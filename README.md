@@ -195,8 +195,10 @@ If you already have a world open to LAN and want the generic single-agent flow i
 
 ```bash
 cd ~/hermescraft
-MC_PORT=<LAN_PORT> ./hermescraft.sh
+HERMES_MODEL=openrouter/anthropic/claude-sonnet-4 MC_PORT=<LAN_PORT> ./hermescraft.sh
 ```
+
+(`hermescraft.sh` requires `HERMES_MODEL` or `--model` so it never falls back to a global Hermes default such as Opus. `--bot-only` skips the LLM and does not need a model.)
 
 Examples in chat:
 - `hermes follow me`
@@ -302,15 +304,20 @@ Primary files:
 - `landfolk.sh` — small-cast LAN launcher
 - `scripts/run-landfolk-bots.sh` — start the 5 Landfolk bot bodies
 - `scripts/run-landfolk-agent.sh` — launch one Landfolk Hermes brain cleanly
-- `bot/server.js` — Mineflayer HTTP bot server
-- `bot/lib/` — routing and perception helpers
+- `bot/server.js` — wiring entrypoint (~600 LOC): config, dependency injection, HTTP startup
+- `bot/lib/actions/` — domain action modules (movement, mining, crafting, combat, world, containers)
+- `bot/lib/bot/` — Mineflayer-dependent gameplay (manager, fair-play, spatial, locations, dig-tools, observation)
+- `bot/lib/server/` — HTTP infrastructure (config, state, http-app, action-registry)
+- `bot/lib/shared/` — pure utilities (perception, resolver, chat, domains, schemas)
+- `bot/lib/goals/` — goal engine and task management
 - `bot/test/` — unit tests
-- `bin/mc` — CLI for observation and action
+- `bin/mc` — Node ESM CLI (`bot/cli/`) over the bot HTTP API (`--json`, `mc commands`, `mc batch`, etc.)
 - `SOUL-minecraft.md` — companion behavior
 - `SOUL-civilization.md` — civilization behavior
 - `SOUL-landfolk.md` — landfolk behavior
 - `prompts/` — character prompts
-- `docs/` — mode notes and hackathon/demo docs
+- `docs/` — mode notes and hackathon/demo docs (`docs/MC_AGENT_BOUNDARIES.md`: Hermes vs server when using `mc`)
+- `data/` — persistent per-bot data (goals, presets, locations, reminders)
 
 Archived reference / experimental material:
 - `docs/archive/` — old plans, audits, arena notes

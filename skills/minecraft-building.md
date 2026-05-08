@@ -1,13 +1,18 @@
 ---
 name: minecraft-building
-description: Build structures in Minecraft — houses, cabins, shelters with actual aesthetics. Not slop.
+description: "Build structures in Minecraft — houses, cabins, fences, shelters, walls, roofs with actual aesthetics. Load when placing multiple blocks, building anything, constructing farms/pens/walls, or when the player asks to build. Covers systematic block placement, material combos, roof styles, and building workflow."
 triggers:
   - minecraft build
   - build a house
   - minecraft construction
   - build shelter
   - log cabin
-version: 4.0.0
+  - place blocks
+  - build wall
+  - build fence
+  - build farm
+  - build pen
+version: 4.1.0
 ---
 
 # Minecraft Building — With Taste

@@ -131,11 +131,19 @@ else
 fi
 
 # Ensure primary scripts are executable
-chmod +x "$SCRIPT_DIR/hermescraft.sh" "$SCRIPT_DIR/civilization.sh" "$SCRIPT_DIR/landfolk.sh" "$BIN_DIR/mc" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/hermescraft.sh" "$SCRIPT_DIR/civilization.sh" "$SCRIPT_DIR/landfolk.sh" "$SCRIPT_DIR/start-gatherer.sh" "$BIN_DIR/mc" 2>/dev/null || true
 chmod +x "$SCRIPT_DIR/scripts/run-landfolk-agent.sh" "$SCRIPT_DIR/scripts/run-landfolk-bots.sh" 2>/dev/null || true
 
 # Create data directory
 mkdir -p "$SCRIPT_DIR/data"
+
+# Hermes skill: minecraft-goals (start-gatherer.sh uses -s minecraft-goals)
+GSKILL="$SCRIPT_DIR/skills/minecraft-goals.md"
+if [ -f "$GSKILL" ] && [ -d "$HOME/.hermes/skills" ]; then
+  mkdir -p "$HOME/.hermes/skills/gaming/minecraft-goals"
+  cp "$GSKILL" "$HOME/.hermes/skills/gaming/minecraft-goals/SKILL.md"
+  echo "    ✓ Hermes skill minecraft-goals → ~/.hermes/skills/gaming/"
+fi
 
 echo ""
 echo "  ═══════════════════════════════════════════"

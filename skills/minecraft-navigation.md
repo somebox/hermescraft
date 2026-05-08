@@ -1,13 +1,18 @@
 ---
 name: minecraft-navigation
-description: Navigation and exploration in Minecraft — finding biomes, structures, caves, ores, and efficient movement
+description: "Navigation and exploration in Minecraft — ore Y-levels, finding structures/biomes/caves, strip mining, coordinate system, spiral search. Load when exploring, mining at specific depths, looking for villages/structures, or navigating underground."
 triggers:
   - minecraft navigate
   - find biome
   - minecraft explore
   - find village
   - find cave
-version: 3.0.0
+  - ore y level
+  - diamond level
+  - strip mine
+  - lost underground
+  - find structure
+version: 3.1.0
 ---
 
 # Minecraft Navigation

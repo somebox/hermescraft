@@ -1,12 +1,18 @@
 ---
 name: minecraft-combat
-description: Combat strategies for every Minecraft mob — how to fight, when to flee, weapon selection
+description: "Combat strategies for every Minecraft mob — weapon priority, mob-specific tactics (creeper, skeleton, enderman, etc.), when to fight vs flee, health thresholds. Load when hostiles are nearby, health is low, preparing for dangerous areas, or entering the Nether."
 triggers:
   - minecraft combat
   - fight mobs
   - minecraft attack
   - kill mobs
-version: 3.0.0
+  - skeleton
+  - creeper
+  - enderman
+  - zombie
+  - nether combat
+  - low health
+version: 3.1.0
 ---
 
 # Minecraft Combat

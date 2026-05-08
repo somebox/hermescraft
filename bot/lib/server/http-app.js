@@ -1,0 +1,549 @@
+/**
+ * Mineflayer bot HTTP listener factory — extracted from server.js for readability and testing.
+ */
+import fs from 'fs';
+
+export function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      try {
+        resolve(data ? JSON.parse(data) : {});
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+  });
+}
+
+export function respond(res, status, data) {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.end(JSON.stringify(data));
+}
+
+const TASK_SEG_SKIP = new Set(['start', 'cancel', 'pause', 'resume', 'checkpoint-respond', 'history']);
+
+/** Record last failure for dashboard /observe (Hermes agents rarely persist goals — this stays server-side). */
+function recordLastApiError(ctx, reqMethod, pathname, err, actionHint) {
+  const msg = (err && err.message) || String(err || 'error');
+  const am = pathname.match(/^\/action\/(\w+)$/);
+  const tm = pathname.match(/^\/task\/(\w+)$/);
+  let action = actionHint || null;
+  if (!action && am) action = am[1];
+  if (!action && tm && !TASK_SEG_SKIP.has(tm[1])) action = tm[1];
+  ctx.lastApiError = {
+    ts: Date.now(),
+    method: reqMethod,
+    path: pathname,
+    action,
+    message: msg.slice(0, 2000),
+  };
+}
+
+/** @param {Record<string, any>} deps */
+export function createBotHttpListener(deps) {
+  const {
+    config,
+    ctx,
+    spatial,
+    actionRegistry,
+    ensureBot,
+    briefState,
+    getFullState,
+    buildMarksListApi,
+    getInventory,
+    getNearby,
+    buildSceneSummary,
+    summarizeSocialGraph,
+    refreshLeaseCheckpoint,
+    taskToApi,
+    persistGoalsToDisk,
+    listPresets,
+    getGoalsScoreboard,
+    buildObservePayload,
+    buildTypedAlerts,
+    buildLogisticsPayload,
+    loadPreset,
+    mergePresetIntoStore,
+    createTaskRecord,
+    pushTaskHistoryRecord,
+    renewLease,
+    createBot,
+    dashboardHtmlPath,
+  } = deps;
+
+  return async function botHttpListener(req, res) {
+
+  // CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    return res.end();
+  }
+
+  const url = new URL(req.url, `http://localhost:${config.api.port}`);
+  const path = url.pathname;
+
+  try {
+    // ── GET endpoints (observation) ──────────────
+    if (req.method === 'GET') {
+      if (path === '/health' || path === '/') {
+        return respond(res, 200, {
+          ok: true,
+          connected: ctx.botReady,
+          username: config.mc.username,
+          server: `${config.mc.host}:${config.mc.port}`,
+        });
+      }
+
+      if (path === '/status') {
+        return respond(res, 200, { ok: true, data: getFullState() });
+      }
+
+      if (path === '/marks') {
+        ensureBot();
+        return respond(res, 200, { ok: true, data: { marks: buildMarksListApi() } });
+      }
+
+      if (path === '/inventory') {
+        return respond(res, 200, { ok: true, data: getInventory() });
+      }
+
+      if (path === '/nearby') {
+        const radius = parseInt(url.searchParams.get('radius') || '32');
+        return respond(res, 200, { ok: true, data: getNearby(radius) });
+      }
+
+      // ASCII top-down map of surroundings
+      if (path === '/map') {
+        const radius = parseInt(url.searchParams.get('radius') || '16');
+        return respond(res, 200, { ok: true, data: spatial.generateMap(radius) });
+      }
+
+      // Narrative description of what you see (human-readable)
+      if (path === '/look') {
+        return respond(res, 200, { ok: true, data: spatial.generateLookAround() });
+      }
+
+      if (path === '/scene') {
+        const range = parseInt(url.searchParams.get('range') || '16');
+        return respond(res, 200, { ok: true, data: buildSceneSummary({ range: Math.min(range, 24) }) });
+      }
+
+      if (path === '/social') {
+        return respond(res, 200, { ok: true, data: { summary: summarizeSocialGraph(ctx.socialGraph), recent_events: ctx.socialEvents.slice(-20) } });
+      }
+
+      if (path === '/chat') {
+        const count = parseInt(url.searchParams.get('count') || '20');
+        const clear = url.searchParams.get('clear') === 'true';
+        const msgs = ctx.chatLog.slice(-count);
+        if (clear) ctx.chatLog.length = 0;
+        return respond(res, 200, { ok: true, data: { messages: msgs } });
+      }
+
+      if (path === '/overhear') {
+        const count = parseInt(url.searchParams.get('count') || '20');
+        const msgs = ctx.overheardLog.slice(-count);
+        return respond(res, 200, { ok: true, data: { messages: msgs } });
+      }
+
+      if (path === '/deaths') {
+        return respond(res, 200, { ok: true, data: {
+          total: ctx.deathLog.length,
+          last_death: ctx.lastDeath ? {
+            ...ctx.lastDeath,
+            seconds_ago: Math.round((Date.now() - ctx.lastDeath.time) / 1000),
+            items_lost: ctx.lastDeath.inventory.map(i => `${i.name}x${i.count}`).join(', ')
+          } : null
+        }});
+      }
+
+      if (path === '/commands') {
+        // Get pending commands queued by in-game chat
+        const pending = ctx.commandQueue.filter(c => c.status === 'pending');
+        return respond(res, 200, { ok: true, data: { commands: pending } });
+      }
+
+      if (path === '/sounds') {
+        return respond(res, 200, { ok: true, data: { sounds: ctx.soundEvents.slice(-10) } });
+      }
+
+      if (path === '/team') {
+        return respond(res, 200, { ok: true, data: ctx.teamConfig });
+      }
+
+      if (path === '/stats') {
+        return respond(res, 200, { ok: true, data: ctx.combatStats });
+      }
+
+      if (path === '/furnaces') {
+        return respond(res, 200, { ok: true, data: { furnaces: ctx.activeFurnaces.map(f => ({
+          ...f,
+          eta_seconds: f.estimatedDone ? Math.max(0, Math.round((f.estimatedDone - Date.now()) / 1000)) : null,
+        })) } });
+      }
+
+      if (path === '/task') {
+        refreshLeaseCheckpoint(ctx.currentTask);
+        if (!ctx.currentTask) return respond(res, 200, { ok: true, data: { task: null }, state: briefState() });
+        return respond(res, 200, {
+          ok: true,
+          data: { task: taskToApi(ctx.currentTask) },
+          state: briefState(),
+        });
+      }
+
+      if (path === '/goals') {
+        ensureBot();
+        const { scored, context } = getGoalsScoreboard();
+        persistGoalsToDisk();
+        return respond(res, 200, {
+          ok: true,
+          data: { goals: scored, context },
+        });
+      }
+
+      if (path === '/goal-presets' || path === '/goals/presets') {
+        return respond(res, 200, { ok: true, data: { presets: listPresets() } });
+      }
+
+      const goalIdMatch = path.match(/^\/goals\/([^/]+)$/);
+      if (goalIdMatch) {
+        ensureBot();
+        const gid = decodeURIComponent(goalIdMatch[1]);
+        const g = ctx.goalsStore.goals.find((x) => x.id === gid);
+        if (!g) return respond(res, 404, { ok: false, error: `Goal not found: ${gid}` });
+        const { scored } = getGoalsScoreboard();
+        const detail = scored.find((x) => x.id === gid) || g;
+        return respond(res, 200, { ok: true, data: { goal: detail } });
+      }
+
+      if (path === '/checkpoint') {
+        ensureBot();
+        return respond(res, 200, buildObservePayload());
+      }
+
+      if (path === '/observe') {
+        ensureBot();
+        return respond(res, 200, buildObservePayload());
+      }
+
+      if (path === '/alerts') {
+        ensureBot();
+        return respond(res, 200, { ok: true, data: { alerts: buildTypedAlerts() } });
+      }
+
+      if (path === '/logistics') {
+        ensureBot();
+        return respond(res, 200, buildLogisticsPayload());
+      }
+
+      if (path === '/dashboard') {
+        try {
+          const html = fs.readFileSync(dashboardHtmlPath, 'utf8');
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          return res.end(html);
+        } catch (e) {
+          return respond(res, 404, { ok: false, error: 'dashboard.html not found' });
+        }
+      }
+
+      if (path === '/task/history') {
+        return respond(res, 200, { ok: true, data: { history: ctx.taskHistory } });
+      }
+    }
+
+    // ── POST endpoints (actions) ────────────────
+    if (req.method === 'POST') {
+      const body = await parseBody(req);
+
+      // Cancel current task
+      if (path === '/task/cancel') {
+        const b = ensureBot();
+        b.pathfinder.setGoal(null);
+        try { b.stopDigging(); } catch {}
+        if (ctx.currentTask && ctx.currentTask.status === 'running') {
+          ctx.currentTask.status = 'cancelled';
+          pushTaskHistoryRecord(ctx.currentTask, 'cancelled');
+        }
+        return respond(res, 200, { ok: true, result: 'Task cancelled.', state: briefState() });
+      }
+
+      // Explicit task start with goal + lease
+      if (path === '/task/start') {
+        if (ctx.currentTask && ctx.currentTask.status === 'running') {
+          return respond(res, 409, {
+            ok: false,
+            error: `Task "${ctx.currentTask.action}" is already running. POST /task/cancel first.`,
+            state: briefState(),
+          });
+        }
+        const actionName = body.action;
+        if (!actionName || !actionRegistry.has(actionName)) {
+          const available = actionRegistry.names().join(', ');
+          return respond(res, 400, {
+            ok: false,
+            error: `Unknown or missing action. Available: ${available}`,
+          });
+        }
+        const actionFn = actionRegistry.get(actionName);
+        const taskBody =
+          body.params && typeof body.params === 'object' ? { ...body.params } : { ...body };
+        delete taskBody.action;
+        delete taskBody.lease_seconds;
+        delete taskBody.goal_id;
+        delete taskBody.parent_goal_id;
+        delete taskBody.contributes_to;
+        const taskId = `${actionName}_${Date.now()}`;
+        const leaseSec =
+          body.lease_seconds != null ? parseFloat(body.lease_seconds) : null;
+        ctx.currentTask = createTaskRecord({
+          id: taskId,
+          action: actionName,
+          lease_seconds: leaseSec && leaseSec > 0 ? leaseSec : null,
+          parent_goal_id: body.goal_id || body.parent_goal_id || null,
+          contributes_to: body.contributes_to || null,
+        });
+        actionFn(taskBody)
+          .then((result) => {
+            if (ctx.currentTask && ctx.currentTask.id === taskId && ctx.currentTask.status === 'running') {
+              ctx.currentTask.status = 'done';
+              ctx.currentTask.result = result;
+              pushTaskHistoryRecord(ctx.currentTask, 'done');
+            }
+            ctx.actionHistory.push({ action: actionName, status: 'done', time: Date.now() });
+            if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+          })
+          .catch((err) => {
+            recordLastApiError(ctx, 'POST', '/task/start', err, actionName);
+            if (ctx.currentTask && ctx.currentTask.id === taskId && ctx.currentTask.status === 'running') {
+              ctx.currentTask.status = 'error';
+              ctx.currentTask.error = err.message;
+              pushTaskHistoryRecord(ctx.currentTask, 'error');
+            }
+            ctx.actionHistory.push({ action: actionName, status: 'error', time: Date.now() });
+            if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+          });
+        return respond(res, 200, {
+          ok: true,
+          task_id: taskId,
+          status: 'started',
+          state: briefState(),
+        });
+      }
+
+      if (path === '/task/checkpoint-respond') {
+        refreshLeaseCheckpoint(ctx.currentTask);
+        const decision = String(body.decision || 'continue').toLowerCase();
+        const leaseSeconds =
+          body.lease_seconds != null ? parseFloat(body.lease_seconds) : 45;
+        if (!ctx.currentTask || ctx.currentTask.status !== 'running') {
+          return respond(res, 200, {
+            ok: true,
+            result: 'No running task to checkpoint.',
+            state: briefState(),
+          });
+        }
+        if (decision === 'cancel' || decision === 'abort') {
+          try {
+            const b = ensureBot();
+            b.pathfinder.setGoal(null);
+            try {
+              b.stopDigging();
+            } catch {}
+          } catch {}
+          ctx.currentTask.status = 'cancelled';
+          pushTaskHistoryRecord(ctx.currentTask, 'cancelled');
+          ctx.currentTask = null;
+          return respond(res, 200, { ok: true, result: 'Task cancelled at checkpoint.', state: briefState() });
+        }
+        if (decision === 'continue' || decision === 'renew') {
+          renewLease(ctx.currentTask, leaseSeconds > 0 ? leaseSeconds : 45);
+          return respond(res, 200, {
+            ok: true,
+            result: `Lease renewed (${leaseSeconds}s).`,
+            state: briefState(),
+          });
+        }
+        renewLease(ctx.currentTask, leaseSeconds > 0 ? leaseSeconds : 45);
+        return respond(res, 200, {
+          ok: true,
+          result: `Checkpoint noted (${decision}). Lease renewed.`,
+          state: briefState(),
+        });
+      }
+
+      if (path === '/task/pause') {
+        ensureBot();
+        if (ctx.currentTask && ctx.currentTask.status === 'running') {
+          ctx.currentTask.checkpoint_status = 'pending';
+        }
+        return respond(res, 200, {
+          ok: true,
+          result: 'Checkpoint forced (pending).',
+          state: briefState(),
+        });
+      }
+
+      if (path === '/task/resume') {
+        ensureBot();
+        const ls = body.lease_seconds != null ? parseFloat(body.lease_seconds) : 45;
+        if (ctx.currentTask && ctx.currentTask.status === 'running') {
+          renewLease(ctx.currentTask, ls > 0 ? ls : 45);
+          return respond(res, 200, {
+            ok: true,
+            result: 'Lease renewed.',
+            state: briefState(),
+          });
+        }
+        return respond(res, 200, {
+          ok: true,
+          result: 'No active task.',
+          state: briefState(),
+        });
+      }
+
+      // Goals API
+      if (path === '/goals' && req.method === 'POST') {
+        ensureBot();
+        if (Array.isArray(body.goals)) {
+          ctx.goalsStore.goals = body.goals;
+        } else if (body.goal) {
+          const g = body.goal;
+          const idx = ctx.goalsStore.goals.findIndex((x) => x.id === g.id);
+          if (idx >= 0) ctx.goalsStore.goals[idx] = { ...ctx.goalsStore.goals[idx], ...g };
+          else ctx.goalsStore.goals.push(g);
+        }
+        persistGoalsToDisk();
+        return respond(res, 200, { ok: true, data: { count: ctx.goalsStore.goals.length }, state: briefState() });
+      }
+
+      if (path === '/goals/update') {
+        ensureBot();
+        const id = body.id;
+        if (!id) return respond(res, 400, { ok: false, error: 'Missing goal id' });
+        const idx = ctx.goalsStore.goals.findIndex((x) => x.id === id);
+        if (idx < 0) return respond(res, 404, { ok: false, error: `Goal not found: ${id}` });
+        const { id: _id, ...rest } = body;
+        ctx.goalsStore.goals[idx] = { ...ctx.goalsStore.goals[idx], ...rest };
+        persistGoalsToDisk();
+        return respond(res, 200, { ok: true, data: { goal: ctx.goalsStore.goals[idx] }, state: briefState() });
+      }
+
+      if (path === '/goals/load-preset') {
+        ensureBot();
+        const name = body.preset || body.name;
+        if (!name) return respond(res, 400, { ok: false, error: 'Missing preset name' });
+        const preset = loadPreset(name);
+        if (!preset) return respond(res, 404, { ok: false, error: `Preset not found: ${name}` });
+        ctx.goalsStore = mergePresetIntoStore(ctx.goalsStore, preset);
+        persistGoalsToDisk();
+        return respond(res, 200, {
+          ok: true,
+          result: `Loaded preset '${name}'`,
+          data: { goals: ctx.goalsStore.goals.length },
+          state: briefState(),
+        });
+      }
+
+      // Background task system: POST /task/ACTION runs async, returns task_id
+      const taskMatch = path.match(/^\/task\/(\w+)$/);
+      if (taskMatch) {
+        const actionName = taskMatch[1];
+        const actionFn = actionRegistry.get(actionName);
+        if (!actionFn) {
+          const available = actionRegistry.names().join(', ');
+          return respond(res, 400, { ok: false, error: `Unknown action "${actionName}". Available: ${available}` });
+        }
+        if (ctx.currentTask && ctx.currentTask.status === 'running') {
+          return respond(res, 409, { ok: false, error: `Task "${ctx.currentTask.action}" is already running (${Math.round((Date.now() - ctx.currentTask.started) / 1000)}s). POST /task/cancel first.`, state: briefState() });
+        }
+        const taskId = `${actionName}_${Date.now()}`;
+        const leaseSec = body.lease_seconds != null ? parseFloat(body.lease_seconds) : null;
+        ctx.currentTask = createTaskRecord({
+          id: taskId,
+          action: actionName,
+          lease_seconds: leaseSec && leaseSec > 0 ? leaseSec : null,
+          parent_goal_id: body.goal_id || body.parent_goal_id || null,
+          contributes_to: body.contributes_to || null,
+        });
+        // Fire and forget — runs in background
+        actionFn(body).then(result => {
+          if (ctx.currentTask && ctx.currentTask.id === taskId && ctx.currentTask.status === 'running') {
+            ctx.currentTask.status = 'done';
+            ctx.currentTask.result = result;
+            pushTaskHistoryRecord(ctx.currentTask, 'done');
+          }
+          ctx.actionHistory.push({ action: actionName, status: 'done', time: Date.now() });
+          if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+        }).catch(err => {
+          recordLastApiError(ctx, 'POST', path, err, actionName);
+          if (ctx.currentTask && ctx.currentTask.id === taskId && ctx.currentTask.status === 'running') {
+            ctx.currentTask.status = 'error';
+            ctx.currentTask.error = err.message;
+            pushTaskHistoryRecord(ctx.currentTask, 'error');
+          }
+          ctx.actionHistory.push({ action: actionName, status: 'error', time: Date.now() });
+          if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+        });
+        return respond(res, 200, { ok: true, task_id: taskId, status: 'started', state: briefState() });
+      }
+
+      // Synchronous action: POST /action/ACTION (still supported for quick stuff)
+      const actionMatch = path.match(/^\/action\/(\w+)$/);
+      if (!actionMatch) {
+        // Special: /connect
+        if (path === '/connect') {
+          await createBot();
+          return respond(res, 200, { ok: true, result: 'Connected', state: briefState() });
+        }
+        return respond(res, 404, { ok: false, error: `Unknown endpoint: ${path}` });
+      }
+
+      const actionName = actionMatch[1];
+      const actionFn = actionRegistry.get(actionName);
+      if (!actionFn) {
+        const available = actionRegistry.names().join(', ');
+        return respond(res, 400, { ok: false, error: `Unknown action "${actionName}". Available: ${available}` });
+      }
+
+      ctx.lastApiError = null;
+      const result = await actionFn(body);
+      ctx.actionHistory.push({ action: actionName, status: 'done', time: Date.now() });
+      if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+      return respond(res, 200, { ok: true, ...result, state: briefState() });
+    }
+
+    if (req.method === 'DELETE') {
+      const gm = path.match(/^\/goals\/([^/]+)$/);
+      if (gm) {
+        ensureBot();
+        const gid = decodeURIComponent(gm[1]);
+        const before = ctx.goalsStore.goals.length;
+        ctx.goalsStore.goals = ctx.goalsStore.goals.filter((x) => x.id !== gid);
+        if (ctx.goalsStore.goals.length === before) {
+          return respond(res, 404, { ok: false, error: `Goal not found: ${gid}` });
+        }
+        persistGoalsToDisk();
+        return respond(res, 200, { ok: true, result: `Removed goal ${gid}` });
+      }
+      return respond(res, 404, { ok: false, error: `Not found: DELETE ${path}` });
+    }
+
+    respond(res, 404, { ok: false, error: `Not found: ${req.method} ${path}` });
+
+  } catch (err) {
+    recordLastApiError(ctx, req.method, path, err);
+    const status = err.message.includes('not connected') ? 503 : 400;
+    respond(res, status, { ok: false, error: err.message, state: briefState() });
+  }
+  };
+}
+

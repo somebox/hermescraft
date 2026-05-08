@@ -27,7 +27,21 @@ test('parseMessageRouting handles direct and group messages', () => {
     channel: 'direct',
   });
 
+  assert.deepEqual(parseMessageRouting('@Elena: come here', { knownNames: known }), {
+    targets: ['elena'],
+    body: 'come here',
+    isBroadcast: false,
+    channel: 'direct',
+  });
+
   assert.deepEqual(parseMessageRouting('Marcus,Elena: regroup', { knownNames: known }), {
+    targets: ['marcus', 'elena'],
+    body: 'regroup',
+    isBroadcast: false,
+    channel: 'group_dm',
+  });
+
+  assert.deepEqual(parseMessageRouting('@Marcus, @Elena: regroup', { knownNames: known }), {
     targets: ['marcus', 'elena'],
     body: 'regroup',
     isBroadcast: false,
@@ -49,8 +63,14 @@ test('parseMessageRouting falls back to public when prefix is not a valid name',
 });
 
 test('mention parsing strips prefix cleanly', () => {
-  assert.equal(broadcastMentionsMe('Hermes, build a house', 'HermesBot'), 'hermes');
-  assert.equal(stripMentionPrefix('Hermes, build a house', 'hermes'), 'build a house');
+  assert.equal(broadcastMentionsMe('Hermes, build a house', 'HermesBot'), 'Hermes');
+  assert.equal(stripMentionPrefix('Hermes, build a house', 'Hermes'), 'build a house');
+
+  assert.equal(broadcastMentionsMe('@HermesBot dig west', 'HermesBot'), '@HermesBot');
+  assert.equal(stripMentionPrefix('@HermesBot dig west', '@HermesBot'), 'dig west');
+
+  assert.equal(broadcastMentionsMe('@hermes status', 'Gatherer'), '@hermes');
+  assert.equal(stripMentionPrefix('@hermes status', '@hermes'), 'status');
 });
 
 test('isMessageForMe respects direct targets and bot aliases', () => {

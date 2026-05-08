@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HermesCraft — dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --good: #3fb950;
+      --warn: #d29922;
+      --bad: #f85149;
+      --hostile: #ff7b72;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1rem 1.25rem 2rem;
+      line-height: 1.45;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+    h1 { font-size: 1.15rem; font-weight: 600; margin: 0; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+    }
+    .badge.ok { border-color: var(--good); color: var(--good); }
+    .badge.warn { border-color: var(--warn); color: var(--warn); }
+    .badge.off { border-color: var(--muted); color: var(--muted); }
+    .mono { font-family: ui-monospace, monospace; font-size: 0.8rem; }
+    .muted { color: var(--muted); font-size: 0.85rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+    .span-2 { grid-column: span 2; }
+    @media (max-width: 900px) { .span-2 { grid-column: span 1; } }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .bar-wrap {
+      height: 8px;
+      background: #21262d;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 0.25rem;
+    }
+    .bar { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+    .bar.hp { background: linear-gradient(90deg, #f85149, #3fb950); }
+    .bar.food { background: #d29922; }
+    .stat-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: baseline;
+      margin-bottom: 0.65rem;
+    }
+    .stat-row:last-child { margin-bottom: 0; }
+    .banner {
+      background: rgba(210, 153, 34, 0.12);
+      border: 1px solid var(--warn);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .banner strong { color: var(--warn); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    th, td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; }
+    tr:last-child td { border-bottom: none; }
+    tr.hostile td { color: var(--hostile); }
+    .pill {
+      display: inline-block;
+      font-size: 0.72rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      background: #21262d;
+      margin-right: 0.35rem;
+      margin-bottom: 0.25rem;
+    }
+    .pill.urgent { background: rgba(248, 81, 73, 0.2); color: #ff7b72; }
+    .goal-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.5rem;
+      background: #0d1117;
+    }
+    .goal-card:last-child { margin-bottom: 0; }
+    .goal-head { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+    .goal-id { font-weight: 600; font-size: 0.85rem; }
+    .urgency-bar { height: 4px; background: #21262d; border-radius: 2px; margin-top: 0.4rem; overflow: hidden; }
+    .urgency-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+    .chat-line { font-size: 0.8rem; padding: 0.35rem 0; border-bottom: 1px solid #21262d; }
+    .chat-line:last-child { border-bottom: none; }
+    .chat-from { color: var(--accent); font-weight: 500; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin-top: 1rem;
+    }
+    button, input {
+      background: #21262d;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.45rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    button:hover { background: #30363d; }
+    #err { color: var(--bad); font-size: 0.85rem; margin-top: 0.5rem; }
+    .empty { color: var(--muted); font-size: 0.85rem; }
+    pre.raw {
+      margin: 0.5rem 0 0;
+      font-size: 0.68rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--muted);
+      max-height: 200px;
+      overflow: auto;
+    }
+    details summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>HermesCraft dashboard</h1>
+    <span id="connBadge" class="badge off">API …</span>
+    <span id="timeBadge" class="badge">—</span>
+    <span class="muted mono" id="apiOrigin"></span>
+  </header>
+  <div id="remindBanner" role="status"></div>
+  <div class="panel span-2" id="lastErrPanel" style="display: none; border-color: var(--bad); background: rgba(248, 81, 73, 0.08);">
+    <h2 style="color: var(--bad);">Last API error</h2>
+    <div id="lastErr" class="mono"></div>
+  </div>
+  <div id="err"></div>
+
+  <div class="grid">
+    <div class="panel span-2">
+      <h2>Agent intent (chat & queue)</h2>
+      <p class="muted" style="margin: 0 0 0.6rem; font-size: 0.82rem;" id="signalsDisclaimer"></p>
+      <div id="signals"></div>
+    </div>
+    <div class="panel span-2">
+      <h2>Goal strategies (preset / store)</h2>
+      <p class="muted" style="margin: 0 0 0.6rem; font-size: 0.82rem;">Suggested mc-style steps from each unsatisfied goal&apos;s <span class="mono">strategies_available</span>. Load gatherer (toolbar) or POST goals to align Hermes with this list.</p>
+      <div id="planHints"></div>
+    </div>
+    <div class="panel span-2">
+      <h2>Recent HTTP actions</h2>
+      <div id="recentActions"></div>
+    </div>
+    <div class="panel span-2">
+      <h2>Vitals & place</h2>
+      <div id="vitals"></div>
+    </div>
+    <div class="panel">
+      <h2>Background task</h2>
+      <div id="task"></div>
+    </div>
+    <div class="panel">
+      <h2>Goals (top)</h2>
+      <div id="goals"></div>
+    </div>
+    <div class="panel">
+      <h2>Alerts</h2>
+      <div id="alerts"></div>
+    </div>
+    <div class="panel">
+      <h2>Chat & commands</h2>
+      <div id="chat"></div>
+    </div>
+    <div class="panel">
+      <h2>Nearby (fair-play)</h2>
+      <div id="entities"></div>
+    </div>
+    <div class="panel">
+      <h2>Inventory</h2>
+      <div id="inv"></div>
+    </div>
+    <div class="panel">
+      <h2>Marks</h2>
+      <div id="marks"></div>
+    </div>
+    <div class="panel">
+      <h2>Task history</h2>
+      <div id="history"></div>
+    </div>
+    <div class="panel">
+      <h2>Combat stats</h2>
+      <div id="stats"></div>
+    </div>
+    <div class="panel span-2">
+      <details>
+        <summary>Raw observe JSON (debug)</summary>
+        <pre class="raw" id="rawObserve"></pre>
+      </details>
+    </div>
+  </div>
+
+  <div class="panel toolbar">
+    <label class="mono muted">Preset</label>
+    <input id="preset" value="gatherer" />
+    <button id="load" type="button">Load preset</button>
+    <button id="cancel" type="button">Cancel task</button>
+    <button id="refresh" type="button">Refresh now</button>
+    <label class="muted mono"><input type="checkbox" id="pollToggle" checked /> Auto refresh 2s</label>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function clear(el) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+    }
+
+    function textN(s) {
+      return document.createTextNode(s == null ? '' : String(s));
+    }
+
+    function addBar(root, label, value, max, barClass) {
+      const pct = max > 0 ? Math.min(100, (Number(value) / max) * 100) : 0;
+      const row = document.createElement('div');
+      row.className = 'stat-row';
+      const a = document.createElement('span');
+      a.appendChild(textN(label));
+      const b = document.createElement('span');
+      b.className = 'mono';
+      b.appendChild(textN(`${value} / ${max}`));
+      row.append(a, b);
+      root.appendChild(row);
+      const wrap = document.createElement('div');
+      wrap.className = 'bar-wrap';
+      const fill = document.createElement('div');
+      fill.className = 'bar ' + barClass;
+      fill.style.width = pct + '%';
+      wrap.appendChild(fill);
+      root.appendChild(wrap);
+    }
+
+    function addStatRow(root, label, value) {
+      const row = document.createElement('div');
+      row.className = 'stat-row';
+      const a = document.createElement('span');
+      a.appendChild(textN(label));
+      const b = document.createElement('span');
+      b.className = 'mono';
+      b.appendChild(DOM(value));
+      row.append(a, b);
+      root.appendChild(row);
+    }
+
+    function DOM(v) {
+      if (v == null) return textN('—');
+      if (typeof v === 'object') return textN(JSON.stringify(v));
+      return textN(String(v));
+    }
+
+    async function j(path, opt) {
+      const r = await fetch(path, opt);
+      const t = await r.text();
+      let d;
+      try { d = JSON.parse(t); } catch { throw new Error(t.slice(0, 200)); }
+      if (!r.ok) throw new Error(d.error || t);
+      return d;
+    }
+
+    function renderVitals(root, st, full) {
+      clear(root);
+      if (!full && !st) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No state (bot disconnected?)'));
+        root.appendChild(p);
+        return;
+      }
+      const maxH = full?.maxHealth ?? 20;
+      if (full?.health != null || st?.health != null) {
+        addBar(root, 'Health', full?.health ?? st?.health, maxH, 'hp');
+      }
+      const food = full?.food ?? st?.food;
+      if (food != null) addBar(root, 'Food', food, 20, 'food');
+
+      const pos = full?.position || st?.position;
+      const posStr = pos && pos.x != null
+        ? `${Number(pos.x).toFixed(1)}, ${Number(pos.y).toFixed(1)}, ${Number(pos.z).toFixed(1)}`
+        : '—';
+      addStatRow(root, 'Position', posStr);
+      addStatRow(root, 'Holding', full?.holding ?? st?.holding ?? '—');
+
+      const meta = [full?.biome, full?.dimension, full?.timePhase, full?.isRaining ? 'Rain' : '']
+        .filter(Boolean).join(' · ');
+      if (meta) {
+        const p = document.createElement('p');
+        p.className = 'muted';
+        p.style.marginTop = '0.6rem';
+        p.appendChild(textN(meta));
+        root.appendChild(p);
+      }
+      if (full?.permanentlyDead) {
+        const p = document.createElement('p');
+        p.style.color = 'var(--bad)';
+        p.appendChild(textN('Permanently dead'));
+        root.appendChild(p);
+      }
+    }
+
+    function renderGoals(root, goals) {
+      clear(root);
+      if (!goals?.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No goals loaded'));
+        root.appendChild(p);
+        return;
+      }
+      goals.slice(0, 8).forEach((g) => {
+        const card = document.createElement('div');
+        card.className = 'goal-card';
+        const head = document.createElement('div');
+        head.className = 'goal-head';
+        const idEl = document.createElement('span');
+        idEl.className = 'goal-id';
+        idEl.appendChild(textN(g.id || '?'));
+        if (g.satisfied) {
+          const ok = document.createElement('span');
+          ok.className = 'pill';
+          ok.style.color = 'var(--good)';
+          ok.appendChild(textN('OK'));
+          idEl.appendChild(textN(' '));
+          idEl.appendChild(ok);
+        }
+        const uEl = document.createElement('span');
+        uEl.className = 'mono muted';
+        const u = g.urgency != null ? Number(g.urgency) : 0;
+        uEl.appendChild(textN(`u=${u.toFixed(2)}`));
+        head.append(idEl, uEl);
+        card.appendChild(head);
+        if (g.metric) {
+          const m = document.createElement('div');
+          m.className = 'muted mono';
+          m.style.fontSize = '0.78rem';
+          m.appendChild(textN(g.metric + (g.gap != null ? ` gap: ${g.gap}` : '')));
+          card.appendChild(m);
+        }
+        const strat = Array.isArray(g.strategies_available) ? g.strategies_available : [];
+        if (strat.length) {
+          const stEl = document.createElement('div');
+          stEl.className = 'muted mono';
+          stEl.style.fontSize = '0.72rem';
+          stEl.style.marginTop = '0.35rem';
+          stEl.appendChild(textN(strat.slice(0, 6).join(' · ')));
+          card.appendChild(stEl);
+        }
+        const ub = document.createElement('div');
+        ub.className = 'urgency-bar';
+        const uf = document.createElement('div');
+        uf.className = 'urgency-fill';
+        uf.style.width = Math.min(100, Math.max(0, u * 100)) + '%';
+        ub.appendChild(uf);
+        card.appendChild(ub);
+        root.appendChild(card);
+      });
+    }
+
+    function renderAlerts(root, alerts) {
+      clear(root);
+      if (!alerts?.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('None'));
+        root.appendChild(p);
+        return;
+      }
+      const ul = document.createElement('ul');
+      ul.style.margin = '0';
+      ul.style.paddingLeft = '1.1rem';
+      ul.style.fontSize = '0.85rem';
+      alerts.forEach((a) => {
+        const li = document.createElement('li');
+        const t = typeof a === 'string' ? a : (a.message || a.text || JSON.stringify(a));
+        li.appendChild(textN(t));
+        ul.appendChild(li);
+      });
+      root.appendChild(ul);
+    }
+
+    function renderInv(root, summary) {
+      clear(root);
+      const entries = Object.entries(summary || {}).sort((a, b) => b[1] - a[1]);
+      if (!entries.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('Empty'));
+        root.appendChild(p);
+        return;
+      }
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      ['Item', 'Qty'].forEach((h) => {
+        const th = document.createElement('th');
+        th.appendChild(textN(h));
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+      const tb = document.createElement('tbody');
+      entries.slice(0, 40).forEach(([name, c]) => {
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td');
+        td1.className = 'mono';
+        td1.appendChild(textN(name));
+        const td2 = document.createElement('td');
+        td2.appendChild(textN(String(c)));
+        tr.append(td1, td2);
+        tb.appendChild(tr);
+      });
+      table.appendChild(tb);
+      root.appendChild(table);
+      if (entries.length > 40) {
+        const p = document.createElement('p');
+        p.className = 'muted';
+        p.appendChild(textN(`+${entries.length - 40} more…`));
+        root.appendChild(p);
+      }
+    }
+
+    function renderMarks(root, data) {
+      clear(root);
+      const marks = data?.data?.marks ?? data?.marks ?? [];
+      if (!Array.isArray(marks) || !marks.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No marks'));
+        root.appendChild(p);
+        return;
+      }
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      ['Name', 'Distance', 'Note'].forEach((h) => {
+        const th = document.createElement('th');
+        th.appendChild(textN(h));
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+      const tb = document.createElement('tbody');
+      marks.forEach((m) => {
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td');
+        td1.className = 'mono';
+        td1.appendChild(textN(m.name));
+        const td2 = document.createElement('td');
+        td2.appendChild(textN(m.distance_m != null ? String(m.distance_m) : '—'));
+        const td3 = document.createElement('td');
+        td3.appendChild(textN(m.note || ''));
+        tr.append(td1, td2, td3);
+        tb.appendChild(tr);
+      });
+      table.appendChild(tb);
+      root.appendChild(table);
+    }
+
+    function renderLastErr(root, panel, err) {
+      clear(root);
+      if (!err || !err.message) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = '';
+      const ago = err.ts ? Math.round((Date.now() - err.ts) / 1000) : null;
+      const head = document.createElement('div');
+      head.style.marginBottom = '0.35rem';
+      head.className = 'muted';
+      head.appendChild(
+        textN(
+          `${err.method || '?'} ${err.path || ''}${err.action ? ' · action:' + err.action : ''}${ago != null ? ' · ' + ago + 's ago' : ''}`,
+        ),
+      );
+      root.appendChild(head);
+      const msg = document.createElement('div');
+      msg.style.whiteSpace = 'pre-wrap';
+      msg.style.wordBreak = 'break-word';
+      msg.appendChild(textN(err.message));
+      root.appendChild(msg);
+    }
+
+    function renderSignals(root, disclaimerEl, sig) {
+      clear(root);
+      disclaimerEl.textContent = sig?.disclaimer || '';
+      const topics = sig?.chat_topics || [];
+      const pending = sig?.pending_commands || [];
+      const active = sig?.active_tasks || [];
+      if (!topics.length && !pending.length && !active.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No keyword hits or queued commands yet.'));
+        root.appendChild(p);
+        return;
+      }
+      if (active.length) {
+        const h0 = document.createElement('div');
+        h0.style.fontSize = '0.72rem';
+        h0.style.marginBottom = '0.35rem';
+        h0.style.color = '#58a6ff';
+        h0.appendChild(textN('Active tasks (acknowledged)'));
+        root.appendChild(h0);
+        active.forEach((c) => {
+          const row = document.createElement('div');
+          row.className = 'mono';
+          row.style.fontSize = '0.78rem';
+          row.style.marginBottom = '0.25rem';
+          row.style.borderLeft = '3px solid #58a6ff';
+          row.style.paddingLeft = '0.5rem';
+          row.appendChild(textN(`${c.from}: ${c.command}`));
+          if (c.plan) {
+            const planEl = document.createElement('div');
+            planEl.className = 'muted';
+            planEl.style.fontSize = '0.72rem';
+            planEl.appendChild(textN(`Plan: ${c.plan}`));
+            row.appendChild(planEl);
+          }
+          root.appendChild(row);
+        });
+      }
+      if (pending.length) {
+        const h2 = document.createElement('div');
+        h2.style.fontSize = '0.72rem';
+        h2.style.marginTop = '0.5rem';
+        h2.style.color = '#d29922';
+        h2.appendChild(textN('Pending requests (awaiting acknowledgement)'));
+        root.appendChild(h2);
+        pending.forEach((c) => {
+          const row = document.createElement('div');
+          row.className = 'mono';
+          row.style.fontSize = '0.78rem';
+          row.style.marginBottom = '0.25rem';
+          row.style.borderLeft = '3px solid #d29922';
+          row.style.paddingLeft = '0.5rem';
+          row.appendChild(textN(`${c.from}: ${c.command}`));
+          root.appendChild(row);
+        });
+      }
+      if (topics.length) {
+        const h = document.createElement('div');
+        h.className = 'muted';
+        h.style.fontSize = '0.72rem';
+        h.style.marginTop = '0.5rem';
+        h.style.marginBottom = '0.35rem';
+        h.appendChild(textN('Chat topics'));
+        root.appendChild(h);
+        topics.forEach((t) => {
+          const row = document.createElement('div');
+          row.style.marginBottom = '0.45rem';
+          row.style.borderBottom = '1px solid #21262d';
+          row.style.paddingBottom = '0.35rem';
+          const lab = document.createElement('strong');
+          lab.appendChild(textN(t.label));
+          row.appendChild(lab);
+          row.appendChild(textN(' · '));
+          const from = document.createElement('span');
+          from.className = 'muted';
+          from.appendChild(textN(t.from || ''));
+          row.appendChild(from);
+          const sn = document.createElement('div');
+          sn.className = 'mono muted';
+          sn.style.fontSize = '0.76rem';
+          sn.style.marginTop = '0.2rem';
+          sn.appendChild(textN(t.snippet || ''));
+          row.appendChild(sn);
+          root.appendChild(row);
+        });
+      }
+    }
+
+    function renderPlanHints(root, hints) {
+      clear(root);
+      const list = Array.isArray(hints) ? hints : [];
+      if (!list.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No unsatisfied goals or no strategies on goals — load a preset.'));
+        root.appendChild(p);
+        return;
+      }
+      list.forEach((h) => {
+        const row = document.createElement('div');
+        row.className = 'mono';
+        row.style.fontSize = '0.78rem';
+        row.style.marginBottom = '0.35rem';
+        row.style.lineHeight = '1.35';
+        row.appendChild(textN(typeof h === 'string' ? h : h.line || ''));
+        root.appendChild(row);
+      });
+    }
+
+    function renderRecentActions(root, rows) {
+      clear(root);
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No recent mc HTTP actions yet'));
+        root.appendChild(p);
+        return;
+      }
+      list.slice(0, 14).forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'mono';
+        row.style.fontSize = '0.76rem';
+        row.style.marginBottom = '0.25rem';
+        const ok = r.status === 'done';
+        row.style.color = ok ? 'var(--good)' : 'var(--warn)';
+        row.appendChild(textN(`${r.action || '?'} · ${r.status || ''}`));
+        root.appendChild(row);
+      });
+    }
+
+    function renderTask(root, t) {
+      clear(root);
+      if (!t || Object.keys(t).length === 0) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('Idle'));
+        root.appendChild(p);
+        return;
+      }
+      Object.entries(t).forEach(([k, v]) => {
+        if (v == null || v === '') return;
+        const row = document.createElement('div');
+        row.className = 'stat-row';
+        const a = document.createElement('span');
+        a.className = 'muted';
+        a.appendChild(textN(k));
+        const b = document.createElement('span');
+        b.className = 'mono';
+        b.appendChild(DOM(v));
+        row.append(a, b);
+        root.appendChild(row);
+      });
+      if (!root.childNodes.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('Idle'));
+        root.appendChild(p);
+      }
+    }
+
+    function renderHistory(root, h) {
+      clear(root);
+      const list = h?.data?.history ?? h?.history ?? [];
+      if (!Array.isArray(list) || !list.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No history'));
+        root.appendChild(p);
+        return;
+      }
+      list.slice(-12).reverse().forEach((r) => {
+        const d = document.createElement('div');
+        d.className = 'mono';
+        d.style.fontSize = '0.78rem';
+        d.style.marginBottom = '0.35rem';
+        d.appendChild(textN((r.action || '?') + ' · '));
+        const s = document.createElement('span');
+        s.className = 'muted';
+        s.appendChild(textN(r.status || ''));
+        d.appendChild(s);
+        if (r.error) {
+          const er = document.createElement('div');
+          er.style.color = 'var(--bad)';
+          er.style.fontSize = '0.72rem';
+          er.style.marginTop = '0.15rem';
+          er.appendChild(textN(String(r.error).slice(0, 240)));
+          d.appendChild(er);
+        }
+        root.appendChild(d);
+      });
+    }
+
+    function renderStats(root, stats) {
+      clear(root);
+      const d = stats?.data ?? stats;
+      if (!d || (d.kills === undefined && d.deaths === undefined)) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No combat yet'));
+        root.appendChild(p);
+        return;
+      }
+      addStatRow(root, 'Kills', d.kills ?? 0);
+      addStatRow(root, 'Deaths', d.deaths ?? 0);
+    }
+
+    function renderChat(root, st, full) {
+      clear(root);
+      const chunks = [];
+      if (full?.unreadChat?.length) {
+        full.unreadChat.forEach((m) => chunks.push({ from: m.from, msg: m.message, ago: m.ago }));
+      }
+      if (st?.new_chat?.length) {
+        st.new_chat.forEach((m) => chunks.push({
+          from: m.from, msg: m.message, ago: m.ago, direct: m.direct,
+        }));
+      }
+      if (st?.player_requests?.length) {
+        const pill = document.createElement('span');
+        pill.className = 'pill urgent';
+        pill.appendChild(textN(`${st.player_requests.length} pending request(s)`));
+        root.appendChild(pill);
+      }
+      if (st?.active_tasks?.length) {
+        const pill = document.createElement('span');
+        pill.className = 'pill';
+        pill.style.background = '#1f3a5f';
+        pill.appendChild(textN(`${st.active_tasks.length} active task(s)`));
+        root.appendChild(pill);
+      }
+      if (!chunks.length && !root.childNodes.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('No recent chat'));
+        root.appendChild(p);
+        return;
+      }
+      chunks.slice(-12).forEach((m) => {
+        const line = document.createElement('div');
+        line.className = 'chat-line';
+        const from = document.createElement('span');
+        from.className = 'chat-from';
+        from.appendChild(textN(m.from));
+        line.appendChild(from);
+        if (m.direct) {
+          const dm = document.createElement('span');
+          dm.className = 'pill';
+          dm.appendChild(textN('DM'));
+          line.appendChild(document.createTextNode(' '));
+          line.appendChild(dm);
+        }
+        line.appendChild(document.createTextNode(' '));
+        const ago = document.createElement('span');
+        ago.className = 'muted';
+        ago.appendChild(textN(m.ago || ''));
+        line.appendChild(ago);
+        line.appendChild(document.createElement('br'));
+        line.appendChild(textN(m.msg || ''));
+        root.appendChild(line);
+      });
+    }
+
+    const HOSTILES = ['zombie', 'skeleton', 'creeper', 'spider', 'enderman', 'witch', 'husk', 'stray', 'drowned', 'phantom'];
+
+    function renderEntities(root, full) {
+      clear(root);
+      const ents = full?.nearbyEntities || [];
+      if (!ents.length) {
+        const p = document.createElement('p');
+        p.className = 'empty';
+        p.appendChild(textN('None in range'));
+        root.appendChild(p);
+        return;
+      }
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      ['Entity', 'Kind', 'm'].forEach((h) => {
+        const th = document.createElement('th');
+        th.appendChild(textN(h));
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+      const tb = document.createElement('tbody');
+      ents.forEach((e) => {
+        const tr = document.createElement('tr');
+        const typ = (e.type || '').toLowerCase();
+        if (HOSTILES.some((h) => typ.includes(h))) tr.className = 'hostile';
+        const td1 = document.createElement('td');
+        td1.className = 'mono';
+        let label = e.type || '';
+        if (e.username) label += ' · ' + e.username;
+        td1.appendChild(textN(label));
+        const td2 = document.createElement('td');
+        td2.appendChild(textN(e.kind || ''));
+        const td3 = document.createElement('td');
+        td3.appendChild(textN(String(e.distance)));
+        tr.append(td1, td2, td3);
+        tb.appendChild(tr);
+      });
+      table.appendChild(tb);
+      root.appendChild(table);
+    }
+
+    let pollTimer = null;
+
+    async function poll() {
+      $('err').textContent = '';
+      $('apiOrigin').textContent = location.origin;
+
+      try {
+        const [health, o, statusPayload, h, stats, marks] = await Promise.all([
+          j('/health').catch(() => null),
+          j('/observe'),
+          j('/status').catch(() => null),
+          j('/task/history').catch(() => ({ data: {} })),
+          j('/stats').catch(() => null),
+          j('/marks').catch(() => null),
+        ]);
+
+        const full = statusPayload?.data ?? statusPayload;
+        const st = o.state;
+
+        const badge = $('connBadge');
+        badge.className = health?.connected ? 'badge ok' : 'badge warn';
+        badge.textContent = health?.connected
+          ? 'Minecraft connected · ' + (health.username || '')
+          : 'API up · bot not connected';
+
+        const day = o.is_day != null ? (o.is_day ? 'Day' : 'Night') : '—';
+        const tb = $('timeBadge');
+        tb.textContent = o.time != null ? `${day} · tick ${Math.round(o.time)}` : day;
+
+        const rb = $('remindBanner');
+        clear(rb);
+        rb.className = '';
+        const due = o.reminders_due || [];
+        if (due.length) {
+          rb.className = 'banner';
+          const strong = document.createElement('strong');
+          strong.appendChild(textN('Reminders due'));
+          rb.appendChild(strong);
+          rb.appendChild(textN(' — ' + due.map((r) => r.note).join(' · ')));
+        }
+
+        renderLastErr($('lastErr'), $('lastErrPanel'), o.last_api_error);
+        renderSignals($('signals'), $('signalsDisclaimer'), o.dashboard_signals);
+        renderPlanHints($('planHints'), o.goals_plan_hints);
+        renderRecentActions($('recentActions'), o.recent_actions);
+        renderVitals($('vitals'), st, full);
+        renderTask($('task'), o.task);
+        renderGoals($('goals'), o.goals);
+        renderAlerts($('alerts'), o.alerts);
+        renderInv($('inv'), o.inventory_summary);
+        renderMarks($('marks'), marks);
+        renderHistory($('history'), h);
+        renderStats($('stats'), stats);
+        renderChat($('chat'), st, full);
+        renderEntities($('entities'), full);
+        $('rawObserve').textContent = JSON.stringify(o, null, 2);
+      } catch (e) {
+        $('err').textContent = String(e.message);
+        $('connBadge').className = 'badge off';
+        $('connBadge').textContent = 'API error';
+      }
+    }
+
+    $('refresh').onclick = () => poll();
+    $('load').onclick = async () => {
+      try {
+        await j('/goals/load-preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preset: $('preset').value }) });
+        await poll();
+      } catch (e) { $('err').textContent = e.message; }
+    };
+    $('cancel').onclick = async () => {
+      try {
+        await j('/task/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        await poll();
+      } catch (e) { $('err').textContent = e.message; }
+    };
+
+    $('pollToggle').onchange = () => {
+      if ($('pollToggle').checked) {
+        pollTimer = setInterval(poll, 2000);
+      } else if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+
+    poll();
+    pollTimer = setInterval(poll, 2000);
+  </script>
+</body>
+</html>

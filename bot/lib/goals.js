@@ -1,0 +1,15 @@
+export {
+  getDataDir,
+  goalsFileForUser,
+  presetsDir,
+  loadGoalsStore,
+  saveGoalsStore,
+  computeThreatScore,
+  buildMetricContext,
+  readCurrentForMetric,
+  computeUrgency,
+  scoreGoals,
+  loadPreset,
+  listPresets,
+  mergePresetIntoStore,
+} from './goals/engine.js';
