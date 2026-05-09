@@ -1,3 +1,4 @@
+import { Vec3 } from 'vec3';
 import { scoreGoals } from '../goals/engine.js';
 import { refreshLeaseCheckpoint, taskToApi } from '../goals/tasks.js';
 import { summarizeSocialGraph } from '../shared/chat.js';
@@ -506,21 +507,38 @@ export function createObservation(deps) {
         kind: e.type, // 'mob', 'player', 'object', etc.
       }));
 
-    // Notable blocks in wider radius
+    // Notable blocks in wider radius.
+    //
+    // Phase-2 perception fix (BUG t_dc89c01b):
+    //   - Iterate from the BOT'S FLOORED INTEGER coord (not pos.offset(dx)),
+    //     so fractional bot X/Z (e.g. (0.5, _, 0.5) at the spawn platform)
+    //     doesn't silently lose half of integer-X targets to Math.floor in
+    //     blockAt. Stride 1 in dx/dz now covers every integer column.
+    //   - Drop the common-block name exclusion (was: stone/dirt/grass_block/
+    //     deepslate). Aggregation by name + nearest + top-25 already prevents
+    //     flooding, and workers need to see deliberately placed terrain
+    //     blocks (walls, dirt mounds, etc.). Air/cave_air/void_air still
+    //     filtered (they're "no block").
+    //   - Surface the truncation explicitly: requested_radius + truncated
+    //     so callers know when scanRadius < radius.
     const blockTypes = {};
-    const scanR = Math.min(radius, 16); // block scan limited for performance
-    for (let dx = -scanR; dx <= scanR; dx += 2) {
+    const SCAN_RADIUS_CAP = 16;
+    const scanR = Math.min(radius, SCAN_RADIUS_CAP);
+    const ix = Math.floor(pos.x);
+    const iy = Math.floor(pos.y);
+    const iz = Math.floor(pos.z);
+    for (let dx = -scanR; dx <= scanR; dx++) {
       for (let dy = -8; dy <= 8; dy++) {
-        for (let dz = -scanR; dz <= scanR; dz += 2) {
-          const block = b.blockAt(pos.offset(dx, dy, dz));
-          if (block && block.name !== 'air' && block.name !== 'cave_air' && block.name !== 'stone' && block.name !== 'dirt' && block.name !== 'grass_block' && block.name !== 'deepslate') {
-            if (!blockTypes[block.name]) blockTypes[block.name] = { count: 0, nearest: null, nearestDist: Infinity };
-            blockTypes[block.name].count++;
-            const dist = pos.distanceTo(block.position);
-            if (dist < blockTypes[block.name].nearestDist) {
-              blockTypes[block.name].nearest = posObj(block.position);
-              blockTypes[block.name].nearestDist = dist;
-            }
+        for (let dz = -scanR; dz <= scanR; dz++) {
+          const block = b.blockAt(new Vec3(ix + dx, iy + dy, iz + dz));
+          if (!block) continue;
+          if (block.name === 'air' || block.name === 'cave_air' || block.name === 'void_air') continue;
+          if (!blockTypes[block.name]) blockTypes[block.name] = { count: 0, nearest: null, nearestDist: Infinity };
+          blockTypes[block.name].count++;
+          const dist = pos.distanceTo(block.position);
+          if (dist < blockTypes[block.name].nearestDist) {
+            blockTypes[block.name].nearest = posObj(block.position);
+            blockTypes[block.name].nearestDist = dist;
           }
         }
       }
@@ -531,7 +549,13 @@ export function createObservation(deps) {
       .slice(0, 25)
       .map(([name, info]) => ({ name, count: info.count, nearest: info.nearest }));
 
-    return { entities, blocks, scanRadius: scanR };
+    return {
+      entities,
+      blocks,
+      scanRadius: scanR,
+      requested_radius: radius,
+      truncated: radius > SCAN_RADIUS_CAP,
+    };
   }
 
   return {
