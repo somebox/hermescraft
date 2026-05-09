@@ -217,13 +217,14 @@ This is the **gate**: no L1+ test can pass until the action it depends on meets 
 
 #### `mc dig X Y Z`
 - `ok=true` only if a block was actually broken at the target coord
+- **Does NOT auto-pickup**: the dropped item entity stays at the target coord. Tests or sequences that need the item in inventory must follow up with `mc pickup` (or `mc collect` which dig+pickups). Verified in L3.1 fixture: `mc dig 1 65 0` returned ok=true with the dirt block removed but inventory unchanged.
 - `ok=false` for these cases, with `error.code` in:
   - `NO_BLOCK_AT_COORD` — target is air/cave_air; `observed_state.block_at_target == "air"`
   - `OUT_OF_RANGE` — distance > 4.5 and pathfind unsuccessful
   - `TOOL_INADEQUATE` — guardSlowDigEstimate fired; `next_action_hint` names the right tool
   - `PROTECTED_BLOCK` — building protection (crafting_table, chest, etc.)
   - `INTERRUPTED` — task cancelled or bot died mid-dig
-- `data` includes: `{ block_name, dropped_items: [...], position_after }`
+- `data` includes: `{ block_name, dropped_items: [{name, count, position}], position_after }`
 
 #### `mc collect <name> <count>`
 - **Phase 1 bug to fix**: `ok=true` with `mined_count == 0` is forbidden by this contract
@@ -430,20 +431,13 @@ When all levels through `L<N>` are `green`:
 
 ## 12. Test world & fixtures (Multiverse)
 
-### World setup
+This section is a summary. Source of truth is `docs/test-world.md`, which captures the operational details and the gotchas surfaced during prep.
 
-Multiverse-Core is installed on the Paper server. We use a dedicated flat world for testing:
+### World setup (already done)
 
-```
-/mv create landfolk-test FLAT
-/mv conf landfolk-test gameMode SURVIVAL
-/mv conf landfolk-test allowMonsters false      # disable mob spawns by default
-/mv conf landfolk-test allowAnimals false
-/mv modify landfolk-test difficulty PEACEFUL
-/mv modify landfolk-test time 6000              # noon, freeze via /gamerule doDaylightCycle false
-```
+Multiverse-Core 5.6.2 is installed. The test world `landfolk-test` is a flat NORMAL world with `--no-structures`, PEACEFUL, daylight/mob/weather cycles off, keep-inventory on, and an 11×11 stone spawn platform at Y=64 centered on (0, 64, 0). Spawn chunk is forceloaded.
 
-Production world `landfolk` is untouched. Tests teleport bots to the test world before action_sequence and back to spawn after cleanup.
+Production world is `world` (the Paper default). `world_nether` and `world_the_end` are unused for Phase 2. A pre-existing `testflat` world is also unused.
 
 ### Fixture file schema
 
@@ -452,39 +446,40 @@ Production world `landfolk` is untouched. Tests teleport bots to the test world 
 ```yaml
 world: landfolk-test
 prep:
-  # Tear down any prior fixture artifacts in this region
-  - "fill 0 60 0 64 100 64 minecraft:air"
+  # Clear test region above platform
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
   # Build the test scenario from scratch
-  - "fill 0 60 0 32 60 32 minecraft:stone"
-  - "setblock 10 65 10 minecraft:dirt"
-  # Bot starting state
-  - "tp Flint landfolk-test 9 65 10"
+  - "execute in landfolk-test run setblock 1 65 0 minecraft:dirt"
+  # Bot starting state — tp at Y=72 to let chunk load before bot reaches the platform
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
   - "clear Flint"
-  - "give Flint minecraft:wooden_pickaxe 1"
   - "effect give Flint minecraft:saturation 1 10"
-required_marks:                            # marks the bot must have for this test
-  - { name: base, coords: [0, 60, 0] }
-  - { name: target, coords: [10, 65, 10] }
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
 cleanup:
-  - "tp Flint landfolk 0 80 0"             # back to production world spawn
-  - "kill @e[type=item,distance=..50,world=landfolk-test]"
-notes: "..."
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 1 65 0 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
 ```
 
 ### Fixture conventions
 
-- **Region isolation**: each test fixture operates in a 64×64 region centered on a known coord, far from other test regions to avoid interference. Region table in `data/test-fixtures/region-map.yaml`.
-- **Idempotent prep**: every `prep` block starts with a `fill ... air` to clear any prior state.
-- **Production world untouched**: tests only modify `landfolk-test`. Bots tp back to `landfolk` after cleanup.
-- **Items cleanup**: `kill @e[type=item,distance=..50,world=landfolk-test]` after each test prevents item-drop pollution.
+- **Region partitioning by capability level** (planned): L0 at (0, 65, 0); L1 at (50, 65, 0); L2 at (100, 65, 0); L3 at (150, 65, 0); L4 at (200, 65, 0) with deep digging area below. ~128 vertical blocks of stone available below Y=64 down to bedrock at Y=-64.
+- **Idempotent prep**: every `prep` block starts with a `fill ... air` to clear prior state.
+- **Inventory does NOT auto-clear across worlds** — every fixture's prep includes `clear <bot>`.
+- **Cross-world tp gotcha**: bots must tp at Y=72 (above platform) with `slow_falling` effect. Without this, the bot can phase through unloaded-chunk "air" that's actually solid stone and suffocate (~17s to die). Forceload on the spawn chunk is the other half of the fix.
+- **Production world untouched**: tests only modify `landfolk-test`. Bots return via `mvtp <bot> world` after cleanup.
+- **Items cleanup**: `execute in landfolk-test run kill @e[type=item,distance=..32]` after each test prevents item-drop pollution.
 
 ### Periodic full reset
 
-`scripts/reset-test-world.sh`: `/mv delete landfolk-test --force && /mv create landfolk-test FLAT`. Run weekly or on-demand if fixtures drift.
+`scripts/reset-test-world.sh` (TODO): `/mv delete landfolk-test --force && /mv create landfolk-test NORMAL --world-type FLAT --no-structures` then re-run the difficulty/gamerule/spawn/forceload sequence from `docs/test-world.md`. Run weekly or on-demand if fixtures drift.
 
 ### Helper script for the human-as-steward
 
-`scripts/run-fixture.sh <fixture-path>` reads the YAML and runs prep/cleanup via ssh→docker→rcon. Used in steps 5 and 10 of the per-session checklist.
+`scripts/run-fixture.sh prep|cleanup|both <fixture.yaml>` reads the YAML and runs prep/cleanup via ssh→docker→rcon. The `-n` flag on ssh inside the loop is load-bearing — without it ssh consumes the heredoc and only the first command runs.
 
 ## 13. Event/feed schema (for future dashboard)
 
@@ -600,16 +595,21 @@ Worker side: each test is a tiny script (just `mc status`, `mc nearby`, etc.) �
 # data/test-fixtures/L1/L1.9_pillar_step_y62_trap.yaml
 world: landfolk-test
 prep:
-  - "fill 0 60 0 32 100 32 minecraft:air"
-  - "fill 14 60 14 18 70 18 minecraft:stone"            # raised platform
-  - "fill 16 64 16 16 70 16 minecraft:air"              # carve 6-deep hole
-  - "tp Flint landfolk-test 16 64 16"                   # bottom of hole
+  # L1 region centered at (50, 65, 0); pillar_step trap at (66, 64, 16)
+  - "execute in landfolk-test run fill 32 60 -16 96 100 16 minecraft:air"
+  - "execute in landfolk-test run fill 64 60 14 68 70 18 minecraft:stone"   # raised platform
+  - "execute in landfolk-test run fill 66 64 16 66 70 16 minecraft:air"     # carve 6-deep hole
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 66 65 16"                         # tp 1 above hole bottom
   - "clear Flint"
   - "give Flint minecraft:dirt 16"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
 required_marks: []
 cleanup:
-  - "tp Flint landfolk 0 80 0"
-  - "kill @e[type=item,distance=..50,world=landfolk-test]"
+  - "execute in landfolk-test run fill 32 60 -16 96 100 16 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..50]"
 ```
 
 **Worked example — L1.9 capability_test card body:**
