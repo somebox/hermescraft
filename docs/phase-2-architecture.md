@@ -1,586 +1,803 @@
-# Phase 2 Architecture — Hermes-driven Autonomous Minecraft Settlement
+# Phase 2 — Two-Bot Co-Evolution Loop
 
-> **Status:** architecture draft, post-Phase-1 (validated through Experiments 1.1–1.4).
-> **Branch:** `experiment/hermes-agents`. Refactor-scope changes only — no backwards-compat constraint.
+> **Status:** executable plan, narrowed from earlier draft per code-review feedback.
+> **Branch:** `experiment/hermes-agents`. No backwards-compat constraint.
+> **Predecessor docs:** `docs/experiments/1.1-1.4-*.md`, `docs/experiments/phase-1-summary.md`.
 
-## Context
+## 1. Context & narrowed objective
 
-Phase 1 ran four experiments and validated three things and disproved two. **Validated:** `/goal` works as a bounded mission primitive; Hermes Kanban is a real distributed task queue with atomic claims, dependencies, and per-task workers; comments-as-IPC plus auto-injected `worker_context` make cross-card data sharing trivial. **Disproved:** long-lived `/goal` sessions in tmux per character (sessions exit after a few minutes); custom-metric goal-preset injection (unknown metrics get urgency=0).
+Phase 1 validated the core architecture (kanban-driven mission spawn, per-character profiles, comments-as-IPC, `worker_context` injection) but also surfaced that **the action layer is the bottleneck**. Phase 2 takes that seriously.
 
-Phase 1 also surfaced a deeper truth: **the bottleneck is the action layer, not the agent reasoning** (`mc collect` silent failures, observation token bloat, pathfinding traps, missing helpers like `place_facing`). Phase 2 takes that seriously — instead of "build the architecture, then run it," Phase 2 is structured as a **co-evolution loop** where each capability level produces both a passing simulation run *and* tooling improvements driven by what the agents struggled with.
+The **single objective** is: *prove the co-evolution loop with two bots and human-as-steward, on a regression-grade test suite.* Steward automation, marks sync, logistics planning, multi-bot expansion, dashboard — all become **products of** that loop, not part of the executable plan. They live in the appendix.
 
-## Phase 2 as a co-evolution loop
+The plan changed substantially from earlier drafts based on review feedback:
+- Scope narrowed to two bots (gatherer + flint) and L0–L4 capabilities only
+- Steward profile + body deferred entirely; human plays the steward role
+- Marks system simplified to a single file + coords inline in card bodies (no distributed sync)
+- Logistics planner deferred; chest tracking moves from prose-parsing to structured `kanban_complete.metadata`
+- Action layer promoted from "side quest" to **gate** — every primitive must meet a response-shape contract before higher tests can pass
+- Capability tests get a strict YAML schema; tests are runnable specifications, not prose
+- Multiverse + flat test world + reusable fixture files make every test deterministic and repeatable
 
-Phase 2 is **not** "implement the settlement, then play it." It's a continuous loop that improves both gameplay coordination and the underlying tooling at the same time:
+## 2. Non-goals (Phase 2)
 
-```
-   ┌────────────────────────────────────────────────────────┐
-   │ 1. Pick a capability level (L0…L8 below)               │
-   │ 2. Steward composes a capability_test mission          │
-   │ 3. Worker runs the test                                │
-   │ 4. Outcome:                                            │
-   │    a. PASS → mark capability green, advance level      │
-   │    b. FAIL with diagnosable cause →                    │
-   │       steward creates a `bug_report` card,             │
-   │       assigned to `human`, NOT auto-dispatched.        │
-   │       Worker's failed test card depends_on the bug.    │
-   │ 5. Human pulls bug card, fixes with Claude Code,       │
-   │    commits, marks card done with commit SHA.           │
-   │ 6. Steward re-runs the original test on next tick      │
-   │    → either PASS (advance) or new bug surfaced.        │
-   └────────────────────────────────────────────────────────┘
-```
+These are explicitly out of scope and live in the Phase 3+ appendix:
 
-The kanban board does double duty: it's the gameplay coordination spine *and* the development backlog. Cards assigned to a character profile flow through the dispatcher; cards assigned to `human` sit ready in the board waiting for me to pull them. Same primitives, two consumer types.
+- ❌ Steward profile + body (human plays the role)
+- ❌ Marks sync between bot caches (single canonical file; coords inline in cards)
+- ❌ Chest inventory in canonical (use card metadata)
+- ❌ Logistics planner / supply-chain analysis / distance computation
+- ❌ Cast expansion beyond gatherer + flint
+- ❌ Custom dashboard implementation (only the event/feed schema is specified, for later)
+- ❌ Capability levels L5–L8 (build, farm, combat, full logistics)
+- ❌ `/api-spec` self-describing endpoint, anti-revisit pathfinder memory, custom metric registration in goal engine — all Phase 3
 
-**Capability levels** (in order; later levels depend on earlier passing):
+## 3. Roles
 
-| Level | Theme | Example test missions |
-|-------|-------|-----------------------|
-| L0 | Foundations & connectivity | `mc connect` health, all 5 bots online, marks API CRUD |
-| L1 | Movement | `mc goto`, `goto_near`, `follow`, `look_at`, `go_mark` round-trip |
-| L2 | Inventory & equip | `mc inventory`, `equip`, `unequip`, item drops, hand-state |
-| L3 | Basic gather + craft | `mc dig` reliably, planks/sticks/wooden tools, crafting table use |
-| L4 | Mining | Stone/coal/iron with appropriate pickaxe; cave navigation; lava awareness |
-| L5 | Build | `mc place`, `place_facing`, simple structures, foundation handling |
-| L6 | Farming & livestock | Plant/harvest wheat, breed animals, food prep |
-| L7 | Combat & survival | Engage hostile mobs, flee threshold logic, regen mgmt |
-| L8 | Full logistics | Multi-bot supply chain, chest rebalancing, treasury dispense |
+| Assignee | Body | Function | Model |
+|----------|------|----------|-------|
+| `gatherer` | port 3001 — mobile | Wood, food, plants, scouting; L1–L4 worker | DeepSeek V4 Flash |
+| `flint` | port 3002 — mobile | Mining, deep ops; L4 specialist | DeepSeek V4 Flash |
+| `human` | (none — pulls cards manually) | Steward role + bug fixes via Claude Code | (me) |
 
-Each level is a **kanban epic** — a parent card with child capability_test cards (one per atomic capability). The steward holds a "capability matrix" derived from card outcomes; only marks a level green when all its children pass cleanly twice in a row.
+The `human` assignee is a first-class kanban concept: cards assigned to `human` are **never auto-dispatched**. They sit in `ready` until I pull them.
 
-This document formalizes the architecture; the migration sequence (later) walks the levels in order.
+I play **two distinct sub-roles** as `human`:
+1. **Steward role** — write capability_test cards, triage failures into bug_reports, run verify_fix cycles, maintain the capability matrix
+2. **Coding role** — pull `[BUG]` / `[FEAT]` / `[SKILL]` cards from the board, fix with Claude Code on the experiment branch, mark done with commit SHA
 
-## The story in one paragraph
+The protocol below in §11 specifies exactly what each sub-role does, with formats precise enough that the steward agent can later be programmed to execute them.
 
-A human posts a coarse intent ("we need more stone"). The **steward** — a Hermes profile that orchestrates the team — enriches it into a structured spec, locates relevant places via the **marks catalog** it curates, and decomposes it into character-assigned kanban cards with explicit coordinates and acceptance predicates. The steward also has a Mineflayer body that **roams the base** — wandering between marks, peeking into chests, observing the team, occasionally chatting — but the body is a diegetic anchor, not a load-bearing component: if it dies it just respawns and keeps going, and the orchestration role continues uninterrupted whether the body is online or not. The **kanban dispatcher** spawns a short-lived worker per card, scoped to one character profile and one Mineflayer body. Workers read their brief plus parents' comments (auto-injected by `worker_context`), use the `mc` CLI to act in-game, optionally fan out via `delegate_task` for transient sub-work, post a comment summarizing what they did, and exit. Dependent cards auto-promote and the chain proceeds. The steward simultaneously runs the team's logistics: tracks chest contents, computes distances and supply-chain efficiency, issues rebalancing missions when chests overflow or sit far from where they're needed. The **kanban board + marks catalog + chest inventory** are the entire coordination protocol.
+## 4. The co-evolution loop
 
 ```
-HUMAN INTENT  ──────────────────────────────────────────────┐
-                                                             │
-                          STEWARD                            │
-                ┌─────────────────────────────┐              │
-                │ Specifier (mission writer)  │ ←────────────┘
-                │ Marks catalog (where)       │
-                │ Chest inventory (what/where)│
-                │ Logistics planner (efficiency)
-                │ In-game ATC (chat / patrol) │
-                │ Treasury custodian          │
-                └─────────────────────────────┘
-                              │
-                writes cards referencing @marks
-                              ↓
-                   KANBAN BOARD (the spine)
-                              ↓
-                   dispatcher → worker (per card)
-                              ↓
-                   worker uses `mc` against its bot body
-                              ↓
-                              MINECRAFT
+┌──────────────────────────────────────────────────────────────┐
+│ 1. Pick the next L<N>.<n> in capability matrix (status=pending)│
+│ 2. Look up its fixture file → run `prep` rcon commands         │
+│ 3. Create capability_test card per the schema (§7)             │
+│ 4. Dispatch via hermes kanban; worker runs                     │
+│ 5. Worker outputs: kanban_complete with PASS/FAIL + metadata   │
+│ 6. Outcome:                                                    │
+│    PASS → matrix.consecutive_pass++; if ≥2 mark green          │
+│    FAIL → triage:                                              │
+│      - action contract violation? → bug_report (assignee=human)│
+│      - skill behavior issue?      → skill_revision (human)     │
+│      - missing primitive?          → feature_request (human)   │
+│      - test/fixture defect?        → fix the test, re-run      │
+│ 7. Pull bug card → fix with Claude Code → commit              │
+│ 8. Mark bug card done with `summary: "fixed in <SHA>"`        │
+│ 9. verify_fix card auto-spawns (or human creates) → re-runs   │
+│    the original test                                           │
+│ 10. PASS on re-run → matrix updated, both cards archived       │
+│     FAIL on re-run → re-open bug or new bug with diagnosis     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## Roles
+The kanban board does double duty: gameplay coord (worker cards) and dev backlog (human cards). Dispatcher patch (§14) ensures these don't cross.
 
-The full architecture supports five characters, but Phase 2 starts with **two bot bodies** and grows the cast as capability levels are validated. The other roles still exist conceptually; they just aren't instantiated yet.
+## 5. Board protocol
 
-### Phase 2 starting scope (Sprint 0)
+### Card types
 
-| Assignee | Body | Function | Model | Status |
-|----------|------|----------|-------|--------|
-| `gatherer` | port 3001 — mobile | Wood, food, plants, scouting | DeepSeek V4 Flash | **Active from start** |
-| `flint` | port 3002 — mobile | Mining (stone, ore, deep ops) | DeepSeek V4 Flash | **Active from start** |
-| `human` | (none — pulls from board manually) | Code fixes, skill rewrites, schema changes | Claude Code | **Active from start** |
-| `steward` | (initially: human role; later: roaming bot) | Specify, plan logistics, ATC chat, marks curation | (n/a yet) | **Deferred — human plays this role until L7+** |
+| Type | Title prefix | Default assignee | Dispatchable | Body schema |
+|------|-------------|------------------|--------------|-------------|
+| `capability_test` | `[L<N>.<n>] <capability>` | character (gatherer/flint) | yes | §7 |
+| `bug_report` | `[BUG][L<N>.<n>] <symptom>` | `human` | **no** | §11 |
+| `feature_request` | `[FEAT] <feature>` | `human` | **no** | §11 |
+| `skill_revision` | `[SKILL] <skill_name>: <issue>` | `human` | **no** | §11 |
+| `verify_fix` | `[VERIFY][L<N>.<n>] re-run <test_id>` | character | yes | §11 |
 
-The two-bot starting set was picked because Flint is the most-tested character through Phase 1 (1.1, 1.3, 1.4) and Gatherer rounds out the workload split (mining vs. surface gathering — covers L3–L4 capability tests).
+### Status transitions
 
-### Deferred roles (added when capability levels justify them)
+Hermes Kanban built-in: `triage → todo → ready → running → done | blocked | timed_out`.
 
-| Role | Activated when | Why deferred |
-|------|---------------|--------------|
-| `mason` (port 3003) | After L5 (build) capability passes with Gatherer placing as backup | Building can be tested via Gatherer first; Mason is a specialist |
-| `barley` (port 3004) | After L6 (farm) capability passes | Farming is later in capability progression |
-| `steward` profile + body (port 3005) | After L7 (combat/survival) and ≥30 marks accumulated | At low scale, human-as-steward is fine; steward profile pays off when there's enough work to coordinate |
-| Custom dashboard | After L8 starts | UI shouldn't drive architecture; built once the data model is stable |
+Phase 2 conventions:
+- Capability tests skip `triage` (created directly in `ready` since they have full schemas at create time)
+- Bug/feature/skill cards skip `triage` too (human-authored, structured)
+- `verify_fix` cards depend_on the bug they verify; auto-promote when bug is `done`
 
-### The `human` assignee — first-class kanban concept
+### Dispatchability rules
 
-Cards assigned to `human` are **never picked up by the dispatcher**. They sit in `ready` until I pull them, fix the issue using Claude Code (or another coding agent) on the `experiment/hermes-agents` branch, commit, mark the card done with a commit SHA, and a re-verification card automatically spawns (via the `verify_fix` template) on the next tick. The dispatcher's worker spawn logic must be patched to **skip tasks assigned to `human`** — see Refactor section.
+The dispatcher must be patched to:
+1. **Skip cards where `assignee == "human"`** — they stay in `ready` indefinitely
+2. **Auto-promote `verify_fix`** when its parent `bug_report` is marked `done` AND parent's `summary` starts with `"fixed in "` (commit SHA marker)
 
-Until the steward profile exists, **I also play the steward role**: writing capability_test cards, triaging worker failures into bug_reports, scheduling re-runs. As we build out capability levels, more of this gets automated; the steward profile is the destination state, not the starting state.
+### Retries and timeouts
 
-## Three layers of control
+| Card type | `--max-runtime` | `--max-retries` | Notes |
+|-----------|----------------|-----------------|-------|
+| capability_test | per-test (5 min default) | 1 | One transient retry; outcome (PASS/FAIL) is final |
+| verify_fix | per-test | 1 | Same as test |
+| bug_report | n/a | n/a | Human-managed |
+| feature_request | n/a | n/a | Human-managed |
 
+### Idempotency keys
+
+- `capability_test`: `{level}_{capability}_{sprint}` — re-running L1.2 in sprint 1 vs sprint 2 are different cards
+- `bug_report`: `{level}_{symptom_kebab}` — same symptom on same test dedupes; different symptom creates new
+- `verify_fix`: `{bug_id}_verify` — exactly one verify per bug
+- `feature_request` / `skill_revision`: `{feature_kebab}` / `{skill}_{issue_kebab}`
+
+### Commit-SHA linkage
+
+Bug-card `kanban_complete` summary string MUST follow:
 ```
-┌────────────────────────────────────────────────────────────┐
-│ MACRO   Kanban board                                       │  Persistent.
-│         specify → triage → ready → running → done|blocked  │  Audit trail.
-└────────────────────────────────────────────────────────────┘
-                       ↓ dispatcher spawns
-┌────────────────────────────────────────────────────────────┐
-│ MISSION One worker process per card                        │  Bounded mission.
-│         hermes -p <profile> --skills kanban-worker chat    │  5–20 min, exits.
-└────────────────────────────────────────────────────────────┘
-                       ↓ worker uses mc
-┌────────────────────────────────────────────────────────────┐
-│ MICRO   Goal engine on the bot body                        │  Per-tick reflexes.
-│         food, threat, supply_*, deposit_* (existing)       │  Steward retargets.
-└────────────────────────────────────────────────────────────┘
-                       ↓ Mineflayer
-                  MINECRAFT WORLD
+fixed in <SHA>: <one-line description of fix>
 ```
 
-**Macro is the planning surface.** Cards, dependencies, comments. Survives crashes, restarts, and the model-of-the-day.
+The verify_fix card body references both bug_id AND `fix_commit`. The verify worker runs the original test's action_sequence and checks the success_predicate. On PASS, both cards close; on FAIL, the bug re-opens with diagnosis from the verify worker.
 
-**Mission is the autonomy unit.** A worker is spawned, briefed via card body + parent comments, runs until `kanban_complete` or `kanban_block`, exits. Token-budgeted, time-budgeted (`max-runtime`), restartable.
+## 6. Capability matrix (L0–L4)
 
-**Micro is the survival reflex.** The bot's existing goal engine (`food_score`, `threat_score`, `supply_*`, `deposit_*`) handles autonomic priorities. The steward retargets *known* metrics to bias idle behavior. New objectives don't go here — they go on the kanban board.
+L0–L4 only. L5+ in Phase 3 appendix.
 
-## The marks catalog — shared world map
+| Level | Theme | Test count | Worker(s) |
+|-------|-------|-----------|-----------|
+| L0 | Connectivity & observation | 6 | both |
+| L1 | Movement | 10 | both |
+| L2 | Inventory & equip | 8 | both |
+| L3 | Basic gather + craft | 14 | gatherer (mostly) |
+| L4 | Mining | 15 | flint (mostly) |
 
-The marks catalog is the team's **canonical spatial vocabulary**. Owned and curated by the steward. Every mission brief references marks by name.
+A level becomes `green` when **all** its tests have `consecutive_pass >= 2` AND there are no open `priority: blocking` bug_reports linked to its tests.
 
-### Schema
+## 7. Capability test contract (schema)
+
+Every capability_test card body MUST be valid YAML matching:
 
 ```yaml
-# data/marks/canonical.yaml — steward-owned, replicated to bot caches
-marks:
-  base:
-    coords: [0, 80, 0]
-    kind: settlement
-    last_verified: 2026-05-09T17:32
-  # tower:                              # ASPIRATIONAL — built by team in a later mission
-  #   coords: [0, 90, 0]
-  #   kind: structure
-  #   parent_mark: base
-  #   notes: "steward's post (planned); treasury chest adjacent"
-  stone_chest:
-    coords: [2, 79, -1]
-    kind: chest
-    holds: [cobblestone, stone]
-    capacity_warning_at: 0.8
-    parent_mark: base
-    inventory:                    # tracked by steward
-      cobblestone: 47
-      stone: 0
-      last_audit: 2026-05-09T17:35
-      last_modified_by: mason
-  iron_chest:
-    coords: [3, 79, -1]
-    kind: chest
-    holds: [iron_ore, iron_ingot, raw_iron]
-    parent_mark: base
-    inventory:
-      iron_ingot: 12
-      raw_iron: 8
-      last_audit: 2026-05-09T16:50
-      last_modified_by: flint
-  treasury:
-    coords: [0, 91, 2]
-    kind: chest
-    holds: [diamond, ender_pearl, golden_apple, enchanted_book]
-    access: steward-gated         # workers must request via chat
-    parent_mark: base    # initially at base; moves to @tower once it exists
-  quarry-east:
-    coords: [180, 50, 0]
-    kind: poi
-    notes: "exposed stone vein, 12 blocks visible surface"
-    expires_after_h: 48           # re-verify if stale
-    discovered_by: flint
-    last_verified: 2026-05-08T11:20
-  oak-NE:
-    coords: [120, 70, 80]
-    kind: biome_resource
-    holds: [oak_log]
-    expires_after_h: 24
+id: L<N>.<n>_<short_name>
+level: L<N>
+capability: <dotted.path>            # e.g. movement.goto_near
+bot: gatherer | flint
+fixture: <relative-path>             # e.g. L1/L1.2_goto_near.yaml
+preconditions:                       # human-readable summary; fixture file is source of truth
+  bot_position: "..."
+  inventory: "..."
+  world_setup: "..."
+  required_marks: [@base, @target]
+action_sequence:                     # list of mc commands the worker MUST run, in order
+  - mc tp_self @base
+  - mc goto_near 100 70 -100 3
+success_predicate:                   # checked after action_sequence; structured assertions
+  - { kind: bot_position_within, coords: [100, 70, -100], radius: 3 }
+  - { kind: no_action_errors }
+  - { kind: inventory_contains, item: dirt, count: ">=4" }
+  - { kind: response_field, field: "data.mined_count", op: "==", value: 4 }
+timeout: 30s
+retry_policy: { transient: 1, outcome: 0 }
+cleanup:                             # post-test rcon commands; also defined in fixture
+  - mc tp_self @base
+evidence_required:                   # what worker MUST include in kanban_complete
+  - mc command log (full stdout/stderr per call)
+  - final mc status output
+  - PASS|FAIL with one-line diagnosis
+exercises_phase1_bug: null | <bug_description>   # set if test deliberately exercises a known bug
 ```
 
-### Schema choices that earn their keep
+### Worker output (`kanban_complete`)
 
-- **`kind`** — `settlement | structure | chest | poi | biome_resource | danger | spawn`. Drives default treatment in dashboard + agent prompts.
-- **`holds`** — explicit content type list for chests; workers know which chest matches an item.
-- **`inventory`** — first-class field for chest marks; logistics depends on this.
-- **`capacity_warning_at`** — triggers steward to spawn overflow/expansion missions.
-- **`parent_mark`** — relational; if `base` moves, dependent marks can be updated together.
-- **`access: steward-gated`** — diegetic permission system; workers request rare items via chat to the steward's in-game body.
-- **`expires_after_h`** — POIs and biome resources go stale; steward re-verifies on cadence.
-- **`discovered_by` / `last_modified_by`** — provenance for trust/conflict resolution.
-
-### Mark sync across bots
-
-Source of truth: `data/marks/canonical.yaml`, owned by steward profile.
-Each bot has a local cache via the existing `bot/data/marks.json` (per-bot file).
-Sync paths:
-- **At dispatch time:** the dispatcher includes a hook that pushes the relevant subset of marks to the assignee's bot via `POST /marks/replace` before spawning the worker.
-- **At runtime, on update:** when steward updates the canonical, it `POST /marks/diff` to all bot bodies.
-- **At worker start:** worker can call `mc marks` to see the current local set; the brief can include "ensure marks include @stone_chest, @base, @quarry-east" as a defensive prefix.
-
-If a worker hits stale data (`mc dig @mark_coords` finds nothing), the worker chats `@steward @mark is wrong`. Steward verifies and updates.
-
-## Chest inventory tracking & logistics
-
-The steward's most distinctive role: **simulating logistics without actually pretending it's not Minecraft**. It tracks what's where, computes flows, and routes work to keep supplies near demand.
-
-### How chest inventory stays current
-
-Three concurrent paths, each cheap:
-
-1. **On every deposit/withdraw mission**, the worker is required to comment with the delta (e.g., "deposited 32 cobblestone in @stone_chest"). Steward parses comments and updates canonical.
-2. **Periodic audit cron**: every 30 min, dispatcher spawns a `steward-audit-chests` mission. Steward walks to each non-distant chest, calls `mc chest @mark` for each, updates canonical from ground truth.
-3. **On-demand audit**: when steward is unsure (conflicting reports, mission planning needs accurate counts), it spawns a single audit task before issuing the dependent missions.
-
-### Logistics planner (steward's reasoning)
-
-The steward periodically (cron or in response to inputs) runs a logistics check. Inputs:
-- Marks catalog with chest inventories
-- Recent mission completions (what was produced, where, by whom)
-- Recent chat (what's been requested)
-
-Outputs (decisions):
-- **Capacity warnings** — `@stone_chest` at 80% → spawn "build overflow chest" or "consume some" mission
-- **Distance optimization** — `@workshop_chest` always low while `@stone_chest` always full and they're 200 blocks apart → spawn "move 32 stone from @stone_chest to @workshop_chest"
-- **Mark relocation suggestions** — repeated tasks consuming from one chest → propose adding a closer dedicated chest
-- **Supply-chain throttling** — if iron production has outpaced consumption for 3+ days, deprioritize iron missions; if below threshold, prioritize them
-- **Stale POI cleanup** — quarry-east verified 50h ago and `expires_after_h: 48` → spawn verify mission
-- **Lost/damaged structure detection** — chest mark exists but `mc chest @mark` returns no container → mark removed; "rebuild @stone_chest" mission spawned
-
-These outputs become **kanban cards posted by the steward** — the same primitives we already validated.
-
-### Distance computation
-
-Two cheap heuristics, suitable for steward-side planning:
-- **Manhattan / Euclidean 3D** for default ranking (low cost, "close enough" for routing).
-- **Cost-per-block** modifiers per `kind`: water adds X, mountains add Y, danger zones add Z.
-
-Steward keeps a derived table:
-
-```
-distance(@base, @quarry-east) = 180.1 blocks (flat)
-distance(@base, @oak-NE)      = 145.3 blocks (over hills)
-distance(@workshop, @quarry-east) = 220.5 blocks
+```yaml
+result: PASS | FAIL | INCONCLUSIVE
+summary: "one-line diagnosis"
+metadata:
+  test_id: L1.2_goto_near
+  predicate_results:
+    - { name: bot_position_within, status: pass, observed: [100.4, 70, -99.8] }
+    - { name: no_action_errors, status: pass }
+  evidence:
+    command_log: [...]
+    final_status: {...}
+    duration_seconds: 12.4
+  inventory_delta: { ... }            # if test involved inventory changes
 ```
 
-Refreshed lazily; recomputed only when marks change.
+## 8. Primitive action reliability contract
 
-## Mission templates
+This is the **gate**: no L1+ test can pass until the action it depends on meets this contract. Sprint 1 fixes them.
 
-The steward draws from a small library of mission templates. Each has a body shape, default assignee, default skills, and a success predicate. Templates split into three categories: **gameplay** (workers), **infrastructure / dev** (human), and **steward-only** (orchestration).
+### Required response shape (all `mc <verb>` actions)
 
-### Gameplay templates (auto-dispatched)
-
-| Template | Body shape | Success predicate |
-|----------|-----------|-------------------|
-| `supply` | "Mine N <item> near @poi, deposit in @chest" | `@chest.inventory[<item>] increased by ≥ N` |
-| `withdraw` | "Take N <item> from @chest, deliver to @loc" | `@chest.inventory[<item>] decreased by N` and worker holds N |
-| `rebalance` | "Move N <item> from @chest_A to @chest_B" | A decreased, B increased by same |
-| `scout` | "Explore N blocks around @origin in <direction>, mark POIs" | ≥1 new mark created with `discovered_by` set |
-| `verify_mark` | "Visit @mark, confirm coords + state" | `last_verified` updated |
-| `build` | "Construct <pattern> at @site using N <block>" | Block count at @site matches pattern |
-| `audit` | "Walk to @chest, count contents, comment" | `last_audit` updated; comment present |
-| `capability_test` | "Exercise <capability> per spec; report PASS/FAIL with diagnosis" | Steward judges from worker's comment + observable world state |
-
-### Dev / infrastructure templates (assigned to `human`, not auto-dispatched)
-
-| Template | Body shape | Done criteria |
-|----------|-----------|---------------|
-| `bug_report` | "Capability X failed: <reproduction>, expected <Y>, got <Z>. Diagnosis: <root_cause>. Suggested fix: <area>." | Human marks done with commit SHA + branch name |
-| `feature_request` | "Capability X requires new <tool/skill/endpoint> because <gap>. Spec: <details>. Used by missions: <list>." | Human marks done with commit SHA |
-| `skill_revision` | "Skill <name> caused agent to <misbehavior>. Specifically: <quote>. Suggested rewrite: <details>." | Human marks done; skill diff in commit |
-| `verify_fix` | (steward-only, parent of bug_report) "Re-run <test_card_id> to verify fix from <bug_card_id>." | Test passes; both bug + verify cards close |
-
-### Steward-only templates (cron-driven)
-
-| Template | Body shape | Success predicate |
-|----------|-----------|-------------------|
-| `respond_chat` | "Read chat for `@steward` mentions, respond, update marks" | Comment per response posted |
-| `treasury_dispense` | "Worker requested N diamonds; verify and place in @recipient_chest" | Recipient_chest gained N diamonds |
-| `triage_failures` | "Scan recent FAIL capability_test outcomes; for each diagnosable, create bug_report assigned to human" | Bug cards created or noted as already-tracked |
-| `verify_human_done` | "For each card with completed parent bug_report, re-run the dependent test" | Test passes (close chain) or new bug_report created |
-
-Templates make steward decomposition tractable — instead of writing prose every time, it picks a template and fills slots.
-
-## The steward's body — separate from the role
-
-The steward **role** (orchestration, marks, logistics, triage) lives entirely in kanban + canonical files + cron-spawned Hermes workers. The steward **body** is an in-world Mineflayer instance that gives the agent a presence in the simulation. **They're decoupled** — the role works whether the body is online or not.
-
-### What the body does (when activated)
-
-A steward worker is spawned periodically (or on demand) via:
-- `respond_chat` (every 2 min) — read chat for `@steward` mentions, reply, update marks
-- `audit_chests` (every 30 min) — walk to each chest mark, call `mc chest @mark`, sync canonical
-- `inspect_base` (every 10 min, low cost) — walk a short loop between marks, observe the team, comment on anything notable in chat
-- `logistics_planner` (every 5 min, wake-gated) — runs offline against canonical state; doesn't necessarily move the body
-- `treasury_dispense` — on demand, when a worker requests a rare item via chat
-- One-off missions — verifying a mark, scouting near base, etc.
-
-When a worker is active, the body roams the base — wandering between marks, peeking into chests, watching others work. Between worker invocations the body just stands wherever it last was. A `steward-role.json` goal-preset keeps it loosely near `@base` via the `stay_near_mark` metric (~30 block leash).
-
-### What the body does NOT do
-
-- **Manual labor.** No mining, fighting, building, farming. The SOUL prompt forbids it; optionally the bot HTTP server rejects `dig`/`fight`/`craft` for the steward profile.
-- **Mission claims.** The steward never claims gameplay tasks (supply, build, rebalance, etc.) — only steward-only templates.
-- **Critical-path work.** Nothing the team needs to function depends on the body being alive.
-
-### Death & disconnect handling
-
-If the body dies: it respawns at default spawn, the steward agent posts a brief comment in chat ("respawned, headed back"), the agent keeps working through cron-driven workers as usual. **No drama, no critical-path block.** The kanban board does not pause for steward death.
-
-If the body disconnects (server hiccup, network blip): cron tasks that *need* the body (audit, dispense, inspect) detect `/health.connected=false` and either skip the tick or use server-side fallbacks (e.g., `mc chest @mark` → PaperMCP equivalent if available). Headless cron tasks (logistics planner, triage) continue uninterrupted because they don't need the body at all.
-
-### Tower as aspirational future state
-
-The "steward's tower" is a goal, not a starting condition. Once the team is consistently efficient and there's enough material accumulated, **the team can build it as one of its kanban missions** — a 3-card chain like:
-
-```
-Card A (gatherer): scout flat ground near @base, mark as @tower-site
-Card B (flint):    supply 64 cobblestone to @tower-site
-Card C (mason):    build steward-tower pattern at @tower-site
+```yaml
+{
+  "ok": <bool>,
+  "command": "<verb>",
+  "data": { <action-specific structured fields> },
+  "error": {                            # only when ok=false
+    "code": "<UPPERCASE_ENUM>",
+    "message": "<human readable>",
+    "observed_state": { ... },
+    "next_action_hint": "<what to try>",
+    "retry_safe": <bool>
+  }
+}
 ```
 
-Until then, the steward roams. When the tower exists, the steward's `inspect_base` mission can include "climb the tower for a wide-angle observation" as one of its variants. Tower-as-feature, not tower-as-requirement.
+### Per-primitive contracts (L0–L4 hot path)
 
-### Why have a body at all?
+#### `mc dig X Y Z`
+- `ok=true` only if a block was actually broken at the target coord
+- `ok=false` for these cases, with `error.code` in:
+  - `NO_BLOCK_AT_COORD` — target is air/cave_air; `observed_state.block_at_target == "air"`
+  - `OUT_OF_RANGE` — distance > 4.5 and pathfind unsuccessful
+  - `TOOL_INADEQUATE` — guardSlowDigEstimate fired; `next_action_hint` names the right tool
+  - `PROTECTED_BLOCK` — building protection (crafting_table, chest, etc.)
+  - `INTERRUPTED` — task cancelled or bot died mid-dig
+- `data` includes: `{ block_name, dropped_items: [...], position_after }`
 
-Mostly diegetic, but with real benefits:
-- **Workers see "Steward: ..." in chat** — gives the team a face. Coordination via in-game chat feels natural.
-- **Direct observation** — body can confirm marks visually without rcon round-trips.
-- **Treasury dispensing** — handing items to workers via chest interaction is more tangible than `/give` commands.
-- **Vibes** — watching a steward NPC wander the base is what makes this a settlement and not a job queue.
+#### `mc collect <name> <count>`
+- **Phase 1 bug to fix**: `ok=true` with `mined_count == 0` is forbidden by this contract
+- `ok=true` only if `mined_count > 0`
+- `ok=false` cases:
+  - `NO_VISIBLE_BLOCKS` — no blocks of `name` found within fair-play range
+  - `ALL_PATHFIND_FAILED` — found candidates but couldn't reach any
+  - `ALL_DIG_FAILED` — found and reached but every dig errored (timeout, tool, interrupt)
+  - `MIXED_PARTIAL` — collected `mined_count > 0` but `< count` AND every remaining attempt failed; this is `ok=true` with a `partial_failure` flag, not `ok=false`
+- `data` includes: `{ mined_count, requested_count, started_inventory, ended_inventory, dropped_items_collected }`
 
-If the body proves problematic (resource cost on the Paper server, frequent death, weird behavior), we can run the steward headless without losing functionality. **The body is the experiment**; the role is the architecture.
+#### `mc place <block> X Y Z`
+- `ok=true` only if block is now at target coord
+- `ok=false` cases:
+  - `NO_SOLID_NEIGHBOR` — all 6 face neighbors are air/liquid; `observed_state.neighbors` enumerates them
+  - `TARGET_OCCUPIED` — block already at coord; `observed_state.existing_block`
+  - `INVENTORY_MISSING` — block not in inventory
+  - `OUT_OF_RANGE` — distance > 4.5 and pathfind unsuccessful
+- `data` includes: `{ placed_block, face_used, position_after }`
 
-## Issue management (full table)
+#### `mc craft <item> [count]`
+- `ok=true` only if `crafted_count >= 1`
+- `ok=false` cases:
+  - `NO_RECIPE` — recipesAll returned empty
+  - `MISSING_INGREDIENTS` — `error.observed_state.missing` lists shortfall
+  - `TABLE_REQUIRED` — recipe needs crafting_table; `next_action_hint` includes nearest table mark/coord if known
+  - `TABLE_OUT_OF_RANGE` — table is just outside 4-block search; `observed_state.nearest_table` includes its coords
+- `data` includes: `{ crafted_count, recipe_used, ingredients_consumed }`
 
-| Failure mode | Detection | Response |
-|--------------|-----------|----------|
-| Capability test FAIL with diagnosable cause | Worker's `kanban_complete` reports FAIL | Steward `triage_failures` cron creates `bug_report` for human; failed test card depends_on the bug |
-| Capability test FAIL with no diagnosis | Worker can't pinpoint cause | Steward creates `bug_report` with "needs investigation" body; human-only |
-| Same bug seen N times | Bug-report idempotency_key match | Steward increments hit counter as comment, doesn't dup |
-| Human marks fix done | Commit SHA in bug card's done summary | `verify_human_done` cron picks up next tick, reruns the dependent test |
-| Worker crash mid-task | Claim TTL expires | Reclaim → respawn next dispatcher tick (validated 1.4) |
-| Mission infeasible (tools missing) | Worker recognizes via `mc` errors | `kanban_block` with reason; steward decides if it's a `bug_report` or just replans |
-| Hallucinated child cards | `kanban_complete.created_cards` rejected | Worker retries without phantom IDs |
-| Bot body crashes | `/health.connected=false` | Supervisor restarts body; current worker blocks; steward reissues affected card |
-| Stale mark coordinates | Worker's `mc dig @mark` returns wrong block | Worker chats steward; steward verifies + updates; mission retried |
-| Chest contents drift from catalog | Worker's `mc chest @mark` count differs from `inventory` | Worker comments delta; steward syncs canonical |
-| Lost chest (broken) | `mc chest @mark` returns no container | Steward removes mark, spawns rebuild mission, alerts in chat |
-| Capacity overflow | Worker can't deposit (chest full) | Worker chats steward; steward creates overflow build or alt-chest deposit |
-| Cross-mission resource conflict | Two cards want same chest concurrently | Steward serializes via deps at card-creation time |
-| Token blowout per mission | `--max-runtime` per card; per-worker turn limit | Dispatcher SIGTERMs, marks `timed_out`, retries up to `max-retries`, then auto-blocks |
-| Steward body death | Mineflayer death event | Body respawns at default spawn; agent posts respawn comment in chat; cron tasks continue uninterrupted (role is body-independent) |
-| Steward body disconnect | `/health.connected=false` for steward body only | Body-dependent cron tasks skip the tick; headless tasks (planner, triage) continue. Body reconnects automatically. |
-| Steward attempting manual labor | `mc dig`/`mc fight`/`mc craft` from steward profile | SOUL prompt forbids it; optional body-side rejection of those actions for steward profile |
-| Steward bad decomposition | Human inspects via dashboard | `kanban edit`, `block`, `reassign`, or replan |
-| Skill prompt confuses agent | Worker comments confusion in card | Steward creates `skill_revision` for human |
-| MC server outage | All bots' `/health.connected=false` | All workers block; recovery on server restore; steward chats status |
+#### `mc chest @mark` (or `X Y Z`)
+- `ok=true` only if a chest container is at the location and was successfully opened
+- `ok=false` cases:
+  - `NO_CONTAINER` — block at target is not a chest/barrel/shulker; `observed_state.block_at_target`
+  - `NO_MARK` — `@mark` doesn't exist in marks file
+  - `OUT_OF_RANGE` — distance > 4.5 and pathfind unsuccessful
+- `data` includes: `{ container_kind, slots: [...], item_counts: {item_name: count, ...} }` for read; deposit/withdraw return `{ inventory_delta: {...}, container_inventory_after: {...} }`
 
-## Custom dashboard vision (deferred implementation)
+### Sprint 1 must ship these contracts
 
-The user's idea of a custom dashboard becomes a real architectural driver, not a nice-to-have. Suggested components:
+The bot HTTP server's response shape changes are non-breaking (additive fields, ok=false where it was ok=true with empty data). Fixing each primitive lives in `bot/lib/actions/*` per the explore-agent's file:line refs.
 
-- **Map view**: marks plotted by `kind`, bot positions overlaid live, active cards drawn as edges between source/target marks (e.g., flint → quarry-east → stone_chest).
-- **Inventory panel**: chest inventories with capacity bars, color-coded by holds; click a chest → audit history.
-- **Mission feed**: live kanban state grouped by character; clicking a card → comments + worker log.
-- **Logistics overview**: supply-chain graph (mineable resource → chest → consumer), with throughput rates.
-- **Chat console**: send `@steward` queries from the dashboard, see responses inline.
-- **Action proposals**: steward's planner output (proposed missions) before they're dispatched, with approve/reject buttons.
+## 9. Minimal marks MVP
 
-This is a separate web app reading from the kanban DB + marks file + bot state APIs. Not part of Hermes's built-in dashboard. Defer implementation; specify the feed APIs in Phase 2 so the dashboard can be built later without architecture changes.
+For Phase 2:
 
-## Refactor plan (branch-scope changes)
+- **One file**: `data/marks/canonical.yaml`. I edit it manually. No per-bot caches, no diff API.
+- **Card body includes resolved coordinates inline**: a card might reference `@quarry-east` in its prose, but the `action_sequence` always uses literal coords (`mc dig 180 50 0`). The mark name is for human readability; the worker uses the coords.
+- **Workers can use `mc go_mark`** if the bot's local marks file has been seeded with the catalog (one-time copy at startup). No runtime sync.
 
-These all live on `experiment/hermes-agents` (no backwards-compat needed):
+This avoids building a distributed marks system before agents prove they can use curated coordinates reliably. Distributed sync moves to Phase 3.
 
-### Action layer (high priority — bottlenecked Phase 1)
-- Fix or replace `mc collect` (silent zero-mined failures from 1.1, 1.3, 1.4)
-- New `mc place_facing` and `mc dig_facing` for relative ops avoiding "no solid neighbor" issues
-- `mc observe_lean` returning only agent-relevant fields (token diet — observation payloads were 90% of message bytes in 1.1)
-- `/api-spec` route on bot HTTP server (OpenAPI listing of `/action/*`)
-- Anti-revisit memory in pathfinder (1.1's bot-stuck-in-hole problem)
+## 10. Chest accounting
 
-### Marks system (new functionality)
-- Canonical marks catalog at `data/marks/canonical.yaml`
-- Steward-side library to read/write canonical, compute distances
-- Bot-side `POST /marks/replace` and `POST /marks/diff` endpoints
-- Auto-sync hook in dispatcher: pre-dispatch marks push to assignee's bot
-- Chat-IPC handler in steward worker (parses `@steward` mentions)
+Workers report chest deltas via **structured `kanban_complete.metadata`**, not parsed prose:
 
-### Chest inventory tracking
-- New schema field `inventory` on chest marks
-- Worker-side comment template for deposit/withdraw deltas
-- Steward-side parser to extract deltas from comments → update canonical
-- `mc chest @mark` already exists; steward audit task uses it
+```yaml
+result: PASS
+summary: "deposited 32 cobblestone in stone_chest"
+metadata:
+  test_id: L4.14_chest_deposit
+  predicate_results: [...]
+  inventory_delta:
+    chest: stone_chest
+    chest_coords: [2, 79, -1]
+    item: cobblestone
+    delta: +32
+    chest_count_before: 47
+    chest_count_after: 79
+    bot_inventory_before: 32
+    bot_inventory_after: 0
+```
 
-### Logistics planner (steward skill)
-- New skill `~/.hermes/skills/landfolk/steward-logistics/SKILL.md` — planner playbook
-- Mission templates as YAML at `data/mission-templates/*.yaml`
-- Steward worker reads templates + canonical state → spawns cards
+The `mc chest @mark` action returns counts; the worker copies them into `metadata`. Comments stay narrative for humans.
 
-### Profile + dispatcher hardening
-- `bin/mc` symlink-resolution fix (already done in 1.4)
-- Per-profile `terminal.env_passthrough: [MC_API_URL, MC_USERNAME]` (already done in 1.4)
-- Bootstrap script `scripts/setup-landfolk-profiles.sh` — initially creates 2 profiles (gatherer + flint); flag-driven so we can grow the cast as capabilities pass
-- `scripts/landfolk-bodies-only.sh` — initially launches 2 Mineflayer bodies (gatherer + flint); same flag-driven scaling
-- Dispatcher patch: skip tasks assigned to `human` (no auto-spawn for those)
-- `verify_fix` template implementation as a steward (or human-as-steward) cron task
+For Phase 2 the canonical marks file does NOT track chest inventory — it stays a coords/labels file. Inventory tracking via accumulated card metadata moves to Phase 3 logistics planner.
 
-### Custom metric registration (future)
-- Goal engine in `bot/lib/goals/engine.js` to accept arbitrary metrics with `evaluate_fn` expression. Lower priority — retargeting existing metrics covers 90% of cases.
+## 11. Human-as-steward protocol
 
-## Migration sequence (capability-driven)
+This is the protocol I follow. **It IS the spec** — the future steward agent will be designed to execute this mechanically.
 
-The sequence walks the capability levels (L0–L8) with **two bots** (gatherer + flint). Each level becomes one or more capability_test cards. Bug reports surface naturally; humans fix them; tests re-run; the level advances. New roles, marks, logistics — they get added when a capability level demands them, not preemptively.
+### File-system artifacts I maintain
 
-Each "sprint" is one or two work sessions. Parallel work where dependencies allow.
+| File | Format | What it holds |
+|------|--------|---------------|
+| `data/marks/canonical.yaml` | YAML | Single source of truth for marks |
+| `data/capability-matrix.yaml` | YAML | One row per `L<N>.<n>` with current status |
+| `data/test-fixtures/<level>/<test_id>.yaml` | YAML | World prep + cleanup rcon commands per test |
+| `data/sprint-state.yaml` | YAML | Active sprint, active level, current focus |
+
+### Card title formats (strict; see §5)
+
+### Card body schemas (strict)
+
+**capability_test body:** §7 schema verbatim.
+
+**bug_report body:**
+```yaml
+test_card_id: t_xxxx                    # the failing test card
+level: L1.2
+capability: movement.goto_near
+priority: blocking | non-blocking       # blocking = level can't be green while open
+symptom: "one-line description of the failure"
+expected: "what the contract says should happen"
+observed: "what the worker actually got"
+repro:
+  - "command sequence"
+  - "log excerpt"
+diagnosis: "root cause hypothesis"
+suggested_fix:
+  area: "bot/lib/actions/movement.js:23-36"
+  approach: "..."
+exercises_contract: "mc goto_near"      # which action contract is being violated
+```
+
+**feature_request body:**
+```yaml
+trigger: "what test or workflow needs this"
+spec:
+  command: "mc <new_verb>"
+  args: { ... }
+  response_shape: { ... }
+  failure_modes: [ ... ]
+priority: blocking | non-blocking
+```
+
+**skill_revision body:**
+```yaml
+skill: <skill_name>
+trigger: "what behavior was off; quote agent's reasoning"
+suggested_rewrite: "..."
+priority: blocking | non-blocking
+```
+
+**verify_fix body:**
+```yaml
+bug_card_id: t_yyyy
+test_card_id: t_xxxx
+fix_commit: <SHA>
+verify_predicate: "re-run test_card_id action_sequence; check success_predicate"
+on_pass: "mark test green; archive both bug and verify"
+on_fail: "post comment with new diagnosis; reopen bug"
+```
+
+### Per-session checklist
+
+1. **Survey** — `hermes kanban list --json`
+2. **Triage** — for each FAILed capability_test without a linked bug:
+   - Diagnose: action-contract violation? skill issue? card-spec defect?
+   - Create the appropriate card type with the proper body schema
+   - Link parent: bug card depends_on the failed test
+3. **Sync matrix** — update `capability-matrix.yaml` from recent outcomes
+4. **Pick next test** — find next pending L<N>.<n> with no blocking bug
+5. **Prep fixture** — read fixture YAML; run `prep:` rcon commands via SSH→docker→rcon-cli
+6. **Create test card** — `hermes kanban create --assignee <bot> --max-runtime <T>` with strict title + YAML body
+7. **Dispatch** — `hermes kanban dispatch`
+8. **Watch** — `hermes kanban tail` or check session log
+9. **Evaluate** — read worker's metadata; mark PASS/FAIL in matrix
+10. **Cleanup** — run `cleanup:` rcon commands from fixture
+11. **Loop** to step 2 (next failure to triage) or step 4 (next test)
+
+### Bug-fix sub-protocol
+
+1. Pick a `[BUG]` card with `priority: blocking` for the active level
+2. Branch: stay on `experiment/hermes-agents`
+3. With Claude Code:
+   - Read bug card body + linked test card body
+   - Read the file:line refs from `suggested_fix.area`
+   - Implement fix per the action contract (§8)
+   - Commit with message: `fix(<area>): <symptom>; closes <bug_id>`
+4. Mark bug card `done` with summary: `fixed in <SHA>: <one-line description>`
+5. The dispatcher patch auto-spawns the verify_fix card (or I create it manually if patch hasn't shipped yet)
+6. On verify PASS → matrix updated, both cards archived
+7. On verify FAIL → re-open bug or create new bug with updated diagnosis
+
+### Capability matrix format
+
+```yaml
+# data/capability-matrix.yaml
+sprint: 1
+levels:
+  L0:
+    status: green
+    last_run: 2026-05-10
+    tests:
+      L0.1_health_connected:    { status: pass, last_run: 2026-05-10, consecutive_pass: 2 }
+      L0.2_health_disconnected: { status: pass, last_run: 2026-05-10, consecutive_pass: 2 }
+      L0.3_observe_payload:     { status: pass, last_run: 2026-05-10, consecutive_pass: 2 }
+      # ...
+  L1:
+    status: in-progress
+    tests:
+      L1.1_goto_simple:    { status: pass, last_run: 2026-05-11, consecutive_pass: 2 }
+      L1.2_goto_near:      { status: fail, blocking_bug: t_bug123, consecutive_pass: 0, last_failure: "no_action_errors predicate failed: 1 error in command_log" }
+      L1.3_goto_timeout:   { status: pending }
+      # ...
+```
+
+### Sprint exit gate
+
+When all levels through `L<N>` are `green`:
+1. `git tag phase2-sprint<N>-passed`
+2. Update `sprint-state.yaml` to next sprint
+3. Move on
+
+## 12. Test world & fixtures (Multiverse)
+
+### World setup
+
+Multiverse-Core is installed on the Paper server. We use a dedicated flat world for testing:
+
+```
+/mv create landfolk-test FLAT
+/mv conf landfolk-test gameMode SURVIVAL
+/mv conf landfolk-test allowMonsters false      # disable mob spawns by default
+/mv conf landfolk-test allowAnimals false
+/mv modify landfolk-test difficulty PEACEFUL
+/mv modify landfolk-test time 6000              # noon, freeze via /gamerule doDaylightCycle false
+```
+
+Production world `landfolk` is untouched. Tests teleport bots to the test world before action_sequence and back to spawn after cleanup.
+
+### Fixture file schema
+
+`data/test-fixtures/<level>/<test_id>.yaml`:
+
+```yaml
+world: landfolk-test
+prep:
+  # Tear down any prior fixture artifacts in this region
+  - "fill 0 60 0 64 100 64 minecraft:air"
+  # Build the test scenario from scratch
+  - "fill 0 60 0 32 60 32 minecraft:stone"
+  - "setblock 10 65 10 minecraft:dirt"
+  # Bot starting state
+  - "tp Flint landfolk-test 9 65 10"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_pickaxe 1"
+  - "effect give Flint minecraft:saturation 1 10"
+required_marks:                            # marks the bot must have for this test
+  - { name: base, coords: [0, 60, 0] }
+  - { name: target, coords: [10, 65, 10] }
+cleanup:
+  - "tp Flint landfolk 0 80 0"             # back to production world spawn
+  - "kill @e[type=item,distance=..50,world=landfolk-test]"
+notes: "..."
+```
+
+### Fixture conventions
+
+- **Region isolation**: each test fixture operates in a 64×64 region centered on a known coord, far from other test regions to avoid interference. Region table in `data/test-fixtures/region-map.yaml`.
+- **Idempotent prep**: every `prep` block starts with a `fill ... air` to clear any prior state.
+- **Production world untouched**: tests only modify `landfolk-test`. Bots tp back to `landfolk` after cleanup.
+- **Items cleanup**: `kill @e[type=item,distance=..50,world=landfolk-test]` after each test prevents item-drop pollution.
+
+### Periodic full reset
+
+`scripts/reset-test-world.sh`: `/mv delete landfolk-test --force && /mv create landfolk-test FLAT`. Run weekly or on-demand if fixtures drift.
+
+### Helper script for the human-as-steward
+
+`scripts/run-fixture.sh <fixture-path>` reads the YAML and runs prep/cleanup via ssh→docker→rcon. Used in steps 5 and 10 of the per-session checklist.
+
+## 13. Event/feed schema (for future dashboard)
+
+Phase 2 doesn't build a dashboard, but specifies the events that would feed one so we don't paint ourselves into a corner:
+
+| Event | Source | Fields |
+|-------|--------|--------|
+| card.created | kanban DB | id, type, level, assignee, created_at |
+| card.claimed | dispatcher | id, run_id, profile, claimed_at |
+| card.completed | worker | id, run_id, result, summary, metadata, completed_at |
+| card.blocked | worker or human | id, reason, blocked_at |
+| card.commented | any | id, author, body, created_at |
+| bot.health | bot http /health | profile, connected, position, hp, food, holding, ts |
+| capability.matrix.updated | human-as-steward | level, test_id, status, consecutive_pass, ts |
+| action.failure | bot http (action contract) | profile, command, error.code, error.message, ts |
+| marks.updated | manual edit + git diff | mark_name, old, new, ts |
+| inventory_delta | card.completed.metadata | (parsed from kanban DB) |
+
+For Phase 2: emit nothing; just don't put data anywhere it can't be queried later. All listed sources are already queryable from kanban DB + bot APIs + git log.
+
+## 14. Refactor plan (Sprint 1 scope)
+
+All on `experiment/hermes-agents`:
+
+### Action contracts (gating)
+- `mc collect` (`bot/lib/actions/mining.js:8-229`) — enforce `ok=false` on `mined_count==0`; return `data.mined_count`, `data.requested_count`; map error paths to enum codes
+- `mc dig` (`bot/lib/actions/mining.js:231-248`) — error code enum (NO_BLOCK_AT_COORD, OUT_OF_RANGE, TOOL_INADEQUATE, PROTECTED_BLOCK, INTERRUPTED); `data.dropped_items`; `data.position_after`
+- `mc place` (`bot/lib/actions/world.js:281-328`) — error code enum (NO_SOLID_NEIGHBOR, TARGET_OCCUPIED, INVENTORY_MISSING, OUT_OF_RANGE); `error.observed_state.neighbors`
+- `mc craft` (`bot/lib/actions/crafting.js:7-97`) — error code enum (NO_RECIPE, MISSING_INGREDIENTS, TABLE_REQUIRED, TABLE_OUT_OF_RANGE); `data.crafted_count`, `data.ingredients_consumed`
+- `mc chest` — error code enum (NO_CONTAINER, NO_MARK, OUT_OF_RANGE); `data.container_kind`, `data.item_counts`
+
+### Dispatcher patch (gating)
+- Skip cards where `assignee == "human"` — never spawn worker
+- On `bug_report` with status=`done` AND `summary` matching `/^fixed in [a-f0-9]{7,40}/`, auto-create the dependent `verify_fix` card
+
+### Already done in Phase 1 (1.4)
+- `bin/mc` symlink resolution fix
+- Per-profile `terminal.env_passthrough: [MC_API_URL, MC_USERNAME]`
+
+### Sprint 0 deliverables (infrastructure, not gating)
+- `scripts/setup-landfolk-profiles.sh` — creates `gatherer` + `flint` profiles cleanly
+- `scripts/landfolk-bodies-only.sh` — launches 2 Mineflayer bodies
+- `scripts/run-fixture.sh` — runs fixture prep/cleanup
+- `data/marks/canonical.yaml` — initial 3-mark seed: `@base`, `@test_origin`, `@spawn_landfolk`
+- `data/capability-matrix.yaml` — empty matrix scaffold for L0–L4
+- `data/test-fixtures/L0/L0.1_health_connected.yaml` — first fixture (smoke test)
+
+## 15. Sprints 0–4 (capability-driven)
 
 ### Sprint 0 — Bootstrap (1 session)
-**Goal: gatherer + flint bot bodies running; dispatcher healthy; first capability_test card runs end-to-end.**
 
-1. `scripts/setup-landfolk-profiles.sh` creating two profiles (`gatherer` and `flint`) with proper `MC_API_URL`, `MC_USERNAME`, `terminal.env_passthrough`
-2. `scripts/landfolk-bodies-only.sh` launching the two Mineflayer bodies (replaces today's `landfolk-control.sh`)
-3. Dispatcher patch: skip tasks assigned to `human`
-4. Smoke-test capability_test card: "L0.1 — gatherer reports `mc status` successfully"
-5. Confirm `verify_fix` template works end-to-end with one synthetic bug
+**Goal:** Two-bot setup running, dispatcher patched for `human` assignee, first capability_test card runs end-to-end through the full loop (prep → dispatch → worker → metadata → matrix).
 
-**Exits with:** baseline that mirrors 1.4 but for two characters and with the human-as-steward + `human` assignee in the loop.
+**Tasks:**
+1. Server: confirm Multiverse, create `landfolk-test` flat world per §12
+2. `scripts/setup-landfolk-profiles.sh` (gatherer + flint)
+3. `scripts/landfolk-bodies-only.sh` launches 2 bodies on ports 3001/3002
+4. Dispatcher patch (skip `human`, auto-spawn verify_fix)
+5. Bootstrap files: marks YAML, matrix YAML, fixture YAML for L0.1
+6. `scripts/run-fixture.sh` working
+7. Smoke-run L0.1 capability_test card end-to-end
 
-### Sprint 1 — L0 + L1 capabilities (foundations + movement) (1–2 sessions)
-**Goal: green light on connectivity and movement primitives for both bots.**
+**Exit gate:**
+- L0.1 (`health_connected`) test passes
+- One synthetic bug card filed and verified to demonstrate the verify_fix loop
 
-Capability tests:
-- L0.1–0.4 — connectivity (status, health, inventory, marks API CRUD)
-- L1.1–1.5 — movement (`goto`, `goto_near`, `follow`, `look_at`, `go_mark`)
+### Sprint 1 — L0 + Action contracts (1–2 sessions)
 
-Expected bug surface (each becomes a `bug_report` to me):
-- 1.1's "stuck in hole at Y=62" pathfinder issue → anti-revisit memory or termination
-- Repeated `goto` failing without progress → make `goto` exit with mined-style structured failure
-- `mc nearby` token bloat → introduce `mc observe_lean`
+**Goal:** L0 green; primitive action contracts shipped for `mc dig`, `mc collect`, `mc place`, `mc craft`, `mc chest`.
 
-### Sprint 2 — L2 + L3 (inventory + basic gather/craft) (1–2 sessions)
-**Goal: agents can use inventory ops and basic crafting reliably.**
+**Action contracts ship first** because L1+ tests can't pass cleanly without them. Most of these are bug fixes per §14.
 
-Capability tests:
-- L2.1–2.4 — `mc inventory`, `equip`, `unequip`, item drops
-- L3.1–3.5 — `mc dig` reliability, oak log → planks → sticks → wooden tools, crafting table interaction
+**L0 capability tests** (6, all use the same simple fixture):
 
-Expected bug surface:
-- `mc collect` silent failure (1.1, 1.3, 1.4) → either deprecate it or fix the return contract
-- Crafting table proximity check rules — agent uncertainty
-- `mc craft` semantics under inventory shortage (already a bug suspect)
+| Test ID | What it checks |
+|---------|---------------|
+| L0.1_health_connected | `/health` returns connected=true with position; move_rate calculated after motion |
+| L0.2_health_disconnected | bot offline (kill -9 the body) → `/health` returns connected=false |
+| L0.3_observe_payload | `/observe` payload contains all required fields per the explore agent's spec |
+| L0.4_observe_action_loop | inject 3 identical failed actions → observe shows `action_loop` warning |
+| L0.5_marks_list_empty | empty marks file → `/marks` returns empty array |
+| L0.6_marks_list_with_distance | seeded marks file → `/marks` returns entries with `distance_m` |
 
-### Sprint 3 — L4 (mining) (1–2 sessions)
-**Goal: flint can mine stone/coal/iron with appropriate tools, navigate caves, recover from lava.**
+Worker side: each test is a tiny script (just `mc status`, `mc nearby`, etc.) — minimal LLM cost.
 
-Capability tests:
-- L4.1–4.5 — surface stone, coal vein, iron ore, cave navigation, lava avoidance
+**Exit gate:**
+- L0 all green
+- All 5 primitive action contracts implemented; no `priority: blocking` bugs open
+- One worked example of L1 test running cleanly (smoke check that contracts don't break L1+)
 
-Expected bug surface:
-- Cave pathfinding regressions
-- Tool durability handling under sustained mining
-- Underground orientation (which way is up?)
+### Sprint 2 — L1 (movement) (1–2 sessions)
 
-### Sprint 4 — L5 (build) (1 session)
-**Goal: gatherer (or flint) can place blocks reliably, including the "no solid neighbor" foundation case Mason solved in 1.4.**
+**Goal:** L1 green for both bots.
 
-Capability tests:
-- L5.1–5.4 — single block place, place_facing variants, simple wall, foundation handling
+**Capability tests (10):**
 
-Expected new functionality (likely `feature_request` cards):
-- `mc place_facing` — direction-relative placement
-- `mc place_against` — explicit "place against this face"
+| Test ID | What it deliberately exercises |
+|---------|-------------------------------|
+| L1.1_goto_simple | short path on flat ground |
+| L1.2_goto_near_radius | radius arg honored |
+| L1.3_goto_timeout | distant target hits 15s timeout; advisory message returned |
+| L1.4_goto_unreachable | target across canyon → contract failure |
+| L1.5_bg_goto_lifecycle | bg_goto starts, completes, currentTask reflects |
+| L1.6_bg_goto_cancel | start, cancel, status='cancelled', pathfinder cleared |
+| L1.7_follow_player_present | follow when player online |
+| L1.8_follow_player_absent | follow when player offline → contract error |
+| L1.9_pillar_step_y62_trap | **Phase 1.1 deliberate trap**: bot in 6-block hole, `mc pillar_step 6` → escape |
+| L1.10_go_mark_navigation | go_mark to seeded mark |
 
-### Sprint 5 — Marks system minimum (1–2 sessions)
-**Goal: introduce marks now that we have proven gameplay capabilities. Two bots reading from a curated catalog drives the first 2-bot coordination.**
+**Worked example — L1.9 fixture:**
 
-1. Canonical marks YAML schema + reader/writer library
-2. `POST /marks/replace` and `POST /marks/diff` endpoints
-3. Hand-curated initial catalog (3–5 marks: `@base`, `@stone_chest`, `@food_chest`, `@quarry-east`)
-4. Dispatcher hook to push marks pre-spawn
-5. First 2-bot coordination test: gatherer mines logs at `@oak-NE`, deposits at `@food_chest` (placeholder); flint mines stone at `@quarry-east`, deposits at `@stone_chest`. Two parallel cards, no dependencies.
+```yaml
+# data/test-fixtures/L1/L1.9_pillar_step_y62_trap.yaml
+world: landfolk-test
+prep:
+  - "fill 0 60 0 32 100 32 minecraft:air"
+  - "fill 14 60 14 18 70 18 minecraft:stone"            # raised platform
+  - "fill 16 64 16 16 70 16 minecraft:air"              # carve 6-deep hole
+  - "tp Flint landfolk-test 16 64 16"                   # bottom of hole
+  - "clear Flint"
+  - "give Flint minecraft:dirt 16"
+required_marks: []
+cleanup:
+  - "tp Flint landfolk 0 80 0"
+  - "kill @e[type=item,distance=..50,world=landfolk-test]"
+```
 
-**Exits with:** marks system stable for two bots; co-evolution loop validated; bugs in marks API surface as `bug_report` cards.
+**Worked example — L1.9 capability_test card body:**
 
-### Sprint 6 — L6 (farming) + chest inventory tracking (2 sessions)
-**Goal: gatherer can plant/harvest; chest inventories tracked.**
+```yaml
+id: L1.9_pillar_step_y62_trap
+level: L1
+capability: movement.pillar_step
+bot: flint
+fixture: L1/L1.9_pillar_step_y62_trap.yaml
+preconditions:
+  bot_position: "(16, 64, 16) — bottom of 6-block stone-walled hole"
+  inventory: "16x dirt"
+action_sequence:
+  - mc pillar_step 6
+success_predicate:
+  - { kind: response_field, field: "ok", op: "==", value: true }
+  - { kind: response_field, field: "data.placed_count", op: "==", value: 6 }
+  - { kind: bot_position_within, coords: [16, 70, 16], radius: 1 }
+  - { kind: inventory_contains, item: dirt, count: "==10" }     # 16 - 6 = 10
+timeout: 60s
+retry_policy: { transient: 1, outcome: 0 }
+exercises_phase1_bug: "1.1's Y=62 hole trap; pillar_step is the existing primitive that should solve it"
+```
 
-Capability tests:
-- L6.1–6.4 — plant wheat, harvest at maturity, breed animals, food prep at furnace
+**Expected bug surface:**
+- `mc goto` 15s timeout returning `ok=true` advisory but bot didn't reach → contract violation, file bug
+- `mc bg_goto` cancel race conditions
+- `pillar_step` consecutive-failure short-circuit firing on legit terrain
 
-Plus:
-- `inventory` schema field on chest marks
-- Worker comment template for deposit/withdraw deltas
-- Audit cron task
+**Exit gate:**
+- L1 all green
+- ≤2 non-blocking bugs open
 
-### Sprint 7 — L7 (combat / survival) (1–2 sessions)
-**Goal: agents engage hostile mobs sensibly, manage health, flee when outmatched.**
+### Sprint 3 — L2 + L3 (inventory, basic gather + craft) (2–3 sessions)
 
-Capability tests:
-- L7.1–7.4 — engage zombie at full HP with sword, flee from creeper at low HP, regen waiting, equip sword vs unarmed combat
+**Goal:** L2 + L3 green. This is where collect/craft contracts get exercised heavily.
 
-Likely new functionality:
-- `mc engage` / `mc disengage` semantics
-- Threat-aware pathfinding
+**L2 tests (8):** equip success/missing/swap, unequip with full inventory, toss partial stack, pickup drops.
 
-### Sprint 8 — Steward profile + first logistics (2 sessions)
-**Goal: replace human-as-steward with a Hermes profile. Add the first logistics planner cron task.**
+**L3 tests (14)** — code-grounded around the discovered handler complexity:
 
-1. Steward profile created with custom `steward-role.json` goal-preset and SOUL prompt
-2. Mason added (port 3003) so the steward has someone to assign to (besides gatherer/flint)
-3. Steward worker auto-runs `respond_chat`, `audit_chests`, `triage_failures`, and (basic) `logistics_planner` cron tasks
-4. First end-to-end un-prompted intervention: `@stone_chest` fills → steward spawns rebalance or build-overflow card → mason or flint executes
+| Test ID | What it deliberately exercises |
+|---------|-------------------------------|
+| L3.1_dig_basic | dirt with bare hand → success |
+| L3.2_dig_air | target is air → contract: `NO_BLOCK_AT_COORD` |
+| L3.3_dig_wrong_tool | stone with wooden_axe held → contract: `TOOL_INADEQUATE` |
+| L3.4_dig_protected | crafting_table → contract: `PROTECTED_BLOCK` |
+| L3.5_collect_basic | 3 oak_log within 5 blocks → mined_count==3 |
+| L3.6_collect_silent_failure | **Phase 1 bug**: 3 oak_log far away → contract: `ALL_PATHFIND_FAILED`, NOT `ok=true mined_count=0` |
+| L3.7_collect_partial | 5 requested, 2 reachable → ok=true with partial_failure flag, mined_count=2 |
+| L3.8_collect_fair_play_los | log behind water in fair-play mode → contract: `NO_VISIBLE_BLOCKS` |
+| L3.9_pillar_step_jumping | basic 5-block pillar, plenty of dirt |
+| L3.10_pillar_step_no_blocks | empty inventory → contract failure |
+| L3.11_craft_hand_recipe | sticks from planks (no table) |
+| L3.12_craft_table_required_present | chest from planks; table at 3 blocks |
+| L3.13_craft_table_required_absent | chest from planks; no table → contract: `TABLE_REQUIRED` |
+| L3.14_craft_missing_ingredients | chest with 0 planks → contract: `MISSING_INGREDIENTS` |
 
-### Sprint 9 — L8 (full logistics) and cast expansion (2 sessions)
-**Goal: full multi-bot supply chain operational; barley joins; treasury operational.**
+**Expected bug surface:**
+- L3.6 will FAIL initially (Phase 1 bug deliberately exercised) → `[BUG][L3.6] mc collect returns ok=true with mined_count=0 on unreachable trees`
+- L3.7 may need `partial_failure` flag added to contract
+- Smelt is not in L3 (move to L4); blocking 30s deserves its own test
+- Discover (`mc discover`) deferred to L4 (not on hot path for L3)
 
-1. Barley (port 3004) joins; first farm operation
-2. Treasury chest near base (relocated to @tower if/when built); first `treasury_dispense` mission
-3. Mark expiry / verification cycles running
-4. Full L8 capability tests: gatherer→deposit→withdraw→consume chains across multiple chests
+**Exit gate:**
+- L2 + L3 all green
+- All 5 contracts holding firm; no contract regressions
+- Phase 1's `mc collect` bug fixed and verified
 
-### Sprint 10+ — Dashboard and polish
-1. Custom dashboard (separate web app), reading from kanban DB + marks YAML + bot APIs
-2. Anti-revisit pathfinder memory
-3. Custom metric registration in goal engine
-4. Whatever else the bug pile has surfaced
+### Sprint 4 — L4 (mining) (2–3 sessions)
 
-## Open questions / risks
+**Goal:** L4 green. Flint is the workhorse; this is the deepest capability set.
 
-- **`worker_context` size budget** — pre-injected parent comments are great but could bloat at scale. Need to cap or summarize at N parents deep.
-- **Steward as single-point-of-orchestration** — if the steward profile breaks, the team loses planning. Plan: low-cadence backup of canonical YAML; steward worker is restart-tolerant by design.
-- **Chat parsing brittleness** — `@steward` mentions parsed by worker LLM. May need a structured chat protocol (`/cmd_arg` style) or rely on the LLM's natural-language tolerance.
-- **Token budget at scale** — five profiles × dozens of missions/day × deepseek-v4-flash. Phase 2 should set a hard rail (e.g., $5/day initial); steward can deprioritize missions when approaching.
-- **Mineflayer body resource cost** — five bots in one Paper server, each with pathfinding + observation. Server-side load needs monitoring; may need to throttle observation polling.
-- **Marks YAML race condition** — concurrent steward workers updating the file. Need a lock file or atomic write pattern (already common solution: write to .tmp, rename).
-- **Mission-template debugging UX** — when a card body comes from a template, errors at runtime point at the template, not the planner that picked it. Logs need template-id traceability.
+**L4 tests (15)** — covers the action richness the explore agent surfaced:
 
-## Success criteria — capability-driven, not single-shot
+| Test ID | What it deliberately exercises |
+|---------|-------------------------------|
+| L4.1_dig_stone_with_pickaxe | stone with stone_pickaxe → succeeds |
+| L4.2_dig_stone_no_pickaxe | stone with bare hand → contract: `TOOL_INADEQUATE` |
+| L4.3_dig_iron_ore_stone_pickaxe | iron_ore with stone_pickaxe → succeeds |
+| L4.4_dig_diamond_iron_pickaxe | diamond_ore with iron_pickaxe → succeeds |
+| L4.5_dig_diamond_stone_pickaxe | diamond_ore with stone_pickaxe → contract: `TOOL_INADEQUATE` (tier mismatch) |
+| L4.6_pillar_step_deep_escape | 30-block hole, 32 dirt → escape with 2 blocks remaining |
+| L4.7_dig_area_5x5x5 | clean excavation, no obstacles |
+| L4.8_dig_area_with_stand | bot in middle of area; nudge-off + stand-block-last |
+| L4.9_tunnel_simple | 10-block straight tunnel, 2x3 cross-section |
+| L4.10_stair_up_solid_ground | 10-step staircase, no auto-floor needed |
+| L4.11_stair_up_open_cave | 10-step staircase over cave; auto-floor placement |
+| L4.12_stair_down_to_layer | descend to known Y |
+| L4.13_find_blocks_coal_ore | discover within radius, returns distance + bearing |
+| L4.14_chest_deposit | open chest, deposit 32 cobble; metadata.inventory_delta correct |
+| L4.15_float_straddle_dig | **Phase 1.4 deliberate**: bot at X=10.4, dig at X=10 → succeeds; verify floor coord used consistently |
 
-Because Phase 2 is a co-evolution loop, "completion" isn't one big run — it's a green capability matrix. Each level is "passing" when its capability_test cards complete cleanly twice in a row with no new bug_reports.
+**Worked example — L4.5 (tier mismatch contract test):**
 
-### Per-sprint exit gates
+```yaml
+id: L4.5_dig_diamond_stone_pickaxe
+level: L4
+capability: mining.dig.tier_mismatch
+bot: flint
+fixture: L4/L4.5_diamond_stone_pickaxe.yaml
+preconditions:
+  bot_position: "(20, 50, 20) — adjacent to single diamond_ore block at (21, 50, 20)"
+  inventory: "1x stone_pickaxe (held)"
+action_sequence:
+  - mc equip stone_pickaxe
+  - mc dig 21 50 20
+success_predicate:
+  - { kind: response_field, field: "ok", op: "==", value: false }
+  - { kind: response_field, field: "error.code", op: "==", value: "TOOL_INADEQUATE" }
+  - { kind: response_field, field: "error.next_action_hint", op: "contains", value: "iron_pickaxe" }
+  - { kind: inventory_contains, item: diamond, count: "==0" }
+  - { kind: world_block_at, coords: [21, 50, 20], block: "diamond_ore" }   # block still there
+timeout: 15s
+exercises_phase1_bug: null
+```
 
-| Sprint | Exit gate |
-|--------|-----------|
-| 0 | Two bots online; one synthetic capability_test runs end-to-end with the human-as-steward + `human` assignee loop |
-| 1 | L0 + L1 green for both bots; ≤2 open bugs |
-| 2 | L2 + L3 green; basic crafting reliable |
-| 3 | L4 green for flint; cave nav not blocking |
-| 4 | L5 green; foundation handling encoded as a primitive |
-| 5 | Marks system live; 2-bot parallel mission with mark refs runs |
-| 6 | L6 green; chest inventory tracking accurate to ±5% |
-| 7 | L7 green; agents survive a night |
-| 8 | Steward profile online; first un-prompted logistics intervention fires and completes |
-| 9 | Full team (4 bots) coordinating on a 24h run; treasury operational |
+**Expected bug surface:**
+- `mc place` "no solid neighbor" still firing where Mason's foundation pattern works → may need `place_against` primitive (file FEAT)
+- `dig_area` nudge-off race conditions
+- `stair_up` auto-floor placement in open caves not always reliable
+- `find_blocks` bearing calculation off by one quadrant in some cases
 
-### Phase-2 "shippable" definition
+**Exit gate:**
+- L4 all green
+- `[BUG][L4.x]` count for blocking < 3
+- Phase 2 done; tag `phase2-sprint4-passed`; appendix-promoted features can begin
 
-A 24-hour live run with the **expanded cast** (gatherer, flint, mason, barley, steward) where:
-- All 4 character bodies + steward stay connected ≥95% of the time.
-- Human posts ≥3 coarse intents (e.g., "we need food", "build a watchtower at @perimeter-N", "rebalance the iron chests") → all complete via kanban chains without manual orchestration.
-- Steward maintains `last_verified` on all marks within their `expires_after_h` budgets.
-- Chest inventories in catalog stay within ±5% of ground-truth (verified by spot audit).
-- Token spend stays under $5/day.
-- At least one logistics planner intervention (rebalance / overflow / scout) fires unprompted and resolves successfully.
-- Capability matrix shows L0–L8 all green.
+## 16. Success criteria
 
-If we hit those, Phase 2 is shippable as the new normal for the Landfolk world.
+### Per-sprint exit gates (sharpened from earlier draft)
+
+| Sprint | Gate |
+|--------|------|
+| 0 | L0.1 passes; one bug→fix→verify cycle completes end-to-end |
+| 1 | L0 fully green (6/6 tests, 2 consecutive passes each); 5 action contracts implemented; no blocking bugs open |
+| 2 | L1 fully green (10/10); ≤2 non-blocking bugs open; pillar_step Y=62 trap escapes deterministically |
+| 3 | L2 + L3 fully green (8 + 14); Phase 1's `mc collect` silent-failure bug fixed and verified; no contract regressions |
+| 4 | L4 fully green (15/15); float-straddle test passes; Phase 2 tag applied |
+
+### Phase 2 "shippable" definition
+
+A 4-hour live run on `landfolk-test` where:
+- L0–L4 all green; capability matrix shows 53/53 tests with `consecutive_pass >= 2`
+- Zero open `priority: blocking` bug_reports
+- Action contracts hold under random fuzz: 100 randomly-selected capability tests run consecutively with no `ok=true` masking a real failure
+- Total worker token spend for the 4-hour run < $5
+
+If we hit those, Phase 2 is done. The action layer is reliable; the loop is boring; we're ready for Phase 3.
+
+---
+
+# Appendix — Phase 3+ Roadmap (when Phase 2 is boring)
+
+The destination architecture from the earlier draft, deferred until the Phase 2 loop is mechanical and bugs are rare.
+
+## A1. Steward profile + body
+A 6th profile `steward` with its own roaming Mineflayer body. Body is decoupled from role (role is body-independent; body provides diegetic chat presence). Aspirational tower built by the team as a kanban mission once efficiency justifies it. See earlier draft (commit `4ed4a55`) for full spec.
+
+## A2. Marks sync (canonical → bot caches)
+`POST /marks/replace` and `POST /marks/diff` endpoints; dispatcher hook to push relevant marks pre-spawn; chat-IPC handler in steward worker. Replaces the simple "coords inline in card body" pattern from §9.
+
+## A3. Chest inventory in canonical
+Promote `inventory_delta` metadata into a per-chest `inventory` field on chest marks. Audit cron tasks. Periodic ground-truth verification.
+
+## A4. Logistics planner
+Steward skill that runs a small rule engine over canonical state:
+- chest occupancy > threshold → spawn overflow/rebalance card
+- item count < floor → spawn supply card
+- mark expired → spawn verify_mark card
+- two cards need same chest → serialize via dependency
+Distance computation, supply-chain efficiency analysis come *after* the rule engine works.
+
+## A5. Mason + Barley cast expansion
+Activated after L5 (build) and L6 (farm) pass with gatherer + flint covering temporarily. Each gets its own profile, body, port.
+
+## A6. Custom dashboard
+Web app reading from kanban DB + marks file + bot APIs + the event/feed schema (§13). Map view, inventory panel, mission feed, logistics overview, chat console.
+
+## A7. L5–L8 capabilities
+- L5 Build: `mc place_facing`, `mc place_against`, structure patterns, foundation handling
+- L6 Farming & livestock: plant/harvest, breeding, food prep
+- L7 Combat & survival: engage/disengage, threat-aware pathfind
+- L8 Full logistics: multi-bot supply chains, treasury, rebalancing
+
+## A8. Action layer polish
+- `/api-spec` endpoint (OpenAPI for `/action/*`)
+- Anti-revisit memory in pathfinder
+- Custom metric registration in goal engine
+- Token-diet `mc observe_lean`
