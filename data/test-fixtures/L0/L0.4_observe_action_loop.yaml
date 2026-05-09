@@ -1,0 +1,27 @@
+# L0.4 — observe_action_loop: /observe surfaces the action_loop warning after
+# 3 identical failed actions in a row.
+#
+# Purpose: verify the loop-detection alert in observation.js:209-212. Workers
+# rely on this to break out of "tried mc dig 5 times, all failed" patterns.
+#
+# Bot setup: stand on test platform; we'll dig at clearly invalid coords
+# three times. Each `mc dig 999 999 999` should fail (OUT_OF_RANGE or
+# NO_BLOCK_AT_COORD) and stack into the actionHistory.
+#
+# Expected response: /observe.state.action_loop is a non-empty string after
+# 3 identical failed digs.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

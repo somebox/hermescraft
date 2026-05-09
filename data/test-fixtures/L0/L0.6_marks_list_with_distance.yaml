@@ -1,0 +1,27 @@
+# L0.6 — marks_list_with_distance: /marks returns seeded marks with distance_m.
+#
+# Purpose: lock the /marks payload shape and the distance_m computation that
+# the architecture's "@mark with distance hint" pattern depends on.
+# Reference: bot/lib/bot/locations.js → buildMarksList; per-bot file at
+# data/locations-<bot>.json.
+#
+# Bot setup: bot teleported to a known location so distances are predictable.
+# Flint already has data/locations-flint.json populated from prior sessions
+# (spawn, home, death_*, mine, etc.) — we don't need to seed anything.
+#
+# Action: curl /marks and check shape.
+# Expected: data.marks is an array; each entry has name, x, y, z, and
+# distance_m as a number ≥ 0.
+
+world: landfolk-test
+
+prep:
+  # Stay in production world for this test — distance_m is computed against
+  # the live position, and the existing locations-flint.json is keyed to
+  # production coords. Just clear inventory and ensure full HP.
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

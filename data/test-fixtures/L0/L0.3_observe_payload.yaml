@@ -1,0 +1,23 @@
+# L0.3 — observe_payload: /observe returns the canonical Phase-2 schema
+#
+# Purpose: lock the /observe payload shape so workers can rely on it.
+# A schema regression here cascades into every higher-level test.
+# Reference: bot/lib/bot/observation.js (top-level keys are populated there).
+#
+# Bot setup: clear inventory, on test platform, full HP/food.
+# Action: curl /observe and check that all required top-level keys exist.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

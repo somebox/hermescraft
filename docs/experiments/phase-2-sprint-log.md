@@ -1,6 +1,10 @@
-# Sprint 0 — Bootstrap log
+# Phase 2 sprint log
 
-Phase 2 Sprint 0: get the two-bot setup, dispatcher path, kanban→fixture→capability-matrix loop running end-to-end with at least one capability_test card.
+Running log of Phase 2 sprints (0, 1, 2, ...). Findings carry forward.
+
+## Sprint 0 — Bootstrap
+
+Goal: get the two-bot setup, dispatcher path, kanban→fixture→capability-matrix loop running end-to-end with at least one capability_test card.
 
 ## Deliverables status
 
@@ -100,3 +104,58 @@ Storing the full health response inside `metadata.response` worked. This is the 
 - [x] One synthetic bug card filed and verified to demonstrate the verify_fix loop
 
 **Sprint 0 complete.**
+
+---
+
+## Sprint 1 — L0 (mostly) green + first brain-driven worker
+
+Goal per architecture §15:
+- L0 all green (consecutive_pass ≥ 2)
+- Action contracts shipped for `mc dig`, `mc collect`, `mc place`, `mc craft`, `mc chest`
+- One worked example of L1 test running cleanly
+
+### Architecture refinement: `behavior_test` card type
+
+Architecture §6 amended (commit 4334298 → next commit) to split capability tests into two modes:
+- **`capability_test`** (existing) — failure means the action layer broke its contract; fix lives in `bot/lib/actions/*.js`; loop is `[BUG]` → fix code → `[VERIFY]`. One pass closes.
+- **`behavior_test`** (new) — failure means the strategy layer is wrong; fix lives in `~/.hermes/profiles/<name>/{SOUL.md,skills/...}`; loop is rewrite skill → re-run → re-run until N consecutive passes. Tests use the fixture system to build adversarial scenarios (mob-vs-bot, hole-with-blocks, locked-chest-protocol, etc.).
+
+This formalizes the iteration loop the user articulated: "put them in front of a mob and iterate until they consistently survive."
+
+Behavior tests start at L1+, dominate L4+. L0 is all `capability_test`.
+
+### L0 status (after Sprint 1)
+
+| Test | Status | Cards | Notes |
+|---|---|---|---|
+| L0.1_health_connected | green (3 passes) | t_86e0a6c6, t_7c3f127c, t_77170817, **t_c63b9de0 (brain)** | brain-driven worker validated end-to-end |
+| L0.2_health_disconnected | deferred | — | needs bot-process-kill harness |
+| L0.3_observe_payload | green (2 passes) | t_dd971cc6, t_6857edd4 | 12/12 required keys present |
+| L0.4_observe_action_loop | green (2 passes) | t_cd693647, t_435fa157 | trigger: 3× POST /action/dig 999/99/999 |
+| L0.5_marks_list_empty | deferred | — | needs fresh-bot-or-marks-clear harness |
+| L0.6_marks_list_with_distance | green (2 passes) | t_695ec6b2, t_4280583c | 36 marks, all distance_m numeric ≥ 0 |
+
+**4/6 green; 2 deferred.** Closing L0.2 + L0.5 needs a bit of test-process plumbing. Pragmatic: defer until Sprint 1 close-out and ship the action-contract refactors first (where the real Phase-2 value lives).
+
+### F6. Brain-driven worker validated end-to-end
+
+`hermes kanban dispatch` → `_default_spawn` → `hermes -p flint --skills kanban-worker chat -q "work kanban task t_c63b9de0"`. The worker:
+
+1. Read the card via the kanban_show tool.
+2. Auto-loaded the `minecraft-flint-mission` skill (legacy from old experiments — note for cleanup).
+3. Executed `mc health --json` — `MC_API_URL` reached the subprocess via `terminal.env_passthrough`. ✓
+4. Evaluated all 4 predicates against the response.
+5. Posted `kanban_complete --result PASS` with a tight one-line summary.
+6. Exited cleanly in 18s on `deepseek/deepseek-v4-flash`.
+
+**Gap (F6.1):** the worker called `kanban_complete` without `metadata`. The completed event shows `result_len: 0`. The Phase-2 SOUL.md asks for "metadata for any inventory_delta / chest_delta / observed errors" — but the worker interpreted "no inventory delta on a health-only card" as "no metadata needed." For the matrix-update tick to fold response payloads into the matrix, workers need to attach the action_sequence response under `metadata.response`. Tighten SOUL.md in the next pass.
+
+**Gap (F6.2):** worker session JSON has `total_input_tokens=None`, `total_cost_usd=None`. Token/cost telemetry isn't being recorded for kanban-spawned workers. Worth investigating but not Phase-2-blocking.
+
+### Open items entering action-contract refactor block
+
+1. **Tighten SOUL.md** to require metadata.response on every `kanban_complete` call. Will reduce duplicate `kanban_show + curl` work in matrix-update tooling.
+2. **Drop `minecraft-flint-mission` skill** from the auto-load path — it's a Phase 1 artifact.
+3. **`mc dig` contract** is up next (smallest delta, validates the pattern). After that: `mc collect` (real Phase-1 bug fix at L3.6).
+
+
