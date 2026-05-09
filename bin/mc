@@ -1,7 +1,14 @@
 #!/bin/bash
 # HermesCraft mc CLI — delegates to Node ESM runner (bot/cli/index.mjs)
 set -o pipefail
-DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks so DIR points at the real hermescraft/bin/, not the symlink dir
+# (e.g. /Users/foz/.local/bin/mc → /Users/foz/hermescraft/bin/mc).
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  [[ "$TARGET" = /* ]] && SOURCE="$TARGET" || SOURCE="$(dirname "$SOURCE")/$TARGET"
+done
+DIR="$(CDPATH="" cd "$(dirname "$SOURCE")" && pwd)"
 
 # Hard guardrail: agents must not invoke mc connect directly.
 if [ "${1:-}" = "connect" ]; then
