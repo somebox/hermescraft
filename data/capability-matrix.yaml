@@ -98,6 +98,14 @@ L3:
   - { id: L3.35_smelt_planks_fuel,            bot: gatherer, status: green,    last_run: "2026-05-10T00:40Z", consecutive_pass: 2, notes: "PASS via t_45eabd71, t_c9cb1600 — oak_planks fuel, smelts_per_unit=1.5" }
   - { id: L3.36_smelt_batch_bg,               bot: gatherer, status: green,    last_run: "2026-05-10T00:42Z", consecutive_pass: 2, notes: "PASS via t_0c5dceca, t_528b2003 — bg_smelt 4 raw_iron, agent polls /task to ~46s done" }
 
+  # mc chest contract suite (Sprint 1)
+  - { id: L3.40_chest_open_basic,             bot: gatherer, status: green,    last_run: "2026-05-10T01:00Z", consecutive_pass: 2, notes: "PASS via t_31419985, t_7f3abeb1 — list_container returns container_kind/position/item_counts/slots" }
+  - { id: L3.41_chest_no_container,           bot: gatherer, status: green,    last_run: "2026-05-10T01:00Z", consecutive_pass: 2, notes: "PASS via t_0f6da416, t_fdec0658 — NO_CONTAINER when block is stone, with block_at_target observed_state" }
+  - { id: L3.42_chest_deposit_simple,         bot: gatherer, status: green,    last_run: "2026-05-10T01:00Z", consecutive_pass: 2, notes: "PASS via t_910ef5a8, t_17760cab — inventory_delta cobblestone:-32, container_delta cobblestone:+32" }
+  - { id: L3.43_chest_withdraw_count,         bot: gatherer, status: green,    last_run: "2026-05-10T01:00Z", consecutive_pass: 2, notes: "PASS via t_2f1b7768, t_9c70a236 — withdraw 16 of 64; symmetric deltas" }
+  - { id: L3.44_chest_disambiguate,           bot: gatherer, status: green,    last_run: "2026-05-10T01:00Z", consecutive_pass: 2, notes: "PASS via t_4e07cfa8, t_0983be1a — AMBIGUOUS_ITEM when 'planks' matches oak+birch; closes the i.name.includes() trap" }
+  - { id: L3.45_chest_search_marks,           bot: gatherer, status: green,    last_run: "2026-05-10T01:00Z", consecutive_pass: 2, notes: "PASS via t_f55cbf35, t_0a26b147 — chest_search across 3 known chests, sorted by distance" }
+
   # mc place contract suite (Sprint 1)
   - { id: L3.20_place_basic,                  bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_7417c508, t_84624816 — face=(0,-1,0) onto platform stone" }
   - { id: L3.21_place_inventory_missing,      bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_6db171c9, t_1523d487 — clear→place returns INVENTORY_MISSING" }

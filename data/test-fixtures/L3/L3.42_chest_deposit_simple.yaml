@@ -1,0 +1,28 @@
+# L3.42 — chest_deposit_simple: deposit 32 cobblestone with inventory_delta verified.
+#
+# Setup: empty chest at (2, 65, 0); bot has 32 cobblestone in inventory.
+# Action: POST /action/deposit {item:"cobblestone", count:32, x:2, y:65, z:0}
+# Expected:
+#   ok=true,
+#   data.inventory_delta == {cobblestone: -32},
+#   data.container_delta == {cobblestone: +32},
+#   data.container_inventory_after == {cobblestone: 32}.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:chest"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:cobblestone 32"
+  - "effect give Flint minecraft:saturation 1 30"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

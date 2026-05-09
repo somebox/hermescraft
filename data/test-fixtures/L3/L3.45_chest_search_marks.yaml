@@ -1,0 +1,41 @@
+# L3.45 — chest_search_marks: search across multiple known chests for an item.
+#
+# This validates the chest_search action that solves the user's "searching
+# multiple chests" pain. Three chests with different contents; we call
+# list_container on each (populating ctx.chestSnapshots) and then call
+# chest_search for an item — it should return the chest(s) that contain it,
+# sorted by distance.
+#
+# Setup:
+#   chest_A at (2, 65, 0)  — 8 oak_planks + 4 cobblestone
+#   chest_B at (-3, 65, 0) — 16 iron_ingot + 32 cobblestone
+#   chest_C at (0, 65, 4)  — 64 cobblestone
+#
+# Test sequence (action_sequence in card; here prep just sets up the chests):
+#   1. list_container x:2 y:65 z:0
+#   2. list_container x:-3 y:65 z:0
+#   3. list_container x:0 y:65 z:4
+#   4. chest_search item:iron_ingot   → returns 1 match (chest_B)
+#   5. chest_search item:cobblestone  → returns 3 matches sorted by distance
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - 'execute in landfolk-test run setblock 2 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:oak_planks",count:8},{Slot:1b,id:"minecraft:cobblestone",count:4}]}'
+  - 'execute in landfolk-test run setblock -3 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:iron_ingot",count:16},{Slot:1b,id:"minecraft:cobblestone",count:32}]}'
+  - 'execute in landfolk-test run setblock 0 65 4 minecraft:chest{Items:[{Slot:0b,id:"minecraft:cobblestone",count:64}]}'
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 30"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock 0 65 4 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

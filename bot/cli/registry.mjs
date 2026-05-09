@@ -734,6 +734,23 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc withdraw ITEM COUNT X Y Z  OR  mc withdraw ITEM COUNT MARK  OR  mc withdraw ITEM @MARK',
     examples: ['mc withdraw iron_ingot 5 100 64 -200', 'mc withdraw iron_ingot 0 materials_chest'],
   }),
+  g('chest_search', 'world', ['cs', 'find_in_chests'], {
+    method: 'POST',
+    path: '/action/chest_search',
+    argSchema: [
+      { key: 'item', type: 'string', required: true },
+      { key: 'max_results', type: 'number', default: 10 },
+      { key: 'exact', type: 'boolean', default: true },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      item: p.item,
+      max_results: Number(p.max_results) || 10,
+      exact: p.exact !== false,
+    }),
+    description: 'Search known chest snapshots (cached from prior list/deposit/withdraw) for an item across all marks. No chest is opened — returns marks + counts. Workers should use this BEFORE deciding which chest to walk to.',
+    usage: 'mc chest_search ITEM [MAX_RESULTS]',
+    examples: ['mc chest_search iron_ingot', 'mc chest_search oak_planks 5'],
+  }),
 
   /* marks */
   g('mark', 'memory', [], {

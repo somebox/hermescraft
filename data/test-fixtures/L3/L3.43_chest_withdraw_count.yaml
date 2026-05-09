@@ -1,0 +1,28 @@
+# L3.43 — chest_withdraw_count: chest has 64 cobble, withdraw 16; counts correct.
+#
+# Setup: chest at (2, 65, 0) loaded with 64 cobblestone (one full stack).
+# Bot has empty inventory.
+# Action: POST /action/withdraw {item:"cobblestone", count:16, x:2, y:65, z:0}
+# Expected:
+#   ok=true,
+#   data.inventory_delta == {cobblestone: +16},
+#   data.container_delta == {cobblestone: -16},
+#   data.container_inventory_after == {cobblestone: 48}.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - 'execute in landfolk-test run setblock 2 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:cobblestone",count:64}]}'
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

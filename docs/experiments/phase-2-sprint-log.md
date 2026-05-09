@@ -455,5 +455,77 @@ L3 status update (Sprint 1 close):
 
 **21 L3 tests green. Action contracts shipped: 4 of 5 (dig, collect, place, craft+smelt). Remaining: chest.**
 
+### Action contract: mc chest (DONE) + chest_search + F21 + F22
+
+#### Refactored: list_container, deposit, withdraw (§8)
+Three handlers now share `openContainerStructured(deps, body)` which returns either `{ok:true, chest, block, x, y, z}` or `{ok:false, error: {...}}` with one of:
+
+| Code | Trigger |
+|---|---|
+| `NO_MARK` | `body.mark` references a name that doesn't exist in marks file |
+| `MISSING_COORDS` | Neither x/y/z nor mark provided |
+| `NO_CONTAINER` | Block at coords is not a chest/barrel/shulker (or air); `observed_state.block_at_target` |
+| `OUT_OF_RANGE` | Distance > 4.5 AND pathfind threw |
+| `INTERRUPTED` | `b.openContainer` threw mid-flight |
+
+deposit/withdraw responses now include:
+- `inventory_delta` (per-name {item: signed-count})
+- `container_delta` (mirror for the chest)
+- `container_inventory_after` (post-state aggregate)
+- `container_slots_after` (per-slot detail)
+- `ambiguous_skipped` / `not_found_skipped` (when an item ref couldn't resolve)
+
+Plus per-item soft failures:
+- `AMBIGUOUS_ITEM` — request matched multiple distinct items via substring (e.g. "planks" → oak_planks AND birch_planks)
+- `ITEM_NOT_FOUND` — request didn't match anything
+
+#### New action: `chest_search`
+Phase-2 §8 extension. Solves the user's "searching multiple chests" pain — scans `ctx.chestSnapshots` (already populated by every prior list/deposit/withdraw) and returns marks containing the requested item, sorted by distance from bot. **No chest is opened during the search.** Workers can call this BEFORE deciding which chest to walk to.
+
+```
+mc chest_search iron_ingot              # exact match across all known chests
+mc chest_search planks max_results=5    # exact match; AMBIGUOUS skipped
+mc chest_search planks exact=false      # broaden: any plank type counts
+```
+
+CLI verb: `mc chest_search` (alias: `mc cs`, `mc find_in_chests`).
+
+### F21. mineflayer chest window inventory_delta gotcha
+
+Sampling `b.inventory.items()` while a chest window is open returns the **pre-open** inventory snapshot — the window holds the player's items in its slot range, and bot.inventory only resyncs on `chest.close()`. First refactor of deposit/withdraw computed `inventory_delta` BEFORE close, returning empty deltas even though items moved. Fix: capture container state inside the try, capture inventory state AFTER `chest.close()` (with a 50ms sleep for the close packet to flush). Now deltas are accurate.
+
+### F22. resolveItemRef: exact-match preferred, AMBIGUOUS surfaced
+
+The original code used `i.name.includes(req.item)` which silently grabbed the first matching wood type. Replaced with a 4-state resolver:
+1. **Exact name match** → use it (sums all stacks of that exact name)
+2. **Substring match, exactly 1 distinct name** → use it (treat as "obvious abbreviation")
+3. **Substring match, multiple distinct names** → return `AMBIGUOUS` with candidate list
+4. **No match** → return `NOT_FOUND`
+
+L3.44 locks the disambiguation: `withdraw planks` against a chest with both oak_planks and birch_planks now returns `ok=false, error.code=AMBIGUOUS_ITEM, observed_state.ambiguous=[{item:'planks', candidates:['oak_planks','birch_planks']}]`. Workers must specify the exact name.
+
+### L3 status (Sprint 1 close — full action contract block)
+
+**5 of 5 action contracts shipped: dig, collect, place, craft+smelt, chest.**
+
+| Test | Status |
+|---|---|
+| L3.1–L3.6 (dig + collect) | green |
+| L3.11–L3.16 (craft + wood-type) | green |
+| L3.20–L3.23 (place) | green |
+| L3.30–L3.36 (smelt incl. bg + alt fuel + batch) | green |
+| L3.40–L3.45 (chest incl. disambiguate + chest_search) | green |
+
+**27 L3 tests green** out of the matrix's expanded set. Behavior_test territory (multi-step plans, multi-furnace coord, multi-chest organize) flagged for Phase 2 follow-up under F20 + new F23 below.
+
+### F23. Open: chest organize / consolidate as behavior_test territory
+
+User flagged "organizing — grouping similar items together" — that's behavior_test material:
+- **Consolidate** — within a single chest, merge duplicate item stacks into the smallest number of slots.
+- **Organize across chests** — move iron-related items to one chest, wood to another, by following a steward-curated convention.
+- **Auto-route deposit** — given an item, pick the chest that already has it (via chest_search), open and deposit there rather than the nearest empty chest.
+
+These need a worker that can chain mc chest_search → mc go_mark → mc deposit; not a single primitive. Frame as L4-level behavior_tests once the strategy layer is exercised.
+
 
 

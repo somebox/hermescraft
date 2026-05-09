@@ -1,0 +1,37 @@
+# L3.44 — chest_disambiguate: chest holds oak_planks AND birch_planks;
+# request "planks" must AMBIGUOUS_ITEM error rather than silently taking
+# whichever stack happens to be first.
+#
+# Setup: chest at (2, 65, 0) with 8 oak_planks + 8 birch_planks.
+# Bot has empty inventory.
+#
+# First action: withdraw "planks" → AMBIGUOUS_ITEM with both candidates.
+# (Workers must specify oak_planks or birch_planks explicitly.)
+# Expected:
+#   ok=false,
+#   error.code=='AMBIGUOUS_ITEM',
+#   error.observed_state.ambiguous == [{item:'planks', candidates:['oak_planks','birch_planks']}],
+#   nothing moved.
+#
+# This locks the user's "duplicate items" gripe: the OLD i.name.includes()
+# behavior would return whichever stack the chest enumerated first
+# (deterministic but wrong). New behavior surfaces the ambiguity so the
+# worker can disambiguate.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - 'execute in landfolk-test run setblock 2 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:oak_planks",count:8},{Slot:1b,id:"minecraft:birch_planks",count:8}]}'
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
