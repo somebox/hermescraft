@@ -1,0 +1,33 @@
+# L0.12 — scene_drop_entity: mc scene reports a dropped item entity nearby.
+#
+# Purpose: verify that drop items (the entity, not the block) show up in
+# scene's visible_entities. After mc dig, the drop sits on the ground;
+# workers need to know it's there before calling mc pickup.
+#
+# Setup: bot at (0.5, 65, 0.5); item entity (oak_log dropped) at (3, 65, 0).
+# Action: GET /scene?range=12
+# Expected: visible_entities contains an item entry within ~3 blocks.
+#
+# The item entity name from the server side is "minecraft:item"; bot side
+# typically reports e.name === 'item' or e.displayName === 'Item'.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+  # Summon a dropped item 3 blocks east of bot.
+  # YAML with double-quoted scalar — backslash-quote does NOT unescape on parse;
+  # use a single-quoted block scalar so the inner double-quotes pass through
+  # to rcon literally.
+  - 'execute in landfolk-test run summon minecraft:item 3 65.5 0 {Item:{id:"minecraft:oak_log",count:1b}}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
+  - "mvtp Flint world"

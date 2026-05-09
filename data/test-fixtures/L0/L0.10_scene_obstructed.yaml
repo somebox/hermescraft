@@ -1,0 +1,42 @@
+# L0.10 — scene_obstructed: mc scene reports a wall but NOT a block hidden behind it.
+#
+# Purpose: verify line-of-sight blocking works. A block behind a 2-block-tall
+# stone wall must NOT show up in scene's visible_blocks even with a wide FOV
+# scan.
+#
+# IMPORTANT — wall height note:
+# The bot's eye sits at pos.y + 1.62*0.85 ≈ +1.38 above feet. Bot stands at
+# Y=65, eye at ~Y=66.38. A 1-block-tall wall (Y=65 only, top at Y=66) is
+# BELOW the eye — rays angled downward at pitches in roughly (-14°, -6°) clear
+# the wall top and hit blocks behind it. To genuinely obstruct LoS, the wall
+# must be at least 2 blocks tall (Y=65 AND Y=66, top at Y=67).
+#
+# Setup:
+#   bot at (0.5, 65, 0.5), looking east.
+#   wall: cobblestone at (2, 65/66, -1..1) — 3 wide × 2 tall.
+#   target_hidden: oak_log at (4, 65, 0) — directly behind the wall.
+# Action:
+#   POST /action/look {x:10, y:65, z:0}  (face east)
+#   GET /scene?range=12
+# Expected: data.visible_block_hits contains cobblestone but NOT oak_log.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  # 2-block-tall wall, 3 wide
+  - "execute in landfolk-test run fill 2 65 -1 2 66 1 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock 4 65 0 minecraft:oak_log"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill 2 65 -1 2 66 1 minecraft:air"
+  - "execute in landfolk-test run setblock 4 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

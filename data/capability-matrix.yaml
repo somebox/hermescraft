@@ -31,6 +31,14 @@ L0:
   - { id: L0.5_marks_list_empty,         bot: either, status: deferred, last_run: null, consecutive_pass: 0, notes: "needs fresh-bot or marks-clear harness; deferred to L0 close-out" }
   - { id: L0.6_marks_list_with_distance, bot: either, status: green,    last_run: "2026-05-09T21:30Z", consecutive_pass: 2, notes: "PASS via t_695ec6b2, t_4280583c; 36 marks, all distance_m numeric>=0" }
 
+  # Perception suite — sprint 1 vision/scan tests
+  - { id: L0.7_nearby_close_block,       bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 0, notes: "FAIL via t_40e31b7e — /nearby misses cobble at (1,65,0). Linked to BUG t_dc89c01b (stride-2 + Math.floor)" }
+  - { id: L0.8_nearby_stride,            bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 0, notes: "FAIL via t_99e662c3 — finds 1/2 cobbles. Same root cause as L0.7" }
+  - { id: L0.9_scene_block_in_fov,       bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_7d8fb694 — scene cobble at (3,65,0) found after look(); 1 more pass → green" }
+  - { id: L0.10_scene_obstructed,        bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_6c3e5bf5 — 2-tall wall blocks LoS correctly. Note: 1-tall walls do NOT obstruct (eye height 1.6+)" }
+  - { id: L0.11_discover_distant,        bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_96361117 — discover coal radius=64 found at (40,50,0) d=42.3" }
+  - { id: L0.12_scene_drop_entity,       bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_c56c8131 — drop item visible in scene + nearby" }
+
 L1:
   - { id: L1.1_goto_simple,              bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
   - { id: L1.2_goto_near_radius,         bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }

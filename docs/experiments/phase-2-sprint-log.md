@@ -219,5 +219,67 @@ This is the kind of bug a behavior_test would *also* surface: a worker calls `mc
 
 5/14 L3 tests green; 1 deferred (TOOL_INADEQUATE), 8 not yet written. The five we've shipped exercise the two most important contracts (dig + collect) including the silent-failure regression.
 
+### Sprint 1 perception suite (L0.7–L0.12) + F9 + F10
+
+User feedback: "the raycast technique is problematic, and we might want to verify the settings allow nearby items to be seen and the scanning approach allows the agent to recognize things farther away without overloading things." Wrote a 6-card perception suite to surface concrete behaviors of `mc nearby`, `mc scene`, and `mc discover`.
+
+#### Results
+
+| Test | Result | Card | Notes |
+|---|---|---|---|
+| L0.7_nearby_close_block | **FAIL** | t_40e31b7e | bug t_dc89c01b — /nearby misses cobble at (1,65,0) when bot at (0.5,_,0.5) |
+| L0.8_nearby_stride | **FAIL** | t_99e662c3 | bug t_dc89c01b — finds 1/2 cobbles (odd-X invisible) |
+| L0.9_scene_block_in_fov | PASS | t_7d8fb694 | mc scene works after `mc look` orients bot |
+| L0.10_scene_obstructed | PASS | t_6c3e5bf5 | 2-tall wall blocks LoS correctly |
+| L0.11_discover_distant | PASS | t_96361117 | chunk-scan finds coal_ore at d=42.3 |
+| L0.12_scene_drop_entity | PASS | t_c56c8131 | drop item visible in scene + nearby |
+
+Filed: **[BUG] t_dc89c01b** — `/nearby block-scan misses ~half of 1-block targets` with reproduction, three candidate fixes, and verify-after-fix steps.
+
+### F9. mc nearby block-scan: stride 2 + Math.floor + common-block filter = silent half-blindness
+
+`bot/lib/bot/observation.js:512-526`. Three compounding issues:
+1. Stride 2 in dx/dz of `pos.offset(dx, _, dz)` — combined with `Math.floor` in `blockAt`, half of integer-X targets are unsampled when bot is at fractional X (the standard mvtp-spawn pose at (0.5, _, 0.5)).
+2. Common-block name filter (line 516) excludes `stone`/`dirt`/`grass_block`/`deepslate` from the response — even when a player or steward deliberately places them. Workers asking "what's around me" can't see these terrains.
+3. `scanR = Math.min(radius, 16)` quietly caps the block scan at 16 even when caller passes radius=64. Caller has no signal that truncation happened.
+
+This is a quiet bug because workers calling mc nearby see *some* output and assume it's complete. The architecture's contract refactor pattern (structured ok/data/error with observed_state) should expand to /nearby too — at least surface the cap.
+
+### F10. Eye height 1.6 means 1-tall walls don't fully obstruct LoS
+
+Bot eye position: `pos.y + (height || 1.62) * 0.85 ≈ pos.y + 1.38`. So bot standing at Y=65 has eye at Y≈66.38. A 1-tall wall (top Y=66) is 0.38 below the eye. Rays at pitches between roughly -14° and -6° pass over the wall top and hit blocks behind it.
+
+**For all obstruction-related tests and behavior_tests: walls must be ≥2 blocks tall.** This is now noted at the top of L0.10 fixture and should be a default in any future LoS-obstacle fixture (digging-tunnel ceilings, shelter walls, etc.). This is a *fixture-design* gotcha, not a code bug — but failing to know it produces flaky tests.
+
+### F11. The four perception modes have very different semantics
+
+| Mode | LoS check | Range | What it sees | Best use |
+|---|---|---|---|---|
+| `mc scene` | yes (raycast cone) | range param, capped 24 in non-fair-play | blocks + entities visible from current orientation | "what can the bot SEE right now" |
+| `mc nearby` | partial (entities go through fair-play LoS; blocks chunk-scan with above bugs) | 16 for blocks; up to radius for entities | entity counts + non-common block summaries | "is anything moving near me" |
+| `mc discover` | none (chunk-scan via b.findBlocks) | 8–64 (configurable per call) | named ore/log/food categories with count + locations | "find coal in the loaded area" |
+| `mc map` | none (chunk-based) | radius param | top-down array of block names | "render terrain layout" |
+
+Workers should learn which mode to use when. Documenting in SOUL.md so the brain doesn't ask `mc scene` to find ore 50 blocks away — it should be `mc discover`.
+
+### L0 status update
+
+| Test | Status |
+|---|---|
+| L0.1 health_connected | green (3) |
+| L0.2 health_disconnected | deferred |
+| L0.3 observe_payload | green (2) |
+| L0.4 observe_action_loop | green (2) |
+| L0.5 marks_list_empty | deferred |
+| L0.6 marks_list_with_distance | green (2) |
+| L0.7 nearby_close_block | **red** (FAIL → bug t_dc89c01b) |
+| L0.8 nearby_stride | **red** (FAIL → bug t_dc89c01b) |
+| L0.9 scene_block_in_fov | red (1 PASS, needs 1 more) |
+| L0.10 scene_obstructed | red (1 PASS, needs 1 more) |
+| L0.11 discover_distant | red (1 PASS, needs 1 more) |
+| L0.12 scene_drop_entity | red (1 PASS, needs 1 more) |
+
+5/12 green; 2 blocked on bug fix; 4 need a second consecutive PASS; 1 deferred (L0.2); L0.5 deferred. Bug t_dc89c01b is now the gating item for L0 green.
+
 
 
