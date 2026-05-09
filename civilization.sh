@@ -79,10 +79,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Default to Sonnet for civilization unless explicitly overridden.
+# Defaults from repo data/agent-models.json (Anthropic branch when API key present).
+AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+RESOLVE_AM="$SCRIPT_DIR/scripts/resolve-agent-model.py"
+
 if [ -z "$MODEL" ] && [ -z "$PROVIDER" ] && [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  MODEL="claude-sonnet-4-20250514"
-  PROVIDER="anthropic"
+  MODEL="$("$RESOLVE_AM" entrypoint civilization_anthropic model "$AGENT_MODELS_JSON")"
+  PROVIDER="$("$RESOLVE_AM" entrypoint civilization_anthropic provider "$AGENT_MODELS_JSON")"
 fi
 
 # Use only the first N agents
@@ -213,10 +216,13 @@ for i in "${!AGENTS[@]}"; do
   # Copy base config and adjust for autonomous play
   if [ -f "$HOME/.hermes/config.yaml" ]; then
     cp "$HOME/.hermes/config.yaml" "$AGENT_HOME/config.yaml"
+    _defm="$(python3 "$SCRIPT_DIR/scripts/resolve-agent-model.py" defaults model "$AGENT_MODELS_JSON")"
+    _defp="$(python3 "$SCRIPT_DIR/scripts/resolve-agent-model.py" defaults provider "$AGENT_MODELS_JSON")"
     # Bump max_iterations so agents live longer
     sed -i 's/max_iterations: [0-9]*/max_iterations: 200/' "$AGENT_HOME/config.yaml"
-    # Default to sonnet to avoid $$$ with 7 agents on opus
-    sed -i 's/default: claude-opus-4-6/default: claude-sonnet-4-20250514/' "$AGENT_HOME/config.yaml"
+    # YAML Hermes defaults from data/agent-models.json
+    sed -i "s|default: .*|default: ${_defm}|" "$AGENT_HOME/config.yaml"
+    sed -i "s|provider: .*|provider: ${_defp}|" "$AGENT_HOME/config.yaml"
     # Enable memory for each agent
     sed -i 's/memory_enabled: false/memory_enabled: true/' "$AGENT_HOME/config.yaml"
     sed -i 's/user_profile_enabled: false/user_profile_enabled: true/' "$AGENT_HOME/config.yaml"

@@ -1,11 +1,11 @@
 /** Mineflayer connect/events/reconnect/hardcore + stuck watchdog. */
 
 /** Actions used by stuck watchdog when task.status === 'running'. */
+/** Note: `collect` is excluded — mining often keeps feet within <2m for 10–20s while digging. */
 export const STUCK_MOVEMENT_ACTIONS = [
   'goto',
   'goto_near',
   'follow',
-  'collect',
   'fight',
   'flee',
   'go_mark',
@@ -15,6 +15,9 @@ export const STUCK_MOVEMENT_ACTIONS = [
   'strafe',
   'combo',
 ];
+
+/** Min ms with almost no position change before declaring stuck (pathfinder can crawl in tight caves). */
+const STUCK_IDLE_MS = 20000;
 
 /** Delay before reconnect; `attempts` matches ctx.reconnectAttempts before increment. */
 export function reconnectBackoffMs(attempts) {
@@ -47,33 +50,104 @@ export function createBotManager(deps) {
     pushTaskHistoryRecord,
   } = deps;
 
-  async function createBot() {
-    if (ctx.bot) {
-      try {
-        ctx.bot.quit();
-      } catch {}
-      ctx.bot = null;
-      ctx.botReady = false;
-      await sleep(1000);
+  /**
+   * Connect to Minecraft. Overlapping calls share one attempt; already-spawned bots no-op unless opts.force.
+   * @param {{ force?: boolean }} [opts]
+   */
+  function createBot(opts = {}) {
+    const force = opts.force === true;
+    // Same TCP session can briefly lack entity or isAlive during death screen — never spawn a second mineflayer bot.
+    if (!force && ctx.bot && ctx.botReady) {
+      if (ctx.bot.entity || ctx.bot.isAlive === false) {
+        return Promise.resolve(ctx.bot);
+      }
     }
 
-    return new Promise((resolve, reject) => {
-      log(`Connecting to ${config.mc.host}:${config.mc.port} as ${config.mc.username}...`);
+    if (force) {
+      const p = Promise.resolve(ctx.connectPromise)
+        .catch(() => {})
+        .then(() => sleep(300))
+        .then(() => runConnectAttempt(true))
+        .finally(() => {
+          if (ctx.connectPromise === p) ctx.connectPromise = null;
+        });
+      ctx.connectPromise = p;
+      return p;
+    }
 
-      ctx.bot = mineflayer.createBot({
-        host: config.mc.host,
-        port: config.mc.port,
-        username: config.mc.username,
-        auth: config.mc.auth,
+    if (!ctx.connectPromise) {
+      const attempt = runConnectAttempt(false).finally(() => {
+        if (ctx.connectPromise === attempt) ctx.connectPromise = null;
       });
+      ctx.connectPromise = attempt;
+    }
+    return ctx.connectPromise;
+  }
 
-      const timeout = setTimeout(() => {
-        reject(new Error(`Connection timeout — couldn't reach ${config.mc.host}:${config.mc.port}`));
-      }, 30000);
+  function runConnectAttempt(force) {
+    return new Promise((resolve, reject) => {
+      void (async () => {
+        try {
+          if (ctx.bot && (force || !ctx.botReady)) {
+            ctx.suppressEndReconnect = true;
+            try {
+              ctx.bot.quit();
+            } catch {}
+            ctx.bot = null;
+            ctx.botReady = false;
+            await sleep(1000);
+          }
+        } catch (e) {
+          ctx.suppressEndReconnect = false;
+          reject(e);
+          return;
+        }
 
-      ctx.bot.once('spawn', () => {
-        clearTimeout(timeout);
-        ctx.mcData = minecraftData(ctx.bot.version);
+        log(`Connecting to ${config.mc.host}:${config.mc.port} as ${config.mc.username}...`);
+
+        const botInstance = mineflayer.createBot({
+          host: config.mc.host,
+          port: config.mc.port,
+          username: config.mc.username,
+          auth: config.mc.auth,
+        });
+
+        ctx.bot = botInstance;
+
+        const cleanupFailedAttempt = () => {
+          try {
+            botInstance.quit();
+          } catch {}
+          if (ctx.bot === botInstance) ctx.bot = null;
+          ctx.botReady = false;
+          ctx.suppressEndReconnect = false;
+        };
+
+        const connectMs =
+          typeof config.mc.connectTimeoutMs === 'number' && config.mc.connectTimeoutMs > 0
+            ? config.mc.connectTimeoutMs
+            : 55000;
+        const timeout = setTimeout(() => {
+          cleanupFailedAttempt();
+          reject(new Error(`Connection timeout — couldn't reach ${config.mc.host}:${config.mc.port}`));
+        }, connectMs);
+
+        const onEarlyReject = /** @type {(err: Error) => void} */ ((err) => {
+          clearTimeout(timeout);
+          cleanupFailedAttempt();
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+
+        botInstance.once('error', onEarlyReject);
+
+        botInstance.once('spawn', () => {
+          clearTimeout(timeout);
+          botInstance.removeListener('error', onEarlyReject);
+          botInstance.on('error', (err) => {
+            log(`Bot error: ${err.message}`);
+          });
+
+          ctx.mcData = minecraftData(ctx.bot.version);
         loadGoalsFromDisk();
         loadReminders();
 
@@ -208,9 +282,9 @@ export function createBotManager(deps) {
           }
         });
 
-        ctx.bot._soundCheckInterval = setInterval(() => {
+        botInstance._soundCheckInterval = setInterval(() => {
           if (!ctx.bot || !ctx.botReady) return;
-          Object.values(ctx.bot.entities).forEach((e) => {
+          Object.values(botInstance.entities).forEach((e) => {
             if (e === ctx.bot.entity || !e.position) return;
             const vel = e.velocity;
             if (!vel) return;
@@ -245,7 +319,48 @@ export function createBotManager(deps) {
             });
             return;
           }
-          log('DIED! Respawning...');
+          log('DIED! Clearing movement and nudging respawn…');
+
+          // Stop pathfinder / digs so they do not block the client_command respawn packet.
+          try {
+            botInstance.pathfinder?.setGoal?.(null);
+          } catch {}
+          try {
+            botInstance.stopDigging();
+          } catch {}
+          try {
+            botInstance.clearControlStates();
+          } catch {}
+
+          if (ctx.currentTask?.status === 'running') {
+            ctx.currentTask.status = 'cancelled';
+            ctx.currentTask.error = 'Interrupted by player death';
+            pushTaskHistoryRecord(ctx.currentTask, 'cancelled');
+          }
+
+          // mineflayer auto-respawns once from health.js; some servers/packet timing need a retry.
+          const nudgeMs = [0, 200, 500, 1200, 2500, 5000, 8000];
+          for (const ms of nudgeMs) {
+            setTimeout(() => {
+              if (ctx.bot !== botInstance || ctx.hardcoreDead) return;
+              try {
+                if (typeof botInstance.respawn === 'function' && botInstance.isAlive === false) {
+                  botInstance.respawn();
+                }
+              } catch (e) {
+                log(`Respawn nudge @${ms}ms failed: ${/** @type {Error} */ (e).message || e}`);
+              }
+            }, ms);
+          }
+        });
+
+        // Fires again after death recovery (mineflayer health plugin) — clear any stale path goal.
+        botInstance.on('spawn', () => {
+          if (ctx.bot !== botInstance) return;
+          try {
+            botInstance.pathfinder?.setGoal?.(null);
+          } catch {}
+          ctx.reconnectAttempts = 0;
         });
 
         ctx.bot.on('kicked', (reason) => {
@@ -257,15 +372,26 @@ export function createBotManager(deps) {
           log(`Disconnected: ${reason}`);
           ctx.botReady = false;
           ctx.positionHistory = [];
-          if (ctx.bot?._soundCheckInterval) {
-            clearInterval(ctx.bot._soundCheckInterval);
-            ctx.bot._soundCheckInterval = null;
+          const skipReconnect = ctx.suppressEndReconnect;
+          if (ctx.suppressEndReconnect) ctx.suppressEndReconnect = false;
+
+          try {
+            if (botInstance._soundCheckInterval) {
+              clearInterval(botInstance._soundCheckInterval);
+              botInstance._soundCheckInterval = null;
+            }
+          } catch {}
+
+          if (skipReconnect) {
+            log('Reconnect timer skipped — session replacement already in flight.');
           }
 
           if (ctx.hardcoreDead) {
             log('☠ Hardcore death — staying disconnected. RIP.');
             return;
           }
+
+          if (skipReconnect) return;
 
           const delay = reconnectBackoffMs(ctx.reconnectAttempts);
           ctx.reconnectAttempts++;
@@ -287,11 +413,8 @@ export function createBotManager(deps) {
           `Connected! Spawned at ${fmt(ctx.bot.entity.position.x)}, ${fmt(ctx.bot.entity.position.y)}, ${fmt(ctx.bot.entity.position.z)}`,
         );
         resolve(ctx.bot);
-      });
-
-      ctx.bot.on('error', (err) => {
-        log(`Bot error: ${err.message}`);
-      });
+        });
+      })();
     });
   }
 
@@ -305,9 +428,10 @@ export function createBotManager(deps) {
       if (
         ctx.currentTask &&
         ctx.currentTask.status === 'running' &&
-        STUCK_MOVEMENT_ACTIONS.includes(ctx.currentTask.action)
+        STUCK_MOVEMENT_ACTIONS.includes(ctx.currentTask.action) &&
+        !ctx.syncActionInFlight
       ) {
-        const old = ctx.positionHistory.find((p) => Date.now() - p.time > 10000);
+        const old = ctx.positionHistory.find((p) => Date.now() - p.time > STUCK_IDLE_MS);
         if (old) {
           const dist = Math.sqrt((pos.x - old.x) ** 2 + (pos.y - old.y) ** 2 + (pos.z - old.z) ** 2);
           if (dist < 2) {
@@ -323,12 +447,12 @@ export function createBotManager(deps) {
             ctx.currentTask.status = 'stuck';
             ctx.currentTask.error = `Stuck at ${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)} — try a different approach`;
             pushTaskHistoryRecord(ctx.currentTask, 'stuck');
-            log('STUCK detected (10s no movement) — task cancelled');
+            log(`STUCK detected (${STUCK_IDLE_MS / 1000}s no movement) — task cancelled`);
           }
         }
       }
 
-      if (!ctx.currentTask || ctx.currentTask.status !== 'running') {
+      if ((!ctx.currentTask || ctx.currentTask.status !== 'running') && !ctx.syncActionInFlight) {
         const recent = ctx.positionHistory.filter((p) => Date.now() - p.time < 8000);
         if (recent.length >= 3) {
           const allSameSpot = recent.every(

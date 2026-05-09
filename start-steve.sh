@@ -20,9 +20,12 @@ cp "$SCRIPT_DIR/SOUL-landfolk.md" "$STEVE_HOME/SOUL.md"
 
 if [ -f "$HOME/.hermes/config.yaml" ]; then
   cp "$HOME/.hermes/config.yaml" "$STEVE_HOME/config.yaml"
+  AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+  _defm="$(python3 "$SCRIPT_DIR/scripts/resolve-agent-model.py" defaults model "$AGENT_MODELS_JSON")"
+  _defp="$(python3 "$SCRIPT_DIR/scripts/resolve-agent-model.py" defaults provider "$AGENT_MODELS_JSON")"
   sed -i 's/max_iterations: [0-9]*/max_iterations: 200/' "$STEVE_HOME/config.yaml" || true
-  sed -i 's/default: .*/default: claude-sonnet-4-20250514/' "$STEVE_HOME/config.yaml" || true
-  sed -i 's/provider: .*/provider: anthropic/' "$STEVE_HOME/config.yaml" || true
+  sed -i "s|default: .*|default: ${_defm}|" "$STEVE_HOME/config.yaml" || true
+  sed -i "s|provider: .*|provider: ${_defp}|" "$STEVE_HOME/config.yaml" || true
   sed -i 's/memory_enabled: false/memory_enabled: true/' "$STEVE_HOME/config.yaml" || true
   sed -i 's/user_profile_enabled: false/user_profile_enabled: true/' "$STEVE_HOME/config.yaml" || true
 fi

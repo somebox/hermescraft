@@ -9,6 +9,11 @@ export function loadConfig(argv = process.argv) {
       port: parseInt(process.env.MC_PORT || '25565', 10),
       username: process.env.MC_USERNAME || 'HermesBot',
       auth: process.env.MC_AUTH || 'offline',
+      /** Mineflayer TCP/login; multi-bot LAN often needs >30s when other clients join first (MC_CONNECT_TIMEOUT_MS). */
+      connectTimeoutMs: Math.min(
+        Math.max(parseInt(process.env.MC_CONNECT_TIMEOUT_MS || '55000', 10) || 55000, 15000),
+        120000,
+      ),
     },
     api: {
       port: parseInt(process.env.API_PORT || '3001', 10),

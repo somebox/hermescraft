@@ -26,6 +26,73 @@ export function respond(res, status, data) {
 
 const TASK_SEG_SKIP = new Set(['start', 'cancel', 'pause', 'resume', 'checkpoint-respond', 'history']);
 
+/** Extract a short (≤80 char) one-liner from an action result for the dashboard. */
+function actionSummary(result) {
+  if (!result) return '';
+  const raw = typeof result === 'string' ? result : result.result || result.message || '';
+  if (!raw) return '';
+  const first = String(raw).split(/[.\n]/, 1)[0].trim();
+  return first.length > 80 ? first.slice(0, 77) + '…' : first;
+}
+
+function pushAction(ctx, action, status, startedAt, result, error) {
+  ctx.actionHistory.push({
+    action,
+    status,
+    started_at: startedAt,
+    finished_at: Date.now(),
+    detail: status === 'done' ? actionSummary(result) : (error || '').slice(0, 80),
+  });
+  if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+}
+
+function recordActionOutcome(ctx, action, status, errorMsg) {
+  const now = Date.now();
+  const c = ctx.actionCounters;
+  if (!c) return;
+  c.events.push({ ts: now, action, status, error: errorMsg || null });
+  const cutoff = now - c.window_ms;
+  while (c.events.length > 0 && c.events[0].ts < cutoff) c.events.shift();
+  if (c.events.length > 600) c.events.splice(0, c.events.length - 600);
+}
+
+function buildActionStats(ctx) {
+  const now = Date.now();
+  const c = ctx.actionCounters;
+  const cutoff = now - c.window_ms;
+  const evts = c.events.filter((e) => e.ts >= cutoff);
+  if (!evts.length) return { total: 0, done: 0, failed: 0, error_rate_pct: 0, actions_per_min: 0, top_errors: [], window_sec: Math.round(c.window_ms / 1000) };
+  const done = evts.filter((e) => e.status === 'done').length;
+  const failed = evts.length - done;
+  const spanMin = Math.max(0.05, (evts[evts.length - 1].ts - evts[0].ts) / 60000 || c.window_ms / 60000);
+  const errMap = {};
+  evts.filter((e) => e.status !== 'done' && e.error).forEach((e) => {
+    const key = `${e.action}: ${(e.error || '').slice(0, 80)}`;
+    errMap[key] = (errMap[key] || 0) + 1;
+  });
+  const topErrors = Object.entries(errMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([msg, n]) => ({ msg, n }));
+  return {
+    total: evts.length,
+    done,
+    failed,
+    error_rate_pct: Math.round((failed / evts.length) * 1000) / 10,
+    actions_per_min: Math.round((evts.length / spanMin) * 100) / 100,
+    done_per_min: Math.round((done / spanMin) * 100) / 100,
+    top_errors: topErrors,
+    window_sec: Math.round(c.window_ms / 1000),
+  };
+}
+
+function classifyIdleReason(ctx) {
+  if (!ctx.bot || !ctx.botReady) return 'disconnected';
+  if (ctx.currentTask?.status === 'running') return 'task_running';
+  if (ctx.currentTask?.status === 'stuck') return 'task_stuck';
+  const recent3 = ctx.actionHistory.slice(-3);
+  if (recent3.length === 3 && recent3.every((e) => e.status !== 'done' && e.action === recent3[0].action)) return 'error_loop';
+  if (ctx.lastApiError && Date.now() - ctx.lastApiError.ts < 30000) return 'recent_error';
+  return 'awaiting_agent';
+}
+
 /** Record last failure for dashboard /observe (Hermes agents rarely persist goals — this stays server-side). */
 function recordLastApiError(ctx, reqMethod, pathname, err, actionHint) {
   const msg = (err && err.message) || String(err || 'error');
@@ -94,11 +161,35 @@ export function createBotHttpListener(deps) {
     // ── GET endpoints (observation) ──────────────
     if (req.method === 'GET') {
       if (path === '/health' || path === '/') {
+        const alive = !ctx.bot || ctx.bot.isAlive !== false;
+        const connected = !!(ctx.botReady && alive);
+        const pos = connected && ctx.bot?.entity ? ctx.bot.entity.position : null;
+        const boot = typeof ctx.bootTime === 'number' ? ctx.bootTime : Date.now();
+        const uptimeSec = Math.round((Date.now() - boot) / 1000);
+        let moveRate = null;
+        const positionHistory = ctx.positionHistory || [];
+        if (positionHistory.length >= 2) {
+          const recent = positionHistory;
+          const first = recent[0];
+          const last = recent[recent.length - 1];
+          const dt = (last.time - first.time) / 1000;
+          if (dt > 2) {
+            const dist = Math.sqrt((last.x - first.x) ** 2 + (last.z - first.z) ** 2);
+            moveRate = +(dist / dt).toFixed(2);
+          }
+        }
         return respond(res, 200, {
           ok: true,
-          connected: ctx.botReady,
+          connected,
           username: config.mc.username,
+          profile: process.env.AGENT_PROFILE || config.mc.username,
+          model: process.env.AGENT_MODEL || null,
+          provider: process.env.AGENT_PROVIDER || null,
           server: `${config.mc.host}:${config.mc.port}`,
+          uptime_sec: uptimeSec,
+          holding: connected && ctx.bot?.heldItem ? ctx.bot.heldItem.name : null,
+          position: pos ? { x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), z: +pos.z.toFixed(1) } : null,
+          move_rate: moveRate,
         });
       }
 
@@ -269,7 +360,7 @@ export function createBotHttpListener(deps) {
         const b = ensureBot();
         b.pathfinder.setGoal(null);
         try { b.stopDigging(); } catch {}
-        if (ctx.currentTask && ctx.currentTask.status === 'running') {
+        if (ctx.currentTask && (ctx.currentTask.status === 'running' || ctx.currentTask.status === 'stuck')) {
           ctx.currentTask.status = 'cancelled';
           pushTaskHistoryRecord(ctx.currentTask, 'cancelled');
         }
@@ -311,6 +402,7 @@ export function createBotHttpListener(deps) {
           parent_goal_id: body.goal_id || body.parent_goal_id || null,
           contributes_to: body.contributes_to || null,
         });
+        const actionStartedAt = Date.now();
         actionFn(taskBody)
           .then((result) => {
             if (ctx.currentTask && ctx.currentTask.id === taskId && ctx.currentTask.status === 'running') {
@@ -318,8 +410,8 @@ export function createBotHttpListener(deps) {
               ctx.currentTask.result = result;
               pushTaskHistoryRecord(ctx.currentTask, 'done');
             }
-            ctx.actionHistory.push({ action: actionName, status: 'done', time: Date.now() });
-            if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+            pushAction(ctx, actionName, 'done', actionStartedAt, result);
+            recordActionOutcome(ctx, actionName, 'done');
           })
           .catch((err) => {
             recordLastApiError(ctx, 'POST', '/task/start', err, actionName);
@@ -328,8 +420,8 @@ export function createBotHttpListener(deps) {
               ctx.currentTask.error = err.message;
               pushTaskHistoryRecord(ctx.currentTask, 'error');
             }
-            ctx.actionHistory.push({ action: actionName, status: 'error', time: Date.now() });
-            if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+            pushAction(ctx, actionName, 'error', actionStartedAt, null, err.message);
+            recordActionOutcome(ctx, actionName, 'error', err.message);
           });
         return respond(res, 200, {
           ok: true,
@@ -474,15 +566,15 @@ export function createBotHttpListener(deps) {
           parent_goal_id: body.goal_id || body.parent_goal_id || null,
           contributes_to: body.contributes_to || null,
         });
-        // Fire and forget — runs in background
+        const taskStartedAt = Date.now();
         actionFn(body).then(result => {
           if (ctx.currentTask && ctx.currentTask.id === taskId && ctx.currentTask.status === 'running') {
             ctx.currentTask.status = 'done';
             ctx.currentTask.result = result;
             pushTaskHistoryRecord(ctx.currentTask, 'done');
           }
-          ctx.actionHistory.push({ action: actionName, status: 'done', time: Date.now() });
-          if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+          pushAction(ctx, actionName, 'done', taskStartedAt, result);
+          recordActionOutcome(ctx, actionName, 'done');
         }).catch(err => {
           recordLastApiError(ctx, 'POST', path, err, actionName);
           if (ctx.currentTask && ctx.currentTask.id === taskId && ctx.currentTask.status === 'running') {
@@ -490,8 +582,8 @@ export function createBotHttpListener(deps) {
             ctx.currentTask.error = err.message;
             pushTaskHistoryRecord(ctx.currentTask, 'error');
           }
-          ctx.actionHistory.push({ action: actionName, status: 'error', time: Date.now() });
-          if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
+          pushAction(ctx, actionName, 'error', taskStartedAt, null, err.message);
+          recordActionOutcome(ctx, actionName, 'error', err.message);
         });
         return respond(res, 200, { ok: true, task_id: taskId, status: 'started', state: briefState() });
       }
@@ -499,10 +591,32 @@ export function createBotHttpListener(deps) {
       // Synchronous action: POST /action/ACTION (still supported for quick stuff)
       const actionMatch = path.match(/^\/action\/(\w+)$/);
       if (!actionMatch) {
-        // Special: /connect
+        // Special: /connect — idempotent unless body.force=true (HermesCraft: avoid resetting TCP during handshake).
         if (path === '/connect') {
-          await createBot();
-          return respond(res, 200, { ok: true, result: 'Connected', state: briefState() });
+          const force = body?.force === true || body?.reconnect === true;
+          try {
+            await createBot(force ? { force: true } : {});
+            const note =
+              ctx.botReady && ctx.bot?.entity
+                ? force
+                  ? 'Reconnected (forced)'
+                  : 'Connected'
+                : 'Connecting';
+            return respond(res, 200, {
+              ok: true,
+              connected: !!ctx.botReady,
+              force: !!force,
+              result: note,
+              state: briefState(),
+            });
+          } catch (e) {
+            const msg = (e && e.message) || String(e);
+            return respond(res, 503, {
+              ok: false,
+              error: msg,
+              state: briefState(),
+            });
+          }
         }
         return respond(res, 404, { ok: false, error: `Unknown endpoint: ${path}` });
       }
@@ -515,10 +629,23 @@ export function createBotHttpListener(deps) {
       }
 
       ctx.lastApiError = null;
-      const result = await actionFn(body);
-      ctx.actionHistory.push({ action: actionName, status: 'done', time: Date.now() });
-      if (ctx.actionHistory.length > ctx.MAX_ACTION_HISTORY) ctx.actionHistory.shift();
-      return respond(res, 200, { ok: true, ...result, state: briefState() });
+      ctx.syncActionInFlight = true;
+
+      // Clear any running bg task's pathfinder goal so sync action can use pathfinder
+      // without triggering "goal was changed" on the sync action.
+      if (ctx.currentTask && ctx.currentTask.status === 'running') {
+        try { ensureBot().pathfinder.setGoal(null); } catch {}
+      }
+
+      const syncStart = Date.now();
+      try {
+        const result = await actionFn(body);
+        pushAction(ctx, actionName, 'done', syncStart, result);
+        recordActionOutcome(ctx, actionName, 'done');
+        return respond(res, 200, { ok: true, ...result, state: briefState() });
+      } finally {
+        ctx.syncActionInFlight = false;
+      }
     }
 
     if (req.method === 'DELETE') {
@@ -541,9 +668,18 @@ export function createBotHttpListener(deps) {
 
   } catch (err) {
     recordLastApiError(ctx, req.method, path, err);
-    const status = err.message.includes('not connected') ? 503 : 400;
+    const am = path.match(/^\/action\/(\w+)$/);
+    if (am) {
+      pushAction(ctx, am[1], 'error', Date.now(), null, err.message);
+      recordActionOutcome(ctx, am[1], 'error', err.message);
+    }
+    const msg = String(err.message || '');
+    const status =
+      /not connected|respawn in progress|dead —/i.test(msg) ? 503 : 400;
     respond(res, status, { ok: false, error: err.message, state: briefState() });
   }
   };
 }
+
+export { buildActionStats, classifyIdleReason };
 

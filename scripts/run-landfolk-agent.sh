@@ -5,10 +5,11 @@ NAME="${1:?Usage: run-landfolk-agent.sh NAME API_PORT PROMPT_FILE HOME_DIR}"
 API_PORT="${2:?Usage: run-landfolk-agent.sh NAME API_PORT PROMPT_FILE HOME_DIR}"
 PROMPT_FILE="${3:?Usage: run-landfolk-agent.sh NAME API_PORT PROMPT_FILE HOME_DIR}"
 AGENT_HOME="${4:?Usage: run-landfolk-agent.sh NAME API_PORT PROMPT_FILE HOME_DIR}"
-MODEL="${MODEL:-claude-sonnet-4-20250514}"
-PROVIDER="${PROVIDER:-anthropic}"
-
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+RESOLVE_AM="$SCRIPT_DIR/scripts/resolve-agent-model.py"
+MODEL="${MODEL:-$("$RESOLVE_AM" entrypoint run_landfolk_agent model "$AGENT_MODELS_JSON")}"
+PROVIDER="${PROVIDER:-$("$RESOLVE_AM" entrypoint run_landfolk_agent provider "$AGENT_MODELS_JSON")}"
 cd "$SCRIPT_DIR"
 
 # Do not override Anthropic auth here.

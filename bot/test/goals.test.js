@@ -37,12 +37,14 @@ describe('goals lib', () => {
     assert.equal(readCurrentForMetric('logs_total', { metric: 'logs_total' }, ctx), 5);
   });
 
-  it('mergePresetIntoStore adds new goals only', () => {
-    const store = { goals: [{ id: 'a', metric: 'logs_total' }], deficitSince: {} };
-    const preset = { goals: [{ id: 'a' }, { id: 'b', metric: 'food_score' }] };
+  it('mergePresetIntoStore adds new goals and updates existing ones', () => {
+    const store = { goals: [{ id: 'a', metric: 'logs_total', priority: 50 }], deficitSince: {} };
+    const preset = { goals: [{ id: 'a', priority: 80 }, { id: 'b', metric: 'food_score' }] };
     mergePresetIntoStore(store, preset);
     assert.equal(store.goals.length, 2);
     assert.ok(store.goals.some((g) => g.id === 'b'));
+    assert.equal(store.goals.find((g) => g.id === 'a').priority, 80);
+    assert.equal(store.goals.find((g) => g.id === 'a').metric, 'logs_total');
   });
 
   it('loadGoalsStore returns defaults for missing file', () => {

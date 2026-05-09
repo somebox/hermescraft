@@ -40,9 +40,16 @@ import {
   isMessageForMe,
   broadcastMentionsMe,
   stripMentionPrefix,
+  stripInlineNameMention,
   applySocialEvent,
   summarizeSocialGraph,
 } from './lib/chat.js';
+import {
+  ingredientCountsFromSlots,
+  recipeIngredientMap as _recipeIngredientMap,
+  bestRecipeForInventory as _bestRecipeForInventory,
+  buildCraftPlanFromRecipes,
+} from './lib/shared/recipe-ingredients.js';
 import {
   goalsFileForUser,
   loadGoalsStore,
@@ -189,18 +196,11 @@ function pushTaskHistoryRecord(task, finalStatus) {
 
 
 function recipeIngredientMap(recipe) {
-  const ings = {};
-  const addId = (id) => {
-    if (!id || id === -1) return;
-    const name = ctx.mcData.items[id]?.name || `id:${id}`;
-    ings[name] = (ings[name] || 0) + 1;
-  };
-  if (recipe.inShape) {
-    for (const row of recipe.inShape) for (const id of row) addId(id);
-  } else if (recipe.ingredients) {
-    for (const row of recipe.ingredients) for (const id of row) addId(id);
-  }
-  return ings;
+  return _recipeIngredientMap(recipe, ctx.mcData);
+}
+
+function bestRecipeForInventory(recipes, b, wantCount) {
+  return _bestRecipeForInventory(recipes, b.inventory.items(), wantCount, ctx.mcData);
 }
 
 function buildCraftPlan(b, itemName, wantCount = 1) {
@@ -215,36 +215,12 @@ function buildCraftPlan(b, itemName, wantCount = 1) {
     recipes = b.recipesFor(itemType.id, null, 1, table);
   }
   if (!recipes || !recipes.length) {
-    try {
-      recipes = b.recipesAll(itemType.id, null, 1);
-    } catch {
-      recipes = null;
-    }
+    try { recipes = b.recipesAll(itemType.id, null, 1); } catch { recipes = null; }
   }
-  if (!recipes || !recipes.length) {
-    return { ok: false, error: `No recipe for ${itemName}` };
-  }
-  const r = recipes[0];
-  const ingCounts = recipeIngredientMap(r);
-  const inv = b.inventory.items();
-  const countHave = (n) => inv.filter((i) => i.name === n).reduce((s, i) => s + i.count, 0);
-  const missing = [];
-  const have = {};
-  for (const [n, c] of Object.entries(ingCounts)) {
-    const need = c * wantCount;
-    const h = countHave(n);
-    have[n] = h;
-    if (h < need) missing.push({ name: n, need, have: h, short: need - h });
-  }
-  return {
-    ok: true,
-    item: itemName,
-    count: wantCount,
-    ingredients: ingCounts,
-    have,
-    missing,
-    needs_table: r.requiresTable !== false,
-  };
+  return buildCraftPlanFromRecipes({
+    recipes, invItems: b.inventory.items(), mcData: ctx.mcData,
+    chestSnapshots: ctx.chestSnapshots, itemName, wantCount,
+  });
 }
 
 function getMyName() {
@@ -327,21 +303,28 @@ async function handleChat(username, message) {
     } else {
       // Broadcast but mentions our name at start? Also queue as command.
       const mention = broadcastMentionsMe(routing.body, getMyName());
-      if (mention) {
-        const command = stripMentionPrefix(routing.body, mention);
-        if (command) {
-          ctx.commandQueue.push({
-            time: Date.now(),
-            from: username,
-            command,
-            channel: 'public_mention',
-            originalMessage: message,
-            status: 'pending',
-          });
-          rememberSocialEvent({ actor: username, kind: 'heard', channel: 'public_mention', command: true, message: command });
-          if (ctx.commandQueue.length > ctx.MAX_QUEUE) ctx.commandQueue.shift();
-          log(`[Queued via mention] ${username}: ${command}`);
-        }
+      const command =
+        mention != null
+          ? stripMentionPrefix(routing.body, mention)
+          : stripInlineNameMention(routing.body, getMyName());
+      if (command) {
+        ctx.commandQueue.push({
+          time: Date.now(),
+          from: username,
+          command,
+          channel: mention != null ? 'public_mention' : 'public_mention_inline',
+          originalMessage: message,
+          status: 'pending',
+        });
+        rememberSocialEvent({
+          actor: username,
+          kind: 'heard',
+          channel: mention != null ? 'public_mention' : 'public_mention_inline',
+          command: true,
+          message: command,
+        });
+        if (ctx.commandQueue.length > ctx.MAX_QUEUE) ctx.commandQueue.shift();
+        log(`[Queued via mention] ${username}: ${command}`);
       } else {
         rememberSocialEvent({ actor: username, kind: 'heard', channel: routing.channel, message: routing.body });
       }
@@ -380,7 +363,14 @@ function itemStr(item) {
 }
 
 function ensureBot() {
-  if (!ctx.bot || !ctx.botReady || !ctx.bot.entity) {
+  if (!ctx.bot || !ctx.botReady) {
+    throw new Error('Bot not connected. POST /connect to retry.');
+  }
+  // mineflayer health plugin: isAlive false while on death screen / respawn packet in flight
+  if (ctx.bot.isAlive === false) {
+    throw new Error('Bot dead — respawn in progress. Retry in 1–2s (mineflayer auto-respawn + server).');
+  }
+  if (!ctx.bot.entity) {
     throw new Error('Bot not connected. POST /connect to retry.');
   }
   return ctx.bot;
@@ -498,6 +488,7 @@ const ACTIONS = createAllActions({
   resolveMiningBlockName,
   resolveCraftItemName,
   buildCraftPlan,
+  bestRecipeForInventory,
   resolveInventoryItem,
   fairPlayHarvestTrunkCandidates,
   findVisibleBlocksByNameWithPhysicalSweep,
@@ -573,6 +564,16 @@ httpServer.listen(config.api.port, () => {
   log(`║  MC:   ${config.mc.host}:${config.mc.port}                ║`);
   log(`║  User: ${config.mc.username.padEnd(28)}║`);
   log(`╚═══════════════════════════════════════╝`);
+  const profile = process.env.AGENT_PROFILE || config.mc.username;
+  const agentModel = (process.env.AGENT_MODEL || '').trim();
+  const agentProvider = (process.env.AGENT_PROVIDER || '').trim();
+  log(`LLM routing (AGENT_* → /health, /dashboard): profile=${profile}`);
+  if (agentModel) {
+    log(`LLM model:   ${agentModel}`);
+    log(`LLM provider: ${agentProvider || '(unset)'}`);
+  } else {
+    log('LLM model:   (AGENT_MODEL not set — Hermes uses its own -m/--provider; dashboard may show null)');
+  }
 
   // Connect ctx.bot
   createBot().catch(e => {

@@ -1,0 +1,84 @@
+{
+  "goals": [
+    {
+      "id": "perimeter_fence",
+      "enabled": true,
+      "metric": "manual_check",
+      "target_min": 1,
+      "target_ok": 1,
+      "priority": 75,
+      "strategies_available": ["build_fence", "mc collect oak_log", "mc craft oak_fence", "mc craft oak_fence_gate", "mc place oak_fence"],
+      "constraints": { "preempt_class": "normal" }
+    },
+    {
+      "id": "supply_arrows",
+      "enabled": true,
+      "metric": "arrows_total",
+      "target_min": 32,
+      "target_ok": 64,
+      "priority": 70,
+      "strategies_available": ["craft_arrows", "mc craft arrow", "mc craft bow", "mc collect gravel", "mc discover flint"],
+      "constraints": { "preempt_class": "normal" }
+    },
+    {
+      "id": "supply_weapons",
+      "enabled": true,
+      "metric": "weapons_total",
+      "target_min": 2,
+      "target_ok": 4,
+      "priority": 65,
+      "strategies_available": ["craft_weapons", "mc craft_plan bow", "mc craft_plan stone_sword", "mc craft_plan iron_sword"],
+      "constraints": { "preempt_class": "normal" }
+    },
+    {
+      "id": "maintain_walls",
+      "enabled": true,
+      "metric": "manual_check",
+      "target_min": 1,
+      "target_ok": 1,
+      "priority": 60,
+      "strategies_available": ["build_walls", "mc collect cobblestone", "mc place cobblestone", "mc fill cobblestone"],
+      "constraints": { "preempt_class": "normal" }
+    },
+    {
+      "id": "maintain_tools",
+      "enabled": true,
+      "metric": "tool_durability_pct",
+      "target_min": 25,
+      "target_ok": 45,
+      "priority": 85,
+      "strategies_available": ["craft_tools", "mc craft_plan stone_axe", "mc craft_plan stone_pickaxe", "mc equip"],
+      "constraints": { "preempt_class": "normal" }
+    },
+    {
+      "id": "maintain_food",
+      "enabled": true,
+      "metric": "food_score",
+      "target_min": 30,
+      "target_ok": 60,
+      "priority": 80,
+      "strategies_available": ["hunt", "gather", "mc discover food"],
+      "constraints": { "preempt_class": "high" }
+    },
+    {
+      "id": "survive",
+      "enabled": true,
+      "metric": "survive_score",
+      "target_min": 70,
+      "target_ok": 90,
+      "priority": 95,
+      "strategies_available": ["eat", "flee", "heal", "fight"],
+      "constraints": { "preempt_class": "critical" }
+    },
+    {
+      "id": "low_threat",
+      "enabled": true,
+      "metric": "threat_score",
+      "target_min": 0,
+      "target_ok": 0,
+      "priority": 100,
+      "strategies_available": ["fight", "flee", "hold_position"],
+      "constraints": { "preempt_class": "critical" }
+    }
+  ]
+}

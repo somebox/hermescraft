@@ -194,8 +194,10 @@ export const RAW_COMMAND_DEFS = [
   g('pillar_step', 'world', ['tower', 'pillar'], {
     method: 'POST',
     path: '/action/pillar_step',
+    description: 'Climb upward by placing blocks underfoot. Use count to climb multiple blocks in one call (max 64).',
     argSchema: [
       { key: 'block', type: 'string' },
+      { key: 'count', type: 'number', description: 'blocks to climb (default 1, max 64)' },
       {
         key: 'jump',
         type: 'string',
@@ -205,13 +207,14 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) =>
       JSON.stringify({
         ...(p.block ? { block: p.block } : {}),
+        ...(p.count ? { count: Number(p.count) } : {}),
         ...(p.jump !== undefined && `${p.jump}`.trim() !== ''
           ? {
               jump: p.jump === true || `${p.jump}`.toLowerCase() === 'true' || `${p.jump}` === '1',
             }
           : {}),
       }),
-    examples: [`mc pillar_step`, `mc pillar_step dirt`, `mc pillar_step cobblestone false`],
+    examples: [`mc pillar_step`, `mc pillar_step cobblestone 10`, `mc pillar_step dirt 20`],
   }),
   g('pickup', 'world', ['p'], { method: 'POST', path: '/action/pickup', bodyFn: () => empty }),
   g('find_blocks', 'world', ['find', 'fb'], {
@@ -455,6 +458,93 @@ export const RAW_COMMAND_DEFS = [
         clear_stand: p.clear_stand !== false,
       }),
   }),
+  g('tunnel', 'world', ['mine_tunnel'], {
+    method: 'POST',
+    path: '/action/tunnel',
+    description:
+      'Dig a straight tunnel using repeated dig_area slices (industrial corridor primitive).',
+    usage: 'mc tunnel X Y Z DIR LENGTH [WIDTH] [HEIGHT]',
+    examples: ['mc tunnel 367 53 -593 north 16 2 3', 'mc tunnel \'{"direction":"east","length":12}\''],
+    argSchema: [
+      { key: 'x', type: 'number', default: null },
+      { key: 'y', type: 'number', default: null },
+      { key: 'z', type: 'number', default: null },
+      { key: 'direction', type: 'string', required: true },
+      { key: 'length', type: 'number', default: 12 },
+      { key: 'width', type: 'number', default: 2 },
+      { key: 'height', type: 'number', default: 3 },
+      { key: 'pickup', type: 'boolean', default: true },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        ...(p.x !== null && p.x !== undefined ? { x: Number(p.x) } : {}),
+        ...(p.y !== null && p.y !== undefined ? { y: Number(p.y) } : {}),
+        ...(p.z !== null && p.z !== undefined ? { z: Number(p.z) } : {}),
+        direction: String(p.direction),
+        length: Number(p.length ?? 12),
+        width: Number(p.width ?? 2),
+        height: Number(p.height ?? 3),
+        pickup: p.pickup !== false,
+      }),
+  }),
+  g('stair_down', 'world', ['mine_stairs', 'stairs_down'], {
+    method: 'POST',
+    path: '/action/stair_down',
+    description:
+      'Dig a descending staircase (one down per forward step) for reliable mine routes.',
+    usage: 'mc stair_down DIR [LENGTH] [X Y Z] [WIDTH] [HEIGHT]',
+    examples: ['mc stair_down north', 'mc stair_down north 20', 'mc stair_down north 12 367 53 -593 1 3', 'mc stair_down \'{"direction":"west","length":10}\''],
+    argSchema: [
+      { key: 'direction', type: 'string', required: true },
+      { key: 'length', type: 'number', default: 12 },
+      { key: 'x', type: 'number', default: null },
+      { key: 'y', type: 'number', default: null },
+      { key: 'z', type: 'number', default: null },
+      { key: 'width', type: 'number', default: 1 },
+      { key: 'height', type: 'number', default: 3 },
+      { key: 'pickup', type: 'boolean', default: true },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        ...(p.x !== null && p.x !== undefined ? { x: Number(p.x) } : {}),
+        ...(p.y !== null && p.y !== undefined ? { y: Number(p.y) } : {}),
+        ...(p.z !== null && p.z !== undefined ? { z: Number(p.z) } : {}),
+        direction: String(p.direction),
+        length: Number(p.length ?? 12),
+        width: Number(p.width ?? 1),
+        height: Number(p.height ?? 3),
+        pickup: p.pickup !== false,
+      }),
+  }),
+  g('stair_up', 'world', ['stairs_up', 'escape'], {
+    method: 'POST',
+    path: '/action/stair_up',
+    description:
+      'Dig an ascending staircase (one up per forward step). Places floor blocks over voids. Use to escape deep caves safely.',
+    usage: 'mc stair_up DIR [LENGTH] [X Y Z] [WIDTH] [HEIGHT]',
+    examples: ['mc stair_up north', 'mc stair_up north 20', 'mc stair_up east 30 350 -4 -567 1 3'],
+    argSchema: [
+      { key: 'direction', type: 'string', required: true },
+      { key: 'length', type: 'number', default: 12 },
+      { key: 'x', type: 'number', default: null },
+      { key: 'y', type: 'number', default: null },
+      { key: 'z', type: 'number', default: null },
+      { key: 'width', type: 'number', default: 1 },
+      { key: 'height', type: 'number', default: 3 },
+      { key: 'pickup', type: 'boolean', default: true },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        ...(p.x !== null && p.x !== undefined ? { x: Number(p.x) } : {}),
+        ...(p.y !== null && p.y !== undefined ? { y: Number(p.y) } : {}),
+        ...(p.z !== null && p.z !== undefined ? { z: Number(p.z) } : {}),
+        direction: String(p.direction),
+        length: Number(p.length ?? 12),
+        width: Number(p.width ?? 1),
+        height: Number(p.height ?? 3),
+        pickup: p.pickup !== false,
+      }),
+  }),
   g('terrain_top', 'world', ['ttop', 'surface_y'], {
     method: 'POST',
     path: '/action/terrain_top',
@@ -500,7 +590,29 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc toss ITEM [COUNT]',
   }),
 
-  g('sleep', 'world', ['bed'], { method: 'POST', path: '/action/sleep_bed', bodyFn: () => empty }),
+  g('sleep', 'world', ['bed'], {
+    method: 'POST',
+    path: '/action/sleep_bed',
+    bodyFn: () => empty,
+    description: 'Find a nearby bed (up to 32 blocks), navigate to it, and sleep. Sets your spawn point.',
+  }),
+  g('set_home', 'world', ['sethome'], {
+    method: 'POST',
+    path: '/action/set_home',
+    description: 'Set your respawn point. Uses server command if available, otherwise finds a bed to sleep in. Call this at your base before going deep underground.',
+    usage: 'mc set_home [X Y Z]',
+    examples: ['mc set_home', 'mc set_home 367 66 -606'],
+    argSchema: [
+      { key: 'x', type: 'number', required: false },
+      { key: 'y', type: 'number', required: false },
+      { key: 'z', type: 'number', required: false },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      ...(p.x !== undefined ? { x: Number(p.x) } : {}),
+      ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+      ...(p.z !== undefined ? { z: Number(p.z) } : {}),
+    }),
+  }),
   g('wait', 'world', ['w'], {
     method: 'POST',
     path: '/action/wait',
@@ -528,9 +640,20 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ player: p.player, message: p.message }),
   }),
 
-  /* death */
+  /* death / respawn */
   g('deaths', 'observe', [], { method: 'GET', path: '/deaths' }),
   g('deathpoint', 'movement', [], { method: 'POST', path: '/action/deathpoint', bodyFn: () => empty }),
+  g('respawn', 'world', [], {
+    method: 'POST',
+    path: '/action/respawn',
+    description: 'Kill and respawn at spawn point. Use when hopelessly stuck underground with no tools or resources to escape. All inventory is dropped at the death location.',
+    usage: 'mc respawn yes',
+    examples: ['mc respawn yes'],
+    argSchema: [
+      { key: 'confirm', type: 'string', required: true, description: 'Must be "yes" to confirm' },
+    ],
+    bodyFn: (p) => JSON.stringify({ confirm: p.confirm }),
+  }),
 
   /* chest */
   g('chest', 'world', ['list_container'], {

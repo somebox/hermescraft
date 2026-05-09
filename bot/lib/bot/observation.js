@@ -1,6 +1,7 @@
 import { scoreGoals } from '../goals/engine.js';
 import { refreshLeaseCheckpoint, taskToApi } from '../goals/tasks.js';
 import { summarizeSocialGraph } from '../shared/chat.js';
+import { buildActionStats, classifyIdleReason } from '../server/http-app.js';
 
 export function createObservation(deps) {
   const { ctx, ensureBot, fmt, posObj, loadLocations, filterEntitiesFairPlay, buildSceneSummary, fireDueReminders, FAIR_PLAY, itemStr } = deps;
@@ -160,6 +161,9 @@ export function createObservation(deps) {
       time: ctx.bot.time.timeOfDay,
       isDay: ctx.bot.time.timeOfDay < 12000,
     };
+    if (ctx.bot.isAlive === false) {
+      state.respawn_pending = true;
+    }
 
     // Nearby utility blocks — so the AI knows what resources are at hand
     try {
@@ -197,7 +201,7 @@ export function createObservation(deps) {
     if (recentSocial.length > 0) state.social = recentSocial;
 
     // Water hazard — surfaces immediately so agent can react
-    if (ctx.bot.entity.isInWater) {
+    if (ctx.bot.entity?.isInWater) {
       state.hazard = 'SUBMERGED in water — mc stop then mc jump to swim up, navigate to shore';
     }
 
@@ -313,6 +317,8 @@ export function createObservation(deps) {
       dashboard_signals: buildDashboardSignals(),
       last_api_error: ctx.lastApiError,
       recent_actions: [...ctx.actionHistory].reverse(),
+      action_stats_5m: buildActionStats(ctx),
+      idle_reason: classifyIdleReason(ctx),
     };
     if (dueReminders.length) payload.reminders_due = dueReminders;
     return payload;

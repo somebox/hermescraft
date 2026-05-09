@@ -84,6 +84,32 @@ function stoneTotal(inv) {
   return invCount(inv, (i) => i.name === 'cobblestone' || i.name === 'stone' || i.name === 'deepslate' || i.name === 'cobbled_deepslate');
 }
 
+function ironTotal(inv) {
+  return invCount(inv, (i) => i.name === 'iron_ingot' || i.name === 'raw_iron');
+}
+
+function coalTotal(inv) {
+  return invCount(inv, (i) => i.name === 'coal' || i.name === 'charcoal');
+}
+
+function diamondTotal(inv) {
+  return invCount(inv, (i) => i.name === 'diamond');
+}
+
+function pickaxeDurabilityMinPercent(inv) {
+  const picks = inv.filter((i) => i.name.endsWith('_pickaxe'));
+  const pcts = picks
+    .map((i) => {
+      const max = i.maxDurability;
+      if (!max || max <= 0) return 100;
+      const cur = i.durability == null ? max : max - i.durability;
+      return Math.min(100, Math.round((cur / max) * 100));
+    })
+    .filter((x) => x != null);
+  if (pcts.length === 0) return 0;
+  return Math.min(...pcts);
+}
+
 /**
  * Nearest hostile distance -> threat 0..1 (higher = worse)
  */
@@ -117,7 +143,11 @@ export function buildMetricContext(bot, mcData, opts = {}) {
   const logs_total = invCount(inv, (i) => LOG_NAMES(i.name));
   const food_score = foodScore(inv, mcData);
   const stone_total = stoneTotal(inv);
+  const iron_total = ironTotal(inv);
+  const coal_total = coalTotal(inv);
+  const diamond_total = diamondTotal(inv);
   const tool_durability_pct = toolDurabilityMinPercent(inv);
+  const pickaxe_durability_pct = pickaxeDurabilityMinPercent(inv);
   const arrow_total = invCount(inv, (i) => i.name === 'arrow');
   const health = bot?.health ?? 20;
   const foodLevel = bot?.food ?? 20;
@@ -128,7 +158,11 @@ export function buildMetricContext(bot, mcData, opts = {}) {
     logs_total,
     food_score,
     stone_total,
+    iron_total,
+    coal_total,
+    diamond_total,
     tool_durability_pct,
+    pickaxe_durability_pct,
     arrow_total,
     health,
     food_level: foodLevel,
@@ -147,8 +181,16 @@ export function readCurrentForMetric(metricKey, goal, ctx) {
       return ctx.food_score;
     case 'stone_total':
       return ctx.stone_total;
+    case 'iron_total':
+      return ctx.iron_total;
+    case 'coal_total':
+      return ctx.coal_total;
+    case 'diamond_total':
+      return ctx.diamond_total;
     case 'tool_durability_pct':
       return ctx.tool_durability_pct;
+    case 'pickaxe_durability_pct':
+      return ctx.pickaxe_durability_pct;
     case 'arrow_total':
       return ctx.arrow_total;
     case 'survive_score':
@@ -266,17 +308,21 @@ export function listPresets() {
 export function mergePresetIntoStore(store, preset) {
   const goals = Array.isArray(preset.goals) ? preset.goals : preset;
   if (!Array.isArray(goals)) return store;
-  const ids = new Set(store.goals.map((g) => g.id));
+  const byId = new Map(store.goals.map((g, i) => [g.id, i]));
   for (const g of goals) {
     if (!g.id) continue;
-    if (ids.has(g.id)) continue;
-    store.goals.push({
-      enabled: true,
-      strategies_available: [],
-      constraints: { preempt_class: 'normal' },
-      ...g,
-    });
-    ids.add(g.id);
+    if (byId.has(g.id)) {
+      const idx = byId.get(g.id);
+      store.goals[idx] = { ...store.goals[idx], ...g };
+    } else {
+      store.goals.push({
+        enabled: true,
+        strategies_available: [],
+        constraints: { preempt_class: 'normal' },
+        ...g,
+      });
+      byId.set(g.id, store.goals.length - 1);
+    }
   }
   return store;
 }

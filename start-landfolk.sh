@@ -13,7 +13,7 @@ MC_HOST="${MC_HOST:-192.168.1.202}"
 MC_PORT="${MC_PORT:-25565}"
 BASE_API_PORT=3001
 MODEL=""
-PROVIDER="${PROVIDER:-openrouter}"
+PROVIDER=""
 LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 BOTS_ONLY=false
 AGENTS_ONLY=false
@@ -25,17 +25,14 @@ _AN_KEY=$(grep "^ANTHROPIC_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 
 [ -n "$_AN_KEY" ] && export ANTHROPIC_API_KEY="$_AN_KEY"
 unset _OR_KEY _AN_KEY
 
-# Format: "Name:role:model" — model is optional, falls back to $MODEL
-# Full cast (uncomment to add more):
-#  "Steve:friend"
-#  "Reed:water"
-#  "Moss:garden"
-#  "Ember:fire"
-AGENTS=(
-  "Barley:food:nvidia/nemotron-3-super-120b-a12b:free"
-  "Flint:stone:tencent/hy3-preview:free"
-  "Mason:builder:deepseek/deepseek-v4-flash"
-)
+AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+RESOLVE_AM="$SCRIPT_DIR/scripts/resolve-agent-model.py"
+CLI_EXAMPLE="$("$RESOLVE_AM" defaults model "$AGENT_MODELS_JSON" 2>/dev/null || printf '%s' '')"
+
+AGENTS=()
+while IFS= read -r line; do
+  [ -n "${line:-}" ] && AGENTS+=("$line")
+done < <("$RESOLVE_AM" roster-lines "$AGENT_MODELS_JSON")
 
 PIDS=()
 BOT_PIDS=()
@@ -46,21 +43,25 @@ while [[ $# -gt 0 ]]; do
     --agents-only) AGENTS_ONLY=true; shift ;;
     --port) MC_PORT="$2"; shift 2 ;;
     --help|-h)
-      echo "Landfolk — 5 community characters"
-      echo "Usage: ./start-landfolk.sh MODEL [--bots-only] [--agents-only] [--port PORT]"
-      echo "Example: ./start-landfolk.sh deepseek/deepseek-chat-v4-0515"
+      echo "Landfolk — multi-character launcher (roster: agents.* with \"role\" in data/agent-models.json)"
+      echo "Usage: ./start-landfolk.sh [MODEL] [--bots-only] [--agents-only] [--port PORT]"
+      echo "MODEL defaults to defaults.model from data/agent-models.json if omitted."
+      if [ -n "$CLI_EXAMPLE" ]; then
+        echo "Example: ./start-landfolk.sh $CLI_EXAMPLE"
+      fi
       exit 0 ;;
     -*) echo "Unknown option: $1"; exit 1 ;;
     *) MODEL="$1"; shift ;;
   esac
 done
 
-if [ -z "$MODEL" ]; then
-  echo "Usage: ./start-landfolk.sh MODEL [options]"
-  echo "Example: ./start-landfolk.sh deepseek/deepseek-chat-v4-0515"
+MODEL="${MODEL:-$("$RESOLVE_AM" defaults model "$AGENT_MODELS_JSON")}"
+PROVIDER="${PROVIDER:-$("$RESOLVE_AM" defaults provider "$AGENT_MODELS_JSON")}"
+
+if [ "${#AGENTS[@]}" -eq 0 ]; then
+  echo "ERROR: no roster lines — add agents with a \"role\" field in ${AGENT_MODELS_JSON}"
   exit 1
 fi
-
 mkdir -p "$LOG_DIR"
 
 cleanup() {

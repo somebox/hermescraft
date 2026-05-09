@@ -1,4 +1,5 @@
-export const CURRENT_CAST = ['steve', 'reed', 'moss', 'flint', 'ember'];
+/** Landfolk cast from data/agent-models.json (lowercase MC usernames). */
+export const CURRENT_CAST = ['gatherer', 'flint', 'mason', 'barley'];
 export const LEGACY_CAST = ['marcus', 'sarah', 'jin', 'dave', 'lisa', 'tommy', 'elena', 'mia', 'genghis', 'cleopatra', 'tesla', 'pirate', 'monk', 'goblin'];
 
 export function buildKnownNames(myName = '', nearbyNames = []) {
@@ -68,6 +69,21 @@ export function broadcastMentionsMe(messageBody, myName) {
 
 export function stripMentionPrefix(messageBody, matchedName) {
   return String(messageBody || '').trim().slice(String(matchedName || '').length).replace(/^[,!.:\s]+/, '').trim();
+}
+
+/** Broadcast text that contains @botname or botname as a word (not only at line start). */
+export function stripInlineNameMention(messageBody, myName) {
+  const raw = String(messageBody || '').trim();
+  const self = String(myName || '').toLowerCase();
+  if (!raw || !self || self.length < 2) return null;
+  const esc = self.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!new RegExp(`\\b@?${esc}\\b`, 'i').test(raw)) return null;
+  const cmd = raw
+    .replace(new RegExp(`\\b@?${esc}\\b`, 'gi'), ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[,!.:\s-]+|[,!.:\s-]+$/g, '')
+    .trim();
+  return cmd.length ? cmd : raw;
 }
 
 export function ensureSocialNode(graph, name) {

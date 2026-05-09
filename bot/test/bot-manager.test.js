@@ -11,8 +11,9 @@ test('reconnectBackoffMs caps exponential delay', () => {
   assert.equal(reconnectBackoffMs(10), 60000);
 });
 
-test('STUCK_MOVEMENT_ACTIONS includes core movement actions', () => {
-  for (const a of ['goto', 'collect', 'follow', 'combo']) {
+test('STUCK_MOVEMENT_ACTIONS includes pathing but not collect (in-place mining)', () => {
+  for (const a of ['goto', 'follow', 'combo']) {
     assert.ok(STUCK_MOVEMENT_ACTIONS.includes(a), a);
   }
+  assert.equal(STUCK_MOVEMENT_ACTIONS.includes('collect'), false);
 });

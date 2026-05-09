@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 # Start HermesCraft companion with configurable model
 # Usage: ./start-companion.sh [model]
-# Examples:
-#   ./start-companion.sh                          # default: minimax/minimax-m2.7
-#   ./start-companion.sh tencent/hy3-preview:free
-#   ./start-companion.sh anthropic/claude-sonnet-4
+# Default model/provider: defaults in data/agent-models.json (optional entrypoints.<key>)
 
 set -euo pipefail
 
-MODEL="${1:-minimax/minimax-m2.7}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+RESOLVE_AM="$SCRIPT_DIR/scripts/resolve-agent-model.py"
+
+if [[ $# -ge 1 && -n "${1:-}" ]]; then
+  MODEL="$1"
+  shift
+else
+  MODEL="$("$RESOLVE_AM" entrypoint companion model "$AGENT_MODELS_JSON")"
+fi
+PROVIDER="${PROVIDER:-$("$RESOLVE_AM" entrypoint companion provider "$AGENT_MODELS_JSON")}"
+
 MC_HOST="${MC_HOST:-192.168.1.202}"
 MC_PORT="${MC_PORT:-25565}"
 MC_USERNAME="${MC_USERNAME:-HermesBot}"
 API_PORT="${API_PORT:-3001}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 MC_USERNAME_LC="$(printf '%s' "$MC_USERNAME" | tr '[:upper:]' '[:lower:]')"
 mkdir -p "$LOG_DIR"
@@ -137,7 +144,7 @@ while true; do
     echo "═══ Round $ROUND ($(date +%H:%M:%S)) ═══"
 
     if [ "$ROUND" -eq 1 ]; then
-        MC_DEBUG_LOG="$MC_DEBUG_LOG" hermes chat --yolo --max-turns 500 -m "$MODEL" --provider openrouter \
+        MC_DEBUG_LOG="$MC_DEBUG_LOG" hermes chat --yolo --max-turns 500 -m "$MODEL" --provider "$PROVIDER" \
             -q "$INITIAL_PROMPT" 2>&1 | tee -a "$LOG"
 
         # Extract session ID for resumption
@@ -148,7 +155,7 @@ while true; do
         fi
     else
         # Resume previous session with context preserved
-        MC_DEBUG_LOG="$MC_DEBUG_LOG" hermes chat --yolo --max-turns 500 -m "$MODEL" --provider openrouter \
+        MC_DEBUG_LOG="$MC_DEBUG_LOG" hermes chat --yolo --max-turns 500 -m "$MODEL" --provider "$PROVIDER" \
             --continue "$SESSION_NAME" \
             -q "$CONTINUE_PROMPT" 2>&1 | tee -a "$LOG"
     fi

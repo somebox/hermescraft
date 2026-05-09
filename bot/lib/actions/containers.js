@@ -257,15 +257,31 @@ export function createContainerActions(deps) {
 
     async smelt_start({ input, fuel, count = 1 }) {
       const b = ensureBot();
-      const furnaceBlock = b.findBlock({
-        matching: block => block.name === 'furnace' || block.name === 'lit_furnace' || block.name === 'blast_furnace' || block.name === 'smoker',
-        maxDistance: 4,
-      });
-      if (!furnaceBlock) throw new Error('No furnace within 4 blocks. Place one first.');
+      const isFurnace = block =>
+        block.name === 'furnace' || block.name === 'lit_furnace' ||
+        block.name === 'blast_furnace' || block.name === 'smoker';
+
+      let furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 4 });
+      if (!furnaceBlock) {
+        furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 32 });
+        if (furnaceBlock) {
+          const fp = furnaceBlock.position;
+          await b.pathfinder.goto(new goals.GoalNear(fp.x, fp.y, fp.z, 3));
+          furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 4 });
+        }
+      }
+      if (!furnaceBlock) throw new Error('No furnace within 32 blocks. Place one first (craft furnace from 8 cobblestone).');
+
+      const inputItem = b.inventory.items().find(i => i.name === input);
+      if (!inputItem) throw new Error(`No ${input} in inventory. Withdraw it from a chest first.`);
 
       const furnace = await b.openFurnace(furnaceBlock);
-      const inputItem = b.inventory.items().find(i => i.name === input);
-      if (!inputItem) { furnace.close(); throw new Error(`No ${input} in inventory.`); }
+
+      // Clear finished output so it doesn't block new input
+      const existingOutput = furnace.outputItem();
+      if (existingOutput) await furnace.takeOutput();
+      const existingInput = furnace.inputItem();
+      if (existingInput && existingInput.name !== input) await furnace.takeInput();
 
       const qty = Math.min(count, inputItem.count, 64);
       await furnace.putInput(inputItem.type, null, qty);
@@ -291,7 +307,8 @@ export function createContainerActions(deps) {
       });
 
       const minutes = Math.ceil(qty * 10 / 60);
-      return { result: `Loaded ${qty} ${input} into furnace at ${fp.x},${fp.y},${fp.z}. ETA: ~${minutes} min. Go do something else!` };
+      const collected = existingOutput ? ` Collected ${existingOutput.count}x ${existingOutput.name} from furnace.` : '';
+      return { result: `Loaded ${qty} ${input} into furnace at ${fp.x},${fp.y},${fp.z}. ETA: ~${minutes} min.${collected} Go do something else!` };
     },
 
     async furnace_check({ x, y, z }) {

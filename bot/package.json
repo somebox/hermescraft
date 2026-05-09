@@ -7,16 +7,18 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "log-view": "node scripts/landfolk-log-view.mjs"
   },
   "dependencies": {
+    "blessed": "^0.1.81",
+    "minecraft-data": "^3.69.0",
     "mineflayer": "^4.23.0",
-    "mineflayer-pathfinder": "^2.4.5",
-    "mineflayer-pvp": "^1.3.2",
     "mineflayer-armor-manager": "^2.0.1",
     "mineflayer-auto-eat": "^5.0.0",
     "mineflayer-collectblock": "^1.6.0",
-    "minecraft-data": "^3.69.0",
+    "mineflayer-pathfinder": "^2.4.5",
+    "mineflayer-pvp": "^1.3.2",
     "vec3": "^0.1.10"
   },
   "engines": {

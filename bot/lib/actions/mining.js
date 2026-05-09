@@ -39,6 +39,44 @@ export function createMiningActions(deps) {
             count: batchSize * 3,
           });
         }
+        if (found.length === 0 && !isNonSolidPlant) {
+          // Fair-play fallback: scout nearby ore coordinates and use short-range
+          // assist to avoid repeated "look/check" loops in tight caves.
+          const scout = b.findBlocks({
+            matching: blockType.id,
+            maxDistance: 10,
+            count: Math.max(batchSize * 2, 8),
+          });
+          if (scout.length > 0) {
+            const nearest = scout.sort(
+              (a, c) => b.entity.position.distanceTo(a) - b.entity.position.distanceTo(c),
+            )[0];
+            try {
+              await b.pathfinder.goto(new goals.GoalNear(nearest.x, nearest.y, nearest.z, 2));
+            } catch {
+              // Keep graceful failure path below with an actionable hint.
+            }
+            const reVisible = await findVisibleBlocksByNameWithPhysicalSweep(blockName, {
+              range: 16,
+              count: batchSize * 3,
+            });
+            found = reVisible.map(
+              (entry) => new Vec3(entry.position.x, entry.position.y, entry.position.z),
+            );
+            if (found.length === 0) {
+              // Last-resort short-range scout-assist: harvest only very nearby
+              // coordinates to keep behavior practical without long-range xray.
+              found = scout
+                .filter((p) => b.entity.position.distanceTo(p) <= 10)
+                .map((p) => new Vec3(p.x, p.y, p.z));
+              if (found.length === 0) {
+                throw new Error(
+                  `Can't see any ${blockName} right now. Nearest scout hit at ${nearest.x}, ${nearest.y}, ${nearest.z}. Try mc goto_near ${nearest.x} ${nearest.y} ${nearest.z} 2, then mc scene and mc collect ${blockName} 2.`,
+                );
+              }
+            }
+          }
+        }
       } else {
         found = b.findBlocks({
           matching: blockType.id,
@@ -103,6 +141,7 @@ export function createMiningActions(deps) {
       /** @type {Set<string>} */
       const tipSet = new Set();
       for (const pos of sorted.slice(0, batchSize)) {
+        if (ctx.currentTask?.status !== 'running') break;
         try {
           const target = b.blockAt(pos);
           if (!target || target.name !== blockName) continue;
@@ -111,15 +150,23 @@ export function createMiningActions(deps) {
 
           const dist = b.entity.position.distanceTo(pos);
           if (dist > 4.5) {
-            // Navigate close — use bot's Y for the goal to avoid tower-climb
-            // pathfinding. For tree logs, we walk to the trunk base and dig up.
-            const navY = Math.floor(b.entity.position.y);
-            try {
-              await b.pathfinder.goto(new goals.GoalNear(pos.x, navY, pos.z, 2));
-            } catch {
-              // Fallback: try reaching the block's actual position
+            const curPos = b.entity.position;
+            const horizDist = Math.abs(pos.x - curPos.x) + Math.abs(pos.z - curPos.z);
+            if (horizDist > 4) {
+              // Far away horizontally — navigate to ground level near the tree
+              // to avoid long pathfinder timeouts on distant elevated blocks
+              const navY = Math.floor(curPos.y);
               try {
-                await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3));
+                await b.pathfinder.goto(new goals.GoalNear(pos.x, navY, pos.z, 2));
+              } catch {
+                try {
+                  await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3));
+                } catch { continue; }
+              }
+            } else {
+              // Close horizontally but above — let pathfinder scaffold up
+              try {
+                await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 2));
               } catch { continue; }
             }
           }

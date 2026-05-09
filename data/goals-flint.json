@@ -1,0 +1,183 @@
+{
+  "goals": [
+    {
+      "enabled": true,
+      "strategies_available": [
+        "flee",
+        "fight",
+        "hold_position"
+      ],
+      "constraints": {
+        "preempt_class": "critical"
+      },
+      "id": "low_threat",
+      "metric": "threat_score",
+      "target_min": 0,
+      "target_ok": 0,
+      "priority": 100
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "eat",
+        "flee",
+        "heal"
+      ],
+      "constraints": {
+        "preempt_class": "critical"
+      },
+      "id": "survive",
+      "metric": "survive_score",
+      "target_min": 70,
+      "target_ok": 90,
+      "priority": 95
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "hunt",
+        "gather",
+        "mc discover food",
+        "mc eat",
+        "mc attack cow",
+        "mc pickup"
+      ],
+      "constraints": {
+        "preempt_class": "high"
+      },
+      "id": "maintain_food",
+      "metric": "food_score",
+      "target_min": 30,
+      "target_ok": 60,
+      "priority": 90
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "craft_pickaxe",
+        "mc craft_plan stone_pickaxe",
+        "mc craft_plan iron_pickaxe"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_pickaxe",
+      "metric": "pickaxe_durability_pct",
+      "target_min": 35,
+      "target_ok": 60,
+      "priority": 85
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "mine_iron",
+        "mc discover iron",
+        "mc collect iron_ore",
+        "mc smelt raw_iron"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "supply_iron",
+      "metric": "iron_total",
+      "target_min": 16,
+      "target_ok": 32,
+      "priority": 80
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "mine_coal",
+        "mc discover coal",
+        "mc collect coal_ore"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "supply_coal",
+      "metric": "coal_total",
+      "target_min": 32,
+      "target_ok": 64,
+      "priority": 75
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "mine_stone",
+        "mc collect stone",
+        "mc tunnel"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "supply_cobblestone",
+      "metric": "stone_total",
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 60
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "deep_mine",
+        "mc discover diamond",
+        "mc collect diamond_ore"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "supply_diamond",
+      "metric": "diamond_total",
+      "target_min": 4,
+      "target_ok": 8,
+      "priority": 40
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "deposit",
+        "mc deposit iron_ingot",
+        "mc list_container"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "deposit_iron",
+      "metric": "chest_mark_total",
+      "params": {
+        "chest_mark": "mine_chest"
+      },
+      "target_min": 32,
+      "target_ok": 64,
+      "priority": 55
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "deposit",
+        "mc deposit coal",
+        "mc list_container"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "deposit_coal",
+      "metric": "chest_mark_total",
+      "params": {
+        "chest_mark": "mine_chest"
+      },
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 45
+    }
+  ],
+  "deficitSince": {
+    "maintain_food": 1778291550869,
+    "supply_iron": 1778291550869,
+    "supply_coal": 1778291550869,
+    "supply_cobblestone": 1778291550869,
+    "supply_diamond": 1778291550869,
+    "maintain_pickaxe": 1778292484680,
+    "survive": 1778293738211
+  }
+}

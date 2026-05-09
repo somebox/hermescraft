@@ -1,5 +1,17 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # HermesCraft mc CLI — delegates to Node ESM runner (bot/cli/index.mjs)
 set -o pipefail
 DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec node "$DIR/../bot/cli/index.mjs" "$@"
+
+# Hard guardrail: agents must not invoke mc connect directly.
+if [ "${1:-}" = "connect" ]; then
+  echo "Blocked mc command: connect. Use landfolk-control/startup flow instead." >&2
+  exit 126
+fi
+
+# Resolve real node, bypassing restricted-bin stubs on PATH
+for _n in /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node; do
+  [ -x "$_n" ] && NODE_BIN="$_n" && break
+done
+: "${NODE_BIN:=node}"
+exec "$NODE_BIN" "$DIR/../bot/cli/index.mjs" "$@"

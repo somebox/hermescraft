@@ -16,12 +16,13 @@ export function createAllActions(deps) {
     ...createContainerActions(deps),
   };
 
-  // Combat and crafting modules reference ACTIONS (for combo/discover),
-  // so we pass the partial map in and merge after.
+  // Combat, crafting, and world modules reference ACTIONS (for combo/discover,
+  // dig_area, pickup), so we pass the partial map in and merge after.
   const withSelf = { ...deps, ACTIONS: base };
   const combat = createCombatActions(withSelf);
   const crafting = createCraftingActions(withSelf);
+  const world = createWorldActions(withSelf);
 
-  Object.assign(base, combat, crafting);
+  Object.assign(base, combat, crafting, world);
   return base;
 }

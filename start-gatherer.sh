@@ -25,7 +25,7 @@ MC_HOST="${MC_HOST:-192.168.1.202}"
 MC_PORT="${MC_PORT:-25565}"
 MC_USERNAME="${MC_USERNAME:-Gatherer}"
 API_PORT="${API_PORT:-3001}"
-PROVIDER="${PROVIDER:-openrouter}"
+PROVIDER=""
 LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 MONITOR_INTERVAL_S="${MONITOR_INTERVAL_S:-10}"
 AUTO_RESUME="${AUTO_RESUME:-true}"
@@ -79,6 +79,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+RESOLVE_AM="$SCRIPT_DIR/scripts/resolve-agent-model.py"
+if [ "$BOTS_ONLY" = true ]; then
+  MODEL="${MODEL:-(bots-only)}"
+else
+  MODEL="${MODEL:-$("$RESOLVE_AM" Gatherer model "$AGENT_MODELS_JSON")}"
+fi
+PROVIDER="${PROVIDER:-$("$RESOLVE_AM" Gatherer provider "$AGENT_MODELS_JSON")}"
+
 MC_USERNAME_LC="$(printf '%s' "$MC_USERNAME" | tr '[:upper:]' '[:lower:]')"
 API_URL="http://localhost:${API_PORT}"
 
@@ -115,20 +124,6 @@ sync_gaming_skill_md() {
   mkdir -p "$dest_dir"
   cp "$src" "$dest_dir/SKILL.md"
 }
-
-if [ "$AGENTS_ONLY" = false ]; then
-  if [ -z "$MODEL" ] && [ "$BOTS_ONLY" = false ]; then
-    echo "Usage: ./start-gatherer.sh MODEL [options]"
-    echo "Example: ./start-gatherer.sh deepseek/deepseek-chat-v4-0515"
-    exit 1
-  fi
-  if [ -z "$MODEL" ] && [ "$BOTS_ONLY" = true ]; then
-    MODEL="(bots-only)"
-  fi
-elif [ -z "$MODEL" ]; then
-  echo "Usage: ./start-gatherer.sh MODEL --agents-only"
-  exit 1
-fi
 
 # ── Hermes CLI (needed for full run or agents-only) ──
 HERMES=""

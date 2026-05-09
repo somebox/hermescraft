@@ -6,6 +6,7 @@ export {
   isMessageForMe,
   broadcastMentionsMe,
   stripMentionPrefix,
+  stripInlineNameMention,
   ensureSocialNode,
   applySocialEvent,
   summarizeSocialGraph,

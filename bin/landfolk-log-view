@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# HermesCraft TUI log viewer (requires: cd bot && npm install)
+set -euo pipefail
+ROOT="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
+export BASE_API_PORT="${BASE_API_PORT:-3001}"
+for _n in /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node; do
+  [ -x "$_n" ] && NODE_BIN="$_n" && break
+done
+: "${NODE_BIN:=node}"
+cd "$ROOT/bot"
+if [ ! -d node_modules/blessed ]; then
+  echo "Installing blessed (one-time)…" >&2
+  npm install blessed --no-audit --no-fund --silent
+fi
+exec "$NODE_BIN" scripts/landfolk-log-view.mjs "$@"

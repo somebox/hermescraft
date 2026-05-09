@@ -198,7 +198,7 @@ cd ~/hermescraft
 HERMES_MODEL=openrouter/anthropic/claude-sonnet-4 MC_PORT=<LAN_PORT> ./hermescraft.sh
 ```
 
-(`hermescraft.sh` requires `HERMES_MODEL` or `--model` so it never falls back to a global Hermes default such as Opus. `--bot-only` skips the LLM and does not need a model.)
+(`hermescraft.sh` requires `HERMES_MODEL` or `--model` so it never falls back to an expensive global Hermes default. `--bot-only` skips the LLM and does not need a model.)
 
 Examples in chat:
 - `hermes follow me`

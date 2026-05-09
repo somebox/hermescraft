@@ -8,13 +8,14 @@ BIN_DIR="$SCRIPT_DIR/bin"
 PROMPT_DIR="$SCRIPT_DIR/prompts/landfolk"
 SOUL_FILE="$SCRIPT_DIR/SOUL-landfolk.md"
 
-# Preserve the currently working Anthropic env from the calling shell.
-# Do not override it with stale on-disk values.
+AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+RESOLVE_AM="$SCRIPT_DIR/scripts/resolve-agent-model.py"
+
 MC_HOST="${MC_HOST:-localhost}"
 MC_PORT="${MC_PORT:-25565}"
 BASE_API_PORT=3001
-MODEL="${MODEL:-claude-sonnet-4-20250514}"
-PROVIDER="${PROVIDER:-anthropic}"
+MODEL="${MODEL:-$("$RESOLVE_AM" entrypoint landfolk model "$AGENT_MODELS_JSON")}"
+PROVIDER="${PROVIDER:-$("$RESOLVE_AM" entrypoint landfolk provider "$AGENT_MODELS_JSON")}"
 BOTS_ONLY=false
 AGENTS_ONLY=false
 

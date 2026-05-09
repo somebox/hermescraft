@@ -96,7 +96,7 @@ PROVIDER="${HERMES_PROVIDER:-${PROVIDER:-openrouter}}"
 API_URL="http://localhost:$API_PORT"
 
 if [ "$BOT_ONLY" != true ] && [ -z "$MODEL" ]; then
-    echo "  ✗ No LLM model set — refusing Hermes default (can use a costly default like Opus)."
+    echo "  ✗ No LLM model set — refusing Hermes default (can fall back to an expensive model)."
     echo "    Set HERMES_MODEL or pass --model, e.g.:"
     echo "      HERMES_MODEL=openrouter/anthropic/claude-sonnet-4 ./hermescraft.sh"
     echo "      ./hermescraft.sh --model claude-sonnet-4 --provider anthropic"

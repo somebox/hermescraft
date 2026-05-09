@@ -6,6 +6,7 @@ import {
   isMessageForMe,
   broadcastMentionsMe,
   stripMentionPrefix,
+  stripInlineNameMention,
   applySocialEvent,
   summarizeSocialGraph,
 } from '../lib/chat.js';
@@ -71,6 +72,13 @@ test('mention parsing strips prefix cleanly', () => {
 
   assert.equal(broadcastMentionsMe('@hermes status', 'Gatherer'), '@hermes');
   assert.equal(stripMentionPrefix('@hermes status', '@hermes'), 'status');
+});
+
+test('stripInlineNameMention catches mid-sentence Flint / @Flint', () => {
+  assert.equal(stripInlineNameMention('hey Flint can you mine coal', 'Flint'), 'hey can you mine coal');
+  assert.equal(stripInlineNameMention('Flint: wait — actually mine west', 'flint'), 'wait — actually mine west');
+  assert.equal(stripInlineNameMention('deflint is not a mention', 'flint'), null);
+  assert.equal(stripInlineNameMention('hello everyone', 'flint'), null);
 });
 
 test('isMessageForMe respects direct targets and bot aliases', () => {

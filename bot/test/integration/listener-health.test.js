@@ -27,7 +27,10 @@ function stubDeps() {
       currentTask: null,
       taskHistory: [],
       actionHistory: [],
+      actionCounters: { window_ms: 300000, events: [] },
       lastApiError: null,
+      bootTime: Date.now(),
+      positionHistory: [],
     },
     spatial: {
       generateMap: () => ({ map: '', legend: '', entities_on_map: [], center: null }),
