@@ -182,5 +182,42 @@ Validation: L3.1, L3.2, L3.4 created and run twice each; all green at consecutiv
 
 `b.blockAt` returning a non-air block doesn't guarantee the block is fully loaded — for chunks beyond render distance, blockAt returns `null` or an unknown-name block, which my handler currently routes to `NO_BLOCK_AT_COORD`. The §8 contract reserves `OUT_OF_RANGE` for "distance > 4.5 and pathfind unsuccessful" — which is the *known-but-unreachable* case. Tested with `dig 200, 65, 200`: routed to NO_BLOCK_AT_COORD (target.name was "unknown"). For now this is acceptable — workers see `ok=false` and a code; the distinction matters more for autonomous nav decisions and can be sharpened in Sprint 2.
 
+### Action contract: mc collect (DONE) + Phase-1 silent-failure root cause
+
+Refactor at `bot/lib/actions/mining.js:collect`. New return shapes:
+
+| Path | Returned |
+|---|---|
+| Success / partial success | `ok=true, data.{mined_count, requested_count, attempted, partial_failure, causes, started_inventory, ended_inventory, dropped_items_collected, dropped_item_positions}` |
+| UNKNOWN_BLOCK | typo / unknown blockName |
+| NO_VISIBLE_BLOCKS | `findBlocks` and raycast both empty |
+| ALL_PATHFIND_FAILED | every harvest attempt's pathfind threw |
+| ALL_DIG_FAILED | every reachable target's `b.dig` threw or timed out |
+| MIXED_FAILURE | mixed cause distribution; `error.observed_state.causes` shows the breakdown |
+
+Per-cause counters track WHY each loop iteration bailed:
+`not_target_block`, `pathfind_failed`, `out_of_range_post_path`, `skipped_self_block`, `dig_failed`. These are exposed in both success (`data.causes`) and failure (`error.observed_state.causes`) responses, so workers and the steward can see WHERE attempts went wrong.
+
+### F8. Phase-1 silent failure: root cause was `ctx.currentTask?.status` on null
+
+The original loop opened with `if (ctx.currentTask?.status !== 'running') break;`. When called via the synchronous `/action/collect` route, `ctx.currentTask` is `null` (it's only set for backgrounded `/task/*` calls). Optional-chain on null returns `undefined`. `undefined !== 'running'` is `true`. The loop **broke on iteration 0** without entering the body. `lastCollectErr` stayed empty. The line 218 throw `if (collected === 0 && lastCollectErr)` never fired. Function returned `{ result: "Mined 0 oak_log..." }` with `ok` defaulted to true by the HTTP wrapper. **That was the silent failure.**
+
+Fix: `if (ctx.currentTask && ctx.currentTask.status !== 'running') break;` — only honour the cancel-flag when there IS a background task. For sync calls (no task), keep harvesting.
+
+This is the kind of bug a behavior_test would *also* surface: a worker calls `mc collect oak_log 3`, the response says ok=true with no mined_count, the bot then calls `mc inventory` and sees no logs, and is confused about reality. The capability_test catches it immediately — exactly what the architecture's "code-grounded tests" §15 promised.
+
+### L3 status (after dig + collect contracts)
+
+| Test | Status | Cards |
+|---|---|---|
+| L3.1_dig_basic | green (2) | t_ba653df3, t_ad113549 |
+| L3.2_dig_air | green (2) | t_acf42e01, t_4a0083c9 |
+| L3.3_dig_wrong_tool | untested | needs equip-aware fixture |
+| L3.4_dig_protected | green (2) | t_5399a1c1, t_cdde9146 |
+| L3.5_collect_basic | green (2) | t_5bbb2c72, t_cd133bd4 |
+| L3.6_collect_silent_failure | **green (2) — Phase-1 bug fixed** | t_670523a5, t_027d466b |
+
+5/14 L3 tests green; 1 deferred (TOOL_INADEQUATE), 8 not yet written. The five we've shipped exercise the two most important contracts (dig + collect) including the silent-failure regression.
+
 
 

@@ -1,0 +1,44 @@
+# L3.6 — collect_silent_failure: the Phase-1 bug.
+#
+# Purpose: previously, mc collect on unreachable trees returned ok=true with
+# mined_count=0 — silent failure. After the contract refactor, this must
+# return ok=false with a structured error code.
+#
+# Region: 3 oak_log floating at (50, 90, 0) — far above the spawn platform
+# in landfolk-test. Bot stays on the platform (no nearby logs); pathfind
+# to (50, 90, 0) will succeed (it's just up; bot can pillar) but a Y=90
+# trunk is far enough above the platform that the time budget runs out.
+# In fair-play mode, raycast from (0, 65, 0) to (50, 90, 0) won't have
+# line-of-sight, so the candidate hits the scout-fallback path.
+#
+# Reproduction goal: trigger the cause-counting path. Either NO_VISIBLE_BLOCKS
+# (raycast fails entirely) or ALL_PATHFIND_FAILED (candidates found but
+# pathfind exhausts budget). Either is a structured ok=false.
+#
+# Expected response:
+#   ok=false,
+#   error.code in [NO_VISIBLE_BLOCKS, ALL_PATHFIND_FAILED],
+#   error.observed_state.mined_count == 0,
+#   error.observed_state.requested_count == 3.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill 45 60 -5 55 100 5 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  # 3 oak_log at (50, 90, 0..2) — floating, no scaffolding to reach
+  - "execute in landfolk-test run setblock 50 90 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 50 90 1 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 50 90 2 minecraft:oak_log"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill 45 60 -5 55 100 5 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

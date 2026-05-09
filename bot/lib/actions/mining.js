@@ -6,12 +6,34 @@ export function createMiningActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveMiningBlockName, fairPlayHarvestTrunkCandidates, findVisibleBlocksByNameWithPhysicalSweep, entitiesMatchingAfterLookSweep, rememberSocialEvent } = deps;
   return {
     async collect({ block, count = 1 }) {
+      // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8 mc collect) ─
+      // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
+      // ok=true requires mined_count > 0; mined_count==0 is a contract violation.
+      // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
+
       const b = ensureBot();
       const blockName = resolveMiningBlockName(block);
       const blockType = ctx.mcData.blocksByName[blockName];
-      if (!blockType) throw new Error(`Unknown block "${blockName}". Check spelling (e.g. oak_log, iron_ore, cobblestone).`);
+      if (!blockType) {
+        return {
+          ok: false,
+          error: {
+            code: 'UNKNOWN_BLOCK',
+            message: `Unknown block "${blockName}". Check spelling (e.g. oak_log, iron_ore, cobblestone).`,
+            observed_state: { requested_block: blockName },
+            retry_safe: false,
+          },
+        };
+      }
 
       const batchSize = Math.min(count, 20);
+      const inventoryAt = () =>
+        b.inventory.items().reduce((acc, it) => {
+          acc[it.name] = (acc[it.name] || 0) + it.count;
+          return acc;
+        }, /** @type {Record<string, number>} */ ({}));
+      const startedInventory = inventoryAt();
+      const startedBlockCount = startedInventory[blockName] || 0;
 
       /** @type {Vec3[]} */
       let found = [];
@@ -70,9 +92,22 @@ export function createMiningActions(deps) {
                 .filter((p) => b.entity.position.distanceTo(p) <= 10)
                 .map((p) => new Vec3(p.x, p.y, p.z));
               if (found.length === 0) {
-                throw new Error(
-                  `Can't see any ${blockName} right now. Nearest scout hit at ${nearest.x}, ${nearest.y}, ${nearest.z}. Try mc goto_near ${nearest.x} ${nearest.y} ${nearest.z} 2, then mc scene and mc collect ${blockName} 2.`,
-                );
+                return {
+                  ok: false,
+                  error: {
+                    code: 'NO_VISIBLE_BLOCKS',
+                    message: `Can't see any ${blockName} right now. Nearest scout hit at ${nearest.x}, ${nearest.y}, ${nearest.z}.`,
+                    observed_state: {
+                      requested_block: blockName,
+                      requested_count: count,
+                      mined_count: 0,
+                      nearest_scout: { x: nearest.x, y: nearest.y, z: nearest.z },
+                      fair_play: true,
+                    },
+                    next_action_hint: `mc goto_near ${nearest.x} ${nearest.y} ${nearest.z} 2, then mc scene and mc collect ${blockName} 2`,
+                    retry_safe: false,
+                  },
+                };
               }
             }
           }
@@ -86,13 +121,25 @@ export function createMiningActions(deps) {
       }
 
       if (found.length === 0) {
-        throw new Error(
-          ctx.fairPlayMode
-            ? isTrunkHarvest
-              ? `No ${blockName} with harvest line-of-sight in range (leaves/water between you and the trunk are ok; dirt/stone/other wood are not). Try mc discover logs, mc goto_near, or circle the tree.`
-              : `Can't see any ${blockName} right now. Turn, move, or use mc scene/mc look before collecting.`
-            : `No ${blockName} found within 64 blocks.`,
-        );
+        return {
+          ok: false,
+          error: {
+            code: 'NO_VISIBLE_BLOCKS',
+            message: ctx.fairPlayMode
+              ? isTrunkHarvest
+                ? `No ${blockName} with harvest line-of-sight in range (leaves/water between you and the trunk are ok; dirt/stone/other wood are not).`
+                : `Can't see any ${blockName} right now. Turn, move, or use mc scene/mc look before collecting.`
+              : `No ${blockName} found within 64 blocks.`,
+            observed_state: {
+              requested_block: blockName,
+              requested_count: count,
+              mined_count: 0,
+              fair_play: ctx.fairPlayMode,
+              search_range: ctx.fairPlayMode ? 16 : 64,
+            },
+            retry_safe: false,
+          },
+        };
       }
 
       const botPos = b.entity.position;
@@ -103,7 +150,23 @@ export function createMiningActions(deps) {
         return true;
       });
 
-      if (safe.length === 0) throw new Error(`No safely reachable ${blockName} found.`);
+      if (safe.length === 0) {
+        return {
+          ok: false,
+          error: {
+            code: 'NO_VISIBLE_BLOCKS',
+            message: `No safely reachable ${blockName} found (all candidates were below the bot).`,
+            observed_state: {
+              requested_block: blockName,
+              requested_count: count,
+              mined_count: 0,
+              candidates_found: found.length,
+              candidates_safely_reachable: 0,
+            },
+            retry_safe: false,
+          },
+        };
+      }
 
       // Group blocks into clusters (trees) by XZ proximity, then sort:
       // 1. Nearest cluster first (minimizes travel)
@@ -138,13 +201,31 @@ export function createMiningActions(deps) {
 
       let collected = 0;
       let lastCollectErr = '';
+      // Per-cause attempt counters — these are why ok=true with mined_count=0
+      // used to slip through. Now every `continue` in the loop bumps a counter.
+      const causes = {
+        not_target_block: 0,    // block changed under us before we got there
+        pathfind_failed: 0,     // both pathfind attempts threw
+        out_of_range_post_path: 0, // pathfind "succeeded" but distance still > 5.5
+        skipped_self_block: 0,  // would dig the block we're standing on
+        dig_failed: 0,          // b.dig threw (timeout, server reject, etc.)
+      };
+      const attempted = Math.min(sorted.length, batchSize);
       /** @type {Set<string>} */
       const tipSet = new Set();
       for (const pos of sorted.slice(0, batchSize)) {
-        if (ctx.currentTask?.status !== 'running') break;
+        // Only honour the cancel-flag when there IS an active background task.
+        // For synchronous /action/collect calls, ctx.currentTask is null —
+        // the optional-chained `status` was undefined, which `!== 'running'`,
+        // which BROKE the loop on iteration 0. That was the Phase-1 silent
+        // failure: 0 attempts, 0 causes, 0 collected, no error to surface.
+        if (ctx.currentTask && ctx.currentTask.status !== 'running') break;
         try {
           const target = b.blockAt(pos);
-          if (!target || target.name !== blockName) continue;
+          if (!target || target.name !== blockName) {
+            causes.not_target_block++;
+            continue;
+          }
           const { hints } = await equipForDig(b, target);
           for (const h of hints) tipSet.add(h);
 
@@ -152,37 +233,48 @@ export function createMiningActions(deps) {
           if (dist > 4.5) {
             const curPos = b.entity.position;
             const horizDist = Math.abs(pos.x - curPos.x) + Math.abs(pos.z - curPos.z);
+            let pathOk = false;
             if (horizDist > 4) {
-              // Far away horizontally — navigate to ground level near the tree
-              // to avoid long pathfinder timeouts on distant elevated blocks
               const navY = Math.floor(curPos.y);
               try {
                 await b.pathfinder.goto(new goals.GoalNear(pos.x, navY, pos.z, 2));
+                pathOk = true;
               } catch {
                 try {
                   await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3));
-                } catch { continue; }
+                  pathOk = true;
+                } catch { /* both attempts failed */ }
               }
             } else {
-              // Close horizontally but above — let pathfinder scaffold up
               try {
                 await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 2));
-              } catch { continue; }
+                pathOk = true;
+              } catch { /* close pathfind failed */ }
+            }
+            if (!pathOk) {
+              causes.pathfind_failed++;
+              continue;
             }
           }
 
-          // Re-fetch target (may have been mined by falling tree physics etc.)
           const recheck = b.blockAt(pos);
-          if (!recheck || recheck.name !== blockName) continue;
-          // Skip if out of reach or if we'd dig the block we're standing on
+          if (!recheck || recheck.name !== blockName) {
+            causes.not_target_block++;
+            continue;
+          }
           const curPos = b.entity.position;
-          if (curPos.distanceTo(pos) > 5.5) continue;
+          if (curPos.distanceTo(pos) > 5.5) {
+            causes.out_of_range_post_path++;
+            continue;
+          }
           const feetY = Math.floor(curPos.y);
           if (pos.y === feetY - 1 &&
               Math.abs(pos.x - Math.floor(curPos.x)) < 1 &&
-              Math.abs(pos.z - Math.floor(curPos.z)) < 1) continue;
+              Math.abs(pos.z - Math.floor(curPos.z)) < 1) {
+            causes.skipped_self_block++;
+            continue;
+          }
 
-          // Dig with timeout to prevent indefinite hangs
           await Promise.race([
             b.dig(recheck, true),
             new Promise((_, rej) => setTimeout(() => rej(new Error('dig_timeout')), 12000)),
@@ -194,11 +286,15 @@ export function createMiningActions(deps) {
           if (m === 'dig_timeout') {
             try { b.stopDigging(); } catch {}
           }
+          causes.dig_failed++;
           lastCollectErr = m;
           log(`[collect] Error mining ${blockName} at ${pos.x},${pos.y},${pos.z}: ${m}`);
         }
       }
 
+      // Pickup pass — collect drops the digs created.
+      let pickedUp = 0;
+      const pickedUpPositions = [];
       await sleep(600);
       for (let attempt = 0; attempt < 3; attempt++) {
         const drops = Object.values(b.entities)
@@ -207,25 +303,89 @@ export function createMiningActions(deps) {
         if (drops.length === 0) break;
         for (const drop of drops.slice(0, 6)) {
           try {
-            await b.pathfinder.goto(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1));
+            const dropPos = drop.position.clone();
+            await b.pathfinder.goto(new goals.GoalNear(dropPos.x, dropPos.y, dropPos.z, 1));
             await sleep(400);
-          } catch {}
+            pickedUpPositions.push({ x: Math.round(dropPos.x * 10) / 10, y: Math.round(dropPos.y * 10) / 10, z: Math.round(dropPos.z * 10) / 10 });
+          } catch { /* drop pickup pathfind fail; pickup attempt continues */ }
         }
       }
 
-      const invCount = b.inventory.items().filter(i => i.name === blockName).reduce((s, i) => s + i.count, 0);
-      const remaining = count - collected;
-      if (collected === 0 && lastCollectErr) {
-        throw new Error(
-          `Could not mine any ${blockName} (${batchSize} attempts). Last error: ${lastCollectErr}`,
-        );
-      }
+      const endedInventory = inventoryAt();
+      const endedBlockCount = endedInventory[blockName] || 0;
+      pickedUp = Math.max(0, endedBlockCount - startedBlockCount);
+
       const tips = [...tipSet];
       const tipsSuffix = tips.length ? ` Tips: ${tips.join(' | ')}` : '';
+
+      // ─ Failure path: collected === 0 ─
+      // Pick the best error code based on which cause dominated.
+      if (collected === 0) {
+        let code;
+        let message;
+        if (attempted === 0) {
+          // Should be impossible — `safe.length === 0` already returned NO_VISIBLE_BLOCKS.
+          code = 'NO_VISIBLE_BLOCKS';
+          message = `Found candidates but none made it into the harvest queue.`;
+        } else if (causes.pathfind_failed === attempted) {
+          code = 'ALL_PATHFIND_FAILED';
+          message = `Found ${attempted} ${blockName} candidates but pathfinding failed on every attempt.`;
+        } else if (causes.dig_failed >= attempted - causes.not_target_block - causes.skipped_self_block) {
+          code = 'ALL_DIG_FAILED';
+          message = `Reached ${attempted - causes.pathfind_failed - causes.not_target_block - causes.skipped_self_block} ${blockName} but every dig failed (${lastCollectErr || 'unknown reason'}).`;
+        } else {
+          // Mixed cause distribution; prefer the highest counter as the code root.
+          const top = Object.entries(causes).sort((a, c) => c[1] - a[1])[0];
+          code = top[0] === 'pathfind_failed' ? 'ALL_PATHFIND_FAILED'
+               : top[0] === 'dig_failed'      ? 'ALL_DIG_FAILED'
+               : 'MIXED_FAILURE';
+          message = `Could not mine any ${blockName} (${attempted} attempts). Dominant cause: ${top[0]} (${top[1]}/${attempted}).`;
+        }
+        return {
+          ok: false,
+          error: {
+            code,
+            message,
+            observed_state: {
+              requested_block: blockName,
+              requested_count: count,
+              mined_count: 0,
+              attempted,
+              causes,
+              candidates_found: found.length,
+              last_inner_error: lastCollectErr || null,
+            },
+            retry_safe: code !== 'ALL_PATHFIND_FAILED', // pathfinding rarely improves on retry without the bot moving
+          },
+          // Preserve hints for callers that surface tips.
+          ...(tips.length ? { hints: tips } : {}),
+        };
+      }
+
+      // ─ Success path (full or partial) ─
+      const remaining = count - collected;
+      const partialFailure = remaining > 0;
       const msg = remaining > 0
-        ? `Mined ${collected} ${blockName} (${remaining} more needed). Have ${invCount} ${blockName} in inventory.${tipsSuffix}`
-        : `Mined ${collected}/${count} ${blockName}. Have ${invCount} ${blockName} in inventory.${tipsSuffix}`;
-      return { result: msg, ...(tips.length ? { hints: tips } : {}) };
+        ? `Mined ${collected} ${blockName} (${remaining} more needed). Have ${endedBlockCount} ${blockName} in inventory.${tipsSuffix}`
+        : `Mined ${collected}/${count} ${blockName}. Have ${endedBlockCount} ${blockName} in inventory.${tipsSuffix}`;
+
+      return {
+        ok: true,
+        data: {
+          mined_count: collected,
+          requested_count: count,
+          attempted,
+          causes,
+          partial_failure: partialFailure,
+          started_inventory: startedInventory,
+          ended_inventory: endedInventory,
+          dropped_items_collected: pickedUp,
+          dropped_item_positions: pickedUpPositions,
+        },
+        // Legacy fields for goal engine + existing tests.
+        result: msg,
+        ...(tips.length ? { hints: tips } : {}),
+      };
     },
 
     async dig({ x, y, z }) {
