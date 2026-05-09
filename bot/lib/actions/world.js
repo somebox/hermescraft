@@ -279,52 +279,161 @@ export function createWorldActions(deps) {
 
   // ── Building ─────────────────────────────────────
   async place({ block: blockName, x, y, z }) {
+    // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8 mc place) ─
+    // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
+    // ok=true requires block to be at target coord AFTER placement (verified via blockAt).
+
     const b = ensureBot();
-    const item = b.inventory.items().find(i => i.name === blockName);
-    if (!item) throw new Error(`No ${blockName} in inventory.`);
-
-    await b.equip(item, 'hand');
     const targetPos = new Vec3(x, y, z);
-
-    const existing = b.blockAt(targetPos);
-    if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
-      throw new Error(
-        `Cannot place at ${x}, ${y}, ${z}: block is already ${existing.name}. Choose an empty air cell with a solid face next to it (or dig this cell first).`,
-      );
-    }
-
-    if (b.entity.position.distanceTo(targetPos) > 4.5) {
-      await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
-    }
-
     const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
-    const neighborSummary = offsets
-      .map(([dx, dy, dz]) => {
-        const ref = b.blockAt(targetPos.offset(dx, dy, dz));
-        const nm = ref?.name ?? '?';
-        const solid = Boolean(ref && ref.name !== 'air' && ref.name !== 'cave_air');
-        return `${dx},${dy},${dz}=${nm}${solid ? '' : '*air*'}`;
-      })
-      .join(' | ');
-    const botP = posObj(b.entity.position);
 
-    for (const [dx, dy, dz] of offsets) {
+    // Capture neighbor map once so all error paths see the same observed state.
+    const neighborMap = offsets.reduce((acc, [dx, dy, dz]) => {
       const ref = b.blockAt(targetPos.offset(dx, dy, dz));
-      if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
-        try {
-          await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
-          return { result: `Placed ${blockName} at ${x}, ${y}, ${z}` };
-        } catch (err) {
-          const reason = /** @type {Error} */ (err).message || String(err);
-          throw new Error(
-            `Mineflayer place failed for ${blockName} at ${x},${y},${z} (attach offset ${dx},${dy},${dz}): ${reason}. Neighbors: ${neighborSummary}. Bot ~${botP ? `${botP.x},${botP.y},${botP.z}` : '?'}.`,
-          );
-        }
+      acc[`${dx},${dy},${dz}`] = {
+        block: ref?.name ?? null,
+        is_air: !ref || ref.name === 'air' || ref.name === 'cave_air' || ref.name === 'void_air',
+        position: { x: x + dx, y: y + dy, z: z + dz },
+      };
+      return acc;
+    }, /** @type {Record<string, {block: string|null, is_air: boolean, position: {x:number,y:number,z:number}}>} */ ({}));
+
+    // ── INVENTORY_MISSING ──
+    const item = b.inventory.items().find(i => i.name === blockName);
+    if (!item) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVENTORY_MISSING',
+          message: `No ${blockName} in inventory.`,
+          observed_state: {
+            requested_block: blockName,
+            requested_coord: { x, y, z },
+            inventory_summary: b.inventory.items().reduce((acc, it) => {
+              acc[it.name] = (acc[it.name] || 0) + it.count;
+              return acc;
+            }, /** @type {Record<string, number>} */ ({})),
+          },
+          retry_safe: false,
+        },
+      };
+    }
+
+    // ── TARGET_OCCUPIED ──
+    const existing = b.blockAt(targetPos);
+    if (existing && existing.name !== 'air' && existing.name !== 'cave_air' && existing.name !== 'void_air') {
+      return {
+        ok: false,
+        error: {
+          code: 'TARGET_OCCUPIED',
+          message: `Cannot place at ${x}, ${y}, ${z}: block is already ${existing.name}. Dig it first or choose another cell.`,
+          observed_state: {
+            requested_block: blockName,
+            requested_coord: { x, y, z },
+            existing_block: existing.name,
+          },
+          next_action_hint: `mc dig ${x} ${y} ${z}`,
+          retry_safe: false,
+        },
+      };
+    }
+
+    // ── OUT_OF_RANGE (path or pathfind) ──
+    const distance = b.entity.position.distanceTo(targetPos);
+    if (distance > 4.5) {
+      try {
+        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+      } catch (err) {
+        return {
+          ok: false,
+          error: {
+            code: 'OUT_OF_RANGE',
+            message: `Target at (${x}, ${y}, ${z}) is ${Math.round(distance * 10) / 10} blocks away and pathfind failed: ${/** @type {Error} */ (err).message}`,
+            observed_state: {
+              requested_block: blockName,
+              requested_coord: { x, y, z },
+              distance: Math.round(distance * 10) / 10,
+              bot_position: posObj(b.entity.position),
+            },
+            retry_safe: false,
+          },
+        };
       }
     }
-    throw new Error(
-      `No solid neighbor for ${blockName} at ${x},${y},${z}. Neighbors: ${neighborSummary}. Bot ~${botP ? `${botP.x},${botP.y},${botP.z}` : '?'}. Stand beside the face you want to extend (target cell must touch solid on one side).`,
-    );
+
+    await b.equip(item, 'hand');
+
+    // ── Try each face that has a solid neighbor ──
+    let lastPlaceErr = null;
+    let triedAnyNeighbor = false;
+    for (const [dx, dy, dz] of offsets) {
+      const ref = b.blockAt(targetPos.offset(dx, dy, dz));
+      if (!ref || ref.name === 'air' || ref.name === 'cave_air' || ref.name === 'void_air') continue;
+      triedAnyNeighbor = true;
+      try {
+        await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+
+        // Verify placement actually landed (mineflayer can ack without the block landing).
+        const after = b.blockAt(targetPos);
+        if (!after || after.name !== blockName) {
+          lastPlaceErr = `placeBlock returned but blockAt(${x},${y},${z}) is ${after?.name ?? 'null'}`;
+          continue;
+        }
+
+        return {
+          ok: true,
+          data: {
+            placed_block: blockName,
+            face_used: { dx, dy, dz, neighbor_block: ref.name, neighbor_position: { x: x + dx, y: y + dy, z: z + dz } },
+            position_after: posObj(b.entity.position),
+            requested_coord: { x, y, z },
+          },
+          // Legacy field for callers that look for `result`.
+          result: `Placed ${blockName} at ${x}, ${y}, ${z}`,
+        };
+      } catch (err) {
+        lastPlaceErr = /** @type {Error} */ (err).message || String(err);
+      }
+    }
+
+    // ── NO_SOLID_NEIGHBOR / INTERRUPTED ──
+    // If we tried at least one neighbor but every attempt failed, that's an
+    // INTERRUPTED-style failure (placement was attempted but server rejected
+    // — bot facing wrong way, target out of reach mid-flight, anti-grief, etc.).
+    // If no neighbor was even solid, that's NO_SOLID_NEIGHBOR.
+    if (triedAnyNeighbor) {
+      return {
+        ok: false,
+        error: {
+          code: 'INTERRUPTED',
+          message: `Placement attempts all rejected by server: ${lastPlaceErr}`,
+          observed_state: {
+            requested_block: blockName,
+            requested_coord: { x, y, z },
+            neighbors: neighborMap,
+            bot_position: posObj(b.entity.position),
+            distance: Math.round(distance * 10) / 10,
+          },
+          retry_safe: true,
+        },
+      };
+    }
+
+    return {
+      ok: false,
+      error: {
+        code: 'NO_SOLID_NEIGHBOR',
+        message: `No solid neighbor for ${blockName} at ${x},${y},${z}. Stand beside the face you want to extend (target cell must touch solid on one side).`,
+        observed_state: {
+          requested_block: blockName,
+          requested_coord: { x, y, z },
+          neighbors: neighborMap,
+          bot_position: posObj(b.entity.position),
+        },
+        next_action_hint: `Place a block adjacent to (${x},${y},${z}) first, or use mc fill / mc pillar_step.`,
+        retry_safe: false,
+      },
+    };
   },
 
   async place_fill({ block: blockName, x1, y1, z1, x2, y2, z2, hollow = false }) {

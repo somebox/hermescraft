@@ -344,5 +344,51 @@ This also led to extending the platform east to x=10 (was 11×11; now 16×11) so
 
 **14/16 L0 green**; 2 deferred (L0.2 disconnected, L0.5 empty marks). The perception block is solid. Action contracts shipped: dig + collect. Remaining for the architecture's Sprint 1 exit gate: place + craft + chest contracts; the two deferred L0 tests; one L1 smoke run.
 
+### Action contract: mc place (DONE) + F15 + F16
+
+Refactor at `bot/lib/actions/world.js:place`. Same pattern as dig/collect: structured `{ok, data, error}`, soft failures route to error.code rather than throwing.
+
+| Path | Returned |
+|---|---|
+| Success | `ok=true, data.{placed_block, face_used:{dx,dy,dz,neighbor_block,neighbor_position}, position_after, requested_coord}` |
+| INVENTORY_MISSING | `ok=false, error.observed_state.inventory_summary` (per-name counts) |
+| TARGET_OCCUPIED | `ok=false, error.observed_state.existing_block`, `next_action_hint='mc dig X Y Z'` |
+| OUT_OF_RANGE | `ok=false, error.observed_state.{distance, bot_position}` |
+| NO_SOLID_NEIGHBOR | `ok=false, error.observed_state.neighbors` (full 6-face map: block name + is_air + position) |
+| INTERRUPTED | `ok=false, retry_safe=true` — placement attempted but server rejected (anti-grief, mid-flight position drift) |
+
+Key implementation detail: success path now **verifies** `b.blockAt(targetPos).name === blockName` AFTER the placeBlock call — mineflayer can ack a place that didn't land (e.g., placement-against-water glitch). If the verification fails, the loop tries the next solid neighbor; if all fail, returns INTERRUPTED.
+
+Tests: L3.20 success, L3.21 INVENTORY_MISSING, L3.22 TARGET_OCCUPIED, L3.23 NO_SOLID_NEIGHBOR — all green at consecutive_pass=2.
+
+### F15. Fixture YAML inline comments need explicit handling
+
+`run-fixture.sh`'s naive YAML parser (intentionally pyyaml-free) didn't strip inline `# comments` on quoted scalars. A line like `- "clear Flint"  # explicit empty inventory` was passed verbatim to rcon, which rejected `"clear Flint" # ...` as unknown command. **Caused L3.21 to falsely return ok=true** because Flint kept the previous test's cobblestone in inventory.
+
+Fixed: when a value starts with `"` or `'`, take only the substring inside the quote pair. Otherwise strip everything from the first ` #` (whitespace + hash). Lesson: naive YAML is fine for this scope but must handle the standard inline-comment pattern.
+
+### F16. mc place pathfind to floating coords throws → routes to OUT_OF_RANGE
+
+Initial L3.23 fixture put the no-neighbor target at (3, 70, 0) — distance 5.6 from bot. The `b.entity.position.distanceTo(targetPos) > 4.5` branch triggered `b.pathfinder.goto(GoalNear)` which can't reach a floating point with no support → throws → routes to OUT_OF_RANGE rather than NO_SOLID_NEIGHBOR.
+
+Fix: place the target within 4.5 blocks (3, 67, 0 — distance 3.24) so the pathfind branch is skipped and the neighbor check runs. Lesson: NO_SOLID_NEIGHBOR is reachable only when target is within direct reach AND has no solid faces. To exercise OUT_OF_RANGE specifically, use a target deliberately beyond 4.5 with no terrain to path to.
+
+### L3 status update (after place contracts)
+
+| Test | Status | Coverage |
+|---|---|---|
+| L3.1 dig_basic | green (2) | success + dropped_items |
+| L3.2 dig_air | green (2) | NO_BLOCK_AT_COORD |
+| L3.3 dig_wrong_tool | untested | needs equip-aware fixture |
+| L3.4 dig_protected | green (2) | PROTECTED_BLOCK |
+| L3.5 collect_basic | green (2) | success + inventory delta |
+| L3.6 collect_silent_failure | green (2) | Phase-1 bug fixed |
+| L3.20 place_basic | green (2) | success + face_used |
+| L3.21 place_inventory_missing | green (2) | INVENTORY_MISSING |
+| L3.22 place_target_occupied | green (2) | TARGET_OCCUPIED |
+| L3.23 place_no_solid_neighbor | green (2) | NO_SOLID_NEIGHBOR |
+
+10/14 + 4 added = **10/18 L3 entries green**. Three Phase-2 action contracts shipped (dig/collect/place). Two remaining: craft + chest.
+
 
 

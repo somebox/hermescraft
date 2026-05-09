@@ -82,6 +82,12 @@ L3:
   - { id: L3.13_craft_table_required_absent,  bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
   - { id: L3.14_craft_missing_ingredients,    bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
 
+  # mc place contract suite (Sprint 1)
+  - { id: L3.20_place_basic,                  bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_7417c508, t_84624816 — face=(0,-1,0) onto platform stone" }
+  - { id: L3.21_place_inventory_missing,      bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_6db171c9, t_1523d487 — clear→place returns INVENTORY_MISSING" }
+  - { id: L3.22_place_target_occupied,        bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_d9ea0713, t_ffb7e9b8 — TARGET_OCCUPIED with next_action_hint" }
+  - { id: L3.23_place_no_solid_neighbor,      bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_b5f4b2cd, t_c9843eb5 — NO_SOLID_NEIGHBOR with all-air neighbor map" }
+
 L4:
   - { id: L4.1_dig_stone_with_pickaxe,        bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
   - { id: L4.2_dig_stone_no_pickaxe,          bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }

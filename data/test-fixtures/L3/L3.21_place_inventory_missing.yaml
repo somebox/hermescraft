@@ -1,0 +1,25 @@
+# L3.21 — place_inventory_missing: mc place returns INVENTORY_MISSING
+# when the requested block isn't in the bot's inventory.
+#
+# Setup: bot has nothing (clear); request mc place cobblestone.
+# Action: POST /action/place {block:"cobblestone", x:3, y:65, z:0}
+# Expected:
+#   ok=false,
+#   error.code=="INVENTORY_MISSING",
+#   error.observed_state.requested_block=="cobblestone".
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"      # explicit empty inventory
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

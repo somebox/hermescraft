@@ -84,9 +84,23 @@ for line in lines:
             break  # left the section
         if stripped.startswith('-'):
             cmd = stripped[1:].strip()
-            # strip surrounding quotes if any
-            if (cmd.startswith('"') and cmd.endswith('"')) or (cmd.startswith("'") and cmd.endswith("'")):
-                cmd = cmd[1:-1]
+            # If the value is wrapped in quotes, take only what's inside the
+            # quotes — discards inline `# comment` trailers correctly.
+            # Otherwise (unquoted scalar), strip an inline `# comment` if any
+            # whitespace precedes the hash.
+            if cmd.startswith('"'):
+                end = cmd.find('"', 1)
+                if end > 0:
+                    cmd = cmd[1:end]
+            elif cmd.startswith("'"):
+                end = cmd.find("'", 1)
+                if end > 0:
+                    cmd = cmd[1:end]
+            else:
+                # naive inline-comment strip on unquoted scalar
+                m2 = re.search(r'\s+#', cmd)
+                if m2:
+                    cmd = cmd[:m2.start()].rstrip()
             out.append(cmd)
 
 for c in out:

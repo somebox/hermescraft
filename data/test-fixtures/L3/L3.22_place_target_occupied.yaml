@@ -1,0 +1,29 @@
+# L3.22 — place_target_occupied: mc place returns TARGET_OCCUPIED
+# when the cell already has a non-air block.
+#
+# Setup: cobblestone at (3, 65, 0); bot has cobblestone in inventory.
+# Action: POST /action/place {block:"cobblestone", x:3, y:65, z:0}
+# Expected:
+#   ok=false,
+#   error.code=="TARGET_OCCUPIED",
+#   error.observed_state.existing_block=="cobblestone",
+#   error.next_action_hint suggests mc dig.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 3 65 0 minecraft:cobblestone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:cobblestone 4"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 3 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
