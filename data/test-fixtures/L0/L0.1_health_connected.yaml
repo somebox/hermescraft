@@ -1,0 +1,28 @@
+# L0.1 — health_connected: bot is online and reports correct position
+#
+# Purpose: smoke test that the bot HTTP /health endpoint reports connected=true,
+# valid position, and is responsive in the test world.
+#
+# Region: spawn area at (0, 65, 0) — the 5x5 platform built at world creation.
+#
+# Bot setup: clear inventory, teleport to spawn, full health.
+# Action: external runner calls GET /health and checks connected==true.
+
+world: landfolk-test
+
+prep:
+  # Tear down any prior artifacts in the spawn region (leave the 11x11 platform at Y=64)
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  # Move bot to test world, then tp at Y=72 so it falls onto the platform with air around it
+  # (avoids chunk-load race where bot suffocates inside the platform).
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  # Return bot to production world; clear any items dropped during test
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
