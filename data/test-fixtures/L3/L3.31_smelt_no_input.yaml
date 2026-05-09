@@ -1,0 +1,27 @@
+# L3.31 — smelt_no_input: smelt requested with input absent → NO_INPUT.
+#
+# Setup: empty inventory (no raw_iron); furnace at (2, 65, 0).
+# Action: POST /action/smelt {input:"raw_iron", count:1}
+# Expected:
+#   ok=false,
+#   error.code=="NO_INPUT",
+#   error.observed_state.requested_input=="raw_iron",
+#   error.observed_state.started_inventory is empty.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

@@ -1,0 +1,31 @@
+# L3.13 — craft_table_absent: mc craft chest with NO crafting_table → TABLE_REQUIRED.
+#
+# Setup: 8 oak_planks in inventory; no crafting_table within 32 blocks.
+# Bot has materials but no bench.
+# Expected:
+#   ok=false, error.code=="TABLE_REQUIRED",
+#   error.observed_state.nearest_table is null,
+#   error.next_action_hint mentions placing a crafting_table.
+#
+# Note: prep ensures NO crafting_table exists in landfolk-test by `fill ... air`
+# over the entire test region. The fill is Y=65+ to preserve the platform.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  # also clear any nearby underground chunks that might have one (none in flat,
+  # but defensive). Y=63 down to Y=50 underground:
+  - "execute in landfolk-test run fill -16 50 -16 16 64 16 minecraft:stone replace minecraft:crafting_table"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:oak_planks 8"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

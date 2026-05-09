@@ -1,0 +1,27 @@
+# L3.12 — craft_table_present: mc craft chest with crafting_table at 3 blocks.
+#
+# Chest recipe: 8 planks (any wood) → 1 chest. Requires crafting_table.
+# Setup: 8 oak_planks in inventory; crafting_table at (2, 65, 0) — 2 blocks east.
+# Bot at (0.5, 65, 0.5), distance to table is sqrt(2.5² + 0.5²) = 2.55, well within 4.
+# Expected:
+#   ok=true, data.crafted_count==1, recipe_used.requires_table==true,
+#   ingredients_consumed has oak_planks: 8, ended_inventory.chest >= 1.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:crafting_table"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:oak_planks 8"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

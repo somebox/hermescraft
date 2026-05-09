@@ -1,0 +1,35 @@
+# L3.30 — smelt_basic: iron_ore + coal → iron_ingot.
+#
+# Smelting takes 10s per item; this fixture asks for 1 to keep the test fast.
+#
+# Setup:
+#   bot has 1 iron_ore + 1 coal
+#   furnace at (2, 65, 0) — within 4-block reach.
+# Action: POST /action/smelt {input:"raw_iron", count:1}
+#   (note: 1.21+ smelts raw_iron, not iron_ore — we give raw_iron in prep)
+# Expected:
+#   ok=true,
+#   data.smelted_count == 1,
+#   data.output_item == "iron_ingot",
+#   data.fuel_used.name == "coal",
+#   data.ended_inventory.iron_ingot >= 1.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:raw_iron 1"
+  - "give Flint minecraft:coal 1"
+  - "effect give Flint minecraft:saturation 1 30"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

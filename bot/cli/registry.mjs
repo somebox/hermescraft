@@ -281,7 +281,23 @@ export const RAW_COMMAND_DEFS = [
         count: Number(p.count) || 1,
         ...(p.fuel ? { fuel: p.fuel } : {}),
       }),
-    usage: 'mc smelt INPUT [FUEL] [COUNT]',
+    usage: 'mc smelt INPUT [FUEL] [COUNT]   # synchronous; blocks ~12s per item',
+  }),
+  g('bg_smelt', 'task', ['bsm'], {
+    method: 'POST',
+    path: '/task/smelt',
+    argSchema: [
+      { key: 'input', type: 'string', required: true },
+      { key: 'fuel', type: 'string', default: '' },
+      { key: 'count', type: 'number', default: 1, min: 1 },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        input: p.input,
+        count: Number(p.count) || 1,
+        ...(p.fuel ? { fuel: p.fuel } : {}),
+      }),
+    usage: 'mc bg_smelt INPUT [FUEL] [COUNT]   # background; returns task_id, poll mc task',
   }),
 
   /* Combat */

@@ -1,0 +1,34 @@
+# L3.15 — craft_wood_specific: bot has birch_planks but tries oak_door.
+#
+# Doors are wood-type-specific. oak_door REQUIRES oak_planks; birch_planks
+# can't substitute. With 6 birch_planks in inventory and a crafting_table
+# present, the craft must fail with MISSING_INGREDIENTS specifically calling
+# out oak_planks (NOT just "planks").
+#
+# This locks correct wood-type handling. If recipe-resolution is loose
+# (treats all planks as interchangeable), this test would FALSELY succeed.
+#
+# Setup: 6 birch_planks; crafting_table at (2, 65, 0).
+# Expected:
+#   ok=false, error.code=="MISSING_INGREDIENTS",
+#   error.observed_state.missing[*].name includes "oak_planks",
+#   started_inventory has birch_planks but NOT oak_planks.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:crafting_table"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:birch_planks 6"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
