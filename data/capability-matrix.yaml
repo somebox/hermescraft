@@ -80,7 +80,23 @@ L3:
   - { id: L3.11_craft_hand_recipe,       bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
   - { id: L3.12_craft_table_required_present, bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
   - { id: L3.13_craft_table_required_absent,  bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
-  - { id: L3.14_craft_missing_ingredients,    bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.14_craft_missing_ingredients,    bot: gatherer, status: green,    last_run: "2026-05-10T00:30Z", consecutive_pass: 2, notes: "PASS via t_c6e0701b, t_4154c960 — chest with 0 planks → MISSING_INGREDIENTS" }
+
+  # mc craft contract suite (Sprint 1)
+  - { id: L3.11_craft_hand_recipe_real,       bot: gatherer, status: green,    last_run: "2026-05-10T00:30Z", consecutive_pass: 2, notes: "PASS via t_9e2ba302, t_3ba2863d — sticks from oak_planks, no table" }
+  - { id: L3.12_craft_table_present,          bot: gatherer, status: green,    last_run: "2026-05-10T00:30Z", consecutive_pass: 2, notes: "PASS via t_7a7386b4, t_99deb930 — chest with table at (2,65,0)" }
+  - { id: L3.13_craft_table_absent,           bot: gatherer, status: green,    last_run: "2026-05-10T00:30Z", consecutive_pass: 2, notes: "PASS via t_c5ce1b68, t_cc41f9fc — TABLE_REQUIRED with directed hint" }
+  - { id: L3.15_craft_wood_specific,          bot: gatherer, status: green,    last_run: "2026-05-10T00:30Z", consecutive_pass: 2, notes: "PASS via t_3a9e9510, t_1074ee59 — oak_door from birch_planks → MISSING_INGREDIENTS pointing at oak_planks" }
+  - { id: L3.16_craft_wood_agnostic,          bot: gatherer, status: green,    last_run: "2026-05-10T00:30Z", consecutive_pass: 2, notes: "PASS via t_728227b6, t_3d7155ec — chest from birch_planks → SUCCESS, consumed birch_planks" }
+
+  # mc smelt contract suite (Sprint 1)
+  - { id: L3.30_smelt_basic,                  bot: gatherer, status: green,    last_run: "2026-05-10T00:35Z", consecutive_pass: 2, notes: "PASS via t_37264c40, t_a1f04208 — sync /action/smelt raw_iron+coal → iron_ingot" }
+  - { id: L3.31_smelt_no_input,               bot: gatherer, status: green,    last_run: "2026-05-10T00:35Z", consecutive_pass: 2, notes: "PASS via t_32e11c01, t_3ddac769 — NO_INPUT" }
+  - { id: L3.32_bg_smelt_task,                bot: gatherer, status: green,    last_run: "2026-05-10T00:35Z", consecutive_pass: 2, notes: "PASS via t_19a47c4d, t_5c880f73 — POST /task/smelt returns immediately, polls done" }
+  - { id: L3.33_smelt_existing_output,        bot: gatherer, status: green,    last_run: "2026-05-10T00:40Z", consecutive_pass: 2, notes: "PASS via t_fb7d5fe9, t_2d504eb9 — auto-collect pre-existing iron_ingot; smelted_count reports ONLY new smelt" }
+  - { id: L3.34_smelt_no_fuel,                bot: gatherer, status: green,    last_run: "2026-05-10T00:40Z", consecutive_pass: 2, notes: "PASS via t_c2f7fa7d, t_53612f05 — NO_FUEL with input restored to inventory" }
+  - { id: L3.35_smelt_planks_fuel,            bot: gatherer, status: green,    last_run: "2026-05-10T00:40Z", consecutive_pass: 2, notes: "PASS via t_45eabd71, t_c9cb1600 — oak_planks fuel, smelts_per_unit=1.5" }
+  - { id: L3.36_smelt_batch_bg,               bot: gatherer, status: green,    last_run: "2026-05-10T00:42Z", consecutive_pass: 2, notes: "PASS via t_0c5dceca, t_528b2003 — bg_smelt 4 raw_iron, agent polls /task to ~46s done" }
 
   # mc place contract suite (Sprint 1)
   - { id: L3.20_place_basic,                  bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_7417c508, t_84624816 — face=(0,-1,0) onto platform stone" }

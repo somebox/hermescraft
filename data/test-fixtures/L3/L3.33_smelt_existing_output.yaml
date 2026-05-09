@@ -1,0 +1,36 @@
+# L3.33 — smelt_existing_output: pre-existing iron_ingot in output slot is
+# auto-collected before the new smelt starts.
+#
+# Setup: a furnace at (2, 65, 0) PRE-LOADED with iron_ingot in its output
+# slot via execute setblock NBT. Bot has 1 raw_iron + 1 coal. Action smelts
+# 1 raw_iron — must auto-collect the existing iron_ingot AND smelt the new one.
+#
+# Expected:
+#   ok=true,
+#   data.smelted_count == 1 (just the new smelt),
+#   data.existing_output_collected.{name:iron_ingot, count:1},
+#   data.ended_inventory.iron_ingot == 2  (pre-existing + smelted).
+#
+# This locks the auto-collect behavior. If the worker forgets to collect
+# previously-finished smelts, the furnace would block indefinitely.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  # Place furnace pre-loaded with 1 iron_ingot in the output slot (Items[2] = output slot)
+  - 'execute in landfolk-test run setblock 2 65 0 minecraft:furnace[facing=north]{Items:[{Slot:2b,id:"minecraft:iron_ingot",count:1}]}'
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:raw_iron 1"
+  - "give Flint minecraft:coal 1"
+  - "effect give Flint minecraft:saturation 1 30"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

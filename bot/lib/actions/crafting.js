@@ -569,7 +569,14 @@ export function createCraftingActions(deps) {
       try { furnace.close(); } catch {}
 
       const endedInventory = inventoryAt();
-      const smeltedCount = outputName ? (endedInventory[outputName] || 0) - (startedInventory[outputName] || 0) : 0;
+      // Inventory delta includes BOTH the auto-collected pre-existing output
+      // (if it matches outputName) AND the freshly-smelted items. Subtract
+      // the existing-output count so smelted_count reflects the actual smelt.
+      const existingOutputCount =
+        existingOutput && existingOutput.name === outputName ? existingOutput.count : 0;
+      const smeltedCount = outputName
+        ? Math.max(0, (endedInventory[outputName] || 0) - (startedInventory[outputName] || 0) - existingOutputCount)
+        : 0;
 
       // ── NOT_SMELTABLE / partial / interrupted ──
       if (!outputName || smeltedCount < 1) {

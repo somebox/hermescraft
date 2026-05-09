@@ -390,5 +390,70 @@ Fix: place the target within 4.5 blocks (3, 67, 0 — distance 3.24) so the path
 
 10/14 + 4 added = **10/18 L3 entries green**. Three Phase-2 action contracts shipped (dig/collect/place). Two remaining: craft + chest.
 
+### Action contract: mc craft + mc smelt (DONE) + F17 + F18 + F19
+
+#### mc craft (§8)
+Same pattern as dig/collect/place. Failure paths:
+`UNKNOWN_ITEM`, `NO_RECIPE`, `TABLE_REQUIRED`, `TABLE_OUT_OF_RANGE`, `MISSING_INGREDIENTS`, `INTERRUPTED`. Success returns `data.{crafted_count, requested_count, expected_per_craft, recipe_used, ingredients_consumed, started/ended_inventory}`.
+
+Ingredient consumption is computed via inventory delta after the craft, so the response shows EXACTLY what wood/items were used — not just what the recipe nominally calls for. This is the basis for the wood-type-specific tests (L3.15 / L3.16).
+
+#### mc smelt (§8.5 — new contract spec)
+Architecture didn't formalize smelt; treating it as §8.5 in the sprint log. Failure paths: `NO_FURNACE`, `NO_INPUT`, `NO_FUEL`, `NOT_SMELTABLE`, `INTERRUPTED`. Success returns `data.{smelted_count, requested_count, input_item, output_item, fuel_used, existing_output_collected, started/ended_inventory, furnace}`.
+
+Behavioral fixes vs the original:
+- **Auto-collects pre-existing output** before loading new input (prevents furnace blocking).
+- **Restores input to bot's inventory** if NO_FUEL fires after putInput already ran (worker doesn't lose materials on failed start).
+- **Distinguishes pre-existing from freshly-smelted in the response**: `existing_output_collected` shows the auto-collected ingot count; `smelted_count` is the actual new smelt only. Bug found and fixed during L3.33.
+
+### F17. mc smelt should be a background task by default
+
+User question: "the wait should ideally not matter, and the agent just treats it as a background job?"
+
+The `/task/<action>` infrastructure was already there — no code change needed in the action layer. Added `bg_smelt` CLI verb (POST /task/smelt) that returns immediately with a `task_id`; agent polls `mc task` to see `status=running` → `done`. **L3.36 batch test** validates the pattern: `bg_smelt raw_iron count=4` returns at t=0s, completes at t=46s, agent free during the wait.
+
+The synchronous `/action/smelt` endpoint stays for fast tests / direct calls, but **SOUL.md should teach workers to use `mc bg_smelt` for any smelt action** since smelting blocks for ≥10s/item.
+
+### F18. Smelt response was over-counting `smelted_count` when furnace had pre-existing output
+
+Original code computed `smelted_count = endedInventory[output] - startedInventory[output]` — but if the furnace already had iron_ingot in its output slot, the auto-collect added that to inventory ALONGSIDE the new smelt. Result: smelted_count reported 2 when only 1 was actually smelted. Fixed by subtracting `existingOutputCount` (the pre-collected count, when same item type) from the delta. L3.33 locks this regression.
+
+### F19. Wood-type semantics are correctly enforced by recipe matching
+
+Two paired tests prove it:
+- **L3.15** craft_wood_specific: bot has 6 birch_planks, asks for `oak_door`. Recipe needs oak_planks specifically. Result: `ok=false, MISSING_INGREDIENTS, missing=[{name:oak_planks, short:6}]`. Birch is NOT substituted. ✓
+- **L3.16** craft_wood_agnostic: bot has 8 birch_planks, asks for `chest`. Recipe accepts any planks (#planks tag). Result: `ok=true, ingredients_consumed={birch_planks:8}`. Worker actually used birch, not (nonexistent) oak. ✓
+
+Together this locks the two semantic modes: type-named recipes (doors, fences, signs) need the named wood; tag-recipes (chest, crafting_table, sticks, scaffolding) accept any matching tag.
+
+### F20. Open: behavior_test territory for smelt/craft
+
+User flagged additional testing surface that's beyond contract — these are behavior_test material:
+- "Remembering to go to the furnace with the right items" — multi-step plan: collect input, walk to furnace, smelt. Requires the bot's STRATEGY layer (SOUL.md / planner). 
+- "Managing multiple furnaces at once" — needs steward coordination + work-allocation. Phase 3.
+- Alternative fuels beyond the hardcoded list (lava_bucket, blaze_rod, dried_kelp_block) — needs server-side fuel tag resolution rather than hardcoded names.
+
+L3 status update (Sprint 1 close):
+
+| Test | Status |
+|---|---|
+| L3.1–L3.6 (dig + collect) | green |
+| L3.11 craft_hand_recipe | green |
+| L3.12 craft_table_present | green |
+| L3.13 craft_table_absent | green |
+| L3.14 craft_missing_ingredients | green |
+| L3.15 craft_wood_specific | green |
+| L3.16 craft_wood_agnostic | green |
+| L3.20–L3.23 (place) | green |
+| L3.30 smelt_basic | green |
+| L3.31 smelt_no_input | green |
+| L3.32 bg_smelt_task | green |
+| L3.33 smelt_existing_output | green |
+| L3.34 smelt_no_fuel | green |
+| L3.35 smelt_planks_fuel | green |
+| L3.36 smelt_batch_bg | green |
+
+**21 L3 tests green. Action contracts shipped: 4 of 5 (dig, collect, place, craft+smelt). Remaining: chest.**
+
 
 

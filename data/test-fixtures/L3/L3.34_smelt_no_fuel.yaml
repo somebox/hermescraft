@@ -1,0 +1,31 @@
+# L3.34 — smelt_no_fuel: bot has input but no fuel → NO_FUEL.
+#
+# Setup: furnace at (2, 65, 0); 1 raw_iron in inventory; no coal/planks/etc.
+# Action: POST /action/smelt {input:"raw_iron",count:1}
+# Expected:
+#   ok=false,
+#   error.code=="NO_FUEL",
+#   error.observed_state.requested_input=="raw_iron",
+#   error.observed_state.accepted_fuels lists the canonical fuel names.
+#
+# Importantly the contract should TAKE BACK the input from the furnace
+# before returning so the bot doesn't lose it. (Verified via inventory check.)
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:raw_iron 1"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

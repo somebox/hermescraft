@@ -1,0 +1,37 @@
+# L3.36 — smelt_batch_bg: smelt 4 raw_iron via bg_smelt; agent should be
+# able to do other things during the smelt and pick up the result later.
+#
+# This validates the canonical "long-running smelt" pattern:
+#   1. POST /task/smelt {input:"raw_iron", count:4} — returns immediately with task_id
+#   2. Agent does other observation / planning (in this test we just sleep)
+#   3. Poll /task to check progress (status=running, then status=done)
+#   4. Read result from task; inventory has 4 iron_ingot.
+#
+# Setup: 4 raw_iron + 1 coal (8 smelts per coal so 1 piece is plenty).
+# Furnace at (2, 65, 0).
+# Expected smelt time: ~42s (4 items × 10s + 2s slack).
+# Expected:
+#   POST returns ok=true with task_id, status=started
+#   /task transitions running → done
+#   final result.data.smelted_count == 4
+#   final inventory.iron_ingot == 4
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:raw_iron 4"
+  - "give Flint minecraft:coal 1"
+  - "effect give Flint minecraft:saturation 1 60"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
