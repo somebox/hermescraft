@@ -1,0 +1,88 @@
+# capability-matrix.yaml — Phase-2 capability test scoreboard
+#
+# One row per capability test (L0–L4 for now; L5+ deferred per Phase 3 appendix).
+#
+# Schema per test:
+#   id: <level.n>_<slug>            # matches data/test-fixtures/<L>/<id>.yaml
+#   bot: <flint|gatherer|either>    # which body the worker drives
+#   status: green|red|untested|deferred
+#   last_run: <ISO-8601 timestamp or null>
+#   consecutive_pass: <int>          # green is "consecutive_pass >= 3"
+#   notes: <one-line, especially for known-fail and bug links>
+#
+# Updated by workers via `hermes kanban complete` metadata.test_id +
+# result, which a small tick script folds into this file. For Sprint 0
+# we update it by hand to validate the loop.
+
+version: 1
+last_updated: 2026-05-09
+notes: |
+  status semantics:
+    untested  = never run
+    red       = last run FAILED, or PASSED but consecutive_pass < 3
+    green     = consecutive_pass >= 3 (per architecture §15 sprint exit gate)
+    deferred  = scheduled for a later sprint
+
+L0:
+  - { id: L0.1_health_connected,         bot: either, status: red, last_run: "2026-05-09T21:21Z", consecutive_pass: 2, notes: "PASS via t_86e0a6c6 (smoke), PASS via t_7c3f127c (verify_fix demo); 1 more consecutive pass → green" }
+  - { id: L0.2_health_disconnected,      bot: either, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L0.3_observe_payload,          bot: either, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L0.4_observe_action_loop,      bot: either, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L0.5_marks_list_empty,         bot: either, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L0.6_marks_list_with_distance, bot: either, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+
+L1:
+  - { id: L1.1_goto_simple,              bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.2_goto_near_radius,         bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.3_goto_timeout,             bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.4_goto_unreachable,         bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.5_bg_goto_lifecycle,        bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.6_bg_goto_cancel,           bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.7_follow_player_present,    bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.8_follow_player_absent,     bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L1.9_pillar_step_y62_trap,     bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "Phase 1.1 deliberate trap" }
+  - { id: L1.10_go_mark_navigation,      bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+
+# L2 (inventory + equip): 8 tests, IDs to be finalized when sprint starts.
+# Placeholders for: equip-success, equip-missing-item, equip-swap,
+# unequip-with-full-inventory, toss-partial-stack, pickup-drops, x2 TBD.
+L2:
+  - { id: L2.1_equip_success,            bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "TBD detail" }
+  - { id: L2.2_equip_missing_item,       bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "TBD detail" }
+  - { id: L2.3_equip_swap,               bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "TBD detail" }
+  - { id: L2.4_unequip_full_inventory,   bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "TBD detail" }
+  - { id: L2.5_toss_partial_stack,       bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "TBD detail" }
+  - { id: L2.6_pickup_drops,             bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "TBD detail" }
+
+L3:
+  - { id: L3.1_dig_basic,                bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "fixture exists; mc dig does not auto-pickup" }
+  - { id: L3.2_dig_air,                  bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.3_dig_wrong_tool,           bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.4_dig_protected,            bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.5_collect_basic,            bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.6_collect_silent_failure,   bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "Phase 1 bug to surface — expected initial FAIL" }
+  - { id: L3.7_collect_partial,          bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "may require partial_failure flag in contract" }
+  - { id: L3.8_collect_fair_play_los,    bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.9_pillar_step_jumping,      bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.10_pillar_step_no_blocks,   bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.11_craft_hand_recipe,       bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.12_craft_table_required_present, bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.13_craft_table_required_absent,  bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.14_craft_missing_ingredients,    bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+
+L4:
+  - { id: L4.1_dig_stone_with_pickaxe,        bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.2_dig_stone_no_pickaxe,          bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.3_dig_iron_ore_stone_pickaxe,    bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.4_dig_diamond_iron_pickaxe,      bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.5_dig_diamond_stone_pickaxe,     bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "tier mismatch" }
+  - { id: L4.6_pillar_step_deep_escape,       bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.7_dig_area_5x5x5,                bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.8_dig_area_with_stand,           bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.9_tunnel_simple,                 bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.10_stair_up_solid_ground,        bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.11_stair_up_open_cave,           bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.12_stair_down_to_layer,          bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.13_find_blocks_coal_ore,         bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.14_chest_deposit,                bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L4.15_float_straddle_dig,           bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "Phase 1.4 deliberate float-straddle case" }

@@ -1,0 +1,28 @@
+# canonical.yaml — Phase-2 marks (single source of truth)
+#
+# Edit this file manually. There is no per-bot cache or runtime sync.
+# Card bodies SHOULD include literal coords (action_sequence uses coords,
+# not @names). Mark names are for human readability and `mc go_mark`.
+#
+# Schema:
+#   <name>:
+#     world:   <multiverse-world-name>     # 'world' | 'landfolk-test' | ...
+#     coords:  [x, y, z]
+#     note:    <one-line description>
+#
+# When you add a mark, list it once here and reference @name in card prose.
+
+base:
+  world: world
+  coords: [358, 66, -602]
+  note: "production-world landfolk base near Flint's spawn"
+
+test_origin:
+  world: landfolk-test
+  coords: [0, 65, 0]
+  note: "spawn platform — 11x11 stone at Y=64; bots stand at Y=65"
+
+spawn_landfolk:
+  world: world
+  coords: [358, 66, -602]
+  note: "where Flint and Gatherer materialize in production after mvtp <bot> world"
