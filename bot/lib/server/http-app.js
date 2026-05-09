@@ -640,8 +640,14 @@ export function createBotHttpListener(deps) {
       const syncStart = Date.now();
       try {
         const result = await actionFn(body);
-        pushAction(ctx, actionName, 'done', syncStart, result);
-        recordActionOutcome(ctx, actionName, 'done');
+        // Phase-2 action contract: handlers may return { ok: false, error: {...} }
+        // for soft failures. Record those as 'error' so observe.action_loop fires
+        // and so action_stats_5m counts them correctly.
+        const softFailure = result && typeof result === 'object' && result.ok === false;
+        const status = softFailure ? 'error' : 'done';
+        const errorMsg = softFailure ? (result.error?.message || result.error?.code || 'soft failure') : null;
+        pushAction(ctx, actionName, status, syncStart, result, errorMsg);
+        recordActionOutcome(ctx, actionName, status, errorMsg);
         return respond(res, 200, { ok: true, ...result, state: briefState() });
       } finally {
         ctx.syncActionInFlight = false;

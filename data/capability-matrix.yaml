@@ -55,10 +55,10 @@ L2:
   - { id: L2.6_pickup_drops,             bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "TBD detail" }
 
 L3:
-  - { id: L3.1_dig_basic,                bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "fixture exists; mc dig does not auto-pickup" }
-  - { id: L3.2_dig_air,                  bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
-  - { id: L3.3_dig_wrong_tool,           bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
-  - { id: L3.4_dig_protected,            bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "" }
+  - { id: L3.1_dig_basic,                bot: flint,    status: green,    last_run: "2026-05-09T22:15Z", consecutive_pass: 2, notes: "post-contract: data.dropped_items=[{name:dirt,count:1,position:...}]; PASS via t_ba653df3, t_ad113549" }
+  - { id: L3.2_dig_air,                  bot: flint,    status: green,    last_run: "2026-05-09T22:15Z", consecutive_pass: 2, notes: "NO_BLOCK_AT_COORD path; PASS via t_acf42e01, t_4a0083c9" }
+  - { id: L3.3_dig_wrong_tool,           bot: flint,    status: untested, last_run: null, consecutive_pass: 0, notes: "TOOL_INADEQUATE path covered by contract; needs fixture" }
+  - { id: L3.4_dig_protected,            bot: flint,    status: green,    last_run: "2026-05-09T22:15Z", consecutive_pass: 2, notes: "PROTECTED_BLOCK path; PASS via t_5399a1c1, t_cdde9146" }
   - { id: L3.5_collect_basic,            bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
   - { id: L3.6_collect_silent_failure,   bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "Phase 1 bug to surface — expected initial FAIL" }
   - { id: L3.7_collect_partial,          bot: gatherer, status: untested, last_run: null, consecutive_pass: 0, notes: "may require partial_failure flag in contract" }

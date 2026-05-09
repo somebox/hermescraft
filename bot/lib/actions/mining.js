@@ -231,20 +231,138 @@ export function createMiningActions(deps) {
     async dig({ x, y, z }) {
       const b = ensureBot();
       const target = b.blockAt(new Vec3(x, y, z));
-      if (!target || target.name === 'air') throw new Error(`No block at ${x}, ${y}, ${z}`);
+
+      // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8 mc dig) ─
+      // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
+      // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
+
+      if (!target || target.name === 'air' || target.name === 'cave_air' || target.name === 'void_air') {
+        return {
+          ok: false,
+          error: {
+            code: 'NO_BLOCK_AT_COORD',
+            message: `No block at ${x}, ${y}, ${z} — target is ${target?.name || 'unknown'}`,
+            observed_state: { block_at_target: target?.name || null, requested_coord: { x, y, z } },
+            retry_safe: false,
+          },
+        };
+      }
 
       if (PROTECTED_DIG_BLOCKS.has(target.name)) {
-        throw new Error(`Cannot dig ${target.name} — it is part of a building. Use doors to enter buildings. Do not destroy structures.`);
+        return {
+          ok: false,
+          error: {
+            code: 'PROTECTED_BLOCK',
+            message: `Cannot dig ${target.name} — it is part of a building. Use doors to enter buildings.`,
+            observed_state: { block_at_target: target.name, requested_coord: { x, y, z } },
+            retry_safe: false,
+          },
+        };
       }
 
-      const { hints } = await equipForDig(b, target);
-      if (b.entity.position.distanceTo(target.position) > 4.5) {
-        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+      const distance = b.entity.position.distanceTo(target.position);
+
+      let hints = [];
+      try {
+        const ed = await equipForDig(b, target);
+        hints = ed.hints || [];
+      } catch (err) {
+        return {
+          ok: false,
+          error: {
+            code: 'TOOL_INADEQUATE',
+            message: err.message,
+            observed_state: {
+              block_at_target: target.name,
+              held: b.tool?.itemInHand()?.name ?? null,
+              distance: Math.round(distance * 10) / 10,
+            },
+            next_action_hint: err.message,
+            retry_safe: false,
+          },
+        };
       }
-      await b.dig(target, true);
+
+      if (distance > 4.5) {
+        try {
+          await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+        } catch (err) {
+          return {
+            ok: false,
+            error: {
+              code: 'OUT_OF_RANGE',
+              message: `Target at (${x}, ${y}, ${z}) is ${Math.round(distance * 10) / 10} blocks away and pathfind failed: ${err.message}`,
+              observed_state: {
+                block_at_target: target.name,
+                distance: Math.round(distance * 10) / 10,
+                bot_position: posObj(b.entity.position),
+              },
+              retry_safe: false,
+            },
+          };
+        }
+      }
+
+      const targetPos = target.position;
+      const beforeDropIds = new Set(
+        Object.values(b.entities)
+          .filter((e) => e.name === 'item' || e.displayName === 'Item')
+          .map((e) => e.id),
+      );
+
+      try {
+        await b.dig(target, true);
+      } catch (err) {
+        return {
+          ok: false,
+          error: {
+            code: 'INTERRUPTED',
+            message: `Dig interrupted: ${err.message}`,
+            observed_state: { block_at_target: target.name, requested_coord: { x, y, z } },
+            retry_safe: true,
+          },
+        };
+      }
+
+      // ─ Success: scan for drop entities at/near the target for data.dropped_items ─
+      // Drops appear ~1-3 server ticks after the block break packet. Wait briefly
+      // (default 300ms; tunable via MC_DIG_DROP_SCAN_MS) then collect any item
+      // entities that weren't there before, restricted to ≤2.5 blocks of the
+      // broken coord (drops can scatter slightly with falling-block physics).
+      const dropScanMs = Number(process.env.MC_DIG_DROP_SCAN_MS) || 300;
+      await sleep(dropScanMs);
+      const dropped = [];
+      for (const e of Object.values(b.entities)) {
+        if (e.name !== 'item' && e.displayName !== 'Item') continue;
+        if (beforeDropIds.has(e.id)) continue;
+        if (!e.position || e.position.distanceTo(targetPos) > 2.5) continue;
+        // mineflayer exposes the held item via metadata index 8 (1.16+) or 7 (older).
+        // Both shapes carry { itemId, itemCount } as the slot data.
+        const meta = e.metadata?.[8] || e.metadata?.[7];
+        const itemName = meta?.itemId
+          ? (ctx.mcData.items[meta.itemId]?.name || `item:${meta.itemId}`)
+          : (e.displayName || 'unknown');
+        const count = meta?.itemCount ?? meta?.count ?? 1;
+        dropped.push({
+          name: itemName,
+          count,
+          position: posObj(e.position),
+        });
+      }
+
       const tips = [...new Set(hints)];
-      const suf = tips.length ? ` Tips: ${tips.join(' | ')}` : '';
-      return { result: `Mined ${target.name} at ${x}, ${y}, ${z}${suf}`, ...(tips.length ? { hints: tips } : {}) };
+
+      return {
+        ok: true,
+        data: {
+          block_name: target.name,
+          dropped_items: dropped,
+          position_after: posObj(b.entity.position),
+        },
+        // Preserve legacy fields so existing callers (goal engine, older tests) still see them.
+        result: `Mined ${target.name} at ${x}, ${y}, ${z}${tips.length ? ` Tips: ${tips.join(' | ')}` : ''}`,
+        ...(tips.length ? { hints: tips } : {}),
+      };
     },
 
     async pickup() {

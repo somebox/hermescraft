@@ -1,0 +1,29 @@
+# L3.4 — dig_protected: mc dig on a crafting_table returns PROTECTED_BLOCK.
+#
+# Purpose: verify the dig contract refuses to break shared infrastructure
+# blocks (crafting_table, chest, furnace, etc.) per PROTECTED_DIG_BLOCKS in
+# bot/lib/bot/dig-tools.js.
+#
+# Bot setup: bare hand, on spawn platform, full HP/food.
+# Target: (2, 65, 0) — crafting_table placed in prep.
+# Expected response:
+#   ok=false, error.code="PROTECTED_BLOCK",
+#   error.observed_state.block_at_target=="crafting_table".
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:crafting_table"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 2 65 0 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

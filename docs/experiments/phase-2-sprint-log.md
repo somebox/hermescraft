@@ -158,4 +158,29 @@ Behavior tests start at L1+, dominate L4+. L0 is all `capability_test`.
 2. **Drop `minecraft-flint-mission` skill** from the auto-load path — it's a Phase 1 artifact.
 3. **`mc dig` contract** is up next (smallest delta, validates the pattern). After that: `mc collect` (real Phase-1 bug fix at L3.6).
 
+### Action contract: mc dig (DONE)
+
+Refactor at `bot/lib/actions/mining.js:dig` — handler now returns structured `{ok, data, error}` per architecture §8 instead of throwing.
+
+| Path | Trigger | Returned |
+|---|---|---|
+| Success | block at coord, in range, tool OK | `ok=true, data.{block_name, dropped_items, position_after}` |
+| NO_BLOCK_AT_COORD | target is air/cave_air/void_air/null | `ok=false, error.code, error.observed_state.block_at_target` |
+| PROTECTED_BLOCK | target in PROTECTED_DIG_BLOCKS (crafting_table, chest, …) | `ok=false, error.code, observed_state` |
+| TOOL_INADEQUATE | equipForDig throws (e.g. axe needed for log, slow-dig refused) | `ok=false, error.code, error.next_action_hint` |
+| OUT_OF_RANGE | distance > 4.5 AND pathfind throws | `ok=false, error.code, observed_state.{distance, bot_position}` |
+| INTERRUPTED | b.dig throws mid-break (cancel, death) | `ok=false, error.code, retry_safe=true` |
+
+Key implementation details:
+- `dropped_items` is captured by snapshotting entity IDs before dig, sleeping `MC_DIG_DROP_SCAN_MS` (default 300ms), then collecting NEW item entities within 2.5 blocks of the target. Verified with L3.1: returned `[{name:"dirt", count:1, position:{1.7, 65.5, 0.7}}]`.
+- The HTTP wrapper in `bot/lib/server/http-app.js:642` was patched: when handler returns `{ok:false}`, action is recorded with status `'error'` (not `'done'`). Confirmed via `recent_actions` showing the failed digs as `('dig', 'error')` — required for `state.action_loop` detection in observation.js.
+- Legacy `result` and `hints` fields preserved alongside `data` for backwards compatibility with the goal engine and existing tests.
+
+Validation: L3.1, L3.2, L3.4 created and run twice each; all green at consecutive_pass=2. L3.3 (TOOL_INADEQUATE) needs a more involved fixture (place stone, dig with held axe) — deferred to next pass.
+
+### F7. mc dig contract: existing thrown-error fall-through paths
+
+`b.blockAt` returning a non-air block doesn't guarantee the block is fully loaded — for chunks beyond render distance, blockAt returns `null` or an unknown-name block, which my handler currently routes to `NO_BLOCK_AT_COORD`. The §8 contract reserves `OUT_OF_RANGE` for "distance > 4.5 and pathfind unsuccessful" — which is the *known-but-unreachable* case. Tested with `dig 200, 65, 200`: routed to NO_BLOCK_AT_COORD (target.name was "unknown"). For now this is acceptable — workers see `ok=false` and a code; the distinction matters more for autonomous nav decisions and can be sharpened in Sprint 2.
+
+
 
