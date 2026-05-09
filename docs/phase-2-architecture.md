@@ -53,7 +53,7 @@ This document formalizes the architecture; the migration sequence (later) walks 
 
 ## The story in one paragraph
 
-A human posts a coarse intent ("we need more stone"). The **steward** — a Hermes profile with its own bot body parked at a fixed tower — enriches it into a structured spec, locates relevant places via the **marks catalog** it curates, and decomposes it into character-assigned kanban cards with explicit coordinates and acceptance predicates. The **kanban dispatcher** spawns a short-lived worker per card, scoped to one character profile and one Mineflayer body. Workers read their brief plus parents' comments (auto-injected by `worker_context`), use the `mc` CLI to act in-game, optionally fan out via `delegate_task` for transient sub-work, post a comment summarizing what they did, and exit. Dependent cards auto-promote and the chain proceeds. The steward simultaneously runs the team's logistics: tracks chest contents, computes distances and supply-chain efficiency, issues rebalancing missions when chests overflow or sit far from where they're needed. The **kanban board + marks catalog + chest inventory** are the entire coordination protocol.
+A human posts a coarse intent ("we need more stone"). The **steward** — a Hermes profile that orchestrates the team — enriches it into a structured spec, locates relevant places via the **marks catalog** it curates, and decomposes it into character-assigned kanban cards with explicit coordinates and acceptance predicates. The steward also has a Mineflayer body that **roams the base** — wandering between marks, peeking into chests, observing the team, occasionally chatting — but the body is a diegetic anchor, not a load-bearing component: if it dies it just respawns and keeps going, and the orchestration role continues uninterrupted whether the body is online or not. The **kanban dispatcher** spawns a short-lived worker per card, scoped to one character profile and one Mineflayer body. Workers read their brief plus parents' comments (auto-injected by `worker_context`), use the `mc` CLI to act in-game, optionally fan out via `delegate_task` for transient sub-work, post a comment summarizing what they did, and exit. Dependent cards auto-promote and the chain proceeds. The steward simultaneously runs the team's logistics: tracks chest contents, computes distances and supply-chain efficiency, issues rebalancing missions when chests overflow or sit far from where they're needed. The **kanban board + marks catalog + chest inventory** are the entire coordination protocol.
 
 ```
 HUMAN INTENT  ──────────────────────────────────────────────┐
@@ -90,7 +90,7 @@ The full architecture supports five characters, but Phase 2 starts with **two bo
 | `gatherer` | port 3001 — mobile | Wood, food, plants, scouting | DeepSeek V4 Flash | **Active from start** |
 | `flint` | port 3002 — mobile | Mining (stone, ore, deep ops) | DeepSeek V4 Flash | **Active from start** |
 | `human` | (none — pulls from board manually) | Code fixes, skill rewrites, schema changes | Claude Code | **Active from start** |
-| `steward` | (initially: human role) | Specify, plan logistics, ATC chat, marks curation | (n/a yet) | **Deferred — human plays this role until L7+** |
+| `steward` | (initially: human role; later: roaming bot) | Specify, plan logistics, ATC chat, marks curation | (n/a yet) | **Deferred — human plays this role until L7+** |
 
 The two-bot starting set was picked because Flint is the most-tested character through Phase 1 (1.1, 1.3, 1.4) and Gatherer rounds out the workload split (mining vs. surface gathering — covers L3–L4 capability tests).
 
@@ -149,11 +149,11 @@ marks:
     coords: [0, 80, 0]
     kind: settlement
     last_verified: 2026-05-09T17:32
-  tower:
-    coords: [0, 90, 0]
-    kind: structure
-    parent_mark: base
-    notes: "steward's post; treasury chest adjacent"
+  # tower:                              # ASPIRATIONAL — built by team in a later mission
+  #   coords: [0, 90, 0]
+  #   kind: structure
+  #   parent_mark: base
+  #   notes: "steward's post (planned); treasury chest adjacent"
   stone_chest:
     coords: [2, 79, -1]
     kind: chest
@@ -180,7 +180,7 @@ marks:
     kind: chest
     holds: [diamond, ender_pearl, golden_apple, enchanted_book]
     access: steward-gated         # workers must request via chat
-    parent_mark: tower
+    parent_mark: base    # initially at base; moves to @tower once it exists
   quarry-east:
     coords: [180, 50, 0]
     kind: poi
@@ -299,16 +299,55 @@ The steward draws from a small library of mission templates. Each has a body sha
 
 Templates make steward decomposition tractable — instead of writing prose every time, it picks a template and fills slots.
 
-## The steward's in-game body — when does it act?
+## The steward's body — separate from the role
 
-The steward profile's bot is a Mineflayer body parked at the tower. It is operated **only when a steward worker is spawned**, which happens via:
-- Periodic `respond_chat` cron tasks (every 2 min by default)
-- Chest audit cron tasks (every 30 min)
-- Logistics-planner cron tasks (every 5 min, wake-gated on changes)
-- Treasury dispense missions (one per chat request)
-- Initial setup or relocation missions
+The steward **role** (orchestration, marks, logistics, triage) lives entirely in kanban + canonical files + cron-spawned Hermes workers. The steward **body** is an in-world Mineflayer instance that gives the agent a presence in the simulation. **They're decoupled** — the role works whether the body is online or not.
 
-Between worker invocations the body sits at the tower with goal-engine handling food/threat/staying near the spawn. A custom `steward-role.json` goal-preset pins it to within ~10 blocks of `@tower`. Optionally we add a body-side flag that rejects `dig`/`fight`/`craft` for the steward profile so a hallucinating worker can't make the steward dig a hole.
+### What the body does (when activated)
+
+A steward worker is spawned periodically (or on demand) via:
+- `respond_chat` (every 2 min) — read chat for `@steward` mentions, reply, update marks
+- `audit_chests` (every 30 min) — walk to each chest mark, call `mc chest @mark`, sync canonical
+- `inspect_base` (every 10 min, low cost) — walk a short loop between marks, observe the team, comment on anything notable in chat
+- `logistics_planner` (every 5 min, wake-gated) — runs offline against canonical state; doesn't necessarily move the body
+- `treasury_dispense` — on demand, when a worker requests a rare item via chat
+- One-off missions — verifying a mark, scouting near base, etc.
+
+When a worker is active, the body roams the base — wandering between marks, peeking into chests, watching others work. Between worker invocations the body just stands wherever it last was. A `steward-role.json` goal-preset keeps it loosely near `@base` via the `stay_near_mark` metric (~30 block leash).
+
+### What the body does NOT do
+
+- **Manual labor.** No mining, fighting, building, farming. The SOUL prompt forbids it; optionally the bot HTTP server rejects `dig`/`fight`/`craft` for the steward profile.
+- **Mission claims.** The steward never claims gameplay tasks (supply, build, rebalance, etc.) — only steward-only templates.
+- **Critical-path work.** Nothing the team needs to function depends on the body being alive.
+
+### Death & disconnect handling
+
+If the body dies: it respawns at default spawn, the steward agent posts a brief comment in chat ("respawned, headed back"), the agent keeps working through cron-driven workers as usual. **No drama, no critical-path block.** The kanban board does not pause for steward death.
+
+If the body disconnects (server hiccup, network blip): cron tasks that *need* the body (audit, dispense, inspect) detect `/health.connected=false` and either skip the tick or use server-side fallbacks (e.g., `mc chest @mark` → PaperMCP equivalent if available). Headless cron tasks (logistics planner, triage) continue uninterrupted because they don't need the body at all.
+
+### Tower as aspirational future state
+
+The "steward's tower" is a goal, not a starting condition. Once the team is consistently efficient and there's enough material accumulated, **the team can build it as one of its kanban missions** — a 3-card chain like:
+
+```
+Card A (gatherer): scout flat ground near @base, mark as @tower-site
+Card B (flint):    supply 64 cobblestone to @tower-site
+Card C (mason):    build steward-tower pattern at @tower-site
+```
+
+Until then, the steward roams. When the tower exists, the steward's `inspect_base` mission can include "climb the tower for a wide-angle observation" as one of its variants. Tower-as-feature, not tower-as-requirement.
+
+### Why have a body at all?
+
+Mostly diegetic, but with real benefits:
+- **Workers see "Steward: ..." in chat** — gives the team a face. Coordination via in-game chat feels natural.
+- **Direct observation** — body can confirm marks visually without rcon round-trips.
+- **Treasury dispensing** — handing items to workers via chest interaction is more tangible than `/give` commands.
+- **Vibes** — watching a steward NPC wander the base is what makes this a settlement and not a job queue.
+
+If the body proves problematic (resource cost on the Paper server, frequent death, weird behavior), we can run the steward headless without losing functionality. **The body is the experiment**; the role is the architecture.
 
 ## Issue management (full table)
 
@@ -328,7 +367,9 @@ Between worker invocations the body sits at the tower with goal-engine handling 
 | Capacity overflow | Worker can't deposit (chest full) | Worker chats steward; steward creates overflow build or alt-chest deposit |
 | Cross-mission resource conflict | Two cards want same chest concurrently | Steward serializes via deps at card-creation time |
 | Token blowout per mission | `--max-runtime` per card; per-worker turn limit | Dispatcher SIGTERMs, marks `timed_out`, retries up to `max-retries`, then auto-blocks |
-| Steward overstepping (leaves tower) | Bot position drift > threshold | SOUL prompt + role goal-preset + body-side rejection of manual labor for steward profile |
+| Steward body death | Mineflayer death event | Body respawns at default spawn; agent posts respawn comment in chat; cron tasks continue uninterrupted (role is body-independent) |
+| Steward body disconnect | `/health.connected=false` for steward body only | Body-dependent cron tasks skip the tick; headless tasks (planner, triage) continue. Body reconnects automatically. |
+| Steward attempting manual labor | `mc dig`/`mc fight`/`mc craft` from steward profile | SOUL prompt forbids it; optional body-side rejection of those actions for steward profile |
 | Steward bad decomposition | Human inspects via dashboard | `kanban edit`, `block`, `reassign`, or replan |
 | Skill prompt confuses agent | Worker comments confusion in card | Steward creates `skill_revision` for human |
 | MC server outage | All bots' `/health.connected=false` | All workers block; recovery on server restore; steward chats status |
@@ -492,7 +533,7 @@ Likely new functionality:
 **Goal: full multi-bot supply chain operational; barley joins; treasury operational.**
 
 1. Barley (port 3004) joins; first farm operation
-2. Treasury chest at tower; first `treasury_dispense` mission
+2. Treasury chest near base (relocated to @tower if/when built); first `treasury_dispense` mission
 3. Mark expiry / verification cycles running
 4. Full L8 capability tests: gatherer→deposit→withdraw→consume chains across multiple chests
 
