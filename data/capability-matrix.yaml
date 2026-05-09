@@ -32,12 +32,16 @@ L0:
   - { id: L0.6_marks_list_with_distance, bot: either, status: green,    last_run: "2026-05-09T21:30Z", consecutive_pass: 2, notes: "PASS via t_695ec6b2, t_4280583c; 36 marks, all distance_m numeric>=0" }
 
   # Perception suite — sprint 1 vision/scan tests
-  - { id: L0.7_nearby_close_block,       bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 0, notes: "FAIL via t_40e31b7e — /nearby misses cobble at (1,65,0). Linked to BUG t_dc89c01b (stride-2 + Math.floor)" }
-  - { id: L0.8_nearby_stride,            bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 0, notes: "FAIL via t_99e662c3 — finds 1/2 cobbles. Same root cause as L0.7" }
-  - { id: L0.9_scene_block_in_fov,       bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_7d8fb694 — scene cobble at (3,65,0) found after look(); 1 more pass → green" }
-  - { id: L0.10_scene_obstructed,        bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_6c3e5bf5 — 2-tall wall blocks LoS correctly. Note: 1-tall walls do NOT obstruct (eye height 1.6+)" }
-  - { id: L0.11_discover_distant,        bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_96361117 — discover coal radius=64 found at (40,50,0) d=42.3" }
-  - { id: L0.12_scene_drop_entity,       bot: flint,  status: red,      last_run: "2026-05-09T22:55Z", consecutive_pass: 1, notes: "PASS via t_c56c8131 — drop item visible in scene + nearby" }
+  - { id: L0.7_nearby_close_block,       bot: flint,  status: green, last_run: "2026-05-09T23:40Z", consecutive_pass: 2, notes: "FIXED in bd79e6e (BUG t_dc89c01b). Verified via t_c9518b9a, t_0f479422" }
+  - { id: L0.8_nearby_stride,            bot: flint,  status: green, last_run: "2026-05-09T23:40Z", consecutive_pass: 2, notes: "FIXED in bd79e6e. Verified via t_819e6c96, t_35bce2bc" }
+  - { id: L0.9_scene_block_in_fov,       bot: flint,  status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_7d8fb694, t_f93b7a21" }
+  - { id: L0.10_scene_obstructed,        bot: flint,  status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_6c3e5bf5, t_629c72e6 — 2-tall wall blocks LoS" }
+  - { id: L0.11_discover_distant,        bot: flint,  status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_96361117, t_bfd66a8f — chunk-scan finds at d=42" }
+  - { id: L0.12_scene_drop_entity,       bot: flint,  status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_c56c8131, t_0ef0146c — drop visible in scene + nearby" }
+  - { id: L0.13_scene_vertical_fov,      bot: flint,  status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_a6b1dddd, t_3070deb0 — vertical FOV ±18°, in-cone visible, out-of-cone hidden" }
+  - { id: L0.14_scene_summary_consistency, bot: flint, status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_a2b90510, t_73fa617c — visible_blocks names ⊆ visible_block_hits names" }
+  - { id: L0.15_looking_at_block,        bot: flint,  status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_1d2e5828, t_79bd500b — looking_at populated when bot aims at block CENTER" }
+  - { id: L0.16_nearby_terrain_visible,  bot: flint,  status: green, last_run: "2026-05-09T23:35Z", consecutive_pass: 2, notes: "PASS via t_6c0d52bb, t_ceeb9dde — regression: stone wall now visible in /nearby" }
 
 L1:
   - { id: L1.1_goto_simple,              bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }

@@ -1,0 +1,38 @@
+# L0.15 — looking_at_block: scene.looking_at populated when bot stares at a block.
+#
+# Purpose: the looking_at field uses bot.blockAtCursor(5) which projects from
+# the bot's actual gaze direction up to 5 blocks. Workers that need to know
+# what they're "pointed at" (e.g. before mining) rely on this.
+#
+# Setup: cobblestone at (3, 65, 0) — directly east, 3 blocks away.
+# Action:
+#   POST /action/look {x:3.5, y:65.5, z:0.5}  (aim at block CENTER, not corner)
+#   GET /scene?range=12
+# Expected:
+#   data.looking_at != null
+#   data.looking_at.name == 'cobblestone'
+#   data.looking_at.position == {x:3, y:65, z:0}
+#
+# Why center, not the (3,65,0) corner: bot.lookAt(Vec3(x,y,z)) aims at the
+# EXACT coord. The block at (3,65,0) occupies (3..4, 65..66, 0..1). Aiming
+# at (3,65,0) targets the southwest-bottom-back corner — which is below the
+# block — so blockAtCursor projects through air and returns null. Aim at
+# the center (3.5, 65.5, 0.5) for the cursor to reliably hit the block face.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 6 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 3 65 0 minecraft:cobblestone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 3 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 6 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

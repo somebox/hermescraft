@@ -1,0 +1,47 @@
+# L0.13 — scene_vertical_fov: scene catches blocks within ±18° vertical cone.
+#
+# Purpose: lock the vertical FOV behavior. With the bot looking horizontal east
+# (pitch 0), the default fair-play scan covers ±18° pitch. A block at +14°
+# above horizontal is in cone; a block at +22° is OUT.
+#
+# Geometry (bot at (0.5, 65, 0.5), eye Y≈66.4):
+#   target_in_cone:  cobblestone at (5, 67, 0)
+#     atan2(67 - 66.4, 5 - 0.5) = atan2(0.6, 4.5) ≈ +7.6° → IN cone
+#   target_out_of_cone: cobblestone at (3, 70, 0)
+#     atan2(70 - 66.4, 3 - 0.5) = atan2(3.6, 2.5) ≈ +55° → FAR OUT of cone
+#
+# Action:
+#   POST /action/look {x:10,y:65,z:0}     # face east, pitch ~0
+#   GET /scene?range=12
+#
+# Expected:
+#   data.visible_block_hits contains (5, 67, 0)
+#   data.visible_block_hits does NOT contain (3, 70, 0)
+#
+# Implication: workers wanting to perceive a block at high pitch must call
+# `mc look_at <coords>` first to re-aim the cone.
+#
+# (Earlier draft of this fixture had a "below" target at (5,63,0) — but that
+# block is BURIED under the platform stone at (5,64,0) and can't be seen. To
+# test below-cone visibility, drill a hole in the platform first.)
+
+world: landfolk-test
+
+prep:
+  # Y=65 only — never fill below or you destroy the platform (see F8 / docs/test-world.md)
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 5 67 0 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock 3 70 0 minecraft:cobblestone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 5 67 0 minecraft:air"
+  - "execute in landfolk-test run setblock 3 70 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

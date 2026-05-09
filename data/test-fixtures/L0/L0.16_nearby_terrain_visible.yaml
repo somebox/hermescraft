@@ -1,0 +1,28 @@
+# L0.16 — nearby_terrain_visible: regression test for BUG t_dc89c01b common-block fix.
+#
+# Purpose: previously stone/dirt/grass_block/deepslate were filtered out of
+# /nearby's blocks summary. After commit bd79e6e, deliberately placed
+# terrain blocks must show up.
+#
+# Setup: a stone wall in the test region that the worker must perceive.
+#   stone wall at (3, 65/66, -1..1) — 3 wide × 2 tall.
+# Action: GET /nearby?radius=8
+# Expected: data.blocks contains an entry name=='stone' with count >= 6.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 6 80 5 minecraft:air"
+  - "execute in landfolk-test run fill 3 65 -1 3 66 1 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill 3 65 -1 3 66 1 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 6 80 5 minecraft:air"
+  - "mvtp Flint world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

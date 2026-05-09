@@ -281,5 +281,68 @@ Workers should learn which mode to use when. Documenting in SOUL.md so the brain
 
 5/12 green; 2 blocked on bug fix; 4 need a second consecutive PASS; 1 deferred (L0.2); L0.5 deferred. Bug t_dc89c01b is now the gating item for L0 green.
 
+### Perception fix landed (bd79e6e) + suite extended to L0.16
+
+Fixed `getNearby` in observation.js per BUG t_dc89c01b. Three changes:
+- **Stride 1 in dx/dz**, iterating from `Math.floor(pos.x)+dx` instead of `pos.offset(dx, _, _)`. Closes the half-blind-at-fractional-X bug.
+- **Drop the common-block name filter**. Aggregation by name (count + nearest) + top-25 prevents flooding without hiding placed terrain.
+- **Surface scanRadius truncation**: response now includes `requested_radius` and `truncated:bool` so callers see when the cap kicks in.
+
+Cost: ~4× more `blockAt` calls (still negligible, chunk-cached).
+
+Verify-fix loop closed: BUG marked done with `fixed in bd79e6e`, `[VERIFY]` cards t_c9518b9a (L0.7) + t_819e6c96 (L0.8) PASS, then second PASS runs t_0f479422 + t_35bce2bc bumped both to consecutive_pass=2.
+
+### Sprint 1 perception: L0.13–L0.16 (depth tests) + F12 + F13
+
+Wrote 4 more fixtures to deepen coverage. All 4 PASS:
+
+| Test | Card1 / Card2 | What it locks |
+|---|---|---|
+| L0.13_scene_vertical_fov | t_a6b1dddd / t_3070deb0 | Default ±18° vertical cone; in-cone visible, out-of-cone hidden until `mc look_at` |
+| L0.14_scene_summary_consistency | t_a2b90510 / t_73fa617c | `visible_blocks` summary names ⊆ `visible_block_hits` names |
+| L0.15_looking_at_block | t_1d2e5828 / t_79bd500b | `looking_at` populated when bot aims at block CENTER (not corner) |
+| L0.16_nearby_terrain_visible | t_6c0d52bb / t_ceeb9dde | Regression: placed stone wall now in /nearby (was filtered before fix) |
+
+### F12. Vertical FOV cone is ±18° from horizontal
+
+`scanVisibleBlocks` defaults: `verticalFov: 36, verticalRays: 3`. With 3 rays spanning 36°, ray pitches are at base±18° and base+0°. So a block at +21° pitch above the bot's eye is OUTSIDE the default cone — invisible until the bot calls `mc look_at` to re-aim. L0.13 locks this: cobble at (5,67,0) (≈+8°) is visible; cobble at (3,70,0) (≈+55°) is not — UNTIL after `look_at(3,70,0)`.
+
+**SOUL.md should teach**: when a worker expects to see a high or low block (chest in a tower, ore in a pit) and `mc scene` reports nothing, the next move is `mc look_at <coords>` — not "the block isn't there."
+
+### F13. mc look_at aims at the EXACT coord — aim at block CENTER for cursor hits
+
+`bot.lookAt(Vec3(x,y,z))` orients the bot's gaze at that coordinate exactly. The block at (3, 65, 0) occupies the cube (3..4, 65..66, 0..1) — so passing (3, 65, 0) targets the corner. For `looking_at` to populate via `blockAtCursor`, the cursor needs to actually intersect the block face. Aim at the center: (3.5, 65.5, 0.5).
+
+**Worker rule**: when calling `mc look_at <coords>` to set up `mc dig` or `looking_at` checks, add 0.5 to each coord to aim at the block center.
+
+### F14. NEVER fill below Y=65 in the spawn region
+
+`fill -5 60 -5 10 80 5 air` destroys the spawn platform stones at Y=64. Bot then tp's to (0, 72, 0), slow-falls into the now-open void, and ends up at Y=-29 (or wherever bedrock physics catches it). Every test fixture must use `fill -5 65 -5 10 80 5 air` for the test region clear.
+
+This also led to extending the platform east to x=10 (was 11×11; now 16×11) so fixtures placing targets at x=4..5 don't risk landing the bot off the edge during slow-fall. Documented in docs/test-world.md including the restore command.
+
+### L0 status update
+
+| Test | Status |
+|---|---|
+| L0.1 health_connected | green (3) |
+| L0.2 health_disconnected | deferred |
+| L0.3 observe_payload | green (2) |
+| L0.4 observe_action_loop | green (2) |
+| L0.5 marks_list_empty | deferred |
+| L0.6 marks_list_with_distance | green (2) |
+| L0.7 nearby_close_block | **green (2 — fixed)** |
+| L0.8 nearby_stride | **green (2 — fixed)** |
+| L0.9 scene_block_in_fov | green (2) |
+| L0.10 scene_obstructed | green (2) |
+| L0.11 discover_distant | green (2) |
+| L0.12 scene_drop_entity | green (2) |
+| L0.13 scene_vertical_fov | green (2) |
+| L0.14 scene_summary_consistency | green (2) |
+| L0.15 looking_at_block | green (2) |
+| L0.16 nearby_terrain_visible | green (2) |
+
+**14/16 L0 green**; 2 deferred (L0.2 disconnected, L0.5 empty marks). The perception block is solid. Action contracts shipped: dig + collect. Remaining for the architecture's Sprint 1 exit gate: place + craft + chest contracts; the two deferred L0 tests; one L1 smoke run.
+
 
 

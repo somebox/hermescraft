@@ -27,11 +27,23 @@ Created with:
 /execute in landfolk-test run forceload add 0 0
 ```
 
-Spawn platform at (0, 64, 0): an 11×11 stone surface with bedrock floor at Y=-64.
+Spawn platform at (0, 64, 0): an **extended 16×11 stone surface** at Y=64 covering x=−5..10, z=−5..5. Bots stand at Y=65. Bedrock floor at Y=−64.
+
+The platform was extended east on 2026-05-09 (from the original 11×11 to 16×11) to accommodate L0.10/L0.13 fixtures that place targets at x=4..5. Without the extension, bots tp'd to (0, 72, 0) for slow-fall would land off the platform and fall to bedrock. Restored if accidentally damaged via:
+```
+/execute in landfolk-test run fill -5 64 -5 10 64 5 minecraft:stone
+```
 
 ## Coordinate conventions
 
-- **Spawn platform**: 11×11 stone at Y=64 centered on (0, 64, 0). Bots stand at Y=65.
+### **Fixture-design rules** (learned the hard way — see F8/F10 below)
+1. **NEVER fill below Y=65 in the spawn region.** `fill -5 60 -5 10 80 5 air` will destroy the platform stones at Y=64 and turn the test into a "bot freefalls to bedrock" run. Always use `fill -5 65 -5 10 80 5 air`.
+2. **Walls obstructing LoS must be at least 2 blocks tall.** Bot eye height ≈ 1.38 above feet — a 1-tall wall is BELOW the eye, and rays at downward pitches in (-14°, -6°) clear the wall and hit blocks behind. Use `fill X 65 Z1 X 66 Z2 minecraft:<wall>`.
+3. **Targets BELOW the platform** require either (a) a hole drilled through the platform with `setblock X 64 Z minecraft:air` so LoS reaches them, or (b) placing them at z=±6 (outside the platform's z-range).
+
+### Coordinate conventions
+
+- **Spawn platform**: 16×11 stone at Y=64 covering x=−5..10, z=−5..5. Bots stand at Y=65.
 - **Test region partitioning** (planned): each capability level gets a 64-block X-axis offset to avoid cross-test contamination:
   - L0 tests: centered at (0, 65, 0) — the spawn platform
   - L1 tests: centered at (50, 65, 0)
