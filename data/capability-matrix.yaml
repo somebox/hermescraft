@@ -25,10 +25,10 @@ notes: |
 
 L0:
   - { id: L0.1_health_connected,         bot: either, status: green,    last_run: "2026-05-09T21:30Z", consecutive_pass: 3, notes: "PASS via t_86e0a6c6, t_7c3f127c (verify), t_77170817" }
-  - { id: L0.2_health_disconnected,      bot: either, status: deferred, last_run: null, consecutive_pass: 0, notes: "needs bot-process-kill harness; deferred to L0 close-out" }
+  - { id: L0.2_health_disconnected,      bot: gatherer, status: green, last_run: "2026-05-10T01:30Z", consecutive_pass: 2, notes: "PASS via t_3833256e, t_eeecda5a — rcon kick → /health connected=false (HTTP server stays up); /connect restores. Used Gatherer to avoid disrupting Flint" }
   - { id: L0.3_observe_payload,          bot: either, status: green,    last_run: "2026-05-09T21:30Z", consecutive_pass: 2, notes: "PASS via t_dd971cc6, t_6857edd4; 12/12 required keys present" }
   - { id: L0.4_observe_action_loop,      bot: either, status: green,    last_run: "2026-05-09T21:30Z", consecutive_pass: 2, notes: "PASS via t_cd693647, t_435fa157; trigger=3x mc dig 999 99 999" }
-  - { id: L0.5_marks_list_empty,         bot: either, status: deferred, last_run: null, consecutive_pass: 0, notes: "needs fresh-bot or marks-clear harness; deferred to L0 close-out" }
+  - { id: L0.5_marks_list_empty,         bot: flint, status: green, last_run: "2026-05-10T01:30Z", consecutive_pass: 2, notes: "PASS via t_ae2cd6b3, t_20b08d28 — fixture writes {} to data/locations-flint.json via local: prefix; locations module reads fresh each call so no restart needed" }
   - { id: L0.6_marks_list_with_distance, bot: either, status: green,    last_run: "2026-05-09T21:30Z", consecutive_pass: 2, notes: "PASS via t_695ec6b2, t_4280583c; 36 marks, all distance_m numeric>=0" }
 
   # Perception suite — sprint 1 vision/scan tests

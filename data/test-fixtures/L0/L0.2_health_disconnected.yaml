@@ -1,0 +1,42 @@
+# L0.2 — health_disconnected: /health reports connected=false after the bot is kicked.
+#
+# Strategy: instead of killing the node process (which would also kill the
+# HTTP server, making /health unreachable), we KICK the bot from the MC
+# server side. The mineflayer client loses its TCP connection; the HTTP
+# server keeps running and reports connected=false.
+#
+# To avoid disrupting Flint (used by every other test), this targets
+# GATHERER on port 3002.
+#
+# Setup:
+#   prep:    bring Gatherer onto the platform; kick him via rcon
+#   action:  GET http://localhost:3002/health (NOT 3001 — Gatherer's port)
+#   cleanup: POST /connect to reconnect Gatherer
+#
+# Expected:
+#   ok=true (HTTP returns), connected=false, mineflayer state cleared.
+
+world: landfolk-test
+
+prep:
+  # Make sure Gatherer is connected first (test from a known good state)
+  - "local: curl -sf -X POST http://localhost:3002/connect >/dev/null"
+  - "local: sleep 2"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "mvtp Gatherer landfolk-test"
+  - "execute in landfolk-test run tp Gatherer 0 72 0"
+  - "clear Gatherer"
+  - "effect give Gatherer minecraft:slow_falling 5 0 true"
+  # Brief pause for the bot to land
+  - "local: sleep 3"
+  # Kick Gatherer — disconnects from MC server, keeps HTTP server alive
+  - "kick Gatherer L0.2-disconnect-test"
+  # Wait for mineflayer to notice the disconnect and update state
+  - "local: sleep 3"
+
+cleanup:
+  # Reconnect Gatherer for subsequent tests
+  - "local: curl -sf -X POST http://localhost:3002/connect >/dev/null"
+  - "local: sleep 4"
+  - "mvtp Gatherer world"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

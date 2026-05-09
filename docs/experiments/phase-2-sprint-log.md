@@ -518,6 +518,37 @@ L3.44 locks the disambiguation: `withdraw planks` against a chest with both oak_
 
 **27 L3 tests green** out of the matrix's expanded set. Behavior_test territory (multi-step plans, multi-furnace coord, multi-chest organize) flagged for Phase 2 follow-up under F20 + new F23 below.
 
+### L0 closeout (Sprint 1 final): L0.2 + L0.5 green via run-fixture.sh `local:` prefix
+
+Both deferred tests needed off-rcon harness — file system writes for L0.5, and bot-connection lifecycle for L0.2. Extended `scripts/run-fixture.sh` with a `local:` prefix that runs commands on the test host (this Mac) instead of via rcon-cli.
+
+```yaml
+prep:
+  - "local: cp data/locations-flint.json /tmp/backup"
+  - "local: echo '{}' > data/locations-flint.json"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+```
+
+#### L0.2 — health_disconnected (green)
+Strategy: KICK the bot rather than killing the process. mineflayer disconnects from MC; HTTP server stays up; `/health` returns `{ok:true, connected:false, position:null}`. To avoid disrupting Flint (used by every other test), targets Gatherer on port 3002. Fixture cleanup `POST /connect` restores Gatherer. Cards: t_3833256e, t_eeecda5a.
+
+#### L0.5 — marks_list_empty (green)
+The locations module reads `data/locations-<name>.json` fresh on every `/marks` call (no caching) — so we can swap the file content live, hit /marks, and see empty. Fixture: backup file → write `{}` → action → restore. Cards: t_ae2cd6b3, t_20b08d28.
+
+### Phase 2 Sprint 1 — DONE
+
+**16/16 L0 green. 27 L3 tests green. 5/5 action contracts shipped.**
+
+| Block | Tests green | Sprint exit gate |
+|---|---|---|
+| L0 (foundation) | 16 / 16 | ✓ |
+| L3 (action contracts: dig, collect, place, craft+smelt, chest) | 27 / TBD | ✓ |
+| Action contracts shipped | 5 / 5 | ✓ |
+| Brain-driven worker validated | t_c63b9de0 | ✓ |
+| Verify_fix loop demonstrated | t_dc89c01b → t_c9518b9a + t_819e6c96 | ✓ |
+
+Architectural findings captured F1–F23 across the sprint. Sprint 2 candidates: L1 (movement) fixtures + first behavior_test (multi-step "fetch + smelt" or "mob ambush").
+
 ### F23. Open: chest organize / consolidate as behavior_test territory
 
 User flagged "organizing — grouping similar items together" — that's behavior_test material:

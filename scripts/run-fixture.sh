@@ -119,10 +119,23 @@ run_rcon_lines() {
     [ -z "$QUIET" ] && echo "=== $section ==="
     while IFS= read -r cmd; do
         [ -z "$cmd" ] && continue
+        local result
+        # `local:` prefix runs the command on the test host (this Mac), not via rcon.
+        # Useful for harness ops like backing up locations files, sleeps, or
+        # killing/connecting bot processes. Shell-quoted; runs under bash -c.
+        if [[ "$cmd" == local:* ]]; then
+            local shell_cmd="${cmd#local:}"
+            shell_cmd="${shell_cmd# }"  # strip one leading space
+            result=$(bash -c "$shell_cmd" 2>&1 | tail -2)
+            if [ -z "$QUIET" ]; then
+                printf '  %s\n' "$cmd"
+                printf '    -> %s\n' "$result"
+            fi
+            continue
+        fi
         # Escape single quotes in command (since we're wrapping in single quotes for ssh)
         local safe_cmd
         safe_cmd=$(printf '%s' "$cmd" | sed "s/'/'\"'\"'/g")
-        local result
         # -n: do not read stdin (would otherwise consume the rest of the herestring)
         result=$(ssh -n "$MC_HOST_SSH" "sudo docker exec $MC_DOCKER_NAME rcon-cli '$safe_cmd'" 2>&1 | tail -2 | tr -d '\033' | sed 's/\[[0-9;]*m//g')
         if [ -n "$QUIET" ]; then
