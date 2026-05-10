@@ -1,0 +1,41 @@
+# L5.6 — path_basic: convert a 5-block dirt strip to dirt_path.
+#
+# Validates Sprint 5's mc path verb:
+#   - Equips a shovel and right-clicks each dirt block to convert.
+#   - Skips columns that are already dirt_path or non-dirt.
+#   - Returns action contract { ok: true, data: { paths_placed, ... } }.
+#
+# Setup:
+#   landfolk-test, day, cleared 21×21 arena.
+#   Floor strip from (0, 64, 0) to (4, 64, 0) is dirt; surrounded by stone.
+#   Bot at (0, 65, 0) holding a wooden_shovel.
+#
+# Action under test:
+#   mc path 0 0 4 0 64
+#
+# Expected:
+#   - { ok: true, data: { paths_placed: 5, paths_skipped: 0, ... } }
+#   - Blocks at (0..4, 64, 0) are all dirt_path.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run fill 0 64 0 4 64 0 minecraft:dirt"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_shovel 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

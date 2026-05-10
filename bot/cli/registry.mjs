@@ -523,6 +523,32 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
 
+  g('path', 'world', [], {
+    description: 'Convert dirt/grass/podzol/coarse_dirt/mycelium/rooted_dirt to dirt_path inside an axis-aligned rectangle, using a shovel. Default Y is bot Y-1 (the floor). Skips columns that are already path, non-dirt, or covered by a non-air block above.',
+    method: 'POST',
+    path: '/action/path',
+    bodyFn: (p) =>
+      JSON.stringify({
+        x1: Number(p.x1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        z2: Number(p.z2),
+        ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+      }),
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'y', type: 'number' },
+    ],
+    usage: 'mc path X1 Z1 X2 Z2 [Y]',
+    examples: [
+      'mc path -3 0 3 0',
+      'mc path 10 10 14 14 64',
+    ],
+  }),
+
   g('through', 'world', [], {
     description: 'Pass through a fence_gate, door, or trapdoor: opens it, walks to the far side, closes it behind. Destination defaults to 2 blocks past the gate on the opposite side from the bot.',
     method: 'POST',
