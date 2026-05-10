@@ -97,5 +97,14 @@
     "category": "world",
     "task": "Build a 3-block-tall cobblestone wall at column (3, 65–67, 0).",
     "correct": ["mc wall cobblestone 3 65 0 3 67 0"]
+  },
+  {
+    "id": "build_fenced_enclosure",
+    "category": "world",
+    "task": "Build a 5×5 oak_fence enclosure between (-2, -2) and (2, 2), with a gate on the south side.",
+    "correct": [
+      "mc fence oak_fence -2 -2 2 2 --gate south",
+      "mc fence oak_fence -2 -2 2 2 -g south"
+    ]
   }
 ]

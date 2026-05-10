@@ -1,0 +1,1135 @@
+{
+  "timestamp": "2026-05-10T16:18:02.052Z",
+  "git_sha": "447f25ca7221f009998cc4e05686c5afac681823",
+  "realistic": true,
+  "parallel": true,
+  "cheatsheet_bytes": 10148,
+  "persona_bytes": 2946,
+  "skill_bytes": 4695,
+  "observe_bytes": 9330,
+  "models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-v4-flash"
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "label": "gemma-4-31b-it"
+    }
+  ],
+  "task_groups": [
+    "direct"
+  ],
+  "results": [
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2634,
+      "usage": {
+        "prompt_tokens": 9886,
+        "completion_tokens": 12,
+        "total_tokens": 9898,
+        "cost": 0.0013874,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0013874,
+          "upstream_inference_prompt_cost": 0.00138404,
+          "upstream_inference_completions_cost": 0.00000336
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0006937000000000001,
+      "output": "```\nmc goto 100 64 200\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 6084,
+      "usage": {
+        "prompt_tokens": 10875,
+        "completion_tokens": 18,
+        "total_tokens": 10893,
+        "cost": 0.00142059,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00142059,
+          "upstream_inference_prompt_cost": 0.00141375,
+          "upstream_inference_completions_cost": 0.00000684
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010946999999999999,
+      "output": "```\nmc goto 100 64 200\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 683,
+      "usage": {
+        "prompt_tokens": 9884,
+        "completion_tokens": 11,
+        "total_tokens": 9895,
+        "cost": 0.00138684,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00138684,
+          "upstream_inference_prompt_cost": 0.00138376,
+          "upstream_inference_completions_cost": 0.00000308
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00069342,
+      "output": "```\nmc collect cobblestone 4\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 232,
+      "usage": {
+        "prompt_tokens": 10867,
+        "completion_tokens": 11,
+        "total_tokens": 10878,
+        "cost": 0.00141689,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141689,
+          "upstream_inference_prompt_cost": 0.00141271,
+          "upstream_inference_completions_cost": 0.00000418
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010911000000000002,
+      "output": "```\nmc collect cobblestone 4\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 928,
+      "usage": {
+        "prompt_tokens": 9897,
+        "completion_tokens": 69,
+        "total_tokens": 9966,
+        "cost": 0.0014049,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0014049,
+          "upstream_inference_prompt_cost": 0.00138558,
+          "upstream_inference_completions_cost": 0.00001932
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 36,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00070245,
+      "output": "```\nmc place oak_planks 10 65 10\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "gemma-4-31b-it",
+      "pass": false,
+      "mc_lines": [],
+      "elapsed_ms": 10033,
+      "usage": null,
+      "cost_usd": null,
+      "output": ""
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "deepseek-v4-flash",
+      "pass": false,
+      "error": "429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"deepseek/deepseek-v4-flash is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations\",\"provider_name\":\"Novita\",\"is_byok\":false",
+      "elapsed_ms": 4288,
+      "cost_usd": null
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5695,
+      "usage": {
+        "prompt_tokens": 10871,
+        "completion_tokens": 8,
+        "total_tokens": 10879,
+        "cost": 0.0021782,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0021782,
+          "upstream_inference_prompt_cost": 0.0021742,
+          "upstream_inference_completions_cost": 0.000004
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010903000000000002,
+      "output": "```\nmc mark shelter\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 3505,
+      "usage": {
+        "prompt_tokens": 9877,
+        "completion_tokens": 48,
+        "total_tokens": 9925,
+        "cost": 0.00139622,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00139622,
+          "upstream_inference_prompt_cost": 0.00138278,
+          "upstream_inference_completions_cost": 0.00001344
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 47,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00069811,
+      "output": "```\nmc goals\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 9186,
+      "usage": {
+        "prompt_tokens": 10861,
+        "completion_tokens": 7,
+        "total_tokens": 10868,
+        "cost": 0.00141459,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141459,
+          "upstream_inference_prompt_cost": 0.00141193,
+          "upstream_inference_completions_cost": 0.00000266
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010889000000000003,
+      "output": "```\nmc goals\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 1398,
+      "usage": {
+        "prompt_tokens": 9883,
+        "completion_tokens": 122,
+        "total_tokens": 10005,
+        "cost": 0.00141778,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141778,
+          "upstream_inference_prompt_cost": 0.00138362,
+          "upstream_inference_completions_cost": 0.00003416
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 116,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0007088900000000001,
+      "output": "```\nmc eat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 222,
+      "usage": {
+        "prompt_tokens": 10867,
+        "completion_tokens": 7,
+        "total_tokens": 10874,
+        "cost": 0.00141537,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141537,
+          "upstream_inference_prompt_cost": 0.00141271,
+          "upstream_inference_completions_cost": 0.00000266
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010895000000000002,
+      "output": "```\nmc eat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 1314,
+      "usage": {
+        "prompt_tokens": 9881,
+        "completion_tokens": 44,
+        "total_tokens": 9925,
+        "cost": 0.00139566,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00139566,
+          "upstream_inference_prompt_cost": 0.00138334,
+          "upstream_inference_completions_cost": 0.00001232
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 33,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00069783,
+      "output": "```\nmc read_chat 5\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 411,
+      "usage": {
+        "prompt_tokens": 10865,
+        "completion_tokens": 11,
+        "total_tokens": 10876,
+        "cost": 0.00141663,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141663,
+          "upstream_inference_prompt_cost": 0.00141245,
+          "upstream_inference_completions_cost": 0.00000418
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010909000000000001,
+      "output": "```\nmc read_chat 5\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 228,
+      "usage": {
+        "prompt_tokens": 9889,
+        "completion_tokens": 12,
+        "total_tokens": 9901,
+        "cost": 0.00138782,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00138782,
+          "upstream_inference_prompt_cost": 0.00138446,
+          "upstream_inference_completions_cost": 0.00000336
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0006939100000000001,
+      "output": "```\nmc combat_skill 0.9\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 196,
+      "usage": {
+        "prompt_tokens": 10874,
+        "completion_tokens": 13,
+        "total_tokens": 10887,
+        "cost": 0.00141856,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141856,
+          "upstream_inference_prompt_cost": 0.00141362,
+          "upstream_inference_completions_cost": 0.00000494
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010926,
+      "output": "```\nmc combat_skill 0.9\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 351,
+      "usage": {
+        "prompt_tokens": 9889,
+        "completion_tokens": 12,
+        "total_tokens": 9901,
+        "cost": 0.000298284,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 9728,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000298284,
+          "upstream_inference_prompt_cost": 0.000294924,
+          "upstream_inference_completions_cost": 0.00000336
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0006939100000000001,
+      "output": "```\nmc feed_mob cow --item wheat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 7304,
+      "usage": {
+        "prompt_tokens": 10874,
+        "completion_tokens": 11,
+        "total_tokens": 10885,
+        "cost": 0.0014178,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0014178,
+          "upstream_inference_prompt_cost": 0.00141362,
+          "upstream_inference_completions_cost": 0.00000418
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010918000000000002,
+      "output": "```\nmc feed_mob cow wheat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 238,
+      "usage": {
+        "prompt_tokens": 9891,
+        "completion_tokens": 13,
+        "total_tokens": 9904,
+        "cost": 0.000298844,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 9728,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000298844,
+          "upstream_inference_prompt_cost": 0.000295204,
+          "upstream_inference_completions_cost": 0.00000364
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0006941900000000001,
+      "output": "```\nmc find_blocks iron_ore 32\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 217,
+      "usage": {
+        "prompt_tokens": 10877,
+        "completion_tokens": 15,
+        "total_tokens": 10892,
+        "cost": 0.00141971,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141971,
+          "upstream_inference_prompt_cost": 0.00141401,
+          "upstream_inference_completions_cost": 0.0000057
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010937,
+      "output": "```\nmc find_blocks iron_ore 32\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 228,
+      "usage": {
+        "prompt_tokens": 9883,
+        "completion_tokens": 9,
+        "total_tokens": 9892,
+        "cost": 0.000296604,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 9728,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000296604,
+          "upstream_inference_prompt_cost": 0.000294084,
+          "upstream_inference_completions_cost": 0.00000252
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0006930700000000001,
+      "output": "```\nmc chest @treasure\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 206,
+      "usage": {
+        "prompt_tokens": 10866,
+        "completion_tokens": 9,
+        "total_tokens": 10875,
+        "cost": 0.001416,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.001416,
+          "upstream_inference_prompt_cost": 0.00141258,
+          "upstream_inference_completions_cost": 0.00000342
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010902000000000002,
+      "output": "```\nmc chest @treasure\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 227,
+      "usage": {
+        "prompt_tokens": 9893,
+        "completion_tokens": 9,
+        "total_tokens": 9902,
+        "cost": 0.000298004,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 9728,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000298004,
+          "upstream_inference_prompt_cost": 0.000295484,
+          "upstream_inference_completions_cost": 0.00000252
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0006937700000000001,
+      "output": "```\nmc fight zombie 6\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "prefix",
+      "elapsed_ms": 217,
+      "usage": {
+        "prompt_tokens": 10876,
+        "completion_tokens": 13,
+        "total_tokens": 10889,
+        "cost": 0.00141882,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141882,
+          "upstream_inference_prompt_cost": 0.00141388,
+          "upstream_inference_completions_cost": 0.00000494
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010927999999999999,
+      "output": "```\nmc fight zombie 6 30\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 277,
+      "usage": {
+        "prompt_tokens": 9890,
+        "completion_tokens": 62,
+        "total_tokens": 9952,
+        "cost": 0.00161212,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 640,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00161212,
+          "upstream_inference_prompt_cost": 0.00159042,
+          "upstream_inference_completions_cost": 0.0000217
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 54,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00070098,
+      "output": "```\nmc mode guard\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 4426,
+      "usage": {
+        "prompt_tokens": 10879,
+        "completion_tokens": 8,
+        "total_tokens": 10887,
+        "cost": 0.00141731,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141731,
+          "upstream_inference_prompt_cost": 0.00141427,
+          "upstream_inference_completions_cost": 0.00000304
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010911,
+      "output": "```\nmc mode guard\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": false,
+      "mc_lines": [],
+      "elapsed_ms": 1788,
+      "usage": {
+        "prompt_tokens": 9887,
+        "completion_tokens": 601,
+        "total_tokens": 10488,
+        "cost": 0.00052794,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 9600,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00052794,
+          "upstream_inference_prompt_cost": 0.00031759,
+          "upstream_inference_completions_cost": 0.00021035
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00077623,
+      "output": ""
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5191,
+      "usage": {
+        "prompt_tokens": 10872,
+        "completion_tokens": 16,
+        "total_tokens": 10888,
+        "cost": 0.00141944,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141944,
+          "upstream_inference_prompt_cost": 0.00141336,
+          "upstream_inference_completions_cost": 0.00000608
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010936,
+      "output": "```\nmc deposit iron_ingot 32 @vault\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5084,
+      "usage": {
+        "prompt_tokens": 9884,
+        "completion_tokens": 97,
+        "total_tokens": 9981,
+        "cost": 0.00141092,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141092,
+          "upstream_inference_prompt_cost": 0.00138376,
+          "upstream_inference_completions_cost": 0.00002716
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 88,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0007054600000000001,
+      "output": "```\nmc scene 8\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 10033,
+      "usage": {
+        "prompt_tokens": 10868,
+        "completion_tokens": 9,
+        "total_tokens": 10877,
+        "cost": 0.00141626,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00141626,
+          "upstream_inference_prompt_cost": 0.00141284,
+          "upstream_inference_completions_cost": 0.00000342
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010904,
+      "output": "```\nmc scene 8\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "build_3block_wall",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": false,
+      "mc_lines": [],
+      "elapsed_ms": 2027,
+      "usage": {
+        "prompt_tokens": 9894,
+        "completion_tokens": 601,
+        "total_tokens": 10495,
+        "cost": 0.00052913,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 9600,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00052913,
+          "upstream_inference_prompt_cost": 0.00031878,
+          "upstream_inference_completions_cost": 0.00021035
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0007767200000000001,
+      "output": ""
+    },
+    {
+      "group": "direct",
+      "task_id": "build_3block_wall",
+      "category": "world",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 4724,
+      "usage": {
+        "prompt_tokens": 10882,
+        "completion_tokens": 23,
+        "total_tokens": 10905,
+        "cost": 0.0014234,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0014234,
+          "upstream_inference_prompt_cost": 0.00141466,
+          "upstream_inference_completions_cost": 0.00000874
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010974,
+      "output": "```\nmc wall cobblestone 3 65 0 3 67 0\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "build_fenced_enclosure",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": false,
+      "mc_lines": [],
+      "elapsed_ms": 1418,
+      "usage": {
+        "prompt_tokens": 9902,
+        "completion_tokens": 601,
+        "total_tokens": 10503,
+        "cost": 0.00053049,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 9600,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00053049,
+          "upstream_inference_prompt_cost": 0.00032014,
+          "upstream_inference_completions_cost": 0.00021035
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00077728,
+      "output": ""
+    },
+    {
+      "group": "direct",
+      "task_id": "build_fenced_enclosure",
+      "category": "world",
+      "model": "gemma-4-31b-it",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 1113,
+      "usage": {
+        "prompt_tokens": 10888,
+        "completion_tokens": 21,
+        "total_tokens": 10909,
+        "cost": 0.00142342,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00142342,
+          "upstream_inference_prompt_cost": 0.00141544,
+          "upstream_inference_completions_cost": 0.00000798
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.0010972,
+      "output": "```\nmc fence oak_fence -2 -2 2 2 --gate south\n```"
+    }
+  ]
+}

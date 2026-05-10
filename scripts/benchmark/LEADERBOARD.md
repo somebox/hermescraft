@@ -1,15 +1,14 @@
 # mc benchmark leaderboard
 
-Run: `2026-05-10T16:11:16.363Z` (git 17a779e)
-Cheatsheet: 9897 bytes
+Run: `2026-05-10T16:20:43.024Z` (git 447f25c)
+Cheatsheet: 10148 bytes
 Task groups: direct
 
 ## Overall ranking
 
 | # | Model | Accuracy | Errors | Cost/call | Avg latency |
 |---|---|---:|---:|---:|---:|
-| 1 | `gemma-4-31b-it` | 16/16 (100%) | 0 | $0.00109 | 1954ms |
-| 2 | `deepseek-v4-flash` | 14/16 (88%) | 0 | $0.00072 | 1383ms |
+| 1 | `deepseek-v4-flash` | 14/17 (82%) | 0 | $0.00072 | 1837ms |
 
 ## Per-group breakdown
 
@@ -17,10 +16,10 @@ Task groups: direct
 
 | Model | Accuracy | Cost/call | Avg latency |
 |---|---:|---:|---:|
-| `gemma-4-31b-it` | 16/16 (100%) | $0.00109 | 1954ms |
-| `deepseek-v4-flash` | 14/16 (88%) | $0.00072 | 1383ms |
+| `deepseek-v4-flash` | 14/17 (82%) | $0.00072 | 1837ms |
 
 ## Failed tasks
 
 - direct/mine_4_cobble on deepseek-v4-flash
-- direct/deposit_iron on deepseek-v4-flash
+- direct/feed_cow on deepseek-v4-flash
+- direct/build_3block_wall on deepseek-v4-flash

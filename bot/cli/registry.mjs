@@ -501,6 +501,28 @@ export const RAW_COMMAND_DEFS = [
   /* Sprint 5 — Building primitives. mc wall is sugar over place_fill that
    * enforces a vertical-height guard (y1 != y2) and follows the action
    * contract (data + structured errors). */
+  g('fence', 'world', [], {
+    description: 'Build a fence enclosure (rectangle perimeter at one Y) of BLOCK between two corners. Optional --gate DIR (north|south|east|west) places a matching fence_gate at the midpoint of that side. Min 3×3.',
+    method: 'POST',
+    path: '/action/fence',
+    customParse: true,
+    bodyFn: (p) =>
+      JSON.stringify({
+        block: String(p.block),
+        x1: Number(p.x1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        z2: Number(p.z2),
+        ...(p.gate ? { gate: String(p.gate) } : {}),
+        ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+      }),
+    usage: 'mc fence BLOCK X1 Z1 X2 Z2 [--gate DIR] [--y Y]',
+    examples: [
+      'mc fence oak_fence -3 -3 3 3 --gate south',
+      'mc fence spruce_fence 10 10 14 16',
+    ],
+  }),
+
   g('wall', 'world', [], {
     description: 'Build a wall (vertical line/rect) of BLOCK between two corners. y1 must differ from y2.',
     method: 'POST',

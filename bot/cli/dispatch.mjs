@@ -124,6 +124,28 @@ function customParse(canonicalName, positional) {
       if (!id) throw new Error('missing:id');
       return { id };
     }
+    case 'fence': {
+      // mc fence BLOCK X1 Z1 X2 Z2 [--gate DIR] [--y Y]
+      const q = positional.slice();
+      let gate = '';
+      let yOpt;
+      const pos = [];
+      for (let i = 0; i < q.length; i++) {
+        const t = String(q[i]);
+        if (t === '--gate' || t === '-g') gate = String(q[++i] || '');
+        else if (t === '--y') yOpt = Number(q[++i]);
+        else pos.push(q[i]);
+      }
+      const [block, x1, z1, x2, z2] = pos;
+      if (!block) throw new Error('missing:block');
+      if ([x1, z1, x2, z2].some((v) => v === undefined)) throw new Error('missing:coords');
+      return {
+        block,
+        x1: Number(x1), z1: Number(z1), x2: Number(x2), z2: Number(z2),
+        ...(gate ? { gate } : {}),
+        ...(yOpt !== undefined ? { y: yOpt } : {}),
+      };
+    }
     case 'flee': {
       const q = positional.slice();
       let distance = 16;

@@ -1,0 +1,41 @@
+# L5.3 — fence_enclosure: 5×5 oak_fence enclosure with a south-side gate.
+#
+# Validates Sprint 5's mc fence verb:
+#   - Perimeter is correct (16 perimeter positions: 4 corners + 4 sides × 3).
+#   - Gate replaces the midpoint of the named side, not an extra block.
+#   - 15 fences + 1 gate match what the action contract reported.
+#
+# Setup:
+#   landfolk-test, day, cleared 21×21 arena at Y=64..70.
+#   Bot at (0, 65, 0) with 32 oak_fence + 4 oak_fence_gate.
+#
+# Action under test:
+#   mc fence oak_fence -2 -2 2 2 --gate south
+#
+# Expected:
+#   - { ok: true, data: { fences_placed: 15, gate_placed: true, gate_position: {x:0, y:65, z:2}, ... } }
+#   - All 15 fence positions on the perimeter (excluding (0,65,2)) are oak_fence.
+#   - (0, 65, 2) is oak_fence_gate.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:oak_fence 32"
+  - "give Flint minecraft:oak_fence_gate 4"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

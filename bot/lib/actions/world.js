@@ -710,6 +710,167 @@ export function createWorldActions(deps) {
   },
 
   /**
+   * Build a fence enclosure: rectangle perimeter at current Y. Optional
+   * --gate DIR places a matching fence_gate at the midpoint of the named
+   * side (north|south|east|west), inferring gate type from fence type
+   * (e.g. oak_fence → oak_fence_gate).
+   * — Phase-2 action contract (see docs/phase-2/action-contracts.md mc fence) —
+   */
+  async fence({ block: blockName, x1, z1, x2, z2, gate, y }) {
+    const b = ensureBot();
+
+    if (!blockName || typeof blockName !== 'string') {
+      return { ok: false, error: { code: 'MISSING_FENCE_BLOCK', message: 'mc fence requires a fence block (e.g. oak_fence)', retry_safe: false } };
+    }
+    if (!blockName.endsWith('_fence')) {
+      return { ok: false, error: { code: 'NOT_A_FENCE', message: `Block "${blockName}" is not a fence type (must end in _fence)`, retry_safe: false } };
+    }
+
+    const args = { x1, z1, x2, z2 };
+    for (const k of ['x1', 'z1', 'x2', 'z2']) {
+      const n = Number(args[k]);
+      if (!Number.isFinite(n)) {
+        return { ok: false, error: { code: 'INVALID_COORD', message: `mc fence requires numeric ${k}`, retry_safe: false } };
+      }
+      args[k] = n;
+    }
+
+    const minX = Math.min(args.x1, args.x2);
+    const maxX = Math.max(args.x1, args.x2);
+    const minZ = Math.min(args.z1, args.z2);
+    const maxZ = Math.max(args.z1, args.z2);
+    const w = maxX - minX + 1;
+    const l = maxZ - minZ + 1;
+
+    if (w < 3 || l < 3) {
+      return { ok: false, error: { code: 'ENCLOSURE_TOO_SMALL', message: `Enclosure ${w}×${l} too small (min 3×3 to have an interior)`, retry_safe: false } };
+    }
+
+    // Use bot's current Y if not specified (fences need a solid block beneath, so picking the bot's standing Y is usually right).
+    const fenceY = Number.isFinite(Number(y)) ? Number(y) : Math.floor(b.entity.position.y);
+
+    // Compute perimeter positions (top + bottom rows + left + right columns, no duplicates).
+    const positions = [];
+    for (let x = minX; x <= maxX; x++) {
+      positions.push({ x, y: fenceY, z: minZ }); // north edge
+      positions.push({ x, y: fenceY, z: maxZ }); // south edge
+    }
+    for (let z = minZ + 1; z <= maxZ - 1; z++) {
+      positions.push({ x: minX, y: fenceY, z }); // west edge
+      positions.push({ x: maxX, y: fenceY, z }); // east edge
+    }
+
+    // Gate: midpoint of the requested side. Replaces one fence with a gate.
+    let gatePos = null;
+    let gateType = null;
+    let gateFacing = null;
+    if (gate) {
+      const dir = String(gate).toLowerCase();
+      if (!['north', 'south', 'east', 'west'].includes(dir)) {
+        return { ok: false, error: { code: 'INVALID_GATE_DIR', message: `gate must be north|south|east|west, got "${gate}"`, retry_safe: false } };
+      }
+      const midX = Math.floor((minX + maxX) / 2);
+      const midZ = Math.floor((minZ + maxZ) / 2);
+      switch (dir) {
+        case 'north': gatePos = { x: midX, y: fenceY, z: minZ }; gateFacing = 'south'; break;
+        case 'south': gatePos = { x: midX, y: fenceY, z: maxZ }; gateFacing = 'north'; break;
+        case 'west':  gatePos = { x: minX, y: fenceY, z: midZ }; gateFacing = 'east';  break;
+        case 'east':  gatePos = { x: maxX, y: fenceY, z: midZ }; gateFacing = 'west';  break;
+      }
+      gateType = blockName.replace(/_fence$/, '_fence_gate');
+    }
+
+    // Filter perimeter to remove the gate position (we'll place the gate separately).
+    const fencePositions = gatePos
+      ? positions.filter((p) => !(p.x === gatePos.x && p.z === gatePos.z))
+      : positions;
+
+    const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+    let placed = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    async function placeOne(pos, itemName) {
+      const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+      if (existing && existing.name !== 'air' && existing.name !== 'cave_air') return 'skipped';
+      const item = b.inventory.items().find((i) => i.name === itemName);
+      if (!item) return 'no_item';
+      try { await b.equip(item, 'hand'); } catch {}
+      if (b.entity.position.distanceTo(new Vec3(pos.x, pos.y, pos.z)) > 4.5) {
+        try { await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3)); } catch {}
+      }
+      for (const [dx, dy, dz] of offsets) {
+        const ref = b.blockAt(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz));
+        if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
+          try {
+            await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+            return 'placed';
+          } catch {}
+          break;
+        }
+      }
+      return 'failed';
+    }
+
+    for (const pos of fencePositions) {
+      const r = await placeOne(pos, blockName);
+      if (r === 'placed') placed++;
+      else if (r === 'skipped') skipped++;
+      else if (r === 'no_item') {
+        return {
+          ok: false,
+          error: {
+            code: 'MISSING_INVENTORY',
+            message: `Out of ${blockName} after placing ${placed}/${fencePositions.length}`,
+            observed_state: { fences_placed: placed, fences_remaining: fencePositions.length - placed - skipped, block: blockName },
+            retry_safe: true,
+          },
+        };
+      } else failed++;
+    }
+
+    let gatePlaced = false;
+    if (gatePos) {
+      const r = await placeOne(gatePos, gateType);
+      if (r === 'placed') gatePlaced = true;
+      else if (r === 'no_item') {
+        // Gate item missing — fence is still valid, just no gate. Return partial success.
+        return {
+          ok: true,
+          data: {
+            fences_placed: placed,
+            fences_attempted: fencePositions.length,
+            skipped_existing: skipped,
+            failed,
+            gate_placed: false,
+            gate_skipped_reason: `no ${gateType} in inventory`,
+            bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: fenceY },
+            block: blockName,
+          },
+          result: `Fence: ${placed}/${fencePositions.length} ${blockName} placed; gate skipped (no ${gateType})`,
+        };
+      }
+    }
+
+    return {
+      ok: true,
+      data: {
+        fences_placed: placed,
+        fences_attempted: fencePositions.length,
+        skipped_existing: skipped,
+        failed,
+        gate_placed: gatePlaced,
+        gate_position: gatePos,
+        gate_facing: gateFacing,
+        gate_type: gateType,
+        bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: fenceY },
+        block: blockName,
+      },
+      result: `Fence: ${placed}/${fencePositions.length} ${blockName} placed${gatePlaced ? `, gate placed (${gateType}) on ${gate} side` : ''}${skipped ? ` (${skipped} skipped)` : ''}${failed ? ` (${failed} failed)` : ''}`,
+    };
+  },
+
+  /**
    * Highest solid block per vertical column — for pit/site selection without N×find_blocks.
    * Optional `radius`: square (2r+1)² around (x,z), returns max top among sampled columns.
    */
