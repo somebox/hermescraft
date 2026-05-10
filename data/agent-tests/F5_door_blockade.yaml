@@ -1,7 +1,11 @@
 # F5 — door blockade: does the agent recover from NAV_BLOCKED?
 #
-# Bot at (0, 65, 7) outside a 5x5 cobble house. South wall has a closed
-# oak_door at (0, 65, 4). Goal location is INSIDE the house at (0, 65, 2).
+# Bot at (0, 65, 7) outside a 5x5 cobble-walled house. The house has:
+#   - stone arena floor at y=64 (continues inside the house, no cobble floor)
+#   - cobble walls 3 tall at y=65..67 around x=-2..2, z=0..4
+#   - cobble ceiling at y=68 (so agent can't fly over)
+#   - oak_door at (0, 65..66, 4) in the south wall
+# Goal: (0, 65, 2) inside. Bot foot Y is 65 everywhere (arena stone at y=64).
 #
 # Naive agent: calls mc goto 0 65 2 → NAV_BLOCKED → retries forever.
 # Good agent: reads error, calls mc through 0 65 4 OR mc move 0 65 2.
@@ -33,6 +37,11 @@ timeout_seconds: 180
 expect:
   bot_at: { x: 0, y: 65, z: 2, range: 2 }
 
+# Sanity-check after prep — abort if walls/door didn't materialize.
+verify_after_prep:
+  - { block: cobblestone, min_count: 70 }
+  - { block: oak_door, min_count: 2 }
+
 prep:
   - "execute in landfolk-test run difficulty peaceful"
   - "execute in landfolk-test run gamerule doDaylightCycle false"
@@ -42,10 +51,16 @@ prep:
   # Wider clear to wipe any leftover state from previous tests
   - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
   - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
-  # 5x5 house at x=-2..2, z=0..4. Walls span y=65..67 (3 tall). Single fill
-  # builds the whole shell at once, then we carve the door slot.
-  - "execute in landfolk-test run fill -2 65 0 2 67 4 minecraft:cobblestone hollow"
-  - "execute in landfolk-test run fill -1 65 1 1 67 3 minecraft:air"
+  # 4 walls + ceiling, no cobble floor (bot stands on the y=64 stone arena
+  # floor both inside and outside the house, so the door threshold is at
+  # bot foot level and the bot can actually walk through).
+  - "execute in landfolk-test run fill -2 65 0 2 67 0 minecraft:cobblestone"          # north wall
+  - "execute in landfolk-test run fill -2 65 4 -1 67 4 minecraft:cobblestone"         # south wall, left of door
+  - "execute in landfolk-test run fill 1 65 4 2 67 4 minecraft:cobblestone"           # south wall, right of door
+  - "execute in landfolk-test run setblock 0 67 4 minecraft:cobblestone"              # south wall, above door
+  - "execute in landfolk-test run fill -2 65 1 -2 67 3 minecraft:cobblestone"         # west wall
+  - "execute in landfolk-test run fill 2 65 1 2 67 3 minecraft:cobblestone"           # east wall
+  - "execute in landfolk-test run fill -2 68 0 2 68 4 minecraft:cobblestone"          # ceiling
   - "execute in landfolk-test run setblock 0 65 4 minecraft:oak_door[half=lower,facing=south,hinge=left,open=false]"
   - "execute in landfolk-test run setblock 0 66 4 minecraft:oak_door[half=upper,facing=south,hinge=left,open=false]"
   - "mvtp Flint landfolk-test"

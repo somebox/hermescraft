@@ -68,16 +68,29 @@ def run_rcon(cmd: str) -> str:
     return result.stdout.strip()
 
 
-def fixture_run(spec: dict, mode: str) -> None:
-    """Run prep or cleanup commands sequentially."""
+def run_rcon_batch(cmds: list[str]) -> str:
+    """Run many rcon commands via a single ssh+rcon-cli invocation.
+    Drastically faster than per-command (one TCP/ssh round-trip vs N).
+    Returns combined stdout."""
+    if not cmds:
+        return ""
+    # rcon-cli accepts multiple commands via stdin, one per line.
+    batch = "\n".join(cmds) + "\n"
+    full = ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"]
+    result = subprocess.run(full, input=batch, capture_output=True, text=True, timeout=60)
+    return result.stdout
+
+
+def fixture_run(spec: dict, mode: str) -> str:
+    """Run prep or cleanup commands as a batched rcon call. Returns combined output."""
     cmds = spec.get(mode, [])
     if not cmds:
-        return
-    for cmd in cmds:
-        try:
-            run_rcon(cmd)
-        except subprocess.TimeoutExpired:
-            print(f"  WARN: rcon timeout on: {cmd[:60]}", file=sys.stderr)
+        return ""
+    try:
+        return run_rcon_batch(cmds)
+    except subprocess.TimeoutExpired:
+        print(f"  WARN: rcon batch timeout in {mode}", file=sys.stderr)
+        return ""
 
 
 def observe(bot_url: str) -> dict:
@@ -207,9 +220,56 @@ def main():
     if skills:
         print(f"  skills: {','.join(skills)}")
 
+    # Pre-prep: tp Flint to safe-home AND run the spec's cleanup commands
+    # so leftover state from a prior interrupted test can't leak in. Then
+    # run prep. All three steps go through the batched rcon path so the
+    # arena flickers for a fraction of a second instead of ~10s.
+    print(f"  pre-prep tp + clean...", end="", flush=True)
+    pre_cmds = ["execute in landfolk-test run tp Flint 52 65 52"]
+    pre_cmds.extend(spec.get("cleanup") or [])
+    run_rcon_batch(pre_cmds)
+    time.sleep(0.5)
+    print(" ok")
+
     print(f"  prep...", end="", flush=True)
     fixture_run(spec, "prep")
     print(" ok")
+
+    # Settle: let mineflayer's block cache ingest the rcon changes.
+    print(f"  settle (3s)...", end="", flush=True)
+    time.sleep(3)
+    print(" ok")
+
+    # Verify prep: query bot's perception and check counts match spec.
+    # Spec uses `verify_after_prep` as a list of { block, min_count } items.
+    # Failures abort the test (no point launching hermes against a broken arena).
+    verify_items = spec.get("verify_after_prep") or []
+    if verify_items:
+        nearby = observe(args.bot_url)
+        # /observe doesn't include block counts; use /nearby separately
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"{args.bot_url}/nearby?radius=16", timeout=10) as resp:
+                near = json.loads(resp.read().decode())
+        except Exception as e:
+            print(f"  VERIFY: nearby query failed: {e}")
+            near = {"data": {"blocks": []}}
+        block_counts = {b["name"]: b["count"] for b in (near.get("data") or {}).get("blocks", [])}
+        print(f"  verify_after_prep:")
+        fail = False
+        for item in verify_items:
+            name = item["block"]
+            want = int(item.get("min_count", 1))
+            have = block_counts.get(name, 0)
+            ok = have >= want
+            flag = "✓" if ok else "✗"
+            print(f"    {flag} {name} ≥ {want}  (have {have})")
+            if not ok:
+                fail = True
+        if fail:
+            print(f"  ABORT: prep verification failed — world not in expected state")
+            fixture_run(spec, "cleanup")
+            sys.exit(3)
 
     pre = observe(args.bot_url)
     pre_actions = ((pre.get("state") or {}).get("recent_actions") or [])
@@ -235,18 +295,29 @@ def main():
 
     print(f"  launching hermes...")
     t0 = time.time()
+    agent_stdout = ""
+    agent_stderr = ""
+    hermes_status = "unknown"
+    timed_out = False
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout_s, env=env)
-        agent_stdout = proc.stdout
-        agent_stderr = proc.stderr
-        hermes_status = "ok" if proc.returncode == 0 else f"exit_{proc.returncode}"
-        timed_out = False
-    except subprocess.TimeoutExpired as e:
-        agent_stdout = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        agent_stderr = (e.stderr or b"").decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-        hermes_status = "timeout"
-        timed_out = True
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=timeout_s, env=env)
+            agent_stdout = proc.stdout
+            agent_stderr = proc.stderr
+            hermes_status = "ok" if proc.returncode == 0 else f"exit_{proc.returncode}"
+        except subprocess.TimeoutExpired as e:
+            agent_stdout = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            agent_stderr = (e.stderr or b"").decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+            hermes_status = "timeout"
+            timed_out = True
+        except KeyboardInterrupt:
+            hermes_status = "interrupted"
+            print("\n  interrupted — running cleanup before exit")
+            fixture_run(spec, "cleanup")
+            raise
+    except KeyboardInterrupt:
+        sys.exit(130)
 
     wall_s = time.time() - t0
     print(f"  hermes finished in {wall_s:.0f}s ({hermes_status})")
@@ -334,7 +405,10 @@ def main():
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    fixture_run(spec, "cleanup")
+    try:
+        fixture_run(spec, "cleanup")
+    except Exception as e:
+        print(f"  WARN: cleanup error: {e}", file=sys.stderr)
 
     stamp = report["timestamp"].replace(":", "-").replace(".", "-")
     out_path = ROOT / "data" / "agent-tests" / "runs" / f"{test_id}-{stamp}.json"

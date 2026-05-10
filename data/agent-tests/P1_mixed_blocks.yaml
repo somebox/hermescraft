@@ -42,6 +42,11 @@ expect:
     - "no blocks"
     - "nothing nearby"
 
+verify_after_prep:
+  - { block: oak_log, min_count: 3 }
+  - { block: birch_log, min_count: 4 }
+  - { block: iron_ore, min_count: 1 }
+
 prep:
   - "execute in landfolk-test run difficulty peaceful"
   - "execute in landfolk-test run gamerule doDaylightCycle false"
