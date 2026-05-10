@@ -1,0 +1,41 @@
+# L6.5 — tunnel_into_lava: mc tunnel aborts with HAZARD_LAVA when it would
+# dig into a lava pocket, returning partial-completion data.
+#
+# Layout: bot at (0, 65, 0) facing south. Solid stone corridor from z=1..10
+# at y=64..66. A hidden lava pocket at (0, 65, 5): single source block in
+# the middle of where the tunnel would dig.
+#
+# Action: mc tunnel 0 65 0 south 10 1 2  (10-long, 1-wide, 2-tall)
+#
+# Expected: ok=false, code=HAZARD_LAVA, observed_state shows the slice
+# where the hazard was encountered + dug_so_far reports the slices already
+# cleared before the lava cell was reached.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 63 -10 10 63 10 minecraft:stone"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # Build a solid stone block to tunnel through
+  - "execute in landfolk-test run fill -2 65 1 2 67 10 minecraft:stone"
+  # Hidden lava pocket at z=5 inside the tunnel corridor
+  - "execute in landfolk-test run setblock 0 65 6 minecraft:lava"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:fire_resistance 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:stone_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

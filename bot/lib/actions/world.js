@@ -1,5 +1,5 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar } from '../bot/dig-tools.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards } from '../bot/dig-tools.js';
 import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
 
 export function createWorldActions(deps) {
@@ -1418,6 +1418,7 @@ export function createWorldActions(deps) {
     pickup: doPickup = true,
     abort_on_fail: abortOnFail = false,
     clear_stand: clearStand = true,
+    safe = true,
   }) {
     const b = ensureBot();
     const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
@@ -1483,6 +1484,27 @@ export function createWorldActions(deps) {
         if (PROTECTED_DIG_BLOCKS.has(target.name)) {
           skipped++;
           continue;
+        }
+
+        // Hazard pre-check — abort the whole op if a hazard cell is encountered.
+        // Caller opts out with safe: false.
+        if (safe) {
+          const hazard = detectDigHazards(b, pos.x, pos.y, pos.z);
+          if (hazard) {
+            const code =
+              hazard.kind === 'lava' ? 'HAZARD_LAVA' :
+              hazard.kind === 'fall' ? 'HAZARD_FALL' :
+              'HAZARD_SUFFOCATE';
+            return {
+              ok: false,
+              error: {
+                code,
+                message: `dig_area aborted at ${pos.x},${pos.y},${pos.z}: ${hazard.kind} hazard. ${dug} blocks dug so far. Pass safe:false to override, or clear the hazard explicitly.`,
+                observed_state: { hazard_at: { x: pos.x, y: pos.y, z: pos.z }, hazard, dug_so_far: dug, skipped_so_far: skipped },
+                retry_safe: false,
+              },
+            };
+          }
         }
 
         try {
@@ -1553,6 +1575,7 @@ export function createWorldActions(deps) {
     let totalSkipped = 0;
     let totalErrors = 0;
 
+    let abortReason = null;
     for (let i = 1; i <= L; i++) {
       const cx = startX + dx * i;
       const cz = startZ + dz * i;
@@ -1563,9 +1586,33 @@ export function createWorldActions(deps) {
         abort_on_fail: false,
         clear_stand: true,
       });
+      // Propagate a hazard abort from dig_area instead of silently continuing.
+      if (res && res.ok === false) {
+        totalDug += Number(res.error?.observed_state?.dug_so_far || 0);
+        totalSkipped += Number(res.error?.observed_state?.skipped_so_far || 0);
+        abortReason = { slice: i, hazard: res.error };
+        break;
+      }
       totalDug += Number(res?.dug || 0);
       totalSkipped += Number(res?.skipped || 0);
       totalErrors += Array.isArray(res?.errors) ? res.errors.length : 0;
+    }
+    if (abortReason) {
+      return {
+        ok: false,
+        error: {
+          code: abortReason.hazard.code || 'HAZARD',
+          message: `tunnel aborted at slice ${abortReason.slice}/${L}: ${abortReason.hazard.message}`,
+          observed_state: {
+            slice: abortReason.slice,
+            total_slices: L,
+            dug_so_far: totalDug,
+            skipped_so_far: totalSkipped,
+            ...(abortReason.hazard.observed_state || {}),
+          },
+          retry_safe: false,
+        },
+      };
     }
 
     let pickupSuffix = '';

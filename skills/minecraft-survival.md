@@ -13,7 +13,7 @@ triggers:
   - item names
   - home base
   - crafting table
-version: 3.1.0
+version: 3.2.0
 ---
 
 # Minecraft Survival — Master Skill
@@ -37,7 +37,9 @@ mc attack [target]     # attack nearest hostile (or specific mob)
 mc eat                 # eat best food in inventory
 mc equip ITEM          # equip tool/weapon to hand
 mc place BLOCK X Y Z   # place block at position
-mc dig X Y Z           # dig specific block
+mc dig X Y Z           # dig specific block (raw — no hazard check)
+mc safe_dig X Y Z      # dig with hazard pre-check (lava/fall/suffocate)
+mc scout [X Y Z] [R]   # observe hazards in a radius before mining
 mc find_blocks BLOCK   # search for block locations
 mc pickup              # collect nearby item drops
 mc chat "message"      # say something in game chat
@@ -110,10 +112,13 @@ Goal: iron tools + shield + bucket
 ### Phase 3: Diamonds
 Goal: diamond gear + enchanting table
 
-1. Mine at Y=-59: `mc goto X -59 Z` then `mc collect deepslate_diamond_ore 5`
-2. Need iron pickaxe minimum (diamond pickaxe preferred)
-3. `mc craft diamond_pickaxe` — 3 diamonds + 2 sticks
-4. `mc craft diamond_sword` — 2 diamonds + 1 stick
+1. Mine at Y=-59: `mc move X -59 Z` (use `mc tunnel` to dig down)
+2. **Scout first**: `mc scout` before any dig at depth. Lava is common at Y < 16; sand pockets can suffocate; one bad swing kills the run. `mc scout` lists lava + falling-block columns + bedrock in a radius.
+3. **Use `mc safe_dig`** instead of `mc dig` at depth. It refuses if breaking a block would expose lava, drop the bot, or release a falling-block column onto its head. Returns `ok:false` with a `HAZARD_*` code so you can re-plan.
+4. `mc tunnel` and `mc dig_area` also auto-abort on hazards and tell you exactly where. Resume with adjusted bounds.
+5. Need iron pickaxe minimum (diamond pickaxe preferred)
+6. `mc craft diamond_pickaxe` — 3 diamonds + 2 sticks
+7. `mc craft diamond_sword` — 2 diamonds + 1 stick
 
 ### Phase 4: Nether
 Goal: nether access + blaze rods + ender pearls

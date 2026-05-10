@@ -355,7 +355,7 @@ What landed during cleanup:
 
 ## Sprint 6 — Safe mining (L6)
 
-**Status:** in progress (2026-05-10).
+**Status:** **shipped** (2026-05-10). Scope narrowed mid-sprint — `mc seal` deferred since agents can use raw `mc place` for the rare wall-off-a-hazard case.
 
 **Goal:** the bot can mine at depth (Y < 0, near lava/gravel) without dying as a side-effect of unsafe digs. The "long-running infrastructure destruction" problem from Sprint 5 had a sibling: agents accidentally suiciding by digging into lava, suffocating under falling sand, or mining the floor out from under themselves. Sprint 6 makes those into action-contract failures with `HAZARD_*` codes, not silent deaths.
 
@@ -367,7 +367,7 @@ This unlocks Sprint 7 (liquids) which assumes the bot can reliably get iron ingo
 |---|---|---|
 | `mc safe_dig` | `mc safe_dig X Y Z [--force]` | Like `mc dig` but checks for HAZARD_LAVA, HAZARD_FALL, HAZARD_SUFFOCATE before swinging. `--force` falls back to raw `mc dig` for power-user override. |
 | `mc scout` | `mc scout X Y Z [RADIUS]` | Observation primitive: list lava/water cells, gravity-affected blocks, bedrock proximity, hostile mobs within radius. Read-only; cheap; intended for "look before you mine". |
-| `mc seal` | `mc seal X Y Z [BLOCK]` | Place a block to wall off a hazard cell (e.g., expose lava → seal it before continuing). Sugar over `mc place` with auto-block-selection from cobble cascade. |
+| ~~`mc seal`~~ | *deferred* | Wall-off-a-hazard verb; not strictly needed for safe mining basics (agent can `mc place` directly). Re-evaluate after agent integration when we see how often agents try to wall off discovered lava. |
 
 ### Existing-verb upgrades
 
@@ -392,9 +392,9 @@ This unlocks Sprint 7 (liquids) which assumes the bot can reliably get iron ingo
 | L6.2 | `dig_under_sand` — sand column above stone target; HAZARD_SUFFOCATE |
 | L6.3 | `dig_floor_under_self` — bot at (0,65,0), dig (0,64,0); HAZARD_FALL |
 | L6.4 | `scout_lava_radius` — scout within 8 finds 3 placed lava cells with correct coords |
-| L6.5 | `seal_lava_seam` — agent uses scout, then seal to wall up exposed lava |
-| L6.6 | `strip_mine_safe` — 12-block tunnel through gravel layer + lava pocket; bot completes alive, hazards reported |
-| L6.7 | `force_override` — same setup as L6.1 with `--force`, dig succeeds (lava still flows; this verifies the override exists) |
+| L6.5 | `tunnel_into_lava` — `mc tunnel` aborts when it would dig into lava, partial-completion data |
+| ~~L6.6~~ | *deferred (seal-dependent)* |
+| ~~L6.7~~ | inline-verified in L6.1 (force override) |
 
 ### Benchmark additions
 
@@ -409,15 +409,17 @@ Add `safe_mine_to_diamond_layer` and `mine_through_gravel` tasks to `direct.json
 
 ### Implementation order
 
-1. **`mc safe_dig`** — implement HAZARD_LAVA first (simplest: check 6 face-neighbors of target for lava). Then HAZARD_FALL (target == floor under bot). Then HAZARD_SUFFOCATE (target supports a falling-block column above). ~60-90 min.
-2. **`mc scout`** — read-only observation; cheap to implement (`bot.findBlocks` per hazard type). ~30 min.
-3. **`mc seal`** — sugar over `mc place` with cobble cascade. ~20 min.
-4. **Upgrade `mc dig` / `mc dig_area` / `mc tunnel`** to call safe_dig per block. ~30 min.
-5. **Fixtures + benchmark + skill text** — straightforward once verbs land.
+1. **`mc safe_dig`** ✅ shipped (41207e4) — HAZARD_LAVA, HAZARD_FALL, HAZARD_SUFFOCATE; `--force` override.
+2. **`mc scout`** ✅ shipped (b167c28) — block-based hazards; known limitation on mob detection in Multiverse worlds.
+3. **Upgrade `mc dig_area` / `mc tunnel`** to per-block hazard pre-check + abort-with-partial-completion. `mc dig` stays as the raw single-block verb; agents reach for `mc safe_dig` instead.
+4. **Skill text update** in `minecraft-survival.md` pointing agents at `mc safe_dig` / `mc scout` for any below-Y=16 work.
+5. **L6.5 fixture** — `mc tunnel` into a hidden lava pocket aborts cleanly.
+
+`mc seal` deferred — agents can use `mc place` directly for the rare "wall off this lava" case. Re-evaluate after agent integration shows how often it comes up.
 
 ### Estimated scope
 
-1–2 sessions. The hazard-detection logic is the bulk; everything else composes around it.
+~1 session remaining; bulk of work was the hazard-detection logic in `dig-tools.js`.
 
 ---
 
