@@ -207,7 +207,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc collect BLOCK [COUNT]',
   }),
   g('dig', 'world', ['d'], {
-    description: 'Break the block at X Y Z (single block)',
+    description: 'Break the block at X Y Z (single block, raw — no hazard checks). Prefer mc safe_dig for general use.',
     method: 'POST',
     path: '/action/dig',
     argSchema: [
@@ -222,6 +222,24 @@ export const RAW_COMMAND_DEFS = [
         y: p.y,
         z: p.z,
       }),
+  }),
+  g('safe_dig', 'world', ['sd'], {
+    description: 'Hazard-aware dig: pre-checks for adjacent lava (HAZARD_LAVA), digging-the-floor-under-self (HAZARD_FALL), and suffocation by a falling-block column above (HAZARD_SUFFOCATE). Returns ok:false on hazard without swinging. Use --force to skip checks (delegates to mc dig).',
+    method: 'POST',
+    path: '/action/safe_dig',
+    customParse: true,
+    bodyFn: (p) =>
+      JSON.stringify({
+        x: Number(p.x),
+        y: Number(p.y),
+        z: Number(p.z),
+        ...(p.force ? { force: true } : {}),
+      }),
+    usage: 'mc safe_dig X Y Z [--force]',
+    examples: [
+      'mc safe_dig 0 64 5',
+      'mc safe_dig 0 64 5 --force',
+    ],
   }),
   g('pillar_step', 'world', ['tower', 'pillar'], {
     method: 'POST',

@@ -1,0 +1,32 @@
+# L6.3 — dig_floor_under_self: safe_dig refuses to break the block the bot
+# is standing on (would drop the bot N blocks).
+#
+# Bot at (0, 65, 0). Floor at (0, 64, 0) is stone. Below that is empty for
+# 10 blocks — falling into bedrock or void would be fatal/painful. Bot tries
+# mc safe_dig 0 64 0; expects ok=false, HAZARD_FALL with drop > 0.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  # Floor at y=64 stone, then 10 blocks of air below, then a stone catch-floor at y=53
+  - "execute in landfolk-test run fill -10 53 -10 10 53 10 minecraft:stone"
+  - "execute in landfolk-test run fill -10 54 -10 10 63 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:stone_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 53 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

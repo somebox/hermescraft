@@ -124,6 +124,22 @@ function customParse(canonicalName, positional) {
       if (!id) throw new Error('missing:id');
       return { id };
     }
+    case 'safe_dig': {
+      // mc safe_dig X Y Z [--force]
+      const q = positional.slice();
+      const out = {};
+      const positionals = [];
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--force') { q.shift(); out.force = true; }
+        else { positionals.push(q.shift()); }
+      }
+      if (positionals.length < 3) throw new Error('missing:coords');
+      out.x = Number(positionals[0]);
+      out.y = Number(positionals[1]);
+      out.z = Number(positionals[2]);
+      return out;
+    }
     case 'move': {
       // mc move X Y Z [--max-doors N] [--door GX GY GZ]
       const q = positional.slice();

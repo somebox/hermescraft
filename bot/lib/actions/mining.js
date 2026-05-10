@@ -1,10 +1,10 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS } from '../bot/dig-tools.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards } from '../bot/dig-tools.js';
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/perception.js';
 
 export function createMiningActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveMiningBlockName, fairPlayHarvestTrunkCandidates, findVisibleBlocksByNameWithPhysicalSweep, entitiesMatchingAfterLookSweep, rememberSocialEvent } = deps;
-  return {
+  const handlers = {
     async collect({ block, count = 1 }) {
       // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc collect) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
@@ -668,5 +668,59 @@ export function createMiningActions(deps) {
       rememberSocialEvent({ actor: cmd.from, kind: 'cancelled_command', channel: cmd.channel || 'direct', message: cmd.command });
       return { result: `Cancelled: "${cmd.command}"${reason ? ` — ${reason}` : ''}` };
     },
+
+    /**
+     * Hazard-aware dig. Pre-checks for HAZARD_LAVA (adjacent lava), HAZARD_FALL
+     * (digging the floor under the bot), and HAZARD_SUFFOCATE (falling-block
+     * column above target in bot's vertical column). On hazard, returns
+     * ok:false with structured error and DOES NOT swing. With force=true,
+     * skips checks and delegates to mc dig (power-user override).
+     */
+    async safe_dig({ x, y, z, force }) {
+      const b = ensureBot();
+      if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
+        return { ok: false, error: { code: 'INVALID_COORD', message: 'mc safe_dig requires numeric x, y, z', retry_safe: false } };
+      }
+      const tx = Math.floor(Number(x)), ty = Math.floor(Number(y)), tz = Math.floor(Number(z));
+      if (force) return handlers.dig({ x: tx, y: ty, z: tz });
+
+      const target = b.blockAt(new Vec3(tx, ty, tz));
+      if (!target || target.name === 'air' || target.name === 'cave_air' || target.name === 'void_air') {
+        return {
+          ok: false,
+          error: {
+            code: 'NO_BLOCK_AT_COORD',
+            message: `No block at ${tx}, ${ty}, ${tz} — target is ${target?.name || 'unknown'}`,
+            observed_state: { block_at_target: target?.name || null, requested_coord: { x: tx, y: ty, z: tz } },
+            retry_safe: false,
+          },
+        };
+      }
+
+      const hazard = detectDigHazards(b, tx, ty, tz);
+      if (hazard) {
+        const code =
+          hazard.kind === 'lava' ? 'HAZARD_LAVA' :
+          hazard.kind === 'fall' ? 'HAZARD_FALL' :
+          'HAZARD_SUFFOCATE';
+        const messages = {
+          HAZARD_LAVA: `Lava at ${hazard.at?.x},${hazard.at?.y},${hazard.at?.z} would flow on the bot if ${target.name} at ${tx},${ty},${tz} is broken. Use mc seal to wall it off, or mc safe_dig --force to override.`,
+          HAZARD_FALL: `Block at ${tx},${ty},${tz} is the floor under the bot — digging it would drop the bot ${hazard.drop} blocks. Step away first, or mc safe_dig --force to override.`,
+          HAZARD_SUFFOCATE: `Falling-block column (${hazard.falling_block} × ${hazard.column_height}) above ${tx},${ty},${tz} would fall on the bot if dug. Approach from a side, or mc safe_dig --force to override.`,
+        };
+        return {
+          ok: false,
+          error: {
+            code,
+            message: messages[code],
+            observed_state: { block_at_target: target.name, requested_coord: { x: tx, y: ty, z: tz }, hazard },
+            retry_safe: false,
+          },
+        };
+      }
+
+      return handlers.dig({ x: tx, y: ty, z: tz });
+    },
   };
+  return handlers;
 }

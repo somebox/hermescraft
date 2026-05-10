@@ -1,0 +1,35 @@
+# L6.2 — dig_under_sand: safe_dig refuses to break a block under a sand column
+# in the bot's vertical column (suffocation hazard).
+#
+# Bot at (0, 64, 0). Block above bot's head: stone at (0, 66, 0). Sand stack
+# above that at (0, 67..69, 0). If bot tries to dig (0, 66, 0) — the stone
+# directly above its head — the sand will fall through and suffocate.
+# mc safe_dig should return HAZARD_SUFFOCATE.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # Block above bot's head (target) and sand column above that.
+  - "execute in landfolk-test run setblock 0 66 0 minecraft:stone"
+  - "execute in landfolk-test run setblock 0 67 0 minecraft:sand"
+  - "execute in landfolk-test run setblock 0 68 0 minecraft:sand"
+  - "execute in landfolk-test run setblock 0 69 0 minecraft:sand"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:stone_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

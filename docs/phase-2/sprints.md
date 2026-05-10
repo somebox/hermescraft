@@ -353,15 +353,82 @@ What landed during cleanup:
 
 ---
 
-## Sprints 6–10 (stubs — to be planned at the end of each predecessor)
+## Sprint 6 — Safe mining (L6)
+
+**Status:** in progress (2026-05-10).
+
+**Goal:** the bot can mine at depth (Y < 0, near lava/gravel) without dying as a side-effect of unsafe digs. The "long-running infrastructure destruction" problem from Sprint 5 had a sibling: agents accidentally suiciding by digging into lava, suffocating under falling sand, or mining the floor out from under themselves. Sprint 6 makes those into action-contract failures with `HAZARD_*` codes, not silent deaths.
+
+This unlocks Sprint 7 (liquids) which assumes the bot can reliably get iron ingots without burning to death at Y=15.
+
+### Verbs
+
+| Verb | Shape | Notes |
+|---|---|---|
+| `mc safe_dig` | `mc safe_dig X Y Z [--force]` | Like `mc dig` but checks for HAZARD_LAVA, HAZARD_FALL, HAZARD_SUFFOCATE before swinging. `--force` falls back to raw `mc dig` for power-user override. |
+| `mc scout` | `mc scout X Y Z [RADIUS]` | Observation primitive: list lava/water cells, gravity-affected blocks, bedrock proximity, hostile mobs within radius. Read-only; cheap; intended for "look before you mine". |
+| `mc seal` | `mc seal X Y Z [BLOCK]` | Place a block to wall off a hazard cell (e.g., expose lava → seal it before continuing). Sugar over `mc place` with auto-block-selection from cobble cascade. |
+
+### Existing-verb upgrades
+
+- `mc dig`: adds pre-check delegate to `mc safe_dig`. Existing direct callers should switch to `mc dig --force` if they actually want the unsafe semantics (none in current code — the change is transparent).
+- `mc dig_area` and `mc tunnel`: per-block hazard pre-check; on HAZARD, abort with partial-completion data and the hazard cell named.
+
+### Action contract
+
+| Error code | When | observed_state | retry_safe |
+|---|---|---|---|
+| `HAZARD_LAVA` | block adjacent to dig target is lava (would flow on bot) | `hazard: { kind:"lava", at:{x,y,z} }` | false |
+| `HAZARD_FALL` | block under bot's standing position would be removed by the dig | `hazard: { kind:"fall", drop:N }` | false |
+| `HAZARD_SUFFOCATE` | block above dig target is sand/gravel/anvil and the target is what holds it up | `hazard: { kind:"suffocate", falling_block:"sand" }` | false |
+| `TOOL_INADEQUATE` | as Sprint 4 — pickaxe tier wrong for block | `held: "wooden_pickaxe", required:"stone_pickaxe"` | false |
+| `PROTECTED_BLOCK` | bedrock, beacon, etc. | `block: "bedrock"` | false |
+
+### Fixtures (L6)
+
+| ID | Tests |
+|---|---|
+| L6.1 | `dig_into_lava` — wall block with lava behind; safe_dig returns HAZARD_LAVA, lava unrevealed |
+| L6.2 | `dig_under_sand` — sand column above stone target; HAZARD_SUFFOCATE |
+| L6.3 | `dig_floor_under_self` — bot at (0,65,0), dig (0,64,0); HAZARD_FALL |
+| L6.4 | `scout_lava_radius` — scout within 8 finds 3 placed lava cells with correct coords |
+| L6.5 | `seal_lava_seam` — agent uses scout, then seal to wall up exposed lava |
+| L6.6 | `strip_mine_safe` — 12-block tunnel through gravel layer + lava pocket; bot completes alive, hazards reported |
+| L6.7 | `force_override` — same setup as L6.1 with `--force`, dig succeeds (lava still flows; this verifies the override exists) |
+
+### Benchmark additions
+
+Add `safe_mine_to_diamond_layer` and `mine_through_gravel` tasks to `direct.json` so model evaluations exercise hazard-aware verb selection.
+
+### Exit gate
+
+- All L6 fixtures green (2 consecutive passes each).
+- 30-minute unattended strip-mining run shows zero hazard-caused deaths (was the primary failure mode for Phase 1 mining bots).
+- `check-conventions.mjs` passes.
+- `skills/minecraft-survival.md` updated to point agents at `mc safe_dig` / `mc scout` for any below-Y=16 work.
+
+### Implementation order
+
+1. **`mc safe_dig`** — implement HAZARD_LAVA first (simplest: check 6 face-neighbors of target for lava). Then HAZARD_FALL (target == floor under bot). Then HAZARD_SUFFOCATE (target supports a falling-block column above). ~60-90 min.
+2. **`mc scout`** — read-only observation; cheap to implement (`bot.findBlocks` per hazard type). ~30 min.
+3. **`mc seal`** — sugar over `mc place` with cobble cascade. ~20 min.
+4. **Upgrade `mc dig` / `mc dig_area` / `mc tunnel`** to call safe_dig per block. ~30 min.
+5. **Fixtures + benchmark + skill text** — straightforward once verbs land.
+
+### Estimated scope
+
+1–2 sessions. The hazard-detection logic is the bulk; everything else composes around it.
+
+---
+
+## Sprints 7–10 (stubs — to be planned at the end of each predecessor)
 
 | Sprint | Domain | Depends on | Status |
 |---|---|---|---|
-| 6 | Safe mining (tool-tier validation, sand/gravel safety) | independent | planned |
 | 7 | Liquid management (`mc self bucket fill/empty`) | 6 (iron) | planned |
 | 8 | Crops (`mc farm till/plant/harvest`) | 5, 7 | planned |
 | 9 | Animals (`mc farm lure/breed/shear/milk`) | 5, 8 | planned |
 | 10 | Fishing + boats (`mc farm fish`, `mc self board/disembark`) | independent | planned |
 
-Each becomes its own section here when the prior sprint exits. Sprint 6 can start in parallel with Sprint 5 — they're independent.
+Each becomes its own section here when the prior sprint exits.
 

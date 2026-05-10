@@ -1,0 +1,33 @@
+# L6.1 — dig_into_lava: safe_dig refuses to break a block adjacent to lava.
+#
+# Stone wall at (0, 64, 1). Lava behind it at (0, 64, 2). Bot at (0, 65, 0)
+# with stone_pickaxe. mc safe_dig should return ok=false with HAZARD_LAVA.
+# The lava remains where it is; the wall remains intact.
+#
+# --force variant (L6.7) re-runs the same setup but with --force to confirm
+# the override path actually digs (and exposes the lava).
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run setblock 0 64 2 minecraft:lava"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:fire_resistance 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:stone_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

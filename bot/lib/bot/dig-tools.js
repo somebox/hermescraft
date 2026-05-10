@@ -38,6 +38,88 @@ export const PROTECTED_DIG_BLOCKS = new Set([
 
 export const DIG_PASSABLE_NAMES = new Set(['air', 'cave_air', 'void_air']);
 export const DIG_FLUID_NAMES = new Set(['water', 'lava']);
+export const FALLING_BLOCK_NAMES = new Set([
+  'sand', 'red_sand', 'gravel', 'anvil', 'chipped_anvil', 'damaged_anvil',
+  'concrete_powder', 'white_concrete_powder', 'orange_concrete_powder',
+  'magenta_concrete_powder', 'light_blue_concrete_powder', 'yellow_concrete_powder',
+  'lime_concrete_powder', 'pink_concrete_powder', 'gray_concrete_powder',
+  'light_gray_concrete_powder', 'cyan_concrete_powder', 'purple_concrete_powder',
+  'blue_concrete_powder', 'brown_concrete_powder', 'green_concrete_powder',
+  'red_concrete_powder', 'black_concrete_powder',
+  'pointed_dripstone', 'scaffolding',
+]);
+const LAVA_NAMES = new Set(['lava', 'flowing_lava']);
+
+/**
+ * Check if breaking the block at (x, y, z) would expose adjacent lava.
+ * Returns { kind: "lava", at:{x,y,z} } if any face neighbor is lava, else null.
+ */
+export function checkLavaHazard(b, x, y, z) {
+  const offsets = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  for (const [dx, dy, dz] of offsets) {
+    const adj = b.blockAt(new Vec3(x + dx, y + dy, z + dz));
+    if (adj && LAVA_NAMES.has(adj.name)) {
+      return { kind: 'lava', at: { x: x + dx, y: y + dy, z: z + dz } };
+    }
+  }
+  return null;
+}
+
+/**
+ * Check if breaking the block at (x, y, z) is the floor block under the bot,
+ * which would cause an unintended fall. Returns { kind:"fall", drop } if so.
+ */
+export function checkFallHazard(b, x, y, z) {
+  const me = b.entity.position;
+  const myFootBlock = {
+    x: Math.floor(me.x),
+    y: Math.floor(me.y) - 1,
+    z: Math.floor(me.z),
+  };
+  if (myFootBlock.x !== x || myFootBlock.y !== y || myFootBlock.z !== z) return null;
+  // Target IS the block under bot. How far would bot fall?
+  let drop = 0;
+  for (let dy = 1; dy < 16; dy++) {
+    const below = b.blockAt(new Vec3(x, y - dy, z));
+    if (below && below.boundingBox === 'block') break;
+    drop = dy;
+  }
+  return { kind: 'fall', drop };
+}
+
+/**
+ * Check if breaking the block at (x, y, z) would cause a falling-block column
+ * above to suffocate the bot. Fires when:
+ *   - target is in the bot's vertical column (same x_floor, z_floor)
+ *   - target is at or above the bot's head (so falling sand lands on bot)
+ *   - block directly above target is a falling block
+ * Returns { kind:"suffocate", falling_block, column_height } if so.
+ */
+export function checkSuffocateHazard(b, x, y, z) {
+  const me = b.entity.position;
+  const myFootX = Math.floor(me.x);
+  const myFootZ = Math.floor(me.z);
+  const myFootY = Math.floor(me.y);
+  if (myFootX !== x || myFootZ !== z) return null;
+  // Target must be at or above bot head Y (foot Y + 1 is head Y for a 2-block-tall mob).
+  if (y < myFootY) return null;
+  const above = b.blockAt(new Vec3(x, y + 1, z));
+  if (!above || !FALLING_BLOCK_NAMES.has(above.name)) return null;
+  let h = 1;
+  while (h < 16) {
+    const stack = b.blockAt(new Vec3(x, y + 1 + h, z));
+    if (!stack || !FALLING_BLOCK_NAMES.has(stack.name)) break;
+    h++;
+  }
+  return { kind: 'suffocate', falling_block: above.name, column_height: h };
+}
+
+/**
+ * Run all dig-time hazard checks. Returns the FIRST hazard found, or null.
+ */
+export function detectDigHazards(b, x, y, z) {
+  return checkLavaHazard(b, x, y, z) || checkFallHazard(b, x, y, z) || checkSuffocateHazard(b, x, y, z);
+}
 
 export function isSoftLandscapeBlock(block) {
   if (!block?.name) return false;
