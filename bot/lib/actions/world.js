@@ -346,7 +346,7 @@ export function createWorldActions(deps) {
 
   // ── Building ─────────────────────────────────────
   async place({ block: blockName, x, y, z }) {
-    // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8 mc place) ─
+    // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc place) ─
     // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
     // ok=true requires block to be at target coord AFTER placement (verified via blockAt).
 

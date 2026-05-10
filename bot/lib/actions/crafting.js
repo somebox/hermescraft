@@ -5,7 +5,7 @@ export function createCraftingActions(deps) {
   const { ctx, ensureBot, goals, sleep, resolveCraftItemName, buildCraftPlan, ACTIONS, loadLocations } = deps;
   return {
     async craft({ item, count = 1 }) {
-      // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8 mc craft) ─
+      // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc craft) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
       // ok=true requires crafted_count >= 1; verified via inventory delta.
 
@@ -412,7 +412,7 @@ export function createCraftingActions(deps) {
     },
 
     async smelt({ input, fuel, count = 1 }) {
-      // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8.5 mc smelt) ─
+      // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc smelt) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
       // ok=true requires smelted_count >= 1; verified via inventory delta on output item.
 

@@ -6,7 +6,7 @@ export function createMiningActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveMiningBlockName, fairPlayHarvestTrunkCandidates, findVisibleBlocksByNameWithPhysicalSweep, entitiesMatchingAfterLookSweep, rememberSocialEvent } = deps;
   return {
     async collect({ block, count = 1 }) {
-      // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8 mc collect) ─
+      // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc collect) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
       // ok=true requires mined_count > 0; mined_count==0 is a contract violation.
       // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
@@ -392,7 +392,7 @@ export function createMiningActions(deps) {
       const b = ensureBot();
       const target = b.blockAt(new Vec3(x, y, z));
 
-      // ─ Phase-2 action contract (see docs/phase-2-architecture.md §8 mc dig) ─
+      // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc dig) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
       // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
 
