@@ -344,8 +344,12 @@ What was deferred:
 
 - `mc dig_pit --stairs` — bot can chain `mc dig_pit` + `mc build_stairs` instead. Re-evaluate if real use cases demand the combined verb.
 - `composition.json` benchmark additions for Sprint 5 — the L5 fixtures cover the integration cases; benchmark tasks for `wall`, `fence`, `path`, `level`, `build_stairs`, `dig_pit`, `move`, `through` were added to `direct.json`.
-- `skills/minecraft-building.md` skill text update — pending Sprint 6+ when we wire skills to mc verbs systematically.
 - Cleanup of `protectedBlocks` and legacy block-tagging workarounds — deferred to building-and-integration phase since `canDig=false` makes them defense-in-depth, not the primary safeguard.
+
+What landed during cleanup:
+
+- `skills/minecraft-navigation.md` v3.2.0: documents `mc move` as the default navigation verb; demotes `mc goto` to "raw pathfinder, open spaces only"; adds a verb-picking table covering doors, terrain, and explicit destruction.
+- `skills/minecraft-building.md` v4.2.0: surfaces the building-primitive verbs (`mc wall`, `mc fence`, `mc level`, `mc path`, `mc dig_pit`, `mc build_stairs`) as the preferred bulk-placement tools; corrects the old `for x..for z: mc place` anti-pattern to recommend `mc level` + `mc fill` instead.
 
 ---
 

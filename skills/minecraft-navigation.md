@@ -12,7 +12,7 @@ triggers:
   - strip mine
   - lost underground
   - find structure
-version: 3.1.0
+version: 3.2.0
 ---
 
 # Minecraft Navigation
@@ -20,8 +20,10 @@ version: 3.1.0
 ## Commands
 
 ```
-mc goto X Y Z            # pathfind to exact position
+mc move X Y Z            # smart non-destructive nav (handles doors/gates)
+mc goto X Y Z            # raw pathfinder — open spaces only, no door handling
 mc goto_near X Y Z [r]   # pathfind near position (default range: 2)
+mc through GX GY GZ      # explicit single door/gate — opens, walks, closes behind
 mc follow PLAYER          # follow a player continuously
 mc stop                   # stop movement
 mc status                 # check position, biome, dimension
@@ -29,6 +31,26 @@ mc find_blocks BLOCK      # find block types nearby
 mc nearby [radius]        # scan surroundings (default: 32)
 mc look_at X Y Z          # look at position
 ```
+
+## Picking the right movement verb
+
+**Default: `mc move`.** It handles doors automatically, never destroys
+infrastructure, and tells you exactly why if it fails.
+
+| Situation | Use |
+|---|---|
+| General navigation (might pass a door, may not) | `mc move X Y Z` |
+| Open terrain, no buildings | `mc goto X Y Z` (slightly faster, no door scan) |
+| You know the door coords and want a single explicit pass | `mc through GX GY GZ` |
+| Need to clear a path through terrain | `mc tunnel` or `mc dig_area` (explicit destruction) |
+
+**Never** rely on `mc goto` to "find a way through" closed doors or walls:
+it cannot. The bot WILL fail with `NAV_BLOCKED`, not break things. To
+modify the world, use an explicit destructive verb.
+
+When `mc move` fails with `NAV_BLOCKED`, the error includes
+`observed_state.nearby_doors` — useful if the auto-detection picked
+wrong and you want to retry with `mc move X Y Z --door GX GY GZ`.
 
 ## Coordinate System
 
@@ -73,8 +95,8 @@ Walk in expanding squares to cover area:
 5. Continue expanding
 
 ### Strip Mining (for ores)
-1. `mc goto X -59 Z` — go to diamond level
-2. Dig straight tunnel (2 high, 1 wide)
+1. `mc move X -59 Z` — go to diamond level (use `mc tunnel` if you need to dig down)
+2. `mc tunnel` to dig a straight 2-high 1-wide corridor
 3. Branch tunnels every 3 blocks left and right
 4. `mc find_blocks diamond_ore` periodically to check
 

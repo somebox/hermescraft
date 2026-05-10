@@ -12,7 +12,7 @@ triggers:
   - build fence
   - build farm
   - build pen
-version: 4.1.0
+version: 4.2.0
 ---
 
 # Minecraft Building — With Taste
@@ -20,16 +20,49 @@ version: 4.1.0
 ## Commands
 
 ```
-mc place BLOCK X Y Z    # place block at position
-mc dig X Y Z            # remove block at position
-mc collect BLOCK N       # gather building materials
-mc craft ITEM [N]        # craft building blocks
-mc status                # check position + inventory
-mc find_blocks BLOCK     # find material sources
-mc interact X Y Z        # open doors, chests, etc
-mc goto_near X Y Z       # get close to build site
-mc nearby                # see what's around you
+# Building primitives (use these for bulk work — they auto-equip materials)
+mc wall BLOCK X1 Y1 Z1 X2 Y2 Z2   # vertical wall between two corners
+mc fence BLOCK X1 Z1 X2 Z2 [--gate DIR]  # fence enclosure with optional gate
+mc level X1 Z1 X2 Z2 Y [BLOCK]    # flatten an area to target Y
+mc path X1 Z1 X2 Z2 [Y]           # convert dirt/grass to dirt_path (needs shovel)
+mc dig_pit X Z W L D              # dig a W×L×D pit
+mc build_stairs BLOCK DIR LEN     # ascending triangular ramp the bot can climb
+
+# Single-block primitives (for finishing work)
+mc place BLOCK X Y Z              # place block at position
+mc dig X Y Z                      # remove block at position
+mc collect BLOCK N                # gather materials
+mc craft ITEM [N]                 # craft building blocks
+
+# Doors and gates
+mc through GX GY GZ [DX DY DZ]    # open door/gate, walk through, close behind
+mc interact X Y Z                 # toggle a door/gate (without traversal)
+
+# Navigation around the build site
+mc move X Y Z                     # smart non-destructive nav (handles doors)
+mc goto_near X Y Z                # raw pathfinder near a position
+
+# Survey
+mc status                         # check position + inventory
+mc nearby                         # see what's around you
+mc find_blocks BLOCK              # find material sources
 ```
+
+## Prefer the building-primitive verbs
+
+For bulk placement, use the high-level verbs — they're transactional
+(action-contract responses with placed/skipped/failed counts), auto-equip
+the right item, and won't half-complete on a small inventory shortfall.
+A loop of `mc place` calls is slower, error-prone, and harder to debug.
+
+| Goal | Use |
+|---|---|
+| 5×5 fenced animal pen with gate | `mc fence oak_fence 0 0 4 4 --gate south` |
+| 3-block-tall cobble wall | `mc wall cobblestone X1 Y1 Z1 X2 Y2 Z2` |
+| Flatten a building site | `mc level X1 Z1 X2 Z2 Y` |
+| Path through a garden | `mc path X1 Z1 X2 Z2` (need shovel) |
+| Stairs out of a foundation pit | `mc build_stairs cobblestone east 4` |
+| Single decorative block | `mc place ...` |
 
 ## Before You Build ANYTHING
 
@@ -108,19 +141,23 @@ Overhang:    extend roof 1 block past walls using stairs/slabs
 
 ## Systematic Placement
 
-When placing a wall/floor/roof, work in a systematic pattern:
-1. Note the starting corner coords from `mc status`
-2. Work along one axis (e.g. X), placing each block
-3. Move to next row (increment Z), repeat
-4. For height, do one full layer then go up (increment Y)
+For walls, fences, paths, floors, ramps — use the bulk-placement verbs
+(`mc wall`, `mc fence`, `mc path`, `mc level`, `mc build_stairs`). They
+take corner coordinates and handle equip, place, skip-existing, and
+partial-success reporting in one call.
 
-Example — 7x5 floor at Y=64 starting at X=100, Z=200:
+For one-off decoration: `mc place BLOCK X Y Z` per block. Always note
+your starting corner coords from `mc status` first so the layout is
+intentional, not improvised.
+
+For a 7×5 floor at Y=64 starting at (100, 200), don't loop `mc place`:
 ```
-for x in 100..106:
-  for z in 200..204:
-    mc place oak_planks X 64 Z
+mc level 100 200 106 204 64        # first flatten terrain
+mc fill oak_planks 100 64 200 106 64 204   # then lay the wooden floor
 ```
-(In practice, run each mc place individually)
+For multi-layer construction, break the build into regions and use the
+right verb for each: `mc fill` for solid layers, `mc wall` for vertical
+walls, `mc fence` for fence enclosures.
 
 ## Emergency Shelter (first night)
 
