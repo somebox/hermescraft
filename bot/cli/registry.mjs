@@ -204,17 +204,27 @@ export const RAW_COMMAND_DEFS = [
         description: 'true|false — jump after placing (default true)',
       },
     ],
-    bodyFn: (p) =>
-      JSON.stringify({
-        ...(p.block ? { block: p.block } : {}),
-        ...(p.count ? { count: Number(p.count) } : {}),
+    bodyFn: (p) => {
+      // If the first positional looked like a number, the parser put it in
+      // `block` ("5"). Re-route numeric `block` to `count` so users can write
+      // `mc pillar_step 5` as a shorthand for `mc pillar_step cobblestone 5`.
+      let block = p.block;
+      let count = p.count;
+      if (block !== undefined && count === undefined && /^\d+$/.test(`${block}`)) {
+        count = Number(block);
+        block = undefined;
+      }
+      return JSON.stringify({
+        ...(block ? { block } : {}),
+        ...(count ? { count: Number(count) } : {}),
         ...(p.jump !== undefined && `${p.jump}`.trim() !== ''
           ? {
               jump: p.jump === true || `${p.jump}`.toLowerCase() === 'true' || `${p.jump}` === '1',
             }
           : {}),
-      }),
-    examples: [`mc pillar_step`, `mc pillar_step cobblestone 10`, `mc pillar_step dirt 20`],
+      });
+    },
+    examples: [`mc pillar_step`, `mc pillar_step 5`, `mc pillar_step cobblestone 10`, `mc pillar_step dirt 20`],
   }),
   g('pickup', 'world', ['p'], { method: 'POST', path: '/action/pickup', bodyFn: () => empty }),
   g('find_blocks', 'world', ['find', 'fb'], {
@@ -360,6 +370,26 @@ export const RAW_COMMAND_DEFS = [
       `Flee distance (number) or flee --to mark. Plan: mc flee --to @home (supports --to; legacy: mc flee 16)`,
     usage: 'mc flee [DISTANCE] [--to MARK]',
     customParse: true,
+  }),
+
+  /* reactive layer mode (Layer 2) */
+  g('mode', 'combat', [], {
+    method: 'POST',
+    path: '/action/mode',
+    bodyFn: (p) => JSON.stringify(p.name ? { name: p.name } : {}),
+    argSchema: [{ key: 'name', type: 'string', default: '' }],
+    description: 'Set reactive mode: normal | guard | hold. No arg = report current mode.',
+    examples: ['mc mode', 'mc mode guard', 'mc mode normal', 'mc mode hold'],
+  }),
+
+  /* reactive layer combat skill (Layer 2) */
+  g('combat_skill', 'combat', ['skill'], {
+    method: 'POST',
+    path: '/action/combat_skill',
+    bodyFn: (p) => JSON.stringify(p.value !== undefined && p.value !== '' ? { value: p.value } : {}),
+    argSchema: [{ key: 'value', type: 'string', default: '' }],
+    description: 'Per-agent combat skill 0..1 (soldier≈0.9, default 0.5, farmer≈0.2). No arg = report current.',
+    examples: ['mc combat_skill', 'mc combat_skill 0.9', 'mc combat_skill 0.2'],
   }),
 
   /* eat / equip */

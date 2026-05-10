@@ -68,6 +68,7 @@ import { createSpatial } from './lib/spatial.js';
 import { createActionRegistry } from './lib/action-registry.js';
 import { createBotHttpListener } from './lib/router.js';
 import { createBotManager } from './lib/bot-manager.js';
+import { createReactive } from './lib/bot/reactive.js';
 import { createLocationsStore, isContainerBlock, findNearbyContainer } from './lib/bot/locations.js';
 import { createAllActions } from './lib/actions/index.js';
 import { createObservation } from './lib/bot/observation.js';
@@ -512,6 +513,23 @@ const ACTIONS = createAllActions({
 });
 
 const actionRegistry = createActionRegistry(ACTIONS);
+
+// ── Reactive layer (Layer 2) ───────────────────────────────────────────
+// Default-on; ticks every 400ms, no-ops while bot is disconnected.
+// Agent picks the policy via `mc mode normal | guard | hold`.
+// Disable entirely with REACTIVE=off env var.
+const reactiveOn = String(process.env.REACTIVE ?? 'on').toLowerCase() !== 'off';
+if (reactiveOn) {
+  // COMBAT_SKILL env var lets per-character launchers default the bot to
+  // soldier (0.9) or farmer (0.2) without an explicit `mc combat_skill` call.
+  const skillEnv = process.env.COMBAT_SKILL;
+  if (skillEnv !== undefined && skillEnv !== '') {
+    const n = Number(skillEnv);
+    if (Number.isFinite(n)) ctx.combat_skill = Math.max(0, Math.min(1, n));
+  }
+  const reactive = createReactive({ ctx, log, ACTIONS, sleep });
+  reactive.start();
+}
 
 
 // ═══════════════════════════════════════════════════════════════════

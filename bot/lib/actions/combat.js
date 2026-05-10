@@ -1,10 +1,81 @@
 /**
  * Combat action handlers: attack, eat, feed_mob, fight, flee,
- * sneak, shield_block, shoot, sprint_attack, critical_hit, strafe, combo.
+ * sneak, shield_block, shoot, sprint_attack, critical_hit, strafe, combo,
+ * plus reactive layer mode selection (mc mode normal|guard|hold).
  */
+const VALID_MODES = ['normal', 'guard', 'hold'];
+
 export function createCombatActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, filterEntitiesFairPlay, reactionDelay, loadLocations, rememberSocialEvent, getMyName, ACTIONS } = deps;
   return {
+
+    /**
+     * Reactive mode selector — Layer 2 per docs/phase-2-architecture.md §16.
+     *   normal: auto-engage if attacked or hostile in melee range; auto-flee creepers.
+     *   guard:  auto-engage hostiles in 12-block radius; hold ground.
+     *   hold:   no auto-actions (pure observation).
+     */
+    async mode({ name }) {
+      if (!name) {
+        return {
+          ok: true,
+          data: { current: ctx.mode || 'normal', valid: VALID_MODES },
+          result: `Reactive mode: ${ctx.mode || 'normal'}`,
+        };
+      }
+      const next = String(name).toLowerCase().trim();
+      if (!VALID_MODES.includes(next)) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_MODE',
+            message: `Mode must be one of ${VALID_MODES.join(', ')}.`,
+            observed_state: { requested: next, current: ctx.mode || 'normal' },
+            retry_safe: false,
+          },
+        };
+      }
+      const previous = ctx.mode || 'normal';
+      ctx.mode = next;
+      return {
+        ok: true,
+        data: { previous, current: next },
+        result: `Reactive mode: ${previous} → ${next}`,
+      };
+    },
+
+    /**
+     * Combat skill setter — clamps to [0, 1]. Reactive layer reads ctx.combat_skill
+     * to decide multi-target probability and tick rate. soldier ≈ 0.9, farmer ≈ 0.2.
+     */
+    async combat_skill({ value }) {
+      if (value === undefined || value === null) {
+        return {
+          ok: true,
+          data: { current: ctx.combat_skill ?? 0.5 },
+          result: `combat_skill = ${(ctx.combat_skill ?? 0.5).toFixed(2)}`,
+        };
+      }
+      const num = Number(value);
+      if (!Number.isFinite(num)) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_VALUE',
+            message: `combat_skill must be a number 0..1. Got: ${value}`,
+            retry_safe: false,
+          },
+        };
+      }
+      const clamped = Math.max(0, Math.min(1, num));
+      const previous = ctx.combat_skill ?? 0.5;
+      ctx.combat_skill = clamped;
+      return {
+        ok: true,
+        data: { previous, current: clamped },
+        result: `combat_skill: ${previous.toFixed(2)} → ${clamped.toFixed(2)}`,
+      };
+    },
 
     async attack({ target }) {
       const b = ensureBot();
@@ -132,7 +203,9 @@ export function createCombatActions(deps) {
         const dist = entity.position.distanceTo(b.entity.position);
         if (dist > 3.5) {
           b.pathfinder.setGoal(new goals.GoalFollow(entity, 2), true);
-          await sleep(300);
+          // Short re-check interval — closes the "bot in melee range but still
+          // sleeping in the chase branch" gap that lets mobs land free hits.
+          await sleep(150);
           continue;
         }
 
@@ -140,7 +213,10 @@ export function createCombatActions(deps) {
         await b.lookAt(entity.position.offset(0, entity.height * 0.8, 0));
         await b.attack(entity);
         hits++;
-        await sleep(600);
+        // Wooden sword cooldown is ~0.625s for full damage; 500ms is a slight
+        // tradeoff (small dmg loss for higher swing rate) that prevents the bot
+        // taking 2 hits between its own swings.
+        await sleep(500);
       }
 
       return { result: `Fight timeout. ${hits} hits on ${targetName}. Health: ${b.health}` };
