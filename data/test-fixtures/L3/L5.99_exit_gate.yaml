@@ -1,0 +1,53 @@
+# L5.99 — exit_gate: full Sprint 5 composite (level + fence + path + through).
+#
+# End-to-end integration test. The bot starts inside a 5x5 dirt area with
+# bumps to dig and an air pit to fill, then must:
+#   1. mc level 0 0 4 4 64 dirt        — flatten (dig 2 cobble bumps, fill 1 air pit)
+#   2. mc fence oak_fence 0 0 4 4 --gate south  — build perimeter + south gate at (2, 65, 4)
+#   3. mc path 0 0 4 4 64              — convert interior 3x3 dirt floor to dirt_path
+#   4. mc through 2 65 4 2 65 6        — open gate, walk out to (2, 65, 6), close gate
+#
+# Setup:
+#   landfolk-test, day, cleared 21x21 arena.
+#   Stone subfloor at y=63, dirt floor at y=64 across (0..4, 64, 0..4).
+#   Bumps: cobblestone at (1, 65, 1) and (3, 66, 3).
+#   Air pit at (2, 64, 2).
+#   Bot inside at (3, 65, 2) holding pickaxe + shovel + dirt + 32 oak_fence + 4 oak_fence_gate.
+#
+# Pass criteria:
+#   - All four calls return ok: true with action-contract data.
+#   - After call 4: bot at z >= 5 (outside enclosure), gate at (2, 65, 4) is closed.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 63 -10 10 63 10 minecraft:stone"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # 5x5 area at y=64 is dirt (so mc path can convert it after fencing)
+  - "execute in landfolk-test run fill 0 64 0 4 64 4 minecraft:dirt"
+  # Two bumps for mc level to dig
+  - "execute in landfolk-test run setblock 1 65 1 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock 3 66 3 minecraft:cobblestone"
+  # One air pit for mc level to fill with dirt
+  - "execute in landfolk-test run setblock 2 64 2 minecraft:air"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 3 65 2"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_pickaxe 1"
+  - "give Flint minecraft:wooden_shovel 1"
+  - "give Flint minecraft:dirt 16"
+  - "give Flint minecraft:oak_fence 32"
+  - "give Flint minecraft:oak_fence_gate 4"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
