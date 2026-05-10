@@ -1,0 +1,48 @@
+# L3.60 — fight_zombie: closed arena, NO armor, wooden sword.
+# Reactive layer (mode=normal default) auto-engages.
+#
+# Setup:
+#   landfolk-test EASY, NIGHT, doDaylightCycle false.
+#   Closed 7x7 stone arena: walls at x=±3 and z=±3 (3 blocks tall, cobblestone).
+#   Floor at Y=64 stone. Torches inside.
+#   Bot at (0, 65, 0), wooden_sword only — NO armor (realistic).
+#   Zombie summoned at (2, 65, 0) — 2 blocks east, melee range immediately.
+#
+# Expected: reactive (mode=normal default) detects zombie via /scene, fires
+#   attack_step on its own. Zombie dies in ~5s. Bot HP dips ~17 then recovers
+#   via saturation. Bot drift ≤ ANCHOR_RANGE_NORMAL=6 blocks.
+#
+# No agent action needed — reactive layer handles everything.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule mobGriefing false"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run fill -3 65 -3 3 67 -3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -3 65 3 3 67 3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -3 65 -3 -3 67 3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 3 65 -3 3 67 3 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock -2 66 -2 minecraft:torch"
+  - "execute in landfolk-test run setblock 2 66 -2 minecraft:torch"
+  - "execute in landfolk-test run setblock -2 66 2 minecraft:torch"
+  - "execute in landfolk-test run setblock 2 66 2 minecraft:torch"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "execute in landfolk-test run effect clear Flint"
+  - "execute in landfolk-test run effect give Flint minecraft:instant_health 1 5 true"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_sword 1"
+  - 'execute in landfolk-test run summon minecraft:zombie 2 65 0 {PersistenceRequired:1b,Tags:["target"]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

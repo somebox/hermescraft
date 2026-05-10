@@ -1,0 +1,48 @@
+# L3.65 — flee_to_mark: bot flees toward a known safe location (mark).
+# AGENT-DRIVEN — not in scripts/combat-suite.sh (reactive's flee_step
+# picks "directly away from threat", not "toward this specific mark"; the
+# mark-target is an agent-layer decision via mc flee --to).
+#
+# Setup:
+#   landfolk-test EASY. Bot at (0, 65, 0). Zombie at (2, 65, 0).
+#   Mark "shelter" at (-12, 65, 0) — 12 blocks west, away from zombie.
+#
+# Action: mc flee --to shelter
+# Expected: bot first moves AWAY from zombie (flee step), then navigates to
+#   mark "shelter". Result includes data.to == "shelter" and final position
+#   near (-12, 65, 0). Bot survives (HP > 0).
+#
+# Validates: locations file integration with flee, two-phase escape (away
+# from threat, then toward safe point).
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run fill -20 65 -5 15 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -25 50 -10 15 64 10 minecraft:stone"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # Torches around the test arena for nighttime visibility
+  - "execute in landfolk-test run setblock -12 66 0 minecraft:torch"
+  - "execute in landfolk-test run setblock 0 66 0 minecraft:torch"
+  - "execute in landfolk-test run setblock -6 66 -3 minecraft:torch"
+  - "execute in landfolk-test run setblock -6 66 3 minecraft:torch"
+  # Set up a "shelter" mark via a static JSON asset (avoids YAML/shell quote pyramids).
+  - "local: cp data/locations-flint.json /tmp/locations-flint.bak"
+  - "local: cp data/test-fixtures/L3/L3.65_locations.json data/locations-flint.json"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 5 10 true"
+  - "execute in landfolk-test run summon minecraft:zombie 2 65 0 {PersistenceRequired:1b}"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -20 65 -5 15 80 5 minecraft:air"
+  - "local: mv /tmp/locations-flint.bak data/locations-flint.json"
+  - "execute in landfolk-test run tp Flint 52 65 52"

@@ -1,0 +1,51 @@
+# L3.62 — flee_creeper: live creeper pursues bot; reactive layer must keep
+# distance until creeper despawns / fuse aborts.
+#
+# Setup:
+#   landfolk-test EASY. Bot at (0, 65, 0), no armor, no weapon.
+#   Creeper at (5, 65, 0) — full AI enabled, will sprint toward bot and
+#   start fizzing within CREEPER_FLEE_RANGE (6).
+#
+# Reactive policy:
+#   Creeper proximity ≤ 6 always triggers flee_step (zig-zag) regardless of
+#   mode. Bot bumps along forward (NOT a long-running goto) so it keeps
+#   re-checking distance every tick.
+#
+# Expected: bot survives 30s. Creeper either fails to detonate (bot keeps
+#   ahead) or detonates harmlessly (>3 blocks away). HP > 0 at end.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule mobGriefing false"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # 17×17 closed arena — bot can circle-flee indefinitely, creeper pursues
+  # but can't corner. No void edges to fall into.
+  - "execute in landfolk-test run fill -8 65 -8 8 70 8 minecraft:air"
+  - "execute in landfolk-test run fill -8 64 -8 8 64 8 minecraft:stone"
+  - "execute in landfolk-test run fill -8 65 -8 8 67 -8 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -8 65  8 8 67  8 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -8 65 -8 -8 67 8 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 8 65 -8 8 67 8 minecraft:cobblestone"
+  # Torches around the perimeter
+  - "execute in landfolk-test run setblock -7 66 -7 minecraft:torch"
+  - "execute in landfolk-test run setblock 7 66 -7 minecraft:torch"
+  - "execute in landfolk-test run setblock -7 66 7 minecraft:torch"
+  - "execute in landfolk-test run setblock 7 66 7 minecraft:torch"
+  - "execute in landfolk-test run setblock 0 66 0 minecraft:torch"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  # Live creeper — full AI. Will pursue bot and start fizzing inside ~3 blocks.
+  - 'execute in landfolk-test run summon minecraft:creeper 5 65 0 {PersistenceRequired:1b,Tags:["target"]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -8 65 -8 8 70 8 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

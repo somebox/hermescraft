@@ -112,6 +112,27 @@ L3:
   - { id: L3.22_place_target_occupied,        bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_d9ea0713, t_ffb7e9b8 — TARGET_OCCUPIED with next_action_hint" }
   - { id: L3.23_place_no_solid_neighbor,      bot: flint,    status: green,    last_run: "2026-05-09T23:55Z", consecutive_pass: 2, notes: "PASS via t_b5f4b2cd, t_c9843eb5 — NO_SOLID_NEIGHBOR with all-air neighbor map" }
 
+  # ladders (Sprint 1 close)
+  - { id: L3.50_ladder_place,                 bot: flint,    status: green,    last_run: "2026-05-10T01:10Z", consecutive_pass: 1, notes: "place ladder against wall — server auto-orients to nearest wall regardless of place handler's chosen ref face. Bot climbs onto placed ladder." }
+  - { id: L3.51_ladder_climb,                 bot: flint,    status: green,    last_run: "2026-05-10T01:10Z", consecutive_pass: 1, notes: "pathfinder uses pre-placed ladder column to climb 5 blocks Y=65→70 in ~12s. Top platform required — ladders ending in mid-air leave bot 1 block short." }
+  - { id: L3.52_ladder_build_then_climb,      bot: flint,    status: green,    last_run: "2026-05-10T01:10Z", consecutive_pass: 1, notes: "place 4 ladders (~1.3s) then pathfinder climb (~12s). Total 13.5s. The 'no pickaxe but have ladders' alternative to pillar_step." }
+
+  # combat + escape (Sprint 1 close)
+  - { id: L3.60_fight_zombie,                 bot: flint,    status: green,    last_run: "2026-05-10T01:30Z", consecutive_pass: 1, notes: "mc fight zombie at point-blank — 6 hits with wooden_sword + iron_helmet. ~5.7s. instant_health offsets damage; net HP gain." }
+  - { id: L3.61_fight_skeleton,               bot: flint,    status: green,    last_run: "2026-05-10T01:30Z", consecutive_pass: 1, notes: "mc fight skeleton at distance 10 — bot closes via GoalFollow then attacks. 6 hits, ~5.1s, full HP." }
+  - { id: L3.62_flee_creeper,                 bot: flint,    status: green,    last_run: "2026-05-10T01:30Z", consecutive_pass: 1, notes: "mc flee 16 from NoAI creeper — 16 blocks west, 2.5s, full HP. NoAI prevents charge+detonate on the test setup delay." }
+  - { id: L3.63_attack_cow_food,              bot: flint,    status: green,    last_run: "2026-05-10T01:30Z", consecutive_pass: 1, notes: "mc fight cow 0 30 — 4 hits to kill cow (10 HP, sword 4 dmg). Use `fight cow` not `attack cow` (single-hit primitive)." }
+  - { id: L3.64_fight_retreat_low_hp,         bot: flint,    status: green,    last_run: "2026-05-10T01:30Z", consecutive_pass: 1, notes: "mc fight zombie 15 30 with bot pre-damaged to 12 HP — first hit drops to 11 → retreat triggers immediately, 0 hits dealt. Defensive movement branch validated." }
+  - { id: L3.65_flee_to_mark,                 bot: flint,    status: green,    last_run: "2026-05-10T01:30Z", consecutive_pass: 1, notes: "mc flee --to shelter — two-phase: retreat from zombie + navigate to mark at (-12, 65, 0). Bot ends near (-9.3, 65, 0.5). Locations file integration confirmed via static asset L3.65_locations.json." }
+  - { id: L3.66_dodge_skeleton,               bot: flint,    status: green,    last_run: "2026-05-10T01:30Z", consecutive_pass: 1, notes: "Defenseless bot survives skeleton arrows by fleeing 25 blocks west — full HP, 4.1s. Distinct from L3.61 (close-and-kill); here engagement is wrong." }
+  - { id: L3.67_fight_two_zombies_obstacles,  bot: flint,    status: green,    last_run: "2026-05-10T01:35Z", consecutive_pass: 1, notes: "mc fight zombie called twice — both zombies killed in 12.7s. Pathfinder routes around 4 stone cover columns to reach z2 behind cover." }
+  - { id: L3.68_shoot_bow,                    bot: flint,    status: green,    last_run: "2026-05-10T01:35Z", consecutive_pass: 1, notes: "mc shoot zombie x5 — 5 arrows consumed, zombie killed, bot HP 20→19.2 (zombie closed to melee during shots). Arrow firing primitive validated; kiting is a higher-level behavior." }
+
+  # reactive layer (Layer 2) — multi-target fight tests
+  - { id: L3.69_multi_zombie_survival,        bot: flint,    status: green,    last_run: "2026-05-10T13:00Z", consecutive_pass: 1, notes: "3 zombies vs sword + NO armor in 9x9 closed arena. Bot HP=20 throughout via multi-target swing per tick. Reactive auto-engages no manual fire." }
+  - { id: L3.70_multi_zombie_stress,          bot: flint,    status: green,    last_run: "2026-05-10T13:00Z", consecutive_pass: 1, notes: "4 zombies vs sword + NO armor. Bot HP=20 sustained — multi-target swing+knockback prevents pile-on damage." }
+  - { id: L3.71_multi_zombie_six,             bot: flint,    status: red,      last_run: "2026-05-10T13:00Z", consecutive_pass: 0, notes: "6 zombies — bot dies at T~15s. Failure mode: WOODEN SWORD DURABILITY (60 hits) runs out at T~8s; bot then has weap=none, flees, gets cornered. Pull weapon-rotation forward into Sprint 3." }
+
 L4:
   - { id: L4.1_dig_stone_with_pickaxe,        bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }
   - { id: L4.2_dig_stone_no_pickaxe,          bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }

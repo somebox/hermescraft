@@ -1,0 +1,51 @@
+# L3.70 — multi_zombie_stress: 4 zombies in closed arena. Pushes the
+# wooden-sword + no-armor bot near the breaking point.
+#
+# Setup:
+#   Same 9x9 arena as L3.69. 4 zombies summoned at the four cardinal points
+#   ~3 blocks from bot (N, S, E, W).
+#
+# Goal: characterize the breaking point. With wooden sword + saturation regen,
+#   bot likely survives 3 (per L3.69). 4 zombies hitting in melee = ~10 dmg/s
+#   incoming, regen ~1 HP/s, kill rate ~5 dmg/s outgoing. Expected: bot dies
+#   or barely survives.
+#
+# Use this fixture to tune mode policies or to motivate L3.71 (4-zombie + armor)
+# and L3.72 (4-zombie + iron sword) showing what a small upgrade buys you.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule mobGriefing false"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run fill -4 65 -4 4 67 -4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -4 65 4 4 67 4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -4 65 -4 -4 67 4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 4 65 -4 4 67 4 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock -3 66 -3 minecraft:torch"
+  - "execute in landfolk-test run setblock 3 66 -3 minecraft:torch"
+  - "execute in landfolk-test run setblock -3 66 3 minecraft:torch"
+  - "execute in landfolk-test run setblock 3 66 3 minecraft:torch"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "execute in landfolk-test run effect clear Flint"
+  - "execute in landfolk-test run effect give Flint minecraft:instant_health 1 5 true"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_sword 1"
+  # 4 zombies, NSWE
+  - 'execute in landfolk-test run summon minecraft:zombie 0 65 -3 {PersistenceRequired:1b,Tags:["target","zN"]}'
+  - 'execute in landfolk-test run summon minecraft:zombie 0 65 3 {PersistenceRequired:1b,Tags:["target","zS"]}'
+  - 'execute in landfolk-test run summon minecraft:zombie 3 65 0 {PersistenceRequired:1b,Tags:["target","zE"]}'
+  - 'execute in landfolk-test run summon minecraft:zombie -3 65 0 {PersistenceRequired:1b,Tags:["target","zW"]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

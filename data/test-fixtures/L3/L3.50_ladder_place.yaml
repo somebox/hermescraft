@@ -1,0 +1,34 @@
+# L3.50 — ladder_place: place a single ladder against a solid stone wall.
+#
+# Setup: bot on platform near a stone wall.
+#   Wall: (5, 65, 0)..(5, 67, 0) stone (3 blocks tall)
+#   Bot at (3, 65, 0).
+#   Ladder will be placed at (4, 65, 0) (west face of the stone wall).
+#
+# Action: POST /action/place {block:"ladder", x:4, y:65, z:0}
+# Expected: ok=true, ladder at (4, 65, 0) attaching to wall (5, 65, 0).
+#
+# Tunable on FAIL:
+#   bot/lib/actions/world.js:place — ladder placement uses the wall as the
+#   reference block; if the place handler picks a horizontal-face neighbor
+#   instead of the wall, the orientation may be wrong.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run fill 5 65 0 5 67 0 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 3 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:ladder 16"
+  # effect give <player> <effect> <seconds> <amplifier>  (amplifier ≤ 255)
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+
+cleanup:
+  - "execute in landfolk-test run fill 4 65 0 4 67 0 minecraft:air"
+  - "execute in landfolk-test run fill 5 65 0 5 67 0 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

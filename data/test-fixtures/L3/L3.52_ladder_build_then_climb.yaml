@@ -1,0 +1,41 @@
+# L3.52 — ladder_build_then_climb: bot builds a ladder column from scratch
+# against a wall, then climbs it to reach a platform.
+#
+# Setup:
+#   Stone wall (5, 65..69, 0) — 5 blocks tall.
+#   Top platform 5x5 at Y=69 around (6, 69, 0).
+#   NO ladders pre-placed.
+#   Bot at (3, 65, 0) with 5 ladders.
+#
+# Steward action sequence:
+#   1. mc place ladder 4 65 0   (placed against wall — face_used should pick
+#      a horizontal neighbor; server auto-orients ladder facing=west)
+#   2. mc place ladder 4 66 0
+#   3. mc place ladder 4 67 0
+#   4. mc place ladder 4 68 0
+#   5. mc goto_near 6 70 0 1
+# Expected: bot at Y=70 on top platform.
+#
+# This exercises the full "no climbing aid" → "construct ladders" → "use
+# them" cycle. A worker without a pickaxe but with ladders should choose this
+# path over pillar_step (cheaper materials, reusable, no risk of getting
+# stranded on top of an unwanted spire).
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run fill 5 65 0 5 69 0 minecraft:stone"
+  - "execute in landfolk-test run fill 4 69 -2 8 69 2 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 3 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:ladder 5"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+
+cleanup:
+  - "execute in landfolk-test run fill 4 65 -2 8 70 2 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

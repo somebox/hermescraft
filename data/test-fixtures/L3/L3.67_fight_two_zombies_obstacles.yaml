@@ -1,0 +1,68 @@
+# L3.67 — fight_two_zombies_obstacles: 2 zombies in a constrained arena
+# with single-block obstacles the bot must dodge AROUND. Tests that the
+# reactive layer can fight while navigating obstacles.
+#
+# Setup:
+#   landfolk-test EASY, NIGHT.
+#   Closed 11×9 arena, walls at z=±4, x=±5.
+#   Two single-block pillars at (-1, 65, -2) and (1, 65, 2) — small enough
+#   that zombies path around them, but the bot must side-step to avoid
+#   walking into them while retreating.
+#
+#   Layout (top-down):
+#       z=-4 #  #  #  #  #  #  #  #  #  #  #
+#       z=-3 #  .  .  .  .  .  .  .  .  .  #
+#       z=-2 #  .  .  .  P  .  .  .  .  .  #   pillar at x=-1
+#       z=-1 #  .  .  .  .  .  .  .  .  .  #
+#       z= 0 #  .  .  .  B  .  .  .  Z  .  #   bot, zombie1 at x=4
+#       z= 1 #  .  .  .  .  .  .  .  .  .  #
+#       z= 2 #  .  .  .  .  .  P  .  .  .  #   pillar at x=1
+#       z= 3 #  .  .  .  .  .  .  .  Z  .  #   zombie2 at (4, 3)
+#       z= 4 #  #  #  #  #  #  #  #  #  #  #
+#
+#   Both zombies at distance ~4 and ~5 from bot — within engageRange.
+#   They WILL reach the bot (no path-blocking obstacles).
+#
+# Expected: reactive engages zombie1 first, kills it, then engages zombie2.
+#   Bot may be pushed against the wall but the lateral strafe in attack_step
+#   keeps it from getting permanently cornered. Both zombies dead < 25s.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule mobGriefing false"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # Closed 11×9 arena
+  - "execute in landfolk-test run fill -6 65 -5 6 70 5 minecraft:air"
+  - "execute in landfolk-test run fill -6 64 -5 6 64 5 minecraft:stone"
+  - "execute in landfolk-test run fill -5 65 -4 5 67 -4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -5 65 4 5 67 4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -5 65 -4 -5 67 4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 5 65 -4 5 67 4 minecraft:cobblestone"
+  # Two single-block pillars (1×2) — bot can squeeze past, zombies can path around
+  - "execute in landfolk-test run fill -1 65 -2 -1 66 -2 minecraft:stone"
+  - "execute in landfolk-test run fill 1 65 2 1 66 2 minecraft:stone"
+  # Torches
+  - "execute in landfolk-test run setblock -4 66 -3 minecraft:torch"
+  - "execute in landfolk-test run setblock 4 66 -3 minecraft:torch"
+  - "execute in landfolk-test run setblock -4 66 3 minecraft:torch"
+  - "execute in landfolk-test run setblock 4 66 3 minecraft:torch"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_sword 1"
+  - "give Flint minecraft:iron_helmet 1"
+  - "item replace entity Flint armor.head with minecraft:iron_helmet 1"
+  - "effect give Flint minecraft:saturation 600 1"
+  - 'execute in landfolk-test run summon minecraft:zombie 4 65 0 {PersistenceRequired:1b,Tags:["target"]}'
+  - 'execute in landfolk-test run summon minecraft:zombie 4 65 3 {PersistenceRequired:1b,Tags:["target"]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -6 65 -5 6 70 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

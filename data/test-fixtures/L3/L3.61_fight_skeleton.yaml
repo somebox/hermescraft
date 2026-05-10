@@ -1,0 +1,54 @@
+# L3.61 — fight_skeleton: skeleton at medium range; reactive layer engages.
+#
+# Setup:
+#   landfolk-test EASY. Bot at (0, 65, 0), wooden_sword + iron_helmet.
+#   Skeleton at (10, 65, 0) — within reactive layer's recently_damaged
+#   trigger window. First arrow lands at ~T=2s, bot takes damage, reactive
+#   transitions to attack_step and closes distance with the back-step dance.
+#
+# Reactive trigger chain:
+#   T=0..2s   skeleton aims, bot idle (out of melee, no damage yet)
+#   T=2s      first arrow hits → recently_damaged → attack_step engages
+#   T=2..6s   bot closes, swings, kills (iron_helmet softens 1-2 more arrows)
+#
+# Expected: skeleton dies within ~10s, bot survives with HP > 5.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule mobGriefing false"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # Closed corridor 5 wide × 16 long, walls at z=±2 and at the ends.
+  # Skeleton can kite ~14 blocks max but cannot escape the bot's pursuit.
+  - "execute in landfolk-test run fill -3 65 -3 15 70 3 minecraft:air"
+  - "execute in landfolk-test run fill -3 64 -3 15 64 3 minecraft:stone"
+  # 4 walls
+  - "execute in landfolk-test run fill -3 65 -3 15 67 -3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -3 65  3 15 67  3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -3 65 -3 -3 67 3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 15 65 -3 15 67 3 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock 0 66 -2 minecraft:torch"
+  - "execute in landfolk-test run setblock 0 66 2 minecraft:torch"
+  - "execute in landfolk-test run setblock 12 66 -2 minecraft:torch"
+  - "execute in landfolk-test run setblock 12 66 2 minecraft:torch"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_sword 1"
+  - "give Flint minecraft:iron_helmet 1"
+  - "item replace entity Flint armor.head with minecraft:iron_helmet 1"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 5 10 true"
+  # NOTE: Paper does not auto-equip bows on summon — must specify HandItems explicitly
+  # or skeleton just walks around in melee.
+  - 'execute in landfolk-test run summon minecraft:skeleton 10 65 0 {PersistenceRequired:1b,Tags:["target"],HandItems:[{id:"minecraft:bow",Count:1b},{}]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -5 65 -5 25 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

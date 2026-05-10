@@ -1,0 +1,38 @@
+# L3.51 — ladder_climb: pathfinder uses pre-placed ladders to reach a platform.
+#
+# Setup:
+#   Stone wall (5, 65..69, 0) — 5 blocks tall, ladder anchor.
+#   Ladders at (4, 65..68, 0), facing=west (attached to east wall).
+#   Top platform 5x5 at Y=69 around (6, 69, 0) so the bot can step OFF the
+#   ladder onto a walkable surface (ladders ending in mid-air leave the bot
+#   stuck 1 block short of "the top").
+#   Bot at (3, 65, 0) on ground level.
+#
+# Action: mc goto_near 6 70 0 1
+# Expected: bot ends at Y=70 (on top platform), pathfinder uses the ladder
+#   column to ascend instead of trying to pillar.
+#
+# Tunable on FAIL:
+#   skills/gaming/minecraft-navigation/SKILL.md "vertical: ladders preferred"
+#   pathfinder uses ladders out-of-the-box; if it fails, suspect ladder
+#   orientation in prep (must be facing=west for east-wall anchor).
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run fill 5 65 0 5 69 0 minecraft:stone"
+  - "execute in landfolk-test run fill 4 69 -2 8 69 2 minecraft:stone"
+  - "execute in landfolk-test run fill 4 65 0 4 68 0 minecraft:ladder[facing=west]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 3 65 0"
+  - "clear Flint"
+  # effect give <player> <effect> <seconds> <amplifier>  (amplifier ≤ 255)
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+
+cleanup:
+  - "execute in landfolk-test run fill 4 65 -2 8 70 2 minecraft:air"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

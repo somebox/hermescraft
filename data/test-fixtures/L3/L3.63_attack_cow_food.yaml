@@ -1,0 +1,40 @@
+# L3.63 — attack_cow_food: kill a cow to get raw_beef (food gathering).
+# AGENT-DRIVEN — not in scripts/combat-suite.sh (reactive layer doesn't
+# auto-attack neutral mobs; agent must call mc fight cow explicitly).
+#
+# Setup:
+#   landfolk-test EASY. Bot at (0, 65, 0), wooden_sword.
+#   Cow at (3, 65, 0).
+#
+# Action: mc fight cow 0 30
+#   (target=cow, retreat_health=0 — never retreat from a passive mob,
+#    duration=30s — plenty for 3 hits)
+# Expected: cow dies (cow has 10 HP, sword does 4 dmg = 3 hits).
+#   raw_beef in inventory (1-3 drops). Optionally leather (0-2 drops).
+#
+# Note: `mc attack` is a single-hit primitive; for "kill X to drop Y" use
+# `mc fight X` which loops until target.isValid is false.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -10 50 -10 15 64 10 minecraft:stone"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_sword 1"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 5 10 true"
+  - "execute in landfolk-test run summon minecraft:cow 3 65 0 {PersistenceRequired:1b,NoAI:1b}"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

@@ -1,0 +1,53 @@
+# L3.68 — shoot_bow: bot fires arrows from a bow at a distant zombie.
+# AGENT-DRIVEN — not in scripts/combat-suite.sh (reactive layer doesn't
+# fire bows; agent must call mc shoot bow explicitly).
+#
+# Setup:
+#   landfolk-test EASY, NIGHT.
+#   Bot at (0, 65, 0) with bow + 16 arrows + iron_helmet (zombie may close).
+#   Zombie at (12, 65, 0) — out of melee, in arrow range.
+#
+# Steward action sequence (5 shots — zombie has 20 HP, arrow ~4-6 dmg):
+#   mc shoot zombie
+#   mc shoot zombie
+#   mc shoot zombie
+#   mc shoot zombie
+#   mc shoot zombie
+# Expected: zombie dies (target.isValid false), bot survives. Arrow count
+#   in inventory drops by ≥4 (≤5 if some shots were partial draws).
+#
+# Validates `mc shoot`:
+#   - bow + arrows in inventory
+#   - target acquisition (substring "zombie")
+#   - aim prediction (entity velocity offset)
+#   - bow charge time (1000ms hold then release)
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run fill -5 65 -5 18 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -10 50 -10 20 64 10 minecraft:stone"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run setblock -3 66 0 minecraft:torch"
+  - "execute in landfolk-test run setblock 6 66 0 minecraft:torch"
+  - "execute in landfolk-test run setblock 14 66 0 minecraft:torch"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:bow 1"
+  - "give Flint minecraft:arrow 16"
+  - "give Flint minecraft:iron_helmet 1"
+  - "item replace entity Flint armor.head with minecraft:iron_helmet 1"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 5 10 true"
+  - 'execute in landfolk-test run summon minecraft:zombie 12 65 0 {PersistenceRequired:1b,Tags:["L368"]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -5 65 -5 18 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

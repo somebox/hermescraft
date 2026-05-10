@@ -1,0 +1,64 @@
+# L3.72 — mixed: 2 skeletons on raised perches + 1 zombie at floor level,
+# in a closed 13×13 room. Combined challenge: skeletons fire from corners
+# (force bot to dodge), zombie chases (forces engagement), and the room is
+# small enough that crossfire converges on whatever spot the bot occupies.
+#
+# Setup:
+#   landfolk-test EASY, NIGHT.
+#   13×13 closed arena, walls at Y=65-69 (4 high so skeleton arrows can't
+#     escape).
+#   Two 1-block raised perches in opposite corners (Y=66) for the skeletons:
+#     NW corner perch at (-5, 66, -5)
+#     SE corner perch at ( 5, 66,  5)
+#   Zombie spawns at floor (0, 65, -3), in front of the bot.
+#   Bot at (0, 65, 0) with wooden_sword (NO armor — forces evasive movement).
+#
+# Reactive expectation:
+#   - Skeleton in awareness → trigger advance (with weapon) OR flee (no weapon)
+#   - Zombie at melee → trigger attack_step
+#   - Both skeletons in sight from start → bot keeps moving (zig-zag)
+#   - The lateral strafe in attack_step prevents the bot from getting
+#     pinned in the same corner that one of the skeletons is shooting from.
+#
+# Expected: zombie dies first, then skeletons (bot has to close 7 blocks of
+#   diagonal). Total time ~20-25s. Bot survives at HP > 0.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule mobGriefing false"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # Closed 13×13 room
+  - "execute in landfolk-test run fill -7 65 -7 7 70 7 minecraft:air"
+  - "execute in landfolk-test run fill -7 64 -7 7 64 7 minecraft:stone"
+  - "execute in landfolk-test run fill -6 65 -6 6 68 -6 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -6 65 6 6 68 6 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -6 65 -6 -6 68 6 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 6 65 -6 6 68 6 minecraft:cobblestone"
+  # Skeleton perches (1 block raised in opposite corners)
+  - "execute in landfolk-test run setblock -5 65 -5 minecraft:stone"
+  - "execute in landfolk-test run setblock 5 65 5 minecraft:stone"
+  # Torches around perimeter
+  - "execute in landfolk-test run setblock -5 66 0 minecraft:torch"
+  - "execute in landfolk-test run setblock 5 66 0 minecraft:torch"
+  - "execute in landfolk-test run setblock 0 66 -5 minecraft:torch"
+  - "execute in landfolk-test run setblock 0 66 5 minecraft:torch"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_sword 1"
+  - "effect give Flint minecraft:saturation 600 1"
+  # 2 skeletons + 1 zombie
+  - 'execute in landfolk-test run summon minecraft:skeleton -5 66 -5 {PersistenceRequired:1b,Tags:["target"],HandItems:[{id:"minecraft:bow",Count:1b},{}]}'
+  - 'execute in landfolk-test run summon minecraft:skeleton 5 66 5 {PersistenceRequired:1b,Tags:["target"],HandItems:[{id:"minecraft:bow",Count:1b},{}]}'
+  - 'execute in landfolk-test run summon minecraft:zombie 0 65 -3 {PersistenceRequired:1b,Tags:["target"]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -7 65 -7 7 70 7 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

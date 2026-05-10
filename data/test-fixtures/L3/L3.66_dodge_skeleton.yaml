@@ -1,0 +1,53 @@
+# L3.66 — dodge_skeleton: skeleton on raised perch at the end of a long
+# corridor. Bot has NO weapon, NO armor — reactive's `ranged_no_weapon`
+# rule forces continuous zig-zag flee even before the first arrow lands.
+#
+# Setup:
+#   landfolk-test EASY, NIGHT, closed corridor.
+#   Corridor: x=-7..8, z=-3..3, walls at Y=65-68 cobblestone.
+#   Floor stone at Y=64.
+#   Skeleton perch at (6, 66, 0) — one block up so arrows have clear path
+#   above bot's head. NO pillar in front of skeleton — direct line of sight.
+#   Bot at (-6, 65, 0) — 12 blocks west; within RANGED_AWARE_RANGE=16 from
+#   the start so the bot zig-zags immediately.
+#
+# Expected: reactive detects skeleton in RANGED_AWARE_RANGE (16) → flees
+#   even at d=20 (no_weapon ranged trigger). Bot moves west, hits west wall,
+#   reflects, keeps zig-zagging. Some arrow hits land. Bot survives 25s.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run time set night"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule mobGriefing false"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -5 10 64 5 minecraft:stone"
+  # 16×7 corridor walls
+  - "execute in landfolk-test run fill -7 65 -3 8 68 -3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -7 65 3 8 68 3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -7 65 -3 -7 68 3 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 8 65 -3 8 68 3 minecraft:cobblestone"
+  # Skeleton perch — single raised block, no LOS obstruction in front of it
+  - "execute in landfolk-test run setblock 6 65 0 minecraft:cobblestone"
+  # Torches
+  - "execute in landfolk-test run setblock -6 66 -2 minecraft:torch"
+  - "execute in landfolk-test run setblock -6 66 2 minecraft:torch"
+  - "execute in landfolk-test run setblock 0 66 -2 minecraft:torch"
+  - "execute in landfolk-test run setblock 0 66 2 minecraft:torch"
+  - "execute in landfolk-test run setblock 4 66 -2 minecraft:torch"
+  - "execute in landfolk-test run setblock 4 66 2 minecraft:torch"
+  - "execute in landfolk-test run tp Flint -6 65 0"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  # Paper does not auto-equip bows — explicit HandItems required.
+  - 'execute in landfolk-test run summon minecraft:skeleton 6 66 0 {PersistenceRequired:1b,Tags:["target"],HandItems:[{id:"minecraft:bow",Count:1b},{}]}'
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run fill -10 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
