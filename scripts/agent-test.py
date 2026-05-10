@@ -45,7 +45,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 DEFAULT_BOT_URL = "http://localhost:3001"
-DEFAULT_MODEL = None  # None = use hermes default
+DEFAULT_MODEL = "google/gemini-2.5-flash"  # current baseline (gemini-2.5-flash-lite refuses ~50% of tasks claiming "no MC tools available", non-lite is reliable + fast)
 DEFAULT_MAX_TURNS = 8
 DEFAULT_TIMEOUT_S = 180
 
@@ -62,9 +62,10 @@ def parse_yaml(path: Path) -> dict:
 
 
 def run_rcon(cmd: str) -> str:
-    """Run a single rcon command via ssh, return output."""
-    full = ["ssh", "ubuntu-host", "sudo", "docker", "exec", "minecraft", "rcon-cli", cmd]
-    result = subprocess.run(full, capture_output=True, text=True, timeout=20)
+    """Run a single rcon command via ssh+stdin. Stdin avoids docker's CLI
+    parser interpreting leading dashes (e.g. -2 coordinates) as flags."""
+    full = ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"]
+    result = subprocess.run(full, input=cmd + "\n", capture_output=True, text=True, timeout=20)
     return result.stdout.strip()
 
 
@@ -290,10 +291,13 @@ def main():
     stage_times["prep"] = time.time() - _t
     print(f" ok ({stage_times['prep']:.1f}s)")
 
-    # Settle: let mineflayer's block cache ingest the rcon changes.
-    print(f"  settle (3s)...", end="", flush=True)
+    # Settle: let mineflayer's block cache ingest the rcon changes. 6s is
+    # needed when the agent will read/write blocks that an external rcon
+    # `fill` just modified — chunk update packets can lag 3-4s under load.
+    settle_s = int(spec.get("settle_seconds", 6))
+    print(f"  settle ({settle_s}s)...", end="", flush=True)
     _t = time.time()
-    time.sleep(3)
+    time.sleep(settle_s)
     stage_times["settle"] = time.time() - _t
     print(f" ok ({stage_times['settle']:.1f}s)")
 

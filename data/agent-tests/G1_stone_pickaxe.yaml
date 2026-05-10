@@ -1,0 +1,82 @@
+# G1 — composite: full chain to a stone_pickaxe.
+#
+# Bot starts with NOTHING except saturation. Standing tree (4 oak_log)
+# at x=5, a 4x4 stone deposit at x=-5 (cobblestone source). No crafting
+# table, no tools, no starter items.
+#
+# Required chain:
+#   1. punch a log     (mc collect oak_log 1, bare hands ok)
+#   2. craft planks    (2x2 inventory craft)
+#   3. craft sticks    (2x2 inventory craft)
+#   4. craft table     (2x2 inventory craft)
+#   5. place table     (mc place crafting_table X Y Z)
+#   6. craft wooden_pickaxe at table (3x3)
+#   7. equip pickaxe, mine 3 cobblestone (mc collect cobblestone 3)
+#   8. craft stone_pickaxe at table (3x3, needs more sticks if used)
+#
+# Pass: stone_pickaxe in inventory + at least one mc craft + collect.
+# Cap mc calls at 40 — generous, but catches runaway loops.
+
+agent_test_id: G1_stone_pickaxe
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: end with a `stone_pickaxe` in your inventory. You're starting
+  from nothing — no tools, no items.
+
+  There is a small oak tree at roughly (5, 65, 0) and a stone deposit
+  at roughly (-5, 65, 0). Use `mc nearby` to confirm.
+
+  Standard chain (you can vary it):
+    - Punch wood for logs (bare hands work on oak_log, just slow).
+    - Craft planks → sticks → crafting_table from inventory.
+    - Place the table, then craft wooden_pickaxe at it.
+    - Mine cobblestone with the wooden pickaxe.
+    - Craft stone_pickaxe at the same table.
+
+  Stop when you have a `stone_pickaxe`. Don't keep mining or building
+  after that — just report and exit.
+
+skills: [minecraft-survival, minecraft-building]
+max_turns: 30
+timeout_seconds: 480
+
+expect:
+  bot_inventory:
+    stone_pickaxe: ">=1"
+  mc_verbs_include_any: [collect, dig]
+  mc_cli_invocations_max: 40
+
+verify_after_prep:
+  - { block: oak_log, min_count: 4 }
+  - { block: stone, min_count: 8 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  # 4-tall oak tree at x=5
+  - "execute in landfolk-test run setblock 5 65 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 5 66 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 5 67 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 5 68 0 minecraft:oak_log"
+  # Small stone deposit at x=-5 (2x2x2 = 8 stone blocks above the arena floor)
+  - "execute in landfolk-test run fill -6 65 -1 -5 66 0 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

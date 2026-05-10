@@ -1,0 +1,75 @@
+# G2 — composite: build a 5x5 cobblestone shelter.
+#
+# Bot has 64 cobblestone + wooden_pickaxe. Goal: build a 5x5 perimeter
+# wall around the spawn area, 3 blocks high. No floor, no roof — just
+# walls.
+#
+# Easiest path: 4 `mc wall` calls (one per side). A naive agent will
+# place block-by-block via `mc place` and burn turns. Either is OK;
+# the test only checks the result.
+#
+# Expected wall coordinates (centered on bot at 0,65,0):
+#   N wall: (-2,65..67, 2) → ( 2,65..67, 2)
+#   S wall: (-2,65..67,-2) → ( 2,65..67,-2)
+#   E wall: ( 2,65..67,-1) → ( 2,65..67, 1)
+#   W wall: (-2,65..67,-1) → (-2,65..67, 1)
+#
+# Pass: 4 corner pillars (NW/NE/SW/SE) are cobblestone at the TOP layer
+# (y=67). If those exist, the agent built a tall-enough perimeter.
+
+agent_test_id: G2_shelter
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: build a 5x5 cobblestone wall enclosure around your current
+  position, 3 blocks tall. No floor, no roof. The 5x5 outer footprint
+  should center on you (so corners at roughly ±2 from your X and Z).
+
+  Tips:
+    - `mc wall BLOCK X1 Y1 Z1 X2 Y2 Z2` builds a vertical wall between
+      two corners in one call — much faster than `mc place` per block.
+    - You have 64 cobblestone (48 needed for 4 walls × 3 high, with
+      shared corners — actually 48 blocks total).
+
+  Stop when the perimeter is complete.
+
+skills: [minecraft-survival, minecraft-building]
+max_turns: 15
+timeout_seconds: 300
+
+expect:
+  # Top layer of each of the 4 corners — proves the wall reached y=67.
+  world_block_at:
+    - { x: -2, y: 67, z: -2, block: cobblestone }
+    - { x:  2, y: 67, z: -2, block: cobblestone }
+    - { x: -2, y: 67, z:  2, block: cobblestone }
+    - { x:  2, y: 67, z:  2, block: cobblestone }
+  mc_cli_invocations_max: 20
+
+verify_after_prep:
+  - { block: stone, min_count: 8 }   # arena floor
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:cobblestone 64"
+  - "give Flint minecraft:wooden_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
