@@ -549,6 +549,255 @@ The locations module reads `data/locations-<name>.json` fresh on every `/marks` 
 
 Architectural findings captured F1–F23 across the sprint. Sprint 2 candidates: L1 (movement) fixtures + first behavior_test (multi-step "fetch + smelt" or "mob ambush").
 
+### F24. mc place: water/lava counted as "tried" neighbor → INTERRUPTED instead of NO_SOLID_NEIGHBOR
+
+While validating B2 (water-gap behavior_test), `mc place cobblestone 3 65 0` (above water) returned `INTERRUPTED` for every cell, despite there being no solid block to place against. Root cause: the neighbor scan only skipped `air/cave_air/void_air`. Water has `boundingBox === 'empty'` and is not air-named, so the loop tried `placeBlock(water, ...)` — server rejects it — `triedAnyNeighbor=true` — error code **INTERRUPTED** (semantically: "server rejected, retry safe"). For a worker, this is misleading: it implies "try again" when the right action is "stand somewhere else."
+
+Fix in `bot/lib/actions/world.js:place`:
+- Introduced `REPLACEABLE` set (air variants + water/lava/bubble_column + tall_grass/fern/vine/snow_layer/kelp/seagrass/dead_bush).
+- `isSolidNeighbor(blk) = blk && !REPLACEABLE.has(blk.name) && blk.boundingBox === 'block'`.
+- Loop now skips non-solid neighbors entirely → returns `NO_SOLID_NEIGHBOR` correctly.
+- `neighborMap.is_air` field renamed to `is_solid` (more accurate; downstream callers use it to debug).
+
+### F25. mc place: TARGET_OCCUPIED for water/grass blocked legitimate placements
+
+Same refactor: `b.placeBlock` against a water-cell reference is rejected, but placing INTO a water-cell (water cell as the target) is valid — the cobble replaces the water. The original handler returned `TARGET_OCCUPIED` for any non-air block at the target, blocking the entire water-replacement bridging strategy.
+
+Fix: TARGET_OCCUPIED now only fires for non-replaceable blocks at the target. Fluids and replaceable plants are allowed.
+
+### F26. B2 fixture: "place at Y=65 over water" was physically impossible
+
+The original B2 strategy comment said "Option A (good): place cobble at Y=65 across the trench, walk over." This is impossible in vanilla Minecraft mechanics — placement requires a solid block adjacent to the target, and at Y=65 over a 3-wide water trench, every neighbor of (3,65,0) is air or water. The bot would never have a valid reference block.
+
+Correct strategy: **place cobble at Y=64** (replace water cells), creating a Y=64 → Y=65 step pattern. (3,64,0) has stone at (2,64,0) as solid neighbor; subsequent (4,64,0) and (5,64,0) use the previous placement as neighbor. Bot then walks at Y=65 over the new cobble.
+
+After F25 fix this strategy works end-to-end:
+- `goto_near 2 65 0 1` → arrived at edge.
+- `place cobblestone 3 64 0` → ok, neighbor=stone(2,64,0).
+- `place cobblestone 4 64 0` → ok.
+- `place cobblestone 5 64 0` → ok.
+- `goto_near 8 65 0 1` → walked across new bridge.
+- `withdraw raw_iron 4` + `withdraw coal 4` → ok.
+- `bg_smelt raw_iron coal 4` → 4 iron_ingot in inventory.
+
+Fixture comment updated to reflect the corrected strategy. SOUL.md needs a "bridge over water" rule note: **place at the water-surface Y, not above it**.
+
+### F27. bg_smelt CLI positional arg order trap
+
+CLI signature: `mc bg_smelt INPUT [FUEL] [COUNT]`. Natural mental model is `mc bg_smelt INPUT COUNT` (parallel to `mc withdraw item count`), but smelt's optional positional comes BEFORE count. `mc bg_smelt raw_iron 4` parses as input=raw_iron, fuel="4", count defaults to 1 → NO_FUEL error with `requested_fuel="4"` in observed_state.
+
+Workaround (no code change): always pass fuel explicitly when count > 1: `mc bg_smelt raw_iron coal 4`. SOUL.md / smelt skill should call this out — and if the worker hits NO_FUEL with `requested_fuel` looking like a number, that's the tell.
+
+### B-suite (behavior_test) fixtures validated via steward action_sequence
+
+| Fixture | Geometry | Steward path | Result |
+|---|---|---|---|
+| B1 baseline | open platform, chest+furnace | goto_near→withdraw×2→goto_near→bg_smelt | iron_ingot×4 |
+| B2 water gap | 3×5×2 water trench at Y=63-64 | goto_near edge→place×3 at Y=64→goto_near→withdraw×2→bg_smelt | iron_ingot×4 |
+| B3 walled | sealed cobble box around chest | goto_near wall→dig wall block→withdraw×2→bg_smelt | iron_ingot×4 |
+| B4 descent | 1×1 vertical shaft to chest 5 below | goto_near top→drop in→withdraw×2→pillar_step×4→goto_near→bg_smelt | iron_ingot×4 |
+
+All four fixtures have a *valid* steward strategy that ends with iron_ingot ≥ 1. Ready for brain-driven worker tests in Sprint 2.
+
+### F28. pillar_step count param doesn't multi-step under slow_falling
+
+B4 fixture grants `slow_falling 60 0` to soften the 5-block fall onto the chest. After landing, `mc pillar_step 5` (count=5) only placed 1 block per call — `placed=1, startY→endY=+1`. Looking at `bot/lib/actions/world.js:pillar_step`, `doOneStep` runs a 400ms cycle waiting for `b.entity.position.y >= baseFy + 1.0` (jump apex check). Slow_falling slows the upward arc enough that the apex check misses inside 400ms — bot lands back down, count++ on consecutiveFails, hits 2 fails, breaks loop.
+
+Workaround: call `pillar_step` once per block (5 separate calls in B4 → climbed Y=61 → Y=66 over 5 calls). Acceptable for behavior tests but worth a SOUL note: under slow_falling, treat pillar_step as 1-step-at-a-time. Long-term fix: widen the cycle deadline to 800ms when the bot has slow_falling effect, or detect "still rising" rather than "above threshold." Defer to Sprint 2 contract polish.
+
+### F29. pillar_step: rewrite — 87s → 2s for 3-block climb, with auto-stop and lateral-exit hints
+
+While running B4 the user observed pillar_step was painfully slow (~30s per block) and overshot the platform by 2 blocks. Investigation surfaced a stack of issues:
+
+1. **Multiple face-offsets per attempt** — original `canPlaceAt` looped through 6 face directions (top, bottom, ±x, ±z) and called `b.placeBlock` against each one. In a 1-wide shaft, lateral faces always failed; each failed `placeBlock` cost a server round-trip (~500ms). Restricted to bottom-face only for the canonical pillar reference, with side-walls as fallback candidates.
+2. **CLI arg confusion** — `mc pillar_step 5` parsed "5" into the `block` slot (string-typed, first positional), not `count` (defaulting to 1). Result: every call was a single step, even though count=5 was intended. Fixed by re-routing numeric `block` to `count` in `bot/cli/registry.mjs`.
+3. **No wait-for-onGround between steps** — after a successful place, the bot was still mid-air; the next iteration fired `setControlState('jump', true)` while airborne, which is a no-op. Added `waitForOnGround(600)` before each jump-place.
+4. **No platform-level auto-stop** — once the bot reached the surrounding floor's level, pillar_step would happily keep building a spire. Added `canStepLaterally()` — checks the 4 horizontal neighbors at feet level for a walkable cell (solid floor + air feet + air head). When found, the loop returns early with `lateral_exit: { x, y, z, dx, dz, floor }` so the caller can `mc goto_near $exit.x $exit.y $exit.z 1` to step out.
+5. **Replaced offset-loop with findStandingBlock + multi-ref** — locate the block currently underfoot directly, then build a candidate list: top-of-standing first, then any solid lateral wall at the target Y. Rotates through candidates if mineflayer rejects (chest top is a known offender — see F30).
+6. **Restored ensureHeadroom** — pillar through a solid roof works again. Tested: a bot in a 4-block underground chamber with 2-block stone ceiling above climbs to the surface in 5.2s (6 blocks placed, ceiling dug through).
+
+Final result on B4 (drop into 5-block shaft, climb back out): pillar_step takes 2.1s for 3 blocks, then `lateral_exit: { x: 6, y: 64, z: 0 }` directs the caller to a single goto_near to step onto the platform. Total run with smelt: 53s end-to-end (40s of which is the 4×iron smelt itself).
+
+### F30. mineflayer placeBlock has a 5-second internal blockUpdate timeout
+
+When `b.placeBlock(refBlock, faceVec)` is called and the server rejects the placement (e.g., bot's hitbox overlaps the new block, or partial-block reference like a chest), the server sends no `blockUpdate` event back. mineflayer waits 5 full seconds for that event before throwing `"Event blockUpdate:(x, y, z) did not fire within timeout of 5000ms"`. In a retry loop, this is catastrophic — N rejected attempts each cost 5s.
+
+Fix: wrap `placeBlock` with `Promise.race([place, timeout(600ms)])`. After the race, verify by reading `b.blockAt(targetPos)`. If the block is there, success regardless of whether mineflayer's internal event fired; if not, the place was rejected and we move to the next candidate ref. Used in pillar_step's place loop — turned chest-pillar from 10.8s/0-blocks into 2.1s/3-blocks.
+
+Generalizable: the same wrapper pattern is worth applying to any `placeBlock` call site that retries on rejection (place_fill, stair_up's floor placement, etc.). Defer to Sprint 2 contract polish unless behavior tests surface it again.
+
+### F31. Ladder primitives validated — placement, climb, build-then-climb
+
+Three L3 fixtures shipped to round out vertical-traversal:
+
+| Fixture | What it tests | Result |
+|---|---|---|
+| L3.50 ladder_place | `mc place ladder` against a stone wall | ok=true; bot climbs onto placed ladder |
+| L3.51 ladder_climb | pathfinder uses pre-placed ladder column to reach top platform | Y=65→70 in 12.2s |
+| L3.52 ladder_build_then_climb | place 4 ladders, then climb to top platform | 13.5s total (1.3s build + 12.2s climb) |
+
+Findings:
+
+1. **`mc place ladder`** — the place handler picks the bottom face (platform stone below) as reference, but the server auto-orients the ladder to attach to the nearest solid wall regardless. Functionally correct; no contract change needed. (Could be improved by preferring horizontal faces when blockName is 'ladder' or other wall-mount blocks — defer.)
+
+2. **Pathfinder ladder support** — mineflayer's pathfinder uses ladders out-of-the-box. Climb speed is ~2.4s/block, slower than walking but reliable. Distinctly slower than pillar_step (1.16s/block under load) but doesn't require digging through ceilings.
+
+3. **Ladders need a top platform** — a ladder column ending in mid-air leaves the bot 1 block short of "the top" (cell above the highest ladder is air with no floor). For pillar_step we surfaced this via `lateral_exit`; for ladders we just require the fixture geometry to include a step-off platform.
+
+4. **Ladders as a pillar_step alternative** — the worker now has two vertical-ascent primitives:
+   - **pillar_step**: builds blocks beneath the bot. Fast (1-2s/block), single-direction, leaves a permanent column. Needs jump headroom (digs through if `ensureHeadroom` succeeds).
+   - **ladder column**: places ladders against an existing wall. Slower per block (~2.4s), reusable for descent, no chunk modification of the ladder column itself. Needs a wall to attach to AND a platform at the top.
+   - SOUL.md should pick: ladders if a wall exists and you have time; pillar_step if you're in open space or in a hurry. Both work.
+
+### F32. Combat & escape primitives — 7 L3 fixtures shipped (L3.60–66)
+
+Covers melee, ranged, threat avoidance, food gathering, defensive retreat, marked-shelter escape, and ranged-evasion.
+
+| Fixture | Action | Result |
+|---|---|---|
+| L3.60 fight_zombie | `mc fight zombie` (point-blank) | 6 hits, full HP, 5.7s |
+| L3.61 fight_skeleton | `mc fight skeleton` (range 10) | bot closes + 6 hits, full HP, 5.1s |
+| L3.62 flee_creeper | `mc flee 16` (NoAI creeper) | 16 blocks west, full HP, 2.5s |
+| L3.63 attack_cow_food | `mc fight cow 0 30` | 4 hits, cow dies, raw_beef drop, 3.1s |
+| L3.64 fight_retreat_low_hp | `mc fight zombie 15 30` (bot pre-damaged) | retreat triggers immediately at 11 HP, 0 hits |
+| L3.65 flee_to_mark | `mc flee --to shelter` | bot at (-9.3, 65, 0.5), navigates to mark |
+| L3.66 dodge_skeleton | `mc flee 25` (defenseless) | survives arrows by movement, 25 blocks, full HP |
+
+#### Findings during the run:
+
+1. **`kill @e[type=!player,distance=..30]` in cleanup is centered on the rcon console** — origin (0, 0, 0) — not the bot. Mobs at Y=65 are 65+ blocks away by the distance metric and never get killed. Lingering cows from prior tests were appearing in subsequent runs. **Fixed across all 7 fixtures by raising distance to ..200.** Worth retro-fitting to all fixture cleanup blocks (defer scan to next session).
+
+2. **`mc attack <target>` is single-hit, not a kill loop.** L3.63 v1 used `mc attack cow` and the cow lived (10 HP, one 4-dmg hit). For "kill X" semantics use `mc fight X` — it loops attack until target.isValid is false. The CLI naming overlap (attack vs fight) is a worker pitfall worth flagging in SOUL.md.
+
+3. **`instant_health 5` regenerates faster than zombie damage** — L3.64 v1 had retreat_health=12 but bot's HP ticked above 12 every 0.5s due to instant_health, so retreat never fired. **Fix**: drop instant_health entirely from defensive-retreat fixtures, pre-damage the bot, set retreat_health *above* the starting HP.
+
+4. **Night + `gamerule doDaylightCycle false` is the right test environment** for hostile mobs. Without `doDaylightCycle false`, time moves while the test runs and skeletons start burning at sunrise, perturbing the test. With it disabled, the scene is stable and reproducible. Torches added for visibility (the user must also be able to *watch* the test in-game).
+
+5. **YAML parser quote-escape pyramid** — the `local: python3 -c '...'` pattern broke the run-fixture.sh parser at the first escaped `\"`. **Workaround**: ship a static JSON asset alongside the YAML (e.g., `L3.65_locations.json`) and `cp` it. Avoids the escape stack entirely.
+
+6. **NoAI creeper for `flee` test** — a charging creeper detonates within the 4-second prep-to-action window if the bot can't react. We're testing the **detection-and-flee branch**, not creeper-survival under fire. NoAI freezes the creeper as a visible-but-stationary threat. (A behavior_test for "creeper actually charging" is a separate concern.)
+
+7. **Defensive movement (L3.66)** validates that the worker has a viable strategy when ENGAGEMENT IS WRONG: defenseless + skeleton at range = `mc flee` not `mc fight`. SOUL.md's combat rule should explicitly call this case out: "no weapon AND ranged threat → flee, do not approach".
+
+### F33. Combat tuning — FAIR_PLAY toggle, fight loop tightening
+
+User observation during combat fixture review: "player was attacked and took a while to defend or run." Two layers of latency in the chain:
+
+1. **`reactionDelay()` (100-300ms)** — fair-play mode adds a random delay before EVERY combat action's first move (attack/fight/flee). Defaults: `REACTION_MIN_MS=100, REACTION_MAX_MS=300`. For tests, set `FAIR_PLAY=false` when launching bots: `FAIR_PLAY=false ./scripts/landfolk-bodies-only.sh start`. Removes the random preamble entirely.
+
+2. **Fight loop sleep durations** — `bot/lib/actions/combat.js:fight`:
+   - Chase branch: `sleep(300)` between path-follow re-checks → **150ms**. Cuts the gap where the bot has already arrived in melee range but is still in the chase branch's sleep.
+   - Attack branch: `sleep(600)` after each swing → **500ms**. Closer to wooden sword's 0.625s ideal cycle without losing per-hit damage.
+
+Net effect: bot reacts to incoming aggro within ~150ms instead of ~700-900ms. The user-observed "took a while to defend" pattern is fixed.
+
+### F34. Skeleton ranged-attack AI is finicky in confined spaces
+
+Designing L3.66 (dodge_skeleton) surfaced a multi-step problem with Paper skeleton AI:
+
+1. **First attempt (1-block bunker window at body level)** — skeleton's eye is at Y=66.4 (feet Y=65 + 1.4). A 1-block window at (11, 65, 0) puts the arrow path at Y=66 = stone wall. Arrows hit the wall, not the bot. **Lesson:** bunker windows must be at the mob's eye Y, not body Y.
+
+2. **Second attempt (1-block window at head level Y=66)** — skeleton stays in the bunker but never fires. Possibly the AI's aim-cone raycast fails at the corner of a 1×1 hole; possibly Paper's `isInWall` heuristic gates ranged attacks when the mob is tightly enclosed. **Lesson:** narrow windows confuse the AI.
+
+3. **Third attempt (2-block-tall window)** — skeleton WALKS OUT the front. Window high enough for body to fit through. **Lesson:** can't have it both ways for stone walls.
+
+4. **Final design — open arena, no bunker** — skeleton fires reliably when given open ground and time. Verified in isolation: skeleton on a 3-block pillar (immediately fell off) fired arrows; skeleton at distance 8 in open air on flat ground fired arrows after ~3-5s of bot stationary.
+
+**Conclusion:** for "skeleton must fire arrows" tests, give the AI an open arena and let nature take its course. Caging skeletons reliably requires iron bars / glass panes, but those block arrows too. The cleanest dodge_skeleton fixture asserts bot survival, not arrow accuracy — the latter is Paper RNG, not under our control.
+
+### F35. Cleanup `kill @e[type=!player,distance=..N]` is centered on rcon console origin
+
+The cleanup pattern `execute in <world> run kill @e[type=!player,distance=..30]` doesn't reach mobs that the bot interacted with — distance is measured from the rcon console's executor position (effectively (0, 0, 0)), not from the bot or any sensible test origin. Mobs at Y=65 are 65+ blocks away by Euclidean distance and never get killed. The user noticed cows lingering across multiple test runs.
+
+**Fix**: use `kill @e[type=!player]` with no distance filter — `execute in <world>` already scopes to the test world, and the test world is otherwise empty of long-lived entities.
+
+### F36. NBT escape pyramid in YAML fixture commands
+
+Summon commands with NBT data that includes string keys (e.g., `Tags:["L366"]`) break the run-fixture.sh YAML parser when wrapped in double-quoted YAML — the parser's `cmd.find('"', 1)` truncates at the first inner `"` from `\"`. Workaround: use single-quoted YAML for the entire line:
+
+```yaml
+- 'execute in landfolk-test run summon minecraft:skeleton 8 65 0 {Tags:["L366"]}'
+```
+
+Single quotes in YAML allow embedded double quotes without escaping. The parser still strips the outer single quotes correctly.
+
+### F37. Eight combat / escape fixtures green (L3.60-67)
+
+| Fixture | Action | Pass condition | Time |
+|---|---|---|---|
+| L3.60 fight_zombie | `mc fight zombie` | killed, alive | 5.8s |
+| L3.61 fight_skeleton | `mc fight skeleton` (range 22) | killed, alive | ~8s |
+| L3.62 flee_creeper | `mc flee 16` (NoAI creeper) | fled ≥10 blocks | 2.5s |
+| L3.63 attack_cow_food | `mc fight cow 0 30` | cow killed, raw_beef | 3.1s |
+| L3.64 fight_retreat_low_hp | `mc fight zombie 15 30` (pre-damaged) | retreat triggers | 0.5s |
+| L3.65 flee_to_mark | `mc flee --to shelter` | bot near mark | 1.4s |
+| L3.66 dodge_skeleton | `mc flee 25` (open arena, no weapon) | survived 25-block flee | 4.2s |
+| L3.67 fight_two_zombies_obstacles | `mc fight zombie 6 30` × 2 | both killed, alive | 12.7s |
+| L3.68 shoot_bow | `mc shoot zombie` × 5 | zombie killed, 5 arrows consumed | 8.5s |
+
+All validated individually with FAIR_PLAY=false bots. Batch runner has a known mvtp-race issue (defer fix).
+
+**`mc shoot` works** but is a **single-shot primitive**, not a kiting loop. It equips bow, finds target, draws, fires, returns. Multi-shot encounters need the worker (or a future `mc bow_volley` action) to call it repeatedly. In L3.68 the zombie closed to melee range during the 5-shot sequence (each shot ~1.7s) — arrows still hit but the bot didn't back-pedal. Kiting (shoot + back-step + repeat) is higher-level behavior, deferred to behavior_tests.
+
+### F38. Audit (A) — observe vs scene: signal layer is split, threat data lives in /scene
+
+User pushed back on the "manual action invocation" testing pattern: action contracts in isolation don't predict survival. We need to verify the bot's signal layer surfaces in-world threats fast enough that an agent (or reactive layer) can respond.
+
+**Audit method:** spawned a zombie 2 blocks east of bot, polled `/observe` and `/scene` at 300ms-3s intervals, recorded what each surfaced.
+
+**`/observe` payload — what's there:**
+- `state.health` — live, updates per damage tick. ✓
+- `state.damage_telemetry: { last_damage, hp_after, seconds_ago }` — populates within 1s of being hit. Excellent "something bad happened" signal. ✓
+- `goals_context.survive_score` — derived from HP, drops cleanly (100→62 over 5s as bot is killed). ✓
+- `goals_context.threat_score` — **stays 0 even while bot is being killed.** Either not computed or stale. **Broken.** ✗
+- `state.top_goal` — **does NOT preempt to `survive` or `low_threat` even at HP=4.6.** Goal engine has those critical goals defined but they don't fire. **Broken.** ✗
+- `nearby_entities` — **field doesn't exist anywhere in /observe.** Top-level None, state-level None. ✗
+- `alerts` — only contained the bot's own walking sounds. No zombie detection, no damage alert, no threat. **Useless for combat awareness.** ✗
+
+**`/scene` payload — has the missing data:**
+- `visible_entities: [{ type, distance, bearing, kind }]` — within 300ms of summon: `{"type": "zombie", "distance": 2, "bearing": "east", "kind": "hostile"}`. ✓ This is the proximity signal we need.
+- `hazards` — exists as a list field; empty in this test. Worth probing with lava/cliff scenarios.
+- `sounds` — populated; includes nearby mob movement.
+- `looking_at` — what the bot is currently looking at.
+
+**Implications:**
+1. The agent's reactive layer needs to poll `/scene` (or merge it into `/observe`). Today's `/observe` simply does not surface visible hostiles.
+2. The goal engine's `threat_score` and critical-goal preemption is broken — bot dies with `top_goal: supply_cobblestone urgency=1.5` while `survive` (priority 95) sits inactive. Two-bug fix needed:
+   - `threat_score` derivation must read `visible_entities[kind=hostile]`.
+   - Goal preemption must respect `preempt_class: critical`.
+3. `damage_telemetry` is ALREADY a viable "took_damage" signal — no new wiring needed for that branch.
+
+**Next steps from audit:**
+- For Sprint 2 stub react-loop (B), poll `/scene` AND `/observe`, treat them as a merged view.
+- Plan a small `/observe` patch to fold `visible_entities` (filtered to hostile + close) and a derived `urgent_alerts` field into the response. Defer until after stub + modes are validated.
+- Plan a goal-engine fix for `threat_score` + preemption. Defer until reactive modes are in place (modes may obviate the need for goal-driven threat reaction).
+
+### F39. Reactive layer (Layer 2) shipped + multi-target combat
+
+Implemented `bot/lib/bot/reactive.js` per the §16 plan revision. Key design points:
+
+- **Per-tick micro-actions, not macros.** Each tick (400ms) the layer issues at most one short action (single swing or 1-2 block step) and re-evaluates. No more `mc fight` or `mc flee 16` — those lock out re-evaluation and yank the bot far from where the agent placed it.
+- **Bounded movement via anchor.** Bot stays within `ANCHOR_RANGE_NORMAL=6` blocks of the position it held when reactive last went idle. The agent's mental model stays intact: "I told the bot to mine cobble at X" → the bot is still ≤6 blocks of X regardless of what threats it dealt with.
+- **Equipment-aware decisions.** No weapon → flee. Sword + no armor → fight. HP critical + recently damaged → flee. Creeper close → flee always.
+- **Multi-target swing per tick.** `attackStep` iterates over EVERY hostile within MELEE_RANGE+0.5 and swings at each. Critical for surviving multi-zombie pile-ons — single-target focus while N attackers land hits is fatal. The combination of per-target `b.attack` + brief back-step at the end produces effective AOE damage and knockback on all nearby threats simultaneously.
+- **Mode switch via `mc mode normal | guard | hold`.** Changes the engagement policy. `hold` disables auto-actions entirely (pure observation). Default `normal` covers single-bot survival.
+- **`FAIR_PLAY=false` removes 100-300ms reaction delay.** The reactive layer's default poll cadence (400ms) is faster than the fair-play preamble. Toggle is per-process env var.
+
+#### Empirical breaking points (closed 9×9 arena, NO armor, wooden sword):
+
+| Threat | Result | Failure mode |
+|---|---|---|
+| 1 zombie | trivial — kill in 4-5s, full HP | — |
+| 3 zombies | bot at full HP throughout | — |
+| 4 zombies | bot at full HP throughout (HP=20 sustained) | — |
+| 6 zombies | bot dies at T~15s | **wooden sword durability runs out at T~8s**; bot then has `weap=none`, flees, gets cornered against arena wall, dies |
+
+Multi-target swing kept the bot at full HP against 4 zombies. The breakthrough finding is that **the durability ceiling, not damage exchange, is the binding constraint on combat duration**. Worth pulling forward Sprint 3 work on weapon-rotation: when held weapon hits low durability, reactive should auto-switch to the next available weapon in inventory.
+
+#### F40. Safe-home pattern for test fixtures
+
+Earlier tests showed bot taking damage, food drain, and witch poisoning in `world` (regular dimension where mobs spawn freely). Cleanup `mvtp Flint world` was the culprit. Built a small walled+lit safe-home box at landfolk-test (52, 65, 52) — peaceful difficulty, no spawns. All 58 test fixtures updated via sed to park the bot there between tests instead of `mvtp Flint world`. Result: HP=20 sustained at the safe-home; clean starting conditions for every test.
+
 ### F23. Open: chest organize / consolidate as behavior_test territory
 
 User flagged "organizing — grouping similar items together" — that's behavior_test material:
@@ -557,6 +806,78 @@ User flagged "organizing — grouping similar items together" — that's behavio
 - **Auto-route deposit** — given an item, pick the chest that already has it (via chest_search), open and deposit there rather than the nearest empty chest.
 
 These need a worker that can chain mc chest_search → mc go_mark → mc deposit; not a single primitive. Frame as L4-level behavior_tests once the strategy layer is exercised.
+
+### F40. Skeleton archery: Paper does not auto-equip bows
+
+**Symptom:** every L3 skeleton fixture had the skeleton charging into melee instead of firing arrows. User: "the skeleton STILL doesn't fire arrows."
+
+**Root cause #1 (real):** `summon minecraft:skeleton ...` with no `HandItems` produces an unarmed skeleton. `data get entity @e[type=skeleton] HandItems` returned `[{}, {}]`. Without a bow, the skeleton's AI defaults to melee chase. Fix: every skeleton summon now needs `HandItems:[{id:"minecraft:bow",Count:1b},{}]` explicitly. Updated L3.61 and L3.66.
+
+**Root cause #2 (red herring that ate ~30 minutes):** my arrow-detection probe used `execute as @e[type=arrow] run say arrow` and counted output. Paper suppresses entity-`say` from rcon return, so I was reading "0 arrows" even when the air was thick with them. Switching the counter to `execute as @e[type=arrow] run tag @s add <unique>` and counting `Added tag` lines is reliable. **Pattern: any `execute as ENTITY run ACTION` that I want to count needs an action that emits per-entity rcon output — `tag add` works, `say` does not.**
+
+The same trap bit my zombie counter: I reused the same tag name across loop iterations, so after iteration 1 every zombie already had the tag and `tag add` reported zero new adds → "all zombies dead" false positive. Fixed: use a per-iteration unique tag.
+
+After the fix, L3.66 shows the bot taking the first arrow at T=2s (HP 20→17), 1–2 arrows in flight at any moment afterwards, and the reactive layer correctly transitioning to `flee_step (no_weapon)` with the new zig-zag dodge.
+
+### F41. combat_skill per-agent setting (soldier vs farmer)
+
+**Goal:** scalar 0..1 per bot that scales lethality so a soldier dispatches a horde while a farmer survives a single attacker but flees one zombie too many. User ask: "set higher for a soldier character and low for a farmer."
+
+**Implementation in `bot/lib/bot/reactive.js`:**
+- `ctx.combat_skill` defaults to 0.5; bootstrap from `COMBAT_SKILL` env var so launchers can stamp roles.
+- `attackStep` always strikes the closest hostile; each additional melee target rolls against a decaying threshold (`skill`, `skill²`, `skill³`, …). At 0.9 a bot reliably hits 6 piled-on zombies; at 0.5 it reliably hits 2; at 0.0 it stays single-target.
+- Tick-rate throttle: low-skill bots skip attack ticks (`skipBudget = round((1 - skill) * 2)`), so skill=0 swings every ~1.2s and skill=1 every 0.4s. **Flee is never throttled** — we don't want a "low-skill" bot to fail to dodge.
+- `mc combat_skill <value>` action exposed via `bot/lib/actions/combat.js`; CLI verb registered. `mc combat_skill` with no arg reports the current value.
+
+**Verification — 4 zombies (L3.70), wooden sword, no armor, closed arena:**
+| skill | clear time | final HP | died mid-fight |
+|------:|-----------:|---------:|----------------|
+| 0.9   | 14s        | 20       | no             |
+| 0.5   | 14s        | 20       | no             |
+| 0.2   | 25s        | 13       | yes (HP 2.5 → respawn) |
+
+The 0.5 ≈ 0.9 result is expected at 4 zombies — once the closest is always struck, half-skill keeps up because zombies attack one at a time anyway. The differential opens up at 6+ zombies (soldier survives, farmer doesn't). The 0.2 run actually died and respawned, then mopped up the persistent zombies — exactly the "farmer survives barely or not at all" envelope we wanted.
+
+**Where this leaves us:** soldier/farmer roles are now a one-line config (`COMBAT_SKILL=0.9` for guards, `0.2` for villagers). Same architecture, same reactive code, profile shapes the survival envelope.
+
+### F42. Combat suite green at skill 0.5 — what it took
+
+After F39–41 the suite still had stuck-bot bugs that only showed up under live observation. User flagged five distinct failure modes by watching the runs:
+
+1. *"Skeleton is too far away from the player."* L3.61 had the skeleton at d=22, designed for the agent-driven `mc fight` (which closes via pathfinder). Reactive only engages within `MELEE_RANGE` (4) or when `recently_damaged`, so the bot stood still soaking arrows. **Fix:** moved skeleton to d=10 inside a confined corridor and added `advance_step` — a bounded sprint toward the closest hostile (mirrors `flee_step` in reverse). One forward sprint of ~1.5 blocks per tick, weapon equipped on the way.
+
+2. *"Creeper doesn't approach or try to explode."* L3.62 had `NoAI:1b` on the creeper — old design tested "did the bot detect a creeper" rather than "did the bot survive a charging creeper." **Fix:** removed `NoAI`, walled the arena into a closed 17×17 room so the bot can circle-flee without falling off the world (it had been running into the void at Y=1).
+
+3. *"Player enters arena with arrows and poison still."* The reset block called `effect clear` and `kill @e[type=arrow]`, but couldn't clear arrows stuck in the bot's body or the damage-tilt animation. **Paper blocks `data merge entity` on players** — `Unable to modify player data`. **Fix:** the only reliable visual reset is `kill Flint` + mineflayer auto-respawn. A `spawnpoint Flint 52 65 52` before kill ensures the respawn lands at safe-home. Reset round-trip is ~1s; cheap and bulletproof.
+
+4. *"Player advances only when shot, then stops."* `decide()` triggered on `recently_damaged` (2s window), so once arrows were in flight but hadn't hit yet the bot was untriggered. **Fix:** added a third trigger condition — `weapon && closest_ranged` — so an armed bot keeps closing on a visible archer indefinitely. For weaponless bots, added a preemptive `flee_step (ranged_no_weapon)` rule that fires the moment a ranged hostile is within `RANGED_AWARE_RANGE=16`. Standing still under archer fire is the worst possible policy.
+
+5. *"Bot ends up in the corner each time, doesn't move around enough."* `attack_step` always retreated with `back` after the swing, which pushed the bot in a straight line away from the closest threat — multi-zombie packs walked it into corners. **Fix:** mixed retreat directions — 50% back, 25% strafe-left, 25% strafe-right. This alone was the difference between L3.71 (6 zombies) clearing in 22s at full HP versus dying twice and ending at HP 14.
+
+`fleeStep` also gained wall-awareness: tries up to 4 rotated angles (zig-zag jitter, ±60°, ±90° strafe) and picks the first one with passable space ahead. Stops bots from grinding into a wall when the "directly away" vector is blocked.
+
+**Verification — combat suite at skill 0.5:**
+| Fixture | Result | HP |
+|---|---|---|
+| L3.60 fight_zombie | cleared 4s | 20 |
+| L3.61 fight_skeleton | cleared 8s | 20 |
+| L3.62 flee_creeper (live AI) | cleared 10s | 19.4 |
+| L3.64 retreat_low_hp | cleared 6s | 20 |
+| L3.66 dodge_skeleton | survived 25s | 20 |
+| L3.67 two_zombies_obstacles | cleared 9s | 20 |
+| L3.69 three zombies | cleared 11s | 20 |
+| L3.70 four zombies | cleared 13s | 20 |
+| L3.71 six zombies | cleared 22s | 20 |
+| L3.72 2-skel + zombie (new) | cleared 17s | 20 |
+
+10/10 pass at skill 0.5, every result above HP 19. L3.72 (closed room with 2 skeletons in opposite corners + zombie at floor) is a new fixture per user request — exercises the crossfire scenario where the bot has to engage one threat while dodging two others.
+
+**Excluded from the reactive suite (agent-driven, not reactive-layer behavior):**
+- L3.63 attack_cow_food (agent decides to hunt food)
+- L3.65 flee_to_mark (agent picks the destination mark)
+- L3.68 shoot_bow (agent fires bow; reactive doesn't shoot)
+
+These remain as fixtures for the strategy/agent layer once that work begins.
 
 
 
