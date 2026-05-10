@@ -1,0 +1,74 @@
+# P1 — perception fidelity: mixed-block scene.
+#
+# Place 3 oak_log + 4 birch_log + 1 iron_ore at known coords. Ask the agent
+# what it sees. The agent's chat output should mention both log types
+# (oak AND birch) — over-literal failure mode is when it only matches "log"
+# as a single category.
+#
+# This is a 1-turn-shoot test: agent should read mc nearby / mc scene once
+# and report. We allow a few extra turns in case it needs to retry or
+# expand the search radius.
+
+agent_test_id: P1_mixed_blocks
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME already set so it targets your body.
+
+  Your job: scan the world around you and report EVERY type of log and
+  ore you can see within 16 blocks, with counts. Be specific about wood
+  types (e.g. oak_log, birch_log, spruce_log are different).
+
+  You MUST run at least one `mc` command (try `mc nearby 16` or
+  `mc find_blocks oak_log` then for other types) before answering.
+  Do not guess or fabricate — only report what the tools return.
+
+  When you have the data, reply with one line in this shape:
+    counts: { <name>: <count>, ... }
+  No prose; just the counts line.
+
+skills: [minecraft-survival]
+max_turns: 4
+timeout_seconds: 120
+
+expect:
+  agent_chat_contains:
+    - oak_log
+    - birch_log
+    - iron_ore
+  agent_chat_does_not_contain:
+    - "I don't see"
+    - "no blocks"
+    - "nothing nearby"
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # 3 oak_log
+  - "execute in landfolk-test run setblock 3 65 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 3 66 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 3 67 0 minecraft:oak_log"
+  # 4 birch_log
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:birch_log"
+  - "execute in landfolk-test run setblock -3 66 0 minecraft:birch_log"
+  - "execute in landfolk-test run setblock -3 65 2 minecraft:birch_log"
+  - "execute in landfolk-test run setblock -3 66 2 minecraft:birch_log"
+  # 1 iron_ore
+  - "execute in landfolk-test run setblock 0 65 4 minecraft:iron_ore"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
