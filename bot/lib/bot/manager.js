@@ -156,18 +156,21 @@ export function createBotManager(deps) {
         ctx.bot.loadPlugin(autoEatLoader);
         ctx.bot.loadPlugin(collectBlock);
 
+        // Pathfinder is READ-ONLY navigation. No digging, no scaffolding,
+        // no destructive side effects from "go from A to B". Agents must be
+        // EXPLICIT about destruction via mc collect / mc dig / mc tunnel /
+        // mc dig_area / mc place / mc wall / etc. This prevents the
+        // long-standing problem of agents tunneling through floors or
+        // stealing blocks while merely trying to navigate to a goal.
         const moves = new Movements(ctx.bot);
         moves.allowSprinting = true;
-        moves.canDig = true;
         moves.allowParkour = true;
-
-        // Prefer soft blocks for scaffolding (easier to mine back later)
-        const scaffoldPreference = ['dirt', 'sand', 'gravel', 'netherrack', 'cobblestone'];
+        moves.canDig = false;
         moves.scafoldingBlocks = [];
-        for (const name of scaffoldPreference) {
-          const bl = ctx.mcData.blocksByName[name];
-          if (bl) moves.scafoldingBlocks.push(bl.id);
-        }
+        // canOpenDoors is true by default in mineflayer-pathfinder, but
+        // empirically unreliable when the door's open-state cache lags.
+        // Use mc through for door/gate traversal — pathfinder approaches,
+        // mc through opens + walks + closes.
 
         const protectedBlocks = [
           'oak_planks',
