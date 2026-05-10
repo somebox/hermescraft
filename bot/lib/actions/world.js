@@ -1292,6 +1292,114 @@ export function createWorldActions(deps) {
     return { result: `Interacted with ${block.name} at ${x}, ${y}, ${z}` };
   },
 
+  /**
+   * Traverse a gate/door: open it, walk to the far side, close it behind.
+   * Args:
+   *   gx, gy, gz — gate position.
+   *   dx, dy, dz — destination on the far side (optional; auto-inferred if absent).
+   * Returns action contract: { ok, data:{ gate_block, opened, traversed_to, closed }, result }.
+   */
+  async through({ gx, gy, gz, dx, dy, dz }) {
+    const b = ensureBot();
+    const gateVec = new Vec3(Number(gx), Number(gy), Number(gz));
+    if (![gx, gy, gz].every((v) => Number.isFinite(Number(v)))) {
+      return { ok: false, error: { code: 'INVALID_COORD', message: 'mc through requires numeric gate coords', retry_safe: false } };
+    }
+
+    const gate = b.blockAt(gateVec);
+    if (!gate) {
+      return { ok: false, error: { code: 'GATE_NOT_FOUND', message: `No block at gate position ${gx}, ${gy}, ${gz}`, retry_safe: false } };
+    }
+    const isPassable = /(_fence_gate|_door|_trapdoor)$/.test(gate.name);
+    if (!isPassable) {
+      return { ok: false, error: { code: 'NOT_A_DOOR', message: `Block at ${gx}, ${gy}, ${gz} is "${gate.name}", not a fence_gate/door/trapdoor`, retry_safe: false } };
+    }
+
+    // Infer destination if not provided: 2 blocks past the gate, opposite side from bot.
+    let destX = Number(dx), destY = Number(dy), destZ = Number(dz);
+    if (![destX, destY, destZ].every(Number.isFinite)) {
+      const me = b.entity.position;
+      const vx = gate.position.x + 0.5 - me.x;
+      const vz = gate.position.z + 0.5 - me.z;
+      // Pick dominant axis; step 2 blocks past the gate in that direction.
+      const stepX = Math.abs(vx) >= Math.abs(vz) ? Math.sign(vx) : 0;
+      const stepZ = stepX === 0 ? Math.sign(vz) : 0;
+      destX = gate.position.x + stepX * 2;
+      destY = gate.position.y;
+      destZ = gate.position.z + stepZ * 2;
+    }
+
+    // Approach the gate so it's reachable.
+    if (b.entity.position.distanceTo(gate.position) > 4.5) {
+      try { await b.pathfinder.goto(new goals.GoalNear(gate.position.x, gate.position.y, gate.position.z, 2)); }
+      catch (e) {
+        return { ok: false, error: { code: 'TRAVERSAL_FAILED', message: `Could not approach gate: ${e?.message || e}`, retry_safe: true } };
+      }
+    }
+
+    // Open. activateBlock toggles, so check shape state first via _properties when available.
+    let opened = false;
+    try {
+      const props = (typeof gate.getProperties === 'function') ? gate.getProperties() : {};
+      const wasOpen = props.open === 'true' || props.open === true;
+      if (!wasOpen) {
+        await b.activateBlock(gate);
+        opened = true;
+      }
+    } catch (e) {
+      return { ok: false, error: { code: 'TRAVERSAL_FAILED', message: `Failed to open ${gate.name}: ${e?.message || e}`, retry_safe: true } };
+    }
+
+    // Walk to destination.
+    try {
+      await b.pathfinder.goto(new goals.GoalNear(destX, destY, destZ, 1));
+    } catch (e) {
+      // Try to close gate before returning the failure (best-effort).
+      try { const g2 = b.blockAt(gateVec); if (g2) await b.activateBlock(g2); } catch {}
+      return {
+        ok: false,
+        error: {
+          code: 'TRAVERSAL_FAILED',
+          message: `Opened gate but could not reach destination ${destX}, ${destY}, ${destZ}: ${e?.message || e}`,
+          observed_state: { gate_block: gate.name, opened, dest: { x: destX, y: destY, z: destZ } },
+          retry_safe: true,
+        },
+      };
+    }
+
+    // Close behind. Re-fetch the block (state may have changed).
+    let closed = false;
+    try {
+      const after = b.blockAt(gateVec);
+      if (after) {
+        const props = (typeof after.getProperties === 'function') ? after.getProperties() : {};
+        const isOpen = props.open === 'true' || props.open === true;
+        if (isOpen) {
+          // Pathfinder may have wandered out of reach; nudge back.
+          if (b.entity.position.distanceTo(after.position) > 4.5) {
+            try { await b.pathfinder.goto(new goals.GoalNear(after.position.x, after.position.y, after.position.z, 2)); } catch {}
+          }
+          await b.activateBlock(after);
+          closed = true;
+        }
+      }
+    } catch {
+      // Non-fatal: traversal succeeded; closing is best-effort.
+    }
+
+    return {
+      ok: true,
+      data: {
+        gate_block: gate.name,
+        gate_position: { x: gate.position.x, y: gate.position.y, z: gate.position.z },
+        opened,
+        traversed_to: { x: destX, y: destY, z: destZ },
+        closed,
+      },
+      result: `Through ${gate.name} at ${gate.position.x},${gate.position.y},${gate.position.z}: ${opened ? 'opened' : 'already open'}, walked to ${destX},${destY},${destZ}, ${closed ? 'closed' : 'left open'}`,
+    };
+  },
+
   async close_screen() {
     const b = ensureBot();
     if (b.currentWindow) b.closeWindow(b.currentWindow);

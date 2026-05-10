@@ -277,6 +277,7 @@ If we hit those, Phase 2 is done. The action layer is reliable; the loop is bori
 |---|---|---|
 | `mc wall` | `mc wall X1 Y1 Z1 X2 Y2 Z2 BLOCK` | Sugar over `mc fill` for vertical line/rect. First deliverable — smallest unit. |
 | `mc fence` | `mc fence X1 Z1 X2 Z2 [--gate DIR]` | Place fence enclosure with optional gate; auto-equips fences and gate item. |
+| `mc through` | `mc through GX GY GZ [DX DY DZ]` | Open a gate/door, walk to the far side, close it behind. Differentiates traversal from raw `mc interact` toggling. |
 | `mc level` | `mc level X1 Z1 X2 Z2 Y` | Flatten rectangle to target Y: dig blocks above Y, fill empties below Y. |
 | `mc dig_pit` | `mc dig_pit X Z W L D [--stairs]` | Dig W×L×D pit. With `--stairs`, line one corner with a staircase out. |
 | `mc path` | `mc path X1 Z1 X2 Z2` | Use shovel on dirt/grass to convert to dirt_path along an axis-aligned line/rect. |
@@ -300,6 +301,7 @@ Every new verb conforms to `phase-2/action-contracts.md`:
 | L5.5 | `dig_pit_with_stairs` — 5×5×4 pit with corner staircase exit; bot can walk out |
 | L5.6 | `path_5_blocks` — convert 5 dirt blocks to dirt_path |
 | L5.7 | `build_stairs_up` — 4-block ascending staircase |
+| L5.10 | `through_gate` — open fence_gate, walk through, close behind. Verifies `mc through` end-to-end. |
 | L5.99 | **exit gate** — bot builds a 5×5 fenced + leveled + path-floored enclosure with a south gate, then walks out through it. End-to-end multi-verb composition. |
 
 ### Benchmark additions

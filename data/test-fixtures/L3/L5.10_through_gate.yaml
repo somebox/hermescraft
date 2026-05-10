@@ -1,0 +1,43 @@
+# L5.10 — through_gate: open a gate, walk through, close it behind.
+#
+# Validates Sprint 5's mc through verb — the dedicated traversal pattern
+# for fence_gates / doors / trapdoors (open + traverse + close).
+#
+# Setup:
+#   landfolk-test, day, cleared 21×21 arena at Y=64..70.
+#   3-block fence wall on Z=2 with an oak_fence_gate at the midpoint (0, 65, 2).
+#   Bot starts at (0, 65, 0), south side of the gate is (0, 65, 5).
+#
+# Action under test:
+#   mc through 0 65 2 0 65 5
+#
+# Expected:
+#   - { ok: true, data: { gate_block: "oak_fence_gate", opened: true|false,
+#       traversed_to: {x:0,y:65,z:5}, closed: true } }
+#   - Bot ends up at z >= 4 (past the gate).
+#   - Block at (0, 65, 2) is oak_fence_gate with state open=false.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # Build a 3-block fence on z=2 at x=-1, x=1 with the gate at x=0.
+  - "execute in landfolk-test run setblock -1 65 2 minecraft:oak_fence"
+  - "execute in landfolk-test run setblock 1 65 2 minecraft:oak_fence"
+  - "execute in landfolk-test run setblock 0 65 2 minecraft:oak_fence_gate[facing=north,open=false]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

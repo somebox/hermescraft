@@ -523,6 +523,27 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
 
+  g('through', 'world', [], {
+    description: 'Pass through a fence_gate, door, or trapdoor: opens it, walks to the far side, closes it behind. Destination defaults to 2 blocks past the gate on the opposite side from the bot.',
+    method: 'POST',
+    path: '/action/through',
+    customParse: true,
+    bodyFn: (p) =>
+      JSON.stringify({
+        gx: Number(p.gx),
+        gy: Number(p.gy),
+        gz: Number(p.gz),
+        ...(p.dx !== undefined ? { dx: Number(p.dx) } : {}),
+        ...(p.dy !== undefined ? { dy: Number(p.dy) } : {}),
+        ...(p.dz !== undefined ? { dz: Number(p.dz) } : {}),
+      }),
+    usage: 'mc through GX GY GZ [DX DY DZ]',
+    examples: [
+      'mc through 0 65 2',
+      'mc through 0 65 2 0 65 5',
+    ],
+  }),
+
   g('wall', 'world', [], {
     description: 'Build a wall (vertical line/rect) of BLOCK between two corners. y1 must differ from y2.',
     method: 'POST',

@@ -124,6 +124,19 @@ function customParse(canonicalName, positional) {
       if (!id) throw new Error('missing:id');
       return { id };
     }
+    case 'through': {
+      // mc through GX GY GZ [DX DY DZ]
+      const p = positional.map(Number);
+      if (p.length < 3 || p.slice(0, 3).some((v) => !Number.isFinite(v))) {
+        throw new Error('missing:gate_coords');
+      }
+      const out = { gx: p[0], gy: p[1], gz: p[2] };
+      if (p.length >= 6) {
+        if (p.slice(3, 6).some((v) => !Number.isFinite(v))) throw new Error('invalid:dest_coords');
+        out.dx = p[3]; out.dy = p[4]; out.dz = p[5];
+      }
+      return out;
+    }
     case 'fence': {
       // mc fence BLOCK X1 Z1 X2 Z2 [--gate DIR] [--y Y]
       const q = positional.slice();

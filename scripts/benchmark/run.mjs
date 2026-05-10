@@ -202,17 +202,31 @@ async function runTaskOnModel(groupName, task, model) {
   return result;
 }
 
-for (const [groupName, tasks] of Object.entries(taskGroups)) {
-  for (const task of tasks) {
-    if (PARALLEL) {
-      const results = await Promise.all(models.map((m) => runTaskOnModel(groupName, task, m)));
-      run.results.push(...results);
-    } else {
-      for (const model of models) {
-        const r = await runTaskOnModel(groupName, task, model);
-        run.results.push(r);
-      }
+// Concurrency model:
+//   PARALLEL (default): each MODEL runs its tasks serially in its own thread,
+//     and different models run concurrently with each other. This avoids
+//     per-key rate-limit (Novita 429s on DeepSeek when we burst 4-wide) while
+//     still finishing in roughly max(per-model wallclock) instead of the sum.
+//   --serial: one call at a time across everything.
+async function runModelTaskList(model) {
+  const out = [];
+  for (const [groupName, tasks] of Object.entries(taskGroups)) {
+    for (const task of tasks) {
+      const r = await runTaskOnModel(groupName, task, model);
+      out.push(r);
     }
+  }
+  return out;
+}
+
+if (PARALLEL) {
+  // One queue per model; queues run concurrently.
+  const perModelResults = await Promise.all(models.map((m) => runModelTaskList(m)));
+  for (const arr of perModelResults) run.results.push(...arr);
+} else {
+  for (const model of models) {
+    const arr = await runModelTaskList(model);
+    run.results.push(...arr);
   }
 }
 

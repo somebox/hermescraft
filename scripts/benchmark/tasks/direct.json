@@ -106,5 +106,14 @@
       "mc fence oak_fence -2 -2 2 2 --gate south",
       "mc fence oak_fence -2 -2 2 2 -g south"
     ]
+  },
+  {
+    "id": "pass_through_gate",
+    "category": "world",
+    "task": "Pass through the fence gate at (0, 65, 2) to reach (0, 65, 5) — opening the gate, walking through, and closing it behind.",
+    "correct": [
+      "mc through 0 65 2 0 65 5",
+      "mc through 0 65 2"
+    ]
   }
 ]
