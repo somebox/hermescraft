@@ -523,6 +523,34 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
 
+  g('build_stairs', 'world', [], {
+    description: 'Build an ascending triangular ramp of BLOCK in cardinal DIR for LEN steps. Each column i is filled from the floor up to height i, so column 1 is 1 block tall, column 2 is 2 blocks, etc. The bot walks up the ramp as it builds. Total blocks = LEN*(LEN+1)/2; LEN is capped at 16.',
+    method: 'POST',
+    path: '/action/build_stairs',
+    bodyFn: (p) =>
+      JSON.stringify({
+        block: String(p.block),
+        direction: String(p.direction),
+        length: Number(p.length),
+        ...(p.x !== undefined ? { x: Number(p.x) } : {}),
+        ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+        ...(p.z !== undefined ? { z: Number(p.z) } : {}),
+      }),
+    argSchema: [
+      { key: 'block', type: 'string', required: true },
+      { key: 'direction', type: 'string', required: true },
+      { key: 'length', type: 'number', required: true },
+      { key: 'x', type: 'number' },
+      { key: 'y', type: 'number' },
+      { key: 'z', type: 'number' },
+    ],
+    usage: 'mc build_stairs BLOCK DIR LEN [X Y Z]',
+    examples: [
+      'mc build_stairs cobblestone north 4',
+      'mc build_stairs oak_planks east 6 0 65 0',
+    ],
+  }),
+
   g('path', 'world', [], {
     description: 'Convert dirt/grass/podzol/coarse_dirt/mycelium/rooted_dirt to dirt_path inside an axis-aligned rectangle, using a shovel. Default Y is bot Y-1 (the floor). Skips columns that are already path, non-dirt, or covered by a non-air block above.',
     method: 'POST',

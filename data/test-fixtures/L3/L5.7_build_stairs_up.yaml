@@ -1,0 +1,40 @@
+# L5.7 — build_stairs_up: place a 4-block ascending staircase.
+#
+# Validates Sprint 5's mc build_stairs verb (constructive mirror of stair_up):
+#   - Each step is one tile forward + one tile up from the previous.
+#   - Bot walks up the staircase as it builds.
+#   - Returns action contract { ok: true, data: { steps_placed, end, ... } }.
+#
+# Setup:
+#   landfolk-test, day, cleared 21×21 arena at Y=64..70.
+#   Bot at (0, 65, 0) holding 16 cobblestone (foot floor at y=64).
+#
+# Action under test:
+#   mc build_stairs cobblestone north 4
+#
+# Expected:
+#   - { ok: true, data: { steps_placed: 4, end: { x:0, y:68, z:-4 }, ... } }
+#   - Blocks at (0, 65, -1), (0, 66, -2), (0, 67, -3), (0, 68, -4) are cobblestone.
+#   - Bot ends standing on the top step (~y=69 ground level).
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:cobblestone 16"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"

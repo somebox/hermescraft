@@ -108,6 +108,14 @@
     ]
   },
   {
+    "id": "build_4step_staircase",
+    "category": "world",
+    "task": "Build an ascending cobblestone staircase 4 steps long going north from your current position.",
+    "correct": [
+      "mc build_stairs cobblestone north 4"
+    ]
+  },
+  {
     "id": "make_dirt_path",
     "category": "world",
     "task": "Convert the 5-block dirt strip from (0, 0) to (4, 0) at floor level Y=64 into dirt_path. Assume a shovel is in inventory.",

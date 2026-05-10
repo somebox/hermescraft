@@ -973,6 +973,114 @@ export function createWorldActions(deps) {
   },
 
   /**
+   * Build an ascending triangular ramp of cubes the bot can climb.
+   * Column i (1..LEN) is filled from the existing floor up to height i,
+   * giving every block a solid face neighbor below to place against.
+   * Block count grows as LEN*(LEN+1)/2 — keep LEN modest.
+   */
+  async build_stairs({ block: blockName, direction, length, x, y, z }) {
+    const b = ensureBot();
+    if (!blockName || typeof blockName !== 'string') {
+      return { ok: false, error: { code: 'MISSING_BLOCK_TYPE', message: 'mc build_stairs requires a block type', retry_safe: false } };
+    }
+    let dirInfo;
+    try { dirInfo = cardinalDelta(direction); }
+    catch { return { ok: false, error: { code: 'INVALID_DIR', message: `direction must be north|south|east|west, got "${direction}"`, retry_safe: false } }; }
+    const { dx, dz, key } = dirInfo;
+
+    const L = Math.min(Math.max(parseInt(String(length), 10) || 0, 1), 16);
+    const startX = Number.isFinite(Number(x)) ? Math.floor(Number(x)) : Math.floor(b.entity.position.x);
+    const startY = Number.isFinite(Number(y)) ? Math.floor(Number(y)) : Math.floor(b.entity.position.y);
+    const startZ = Number.isFinite(Number(z)) ? Math.floor(Number(z)) : Math.floor(b.entity.position.z);
+
+    const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
+    const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+
+    let placed = 0, skipped = 0, failed = 0;
+    const errors = [];
+
+    for (let i = 1; i <= L; i++) {
+      const cx = startX + dx * i;
+      const cz = startZ + dz * i;
+      // Fill column from the existing-floor level up to height i.
+      // h = 0 → placed at startY (one above existing floor), h = i-1 → top of step.
+      for (let h = 0; h < i; h++) {
+        const cy = startY + h;
+        const target = b.blockAt(new Vec3(cx, cy, cz));
+        if (target && !isAirLike(target)) {
+          if (target.name === blockName) { skipped++; continue; }
+          // Something else is already there — count as skipped (don't overwrite).
+          skipped++; continue;
+        }
+
+        // Top of column needs head clearance (cy+1) for the bot to stand on it.
+        if (h === i - 1) {
+          const headBlock = b.blockAt(new Vec3(cx, cy + 1, cz));
+          if (headBlock && !isAirLike(headBlock)) {
+            failed++;
+            errors.push(`step ${i} top: head clearance blocked by ${headBlock.name}`);
+            continue;
+          }
+        }
+
+        const item = b.inventory.items().find((it) => it.name === blockName);
+        if (!item) {
+          return {
+            ok: false,
+            error: {
+              code: 'MISSING_INVENTORY',
+              message: `Out of ${blockName} after placing ${placed} blocks (step ${i}/${L})`,
+              observed_state: { blocks_placed: placed, current_step: i, total_steps: L, block: blockName },
+              retry_safe: true,
+            },
+          };
+        }
+        try { await b.equip(item, 'hand'); } catch {}
+
+        let didPlace = false;
+        for (const [ox, oy, oz] of offsets) {
+          const ref = b.blockAt(new Vec3(cx + ox, cy + oy, cz + oz));
+          if (ref && !isAirLike(ref) && ref.boundingBox === 'block') {
+            try {
+              await b.placeBlock(ref, new Vec3(-ox, -oy, -oz));
+              didPlace = true;
+              placed++;
+              break;
+            } catch (e) {
+              errors.push(`step ${i} h=${h}: place failed: ${e?.message || e}`);
+            }
+          }
+        }
+        if (!didPlace) {
+          failed++;
+          errors.push(`step ${i} h=${h}: no solid neighbor at ${cx},${cy},${cz}`);
+        }
+      }
+
+      // After completing column i, walk onto the top so next column's blocks are reachable.
+      try { await b.pathfinder.goto(new goals.GoalNear(cx, startY + i, cz, 0)); } catch {}
+    }
+
+    const expectedBlocks = (L * (L + 1)) / 2;
+    return {
+      ok: true,
+      data: {
+        blocks_placed: placed,
+        blocks_skipped: skipped,
+        blocks_failed: failed,
+        expected_blocks: expectedBlocks,
+        block: blockName,
+        direction: key,
+        length: L,
+        start: { x: startX, y: startY, z: startZ },
+        end: { x: startX + dx * L, y: startY + L - 1, z: startZ + dz * L },
+        errors: errors.slice(0, 5),
+      },
+      result: `build_stairs ${key} ${L} ${blockName}: ${placed}/${expectedBlocks} blocks placed${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`,
+    };
+  },
+
+  /**
    * Highest solid block per vertical column — for pit/site selection without N×find_blocks.
    * Optional `radius`: square (2r+1)² around (x,z), returns max top among sampled columns.
    */
