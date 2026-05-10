@@ -2,18 +2,16 @@
 /**
  * mc command benchmark — score LLMs on composing mc commands correctly.
  *
- * By default the prompt is REALISTIC: it includes the SOUL/persona text,
- * a representative skill, the cheatsheet, and a real /observe snapshot.
- * This mirrors what a production Hermes agent receives.
+ * Realistic mode (default) sends the same shape of prompt a production
+ * Hermes agent gets: SOUL persona + skill + cheatsheet + /observe snapshot.
  *
- * Use --syntax-only for the cheatsheet-only baseline (older/simpler shape).
- *
- * Usage:
- *   node scripts/benchmark/run.mjs                      # realistic mode (default)
- *   node scripts/benchmark/run.mjs --syntax-only        # cheatsheet only
- *   node scripts/benchmark/run.mjs --models a,b
- *   node scripts/benchmark/run.mjs --tasks direct
- *   node scripts/benchmark/run.mjs --persona path.md   # alt SOUL file
+ * --syntax-only    cheatsheet only (ablation; older simpler shape)
+ * --models a,b     filter to specific models
+ * --tasks direct   filter to specific task groups
+ * --persona F      alt persona file
+ * --skill F        alt skill file
+ * --observe F      alt observe fixture
+ * --serial         disable per-task model parallelism
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +28,7 @@ const arg = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1
 const has = (flag) => argv.includes(flag);
 
 const REALISTIC = !has('--syntax-only');
+const PARALLEL = !has('--serial');
 
 const SECRETS = '/Users/foz/homelab/secrets.yaml';
 const keyMatch = readFileSync(SECRETS, 'utf8').match(/openrouter_api_key:\s*(\S+)/);
@@ -54,7 +53,6 @@ for (const f of taskFiles) {
 
 const cheatsheet = readFileSync(join(ROOT, 'docs/mc-cheatsheet.md'), 'utf8');
 
-// Realistic-mode fixtures: SOUL persona + a representative skill + a real observe
 let persona = '', skill = '', observeJson = '';
 if (REALISTIC) {
   const personaFile = arg('--persona') || join(HERE, 'fixtures/persona-flint.md');
@@ -160,10 +158,15 @@ let gitSha = 'unknown';
 const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT });
 if (sha.status === 0) gitSha = sha.stdout.toString().trim();
 
+const totalCalls = Object.values(taskGroups).reduce((sum, t) => sum + t.length, 0) * models.length;
+let completedCalls = 0;
+const startTime = Date.now();
+
 const run = {
   timestamp: new Date().toISOString(),
   git_sha: gitSha,
   realistic: REALISTIC,
+  parallel: PARALLEL,
   cheatsheet_bytes: cheatsheet.length,
   persona_bytes: persona.length,
   skill_bytes: skill.length,
@@ -173,28 +176,42 @@ const run = {
   results: [],
 };
 
-console.error(`Mode: ${REALISTIC ? 'realistic (persona + skill + observe + cheatsheet)' : 'syntax-only (cheatsheet only)'}`);
+console.error(`Mode: ${REALISTIC ? 'realistic' : 'syntax-only'}  parallel: ${PARALLEL}`);
 console.error(`Models: ${models.map((m) => m.label).join(', ')}`);
-console.error(`Tasks: ${Object.entries(taskGroups).map(([g, t]) => g + '=' + t.length).join(', ')}`);
+console.error(`Tasks:  ${Object.entries(taskGroups).map(([g, t]) => g + '=' + t.length).join(', ')}`);
+console.error(`Total calls: ${totalCalls}`);
 console.error('');
+
+async function runTaskOnModel(groupName, task, model) {
+  const prompt = buildPrompt(task.task);
+  const r = await callOR(model.id, prompt);
+  let grade;
+  if (r.error) grade = { pass: false, error: r.error };
+  else if (groupName === 'direct') grade = gradeDirect(r.content, task.correct);
+  else if (groupName === 'composition') grade = gradeComposition(r.content, task.correct_lines_required, task.scoring);
+  else grade = { pass: false, error: `unknown group ${groupName}` };
+  const cost = computeCost(model, r.usage);
+  const result = {
+    group: groupName, task_id: task.id, category: task.category, model: model.label,
+    ...grade, elapsed_ms: r.elapsed_ms, usage: r.usage, cost_usd: cost, output: r.content,
+  };
+  completedCalls++;
+  const elapsedTotal = ((Date.now() - startTime) / 1000).toFixed(0);
+  const tag = grade.pass ? 'PASS' : 'FAIL';
+  console.error(`  [${completedCalls}/${totalCalls} ${elapsedTotal}s] ${tag.padEnd(4)}  ${groupName}/${task.id} on ${model.label.padEnd(28)} ${r.elapsed_ms}ms  $${(cost ?? 0).toFixed(5)}`);
+  return result;
+}
 
 for (const [groupName, tasks] of Object.entries(taskGroups)) {
   for (const task of tasks) {
-    for (const model of models) {
-      console.error(`[${groupName}] ${task.id} on ${model.label} ...`);
-      const prompt = buildPrompt(task.task);
-      const r = await callOR(model.id, prompt);
-      let grade;
-      if (r.error) grade = { pass: false, error: r.error };
-      else if (groupName === 'direct') grade = gradeDirect(r.content, task.correct);
-      else if (groupName === 'composition') grade = gradeComposition(r.content, task.correct_lines_required, task.scoring);
-      else grade = { pass: false, error: `unknown group ${groupName}` };
-      const cost = computeCost(model, r.usage);
-      run.results.push({
-        group: groupName, task_id: task.id, category: task.category, model: model.label,
-        ...grade, elapsed_ms: r.elapsed_ms, usage: r.usage, cost_usd: cost, output: r.content,
-      });
-      console.error(`  → ${grade.pass ? 'PASS' : 'FAIL'}  ${r.elapsed_ms}ms  $${(cost ?? 0).toFixed(5)}`);
+    if (PARALLEL) {
+      const results = await Promise.all(models.map((m) => runTaskOnModel(groupName, task, m)));
+      run.results.push(...results);
+    } else {
+      for (const model of models) {
+        const r = await runTaskOnModel(groupName, task, model);
+        run.results.push(r);
+      }
     }
   }
 }
@@ -203,6 +220,7 @@ const stamp = run.timestamp.replace(/[:.]/g, '-');
 const outPath = join(RUNS_DIR, `${stamp}${REALISTIC ? '-realistic' : '-syntax'}.json`);
 writeFileSync(outPath, JSON.stringify(run, null, 2));
 console.error(`\nWrote ${outPath}`);
+console.error(`Total wallclock: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
 const summary = {};
 for (const r of run.results) {

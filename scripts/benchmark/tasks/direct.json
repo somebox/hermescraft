@@ -15,7 +15,7 @@
     "id": "place_block",
     "category": "world",
     "task": "Place a single oak_planks block at (10, 65, 10). Assume the block is in inventory.",
-    "correct": ["mc place 10 65 10 oak_planks", "mc place oak_planks 10 65 10"]
+    "correct": ["mc place oak_planks 10 65 10"]
   },
   {
     "id": "save_mark",

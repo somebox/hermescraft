@@ -1,0 +1,364 @@
+{
+  "timestamp": "2026-05-10T15:54:02.249Z",
+  "git_sha": "745b6c9e216c4c1a2c0956416c2b7a0901dacb63",
+  "mode": "two-tier",
+  "pairs": [
+    {
+      "label": "gemma-4-31b-it->deepseek-v4-flash",
+      "decomposer": "gemma-4-31b-it",
+      "executor": "deepseek-v4-flash"
+    }
+  ],
+  "results": [
+    {
+      "pair": "gemma-4-31b-it->deepseek-v4-flash",
+      "task_id": "shelter_corner",
+      "decomposer_output": "1. Place a cobblestone block at (5, 65, 5).\n2. Place a cobblestone block at (5, 66, 5).\n3. Place a cobblestone block at (5, 67, 5).",
+      "decomposed_steps": [
+        "Place a cobblestone block at (5, 65, 5).",
+        "Place a cobblestone block at (5, 66, 5).",
+        "Place a cobblestone block at (5, 67, 5)."
+      ],
+      "step_responses": [
+        {
+          "step": "Place a cobblestone block at (5, 65, 5).",
+          "output": "```\nmc place cobblestone 5 65 5\n```",
+          "elapsed_ms": 1360,
+          "usage": {
+            "prompt_tokens": 3049,
+            "completion_tokens": 62,
+            "total_tokens": 3111,
+            "cost": 0.000128828,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 2816,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.000128828,
+              "upstream_inference_prompt_cost": 0.000111468,
+              "upstream_inference_completions_cost": 0.00001736
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 31,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "step": "Place a cobblestone block at (5, 66, 5).",
+          "output": "```\nmc place cobblestone 5 66 5\n```",
+          "elapsed_ms": 1350,
+          "usage": {
+            "prompt_tokens": 3049,
+            "completion_tokens": 63,
+            "total_tokens": 3112,
+            "cost": 0.000129108,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 2816,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.000129108,
+              "upstream_inference_prompt_cost": 0.000111468,
+              "upstream_inference_completions_cost": 0.00001764
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 34,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "step": "Place a cobblestone block at (5, 67, 5).",
+          "output": "```\nmc place cobblestone 5 67 5\n```",
+          "elapsed_ms": 853,
+          "usage": {
+            "prompt_tokens": 3049,
+            "completion_tokens": 65,
+            "total_tokens": 3114,
+            "cost": 0.00044506,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.00044506,
+              "upstream_inference_prompt_cost": 0.00042686,
+              "upstream_inference_completions_cost": 0.0000182
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 39,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ],
+      "step_commands": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "pass": true,
+      "matched": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "cost_usd": 0.00178929,
+      "decomposer_cost": 0.0011224,
+      "executor_cost": 0.0006668900000000001,
+      "total_steps": 3
+    },
+    {
+      "pair": "gemma-4-31b-it->deepseek-v4-flash",
+      "task_id": "smelt_iron_pipeline",
+      "decomposer_output": "1. Smelt 4 raw iron using coal in the nearby furnace.\n2. Check the status of the furnace.",
+      "decomposed_steps": [
+        "Smelt 4 raw iron using coal in the nearby furnace.",
+        "Check the status of the furnace."
+      ],
+      "step_responses": [
+        {
+          "step": "Smelt 4 raw iron using coal in the nearby furnace.",
+          "output": "```\nmc smelt raw_iron coal 4\n```",
+          "elapsed_ms": 6095,
+          "usage": {
+            "prompt_tokens": 3046,
+            "completion_tokens": 72,
+            "total_tokens": 3118,
+            "cost": 0.000131208,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 2816,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.000131208,
+              "upstream_inference_prompt_cost": 0.000111048,
+              "upstream_inference_completions_cost": 0.00002016
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 42,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "step": "Check the status of the furnace.",
+          "output": "```\nmc furnace_check X Y Z\n```",
+          "elapsed_ms": 860,
+          "usage": {
+            "prompt_tokens": 3040,
+            "completion_tokens": 214,
+            "total_tokens": 3254,
+            "cost": 0.000184464,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 2688,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.000184464,
+              "upstream_inference_prompt_cost": 0.000124544,
+              "upstream_inference_completions_cost": 0.00005992
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 201,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ],
+      "step_commands": [
+        "mc smelt raw_iron coal 4",
+        "mc furnace_check X Y Z"
+      ],
+      "pass": true,
+      "matched": [
+        "mc smelt raw_iron 4",
+        "mc furnace_check"
+      ],
+      "cost_usd": 0.00157436,
+      "decomposer_cost": 0.0011083,
+      "executor_cost": 0.00046606,
+      "total_steps": 2
+    },
+    {
+      "pair": "gemma-4-31b-it->deepseek-v4-flash",
+      "task_id": "rescue_to_safehome",
+      "decomposer_output": "1. Walk to the home mark.\n2. Set the reactive mode to guard.",
+      "decomposed_steps": [
+        "Walk to the home mark.",
+        "Set the reactive mode to guard."
+      ],
+      "step_responses": [
+        {
+          "step": "Walk to the home mark.",
+          "output": "```\nmc go_mark home\n```",
+          "elapsed_ms": 1179,
+          "usage": {
+            "prompt_tokens": 3039,
+            "completion_tokens": 70,
+            "total_tokens": 3109,
+            "cost": 0.00044506,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.00044506,
+              "upstream_inference_prompt_cost": 0.00042546,
+              "upstream_inference_completions_cost": 0.0000196
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 60,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "step": "Set the reactive mode to guard.",
+          "output": "```\nmc mode guard\n```",
+          "elapsed_ms": 4354,
+          "usage": {
+            "prompt_tokens": 3040,
+            "completion_tokens": 34,
+            "total_tokens": 3074,
+            "cost": 0.00043512,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.00043512,
+              "upstream_inference_prompt_cost": 0.0004256,
+              "upstream_inference_completions_cost": 0.00000952
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 24,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ],
+      "step_commands": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "pass": true,
+      "matched": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "cost_usd": 0.00154419,
+      "decomposer_cost": 0.0011041,
+      "executor_cost": 0.0004400900000000001,
+      "total_steps": 2
+    },
+    {
+      "pair": "gemma-4-31b-it->deepseek-v4-flash",
+      "task_id": "scout_then_report",
+      "decomposer_output": "1. Find hostile entities within 32 blocks.\n2. Send a public chat message saying \"all clear\" if no hostile entities are found.",
+      "decomposed_steps": [
+        "Find hostile entities within 32 blocks.",
+        "Send a public chat message saying \"all clear\" if no hostile entities are found."
+      ],
+      "step_responses": [
+        {
+          "step": "Find hostile entities within 32 blocks.",
+          "output": "",
+          "elapsed_ms": 958,
+          "usage": {
+            "prompt_tokens": 3041,
+            "completion_tokens": 200,
+            "total_tokens": 3241,
+            "cost": 0.00048174,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.00048174,
+              "upstream_inference_prompt_cost": 0.00042574,
+              "upstream_inference_completions_cost": 0.000056
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 196,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "step": "Send a public chat message saying \"all clear\" if no hostile entities are found.",
+          "output": "```\nmc chat \"all clear\"\n```",
+          "elapsed_ms": 730,
+          "usage": {
+            "prompt_tokens": 3050,
+            "completion_tokens": 108,
+            "total_tokens": 3158,
+            "cost": 0.000156184,
+            "is_byok": false,
+            "prompt_tokens_details": {
+              "cached_tokens": 2688,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0
+            },
+            "cost_details": {
+              "upstream_inference_cost": 0.000156184,
+              "upstream_inference_prompt_cost": 0.000125944,
+              "upstream_inference_completions_cost": 0.00003024
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 98,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ],
+      "step_commands": [
+        "mc chat \"all clear\""
+      ],
+      "pass": false,
+      "matched": [
+        null,
+        "mc chat"
+      ],
+      "cost_usd": 0.0015804900000000004,
+      "decomposer_cost": 0.0011110000000000002,
+      "executor_cost": 0.00046949000000000003,
+      "total_steps": 2
+    }
+  ]
+}

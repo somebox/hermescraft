@@ -4,9 +4,9 @@
     "category": "world+craft",
     "task": "You're at (0, 65, 0) with cobblestone in inventory. Build a 3-block-tall corner pillar at (5, 65, 5) using cobblestone. Output the mc commands to place the three blocks.",
     "correct_lines_required": [
-      "mc place 5 65 5 cobblestone",
-      "mc place 5 66 5 cobblestone",
-      "mc place 5 67 5 cobblestone"
+      "mc place cobblestone 5 65 5",
+      "mc place cobblestone 5 66 5",
+      "mc place cobblestone 5 67 5"
     ],
     "scoring": "all_lines_present"
   },
