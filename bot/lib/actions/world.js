@@ -973,6 +973,73 @@ export function createWorldActions(deps) {
   },
 
   /**
+   * Dig a W×L×D pit. The pit top is at the bot's existing surface (bot Y - 1)
+   * unless `top_y` is given. Capped at 256 columns × 16 depth = 4096 blocks.
+   * Thin wrapper over dig_area; stair-out is a separate verb (mc build_stairs).
+   */
+  async dig_pit({ x, z, w, l, d, top_y }) {
+    const b = ensureBot();
+    for (const [k, v] of Object.entries({ x, z, w, l, d })) {
+      if (!Number.isFinite(Number(v))) {
+        return { ok: false, error: { code: 'INVALID_COORD', message: `mc dig_pit requires numeric ${k}`, retry_safe: false } };
+      }
+    }
+    const cornerX = Math.floor(Number(x));
+    const cornerZ = Math.floor(Number(z));
+    const W = parseInt(String(w), 10);
+    const L = parseInt(String(l), 10);
+    const D = parseInt(String(d), 10);
+    for (const [k, v] of [['w', W], ['l', L], ['d', D]]) {
+      if (!Number.isFinite(v) || v < 1) {
+        return { ok: false, error: { code: 'INVALID_COORD', message: `mc dig_pit requires positive integer ${k}`, retry_safe: false } };
+      }
+    }
+    const totalBlocks = W * L * D;
+    if (totalBlocks > 500) {
+      return {
+        ok: false,
+        error: {
+          code: 'OUT_OF_RANGE',
+          message: `mc dig_pit ${W}×${L}×${D} = ${totalBlocks} blocks exceeds 500-block limit; split into smaller pits`,
+          retry_safe: false,
+        },
+      };
+    }
+
+    const surfaceY = Number.isFinite(Number(top_y)) ? Math.floor(Number(top_y)) : Math.floor(b.entity.position.y) - 1;
+    const x1 = cornerX, x2 = cornerX + W - 1;
+    const z1 = cornerZ, z2 = cornerZ + L - 1;
+    const y1 = surfaceY - D + 1, y2 = surfaceY;
+
+    const res = await ACTIONS.dig_area({ x1, y1, z1, x2, y2, z2, pickup: true, abort_on_fail: false, clear_stand: true });
+    // dig_area uses an older response shape (top-level result/dug/etc.) and may
+    // return { ok: false, error: "string" }. Map both into the action contract.
+    if (res && res.ok === false) {
+      return {
+        ok: false,
+        error: {
+          code: 'DIG_AREA_FAILED',
+          message: typeof res.error === 'string' ? res.error : (res.error?.message || 'dig_area failed'),
+          observed_state: { bounds: { x1, y1, z1, x2, y2, z2 } },
+          retry_safe: false,
+        },
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        dug: Number(res?.dug || 0),
+        skipped: Number(res?.skipped || 0),
+        errors_count: Array.isArray(res?.errors) ? res.errors.length : 0,
+        bounds: { x1, y1, z1, x2, y2, z2 },
+        size: { w: W, l: L, d: D },
+        floor_y: y1 - 1,
+      },
+      result: `dig_pit ${W}×${L}×${D} at (${cornerX}, surface=${surfaceY}, ${cornerZ}): dug ${res?.dug || 0}, skipped ${res?.skipped || 0}. Floor Y=${y1 - 1}.`,
+    };
+  },
+
+  /**
    * Flatten a rectangle to target Y: dig solid blocks above Y, place a
    * fill block at Y if the column is air at that level. Touches up to
    * `up` blocks above Y (default 8). Below Y is not touched.

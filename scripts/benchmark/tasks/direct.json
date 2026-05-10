@@ -108,6 +108,14 @@
     ]
   },
   {
+    "id": "dig_3x3_pit",
+    "category": "world",
+    "task": "Dig a 3x3x3 pit at the corner (0, 0). Use the surface as the top of the pit.",
+    "correct": [
+      "mc dig_pit 0 0 3 3 3"
+    ]
+  },
+  {
     "id": "level_5x5_to_y64",
     "category": "world",
     "task": "Flatten a 7x7 area between (0, 0) and (6, 6) to ground level Y=64. Use dirt as the fill block.",

@@ -523,6 +523,34 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
 
+  g('dig_pit', 'world', [], {
+    description: 'Dig a W×L×D pit at corner (X, Z). Top of pit defaults to bot Y - 1 (the surface block); pit floor ends up at top - D. Use mc build_stairs separately to add stairs out. Max 256 columns × 16 depth.',
+    method: 'POST',
+    path: '/action/dig_pit',
+    bodyFn: (p) =>
+      JSON.stringify({
+        x: Number(p.x),
+        z: Number(p.z),
+        w: Number(p.w),
+        l: Number(p.l),
+        d: Number(p.d),
+        ...(p.top_y !== undefined ? { top_y: Number(p.top_y) } : {}),
+      }),
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+      { key: 'w', type: 'number', required: true },
+      { key: 'l', type: 'number', required: true },
+      { key: 'd', type: 'number', required: true },
+      { key: 'top_y', type: 'number' },
+    ],
+    usage: 'mc dig_pit X Z W L D [TOP_Y]',
+    examples: [
+      'mc dig_pit 0 0 3 3 3',
+      'mc dig_pit 100 200 5 5 4 64',
+    ],
+  }),
+
   g('level', 'world', [], {
     description: 'Flatten a rectangle to target Y: dig solid blocks above Y (up to 8 by default), and fill any air gaps at Y with a leveling block. Auto-picks a fill block from {dirt, cobblestone, stone} unless BLOCK is given. Below Y is not touched. Max 256 columns.',
     method: 'POST',

@@ -1,0 +1,41 @@
+# L5.5 — dig_pit_basic: dig a 3x3x3 pit.
+#
+# Validates Sprint 5's mc dig_pit verb (thin wrapper over dig_area):
+#   - Removes a 3x3x3 box of stone starting at the surface.
+#   - Returns action contract { ok: true, data: { dug, bounds, ... } }.
+#
+# Setup:
+#   landfolk-test, day, cleared 21x21 arena.
+#   Floor at y=64 (stone). Bot at (0, 65, 5) — outside the pit area, holding
+#   a stone_pickaxe (needs to be at least wood, but stone is fastest on stone).
+#
+# Action under test:
+#   mc dig_pit 0 0 3 3 3
+#
+# Expected:
+#   - { ok: true, data: { dug: 27, ... } }
+#     (3×3×3 = 27 stone blocks; surface column from y=62..64.)
+#   - Pit interior: x∈[0,2], y∈[62,64], z∈[0,2] is air.
+#   - Pit floor (y=61) is intact stone.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 50 -10 10 64 10 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 5"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:stone_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
