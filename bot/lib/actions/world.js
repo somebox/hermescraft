@@ -1739,18 +1739,50 @@ export function createWorldActions(deps) {
       return { ok: false, error: { code: 'TRAVERSAL_FAILED', message: `Failed to open ${gate.name}: ${e?.message || e}`, retry_safe: true } };
     }
 
-    // Walk to destination.
+    // Walk through the gate using direct movement, NOT pathfinder.
+    // Pathfinder treats closed doors as impassable and (with canDig=true) will
+    // tunnel through walls/floor to bypass them — destructive and wrong here.
+    // The door is right in front of us; just hold "forward" toward dest.
+    try { b.pathfinder.setGoal(null); } catch {}
+    const destPos = new Vec3(destX + 0.5, destY, destZ + 0.5);
+    await b.lookAt(destPos);
+
+    const traverseStart = Date.now();
+    const TRAVERSAL_TIMEOUT_MS = 6000;
+    let crossedGate = false;
+    let reached = false;
+    b.setControlState('forward', true);
     try {
-      await b.pathfinder.goto(new goals.GoalNear(destX, destY, destZ, 1));
-    } catch (e) {
+      while (Date.now() - traverseStart < TRAVERSAL_TIMEOUT_MS) {
+        await sleep(100);
+        const me = b.entity.position;
+        const dist = me.distanceTo(destPos);
+        // Detect when we've crossed the gate plane (so we can close it after).
+        if (!crossedGate) {
+          // Direction vector start→dest, normalized roughly to a sign per axis.
+          const sx = Math.sign(destX - me.x);
+          const sz = Math.sign(destZ - me.z);
+          const passedX = Math.abs(sx) > 0.01 ? (sx > 0 ? me.x > gate.position.x + 0.5 : me.x < gate.position.x + 0.5) : true;
+          const passedZ = Math.abs(sz) > 0.01 ? (sz > 0 ? me.z > gate.position.z + 0.5 : me.z < gate.position.z + 0.5) : true;
+          if (passedX && passedZ) crossedGate = true;
+        }
+        if (dist < 1.0) { reached = true; break; }
+        // If bot stopped moving (collision with frame, etc), nudge with jump.
+      }
+    } finally {
+      b.setControlState('forward', false);
+    }
+
+    if (!reached) {
       // Try to close gate before returning the failure (best-effort).
       try { const g2 = b.blockAt(gateVec); if (g2) await b.activateBlock(g2); } catch {}
+      const me = b.entity.position;
       return {
         ok: false,
         error: {
           code: 'TRAVERSAL_FAILED',
-          message: `Opened gate but could not reach destination ${destX}, ${destY}, ${destZ}: ${e?.message || e}`,
-          observed_state: { gate_block: gate.name, opened, dest: { x: destX, y: destY, z: destZ } },
+          message: `Opened ${gate.name} but bot stalled at ${me.x.toFixed(1)},${me.y.toFixed(1)},${me.z.toFixed(1)} (target ${destX},${destY},${destZ}). The doorway may be obstructed or the destination wrong.`,
+          observed_state: { gate_block: gate.name, opened, crossed_gate: crossedGate, current: { x: me.x, y: me.y, z: me.z }, dest: { x: destX, y: destY, z: destZ } },
           retry_safe: true,
         },
       };
@@ -1764,9 +1796,9 @@ export function createWorldActions(deps) {
         const props = (typeof after.getProperties === 'function') ? after.getProperties() : {};
         const isOpen = props.open === 'true' || props.open === true;
         if (isOpen) {
-          // Pathfinder may have wandered out of reach; nudge back.
+          // We may be slightly out of activate range; turn back briefly if so.
           if (b.entity.position.distanceTo(after.position) > 4.5) {
-            try { await b.pathfinder.goto(new goals.GoalNear(after.position.x, after.position.y, after.position.z, 2)); } catch {}
+            await b.lookAt(after.position.offset(0.5, 0.5, 0.5));
           }
           await b.activateBlock(after);
           closed = true;

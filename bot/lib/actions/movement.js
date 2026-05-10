@@ -11,6 +11,14 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj }) {
       const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000));
       try {
         await Promise.race([b.pathfinder.goto(goal), timeout]);
+        // Verify pathfinder actually reached the goal — it can resolve early
+        // when the path is blocked (e.g. closed doors pathfinder won't open
+        // reliably). Check the bot's actual position.
+        const pos = posObj();
+        const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
+        if (dist > 2) {
+          return { ok: false, error: `Pathfinder resolved without reaching goal: now at ${pos.x},${pos.y},${pos.z}, ${dist.toFixed(1)} blocks from target. Likely blocked (closed door, sealed wall). Use mc through for doors/gates, or mc bg_goto for long distances.` };
+        }
         return { result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
