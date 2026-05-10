@@ -1,5 +1,5 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS, DIG_PASSABLE_NAMES, columnTopSolid, nudgeOffStandPillar } from '../bot/dig-tools.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar } from '../bot/dig-tools.js';
 import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
 
 export function createWorldActions(deps) {
@@ -1263,6 +1263,106 @@ export function createWorldActions(deps) {
    * Highest solid block per vertical column — for pit/site selection without N×find_blocks.
    * Optional `radius`: square (2r+1)² around (x,z), returns max top among sampled columns.
    */
+  /**
+   * Hazard observation in a radius. Read-only; no movement, no digging.
+   * Useful for "look before you mine" — agent runs scout, plans around
+   * lava and gravity columns, then issues mc safe_dig calls.
+   *
+   * Args:
+   *   x, y, z   — center; defaults to bot position
+   *   radius    — search radius; default 8, capped at 16
+   */
+  async scout({ x, y, z, radius }) {
+    const b = ensureBot();
+    const r = Math.min(Math.max(parseInt(String(radius ?? 8), 10) || 8, 1), 16);
+    const me = b.entity.position;
+    const cx = Number.isFinite(Number(x)) ? Math.floor(Number(x)) : Math.floor(me.x);
+    const cy = Number.isFinite(Number(y)) ? Math.floor(Number(y)) : Math.floor(me.y);
+    const cz = Number.isFinite(Number(z)) ? Math.floor(Number(z)) : Math.floor(me.z);
+    const center = new Vec3(cx, cy, cz);
+
+    const lavaPositions = b.findBlocks({
+      matching: (block) => block.name === 'lava' || block.name === 'flowing_lava',
+      maxDistance: r,
+      count: 50,
+      point: center,
+    });
+    const waterPositions = b.findBlocks({
+      matching: (block) => block.name === 'water' || block.name === 'flowing_water',
+      maxDistance: r,
+      count: 50,
+      point: center,
+    });
+    const fallingPositions = b.findBlocks({
+      matching: (block) => FALLING_BLOCK_NAMES.has(block.name),
+      maxDistance: r,
+      count: 50,
+      point: center,
+    });
+    const bedrockPositions = b.findBlocks({
+      matching: (block) => block.name === 'bedrock',
+      maxDistance: r,
+      count: 1,
+      point: center,
+    });
+
+    const fmtPos = (p) => ({ x: p.x, y: p.y, z: p.z });
+    const lava = lavaPositions.map((p) => {
+      const blk = b.blockAt(p);
+      const props = (typeof blk?.getProperties === 'function') ? blk.getProperties() : {};
+      const level = props.level !== undefined ? Number(props.level) : 0;
+      return { ...fmtPos(p), source: level === 0, dist: Math.round(p.distanceTo(center) * 10) / 10 };
+    });
+    const water = waterPositions.map((p) => ({ ...fmtPos(p), dist: Math.round(p.distanceTo(center) * 10) / 10 }));
+    const falling = fallingPositions.map((p) => {
+      const blk = b.blockAt(p);
+      return { ...fmtPos(p), name: blk?.name || 'unknown', dist: Math.round(p.distanceTo(center) * 10) / 10 };
+    });
+    let bedrock = null;
+    if (bedrockPositions.length) {
+      const bp = bedrockPositions[0];
+      bedrock = { ...fmtPos(bp), dist: Math.round(bp.distanceTo(center) * 10) / 10 };
+    }
+
+    // Hostile mobs — common Minecraft hostile types within the radius.
+    // Known limitation: in Multiverse non-default worlds, mineflayer's
+    // entity tracker may report empty even when mobs are nearby. Use
+    // mc scene as a fallback when scout reports 0 hostile.
+    const HOSTILE = new Set(['zombie', 'skeleton', 'creeper', 'spider', 'enderman', 'witch', 'pillager', 'vindicator', 'evoker', 'drowned', 'husk', 'stray', 'phantom', 'cave_spider', 'silverfish', 'endermite', 'blaze', 'ghast', 'magma_cube', 'slime', 'wither_skeleton', 'piglin', 'piglin_brute', 'zoglin', 'hoglin']);
+    const hostile = [];
+    for (const e of Object.values(b.entities)) {
+      if (!e.position || !HOSTILE.has(e.name)) continue;
+      const d = e.position.distanceTo(center);
+      if (d > r) continue;
+      hostile.push({ name: e.name, x: Math.floor(e.position.x), y: Math.floor(e.position.y), z: Math.floor(e.position.z), dist: Math.round(d * 10) / 10 });
+    }
+    hostile.sort((a, b) => a.dist - b.dist);
+
+    const counts = { lava: lava.length, water: water.length, falling: falling.length, hostile: hostile.length };
+    const summary = [
+      counts.lava ? `${counts.lava} lava` : null,
+      counts.water ? `${counts.water} water` : null,
+      counts.falling ? `${counts.falling} falling-block` : null,
+      counts.hostile ? `${counts.hostile} hostile (${hostile[0].name} at ${hostile[0].dist})` : null,
+      bedrock ? `bedrock at ${bedrock.dist}` : null,
+    ].filter(Boolean).join(', ') || 'all clear';
+
+    return {
+      ok: true,
+      data: {
+        center: { x: cx, y: cy, z: cz },
+        radius: r,
+        lava,
+        water,
+        falling_blocks: falling,
+        bedrock,
+        hostile_mobs: hostile,
+        counts,
+      },
+      result: `Scout r=${r} from ${cx},${cy},${cz}: ${summary}`,
+    };
+  },
+
   async terrain_top({ x, z, radius = 0 }) {
     const b = ensureBot();
     const cx = Math.floor(Number(x));

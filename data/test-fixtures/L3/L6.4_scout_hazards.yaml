@@ -1,0 +1,51 @@
+# L6.4 — scout_hazards: read-only observation finds known placed hazards.
+#
+# Layout: bot at (0, 65, 0). Three lava cells at (3,64,0), (5,64,2), (-2,64,3).
+# Two water cells at (4,64,5), (-3,64,-3). Two sand columns:
+#   sand at (1, 65..67, -2) and gravel at (-1, 65..66, 4).
+# One bedrock at (-5, 64, 5). One zombie at (6, 65, 0).
+#
+# mc scout 0 65 0 8 should report all of them with correct counts.
+# (radius 8 catches lava at 5 blocks, but the bedrock at 7 is just inside.
+# The water cell at z=5 is 5 blocks; the others vary.)
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # Lava cells (3 of them)
+  - "execute in landfolk-test run setblock 3 64 0 minecraft:lava"
+  - "execute in landfolk-test run setblock 5 64 2 minecraft:lava"
+  - "execute in landfolk-test run setblock -2 64 3 minecraft:lava"
+  # Water cells (2 of them)
+  - "execute in landfolk-test run setblock 4 64 5 minecraft:water"
+  - "execute in landfolk-test run setblock -3 64 -3 minecraft:water"
+  # Sand column (3 sand blocks)
+  - "execute in landfolk-test run setblock 1 65 -2 minecraft:sand"
+  - "execute in landfolk-test run setblock 1 66 -2 minecraft:sand"
+  - "execute in landfolk-test run setblock 1 67 -2 minecraft:sand"
+  # Gravel column (2 gravel blocks)
+  - "execute in landfolk-test run setblock -1 65 4 minecraft:gravel"
+  - "execute in landfolk-test run setblock -1 66 4 minecraft:gravel"
+  # One bedrock at distance 7 (inside radius 8)
+  - "execute in landfolk-test run setblock -5 64 5 minecraft:bedrock"
+  # Zombie inside radius
+  - "execute in landfolk-test run summon zombie 6 65 0 {NoAI:1b}"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:fire_resistance 600 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

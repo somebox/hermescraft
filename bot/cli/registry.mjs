@@ -223,6 +223,29 @@ export const RAW_COMMAND_DEFS = [
         z: p.z,
       }),
   }),
+  g('scout', 'observe', [], {
+    description: 'Hazard observation in a radius around X Y Z (or bot position). Read-only — lists lava cells (with source/flowing flag), water, falling-block columns (sand/gravel/anvil/concrete_powder), bedrock proximity, and hostile mobs. Use before mining at depth.',
+    method: 'POST',
+    path: '/action/scout',
+    bodyFn: (p) =>
+      JSON.stringify({
+        ...(p.x !== undefined ? { x: Number(p.x) } : {}),
+        ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+        ...(p.z !== undefined ? { z: Number(p.z) } : {}),
+        ...(p.radius !== undefined ? { radius: Number(p.radius) } : {}),
+      }),
+    argSchema: [
+      { key: 'x', type: 'number' },
+      { key: 'y', type: 'number' },
+      { key: 'z', type: 'number' },
+      { key: 'radius', type: 'number', default: 8 },
+    ],
+    usage: 'mc scout [X Y Z] [RADIUS]',
+    examples: [
+      'mc scout',
+      'mc scout 0 -50 0 8',
+    ],
+  }),
   g('safe_dig', 'world', ['sd'], {
     description: 'Hazard-aware dig: pre-checks for adjacent lava (HAZARD_LAVA), digging-the-floor-under-self (HAZARD_FALL), and suffocation by a falling-block column above (HAZARD_SUFFOCATE). Returns ok:false on hazard without swinging. Use --force to skip checks (delegates to mc dig).',
     method: 'POST',
