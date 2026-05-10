@@ -267,7 +267,7 @@ If we hit those, Phase 2 is done. The action layer is reliable; the loop is bori
 
 ## Sprint 5 — Building primitives (L5)
 
-**Status:** planned (2026-05-10).
+**Status:** **shipped** (2026-05-10). All planned verbs + fixtures landed plus two unplanned-but-essential additions: `mc move` (smart non-destructive nav) and the pathfinder canDig=false architectural change.
 
 **Goal:** the bot can construct basic structures via composed primitives. Unlocks Sprints 7–9 (liquids in pits, walled crop fields, fenced animal pens).
 
@@ -279,9 +279,10 @@ If we hit those, Phase 2 is done. The action layer is reliable; the loop is bori
 | `mc fence` | `mc fence X1 Z1 X2 Z2 [--gate DIR]` | Place fence enclosure with optional gate; auto-equips fences and gate item. |
 | `mc through` | `mc through GX GY GZ [DX DY DZ]` | Open a gate/door, walk to the far side, close it behind. Differentiates traversal from raw `mc interact` toggling. |
 | `mc level` | `mc level X1 Z1 X2 Z2 Y` | Flatten rectangle to target Y: dig blocks above Y, fill empties below Y. |
-| `mc dig_pit` | `mc dig_pit X Z W L D [--stairs]` | Dig W×L×D pit. With `--stairs`, line one corner with a staircase out. |
-| `mc path` | `mc path X1 Z1 X2 Z2` | Use shovel on dirt/grass to convert to dirt_path along an axis-aligned line/rect. |
-| `mc build_stairs` | `mc build_stairs DIR LEN [up\|down] BLOCK` | Constructive mirror of `mc mine stairs`. |
+| `mc dig_pit` | `mc dig_pit X Z W L D [TOP_Y]` | Dig W×L×D pit. Wraps `mc dig_area`. (`--stairs` flag deferred — bot can call `mc dig_pit` then `mc build_stairs` to climb out.) |
+| `mc path` | `mc path X1 Z1 X2 Z2 [Y]` | Use shovel on dirt/grass to convert to dirt_path along an axis-aligned line/rect. |
+| `mc build_stairs` | `mc build_stairs BLOCK DIR LEN` | Builds an ascending triangular ramp (each column is filled from floor up to height i). Pure cube-step staircases can't be placed mid-air — every block needs a face neighbor below. |
+| `mc move` *(unplanned)* | `mc move X Y Z [--max-doors N] [--door GX GY GZ]` | Smart non-destructive nav. On NAV_BLOCKED, auto-detects a door/gate between bot and target, opens it via `mc through` (closes behind), and recurses. Up to max-doors legs. Replaces `mc goto` for general navigation. |
 
 ### Action contract
 
@@ -302,6 +303,8 @@ Every new verb conforms to `phase-2/action-contracts.md`:
 | L5.6 | `path_5_blocks` — convert 5 dirt blocks to dirt_path |
 | L5.7 | `build_stairs_up` — 4-block ascending staircase |
 | L5.10 | `through_gate` — open fence_gate, walk through, close behind. Verifies `mc through` end-to-end. |
+| L5.11 | `through_door` — 5×5 cobble house with oak_door; bot enters and exits, doors closed each time. |
+| L5.12 | `move_through_building` — 2-room vestibule layout; 5 scenarios (open path / one door / two doors / sealed / --door override) covering all `mc move` paths. |
 | L5.99 | **exit gate** — bot builds a 5×5 fenced + leveled + path-floored enclosure with a south gate, then walks out through it. End-to-end multi-verb composition. |
 
 ### Benchmark additions
@@ -327,6 +330,22 @@ Add 4–5 new tasks to `scripts/benchmark/tasks/composition.json` covering Sprin
 ### Estimated scope
 
 1–2 sessions. First verb is the longest because it sets up the registry/fixture/benchmark pattern; subsequent verbs are 30–45 min each.
+
+### Sprint 5 retrospective (post-ship)
+
+What landed beyond the original plan:
+
+- **`mc move`** — smart non-destructive nav. Wasn't planned; surfaced when `mc through`/`mc goto` interactions exposed that agents need a single "go here" verb that handles doors automatically. Picks the closest accessible door (score by `dist(bot, near_side)`) — multi-door buildings unwind one door per leg. Closes every door behind.
+- **Pathfinder canDig=false default** — empirical trap tests confirmed pathfinder breaks doors and tunnels through floors when `canDig=true`, even with `oak_door` in `protectedBlocks` (the protection list is unreliable for wooden doors). Reverted to `canDig=false`; navigation is now strictly read-only. Mining is explicit (`mc collect`/`mc dig`/`mc tunnel`).
+- **Action-contract failures on `mc goto`** — `NAV_BLOCKED`, `NAV_TIMEOUT`, `NAV_FAILED` codes with `observed_state` and hints pointing at `mc through` / `mc tunnel`.
+- **`mc through` rewrite** — uses direct movement (not pathfinder) for the door-cross step, so closed-door bypass via tunneling can't happen.
+
+What was deferred:
+
+- `mc dig_pit --stairs` — bot can chain `mc dig_pit` + `mc build_stairs` instead. Re-evaluate if real use cases demand the combined verb.
+- `composition.json` benchmark additions for Sprint 5 — the L5 fixtures cover the integration cases; benchmark tasks for `wall`, `fence`, `path`, `level`, `build_stairs`, `dig_pit`, `move`, `through` were added to `direct.json`.
+- `skills/minecraft-building.md` skill text update — pending Sprint 6+ when we wire skills to mc verbs systematically.
+- Cleanup of `protectedBlocks` and legacy block-tagging workarounds — deferred to building-and-integration phase since `canDig=false` makes them defense-in-depth, not the primary safeguard.
 
 ---
 
