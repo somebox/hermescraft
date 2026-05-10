@@ -23,5 +23,5 @@ prep:
   - "effect give Flint minecraft:slow_falling 5 0 true"
 
 cleanup:
-  - "mvtp Flint world"
+  - "execute in landfolk-test run tp Flint 52 65 52"
   - "execute in landfolk-test run kill @e[type=item,distance=..32]"

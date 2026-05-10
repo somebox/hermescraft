@@ -30,4 +30,4 @@ prep:
 
 cleanup:
   - "execute in landfolk-test run kill @e[type=item,distance=..32]"
-  - "mvtp Flint world"
+  - "execute in landfolk-test run tp Flint 52 65 52"

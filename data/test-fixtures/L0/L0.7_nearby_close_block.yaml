@@ -28,5 +28,5 @@ prep:
 cleanup:
   - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
   - "execute in landfolk-test run setblock 1 65 0 minecraft:air"
-  - "mvtp Flint world"
+  - "execute in landfolk-test run tp Flint 52 65 52"
   - "execute in landfolk-test run kill @e[type=item,distance=..32]"

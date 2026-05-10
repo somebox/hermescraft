@@ -24,5 +24,5 @@ prep:
 
 cleanup:
   # Return bot to production world; clear any items dropped during test
-  - "mvtp Flint world"
+  - "execute in landfolk-test run tp Flint 52 65 52"
   - "execute in landfolk-test run kill @e[type=item,distance=..32]"

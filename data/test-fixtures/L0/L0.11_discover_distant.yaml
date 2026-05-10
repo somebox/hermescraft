@@ -31,5 +31,5 @@ prep:
 cleanup:
   - "execute in landfolk-test run setblock 40 50 0 minecraft:stone"
   - "execute in landfolk-test run forceload remove 32 -16 47 16"
-  - "mvtp Flint world"
+  - "execute in landfolk-test run tp Flint 52 65 52"
   - "execute in landfolk-test run kill @e[type=item,distance=..50]"
