@@ -1,0 +1,62 @@
+# F5 — door blockade: does the agent recover from NAV_BLOCKED?
+#
+# Bot at (0, 65, 7) outside a 5x5 cobble house. South wall has a closed
+# oak_door at (0, 65, 4). Goal location is INSIDE the house at (0, 65, 2).
+#
+# Naive agent: calls mc goto 0 65 2 → NAV_BLOCKED → retries forever.
+# Good agent: reads error, calls mc through 0 65 4 OR mc move 0 65 2.
+#
+# This is the highest-value test for validating Sprint 5/6 — if the
+# agent doesn't read the hint, the action-contract error messages are
+# not earning their cost.
+
+agent_test_id: F5_door_blockade
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set so it targets your body.
+
+  Goal: get to position (0, 65, 2). Use whatever mc commands you need.
+  When you arrive (within 2 blocks), report your final position.
+
+  Tips:
+    - If a command fails with ok:false, READ THE ERROR MESSAGE — it
+      usually tells you what verb to try instead.
+    - There are many movement verbs: mc goto (raw pathfinder),
+      mc move (smart, handles doors), mc through (door/gate traversal).
+
+skills: [minecraft-navigation, minecraft-survival]
+max_turns: 8
+timeout_seconds: 180
+
+expect:
+  bot_at: { x: 0, y: 65, z: 2, range: 2 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # Wider clear to wipe any leftover state from previous tests
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  # 5x5 house at x=-2..2, z=0..4. Walls span y=65..67 (3 tall). Single fill
+  # builds the whole shell at once, then we carve the door slot.
+  - "execute in landfolk-test run fill -2 65 0 2 67 4 minecraft:cobblestone hollow"
+  - "execute in landfolk-test run fill -1 65 1 1 67 3 minecraft:air"
+  - "execute in landfolk-test run setblock 0 65 4 minecraft:oak_door[half=lower,facing=south,hinge=left,open=false]"
+  - "execute in landfolk-test run setblock 0 66 4 minecraft:oak_door[half=upper,facing=south,hinge=left,open=false]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 7"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

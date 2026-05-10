@@ -256,18 +256,49 @@ def main():
     new_actions = post_actions[: max(0, len(post_actions) - pre_count)] if len(post_actions) >= pre_count else post_actions
     ok_false_count = sum(1 for a in new_actions if a.get("status") == "error")
     loop_sig = detect_loop_signature(new_actions)
-    # Count ALL mc invocations from agent stdout/stderr — terminal tool logs
-    # each `mc X` command, including read-only ones (mc nearby, mc scene)
-    # that don't hit /action/* and so don't appear in recent_actions.
-    mc_cli_calls = len(re.findall(r"\bmc\s+[a-z_]+", agent_stderr + agent_stdout))
+    # mc_cli_calls is now computed below from session JSON (more reliable).
 
-    # extract session id from hermes output (line "session_id: ...")
+    # extract session id from hermes output — typically in stderr with -Q
     session_id = None
-    for line in agent_stdout.splitlines():
-        m = re.match(r"session_id:\s*(\S+)", line)
-        if m:
-            session_id = m.group(1)
+    for source in (agent_stderr, agent_stdout):
+        for line in (source or "").splitlines():
+            m = re.search(r"session_id:\s*(\S+)", line)
+            if m:
+                session_id = m.group(1)
+                break
+        if session_id:
             break
+
+    # Read the session JSON to get the real tool-call sequence and counts.
+    # -Q suppresses tool traces in stdout, so this is the only reliable source.
+    tool_calls = []
+    if session_id:
+        sess_path = Path.home() / ".hermes" / "sessions" / f"session_{session_id}.json"
+        if sess_path.exists():
+            try:
+                sess = json.loads(sess_path.read_text())
+                for msg in sess.get("messages", []):
+                    for tc in (msg.get("tool_calls") or []):
+                        fn = tc.get("function", {}) or {}
+                        try:
+                            args = json.loads(fn.get("arguments") or "{}")
+                        except Exception:
+                            args = {"_raw": fn.get("arguments")}
+                        tool_calls.append({"name": fn.get("name"), "args": args})
+            except Exception as e:
+                print(f"  WARN: could not read session {sess_path}: {e}", file=sys.stderr)
+
+    # Extract individual `mc <verb>` invocations from terminal tool commands.
+    mc_verbs_used = []
+    for tc in tool_calls:
+        if tc.get("name") == "terminal":
+            cmd = (tc.get("args") or {}).get("command") or ""
+            for m in re.finditer(r"\bmc\s+([a-z_]+)\b", cmd):
+                mc_verbs_used.append(m.group(1))
+    mc_cli_calls = len(mc_verbs_used)
+    verb_counts = {}
+    for v in mc_verbs_used:
+        verb_counts[v] = verb_counts.get(v, 0) + 1
 
     preds = predicate_results(spec, agent_stdout, post)
     all_pass = all(r["pass"] for r in preds) if preds else False
@@ -286,9 +317,12 @@ def main():
         "metrics": {
             "action_mutating_calls": len(new_actions),
             "mc_cli_invocations": mc_cli_calls,
+            "mc_verb_counts": verb_counts,
+            "tool_call_count": len(tool_calls),
             "ok_false_count": ok_false_count,
             "loop_signature": loop_sig,
         },
+        "tool_calls": tool_calls,
         "pre": {"position": pre_pos, "inventory": pre_inv},
         "post": {
             "position": (post.get("state") or {}).get("position"),
@@ -308,7 +342,8 @@ def main():
     with open(out_path, "w") as f:
         json.dump(report, f, indent=2)
 
-    print(f"  {verdict}  {mc_cli_calls} mc/cli, {len(new_actions)} mutating, {ok_false_count} ok:false, loop={loop_sig.get('max_streak', 0)}")
+    verb_summary = ", ".join(f"{k}×{v}" for k, v in sorted(verb_counts.items(), key=lambda kv: -kv[1])[:5]) or "(none)"
+    print(f"  {verdict}  {mc_cli_calls} mc/cli ({verb_summary}), {ok_false_count} ok:false, loop={loop_sig.get('max_streak', 0)}")
     for r in preds:
         flag = "✓" if r["pass"] else "✗"
         print(f"    {flag} {r['kind']}" + (f" — {r['detail']}" if r['detail'] else ""))
