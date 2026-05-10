@@ -1,0 +1,687 @@
+[
+  {
+    "kind": "direct",
+    "task_id": "walk_to_coords",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "error": "OR 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"deepseek/deepseek-v4-flash is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate you",
+    "pass": false
+  },
+  {
+    "kind": "direct",
+    "task_id": "walk_to_coords",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc go to 100 64 200\n```",
+    "correct": [
+      "mc go to 100 64 200"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc go to 100 64 200"
+  },
+  {
+    "kind": "direct",
+    "task_id": "walk_to_coords",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc goto 100 64 200\n```",
+    "correct": [
+      "mc goto 100 64 200"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc goto 100 64 200"
+  },
+  {
+    "kind": "direct",
+    "task_id": "walk_to_coords",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc go to 100 64 200\n```",
+    "correct": [
+      "mc go to 100 64 200"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc go to 100 64 200"
+  },
+  {
+    "kind": "direct",
+    "task_id": "mine_4_cobble",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc collect cobblestone 4\n```",
+    "correct": [
+      "mc collect cobblestone 4"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc collect cobblestone 4"
+  },
+  {
+    "kind": "direct",
+    "task_id": "mine_4_cobble",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc mine collect cobblestone 4 16\n```",
+    "correct": [
+      "mc mine collect cobblestone 4"
+    ],
+    "pass": true,
+    "matchType": "prefix",
+    "match": "mc mine collect cobblestone 4"
+  },
+  {
+    "kind": "direct",
+    "task_id": "mine_4_cobble",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc collect cobblestone 4\n```",
+    "correct": [
+      "mc collect cobblestone 4"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc collect cobblestone 4"
+  },
+  {
+    "kind": "direct",
+    "task_id": "mine_4_cobble",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc mine collect cobblestone 4 16\n```",
+    "correct": [
+      "mc mine collect cobblestone 4"
+    ],
+    "pass": true,
+    "matchType": "prefix",
+    "match": "mc mine collect cobblestone 4"
+  },
+  {
+    "kind": "direct",
+    "task_id": "place_block",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc place oak_planks 10 65 10\n```",
+    "correct": [
+      "mc place 10 65 10 oak_planks",
+      "mc place oak_planks 10 65 10"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc place oak_planks 10 65 10"
+  },
+  {
+    "kind": "direct",
+    "task_id": "place_block",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc build block 10 65 10 oak_planks\n```",
+    "correct": [
+      "mc build block 10 65 10 oak_planks"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc build block 10 65 10 oak_planks"
+  },
+  {
+    "kind": "direct",
+    "task_id": "place_block",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc place oak_planks 10 65 10\n```",
+    "correct": [
+      "mc place 10 65 10 oak_planks",
+      "mc place oak_planks 10 65 10"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc place oak_planks 10 65 10"
+  },
+  {
+    "kind": "direct",
+    "task_id": "place_block",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc build block 10 65 10 oak_planks\n```",
+    "correct": [
+      "mc build block 10 65 10 oak_planks"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc build block 10 65 10 oak_planks"
+  },
+  {
+    "kind": "direct",
+    "task_id": "save_mark",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc mark shelter\n```",
+    "correct": [
+      "mc mark shelter"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc mark shelter"
+  },
+  {
+    "kind": "direct",
+    "task_id": "save_mark",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc plan mark add shelter\n```",
+    "correct": [
+      "mc plan mark add shelter"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc plan mark add shelter"
+  },
+  {
+    "kind": "direct",
+    "task_id": "save_mark",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc mark shelter\n```",
+    "correct": [
+      "mc mark shelter"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc mark shelter"
+  },
+  {
+    "kind": "direct",
+    "task_id": "save_mark",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc plan mark add shelter\n```",
+    "correct": [
+      "mc plan mark add shelter"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc plan mark add shelter"
+  },
+  {
+    "kind": "direct",
+    "task_id": "list_goals",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "error": "OR 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"deepseek/deepseek-v4-flash is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate you",
+    "pass": false
+  },
+  {
+    "kind": "direct",
+    "task_id": "list_goals",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc plan goal list\n```",
+    "correct": [
+      "mc plan goal list"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc plan goal list"
+  },
+  {
+    "kind": "direct",
+    "task_id": "list_goals",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc goals\n```",
+    "correct": [
+      "mc goals"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc goals"
+  },
+  {
+    "kind": "direct",
+    "task_id": "list_goals",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc plan goal list\n```",
+    "correct": [
+      "mc plan goal list"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc plan goal list"
+  },
+  {
+    "kind": "direct",
+    "task_id": "eat_food",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc eat\n```",
+    "correct": [
+      "mc eat"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc eat"
+  },
+  {
+    "kind": "direct",
+    "task_id": "eat_food",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc self eat\n```",
+    "correct": [
+      "mc self eat"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc self eat"
+  },
+  {
+    "kind": "direct",
+    "task_id": "eat_food",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc eat\n```",
+    "correct": [
+      "mc eat"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc eat"
+  },
+  {
+    "kind": "direct",
+    "task_id": "eat_food",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc self eat\n```",
+    "correct": [
+      "mc self eat"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc self eat"
+  },
+  {
+    "kind": "direct",
+    "task_id": "read_chat",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "error": "OR 429: {\"error\":{\"message\":\"Provider returned error\",\"code\":429,\"metadata\":{\"raw\":\"deepseek/deepseek-v4-flash is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate you",
+    "pass": false
+  },
+  {
+    "kind": "direct",
+    "task_id": "read_chat",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc say read 5\n```",
+    "correct": [
+      "mc say read 5"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc say read 5"
+  },
+  {
+    "kind": "direct",
+    "task_id": "read_chat",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc read_chat 5\n```",
+    "correct": [
+      "mc read_chat 5"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc read_chat 5"
+  },
+  {
+    "kind": "direct",
+    "task_id": "read_chat",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc say read 5\n```",
+    "correct": [
+      "mc say read 5"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc say read 5"
+  },
+  {
+    "kind": "direct",
+    "task_id": "set_combat_skill",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc combat_skill 0.9\n```",
+    "correct": [
+      "mc combat_skill 0.9"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc combat_skill 0.9"
+  },
+  {
+    "kind": "direct",
+    "task_id": "set_combat_skill",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc fight skill 0.9\n```",
+    "correct": [
+      "mc fight skill 0.9"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc fight skill 0.9"
+  },
+  {
+    "kind": "direct",
+    "task_id": "set_combat_skill",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc combat_skill 0.9\n```",
+    "correct": [
+      "mc combat_skill 0.9"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc combat_skill 0.9"
+  },
+  {
+    "kind": "direct",
+    "task_id": "set_combat_skill",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc fight skill 0.9\n```",
+    "correct": [
+      "mc fight skill 0.9"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc fight skill 0.9"
+  },
+  {
+    "kind": "direct",
+    "task_id": "feed_cow",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc feed_mob cow\n```",
+    "correct": [
+      "mc feed_mob cow wheat",
+      "mc feed_mob cow --item wheat"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": [
+      "mc feed_mob cow"
+    ]
+  },
+  {
+    "kind": "direct",
+    "task_id": "feed_cow",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc farm feed cow wheat\n```",
+    "correct": [
+      "mc farm feed cow wheat",
+      "mc farm feed cow --item wheat"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc farm feed cow wheat"
+  },
+  {
+    "kind": "direct",
+    "task_id": "feed_cow",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc feed_mob cow wheat\n```",
+    "correct": [
+      "mc feed_mob cow wheat",
+      "mc feed_mob cow --item wheat"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc feed_mob cow wheat"
+  },
+  {
+    "kind": "direct",
+    "task_id": "feed_cow",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "We need to feed wheat to a nearby cow: right-click the cow with wheat already in hand. So we need to ensure wheat is in hand, then interact with cow. The command for interacting with a block/entity is `mc self interact X Y Z`. But we need to target a cow entity. There's also `mc farm feed TARGET [ITEM]` which feeds a target with item. That seems appropriate: feed a target (animal) with item. The command: `mc farm feed TARGET [ITEM]`. It says: feed TARGET [ITEM] — right-click mob with item. So we need to specify the target cow and wheat. We need to locate a nearby cow. Could use `mc sense find entities cow` to get coordinates, then feed. But we can combine? The task: feed wheat to a nearby cow (right-click the cow with wheat already in hand). We assume wheat is already in hand. So we just need to target a nearby cow and feed. Use `mc farm feed` with target being the nearest cow? The command likely expects a target selector? Not sure. The cheatsheet: `mc farm feed TARGET [ITEM]` — feed two adults? Actually that's breed. Wait: `mc farm feed TARGET [ITEM]` — right-click mob with item. So we need to specify TARGET (entity) and optionally ITEM (if not in hand). Since wheat is already in hand, we can omit ITEM. So we need to get the target cow. Could use `mc sense find entities cow` to get nearest cow coordinates, then use that as target? But the feed command likely expects an entity ID or maybe a mark? Not sure. Could use `mc farm feed @nearest_cow`? Not in cheatsheet. Perhaps we can use `mc farm feed` with no target? No.\n\nAlternative: Use `mc self interact X Y Z` on the cow's position. We need to get cow position via sense. So we need two commands: first sense to find cow, then interact. But we must output exact mc command(s). Could we chain via `mc meta batch`? Possibly but simpler: output two commands: one to sense find entities cow, then use that output? But we cannot embed output. The instruction: Output the EXACT mc command(s) to accomplish a task. Likely we need to provide a single command that does both? Maybe `mc farm feed cow wheat`? Not in cheatsheet.\n\nCheck other commands: `mc farm lure ANIMAL --to MARK` — walk animal to mark. Not relevant.\n\n`mc farm breed PAIR` — feed two adults.\n\nThus `mc farm feed` is the correct verb.\n\nWe need to specify TARGET. Perhaps we can use `mc farm feed @e[type=cow,limit=1]`? Not in cheatsheet.\n\nMaybe the bot automatically selects nearest if omitted? The description",
+    "correct": [
+      "mc farm feed cow wheat",
+      "mc farm feed cow --item wheat"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": [
+      "mc farm breed PAIR` — feed two adults."
+    ]
+  },
+  {
+    "kind": "direct",
+    "task_id": "find_iron",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc find_blocks iron_ore 32 1\n```",
+    "correct": [
+      "mc find_blocks iron_ore 32"
+    ],
+    "pass": true,
+    "matchType": "prefix",
+    "match": "mc find_blocks iron_ore 32"
+  },
+  {
+    "kind": "direct",
+    "task_id": "find_iron",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc sense find blocks iron_ore 32\n```",
+    "correct": [
+      "mc sense find blocks iron_ore 32"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc sense find blocks iron_ore 32"
+  },
+  {
+    "kind": "direct",
+    "task_id": "find_iron",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc find_blocks iron_ore 32\n```",
+    "correct": [
+      "mc find_blocks iron_ore 32"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc find_blocks iron_ore 32"
+  },
+  {
+    "kind": "direct",
+    "task_id": "find_iron",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc sense find blocks iron_ore 32\n```",
+    "correct": [
+      "mc sense find blocks iron_ore 32"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc sense find blocks iron_ore 32"
+  },
+  {
+    "kind": "direct",
+    "task_id": "open_chest_mark",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc chest @treasure\n```",
+    "correct": [
+      "mc chest @treasure"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc chest @treasure"
+  },
+  {
+    "kind": "direct",
+    "task_id": "open_chest_mark",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc store open @treasure\n```",
+    "correct": [
+      "mc store open @treasure"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc store open @treasure"
+  },
+  {
+    "kind": "direct",
+    "task_id": "open_chest_mark",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "```\nmc chest @treasure\n```",
+    "correct": [
+      "mc chest @treasure"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc chest @treasure"
+  },
+  {
+    "kind": "direct",
+    "task_id": "open_chest_mark",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "```\nmc store open @treasure\n```",
+    "correct": [
+      "mc store open @treasure"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc store open @treasure"
+  },
+  {
+    "kind": "direct",
+    "task_id": "fight_zombie",
+    "grammar": "v1",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc fight zombie 6\n```",
+    "correct": [
+      "mc fight zombie 6",
+      "mc fight zombie 6 30"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc fight zombie 6"
+  },
+  {
+    "kind": "direct",
+    "task_id": "fight_zombie",
+    "grammar": "v2",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc fight loop zombie 6\n```",
+    "correct": [
+      "mc fight loop zombie 6",
+      "mc fight loop zombie 6 30"
+    ],
+    "pass": true,
+    "matchType": "exact",
+    "match": "mc fight loop zombie 6"
+  },
+  {
+    "kind": "direct",
+    "task_id": "fight_zombie",
+    "grammar": "v1",
+    "model": "nemotron-120b",
+    "output": "We need to output the exact mc command(s) to engage a zombie in melee combat: fight loop until it dies or HP drops below 6.\n\nWe have a command: `mc fight [TARGET] [RETREAT_HEALTH] [DURATION]`. So we need to specify target (zombie) and retreat health (6). Duration optional.\n\nWe need to identify the zombie target. Likely we need to specify the target entity. Could be by name? The fight command expects a TARGET argument. Probably we can give entity ID or maybe we can use nearest zombie? Not sure. The cheatsheet doesn't show a way to select nearest zombie. There is `mc find_entities [TYPE] [RADIUS]` to locate entities. But we need to engage a zombie in melee combat: fight loop until it dies or HP drops below 6. Probably we can just run `mc fight zombie 6`. Does the fight command accept entity type? Let's check: In combat section: `mc fight [TARGET] [RETREAT_HEALTH] [DURATION]` — Fight loop on TARGET until dead or HP threshold. So TARGET likely is an entity identifier (maybe entity ID or player name). For mobs, maybe we can use the entity type? Not sure.\n\nAlternatively, we could use `mc bg_fight [TARGET] [RETREAT_HEALTH] [DURATION]` for background fight loop. But the task says engage a zombie in melee combat: fight loop until it dies or HP drops below 6. That's exactly the fight command.\n\nWe need to specify the zombie target. Perhaps we can use `@e[type=zombie,limit=1,sort=nearest]`? Not sure if the CLI supports selector syntax. The cheatsheet doesn't mention selectors. However, there is `mc find_entities [TYPE] [RADIUS]` which returns list. But we need to pick one.\n\nMaybe we can just use `mc fight zombie 6` and assume the system interprets \"zombie\" as nearest zombie. Or we could first find a zombie: `mc find_entities zombie 16` to get IDs, then use the first ID in fight. But we need to output only mc command(s). Could be multiple commands: first find, then fight.\n\nBut the task: \"Engage a zombie in melee combat: fight loop until it dies or HP drops below 6.\" Probably they expect a single command: `mc fight zombie 6`. Let's check if there is any example in cheatsheet: Not given. However, there is `mc attack [TARGET]` (kill, a) — Single attack on TARGET (one swing). So TARGET likely can be entity name or ID. For zombie, maybe we can use \"zombie\". Similarly, `mc crit [TARGET]`",
+    "correct": [
+      "mc fight zombie 6",
+      "mc fight zombie 6 30"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": []
+  },
+  {
+    "kind": "direct",
+    "task_id": "fight_zombie",
+    "grammar": "v2",
+    "model": "nemotron-120b",
+    "output": "We need to output the exact mc command(s) to engage a zombie in melee combat: fight loop until it dies or HP drops below 6.\n\nWe have fight loop command: `mc fight loop [TARGET] [HP] [DUR]`. The description: \"fight until dead\". The parameters: TARGET, HP, DUR. Likely we can specify target entity and HP threshold? The task: fight loop until it dies or HP drops below 6. So we need to set HP threshold to 6? The command likely takes HP as the threshold to stop if HP drops below that? Not sure but we can assume: `mc fight loop <target> 6` will loop until target dies or HP drops below 6. We need to identify the zombie target. We need to locate a zombie entity. Use sense find entities TYPE [R] to locate zombies. Then we can get its coordinates or maybe we can target by entity ID? The fight loop likely expects a target entity (maybe by ID or name). We might need to first find a zombie, then use fight loop targeting it.\n\nWe can do: `mc sense find entities zombie` to get nearest zombie. That will output something like maybe list of entities with IDs. But we need to capture the target. However, we cannot store variables; we just need to output commands. Perhaps we can use `mc fight loop zombie`? Not sure if TARGET can be a type. The cheatsheet says `[TARGET]` maybe entity ID or player name. Could we use `mc fight loop zombie`? Probably not.\n\nAlternative: Use `mc fight loop` without target? It might auto-target nearest hostile? Not sure.\n\nWe could use `mc fight loop` with no arguments, which might engage whatever is in combat? But the task says engage a zombie in melee combat: fight loop until it dies or HP drops below 6. So we need to target a zombie.\n\nWe could first run `mc sense find entities zombie 10` to locate a zombie within 10 blocks, then use the output to feed into fight loop? But we cannot parse output in this environment; we just need to output commands. Possibly we can chain: `mc sense find entities zombie 10` then `mc fight loop <target> 6`. But we need to know the target ID from the sense output. Since we cannot know it ahead, maybe we assume the bot will automatically target the nearest zombie if we just say `mc fight loop zombie 6`? Not in cheatsheet.\n\nLet's examine other commands: `mc fight attack [TARGET]` - single swing. So TARGET likely is an entity identifier. How to get that? Perhaps we can use `mc sense look` to see what's directly ahead, which could be a zombie. Then we can attack it. But for loop, we need to keep fighting.\n\nMaybe we can",
+    "correct": [
+      "mc fight loop zombie 6",
+      "mc fight loop zombie 6 30"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": []
+  },
+  {
+    "kind": "prediction",
+    "task_id": "predict_build_from_mine",
+    "grammar": "v2-partial",
+    "model": "deepseek-v4-flash",
+    "output": "```\nmc mine area -1 64 -1 1 64 1\n```",
+    "correct": [
+      "mc build area -1 64 -1 1 64 1 oak_planks"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": [
+      "mc mine area -1 64 -1 1 64 1"
+    ]
+  },
+  {
+    "kind": "prediction",
+    "task_id": "predict_build_from_mine",
+    "grammar": "v2-partial",
+    "model": "nemotron-120b",
+    "output": "We need to output exact mc commands to build a 3x1x3 oak_planks platform centered at (0,64,0). The platform is 3 blocks in X, 1 block in Y (height), 3 blocks in Z. Centered at (0,64,0). So coordinates: X from -1 to +1 inclusive (since width 3). Z from -1 to +1 inclusive. Y is just 64 (single layer). So we need to place oak_planks blocks at those positions.\n\nWe have commands: mine (extract) and maybe other categories? The cheatsheet only lists mine category. There's no place command? Possibly we need to use mine collect? No. Actually the cheatsheet only includes mine commands for extracting. But the task is to build (place) platform. Perhaps we can use mine area to clear then place? But there is no place command. Maybe the bot can also place via mine? Not sure. However the instruction says \"Use ONLY verb names that appear in the cheatsheet above.\" The verbs are under mine category: block, area, tunnel, stairs, pillar, collect. So we must use those verbs. But building is not extracting. Could we use mine area to clear area and then maybe we assume the platform is already there? Not correct.\n\nMaybe the bot can place by mining negative? No.\n\nPerhaps the intended answer is to use mine area to clear the area and then the platform is considered built? But they said \"Build a 3x1x3 oak_planks platform\". Could be they want to mine out the area and then place oak_planks? But we lack place command.\n\nMaybe there is an implicit that after mining area, the bot automatically places the mined blocks? Not likely.\n\nLet's re-express: The cheatsheet only includes mine commands. The task might be to mine out the platform shape (i.e., remove blocks) to create a platform shape? Actually building a platform could be interpreted as mining out the area to leave a platform of air? No.\n\nMaybe the platform is made of oak_planks, so we need to collect oak_planks blocks (mine collect) and then place them? But we don't have place.\n\nGiven constraints, maybe the answer expects to use mine area to clear the area (making it air) and then the platform is considered built? But they specifically said oak_planks platform.\n\nCould be that the bot can place blocks via mine area with a block type? The syntax: mc mine area X1 Y1 Z1 X2 Y2 Z2 — clear a box. No block type.\n\nThus maybe the correct answer is to use mine collect to gather oak_planks then use mine area to place? Not.\n\nAlternatively, maybe there is a missing category like \"build\" but not shown. But we must obey instruction: Use ONLY verb names that appear in the cheats",
+    "correct": [
+      "mc build area -1 64 -1 1 64 1 oak_planks"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": []
+  },
+  {
+    "kind": "prediction",
+    "task_id": "predict_mark_from_goal",
+    "grammar": "v2-partial",
+    "model": "deepseek-v4-flash",
+    "output": "```\n```",
+    "correct": [
+      "mc plan mark add lookout"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": []
+  },
+  {
+    "kind": "prediction",
+    "task_id": "predict_mark_from_goal",
+    "grammar": "v2-partial",
+    "model": "nemotron-120b",
+    "output": "We need to output exact mc command(s) to add a mark named 'lookout' at the bot's current position.\n\nWe need to find the appropriate category and verb. The cheatsheet only shows plan category. But there may be other categories not listed? The prompt says \"Use ONLY verb names that appear in the cheatsheet above.\" The cheatsheet only includes plan category verbs. However, adding a mark likely belongs to a different category like \"world\" or \"mark\". But we are restricted to verbs that appear in the cheatsheet. That seems contradictory. Perhaps the cheatsheet is just an example; we need to infer that there is a category like \"mark\" with verb \"add\". But the instruction says \"Use ONLY verb names that appear in the cheatsheet above.\" The cheatsheet above lists verbs: goal add, goal list, goal set, goal status, goal remove, goal preset list, goal preset load. Those are all under plan category. None of those are about adding a mark.\n\nMaybe the task expects us to use \"plan goal add\" to add a goal? But the task is to add a mark named 'lookout' at the bot's current position. Could be that \"mark\" is a type of goal? Or maybe there is a category \"mark\" with verb \"add\". But the instruction says use only verb names that appear in the cheatsheet above. The verb \"add\" appears in the cheatsheet (goal add). So we can use \"add\" as verb, but we need to pick a category. The category must be something that exists; but we don't know. However, we can infer that there is a category \"mark\". The cheatsheet didn't list it, but maybe it's implied that we can use any category, but the verb must be from the cheatsheet. The verb \"add\" is allowed. So we could do: `mc mark add lookout`. But we need to specify at the bot's current position. Maybe the command automatically uses current position if no coordinates given. Or we need to add args for position? Not sure.\n\nAlternatively, maybe there is a category \"world\" with verb \"mark\". But verb \"mark\" not in cheatsheet.\n\nGiven the constraints, the only safe answer is to use the plan category? But adding a mark is not a goal. However, maybe the bot treats marks as goals? Unlikely.\n\nLet's re-read: The cheatsheet is \"mc command cheatsheet (v2 — proposed categorical grammar)\". It lists Discovery commands: `mc <category>` list all verbs in that category. So we could first run `mc mark` to see verbs. But we cannot output that because we need to output the command to accomplish the task. We could output multiple commands: first list verbs, then add mark. But the task is to add a mark. The simplest is `mc",
+    "correct": [
+      "mc plan mark add lookout"
+    ],
+    "pass": false,
+    "matchType": "none",
+    "match": null,
+    "mc_lines": []
+  }
+]
