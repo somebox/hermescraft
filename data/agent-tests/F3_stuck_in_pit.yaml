@@ -1,0 +1,77 @@
+# F3 — stuck recovery: bot dropped in a 2-deep stone pit; goal is on
+# the surface 3 blocks away. Pathfinder will report NAV_BLOCKED for a
+# direct walking goto because the pit walls are too tall to step out.
+#
+# Bot has a wooden_pickaxe. To recover the agent needs to either:
+#   - mc dig 0 65 0   (one of the pit walls — opens a stair)
+#   - mc place 0 64 0 (place a block under self then jump out)
+#   - mc through (won't help, no door)
+# So the cleanest fix is "dig a wall block, walk out".
+#
+# Naive failure: agent calls `mc goto 3 66 0` repeatedly, getting
+# NAV_BLOCKED each time. A good agent reads the error, observes the
+# 2-block-deep pit on `mc nearby`, and digs or places to recover.
+#
+# Pass criteria:
+#   - Final bot position y >= 66 (on the surface, not in the pit).
+#   - Total mc/cli ≤ 12.
+#
+# (We don't strictly require reaching (3, 66, 0); "got out of the pit"
+# is the real test.)
+
+agent_test_id: F3_stuck_in_pit
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: get to the surface (y >= 68). You're stuck at the bottom of a
+  3-block-tall hole in stone.
+
+  Tips:
+    - You have a wooden_pickaxe. You can dig stone blocks for cobblestone.
+    - `mc goto` alone won't work — pathfinder doesn't dig or place.
+    - `mc pillar_step cobblestone 3` is the standard "tower up" verb —
+      it jumps and places a block underfoot, repeated.
+    - `mc stair_up` digs an ascending staircase.
+    - You can also `mc dig` the wall and walk out a stair you've carved.
+
+  Stop once you've climbed out (y >= 68).
+
+skills: [minecraft-survival, minecraft-navigation]
+max_turns: 12
+timeout_seconds: 240
+
+expect:
+  bot_y_at_least: 68
+  mc_cli_invocations_max: 15
+
+verify_after_prep:
+  - { block: stone, min_count: 80 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 67 10 minecraft:stone"
+  # Carve a 1x1 hole at (0, 65..66, 0) so the bot is 2 blocks deep
+  # (its head at y=66, surface at y=67).
+  - "execute in landfolk-test run setblock 0 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock 0 66 0 minecraft:air"
+  - "execute in landfolk-test run setblock 0 67 0 minecraft:air"   # ceiling open
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

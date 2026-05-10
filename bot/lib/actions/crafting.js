@@ -1,8 +1,9 @@
 import { Vec3 } from 'vec3';
-import { ingredientCountsFromSlots } from '../shared/recipe-ingredients.js';
+import { ingredientCountsFromSlots, recipeIngredientMap } from '../shared/recipe-ingredients.js';
+import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
 
 export function createCraftingActions(deps) {
-  const { ctx, ensureBot, goals, sleep, resolveCraftItemName, buildCraftPlan, ACTIONS, loadLocations } = deps;
+  const { ctx, ensureBot, goals, sleep, resolveCraftItemName, buildCraftPlan, ACTIONS, loadLocations, getMyName, log } = deps;
   return {
     async craft({ item, count = 1 }) {
       // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc craft) ─
@@ -158,6 +159,16 @@ export function createCraftingActions(deps) {
       }
 
       // ── Attempt craft. Failures here are catch-all INTERRUPTED-ish. ──
+      // For table-required recipes, mineflayer 4.23 + Paper 1.21 has a race
+      // where b.craft silently no-ops if the bot isn't oriented + close
+      // enough at the exact moment the open-window packet fires. Explicitly
+      // lookAt the table and brief settle before crafting.
+      if (requiresBench && table) {
+        try {
+          await b.lookAt(table.position.offset(0.5, 0.5, 0.5), true);
+          await sleep(150);
+        } catch { /* best-effort */ }
+      }
       try {
         await b.craft(recipe, count, requiresBench ? table : undefined);
       } catch (err) {
@@ -216,6 +227,26 @@ export function createCraftingActions(deps) {
       }
 
       if (craftedDelta < 1) {
+        // Mineflayer's craft() against Paper 1.21+ has a long-standing bug
+        // where 3x3 table-required recipes complete the click sequence but
+        // the server doesn't materialize the result (see mineflayer issue
+        // #3399 and friends). Ingredients are placed in the grid then
+        // returned to inventory unchanged. When this happens, fall back to
+        // a server-side craft via PaperMCP: clear ingredients, give result.
+        // Only attempt fallback when ingredients are still in inventory
+        // (i.e. mineflayer didn't half-consume them).
+        const requiredIngs = recipeIngredientMap(recipe, ctx.mcData);
+        const ingsIntact = Object.entries(requiredIngs).every(
+          ([n, perCraft]) => (endedInventory[n] || 0) >= perCraft * count,
+        );
+        if (requiresBench && ingsIntact && paperMcpConfig()) {
+          const fb = await serverSideCraftFallback({
+            itemName, count, recipe, ctx, b,
+            getMyName, log, sleep, inventoryAt,
+            startedInventory, requiredIngs, expectedDelta,
+          });
+          if (fb) return fb;
+        }
         return {
           ok: false,
           error: {
@@ -617,5 +648,84 @@ export function createCraftingActions(deps) {
         result: `Smelted ${outputName} x${smeltedCount}${existingOutput ? ` (+ ${existingOutput.count}x ${existingOutput.name} already in furnace)` : ''}`,
       };
     },
+  };
+}
+
+/**
+ * Server-side craft fallback for table-required (3x3) recipes that mineflayer's
+ * b.craft cannot complete on Paper 1.21+ (open mineflayer issue #3399). Consumes
+ * ingredients via /clear and gives the result via /give through PaperMCP. Verifies
+ * via inventory delta. Returns null if PaperMCP is unavailable or the fallback
+ * itself fails — caller falls through to the original INTERRUPTED error.
+ */
+async function serverSideCraftFallback({
+  itemName, count, recipe, ctx, b,
+  getMyName, log, sleep, inventoryAt,
+  startedInventory, requiredIngs, expectedDelta,
+}) {
+  const pmcpCfg = paperMcpConfig();
+  if (!pmcpCfg) return null;
+  const username = getMyName();
+  if (!username) return null;
+  if (log) log(`[craft] server-side fallback for ${itemName} x${count} (mineflayer delta=0 bug)`);
+
+  const totalIngs = {};
+  for (const [n, perCraft] of Object.entries(requiredIngs)) {
+    totalIngs[n] = perCraft * count;
+  }
+
+  try {
+    for (const [name, qty] of Object.entries(totalIngs)) {
+      const r = await executeServerCommand(pmcpCfg, `clear ${username} minecraft:${name} ${qty}`);
+      if (!r.ok) {
+        if (log) log(`[craft] fallback clear ${name}x${qty} failed: ${r.error}`);
+        return null;
+      }
+    }
+    const outName = recipe.result?.name || itemName;
+    const outCount = (recipe.result?.count || 1) * count;
+    const r = await executeServerCommand(pmcpCfg, `give ${username} minecraft:${outName} ${outCount}`);
+    if (!r.ok) {
+      if (log) log(`[craft] fallback give ${outName}x${outCount} failed: ${r.error}`);
+      return null;
+    }
+  } catch (err) {
+    if (log) log(`[craft] fallback threw: ${err?.message || err}`);
+    return null;
+  }
+
+  // Wait for inventory packets to settle.
+  for (let i = 0; i < 10; i++) {
+    await sleep(100);
+    const inv = inventoryAt();
+    if ((inv[itemName] || 0) - (startedInventory[itemName] || 0) >= 1) break;
+  }
+  const endedInventory = inventoryAt();
+  const craftedDelta = (endedInventory[itemName] || 0) - (startedInventory[itemName] || 0);
+  const ingredientsConsumed = {};
+  for (const [n, before] of Object.entries(startedInventory)) {
+    const after = endedInventory[n] || 0;
+    if (after < before) ingredientsConsumed[n] = before - after;
+  }
+  if (craftedDelta < 1) {
+    if (log) log(`[craft] fallback ran but inventory delta still 0; bailing`);
+    return null;
+  }
+  return {
+    ok: true,
+    data: {
+      crafted_count: craftedDelta,
+      requested_count: count,
+      expected_per_craft: recipe.result?.count || 1,
+      recipe_used: {
+        requires_table: true,
+        result_per_craft: recipe.result?.count || 1,
+        fallback: 'papermcp_server_side',
+      },
+      ingredients_consumed: ingredientsConsumed,
+      started_inventory: startedInventory,
+      ended_inventory: endedInventory,
+    },
+    result: `Crafted ${itemName} x${craftedDelta} (server-side fallback)`,
   };
 }

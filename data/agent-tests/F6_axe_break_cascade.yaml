@@ -1,0 +1,90 @@
+# F6 — dependency cascade: bot mid-mining, axe broken, must recover.
+#
+# Bot at (0, 65, 0) inventory: 4 oak_log (just-felled tree's worth), nothing
+# else. There is no crafting table anywhere, no axe. A second oak tree
+# (4 logs) stands at (5, 65, 0)..(5, 68, 0) — the wood the bot should
+# resume mining once it has a working axe.
+#
+# To recover, agent must:
+#   1. craft oak_planks from log(s)        (inventory craft, 2x2)
+#   2. craft sticks from planks            (inventory craft)
+#   3. craft crafting_table from planks    (inventory craft)
+#   4. place the crafting_table somewhere
+#   5. craft wooden_axe at the table       (3x3 — table required)
+#   6. mc collect oak_log 1 (or mc dig)    (mine with the new axe)
+#
+# Common failures:
+#   - Agent tries mc collect oak_log immediately and loops on
+#     "no tool" errors instead of crafting.
+#   - Agent tries to craft wooden_axe without first placing a
+#     crafting_table (3x3 recipes need a table).
+#   - Agent doesn't realize that planks → sticks → table → axe is
+#     a 4-step chain and gives up.
+#
+# Pass criteria: bot ends with a wooden_axe (or stone_axe) AND has
+# actually mined at least one log (mc collect or mc dig appears in
+# tool calls). We don't check log COUNT because a thrifty agent may
+# burn most of its starting logs on planks then re-stock.
+
+agent_test_id: F6_axe_break_cascade
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. Your axe just broke. You've been
+  asked to keep mining wood.
+
+  The `mc` CLI is on PATH. Use it to check inventory, scan surroundings,
+  craft what you need, and resume mining.
+
+  Notes:
+    - 3x3 recipes (axes, pickaxes) need a crafting_table nearby.
+    - 2x2 recipes (planks, sticks, crafting_table itself) can be done
+      from inventory.
+    - If a command fails, read the error — it often tells you what's
+      missing.
+
+  Stop when you have a working axe AND have mined at least 1 more log.
+
+skills: [minecraft-survival, minecraft-building]
+max_turns: 20
+timeout_seconds: 300
+
+expect:
+  bot_inventory_any:
+    wooden_axe: 1
+    stone_axe: 1
+    iron_axe: 1
+    diamond_axe: 1
+    netherite_axe: 1
+  # Demonstrate the agent actually went mining (not just crafted and stopped).
+  mc_verbs_include_any: [collect, dig, mine, harvest, tunnel]
+
+verify_after_prep:
+  - { block: oak_log, min_count: 4 }     # the standing tree to mine
+  # (the bot's starting 4 oak_log are in inventory, not world-visible)
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  # Standing oak tree at x=5, 4 blocks tall
+  - "execute in landfolk-test run setblock 5 65 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 5 66 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 5 67 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 5 68 0 minecraft:oak_log"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:oak_log 4"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

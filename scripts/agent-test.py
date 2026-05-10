@@ -103,10 +103,12 @@ def observe(bot_url: str) -> dict:
         return {}
 
 
-def predicate_results(spec: dict, agent_chat: str, end_state: dict) -> list:
+def predicate_results(spec: dict, agent_chat: str, end_state: dict,
+                       mc_verbs: list = None) -> list:
     """Evaluate each predicate, return list of {kind, pass, detail}."""
     expect = spec.get("expect", {}) or {}
     results = []
+    mc_verbs = mc_verbs or []
     chat_lower = (agent_chat or "").lower()
 
     if "agent_chat_contains" in expect:
@@ -115,11 +117,26 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict) -> list:
             results.append({"kind": f"chat_contains:{needle}", "pass": hit,
                              "detail": "" if hit else f"not in chat"})
 
+    if "agent_chat_contains_any" in expect:
+        needles = expect["agent_chat_contains_any"]
+        hits = [n for n in needles if n.lower() in chat_lower]
+        ok = len(hits) > 0
+        detail = (",".join(hits) + " found") if hits else f"none of {len(needles)} phrases in chat"
+        results.append({"kind": f"chat_contains_any:{len(needles)}_phrases",
+                         "pass": ok, "detail": detail})
+
     if "agent_chat_does_not_contain" in expect:
         for needle in expect["agent_chat_does_not_contain"]:
             hit = needle.lower() in chat_lower
             results.append({"kind": f"chat_does_not_contain:{needle}", "pass": not hit,
                              "detail": "" if not hit else f"unwanted phrase appeared"})
+
+    if "bot_y_at_least" in expect:
+        ymin = float(expect["bot_y_at_least"])
+        pos = (end_state.get("state") or {}).get("position") or {}
+        ok = pos and pos.get("y", -1) >= ymin
+        results.append({"kind": f"bot_y>={ymin}", "pass": bool(ok),
+                         "detail": f"y={pos.get('y') if pos else 'none'}"})
 
     if "bot_at" in expect:
         target = expect["bot_at"]
@@ -136,25 +153,56 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict) -> list:
             results.append({"kind": "bot_at", "pass": ok,
                              "detail": f"pos={pos}, target={target}, dist={dist:.1f}"})
 
+    def _inv_check(item, want, inv):
+        have = inv.get(item, 0)
+        if isinstance(want, str) and want.startswith(">="):
+            threshold = int(want[2:])
+            return have >= threshold, have, threshold, f"{item}>={threshold}"
+        if isinstance(want, str) and want.startswith(">"):
+            threshold = int(want[1:])
+            return have > threshold, have, threshold, f"{item}>{threshold}"
+        threshold = int(want)
+        return have >= threshold, have, threshold, f"{item}>={threshold}"
+
     if "bot_inventory" in expect:
         inv = end_state.get("inventory_summary") or {}
         for item, want in expect["bot_inventory"].items():
-            have = inv.get(item, 0)
-            if isinstance(want, str) and want.startswith(">="):
-                threshold = int(want[2:])
-                ok = have >= threshold
-                results.append({"kind": f"inv:{item}{want}", "pass": ok,
-                                 "detail": f"have={have}"})
-            elif isinstance(want, str) and want.startswith(">"):
-                threshold = int(want[1:])
-                ok = have > threshold
-                results.append({"kind": f"inv:{item}{want}", "pass": ok,
-                                 "detail": f"have={have}"})
-            else:
-                threshold = int(want)
-                ok = have >= threshold
-                results.append({"kind": f"inv:{item}>={threshold}", "pass": ok,
-                                 "detail": f"have={have}"})
+            ok, have, _, label = _inv_check(item, want, inv)
+            results.append({"kind": f"inv:{label}", "pass": ok, "detail": f"have={have}"})
+
+    if "bot_inventory_any" in expect:
+        # Passes if ANY listed item meets its threshold. Useful for tests
+        # like "has SOME working axe" without prescribing the tier.
+        inv = end_state.get("inventory_summary") or {}
+        items = expect["bot_inventory_any"]
+        passes = []
+        for item, want in items.items():
+            ok, have, _, label = _inv_check(item, want, inv)
+            if ok:
+                passes.append(f"{item}={have}")
+        any_pass = len(passes) > 0
+        def _lbl(k, v):
+            if isinstance(v, str) and (v.startswith(">=") or v.startswith(">")):
+                return f"{k}{v}"
+            return f"{k}>={v}"
+        label = " | ".join(_lbl(k, v) for k, v in items.items())
+        detail = ("; ".join(passes)) if passes else "none of: " + ", ".join(items.keys())
+        results.append({"kind": f"inv_any:{label}", "pass": any_pass, "detail": detail})
+
+    if "mc_cli_invocations_max" in expect:
+        cap = int(expect["mc_cli_invocations_max"])
+        have = len(mc_verbs)
+        ok = have <= cap
+        results.append({"kind": f"mc_cli_invocations<={cap}", "pass": ok,
+                         "detail": f"used {have}"})
+
+    if "mc_verbs_include_any" in expect:
+        wanted = expect["mc_verbs_include_any"]
+        hits = [v for v in wanted if v in mc_verbs]
+        ok = len(hits) > 0
+        label = "|".join(wanted)
+        detail = (",".join(hits) + " used") if hits else f"none of: {','.join(wanted)} in {mc_verbs}"
+        results.append({"kind": f"mc_verbs_include_any:{label}", "pass": ok, "detail": detail})
 
     if "world_block_at" in expect:
         for probe in expect["world_block_at"]:
@@ -224,21 +272,30 @@ def main():
     # so leftover state from a prior interrupted test can't leak in. Then
     # run prep. All three steps go through the batched rcon path so the
     # arena flickers for a fraction of a second instead of ~10s.
+    stage_times = {}
+    overall_t0 = time.time()
+
     print(f"  pre-prep tp + clean...", end="", flush=True)
+    _t = time.time()
     pre_cmds = ["execute in landfolk-test run tp Flint 52 65 52"]
     pre_cmds.extend(spec.get("cleanup") or [])
     run_rcon_batch(pre_cmds)
     time.sleep(0.5)
-    print(" ok")
+    stage_times["pre_prep"] = time.time() - _t
+    print(f" ok ({stage_times['pre_prep']:.1f}s)")
 
     print(f"  prep...", end="", flush=True)
+    _t = time.time()
     fixture_run(spec, "prep")
-    print(" ok")
+    stage_times["prep"] = time.time() - _t
+    print(f" ok ({stage_times['prep']:.1f}s)")
 
     # Settle: let mineflayer's block cache ingest the rcon changes.
     print(f"  settle (3s)...", end="", flush=True)
+    _t = time.time()
     time.sleep(3)
-    print(" ok")
+    stage_times["settle"] = time.time() - _t
+    print(f" ok ({stage_times['settle']:.1f}s)")
 
     # Verify prep: query bot's perception and check counts match spec.
     # Spec uses `verify_after_prep` as a list of { block, min_count } items.
@@ -293,6 +350,8 @@ def main():
     env["MC_API_URL"] = args.bot_url
     env["MC_USERNAME"] = "Flint"
 
+    _t = time.time()
+    stage_times["verify"] = _t - (overall_t0 + sum(stage_times.values()))
     print(f"  launching hermes...")
     t0 = time.time()
     agent_stdout = ""
@@ -320,8 +379,10 @@ def main():
         sys.exit(130)
 
     wall_s = time.time() - t0
+    stage_times["hermes"] = wall_s
     print(f"  hermes finished in {wall_s:.0f}s ({hermes_status})")
 
+    _t = time.time()
     post = observe(args.bot_url)
     post_actions = ((post.get("state") or {}).get("recent_actions") or [])
     new_actions = post_actions[: max(0, len(post_actions) - pre_count)] if len(post_actions) >= pre_count else post_actions
@@ -371,7 +432,7 @@ def main():
     for v in mc_verbs_used:
         verb_counts[v] = verb_counts.get(v, 0) + 1
 
-    preds = predicate_results(spec, agent_stdout, post)
+    preds = predicate_results(spec, agent_stdout, post, mc_verbs_used)
     all_pass = all(r["pass"] for r in preds) if preds else False
     verdict = "PASS" if all_pass and not timed_out else ("TIMEOUT" if timed_out else "FAIL")
 
@@ -405,10 +466,17 @@ def main():
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
+    stage_times["post"] = time.time() - _t
+
+    _t = time.time()
     try:
         fixture_run(spec, "cleanup")
     except Exception as e:
         print(f"  WARN: cleanup error: {e}", file=sys.stderr)
+    stage_times["cleanup"] = time.time() - _t
+
+    report["stage_times"] = {k: round(v, 1) for k, v in stage_times.items()}
+    report["total_seconds"] = round(time.time() - overall_t0, 1)
 
     stamp = report["timestamp"].replace(":", "-").replace(".", "-")
     out_path = ROOT / "data" / "agent-tests" / "runs" / f"{test_id}-{stamp}.json"
@@ -417,6 +485,8 @@ def main():
         json.dump(report, f, indent=2)
 
     verb_summary = ", ".join(f"{k}×{v}" for k, v in sorted(verb_counts.items(), key=lambda kv: -kv[1])[:5]) or "(none)"
+    timing_summary = " ".join(f"{k}={v:.1f}s" for k, v in stage_times.items())
+    print(f"  timing: total={report['total_seconds']:.1f}s | {timing_summary}")
     print(f"  {verdict}  {mc_cli_calls} mc/cli ({verb_summary}), {ok_false_count} ok:false, loop={loop_sig.get('max_streak', 0)}")
     for r in preds:
         flag = "✓" if r["pass"] else "✗"

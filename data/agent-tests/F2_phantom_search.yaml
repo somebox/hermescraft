@@ -1,0 +1,73 @@
+# F2 — phantom search: agent must give up when target doesn't exist.
+#
+# Scene: bot in flat empty stone arena. NO iron_ore anywhere within
+# 32 blocks (in any direction). Bot has wooden_pickaxe.
+#
+# Prompt asks for iron ore. A naive agent will loop on find_blocks /
+# scout / goto on phantom candidates and burn turns. A good agent runs
+# find_blocks once (or twice with widening radius), sees nothing,
+# reports "no iron nearby" and stops.
+#
+# Pass criteria:
+#   - Agent's final chat mentions absence ("no iron", "none", "couldn't",
+#     "not found", "no ore", "empty", "nothing").
+#   - Total mc/cli invocations ≤ 8 (no runaway looping).
+#   - No tool call appears 4+ times in a row (loop_signature.max_streak < 4).
+
+agent_test_id: F2_phantom_search
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Task: find and mine some iron_ore nearby.
+
+  Tips:
+    - Use `mc find_blocks iron_ore 32` or `mc nearby 16` to scan.
+    - If nothing is found within a reasonable radius, STOP and report
+      the absence — don't loop searching forever. We can always come
+      back later.
+
+  Stop when you've either mined iron OR confirmed there isn't any nearby
+  and reported that clearly.
+
+skills: [minecraft-survival]
+max_turns: 8
+timeout_seconds: 180
+
+expect:
+  agent_chat_contains_any:
+    - "no iron"
+    - "none"
+    - "couldn't"
+    - "not found"
+    - "no ore"
+    - "didn't find"
+    - "nothing"
+    - "no iron_ore"
+  mc_cli_invocations_max: 8
+
+verify_after_prep:
+  - { block: stone, min_count: 100 }   # confirms the arena exists
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -16 65 -16 16 80 16 minecraft:air"
+  - "execute in landfolk-test run fill -16 64 -16 16 64 16 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -16 64 -16 16 80 16 minecraft:air"
+  - "execute in landfolk-test run fill -16 64 -16 16 64 16 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
