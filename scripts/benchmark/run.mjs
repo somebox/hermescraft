@@ -2,13 +2,18 @@
 /**
  * mc command benchmark — score LLMs on composing mc commands correctly.
  *
- * Run:    node scripts/benchmark/run.mjs [--models a,b] [--tasks direct,composition]
- * Output: scripts/benchmark/runs/<timestamp>.json
+ * By default the prompt is REALISTIC: it includes the SOUL/persona text,
+ * a representative skill, the cheatsheet, and a real /observe snapshot.
+ * This mirrors what a production Hermes agent receives.
  *
- * Used for:
- *   1. Model selection — score every candidate, rank by accuracy/cost.
- *   2. Regression detection — compare a new run to the last; flag drops > 5pp.
- *   3. Pattern validation — when registry/cheatsheet changes, re-run.
+ * Use --syntax-only for the cheatsheet-only baseline (older/simpler shape).
+ *
+ * Usage:
+ *   node scripts/benchmark/run.mjs                      # realistic mode (default)
+ *   node scripts/benchmark/run.mjs --syntax-only        # cheatsheet only
+ *   node scripts/benchmark/run.mjs --models a,b
+ *   node scripts/benchmark/run.mjs --tasks direct
+ *   node scripts/benchmark/run.mjs --persona path.md   # alt SOUL file
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +27,9 @@ mkdirSync(RUNS_DIR, { recursive: true });
 
 const argv = process.argv.slice(2);
 const arg = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : undefined; };
+const has = (flag) => argv.includes(flag);
+
+const REALISTIC = !has('--syntax-only');
 
 const SECRETS = '/Users/foz/homelab/secrets.yaml';
 const keyMatch = readFileSync(SECRETS, 'utf8').match(/openrouter_api_key:\s*(\S+)/);
@@ -46,26 +54,40 @@ for (const f of taskFiles) {
 
 const cheatsheet = readFileSync(join(ROOT, 'docs/mc-cheatsheet.md'), 'utf8');
 
+// Realistic-mode fixtures: SOUL persona + a representative skill + a real observe
+let persona = '', skill = '', observeJson = '';
+if (REALISTIC) {
+  const personaFile = arg('--persona') || join(HERE, 'fixtures/persona-flint.md');
+  const skillFile = arg('--skill') || join(HERE, 'fixtures/skill-survival.md');
+  const observeFile = arg('--observe') || join(HERE, 'fixtures/observe-flint.json');
+  persona = readFileSync(personaFile, 'utf8');
+  skill = readFileSync(skillFile, 'utf8');
+  observeJson = readFileSync(observeFile, 'utf8');
+}
+
 function buildPrompt(task) {
-  return `You are operating a Minecraft bot via the \`mc\` CLI. Output the EXACT mc command(s) to accomplish a task.
+  const sections = [];
+  if (REALISTIC) {
+    sections.push('# Persona\n\n' + persona);
+    sections.push('# Skill: minecraft-survival\n\n' + skill);
+  }
+  sections.push('# Available `mc` commands\n\n' + cheatsheet);
+  if (REALISTIC) {
+    let pretty;
+    try { pretty = JSON.stringify(JSON.parse(observeJson), null, 2); } catch { pretty = observeJson; }
+    sections.push('# Current game state (mc observe output)\n\n```json\n' + pretty + '\n```');
+  }
+  sections.push(`# Output format
 
-# Available commands
-
-${cheatsheet}
-
-# Output format
-
-Reply with ONLY the mc command(s) inside a fenced code block. No prose, no explanation, no preamble. Example correct reply:
+Reply with ONLY the mc command(s) inside a fenced code block. No prose, no explanation, no preamble.
 
 \`\`\`
 mc some_verb arg1 arg2
 \`\`\`
 
-Use ONLY verb names that appear in the cheatsheet above.
-
-# Task
-
-${task}`;
+Use ONLY verb names that appear in the cheatsheet.`);
+  sections.push('# Task\n\n' + task);
+  return sections.join('\n\n');
 }
 
 async function callOR(modelId, prompt) {
@@ -141,11 +163,20 @@ if (sha.status === 0) gitSha = sha.stdout.toString().trim();
 const run = {
   timestamp: new Date().toISOString(),
   git_sha: gitSha,
+  realistic: REALISTIC,
   cheatsheet_bytes: cheatsheet.length,
+  persona_bytes: persona.length,
+  skill_bytes: skill.length,
+  observe_bytes: observeJson.length,
   models: models.map((m) => ({ id: m.id, label: m.label })),
   task_groups: Object.keys(taskGroups),
   results: [],
 };
+
+console.error(`Mode: ${REALISTIC ? 'realistic (persona + skill + observe + cheatsheet)' : 'syntax-only (cheatsheet only)'}`);
+console.error(`Models: ${models.map((m) => m.label).join(', ')}`);
+console.error(`Tasks: ${Object.entries(taskGroups).map(([g, t]) => g + '=' + t.length).join(', ')}`);
+console.error('');
 
 for (const [groupName, tasks] of Object.entries(taskGroups)) {
   for (const task of tasks) {
@@ -169,7 +200,7 @@ for (const [groupName, tasks] of Object.entries(taskGroups)) {
 }
 
 const stamp = run.timestamp.replace(/[:.]/g, '-');
-const outPath = join(RUNS_DIR, `${stamp}.json`);
+const outPath = join(RUNS_DIR, `${stamp}${REALISTIC ? '-realistic' : '-syntax'}.json`);
 writeFileSync(outPath, JSON.stringify(run, null, 2));
 console.error(`\nWrote ${outPath}`);
 
@@ -185,5 +216,5 @@ for (const r of run.results) {
 console.error('\n=== Summary ===');
 for (const [k, v] of Object.entries(summary).sort()) {
   const pct = ((v.pass / v.total) * 100).toFixed(0);
-  console.error(`  ${k.padEnd(40)}  ${v.pass}/${v.total}  (${pct}%)  ~$${v.cost.toFixed(4)}  ${(v.time / v.total).toFixed(0)}ms/call`);
+  console.error(`  ${k.padEnd(45)}  ${v.pass}/${v.total}  (${pct}%)  ~$${v.cost.toFixed(4)}  ${(v.time / v.total).toFixed(0)}ms/call`);
 }

@@ -42,6 +42,24 @@
       "cost_per_1m_out": 2.00,
       "tier": "cheap-openai",
       "in_production": false
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "label": "gemma-4-31b-it",
+      "cost_per_1m_in": 0.10,
+      "cost_per_1m_out": 0.40,
+      "tier": "cheap-google",
+      "in_production": false,
+      "note": "prices are placeholders — verify against OpenRouter"
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "label": "minimax-m2.5",
+      "cost_per_1m_in": 0.20,
+      "cost_per_1m_out": 1.00,
+      "tier": "cheap",
+      "in_production": false,
+      "note": "prices are placeholders — verify against OpenRouter"
     }
   ]
 }
