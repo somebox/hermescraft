@@ -320,6 +320,19 @@ async function main() {
   const first = cmdLine[0];
   const firstHit = resolveToken(first, aliasMap);
 
+  // Short-circuit `mc <cmd> --help` (and `-h`) before dispatch — prints the
+  // command's metadata and exits without an HTTP call. Lets agents discover
+  // arg shapes on demand instead of having to memorize them.
+  if (globals.help) {
+    if (globals.json) {
+      const all = introspectDefinitions({}, undefined);
+      printJson({ ok: true, command: 'help', data: { target: firstHit.canonicalName, definition: all[firstHit.canonicalName] ?? null } }, true);
+    } else {
+      printOneCommandHelp(firstHit);
+    }
+    process.exit(0);
+  }
+
   if (firstHit.canonicalName === 'batch') {
     const segments = expandBatchArgv(cmdLine.slice(1));
 

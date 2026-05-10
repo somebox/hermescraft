@@ -8,6 +8,7 @@ export function stripGlobalFlags(argv) {
   const rest = [];
   let json = false;
   let dryRun = false;
+  let help = false;
   /** @type {number|undefined} */
   let limit;
   /** @type {string[]|undefined} */
@@ -16,6 +17,7 @@ export function stripGlobalFlags(argv) {
     const a = argv[i];
     if (a === '--json') json = true;
     else if (a === '--dry-run' || a === '-n') dryRun = true;
+    else if (a === '--help' || a === '-h') help = true;
     else if (a.startsWith('--limit=')) limit = Number(a.slice('--limit='.length));
     else if (a === '--limit') {
       limit = Number(argv[i + 1]);
@@ -38,6 +40,7 @@ export function stripGlobalFlags(argv) {
     globals: {
       json,
       dryRun,
+      help,
       ...(limit !== undefined && !Number.isNaN(limit) ? { limit } : {}),
       ...(fields?.length ? { fields } : {}),
     },

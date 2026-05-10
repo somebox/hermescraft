@@ -60,21 +60,24 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc craft_plan oak_planks 4'],
   }),
   g('logistics', 'observe', ['log'], { method: 'GET', path: '/logistics', description: 'Logistics rollup', examples: ['mc logistics'] }),
-  g('inventory', 'observe', ['inv', 'i'], { method: 'GET', path: '/inventory', examples: ['mc inventory'] }),
+  g('inventory', 'observe', ['inv', 'i'], { description: 'List items in bot inventory', method: 'GET', path: '/inventory', examples: ['mc inventory'] }),
   g('nearby', 'observe', ['n'], {
+    description: 'List nearby blocks/entities within radius',
     method: 'GET',
     pathFn: (p) => `/nearby?radius=${encodeURIComponent(Number(p.radius) || 32)}`,
     argSchema: [{ key: 'radius', type: 'number', default: 32 }],
     examples: ['mc nearby 48'],
   }),
   g('map', 'observe', ['m'], {
+    description: 'Compact ASCII map of nearby terrain',
     method: 'GET',
     pathFn: (p) => `/map?radius=${encodeURIComponent(Number(p.radius) || 16)}`,
     argSchema: [{ key: 'radius', type: 'number', default: 16 }],
     examples: ['mc map 16'],
   }),
-  g('look', 'observe', ['survey'], { method: 'GET', path: '/look', examples: ['mc look'] }),
+  g('look', 'observe', ['survey'], { description: 'What the bot is currently facing', method: 'GET', path: '/look', examples: ['mc look'] }),
   g('scene', 'observe', ['perceive', 'vision'], {
+    description: 'Visible entities + landmarks in vision range',
     method: 'GET',
     pathFn: (p) => `/scene?range=${encodeURIComponent(Number(p.range ?? p.radius) || 16)}`,
     argSchema: [{ key: 'range', type: 'number', default: 16 }],
@@ -90,6 +93,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* Social / chat */
   g('chat', 'social', ['say'], {
+    description: 'Public chat message',
     method: 'POST',
     path: '/action/chat',
     argSchema: [{ key: 'message', type: 'string', required: true }],
@@ -97,19 +101,22 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc chat Hello'],
   }),
   g('read_chat', 'social', ['messages', 'msg'], {
+    description: 'Recent public chat messages',
     method: 'GET',
     pathFn: (p) => `/chat?count=${encodeURIComponent(Number(p.count) || 20)}`,
     argSchema: [{ key: 'count', type: 'number', default: 20 }],
   }),
   g('overhear', 'social', ['overheard', 'eavesdrop'], {
+    description: 'Recent chat from other bots/players (filtered)',
     method: 'GET',
     pathFn: (p) => `/overhear?count=${encodeURIComponent(Number(p.count) || 20)}`,
     argSchema: [{ key: 'count', type: 'number', default: 20 }],
   }),
-  g('social', 'social', [], { method: 'GET', path: '/social' }),
+  g('social', 'social', [], { description: 'Social state: nearby players + interactions', method: 'GET', path: '/social' }),
 
   /* Movement */
   g('goto', 'movement', ['go', 'g'], {
+    description: 'Walk to absolute block coordinates',
     method: 'POST',
     path: '/action/goto',
     argSchema: [
@@ -128,6 +135,7 @@ export const RAW_COMMAND_DEFS = [
     examples: [`mc goto 100 64 -200`],
   }),
   g('goto_near', 'movement', ['near'], {
+    description: 'Walk to within RANGE blocks of target',
     method: 'POST',
     path: '/action/goto_near',
     argSchema: [
@@ -147,12 +155,14 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc goto_near X Y Z [RANGE]',
   }),
   g('follow', 'movement', ['f'], {
+    description: 'Follow a player by name',
     method: 'POST',
     path: '/action/follow',
     argSchema: [{ key: 'player', type: 'string', required: true }],
     bodyFn: (p) => JSON.stringify({ player: p.player }),
   }),
   g('look_at', 'movement', [], {
+    description: 'Turn the bot to face X Y Z',
     method: 'POST',
     path: '/action/look',
     argSchema: [
@@ -162,10 +172,11 @@ export const RAW_COMMAND_DEFS = [
     ],
     bodyFn: (p) => JSON.stringify({ x: p.x, y: p.y, z: p.z }),
   }),
-  g('stop', 'movement', [], { method: 'POST', path: '/action/stop', bodyFn: () => empty }),
+  g('stop', 'movement', [], { description: 'Cancel current movement task', method: 'POST', path: '/action/stop', bodyFn: () => empty }),
 
   /* Mining / gather */
   g('collect', 'world', ['mine', 'c'], {
+    description: 'Find + mine N of a block type within radius',
     method: 'POST',
     path: '/action/collect',
     argSchema: [
@@ -176,6 +187,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc collect BLOCK [COUNT]',
   }),
   g('dig', 'world', ['d'], {
+    description: 'Break the block at X Y Z (single block)',
     method: 'POST',
     path: '/action/dig',
     argSchema: [
@@ -226,8 +238,9 @@ export const RAW_COMMAND_DEFS = [
     },
     examples: [`mc pillar_step`, `mc pillar_step 5`, `mc pillar_step cobblestone 10`, `mc pillar_step dirt 20`],
   }),
-  g('pickup', 'world', ['p'], { method: 'POST', path: '/action/pickup', bodyFn: () => empty }),
+  g('pickup', 'world', ['p'], { description: 'Walk to + collect a nearby item drop', method: 'POST', path: '/action/pickup', bodyFn: () => empty }),
   g('find_blocks', 'world', ['find', 'fb'], {
+    description: 'Locate blocks of TYPE within radius (no mining)',
     method: 'POST',
     path: '/action/find_blocks',
     argSchema: [
@@ -239,6 +252,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc find_blocks BLOCK [RADIUS] [COUNT]',
   }),
   g('find_entities', 'world', ['fe'], {
+    description: 'Locate entities of TYPE within radius',
     method: 'POST',
     path: '/action/find_entities',
     argSchema: [
@@ -262,6 +276,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* Craft */
   g('craft', 'craft', ['cr'], {
+    description: 'Craft ITEM [COUNT] using inventory + nearby crafting table',
     method: 'POST',
     path: '/action/craft',
     argSchema: [
@@ -272,12 +287,14 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc craft ITEM [COUNT]',
   }),
   g('recipes', 'craft', ['recipe', 'r'], {
+    description: 'List craftable items given current inventory',
     method: 'POST',
     path: '/action/recipes',
     argSchema: [{ key: 'item', type: 'string', required: true }],
     bodyFn: (p) => JSON.stringify({ item: p.item }),
   }),
   g('smelt', 'craft', ['sm'], {
+    description: 'Smelt INPUT [COUNT] in nearby furnace (foreground)',
     method: 'POST',
     path: '/action/smelt',
     argSchema: [
@@ -294,6 +311,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc smelt INPUT [FUEL] [COUNT]   # synchronous; blocks ~12s per item',
   }),
   g('bg_smelt', 'task', ['bsm'], {
+    description: 'Background smelt batch',
     method: 'POST',
     path: '/task/smelt',
     argSchema: [
@@ -312,12 +330,14 @@ export const RAW_COMMAND_DEFS = [
 
   /* Combat */
   g('attack', 'combat', ['kill', 'a'], {
+    description: 'Single attack on TARGET (one swing)',
     method: 'POST',
     path: '/action/attack',
     bodyFn: (p) => (p.target ? JSON.stringify({ target: p.target }) : empty),
     argSchema: [{ key: 'target', type: 'string', default: '' }],
   }),
   g('fight', 'combat', [], {
+    description: 'Fight loop on TARGET until dead or HP threshold',
     method: 'POST',
     path: '/action/fight',
     bodyFn: (p) =>
@@ -334,6 +354,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc fight [TARGET] [RETREAT_HEALTH] [DURATION]',
   }),
   g('bg_fight', 'task', [], {
+    description: 'Background fight loop',
     method: 'POST',
     path: '/task/fight',
     bodyFn: (p) =>
@@ -393,7 +414,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /* eat / equip */
-  g('eat', 'combat', ['e'], { method: 'POST', path: '/action/eat', bodyFn: () => empty }),
+  g('eat', 'combat', ['e'], { description: 'Eat the best food in inventory', method: 'POST', path: '/action/eat', bodyFn: () => empty }),
   g('feed_mob', 'world', ['feed', 'use_on_mob'], {
     method: 'POST',
     path: '/action/feed_mob',
@@ -408,6 +429,7 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc feed_mob chicken', 'mc feed_mob cow --item wheat', 'mc feed_mob cow wheat'],
   }),
   g('equip', 'world', ['eq'], {
+    description: 'Equip ITEM to hand or armor SLOT',
     method: 'POST',
     path: '/action/equip',
     argSchema: [
@@ -430,6 +452,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* build */
   g('place', 'world', ['pl'], {
+    description: 'Place a block at X Y Z (block from hand)',
     method: 'POST',
     path: '/action/place',
     argSchema: [
@@ -448,6 +471,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc place BLOCK X Y Z',
   }),
   g('fill', 'world', [], {
+    description: 'Fill an axis-aligned box with BLOCK',
     method: 'POST',
     path: '/task/place_fill',
     bodyFn: (p) =>
@@ -609,6 +633,7 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
   g('interact', 'world', ['use_block'], {
+    description: 'Right-click block at X Y Z (door/lever/button)',
     method: 'POST',
     path: '/action/interact',
     argSchema: [
@@ -618,10 +643,11 @@ export const RAW_COMMAND_DEFS = [
     ],
     bodyFn: (p) => JSON.stringify({ x: p.x, y: p.y, z: p.z }),
   }),
-  g('close', 'world', [], { method: 'POST', path: '/action/close_screen', bodyFn: () => empty }),
+  g('close', 'world', [], { description: 'Close currently-open container', method: 'POST', path: '/action/close_screen', bodyFn: () => empty }),
 
-  g('use', 'world', ['u'], { method: 'POST', path: '/action/use', bodyFn: () => empty }),
+  g('use', 'world', ['u'], { description: 'Activate held item (right-click in air)', method: 'POST', path: '/action/use', bodyFn: () => empty }),
   g('toss', 'world', ['drop'], {
+    description: 'Drop ITEM [COUNT] from inventory',
     method: 'POST',
     path: '/action/toss',
     bodyFn: (p) =>
@@ -660,6 +686,7 @@ export const RAW_COMMAND_DEFS = [
     }),
   }),
   g('wait', 'world', ['w'], {
+    description: 'Pause N seconds (no-op until timeout)',
     method: 'POST',
     path: '/action/wait',
     argSchema: [{ key: 'seconds', type: 'number', default: 5 }],
@@ -668,6 +695,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* chat_to / whisper */
   g('chat_to', 'social', [], {
+    description: 'Direct chat to PLAYER',
     method: 'POST',
     path: '/action/chat_to',
     argSchema: [
@@ -677,6 +705,7 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ player: p.player, message: p.message }),
   }),
   g('whisper', 'social', ['dm', 'tell', 'private'], {
+    description: 'Whisper (private) to PLAYER',
     method: 'POST',
     path: '/action/whisper',
     argSchema: [
@@ -687,8 +716,8 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /* death / respawn */
-  g('deaths', 'observe', [], { method: 'GET', path: '/deaths' }),
-  g('deathpoint', 'movement', [], { method: 'POST', path: '/action/deathpoint', bodyFn: () => empty }),
+  g('deaths', 'observe', [], { description: 'Recent death events', method: 'GET', path: '/deaths' }),
+  g('deathpoint', 'movement', [], { description: 'Walk to most recent death location', method: 'POST', path: '/action/deathpoint', bodyFn: () => empty }),
   g('respawn', 'world', [], {
     method: 'POST',
     path: '/action/respawn',
@@ -703,6 +732,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* chest */
   g('chest', 'world', ['list_container'], {
+    description: 'Open + list a chest at X Y Z or @MARK',
     method: 'POST',
     path: '/action/list_container',
     argSchema: [
@@ -784,6 +814,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* marks */
   g('mark', 'memory', [], {
+    description: 'Save current position as named mark',
     method: 'POST',
     path: '/action/mark',
     customParse: true,
@@ -800,8 +831,9 @@ export const RAW_COMMAND_DEFS = [
       }),
     usage: 'mc mark NAME [NOTE]',
   }),
-  g('marks', 'memory', [], { method: 'POST', path: '/action/marks', bodyFn: () => empty }),
+  g('marks', 'memory', [], { description: 'List all marks', method: 'POST', path: '/action/marks', bodyFn: () => empty }),
   g('mark_update', 'memory', ['mark-up', 'mu'], {
+    description: 'Move existing MARK to current position',
     method: 'POST',
     path: '/action/mark_update',
     customParse: true,
@@ -816,6 +848,7 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
   g('go_mark', 'memory', [], {
+    description: 'Walk to a saved mark',
     method: 'POST',
     path: '/action/go_mark',
     argSchema: [{ key: 'name', type: 'string', required: true }],
@@ -823,6 +856,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc go_mark NAME',
   }),
   g('unmark', 'memory', [], {
+    description: 'Delete a mark by name',
     method: 'POST',
     path: '/action/unmark',
     argSchema: [{ key: 'name', type: 'string', required: true }],
@@ -830,27 +864,31 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /* Goals */
-  g('goals', 'goals', [], { method: 'GET', path: '/goals' }),
+  g('goals', 'goals', [], { description: 'List active goals with urgency', method: 'GET', path: '/goals' }),
   g('goal_add', 'goals', [], {
+    description: 'Add a new goal (id + metric + thresholds)',
     method: 'POST',
     path: '/goals',
     customParse: true,
     bodyFn: (p) => JSON.stringify({ goal: p.goal }),
   }),
   g('goal_set', 'goals', [], {
+    description: 'Set goal field (priority, target, etc.)',
     method: 'POST',
     path: '/goals/update',
     customParse: true,
     bodyFn: (p) => JSON.stringify(p),
   }),
-  g('goal_remove', 'goals', ['goal_rm'], { method: 'DELETE', pathFn: (p) => `/goals/${encodeURIComponent(String(p.id))}`, customParse: true }),
+  g('goal_remove', 'goals', ['goal_rm'], { description: 'Remove goal by id', method: 'DELETE', pathFn: (p) => `/goals/${encodeURIComponent(String(p.id))}`, customParse: true }),
   g('goal_status', 'goals', ['gs'], {
+    description: 'Detail status of a single goal',
     method: 'GET',
     pathFn: (p) => `/goals/${encodeURIComponent(String(p.id))}`,
     customParse: true,
   }),
-  g('goal_presets', 'goals', [], { method: 'GET', path: '/goal-presets' }),
+  g('goal_presets', 'goals', [], { description: 'List built-in goal presets', method: 'GET', path: '/goal-presets' }),
   g('goal_load', 'goals', ['load_goals'], {
+    description: 'Load a goal preset (miner/builder/etc.)',
     method: 'POST',
     path: '/goals/load-preset',
     argSchema: [{ key: 'preset', type: 'string', required: true }],
@@ -859,28 +897,33 @@ export const RAW_COMMAND_DEFS = [
 
   /* task */
   g('task_start', 'task', ['tstart'], {
+    description: 'Start named background task with args',
     method: 'POST',
     path: '/task/start',
     customParse: true,
     bodyFn: (p) => JSON.stringify(p),
   }),
-  g('task', 'task', ['task_status'], { method: 'GET', path: '/task', examples: [`mc task`] }),
-  g('task_pause', 'task', [], { method: 'POST', path: '/task/pause', bodyFn: () => empty }),
+  g('task', 'task', ['task_status'], { description: 'Status of background task by id', method: 'GET', path: '/task', examples: [`mc task`] }),
+  g('task_pause', 'task', [], { description: 'Pause running task', method: 'POST', path: '/task/pause', bodyFn: () => empty }),
   g('task_resume', 'task', [], {
+    description: 'Resume paused task',
     method: 'POST',
     path: '/task/resume',
     argSchema: [{ key: 'lease_seconds', type: 'number', default: 45 }],
     bodyFn: (p) => JSON.stringify({ lease_seconds: Number(p.lease_seconds ?? 45) }),
   }),
   g('task_history', 'task', ['tasks_done'], {
+    description: 'List recent task runs',
     method: 'GET',
     path: '/task/history',
   }),
   g('checkpoint', 'task', ['chk'], {
+    description: 'Set agent decision checkpoint',
     method: 'GET',
     path: '/checkpoint',
   }),
   g('checkpoint_respond', 'task', ['cpr'], {
+    description: 'Respond to a pending checkpoint',
     method: 'POST',
     path: '/task/checkpoint-respond',
     customParse: true,
@@ -889,6 +932,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* background */
   g('bg_collect', 'task', [], {
+    description: 'Background mine N of BLOCK',
     method: 'POST',
     path: '/task/collect',
     argSchema: [
@@ -899,6 +943,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc bg_collect BLOCK [COUNT]',
   }),
   g('bg_goto', 'task', [], {
+    description: 'Background walk to X Y Z',
     method: 'POST',
     path: '/task/goto',
     argSchema: [
@@ -910,6 +955,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc bg_goto X Y Z',
   }),
   g('cancel', 'task', [], {
+    description: 'Cancel current task',
     method: 'POST',
     path: '/task/cancel',
     bodyFn: () => empty,
@@ -917,6 +963,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* advanced combat*/
   g('sneak', 'combat', [], {
+    description: 'Toggle sneak (crouch)',
     method: 'POST',
     path: '/action/sneak',
     bodyFn: (p) =>
@@ -926,12 +973,14 @@ export const RAW_COMMAND_DEFS = [
     argSchema: [{ key: 'enable', type: 'string', default: 'true' }],
   }),
   g('shield', 'combat', ['block'], {
+    description: 'Raise shield (block) for SECONDS',
     method: 'POST',
     path: '/action/shield_block',
     argSchema: [{ key: 'duration', type: 'number', default: 3 }],
     bodyFn: (p) => JSON.stringify({ duration: Number(p.duration ?? 3) }),
   }),
   g('shoot', 'combat', ['bow'], {
+    description: 'Fire bow at TARGET (must hold bow + arrows)',
     method: 'POST',
     path: '/action/shoot',
     argSchema: [
@@ -946,18 +995,21 @@ export const RAW_COMMAND_DEFS = [
     customParse: true,
   }),
   g('sprint_attack', 'combat', ['sa'], {
+    description: 'Sprint into TARGET for knockback hit',
     method: 'POST',
     path: '/action/sprint_attack',
     bodyFn: (p) => (p.target ? JSON.stringify({ target: p.target }) : empty),
     argSchema: [{ key: 'target', type: 'string', default: '' }],
   }),
   g('crit', 'combat', ['critical'], {
+    description: 'Jump-attack TARGET for critical-hit damage',
     method: 'POST',
     path: '/action/critical_hit',
     bodyFn: (p) => (p.target ? JSON.stringify({ target: p.target }) : empty),
     argSchema: [{ key: 'target', type: 'string', default: '' }],
   }),
   g('strafe', 'combat', [], {
+    description: 'Sidestep TARGET while attacking',
     method: 'POST',
     path: '/action/strafe',
     customParse: true,
@@ -968,6 +1020,7 @@ export const RAW_COMMAND_DEFS = [
     }),
   }),
   g('combo', 'combat', [], {
+    description: 'Pre-defined attack sequence on TARGET',
     method: 'POST',
     path: '/action/combo',
     customParse: true,
@@ -978,6 +1031,7 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
   g('bg_combo', 'task', [], {
+    description: 'Background combo attack sequence',
     method: 'POST',
     path: '/task/combo',
     customParse: true,
@@ -988,6 +1042,7 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
   g('bg_strafe', 'task', [], {
+    description: 'Background strafe loop',
     method: 'POST',
     path: '/task/strafe',
     customParse: true,
@@ -1001,6 +1056,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* smelt extras */
   g('smelt_start', 'craft', ['sstart'], {
+    description: 'Begin background smelt task (returns task id)',
     method: 'POST',
     path: '/action/smelt_start',
     customParse: true,
@@ -1013,6 +1069,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc smelt_start INPUT [FUEL] [COUNT]',
   }),
   g('furnace_check', 'craft', ['fc'], {
+    description: 'Status of a specific furnace (input/output/fuel)',
     method: 'POST',
     path: '/action/furnace_check',
     argSchema: [
@@ -1023,6 +1080,7 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ x: p.x, y: p.y, z: p.z }),
   }),
   g('furnace_take', 'craft', ['ft'], {
+    description: 'Withdraw smelted output from furnace',
     method: 'POST',
     path: '/action/furnace_take',
     argSchema: [
@@ -1032,17 +1090,19 @@ export const RAW_COMMAND_DEFS = [
     ],
     bodyFn: (p) => JSON.stringify({ x: p.x, y: p.y, z: p.z }),
   }),
-  g('furnaces', 'observe', [], { method: 'GET', path: '/furnaces' }),
+  g('furnaces', 'observe', [], { description: 'List known furnace marks + smelt status', method: 'GET', path: '/furnaces' }),
 
   /* team */
   g('team_chat', 'social', ['tc'], {
+    description: 'Chat to current team channel',
     method: 'POST',
     path: '/action/team_chat',
     argSchema: [{ key: 'message', type: 'string', required: true }],
     bodyFn: (p) => JSON.stringify({ message: p.message }),
   }),
-  g('team_status', 'social', ['ts'], { method: 'POST', path: '/action/team_status', bodyFn: () => empty }),
+  g('team_status', 'social', ['ts'], { description: 'Current team membership + roster', method: 'POST', path: '/action/team_status', bodyFn: () => empty }),
   g('rally', 'social', [], {
+    description: 'Move all team bots to current position',
     method: 'POST',
     path: '/action/rally',
     customParse: true,
@@ -1055,12 +1115,14 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
   g('report', 'social', [], {
+    description: 'Submit a status report (event-based)',
     method: 'POST',
     path: '/action/report',
     argSchema: [{ key: 'message', type: 'string', required: true }],
     bodyFn: (p) => JSON.stringify({ message: p.message }),
   }),
   g('set_team', 'social', [], {
+    description: 'Join named team channel',
     method: 'POST',
     path: '/action/set_team',
     customParse: true,
@@ -1072,9 +1134,10 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
 
-  g('sounds', 'observe', [], { method: 'GET', path: '/sounds' }),
-  g('stats', 'observe', [], { method: 'GET', path: '/stats' }),
+  g('sounds', 'observe', [], { description: 'Recent footstep / mob sounds', method: 'GET', path: '/sounds' }),
+  g('stats', 'observe', [], { description: 'Bot session stats (uptime, errors, etc.)', method: 'GET', path: '/stats' }),
   g('fair_play', 'observe', [], {
+    description: 'Toggle reaction-delay preamble (fair-play vs instant)',
     method: 'POST',
     path: '/action/set_fair_play',
     bodyFn: (p) =>
@@ -1084,10 +1147,11 @@ export const RAW_COMMAND_DEFS = [
     argSchema: [{ key: 'enabled', type: 'string', default: 'true' }],
   }),
 
-  g('connect', 'observe', ['reconnect'], { method: 'POST', path: '/connect', bodyFn: () => empty }),
-  g('health', 'observe', ['h'], { method: 'GET', path: '/health' }),
+  g('connect', 'observe', ['reconnect'], { description: 'Reconnect bot to server', method: 'POST', path: '/connect', bodyFn: () => empty }),
+  g('health', 'observe', ['h'], { description: 'HP/food/effects summary', method: 'GET', path: '/health' }),
 
   g('complete_command', 'social', ['done'], {
+    description: 'Mark a queued command as complete',
     method: 'POST',
     path: '/action/complete_command',
     argSchema: [{ key: 'index', type: 'number', default: 0 }, { key: 'message', type: 'string' }],
@@ -1095,6 +1159,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('acknowledge_command', 'social', ['ack'], {
+    description: 'Acknowledge receipt of a queued command',
     method: 'POST',
     path: '/action/acknowledge_command',
     argSchema: [{ key: 'index', type: 'number', default: 0 }, { key: 'plan', type: 'string' }],
@@ -1102,6 +1167,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('cancel_command', 'social', ['reject'], {
+    description: 'Cancel a pending queued command',
     method: 'POST',
     path: '/action/cancel_command',
     argSchema: [{ key: 'index', type: 'number', default: 0 }, { key: 'reason', type: 'string' }],
@@ -1125,6 +1191,7 @@ export const RAW_COMMAND_DEFS = [
     'platform',
     [],
     {
+      description: 'Run multiple mc calls in one invocation',
       customParse: true,
       examples: [`mc batch status goals inventory`, `mc batch "nearby 32" observe`],
     },
@@ -1132,6 +1199,7 @@ export const RAW_COMMAND_DEFS = [
 
   /** URL echo only — same as bash */
   g('dashboard', 'platform', ['dash'], {
+    description: 'Open the bot dashboard URL',
     kind: 'http',
     customParse: true,
     method: 'GET',
@@ -1139,7 +1207,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /** Replaced bash helpers — composites implemented in dispatcher */
-  g('anchors', 'observe', [], { customParse: true, category: 'observe', aliases: [], method: 'GET', path: '/__anchors__' }),
+  g('anchors', 'observe', [], { description: 'Known anchor marks', customParse: true, category: 'observe', aliases: [], method: 'GET', path: '/__anchors__' }),
 
   // ── Reminders ──
   g('remind', 'task', [], {
