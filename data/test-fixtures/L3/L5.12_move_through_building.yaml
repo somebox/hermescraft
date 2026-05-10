@@ -1,0 +1,68 @@
+# L5.12 — move_through_building: smart non-destructive navigation through buildings.
+#
+# Validates mc move across the design scenarios. Layout: a two-room building
+# with an interior vestibule between two doors, both opening to the south.
+#
+#   z=-2  inner north wall
+#   z=-1..1  inner room interior (bot starts at z=0)
+#   z=2   inner south wall, with door at (0, 65..66, 2)
+#   z=3..4  vestibule interior
+#   z=5   outer south wall, with door at (0, 65..66, 5)
+#   z=6   outside (test target)
+#
+# Bot starts at (0, 65, 0) inside the inner room with a stone_pickaxe.
+#
+# Test scenarios (rerun prep before each — each is independent):
+#   A. Open path     — manually remove both doors, mc move 0 65 6 walks straight out
+#   B. One door      — manually remove the outer door, mc move 0 65 6 uses inner only
+#   C. Two doors     — default prep state, mc move 0 65 6 uses both in sequence
+#   D. Sealed        — replace both doors with cobblestone, mc move → NAV_BLOCKED
+#   E. --door override — mc move 0 65 6 --door 0 65 2 (force inner door first)
+#
+# Pass criteria:
+#   A,B,C,E: ok=true, bot at z ≈ 6, doors_used reports closed=true for each
+#            door used, rcon confirms doors are oak_door[open=false] after.
+#   D:       ok=false, code=NAV_BLOCKED, nearby_doors=[].
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 63 -10 10 63 10 minecraft:stone"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # Inner room walls (interior x=-1..1, z=-1..1; walls at boundary x=-2,2 / z=-2,2)
+  - "execute in landfolk-test run fill -2 65 -2 2 67 -2 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -2 65 -1 -2 67 1 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 2 65 -1 2 67 1 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -2 65 2 -1 67 2 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 1 65 2 2 67 2 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -2 68 -2 2 68 2 minecraft:cobblestone"
+  # Vestibule connecting walls (between the two doors, z=3..4)
+  - "execute in landfolk-test run fill -2 65 3 -2 67 4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 2 65 3 2 67 4 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -2 68 3 2 68 4 minecraft:cobblestone"
+  # Outer south wall at z=5 (door slot at x=0)
+  - "execute in landfolk-test run fill -2 65 5 -1 67 5 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 1 65 5 2 67 5 minecraft:cobblestone"
+  # Both doors, closed
+  - "execute in landfolk-test run setblock 0 65 2 minecraft:oak_door[half=lower,facing=south,hinge=left,open=false]"
+  - "execute in landfolk-test run setblock 0 66 2 minecraft:oak_door[half=upper,facing=south,hinge=left,open=false]"
+  - "execute in landfolk-test run setblock 0 65 5 minecraft:oak_door[half=lower,facing=south,hinge=left,open=false]"
+  - "execute in landfolk-test run setblock 0 66 5 minecraft:oak_door[half=upper,facing=south,hinge=left,open=false]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:stone_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

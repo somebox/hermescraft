@@ -115,8 +115,28 @@ export const RAW_COMMAND_DEFS = [
   g('social', 'social', [], { description: 'Social state: nearby players + interactions', method: 'GET', path: '/social' }),
 
   /* Movement */
+  g('move', 'movement', ['mv'], {
+    description: 'Smart non-destructive navigation to X Y Z. Like mc goto but if the path is blocked by a door/gate, automatically opens it (mc through, closes behind) and continues. Up to MAX_DOORS legs. Never digs. Use this instead of mc goto when navigating buildings.',
+    method: 'POST',
+    path: '/action/move',
+    customParse: true,
+    bodyFn: (p) =>
+      JSON.stringify({
+        x: Number(p.x),
+        y: Number(p.y),
+        z: Number(p.z),
+        ...(p.max_doors !== undefined ? { max_doors: Number(p.max_doors) } : {}),
+        ...(p.door ? { door: p.door } : {}),
+      }),
+    usage: 'mc move X Y Z [--max-doors N] [--door GX GY GZ]',
+    examples: [
+      'mc move 100 64 -200',
+      'mc move 0 65 6 --max-doors 3',
+      'mc move 0 65 6 --door 0 65 2',
+    ],
+  }),
   g('goto', 'movement', ['go', 'g'], {
-    description: 'Walk to absolute block coordinates',
+    description: 'Walk to absolute block coordinates (raw pathfinder; no door handling). Prefer mc move for general navigation — mc goto is for open spaces and power-user cases.',
     method: 'POST',
     path: '/action/goto',
     argSchema: [

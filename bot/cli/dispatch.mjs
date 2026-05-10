@@ -124,6 +124,27 @@ function customParse(canonicalName, positional) {
       if (!id) throw new Error('missing:id');
       return { id };
     }
+    case 'move': {
+      // mc move X Y Z [--max-doors N] [--door GX GY GZ]
+      const q = positional.slice();
+      const out = {};
+      const positionals = [];
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--max-doors' || t === '-md') { q.shift(); out.max_doors = Number(q.shift()); }
+        else if (t === '--door') {
+          q.shift();
+          const dx = Number(q.shift()), dy = Number(q.shift()), dz = Number(q.shift());
+          if (![dx, dy, dz].every(Number.isFinite)) throw new Error('invalid:--door requires 3 numeric coords');
+          out.door = { x: dx, y: dy, z: dz };
+        } else { positionals.push(q.shift()); }
+      }
+      if (positionals.length < 3) throw new Error('missing:coords');
+      out.x = Number(positionals[0]);
+      out.y = Number(positionals[1]);
+      out.z = Number(positionals[2]);
+      return out;
+    }
     case 'through': {
       // mc through GX GY GZ [DX DY DZ]
       const p = positional.map(Number);
