@@ -973,6 +973,118 @@ export function createWorldActions(deps) {
   },
 
   /**
+   * Flatten a rectangle to target Y: dig solid blocks above Y, place a
+   * fill block at Y if the column is air at that level. Touches up to
+   * `up` blocks above Y (default 8). Below Y is not touched.
+   */
+  async level({ x1, z1, x2, z2, y, block: fillBlockName, up }) {
+    const b = ensureBot();
+    for (const [k, v] of Object.entries({ x1, z1, x2, z2, y })) {
+      if (!Number.isFinite(Number(v))) {
+        return { ok: false, error: { code: 'INVALID_COORD', message: `mc level requires numeric ${k}`, retry_safe: false } };
+      }
+    }
+    const minX = Math.min(Number(x1), Number(x2));
+    const maxX = Math.max(Number(x1), Number(x2));
+    const minZ = Math.min(Number(z1), Number(z2));
+    const maxZ = Math.max(Number(z1), Number(z2));
+    const targetY = Math.floor(Number(y));
+    const upRange = Math.min(Math.max(parseInt(String(up || 8), 10) || 8, 1), 16);
+    const w = maxX - minX + 1;
+    const l = maxZ - minZ + 1;
+    if (w * l > 256) {
+      return { ok: false, error: { code: 'OUT_OF_RANGE', message: `mc level area ${w}×${l}=${w * l} exceeds 256-column limit`, retry_safe: false } };
+    }
+
+    const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
+    const fillCascade = fillBlockName ? [fillBlockName] : ['dirt', 'cobblestone', 'stone', 'cobbled_deepslate', 'deepslate'];
+    const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+
+    let dug = 0, placed = 0, skipped = 0, failed = 0;
+    const errors = [];
+
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        // 1) Dig blocks above targetY (top-down so debris doesn't fall on us).
+        for (let dy = upRange; dy >= 1; dy--) {
+          const py = targetY + dy;
+          const blk = b.blockAt(new Vec3(x, py, z));
+          if (!blk || isAirLike(blk)) continue;
+          if (PROTECTED_DIG_BLOCKS.has(blk.name)) { skipped++; continue; }
+          if (b.entity.position.distanceTo(blk.position) > 4.5) {
+            try { await b.pathfinder.goto(new goals.GoalNear(x, py, z, 3)); } catch {}
+          }
+          try {
+            await equipForDig(b, blk);
+            await b.dig(blk);
+            dug++;
+          } catch (e) {
+            failed++;
+            errors.push(`dig ${x},${py},${z}: ${e?.message || e}`);
+          }
+        }
+
+        // 2) Fill air at targetY with a leveling block.
+        const target = b.blockAt(new Vec3(x, targetY, z));
+        if (target && !isAirLike(target)) { skipped++; continue; }
+
+        let didPlace = false;
+        for (const blockName of fillCascade) {
+          const item = b.inventory.items().find((it) => it.name === blockName);
+          if (!item) continue;
+          try { await b.equip(item, 'hand'); } catch { continue; }
+          if (b.entity.position.distanceTo(new Vec3(x, targetY, z)) > 4.5) {
+            try { await b.pathfinder.goto(new goals.GoalNear(x, targetY + 1, z, 3)); } catch {}
+          }
+          for (const [ox, oy, oz] of offsets) {
+            const ref = b.blockAt(new Vec3(x + ox, targetY + oy, z + oz));
+            if (ref && !isAirLike(ref) && ref.boundingBox === 'block') {
+              try {
+                await b.placeBlock(ref, new Vec3(-ox, -oy, -oz));
+                didPlace = true;
+                placed++;
+                break;
+              } catch { /* try next face */ }
+            }
+          }
+          if (didPlace) break;
+        }
+        if (!didPlace) {
+          // No fillable item in inventory — only count as failed if there was an air gap to fill.
+          const present = fillCascade.some((nm) => b.inventory.items().find((it) => it.name === nm));
+          if (!present) {
+            return {
+              ok: false,
+              error: {
+                code: 'MISSING_INVENTORY',
+                message: `mc level: no fill block in inventory (tried ${fillCascade.join(', ')})`,
+                observed_state: { dug, placed, columns_remaining: (maxX - x + 1) * l + (maxZ - z), bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY } },
+                retry_safe: true,
+              },
+            };
+          }
+          failed++;
+          errors.push(`fill ${x},${targetY},${z}: no solid neighbor`);
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      data: {
+        dug,
+        placed,
+        skipped,
+        failed,
+        bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY },
+        up_range: upRange,
+        errors: errors.slice(0, 5),
+      },
+      result: `level ${w}×${l} to Y=${targetY}: dug ${dug}, placed ${placed}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`,
+    };
+  },
+
+  /**
    * Build an ascending triangular ramp of cubes the bot can climb.
    * Column i (1..LEN) is filled from the existing floor up to height i,
    * giving every block a solid face neighbor below to place against.

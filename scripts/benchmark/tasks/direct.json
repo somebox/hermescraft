@@ -108,6 +108,15 @@
     ]
   },
   {
+    "id": "level_5x5_to_y64",
+    "category": "world",
+    "task": "Flatten a 7x7 area between (0, 0) and (6, 6) to ground level Y=64. Use dirt as the fill block.",
+    "correct": [
+      "mc level 0 0 6 6 64 dirt",
+      "mc level 0 0 6 6 64"
+    ]
+  },
+  {
     "id": "build_4step_staircase",
     "category": "world",
     "task": "Build an ascending cobblestone staircase 4 steps long going north from your current position.",

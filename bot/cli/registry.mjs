@@ -523,6 +523,36 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
 
+  g('level', 'world', [], {
+    description: 'Flatten a rectangle to target Y: dig solid blocks above Y (up to 8 by default), and fill any air gaps at Y with a leveling block. Auto-picks a fill block from {dirt, cobblestone, stone} unless BLOCK is given. Below Y is not touched. Max 256 columns.',
+    method: 'POST',
+    path: '/action/level',
+    bodyFn: (p) =>
+      JSON.stringify({
+        x1: Number(p.x1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        z2: Number(p.z2),
+        y: Number(p.y),
+        ...(p.block ? { block: String(p.block) } : {}),
+        ...(p.up !== undefined ? { up: Number(p.up) } : {}),
+      }),
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'block', type: 'string' },
+      { key: 'up', type: 'number' },
+    ],
+    usage: 'mc level X1 Z1 X2 Z2 Y [BLOCK] [UP]',
+    examples: [
+      'mc level 0 0 4 4 64',
+      'mc level -3 -3 3 3 64 dirt',
+    ],
+  }),
+
   g('build_stairs', 'world', [], {
     description: 'Build an ascending triangular ramp of BLOCK in cardinal DIR for LEN steps. Each column i is filled from the floor up to height i, so column 1 is 1 block tall, column 2 is 2 blocks, etc. The bot walks up the ramp as it builds. Total blocks = LEN*(LEN+1)/2; LEN is capped at 16.',
     method: 'POST',

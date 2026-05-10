@@ -1,0 +1,48 @@
+# L5.4 — level_basic: flatten a 7x7 area with bumps and pits.
+#
+# Validates Sprint 5's mc level verb:
+#   - Digs solid blocks above target Y.
+#   - Fills air gaps at target Y with a leveling block.
+#   - Returns action contract { ok: true, data: { dug, placed, ... } }.
+#
+# Setup:
+#   landfolk-test, day, cleared 21x21 arena.
+#   Floor at y=64 (stone). Bumps at (1,65,1) cobblestone, (3,66,3) cobblestone.
+#   Air gap at (2,64,2) — was stone, set to air.
+#   Bot at (-2, 65, -2) holding 16 dirt and a wooden_pickaxe.
+#
+# Action under test:
+#   mc level 0 0 6 6 64 dirt
+#
+# Expected:
+#   - { ok: true, data: { dug: 2, placed: 1, skipped: 48, ... } }
+#     (2 cobble bumps dug; 1 air gap filled with dirt; 48 stone columns
+#      already at y=64 are skipped because target IS solid.)
+#   - All blocks at (0..6, 65..72, 0..6) are air.
+#   - Block at (2, 64, 2) is dirt.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run setblock 1 65 1 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock 3 66 3 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock 2 64 2 minecraft:air"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint -2 65 -2"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:dirt 16"
+  - "give Flint minecraft:wooden_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
