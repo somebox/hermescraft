@@ -497,6 +497,40 @@ export const RAW_COMMAND_DEFS = [
     ],
     usage: 'mc fill BLOCK X1 Y1 Z1 X2 Y2 Z2 [HOLLOW]',
   }),
+
+  /* Sprint 5 — Building primitives. mc wall is sugar over place_fill that
+   * enforces a vertical-height guard (y1 != y2) and follows the action
+   * contract (data + structured errors). */
+  g('wall', 'world', [], {
+    description: 'Build a wall (vertical line/rect) of BLOCK between two corners. y1 must differ from y2.',
+    method: 'POST',
+    path: '/action/wall',
+    bodyFn: (p) =>
+      JSON.stringify({
+        block: String(p.block),
+        x1: Number(p.x1),
+        y1: Number(p.y1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        y2: Number(p.y2),
+        z2: Number(p.z2),
+      }),
+    argSchema: [
+      { key: 'block', type: 'string', required: true },
+      { key: 'x1', type: 'number', required: true },
+      { key: 'y1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'y2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+    ],
+    usage: 'mc wall BLOCK X1 Y1 Z1 X2 Y2 Z2',
+    examples: [
+      'mc wall cobblestone 0 65 0 0 67 4',
+      'mc wall oak_planks -3 65 -3 -3 67 3',
+    ],
+  }),
+
   g('dig_area', 'world', ['da', 'clear_area'], {
     method: 'POST',
     path: '/action/dig_area',

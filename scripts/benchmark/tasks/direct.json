@@ -91,5 +91,11 @@
     "category": "observe",
     "task": "Show what entities and landmarks are visible within 8 blocks.",
     "correct": ["mc scene 8"]
+  },
+  {
+    "id": "build_3block_wall",
+    "category": "world",
+    "task": "Build a 3-block-tall cobblestone wall at column (3, 65–67, 0).",
+    "correct": ["mc wall cobblestone 3 65 0 3 67 0"]
   }
 ]

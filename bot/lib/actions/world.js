@@ -570,6 +570,146 @@ export function createWorldActions(deps) {
   },
 
   /**
+   * Build a wall: vertical line/rectangle of blocks. Sugar over place_fill
+   * with action-contract shape and a "must have height" guard so a flat
+   * single-Y rectangle (= floor) gets a clear error instead of silently
+   * placing a slab. See docs/phase-2/sprints.md (Sprint 5 — Building primitives).
+   * — Phase-2 action contract (see docs/phase-2/action-contracts.md mc wall) —
+   */
+  async wall({ block: blockName, x1, y1, z1, x2, y2, z2 }) {
+    const b = ensureBot();
+
+    if (!blockName || typeof blockName !== 'string') {
+      return {
+        ok: false,
+        error: {
+          code: 'MISSING_BLOCK_TYPE',
+          message: 'mc wall requires a block name (e.g. cobblestone, oak_planks)',
+          observed_state: { received: blockName },
+          retry_safe: false,
+        },
+      };
+    }
+
+    const coords = ['x1', 'y1', 'z1', 'x2', 'y2', 'z2'];
+    const args = { x1, y1, z1, x2, y2, z2 };
+    for (const k of coords) {
+      const n = Number(args[k]);
+      if (!Number.isFinite(n)) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_COORD',
+            message: `mc wall requires numeric ${k}, got ${args[k]}`,
+            observed_state: { received: args },
+            retry_safe: false,
+          },
+        };
+      }
+      args[k] = n;
+    }
+
+    const minX = Math.min(args.x1, args.x2);
+    const maxX = Math.max(args.x1, args.x2);
+    const minY = Math.min(args.y1, args.y2);
+    const maxY = Math.max(args.y1, args.y2);
+    const minZ = Math.min(args.z1, args.z2);
+    const maxZ = Math.max(args.z1, args.z2);
+
+    if (minY === maxY) {
+      return {
+        ok: false,
+        error: {
+          code: 'NOT_A_WALL',
+          message: `y1=y2=${minY}: walls need vertical height. Use mc fill for a flat slab.`,
+          observed_state: { y1: args.y1, y2: args.y2 },
+          retry_safe: false,
+        },
+      };
+    }
+
+    const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+    if (total > 200) {
+      return {
+        ok: false,
+        error: {
+          code: 'OUT_OF_RANGE',
+          message: `Wall too large (${total} blocks, max 200). Split into smaller walls.`,
+          observed_state: { total, max: 200 },
+          retry_safe: false,
+        },
+      };
+    }
+
+    const positions = [];
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          positions.push({ x, y, z });
+        }
+      }
+    }
+
+    const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+    let placed = 0;
+    let skipped_existing = 0;
+    let failed = 0;
+
+    for (const pos of positions) {
+      const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+      if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
+        skipped_existing++;
+        continue;
+      }
+
+      const item = b.inventory.items().find((i) => i.name === blockName);
+      if (!item) {
+        return {
+          ok: false,
+          error: {
+            code: 'MISSING_INVENTORY',
+            message: `Out of ${blockName} after placing ${placed}/${positions.length}`,
+            observed_state: { blocks_placed: placed, blocks_remaining: positions.length - placed - skipped_existing, block: blockName },
+            retry_safe: true,
+          },
+        };
+      }
+      try { await b.equip(item, 'hand'); } catch {}
+
+      if (b.entity.position.distanceTo(new Vec3(pos.x, pos.y, pos.z)) > 4.5) {
+        try { await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3)); } catch {}
+      }
+
+      let success = false;
+      for (const [dx, dy, dz] of offsets) {
+        const ref = b.blockAt(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz));
+        if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
+          try {
+            await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+            placed++;
+            success = true;
+          } catch {}
+          break;
+        }
+      }
+      if (!success) failed++;
+    }
+
+    return {
+      ok: true,
+      data: {
+        blocks_placed: placed,
+        blocks_attempted: positions.length,
+        skipped_existing,
+        failed,
+        bounds: { x1: minX, y1: minY, z1: minZ, x2: maxX, y2: maxY, z2: maxZ },
+        block: blockName,
+      },
+      result: `Wall: ${placed}/${positions.length} ${blockName} placed${skipped_existing ? ` (${skipped_existing} skipped — existing block)` : ''}${failed ? ` (${failed} failed)` : ''}`,
+    };
+  },
+
+  /**
    * Highest solid block per vertical column — for pit/site selection without N×find_blocks.
    * Optional `radius`: square (2r+1)² around (x,z), returns max top among sampled columns.
    */

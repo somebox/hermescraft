@@ -1,0 +1,40 @@
+# L5.1 — wall_basic: place a 1×3 vertical cobblestone wall.
+#
+# First fixture for Sprint 5 (Building primitives). Validates:
+#   - mc wall produces an action-contract success ({ ok: true, data: ... }).
+#   - The wall actually exists in the world after the call returns.
+#   - The bot's inventory was decremented by the placed count.
+#
+# Setup:
+#   landfolk-test, day, 21×21 cleared arena at Y=64..70.
+#   Bot at (0, 65, 0) with 16 cobblestone in inventory.
+#
+# Action under test:
+#   mc wall cobblestone 3 65 0 3 67 0
+#
+# Expected:
+#   - Response { ok: true, data.blocks_placed: 3, data.blocks_attempted: 3 }
+#   - Blocks at (3, 65, 0), (3, 66, 0), (3, 67, 0) are all cobblestone.
+#   - Inventory cobblestone count decreased from 16 to 13.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:cobblestone 16"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
