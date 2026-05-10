@@ -1,0 +1,95 @@
+[
+  {
+    "id": "walk_to_coords",
+    "category": "movement",
+    "task": "Walk the bot to coordinates 100, 64, 200.",
+    "correct": ["mc goto 100 64 200"]
+  },
+  {
+    "id": "mine_4_cobble",
+    "category": "world",
+    "task": "Mine 4 cobblestone within radius 16.",
+    "correct": ["mc collect cobblestone 4"]
+  },
+  {
+    "id": "place_block",
+    "category": "world",
+    "task": "Place a single oak_planks block at (10, 65, 10). Assume the block is in inventory.",
+    "correct": ["mc place 10 65 10 oak_planks", "mc place oak_planks 10 65 10"]
+  },
+  {
+    "id": "save_mark",
+    "category": "memory",
+    "task": "Save the bot's current location as a mark called \"shelter\".",
+    "correct": ["mc mark shelter"]
+  },
+  {
+    "id": "list_goals",
+    "category": "goals",
+    "task": "List all active goals.",
+    "correct": ["mc goals"]
+  },
+  {
+    "id": "eat_food",
+    "category": "combat",
+    "task": "Eat the best food in the bot's inventory.",
+    "correct": ["mc eat"]
+  },
+  {
+    "id": "read_chat",
+    "category": "social",
+    "task": "Show the last 5 public chat messages.",
+    "correct": ["mc read_chat 5"]
+  },
+  {
+    "id": "set_combat_skill",
+    "category": "combat",
+    "task": "Set the bot's combat skill to 0.9 (soldier-level).",
+    "correct": ["mc combat_skill 0.9"]
+  },
+  {
+    "id": "feed_cow",
+    "category": "world",
+    "task": "Feed wheat to a nearby cow (right-click the cow with wheat already in hand).",
+    "correct": ["mc feed_mob cow wheat", "mc feed_mob cow --item wheat"]
+  },
+  {
+    "id": "find_iron",
+    "category": "observe",
+    "task": "Find the nearest iron_ore within 32 blocks (don't mine it, just locate).",
+    "correct": ["mc find_blocks iron_ore 32"]
+  },
+  {
+    "id": "open_chest_mark",
+    "category": "world",
+    "task": "Open the chest at the mark called \"treasure\".",
+    "correct": ["mc chest @treasure"]
+  },
+  {
+    "id": "fight_zombie",
+    "category": "combat",
+    "task": "Engage a zombie in melee combat: fight loop until it dies or HP drops below 6.",
+    "correct": ["mc fight zombie 6", "mc fight zombie 6 30"]
+  },
+  {
+    "id": "set_reactive_mode",
+    "category": "combat",
+    "task": "Set the bot's reactive mode to guard (auto-engage hostiles in 12-block radius).",
+    "correct": ["mc mode guard"]
+  },
+  {
+    "id": "deposit_iron",
+    "category": "world",
+    "task": "Deposit 32 iron_ingot into the chest at mark \"vault\".",
+    "correct": [
+      "mc deposit iron_ingot 32 @vault",
+      "mc deposit iron_ingot 32 vault"
+    ]
+  },
+  {
+    "id": "scene_8",
+    "category": "observe",
+    "task": "Show what entities and landmarks are visible within 8 blocks.",
+    "correct": ["mc scene 8"]
+  }
+]

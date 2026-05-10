@@ -1,0 +1,47 @@
+{
+  "comment": "OpenRouter models to benchmark. Costs shown in USD per 1M tokens (input/output). Update when pricing changes. To benchmark a different model, uncomment or add an entry.",
+  "models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-v4-flash",
+      "cost_per_1m_in": 0.07,
+      "cost_per_1m_out": 0.14,
+      "tier": "cheap",
+      "in_production": true,
+      "production_role": "Flint, Mason, Gatherer (default agent model)"
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "label": "nemotron-3-super-120b-free",
+      "cost_per_1m_in": 0,
+      "cost_per_1m_out": 0,
+      "tier": "free",
+      "in_production": true,
+      "production_role": "Barley"
+    },
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "label": "claude-haiku-4.5",
+      "cost_per_1m_in": 1.00,
+      "cost_per_1m_out": 5.00,
+      "tier": "cheap-anthropic",
+      "in_production": false
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "label": "gemini-2.5-flash",
+      "cost_per_1m_in": 0.30,
+      "cost_per_1m_out": 2.50,
+      "tier": "cheap-google",
+      "in_production": false
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "label": "gpt-5-mini",
+      "cost_per_1m_in": 0.25,
+      "cost_per_1m_out": 2.00,
+      "tier": "cheap-openai",
+      "in_production": false
+    }
+  ]
+}

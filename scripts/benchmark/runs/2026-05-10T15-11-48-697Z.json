@@ -1,0 +1,1362 @@
+{
+  "timestamp": "2026-05-10T15:11:48.697Z",
+  "git_sha": "d31940681325ef3dc819c52f412a56fc34c03583",
+  "cheatsheet_bytes": 9771,
+  "models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-v4-flash"
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "label": "nemotron-3-super-120b-free"
+    }
+  ],
+  "task_groups": [
+    "composition",
+    "direct"
+  ],
+  "results": [
+    {
+      "group": "composition",
+      "task_id": "shelter_corner",
+      "category": "world+craft",
+      "model": "deepseek-v4-flash",
+      "pass": false,
+      "matched": [
+        null,
+        null,
+        null
+      ],
+      "mc_lines": [],
+      "elapsed_ms": 1257,
+      "usage": {
+        "prompt_tokens": 3113,
+        "completion_tokens": 600,
+        "total_tokens": 3713,
+        "cost": 0.00060382,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00060382,
+          "upstream_inference_prompt_cost": 0.00043582,
+          "upstream_inference_completions_cost": 0.000168
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00030191,
+      "output": ""
+    },
+    {
+      "group": "composition",
+      "task_id": "shelter_corner",
+      "category": "world+craft",
+      "model": "nemotron-3-super-120b-free",
+      "pass": false,
+      "matched": [
+        null,
+        null,
+        null
+      ],
+      "mc_lines": [],
+      "elapsed_ms": 10017,
+      "usage": {
+        "prompt_tokens": 3106,
+        "completion_tokens": 600,
+        "total_tokens": 3706,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 524,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "We need to output mc commands to place three blocks at (5,65,5) forming a corner pillar 3 blocks tall. Starting at (0,65,0). We have cobblestone in inventory. Need to place blocks at (5,65,5), (5,66,5), (5,67,5) presumably vertical pillar. Use mc place BLOCK X Y Z. Need to ensure we have cobblestone in hand? The place command uses block from hand. We may need to equip cobblestone first. Use mc equip cobblestone (maybe slot?). The cheatsheet: mc equip ITEM [SLOT] (eq) — Equip ITEM to hand or armor SLOT. So we can do mc equip cobblestone. Then place each block.\n\nWe might need to move to location? The place command can place at coordinates regardless of bot position? It likely places block at given coordinates if within reach? Usually you need to be adjacent. But we can use mc goto to get near then place. However the task: \"Build a 3-block-tall corner pillar at (5, 65, 5) using cobblestone.\" Likely we need to place blocks at those coordinates. We can just use mc place cobblestone 5 65 5 etc. The bot will try to place if within range; if not, maybe it will move? Not sure. Safer to move to adjacent spot then place. But we can just output place commands; assume bot can place from distance? Usually you need to be looking at block and within 4-5 blocks. From (0,65,0) to (5,65,5) distance sqrt(5^2+0+5^2)=~7.07 >5 maybe out of range. So we need to move closer.\n\nWe could go to (5,65,4) or (4,65,5) etc. Let's go to (5,65,4) then place upward? Actually to place at (5,65,5) we need to be adjacent to that block. Could stand at (5,65,4) and place east? Actually coordinates: x increase east, z increase south? Not important. To place block at (5,65,5), we could stand at (5,65,4) and place block at +z direction? The place command expects absolute coordinates; bot will try to place if looking at that block and within range. So we need to be near enough.\n\nSimplify: Use mc goto_near 5 65 5 1 (within 1 block). Then place three blocks vertically. But we need to place at same x,z but increasing y. We can stay at same x,z and place upward by aiming up? The place"
+    },
+    {
+      "group": "composition",
+      "task_id": "smelt_iron_pipeline",
+      "category": "craft",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "matched": [
+        "mc smelt raw_iron 4",
+        "mc furnace_check"
+      ],
+      "mc_lines": [
+        "mc smelt raw_iron coal 4",
+        "mc furnace_check"
+      ],
+      "elapsed_ms": 2332,
+      "usage": {
+        "prompt_tokens": 3096,
+        "completion_tokens": 17,
+        "total_tokens": 3113,
+        "cost": 0.0004382,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0004382,
+          "upstream_inference_prompt_cost": 0.00043344,
+          "upstream_inference_completions_cost": 0.00000476
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021909999999999999,
+      "output": "```\nmc smelt raw_iron coal 4\nmc furnace_check\n```"
+    },
+    {
+      "group": "composition",
+      "task_id": "smelt_iron_pipeline",
+      "category": "craft",
+      "model": "nemotron-3-super-120b-free",
+      "pass": false,
+      "matched": [
+        null,
+        null
+      ],
+      "mc_lines": [],
+      "elapsed_ms": 8161,
+      "usage": {
+        "prompt_tokens": 3087,
+        "completion_tokens": 600,
+        "total_tokens": 3687,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 636,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "We need to smelt 4 raw_iron into iron_ingot, then check furnace status. The furnace is nearby; we can use mc smelt INPUT [FUEL] [COUNT] (synchronous) or mc smelt_start for background. Since we need to check furnace status after smelting, we can use mc smelt raw_iron [fuel?] 4. Need fuel; we may have coal or something. Not specified. Could assume we have fuel in inventory; but we can just call mc smelt raw_iron 4 (fuel optional). The command: mc smelt raw_iron 4. Then mc furnace_check X Y Z? We need coordinates of furnace. We are standing next to a furnace; we could use mc furnace_check without args? The cheatsheet shows mc furnace_check X Y Z (fc) — Status of a specific furnace (input/output/fuel). It requires coordinates. We could get furnace position via mc nearby or mc look? But we can also use mc furnace_check with no args? Not in cheatsheet. Maybe we can use mc furnace_check @MARK? Not listed. However we could use mc furnace_check with the furnace we are next to by using relative coordinates? Could use mc furnace_check ~ ~ ~? Not sure if supported. The cheatsheet doesn't show relative coordinates. But we can use mc furnace_check with the furnace we are next to by using mc chest? Not.\n\nAlternative: Use mc smelt_start then mc furnace_check after? But still need coordinates.\n\nMaybe we can use mc furnace_check without arguments to check the furnace we are facing? Not in cheatsheet.\n\nWe could use mc furnace_check with the furnace we are next to by using mc look to get direction then compute? Too complex.\n\nMaybe we can use mc furnace_check with the furnace we are next to by using the furnace mark? We could set a mark at furnace before smelting: mc mark furnace. Then after smelting, mc furnace_check @furnace? The cheatsheet shows mc chest X Y Z OR mc chest @MARK (list_container). For furnace_check, only X Y Z is shown. No @MARK variant. So we need coordinates.\n\nWe could get coordinates via mc status or mc observe? But we need to output only mc commands; we can chain multiple commands in one invocation using mc batch? The task: \"Output the EXACT mc command(s) to accomplish a task.\" We can output multiple lines each being a mc command. We can first get furnace coordinates via mc nearby? But we need to output commands, not compute.\n\nWe could do: mc smelt raw_iron 4 (assuming fuel present). Then mc furnace_check <x> <y> <z> where we need to know coordinates. Since we are standing next to furnace, we could approximate by using mc look to get direction then offset? Not"
+    },
+    {
+      "group": "composition",
+      "task_id": "rescue_to_safehome",
+      "category": "movement+combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "matched": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "mc_lines": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "elapsed_ms": 1282,
+      "usage": {
+        "prompt_tokens": 3084,
+        "completion_tokens": 72,
+        "total_tokens": 3156,
+        "cost": 0.00045192,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00045192,
+          "upstream_inference_prompt_cost": 0.00043176,
+          "upstream_inference_completions_cost": 0.00002016
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 60,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022596000000000004,
+      "output": "```\nmc go_mark home\nmc mode guard\n```"
+    },
+    {
+      "group": "composition",
+      "task_id": "rescue_to_safehome",
+      "category": "movement+combat",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "matched": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "mc_lines": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "elapsed_ms": 5092,
+      "usage": {
+        "prompt_tokens": 3076,
+        "completion_tokens": 187,
+        "total_tokens": 3263,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 187,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc go_mark home\nmc mode guard\n```"
+    },
+    {
+      "group": "composition",
+      "task_id": "scout_then_report",
+      "category": "observe+social",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "matched": [
+        "mc find_entities",
+        "mc chat"
+      ],
+      "mc_lines": [
+        "mc find_entities hostile 32",
+        "mc chat all clear"
+      ],
+      "elapsed_ms": 224,
+      "usage": {
+        "prompt_tokens": 3100,
+        "completion_tokens": 16,
+        "total_tokens": 3116,
+        "cost": 0.00043848,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043848,
+          "upstream_inference_prompt_cost": 0.000434,
+          "upstream_inference_completions_cost": 0.00000448
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021924000000000002,
+      "output": "```\nmc find_entities hostile 32\nmc chat all clear\n```"
+    },
+    {
+      "group": "composition",
+      "task_id": "scout_then_report",
+      "category": "observe+social",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "matched": [
+        "mc find_entities",
+        "mc chat"
+      ],
+      "mc_lines": [
+        "mc find_entities monster 32",
+        "mc chat all clear"
+      ],
+      "elapsed_ms": 10013,
+      "usage": {
+        "prompt_tokens": 3092,
+        "completion_tokens": 384,
+        "total_tokens": 3476,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 386,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc find_entities monster 32\nmc chat all clear\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 663,
+      "usage": {
+        "prompt_tokens": 3074,
+        "completion_tokens": 12,
+        "total_tokens": 3086,
+        "cost": 0.00043372,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043372,
+          "upstream_inference_prompt_cost": 0.00043036,
+          "upstream_inference_completions_cost": 0.00000336
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021686,
+      "output": "```\nmc goto 100 64 200\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5415,
+      "usage": {
+        "prompt_tokens": 3070,
+        "completion_tokens": 102,
+        "total_tokens": 3172,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 70,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc goto 100 64 200\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "prefix",
+      "elapsed_ms": 597,
+      "usage": {
+        "prompt_tokens": 3072,
+        "completion_tokens": 13,
+        "total_tokens": 3085,
+        "cost": 0.00043372,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043372,
+          "upstream_inference_prompt_cost": 0.00043008,
+          "upstream_inference_completions_cost": 0.00000364
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021686000000000003,
+      "output": "```\nmc collect cobblestone 4 16\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5925,
+      "usage": {
+        "prompt_tokens": 3063,
+        "completion_tokens": 330,
+        "total_tokens": 3393,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 317,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc collect cobblestone 4\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 7409,
+      "usage": {
+        "prompt_tokens": 3085,
+        "completion_tokens": 55,
+        "total_tokens": 3140,
+        "cost": 0.0004473,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0004473,
+          "upstream_inference_prompt_cost": 0.0004319,
+          "upstream_inference_completions_cost": 0.0000154
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 31,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022365000000000002,
+      "output": "```\nmc place oak_planks 10 65 10\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 3375,
+      "usage": {
+        "prompt_tokens": 3078,
+        "completion_tokens": 103,
+        "total_tokens": 3181,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 71,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc place oak_planks 10 65 10\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2303,
+      "usage": {
+        "prompt_tokens": 3075,
+        "completion_tokens": 7,
+        "total_tokens": 3082,
+        "cost": 0.00043246,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043246,
+          "upstream_inference_prompt_cost": 0.0004305,
+          "upstream_inference_completions_cost": 0.00000196
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021623000000000004,
+      "output": "```\nmc mark shelter\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 10018,
+      "usage": {
+        "prompt_tokens": 3066,
+        "completion_tokens": 75,
+        "total_tokens": 3141,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 70,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc mark shelter\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2024,
+      "usage": {
+        "prompt_tokens": 3065,
+        "completion_tokens": 6,
+        "total_tokens": 3071,
+        "cost": 0.00043078,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043078,
+          "upstream_inference_prompt_cost": 0.0004291,
+          "upstream_inference_completions_cost": 0.00000168
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021539,
+      "output": "```\nmc goals\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 1303,
+      "usage": {
+        "prompt_tokens": 3056,
+        "completion_tokens": 55,
+        "total_tokens": 3111,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 50,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc goals\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2656,
+      "usage": {
+        "prompt_tokens": 3071,
+        "completion_tokens": 6,
+        "total_tokens": 3077,
+        "cost": 0.00043162,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043162,
+          "upstream_inference_prompt_cost": 0.00042994,
+          "upstream_inference_completions_cost": 0.00000168
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021581,
+      "output": "```\nmc eat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 1411,
+      "usage": {
+        "prompt_tokens": 3062,
+        "completion_tokens": 84,
+        "total_tokens": 3146,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 86,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc eat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2126,
+      "usage": {
+        "prompt_tokens": 3069,
+        "completion_tokens": 46,
+        "total_tokens": 3115,
+        "cost": 0.00053783,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00053783,
+          "upstream_inference_prompt_cost": 0.00052173,
+          "upstream_inference_completions_cost": 0.0000161
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 35,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022127000000000003,
+      "output": "```\nmc read_chat 5\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 1848,
+      "usage": {
+        "prompt_tokens": 3060,
+        "completion_tokens": 91,
+        "total_tokens": 3151,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 86,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc read_chat 5\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 369,
+      "usage": {
+        "prompt_tokens": 3077,
+        "completion_tokens": 12,
+        "total_tokens": 3089,
+        "cost": 0.00043414,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043414,
+          "upstream_inference_prompt_cost": 0.00043078,
+          "upstream_inference_completions_cost": 0.00000336
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021707,
+      "output": "```\nmc combat_skill 0.9\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5131,
+      "usage": {
+        "prompt_tokens": 3068,
+        "completion_tokens": 107,
+        "total_tokens": 3175,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 76,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc combat_skill 0.9\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2218,
+      "usage": {
+        "prompt_tokens": 3077,
+        "completion_tokens": 10,
+        "total_tokens": 3087,
+        "cost": 0.00043358,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043358,
+          "upstream_inference_prompt_cost": 0.00043078,
+          "upstream_inference_completions_cost": 0.0000028
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021679000000000002,
+      "output": "```\nmc feed_mob cow wheat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 4778,
+      "usage": {
+        "prompt_tokens": 3068,
+        "completion_tokens": 282,
+        "total_tokens": 3350,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 256,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc feed_mob cow wheat\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 744,
+      "usage": {
+        "prompt_tokens": 3079,
+        "completion_tokens": 76,
+        "total_tokens": 3155,
+        "cost": 0.000151284,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 2688,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000151284,
+          "upstream_inference_prompt_cost": 0.000130004,
+          "upstream_inference_completions_cost": 0.00002128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 62,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022617,
+      "output": "```\nmc find_blocks iron_ore 32\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5277,
+      "usage": {
+        "prompt_tokens": 3071,
+        "completion_tokens": 193,
+        "total_tokens": 3264,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 185,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc find_blocks iron_ore 32\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 840,
+      "usage": {
+        "prompt_tokens": 3071,
+        "completion_tokens": 90,
+        "total_tokens": 3161,
+        "cost": 0.00045514,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00045514,
+          "upstream_inference_prompt_cost": 0.00042994,
+          "upstream_inference_completions_cost": 0.0000252
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 81,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022757000000000002,
+      "output": "```\nmc chest @treasure\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 7288,
+      "usage": {
+        "prompt_tokens": 3062,
+        "completion_tokens": 110,
+        "total_tokens": 3172,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 97,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc chest @treasure\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2288,
+      "usage": {
+        "prompt_tokens": 3081,
+        "completion_tokens": 9,
+        "total_tokens": 3090,
+        "cost": 0.00043386,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00043386,
+          "upstream_inference_prompt_cost": 0.00043134,
+          "upstream_inference_completions_cost": 0.00000252
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00021693000000000003,
+      "output": "```\nmc fight zombie 6\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 10019,
+      "usage": {
+        "prompt_tokens": 3072,
+        "completion_tokens": 431,
+        "total_tokens": 3503,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 443,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc fight zombie 6\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 766,
+      "usage": {
+        "prompt_tokens": 3080,
+        "completion_tokens": 50,
+        "total_tokens": 3130,
+        "cost": 0.0004452,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0004452,
+          "upstream_inference_prompt_cost": 0.0004312,
+          "upstream_inference_completions_cost": 0.000014
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 42,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022260000000000002,
+      "output": "```\nmc mode guard\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 5312,
+      "usage": {
+        "prompt_tokens": 3073,
+        "completion_tokens": 159,
+        "total_tokens": 3232,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 161,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc mode guard\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 1024,
+      "usage": {
+        "prompt_tokens": 3077,
+        "completion_tokens": 104,
+        "total_tokens": 3181,
+        "cost": 0.0004599,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0004599,
+          "upstream_inference_prompt_cost": 0.00043078,
+          "upstream_inference_completions_cost": 0.00002912
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 88,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022995,
+      "output": "```\nmc deposit iron_ingot 32 @vault\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 10007,
+      "usage": {
+        "prompt_tokens": 3068,
+        "completion_tokens": 158,
+        "total_tokens": 3226,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 120,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc deposit iron_ingot 32 @vault\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "deepseek-v4-flash",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 895,
+      "usage": {
+        "prompt_tokens": 3072,
+        "completion_tokens": 63,
+        "total_tokens": 3135,
+        "cost": 0.000146664,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 2688,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000146664,
+          "upstream_inference_prompt_cost": 0.000129024,
+          "upstream_inference_completions_cost": 0.00001764
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 54,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0.00022386000000000004,
+      "output": "```\nmc scene 8\n```"
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "nemotron-3-super-120b-free",
+      "pass": true,
+      "match": "exact",
+      "elapsed_ms": 2149,
+      "usage": {
+        "prompt_tokens": 3063,
+        "completion_tokens": 121,
+        "total_tokens": 3184,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 108,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "cost_usd": 0,
+      "output": "```\nmc scene 8\n```"
+    }
+  ]
+}

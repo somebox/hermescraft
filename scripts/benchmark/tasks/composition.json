@@ -1,0 +1,43 @@
+[
+  {
+    "id": "shelter_corner",
+    "category": "world+craft",
+    "task": "You're at (0, 65, 0) with cobblestone in inventory. Build a 3-block-tall corner pillar at (5, 65, 5) using cobblestone. Output the mc commands to place the three blocks.",
+    "correct_lines_required": [
+      "mc place 5 65 5 cobblestone",
+      "mc place 5 66 5 cobblestone",
+      "mc place 5 67 5 cobblestone"
+    ],
+    "scoring": "all_lines_present"
+  },
+  {
+    "id": "smelt_iron_pipeline",
+    "category": "craft",
+    "task": "You have raw_iron in inventory and you're standing next to a furnace. Smelt 4 raw_iron into iron_ingot, then check the furnace's status.",
+    "correct_lines_required": [
+      "mc smelt raw_iron 4",
+      "mc furnace_check"
+    ],
+    "scoring": "all_lines_present_any_order_partial_args_ok"
+  },
+  {
+    "id": "rescue_to_safehome",
+    "category": "movement+combat",
+    "task": "Bot is at low HP and surrounded by zombies. Walk to the home mark, then set the bot to guard mode.",
+    "correct_lines_required": [
+      "mc go_mark home",
+      "mc mode guard"
+    ],
+    "scoring": "all_lines_present"
+  },
+  {
+    "id": "scout_then_report",
+    "category": "observe+social",
+    "task": "Scan for hostile entities within 32 blocks, then send a public chat message saying \"all clear\" if none found. Output both commands; the chat is conditional on the agent reading the find result.",
+    "correct_lines_required": [
+      "mc find_entities",
+      "mc chat"
+    ],
+    "scoring": "all_lines_present_partial_args_ok"
+  }
+]

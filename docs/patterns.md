@@ -204,7 +204,27 @@ shim, ask why.
 
 ---
 
-## P13. `script/check-conventions.mjs` is the gate
+## P13. Benchmark LLM accuracy on `mc` after pattern changes
+
+**Pattern:** when the registry, cheatsheet, or skill text changes, run
+`scripts/benchmark/run.mjs` to verify LLM accuracy didn't regress. Persist
+the run JSON in `scripts/benchmark/runs/`. Use `scripts/benchmark/compare.mjs`
+to diff against the prior run; >5pp regression on any (model, group) is a
+failure.
+
+**Why:** the v1-vs-v2 grammar eval (one-off) showed that intuitions about
+"this should be clearer for LLMs" don't always hold. The benchmark is the
+durable version of that experiment — run continuously, it catches the
+opposite failure mode (a "small" change accidentally making the surface
+harder to compose against).
+
+**How to check:** `node scripts/benchmark/run.mjs` after the change;
+`node scripts/benchmark/compare.mjs` to diff. Sprint exit gates require
+this to pass.
+
+---
+
+## P14. `script/check-conventions.mjs` is the gate
 
 **Pattern:** convention violations that can be detected programmatically
 should be detected programmatically. Run before commit:
