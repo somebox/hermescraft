@@ -1,0 +1,75 @@
+# G4 — container I/O: selectively withdraw items from a chest.
+#
+# Pre-placed chest at (3, 65, 0) with mixed contents:
+#   oak_log×8, cobblestone×4, oak_planks×5, iron_ingot×6
+#
+# Bot starts with empty inventory at (0, 65, 0). Goal: withdraw all
+# WOOD-type items (oak_log + oak_planks). Leave the stone/ore items.
+#
+# Tests:
+#   - mc chest (peek + open)
+#   - mc withdraw ITEM COUNT
+#   - Selectivity: agent shouldn't grab everything blindly.
+
+agent_test_id: G4_chest_withdraw
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: take all the WOOD-type items from the chest at (3, 65, 0).
+  Leave the non-wood items (stone, ores, ingots, etc.) in the chest.
+
+  Tips:
+    - `mc chest 3 65 0` opens the chest and lists what's inside.
+    - `mc withdraw ITEM COUNT 3 65 0` takes COUNT of ITEM. Use **COUNT=0
+      to take all of that item** (otherwise it only takes the number
+      you specify — `mc withdraw oak_log 1` only takes ONE log, not all).
+    - "Wood-type" means logs, planks, sticks, fences, etc. — anything
+      made primarily from trees.
+
+  Stop when ALL wood items from the chest are in your inventory.
+
+skills: [minecraft-survival]
+max_turns: 10
+timeout_seconds: 240
+
+expect:
+  bot_inventory:
+    oak_log: ">=8"
+    oak_planks: ">=5"
+  # Verify selectivity: bot should NOT have the non-wood items.
+  bot_inventory_excludes:
+    cobblestone: ">=1"
+    iron_ingot: ">=1"
+  mc_cli_invocations_max: 12
+
+verify_after_prep:
+  - { block: chest, min_count: 1 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  # Chest at (3, 65, 0) pre-loaded with mixed items. NB: setblock+inline
+  # NBT silently ignores stack counts (post-1.20 the field is `count` not
+  # `Count` and NBT-inside-setblock is finicky). data merge with int count
+  # is the reliable path.
+  - "execute in landfolk-test run setblock 3 65 0 minecraft:chest"
+  - 'execute in landfolk-test run data merge block 3 65 0 {Items:[{Slot:0b,id:"minecraft:oak_log",count:8},{Slot:1b,id:"minecraft:cobblestone",count:4},{Slot:2b,id:"minecraft:oak_planks",count:5},{Slot:3b,id:"minecraft:iron_ingot",count:6}]}'
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

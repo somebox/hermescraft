@@ -1,0 +1,69 @@
+# G5 — composite: mine + smelt iron.
+#
+# Bot has stone_pickaxe + saturation. Iron_ore at (3, 65, 0), coal_ore
+# at (-3, 65, 0). Furnace pre-placed at (1, 65, 0).
+#
+# Chain:
+#   1. mc collect iron_ore → drops raw_iron (1+)
+#   2. mc collect coal_ore → drops coal (1+)
+#   3. mc smelt raw_iron coal → produces iron_ingot
+#
+# Tests the natural step after G1 (stone pickaxe → iron tier).
+
+agent_test_id: G5_iron_smelt
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: end with iron_ingot in your inventory.
+
+  There's one iron_ore nearby, one coal_ore, and a furnace. Use the
+  `mc nearby` or `mc scene` verbs if you need to locate them.
+
+  Standard chain:
+    - Mine iron_ore (drops raw_iron, since you have a stone pickaxe).
+    - Mine coal_ore (drops coal, for fuel).
+    - `mc smelt raw_iron coal 1` smelts 1 raw_iron using coal as fuel.
+
+  Stop when you have iron_ingot.
+
+skills: [minecraft-survival]
+max_turns: 12
+timeout_seconds: 240
+
+expect:
+  bot_inventory:
+    iron_ingot: ">=1"
+  mc_verbs_include_any: [smelt]
+  mc_cli_invocations_max: 18
+
+verify_after_prep:
+  - { block: iron_ore, min_count: 1 }
+  - { block: coal_ore, min_count: 1 }
+  - { block: furnace, min_count: 1 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run setblock 3 65 0 minecraft:iron_ore"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:coal_ore"
+  - "execute in landfolk-test run setblock 1 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:stone_pickaxe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

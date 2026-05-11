@@ -41,8 +41,8 @@ prompt: |
   after that — just report and exit.
 
 skills: [minecraft-survival, minecraft-building]
-max_turns: 30
-timeout_seconds: 480
+max_turns: 25
+timeout_seconds: 240
 
 expect:
   bot_inventory:

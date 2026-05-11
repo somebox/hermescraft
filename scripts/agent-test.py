@@ -45,7 +45,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 DEFAULT_BOT_URL = "http://localhost:3001"
-DEFAULT_MODEL = "google/gemini-2.5-flash"  # current baseline (gemini-2.5-flash-lite refuses ~50% of tasks claiming "no MC tools available", non-lite is reliable + fast)
+DEFAULT_MODEL = "google/gemini-2.5-flash"  # baseline for terminal-tool agent tests.
+# 2026-05 model findings (agent-test context, not direct-API/benchmark):
+#   - google/gemini-2.5-flash       — reliable, fast, ~6 mc calls/composite test
+#   - openai/gpt-4o-mini            — confuses mc CLI for memory/search_files
+#                                     even with explicit prompt; better for
+#                                     benchmark-style direct-response tests
+#   - google/gemini-2.5-flash-lite  — refuses ~50% of tasks claiming no MC tools
+#   - meta-llama/llama-3.1-8b-instruct — comparable to gemini-2.5-flash-lite,
+#                                     useful for cheap regression runs
+#   - deepseek/deepseek-v4-flash    — works but 2-3x slower than gemini-2.5-flash
 DEFAULT_MAX_TURNS = 8
 DEFAULT_TIMEOUT_S = 180
 
@@ -170,6 +179,20 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         for item, want in expect["bot_inventory"].items():
             ok, have, _, label = _inv_check(item, want, inv)
             results.append({"kind": f"inv:{label}", "pass": ok, "detail": f"have={have}"})
+
+    if "bot_inventory_excludes" in expect:
+        # Items the bot should NOT have at end. Each item/threshold defines
+        # the failure boundary: predicate fails if bot has >= that count.
+        inv = end_state.get("inventory_summary") or {}
+        offenders = []
+        for item, want in expect["bot_inventory_excludes"].items():
+            ok, have, threshold, _ = _inv_check(item, want, inv)
+            if ok:
+                offenders.append(f"{item}={have}>={threshold}")
+        any_offender = len(offenders) > 0
+        results.append({"kind": "inv_excludes",
+                         "pass": not any_offender,
+                         "detail": ("had: " + "; ".join(offenders)) if offenders else "clean"})
 
     if "bot_inventory_any" in expect:
         # Passes if ANY listed item meets its threshold. Useful for tests
@@ -356,35 +379,132 @@ def main():
 
     _t = time.time()
     stage_times["verify"] = _t - (overall_t0 + sum(stage_times.values()))
-    print(f"  launching hermes...")
+    # Stall watchdog kills hermes if its session file stops growing for this
+    # long — catches "agent loops on a 60s-timeout mc call" without waiting
+    # out the full spec timeout. Each tool call appends to the session file,
+    # so mtime growth is a reliable progress signal. Threshold must exceed
+    # hermes' own per-tool timeout (60s) so a single slow tool doesn't trip.
+    stall_seconds = int(spec.get("stall_seconds", 75))
+    print(f"  launching hermes... (timeout={timeout_s}s, stall_kill={stall_seconds}s)")
     t0 = time.time()
     agent_stdout = ""
     agent_stderr = ""
     hermes_status = "unknown"
     timed_out = False
+    stalled = False
+    sessions_dir = Path.home() / ".hermes" / "sessions"
+    pre_session_files = set(sessions_dir.glob("session_*.json")) if sessions_dir.exists() else set()
+    proc = None
+    my_session = None
+    # message_timeline records (t_since_launch, msg_count, role) each time
+    # the session file grows. Used to break down hermes wall time into
+    # per-step latencies after the run.
+    message_timeline = []
     try:
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=timeout_s, env=env)
-            agent_stdout = proc.stdout
-            agent_stderr = proc.stderr
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, env=env)
+        last_mtime = None
+        last_growth = time.time()
+        last_msg_count = 0
+        while True:
+            try:
+                proc.wait(timeout=1.0)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            elapsed = time.time() - t0
+            if elapsed > timeout_s:
+                proc.terminate()
+                try: proc.wait(timeout=5)
+                except subprocess.TimeoutExpired: proc.kill()
+                hermes_status = "timeout"
+                timed_out = True
+                break
+            # Identify our session file: newest *.json that wasn't there at start.
+            if my_session is None and sessions_dir.exists():
+                now_files = set(sessions_dir.glob("session_*.json"))
+                new_files = now_files - pre_session_files
+                if new_files:
+                    my_session = max(new_files, key=lambda p: p.stat().st_mtime)
+            if my_session and my_session.exists():
+                mt = my_session.stat().st_mtime
+                if last_mtime is None or mt > last_mtime:
+                    last_mtime = mt
+                    last_growth = time.time()
+                    # Sample message count for timeline (cheap; only on growth).
+                    try:
+                        sess_data = json.loads(my_session.read_text())
+                        msgs = sess_data.get("messages", [])
+                        if len(msgs) > last_msg_count:
+                            for m in msgs[last_msg_count:]:
+                                message_timeline.append((round(elapsed, 1), len(message_timeline) + 1, m.get("role", "?")))
+                            last_msg_count = len(msgs)
+                    except Exception:
+                        pass
+                elif time.time() - last_growth > stall_seconds:
+                    proc.terminate()
+                    try: proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired: proc.kill()
+                    hermes_status = "stalled"
+                    stalled = True
+                    print(f"  stall-watchdog: no session-file growth in {stall_seconds}s — killed hermes")
+                    break
+        agent_stdout, agent_stderr = proc.communicate()
+        if not timed_out and not stalled:
             hermes_status = "ok" if proc.returncode == 0 else f"exit_{proc.returncode}"
-        except subprocess.TimeoutExpired as e:
-            agent_stdout = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-            agent_stderr = (e.stderr or b"").decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-            hermes_status = "timeout"
-            timed_out = True
-        except KeyboardInterrupt:
-            hermes_status = "interrupted"
-            print("\n  interrupted — running cleanup before exit")
-            fixture_run(spec, "cleanup")
-            raise
     except KeyboardInterrupt:
+        if proc:
+            proc.terminate()
+            try: proc.wait(timeout=5)
+            except subprocess.TimeoutExpired: proc.kill()
+        hermes_status = "interrupted"
+        print("\n  interrupted — running cleanup before exit")
+        fixture_run(spec, "cleanup")
         sys.exit(130)
 
     wall_s = time.time() - t0
     stage_times["hermes"] = wall_s
     print(f"  hermes finished in {wall_s:.0f}s ({hermes_status})")
+
+    # Break the hermes wall time into model-think vs tool-exec phases by
+    # looking at inter-message latencies. Convention in hermes session log:
+    # role=assistant ← model output (preceded by think-time); role=tool ←
+    # tool result (preceded by tool-exec time). Edge: first assistant msg
+    # latency includes hermes startup (Python import + plugin load).
+    role_secs = {"think": 0.0, "tool_exec": 0.0, "other": 0.0}
+    role_counts = {"think": 0, "tool_exec": 0, "other": 0}
+    if message_timeline:
+        prev_t = 0.0
+        for t, _idx, role in message_timeline:
+            dt = max(0.0, t - prev_t)
+            if role == "assistant":
+                role_secs["think"] += dt
+                role_counts["think"] += 1
+            elif role == "tool":
+                role_secs["tool_exec"] += dt
+                role_counts["tool_exec"] += 1
+            else:
+                role_secs["other"] += dt
+                role_counts["other"] += 1
+            prev_t = t
+        # Account for hermes startup / final wrap (any time after last msg).
+        tail = wall_s - prev_t
+        if tail > 0:
+            role_secs["other"] += tail
+        parts = []
+        if role_counts["think"]:
+            parts.append(f"model_think={role_secs['think']:.0f}s({role_counts['think']} calls, avg {role_secs['think']/max(1,role_counts['think']):.1f}s)")
+        if role_counts["tool_exec"]:
+            parts.append(f"tool_exec={role_secs['tool_exec']:.0f}s({role_counts['tool_exec']} calls, avg {role_secs['tool_exec']/max(1,role_counts['tool_exec']):.1f}s)")
+        parts.append(f"other={role_secs['other']:.0f}s")
+        print(f"  hermes breakdown: " + " | ".join(parts))
+    stage_times["hermes_model_think"] = round(role_secs["think"], 1)
+    stage_times["hermes_tool_exec"] = round(role_secs["tool_exec"], 1)
+    stage_times["hermes_other"] = round(role_secs["other"], 1)
+    if os.environ.get("AGENT_TEST_TIMELINE"):
+        print(f"  hermes message timeline (t_s, role):")
+        for t, _i, role in message_timeline:
+            print(f"    {t:6.1f}s  {role}")
 
     _t = time.time()
     post = observe(args.bot_url)
@@ -407,22 +527,28 @@ def main():
 
     # Read the session JSON to get the real tool-call sequence and counts.
     # -Q suppresses tool traces in stdout, so this is the only reliable source.
+    # On timeout/stall, the session_id line may not have flushed to stderr —
+    # fall back to my_session (the file path the watchdog identified).
     tool_calls = []
+    sess_path = None
     if session_id:
         sess_path = Path.home() / ".hermes" / "sessions" / f"session_{session_id}.json"
-        if sess_path.exists():
-            try:
-                sess = json.loads(sess_path.read_text())
-                for msg in sess.get("messages", []):
-                    for tc in (msg.get("tool_calls") or []):
-                        fn = tc.get("function", {}) or {}
-                        try:
-                            args = json.loads(fn.get("arguments") or "{}")
-                        except Exception:
-                            args = {"_raw": fn.get("arguments")}
-                        tool_calls.append({"name": fn.get("name"), "args": args})
-            except Exception as e:
-                print(f"  WARN: could not read session {sess_path}: {e}", file=sys.stderr)
+    elif my_session and my_session.exists():
+        sess_path = my_session
+        session_id = sess_path.stem.replace("session_", "")
+    if sess_path and sess_path.exists():
+        try:
+            sess = json.loads(sess_path.read_text())
+            for msg in sess.get("messages", []):
+                for tc in (msg.get("tool_calls") or []):
+                    fn = tc.get("function", {}) or {}
+                    try:
+                        args = json.loads(fn.get("arguments") or "{}")
+                    except Exception:
+                        args = {"_raw": fn.get("arguments")}
+                    tool_calls.append({"name": fn.get("name"), "args": args})
+        except Exception as e:
+            print(f"  WARN: could not read session {sess_path}: {e}", file=sys.stderr)
 
     # Extract individual `mc <verb>` invocations from terminal tool commands.
     mc_verbs_used = []

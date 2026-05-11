@@ -38,7 +38,7 @@ prompt: |
 
 skills: [minecraft-survival, minecraft-building]
 max_turns: 15
-timeout_seconds: 300
+timeout_seconds: 180
 
 expect:
   # Top layer of each of the 4 corners — proves the wall reached y=67.

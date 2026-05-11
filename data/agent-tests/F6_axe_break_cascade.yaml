@@ -47,7 +47,7 @@ prompt: |
 
 skills: [minecraft-survival, minecraft-building]
 max_turns: 20
-timeout_seconds: 300
+timeout_seconds: 180
 
 expect:
   bot_inventory_any:

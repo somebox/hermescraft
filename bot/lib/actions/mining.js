@@ -528,8 +528,13 @@ export function createMiningActions(deps) {
     async pickup() {
       const b = ensureBot();
       const invBefore = b.inventory.items().reduce((s, i) => s + i.count, 0);
+      const PER_ITEM_TIMEOUT_MS = 6000;
+      const OVERALL_BUDGET_MS = 25000;
+      const start = Date.now();
+      let skipped_unreachable = 0;
 
       for (let attempt = 0; attempt < 3; attempt++) {
+        if (Date.now() - start > OVERALL_BUDGET_MS) break;
         const pos = b.entity.position;
         const drops = Object.values(b.entities)
           .filter(e => (e.name === 'item' || e.displayName === 'Item') && e.position.distanceTo(pos) < 16)
@@ -538,16 +543,30 @@ export function createMiningActions(deps) {
         if (drops.length === 0) break;
 
         for (const drop of drops.slice(0, 8)) {
+          if (Date.now() - start > OVERALL_BUDGET_MS) break;
           try {
-            await b.pathfinder.goto(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1));
+            // Race pathfinder.goto against a hard per-item timeout. Without
+            // this, pathfinder can spin indefinitely on items in cramped or
+            // unreachable spots (caves, hole bottoms, behind blocks) — the
+            // common "Flint runs in place" failure mode.
+            const goto = b.pathfinder.goto(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1));
+            const timer = new Promise((_, rej) => setTimeout(() => rej(new Error('pickup_per_item_timeout')), PER_ITEM_TIMEOUT_MS));
+            await Promise.race([goto, timer]);
             await sleep(400);
-          } catch {}
+          } catch (err) {
+            if (err?.message === 'pickup_per_item_timeout') {
+              skipped_unreachable++;
+              try { b.pathfinder.stop(); } catch { /* ignore */ }
+              try { b.clearControlStates?.(); } catch { /* ignore */ }
+            }
+          }
         }
       }
 
       const invAfter = b.inventory.items().reduce((s, i) => s + i.count, 0);
       const gained = invAfter - invBefore;
-      return { result: gained > 0 ? `Picked up ${gained} items.` : 'No items to pick up.' };
+      const note = skipped_unreachable > 0 ? ` (${skipped_unreachable} unreachable, skipped)` : '';
+      return { result: gained > 0 ? `Picked up ${gained} items${note}.` : `No items picked up${note}.` };
     },
 
     async find_blocks({ block, radius = 32, count = 10 }) {
