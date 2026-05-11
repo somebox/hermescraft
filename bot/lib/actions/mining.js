@@ -2,6 +2,39 @@ import { Vec3 } from 'vec3';
 import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards } from '../bot/dig-tools.js';
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/perception.js';
 
+/**
+ * Race pathfinder.goto against a hard wall-clock timeout. Without this, the
+ * pathfinder can spin indefinitely on unreachable targets (cramped spots,
+ * blocks behind other blocks, items at the bottom of holes) — the visible
+ * "Flint stuck running in place" failure mode. On timeout, stop the
+ * pathfinder and clear control states so the bot is left in a clean state.
+ *
+ * @param {import('mineflayer').Bot} b
+ * @param {object} goal - mineflayer-pathfinder goal
+ * @param {number} timeoutMs
+ * @throws Error("pathfinder_timeout") on timeout, or the underlying
+ *         pathfinder error otherwise.
+ */
+async function gotoWithTimeout(b, goal, timeoutMs) {
+  let timer;
+  try {
+    await Promise.race([
+      b.pathfinder.goto(goal),
+      new Promise((_, rej) => {
+        timer = setTimeout(() => rej(new Error('pathfinder_timeout')), timeoutMs);
+      }),
+    ]);
+  } catch (err) {
+    if (/** @type {Error} */ (err).message === 'pathfinder_timeout') {
+      try { b.pathfinder.stop(); } catch { /* ignore */ }
+      try { b.clearControlStates?.(); } catch { /* ignore */ }
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function createMiningActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveMiningBlockName, fairPlayHarvestTrunkCandidates, findVisibleBlocksByNameWithPhysicalSweep, entitiesMatchingAfterLookSweep, rememberSocialEvent } = deps;
   const handlers = {
@@ -74,7 +107,7 @@ export function createMiningActions(deps) {
               (a, c) => b.entity.position.distanceTo(a) - b.entity.position.distanceTo(c),
             )[0];
             try {
-              await b.pathfinder.goto(new goals.GoalNear(nearest.x, nearest.y, nearest.z, 2));
+              await gotoWithTimeout(b, new goals.GoalNear(nearest.x, nearest.y, nearest.z, 2), 8000);
             } catch {
               // Keep graceful failure path below with an actionable hint.
             }
@@ -237,17 +270,17 @@ export function createMiningActions(deps) {
             if (horizDist > 4) {
               const navY = Math.floor(curPos.y);
               try {
-                await b.pathfinder.goto(new goals.GoalNear(pos.x, navY, pos.z, 2));
+                await gotoWithTimeout(b, new goals.GoalNear(pos.x, navY, pos.z, 2), 8000);
                 pathOk = true;
               } catch {
                 try {
-                  await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3));
+                  await gotoWithTimeout(b, new goals.GoalNear(pos.x, pos.y, pos.z, 3), 6000);
                   pathOk = true;
                 } catch { /* both attempts failed */ }
               }
             } else {
               try {
-                await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 2));
+                await gotoWithTimeout(b, new goals.GoalNear(pos.x, pos.y, pos.z, 2), 6000);
                 pathOk = true;
               } catch { /* close pathfind failed */ }
             }
@@ -304,7 +337,7 @@ export function createMiningActions(deps) {
         for (const drop of drops.slice(0, 6)) {
           try {
             const dropPos = drop.position.clone();
-            await b.pathfinder.goto(new goals.GoalNear(dropPos.x, dropPos.y, dropPos.z, 1));
+            await gotoWithTimeout(b, new goals.GoalNear(dropPos.x, dropPos.y, dropPos.z, 1), 5000);
             await sleep(400);
             pickedUpPositions.push({ x: Math.round(dropPos.x * 10) / 10, y: Math.round(dropPos.y * 10) / 10, z: Math.round(dropPos.z * 10) / 10 });
           } catch { /* drop pickup pathfind fail; pickup attempt continues */ }
@@ -445,7 +478,7 @@ export function createMiningActions(deps) {
 
       if (distance > 4.5) {
         try {
-          await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+          await gotoWithTimeout(b, new goals.GoalNear(x, y, z, 3), 10000);
         } catch (err) {
           return {
             ok: false,
@@ -545,19 +578,13 @@ export function createMiningActions(deps) {
         for (const drop of drops.slice(0, 8)) {
           if (Date.now() - start > OVERALL_BUDGET_MS) break;
           try {
-            // Race pathfinder.goto against a hard per-item timeout. Without
-            // this, pathfinder can spin indefinitely on items in cramped or
-            // unreachable spots (caves, hole bottoms, behind blocks) — the
-            // common "Flint runs in place" failure mode.
-            const goto = b.pathfinder.goto(new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1));
-            const timer = new Promise((_, rej) => setTimeout(() => rej(new Error('pickup_per_item_timeout')), PER_ITEM_TIMEOUT_MS));
-            await Promise.race([goto, timer]);
+            // Per-item timeout: pathfinder spins indefinitely on drops in
+            // cramped/unreachable spots (caves, hole bottoms, behind blocks).
+            await gotoWithTimeout(b, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 1), PER_ITEM_TIMEOUT_MS);
             await sleep(400);
           } catch (err) {
-            if (err?.message === 'pickup_per_item_timeout') {
+            if (/** @type {Error} */ (err).message === 'pathfinder_timeout') {
               skipped_unreachable++;
-              try { b.pathfinder.stop(); } catch { /* ignore */ }
-              try { b.clearControlStates?.(); } catch { /* ignore */ }
             }
           }
         }
