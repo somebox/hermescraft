@@ -455,6 +455,21 @@ def main():
         cmd.extend(["-m", model])
     if skills:
         cmd.extend(["-s", ",".join(skills)])
+    # Per-spec toolsets override; default `terminal` — the G-test agent
+    # only needs the `mc` CLI surface, which lives in the terminal
+    # toolset. Skipping the rest (browser, code_execution, delegation,
+    # cronjob, etc.) saves ~10k tokens of tool-schema overhead per
+    # request. Override via `toolsets: [...]` in the test YAML.
+    toolsets = spec.get("toolsets") or ["terminal"]
+    cmd.extend(["-t", ",".join(toolsets)])
+    # G-tests have self-contained step-by-step prompts; the global
+    # ~/.hermes/SOUL.md (3.6k tokens of "Hermes — Playing Minecraft"
+    # guidance) plus preloaded skills are dead weight. --ignore-rules
+    # skips AGENTS.md / SOUL.md / .cursorrules / memory / preloaded
+    # skills. Saves another ~3.5k tokens per request. Tests that NEED
+    # SOUL/skill context can set `ignore_rules: false` in the spec.
+    if spec.get("ignore_rules", True):
+        cmd.append("--ignore-rules")
 
     env = os.environ.copy()
     env["MC_API_URL"] = args.bot_url
