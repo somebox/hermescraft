@@ -9,6 +9,7 @@ import { createWorldActions } from './world.js';
 import { createContainerActions } from './containers.js';
 import { createFarmingActions } from './farming.js';
 import { createAnimalsActions } from './animals.js';
+import { createWaterActions } from './water.js';
 
 export function createAllActions(deps) {
   const base = {
@@ -29,7 +30,8 @@ export function createAllActions(deps) {
   const movement = createMovementActions(withSelf);
   const farming = createFarmingActions(withSelf);
   const animals = createAnimalsActions(withSelf);
+  const water = createWaterActions(withSelf);
 
-  Object.assign(base, combat, crafting, world, movement, farming, animals);
+  Object.assign(base, combat, crafting, world, movement, farming, animals, water);
   return base;
 }

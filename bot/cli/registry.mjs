@@ -1052,6 +1052,48 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc lure chicken 5 65 5', 'mc lure cow 0 64 0'],
   }),
 
+  g('fish', 'world', [], {
+    description: 'Cast a fishing_rod into nearby water, wait for a bite (5-30s vanilla), reel in, and pick up the drop. Optional timeout_seconds (default 60). Returns NO_ROD, NO_WATER, FISH_TIMEOUT.',
+    method: 'POST',
+    path: '/action/fish',
+    argSchema: [{ key: 'timeout_seconds', type: 'number', default: 60 }],
+    bodyFn: (p) => JSON.stringify({ timeout_seconds: Number(p.timeout_seconds) || 60 }),
+    usage: 'mc fish [TIMEOUT_SECONDS]',
+    examples: ['mc fish', 'mc fish 90'],
+  }),
+
+  g('place_boat', 'world', [], {
+    description: 'Place a boat (any *_boat in inventory) at water cell X Y Z. The target block must be water. Boats float on water surface; vanilla allows ridden mobs to be carried. Returns NO_BOAT, NO_WATER_AT_TARGET.',
+    method: 'POST',
+    path: '/action/place_boat',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    usage: 'mc place_boat X Y Z',
+    examples: ['mc place_boat 5 63 5'],
+  }),
+
+  g('board', 'world', ['mount'], {
+    description: 'Mount the nearest boat within 6 blocks. Bot becomes the rider; movement verbs steer the boat. Returns NO_BOAT, ALREADY_MOUNTED, OUT_OF_RANGE.',
+    method: 'POST',
+    path: '/action/board',
+    bodyFn: () => '{}',
+    usage: 'mc board',
+    examples: ['mc board'],
+  }),
+
+  g('disembark', 'world', ['dismount'], {
+    description: 'Exit the current vehicle (boat). Returns NOT_MOUNTED if the bot isn\'t in a vehicle.',
+    method: 'POST',
+    path: '/action/disembark',
+    bodyFn: () => '{}',
+    usage: 'mc disembark',
+    examples: ['mc disembark'],
+  }),
+
   g('toss', 'world', ['drop'], {
     description: 'Drop ITEM [COUNT] from inventory',
     method: 'POST',

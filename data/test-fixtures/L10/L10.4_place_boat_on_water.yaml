@@ -1,0 +1,25 @@
+# L10.4 — place_boat_on_water: bot at pond edge with boat → boat entity spawns.
+#
+# Setup: bot at (0,65,0) holding oak_boat; water at (0,64,3).
+# Action: POST /action/place_boat {x:0, y:64, z:3}
+# Expected: ok=true, data.boat_entity_id set.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -3 64 3 3 64 9 minecraft:water"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "clear Flint"
+  - "give Flint minecraft:oak_boat 1"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

@@ -361,6 +361,54 @@ The sustainable maintenance pattern:
 - **Trampling crops with animals**: animals walking on bare farmland trample
   it back to dirt, just like the bot. Keep the pen on grass, not farmland.
 
+## Fishing and boats
+
+### Fishing
+
+`mc fish [TIMEOUT_SECONDS]` casts a fishing rod into nearby water, waits
+for a bite (vanilla 5-30s, less in rain or with sky exposure), reels in,
+and returns the catch. Default timeout 60s.
+
+Loot table:
+- ~85% fish: cod (60%), salmon (25%), pufferfish (13%), tropical_fish (2%)
+- ~10% junk: bone, leather, stick, string, ink_sac, etc.
+- ~5% treasure: enchanted_book, name_tag, nautilus_shell, saddle, etc.
+
+Requirements: fishing_rod in inventory; water source block within 6 blocks
+of the bot. The verb auto-positions the bot ~5-7 blocks back from water
+so the bobber arc lands inside the pond.
+
+Errors: `NO_ROD`, `NO_WATER`, `FISH_TIMEOUT` (no bite in TIMEOUT_SECONDS —
+retry; sometimes the bobber lands wrong).
+
+Rain in the test world speeds up bites significantly. Day vs night does
+not matter mechanically. Each successful catch consumes 1 durability from
+the rod (max 64).
+
+### Boats
+
+Boats let you cross water without swimming risk and carry mobs as
+passengers. Crafted from 5 planks (any overworld wood).
+
+| Verb | Effect |
+|---|---|
+| `mc place_boat X Y Z` | Spawn a boat on the water at (X,Y,Z). Requires `*_boat` item in inventory. PaperMCP fallback handles 1.21+ silent-no-op. |
+| `mc board` | Mount the nearest boat within 6 blocks. Returns NO_BOAT if none found. |
+| `mc disembark` | Exit the current vehicle. PaperMCP fallback uses server-side `ride dismount`. |
+
+Typical crossing pattern:
+1. `mc place_boat <waterX> <waterY> <waterZ>` next to your shore.
+2. `mc board` to enter the boat.
+3. (Optional) `mc goto <farX> <farY> <farZ>` while mounted — the boat
+   moves with you in vanilla, though pathfinder steering through water
+   is unreliable; for long crossings, disembark and re-board on the far
+   side instead.
+4. `mc disembark` to step out.
+
+Boats float on water and survive land contact (modern MC). They take
+damage from explosions, fire, lava, cactus, and mob attacks. A destroyed
+boat drops as an item to be picked up.
+
 ## Block & item names (use EXACT names with mc commands)
 
 **Wood**: oak_log, birch_log, spruce_log, dark_oak_log, jungle_log, acacia_log → oak_planks, birch_planks, etc. → stick

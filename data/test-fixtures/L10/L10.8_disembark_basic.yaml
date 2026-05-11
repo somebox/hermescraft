@@ -1,0 +1,29 @@
+# L10.8 — disembark_basic: bot in a boat → bot exits.
+#
+# Setup: boat at (0,65,3), bot summoned ON the boat via ride command.
+# Note: prep summons boat and uses /ride to mount bot before the action.
+# Action: POST /action/disembark
+# Expected: ok=true.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -3 64 3 3 64 9 minecraft:water"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "execute in landfolk-test run summon minecraft:oak_boat 0.5 65 3.5"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  # Mount the bot on the boat via vanilla ride command
+  - "local: sleep 1"
+  - "execute in landfolk-test as @e[type=oak_boat,limit=1] run ride Flint mount @s"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

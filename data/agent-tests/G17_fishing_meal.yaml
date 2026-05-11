@@ -1,0 +1,77 @@
+# G17 — bot stands by a pond and fishes until it has 3 fish/items.
+#
+# Tests `mc fish` as a renewable food source. Bot loops the verb until
+# inventory has 3 catches (any combo of cod/salmon/pufferfish/junk).
+
+agent_test_id: G17_fishing_meal
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Setup:
+    - You stand at (0, 65, 0) next to a pond at z >= 3.
+    - You have 1 fishing_rod.
+
+  Goal: catch at least 3 fish or fishing-loot items by repeatedly
+  fishing. Each `mc fish` call takes 5-30+ seconds because the bobber
+  must wait for a bite — be patient.
+
+  Execute:
+    1. `mc fish 90` — cast and wait up to 90 seconds. The bot finds
+       water automatically, casts, waits for a bite, and reels in.
+    2. Check the result. If you got something, run `mc fish 90` again
+       to catch the next one.
+    3. Repeat until your inventory has 3+ caught items combined.
+    4. Stop after the third successful catch.
+
+  Do NOT batch commands in execute_code Python scripts — run each
+  `mc fish` directly through the terminal tool.
+
+skills: [minecraft-survival]
+max_turns: 12
+timeout_seconds: 600
+post_wait_seconds: 4
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 18
+  mc_verbs_include_any: [fish]
+  # At least one successful catch. Vanilla fish loot is random (cod /
+  # salmon / pufferfish / tropical_fish / junk / treasure) — a precise
+  # type-count predicate is too brittle. We assert the catch produced
+  # SOMETHING fish-shaped.
+  bot_inventory_any:
+    cod: 1
+    salmon: 1
+    pufferfish: 1
+    tropical_fish: 1
+
+verify_after_prep:
+  - { block: water, min_count: 30 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run weather rain"  # rain speeds up bites
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block"
+  # Larger pond for reliable cast-landing
+  - "execute in landfolk-test run fill -4 64 3 4 64 12 minecraft:water"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:fishing_rod 1"
+
+cleanup:
+  - "execute in landfolk-test run weather clear"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

@@ -29,6 +29,13 @@ const LONG_ACTION_PATHS = new Set([
   '/action/goto_near',
   '/action/follow',
   '/action/pillar_step',
+  '/action/fish',
+  '/action/lure',
+  '/action/breed',
+  '/action/shear',
+  '/action/milk_cow',
+  '/action/hunt',
+  '/action/through',
   '/task/start',
 ]);
 

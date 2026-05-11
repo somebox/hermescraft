@@ -1,0 +1,22 @@
+# L10.3 — fish_no_water: rod in inventory but no water nearby.
+#
+# Action: POST /action/fish
+# Expected: ok=false, error.code=="NO_WATER".
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "clear Flint"
+  - "give Flint minecraft:fishing_rod 1"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+
+cleanup:
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

@@ -695,11 +695,59 @@ L9.1 breed_chicken_pair_success · L9.2 breed_no_food · L9.3 breed_no_pair · L
 
 ---
 
-## Sprint 10 (stub — to be planned)
+## Sprint 10 — Fishing + Boats
 
-| Sprint | Domain | Depends on | Status |
-|---|---|---|---|
-| 10 | Fishing + boats (`mc farm fish`, `mc self board/disembark`) | independent | planned |
+**Status:** SHIPPED 2026-05-11. 4 verbs (`mc fish`/`place_boat`/`board`/`disembark`) landed in `bot/lib/actions/water.js`. All 8 L10 fixtures green; G17 (fishing meal) + G18 (ferry crossing) PASS 3/3 on `gemini-2.5-flash`. Skill doc gained "Fishing and boats" section with loot tables and crossing pattern.
+
+**Goal:** unlock water gameplay. Fishing is the simplest renewable food source (independent of crops/animals); boats let bots cross water without drowning risk and ferry mobs.
+
+### Verbs
+
+| Verb | Shape | Notes |
+|---|---|---|
+| `mc fish [TIMEOUT]` | `mc fish 90` | Cast rod, wait for bite, reel in, return catch. Auto-positions ~7 blocks from water for predictable bobber arc. Default timeout 60s. |
+| `mc place_boat X Y Z` | `mc place_boat 0 64 3` | Spawn boat at water cell. PaperMCP fallback (clear + summon) handles Paper 1.21+ silent no-op on boat-from-item placement. |
+| `mc board` | `mc board` | Mount nearest boat within 6 blocks. Stale-vehicle cleanup if previous boat died. |
+| `mc disembark` | `mc disembark` | Exit current vehicle. PaperMCP fallback uses server-side `ride <user> dismount` when native + sneak-key both fail. |
+
+### Fishing geometry (notes)
+
+Mineflayer's view-direction packet sync with Paper 1.21+ is lossy — the bot's pitch sometimes doesn't apply at activateItem time, so the bobber casts with whatever pitch the server saw last (usually ~0 horizontal). Empirically, a default-pitch cast lands ~8-9 blocks horizontally from the bot, so the action computes a stance position ~7 blocks from the target water and lets gravity handle the rest.
+
+### Action contract notes
+
+- `mc fish`: 1500ms post-reel wait for inventory packet delivery (catch is added directly to inventory, no item entity).
+- `mc place_boat`: bot stances on a solid block adjacent to the water target (4 cardinal neighbors at refBlock+1Y), avoiding walks INTO water.
+- `mc board`: clears stale `b.vehicle` reference if the previous vehicle entity is no longer in `b.entities`.
+- `mc disembark`: 3-tier fallback (native dismount → sneak-key → PaperMCP `ride dismount`).
+- HTTP timeouts: added all Sprint 7-10 long-running verbs (fish/lure/breed/shear/milk_cow/hunt/through) to `LONG_ACTION_PATHS` in `bot/cli/http.mjs` so CLI doesn't abort at 25s.
+
+### Fixtures (L10, 8 total)
+
+L10.1 fish_basic_catch · L10.2 fish_no_rod · L10.3 fish_no_water · L10.4 place_boat_on_water · L10.5 place_boat_no_boat · L10.6 board_basic · L10.7 board_no_boat · L10.8 disembark_basic
+
+### Agent-tests (G17, G18)
+
+| ID | Scenario |
+|---|---|
+| G17 | `fishing_meal` — bot by a pond casts 3 times in the rain, accumulates fish in inventory. |
+| G18 | `ferry_crossing` — bot places a boat, boards, disembarks, walks to far shore. |
+
+### Exit gate met
+
+- All 8 L10 fixtures smoke-tested green (verbs return correct ok/error).
+- G17 + G18 each 3/3 PASS on default model.
+- check-conventions.mjs passes.
+- Skill text updated.
+
+---
+
+## Sprint 11+ (stubs — to be planned)
+
+Open domains for future sprints:
+- **Trading + villagers**: `mc trade VILLAGER_ID OFFER_INDEX` once a curing/restock model is sketched.
+- **Enchanting**: build enchanting table + 15 bookshelves, enchant tools via XP.
+- **Nether**: portal lighting, blaze rods, ender pearls (loops into endgame).
 
 Each becomes its own section here when the prior sprint exits.
 

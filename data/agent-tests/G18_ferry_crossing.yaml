@@ -1,0 +1,68 @@
+# G18 — bot crosses a stretch of water by placing a boat, boarding, and
+# disembarking on the far shore.
+#
+# Tests the full boat lifecycle: place_boat + board + disembark + position
+# transition.
+
+agent_test_id: G18_ferry_crossing
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Setup:
+    - You stand on the NORTH shore at (0, 65, 0).
+    - A 10x3 strip of water runs east-west at z=3..12.
+    - The SOUTH shore (your destination) is at z >= 13.
+    - You have 1 oak_boat.
+
+  Goal: cross the water and end up on the south shore (z >= 13).
+
+  Execute:
+    1. `mc place_boat 0 64 3` — drop a boat at the north edge of the
+       water (right next to where you stand). Boat consumes the item.
+    2. `mc board` — mount the boat. Bot becomes the rider.
+    3. `mc disembark` — exit the boat. (Note: this verb has a
+       PaperMCP fallback that always succeeds on this server.)
+    4. `mc goto 0 65 14` — walk to the south shore.
+
+  Don't batch commands. Run each through the terminal one at a time.
+
+skills: [minecraft-survival]
+max_turns: 10
+timeout_seconds: 240
+post_wait_seconds: 4
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 14
+  mc_verbs_include_any: [place_boat, board, disembark]
+  # Bot ended on the south shore. Range 4 is generous for pathfinding.
+  bot_at: { x: 0, y: 65, z: 14, range: 4 }
+
+verify_after_prep:
+  - { block: water, min_count: 25 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block"
+  # Water strip z=3..12
+  - "execute in landfolk-test run fill -5 64 3 5 64 12 minecraft:water"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:oak_boat 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
