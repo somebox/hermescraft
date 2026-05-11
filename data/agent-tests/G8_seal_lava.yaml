@@ -26,14 +26,16 @@ prompt: |
 
   You have an empty bucket. There is a lava source at (0, 65, -3).
 
-  Goal: pick up the lava, then deposit it at (1, 65, 0).
+  Goal, in order:
+    1. Walk near the lava source to fill your bucket.
+       `mc bucket_fill 0 65 -3` (you'll be close to the box).
+    2. Return to your starting position: `mc goto 0 65 0`.
+    3. From the starting position, deposit the lava 3 blocks east of
+       you: `mc bucket_empty 3 65 0`. You stay where you are — the
+       bucket_empty verb has 4-block reach.
+    4. Do NOT walk to (3, 65, 0). The lava there is dangerous.
 
-  Tools:
-    - `mc bucket_fill X Y Z`
-    - `mc bucket_empty X Y Z`
-    - `mc goto X Y Z`
-
-  Stop when the lava is placed at (1, 65, 0).
+  Stop after the deposit. Don't move further.
 
 skills: [minecraft-survival]
 max_turns: 8
@@ -41,12 +43,16 @@ timeout_seconds: 180
 post_wait_seconds: 10
 
 expect:
-  # Bot survived — even low HP is success if the reactive escape
-  # prevented death and lava landed where requested.
-  bot_hp_at_least: 1
+  # No deaths. The reactive layer must keep the bot alive — if it dies
+  # and respawns, that's a survival failure even if HP is back to 20.
+  bot_did_not_die: true
+  # Bot finished with substantial HP — the reactive should fire BEFORE
+  # the bot catches fire (preemptive on adjacent_lava), not just after.
+  # If reactive only kicks in after burning damage, HP drops below 16.
+  bot_hp_at_least: 16
   mc_verbs_include_any: [bucket_fill]
   world_block_at:
-    - { x: 1, y: 65, z: 0, block: lava }
+    - { x: 3, y: 65, z: 0, block: lava }
   # The reactive layer must have fired at least one escape_lava event.
   auto_action_fired: [escape_lava]
 

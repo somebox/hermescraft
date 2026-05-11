@@ -156,10 +156,14 @@ export function createReactive(deps) {
 
     // ── Always-on environmental safety (overrides combat, fires in hold mode
     //    too — we never let the bot stand in lava or drown to follow orders).
-    //    Lava: feet/head in lava → jump-and-flee. Adjacent lava + on-fire →
-    //    step away. Submerged + low oxygen → swim up.
-    if (state.in_lava || (state.on_fire && state.adjacent_lava)) {
-      return { action: 'escape_lava', hazards: state.lava_neighbors, why: state.in_lava ? 'in_lava' : 'on_fire_near_lava' };
+    //    Lava: PREEMPTIVE — any adjacent lava cell (or in-lava / on-fire)
+    //    triggers escape so the bot moves BEFORE taking fire damage, not
+    //    after. Submerged + low oxygen → swim up.
+    if (state.in_lava || state.adjacent_lava || state.on_fire) {
+      const why = state.in_lava ? 'in_lava'
+                 : state.on_fire ? 'on_fire'
+                 : 'adjacent_lava';
+      return { action: 'escape_lava', hazards: state.lava_neighbors, why };
     }
     if (state.in_water && state.oxygen <= 8) {
       return { action: 'swim_up', oxygen: state.oxygen, why: 'low_oxygen' };
@@ -516,15 +520,19 @@ export function createReactive(deps) {
   }
 
   /**
-   * Emergency lava escape. Picks the cardinal direction with NO lava neighbor
-   * (or the opposite of the closest lava if all sides are bad), then sprints
-   * + jumps to clear a 1-block lava cell. Bounded per-tick so the bot can
-   * re-evaluate next tick.
+   * Emergency lava escape. Picks a safety vector AWAY from the centroid of
+   * detected lava cells, looks there, and SUSTAINED-sprints for up to 1.5s
+   * — long enough to clear 6-8 blocks of distance, well outside any
+   * subsequent lava-flow re-engulfment. Bounded so the bot can still
+   * re-evaluate, but biased toward "get FAR" not "step back".
+   *
+   * Re-checks every 200ms during the sprint: if no longer adjacent to lava
+   * AND not on fire, break early (don't waste time fleeing a safe zone).
    */
   async function escapeLava(state, lavaHazards) {
     const b = state.bot;
     const startPos = { x: state.myPos.x, z: state.myPos.z };
-    // Build a "safety vector": away from average lava position.
+    // Safety vector: away from average lava position.
     let safeDx = 0, safeDz = 0;
     if (lavaHazards && lavaHazards.length > 0) {
       const cx = lavaHazards.reduce((s, h) => s + h.x + 0.5, 0) / lavaHazards.length;
@@ -533,21 +541,38 @@ export function createReactive(deps) {
       safeDz = state.myPos.z - cz;
       const mag = Math.hypot(safeDx, safeDz);
       if (mag > 0.01) { safeDx /= mag; safeDz /= mag; }
+    } else {
+      // No lava cells but on_fire — just sprint forward to clear any pursuing
+      // flame source. Direction doesn't matter as much; pick the bot's
+      // current facing.
+      safeDx = -Math.sin(b.entity.yaw);
+      safeDz = Math.cos(b.entity.yaw);
     }
-    // Look in the safe direction so movement is forward-sprint (faster than
-    // back-step) toward safety. If no clear vector, just jump in place — at
-    // worst we trade lateral motion for a tick of HP regen pending re-eval.
     try {
-      if (Math.abs(safeDx) + Math.abs(safeDz) > 0.01) {
-        const lookTarget = state.myPos.offset(safeDx * 4, 0, safeDz * 4);
-        await b.lookAt(lookTarget, true);
-      }
+      const lookTarget = state.myPos.offset(safeDx * 8, 0, safeDz * 8);
+      await b.lookAt(lookTarget, true);
     } catch { /* best-effort */ }
     try {
       b.setControlState('jump', true);
       b.setControlState('sprint', true);
       b.setControlState('forward', true);
-      await sleep(350);
+      // Sustained sprint loop: ~1.5s max, breaking early once safe.
+      for (let i = 0; i < 7; i++) {
+        await sleep(200);
+        // Re-read after each tick: safe if not in/adjacent to lava + not on fire.
+        const stillBurning = !!b.entity?.metadata?.[0] && (b.entity.metadata[0] & 0x01) !== 0;
+        const stillInLava = !!b.entity?.isInLava;
+        if (!stillBurning && !stillInLava) {
+          // Quick check: any lava block within 1 cardinal? If clear, break.
+          const fp = b.entity.position.floored();
+          let anyNeighborLava = false;
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const probe = b.blockAt(fp.offset(dx, 0, dz));
+            if (probe?.name === 'lava') { anyNeighborLava = true; break; }
+          }
+          if (!anyNeighborLava) break;
+        }
+      }
     } finally {
       b.setControlState('forward', false);
       b.setControlState('sprint', false);

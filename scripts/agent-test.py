@@ -114,7 +114,7 @@ def observe(bot_url: str) -> dict:
 
 
 def predicate_results(spec: dict, agent_chat: str, end_state: dict,
-                       mc_verbs: list = None) -> list:
+                       mc_verbs: list = None, pre_deaths: int = 0) -> list:
     """Evaluate each predicate, return list of {kind, pass, detail}."""
     expect = spec.get("expect", {}) or {}
     results = []
@@ -155,6 +155,18 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         ok = hp is not None and hp >= hpmin
         results.append({"kind": f"bot_hp>={hpmin}", "pass": bool(ok),
                          "detail": f"hp={hp if hp is not None else 'none'}"})
+
+    if expect.get("bot_did_not_die"):
+        # Bot's death counter (state.death_death_number) increments per death.
+        # Compare pre vs post to detect deaths during the test, regardless of
+        # whether the bot then respawned. Robust to "died and got back to
+        # almost-full HP" cases where bot_hp_at_least would still pass.
+        st = end_state.get("state") or {}
+        post_deaths = int(st.get("death_death_number") or 0)
+        died = post_deaths > pre_deaths
+        results.append({"kind": "bot_did_not_die",
+                         "pass": not died,
+                         "detail": f"deaths: pre={pre_deaths} post={post_deaths}" + (" (died!)" if died else "")})
 
     if "auto_action_fired" in expect:
         # Validates that the reactive layer auto-fired at least one of the
@@ -400,6 +412,7 @@ def main():
     pre_count = len(pre_actions)
     pre_pos = (pre.get("state") or {}).get("position") or {}
     pre_inv = pre.get("inventory_summary") or {}
+    pre_deaths = int((pre.get("state") or {}).get("death_death_number") or 0)
 
     prompt = spec.get("prompt", "").strip()
     if not prompt:
@@ -612,7 +625,7 @@ def main():
     for v in mc_verbs_used:
         verb_counts[v] = verb_counts.get(v, 0) + 1
 
-    preds = predicate_results(spec, agent_stdout, post, mc_verbs_used)
+    preds = predicate_results(spec, agent_stdout, post, mc_verbs_used, pre_deaths)
     all_pass = all(r["pass"] for r in preds) if preds else False
     verdict = "PASS" if all_pass and not timed_out else ("TIMEOUT" if timed_out else "FAIL")
 
