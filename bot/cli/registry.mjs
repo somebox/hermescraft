@@ -1107,6 +1107,24 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc disembark'],
   }),
 
+  g('sail', 'world', [], {
+    description: 'Sail the boat the bot is currently riding to X Y Z. Uses rider forward + look to steer; auto-stops within 2 blocks of target. Returns NOT_MOUNTED if not in a boat, OUT_OF_RANGE if the boat gets stuck/dismounted, TIMEOUT if not reached.',
+    method: 'POST',
+    path: '/action/sail',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+      { key: 'timeout_seconds', type: 'number', default: 60 },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x: Number(p.x), y: Number(p.y), z: Number(p.z),
+      ...(p.timeout_seconds !== undefined ? { timeout_seconds: Number(p.timeout_seconds) } : {}),
+    }),
+    usage: 'mc sail X Y Z [TIMEOUT_SECONDS]',
+    examples: ['mc sail 0 64 20', 'mc sail -50 64 0 120'],
+  }),
+
   g('toss', 'world', ['drop'], {
     description: 'Drop ITEM [COUNT] from inventory',
     method: 'POST',

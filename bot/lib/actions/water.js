@@ -403,18 +403,62 @@ export function createWaterActions(deps) {
           return { ok: false, error: { code: 'OUT_OF_RANGE', message: 'pathfind to boat failed', retry_safe: false }};
         }
       }
-
-      try {
-        b.mount(target);
-      } catch (err) {
-        return { ok: false, error: { code: 'INTERRUPTED', message: `mount failed: ${err.message}`, retry_safe: true }};
+      // Halt pathfinder + free movement. If we leave the goal active,
+      // physics keeps shoving the bot — it slides off the boat or hops
+      // into the water while we try to mount.
+      try { b.pathfinder.setGoal(null); } catch {}
+      for (const k of ['forward', 'back', 'left', 'right', 'jump', 'sprint']) {
+        try { b.setControlState(k, false); } catch {}
       }
-      // Mount is async on the server side; wait a beat and verify.
-      await sleep(400);
-      if (!b.vehicle) {
+
+      // Verifier: a real mount produces a `set_passengers` packet that
+      // mineflayer reflects in `<vehicle>.passengers`. Native b.mount()
+      // sets b.vehicle locally but doesn't always trigger set_passengers
+      // on Paper 1.21+ — bot ends up STANDING ON the boat (gravity then
+      // slides it off into the water). The boat's passenger list is the
+      // only signal that the server actually mounted us.
+      const isReallyMounted = () => {
+        const live = b.entities[target.id];
+        if (!live) return false;
+        const ps = Array.isArray(live.passengers) ? live.passengers : [];
+        return ps.some((p) => p === b.entity || p?.id === b.entity.id);
+      };
+
+      try { b.mount(target); } catch {}
+      await sleep(500);
+
+      let mounted = isReallyMounted();
+      let fallback = null;
+
+      if (!mounted) {
+        const pmcp = paperMcpConfig();
+        const username = getMyName?.();
+        if (pmcp && username) {
+          log(`[board] native mount didn't stick — PaperMCP ride fallback`);
+          // `ride <user> mount <vehicle>` needs a single-entity selector.
+          // Pin to the specific target boat's coords with a tiny distance
+          // window so we don't grab a different boat that drifted close.
+          const tx = Math.floor(target.position.x);
+          const ty = Math.floor(target.position.y);
+          const tz = Math.floor(target.position.z);
+          const cmd = `execute in landfolk-test positioned ${tx} ${ty} ${tz} run ride ${username} mount @e[type=oak_boat,sort=nearest,limit=1,distance=..3]`;
+          const r = await executeServerCommand(pmcp, cmd).catch((e) => ({ ok: false, error: e?.message }));
+          await sleep(600);
+          mounted = isReallyMounted();
+          if (r && r.ok && mounted) fallback = 'papermcp_server_side';
+        }
+      }
+
+      if (!mounted) {
+        const live = b.entities[target.id];
         return { ok: false, error: {
           code: 'MOUNT_REJECTED',
-          message: 'Server did not confirm mount within 400ms. Boat may be already occupied or out of reach.',
+          message: 'Server did not confirm mount. Boat may be occupied, the bot may be on top of (not in) the boat, or the entity selector missed it.',
+          observed_state: {
+            bot_pos: [Number(b.entity.position.x.toFixed(2)), Number(b.entity.position.y.toFixed(2)), Number(b.entity.position.z.toFixed(2))],
+            boat_pos: live ? [Number(live.position.x.toFixed(2)), Number(live.position.y.toFixed(2)), Number(live.position.z.toFixed(2))] : null,
+            boat_passengers: live && Array.isArray(live.passengers) ? live.passengers.length : null,
+          },
           retry_safe: true,
         }};
       }
@@ -423,11 +467,176 @@ export function createWaterActions(deps) {
         ok: true,
         command: 'board',
         data: {
-          vehicle: b.vehicle.name,
-          vehicle_id: b.vehicle.id,
+          vehicle: b.vehicle?.name || target.name,
+          vehicle_id: b.vehicle?.id ?? target.id,
+          ...(fallback ? { fallback } : {}),
           boat_position: [Math.floor(target.position.x), Math.floor(target.position.y), Math.floor(target.position.z)],
         },
       };
+    },
+
+    /**
+     * Sail a mounted boat to (x, y, z). Steers via setControlState
+     * while the bot is the rider of an unoccupied boat; vanilla maps
+     * the rider's "forward" key to boat propulsion. Stops when the
+     * boat is within 2 blocks of the target on the horizontal plane.
+     * Action contract: NOT_MOUNTED, NOT_A_BOAT, TIMEOUT, OUT_OF_RANGE.
+     */
+    async sail({ x, y, z, timeout_seconds = 60 }) {
+      const b = ensureBot();
+      const target = new Vec3(Number(x), Number(y), Number(z));
+
+      if (!b.vehicle) {
+        return { ok: false, error: {
+          code: 'NOT_MOUNTED',
+          message: 'Bot is not in a vehicle. Run mc board first.',
+          retry_safe: false,
+        }};
+      }
+      const boat = b.entities[b.vehicle.id] || b.vehicle;
+      const isBoat = boat?.name?.endsWith?.('_boat') || boat?.name === 'boat' || boat?.name === 'bamboo_raft';
+      if (!isBoat) {
+        return { ok: false, error: {
+          code: 'NOT_A_BOAT',
+          message: `Mounted on ${boat?.name || 'unknown'}, not a boat.`,
+          retry_safe: false,
+        }};
+      }
+
+      const startPos = boat.position.clone();
+      const deadline = Date.now() + (Number(timeout_seconds) || 60) * 1000;
+
+      // Steering preference: in vanilla, the rider's "forward" key drives
+      // the boat. mineflayer's setControlState SHOULD relay this, but on
+      // Paper 1.21+ the controller relationship may not be set when the
+      // mount was forced via server-side `ride` command — input doesn't
+      // propel the boat.
+      //
+      // Fallback: PaperMCP server-side `tp` of the boat entity. Riders
+      // ride along with the vehicle's position, so tp'ing the boat moves
+      // the bot too. We step the boat in small increments toward the
+      // target so the visual is a "smooth sail," not an instant warp,
+      // and so we don't fly the boat through obstacles.
+
+      const pmcp = paperMcpConfig();
+      const username = getMyName?.();
+      const useTpFallback = !!(pmcp && username);
+
+      // First, try native steering for 1.5s. If the boat moves at all,
+      // keep going with native; otherwise switch to tp-step mode.
+      let nativeWorks = false;
+      try {
+        const yaw0 = Math.atan2(target.x - startPos.x === 0 ? 0 : -(target.x - startPos.x), target.z - startPos.z);
+        try { await b.look(yaw0, 0, true); } catch {}
+        b.setControlState('forward', true);
+        await sleep(1500);
+        const liveAfter = b.entities[b.vehicle?.id];
+        if (liveAfter && startPos.distanceTo(liveAfter.position) > 0.4) {
+          nativeWorks = true;
+        }
+        if (!nativeWorks) b.setControlState('forward', false);
+      } catch {}
+
+      let lastDistance = (b.entities[b.vehicle?.id]?.position || boat.position).distanceTo(target);
+      let stallTicks = 0;
+
+      try {
+        while (Date.now() < deadline) {
+          const live = b.entities[b.vehicle?.id];
+          if (!live || !b.vehicle) {
+            try { b.setControlState('forward', false); } catch {}
+            return { ok: false, error: {
+              code: 'OUT_OF_RANGE',
+              message: 'Lost the boat mid-sail (dismounted by physics or boat broke).',
+              retry_safe: true,
+            }};
+          }
+
+          const here = live.position;
+          const dx = target.x - here.x;
+          const dz = target.z - here.z;
+          const horiz = Math.hypot(dx, dz);
+
+          if (horiz < 2) {
+            try { b.setControlState('forward', false); } catch {}
+            await sleep(400);
+            return {
+              ok: true,
+              command: 'sail',
+              data: {
+                from: [Math.floor(startPos.x), Math.floor(startPos.y), Math.floor(startPos.z)],
+                to: [Math.floor(here.x), Math.floor(here.y), Math.floor(here.z)],
+                target: [Number(x), Number(y), Number(z)],
+                horizontal_distance_remaining: Number(horiz.toFixed(2)),
+                ...(nativeWorks ? {} : { fallback: 'papermcp_tp_step' }),
+              },
+            };
+          }
+
+          if (nativeWorks) {
+            const yaw = Math.atan2(-dx, dz);
+            try { await b.look(yaw, 0, true); } catch {}
+            b.setControlState('forward', true);
+            await sleep(300);
+          } else if (useTpFallback) {
+            // Step the boat 1.5 blocks toward the target each tick.
+            // Boats travel at ~0.4 blocks per tick under player input;
+            // 1.5 per 400ms loop = ~3.75 b/s, similar to normal sailing
+            // speed. Select the boat by a tight bbox centered on its
+            // current position so we hit OUR boat, not some other one.
+            const step = Math.min(1.5, horiz);
+            const nx = here.x + (dx / horiz) * step;
+            const nz = here.z + (dz / horiz) * step;
+            const ny = here.y;
+            const bx = Math.floor(here.x);
+            const by = Math.floor(here.y);
+            const bz = Math.floor(here.z);
+            const cmd = `execute in landfolk-test positioned ${bx} ${by} ${bz} run tp @e[type=oak_boat,distance=..2,limit=1] ${nx.toFixed(3)} ${ny.toFixed(3)} ${nz.toFixed(3)}`;
+            const r = await executeServerCommand(pmcp, cmd).catch(() => ({ ok: false }));
+            if (!r || !r.ok) log(`[sail] tp step failed`);
+            await sleep(400);
+          } else {
+            // No fallback available; native isn't working. Bail.
+            return { ok: false, error: {
+              code: 'OUT_OF_RANGE',
+              message: 'Boat not responding to rider input and no PaperMCP fallback configured.',
+              retry_safe: false,
+            }};
+          }
+
+          if (Math.abs(lastDistance - horiz) < 0.05) {
+            stallTicks++;
+            if (stallTicks >= 8) {
+              try { b.setControlState('forward', false); } catch {}
+              return { ok: false, error: {
+                code: 'OUT_OF_RANGE',
+                message: `Boat stuck — no progress in ~3s. Likely wedged against terrain at (${here.x.toFixed(1)}, ${here.y.toFixed(1)}, ${here.z.toFixed(1)}).`,
+                observed_state: {
+                  boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
+                  horizontal_distance_remaining: Number(horiz.toFixed(2)),
+                },
+                retry_safe: false,
+              }};
+            }
+          } else {
+            stallTicks = 0;
+          }
+          lastDistance = horiz;
+        }
+      } finally {
+        try { b.setControlState('forward', false); } catch {}
+      }
+
+      const here = b.entities[b.vehicle?.id]?.position || boat.position;
+      return { ok: false, error: {
+        code: 'TIMEOUT',
+        message: `Did not reach (${x},${y},${z}) within ${timeout_seconds}s.`,
+        observed_state: {
+          boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
+          horizontal_distance_remaining: Number(here.distanceTo(target).toFixed(2)),
+        },
+        retry_safe: true,
+      }};
     },
 
     /**

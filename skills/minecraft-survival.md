@@ -393,17 +393,23 @@ passengers. Crafted from 5 planks (any overworld wood).
 | Verb | Effect |
 |---|---|
 | `mc place_boat X Y Z` | Spawn a boat on the water at (X,Y,Z). Requires `*_boat` item in inventory. PaperMCP fallback handles 1.21+ silent-no-op. |
-| `mc board` | Mount the nearest boat within 6 blocks. Returns NO_BOAT if none found. |
+| `mc board` | Mount the nearest boat within 6 blocks. Returns NO_BOAT if none found. Verifies via the boat's passenger list and uses a PaperMCP `ride mount` fallback if native doesn't stick. |
+| `mc sail X Y Z` | Propel a mounted boat to (X,Y,Z). Tries native rider input first; if the boat doesn't move within 1.5s (Paper 1.21+ doesn't always give the rider control), falls back to server-side tp-stepping the boat 1.5 blocks per tick toward the target. Auto-stops within 2 blocks. Returns OUT_OF_RANGE if stuck. |
 | `mc disembark` | Exit the current vehicle. PaperMCP fallback uses server-side `ride dismount`. |
 
 Typical crossing pattern:
 1. `mc place_boat <waterX> <waterY> <waterZ>` next to your shore.
 2. `mc board` to enter the boat.
-3. (Optional) `mc goto <farX> <farY> <farZ>` while mounted — the boat
-   moves with you in vanilla, though pathfinder steering through water
-   is unreliable; for long crossings, disembark and re-board on the far
-   side instead.
+3. `mc sail <farX> <farY> <farZ>` to drive the boat across. The verb
+   handles steering AND the propulsion fallback when the rider isn't
+   recognized as the boat's controller.
 4. `mc disembark` to step out.
+5. `mc goto <shoreX> <shoreY> <shoreZ>` if the boat stopped short of
+   solid ground (e.g., last 1-2 blocks of swimming or walking).
+
+Don't substitute `mc goto` for `mc sail` while mounted — `mc goto`
+runs the pathfinder which doesn't understand boats, so the bot just
+swims while the boat sits unused.
 
 Boats float on water and survive land contact (modern MC). They take
 damage from explosions, fire, lava, cactus, and mob attacks. A destroyed

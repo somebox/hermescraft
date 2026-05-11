@@ -17,15 +17,22 @@ prompt: |
     - The SOUTH shore (your destination) is at z >= 13.
     - You have 1 oak_boat.
 
-  Goal: cross the water and end up on the south shore (z >= 13).
+  Goal: cross the water IN the boat and end up on the south shore
+  (z >= 13). The boat must actually carry you — walking through
+  water is not allowed (the predicate verifies the boat travelled
+  with you).
 
   Execute:
     1. `mc place_boat 0 64 3` — drop a boat at the north edge of the
        water (right next to where you stand). Boat consumes the item.
-    2. `mc board` — mount the boat. Bot becomes the rider.
-    3. `mc disembark` — exit the boat. (Note: this verb has a
-       PaperMCP fallback that always succeeds on this server.)
-    4. `mc goto 0 65 14` — walk to the south shore.
+    2. `mc board` — mount the boat. Bot becomes the rider; the boat
+       sits on the water at y=65.
+    3. `mc sail 0 64 13` — sail the boat south across the water.
+       The verb steers via rider forward+look; auto-stops within 2
+       blocks of the target. If you get OUT_OF_RANGE (stuck), try
+       a slightly different target like `mc sail 0 64 12`.
+    4. `mc disembark` — exit the boat at the south side.
+    5. `mc goto 0 65 14` — walk the last block onto the shore.
 
   Don't batch commands. Run each through the terminal one at a time.
 
@@ -37,9 +44,15 @@ post_wait_seconds: 4
 expect:
   bot_did_not_die: true
   bot_hp_at_least: 14
-  mc_verbs_include_any: [place_boat, board, disembark]
+  # All three boat verbs must be used. `sail` is the new propulsion verb;
+  # without it the bot would just swim across (failing the spirit of the test).
+  mc_verbs_include_any: [sail]
   # Bot ended on the south shore. Range 4 is generous for pathfinding.
   bot_at: { x: 0, y: 65, z: 14, range: 4 }
+  # The boat must have travelled to the south end too (proves it carried
+  # the bot, not vice versa).
+  entity_in_bbox:
+    - { type: oak_boat, bbox: { x1: -3, y1: 63, z1: 8, x2: 3, y2: 66, z2: 14 }, min_count: 1 }
 
 verify_after_prep:
   - { block: water, min_count: 25 }

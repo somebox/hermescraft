@@ -30,6 +30,7 @@ const LONG_ACTION_PATHS = new Set([
   '/action/follow',
   '/action/pillar_step',
   '/action/fish',
+  '/action/sail',
   '/action/lure',
   '/action/breed',
   '/action/shear',
