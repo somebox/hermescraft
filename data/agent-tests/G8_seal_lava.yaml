@@ -33,6 +33,9 @@ expect:
     - { x: -3, y: 65, z: 0, block: obsidian }
   mc_verbs_include_any: [bucket_empty]
   mc_cli_invocations_max: 8
+  # Bot must survive — verifies the reactive layer kept it out of the lava.
+  # No fire_resistance effect; bot relies on its own auto-escape behavior.
+  bot_hp_at_least: 12
 
 verify_after_prep:
   - { block: lava, min_count: 1 }
@@ -59,9 +62,9 @@ prep:
   - "execute in landfolk-test run tp Flint 0 65 0"
   - "effect clear Flint"
   - "effect give Flint minecraft:saturation 600 1"
-  # Fire resistance: belt-and-braces in case the agent stands in lava
-  # contact briefly. Test isn't about combat / survival here.
-  - "execute in landfolk-test run effect give Flint fire_resistance 600 1"
+  # NO fire_resistance — the bot's reactive layer should auto-step away
+  # from lava (escape_lava decision branch). If this test fails on HP,
+  # the reactive escape isn't working.
   - "clear Flint"
   - "give Flint minecraft:water_bucket 1"
 

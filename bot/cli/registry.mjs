@@ -897,6 +897,15 @@ export const RAW_COMMAND_DEFS = [
 
   g('use', 'world', ['u'], { description: 'Activate held item (right-click in air)', method: 'POST', path: '/action/use', bodyFn: () => empty }),
 
+  g('surface', 'world', ['swim_up'], {
+    description: 'Swim up to the water surface. Hold jump until head is in air or 30s elapses. No-op if not in water.',
+    method: 'POST',
+    path: '/action/surface',
+    bodyFn: () => empty,
+    usage: 'mc surface',
+    examples: ['mc surface'],
+  }),
+
   g('bucket_fill', 'world', ['fill_bucket'], {
     description: 'Fill an empty bucket from a water/lava source block at X Y Z. Returns NOT_A_SOURCE if the block is flowing (level > 0).',
     method: 'POST',

@@ -105,6 +105,25 @@ export function createReactive(deps) {
       (h) => RANGED_HOSTILE_NAMES.has((h.name || '').toLowerCase()) && h.distance <= RANGED_AWARE_RANGE,
     ) || null;
 
+    // Environmental hazard scan: read foot / head / immediate-cardinal blocks.
+    // mineflayer's b.entity.isInLava / isInWater are reliable flags for the
+    // bot's collision box. We additionally peek 1 step in each cardinal
+    // direction at foot level so the bot can flee BEFORE stepping into lava.
+    let inLava = !!b.entity.isInLava;
+    let inWater = !!b.entity.isInWater;
+    let onFire = !!b.entity.metadata?.[0] && (b.entity.metadata[0] & 0x01) !== 0;
+    const footPos = myPos.floored();
+    const lavaNeighbors = [];
+    if (typeof b.blockAt === 'function') {
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const probe = b.blockAt(footPos.offset(dx, 0, dz));
+        if (probe?.name === 'lava') lavaNeighbors.push({ x: footPos.x + dx, y: footPos.y, z: footPos.z + dz });
+      }
+      // Below-foot lava is the next-step death.
+      const below = b.blockAt(footPos.offset(0, -1, 0));
+      if (below?.name === 'lava') lavaNeighbors.push({ x: footPos.x, y: footPos.y - 1, z: footPos.z });
+    }
+
     return {
       bot: b,
       myPos,
@@ -119,6 +138,13 @@ export function createReactive(deps) {
       closest_ranged: closestRanged,
       weapon: weapon ? weapon.name : null,
       armor_count: armorCount,
+      // Environmental hazards
+      in_lava: inLava,
+      on_fire: onFire,
+      lava_neighbors: lavaNeighbors,
+      adjacent_lava: lavaNeighbors.length > 0,
+      in_water: inWater,
+      oxygen: typeof b.oxygenLevel === 'number' ? b.oxygenLevel : 20,
     };
   }
 
@@ -127,6 +153,17 @@ export function createReactive(deps) {
     if (mode === 'hold') return null;
 
     const anchorRange = mode === 'guard' ? ANCHOR_RANGE_GUARD : ANCHOR_RANGE_NORMAL;
+
+    // ── Always-on environmental safety (overrides combat, fires in hold mode
+    //    too — we never let the bot stand in lava or drown to follow orders).
+    //    Lava: feet/head in lava → jump-and-flee. Adjacent lava + on-fire →
+    //    step away. Submerged + low oxygen → swim up.
+    if (state.in_lava || (state.on_fire && state.adjacent_lava)) {
+      return { action: 'escape_lava', hazards: state.lava_neighbors, why: state.in_lava ? 'in_lava' : 'on_fire_near_lava' };
+    }
+    if (state.in_water && state.oxygen <= 8) {
+      return { action: 'swim_up', oxygen: state.oxygen, why: 'low_oxygen' };
+    }
 
     // Always-on safety: creeper proximity flees regardless of mode.
     if (state.closest_creeper && state.closest_creeper.distance <= CREEPER_FLEE_RANGE) {
@@ -466,12 +503,75 @@ export function createReactive(deps) {
         await fleeStep(state, decision.threat);
       } else if (decision.action === 'advance_step') {
         await advanceStep(state, decision.target.entity);
+      } else if (decision.action === 'escape_lava') {
+        await escapeLava(state, decision.hazards);
+      } else if (decision.action === 'swim_up') {
+        await swimUp(state);
       }
     } catch (e) {
       log(`[reactive] ${decision.action} error: ${/** @type {Error} */ (e).message || e}`);
     } finally {
       inFlight = false;
     }
+  }
+
+  /**
+   * Emergency lava escape. Picks the cardinal direction with NO lava neighbor
+   * (or the opposite of the closest lava if all sides are bad), then sprints
+   * + jumps to clear a 1-block lava cell. Bounded per-tick so the bot can
+   * re-evaluate next tick.
+   */
+  async function escapeLava(state, lavaHazards) {
+    const b = state.bot;
+    const startPos = { x: state.myPos.x, z: state.myPos.z };
+    // Build a "safety vector": away from average lava position.
+    let safeDx = 0, safeDz = 0;
+    if (lavaHazards && lavaHazards.length > 0) {
+      const cx = lavaHazards.reduce((s, h) => s + h.x + 0.5, 0) / lavaHazards.length;
+      const cz = lavaHazards.reduce((s, h) => s + h.z + 0.5, 0) / lavaHazards.length;
+      safeDx = state.myPos.x - cx;
+      safeDz = state.myPos.z - cz;
+      const mag = Math.hypot(safeDx, safeDz);
+      if (mag > 0.01) { safeDx /= mag; safeDz /= mag; }
+    }
+    // Look in the safe direction so movement is forward-sprint (faster than
+    // back-step) toward safety. If no clear vector, just jump in place — at
+    // worst we trade lateral motion for a tick of HP regen pending re-eval.
+    try {
+      if (Math.abs(safeDx) + Math.abs(safeDz) > 0.01) {
+        const lookTarget = state.myPos.offset(safeDx * 4, 0, safeDz * 4);
+        await b.lookAt(lookTarget, true);
+      }
+    } catch { /* best-effort */ }
+    try {
+      b.setControlState('jump', true);
+      b.setControlState('sprint', true);
+      b.setControlState('forward', true);
+      await sleep(350);
+    } finally {
+      b.setControlState('forward', false);
+      b.setControlState('sprint', false);
+      b.setControlState('jump', false);
+    }
+    await settleStuck(b, startPos, 0.3);
+  }
+
+  /**
+   * Swim up out of water. Hold jump (which acts as swim-up when submerged)
+   * and forward for one tick.
+   */
+  async function swimUp(state) {
+    const b = state.bot;
+    const startPos = { x: state.myPos.x, z: state.myPos.z };
+    try {
+      b.setControlState('jump', true);
+      b.setControlState('forward', true);
+      await sleep(300);
+    } finally {
+      b.setControlState('jump', false);
+      b.setControlState('forward', false);
+    }
+    await settleStuck(b, startPos, 0.1);
   }
 
   function pushAutoEvent(event) {

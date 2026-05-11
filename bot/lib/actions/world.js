@@ -1995,6 +1995,42 @@ export function createWorldActions(deps) {
   },
 
   /**
+   * Swim up to the water surface. Holds jump (swim-up while submerged) until
+   * the bot's head is in air or 30s elapse. Used to escape water columns the
+   * bot pours on itself (G9 scenario). No-op if the bot isn't in water.
+   */
+  async surface() {
+    const b = ensureBot();
+    if (!b.entity.isInWater) {
+      return { result: `Not in water — already at surface.`, data: { in_water: false } };
+    }
+    const start = Date.now();
+    const startY = b.entity.position.y;
+    let ticks = 0;
+    try {
+      b.setControlState('jump', true);
+      // Tick loop: every 200ms check if head is out of water. Bound to 30s.
+      while (Date.now() - start < 30000) {
+        await sleep(200);
+        ticks++;
+        // Mineflayer caches isInWater on the entity object, updated each
+        // physics tick. Check the EYE level too — head out of water = surfaced.
+        const eyePos = b.entity.position.offset(0, 1.62, 0);
+        const eyeBlock = b.blockAt(eyePos.floored());
+        const surfaced = !b.entity.isInWater || (eyeBlock && eyeBlock.name !== 'water');
+        if (surfaced) break;
+      }
+    } finally {
+      b.setControlState('jump', false);
+    }
+    const endY = b.entity.position.y;
+    return {
+      result: `Surfaced from y=${startY.toFixed(1)} to y=${endY.toFixed(1)} in ${ticks * 0.2}s.`,
+      data: { start_y: startY, end_y: endY, ticks, in_water: !!b.entity.isInWater },
+    };
+  },
+
+  /**
    * Fill an empty bucket from a water/lava source block at (x,y,z).
    * ── Phase-2 action contract (Sprint 7) ──
    *   MISSING_BUCKET   no empty bucket in inventory

@@ -148,6 +148,14 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         results.append({"kind": f"bot_y>={ymin}", "pass": bool(ok),
                          "detail": f"y={pos.get('y') if pos else 'none'}"})
 
+    if "bot_hp_at_least" in expect:
+        hpmin = float(expect["bot_hp_at_least"])
+        st = end_state.get("state") or {}
+        hp = st.get("health")
+        ok = hp is not None and hp >= hpmin
+        results.append({"kind": f"bot_hp>={hpmin}", "pass": bool(ok),
+                         "detail": f"hp={hp if hp is not None else 'none'}"})
+
     if "bot_at" in expect:
         target = expect["bot_at"]
         pos = (end_state.get("state") or {}).get("position") or {}
