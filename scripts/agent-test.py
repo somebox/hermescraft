@@ -156,6 +156,18 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         results.append({"kind": f"bot_hp>={hpmin}", "pass": bool(ok),
                          "detail": f"hp={hp if hp is not None else 'none'}"})
 
+    if "auto_action_fired" in expect:
+        # Validates that the reactive layer auto-fired at least one of the
+        # listed actions during the run. Reads from observe response's
+        # auto_action_log (populated by reactive.js:pushAutoEvent).
+        wanted = expect["auto_action_fired"] or []
+        log = end_state.get("auto_action_log") or end_state.get("autoActionLog") or []
+        fired = set(e.get("action") for e in log if isinstance(e, dict))
+        hits = [w for w in wanted if w in fired]
+        ok = len(hits) > 0
+        detail = ("fired: " + ",".join(hits)) if hits else f"none of {wanted}; log had: {sorted(fired) if fired else '(empty)'}"
+        results.append({"kind": f"auto_action:{','.join(wanted)}", "pass": ok, "detail": detail})
+
     if "bot_at" in expect:
         target = expect["bot_at"]
         pos = (end_state.get("state") or {}).get("position") or {}
@@ -319,7 +331,17 @@ def main():
 
     print(f"  pre-prep tp + clean...", end="", flush=True)
     _t = time.time()
-    pre_cmds = ["execute in landfolk-test run tp Flint 52 65 52"]
+    pre_cmds = [
+        # Reset Flint state between runs: extinguish fire, clear ALL effects,
+        # restore full health + saturation. Without these, lingering fire
+        # damage / curse effects / low HP from prior tests pollute the run.
+        # `data merge entity Fire:0s` is the only reliable way to put out
+        # active burning — `effect clear` doesn't touch the Fire tag.
+        "execute in landfolk-test run data merge entity @e[type=player,name=Flint,limit=1] {Fire:0s,HurtTime:0s,DeathTime:0s}",
+        "execute in landfolk-test run effect clear Flint",
+        "execute in landfolk-test run effect give Flint minecraft:instant_health 1 4",
+        "execute in landfolk-test run tp Flint 52 65 52",
+    ]
     pre_cmds.extend(spec.get("cleanup") or [])
     run_rcon_batch(pre_cmds)
     time.sleep(0.5)
@@ -523,6 +545,16 @@ def main():
         print(f"  hermes message timeline (t_s, role):")
         for t, _i, role in message_timeline:
             print(f"    {t:6.1f}s  {role}")
+
+    # Optional post-hermes settle: give the bot time to finish auto-actions
+    # (reactive escape, regenerate from saturation, etc.) before measuring
+    # final state. Useful for survival tests where hermes exits while the bot
+    # is mid-escape and the un-settled HP under-counts true survival.
+    post_wait = int(spec.get("post_wait_seconds", 0))
+    if post_wait > 0:
+        print(f"  post_wait ({post_wait}s, let reactive finish)...", end="", flush=True)
+        time.sleep(post_wait)
+        print(" ok")
 
     _t = time.time()
     post = observe(args.bot_url)

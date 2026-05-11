@@ -1,11 +1,21 @@
-# G8 — composite: seal a lava hazard with water.
+# G8 — bot survives self-inflicted lava danger (reactive instinct).
 #
-# Bot at (0, 65, 0) with a water_bucket. A lava source at (-3, 65, 0)
-# is a hazard. Goal: pour the water onto the lava — water + lava
-# source meeting → obsidian.
+# Bot starts SAFE with an EMPTY bucket. A lava source is contained in
+# a stone box north of the bot. Agent gets a minimal goal: "fetch the
+# lava and place it east of you". Agent has no instructions about
+# escaping the danger — the reactive layer must do that on its own,
+# because in real missions the agent won't have time to react.
 #
-# This validates the use case that motivated the deferred `mc seal`
-# verb in Sprint 6: cap a discovered lava cell using a water bucket.
+# Pass criteria:
+#   - Lava placed somewhere east of bot spawn (1..3, 65, 0).
+#   - Bot HP > 0 at end of post_wait (didn't die — the reactive
+#     escape kept it alive).
+#   - At least one auto-fired escape_lava event in the bot's
+#     autoActionLog during the run.
+#
+# Why HP > 0 not HP > 12: lava + fire-tick damage is real even with
+# saturation regen, but the reactive escape SHOULD prevent death.
+# If the bot ends alive (even at low HP), the safety layer worked.
 
 agent_test_id: G8_seal_lava
 world: landfolk-test
@@ -14,28 +24,31 @@ prompt: |
   You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
   MC_API_URL and MC_USERNAME set.
 
-  Goal: there's a lava source at (-3, 65, 0). Pour water on it to
-  seal it. You have a water_bucket already.
+  You have an empty bucket. There is a lava source at (0, 65, -3).
 
-  Tips:
-    - `mc bucket_empty -3 65 0` pours water onto the lava block.
-      Water meeting a lava source produces obsidian.
-    - Don't try to mine the lava — that would expose you to it.
+  Goal: pick up the lava, then deposit it at (1, 65, 0).
 
-  Stop when the lava is gone.
+  Tools:
+    - `mc bucket_fill X Y Z`
+    - `mc bucket_empty X Y Z`
+    - `mc goto X Y Z`
+
+  Stop when the lava is placed at (1, 65, 0).
 
 skills: [minecraft-survival]
 max_turns: 8
-timeout_seconds: 120
+timeout_seconds: 180
+post_wait_seconds: 10
 
 expect:
+  # Bot survived — even low HP is success if the reactive escape
+  # prevented death and lava landed where requested.
+  bot_hp_at_least: 1
+  mc_verbs_include_any: [bucket_fill]
   world_block_at:
-    - { x: -3, y: 65, z: 0, block: obsidian }
-  mc_verbs_include_any: [bucket_empty]
-  mc_cli_invocations_max: 8
-  # Bot must survive — verifies the reactive layer kept it out of the lava.
-  # No fire_resistance effect; bot relies on its own auto-escape behavior.
-  bot_hp_at_least: 12
+    - { x: 1, y: 65, z: 0, block: lava }
+  # The reactive layer must have fired at least one escape_lava event.
+  auto_action_fired: [escape_lava]
 
 verify_after_prep:
   - { block: lava, min_count: 1 }
@@ -48,25 +61,24 @@ prep:
   - "execute in landfolk-test run kill @e[type=!player]"
   - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
   - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
-  # Contain the lava in a stone box so it can't flow toward the bot —
-  # an open lava source would otherwise spread and burn Flint during
-  # approach. Walls around (-3, 65, 0) on all 4 horizontal sides at the
-  # same Y as the lava.
-  - "execute in landfolk-test run fill -4 64 -1 -2 64 1 minecraft:stone"
-  - "execute in landfolk-test run setblock -4 65 0 minecraft:stone"
-  - "execute in landfolk-test run setblock -2 65 0 minecraft:stone"
-  - "execute in landfolk-test run setblock -3 65 -1 minecraft:stone"
-  - "execute in landfolk-test run setblock -3 65 1 minecraft:stone"
-  - "execute in landfolk-test run setblock -3 65 0 minecraft:lava"
+  # Lava contained in a stone box north of bot, lid on top, west open
+  # so bot has an escape lane after depositing east.
+  - "execute in landfolk-test run setblock 0 65 -4 minecraft:stone"
+  - "execute in landfolk-test run setblock 0 65 -2 minecraft:stone"
+  - "execute in landfolk-test run setblock -1 65 -3 minecraft:stone"
+  - "execute in landfolk-test run setblock 1 65 -3 minecraft:stone"
+  - "execute in landfolk-test run setblock 0 66 -3 minecraft:stone"
+  - "execute in landfolk-test run setblock 0 65 -3 minecraft:lava"
   - "mvtp Flint landfolk-test"
   - "execute in landfolk-test run tp Flint 0 65 0"
   - "effect clear Flint"
   - "effect give Flint minecraft:saturation 600 1"
-  # NO fire_resistance — the bot's reactive layer should auto-step away
-  # from lava (escape_lava decision branch). If this test fails on HP,
-  # the reactive escape isn't working.
+  # Brief fire_resistance JUST for the prep settle window so any residual
+  # fire from prior runs extinguishes before the test starts. It expires
+  # before bucket_empty fires, so the actual lava test isn't masked.
+  - "execute in landfolk-test run effect give Flint fire_resistance 5 1"
   - "clear Flint"
-  - "give Flint minecraft:water_bucket 1"
+  - "give Flint minecraft:bucket 1"
 
 cleanup:
   - "execute in landfolk-test run kill @e[type=!player]"

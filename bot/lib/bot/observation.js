@@ -319,6 +319,7 @@ export function createObservation(deps) {
       last_api_error: ctx.lastApiError,
       recent_actions: [...ctx.actionHistory].reverse(),
       action_stats_5m: buildActionStats(ctx),
+      auto_action_log: ctx.autoActionLog ? [...ctx.autoActionLog].slice(-16) : [],
       idle_reason: classifyIdleReason(ctx),
     };
     if (dueReminders.length) payload.reminders_due = dueReminders;
