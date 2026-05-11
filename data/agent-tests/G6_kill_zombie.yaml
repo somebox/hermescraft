@@ -1,0 +1,78 @@
+# G6 — composite: combat. Kill the zombie outside.
+#
+# Bot is well-equipped (iron sword, iron armor, saturation) at (0,65,0)
+# in an open arena. One zombie summoned at (5, 65, 0). Difficulty is
+# `easy` (not peaceful, or zombies despawn). doMobSpawning false so no
+# other mobs interfere.
+#
+# Goal: kill the zombie. The agent should:
+#   1. mc nearby / mc find_entities to locate the zombie
+#   2. mc fight zombie (or mc attack)
+#   3. Optionally mc pickup any drops
+#
+# Pass:
+#   - No zombie entity exists in world after the run.
+#   - Agent invoked attack or fight.
+#   - Bot is still alive (no respawn — would mean bot got killed first).
+
+agent_test_id: G6_kill_zombie
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: there is a zombie within ~10 blocks of you. Kill it.
+
+  Tips:
+    - `mc nearby 16` or `mc find_entities zombie` will locate it.
+    - `mc fight zombie` runs a fight loop on the nearest zombie until
+      it dies. `mc attack` does a single swing — use it if you're
+      already in range.
+    - You have an iron_sword and full iron armor. Saturation is high.
+
+  Stop when the zombie is dead.
+
+skills: [minecraft-survival, minecraft-combat]
+max_turns: 10
+timeout_seconds: 180
+
+expect:
+  world_no_entity_of_type: [zombie]
+  mc_verbs_include_any: [fight, attack]
+  # Bot should still be alive — sanity check that combat didn't kill it.
+  bot_y_at_least: 60
+
+verify_after_prep:
+  - { block: stone, min_count: 8 }
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  # Midnight so zombies don't burn in sunlight before the bot can fight.
+  - "execute in landfolk-test run time set midnight"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "execute in landfolk-test run effect give Flint instant_health 1 4"
+  - "clear Flint"
+  - "give Flint minecraft:iron_sword 1"
+  - "give Flint minecraft:iron_helmet 1"
+  - "give Flint minecraft:iron_chestplate 1"
+  - "give Flint minecraft:iron_leggings 1"
+  - "give Flint minecraft:iron_boots 1"
+  # Summon the target last so it's freshly placed. NoAI=1 so it doesn't
+  # wander off — keeps the test deterministic. Silent=1 cuts noise.
+  - 'execute in landfolk-test run summon zombie 5 65 0 {NoAI:1b,Silent:1b,PersistenceRequired:1b,CustomName:''"target"''}'
+
+cleanup:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

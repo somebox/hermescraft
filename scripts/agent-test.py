@@ -228,6 +228,16 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         detail = (",".join(hits) + " used") if hits else f"none of: {','.join(wanted)} in {mc_verbs}"
         results.append({"kind": f"mc_verbs_include_any:{label}", "pass": ok, "detail": detail})
 
+    if "world_no_entity_of_type" in expect:
+        # Pass when no entity of the given type exists in the test world.
+        # Uses rcon stdout: a `data get entity` selector prints entity NBT on
+        # match, or "No entity was found" when nothing matches. Read-only.
+        for ent_type in (expect["world_no_entity_of_type"] or []):
+            out = run_rcon(f'execute in landfolk-test run data get entity @e[type={ent_type},limit=1]')
+            absent = "No entity was found" in (out or "")
+            results.append({"kind": f"no_entity:{ent_type}", "pass": absent,
+                             "detail": "" if absent else out.strip()[:60]})
+
     if "world_block_at" in expect:
         for probe in expect["world_block_at"]:
             x, y, z = probe["x"], probe["y"], probe["z"]

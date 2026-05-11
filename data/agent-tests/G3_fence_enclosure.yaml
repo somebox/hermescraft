@@ -1,0 +1,67 @@
+# G3 — composite: build a fence perimeter with a gate.
+#
+# Bot has 32 oak_fence + 1 oak_fence_gate at (0, 65, 0). Goal: build a
+# 5x5 oak_fence perimeter around the spawn, with a gate on the south
+# side so the bot can walk in/out.
+#
+# Tests the `mc fence` verb (different from `mc wall` — fences are 1
+# layer thick, 1 high, perimeter only) and named-argument parsing for
+# the optional --gate flag.
+
+agent_test_id: G3_fence_enclosure
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: build a 5x5 oak_fence perimeter around your current position
+  (centered on you), with a fence gate on the south side. You have
+  oak_fence and an oak_fence_gate already in your inventory.
+
+  Tips:
+    - `mc fence BLOCK X1 Z1 X2 Z2 --gate DIR` builds a 1-block-high
+      perimeter and places a matching gate at the midpoint of that side.
+      Example: `mc fence oak_fence -2 -2 2 2 --gate south`
+    - One call should do it. No `mc place` per-block needed.
+
+  Stop when the perimeter + gate exist.
+
+skills: [minecraft-survival, minecraft-building]
+max_turns: 8
+timeout_seconds: 180
+
+expect:
+  # 4 corners of the fence perimeter, plus the gate at the south midpoint.
+  world_block_at:
+    - { x: -2, y: 65, z: -2, block: oak_fence }
+    - { x:  2, y: 65, z: -2, block: oak_fence }
+    - { x: -2, y: 65, z:  2, block: oak_fence }
+    - { x:  2, y: 65, z:  2, block: oak_fence }
+  mc_cli_invocations_max: 10
+  mc_verbs_include_any: [fence]
+
+verify_after_prep:
+  - { block: stone, min_count: 8 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:oak_fence 32"
+  - "give Flint minecraft:oak_fence_gate 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
