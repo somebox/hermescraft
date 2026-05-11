@@ -423,6 +423,91 @@ Add `safe_mine_to_diamond_layer` and `mine_through_gravel` tasks to `direct.json
 
 ---
 
+## Sprint A — Agent integration tests
+
+**Status:** **shipped** (2026-05-11). Out-of-band sprint inserted between 6 and 7: the "re-evaluate after agent integration" Sprint 6 referenced. Goal was to validate that the verb suite shipped in Sprints 0–6 actually composes correctly under LLM control, surface any remaining structural gaps, and put a repeatable test runner in place for future sprints to lean on.
+
+**Goal:** drive the bot through realistic multi-step scenarios using a real Hermes agent, measure where it fails, and either fix the underlying action or harden the prompt/skill. Tests are parameterized by spec YAML so adding scenarios is cheap.
+
+### Deliverables
+
+- `scripts/agent-test.py` — spec-driven runner: batched rcon prep, pre-prep teleport + cleanup, post-prep verification, hermes subprocess with `--max-turns` + `-Q`, stall-watchdog (kills hermes if its session file stops growing for `stall_seconds`, default 75s), per-stage timing breakdown, JSON report per run.
+- `data/agent-tests/` — 13 specs covering perception, atomic failure modes, and composite multi-step scenarios.
+- Three bot-level fixes surfaced and shipped during this sprint (see "Bugs surfaced + fixed" below).
+- `docs/agent-tests.md` — runner + predicate reference and per-test summary.
+
+### Tests
+
+| Class | Test | Capability | Avg time |
+|---|---|---|---|
+| Perception | P1 mixed_blocks | name-specific block reporting (oak vs birch vs spruce) | 13s |
+| Failure modes | F1 over_literal_names | "wood" → birch_log canonicalization | 25s |
+| | F2 phantom_search | give-up cleanly when target doesn't exist | 12s |
+| | F3 stuck_in_pit | recover from 3-deep stone pit (`mc pillar_step` / `mc stair_up`) | 48s |
+| | F4 tool_tier | wooden vs stone pickaxe on iron_ore | 22s |
+| | F5 door_blockade | `mc goto`→NAV_BLOCKED→`mc through` recovery | 20s |
+| | F6 axe_break_cascade | planks→sticks→table→wooden_axe→mine chain | 60s |
+| Composite | G1 stone_pickaxe | punch wood from nothing → stone_pickaxe (multi-step) | 100-200s |
+| | G2 shelter | 5×5 cobblestone perimeter via `mc wall` ×4 | 45s |
+| | G3 fence_enclosure | one-call `mc fence ... --gate south` | 32s |
+| | G4 chest_withdraw | selective container I/O (peek + withdraw by item type) | 18s |
+| | G5 iron_smelt | mine iron_ore + coal_ore → `mc smelt raw_iron coal` | 43s |
+| | G6 kill_zombie | iron-equipped bot kills a NoAI zombie via `mc fight` | 20s |
+
+All 13 pass reliably with `google/gemini-2.5-flash` as the default model (≥3/3 PASS each).
+
+### Predicates
+
+The runner accepts a YAML `expect:` block with these predicate types:
+
+- `agent_chat_contains` / `agent_chat_contains_any` / `agent_chat_does_not_contain`
+- `bot_at` (with optional `range`) / `bot_y_at_least`
+- `bot_inventory` / `bot_inventory_any` / `bot_inventory_excludes`
+- `world_block_at` (rcon `if block X Y Z material` + `say MATCH_*` echo via bot chat)
+- `world_no_entity_of_type` (rcon `data get entity @e[type=X]` returns "No entity was found" on absence)
+- `mc_verbs_include_any` (set-membership over `mc <verb>` calls extracted from terminal tool args)
+- `mc_cli_invocations_max` (loop / chattiness cap)
+
+### Bugs surfaced + fixed
+
+1. **rcon coord-flag parsing** (`scripts/agent-test.py`) — the single-command rcon path passed the full command as a docker-exec positional argv, so any `-N` coordinate got interpreted as a docker CLI flag (`unknown shorthand flag: '2' in -2`). Symptom: `world_block_at` probes at negative coordinates silently failed. The batched path already used stdin; switched the single path to match. Without this fix, G2 looked like it failed three of four corners on every run.
+2. **Mineflayer 3×3 craft delta=0** (`bot/lib/actions/crafting.js`) — Mineflayer 4.35 + Paper 1.21 has an open bug ([#3399](https://github.com/PrismarineJS/mineflayer/issues/3399) et al.) where table-required `b.craft()` completes the click sequence but the server doesn't materialize the result. Ingredients stay in inventory untouched. Added a PaperMCP server-side fallback: when ingredients are still intact after `b.craft` returns delta=0, consume ingredients via `/clear` and emit the result via `/give`, then verify the delta. Reported as `recipe_used.fallback = papermcp_server_side` in action data. Required adding `clear` to PaperMCP's `command_whitelist`. Without this fix, F6 and G1 can't pass — both depend on a wooden_pickaxe + stone_pickaxe craft.
+3. **Pathfinder spin on unreachable targets** (`bot/lib/actions/mining.js`) — `b.pathfinder.goto` has no wall-clock cap, so unreachable items (cramped spots, hole bottoms, behind blocks) caused indefinite spin — the visible "Flint stuck running in place" failure. Extracted a shared `gotoWithTimeout(bot, goal, ms)` helper that races `pathfinder.goto` against a wall-clock deadline, stops the pathfinder + clears control states on timeout, then throws `pathfinder_timeout`. Applied at all 7 pathfind callsites in mining.js (`collect`, `dig`, `pickup`) with 5-10s caps depending on context.
+
+### Other improvements
+
+- **Stall watchdog**: agent-test.py polls the hermes session file mtime every 1s; if it doesn't grow for `stall_seconds` (default 75s, > hermes's own 60s tool timeout so a single slow call doesn't trip it), it terminates hermes. Catches "agent loops on a 60s-timeout tool call" without waiting out the full spec timeout.
+- **Per-stage timing breakdown**: stdout + report now show `pre_prep`, `prep`, `settle`, `verify`, `hermes` (with internal `model_think` / `tool_exec` / `other` split via session-file message timeline), `post`, `cleanup`. Confirmed empirically that LLM inference is the dominant cost — framework overhead is ~7s flat per test; the rest scales with agent reasoning.
+- **Session-file fallback**: when the timeout/stall path doesn't get the session_id line flushed to stderr, we fall back to identifying the session file by "newest file created during hermes run". Previously regressed `tool_call_count` to 0 on early terminations.
+
+### Model findings (gemini-2.5-flash baseline)
+
+| Model | Suitability for agent-test |
+|---|---|
+| `google/gemini-2.5-flash` | **default**. Reliable, fast (2-8s per LLM round-trip), good tool-call accuracy |
+| `google/gemini-2.5-flash-lite` | Refuses ~50% of tasks claiming "no Minecraft tools available" — avoid as baseline |
+| `openai/gpt-4o-mini` | Wanders off to `memory`/`search_files` instead of using the terminal; good for direct-API benchmarks, bad for terminal-tool agents |
+| `meta-llama/llama-3.1-8b-instruct` | Comparable to gemini-lite — cheap regression tier |
+| `deepseek/deepseek-v4-flash` | Works but 2-3× slower than gemini-2.5-flash |
+
+### Exit gate
+
+- All 13 specs pass at least 3 of 3 attempts on the default model.
+- Stall watchdog tested against a known-stuck scenario (mc collect → unreachable target).
+- Bot-side timeouts in `pickup` / `collect` / `dig` verified to fail fast without leaving the pathfinder running.
+- All sprint commits land on `experiment/hermes-agents`.
+
+### Carry-forward (deferred Phase-1 follow-ups)
+
+These were called out in `experiments/phase-1-summary.md` §"Branch-scope refactors needed" but not addressed in Sprint A. The agent-test suite makes them easier to attempt safely:
+
+- `mc observe_lean` — strip nearby-block lists from the default observe payload; ~90% of token spend in long G-series runs is observe responses.
+- Custom metric registration in `bot/lib/goals/engine.js` — accept arbitrary metric names so the steward can drive goal-preset urgency for free-form objectives.
+- `/api-spec` route on the bot HTTP server — OpenAPI listing of available actions/queries for skill / prompt generation.
+- Per-character `--ignore-rules` invocation for kanban-spawned workers (hermes-side, not hermescraft) — prevent cross-session memory contamination between unrelated missions.
+
+---
+
 ## Sprints 7–10 (stubs — to be planned at the end of each predecessor)
 
 | Sprint | Domain | Depends on | Status |
