@@ -1,0 +1,113 @@
+# G20 — survival across a real night cycle (Phase A integration v2).
+#
+# Same biome as G19 but with the difficulty turned up:
+#   - doDaylightCycle: true        — sun actually sets
+#   - doMobSpawning: true          — zombies + skeletons spawn at night
+#   - difficulty: easy             — damage scaled down, but real threat
+#   - time: 11000                  — late afternoon, ~9 in-game min to night
+#
+# The agent has ~3 real minutes (at 24000 ticks/20-min day) of safe
+# daylight to gather + craft + build defenses, then must survive the
+# night. The reactive layer (Sprint 6+) handles immediate hazards;
+# the agent's job is to make smart strategic choices.
+#
+# Success: bot didn't die AND has at least one weapon-tier tool AND
+# is at >= 8 HP at end.
+
+agent_test_id: G20_survival_night_cycle
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  It's late afternoon (time ~11000). The sun will set in about 3
+  minutes of real time. Hostile mobs spawn at night on easy difficulty.
+
+  You're in a mini-biome with:
+    - 4-block oak tree at ~(5, 65, 0)
+    - stone deposit at ~(-5, 65, 0)
+    - pond at z >= 5
+    - some chickens and a cow
+
+  You start empty-handed. Goal: SURVIVE the night with as much HP as
+  possible. By dawn (time ~23000) you should:
+    1. Be alive
+    2. Have at least one weapon (wooden_sword, stone_sword, etc.)
+    3. Be at >= 8 HP
+
+  Suggested priorities (in order):
+    1. Bootstrap fast: oak_log → planks/sticks → crafting_table →
+       wooden_pickaxe → wooden_sword. Cobblestone if you have time.
+    2. Build a small shelter before sunset: dig 2 blocks into a wall
+       and seal yourself in with cobblestone or dirt, OR pillar up
+       3 blocks (mobs can't reach you).
+    3. Once safe, just wait out the night. Use `mc status` to check
+       time — daytime starts at time 0 (mod 24000); 12000-23000 is night.
+
+  The reactive layer handles immediate threats (it'll auto-flee from
+  creepers, fight back if attacked with a weapon). Your job is the
+  strategic chain: tools → shelter → wait.
+
+  Don't batch commands. Run each through the terminal one at a time.
+
+skills: []
+toolsets: [terminal]
+max_turns: 50
+timeout_seconds: 720
+post_wait_seconds: 4
+stall_seconds: 90
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 8
+  mc_verbs_include_any: [craft, collect, place]
+  bot_inventory_any:
+    wooden_sword: 1
+    stone_sword: 1
+    iron_sword: 1
+    wooden_axe: 1
+    stone_axe: 1
+    iron_axe: 1
+
+verify_after_prep:
+  - { block: oak_log, min_count: 4 }
+  - { block: stone, min_count: 8 }
+
+prep:
+  - "execute in landfolk-test run difficulty easy"
+  - "execute in landfolk-test run gamerule doDaylightCycle true"
+  - "execute in landfolk-test run gamerule doMobSpawning true"
+  - "execute in landfolk-test run gamerule keepInventory true"  # if it dies once, give it a chance
+  - "execute in landfolk-test run time set 11000"  # late afternoon
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -20 65 -20 20 80 20 minecraft:air"
+  - "execute in landfolk-test run fill -20 64 -20 20 64 20 minecraft:grass_block"
+  # Tree
+  - "execute in landfolk-test run fill 5 65 0 5 68 0 minecraft:oak_log"
+  - "execute in landfolk-test run fill 4 69 -1 6 69 1 minecraft:oak_leaves"
+  - "execute in landfolk-test run setblock 5 69 0 minecraft:oak_leaves"
+  # Stone (more this time — bot will need it for shelter)
+  - "execute in landfolk-test run fill -6 65 -1 -4 67 1 minecraft:stone"
+  # Pond
+  - "execute in landfolk-test run fill -3 64 6 3 64 10 minecraft:water"
+  # Animals
+  - "execute in landfolk-test run summon minecraft:chicken 2 65 -3 {NoAI:0b}"
+  - "execute in landfolk-test run summon minecraft:cow 3 65 -5 {NoAI:0b}"
+  - "execute in landfolk-test run summon minecraft:cow -3 65 -5 {NoAI:0b}"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 60 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run gamerule keepInventory false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -20 64 -20 20 80 20 minecraft:air"
+  - "execute in landfolk-test run fill -20 64 -20 20 64 20 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..40]"
