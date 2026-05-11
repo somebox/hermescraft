@@ -1,0 +1,440 @@
+/**
+ * Farming verbs (Sprint 8): mc till / plant / harvest / bonemeal.
+ *
+ * Same Paper 1.21+ caveat as buckets — mineflayer's b.activateBlock /
+ * b.activateItem against farmland-related blocks silently no-ops on
+ * Paper. The action handlers try native first, then fall back to
+ * PaperMCP server-side commands (setblock + clear/give) to keep
+ * inventory + world state consistent.
+ */
+
+import { Vec3 } from 'vec3';
+import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+
+const HOE_NAMES = ['netherite_hoe', 'diamond_hoe', 'iron_hoe', 'stone_hoe', 'golden_hoe', 'wooden_hoe'];
+const TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'dirt_path']);
+
+// Items that go on farmland (top of farmland block).
+// Map: item-in-inventory → block-name-placed.
+const FARMLAND_CROPS = {
+  wheat_seeds: 'wheat',
+  beetroot_seeds: 'beetroots',
+  carrot: 'carrots',
+  potato: 'potatoes',
+  melon_seeds: 'melon_stem',
+  pumpkin_seeds: 'pumpkin_stem',
+};
+
+// Items that go on dirt/grass directly (not farmland).
+const SOIL_CROPS = {
+  oak_sapling: 'oak_sapling',
+  birch_sapling: 'birch_sapling',
+  spruce_sapling: 'spruce_sapling',
+  jungle_sapling: 'jungle_sapling',
+  acacia_sapling: 'acacia_sapling',
+  dark_oak_sapling: 'dark_oak_sapling',
+  cherry_sapling: 'cherry_sapling',
+  mangrove_propagule: 'mangrove_propagule',
+  sugar_cane: 'sugar_cane',
+};
+
+const ALL_PLANTABLES = { ...FARMLAND_CROPS, ...SOIL_CROPS };
+
+// "Mature" crop ages — vanilla crops are age 7, beetroot is 3.
+const MATURE_AGE = {
+  wheat: 7,
+  carrots: 7,
+  potatoes: 7,
+  beetroots: 3,
+};
+
+export function createFarmingActions(deps) {
+  const { ctx, ensureBot, goals, sleep, posObj, log, getMyName, ACTIONS } = deps;
+
+  const inventoryAt = (b) =>
+    b.inventory.items().reduce((acc, it) => {
+      acc[it.name] = (acc[it.name] || 0) + it.count;
+      return acc;
+    }, /** @type {Record<string, number>} */ ({}));
+
+  function findFirstHoe(b) {
+    for (const name of HOE_NAMES) {
+      const it = b.inventory.items().find((i) => i.name === name);
+      if (it) return it;
+    }
+    return null;
+  }
+
+  return {
+    /**
+     * Till a single dirt/grass block at (x, y, z) → farmland.
+     * Action contract: NO_HOE, NOT_TILLABLE, OUT_OF_RANGE, UNCHANGED.
+     */
+    async till({ x, y, z }) {
+      const b = ensureBot();
+      const targetPos = new Vec3(Number(x), Number(y), Number(z));
+
+      const hoe = findFirstHoe(b);
+      if (!hoe) {
+        return { ok: false, error: {
+          code: 'NO_HOE',
+          message: 'No hoe in inventory. Craft one (mc craft wooden_hoe) first.',
+          observed_state: { inventory_hoes: [] },
+          retry_safe: false,
+        }};
+      }
+
+      const target = b.blockAt(targetPos);
+      if (!target || !TILLABLE.has(target.name)) {
+        return { ok: false, error: {
+          code: 'NOT_TILLABLE',
+          message: `Block at (${x},${y},${z}) is ${target?.name ?? 'unloaded'} — only dirt/grass/coarse_dirt can be tilled.`,
+          observed_state: { target_block: target?.name ?? null, requested_coord: { x, y, z }, tillable: [...TILLABLE] },
+          retry_safe: false,
+        }};
+      }
+
+      if (b.entity.position.distanceTo(targetPos) > 4.5) {
+        try {
+          await b.pathfinder.goto(new goals.GoalNear(Number(x), Number(y), Number(z), 3));
+        } catch {
+          return { ok: false, error: {
+            code: 'OUT_OF_RANGE',
+            message: `Target at (${x},${y},${z}) is ${Math.round(b.entity.position.distanceTo(targetPos) * 10) / 10} blocks away and pathfind failed.`,
+            observed_state: { distance: b.entity.position.distanceTo(targetPos), bot_position: posObj(b.entity.position) },
+            retry_safe: false,
+          }};
+        }
+      }
+
+      try { await b.equip(hoe, 'hand'); } catch (err) {
+        return { ok: false, error: { code: 'INTERRUPTED', message: `equip ${hoe.name} failed: ${err.message}`, retry_safe: true }};
+      }
+
+      // Try native first. Same Paper-1.21+ activate-block silent no-op as buckets.
+      try {
+        await b.lookAt(targetPos.offset(0.5, 0.5, 0.5), true);
+        await sleep(100);
+        await b.activateBlock(target);
+        await sleep(400);
+      } catch { /* fall through */ }
+      let after = b.blockAt(targetPos);
+      let fallback = null;
+      if (after?.name !== 'farmland') {
+        const pmcp = paperMcpConfig();
+        if (pmcp) {
+          log(`[till] native no-op (block still ${after?.name}) — using PaperMCP fallback`);
+          const r = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:farmland`);
+          if (r.ok) {
+            for (let i = 0; i < 6; i++) {
+              await sleep(150);
+              after = b.blockAt(targetPos);
+              if (after?.name === 'farmland') break;
+            }
+            fallback = 'papermcp_server_side';
+          }
+        }
+      }
+      if (after?.name !== 'farmland') {
+        return { ok: false, error: {
+          code: 'UNCHANGED',
+          message: `Tilled (${x},${y},${z}) but block is still ${after?.name ?? 'unloaded'}, expected farmland.`,
+          observed_state: { target_block_after: after?.name, fallback_attempted: !!paperMcpConfig() },
+          retry_safe: true,
+        }};
+      }
+      return {
+        ok: true,
+        data: { tilled_coord: { x, y, z }, hoe: hoe.name, ...(fallback ? { fallback } : {}) },
+        result: `Tilled ${target.name} → farmland at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`,
+      };
+    },
+
+    /**
+     * Plant a seed/sapling at (x, y, z). For farmland crops (wheat,
+     * beetroot, carrot, potato), the soil at (x, y-1, z) must be farmland
+     * and we place the crop block AT (x, y, z). For saplings/sugar_cane,
+     * the soil at (x, y-1, z) must be dirt/grass.
+     * Action contract: NO_SEEDS, NOT_FARMLAND, BLOCKED, UNCHANGED.
+     */
+    async plant({ item, x, y, z }) {
+      const b = ensureBot();
+      const itemName = String(item);
+      const targetPos = new Vec3(Number(x), Number(y), Number(z));
+      const soilPos = targetPos.offset(0, -1, 0);
+
+      const wantsFarmland = itemName in FARMLAND_CROPS;
+      const wantsSoil = itemName in SOIL_CROPS;
+      if (!wantsFarmland && !wantsSoil) {
+        return { ok: false, error: {
+          code: 'UNKNOWN_PLANTABLE',
+          message: `"${itemName}" isn't a known plantable. Try one of: ${Object.keys(ALL_PLANTABLES).join(', ')}.`,
+          observed_state: { requested: itemName },
+          retry_safe: false,
+        }};
+      }
+
+      const seed = b.inventory.items().find((i) => i.name === itemName);
+      if (!seed) {
+        return { ok: false, error: {
+          code: 'NO_SEEDS',
+          message: `No ${itemName} in inventory.`,
+          observed_state: { requested: itemName, have: b.inventory.items().map((i) => i.name) },
+          retry_safe: false,
+        }};
+      }
+
+      const soil = b.blockAt(soilPos);
+      if (wantsFarmland && soil?.name !== 'farmland') {
+        return { ok: false, error: {
+          code: 'NOT_FARMLAND',
+          message: `Soil at (${x},${y - 1},${z}) is ${soil?.name ?? 'unloaded'}, expected farmland. Till it first.`,
+          observed_state: { target_soil: soil?.name, requested: itemName },
+          next_action_hint: `mc till ${x} ${y - 1} ${z}`,
+          retry_safe: false,
+        }};
+      }
+      if (wantsSoil && !['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'podzol'].includes(soil?.name)) {
+        return { ok: false, error: {
+          code: 'WRONG_SOIL',
+          message: `Soil at (${x},${y - 1},${z}) is ${soil?.name}, this plantable needs dirt/grass.`,
+          observed_state: { target_soil: soil?.name, requested: itemName },
+          retry_safe: false,
+        }};
+      }
+
+      const existing = b.blockAt(targetPos);
+      if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
+        return { ok: false, error: {
+          code: 'BLOCKED',
+          message: `Target (${x},${y},${z}) is ${existing.name}, not air.`,
+          observed_state: { target_block: existing.name },
+          retry_safe: false,
+        }};
+      }
+
+      if (b.entity.position.distanceTo(targetPos) > 4.5) {
+        try { await b.pathfinder.goto(new goals.GoalNear(Number(x), Number(y), Number(z), 3)); }
+        catch {
+          return { ok: false, error: { code: 'OUT_OF_RANGE', message: `pathfind failed to (${x},${y},${z})`, retry_safe: false }};
+        }
+      }
+
+      try { await b.equip(seed, 'hand'); } catch (err) {
+        return { ok: false, error: { code: 'INTERRUPTED', message: `equip ${itemName} failed: ${err.message}`, retry_safe: true }};
+      }
+
+      const before = inventoryAt(b);
+      // Try native — placeBlock on the soil with face up.
+      try {
+        await b.lookAt(soilPos.offset(0.5, 1, 0.5), true);
+        await sleep(100);
+        await b.placeBlock(soil, new Vec3(0, 1, 0));
+        await sleep(300);
+      } catch { /* fall through */ }
+      let placed = b.blockAt(targetPos);
+      let fallback = null;
+      const cropBlockName = ALL_PLANTABLES[itemName];
+      if (placed?.name !== cropBlockName) {
+        const pmcp = paperMcpConfig();
+        const username = getMyName?.();
+        if (pmcp && username) {
+          log(`[plant] native no-op (block ${placed?.name}) — using PaperMCP fallback for ${itemName}`);
+          const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:${itemName} 1`);
+          const r2 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:${cropBlockName}`);
+          if (r1.ok && r2.ok) {
+            for (let i = 0; i < 6; i++) {
+              await sleep(150);
+              placed = b.blockAt(targetPos);
+              if (placed?.name === cropBlockName) break;
+            }
+            fallback = 'papermcp_server_side';
+          }
+        }
+      }
+      const after = inventoryAt(b);
+      if (placed?.name !== cropBlockName) {
+        return { ok: false, error: {
+          code: 'UNCHANGED',
+          message: `Planted ${itemName} at (${x},${y},${z}) but block is ${placed?.name ?? 'unloaded'}, expected ${cropBlockName}.`,
+          observed_state: { target_block_after: placed?.name, started_inventory: before, ended_inventory: after },
+          retry_safe: true,
+        }};
+      }
+      return {
+        ok: true,
+        data: { planted: itemName, crop_block: cropBlockName, target_coord: { x, y, z }, ...(fallback ? { fallback } : {}) },
+        result: `Planted ${itemName} at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`,
+      };
+    },
+
+    /**
+     * Apply bone meal to a crop. Native: equip bone_meal, activate block.
+     * Fallback: server-side increment of the block's age property until
+     * mature, plus clear bone_meal from inventory.
+     */
+    async bonemeal({ x, y, z }) {
+      const b = ensureBot();
+      const targetPos = new Vec3(Number(x), Number(y), Number(z));
+
+      const meal = b.inventory.items().find((i) => i.name === 'bone_meal');
+      if (!meal) {
+        return { ok: false, error: {
+          code: 'NO_BONEMEAL',
+          message: 'No bone_meal in inventory.',
+          observed_state: { inventory: b.inventory.items().filter((i) => i.name.includes('bone')).map((i) => i.name) },
+          retry_safe: false,
+        }};
+      }
+
+      const target = b.blockAt(targetPos);
+      if (!target) {
+        return { ok: false, error: { code: 'NOT_GROWABLE', message: `No block at (${x},${y},${z}).`, retry_safe: false }};
+      }
+      const matureAge = MATURE_AGE[target.name];
+      const isCrop = matureAge !== undefined;
+
+      if (b.entity.position.distanceTo(targetPos) > 4.5) {
+        try { await b.pathfinder.goto(new goals.GoalNear(Number(x), Number(y), Number(z), 3)); }
+        catch {
+          return { ok: false, error: { code: 'OUT_OF_RANGE', message: `pathfind failed to (${x},${y},${z})`, retry_safe: false }};
+        }
+      }
+
+      try { await b.equip(meal, 'hand'); } catch (err) {
+        return { ok: false, error: { code: 'INTERRUPTED', message: `equip bone_meal failed: ${err.message}`, retry_safe: true }};
+      }
+
+      const before = inventoryAt(b);
+      try {
+        await b.lookAt(targetPos.offset(0.5, 0.5, 0.5), true);
+        await sleep(100);
+        await b.activateBlock(target);
+        await sleep(300);
+      } catch { /* fall through */ }
+      // Fallback: setblock the crop with age=mature (or +1 step).
+      let placed = b.blockAt(targetPos);
+      let fallback = null;
+      if (isCrop) {
+        const props = placed?.getProperties?.() || {};
+        const curAge = Number(props.age ?? 0);
+        if (curAge < matureAge) {
+          const pmcp = paperMcpConfig();
+          const username = getMyName?.();
+          if (pmcp && username) {
+            log(`[bonemeal] native didn't advance age (${curAge}) — PaperMCP fallback to mature`);
+            const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:bone_meal 1`);
+            const r2 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:${target.name}[age=${matureAge}]`);
+            if (r1.ok && r2.ok) {
+              for (let i = 0; i < 6; i++) {
+                await sleep(150);
+                placed = b.blockAt(targetPos);
+                if (placed?.name === target.name) break;
+              }
+              fallback = 'papermcp_server_side';
+            }
+          }
+        }
+      }
+      const after = inventoryAt(b);
+      const finalProps = placed?.getProperties?.() || {};
+      const finalAge = Number(finalProps.age ?? 0);
+      const mealConsumed = (before.bone_meal || 0) - (after.bone_meal || 0);
+      if (mealConsumed < 1 && fallback === null) {
+        return { ok: false, error: {
+          code: 'BONEMEAL_FAILED',
+          message: `bone_meal didn't do anything to ${target.name} at (${x},${y},${z}).`,
+          observed_state: { target_block: target.name, age: finalAge, started_inventory: before, ended_inventory: after },
+          retry_safe: true,
+        }};
+      }
+      return {
+        ok: true,
+        data: {
+          target_block: target.name,
+          age_before: isCrop ? Number((target.getProperties?.() || {}).age ?? 0) : null,
+          age_after: isCrop ? finalAge : null,
+          is_mature: isCrop ? finalAge >= matureAge : null,
+          bone_meal_consumed: mealConsumed,
+          ...(fallback ? { fallback } : {}),
+        },
+        result: `Bonemealed ${target.name} at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`,
+      };
+    },
+
+    /**
+     * Harvest mature crops in an axis-aligned rectangle at the given Y.
+     * If Y is omitted, defaults to the bot's foot Y. Skips immature
+     * crops (returns their count). Picks up drops.
+     */
+    async harvest({ x1, z1, x2, z2, y }) {
+      const b = ensureBot();
+      const minX = Math.min(Number(x1), Number(x2));
+      const maxX = Math.max(Number(x1), Number(x2));
+      const minZ = Math.min(Number(z1), Number(z2));
+      const maxZ = Math.max(Number(z1), Number(z2));
+      const harvestY = y !== undefined ? Number(y) : Math.floor(b.entity.position.y);
+
+      const before = inventoryAt(b);
+      let mature = 0;
+      let immatureCount = 0;
+      const immature = [];
+
+      for (let xi = minX; xi <= maxX; xi++) {
+        for (let zi = minZ; zi <= maxZ; zi++) {
+          const pos = new Vec3(xi, harvestY, zi);
+          const blk = b.blockAt(pos);
+          if (!blk) continue;
+          const matureAge = MATURE_AGE[blk.name];
+          if (matureAge === undefined) continue; // not a crop
+          const age = Number((blk.getProperties?.() || {}).age ?? 0);
+          if (age < matureAge) {
+            immatureCount++;
+            immature.push({ x: xi, y: harvestY, z: zi, name: blk.name, age });
+            continue;
+          }
+          if (b.entity.position.distanceTo(pos) > 4.5) {
+            try { await b.pathfinder.goto(new goals.GoalNear(xi, harvestY, zi, 3)); }
+            catch { continue; }
+          }
+          try {
+            await b.dig(blk, true);
+            mature++;
+            await sleep(150);
+          } catch { /* skip */ }
+        }
+      }
+
+      // Pickup pass
+      await sleep(500);
+      try { await ACTIONS.pickup({}); } catch { /* best-effort */ }
+
+      const after = inventoryAt(b);
+      if (mature === 0 && immatureCount === 0) {
+        return { ok: false, error: {
+          code: 'NOTHING_TO_HARVEST',
+          message: `No crops found in rectangle (${minX},${harvestY},${minZ})-(${maxX},${harvestY},${maxZ}).`,
+          observed_state: { searched_blocks: (maxX - minX + 1) * (maxZ - minZ + 1) },
+          retry_safe: false,
+        }};
+      }
+
+      const gained = {};
+      for (const [n, c] of Object.entries(after)) {
+        const diff = c - (before[n] || 0);
+        if (diff > 0) gained[n] = diff;
+      }
+      return {
+        ok: true,
+        data: {
+          harvested_count: mature,
+          skipped_immature: immatureCount,
+          immature_blocks: immature.slice(0, 8),
+          inventory_gained: gained,
+          bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: harvestY },
+        },
+        result: `Harvested ${mature} mature crops${immatureCount ? ` (${immatureCount} immature skipped)` : ''}. Gained: ${Object.entries(gained).map(([n, c]) => `${c}x ${n}`).join(', ') || 'nothing'}.`,
+      };
+    },
+  };
+}

@@ -576,11 +576,79 @@ These go in `data/agent-tests/` (sister to the F/G suite from Sprint A):
 
 ---
 
-## Sprints 8–10 (stubs — to be planned at the end of each predecessor)
+## Sprint 8 — Crops
+
+**Status:** SHIPPED 2026-05-11. Verbs `mc till`/`plant`/`bonemeal`/`harvest` landed in `bot/lib/actions/farming.js` with PaperMCP fallback for bonemeal (mineflayer's `activateBlock` silent-no-ops on Paper 1.21+ for bone meal). All 8 L8 fixtures smoke-tested green. G10 wheat_farm_cycle PASS ≥3/3 consecutively on `google/gemini-2.5-flash` (runs at `data/agent-tests/runs/G10_wheat_farm_cycle-2026-05-11T11-{35,37,39}*.json`). Skill text updated with light/hydration/maturity-stages/trampling/drop-rules guidance derived from the Minecraft wiki crop-farming tutorial.
+
+**Goal:** the bot can till soil, plant seeds, accelerate growth with bone meal, and harvest mature crops. Unlocks self-sufficient food generation — bots no longer depend on saturation effects for long missions. Combined with Sprint 7's water transport (crops need hydrated farmland within 4 blocks), this is the first sprint where a bot can survive indefinitely on its own.
+
+### Verbs
+
+| Verb | Shape | Notes |
+|---|---|---|
+| `mc till` | `mc till X Y Z` | Convert a single dirt/grass block at (X,Y,Z) into farmland. Auto-equips a hoe (any tier). Returns NO_HOE / NOT_TILLABLE / OUT_OF_RANGE. |
+| `mc plant` | `mc plant ITEM X Y Z` | Place a seed/sapling/crop on the block at (X,Y,Z+1) (the cell above the tilled soil). Validates the item is a plantable, the target soil is farmland/dirt as appropriate. |
+| `mc harvest` | `mc harvest X1 Z1 X2 Z2 [Y]` | Dig mature crops in an axis-aligned rectangle. Skips immature crops (returns count of `skipped_immature`). Collects drops via the usual pickup pass. |
+| `mc bonemeal` | `mc bonemeal X Y Z` | Apply bone meal to a crop at (X,Y,Z). Equips bone_meal, activates on the block. Returns BONEMEAL_FAILED if the target isn't growable or no bone_meal in inventory. |
+
+### Action contract
+
+| Error code | When | observed_state | retry_safe |
+|---|---|---|---|
+| `NO_HOE` | no hoe in inventory (till) | `inventory_hoes: []` | false |
+| `NOT_TILLABLE` | target block isn't dirt/grass/coarse_dirt (till) | `target_block: "stone"` | false |
+| `NO_SEEDS` | requested seed/sapling not in inventory (plant) | `requested: "wheat_seeds", have: ["beetroot_seeds"]` | false |
+| `NOT_FARMLAND` | plant target's ground isn't farmland (for wheat/carrot/potato) | `target_soil: "dirt"` | false |
+| `NOTHING_TO_HARVEST` | rectangle contains no mature crops | `total_blocks: 9, mature: 0, immature: 7` | false |
+| `BONEMEAL_FAILED` | bone meal application didn't trigger growth (already mature, wrong target, no item) | `target_block: "wheat", age: 7` | true |
+| `OUT_OF_RANGE` | target too far + pathfind failed | `distance: 7.2` | false |
+
+### Fixtures (L8)
+
+| ID | Tests |
+|---|---|
+| L8.1 | `till_basic` — grass block + iron_hoe → farmland |
+| L8.2 | `till_wrong_block` — stone target → NOT_TILLABLE |
+| L8.3 | `plant_wheat` — farmland at Y=64, wheat_seeds in inv → wheat crop at Y+1 |
+| L8.4 | `plant_no_seeds` → NO_SEEDS |
+| L8.5 | `bonemeal_immature_wheat` — wheat at age=0, bonemeal in inv → age increments |
+| L8.6 | `harvest_mature_wheat_3x3` — 3x3 mature wheat field → 9 wheat collected, 0 seeds lost |
+| L8.7 | `harvest_mixed_maturity` — 3x3 with mix of mature + immature → only mature counted; immature listed in observed |
+| L8.8 | `full_cycle_3x3` — till → plant → bonemeal until mature → harvest. End: bot has wheat in inv, farmland clear of crops |
+
+### Agent-test scenarios
+
+| ID | Scenario |
+|---|---|
+| G10 | `wheat_farm_cycle` — bot has hoe + wheat_seeds + bone_meal. Goal: till a 3x3 patch, plant, bonemeal to maturity, harvest. Composite multi-verb chain. |
+
+### Implementation order
+
+1. `mc till` (single-block) — simplest, sets the pattern.
+2. `mc plant` — adds seed/soil validation logic.
+3. `mc bonemeal` — same activate-block pattern, plus growth verification.
+4. `mc harvest` (rectangle) — area scan + dig-mature loop, reuses pickup.
+5. L8.1-L8.8 fixtures.
+6. G10 agent-test.
+7. Skill text update in `skills/minecraft-survival.md` — point at the farm verbs for food generation.
+
+### Exit gate
+
+- All L8 fixtures green (2 consecutive passes each).
+- G10 reliable (≥3/3 PASS on default model).
+- `check-conventions.mjs` passes (4 new verbs each have description + examples).
+- Skill text updated.
+
+### Estimated scope
+
+1-2 sessions. Mineflayer plumbing is the bucket pattern repeated (activateBlock with hoe / bone_meal / seed-on-farmland). Expect the same Paper 1.21+ silent-no-op gotcha → PaperMCP server-side fallback for actions that mineflayer can't complete.
+
+---
+
+## Sprints 9–10 (stubs — to be planned at the end of each predecessor)
 
 | Sprint | Domain | Depends on | Status |
 |---|---|---|---|
-| 8 | Crops (`mc farm till/plant/harvest`) | 5, 7 | planned |
 | 9 | Animals (`mc farm lure/breed/shear/milk`) | 5, 8 | planned |
 | 10 | Fishing + boats (`mc farm fish`, `mc self board/disembark`) | independent | planned |
 

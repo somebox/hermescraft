@@ -1,0 +1,27 @@
+# L8.3 — plant_wheat: mc plant places a wheat crop on farmland.
+#
+# Setup: farmland at (1,64,0), air above at (1,65,0); bot has wheat_seeds.
+# Action: POST /action/plant {item:"wheat_seeds", x:1, y:65, z:0}
+# Expected: ok=true, data.planted=="wheat_seeds", data.crop_block=="wheat",
+#           server-side block at (1,65,0) is wheat after.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 1 64 0 minecraft:farmland"
+  - "execute in landfolk-test run setblock 1 65 0 minecraft:air"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:wheat_seeds 4"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 1 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock 1 64 0 minecraft:stone"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

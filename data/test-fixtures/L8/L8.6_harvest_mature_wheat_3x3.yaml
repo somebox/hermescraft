@@ -1,0 +1,27 @@
+# L8.6 — harvest_mature_wheat_3x3: mc harvest collects 9 mature wheat blocks.
+#
+# Setup: 3x3 farmland (-1..1, 64, -1..1), mature wheat (age=7) on each.
+# Bot has nothing — harvest digs by hand.
+# Action: POST /action/harvest {x1:-1, z1:-1, x2:1, z2:1, y:65}
+# Expected: ok=true, data.harvested_count==9, data.skipped_immature==0,
+#           data.inventory_gained has wheat>=9.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -1 64 -1 1 64 1 minecraft:farmland"
+  - "execute in landfolk-test run fill -1 65 -1 1 65 1 minecraft:wheat[age=7]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill -1 65 -1 1 65 1 minecraft:air"
+  - "execute in landfolk-test run fill -1 64 -1 1 64 1 minecraft:stone"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

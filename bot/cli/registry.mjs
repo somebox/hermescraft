@@ -933,6 +933,68 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc bucket_empty X Y Z',
     examples: ['mc bucket_empty 3 65 0', 'mc bucket_empty -2 64 5  # pour water onto lava — produces stone/cobble/obsidian'],
   }),
+
+  g('till', 'world', ['hoe'], {
+    description: 'Convert dirt/grass at X Y Z into farmland. Auto-equips any hoe (wooden/stone/iron/etc.). Returns NO_HOE / NOT_TILLABLE / OUT_OF_RANGE.',
+    method: 'POST',
+    path: '/action/till',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    usage: 'mc till X Y Z',
+    examples: ['mc till 5 64 10', 'mc till 0 64 0'],
+  }),
+
+  g('plant', 'world', ['sow'], {
+    description: 'Plant a seed/sapling at X Y Z. ITEM must be in inventory (wheat_seeds, beetroot_seeds, carrot, potato, *_sapling, sugar_cane, melon_seeds, pumpkin_seeds). The block at (X,Y-1,Z) must be farmland (for farm crops) or dirt/grass (for saplings/sugar_cane).',
+    method: 'POST',
+    path: '/action/plant',
+    argSchema: [
+      { key: 'item', type: 'string', required: true },
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ item: String(p.item), x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    usage: 'mc plant ITEM X Y Z',
+    examples: ['mc plant wheat_seeds 5 65 10', 'mc plant oak_sapling 0 65 0'],
+  }),
+
+  g('bonemeal', 'world', [], {
+    description: 'Apply bone meal to a crop or sapling at X Y Z. Accelerates growth (or fully matures via PaperMCP fallback if mineflayer activation silently no-ops). Returns NO_BONEMEAL / NOT_GROWABLE / BONEMEAL_FAILED.',
+    method: 'POST',
+    path: '/action/bonemeal',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    usage: 'mc bonemeal X Y Z',
+    examples: ['mc bonemeal 5 65 10'],
+  }),
+
+  g('harvest', 'world', [], {
+    description: 'Harvest mature crops in axis-aligned rectangle (X1,Z1)-(X2,Z2) at Y (defaults to bot foot Y). Skips immature crops and reports them. Picks up drops.',
+    method: 'POST',
+    path: '/action/harvest',
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'y', type: 'number', required: false },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x1: Number(p.x1), z1: Number(p.z1), x2: Number(p.x2), z2: Number(p.z2),
+      ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+    }),
+    usage: 'mc harvest X1 Z1 X2 Z2 [Y]',
+    examples: ['mc harvest 0 0 4 4 65', 'mc harvest -2 -2 2 2'],
+  }),
   g('toss', 'world', ['drop'], {
     description: 'Drop ITEM [COUNT] from inventory',
     method: 'POST',

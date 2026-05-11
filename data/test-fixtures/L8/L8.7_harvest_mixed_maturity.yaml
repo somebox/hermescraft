@@ -1,0 +1,32 @@
+# L8.7 — harvest_mixed_maturity: only mature crops are collected.
+#
+# Setup: 3x3 farmland with wheat:
+#   mature (age=7) at corners (4 blocks): (-1,65,-1), (1,65,-1), (-1,65,1), (1,65,1)
+#   immature (age=2) elsewhere (5 blocks): edges + center
+# Action: POST /action/harvest {x1:-1, z1:-1, x2:1, z2:1, y:65}
+# Expected: ok=true, data.harvested_count==4, data.skipped_immature==5,
+#           immature crops still in world after.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -1 64 -1 1 64 1 minecraft:farmland"
+  - "execute in landfolk-test run fill -1 65 -1 1 65 1 minecraft:wheat[age=2]"
+  - "execute in landfolk-test run setblock -1 65 -1 minecraft:wheat[age=7]"
+  - "execute in landfolk-test run setblock 1 65 -1 minecraft:wheat[age=7]"
+  - "execute in landfolk-test run setblock -1 65 1 minecraft:wheat[age=7]"
+  - "execute in landfolk-test run setblock 1 65 1 minecraft:wheat[age=7]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill -1 65 -1 1 65 1 minecraft:air"
+  - "execute in landfolk-test run fill -1 64 -1 1 64 1 minecraft:stone"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

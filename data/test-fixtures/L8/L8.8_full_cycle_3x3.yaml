@@ -1,0 +1,35 @@
+# L8.8 — full_cycle_3x3: till → plant → bonemeal → harvest end-to-end.
+#
+# Setup: 3x3 dirt at (-1..1, 64, -1..1); air above; bot has iron_hoe,
+#        wheat_seeds, bone_meal.
+# Procedure (handler script drives the mc verbs in sequence):
+#   1. mc till for each of the 9 dirt blocks → 9× farmland
+#   2. mc plant wheat_seeds on each of 9 cells above the farmland
+#   3. mc bonemeal each of 9 wheat crops (forces mature)
+#   4. mc harvest x1=-1 z1=-1 x2=1 z2=1 y=65
+# Expected: bot inventory has wheat >= 9 after harvest. All 9 cells back to
+# air. Farmland still present at Y=64.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -1 64 -1 1 64 1 minecraft:dirt"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:iron_hoe 1"
+  # 9 crops × 2 bonemeal per fallback = 18 minimum. Give extra headroom for any
+  # farmland that gets trampled mid-cycle (vanilla: standing on farmland reverts it).
+  - "give Flint minecraft:wheat_seeds 32"
+  - "give Flint minecraft:bone_meal 32"
+  - "effect give Flint minecraft:saturation 1 30"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 30 0 true"
+
+cleanup:
+  - "execute in landfolk-test run fill -1 65 -1 1 65 1 minecraft:air"
+  - "execute in landfolk-test run fill -1 64 -1 1 64 1 minecraft:stone"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

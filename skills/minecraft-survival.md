@@ -185,6 +185,57 @@ When you first join or settle an area:
 
 Deposit extras in chests before dangerous trips. Return to base to deposit after gathering.
 
+## Farming for food
+
+Once you have an iron_hoe (or wooden_hoe for early-game) you can grow your own
+food. Crop cycle: till → plant → bonemeal → harvest.
+
+1. `mc till X Y Z` — convert dirt/grass to farmland. Y is the dirt block's Y
+   (not the air above). Auto-equips any hoe in inventory.
+2. `mc plant wheat_seeds X Y Z` — plant at Y = farmland_y + 1 (one above
+   the farmland). Works for `wheat_seeds`, `beetroot_seeds`, `carrot`, `potato`,
+   `melon_seeds`, `pumpkin_seeds` on farmland; `*_sapling` and `sugar_cane`
+   on dirt/grass directly.
+3. `mc bonemeal X Y Z` — apply bone meal to a planted crop to accelerate
+   growth. **Vanilla advances 2-5 stages per call (random).** Check
+   `data.is_mature` in the response — if false, call again.
+4. `mc harvest X1 Z1 X2 Z2 [Y]` — harvest mature crops in an axis-aligned
+   rectangle. Skips immature crops. Drops are picked up automatically.
+
+**Growth requires** (without these crops stall and never mature):
+- **Light level ≥9** at the crop block. Place torches every ~6 blocks around
+  the field if growing indoors or at night.
+- **Hydrated farmland** — a water source within 4 blocks horizontally
+  (same Y or 1 above). Dry farmland still grows but half-speed and reverts
+  to dirt if left empty.
+- Loaded chunk — the bot needs to stay nearby for growth to tick.
+
+**Watering**: use `mc bucket_fill X Y Z` from a water source, walk to the
+field, then `mc bucket_empty X Y Z` to place water within 4 blocks of the
+farmland. One water source can hydrate a 9x9 farmland patch around it.
+
+**Trampling**: standing on bare farmland reverts it to dirt. Walking on
+farmland with crops on it is fine. When laying out a 3x3 patch, till + plant
+each cell before moving to the next so you never have to walk across bare
+farmland.
+
+**Crop drop rules** (matters for sustainability):
+- Mature wheat: 1 wheat + 1-4 seeds (always net positive on seeds).
+- Mature beetroot: 1 beetroot + 1-4 seeds.
+- Mature carrot/potato: 1-4 of the crop, no seed (re-plant from the crop
+  itself; save 1 from each harvest).
+- Immature wheat/beetroot: 1 seed only (no crop, no food).
+
+**Maturity stages**:
+- Wheat / carrot / potato: 0-7 (mature = 7).
+- Beetroot: 0-3 (mature = 3).
+
+**Wheat seeds**: harvest grass with `mc dig` to collect wheat_seeds when
+you don't have any yet.
+
+**Sugar cane**: plant on dirt/grass/sand adjacent to water. Grows up to 4
+blocks tall without bonemeal.
+
 ## Block & item names (use EXACT names with mc commands)
 
 **Wood**: oak_log, birch_log, spruce_log, dark_oak_log, jungle_log, acacia_log → oak_planks, birch_planks, etc. → stick

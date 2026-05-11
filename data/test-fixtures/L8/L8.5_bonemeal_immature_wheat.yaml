@@ -1,0 +1,28 @@
+# L8.5 — bonemeal_immature_wheat: mc bonemeal advances wheat growth.
+#
+# Setup: farmland at (1,64,0), wheat (age=0) at (1,65,0); bot has bone_meal.
+# Action: POST /action/bonemeal {x:1, y:65, z:0}
+# Expected: ok=true, data.target_block=="wheat", data.age_after >= 1.
+# Note: Paper 1.21+ often silent-no-ops mineflayer activate; PaperMCP
+# fallback sets age to 7 (mature). data.fallback may be present.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run setblock 1 64 0 minecraft:farmland"
+  - "execute in landfolk-test run setblock 1 65 0 minecraft:wheat[age=0]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:bone_meal 4"
+  - "effect give Flint minecraft:saturation 1 10"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 5 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 1 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock 1 64 0 minecraft:stone"
+  - "execute in landfolk-test run fill -5 65 -5 5 80 5 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

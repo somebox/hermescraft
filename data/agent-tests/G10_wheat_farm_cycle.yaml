@@ -1,0 +1,123 @@
+# G10 — composite: full wheat farming cycle.
+#
+# Bot at (0, 65, 0) standing on a 3x3 dirt patch at Y=64. Bot has
+# iron_hoe, wheat_seeds, and bone_meal in inventory. Goal: till the
+# soil, plant wheat, accelerate growth with bone meal, and harvest.
+#
+# Tests `mc till` + `mc plant` + `mc bonemeal` + `mc harvest`
+# end-to-end. Multi-verb chain.
+#
+# Vanilla quirk that matters: standing on farmland with crops on it
+# is fine, but standing on bare farmland reverts it to dirt. The
+# agent should till + plant in one pass per cell, or work backwards
+# so it never has to walk on bare farmland to reach the next cell.
+
+agent_test_id: G10_wheat_farm_cycle
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: grow and harvest wheat from a 3x3 dirt patch.
+
+  Setup:
+    - You stand on a 3x3 dirt patch at Y=64, centered at (0, 64, 0).
+      The 9 dirt blocks span (-1..1, 64, -1..1).
+    - You have an iron_hoe, 32 wheat_seeds, and 32 bone_meal.
+
+  EXECUTE THESE STEPS NOW — do not stop until step 4 completes.
+  Run each command, check the JSON `ok` field, then run the next.
+  Do not narrate plans. Just run commands.
+
+  IMPORTANT: run each `mc` command directly via the terminal tool, one
+  at a time. Do NOT batch them inside an execute_code Python script —
+  we need to see the per-command results to handle failures correctly.
+
+  Step 1 — till all 9 cells (run all 9 commands, in this exact order):
+    mc till -1 64 -1
+    mc till 0 64 -1
+    mc till 1 64 -1
+    mc till -1 64 0
+    mc till 0 64 0
+    mc till 1 64 0
+    mc till -1 64 1
+    mc till 0 64 1
+    mc till 1 64 1
+
+  Step 2 — plant all 9 cells (same coords at Y=65):
+    mc plant wheat_seeds -1 65 -1
+    mc plant wheat_seeds 0 65 -1
+    mc plant wheat_seeds 1 65 -1
+    mc plant wheat_seeds -1 65 0
+    mc plant wheat_seeds 0 65 0
+    mc plant wheat_seeds 1 65 0
+    mc plant wheat_seeds -1 65 1
+    mc plant wheat_seeds 0 65 1
+    mc plant wheat_seeds 1 65 1
+
+  Step 3 — bonemeal each crop until mature. For each of the 9 crops,
+  run `mc bonemeal X 65 Z` and check `data.is_mature` in the response.
+  If false, run it again on the same coord. Repeat until is_mature=true,
+  then move to the next crop.
+
+  Step 4 — harvest the entire field:
+    mc harvest -1 -1 1 1 65
+
+  Then stop. The test passes when wheat is in your inventory and the
+  field is cleared.
+
+  If a `mc till` returns NOT_FARMLAND or a `mc plant` returns
+  NOT_FARMLAND for a cell you walked on, just re-till that cell and
+  continue. Standing on bare farmland reverts it to dirt; crops
+  protect the farmland once planted.
+
+skills: [minecraft-survival]
+max_turns: 30
+timeout_seconds: 360
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 14
+  mc_verbs_include_any: [till, plant, bonemeal, harvest]
+  # Harvest must have run and collected at least 4 wheat. The bot picks
+  # up drops automatically; presence of wheat in inv is the canonical
+  # signal it actually finished the cycle. 4 is a generous floor —
+  # vanilla farmland trampling can lose 1-2 crops during the run.
+  bot_inventory:
+    wheat: 4
+  # Field must be cleared after harvest. Spot-check three corners are
+  # air, not wheat.
+  world_block_at:
+    - { x: -1, y: 65, z: -1, block: air }
+    - { x: 1, y: 65, z: 1, block: air }
+    - { x: 0, y: 65, z: 0, block: air }
+
+verify_after_prep:
+  - { block: dirt, min_count: 9 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run gamerule randomTickSpeed 0"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  # 3x3 dirt patch (the canvas)
+  - "execute in landfolk-test run fill -1 64 -1 1 64 1 minecraft:dirt"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:iron_hoe 1"
+  - "give Flint minecraft:wheat_seeds 32"
+  - "give Flint minecraft:bone_meal 32"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
