@@ -283,6 +283,36 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
             results.append({"kind": f"block@{x},{y},{z}=={block}", "pass": hit,
                              "detail": ""})
 
+    if "entity_in_bbox" in expect:
+        # List of {type, bbox: {x1,y1,z1,x2,y2,z2}, min_count?, max_count?}.
+        # Counts entities of that type inside the inclusive AABB; passes when
+        # count >= min_count (default 0) AND count <= max_count (default inf).
+        # Set max_count: 0 to assert absence; min_count: 1 to assert presence.
+        for probe in expect["entity_in_bbox"] or []:
+            t = probe["type"]
+            bb = probe["bbox"]
+            x1, y1, z1 = bb["x1"], bb["y1"], bb["z1"]
+            x2, y2, z2 = bb["x2"], bb["y2"], bb["z2"]
+            min_count = int(probe.get("min_count", 0))
+            max_count = probe.get("max_count", None)
+            dx = x2 - x1
+            dy = y2 - y1
+            dz = z2 - z1
+            sel = f"@e[type={t},x={x1},y={y1},z={z1},dx={dx},dy={dy},dz={dz}]"
+            tag = f"cnt_{t}_{x1}_{y1}_{z1}".replace("-", "n").replace(":", "_")
+            run_rcon(f'execute in landfolk-test as {sel} run say MATCH_{tag}')
+            time.sleep(1.5)
+            obs = observe(DEFAULT_BOT_URL)
+            chat = (obs.get("state") or {}).get("new_chat") or []
+            count = sum(1 for m in chat if f"MATCH_{tag}" in (m.get("message") or ""))
+            ok = count >= min_count and (max_count is None or count <= max_count)
+            bounds = f">={min_count}" + (f",<={max_count}" if max_count is not None else "")
+            results.append({
+                "kind": f"entity_in_bbox:{t}{bounds}",
+                "pass": ok,
+                "detail": f"count={count} bbox=({x1},{y1},{z1})..({x2},{y2},{z2})",
+            })
+
     return results
 
 

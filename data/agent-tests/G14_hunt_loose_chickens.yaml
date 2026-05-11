@@ -1,0 +1,71 @@
+# G14 — bot hunts 3 wild (moving) chickens for feathers + meat.
+#
+# Open field, no pen. 3 chickens with AI enabled, wandering. Bot has
+# iron_sword. The chickens move (NoAI:0b), so this tests the hunt
+# verb's ability to chase live targets rather than statues.
+
+agent_test_id: G14_hunt_loose_chickens
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Setup:
+    - You stand at (0, 65, 0) in an open grass field.
+    - 3 wild chickens are wandering nearby within ~5 blocks.
+    - You have an iron_sword.
+
+  Goal: kill all 3 chickens and collect their drops (feathers + raw
+  chicken). Use `mc hunt chicken 3` — the verb auto-equips the sword,
+  chases each chicken until dead, and runs a pickup pass after.
+
+  If hunt returns ok=true with killed<3, run it again with the
+  remaining count (e.g. `mc hunt chicken 1`) to mop up survivors.
+
+  Do not narrate plans. Run each command one at a time via terminal;
+  do NOT batch them in execute_code Python scripts.
+
+skills: [minecraft-survival]
+max_turns: 8
+timeout_seconds: 180
+post_wait_seconds: 5
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 16
+  mc_verbs_include_any: [hunt]
+  bot_inventory:
+    feather: 2
+    chicken: 2
+  # No live chickens left in the arena.
+  world_no_entity_of_type: [chicken]
+
+verify_after_prep:
+  - { block: grass_block, min_count: 9 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:grass_block"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  # Chickens with AI enabled — they will wander as the bot approaches.
+  - "execute in landfolk-test run summon minecraft:chicken 0 65 3 {NoAI:0b}"
+  - "execute in landfolk-test run summon minecraft:chicken 2 65 3 {NoAI:0b}"
+  - "execute in landfolk-test run summon minecraft:chicken -2 65 3 {NoAI:0b}"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:iron_sword 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

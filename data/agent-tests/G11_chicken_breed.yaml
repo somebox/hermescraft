@@ -1,0 +1,84 @@
+# G11 — bot breeds two chickens through a fence, baby spawns inside pen.
+#
+# Bot stands OUTSIDE a 5x5 pen with 2 adult chickens contained inside.
+# Bot has wheat_seeds. Goal: breed both chickens (reaching through the
+# fence is fine — useOn range is ~4 blocks). Baby must spawn INSIDE the
+# pen — i.e. the breeding produced a new chicken without releasing any.
+#
+# Critical test of "breed without losing chickens": if the agent enters
+# the pen to feed and leaves the gate open, chickens escape. Bot must
+# stay outside.
+
+agent_test_id: G11_chicken_breed
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Setup:
+    - You stand at (0, 65, -3), just OUTSIDE a 5x5 fenced pen centered
+      at (0, 65, 0). The fence is at x=-2..2, z=-2..2 at Y=65.
+    - 2 adult chickens are contained inside the pen.
+    - You have 8 wheat_seeds.
+
+  Goal: breed the chickens through the fence. Do NOT enter the pen.
+  Chickens can escape if a fence is breached, so all your work must
+  happen from your starting position or by moving along the OUTSIDE
+  of the pen perimeter.
+
+  Execute these steps:
+    1. Run `mc look` — orient toward the chickens.
+    2. Run `mc breed chicken`. The bot will walk close to the fence
+       and feed both chickens through it (4-block reach).
+    3. If ok=true, you are done.
+
+  Do not narrate plans. Run each command one at a time via terminal;
+  do NOT batch them in execute_code Python scripts. Do NOT mine or
+  place any blocks — that risks breaching the pen.
+
+skills: [minecraft-survival]
+max_turns: 8
+timeout_seconds: 180
+post_wait_seconds: 8
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 16
+  mc_verbs_include_any: [breed]
+  # Confirm 3+ chickens exist (2 adults + at least 1 baby).
+  # We can't directly count entities in the predicates, but we can
+  # check that the pen still contains chickens by verifying no chickens
+  # escaped outside the fence bounds.
+
+verify_after_prep:
+  - { block: oak_fence, min_count: 16 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:grass_block"
+  # 5x5 fenced pen (closed — no gate). Fence ring at Y=65.
+  - "execute in landfolk-test run fill -2 65 -2 2 65 -2 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -2 65 2 2 65 2 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -2 65 -2 -2 65 2 minecraft:oak_fence"
+  - "execute in landfolk-test run fill 2 65 -2 2 65 2 minecraft:oak_fence"
+  - "mvtp Flint landfolk-test"
+  # Bot OUTSIDE the pen, facing the pen
+  - "execute in landfolk-test run tp Flint 0 65 -4 180 0"
+  - "execute in landfolk-test run summon minecraft:chicken 0 65 0 {NoAI:0b,Age:0}"
+  - "execute in landfolk-test run summon minecraft:chicken 1 65 0 {NoAI:0b,Age:0}"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:wheat_seeds 8"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

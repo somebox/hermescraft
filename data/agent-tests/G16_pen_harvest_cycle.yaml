@@ -1,0 +1,105 @@
+# G16 — bot enters a fenced pen via the gate, harvests wool from 2 sheep,
+# and leaves through the gate WITHOUT letting the sheep escape.
+#
+# This is the realistic husbandry maintenance pattern: pens have gates,
+# bots cycle in and out for shearing, milking, breeding, and egg
+# collection. Containment is non-negotiable — the test fails if any
+# sheep is found OUTSIDE the pen at the end.
+
+agent_test_id: G16_pen_harvest_cycle
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Setup:
+    - You stand at (0, 65, -5), outside a 7x7 fenced pen centered at
+      (0, 65, 0). Pen perimeter is at x=-3..3, z=-3..3 (Y=65).
+    - The pen has a CLOSED fence_gate at (0, 65, -3) — directly
+      between you and the pen interior.
+    - 2 unsheared sheep are wandering inside the pen.
+    - You have 1 shears.
+
+  Goal: shear both sheep WITHOUT letting them escape. The pen has a
+  gate that you can use to enter and exit safely — the `mc through`
+  verb opens the gate, walks through, and closes it behind in one call.
+
+  Execute:
+    1. `mc through 0 65 -3` — enter the pen via the gate. The gate
+       closes behind you, keeping sheep contained.
+    2. `mc shear` — shear the first sheep.
+    3. `mc shear` again — shear the second one.
+    4. `mc through 0 65 -3 0 65 -5` — exit the pen via the same gate,
+       this time aiming for the destination (0, 65, -5) OUTSIDE the
+       pen. The gate closes behind you again.
+
+  Error handling:
+    - At step 2 or 3 if you get OUT_OF_RANGE, the sheep moved — run
+      `mc shear` again; the bot's chase loop will follow them.
+    - At step 1 or 4 if you get ANIMAL_AT_GATE, a sheep is right next
+      to the gate and would escape if you opened it. Wait 2-3 seconds
+      for the sheep to wander away, then retry `mc through`. If it
+      keeps happening, run `mc shear` first (sheep tend to drift after
+      being sheared) and then retry.
+
+  Do not narrate plans. Run each command one at a time via terminal;
+  do NOT batch them in execute_code Python scripts.
+
+skills: [minecraft-survival]
+max_turns: 12
+timeout_seconds: 240
+post_wait_seconds: 5
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 14
+  mc_verbs_include_any: [through, shear]
+  # Bot ended OUTSIDE the pen
+  bot_at: { x: 0, y: 65, z: -5, range: 4 }
+  # Got at least 1 wool
+  bot_inventory:
+    white_wool: 1
+  # No sheep escaped — pen interior is x=-3..3, z=-3..3. Outside strips
+  # cover the arena (10x10) minus the pen.
+  entity_in_bbox:
+    - { type: sheep, bbox: { x1: -5, y1: 63, z1: -5, x2: 5, y2: 67, z2: -4 }, max_count: 0 }
+    - { type: sheep, bbox: { x1: -5, y1: 63, z1: 4, x2: 5, y2: 67, z2: 5 }, max_count: 0 }
+    - { type: sheep, bbox: { x1: -5, y1: 63, z1: -3, x2: -4, y2: 67, z2: 3 }, max_count: 0 }
+    - { type: sheep, bbox: { x1: 4, y1: 63, z1: -3, x2: 5, y2: 67, z2: 3 }, max_count: 0 }
+
+verify_after_prep:
+  - { block: oak_fence, min_count: 22 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:grass_block"
+  # 7x7 pen with gate at (0,65,-3). Bigger than 5x5 so sheep don't
+  # crowd against the fence under bot-induced movement (vanilla physics
+  # can clip animals through fences when collisions stack).
+  - "execute in landfolk-test run fill -3 65 -3 3 65 -3 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -3 65 3 3 65 3 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -3 65 -3 -3 65 3 minecraft:oak_fence"
+  - "execute in landfolk-test run fill 3 65 -3 3 65 3 minecraft:oak_fence"
+  - "execute in landfolk-test run setblock 0 65 -3 minecraft:oak_fence_gate[facing=north,open=false]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 -5 180 0"
+  # Sheep inside the pen, AI on so they wander
+  - "execute in landfolk-test run summon minecraft:sheep -1 65 0 {NoAI:0b,Color:0b,Sheared:0b}"
+  - "execute in landfolk-test run summon minecraft:sheep 1 65 0 {NoAI:0b,Color:0b,Sheared:0b}"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:shears 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"

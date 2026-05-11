@@ -236,6 +236,105 @@ you don't have any yet.
 **Sugar cane**: plant on dirt/grass/sand adjacent to water. Grows up to 4
 blocks tall without bonemeal.
 
+## Animal husbandry
+
+The four farm animals you'll work with are chickens, cows, sheep, and pigs.
+All share the same vanilla mechanics: breed two adults with their food → baby
+spawns → 20 min to maturity → 5 min breed cooldown afterward.
+
+| Animal | Breeds with | Live harvest | Kill drops |
+|---|---|---|---|
+| Chicken | wheat_seeds (or pumpkin/melon/beetroot seeds) | Eggs auto-spawn every 5-10 min | raw_chicken + feather |
+| Cow | wheat | milk via empty bucket (renewable) | beef + leather |
+| Sheep | wheat | wool via shears; regrows when sheep eats grass | mutton + wool |
+| Pig | carrot / potato / beetroot | none | porkchop |
+
+### Verbs
+
+1. `mc breed SPECIES` — feed 2 adult animals of that species. Auto-picks the
+   first valid breeding item from your inventory. Returns NO_FOOD if you
+   don't have enough, NO_PAIR if fewer than 2 adults are visible within 12
+   blocks, ANIMAL_ON_COOLDOWN if the server rejected the feed (5-min cooldown
+   still ticking).
+2. `mc shear` — shear the nearest unsheared sheep within 8 blocks. Wool
+   drops are picked up automatically. Returns NO_SHEARS, NO_SHEEP, or
+   SHEEP_ALREADY_SHEARED.
+3. `mc milk_cow` — fill an empty bucket with milk from the nearest cow.
+   Returns NO_BUCKET, NO_COW.
+4. `mc hunt SPECIES [COUNT]` — kill COUNT animals (default 1), auto-equip
+   best weapon, run pickup pass after. Use this when an animal escapes the
+   pen and luring back is impractical, or when you specifically need meat
+   or feathers.
+5. `mc lure SPECIES X Y Z` — walk to (X,Y,Z) holding the breeding item;
+   vanilla AI makes nearby animals follow within ~10 blocks. Use this to
+   return an escaped animal to the pen before resorting to `mc hunt`.
+
+### Containment
+
+Animals need to stay in a pen for breeding to be reliable. Build a
+1-block-high fence with `mc place oak_fence` (or any fence variant); animals
+cannot path-jump fences. A pen of about 5x5 holds a small flock comfortably.
+
+**Add a gate.** Pens should have a fence_gate (`mc place oak_fence_gate X Y Z`)
+on one side so the bot can enter and exit without breaching the fence. The
+`mc through GX GY GZ` verb does the full sequence — opens the gate, walks to
+the far side, closes the gate behind — in one call. Use it whenever you need
+to enter the pen to shear, milk, or breed from inside.
+
+**`mc through` aborts if an animal is at the gate.** Before opening, it
+checks for passive mobs (chicken/cow/sheep/pig/etc.) within 1.5 blocks of
+the gate and returns `ANIMAL_AT_GATE` if any are present — opening would let
+them escape. On this error: wait 2-3 seconds for the animal to wander, then
+retry. Repeated failures suggest the animal is "parked" near the gate; try
+to lure it elsewhere with food, or just hunt it.
+
+If a chicken escapes (chickens are flighty and follow held seeds), you have
+two options:
+- **Lure**: `mc lure chicken <pen_x> <pen_y> <pen_z>` — bot equips seeds and
+  walks toward the destination; the escaped chicken follows. Combine with
+  `mc through` if you need the chicken to cross a gate.
+- **Hunt**: `mc hunt chicken 1` — kill it for feather + raw_chicken.
+
+### Harvest cycle through a gate
+
+The realistic maintenance loop for a fenced pen with a gate at (gx, gy, gz):
+
+1. `mc through gx gy gz` — enter pen (gate opens, you walk in, gate closes).
+2. `mc shear` (sheep) / `mc milk_cow` (cows) / `mc breed SPECIES` / `mc pickup`
+   (for eggs and dropped wool) — work from inside the pen.
+3. `mc through gx gy gz <outside_x> <outside_y> <outside_z>` — exit pen
+   targeting an explicit destination block OUTSIDE the pen (otherwise the bot
+   may walk back to where it just came from).
+
+The animals stay contained because the gate closes behind you twice. This is
+the safest pattern — outside-the-fence-reach work (using shear/milk_cow on
+animals through the fence) only succeeds when an animal happens to be within
+~4 blocks of the bot's side of the fence, which gets unreliable as animals
+wander.
+
+### Farming cycle
+
+The sustainable maintenance pattern:
+1. Breed pairs every 5+ minutes (cooldown).
+2. Harvest eggs (auto-spawn on ground near chickens) every visit — just `mc
+   pickup` or wait for the reactive layer to handle drops.
+3. Shear sheep on visit — wool regrows after they graze.
+4. Milk cows on visit — bucket is reusable.
+5. Hunt extra adults for meat/leather when the flock outgrows the pen.
+
+### Gotchas
+
+- **Fair-play view cone**: bots only see animals in their facing direction.
+  If `mc breed` returns NO_PAIR but you know 2 chickens are nearby, the bot
+  needs to face them — try `mc look` toward the pen first.
+- **Babies don't count**: `mc breed` filters out baby animals automatically.
+- **5-minute breed cooldown** is per-animal; if you re-call breed too quickly
+  you'll get ANIMAL_ON_COOLDOWN.
+- **Eggs**: chickens lay eggs on the ground automatically — no verb needed.
+  Use `mc pickup 4` to collect them.
+- **Trampling crops with animals**: animals walking on bare farmland trample
+  it back to dirt, just like the bot. Keep the pen on grass, not farmland.
+
 ## Block & item names (use EXACT names with mc commands)
 
 **Wood**: oak_log, birch_log, spruce_log, dark_oak_log, jungle_log, acacia_log → oak_planks, birch_planks, etc. → stick

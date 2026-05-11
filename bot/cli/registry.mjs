@@ -995,6 +995,63 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc harvest X1 Z1 X2 Z2 [Y]',
     examples: ['mc harvest 0 0 4 4 65', 'mc harvest -2 -2 2 2'],
   }),
+
+  g('breed', 'world', [], {
+    description: 'Feed 2 adult animals of SPECIES (chicken/cow/sheep/pig) to start breeding. Auto-picks a breeding item from inventory: wheat for cow/sheep, wheat_seeds for chicken (also pumpkin/melon/beetroot seeds), carrot/potato/beetroot for pig. Returns NO_FOOD, NO_PAIR, ANIMAL_ON_COOLDOWN.',
+    method: 'POST',
+    path: '/action/breed',
+    argSchema: [{ key: 'species', type: 'string', required: true }],
+    bodyFn: (p) => JSON.stringify({ species: String(p.species) }),
+    usage: 'mc breed SPECIES',
+    examples: ['mc breed chicken', 'mc breed cow', 'mc breed sheep'],
+  }),
+
+  g('shear', 'world', [], {
+    description: 'Shear the nearest unsheared sheep within 8 blocks. Auto-equips shears, picks up wool drops. Returns NO_SHEARS, NO_SHEEP, SHEEP_ALREADY_SHEARED.',
+    method: 'POST',
+    path: '/action/shear',
+    bodyFn: () => '{}',
+    usage: 'mc shear',
+    examples: ['mc shear'],
+  }),
+
+  g('milk_cow', 'world', ['milk'], {
+    description: 'Fill an empty bucket with milk from the nearest cow within 8 blocks. Bot must have minecraft:bucket in inventory. Returns NO_BUCKET, NO_COW.',
+    method: 'POST',
+    path: '/action/milk_cow',
+    bodyFn: () => '{}',
+    usage: 'mc milk_cow',
+    examples: ['mc milk_cow'],
+  }),
+
+  g('hunt', 'world', [], {
+    description: 'Kill COUNT (default 1) nearest animals of SPECIES (chicken/cow/sheep/pig/rabbit). Auto-equips best weapon, runs pickup pass after. Returns NOTHING_TO_HUNT, UNSUPPORTED_SPECIES.',
+    method: 'POST',
+    path: '/action/hunt',
+    argSchema: [
+      { key: 'species', type: 'string', required: true },
+      { key: 'count', type: 'number', default: 1 },
+    ],
+    bodyFn: (p) => JSON.stringify({ species: String(p.species), count: Number(p.count) || 1 }),
+    usage: 'mc hunt SPECIES [COUNT]',
+    examples: ['mc hunt chicken 3', 'mc hunt cow'],
+  }),
+
+  g('lure', 'world', [], {
+    description: 'Walk to X Y Z holding the breeding item for SPECIES; vanilla AI makes nearby animals follow. Reports follower distance at arrival. Useful for returning escaped animals to a pen. Returns NO_FOOD, NO_ANIMAL.',
+    method: 'POST',
+    path: '/action/lure',
+    argSchema: [
+      { key: 'species', type: 'string', required: true },
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ species: String(p.species), x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    usage: 'mc lure SPECIES X Y Z',
+    examples: ['mc lure chicken 5 65 5', 'mc lure cow 0 64 0'],
+  }),
+
   g('toss', 'world', ['drop'], {
     description: 'Drop ITEM [COUNT] from inventory',
     method: 'POST',

@@ -1,0 +1,28 @@
+# L9.9 — lure_chicken_follows: bot walks holding wheat_seeds; chicken follows.
+#
+# Setup: chicken at (5,65,0), bot at (0,65,0), wheat_seeds in inv.
+# Bot lures to (-5,65,0).
+# Action: POST /action/lure {species:"chicken", x:-5, y:65, z:0}
+# Expected: ok=true, data.animal_end_pos["x"] < data.animal_start_pos["x"]
+# (animal moved west, toward the lure destination). `followed` may be
+# false if movement is slow — that's OK, the test asserts movement only.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -10 65 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -5 10 64 5 minecraft:grass_block"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "execute in landfolk-test run summon minecraft:chicken 5 65 0 {NoAI:0b}"
+  - "clear Flint"
+  - "give Flint minecraft:wheat_seeds 8"
+  - "effect give Flint minecraft:saturation 1 30"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -5 10 80 5 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -5 10 64 5 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

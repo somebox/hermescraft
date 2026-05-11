@@ -1,0 +1,65 @@
+# G13 — bot milks a cow through a fence.
+#
+# Bot is OUTSIDE a 5x5 pen with 1 cow. Bot has an empty bucket. Goal:
+# fill the bucket with milk by reaching through the fence.
+
+agent_test_id: G13_cow_milk
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Setup:
+    - You stand at (0, 65, -4), just OUTSIDE a 5x5 fenced pen.
+    - 1 cow is inside the pen.
+    - You have an empty bucket.
+
+  Goal: fill the bucket with milk. Stay OUTSIDE the pen.
+
+  Run `mc milk_cow`. The bot will walk to the fence and milk the cow
+  through it (~4 block reach). If ok=true, you are done.
+
+  Do not narrate plans. Run each command one at a time via terminal;
+  do NOT batch them in execute_code Python scripts.
+
+skills: [minecraft-survival]
+max_turns: 6
+timeout_seconds: 120
+post_wait_seconds: 4
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 16
+  mc_verbs_include_any: [milk_cow]
+  bot_inventory:
+    milk_bucket: 1
+
+verify_after_prep:
+  - { block: oak_fence, min_count: 16 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:grass_block"
+  - "execute in landfolk-test run fill -2 65 -2 2 65 -2 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -2 65 2 2 65 2 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -2 65 -2 -2 65 2 minecraft:oak_fence"
+  - "execute in landfolk-test run fill 2 65 -2 2 65 2 minecraft:oak_fence"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 -4 180 0"
+  - "execute in landfolk-test run summon minecraft:cow 0 65 0 {NoAI:0b}"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:bucket 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

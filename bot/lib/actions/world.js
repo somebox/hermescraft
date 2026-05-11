@@ -1873,6 +1873,39 @@ export function createWorldActions(deps) {
       }
     }
 
+    // Safety: before opening the gate, check for passive animals adjacent
+    // to it. If any are within 1.5 blocks of the gate centerline, opening
+    // exposes a window for them to escape through. Return ANIMAL_AT_GATE
+    // and let the caller decide what to do (push them back, hunt them,
+    // wait and retry).
+    const passiveSpecies = new Set([
+      'chicken', 'cow', 'sheep', 'pig', 'rabbit', 'horse', 'donkey',
+      'mule', 'mooshroom', 'llama', 'goat',
+    ]);
+    const gateCenter = gate.position.offset(0.5, 0.5, 0.5);
+    const blockingAnimals = Object.values(b.entities)
+      .filter((e) => e && e !== b.entity && e.position && passiveSpecies.has((e.name || '').toLowerCase()))
+      .filter((e) => e.position.distanceTo(gateCenter) <= 1.5);
+    if (blockingAnimals.length > 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'ANIMAL_AT_GATE',
+          message: `Cannot open ${gate.name}: ${blockingAnimals.length} animal(s) within 1.5 blocks of the gate would escape.`,
+          observed_state: {
+            gate: { x: gate.position.x, y: gate.position.y, z: gate.position.z },
+            blocking: blockingAnimals.map((e) => ({
+              species: e.name,
+              pos: [Math.floor(e.position.x), Math.floor(e.position.y), Math.floor(e.position.z)],
+              distance: Number(e.position.distanceTo(gateCenter).toFixed(2)),
+            })),
+          },
+          next_action_hint: 'Wait for animals to wander away, or push them back, then retry.',
+          retry_safe: true,
+        },
+      };
+    }
+
     // Open. activateBlock toggles, so check shape state first via _properties when available.
     let opened = false;
     try {
@@ -1895,7 +1928,10 @@ export function createWorldActions(deps) {
     await b.lookAt(destPos);
 
     const traverseStart = Date.now();
-    const TRAVERSAL_TIMEOUT_MS = 6000;
+    // Keep traversal SHORT so the gate isn't left open longer than needed —
+    // every extra second is a chance for a passive mob to slip through.
+    // The actual crossing is sub-second; 2.5s is comfortable headroom.
+    const TRAVERSAL_TIMEOUT_MS = 2500;
     let crossedGate = false;
     let reached = false;
     b.setControlState('forward', true);

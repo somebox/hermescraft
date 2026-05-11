@@ -645,11 +645,60 @@ These go in `data/agent-tests/` (sister to the F/G suite from Sprint A):
 
 ---
 
-## Sprints 9–10 (stubs — to be planned at the end of each predecessor)
+## Sprint 9 — Animals
+
+**Status:** SHIPPED 2026-05-11. 5 verbs (`mc breed`/`shear`/`milk_cow`/`hunt`/`lure`) landed in `bot/lib/actions/animals.js`. All 10 L9 fixtures green; 6 agent-tests (G11-G16) reliably PASS on `gemini-2.5-flash`. Skill text gained a "Husbandry" section covering breeding food, cooldown, hydration, drop rules, containment via gates, and the gate-safety pattern.
+
+**Goal:** the bot can breed, shear, milk, hunt, and lure passive farm animals. Combined with Sprint 8 crops, this completes the loop: wheat→cows/sheep, wheat_seeds→chickens, carrot/potato/beetroot→pigs. Bots can now self-sufficiently maintain a renewable food + materials supply (eggs, milk, wool, leather, feathers).
+
+### Verbs
+
+| Verb | Shape | Notes |
+|---|---|---|
+| `mc breed SPECIES` | `mc breed chicken` | Feed 2 adult animals to start breeding. Auto-picks breeding item: wheat_seeds for chicken, wheat for cow/sheep, carrot/potato/beetroot for pig. Returns NO_FOOD, NO_PAIR, ANIMAL_ON_COOLDOWN. |
+| `mc shear` | `mc shear` | Shear nearest unsheared sheep within 8 blocks. Chase loop retries up to 4× as sheep wander. Returns NO_SHEARS, NO_SHEEP, SHEEP_ALREADY_SHEARED. |
+| `mc milk_cow` | `mc milk_cow` | Fill empty bucket from nearest cow. Chase loop, PaperMCP fallback if native useOn fails. Returns NO_BUCKET, NO_COW. |
+| `mc hunt SPECIES [COUNT]` | `mc hunt chicken 3` | Kill N animals; auto-equip weapon, chase + attack loop, multi-pass pickup at each kill site to ensure feathers + meat are collected. |
+| `mc lure SPECIES X Y Z` | `mc lure chicken 0 65 0` | Walk to coord holding breeding item; vanilla AI makes animals follow within ~10 blocks. Reports follower distance. |
+
+### Action contract additions (shared)
+
+`mc through` (Sprint 5 verb, used heavily in Sprint 9 for pen entry/exit) gained an `ANIMAL_AT_GATE` error that fires when a passive mob is within 1.5 blocks of the gate. Opening would let it escape. Agent should wait for the animal to wander, then retry. The traversal timeout was also tightened from 6s → 2.5s to minimize the open-gate window.
+
+### Chase loop
+
+`walkToEntity` in animals.js loops: re-resolve target → pathfind to GoalNear(pos, 2) → re-check distance → repeat until reach or 12s timeout. The radius=2 GoalNear is deliberately loose so the bot doesn't crowd the animal into walls (vanilla collision physics can clip passives through fences when pushed repeatedly).
+
+### Fixtures (L9, 10 total)
+
+L9.1 breed_chicken_pair_success · L9.2 breed_no_food · L9.3 breed_no_pair · L9.4 shear_basic · L9.5 shear_already_sheared · L9.6 milk_cow_basic · L9.7 milk_no_bucket · L9.8 hunt_chickens_x3 · L9.9 lure_chicken_follows · L9.10 lure_no_food
+
+### Agent-tests (G11-G16, 6 total)
+
+| ID | Scenario |
+|---|---|
+| G11 | `chicken_breed` — bot OUTSIDE fenced pen breeds 2 chickens through the fence. |
+| G12 | `sheep_harvest_3x` — bot OUTSIDE pen shears 3 sheep through fence. ≥2 wool. |
+| G13 | `cow_milk` — bot OUTSIDE pen milks 1 cow through fence. |
+| G14 | `hunt_loose_chickens` — bot kills 3 wandering chickens, collects ≥2 feathers. |
+| G15 | `chicken_containment` — escaped chicken outside a gated pen; agent ends with no loose chicken (typically via hunt). |
+| G16 | `pen_harvest_cycle` — bot enters 7x7 pen via fence_gate (`mc through`), shears 2 sheep, exits via same gate. Sheep stay contained. |
+
+### Exit gate met
+
+- All 10 L9 fixtures green (smoke-tested each).
+- G11-G14: 1/1 each (single-verb tests).
+- G15: 3/3 PASS.
+- G16: 4/4 PASS (after gate-safety pre-check + traversal speedup).
+- check-conventions.mjs passes.
+- Skill text updated.
+
+---
+
+## Sprint 10 (stub — to be planned)
 
 | Sprint | Domain | Depends on | Status |
 |---|---|---|---|
-| 9 | Animals (`mc farm lure/breed/shear/milk`) | 5, 8 | planned |
 | 10 | Fishing + boats (`mc farm fish`, `mc self board/disembark`) | independent | planned |
 
 Each becomes its own section here when the prior sprint exits.
