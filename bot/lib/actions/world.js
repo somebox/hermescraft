@@ -1994,6 +1994,297 @@ export function createWorldActions(deps) {
     return { result: `Used ${b.heldItem?.name || 'hand'}` };
   },
 
+  /**
+   * Fill an empty bucket from a water/lava source block at (x,y,z).
+   * ── Phase-2 action contract (Sprint 7) ──
+   *   MISSING_BUCKET   no empty bucket in inventory
+   *   NOT_A_LIQUID     target block isn't water/lava
+   *   NOT_A_SOURCE     target is flowing (level > 0), not a source
+   *   OUT_OF_RANGE     bot couldn't reach within 4.5 blocks
+   *   UNCHANGED        server rejected — inventory delta is zero
+   */
+  async bucket_fill({ x, y, z }) {
+    const b = ensureBot();
+    const inventoryAt = () =>
+      b.inventory.items().reduce((acc, it) => { acc[it.name] = (acc[it.name] || 0) + it.count; return acc; }, /** @type {Record<string, number>} */ ({}));
+
+    const empty = b.inventory.items().find((i) => i.name === 'bucket');
+    if (!empty) {
+      const buckets = b.inventory.items().filter((i) => /bucket$/.test(i.name)).map((i) => `${i.name}x${i.count}`);
+      return { ok: false, error: {
+        code: 'MISSING_BUCKET',
+        message: 'No empty bucket in inventory. Craft one (3 iron_ingot).',
+        observed_state: { inventory_buckets: buckets },
+        retry_safe: false,
+      }};
+    }
+
+    const targetPos = new Vec3(x, y, z);
+    const target = b.blockAt(targetPos);
+    if (!target || (target.name !== 'water' && target.name !== 'lava')) {
+      return { ok: false, error: {
+        code: 'NOT_A_LIQUID',
+        message: `Block at (${x}, ${y}, ${z}) is ${target?.name ?? 'unloaded'}, not water/lava.`,
+        observed_state: { target_block: target?.name ?? null, requested_coord: { x, y, z } },
+        retry_safe: false,
+      }};
+    }
+
+    const rawLevel = target.getProperties?.()?.level;
+    const level = Number(rawLevel ?? 0);
+    if (level !== 0) {
+      return { ok: false, error: {
+        code: 'NOT_A_SOURCE',
+        message: `${target.name} at (${x}, ${y}, ${z}) is flowing (level=${level}), not a source. Buckets only fill from source blocks.`,
+        observed_state: { target_block: target.name, level },
+        retry_safe: false,
+      }};
+    }
+
+    if (b.entity.position.distanceTo(targetPos) > 4.5) {
+      try {
+        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+      } catch {
+        return { ok: false, error: {
+          code: 'OUT_OF_RANGE',
+          message: `Target at (${x}, ${y}, ${z}) is ${Math.round(b.entity.position.distanceTo(targetPos) * 10) / 10} blocks away and pathfind failed.`,
+          observed_state: { distance: b.entity.position.distanceTo(targetPos), bot_position: posObj(b.entity.position) },
+          retry_safe: false,
+        }};
+      }
+    }
+
+    try { await b.equip(empty, 'hand'); } catch (err) {
+      return { ok: false, error: {
+        code: 'INTERRUPTED',
+        message: `equip bucket failed: ${/** @type {Error} */ (err).message}`,
+        retry_safe: true,
+      }};
+    }
+
+    const liquidName = target.name === 'water' ? 'water_bucket' : 'lava_bucket';
+    const before = inventoryAt();
+    // Try native mineflayer first; falls through to PaperMCP server-side
+    // if the inventory delta is zero. On Paper 1.21+, both use_item and
+    // use_item_on packets silently no-op for bucket fill against fluid
+    // blocks (same class of bug as the 3x3 craft delta=0 issue); the
+    // PaperMCP fallback is the reliable path.
+    try {
+      await b.lookAt(target.position.offset(0.5, 0.5, 0.5), true);
+      await sleep(100);
+      await b.activateItem();
+      await sleep(400);
+      try { b.deactivateItem(); } catch { /* ignore */ }
+    } catch { /* fall through to PaperMCP */ }
+    let after = inventoryAt();
+    let gained = (after[liquidName] || 0) - (before[liquidName] || 0);
+    let fallback = null;
+    if (gained < 1) {
+      const pmcp = paperMcpConfig();
+      const username = getMyName?.();
+      if (pmcp && username) {
+        log(`[bucket_fill] native no-op for ${liquidName} — using PaperMCP fallback`);
+        const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:bucket 1`);
+        const r2 = await executeServerCommand(pmcp, `give ${username} minecraft:${liquidName} 1`);
+        const r3 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:air`);
+        if (r1.ok && r2.ok && r3.ok) {
+          for (let i = 0; i < 8; i++) {
+            await sleep(120);
+            after = inventoryAt();
+            if ((after[liquidName] || 0) - (before[liquidName] || 0) >= 1) break;
+          }
+          gained = (after[liquidName] || 0) - (before[liquidName] || 0);
+          fallback = 'papermcp_server_side';
+        } else if (log) {
+          log(`[bucket_fill] PaperMCP fallback failed: clear=${r1.error} give=${r2.error} setblock=${r3.error}`);
+        }
+      }
+    }
+    if (gained < 1) {
+      return { ok: false, error: {
+        code: 'UNCHANGED',
+        message: `bucket_fill did not produce a ${liquidName}.`,
+        observed_state: { started_inventory: before, ended_inventory: after, target_block: target.name, fallback_attempted: !!paperMcpConfig() },
+        retry_safe: true,
+      }};
+    }
+    return {
+      ok: true,
+      data: {
+        filled: liquidName,
+        source_coord: { x, y, z },
+        started_inventory: before,
+        ended_inventory: after,
+        ...(fallback ? { fallback } : {}),
+      },
+      result: fallback
+        ? `Filled ${liquidName} from ${target.name} at ${x},${y},${z} (server-side fallback).`
+        : `Filled ${liquidName} from ${target.name} at ${x},${y},${z}.`,
+    };
+  },
+
+  /**
+   * Empty a filled water/lava bucket into a replaceable cell at (x,y,z).
+   * Bucket placement is "right-click on a face of a solid neighbor" semantically;
+   * the liquid appears in the empty cell on that face.
+   * ── Phase-2 action contract (Sprint 7) ──
+   *   MISSING_BUCKET   no water_bucket / lava_bucket in inventory
+   *   BLOCKED          target cell isn't replaceable, OR no solid neighbor to anchor placement
+   *   OUT_OF_RANGE     bot couldn't reach within 4.5 blocks
+   *   UNCHANGED        server rejected — destination block didn't change
+   */
+  async bucket_empty({ x, y, z }) {
+    const b = ensureBot();
+    const inventoryAt = () =>
+      b.inventory.items().reduce((acc, it) => { acc[it.name] = (acc[it.name] || 0) + it.count; return acc; }, /** @type {Record<string, number>} */ ({}));
+
+    const filled = b.inventory.items().find((i) => i.name === 'water_bucket' || i.name === 'lava_bucket');
+    if (!filled) {
+      return { ok: false, error: {
+        code: 'MISSING_BUCKET',
+        message: 'No water_bucket or lava_bucket in inventory. Use mc bucket_fill first.',
+        observed_state: { inventory_buckets: b.inventory.items().filter((i) => /bucket$/.test(i.name)).map((i) => i.name) },
+        retry_safe: false,
+      }};
+    }
+    const liquid = filled.name === 'water_bucket' ? 'water' : 'lava';
+
+    const targetPos = new Vec3(x, y, z);
+    const existing = b.blockAt(targetPos);
+    const REPLACEABLE = new Set([
+      'air', 'cave_air', 'void_air',
+      'tall_grass', 'short_grass', 'grass', 'fern', 'large_fern',
+      'vine', 'snow', 'snow_layer', 'fire', 'soul_fire',
+      'kelp', 'kelp_plant', 'seagrass', 'tall_seagrass', 'dead_bush',
+    ]);
+    const oppositeLiquid = liquid === 'water' ? 'lava' : 'water';
+    // Pouring opposite liquid IS the test case for the seal/cobble/obsidian
+    // reaction — treat as a valid target. Otherwise enforce replaceable.
+    if (existing && !REPLACEABLE.has(existing.name) && existing.name !== oppositeLiquid) {
+      return { ok: false, error: {
+        code: 'BLOCKED',
+        message: `Target (${x}, ${y}, ${z}) is ${existing.name}, not replaceable. Dig it first.`,
+        observed_state: { target_block: existing.name, requested_coord: { x, y, z } },
+        next_action_hint: `mc dig ${x} ${y} ${z}`,
+        retry_safe: false,
+      }};
+    }
+
+    // Find a solid OR fluid neighbor to anchor the activateBlock call.
+    // Fluid neighbors are acceptable because in MC you can right-click on
+    // a lava/water face to place a bucket's liquid in the adjacent cell.
+    const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+    let refBlock = null;
+    let refOffset = null;
+    for (const [dx, dy, dz] of offsets) {
+      const nb = b.blockAt(targetPos.offset(dx, dy, dz));
+      if (nb && (nb.boundingBox === 'block' || nb.name === 'water' || nb.name === 'lava')) {
+        refBlock = nb;
+        refOffset = [dx, dy, dz];
+        break;
+      }
+    }
+    if (!refBlock) {
+      return { ok: false, error: {
+        code: 'BLOCKED',
+        message: `Target (${x}, ${y}, ${z}) has no solid or fluid neighbor — bucket placement needs a face to click on.`,
+        observed_state: { requested_coord: { x, y, z } },
+        retry_safe: false,
+      }};
+    }
+
+    if (b.entity.position.distanceTo(targetPos) > 4.5) {
+      try {
+        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+      } catch {
+        return { ok: false, error: {
+          code: 'OUT_OF_RANGE',
+          message: `Target at (${x}, ${y}, ${z}) is ${Math.round(b.entity.position.distanceTo(targetPos) * 10) / 10} blocks away and pathfind failed.`,
+          observed_state: { distance: b.entity.position.distanceTo(targetPos), bot_position: posObj(b.entity.position) },
+          retry_safe: false,
+        }};
+      }
+    }
+
+    try { await b.equip(filled, 'hand'); } catch (err) {
+      return { ok: false, error: {
+        code: 'INTERRUPTED',
+        message: `equip ${filled.name} failed: ${/** @type {Error} */ (err).message}`,
+        retry_safe: true,
+      }};
+    }
+
+    const before = inventoryAt();
+    // Try native first; fall through to PaperMCP if no inventory delta.
+    // Same Paper 1.21+ quirk as bucket_fill — use_item_on against a solid
+    // face holding a water/lava bucket silently no-ops.
+    const faceVec = new Vec3(-refOffset[0], -refOffset[1], -refOffset[2]);
+    try {
+      await b.lookAt(refBlock.position.offset(0.5, 0.5, 0.5), true);
+      await sleep(100);
+      await b.activateBlock(refBlock, faceVec);
+      await sleep(400);
+    } catch { /* fall through to PaperMCP */ }
+    let placed = b.blockAt(targetPos);
+    let after = inventoryAt();
+    let fallback = null;
+    const bucketGone = (before[filled.name] || 0) - (after[filled.name] || 0) >= 1;
+    if (!bucketGone) {
+      const pmcp = paperMcpConfig();
+      const username = getMyName?.();
+      if (pmcp && username) {
+        log(`[bucket_empty] native no-op — using PaperMCP fallback`);
+        // If pouring onto the opposite liquid, simulate the MC reaction:
+        //   water-on-lava → obsidian (source-source meeting)
+        //   lava-on-water → stone
+        let placedBlock = liquid;
+        if (existing && existing.name === oppositeLiquid) {
+          placedBlock = liquid === 'water' ? 'obsidian' : 'stone';
+        }
+        const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:${filled.name} 1`);
+        const r2 = await executeServerCommand(pmcp, `give ${username} minecraft:bucket 1`);
+        const r3 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:${placedBlock}`);
+        if (r1.ok && r2.ok && r3.ok) {
+          for (let i = 0; i < 8; i++) {
+            await sleep(120);
+            after = inventoryAt();
+            placed = b.blockAt(targetPos);
+            if ((after.bucket || 0) > (before.bucket || 0) && placed?.name) break;
+          }
+          fallback = 'papermcp_server_side';
+        } else if (log) {
+          log(`[bucket_empty] PaperMCP fallback failed: clear=${r1.error} give=${r2.error} setblock=${r3.error}`);
+        }
+      }
+    }
+    // Lava + water reactions can convert the target to stone/cobble/obsidian.
+    const liquidReacted = placed && /^(stone|cobblestone|obsidian)$/.test(placed.name);
+    const ok = placed && (placed.name === liquid || liquidReacted);
+    if (!ok) {
+      return { ok: false, error: {
+        code: 'UNCHANGED',
+        message: `bucket_empty did not place ${liquid} at (${x}, ${y}, ${z}); block is ${placed?.name ?? 'unloaded'}.`,
+        observed_state: { target_block_after: placed?.name ?? null, started_inventory: before, ended_inventory: after, fallback_attempted: !!paperMcpConfig() },
+        retry_safe: true,
+      }};
+    }
+    return {
+      ok: true,
+      data: {
+        emptied: filled.name,
+        placed_block: placed.name,
+        target_coord: { x, y, z },
+        reacted: liquidReacted ? placed.name : null,
+        started_inventory: before,
+        ended_inventory: after,
+        ...(fallback ? { fallback } : {}),
+      },
+      result: liquidReacted
+        ? `Emptied ${filled.name} — water/lava reaction produced ${placed.name} at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`
+        : `Emptied ${filled.name} — ${liquid} placed at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`,
+    };
+  },
+
   async sleep_bed() {
     const b = ensureBot();
     let bed = b.findBlock({ matching: block => block.name?.includes('bed'), maxDistance: 6 });

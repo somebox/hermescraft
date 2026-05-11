@@ -508,11 +508,78 @@ These were called out in `experiments/phase-1-summary.md` §"Branch-scope refact
 
 ---
 
-## Sprints 7–10 (stubs — to be planned at the end of each predecessor)
+## Sprint 7 — Liquid management
+
+**Status:** in progress (started 2026-05-11).
+
+**Goal:** the bot can carry liquids in buckets — fill from water/lava sources, empty into open or replaceable cells. Unlocks Sprint 8 (crop hydration needs water transport) and gives agents the missing tool for the "wall off discovered lava" use case that motivated the deferred `mc seal` verb in Sprint 6.
+
+### Verbs
+
+| Verb | Shape | Notes |
+|---|---|---|
+| `mc bucket_fill` | `mc bucket_fill X Y Z` | Fill an empty bucket from a water/lava source block at (X,Y,Z). Bot equips its empty bucket, walks within reach if needed, looks at the target, and activates. |
+| `mc bucket_empty` | `mc bucket_empty X Y Z` | Place liquid from held water/lava bucket at (X,Y,Z). Bot equips the matching liquid bucket, looks at the destination, activates. |
+
+`mc seal` (deferred from Sprint 6) is **subsumed** by `mc bucket_empty water` over a lava hazard: pour water on top of lava and the contact reaction produces stone/obsidian/cobble per vanilla rules. No new verb needed.
+
+### Action contract
+
+| Error code | When | observed_state | retry_safe |
+|---|---|---|---|
+| `MISSING_BUCKET` | no empty bucket in inventory (fill) or no matching liquid bucket (empty) | `inventory_buckets: [...]` | false |
+| `NOT_A_LIQUID` | target block for fill isn't a water/lava source | `target_block: "stone"` | false |
+| `NOT_A_SOURCE` | target is flowing water/lava, not a source block (fill) | `target_block: "water", level: 3` | false |
+| `BLOCKED` | target cell for empty isn't replaceable (not air/grass/waterloggable) | `target_block: "stone"` | false |
+| `OUT_OF_RANGE` | bot couldn't reach within 4.5 blocks after pathfind | `distance: 7.2` | false |
+| `UNCHANGED` | inventory delta is zero post-action (server rejected silently) | `started_bucket, ended_bucket` | true |
+
+### Fixtures (L7)
+
+| ID | Tests |
+|---|---|
+| L7.1 | `bucket_fill_water` — empty bucket + water source at (3,65,0); result: water_bucket in inv, source block becomes air |
+| L7.2 | `bucket_fill_lava` — empty bucket + lava source; result: lava_bucket in inv |
+| L7.3 | `bucket_fill_not_source` — flowing water (not source); fill returns NOT_A_SOURCE |
+| L7.4 | `bucket_empty_water` — water_bucket + air target; result: water source at target, empty bucket in inv |
+| L7.5 | `bucket_empty_blocked` — water_bucket + stone target; fail BLOCKED |
+| L7.6 | `seal_lava_via_water` — composite: place water_bucket over a 1×1 lava source; verify cobble/obsidian formation |
+
+### Agent-test scenarios
+
+These go in `data/agent-tests/` (sister to the F/G suite from Sprint A):
+
+| ID | Scenario |
+|---|---|
+| G7 | `bucket_water_transport` — bot fetches water from a pond at (-5, 65, 0), carries it 10 blocks, places it next to a dirt block (turns to mud or waters a crop). |
+| G8 | `seal_lava_pit` — bot finds a small lava cell, has a water_bucket, pours water on it, verifies the lava is gone. Validates the deferred `mc seal` use case. |
+
+### Implementation order
+
+1. `mc bucket_fill` — handler in `world.js`, registry entry, L7.1 fixture.
+2. `mc bucket_empty` — handler, registry, L7.4 fixture.
+3. NOT_A_SOURCE / BLOCKED error refinements; L7.2, L7.3, L7.5.
+4. L7.6 composite (lava + water reaction).
+5. G7 + G8 agent-tests.
+6. Skill text in `skills/minecraft-survival.md` — point agents at bucket verbs for lava-hazard mitigation and water transport.
+
+### Exit gate
+
+- All L7 fixtures green (2 consecutive passes each).
+- G7 + G8 agent-tests reliable (≥3/3 PASS on default model).
+- `check-conventions.mjs` passes (both new verbs have `description` + `examples`).
+- Skill text updated.
+
+### Estimated scope
+
+1–2 sessions. The mechanics are simple (mineflayer's `b.activateItem()` does the work) — the bulk is the action contract + lookAt sequencing + per-error observability.
+
+---
+
+## Sprints 8–10 (stubs — to be planned at the end of each predecessor)
 
 | Sprint | Domain | Depends on | Status |
 |---|---|---|---|
-| 7 | Liquid management (`mc self bucket fill/empty`) | 6 (iron) | planned |
 | 8 | Crops (`mc farm till/plant/harvest`) | 5, 7 | planned |
 | 9 | Animals (`mc farm lure/breed/shear/milk`) | 5, 8 | planned |
 | 10 | Fishing + boats (`mc farm fish`, `mc self board/disembark`) | independent | planned |

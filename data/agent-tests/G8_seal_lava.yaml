@@ -1,0 +1,72 @@
+# G8 — composite: seal a lava hazard with water.
+#
+# Bot at (0, 65, 0) with a water_bucket. A lava source at (-3, 65, 0)
+# is a hazard. Goal: pour the water onto the lava — water + lava
+# source meeting → obsidian.
+#
+# This validates the use case that motivated the deferred `mc seal`
+# verb in Sprint 6: cap a discovered lava cell using a water bucket.
+
+agent_test_id: G8_seal_lava
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: there's a lava source at (-3, 65, 0). Pour water on it to
+  seal it. You have a water_bucket already.
+
+  Tips:
+    - `mc bucket_empty -3 65 0` pours water onto the lava block.
+      Water meeting a lava source produces obsidian.
+    - Don't try to mine the lava — that would expose you to it.
+
+  Stop when the lava is gone.
+
+skills: [minecraft-survival]
+max_turns: 8
+timeout_seconds: 120
+
+expect:
+  world_block_at:
+    - { x: -3, y: 65, z: 0, block: obsidian }
+  mc_verbs_include_any: [bucket_empty]
+  mc_cli_invocations_max: 8
+
+verify_after_prep:
+  - { block: lava, min_count: 1 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  # Contain the lava in a stone box so it can't flow toward the bot —
+  # an open lava source would otherwise spread and burn Flint during
+  # approach. Walls around (-3, 65, 0) on all 4 horizontal sides at the
+  # same Y as the lava.
+  - "execute in landfolk-test run fill -4 64 -1 -2 64 1 minecraft:stone"
+  - "execute in landfolk-test run setblock -4 65 0 minecraft:stone"
+  - "execute in landfolk-test run setblock -2 65 0 minecraft:stone"
+  - "execute in landfolk-test run setblock -3 65 -1 minecraft:stone"
+  - "execute in landfolk-test run setblock -3 65 1 minecraft:stone"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:lava"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  # Fire resistance: belt-and-braces in case the agent stands in lava
+  # contact briefly. Test isn't about combat / survival here.
+  - "execute in landfolk-test run effect give Flint fire_resistance 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:water_bucket 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

@@ -896,6 +896,34 @@ export const RAW_COMMAND_DEFS = [
   g('close', 'world', [], { description: 'Close currently-open container', method: 'POST', path: '/action/close_screen', bodyFn: () => empty }),
 
   g('use', 'world', ['u'], { description: 'Activate held item (right-click in air)', method: 'POST', path: '/action/use', bodyFn: () => empty }),
+
+  g('bucket_fill', 'world', ['fill_bucket'], {
+    description: 'Fill an empty bucket from a water/lava source block at X Y Z. Returns NOT_A_SOURCE if the block is flowing (level > 0).',
+    method: 'POST',
+    path: '/action/bucket_fill',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    usage: 'mc bucket_fill X Y Z',
+    examples: ['mc bucket_fill 10 64 -3', 'mc bucket_fill -5 65 0'],
+  }),
+
+  g('bucket_empty', 'world', ['empty_bucket', 'pour'], {
+    description: 'Place water/lava from a filled bucket at X Y Z. Auto-picks water_bucket or lava_bucket from inventory. Target must be air/grass/replaceable.',
+    method: 'POST',
+    path: '/action/bucket_empty',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    usage: 'mc bucket_empty X Y Z',
+    examples: ['mc bucket_empty 3 65 0', 'mc bucket_empty -2 64 5  # pour water onto lava — produces stone/cobble/obsidian'],
+  }),
   g('toss', 'world', ['drop'], {
     description: 'Drop ITEM [COUNT] from inventory',
     method: 'POST',

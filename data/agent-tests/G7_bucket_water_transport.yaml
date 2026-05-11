@@ -1,0 +1,68 @@
+# G7 — composite: fetch water in a bucket, carry it, pour it.
+#
+# Bot at (0, 65, 0) with an empty bucket. A 1-block contained water
+# source at (-5, 65, 0). Goal: fill the bucket from the water, walk
+# back toward (0,65,0), pour the water at (3, 65, 0).
+#
+# Tests `mc bucket_fill` + `mc bucket_empty` end-to-end with real
+# navigation between them.
+
+agent_test_id: G7_bucket_water_transport
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: fetch water from the source at (-5, 65, 0), then place water
+  at (3, 65, 0) using `mc bucket_empty`.
+
+  You have an empty bucket. The water source is contained in a small
+  stone box; the destination (3, 65, 0) is open air on top of stone.
+
+  Tips:
+    - `mc bucket_fill X Y Z` fills an empty bucket from a water/lava
+      source. Bot must be within 4-5 blocks.
+    - `mc bucket_empty X Y Z` pours water/lava from a filled bucket
+      at the target coordinates. Same range.
+    - Use `mc nearby 16` if you can't find the water source.
+
+  Stop when there's a water block at (3, 65, 0).
+
+skills: [minecraft-survival]
+max_turns: 10
+timeout_seconds: 180
+
+expect:
+  world_block_at:
+    - { x: 3, y: 65, z: 0, block: water }
+  mc_verbs_include_any: [bucket_fill]
+  mc_cli_invocations_max: 12
+
+verify_after_prep:
+  - { block: water, min_count: 1 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  # Contain the water source so it doesn't flow into the arena.
+  - "execute in landfolk-test run fill -6 64 -1 -4 64 1 minecraft:stone"
+  - "execute in landfolk-test run fill -6 65 -1 -4 65 1 minecraft:stone"
+  - "execute in landfolk-test run setblock -5 65 0 minecraft:water"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:bucket 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
