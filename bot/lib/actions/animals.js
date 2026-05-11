@@ -592,8 +592,11 @@ export function createAnimalsActions(deps) {
         }};
       }
 
-      // Tick a few times so the entity AI has frames to actually move.
-      await sleep(1500);
+      // Tick the AI long enough for the animal to actually catch up.
+      // Chickens walk at ~0.25 b/s, so 4 seconds buys ~1 block of progress.
+      // Agents typically call lure multiple times to walk an animal across
+      // longer distances; this is a sensible per-call settle time.
+      await sleep(4000);
 
       const tracked = b.entities[target.id];
       const endPos = tracked

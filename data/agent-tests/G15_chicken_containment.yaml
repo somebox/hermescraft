@@ -1,21 +1,26 @@
-# G15 — bot uses a fence_gate to bring an escaped chicken back into a pen.
+# G15 — bot lures a wild chicken into a pen and contains it ALIVE.
 #
-# This is the "don't lose your chickens" test. Setup: a 5x5 pen sealed
-# by a fence_gate (oak_fence_gate) on the north side. The gate is
-# CLOSED at start. A wild chicken wanders outside the pen. Bot has
-# wheat_seeds.
+# Strict test of the lure-into-pen path. Setup: a 9x9 pen with a closed
+# oak_fence_gate on the north side. A wild chicken wanders outside. Bot
+# has wheat_seeds and an iron_sword (sword is for swapping hands, NOT
+# killing — the chicken must end alive INSIDE the pen).
 #
 # Realistic workflow:
-#   1. `mc through GX GY GZ` to open the gate, walk into the pen,
-#      close it behind (vanilla activate-block sequence).
-#   2. From inside the pen, lure the chicken back through the gate is
-#      hard. Easier: stand near the gate, hold wheat_seeds, and the
-#      chicken paths toward the gate from outside. OR open the gate,
-#      lure chicken through, close behind.
-#   3. Alternative (fallback): kill it with `mc hunt chicken 1`.
+#   1. Lure chicken close to the gate (outside).
+#   2. Open the gate (`mc interact`).
+#   3. Lure chicken DEEP into the pen — bot walks to a far corner, the
+#      chicken follows all the way in.
+#   4. Close the gate (`mc interact` again — it toggles).
+#   5. Swap to a non-attractive item (`mc equip iron_sword`) so the
+#      chicken stops following the bot.
+#   6. Wait a few seconds for the chicken to drift away from the gate.
+#   7. Exit through the gate (`mc through`) when no chicken is near it.
 #
-# Pass criteria: no chicken loose outside the pen at end. Either
-# contained inside, or killed for feathers.
+# Pass criteria:
+#   - Chicken is ALIVE (zero feathers in bot inventory).
+#   - Chicken is INSIDE the pen (interior or gate row).
+#   - Chicken is NOT outside the pen.
+#   - Bot is outside the pen at end.
 
 agent_test_id: G15_chicken_containment
 world: landfolk-test
@@ -25,59 +30,68 @@ prompt: |
   MC_API_URL and MC_USERNAME set.
 
   Setup:
-    - You stand at (0, 65, -4), outside a 5x5 fenced pen centered at
-      (0, 65, 0). The pen perimeter is at x=-2..2, z=-2..2 (Y=65).
-    - The pen has a CLOSED fence_gate at (0, 65, -2) — directly
-      between you and the pen interior. Everywhere else is solid
-      oak_fence.
-    - A wild chicken is wandering near (3, 65, -3), outside the pen.
-    - You have 8 wheat_seeds, 1 oak_fence, and 1 iron_sword.
+    - You stand at (0, 65, -6), outside a 9x9 fenced pen. Pen
+      perimeter at x=-4..4, z=-4..4 (Y=65). Pen interior is
+      x=-3..3, z=-3..3.
+    - The pen has a CLOSED oak_fence_gate at (0, 65, -4) on the
+      north side, directly between you and the pen.
+    - A wild chicken is at (0, 65, -7), just north of you.
+    - You have 16 wheat_seeds and 1 iron_sword. The sword is for
+      SWAPPING HANDS later, not killing — the chicken must END
+      ALIVE INSIDE THE PEN. Do NOT use `mc hunt` and do NOT attack
+      the chicken with the sword.
 
-  Goal: end the test with the chicken NOT loose outside the pen.
-  The simplest reliable strategy is to kill it for feathers — chickens
-  are hard to lure precisely through gates because vanilla AI is slow.
-
-  RECOMMENDED — Hunt:
-    1. `mc hunt chicken 1` — kill the loose chicken, collect feather
-       and raw chicken. Done. This always succeeds.
-
-  Optional aggressive strategy — Lure and contain (often fails):
-    1. `mc lure chicken 0 65 -3`
-    2. `mc through 0 65 -2`
-    3. `mc nearby 8` — VERIFY a chicken is inside the pen
-       (x in -2..2, z in -2..2).
-    4. If no chicken is inside the pen, the lure failed — kill it
-       instead with `mc hunt chicken 1`.
-
-  Pick hunt unless you specifically want to test the lure path.
-  Whichever path you choose, the criterion is: no live chicken
-  remains in the area outside the pen.
+  Execute this exact sequence:
+    1. `mc lure chicken 0 65 -5` — bring chicken next to the gate
+       from the outside.
+    2. `mc interact 0 65 -4` — open the gate.
+    3. `mc lure chicken 0 65 0` — walk into the pen; the chicken
+       follows you through the open gate.
+    4. `mc lure chicken 0 65 2` — walk DEEPER into the pen so the
+       chicken follows all the way in, away from the gate.
+    5. `mc interact 0 65 -4` — close the gate. (It toggles state.)
+    6. `mc equip iron_sword` — switch hands. The chicken stops
+       following you because you're no longer holding its food.
+    7. Wait 4 seconds, then `mc nearby 8` to verify the chicken is
+       NOT next to the gate.
+    8. `mc through 0 65 -4 0 65 -6` — exit through the gate. The
+       safety check (`ANIMAL_AT_GATE`) will refuse if a chicken is
+       within 1.5 blocks of the gate. If you get that error, wait
+       4 more seconds and retry. If the bot is having trouble
+       leaving, lure the chicken further south first (`mc goto 0
+       65 3` then back to the gate).
 
   Do not narrate plans. Run each command one at a time via terminal;
   do NOT batch them in execute_code Python scripts.
 
 skills: [minecraft-survival]
-max_turns: 14
-timeout_seconds: 240
-post_wait_seconds: 6
+max_turns: 18
+timeout_seconds: 360
+post_wait_seconds: 5
 
 expect:
   bot_did_not_die: true
-  bot_hp_at_least: 14
-  mc_verbs_include_any: [lure, hunt, through]
-  # The chicken must NOT be loose. Acceptable end-states:
-  #   (a) chicken alive INSIDE the pen, or
-  #   (b) chicken killed (no chicken anywhere outside the pen).
-  # We assert ZERO chickens in each of 4 strips covering the area
-  # OUTSIDE the pen.
+  bot_hp_at_least: 16
+  # Must have used lure. Hunt is explicitly forbidden by the prompt.
+  mc_verbs_include_any: [lure]
+  # No feathers = chicken not killed. (Hunt would have dropped 1+.)
+  bot_inventory_excludes:
+    feather: 1
+    chicken: 1
+  # Bot ended OUTSIDE the pen
+  bot_at: { x: 0, y: 65, z: -6, range: 4 }
+  # Chicken alive AND inside the pen volume (including gate row).
   entity_in_bbox:
-    - { type: chicken, bbox: { x1: -5, y1: 63, z1: -5, x2: 5, y2: 67, z2: -3 }, max_count: 0 }
-    - { type: chicken, bbox: { x1: -5, y1: 63, z1: 3, x2: 5, y2: 67, z2: 5 }, max_count: 0 }
-    - { type: chicken, bbox: { x1: -5, y1: 63, z1: -2, x2: -3, y2: 67, z2: 2 }, max_count: 0 }
-    - { type: chicken, bbox: { x1: 3, y1: 63, z1: -2, x2: 5, y2: 67, z2: 2 }, max_count: 0 }
+    # Inside the pen — at least 1 chicken (alive, contained).
+    - { type: chicken, bbox: { x1: -4, y1: 64, z1: -4, x2: 4, y2: 66, z2: 4 }, min_count: 1 }
+    # No chicken in any of the four outside strips.
+    - { type: chicken, bbox: { x1: -10, y1: 63, z1: -10, x2: 10, y2: 67, z2: -5 }, max_count: 0 }
+    - { type: chicken, bbox: { x1: -10, y1: 63, z1: 5, x2: 10, y2: 67, z2: 10 }, max_count: 0 }
+    - { type: chicken, bbox: { x1: -10, y1: 63, z1: -4, x2: -5, y2: 67, z2: 4 }, max_count: 0 }
+    - { type: chicken, bbox: { x1: 5, y1: 63, z1: -4, x2: 10, y2: 67, z2: 4 }, max_count: 0 }
 
 verify_after_prep:
-  - { block: oak_fence, min_count: 14 }
+  - { block: oak_fence, min_count: 31 }
 
 prep:
   - "execute in landfolk-test run difficulty peaceful"
@@ -85,29 +99,27 @@ prep:
   - "execute in landfolk-test run gamerule doMobSpawning false"
   - "execute in landfolk-test run time set day"
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill -10 65 -10 10 80 10 minecraft:air"
-  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:grass_block"
-  # 5x5 fenced pen with a fence_gate on the north side at (0,65,-2)
-  - "execute in landfolk-test run fill -2 65 -2 2 65 -2 minecraft:oak_fence"
-  - "execute in landfolk-test run fill -2 65 2 2 65 2 minecraft:oak_fence"
-  - "execute in landfolk-test run fill -2 65 -2 -2 65 2 minecraft:oak_fence"
-  - "execute in landfolk-test run fill 2 65 -2 2 65 2 minecraft:oak_fence"
-  # Replace the center north block with a CLOSED fence_gate
-  - "execute in landfolk-test run setblock 0 65 -2 minecraft:oak_fence_gate[facing=north,open=false]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block"
+  # 9x9 fenced pen with a CLOSED fence_gate at (0,65,-4)
+  - "execute in landfolk-test run fill -4 65 -4 4 65 -4 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -4 65 4 4 65 4 minecraft:oak_fence"
+  - "execute in landfolk-test run fill -4 65 -4 -4 65 4 minecraft:oak_fence"
+  - "execute in landfolk-test run fill 4 65 -4 4 65 4 minecraft:oak_fence"
+  - "execute in landfolk-test run setblock 0 65 -4 minecraft:oak_fence_gate[facing=north,open=false]"
   - "mvtp Flint landfolk-test"
-  - "execute in landfolk-test run tp Flint 0 65 -4 180 0"
-  # Wild chicken with AI enabled, outside the pen on the east side
-  - "execute in landfolk-test run summon minecraft:chicken 3 65 -3 {NoAI:0b,Age:0}"
+  - "execute in landfolk-test run tp Flint 0 65 -6 180 0"
+  # Chicken north of bot, aligned with the gate on the x-axis. AI on.
+  - "execute in landfolk-test run summon minecraft:chicken 0 65 -7 {NoAI:0b,Age:0}"
   - "effect clear Flint"
   - "effect give Flint minecraft:saturation 600 1"
   - "clear Flint"
-  - "give Flint minecraft:wheat_seeds 8"
-  - "give Flint minecraft:oak_fence 4"
+  - "give Flint minecraft:wheat_seeds 16"
   - "give Flint minecraft:iron_sword 1"
 
 cleanup:
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill -10 64 -10 10 80 10 minecraft:air"
-  - "execute in landfolk-test run fill -10 64 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
   - "execute in landfolk-test run tp Flint 52 65 52"
   - "execute in landfolk-test run kill @e[type=item,distance=..32]"

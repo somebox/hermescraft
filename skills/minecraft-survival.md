@@ -290,10 +290,36 @@ to lure it elsewhere with food, or just hunt it.
 
 If a chicken escapes (chickens are flighty and follow held seeds), you have
 two options:
-- **Lure**: `mc lure chicken <pen_x> <pen_y> <pen_z>` — bot equips seeds and
-  walks toward the destination; the escaped chicken follows. Combine with
-  `mc through` if you need the chicken to cross a gate.
-- **Hunt**: `mc hunt chicken 1` — kill it for feather + raw_chicken.
+- **Lure-into-pen** (preferred for keeping the flock alive): step-by-step
+  procedure below. Works but requires care — vanilla AI is slow.
+- **Hunt**: `mc hunt chicken 1` — kill it for feather + raw_chicken. Always
+  reliable; use this if the chicken is too far to lure or the gate-side
+  geometry is awkward.
+
+### The lure-into-pen procedure
+
+To return an escaped chicken to a pen without losing it, follow this
+sequence (each `mc lure` call lasts ~5 seconds because chickens walk slowly
+at ~0.25 b/s and need time to catch up):
+
+1. `mc lure chicken <gate_x> <gate_y> <gate_outside_z>` — walk to a spot
+   right outside the gate (e.g. one block north of the gate); the chicken
+   follows you within ~2 blocks.
+2. `mc interact <gate_x> <gate_y> <gate_z>` — open the gate.
+3. `mc lure chicken <inside_x> <inside_y> <inside_z>` — walk INTO the pen,
+   stopping somewhere mid-depth; the chicken follows through the open gate.
+4. `mc lure chicken <far_x> <far_y> <far_z>` — walk DEEPER toward the far
+   wall so the chicken comes all the way in, away from the gate. (Without
+   this step the chicken stays in the gate aperture.)
+5. `mc interact <gate_x> <gate_y> <gate_z>` — toggle the gate CLOSED.
+6. `mc equip iron_sword` (or any non-seed item) — chicken stops following.
+7. Wait 3-5 seconds for the chicken to drift away from the gate area.
+8. `mc through <gate_x> <gate_y> <gate_z> <outside_x> <outside_y> <outside_z>`
+   — exit through the gate. If you get `ANIMAL_AT_GATE`, the chicken is
+   still too close — wait longer and retry.
+
+Steps 1-7 keep the chicken inside; step 8 returns the bot to outside the pen
+with the gate closed behind. The chicken is contained and alive.
 
 ### Harvest cycle through a gate
 
