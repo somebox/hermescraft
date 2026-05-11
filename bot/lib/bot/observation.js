@@ -162,6 +162,11 @@ export function createObservation(deps) {
       time: ctx.bot.time.timeOfDay,
       isDay: ctx.bot.time.timeOfDay < 12000,
     };
+    // Surface combat tallies in the brief view so the agent can see at
+    // a glance how dangerous the session has been (and whether it's
+    // landing kills back). Both fields omitted when zero.
+    if (ctx.combatStats?.kills > 0) state.kills = ctx.combatStats.kills;
+    if (ctx.deathLog?.length > 0) state.deaths = ctx.deathLog.length;
     if (ctx.bot.isAlive === false) {
       state.respawn_pending = true;
     }

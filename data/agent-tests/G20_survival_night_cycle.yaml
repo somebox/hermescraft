@@ -21,33 +21,56 @@ prompt: |
   You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
   MC_API_URL and MC_USERNAME set.
 
-  It's late afternoon (time ~11000). The sun will set in about 3
-  minutes of real time. Hostile mobs spawn at night on easy difficulty.
+  ## Situation
+  It's late afternoon (time ~11000). Sun sets at time 12000 — that's
+  about 3 minutes of real time. Hostile mobs spawn at night on easy
+  difficulty. You start empty-handed.
 
-  You're in a mini-biome with:
-    - 4-block oak tree at ~(5, 65, 0)
-    - stone deposit at ~(-5, 65, 0)
-    - pond at z >= 5
-    - some chickens and a cow
+  ## Arena
+  - oak tree at (5, 65, 0..3) — 4 logs
+  - stone deposit at (-5..-4, 65..67, -1..1) — plenty of cobblestone
+  - pond at z=6..10
+  - 2 cows + 1 chicken — meat source (raw meat IS edible food)
 
-  You start empty-handed. Goal: SURVIVE the night with as much HP as
-  possible. By dawn (time ~23000) you should:
-    1. Be alive
-    2. Have at least one weapon (wooden_sword, stone_sword, etc.)
-    3. Be at >= 8 HP
+  ## Hard deadlines
+  - By time **11500** (1.5 min in): wooden_pickaxe in hand
+  - By time **12000** (sunset, ~3 min in): inside shelter
+  - From time 12000 to 23000: STAY in shelter, do NOT venture out
+  - At time **23000**: dawn — safe to come out
 
-  Suggested priorities (in order):
-    1. Bootstrap fast: oak_log → planks/sticks → crafting_table →
-       wooden_pickaxe → wooden_sword. Cobblestone if you have time.
-    2. Build a small shelter before sunset: dig 2 blocks into a wall
-       and seal yourself in with cobblestone or dirt, OR pillar up
-       3 blocks (mobs can't reach you).
-    3. Once safe, just wait out the night. Use `mc status` to check
-       time — daytime starts at time 0 (mod 24000); 12000-23000 is night.
+  ## Critical verbs (use EXACTLY these — others may not exist)
+  - `mc status` — your single source of truth (time, hp, hunger, holding, inventory)
+  - `mc collect oak_log 4` — gather logs (NOT `mc mine`, NOT `mc dig`)
+  - `mc collect cobblestone 16` — gather stone (auto-equips your pickaxe)
+  - `mc craft oak_planks 4` — 1 log → 4 planks
+  - `mc craft stick 4` — 2 planks → 4 sticks
+  - `mc craft crafting_table 1` — 4 planks (works WITHOUT a table)
+  - `mc place crafting_table X Y Z` — place at X Y Z (NOT on top of your tree)
+  - `mc craft wooden_pickaxe 1` — 3 planks + 2 sticks AT a table
+  - `mc craft wooden_sword 1` — 2 planks + 1 stick AT a table
+  - `mc craft stone_pickaxe 1` / `mc craft stone_sword 1` — same, with cobblestone
+  - `mc place cobblestone X Y Z` — build shelter wall (place adjacent blocks one at a time)
+  - `mc eat` — auto-eats the best food in your inventory
+  - `mc wait 30` — pass 30 seconds (use this DURING the night to burn time)
+  - `mc attack <species>` — defend against a mob if one breaks in
 
-  The reactive layer handles immediate threats (it'll auto-flee from
-  creepers, fight back if attacked with a weapon). Your job is the
-  strategic chain: tools → shelter → wait.
+  ## Shelter recipe (cheapest reliable option)
+  Once you have ~6 cobblestone, pillar up 3 blocks where you stand:
+    `mc place cobblestone <bot_x> <bot_y+1> <bot_z>` (jump first if needed)
+  OR dig 2 blocks into the ground and seal the opening above with
+  cobblestone. Either approach: mobs can't reach you, and you can
+  break out at dawn.
+
+  ## Your plan (think this through BEFORE running any commands)
+  Write a brief plan in your head:
+    1. Identify priority order (tools BEFORE shelter, NOT in parallel)
+    2. Estimate the time budget for each step
+    3. Decide what to skip if you run out of time (food is OK to skip —
+       you have saturation 60; you won't starve in 12 minutes)
+
+  Then execute, one command at a time. After every 3 commands run
+  `mc status` to check time and HP. If `time >= 12000` and you're
+  not yet in shelter, STOP everything else and shelter immediately.
 
   Don't batch commands. Run each through the terminal one at a time.
 
