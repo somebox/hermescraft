@@ -272,7 +272,8 @@ export function createObservation(deps) {
     return state;
   }
 
-  function buildObservePayload() {
+  function buildObservePayload(opts = {}) {
+    const lean = opts.lean === true;
     const brief = briefState();
     const { scored, context } = getGoalsScoreboard();
     refreshLeaseCheckpoint(ctx.currentTask);
@@ -298,28 +299,36 @@ export function createObservation(deps) {
           })
           .filter(m => m.dist < 200)
           .sort((a, b) => a.dist - b.dist)
-          .slice(0, 10);
+          .slice(0, lean ? 5 : 10);
       }
     } catch { /* ignore */ }
+
+    // Lean goals: just id/urgency/satisfied/gap, top 5. Full goals are
+    // ~300B each with strategies/constraints/metadata — most calls don't
+    // need that detail.
+    const leanGoals = (gs) => gs.slice(0, 5).map((g) => ({
+      id: g.id, urgency: g.urgency, satisfied: g.satisfied, gap: g.gap,
+    }));
 
     const payload = {
       ok: true,
       time: ctx.bot?.time?.timeOfDay,
       is_day: ctx.bot ? ctx.bot.time.timeOfDay < 12000 : null,
       state: brief,
-      goals: scored.slice(0, 12),
-      goals_context: context,
-      goals_plan_hints: buildGoalsPlanHints(scored),
+      goals: lean ? leanGoals(scored) : scored.slice(0, 12),
+      ...(lean ? {} : { goals_context: context, goals_plan_hints: buildGoalsPlanHints(scored) }),
       task,
       alerts,
       inventory_summary: invSummary,
       chest_snapshots: ctx.chestSnapshots,
       nearby_marks: nearbyMarks?.length ? nearbyMarks : undefined,
-      dashboard_signals: buildDashboardSignals(),
+      ...(lean ? {} : { dashboard_signals: buildDashboardSignals() }),
       last_api_error: ctx.lastApiError,
-      recent_actions: [...ctx.actionHistory].reverse(),
-      action_stats_5m: buildActionStats(ctx),
-      auto_action_log: ctx.autoActionLog ? [...ctx.autoActionLog].slice(-16) : [],
+      recent_actions: lean
+        ? [...ctx.actionHistory].slice(-5).reverse()
+        : [...ctx.actionHistory].reverse(),
+      ...(lean ? {} : { action_stats_5m: buildActionStats(ctx) }),
+      auto_action_log: ctx.autoActionLog ? [...ctx.autoActionLog].slice(lean ? -4 : -16) : [],
       idle_reason: classifyIdleReason(ctx),
     };
     if (dueReminders.length) payload.reminders_due = dueReminders;
@@ -349,7 +358,8 @@ export function createObservation(deps) {
     };
   }
 
-  function getFullState() {
+  function getFullState(opts = {}) {
+    const lean = opts.lean === true;
     const b = ensureBot();
     const pos = b.entity.position;
     const inv = b.inventory.items();
@@ -399,11 +409,14 @@ export function createObservation(deps) {
 
     const nearbyBlocks = Object.entries(blockCounts)
       .sort((a, c) => c[1] - a[1])
-      .slice(0, 20)
+      .slice(0, lean ? 6 : 20)
       .map(([name, count]) => ({ name, count }));
 
-    // What we're looking at
-    const scene = buildSceneSummary({ range: 16 });
+    // What we're looking at. Scene summary is the heavy hitter inside
+    // /status (~2KB). In lean mode we still build the summary text but
+    // drop the structured visible_block_hits/visible_entities arrays.
+    const scene = buildSceneSummary({ range: lean ? 12 : 16 });
+    const leanScene = lean && scene ? { summary: scene.summary, range: scene.range } : null;
     const target = b.blockAtCursor?.(5);
     const lookingAt = target ? { name: target.name, position: posObj(target.position) } : null;
 
@@ -430,10 +443,10 @@ export function createObservation(deps) {
       holding: ctx.bot.heldItem ? itemStr(ctx.bot.heldItem) : 'empty',
       experience: { level: b.experience?.level || 0 },
       inventory: inv.map(i => ({ name: i.name, count: i.count })),
-      inventoryCount: inv.length,
+      ...(lean ? {} : { inventoryCount: inv.length }),
       nearbyBlocks,
-      notableBlocks,
-      nearbyEntities: entities,
+      ...(lean ? {} : { notableBlocks }),
+      nearbyEntities: lean ? entities.slice(0, 5) : entities,
       nearbyPlayers: entities.filter(e => e.kind === 'player').map(p => ({ name: p.username || p.type, distance: p.distance, position: p.position })),
       lookingAt,
       unreadChat: unreadChat.length > 0 ? unreadChat : undefined,
@@ -443,9 +456,11 @@ export function createObservation(deps) {
       isRaining: b.isRaining,
       isSneaking: ctx.isSneaking,
       // Fair play: sound events (directional hints without exact positions)
-      sounds: ctx.soundEvents.length > 0 ? ctx.soundEvents.slice(-5) : undefined,
-      scene,
-      social_summary: summarizeSocialGraph(ctx.socialGraph),
+      sounds: lean
+        ? (ctx.soundEvents.length > 0 ? ctx.soundEvents.slice(-2) : undefined)
+        : (ctx.soundEvents.length > 0 ? ctx.soundEvents.slice(-5) : undefined),
+      scene: leanScene || scene,
+      ...(lean ? {} : { social_summary: summarizeSocialGraph(ctx.socialGraph) }),
       // Team info
       team: ctx.teamConfig.team ? {
         name: ctx.teamConfig.team,

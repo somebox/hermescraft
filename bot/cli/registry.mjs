@@ -26,13 +26,26 @@ export const RAW_COMMAND_DEFS = [
     'status',
     'observe',
     ['state', 's'],
-    { method: 'GET', path: '/status', description: 'Full game snapshot', examples: ['mc status', 'mc status --json'] },
+    {
+      method: 'GET',
+      // Default lean — trims scene structure, notableBlocks, sounds, and
+      // caps nearby entities/blocks. ~60% smaller than full. Use
+      // `mc status --full` if you need the verbose view.
+      customParse: true,
+      pathFn: (p) => (p.full ? '/status' : '/status?lean=true'),
+      description: 'Game snapshot (lean by default; --full for everything)',
+      examples: ['mc status', 'mc status --full', 'mc status --json'],
+    },
   ),
   g('observe', 'observe', ['snapshot'], {
     method: 'GET',
-    path: '/observe',
-    description: 'Goals + task + alerts snapshot',
-    examples: ['mc observe'],
+    // Default lean — trims full goal objects to {id, urgency, satisfied, gap},
+    // last 5 recent_actions, drops plan_hints/dashboard_signals/action_stats.
+    // ~80% smaller than full. Use `mc observe --full` for the verbose view.
+    customParse: true,
+    pathFn: (p) => (p.full ? '/observe' : '/observe?lean=true'),
+    description: 'Goals + task + alerts snapshot (lean by default; --full for everything)',
+    examples: ['mc observe', 'mc observe --full'],
   }),
   g('alerts', 'observe', [], { method: 'GET', path: '/alerts', description: 'Typed alerts', examples: ['mc alerts'] }),
   g('discover', 'observe', ['disc'], {

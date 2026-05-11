@@ -430,6 +430,29 @@ boat drops as an item to be picked up.
 - **Use mc map 16** when disoriented
 - After EVERY movement, `mc status` to check position
 
+### Pick the smallest verb for the question
+
+Every `mc` call adds tokens to your context. Use the narrowest verb that
+answers what you actually need:
+
+| Question | Verb | Typical size |
+|---|---|---|
+| Where am I? Am I alive? | `mc health` | ~0.2 KB |
+| What do I have? | `mc inventory` | ~0.4 KB |
+| What block am I looking at? | `mc look` | ~0.3 KB |
+| What's in front of me? | `mc map 16` | ~1.7 KB |
+| Counts of nearby blocks? | `mc nearby 16` | ~0.4 KB |
+| Quick game state + goals? | `mc status` (lean default) | ~1-2 KB |
+| Same + recent_actions? | `mc observe` (lean default) | ~2 KB |
+| Full goal objects + plan hints? | `mc observe --full` | ~7-10 KB |
+| Every visible block's coords? | `mc scene` | ~10 KB (heavy!) |
+
+`mc status` and `mc observe` default to **lean** mode — they cap nearby
+entities/blocks, trim goals to {id, urgency, satisfied, gap}, and drop
+plan_hints/dashboard_signals/action_stats. Add `--full` if you genuinely
+need the verbose view. The lean default is 60-80% smaller and almost
+always sufficient.
+
 ## When stuck
 
 - Same action fails 3× → try something different

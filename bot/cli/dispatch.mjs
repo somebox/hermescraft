@@ -92,6 +92,18 @@ function finalize(def, canonicalName, params) {
  */
 function customParse(canonicalName, positional) {
   switch (canonicalName) {
+    case 'status':
+    case 'observe': {
+      // mc status [--full] | mc observe [--full] — no positionals expected.
+      const q = positional.slice();
+      const out = {};
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--full') { q.shift(); out.full = true; }
+        else throw new Error(`unknown_flag:${t}`);
+      }
+      return out;
+    }
     case 'feed_mob': {
       const q = positional.slice();
       let item = '';

@@ -194,7 +194,8 @@ export function createBotHttpListener(deps) {
       }
 
       if (path === '/status') {
-        return respond(res, 200, { ok: true, data: getFullState() });
+        const lean = url.searchParams.get('lean') === 'true';
+        return respond(res, 200, { ok: true, data: getFullState({ lean }) });
       }
 
       if (path === '/marks') {
@@ -323,7 +324,8 @@ export function createBotHttpListener(deps) {
 
       if (path === '/observe') {
         ensureBot();
-        return respond(res, 200, buildObservePayload());
+        const lean = url.searchParams.get('lean') === 'true';
+        return respond(res, 200, buildObservePayload({ lean }));
       }
 
       if (path === '/alerts') {
