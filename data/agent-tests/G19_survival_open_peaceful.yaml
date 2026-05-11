@@ -1,0 +1,135 @@
+# G19 — open-ended peaceful survival run (Phase A integration test).
+#
+# First integration test of the full verb stack. The agent gets an
+# open goal ("survive and make progress") instead of step-by-step
+# instructions. Success is measured by what the agent has at the end,
+# not by which specific verbs it chose.
+#
+# Setup: realistic mini-biome with trees, a stone deposit, a pond,
+# and grass-fed animals. Peaceful difficulty for v1 — no hostile
+# pressure, just resource/skill chaining.
+#
+# Goal predicates (must hit at least 3 of 4):
+#   - has SOME tool (any wooden/stone/iron pickaxe/axe/sword/shovel)
+#   - has SOME food in inventory (cooked or raw — beef/chicken/fish/wheat)
+#   - placed a crafting_table somewhere (proves they bootstrapped)
+#   - hp >= 14 at end (survived without major damage)
+
+agent_test_id: G19_survival_open_peaceful
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  You wake up at dawn in a small mini-biome with:
+    - a 4-block oak tree at ~(5, 65, 0)
+    - a stone deposit at ~(-5, 65, 0)
+    - a pond at z >= 5
+    - some chickens and a cow wandering nearby
+    - grass underfoot
+
+  You start with NOTHING. Difficulty is peaceful — no hostile pressure.
+
+  Goal: spend the next ~8 minutes making yourself viable. By the end
+  you should have:
+    1. At least one TOOL you crafted (pickaxe/axe/sword — any tier)
+    2. At least one FOOD item (raw or cooked: meat, fish, or wheat)
+    3. A crafting_table you placed somewhere
+    4. Full or near-full HP
+
+  How you achieve these is up to you. Reasonable order:
+    - Get oak_log → planks → sticks → crafting_table → wooden_pickaxe
+    - Then collect cobblestone for stone tools, OR
+    - Hunt a chicken/cow for meat, OR
+    - Fish at the pond (needs fishing_rod — craft from 3 sticks + 2 string;
+      no string here so fish is harder than hunt)
+
+  Use `mc tips TOPIC` (e.g., `mc tips craft`) if a verb confuses you.
+  Use `mc status` to check what you have and where you are.
+
+  Don't batch commands. Run each through the terminal one at a time.
+  Stop when you have all 4 success conditions (or when you've done
+  the best you can within the time budget).
+
+skills: []
+toolsets: [terminal]
+max_turns: 40
+timeout_seconds: 600
+post_wait_seconds: 4
+stall_seconds: 90
+
+expect:
+  bot_did_not_die: true
+  bot_hp_at_least: 14
+  # Agent must have crafted at least one thing.
+  mc_verbs_include_any: [craft]
+  # At least one of: tool (any tier) OR food (raw/cooked meat, fish,
+  # wheat, bread, apple). Single inventory_any keys can't be duplicated
+  # in YAML, so we OR-combine the two categories. Vanilla `mc craft` of
+  # any of these proves the agent chained collect+craft.
+  bot_inventory_any:
+    # tools
+    wooden_pickaxe: 1
+    stone_pickaxe: 1
+    iron_pickaxe: 1
+    wooden_axe: 1
+    stone_axe: 1
+    iron_axe: 1
+    wooden_sword: 1
+    stone_sword: 1
+    iron_sword: 1
+    wooden_shovel: 1
+    stone_shovel: 1
+    # food
+    cooked_beef: 1
+    beef: 1
+    cooked_chicken: 1
+    chicken: 1
+    cooked_mutton: 1
+    mutton: 1
+    cooked_cod: 1
+    cod: 1
+    cooked_salmon: 1
+    salmon: 1
+    wheat: 1
+    bread: 1
+
+verify_after_prep:
+  - { block: oak_log, min_count: 4 }
+  - { block: stone, min_count: 8 }
+  - { block: water, min_count: 15 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 65 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block"
+  # 4-tall oak tree
+  - "execute in landfolk-test run fill 5 65 0 5 68 0 minecraft:oak_log"
+  - "execute in landfolk-test run fill 4 69 -1 6 69 1 minecraft:oak_leaves"
+  - "execute in landfolk-test run setblock 5 69 0 minecraft:oak_leaves"
+  # Stone deposit (small 3x3x2 cluster) at x=-5
+  - "execute in landfolk-test run fill -6 65 -1 -4 66 1 minecraft:stone"
+  # Pond at z=6..10
+  - "execute in landfolk-test run fill -3 64 6 3 64 10 minecraft:water"
+  # Wandering animals - 3 chickens + 1 cow
+  - "execute in landfolk-test run summon minecraft:chicken 2 65 -3 {NoAI:0b}"
+  - "execute in landfolk-test run summon minecraft:chicken -2 65 -3 {NoAI:0b}"
+  - "execute in landfolk-test run summon minecraft:chicken 0 65 -4 {NoAI:0b}"
+  - "execute in landfolk-test run summon minecraft:cow 3 65 -5 {NoAI:0b}"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 60 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -15 64 -15 15 80 15 minecraft:air"
+  - "execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
