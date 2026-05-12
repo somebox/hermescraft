@@ -458,6 +458,77 @@ export function createBotManager(deps) {
         }
       }
 
+      // Sync-action stuck detection + unstick. Movement-oriented sync
+      // actions (collect, goto, pickup, etc.) sometimes wedge the bot
+      // on a block corner — pathfinder thinks it's traveling, but
+      // velocity is ~0. A short jump + clearControlStates usually
+      // dislodges it without disrupting the broader action.
+      //
+      // Threshold is shorter than the BG-task watchdog (8s vs 20s)
+      // because we want to unstick FAST during long mining sessions,
+      // not just log after 20s. We also nudge BEFORE giving up so the
+      // higher-level action can keep making progress.
+      const SYNC_STUCK_ACTIONS = new Set([
+        'collect', 'dig', 'dig_area', 'goto', 'goto_near', 'pickup',
+        'follow', 'go_mark', 'fish', 'sail', 'hunt', 'lure', 'through',
+        'place_fill', 'wall', 'tunnel',
+      ]);
+      const SYNC_STUCK_IDLE_MS = 8000;
+      if (ctx.syncActionInFlight && SYNC_STUCK_ACTIONS.has(ctx.syncActionName)) {
+        const old = ctx.positionHistory.find((p) => Date.now() - p.time > SYNC_STUCK_IDLE_MS);
+        if (old) {
+          const dxz = Math.hypot(pos.x - old.x, pos.z - old.z);
+          if (dxz < 0.5) {
+            const now = Date.now();
+            // Log + unstick at most once every 5s per stuck-streak.
+            if (!ctx._lastSyncStuckLogAt || now - ctx._lastSyncStuckLogAt > 5000) {
+              ctx._lastSyncStuckLogAt = now;
+              // Detect "off-centre wedge": bot's xz is significantly off the
+              // centre of its standing cell (>0.2 from .5/.5). This often
+              // means the bot is pressed against a block face that the
+              // pathfinder is repeatedly trying to step into. Re-centering
+              // gives pathfinder a fresh start without the obstacle being
+              // exactly on the player hitbox boundary.
+              const cellCx = Math.floor(pos.x) + 0.5;
+              const cellCz = Math.floor(pos.z) + 0.5;
+              const offX = pos.x - cellCx;
+              const offZ = pos.z - cellCz;
+              const offDist = Math.hypot(offX, offZ);
+              const offCentre = offDist > 0.2;
+              log(`STUCK (sync) ${ctx.syncActionName}: no horizontal movement (${dxz.toFixed(2)}m) in ${(SYNC_STUCK_IDLE_MS/1000)|0}s at ${pos.x.toFixed(1)},${pos.y.toFixed(0)},${pos.z.toFixed(1)}${offCentre ? ` (off-centre ${offDist.toFixed(2)}m)` : ''} — wiggling${offCentre ? '+recentre' : ''}`);
+              // Always: clear active pathfinder commands. This frees the
+              // bot from whatever direction pathfinder was pushing toward.
+              try { ctx.bot.clearControlStates(); } catch {}
+              if (offCentre) {
+                // Step toward cell centre. mineflayer's setControlState
+                // moves relative to current yaw, so we use lookAt + brief
+                // forward step to nudge the bot back to (.5, .5). The
+                // yaw change is brief and pathfinder will re-look on its
+                // next tick.
+                try {
+                  const target = ctx.bot.entity.position.offset(-offX, 0, -offZ);
+                  ctx.bot.lookAt(target, true).then(() => {
+                    try { ctx.bot.setControlState('forward', true); } catch {}
+                    setTimeout(() => {
+                      try { ctx.bot.setControlState('forward', false); } catch {}
+                    }, 250);
+                  }).catch(() => {});
+                } catch {}
+              } else {
+                // Centred but stuck — likely vertical (block above
+                // hitbox). Brief jump as before.
+                try {
+                  ctx.bot.setControlState('jump', true);
+                  setTimeout(() => { try { ctx.bot.setControlState('jump', false); } catch {} }, 250);
+                } catch {}
+              }
+            }
+          } else if (ctx._lastSyncStuckLogAt) {
+            ctx._lastSyncStuckLogAt = null;
+          }
+        }
+      }
+
       if ((!ctx.currentTask || ctx.currentTask.status !== 'running') && !ctx.syncActionInFlight) {
         const recent = ctx.positionHistory.filter((p) => Date.now() - p.time < 8000);
         if (recent.length >= 3) {

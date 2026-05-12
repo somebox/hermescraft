@@ -434,56 +434,67 @@ export function createObservation(deps) {
       ago: Math.round((Date.now() - m.time) / 1000) + 's',
     })) : [];
 
+    // Lean mode drops fields that rarely change or aren't needed by the
+    // agent's per-turn decisions (dimension, maxHealth, isDay/timePhase
+    // are all derivable from time; experience, fairPlay/hardcore/
+    // permanentlyDead never change during a session). Cuts /status?lean
+    // payload roughly in half.
     return {
       health: fmt(b.health),
-      maxHealth: 20,
+      ...(lean ? {} : { maxHealth: 20 }),
       food: b.food,
       saturation: fmt(b.foodSaturation),
       position: posObj(),
-      dimension: b.game?.dimension?.replace('minecraft:', '') || 'overworld',
-      biome,
+      ...(lean ? {} : { dimension: b.game?.dimension?.replace('minecraft:', '') || 'overworld' }),
+      ...(lean ? {} : { biome }),
       time: time,
-      isDay: time < 12000,
-      timePhase: time < 6000 ? 'morning' : time < 12000 ? 'afternoon' : time < 18000 ? 'evening' : 'night',
+      ...(lean ? {} : { isDay: time < 12000 }),
+      ...(lean ? {} : { timePhase: time < 6000 ? 'morning' : time < 12000 ? 'afternoon' : time < 18000 ? 'evening' : 'night' }),
       holding: ctx.bot.heldItem ? itemStr(ctx.bot.heldItem) : 'empty',
-      experience: { level: b.experience?.level || 0 },
+      ...(lean ? {} : { experience: { level: b.experience?.level || 0 } }),
       inventory: inv.map(i => ({ name: i.name, count: i.count })),
       ...(lean ? {} : { inventoryCount: inv.length }),
       nearbyBlocks,
       ...(lean ? {} : { notableBlocks }),
       nearbyEntities: lean ? entities.slice(0, 5) : entities,
-      nearbyPlayers: entities.filter(e => e.kind === 'player').map(p => ({ name: p.username || p.type, distance: p.distance, position: p.position })),
+      ...(entities.some(e => e.kind === 'player') ? {
+        nearbyPlayers: entities.filter(e => e.kind === 'player').map(p => ({ name: p.username || p.type, distance: p.distance, position: p.position })),
+      } : {}),
       lookingAt,
       unreadChat: unreadChat.length > 0 ? unreadChat : undefined,
-      deaths: ctx.deathLog.length,
-      lastDeath: ctx.lastDeath ? { position: ctx.lastDeath.position, seconds_ago: Math.round((Date.now()-ctx.lastDeath.time)/1000) } : null,
-      onGround: b.entity.onGround,
-      isRaining: b.isRaining,
-      isSneaking: ctx.isSneaking,
+      ...(ctx.deathLog.length > 0 ? { deaths: ctx.deathLog.length } : {}),
+      ...(ctx.lastDeath ? { lastDeath: { position: ctx.lastDeath.position, seconds_ago: Math.round((Date.now()-ctx.lastDeath.time)/1000) } } : {}),
+      ...(lean ? {} : { onGround: b.entity.onGround }),
+      ...(b.isRaining ? { isRaining: true } : {}),
+      ...(ctx.isSneaking ? { isSneaking: true } : {}),
       // Fair play: sound events (directional hints without exact positions)
-      sounds: lean
-        ? (ctx.soundEvents.length > 0 ? ctx.soundEvents.slice(-2) : undefined)
-        : (ctx.soundEvents.length > 0 ? ctx.soundEvents.slice(-5) : undefined),
+      ...(ctx.soundEvents.length > 0 ? {
+        sounds: ctx.soundEvents.slice(lean ? -2 : -5),
+      } : {}),
       scene: leanScene || scene,
       ...(lean ? {} : { social_summary: summarizeSocialGraph(ctx.socialGraph) }),
       // Team info
-      team: ctx.teamConfig.team ? {
-        name: ctx.teamConfig.team,
-        role: ctx.teamConfig.role,
-        rallyPoint: ctx.teamConfig.rallyPoint,
-        recentTeamChat: ctx.teamConfig.teamChat.slice(-3),
-      } : undefined,
+      ...(ctx.teamConfig.team ? {
+        team: {
+          name: ctx.teamConfig.team,
+          role: ctx.teamConfig.role,
+          rallyPoint: ctx.teamConfig.rallyPoint,
+          recentTeamChat: ctx.teamConfig.teamChat.slice(-3),
+        },
+      } : {}),
       // Combat stats
-      combatStats: (ctx.combatStats.kills + ctx.combatStats.deaths > 0) ? ctx.combatStats : undefined,
+      ...((ctx.combatStats.kills + ctx.combatStats.deaths > 0) ? { combatStats: ctx.combatStats } : {}),
       // Active furnaces
-      activeFurnaces: ctx.activeFurnaces.length > 0 ? ctx.activeFurnaces.map(f => ({
-        position: { x: f.x, y: f.y, z: f.z },
-        input: f.input,
-        estimatedDone: f.estimatedDone ? Math.max(0, Math.round((f.estimatedDone - Date.now()) / 1000)) + 's' : 'unknown',
-      })) : undefined,
-      fairPlay: ctx.fairPlayMode,
-      hardcore: ctx.bot.game?.hardcore || false,
-      permanentlyDead: ctx.hardcoreDead,
+      ...(ctx.activeFurnaces.length > 0 ? {
+        activeFurnaces: ctx.activeFurnaces.map(f => ({
+          position: { x: f.x, y: f.y, z: f.z },
+          input: f.input,
+          estimatedDone: f.estimatedDone ? Math.max(0, Math.round((f.estimatedDone - Date.now()) / 1000)) + 's' : 'unknown',
+        })),
+      } : {}),
+      ...(lean ? {} : { fairPlay: ctx.fairPlayMode }),
+      ...(b.game?.hardcore ? { hardcore: true } : {}),
+      ...(ctx.hardcoreDead ? { permanentlyDead: true } : {}),
     };
   }
 

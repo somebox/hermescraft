@@ -111,14 +111,45 @@ export function buildEnvelope({ command, httpRes, parsedParams, globals }) {
       typeof js.error_type === 'string' && js.error_type.trim()
         ? js.error_type.trim()
         : classified.error_type;
-    const primary =
-      typeof js.error === 'string'
-        ? js.error
-        : typeof js.message === 'string'
-          ? js.message
-          : httpRes?.text?.trim()
-            ? httpRes.text.trim().slice(0, 4000)
-            : 'error';
+
+    // Phase-2 action contract: js.error may be an OBJECT
+    // ({code, message, observed_state, retry_safe}) — extract `.message`
+    // for the human one-liner and `.code` for the error code, instead of
+    // serializing the whole envelope into `primary`. Falling through to
+    // `httpRes.text` (legacy behavior) used to ship the full JSON tail
+    // — including `observed_state` and `state` — into every error
+    // response, ballooning per-turn token cost by 5-10×.
+    let primary;
+    let phase2Code = null;
+    if (js.error && typeof js.error === 'object') {
+      const errObj = /** @type {Record<string,unknown>} */ (js.error);
+      primary = typeof errObj.message === 'string' ? errObj.message : 'error';
+      if (typeof errObj.code === 'string') phase2Code = errObj.code;
+    } else if (typeof js.error === 'string') {
+      primary = js.error;
+    } else if (typeof js.message === 'string') {
+      primary = js.message;
+    } else if (httpRes?.text?.trim()) {
+      primary = httpRes.text.trim().slice(0, 4000);
+    } else {
+      primary = 'error';
+    }
+
+    // Trim state blob to the 5 fields the human renderer actually uses
+    // (HP, Food, Pos, Hold, time). Dropping spawn_point/top_goal/
+    // nearby_utilities/isDay from EVERY error response saves ~150 bytes/
+    // call × dozens of calls per turn = a major chunk of context bloat.
+    let trimmedState;
+    if (js.state != null && typeof js.state === 'object') {
+      const s = /** @type {Record<string,unknown>} */ (js.state);
+      trimmedState = {};
+      if (s.health !== undefined) trimmedState.health = s.health;
+      if (s.food !== undefined) trimmedState.food = s.food;
+      if (s.position !== undefined) trimmedState.position = s.position;
+      if (s.holding !== undefined) trimmedState.holding = s.holding;
+      if (s.time !== undefined) trimmedState.time = s.time;
+    }
+
     return {
       ok: false,
       command,
@@ -126,9 +157,10 @@ export function buildEnvelope({ command, httpRes, parsedParams, globals }) {
       error_type,
       hint,
       http_status: httpRes?.httpStatus ?? 0,
-      ...(js.code != null && typeof js.code === 'string' ? { code: js.code } : {}),
+      ...(phase2Code ? { code: phase2Code }
+          : js.code != null && typeof js.code === 'string' ? { code: js.code } : {}),
       ...(js.details != null && typeof js.details === 'object' ? { details: js.details } : {}),
-      ...(js.state != null && typeof js.state === 'object' ? { state: js.state } : {}),
+      ...(trimmedState ? { state: trimmedState } : {}),
       ...(parsedParams && Object.keys(parsedParams).length ? { params: parsedParams } : {}),
     };
   }

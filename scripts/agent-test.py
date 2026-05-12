@@ -43,6 +43,14 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Line-buffer stdout so `tee` / `tail -f` see output immediately. Without
+# this, Python switches to block-buffering when stdout is a pipe, and the
+# user can't watch a run in real time.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 ROOT = Path(__file__).parent.parent
 DEFAULT_BOT_URL = "http://localhost:3001"
 DEFAULT_MODEL = "google/gemini-2.5-flash"  # baseline for terminal-tool agent tests.
@@ -78,6 +86,33 @@ def run_rcon(cmd: str) -> str:
     return result.stdout.strip()
 
 
+def mirror_to_chat(text: str, prefix: str = "Flint") -> None:
+    """Broadcast a single line to every player on every world via
+    `tellraw @a` (Paper). Used to mirror the agent's natural-language
+    thinking into in-game chat so a spectator can follow along — without
+    this, chat from a `landfolk-test` test world is invisible to anyone
+    standing in `landfolk`. Best-effort: failures are swallowed so a
+    flaky rcon never breaks the test."""
+    if not text:
+        return
+    # Escape for JSON inside a Minecraft tellraw payload. The text becomes
+    # the value of a JSON string, so escape backslash and double-quote and
+    # collapse newlines.
+    safe = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+    if len(safe) > 240:
+        safe = safe[:237] + "..."
+    payload = (
+        f'tellraw @a ['
+        f'{{"text":"<{prefix} thinks> ","color":"gray","italic":true}},'
+        f'{{"text":"{safe}","color":"white"}}'
+        f']'
+    )
+    try:
+        run_rcon(payload)
+    except Exception:
+        pass
+
+
 def run_rcon_batch(cmds: list[str]) -> str:
     """Run many rcon commands via a single ssh+rcon-cli invocation.
     Drastically faster than per-command (one TCP/ssh round-trip vs N).
@@ -111,6 +146,72 @@ def observe(bot_url: str) -> dict:
             return json.loads(resp.read().decode())
     except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
         return {}
+
+
+def _summarize_msg(m: dict, max_len: int = 220) -> str:
+    """Render a hermes session message as a single short line for live tail.
+    Hermes schema: content is a string (possibly empty), tool calls live on
+    assistant messages as `tool_calls=[{function:{name,arguments(JSON-str)}}]`,
+    and tool responses are `role=tool` with content as JSON-stringified
+    `{output: "..."}`. Returns '' to skip the system prompt and empty noise."""
+    role = m.get("role", "?")
+    content = m.get("content") or ""
+    parts = []
+
+    # Assistant tool calls — surface command name + first arg (the bash
+    # command, or the first kwarg) so the user sees what the model
+    # is actually doing each turn.
+    if role == "assistant":
+        if isinstance(content, str) and content.strip():
+            parts.append(content.strip())
+        for tc in m.get("tool_calls") or []:
+            fn = (tc.get("function") or {})
+            name = fn.get("name", "?")
+            args_raw = fn.get("arguments") or ""
+            try:
+                args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
+            except Exception:
+                args = {"_raw": args_raw[:80]}
+            cmd = (args.get("command") or args.get("cmd") or args.get("script")
+                   if isinstance(args, dict) else None)
+            if cmd:
+                parts.append(f"→ {name}: {cmd}")
+            else:
+                key = next(iter(args), None) if isinstance(args, dict) else None
+                val = args.get(key) if (key and isinstance(args, dict)) else args
+                parts.append(f"→ {name}({key}={val!r})" if key else f"→ {name}()")
+    elif role == "tool":
+        # Tool output is verbose JSON — flatten to first non-empty line.
+        text = content if isinstance(content, str) else json.dumps(content)
+        try:
+            obj = json.loads(text)
+            if isinstance(obj, dict) and "output" in obj:
+                text = obj["output"]
+        except Exception:
+            pass
+        text = (text or "").strip().splitlines()
+        # Take the first informative line, skip "state: ..." prefix if
+        # there's a more interesting JSON-result line right after.
+        head = text[0] if text else ""
+        if head.startswith("state:") and len(text) > 1:
+            head = text[1]
+        parts.append(f"⟵ {head}")
+    elif role == "user":
+        # The big initial prompt is uninteresting in the live tail.
+        if isinstance(content, str) and len(content) > 400:
+            return ""
+        if isinstance(content, str) and content.strip():
+            parts.append(content.strip())
+    elif isinstance(content, str) and content.strip():
+        parts.append(content.strip())
+
+    text = " | ".join(p for p in parts if p)
+    text = text.replace("\n", " ").strip()
+    if not text:
+        return ""
+    if len(text) > max_len:
+        text = text[:max_len - 1] + "…"
+    return text
 
 
 def predicate_results(spec: dict, agent_chat: str, end_state: dict,
@@ -155,6 +256,19 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         ok = hp is not None and hp >= hpmin
         results.append({"kind": f"bot_hp>={hpmin}", "pass": bool(ok),
                          "detail": f"hp={hp if hp is not None else 'none'}"})
+
+    if "final_bot_time_at_least" in expect:
+        # Bot-time at end of run. For G20-style "survive the night" tests,
+        # ending at bot_time ~12100 (right at sunset) means the test
+        # ran out of turns before mobs could spawn. Force the run to
+        # actually reach deep night (e.g., 15000+ for past-midnight).
+        target = int(expect["final_bot_time_at_least"])
+        st = end_state.get("state") or {}
+        bt = st.get("time")
+        ok = bt is not None and bt >= target
+        results.append({"kind": f"final_bot_time>={target}",
+                         "pass": bool(ok),
+                         "detail": f"final_bot_time={bt if bt is not None else 'none'}"})
 
     if expect.get("bot_did_not_die"):
         # Bot's death counter (state.death_death_number) increments per death.
@@ -425,11 +539,15 @@ def main():
         fail = False
         for item in verify_items:
             name = item["block"]
-            want = int(item.get("min_count", 1))
+            want_min = int(item.get("min_count", 1))
+            want_max = item.get("max_count")
             have = block_counts.get(name, 0)
-            ok = have >= want
+            ok_min = have >= want_min
+            ok_max = want_max is None or have <= int(want_max)
+            ok = ok_min and ok_max
             flag = "✓" if ok else "✗"
-            print(f"    {flag} {name} ≥ {want}  (have {have})")
+            bound = f"≥ {want_min}" + (f", ≤ {want_max}" if want_max is not None else "")
+            print(f"    {flag} {name} {bound}  (have {have})")
             if not ok:
                 fail = True
         if fail:
@@ -530,12 +648,26 @@ def main():
                     last_mtime = mt
                     last_growth = time.time()
                     # Sample message count for timeline (cheap; only on growth).
+                    # Also stream a short snippet of each new assistant/tool
+                    # message so the user can watch what the agent is doing.
                     try:
                         sess_data = json.loads(my_session.read_text())
                         msgs = sess_data.get("messages", [])
                         if len(msgs) > last_msg_count:
                             for m in msgs[last_msg_count:]:
-                                message_timeline.append((round(elapsed, 1), len(message_timeline) + 1, m.get("role", "?")))
+                                role = m.get("role", "?")
+                                message_timeline.append((round(elapsed, 1), len(message_timeline) + 1, role))
+                                snippet = _summarize_msg(m)
+                                if snippet:
+                                    ts = f"{elapsed:6.1f}s"
+                                    print(f"    [{ts}] {role}: {snippet}")
+                                # Mirror assistant *text* (not tool calls)
+                                # to in-game chat so a spectator on any
+                                # world can follow the agent's reasoning.
+                                if role == "assistant":
+                                    c = m.get("content") or ""
+                                    if isinstance(c, str) and c.strip():
+                                        mirror_to_chat(c.strip())
                             last_msg_count = len(msgs)
                     except Exception:
                         pass

@@ -6,7 +6,27 @@
 const VALID_MODES = ['normal', 'guard', 'hold'];
 
 export function createCombatActions(deps) {
-  const { ctx, ensureBot, goals, fmt, posObj, sleep, filterEntitiesFairPlay, reactionDelay, loadLocations, rememberSocialEvent, getMyName, ACTIONS } = deps;
+  const { ctx, ensureBot, goals, fmt, posObj, sleep, filterEntitiesFairPlay, reactionDelay, loadLocations, rememberSocialEvent, getMyName, ACTIONS, hasLineOfSight, eyePosition } = deps;
+
+  // Throws if a solid block sits between the bot's eye and the entity's
+  // chest. Prevents the "stab through cobblestone shelter wall" exploit
+  // where a zombie 1m on the other side of a 1-block wall is within
+  // melee distance and gets hit because mineflayer.attack() doesn't
+  // server-side-check line of sight on its own. Detection-side fair
+  // play allows < 3m sensing (you can hear it), but striking through
+  // a block is not legal play.
+  function assertCanHit(entity) {
+    if (!hasLineOfSight || !eyePosition) return; // pre-wire safety
+    const eye = eyePosition();
+    if (!eye || !entity?.position) return;
+    const target = entity.position.offset(0, (entity.height || 1.8) * 0.5, 0);
+    if (!hasLineOfSight(eye, target)) {
+      const name = entity.name || entity.displayName || entity.username || 'target';
+      const err = new Error(`Cannot hit ${name}: line of sight blocked by a wall/block.`);
+      err.code = 'ATTACK_BLOCKED';
+      throw err;
+    }
+  }
   return {
 
     /**
@@ -95,6 +115,8 @@ export function createCombatActions(deps) {
       if (entity.position.distanceTo(b.entity.position) > 3) {
         await b.pathfinder.goto(new goals.GoalNear(entity.position.x, entity.position.y, entity.position.z, 2));
       }
+      assertCanHit(entity);
+      await b.lookAt(entity.position.offset(0, (entity.height || 1.8) * 0.8, 0));
       await b.attack(entity);
       return { result: `Attacked ${entity.name || target} (${fmt(entity.position.distanceTo(b.entity.position))}m away)` };
     },
@@ -211,6 +233,15 @@ export function createCombatActions(deps) {
 
         b.pathfinder.setGoal(null);
         await b.lookAt(entity.position.offset(0, entity.height * 0.8, 0));
+        // Don't swing through walls. If LOS is blocked, try to reposition
+        // by re-pathing closer (which usually requires a clear path).
+        try {
+          assertCanHit(entity);
+        } catch (e) {
+          b.pathfinder.setGoal(new goals.GoalFollow(entity, 2), true);
+          await sleep(250);
+          continue;
+        }
         await b.attack(entity);
         hits++;
         // Wooden sword cooldown is ~0.625s for full damage; 500ms is a slight
@@ -376,6 +407,12 @@ export function createCombatActions(deps) {
         await b.pathfinder.goto(new goals.GoalNear(entity.position.x, entity.position.y, entity.position.z, 2));
       }
       await b.lookAt(entity.position.offset(0, entity.height * 0.8, 0));
+      try {
+        assertCanHit(entity);
+      } catch (e) {
+        b.setControlState('sprint', false);
+        throw e;
+      }
       await b.attack(entity);
       b.setControlState('sprint', false);
 
@@ -408,6 +445,7 @@ export function createCombatActions(deps) {
       b.setControlState('jump', false);
       await sleep(150);
       await b.lookAt(entity.position.offset(0, entity.height * 0.8, 0));
+      assertCanHit(entity);
       await b.attack(entity);
 
       return { result: `Critical hit on ${entity.name || target}! (150% damage, star particles)` };
@@ -450,8 +488,13 @@ export function createCombatActions(deps) {
         b.setControlState(dir === 'left' ? 'right' : 'left', false);
 
         if (dist < 4) {
-          await b.attack(entity);
-          hits++;
+          try {
+            assertCanHit(entity);
+            await b.attack(entity);
+            hits++;
+          } catch (e) {
+            // LOS blocked — skip this swing, keep strafing
+          }
         }
 
         await sleep(500);

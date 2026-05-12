@@ -1171,6 +1171,14 @@ export const RAW_COMMAND_DEFS = [
     argSchema: [{ key: 'seconds', type: 'number', default: 5 }],
     bodyFn: (p) => JSON.stringify({ seconds: Number(p.seconds ?? 5) }),
   }),
+  g('is_sheltered', 'world', ['shelter_check', 'sealed'], {
+    description: 'Pathfinder enclosure test — can the bot walk OUT of here? Mob pathfinding is symmetric, so if YES then mobs can walk IN. Use this to verify a shelter before settling in.',
+    method: 'POST',
+    path: '/action/is_sheltered',
+    argSchema: [{ key: 'radius', type: 'number', default: 20 }],
+    bodyFn: (p) => JSON.stringify({ radius: Number(p.radius ?? 20) }),
+    examples: ['mc is_sheltered', 'mc is_sheltered radius=30'],
+  }),
 
   /* chat_to / whisper */
   g('chat_to', 'social', [], {

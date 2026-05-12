@@ -128,8 +128,33 @@ export function positionalToParams(commandName, argSchema = [], positional) {
   }
 
   const tokens = positional.slice();
+
+  // Pre-pass: extract `key=value` tokens (common CLI convention, agents
+  // assume it works). Anything matching a spec key gets routed to that
+  // spec; remaining tokens fall through to positional consumption below.
+  const kwOverrides = /** @type {Record<string, string>} */ ({});
+  const specByKey = Object.fromEntries(argSchema.map((s) => [s.key, s]));
+  const remaining = [];
+  for (const t of tokens) {
+    const m = typeof t === 'string' ? t.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/) : null;
+    if (m && specByKey[m[1]]) {
+      kwOverrides[m[1]] = m[2];
+    } else {
+      remaining.push(t);
+    }
+  }
+
+  // Positional consumption — skip specs already filled via kw=value.
   for (const spec of argSchema) {
-    const tok = tokens.shift();
+    if (spec.key in kwOverrides) {
+      try {
+        merged[spec.key] = coerceValue(spec, kwOverrides[spec.key]);
+      } catch (e) {
+        throw new Error(`${commandName}:${spec.key}:${/** @type {Error} */ (e).message || e}`);
+      }
+      continue;
+    }
+    const tok = remaining.shift();
     try {
       if (tok === undefined) {
         if (spec.default !== undefined) merged[spec.key] = spec.default;
@@ -139,7 +164,7 @@ export function positionalToParams(commandName, argSchema = [], positional) {
       throw new Error(`${commandName}:${spec.key}:${/** @type {Error} */ (e).message || e}`);
     }
   }
-  if (tokens.length) throw new Error(`extra_arguments:${commandName}`);
+  if (remaining.length) throw new Error(`extra_arguments:${commandName}`);
   return merged;
 }
 

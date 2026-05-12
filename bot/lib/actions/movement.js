@@ -50,7 +50,31 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
   return {
     async goto({ x, y, z }) {
       const b = ensureBot();
-      const goal = new goals.GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z));
+      // Pre-check: GoalBlock requires the bot to stand AT (x,y,z). If the
+      // target tile or the head tile above it is a solid block, GoalBlock
+      // is impossible by construction (you can't occupy a solid cell).
+      // Common case: agent calls `mc goto 1 65 1` to reach a crafting
+      // table at (1,65,1) — pathfinder spends 15s before giving up.
+      // Catch it early with an actionable hint pointing at goto_near.
+      const tx = Math.floor(x), ty = Math.floor(y), tz = Math.floor(z);
+      const blockAtTarget = b.blockAt(new Vec3(tx, ty, tz));
+      const blockAtHead = b.blockAt(new Vec3(tx, ty + 1, tz));
+      const isSolid = (blk) => blk && blk.name !== 'air' && blk.name !== 'cave_air'
+        && blk.name !== 'void_air' && blk.boundingBox === 'block';
+      if (isSolid(blockAtTarget) || isSolid(blockAtHead)) {
+        const blocker = isSolid(blockAtTarget) ? blockAtTarget : blockAtHead;
+        const pos = posObj();
+        return {
+          ok: false,
+          error: {
+            code: 'NAV_TARGET_OCCUPIED',
+            message: `Target ${tx},${ty},${tz} is inside a solid block (${blocker.name}). You can't stand there. Use \`mc goto_near ${tx} ${ty} ${tz}\` to reach an adjacent walkable tile instead.`,
+            observed_state: { target: { x: tx, y: ty, z: tz }, blocker: blocker.name, current: pos },
+            retry_safe: false,
+          },
+        };
+      }
+      const goal = new goals.GoalBlock(tx, ty, tz);
       const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000));
       try {
         await Promise.race([b.pathfinder.goto(goal), timeout]);

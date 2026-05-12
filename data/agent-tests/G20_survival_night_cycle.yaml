@@ -22,21 +22,48 @@ prompt: |
   MC_API_URL and MC_USERNAME set.
 
   ## Situation
-  It's late afternoon (time ~11000). Sun sets at time 12000 — that's
-  about 3 minutes of real time. Hostile mobs spawn at night on easy
-  difficulty. You start empty-handed.
+  It's MID-DAY (time ~5000). Sun sets at time 12000 — that's about
+  **6 minutes of real daylight ahead**, then ~10 minutes of darkness
+  before dawn (time 23000). Hostile mobs (zombies, skeletons) spawn
+  at night on easy difficulty. You start empty-handed. Plan tight:
+  tools + shelter in ~6 min, then survive the night.
 
-  ## Arena
-  - oak tree at (5, 65, 0..3) — 4 logs
-  - stone deposit at (-5..-4, 65..67, -1..1) — plenty of cobblestone
-  - pond at z=6..10
-  - 2 cows + 1 chicken — meat source (raw meat IS edible food)
+  ## Arena — small, bounded, deliberate
+  This is a 64x64 test arena centered on your spawn at (0, 65, 0).
+  ALL resources you need are within 10 blocks of origin — placed for
+  you. DO NOT wander, search, or `goto_near` random coordinates.
+  Everything is right here:
+    - 3 oak trees (4 logs each = 12 total): at (5,65,0), (8,65,-3), (8,65,3)
+    - stone deposit at (-5..-4, 65..67, -1..1) — plenty of cobblestone
+    - pond at z=6..10 (DO NOT dig stone through water — pick a dry path)
+    - 2 cows + 1 chicken — meat source (raw meat IS edible food)
+  If `mc collect` says it can't see a block, use `mc nearby 16` or
+  `mc scene` to look around (turning your view), NOT goto_near.
+  Outside this arena there is nothing — only mob spawning territory
+  at night. Stay near origin during the day.
 
   ## Hard deadlines
-  - By time **11500** (1.5 min in): wooden_pickaxe in hand
-  - By time **12000** (sunset, ~3 min in): inside shelter
-  - From time 12000 to 23000: STAY in shelter, do NOT venture out
+  - By time **8000** (~3 min in): wooden_pickaxe AND wooden_sword
+  - By time **10000** (~5 min in): stone_pickaxe AND stone_sword
+  - By time **11500** (~6.5 min in): **≥16 cobblestone in inventory**
+    (you only need 9 to seal yourself in, but mobs will eat through
+    your plans — gather a surplus so you can patch leaks without
+    re-mining at night)
+  - By time **12000** (sunset): inside shelter, sealed, verified
+  - From time 12000 to 23000: STAY in shelter — but stay ALERT.
+    Run `mc status` and `mc nearby 8` periodically. If a mob is
+    visible inside your shelter (you missed a wall), close it. Use
+    `mc wait 30` to pass time but break out of waiting if your HP
+    drops or a mob appears adjacent.
   - At time **23000**: dawn — safe to come out
+
+  Resource budget BEFORE you start building:
+    • ≥9 logs (for pickaxe → sword → table → spare planks)
+    • ≥16 cobblestone (9 shelter + 7 patch/upgrade margin)
+    • Optional: 1 cow killed for meat (skip if time-pressured)
+  Do NOT start placing shelter blocks until the budget is met. If
+  you find yourself mid-build short of cobble, stop, mine more,
+  return — don't try to "make do" with a partial wall.
 
   ## Critical verbs (use EXACTLY these — others may not exist)
   - `mc status` — your single source of truth (time, hp, hunger, holding, inventory)
@@ -48,18 +75,98 @@ prompt: |
   - `mc place crafting_table X Y Z` — place at X Y Z (NOT on top of your tree)
   - `mc craft wooden_pickaxe 1` — 3 planks + 2 sticks AT a table
   - `mc craft wooden_sword 1` — 2 planks + 1 stick AT a table
-  - `mc craft stone_pickaxe 1` / `mc craft stone_sword 1` — same, with cobblestone
-  - `mc place cobblestone X Y Z` — build shelter wall (place adjacent blocks one at a time)
+  - `mc craft stone_pickaxe 1` / `mc craft stone_sword 1` — same, with cobblestone.
+    NOTE: stone-tier crafts sometimes need a server-side fallback that
+    takes 5-15s. When calling these, pass `timeout=180` to your terminal
+    tool so it doesn't kill the call at the default 60s.
+  - `mc place <block> X Y Z` — place ANY block from your inventory at a coord. Use batch to lay many at once.
+  - `mc fill <block> X1 Y1 Z1 X2 Y2 Z2 [hollow]` — fills a box; pass `hollow=true` for a SHELL (great for shelter walls, leaves interior open). Default is solid — if you forget `hollow=true` you'll bury yourself. Example shelter around (0,65,0): `mc fill cobblestone -1 65 -1 1 67 1 hollow=true`
+  - `mc wall <block> X1 Y1 Z1 X2 Y2 Z2` — vertical wall primitive (y1 must differ from y2)
+  - `mc help <verb>` — see flags + examples for any verb. Use this when in doubt.
+  - `mc dig X Y Z` — break a block at exact coord (use for opening doors, clearing terrain)
   - `mc eat` — auto-eats the best food in your inventory
   - `mc wait 30` — pass 30 seconds (use this DURING the night to burn time)
   - `mc attack <species>` — defend against a mob if one breaks in
 
-  ## Shelter recipe (cheapest reliable option)
-  Once you have ~6 cobblestone, pillar up 3 blocks where you stand:
-    `mc place cobblestone <bot_x> <bot_y+1> <bot_z>` (jump first if needed)
-  OR dig 2 blocks into the ground and seal the opening above with
-  cobblestone. Either approach: mobs can't reach you, and you can
-  break out at dawn.
+  ## Shelter — what counts as safe
+  Hostile mobs CAN'T climb walls, CAN'T break blocks, CAN'T pass
+  through solid blocks. They CAN walk, swim, and jump 1 block. Any
+  fully enclosed space taller than 2 blocks keeps you safe.
+
+  Materials work universally: ANY solid block stops mobs — oak_planks,
+  cobblestone, dirt (from grass via shovel), oak_log, stone. Don't
+  obsess over which block — use whatever you have most of.
+
+  ## Build recipe — build AROUND yourself, layer by layer
+
+  The mental model: you are standing in a 1×2 hollow column at the
+  center. You build OUTWARD from your own feet — the walls form a
+  ring around you, never on top of you. You never have to move once
+  the build starts. Picture the cross-section of each layer as a
+  small grid, mark the cells, then place them.
+
+  1. **Pick a center cell** you'll stand in (e.g. the spawn coord
+     (0,65,0)). Call this (cx, cy, cz). Your foot occupies (cx,cy,cz),
+     your head occupies (cx,cy+1,cz). Those two cells STAY EMPTY.
+
+  2. **Plan each layer on a 3×3 grid** centered on you. Write it out
+     in your head — `.` is empty (you), `#` is a block to place:
+
+         Layer cy (foot ring) — 4 blocks:   Layer cy+1 (head ring) — 4 blocks:
+           . # .                              . # .
+           # . #     ← you stand in center    # . #     ← head at center
+           . # .                              . # .
+
+         Layer cy+2 (roof) — 1 block:
+           . . .
+           . # .   ← one block directly above your head
+           . . .
+
+       Corners (NE/NW/SE/SW) stay empty. Mobs can't walk diagonally
+       through a gap that's only 1 block wide at the corner — but
+       arrows and skeletons can shoot through. If you have spare
+       blocks, fill the 4 corners on both rings too (8 more = 17
+       total instead of 9). Recommended once you have ≥16 cobble.
+
+  3. **Stand AT the center cell** before placing. `mc goto cx cy cz`
+     then `mc status` to confirm position. If your foot isn't exactly
+     at (cx, cy, cz) the placement coords below will leave gaps.
+
+  4. **Place each layer in ONE batch, in order foot → head → roof:**
+
+       # Foot ring (4 cardinals):
+       mc batch "place BLOCK (cx+1) cy cz" "place BLOCK (cx-1) cy cz" \
+                "place BLOCK cx cy (cz+1)" "place BLOCK cx cy (cz-1)"
+
+       # Head ring (4 cardinals, one block higher):
+       mc batch "place BLOCK (cx+1) (cy+1) cz" "place BLOCK (cx-1) (cy+1) cz" \
+                "place BLOCK cx (cy+1) (cz+1)" "place BLOCK cx (cy+1) (cz-1)"
+
+       # Roof (1 block directly over your head):
+       mc place BLOCK cx (cy+2) cz
+
+       Don't try to use `mc fill` for this — `mc fill` places EVERY
+       cell in the box including the cell you're standing in. It
+       will push you out or bury you. Use `mc place` (or batched
+       `mc place`) so each placed block is explicit.
+
+  5. **Verify from INSIDE the shelter** with `mc is_sheltered`.
+     The check is meaningful only when you're standing inside.
+     If `mc status` shows your position outside (cx, cy, cz),
+     `mc goto cx cy cz` first, then verify. Read BOTH fields:
+       • `enclosed: true` AND
+       • `open_walls: []` (empty list of immediate gaps)
+     If either fails, the `leak` or `open_walls` tells you the exact
+     coord to plug. `mc place BLOCK <coord>`, then re-verify.
+
+  6. **Announce "sheltered in place"** in your reply and start
+     `mc wait 30` cycles until dawn (time 23000).
+
+  If you don't have 9 blocks of any one type when you need them,
+  STOP, mine more (stone for cobble, logs for planks), then resume.
+  Mixed block types are fine — they all stop mobs equally. The
+  failure mode to avoid is starting to build with 5 blocks "and
+  figuring out the rest" — you'll end up exposed at sundown.
 
   ## Your plan (think this through BEFORE running any commands)
   Write a brief plan in your head:
@@ -68,48 +175,127 @@ prompt: |
     3. Decide what to skip if you run out of time (food is OK to skip —
        you have saturation 60; you won't starve in 12 minutes)
 
-  Then execute, one command at a time. After every 3 commands run
-  `mc status` to check time and HP. If `time >= 12000` and you're
-  not yet in shelter, STOP everything else and shelter immediately.
+  ## Batch your commands — keep batches small and focused
+  Each terminal tool call costs ~5s of model thinking, so issuing
+  commands one at a time is wasteful. Use `mc batch` to group 2-3
+  related commands per call. Examples of good batches:
 
-  Don't batch commands. Run each through the terminal one at a time.
+    mc batch "craft oak_planks 4" "craft stick 4" "craft crafting_table 1"
+    mc batch "craft wooden_pickaxe 1" "craft wooden_sword 1"
+    mc batch "place cobblestone 0 66 0" "place cobblestone 1 65 0" "place cobblestone 0 65 1"
 
-skills: []
+  **Aim for 2-3 commands per batch** — short batches let you see each
+  result before deciding the next step, and they keep momentum visible.
+  A batch of 5+ commands chains too many uncertain steps together; if
+  one step fails or moves the bot unexpectedly, the rest of the batch
+  often has wrong assumptions baked in. Prefer two small batches over
+  one giant one when crafts, pathfinding, and placing are mixed.
+
+  Break out of batching when the NEXT step depends on inspecting an
+  earlier output (e.g. `mc status` to see time before deciding to
+  shelter).
+
+  After every 2-3 batches run `mc status` to check time and HP. If
+  `time >= 12000` and you're not yet in shelter, STOP everything
+  else and shelter immediately.
+
+skills: [minecraft-survival, minecraft-planning]
+# Load SOUL.md and the chosen skills — this is an integration test that
+# wants the agent's full planning/survival context, not a stripped-down
+# G-test. Costs ~5-7k extra tokens per turn but the planning skill
+# explicitly tells the agent to research → decompose → execute in order.
+ignore_rules: false
 toolsets: [terminal]
-max_turns: 50
-timeout_seconds: 720
+max_turns: 120
+# 15 min budget. v16-v20 ALL ended right at sunset (bot_time ~12100)
+# because max_turns=60-80 was the binding limit, not the timeout. The
+# `final_bot_time` predicate now enforces that the run made it deep
+# into night — otherwise mobs never had a chance to spawn and "no
+# deaths" is a hollow pass.
+timeout_seconds: 900
 post_wait_seconds: 4
-stall_seconds: 90
+stall_seconds: 150
 
 expect:
   bot_did_not_die: true
   bot_hp_at_least: 8
-  mc_verbs_include_any: [craft, collect, place]
+  # Force the run to reach DEEP NIGHT (past midnight, bot_time 18000).
+  # Without this, runs that hit max_turns at sunset register as "no
+  # deaths" — but mobs hadn't even spawned yet. v20 ended at 12142.
+  # 18000 = midnight = full mob spawning active for ~5 min already.
+  final_bot_time_at_least: 18000
+  # craft is the strictest verb to require — wooden_sword needs craft.
+  # collect+place are implied by getting cobble in the world.
+  mc_verbs_include_any: [craft]
+  # Require STONE tier (or better). Wooden-only false-passed v17b/v18
+  # because the agent stalled at the stone-tool craft step and never
+  # actually got past that gate — but the OR-list with wooden_sword
+  # made the test green anyway. Stone tier proves the agent worked
+  # through the craft+PaperMCP fallback successfully.
   bot_inventory_any:
-    wooden_sword: 1
     stone_sword: 1
     iron_sword: 1
-    wooden_axe: 1
     stone_axe: 1
     iron_axe: 1
+    diamond_sword: 1
+    diamond_axe: 1
+  # No leftover-cobble predicate — v20 showed it penalises an agent
+  # that spent all its cobble building a shelter (the right move).
+  # `bot_did_not_die` + `stone_sword` together are strong enough proof
+  # that the agent quarried, crafted, AND survived the night.
 
 verify_after_prep:
-  - { block: oak_log, min_count: 4 }
-  - { block: stone, min_count: 8 }
+  # 3 trees × 4 logs each = 12 oak_log blocks (allow a bit of slack).
+  - { block: oak_log,  min_count: 12, max_count: 14 }
+  # Note: `mc nearby` aggregates ALL blocks in the 16-radius cube around
+  # the bot — that includes natural underground stone at y<64 (the world
+  # generates it on chunk-load). So the count is dominated by bedrock-area
+  # stone, not the surface deposit. The real "world not clean" sentinel
+  # is the crafting_table check below — that survived the v8 incident.
+  - { block: stone,    min_count: 24 }
+  # No crafting tables should exist after prep — any are leftover from
+  # a previous run that didn't clean. (Caught the v8 over-limit-fill bug.)
+  - { block: crafting_table, min_count: 0, max_count: 0 }
 
 prep:
   - "execute in landfolk-test run difficulty easy"
   - "execute in landfolk-test run gamerule doDaylightCycle true"
   - "execute in landfolk-test run gamerule doMobSpawning true"
   - "execute in landfolk-test run gamerule keepInventory true"  # if it dies once, give it a chance
-  - "execute in landfolk-test run time set 11000"  # late afternoon
+  # v15/v16 finished shelter at bot_time ~11050 (~340s real). With
+  # start=4000 the run ended right at sunset — no actual night to
+  # survive. Bot/wall ratio = 20 ticks/sec, so sunset_wall = (12000 -
+  # start) / 20. start=5000 → sunset at ~350s real (~10s after typical
+  # shelter done) → mobs spawn while agent is sealing up.
+  - "execute in landfolk-test run time set 5000"
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill -20 65 -20 20 80 20 minecraft:air"
-  - "execute in landfolk-test run fill -20 64 -20 20 64 20 minecraft:grass_block"
-  # Tree
+  # Arena -32..32 (65×16×65 air + 65×1×65 grass). Paper's default
+  # fill limit is 32768 blocks; a single -32..32 fill is 67600 blocks
+  # and gets SILENTLY CAPPED, leaving leftover blocks from prior runs
+  # (incident: v8 ran on a half-cleaned world with old crafting tables
+  # and a stone floor still in place). Split into four 33×33 quadrants
+  # of 17,424 blocks each — well under the cap.
+  - "execute in landfolk-test run fill -32 65 -32 0 80 0 minecraft:air"
+  - "execute in landfolk-test run fill 1 65 -32 32 80 0 minecraft:air"
+  - "execute in landfolk-test run fill -32 65 1 0 80 32 minecraft:air"
+  - "execute in landfolk-test run fill 1 65 1 32 80 32 minecraft:air"
+  - "execute in landfolk-test run fill -32 64 -32 0 64 0 minecraft:grass_block"
+  - "execute in landfolk-test run fill 1 64 -32 32 64 0 minecraft:grass_block"
+  - "execute in landfolk-test run fill -32 64 1 0 64 32 minecraft:grass_block"
+  - "execute in landfolk-test run fill 1 64 1 32 64 32 minecraft:grass_block"
+  # Three 4-tall oak trees — gives 12 logs total. With 4 logs the
+  # agent's typical first-batch arithmetic (8 planks → sticks, 4 →
+  # table, 3 → pickaxe = 15/16 planks) leaves nothing for a sword.
+  # Extra trees give slack to recover without re-collecting wood.
   - "execute in landfolk-test run fill 5 65 0 5 68 0 minecraft:oak_log"
   - "execute in landfolk-test run fill 4 69 -1 6 69 1 minecraft:oak_leaves"
   - "execute in landfolk-test run setblock 5 69 0 minecraft:oak_leaves"
+  - "execute in landfolk-test run fill 8 65 -3 8 68 -3 minecraft:oak_log"
+  - "execute in landfolk-test run fill 7 69 -4 9 69 -2 minecraft:oak_leaves"
+  - "execute in landfolk-test run setblock 8 69 -3 minecraft:oak_leaves"
+  - "execute in landfolk-test run fill 8 65 3 8 68 3 minecraft:oak_log"
+  - "execute in landfolk-test run fill 7 69 2 9 69 4 minecraft:oak_leaves"
+  - "execute in landfolk-test run setblock 8 69 3 minecraft:oak_leaves"
   # Stone (more this time — bot will need it for shelter)
   - "execute in landfolk-test run fill -6 65 -1 -4 67 1 minecraft:stone"
   # Pond
@@ -120,6 +306,11 @@ prep:
   - "execute in landfolk-test run summon minecraft:cow -3 65 -5 {NoAI:0b}"
   - "mvtp Flint landfolk-test"
   - "execute in landfolk-test run tp Flint 0 65 0 0 0"
+  # Pin spawnpoint to the arena. Without this, every death respawns the
+  # bot at the global world spawn (~358,-601) — far outside the test
+  # arena, where it can't recover. Caused 8 unrecoverable deaths in v13.
+  - "execute in landfolk-test run spawnpoint Flint 0 65 0"
+  - "execute in landfolk-test run setworldspawn 0 65 0"
   - "effect clear Flint"
   - "effect give Flint minecraft:saturation 60 1"
   - "clear Flint"
@@ -130,7 +321,14 @@ cleanup:
   - "execute in landfolk-test run gamerule keepInventory false"
   - "execute in landfolk-test run time set day"
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill -20 64 -20 20 80 20 minecraft:air"
-  - "execute in landfolk-test run fill -20 64 -20 20 64 20 minecraft:stone"
+  # Same quadrant split as prep — see comment there for the limit story.
+  - "execute in landfolk-test run fill -32 64 -32 0 80 0 minecraft:air"
+  - "execute in landfolk-test run fill 1 64 -32 32 80 0 minecraft:air"
+  - "execute in landfolk-test run fill -32 64 1 0 80 32 minecraft:air"
+  - "execute in landfolk-test run fill 1 64 1 32 80 32 minecraft:air"
+  - "execute in landfolk-test run fill -32 64 -32 0 64 0 minecraft:stone"
+  - "execute in landfolk-test run fill 1 64 -32 32 64 0 minecraft:stone"
+  - "execute in landfolk-test run fill -32 64 1 0 64 32 minecraft:stone"
+  - "execute in landfolk-test run fill 1 64 1 32 64 32 minecraft:stone"
   - "execute in landfolk-test run tp Flint 52 65 52"
   - "execute in landfolk-test run kill @e[type=item,distance=..40]"

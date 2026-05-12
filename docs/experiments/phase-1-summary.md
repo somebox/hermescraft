@@ -54,7 +54,7 @@ For the steward → bot brain control surface, this means:
 Confirmed across 1.1 and 1.3:
 - `mc collect <name> <count>` returns `ok:true` even when `mined_count=0` (silent failure).
 - `mc dig <x> <y> <z>` works correctly. The 1.3 agent self-corrected.
-- Tool responses dominate token spend (~90% of message bytes in 1.1's session DB).
+- Tool responses dominate **persisted chat volume** in Hermes (~90% of assistant+tool+user **UTF-8 bytes** in 1.1’s session DB; not the same as billed LLM tokens unless measured separately).
 - `mc observe`/`mc nearby`/`mc scene` are heavy; we should add a leaner variant.
 - Pathfinding to canopy logs from ground was unreliable (1.1).
 - Bot got stuck in terrain holes repeatedly (1.1).

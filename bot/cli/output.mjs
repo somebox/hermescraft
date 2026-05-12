@@ -70,16 +70,13 @@ export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
   const d = e.data;
   const st = e.state;
 
-  if (st && typeof st === 'object') {
-    const bits = [];
-    if (st.health !== undefined) bits.push(`HP:${st.health}`);
-    if (st.food !== undefined) bits.push(`Food:${st.food}`);
-    if (st.position) bits.push(`Pos:${fmtPos(st.position)}`);
-    if (st.holding) bits.push(`Hold:${typeof st.holding === 'object' ? JSON.stringify(st.holding) : st.holding}`);
-    if (bits.length) console.log(`  state: ${bits.join(' | ')}`);
-    if (st.new_chat?.length) {
-      for (const m of st.new_chat) console.log(`  chat <${m.from}> ${m.message}`);
-    }
+  // On the happy path, only surface chat events from the state block —
+  // HP/Food/Pos/Hold are noise that the agent can fetch with mc status
+  // when relevant. Prepending it to every tool response was costing
+  // ~50 tokens/call. The agent already has the world state from its
+  // last explicit status call.
+  if (st && typeof st === 'object' && st.new_chat?.length) {
+    for (const m of st.new_chat) console.log(`  chat <${m.from}> ${m.message}`);
   }
 
   if (typeof d?.result === 'string') console.log(`  ${d.result}`);
@@ -112,8 +109,11 @@ export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
     }
     if (Array.isArray(d.entities) && Array.isArray(d.blocks)) {
       console.log(`  entities (${d.entities.length}):`);
-      for (const ent of d.entities.slice(0, 12))
-        console.log(`    ${ent.type} (${ent.distance}m)`);
+      for (const ent of d.entities.slice(0, 12)) {
+        const p = ent.position;
+        const loc = p ? ` @${p.x},${p.y},${p.z}` : '';
+        console.log(`    ${ent.type} (${ent.distance}m)${loc}`);
+      }
       console.log(`  blocks (${d.blocks.length} types):`);
       for (const b of d.blocks.slice(0, 15)) {
         const n = b.nearest;
@@ -134,7 +134,10 @@ export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
     }
   }
 
-  // fallback JSON pretty
-  console.log(JSON.stringify(e, null, 2));
+  // Fallback JSON. Pretty-print when stdout is a TTY (a human is reading
+  // it), compact when piped (LLM agents or other tools consuming it) —
+  // compact JSON is ~50% smaller and saves real tokens in agent runs.
+  const pretty = process.stdout.isTTY;
+  console.log(JSON.stringify(e, null, pretty ? 2 : undefined));
   return '';
 }

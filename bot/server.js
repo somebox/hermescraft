@@ -398,6 +398,8 @@ const {
   entitiesMatchingAfterLookSweep,
   reactionDelay,
   buildSceneSummary,
+  hasLineOfSight,
+  eyePosition,
 } = fairPlayApi;
 
 const spatial = createSpatial({ ensureBot, fmt, posObj });
@@ -495,6 +497,8 @@ const ACTIONS = createAllActions({
   findVisibleBlocksByNameWithPhysicalSweep,
   entitiesMatchingAfterLookSweep,
   filterEntitiesFairPlay,
+  hasLineOfSight,
+  eyePosition,
   reactionDelay,
   rememberSocialEvent,
   getMyName,
@@ -527,7 +531,7 @@ if (reactiveOn) {
     const n = Number(skillEnv);
     if (Number.isFinite(n)) ctx.combat_skill = Math.max(0, Math.min(1, n));
   }
-  const reactive = createReactive({ ctx, log, ACTIONS, sleep });
+  const reactive = createReactive({ ctx, log, ACTIONS, sleep, hasLineOfSight, eyePosition });
   reactive.start();
 }
 

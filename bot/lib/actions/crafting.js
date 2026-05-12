@@ -115,6 +115,18 @@ export function createCraftingActions(deps) {
       const recipe = deps.bestRecipeForInventory ? deps.bestRecipeForInventory(recipes, b, count) : recipes[0];
       const requiresBench = recipe.requiresTable !== false;
 
+      // Convert "I want N items" → "how many times to run the recipe".
+      // mineflayer's b.craft(recipe, N) runs the recipe N times. For a
+      // planks recipe that yields 4 per run, asking for `count = 4` and
+      // passing it straight to b.craft produced 16 planks (and consumed
+      // 4 logs) — confusing for models that read `crafted_count=16,
+      // requested_count=4` as a failure. We now compute invocations =
+      // ceil(count / yield), so `craft 4 planks` runs the recipe once
+      // (1 log → 4 planks), `craft 5 planks` runs twice (2 logs → 8),
+      // and so on. The user gets AT LEAST what they asked for.
+      const resultPerCraft = recipe.result?.count || 1;
+      const invocations = Math.max(1, Math.ceil(count / resultPerCraft));
+
       // ── TABLE_REQUIRED ──
       if (requiresBench && !table) {
         return {
@@ -140,7 +152,9 @@ export function createCraftingActions(deps) {
       // Pre-flight ingredient check via buildCraftPlan if available.
       // This gives us MISSING_INGREDIENTS *before* attempting the craft, with
       // a clean shortfall list rather than parsing mineflayer's error string.
-      const plan = buildCraftPlan ? buildCraftPlan(b, itemName, count) : null;
+      // Pass `invocations`, not `count` — the plan multiplies ingredients by
+      // its wantCount param, and our wantCount is "recipe runs", not "items".
+      const plan = buildCraftPlan ? buildCraftPlan(b, itemName, invocations) : null;
       if (plan && plan.ok && plan.missing && plan.missing.length > 0) {
         return {
           ok: false,
@@ -170,7 +184,7 @@ export function createCraftingActions(deps) {
         } catch { /* best-effort */ }
       }
       try {
-        await b.craft(recipe, count, requiresBench ? table : undefined);
+        await b.craft(recipe, invocations, requiresBench ? table : undefined);
       } catch (err) {
         const msg = /** @type {Error} */ (err).message || String(err);
         // Re-classify mineflayer's raw error string to one of our codes.
@@ -219,7 +233,7 @@ export function createCraftingActions(deps) {
       // ── Verify via inventory delta ──
       const endedInventory = inventoryAt();
       const craftedDelta = (endedInventory[itemName] || 0) - (startedInventory[itemName] || 0);
-      const expectedDelta = count * (recipe.result?.count || 1);
+      const expectedDelta = invocations * resultPerCraft;
       const ingredientsConsumed = {};
       for (const [name, before] of Object.entries(startedInventory)) {
         const after = endedInventory[name] || 0;
@@ -237,11 +251,11 @@ export function createCraftingActions(deps) {
         // (i.e. mineflayer didn't half-consume them).
         const requiredIngs = recipeIngredientMap(recipe, ctx.mcData);
         const ingsIntact = Object.entries(requiredIngs).every(
-          ([n, perCraft]) => (endedInventory[n] || 0) >= perCraft * count,
+          ([n, perCraft]) => (endedInventory[n] || 0) >= perCraft * invocations,
         );
         if (requiresBench && ingsIntact && paperMcpConfig()) {
           const fb = await serverSideCraftFallback({
-            itemName, count, recipe, ctx, b,
+            itemName, count: invocations, recipe, ctx, b,
             getMyName, log, sleep, inventoryAt,
             startedInventory, requiredIngs, expectedDelta,
           });

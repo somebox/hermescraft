@@ -364,7 +364,7 @@ export function createFairPlaySuite(deps) {
     const b = ensureBot();
     const hits = await collectVisibleHitsWithPhysicalLookSweep(
       b,
-      { range, horizontalFov: 100, verticalFov: 36, horizontalRays: 7, verticalRays: 3 },
+      { range, horizontalFov: 100, verticalFov: 50, horizontalRays: 7, verticalRays: 5 },
       { headings, settleMs },
     );
     return hits.filter((entry) => entry.name.toLowerCase() === needle).slice(0, count);

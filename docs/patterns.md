@@ -207,10 +207,11 @@ shim, ask why.
 ## P13. Benchmark LLM accuracy on `mc` after pattern changes
 
 **Pattern:** when the registry, cheatsheet, or skill text changes, run
-`scripts/benchmark/run.mjs` to verify LLM accuracy didn't regress. Persist
-the run JSON in `scripts/benchmark/runs/`. Use `scripts/benchmark/compare.mjs`
-to diff against the prior run; >5pp regression on any (model, group) is a
-failure.
+`scripts/benchmark/run.mjs` to verify LLM accuracy didn't regress. Outputs land
+under `scripts/benchmark/runs/<model_slug>/` (one JSON per model per run). Use
+`scripts/benchmark/compare.mjs --model <id>` to diff the last two runs for that
+model, or pass two explicit paths; **>5pp drop in accuracy or in average
+`semantic_score` per (model, group)** is a failure.
 
 **Why:** the v1-vs-v2 grammar eval (one-off) showed that intuitions about
 "this should be clearer for LLMs" don't always hold. The benchmark is the
@@ -219,8 +220,8 @@ opposite failure mode (a "small" change accidentally making the surface
 harder to compose against).
 
 **How to check:** `node scripts/benchmark/run.mjs` after the change;
-`node scripts/benchmark/compare.mjs` to diff. Sprint exit gates require
-this to pass.
+`node scripts/benchmark/compare.mjs --model <openrouter-model-id>` (or two JSON paths).
+Sprint exit gates require this to pass.
 
 ---
 

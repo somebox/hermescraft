@@ -400,6 +400,26 @@ export function createWorldActions(deps) {
       };
     }
 
+    // ── TARGET_SELF_OCCUPIED ──
+    // The bot itself occupies 2 cells: foot (floor(botY)) and head
+    // (floor(botY)+1). Server silently rejects placement in either —
+    // mineflayer waits 5s for a blockUpdate event that never fires.
+    // Pre-flight catch returns an actionable error immediately so the
+    // agent doesn't waste a turn (and 5s) on the timeout.
+    const botY = Math.floor(b.entity.position.y);
+    const botBlockX = Math.floor(b.entity.position.x);
+    const botBlockZ = Math.floor(b.entity.position.z);
+    if (x === botBlockX && z === botBlockZ && (y === botY || y === botY + 1)) {
+      return {
+        ok: false,
+        error: {
+          code: 'TARGET_SELF_OCCUPIED',
+          message: `Cannot place at ${x},${y},${z}: that's your ${y === botY ? 'foot' : 'head'} cell. Step aside (e.g. mc goto_near ${x + 1} ${y} ${z}) or pick an adjacent cell.`,
+          retry_safe: false,
+        },
+      };
+    }
+
     // ── TARGET_OCCUPIED ──
     // Only a non-replaceable block at target counts as occupied.
     const existing = b.blockAt(targetPos);
@@ -468,9 +488,7 @@ export function createWorldActions(deps) {
           ok: true,
           data: {
             placed_block: blockName,
-            face_used: { dx, dy, dz, neighbor_block: ref.name, neighbor_position: { x: x + dx, y: y + dy, z: z + dz } },
-            position_after: posObj(b.entity.position),
-            requested_coord: { x, y, z },
+            at: { x, y, z },
           },
           // Legacy field for callers that look for `result`.
           result: `Placed ${blockName} at ${x}, ${y}, ${z}`,
@@ -2468,6 +2486,151 @@ export function createWorldActions(deps) {
     const b = ensureBot();
     await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3));
     return { result: `At death #${ctx.lastDeath.deathNumber} (${age}s ago). Lost: ${ctx.lastDeath.inventory.map(i=>`${i.name}x${i.count}`).join(', ')}` };
+  },
+
+  /**
+   * Enclosure test: can the bot pathfind OUT of its current position?
+   * Pathfinding is symmetric — if the bot can walk out, mobs can walk in.
+   * Uses the same non-destructive movements pathfinder normally uses
+   * (closed doors/gates count as walls; fences are 1.5 tall so pathfinder
+   * treats them as impassable).
+   *
+   * Tests several distant cardinal+vertical targets. If ANY succeeds, the
+   * bot is NOT fully enclosed — returns the first leak's exit cell
+   * (the first block the path would walk into, i.e. the gap).
+   *
+   * Use after building a shelter to verify it's actually sealed before
+   * settling in for the night.
+   */
+  async is_sheltered({ radius = 20 } = {}) {
+    const b = ensureBot();
+    const start = b.entity.position;
+    const movements = b.pathfinder.movements;
+    if (!movements) {
+      return {
+        ok: false,
+        error: {
+          code: 'NO_MOVEMENTS',
+          message: 'Pathfinder movements not configured. Cannot test enclosure.',
+          retry_safe: false,
+        },
+      };
+    }
+
+    // Try cardinal targets at `radius` blocks horizontally + one straight up.
+    // Each direction gets a short timeout — total wall-clock is bounded.
+    const r = Math.max(8, Math.min(48, Number(radius) || 20));
+    const sx = Math.floor(start.x);
+    const sy = Math.floor(start.y);
+    const sz = Math.floor(start.z);
+    const targets = [
+      { name: 'east',  x: sx + r, y: sy, z: sz },
+      { name: 'west',  x: sx - r, y: sy, z: sz },
+      { name: 'south', x: sx,     y: sy, z: sz + r },
+      { name: 'north', x: sx,     y: sy, z: sz - r },
+      { name: 'up',    x: sx,     y: Math.min(sy + r, 250), z: sz },
+    ];
+
+    const checks = [];
+    let firstLeak = null;
+    for (const t of targets) {
+      const goal = new goals.GoalNear(t.x, t.y, t.z, 1);
+      let status = 'noPath';
+      let firstStep = null;
+      try {
+        // 4000ms per direction: long enough that "noPath" actually means
+        // no path, not "didn't finish searching in 1.5s". False-positive
+        // SHELTERED reports were the worst case (agent trusts the seal,
+        // waits, dies). 5 directions × 4s worst-case ≈ 20s total, still
+        // tolerable as a one-shot verification call.
+        const result = b.pathfinder.getPathTo(movements, goal, 4000);
+        status = result.status;
+        if (status === 'success' && result.path && result.path.length > 0) {
+          // First step that's NOT the start cell — the "exit" through which
+          // the bot would walk out (and mobs walk in).
+          for (const node of result.path) {
+            if (Math.floor(node.x) !== sx || Math.floor(node.y) !== sy || Math.floor(node.z) !== sz) {
+              firstStep = { x: Math.floor(node.x), y: Math.floor(node.y), z: Math.floor(node.z) };
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        status = `error:${(e && e.message) || e}`;
+      }
+      const leaked = status === 'success';
+      checks.push({ direction: t.name, target: { x: t.x, y: t.y, z: t.z }, status, exit: firstStep });
+      if (leaked && !firstLeak) firstLeak = { direction: t.name, exit: firstStep };
+    }
+
+    const pathfinderEnclosed = firstLeak === null;
+
+    // Also report the immediate 6 wall cells (cardinal neighbours of bot's
+    // foot and head). Pathfinder can be fooled by complex geometry but a
+    // human can read this list directly. If any cell is air/water/etc
+    // when pathfinder thinks the shelter's sealed, the seal is FALSE —
+    // mobs in vanilla MC can attack-reach the player through any 1-block
+    // hole adjacent to where the player stands, even if they can't walk
+    // through it. v30 lost a bot to exactly this geometry: pathfinder
+    // said enclosed because a crafting-table-blocked-foot + air-head
+    // gap had no walkable path, but a zombie outside reached through
+    // the head-level air gap and killed the bot.
+    const botFootX = Math.floor(start.x), botFootY = Math.floor(start.y), botFootZ = Math.floor(start.z);
+    const wallReport = {};
+    for (const lvl of ['foot', 'head']) {
+      const wy = botFootY + (lvl === 'head' ? 1 : 0);
+      for (const [dx, dz, name] of [[1,0,'east'],[-1,0,'west'],[0,1,'south'],[0,-1,'north']]) {
+        const blk = b.blockAt(start.offset(dx, lvl === 'head' ? 1 : 0, dz).floored());
+        wallReport[`${lvl}_${name}`] = {
+          pos: { x: botFootX + dx, y: wy, z: botFootZ + dz },
+          block: blk?.name ?? 'unknown',
+          solid: blk ? (blk.boundingBox === 'block') : false,
+        };
+      }
+    }
+    // Plus the roof (1 block above head).
+    const roof = b.blockAt(start.offset(0, 2, 0).floored());
+    wallReport.roof = {
+      pos: { x: botFootX, y: botFootY + 2, z: botFootZ },
+      block: roof?.name ?? 'unknown',
+      solid: roof ? (roof.boundingBox === 'block') : false,
+    };
+
+    const openWalls = Object.entries(wallReport)
+      .filter(([_, v]) => !v.solid)
+      .map(([k, v]) => `${k}=${v.block}@(${v.pos.x},${v.pos.y},${v.pos.z})`);
+
+    // Final verdict combines BOTH checks. Pathfinder says no walk-path,
+    // AND every immediate-neighbour cell is solid → truly safe. Either
+    // failing → not enclosed.
+    const enclosed = pathfinderEnclosed && openWalls.length === 0;
+
+    let resultMsg;
+    if (enclosed) {
+      resultMsg = `SHELTERED — pathfinder found no exit within ${r} blocks AND all 9 immediate-neighbour cells (4 foot, 4 head, roof) are solid blocks. Safe to wait out the night.`;
+    } else if (pathfinderEnclosed && openWalls.length > 0) {
+      resultMsg = `OPEN — pathfinder found no walk-path out, BUT ${openWalls.length} immediate cell(s) are not solid: ${openWalls.join(', ')}. Mobs can attack-reach you through these 1-block gaps even though they can't walk in. Seal every immediate-neighbour cell (foot, head, roof) before nightfall.`;
+    } else {
+      resultMsg = `OPEN — escape route via ${firstLeak.direction} starts at (${firstLeak.exit.x},${firstLeak.exit.y},${firstLeak.exit.z}). Mobs can use that path to reach you. Seal it before nightfall.${openWalls.length > 0 ? ' Immediate gaps: ' + openWalls.join(', ') : ''}`;
+    }
+
+    return {
+      ok: true,
+      data: {
+        enclosed,
+        // Sub-signals so callers can distinguish "walk-path leak" from
+        // "attack-reach leak". Useful for nuanced agent reasoning.
+        pathfinder_enclosed: pathfinderEnclosed,
+        all_walls_solid: openWalls.length === 0,
+        bot_position: { x: Math.round(start.x * 10) / 10, y: Math.round(start.y * 10) / 10, z: Math.round(start.z * 10) / 10 },
+        radius: r,
+        leak: firstLeak,
+        checks,
+        immediate_walls: wallReport,
+        open_walls: openWalls,
+      },
+      result: resultMsg,
+    };
   },
 
   };

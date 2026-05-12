@@ -23,6 +23,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BOT_DIR="$ROOT/bot"
 
+# Source repo .env so PAPERMCP_TOKEN etc. flow through to the bot
+# subprocess. Without this, the server-side craft fallback (which masks
+# mineflayer.craft's known Paper 1.21+ failure for table recipes) never
+# fires — runs see INTERRUPTED on stone_pickaxe / stone_sword crafts.
+if [ -f "$ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT/.env"
+  set +a
+fi
+
 MC_HOST="${MC_HOST:-192.168.1.202}"
 MC_PORT="${MC_PORT:-25565}"
 FLINT_PORT="${FLINT_PORT:-3001}"
@@ -98,6 +109,9 @@ start_bot() {
       MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" \
         MC_USERNAME="$name" API_PORT="$port" \
         FAIR_PLAY="$FAIR_PLAY" \
+        PAPERMCP_TOKEN="${PAPERMCP_TOKEN:-}" \
+        PAPERMCP_HOST="${PAPERMCP_HOST:-}" \
+        PAPERMCP_PORT="${PAPERMCP_PORT:-}" \
         node server.js
     ) >"$log" 2>&1 &
     local pid="$!"
@@ -109,6 +123,9 @@ start_bot() {
       MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" \
       MC_USERNAME="$name" API_PORT="$port" \
       FAIR_PLAY="$FAIR_PLAY" \
+      PAPERMCP_TOKEN="${PAPERMCP_TOKEN:-}" \
+      PAPERMCP_HOST="${PAPERMCP_HOST:-}" \
+      PAPERMCP_PORT="${PAPERMCP_PORT:-}" \
       node server.js
   fi
 }

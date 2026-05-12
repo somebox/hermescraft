@@ -333,6 +333,40 @@ async function main() {
     process.exit(0);
   }
 
+  // Shell-chaining detection. Agents sometimes write
+  //   mc craft stick 4 && mc craft crafting_table 1
+  // thinking the CLI honours bash-style chaining. It doesn't — argv
+  // contains the literal `&&` (or `;` / `||`) token, and the first
+  // verb either silently ignores trailing tokens or treats them as
+  // bogus args. We catch that here and emit a hint pointing at
+  // `mc batch`, the actual multi-command mechanism.
+  if (firstHit.canonicalName !== 'batch') {
+    const CHAIN = new Set(['&&', '||', ';', '|']);
+    const chainIdx = cmdLine.findIndex((t) => CHAIN.has(t));
+    if (chainIdx > 0) {
+      // Segment by chain operators, dropping `mc` prefixes within each.
+      const segs = [];
+      let cur = [];
+      for (const t of cmdLine) {
+        if (CHAIN.has(t)) {
+          if (cur.length) segs.push(cur);
+          cur = [];
+          continue;
+        }
+        if (cur.length === 0 && t === 'mc') continue;
+        cur.push(t);
+      }
+      if (cur.length) segs.push(cur);
+      const suggestion = segs.map((s) => `"${s.join(' ')}"`).join(' ');
+      console.log(
+        `ERROR (cli): "${cmdLine[chainIdx]}" is shell-chaining syntax — mc runs ONE command per call. ` +
+          `To run multiple commands, use:\n\n  mc batch ${suggestion}\n\n` +
+          `or issue them as separate \`mc\` calls.`,
+      );
+      process.exit(2);
+    }
+  }
+
   if (firstHit.canonicalName === 'batch') {
     const segments = expandBatchArgv(cmdLine.slice(1));
 

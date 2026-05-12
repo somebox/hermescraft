@@ -65,7 +65,22 @@ const TICK_MS = 400;
 const BACKSTEP_MS = 120;            // brief retreat after each swing (knockback dance)
 
 export function createReactive(deps) {
-  const { ctx, log, ACTIONS, sleep } = deps;
+  const { ctx, log, ACTIONS, sleep, hasLineOfSight, eyePosition } = deps;
+
+  // Same fair-play LOS guard used by mc attack/mc collect: refuse to
+  // swing if a solid block sits between the bot's eye and the target's
+  // chest. Critical for reactive: it ticks every 400ms and would
+  // otherwise let the bot attack mobs through its own shelter walls.
+  // v30/v31 demonstrated the regression — reactive `attack_step` was
+  // firing on enderman@1.6m while the bot was fully sealed in a 1-block
+  // cobble shelter. Returns true if attack is fair, false if blocked.
+  function reactiveCanHit(entity) {
+    if (!hasLineOfSight || !eyePosition) return true; // pre-wire safety
+    const eye = eyePosition();
+    if (!eye || !entity?.position) return true;
+    const target = entity.position.offset(0, (entity.height || 1.8) * 0.5, 0);
+    return hasLineOfSight(eye, target);
+  }
 
   function isHostile(entity) {
     if (!entity || !entity.position || entity === ctx.bot?.entity) return false;
@@ -165,7 +180,13 @@ export function createReactive(deps) {
                  : 'adjacent_lava';
       return { action: 'escape_lava', hazards: state.lava_neighbors, why };
     }
-    if (state.in_water && state.oxygen <= 8) {
+    // Drowning protection. Oxygen ranges 0-20 (one tick = 1 second IRL).
+    // Damage starts when oxygen hits -1. At threshold 14 we have ~7s of
+    // air left — plenty of time for pathfinder cancel + surface, even
+    // accounting for 400ms reactive tick latency. Old threshold of 8
+    // was too tight: bot would start taking damage before swim_up
+    // could override a pathfinder goal that was driving it deeper.
+    if (state.in_water && state.oxygen <= 14) {
       return { action: 'swim_up', oxygen: state.oxygen, why: 'low_oxygen' };
     }
 
@@ -273,6 +294,9 @@ export function createReactive(deps) {
     }
     for (const target of meleeTargets) {
       if (!target || !target.isValid) continue;
+      // Skip targets blocked by a wall. Without this, a sealed shelter
+      // is no defense — reactive will hammer mobs through cobblestone.
+      if (!reactiveCanHit(target)) continue;
       try {
         await b.lookAt(target.position.offset(0, (target.height || 1.8) * 0.6, 0), true);
         await b.attack(target);
@@ -582,16 +606,28 @@ export function createReactive(deps) {
   }
 
   /**
-   * Swim up out of water. Hold jump (which acts as swim-up when submerged)
-   * and forward for one tick.
+   * Swim up out of water. Cancels any active pathfinder goal first —
+   * the most common cause of drowning is pathfinder driving the bot
+   * into/through water to reach a target (e.g. an underwater stone
+   * the visibility scan saw through the surface). Then holds jump
+   * (which acts as swim-up when submerged) for a sustained burst,
+   * long enough to break the surface.
    */
   async function swimUp(state) {
     const b = state.bot;
+    // Cancel any goal that's driving the bot deeper. Without this, the
+    // pathfinder's own control states override our jump/forward and
+    // keep walking the bot underwater toward its target.
+    try {
+      if (b.pathfinder) b.pathfinder.setGoal(null);
+    } catch { /* pathfinder not available */ }
     const startPos = { x: state.myPos.x, z: state.myPos.z };
     try {
       b.setControlState('jump', true);
       b.setControlState('forward', true);
-      await sleep(300);
+      // 800ms (was 300ms) — long enough for ~2 reactive ticks of jump
+      // hold to break surface even from 2-3 blocks deep.
+      await sleep(800);
     } finally {
       b.setControlState('jump', false);
       b.setControlState('forward', false);

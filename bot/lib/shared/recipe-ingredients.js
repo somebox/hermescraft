@@ -59,6 +59,37 @@ const LOG_TO_PLANKS = {
 };
 
 /**
+ * Minecraft 1.21 recipe ingredient tags — mineflayer flattens these to a
+ * single canonical ingredient (often the "newest" variant), so a stone tool
+ * recipe lists cobbled_deepslate even though the server accepts ANY item
+ * from `#minecraft:stone_crafting_materials`. Without this map, a bot
+ * with plain cobblestone gets MISSING_INGREDIENTS for stone_pickaxe even
+ * though the actual craft would succeed.
+ *
+ * Map: canonical-ingredient → list of items that satisfy it.
+ */
+const INGREDIENT_TAG_EQUIVALENTS = {
+  // #minecraft:stone_crafting_materials — stone tools, furnace.
+  // (We deliberately do NOT include #minecraft:planks here even though
+  // it's a real tag in 1.21+ — bestRecipeForInventory relies on plank
+  // types being distinct so it can pick the correct plank-specific
+  // recipe variant. Adding planks here breaks that tiebreak. The
+  // missing-plank case is rare in practice; stone-tools is what hit
+  // us in G20.)
+  cobbled_deepslate: ['cobblestone', 'cobbled_deepslate', 'blackstone'],
+  cobblestone:       ['cobblestone', 'cobbled_deepslate', 'blackstone'],
+  blackstone:        ['cobblestone', 'cobbled_deepslate', 'blackstone'],
+};
+
+/** Sum inventory counts that satisfy a (possibly tagged) recipe ingredient. */
+function countSatisfying(name, invItems) {
+  const equivalents = INGREDIENT_TAG_EQUIVALENTS[name] || [name];
+  return invItems
+    .filter(i => equivalents.includes(i.name))
+    .reduce((s, i) => s + i.count, 0);
+}
+
+/**
  * Pick the recipe variant whose ingredients best match what's available.
  * When no variant has direct ingredients, applies a tiebreaker for plank
  * types based on logs in inventory (log → 4 planks).
@@ -70,11 +101,15 @@ const LOG_TO_PLANKS = {
  */
 export function bestRecipeForInventory(recipes, invItems, wantCount, mcData) {
   if (!recipes || recipes.length <= 1) return recipes?.[0] || null;
-  const countHave = (n) => invItems.filter((i) => i.name === n).reduce((s, i) => s + i.count, 0);
+  // countSatisfying expands the ingredient name through INGREDIENT_TAG_EQUIVALENTS
+  // so cobblestone counts toward a cobbled_deepslate requirement (stone tools).
+  const countHave = (n) => countSatisfying(n, invItems);
 
   const plankFromLog = {};
   for (const [log, plank] of Object.entries(LOG_TO_PLANKS)) {
-    const logCount = countHave(log);
+    const logCount = invItems
+      .filter(i => i.name === log)
+      .reduce((s, i) => s + i.count, 0);
     if (logCount > 0) plankFromLog[plank] = logCount * 4;
   }
 
@@ -114,7 +149,10 @@ export function buildCraftPlanFromRecipes({ recipes, invItems, mcData, chestSnap
   }
   const r = bestRecipeForInventory(recipes, invItems, wantCount, mcData);
   const ingCounts = recipeIngredientMap(r, mcData);
-  const countHave = (n) => invItems.filter((i) => i.name === n).reduce((s, i) => s + i.count, 0);
+  // Use tag-equivalence: cobblestone satisfies a cobbled_deepslate
+  // requirement (and similar tagged ingredients) so the pre-flight check
+  // doesn't reject crafts the server would accept.
+  const countHave = (n) => countSatisfying(n, invItems);
 
   const chestTotals = {};
   for (const [markName, snap] of Object.entries(chestSnapshots || {})) {

@@ -632,6 +632,7 @@ export function createBotHttpListener(deps) {
 
       ctx.lastApiError = null;
       ctx.syncActionInFlight = true;
+      ctx.syncActionName = actionName;
 
       // Clear any running bg task's pathfinder goal so sync action can use pathfinder
       // without triggering "goal was changed" on the sync action.
@@ -653,6 +654,8 @@ export function createBotHttpListener(deps) {
         return respond(res, 200, { ok: true, ...result, state: briefState() });
       } finally {
         ctx.syncActionInFlight = false;
+        ctx.syncActionName = null;
+        ctx._lastSyncStuckLogAt = null;
       }
     }
 
