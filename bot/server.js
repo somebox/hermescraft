@@ -258,7 +258,10 @@ async function handleChat(username, message) {
 
   // Proximity filter: broadcasts from other known agents only heard when nearby.
   // Human players are not in CURRENT_CAST so they always pass through.
-  if (forMe && routing.isBroadcast && ctx.bot && ctx.botReady) {
+  // BOT_HEAR_ALL=true bypasses this entirely — for coordinated multi-agent
+  // tests where bots need to hear each other regardless of distance.
+  const hearAll = (process.env.BOT_HEAR_ALL || '').toLowerCase() === 'true';
+  if (!hearAll && forMe && routing.isBroadcast && ctx.bot && ctx.botReady) {
     const senderLower = username.toLowerCase();
     const isOtherAgent = CURRENT_CAST.includes(senderLower) && senderLower !== getMyName().toLowerCase();
     if (isOtherAgent) {

@@ -440,6 +440,50 @@ export function createWorldActions(deps) {
       };
     }
 
+    // ── TARGET_ENTITY_OCCUPIED ──
+    // Another player or mob is standing in the target cell. The server
+    // silently rejects placement (no error event fires), so we'd otherwise
+    // sit for 5s on placeBlock's timeout with no useful feedback. Detect
+    // it pre-flight and tell the agent exactly who is in the way so they
+    // can ask via chat — critical for multi-bot coordination (G21).
+    // Entities occupy their foot block AND the block above (height ~1.8).
+    const blockingEntity = Object.values(b.entities || {}).find((e) => {
+      if (!e || !e.position || e === b.entity) return false;
+      const ex = Math.floor(e.position.x);
+      const ey = Math.floor(e.position.y);
+      const ez = Math.floor(e.position.z);
+      if (ex !== x || ez !== z) return false;
+      // The cell is occupied if it matches the entity's feet OR head cell.
+      return ey === y || ey + 1 === y;
+    });
+    if (blockingEntity) {
+      const isPlayer = blockingEntity.type === 'player';
+      const who = blockingEntity.username || blockingEntity.name || blockingEntity.displayName || blockingEntity.type || 'entity';
+      const kind = isPlayer ? 'player' : (blockingEntity.name || blockingEntity.type || 'entity');
+      const hintTo = isPlayer
+        ? `mc chat_to ${who} "please step aside, I need to place at ${x},${y},${z}"`
+        : `mc attack ${who}`;
+      return {
+        ok: false,
+        error: {
+          code: 'TARGET_ENTITY_OCCUPIED',
+          message: `Cannot place at ${x},${y},${z}: ${kind} '${who}' is standing there. Ask them to move (or wait).`,
+          observed_state: {
+            requested_block: blockName,
+            requested_coord: { x, y, z },
+            blocked_by: {
+              kind,
+              name: who,
+              position: { x: blockingEntity.position.x, y: blockingEntity.position.y, z: blockingEntity.position.z },
+              is_player: isPlayer,
+            },
+          },
+          next_action_hint: hintTo,
+          retry_safe: true,
+        },
+      };
+    }
+
     // ── OUT_OF_RANGE (path or pathfind) ──
     const distance = b.entity.position.distanceTo(targetPos);
     if (distance > 4.5) {

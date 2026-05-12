@@ -1,0 +1,307 @@
+# G21 — first two-bot coordination test.
+#
+# Flint and Mason cooperate to build a small house with windows. The
+# steward (scripts/g21-orchestrator.py) delivers missions over RCON chat
+# and listens for keyword acknowledgements. Bots have continuous Hermes
+# sessions launched by scripts/landfolk-control.sh --profiles flint,mason.
+#
+# This is a single-demo spec; no N=3 bench yet. See the plan at
+# /Users/foz/.claude/plans/our-goal-simply-to-sequential-nygaard.md.
+
+agent_test_id: G21_two_bot_house
+world: landfolk-test
+description: |
+  Two-bot cooperative build. Phase 1 in parallel (Mason mines cobble,
+  Flint builds a chest + deposits planks). Phase 2 in parallel (Mason
+  builds a slab + tells Flint when ready; Flint crafts a door + planks).
+  Phase 3 joint (build a small house with walls, door, window — sand is
+  on-site so they can choose to smelt glass).
+
+bots:
+  - name: Flint
+    port: 3002         # per data/agent-models.json — landfolk-control default
+    profile: flint
+  - name: Mason
+    port: 3003
+    profile: mason
+
+# Pre-test world setup. Runs via RCON BEFORE bot bodies launch — wipes
+# the arena of all blocks, items, and entities from previous runs and
+# rebuilds it from scratch. A separate `post_connect_setup` runs after
+# bot bodies connect (so /clear actually wipes their inventory).
+#
+# Layout (all coords are in `landfolk-test`):
+#   SUPPLY_CHEST  ( 0, 65,  0)   — origin spawn, shared tools
+#   KEEP_SITE     ( 0, 65, 10)   — central build site, 4x4 platform here in M2A
+#   MINING_HINT   (-12, 65,-12)  — large stone outcrop south-west (~100+ stone)
+#   BEACH         ( 12, 64, 12)  — sand strip on a lake's east shore, NE
+#   trees         ±6/±8 in X,Z + 4 extras at outer radius (~32 logs total)
+# Daylight cycle stays ON so world ticks advance — bots use ticks for
+# mission deadlines. Mob spawning stays off (no night threat).
+world_setup:
+  - rcon: 'execute in landfolk-test run time set 5000'
+  - rcon: 'execute in landfolk-test run gamerule doDaylightCycle true'
+  - rcon: 'execute in landfolk-test run gamerule keepInventory true'
+  - rcon: 'execute in landfolk-test run gamerule doMobSpawning false'
+  - rcon: 'execute in landfolk-test run gamerule commandModificationBlockLimit 100000'
+  - rcon: 'execute in landfolk-test run weather clear 9999'
+
+  # Wipe ALL non-player entities (items, mobs, projectiles, ...) — drops
+  # from previous runs and any stragglers. Run twice in case some are
+  # newly spawned by previous run's cleanup.
+  - rcon: 'execute in landfolk-test run kill @e[type=!player]'
+  - rcon: 'execute in landfolk-test run kill @e[type=!player]'
+
+  # Wipe a generous 80x14x80 area (catches any leftover blocks placed
+  # outside the inner arena in prior runs — e.g., chests Flint built at
+  # an old KEEP_SITE coord like 20,65,28). Split into ≤32768-block fills
+  # to stay under Paper's command-limit. 80x80 = 6400 per Y-slice, so
+  # 5-slice fills are safely under.
+  - rcon: 'execute in landfolk-test run fill -40 62 -40 40 66 40 air replace'
+  - rcon: 'execute in landfolk-test run fill -40 67 -40 40 71 40 air replace'
+  - rcon: 'execute in landfolk-test run fill -40 72 -40 40 76 40 air replace'
+
+  # Rebuild ground layers: stone bedrock, dirt, grass surface.
+  - rcon: 'execute in landfolk-test run fill -40 62 -40 40 62 40 minecraft:stone'
+  - rcon: 'execute in landfolk-test run fill -40 63 -40 40 63 40 minecraft:dirt'
+  - rcon: 'execute in landfolk-test run fill -40 64 -40 40 64 40 minecraft:grass_block'
+
+  # SUPPLY_CHEST at origin with shared tools + food. MUST be a single-line
+  # command — multi-line YAML block scalars get split by `rcon-cli` into
+  # separate broken commands, so the chest never gets placed.
+  - rcon: 'execute in landfolk-test run setblock 0 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:wooden_pickaxe",Count:1b},{Slot:1b,id:"minecraft:wooden_pickaxe",Count:1b},{Slot:2b,id:"minecraft:wooden_axe",Count:1b},{Slot:3b,id:"minecraft:wooden_axe",Count:1b},{Slot:4b,id:"minecraft:bread",Count:16b},{Slot:5b,id:"minecraft:apple",Count:8b},{Slot:6b,id:"minecraft:cooked_beef",Count:8b}]}'
+
+  # Stone outcrop — small hill SW. ~84 stones in a stepped pyramid plus
+  # 6 scattered outliers so it doesn't look like a perfect cube.
+  # Resource budget: M1A asks for 80 cobble, plenty here.
+  - rcon: 'execute in landfolk-test run fill -15 64 -15 -9 64 -9 minecraft:stone replace grass_block'   # 7x7 base (49)
+  - rcon: 'execute in landfolk-test run fill -14 65 -14 -10 65 -10 minecraft:stone replace air'         # 5x5 second tier (25)
+  - rcon: 'execute in landfolk-test run fill -13 66 -13 -11 66 -11 minecraft:stone replace air'         # 3x3 third tier (9)
+  - rcon: 'execute in landfolk-test run setblock -12 67 -12 minecraft:stone'                              # peak (1)
+  # Scattered outliers for natural look.
+  - rcon: 'execute in landfolk-test run setblock -17 65 -10 minecraft:stone'
+  - rcon: 'execute in landfolk-test run setblock -8 65 -16 minecraft:stone'
+  - rcon: 'execute in landfolk-test run setblock -7 65 -10 minecraft:stone'
+  - rcon: 'execute in landfolk-test run setblock -16 65 -8 minecraft:stone'
+  - rcon: 'execute in landfolk-test run setblock -10 65 -17 minecraft:stone'
+  - rcon: 'execute in landfolk-test run setblock -18 64 -12 minecraft:stone replace grass_block'
+
+  # Lake + beach — water at grass level (y=64 surface), surrounded by sand
+  # walls at y=64 on every side so water can't flow out and flood the
+  # arena. Underwater layer at y=63 for visual depth (water doesn't drop
+  # below y=63). A bot walking onto the water sinks 1 block and can swim
+  # right back out — no drowning hazard.
+  - rcon: 'execute in landfolk-test run fill 8 63 11 11 63 14 minecraft:water replace dirt'
+  - rcon: 'execute in landfolk-test run fill 8 64 11 11 64 14 minecraft:water replace grass_block'
+  - rcon: 'execute in landfolk-test run fill 8 64 11 11 64 14 minecraft:water replace air'
+  # Containment walls at y=64 around the water (sand replaces grass).
+  - rcon: 'execute in landfolk-test run fill 7 64 11 7 64 14 minecraft:sand replace grass_block'    # west wall
+  - rcon: 'execute in landfolk-test run fill 8 64 10 11 64 10 minecraft:sand replace grass_block'   # north wall
+  - rcon: 'execute in landfolk-test run fill 8 64 15 11 64 15 minecraft:sand replace grass_block'   # south wall
+  # Beach (east side, beyond the east containment wall — wider strip for
+  # the "beach" feel).
+  - rcon: 'execute in landfolk-test run fill 12 64 10 16 64 15 minecraft:sand replace grass_block'
+  - rcon: 'execute in landfolk-test run fill 8 64 16 12 64 17 minecraft:sand replace grass_block'
+
+  # Trees — 12 oaks scattered around the arena. 4-block trunk + 3x3 leaves.
+  # Resource budget (oak_log):
+  #   M1B: chest=2, deposit 20 planks (=5 logs)         =  7 logs
+  #   M2B: door=2, stockpile 20 planks (=5 logs)        =  7 logs
+  #   buffer for lost drops / mis-chops                 =  6 logs
+  #   ────────────────────────────────────────────────────────
+  #   total Flint demand                                = 20 logs
+  # Supply: 12 trees × 4 logs each = 48 logs (2.4× buffer over demand).
+  - rcon: 'execute in landfolk-test run fill 6 65 -6 6 68 -6 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill 5 68 -7 7 69 -5 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill -6 65 6 -6 68 6 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill -7 68 5 -5 69 7 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill -8 65 -8 -8 68 -8 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill -9 68 -9 -7 69 -7 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill 8 65 8 8 68 8 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill 7 68 7 9 69 9 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill -15 65 5 -15 68 5 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill -16 68 4 -14 69 6 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill 15 65 -5 15 68 -5 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill 14 68 -6 16 69 -4 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill 5 65 -15 5 68 -15 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill 4 68 -16 6 69 -14 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill -5 65 15 -5 68 15 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill -6 68 14 -4 69 16 minecraft:oak_leaves[persistent=true] replace air'
+  # Four extra trees in the outer ring for surplus.
+  - rcon: 'execute in landfolk-test run fill 18 65 12 18 68 12 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill 17 68 11 19 69 13 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill -18 65 -12 -18 68 -12 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill -19 68 -13 -17 69 -11 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill 12 65 18 12 68 18 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill 11 68 17 13 69 19 minecraft:oak_leaves[persistent=true] replace air'
+  - rcon: 'execute in landfolk-test run fill -12 65 -18 -12 68 -18 minecraft:oak_log'
+  - rcon: 'execute in landfolk-test run fill -13 68 -19 -11 69 -17 minecraft:oak_leaves[persistent=true] replace air'
+
+  # Per-player spawn points — set BEFORE bot bodies connect so the
+  # bots' initial spawn lands on the arena, not at the landfolk main base.
+  - rcon: 'execute in landfolk-test run setworldspawn 0 65 -3'
+  - rcon: 'execute in landfolk-test run spawnpoint Flint -2 65 0'
+  - rcon: 'execute in landfolk-test run spawnpoint Mason 2 65 0'
+
+# Post-bot-connect setup. Runs AFTER bot bodies are healthy. `/clear` and
+# `/effect clear` only work on connected players, so this is where we wipe
+# inventory leftovers, restore full HP+food, and TP each bot to its start.
+# Clear is run TWICE because mineflayer sometimes restores inventory from
+# its in-memory window 1-2 ticks after a /clear; the second clear catches
+# anything that snapped back.
+post_connect_setup:
+  - rcon: 'execute in landfolk-test run effect clear Flint'
+  - rcon: 'execute in landfolk-test run effect clear Mason'
+  - rcon: 'execute in landfolk-test run effect give Flint minecraft:saturation 5 10'
+  - rcon: 'execute in landfolk-test run effect give Mason minecraft:saturation 5 10'
+  - rcon: 'execute in landfolk-test run effect give Flint minecraft:instant_health 1 4'
+  - rcon: 'execute in landfolk-test run effect give Mason minecraft:instant_health 1 4'
+  - rcon: 'execute in landfolk-test run clear Flint'
+  - rcon: 'execute in landfolk-test run clear Mason'
+  - rcon: 'execute in landfolk-test run clear Flint'
+  - rcon: 'execute in landfolk-test run clear Mason'
+  - rcon: 'execute in landfolk-test run xp set Flint 0 levels'
+  - rcon: 'execute in landfolk-test run xp set Mason 0 levels'
+  - rcon: 'execute in landfolk-test run tp Flint -2 65 0 90 0'    # west of chest, facing east
+  - rcon: 'execute in landfolk-test run tp Mason 2 65 0 270 0'    # east of chest, facing west
+
+# Marks pre-written to each bot via `mc mark` after world_setup.
+marks:
+  SUPPLY_CHEST: { x: 0,   y: 65, z: 0,   note: "Shared tools — share with your partner" }
+  KEEP_SITE:    { x: 0,   y: 65, z: 10,  note: "Central build site (platform + house here)" }
+  MINING_HINT:  { x: -12, y: 65, z: -12, note: "Scattered stone outcrop SW" }
+  BEACH:        { x: 12,  y: 64, z: 12,  note: "Sand + water pond NE — sand for glass" }
+
+# Phase graph. Mission text is intentionally free of player names like
+# "flint" / "mason" — the bot's chat parser treats any `<knownName>:` token
+# as direct-message routing and sets the chat record's `from` field to that
+# player's lowercased name, breaking keyword sender filtering. Instead each
+# mission is addressed by its uppercase mission ID (e.g. `[STEWARD] M1A:`).
+# The brain prompt teaches each bot which mission IDs are its own.
+phases:
+  - id: M0_RADIO_CHECK
+    parallel: true
+    # Before any real work, both bots must verify they can hear each other.
+    # Each says a unique phrase, then must repeat what their partner said.
+    # If a bot can't hear the other, the test never advances — surfaces
+    # any cross-bot chat issue immediately, not 10 minutes into M1.
+    missions:
+      - id: M0A
+        to: Mason
+        text:
+          - '@mason please say "RADIO CHECK MASON SPEAKING" via mc chat, then read chat and reply with what @flint just said.'
+          - 'emit "M0 OK" once you have repeated @flint''s radio-check phrase back to him.'
+        deadline_tick: 7000
+        done_keyword: "M0 OK"
+        keyword_from: Mason
+      - id: M0B
+        to: Flint
+        text:
+          - '@flint please say "RADIO CHECK FLINT SPEAKING" via mc chat, then read chat and reply with what @mason just said.'
+          - 'emit "M0 OK" once you have repeated @mason''s radio-check phrase back to him.'
+        deadline_tick: 7000
+        done_keyword: "M0 OK"
+        keyword_from: Flint
+
+  - id: M1
+    parallel: true
+    # No phase_setup — bots already at TP positions from world_setup.
+    missions:
+      - id: M1A
+        to: Mason
+        # Resource budget for cobble (everything Mason needs from M2A + M3):
+        #   M2A platform 4x4               = 16 blocks
+        #   M3 walls perimeter 4x4 × 3 high = 36 blocks
+        #   buffer for mis-placement       =  8 blocks
+        #   ────────────────────────────────────────
+        #   total                          = 60 blocks
+        # The stone outcrop in world_setup has ~90 stones available.
+        text: '@mason please mine 60 cobblestone — there is a stone outcrop near MINING_HINT (-12,65,-12). deadline tick 11000. emit "M1A DONE" when finished.'
+        deadline_tick: 11000
+        done_keyword: "M1A DONE"
+        keyword_from: Mason
+        fallback_inventory: { bot: Mason, item: cobblestone, min: 60 }
+      - id: M1B
+        to: Flint
+        # Wood budget: chest (=2 logs) + 20 planks deposit (=5 logs) = 7 logs
+        # of his "get 16" ask. Leaves ~9 logs in inventory for M2B's door + planks.
+        text: '@flint please get 16 oak_log from the trees, craft planks, build a chest at (-3,65,10) just west of KEEP_SITE, and put 20 oak_planks in it. deadline tick 11000. emit "M1B DONE" when finished.'
+        deadline_tick: 11000
+        done_keyword: "M1B DONE"
+        keyword_from: Flint
+        # No simple inventory fallback (chest contents need RCON parsing);
+        # rely on keyword + timeout.
+
+  - id: M2
+    parallel: true
+    phase_setup:
+      # Top up HP + clear orphaned drops, but DON'T teleport — surprise
+      # TPs mid-exercise disrupt whatever the bot was about to do.
+      - rcon: 'execute in landfolk-test run effect give Flint minecraft:instant_health 1 4'
+      - rcon: 'execute in landfolk-test run effect give Mason minecraft:instant_health 1 4'
+      - rcon: 'execute in landfolk-test run kill @e[type=item]'
+    missions:
+      - id: M2A
+        to: Mason
+        text: '@mason please take cobble to the chest at (-3,65,10) (deposit 16+ cobble there for the platform), then build a 4x4 cobblestone PLATFORM at (-2 to 1, 65, 9 to 12) — that''s 16 blocks. emit "SLAB READY" when the platform is done.'
+        deadline_tick: 17000
+        done_keyword: "SLAB READY"
+        keyword_from: Mason
+        # No inventory fallback — slab geometry would need per-block RCON checks.
+      - id: M2B
+        to: Flint
+        # Door = 6 planks, plus 20 stockpile = 26 planks = 7 logs.
+        # Flint should already have ~9 logs leftover from M1B; if not, the
+        # trees in world_setup have plenty of surplus.
+        text: '@flint please craft 1 wooden_door and stockpile 20 more oak_planks in your inventory. deadline tick 17000. emit "M2B DONE" when finished.'
+        deadline_tick: 17000
+        done_keyword: "M2B DONE"
+        keyword_from: Flint
+        fallback_inventory: { bot: Flint, item: oak_door, min: 1 }
+
+  - id: M3
+    parallel: false
+    phase_setup:
+      # Top up HP + clear orphaned drops. NO teleports — bots stay
+      # where M2 left them and walk to the platform on their own.
+      - rcon: 'execute in landfolk-test run effect give Flint minecraft:instant_health 1 4'
+      - rcon: 'execute in landfolk-test run effect give Mason minecraft:instant_health 1 4'
+      - rcon: 'execute in landfolk-test run kill @e[type=item]'
+    missions:
+      - id: M3
+        to: both
+        # Mission text is a LIST — each item broadcasts as a separate chat
+        # line. Mineflayer caps chat at ~240 chars, so splitting prevents
+        # truncation and gives the bots time to process each line.
+        text:
+          - '@flint @mason please build a small house ON the platform at (-2 to 1, 65, 9 to 12).'
+          - 'specs: WALLS 3 high around the perimeter (cobble at y=66, 67, 68). The INTERIOR must be empty so a player can stand inside.'
+          - 'add 1 DOOR (wooden, in any wall) and 1 WINDOW (glass or glass_pane, in any wall).'
+          - 'sand for glass is at the BEACH mark (12, 64, 12). decide together: smelt glass or use cobble for that wall slot.'
+          - 'first DECIDE who does what — chat to claim sub-tasks (e.g. "I will build the south + west walls"). DO NOT duplicate work.'
+          - 'BEFORE emitting "HOUSE COMPLETE", one of you MUST stand inside the house and run `mc is_sheltered` to verify it''s enclosed.'
+          - 'deadline tick 29000. emit "HOUSE COMPLETE" only after is_sheltered confirms the structure is sealed.'
+        deadline_tick: 29000
+        done_keyword: "HOUSE COMPLETE"
+        keyword_from: any
+        # No fallback for v1 — house geometry is too varied to predicate cheaply.
+
+# Steward timing (all in Minecraft world ticks).
+warning_lead_ticks: 1200       # broadcast warning this many ticks before deadline
+hard_overtime_ticks: 2400      # advance to next phase this many ticks after deadline
+
+# Orchestrator runtime.
+global_wallclock_max_seconds: 2700   # 45 min hard kill
+poll_interval_seconds: 3
+chat_history_count: 30               # /chat?count=N each poll
+hermes_session_max_turns: 2000       # single long-lived session per bot for the whole test
+launch_settle_seconds: 8             # wait after starting bots before missions fire
+
+# Post-test cleanup. Runs whether the test passes or fails.
+cleanup:
+  - rcon: 'execute in landfolk-test run kill @e[type=item]'
+
+# Pass criteria (used to set the orchestrator's exit code and findings verdict).
+expect:
+  m3_done: true                       # the test ends with M3 keyword match OR predicate
+  global_timeout_not_hit: true        # we didn't blow the 45 min cap

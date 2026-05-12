@@ -905,3 +905,60 @@ These remain as fixtures for the strategy/agent layer once that work begins.
   - **Terrain-wedge soft-spot** — jump+back escalation works but adds ~30 s of stuck-time in deep mined-out deposits. Acceptable for now; revisit if it shows up in G21.
 - **Verdict:** G20 frozen at F43. Reactive-layer regressions from F42 are closed; the 4 remaining FAIL modes are all agent-strategy issues that belong to a prompt/SOUL revision sprint, not the bot framework. Moving to G21 (two-bot collaboration).
 
+
+### F44. G21 v1 — first two-bot coordination test, learnings + framework gaps
+
+- **Scope:** stand up the simplest possible two-bot collaboration test. Flint + Mason cooperate, in one Minecraft world, to grab tools from a shared chest, mine cobble, build a chest, build a 4×4 platform, then jointly construct a small house with door + window. The steward is a scripted Python orchestrator that delivers missions over in-game chat (RCON `tellraw`) and listens for keyword acks. No long-lived Hermes-driven steward yet; that's the eventual architecture but we wanted to prove the chat protocol first.
+- **What shipped (12 iterations from cold start to first PASS):**
+  - `scripts/g21-orchestrator.py` — standalone runner. Launches 2 bot bodies (`node server.js` per bot) and 2 long-lived `hermes chat --yolo --max-turns 2000` sessions, runs world setup + post-connect setup + per-phase setup via RCON batches, broadcasts mission text via `tellraw`, polls each bot's `/chat` for keyword detection, advances phases.
+  - `data/agent-tests/G21_two_bot_house.yaml` — declarative spec: bots, world setup, post-connect setup, marks, phase graph (M0 radio check → M1 parallel mine+chest → M2 parallel platform+door → M3 joint house), per-phase timing.
+  - `prompts/landfolk/{flint,mason}.md` — extended with a "G21 coordination" block on top of existing role prompts.
+  - `bot/server.js` — added `BOT_HEAR_ALL` env-var bypass for the cross-bot proximity filter on chat broadcasts.
+  - `bot/lib/actions/world.js` — added `TARGET_ENTITY_OCCUPIED` pre-flight check in the `place` action so a bot trying to place where a partner is standing gets a clear actionable error (with partner name + suggested chat) instead of a 5 s silent timeout.
+  - Combined ASCII-only log at `/tmp/hermescraft-g21/combined.log` — tailable, no UTF-8 box-drawing noise, both bots' streams merged with `[Flint]` / `[Mason]` prefixes.
+- **The chat-routing detective story (the biggest single time sink):**
+  - **Paper's `say @<name>:` expands** the `@selector` and re-emits the line as if it came FROM that player. So `say @mason: mine 100 cobble` showed up in chat as `<mason> mine 100 cobble`. The orchestrator's keyword filter (matching by sender) then accidentally matched the steward's own mission text — phases "completed" within 1 s of broadcast. Two fixes were needed in combination: switch broadcasts to `tellraw` (no @-expansion) AND add a `[STEWARD]` text prefix so Mineflayer extracts `STEWARD` as the chat username via its bracketed-prefix heuristic.
+  - The bot's own `parseMessageRouting` parser also matches `<knownName>:` as direct-message routing — so any mission text starting with `mason:` or `flint:` still got mis-routed. Final shape: `@flint please …` (no colon after the name) keeps `from=STEWARD` and treats the body as a broadcast addressed by mention.
+  - Cross-bot chat hearing is gated by a **proximity filter** (`FAIR_PLAY.LOS_ENTITY_RANGE = 48` blocks). Mason mining ~25 blocks from Flint's tree-chopping was inside the threshold, but as soon as either bot wandered to MINING_HINT or the BEACH (>48 blocks from the partner), broadcasts dropped into `overheardLog` and `mc read_chat` couldn't see them. `BOT_HEAR_ALL=true` env-var bypass added; orchestrator sets it on every body launch.
+- **First successful PASS (iteration 9, model `z-ai/glm-5.1`):**
+  - Wallclock 18 min 17 s end-to-end. All five missions completed: 3 via keyword (M1B, M2A SLAB READY, M3 HOUSE COMPLETE), 2 via inventory fallback (M1A 60-cobble, M2B 1-door + 20-planks).
+  - The bots **genuinely cooperated** — visible in the combined log:
+    - Mason: `"Mason: stuck trying to place door. Flint, can you help place the oak_door at (-1,66,9)?"`
+    - Flint: `"Flint: door and window placed. House looks complete from outside — walls, roof, door, window all there. Mason, can you confirm from inside?"`
+  - They **smelted glass for the window** without being told twice — sand on the BEACH mark + furnace + smelt, exactly as the prompt suggested. They added a roof beyond spec.
+  - RCON probe confirmed the build: 42 cobble + 1 oak_door + 1 glass in the envelope `(-5..4, 65..71, 7..14)`.
+- **Recurring failure modes across iterations 5–12 (real bot-framework gaps, not prompt issues):**
+  - **`mc place` failure rate ~44%** (12 of 27 attempts errored in run 12). When the bot was outside ~4.5 blocks, the action's internal pathfinder call had no wallclock cap and frequently hung 5–25 s before timing out. When a partner stood on the target cell, the pre-fix behaviour was a silent 5 s timeout with no useful feedback.
+  - **`mc goto` / `mc go_mark` stuck loop** — pathfinder gets stuck on a corner or unreachable target and the action sits for 15–25 s before returning `[error]`, but the bot's brain keeps issuing OTHER `mc` commands (`read_chat`, `find_blocks`, `chat`) in parallel. The bot doesn't realise its "current task" is actually frozen.
+  - **`mc task` polling spam** — after a synchronous action like `mc fill` completes (instant), Mason called `mc task` 22 times in a row expecting an async task status. The bot's mental model of "long-running task" doesn't match the framework's sync vs. async distinction.
+  - **Place-through-walls** — bots placed cobble through an existing wall (no raycast LOS guard on `placeBlock`, parallel to the attack-through-walls bug we fixed in G20 F42).
+  - **Chat asymmetry** — bots emit a lot of chat (31 outgoing) but poll `mc read_chat` rarely (10 polls in the same run, 3:1 talk-to-listen). Reasonable as ambient narration, but it means a partner's request can sit unread for 30+ seconds while the recipient grinds through their own `mc fill` plan.
+  - **Mining the build site** — Flint chopped cobble out of an already-placed wall to top up his inventory (prompt now explicitly forbids this; verify in next run).
+- **Carry-forwards for F45 — framework hardening (proposed):**
+  - **Action-level wallclock cap.** Every long-running primitive (`mc place`, `mc goto`, `mc goto_near`, `mc go_mark`, `mc collect`, `mc dig`, `mc craft`) returns within an absolute cap (e.g. 8 s for place, 15 s for collect/goto, 30 s for craft). On cap, return `OPERATION_TIMEOUT` with the partial-progress observed_state so the agent can decide next.
+  - **Raycast LOS guard on `placeBlock`.** Same primitive as combat — refuse placement when the bot's eye can't see the target face. Closes the place-through-walls hole.
+  - **Background-action heartbeat.** `bg_*` actions emit a progress heartbeat (line in chatLog / `/status` flag) so the brain knows it's still running and doesn't trigger `mc flee` panic.
+  - **Unread-chat indicator in `mc status`.** Add `unread_chat: N` to the status payload so the brain notices waiting messages without polling separately. Cheap signal, big behavioural change.
+  - **`mc inspect X Y Z`** primitive — return `{block, entities_at, occupied_by}`. Closes the gap that the new `TARGET_ENTITY_OCCUPIED` error filled half-way, but proactively rather than after a failed attempt.
+  - **`mc is_empty REGION` / `mc is_filled REGION`** — region predicates beyond just `mc is_sheltered`. Useful for "is the interior empty?" or "are all 12 perimeter cells filled?" checks before emitting DONE.
+  - **`mc task` semantics doc.** Either make `mc task` echo the most recent completion or rename to `mc current_task` and document that synchronous actions never appear there. Stops the polling spam.
+  - **Move-friendly infrastructure blocks.** `crafting_table`, `furnace`, `chest`, `barrel` should be dig-allowed in coordinated-build mode (BOT_ALLOW_DIG_INFRASTRUCTURE env var or similar). A misplaced table at the build site is otherwise a permanent obstacle. Steward-declared "protected" list can come later; default for now should permit relocation.
+  - **`TARGET_OCCUPIED` error should hint about diggability.** Current message says "block is already X. Dig it first or choose another cell." Better: include `is_diggable: true/false`, the suggested tool, and whether it's a craft fixture (`crafting_table`/`chest`) that the bot can move. Saves the agent a planning cycle.
+  - **`mc flee` should not fire after pathfinder errors.** Right now `goto [error]` is followed by `mc flee 16` in the reactive layer, even when there's no threat. Flee should require a real hostile / damage signal, not generic stuck-state.
+  - **Observation payload budget.** Token usage hit ~200 k input per Hermes call on a deepseek-flash run — overwhelmingly driven by repeated full `mc observe` / `mc scene` outputs accumulating in the conversation history. Trim these (return summary by default, full body only when explicitly asked) and document the budget per agent-test.
+  - **Hermes-side context controls.** The compression-threshold knob is set to 0.5 but the Minecraft tool outputs are large enough that compression still keeps a lot. Worth evaluating per-tool max-context-share settings or aggressive summarisation hooks for verbose tools like `observe`, `scene`, `nearby`.
+
+- **G21 v1 deepseek-v4-flash one-shot — partial data (run aborted mid-M3):**
+  - M0 RADIO_CHECK: pass.
+  - M1A (Mason mine 60 cobble): pass via inventory fallback at tick 12450 (mason was over-collecting and didn't emit the keyword phrase; predicate caught it).
+  - M1B (Flint build chest + 20 planks): **HARD TIMEOUT** at tick 13430 — Flint did not emit `M1B DONE` within budget + 2400 overtime. He had over-collected sand (14 blocks for what only needed 3-4) and got stuck switching between tasks.
+  - M2A (Mason platform): pass via keyword at tick 16250 (after a single warning).
+  - M2B (Flint door + 20 planks): pass via inventory fallback.
+  - M3 (joint house): aborted by user before completion. Patterns observed in the live combined log before abort:
+    - `mc flee 16` fired immediately after `mc goto … [error]` with no threat present.
+    - Mason collected ~14 sand (only ~3 needed for one glass block) — no "take only what you need" guidance in the prompt.
+    - Both bots opened SUPPLY_CHEST and took multiples of the same tool, leaving nothing for the partner — fair-share rule was in the prompt but ignored.
+    - Stuck-on-corner pattern surfaced again: M3 cobblestone placement at `(1, 68, 11)` errored 4× in a row across 60 s with no recovery move.
+    - Communication: bots emitted progress notes intermittently but didn't share *decisions* before acting ("I'll do the south wall" type announcements were rare).
+- **Verdict:** G21 v1 proves the chat-driven orchestrator pattern works end-to-end on the first reliable run. Both bots cooperated, smelted glass, built a verifiable structure, and signalled completion via keyword. The remaining instability is dominated by **framework-level action-timeout and verification gaps**, not coordination or prompt drift. The cleanest next step is **F45: a focused bot-framework hardening sprint** that addresses the seven carry-forwards above before we try G22 (3+ bot coordination, harder mission graph).
+
