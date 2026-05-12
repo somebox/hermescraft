@@ -483,28 +483,62 @@ export function createBotManager(deps) {
             // Log + unstick at most once every 5s per stuck-streak.
             if (!ctx._lastSyncStuckLogAt || now - ctx._lastSyncStuckLogAt > 5000) {
               ctx._lastSyncStuckLogAt = now;
-              // Detect "off-centre wedge": bot's xz is significantly off the
-              // centre of its standing cell (>0.2 from .5/.5). This often
-              // means the bot is pressed against a block face that the
-              // pathfinder is repeatedly trying to step into. Re-centering
-              // gives pathfinder a fresh start without the obstacle being
-              // exactly on the player hitbox boundary.
+
+              // Track repeated activations at the same spot. v33 demonstrated
+              // a terrain wedge (mined-out deposit, 1-block depression) where
+              // the basic re-centre wiggle wasn't enough — every neighbour cell
+              // required a jump to escape and pathfinder wasn't issuing one.
+              // After 3 stuck events within 30s at the same spot, escalate:
+              // cancel pathfinder goal + sustained jump+forward burst.
+              if (!Array.isArray(ctx._stuckActivations)) ctx._stuckActivations = [];
+              ctx._stuckActivations = ctx._stuckActivations
+                .filter((s) => now - s.time < 30000);
+              const sameSpot = ctx._stuckActivations
+                .filter((s) => Math.hypot(s.x - pos.x, s.z - pos.z) < 1.5);
+              const escalate = sameSpot.length >= 2; // this would be the 3rd
+
               const cellCx = Math.floor(pos.x) + 0.5;
               const cellCz = Math.floor(pos.z) + 0.5;
               const offX = pos.x - cellCx;
               const offZ = pos.z - cellCz;
               const offDist = Math.hypot(offX, offZ);
               const offCentre = offDist > 0.2;
-              log(`STUCK (sync) ${ctx.syncActionName}: no horizontal movement (${dxz.toFixed(2)}m) in ${(SYNC_STUCK_IDLE_MS/1000)|0}s at ${pos.x.toFixed(1)},${pos.y.toFixed(0)},${pos.z.toFixed(1)}${offCentre ? ` (off-centre ${offDist.toFixed(2)}m)` : ''} — wiggling${offCentre ? '+recentre' : ''}`);
-              // Always: clear active pathfinder commands. This frees the
-              // bot from whatever direction pathfinder was pushing toward.
+
+              const mode = escalate
+                ? 'ESCALATE'
+                : offCentre ? 'wiggling+recentre' : 'wiggling';
+              log(`STUCK (sync) ${ctx.syncActionName}: no horizontal movement (${dxz.toFixed(2)}m) in ${(SYNC_STUCK_IDLE_MS/1000)|0}s at ${pos.x.toFixed(1)},${pos.y.toFixed(0)},${pos.z.toFixed(1)}${offCentre ? ` (off-centre ${offDist.toFixed(2)}m)` : ''}${escalate ? ` [${sameSpot.length + 1} same-spot activations]` : ''} — ${mode}`);
+
+              // Always: clear active pathfinder commands. Frees the bot
+              // from whatever direction pathfinder was pushing toward.
               try { ctx.bot.clearControlStates(); } catch {}
-              if (offCentre) {
+
+              if (escalate) {
+                // Terrain wedge: cancel the pathfinder goal entirely and
+                // step BACK briefly (jump+back). Pathfinder was pressing
+                // FORWARD into whatever obstacle wedged the bot; going
+                // back disengages from it. Jump covers the "in a hole"
+                // case where vertical clearance is also needed. Combining
+                // both handles wall-wedge AND hole-wedge geometries.
+                // 500ms is enough for a 1-block step + jump arc.
+                try { ctx.bot.pathfinder.setGoal(null); } catch {}
+                try {
+                  ctx.bot.setControlState('jump', true);
+                  ctx.bot.setControlState('back', true);
+                  setTimeout(() => {
+                    try {
+                      ctx.bot.setControlState('jump', false);
+                      ctx.bot.setControlState('back', false);
+                    } catch {}
+                  }, 500);
+                } catch {}
+                // Reset activation tracking — the escalation will either
+                // free the bot or the next stuck-streak starts fresh.
+                ctx._stuckActivations = [];
+              } else if (offCentre) {
                 // Step toward cell centre. mineflayer's setControlState
                 // moves relative to current yaw, so we use lookAt + brief
-                // forward step to nudge the bot back to (.5, .5). The
-                // yaw change is brief and pathfinder will re-look on its
-                // next tick.
+                // forward step to nudge the bot back to (.5, .5).
                 try {
                   const target = ctx.bot.entity.position.offset(-offX, 0, -offZ);
                   ctx.bot.lookAt(target, true).then(() => {
@@ -514,6 +548,7 @@ export function createBotManager(deps) {
                     }, 250);
                   }).catch(() => {});
                 } catch {}
+                ctx._stuckActivations.push({ x: pos.x, z: pos.z, time: now });
               } else {
                 // Centred but stuck — likely vertical (block above
                 // hitbox). Brief jump as before.
@@ -521,10 +556,13 @@ export function createBotManager(deps) {
                   ctx.bot.setControlState('jump', true);
                   setTimeout(() => { try { ctx.bot.setControlState('jump', false); } catch {} }, 250);
                 } catch {}
+                ctx._stuckActivations.push({ x: pos.x, z: pos.z, time: now });
               }
             }
           } else if (ctx._lastSyncStuckLogAt) {
+            // Made progress — clear the streak.
             ctx._lastSyncStuckLogAt = null;
+            ctx._stuckActivations = [];
           }
         }
       }

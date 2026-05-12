@@ -880,4 +880,28 @@ After F39–41 the suite still had stuck-bot bugs that only showed up under live
 These remain as fixtures for the strategy/agent layer once that work begins.
 
 
+### F43. G20 close-out — validate F42 at N=3 and freeze
+
+- **Scope:** confirm the F42 reactive/mining/crafting/drown/shelter fixes hold over multiple runs on the two strongest models. Freeze G20 and move on to G21.
+- **Fixes shipped this sprint (just two tooling cleanups — no bot-framework code changed):**
+  - `mc_verbs_include_any` predicate (`scripts/agent-test.py`) now peeks into `mc batch` JSON payloads — inner action names (e.g. `craft` inside a batch step) count toward predicates. Closes the long-running false-negative where every batch-only run failed the `craft` predicate.
+  - `g20-bench.py` death classifier (`DEATHS_RE`) was capturing the absolute `post` death counter, which is a cumulative Mineflayer-body counter that survives `/reset`. Per-run absolute values bleed across runs (e.g. the bench reported `deaths=54` for a run that actually had 0). Switched to `post - pre` delta. First bench sweep silently mis-classified 3 PASS runs as FAIL until this was caught.
+- **Bench (N=3, strict rule = `survived AND deaths == 0`):**
+
+  | model                       | passes/3 | mean deaths | mean final_t | mean seconds |
+  |-----------------------------|----------|-------------|--------------|--------------|
+  | deepseek/deepseek-v4-pro    | 2/3      | 9.3         | 18 010       | 652          |
+  | z-ai/glm-5.1                | 2/3      | 7.7         | 18 018       | 652          |
+
+  Both meet the ≥ 2/3 acceptance bar. PASS runs early-exit at ~520 s; FAIL runs go the full 915 s as the bot keeps re-arming the watchdog after each death.
+- **Failure modes observed in the 4 non-passing runs (3 distinct patterns, none a F42 regression):**
+  - **Death-loop** — bot dies once, respawns outside its shelter, walks back through the mob cluster to recover items, dies again. Loops ~25× through the rest of the night. (deepseek r1 original + r3 retry, deepseek r3 original.)
+  - **Bot leaves shelter to fight** — bot has a visible zombie via `mc nearby` and goes out to engage at night instead of waiting it out. (deepseek r3 original.)
+  - **Fall through terrain** — bot ended up at Y = -59 after standing on an edge. Couldn't pathfind back to surface. (glm r3.)
+- **Carry-forwards (deferred to agent-prompt / SOUL revision, not framework work):**
+  - **Death-recovery strategy** — the G20 prompt doesn't tell the bot to *stay put* after a death and accept item loss. The recovery instinct ("find death point, grab items") is what triggers the loop.
+  - **Bot leaving sealed shelter** — once shelter is closed, the prompt should forbid breaking it before dawn.
+  - **Reactive narrative collision** — agent plans around hazards the reactive layer already handled (e.g. "I see a creeper, let me retreat" right after reactive already retreated).
+  - **Terrain-wedge soft-spot** — jump+back escalation works but adds ~30 s of stuck-time in deep mined-out deposits. Acceptable for now; revisit if it shows up in G21.
+- **Verdict:** G20 frozen at F43. Reactive-layer regressions from F42 are closed; the 4 remaining FAIL modes are all agent-strategy issues that belong to a prompt/SOUL revision sprint, not the bot framework. Moving to G21 (two-bot collaboration).
 

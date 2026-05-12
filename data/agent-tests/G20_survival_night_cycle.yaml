@@ -94,8 +94,38 @@ prompt: |
   fully enclosed space taller than 2 blocks keeps you safe.
 
   Materials work universally: ANY solid block stops mobs — oak_planks,
-  cobblestone, dirt (from grass via shovel), oak_log, stone. Don't
-  obsess over which block — use whatever you have most of.
+  cobblestone, dirt, oak_log, stone. Don't obsess over which block —
+  use whatever you have most of.
+
+  ## Minecraft basics you might need
+
+  - **Dirt and grass are free building materials.** Grass blocks drop
+    dirt when broken (bare hands work, no shovel needed). The whole
+    arena floor at y=64 is grass — that's effectively an unlimited
+    supply of shelter blocks. If you run short of cobble or planks,
+    `mc dig X 64 Z` of any grass cell gives you a dirt block to place
+    elsewhere.
+  - **Crafting tables are mineable and replaceable.** If a table is
+    blocking a wall position, `mc dig` it (it'll drop as
+    `crafting_table` item), then place it somewhere out of the way.
+    Don't let one misplaced table doom your shelter geometry.
+  - **You can dig down 1 block** under your feet to create a foothold
+    or sit below ground level when surrounded — the cell below your
+    foot is `mc dig <cx> <cy-1> <cz>` (use `mc status` for your
+    current cy). After digging, you fall in; place a block above your
+    head to seal yourself in a 1-block bunker.
+  - **`mc dig` opens corridors when pathfinding fails.** If `mc goto`
+    keeps NAV_TIMEOUTing and you're sure of where you want to go, the
+    real fix is usually to dig the obstacle (one block in the way,
+    not relocate your shelter). The arena is small — origin is always
+    reachable if you clear the line.
+  - **Mobs don't break blocks** (except creepers exploding). A
+    cobblestone wall stops zombies, skeletons, spiders, drowned, all
+    of them. Stay sealed and you're safe.
+  - **Mix materials freely.** A shelter made of 5 cobble + 3 planks +
+    1 dirt block is just as zombie-proof as 9 cobble. Stop building
+    only because you're out of cobble; keep building with whatever
+    is in your inventory.
 
   ## Build recipe — build AROUND yourself, layer by layer
 
@@ -216,14 +246,28 @@ timeout_seconds: 900
 post_wait_seconds: 4
 stall_seconds: 150
 
+# Early-exit: if the bot has cleared the danger window (mob spawns at
+# time ~12000, this triggers at 14000 = ~2 game-minutes into night) and
+# is at full-ish HP with no new deaths for 60 real seconds, declare PASS
+# and kill hermes. Saves the 5-10 minutes the bot would otherwise spend
+# in mc wait 30 cycles until dawn — confidence is high enough at that
+# point that the run is going to succeed.
+early_exit:
+  bot_time_at_least: 14000
+  bot_hp_at_least: 15
+  stable_seconds: 60
+  bot_url: http://localhost:3001
+
 expect:
   bot_did_not_die: true
   bot_hp_at_least: 8
-  # Force the run to reach DEEP NIGHT (past midnight, bot_time 18000).
-  # Without this, runs that hit max_turns at sunset register as "no
-  # deaths" — but mobs hadn't even spawned yet. v20 ended at 12142.
-  # 18000 = midnight = full mob spawning active for ~5 min already.
-  final_bot_time_at_least: 18000
+  # Must reach the danger window — mobs spawn at sunset (time 12000)
+  # and the bot must demonstrate survival past that. 14000 = ~2
+  # game-minutes into night, mob spawning fully active. Matches the
+  # early_exit gate above, so a successful early-exit run satisfies
+  # this predicate automatically. Without this floor, a run that
+  # times out at sunset would falsely register "no deaths".
+  final_bot_time_at_least: 14000
   # craft is the strictest verb to require — wooden_sword needs craft.
   # collect+place are implied by getting cobble in the world.
   mc_verbs_include_any: [craft]

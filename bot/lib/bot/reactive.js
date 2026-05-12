@@ -79,6 +79,24 @@ export function createReactive(deps) {
     const eye = eyePosition();
     if (!eye || !entity?.position) return true;
     const target = entity.position.offset(0, (entity.height || 1.8) * 0.5, 0);
+    // Vertical reach check. Foot-to-foot 3D distance can be ≤4 even
+    // when the target is straight overhead (skeleton on shelter roof,
+    // spider in a tree, zombie that fell into a pit). The bot's actual
+    // swing reach is ~3.5 blocks from EYE to target centre. A mob 2
+    // blocks straight up has eyeDist > 3.5 if the bot is short and
+    // can't fluidly pitch to 80° — swing animation plays but no hit
+    // lands, and reactive locks into an unproductive attack loop.
+    // Refuse the swing if eye-to-target exceeds the swing radius.
+    const dx = target.x - eye.x;
+    const dy = target.y - eye.y;
+    const dz = target.z - eye.z;
+    const eyeDist = Math.hypot(dx, dy, dz);
+    if (eyeDist > 3.5) return false;
+    // Also skip if the target is mostly vertical from the bot — even
+    // within 3.5m, hitting straight up/down with pitch >65° is finicky
+    // and the bot tends to spin in place doing nothing useful.
+    const horizDist = Math.hypot(dx, dz);
+    if (horizDist < 0.7 && Math.abs(dy) > 1.5) return false;
     return hasLineOfSight(eye, target);
   }
 

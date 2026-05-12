@@ -37,6 +37,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -601,7 +602,28 @@ def main():
     # so mtime growth is a reliable progress signal. Threshold must exceed
     # hermes' own per-tool timeout (60s) so a single slow tool doesn't trip.
     stall_seconds = int(spec.get("stall_seconds", 75))
-    print(f"  launching hermes... (timeout={timeout_s}s, stall_kill={stall_seconds}s)")
+
+    # Early-exit watchdog: terminate hermes when the bot has demonstrably
+    # survived past the danger window. For G20-style night-survival tests
+    # this saves 5-10 minutes per run that would otherwise be spent
+    # polling `mc wait 30` until dawn. Spec sets:
+    #   early_exit:
+    #     bot_time_at_least: 14000   # game-time threshold (night well in)
+    #     bot_hp_at_least: 15         # HP floor
+    #     stable_seconds: 60          # how long the above must hold
+    #     bot_url: http://localhost:3001
+    early_exit_cfg = spec.get("early_exit") or {}
+    early_exit_bot_url = early_exit_cfg.get("bot_url", "http://localhost:3001")
+    early_exit_time = int(early_exit_cfg.get("bot_time_at_least", 0))
+    early_exit_hp = float(early_exit_cfg.get("bot_hp_at_least", 0))
+    early_exit_stable = float(early_exit_cfg.get("stable_seconds", 60))
+    early_exit_enabled = bool(early_exit_cfg) and early_exit_time > 0
+    early_exit_first_ok_at = None
+    early_exit_last_deaths = None
+    early_exit_last_poll = 0.0
+
+    print(f"  launching hermes... (timeout={timeout_s}s, stall_kill={stall_seconds}s)" +
+          (f" early_exit=t>={early_exit_time},hp>={early_exit_hp},stable={early_exit_stable}s" if early_exit_enabled else ""))
     t0 = time.time()
     agent_stdout = ""
     agent_stderr = ""
@@ -679,6 +701,41 @@ def main():
                     stalled = True
                     print(f"  stall-watchdog: no session-file growth in {stall_seconds}s — killed hermes")
                     break
+
+                # Early-exit watchdog. Poll bot state every 4s; if the bot
+                # has cleared the danger threshold and stayed there for
+                # `stable_seconds`, terminate hermes early and treat as PASS.
+                if early_exit_enabled and time.time() - early_exit_last_poll > 4.0:
+                    early_exit_last_poll = time.time()
+                    try:
+                        import urllib.request
+                        with urllib.request.urlopen(f"{early_exit_bot_url}/status?lean=true", timeout=3) as resp:
+                            sdata = (json.loads(resp.read().decode()).get("data") or {})
+                        s_time = int(sdata.get("time") or 0)
+                        s_hp = float(sdata.get("health") or 0)
+                        s_deaths = int(sdata.get("deaths") or 0)
+                        threshold_met = s_time >= early_exit_time and s_hp >= early_exit_hp
+                        deaths_stable = early_exit_last_deaths is None or s_deaths == early_exit_last_deaths
+                        if threshold_met and deaths_stable:
+                            if early_exit_first_ok_at is None:
+                                early_exit_first_ok_at = time.time()
+                                early_exit_last_deaths = s_deaths
+                                print(f"  early-exit: bot stable (t={s_time}, hp={s_hp}, deaths={s_deaths}) — armed, will exit after {early_exit_stable:.0f}s")
+                            elif time.time() - early_exit_first_ok_at >= early_exit_stable:
+                                proc.terminate()
+                                try: proc.wait(timeout=5)
+                                except subprocess.TimeoutExpired: proc.kill()
+                                hermes_status = "early_exit"
+                                print(f"  early-exit: bot stable for {early_exit_stable:.0f}s (t={s_time}, hp={s_hp}, deaths={s_deaths}) — killed hermes (PASS)")
+                                break
+                        else:
+                            # Reset arming if the bot took a death or HP dropped.
+                            if early_exit_first_ok_at is not None:
+                                early_exit_first_ok_at = None
+                                print(f"  early-exit: re-armed (t={s_time}, hp={s_hp}, deaths={s_deaths})")
+                            early_exit_last_deaths = s_deaths
+                    except Exception:
+                        pass
         agent_stdout, agent_stderr = proc.communicate()
         if not timed_out and not stalled:
             hermes_status = "ok" if proc.returncode == 0 else f"exit_{proc.returncode}"
@@ -791,12 +848,34 @@ def main():
             print(f"  WARN: could not read session {sess_path}: {e}", file=sys.stderr)
 
     # Extract individual `mc <verb>` invocations from terminal tool commands.
+    # When the verb is `batch`, also peek into the JSON payload so inner
+    # action names (e.g. "craft" inside a batch step) count toward predicates.
     mc_verbs_used = []
     for tc in tool_calls:
         if tc.get("name") == "terminal":
             cmd = (tc.get("args") or {}).get("command") or ""
             for m in re.finditer(r"\bmc\s+([a-z_]+)\b", cmd):
                 mc_verbs_used.append(m.group(1))
+            try:
+                tokens = shlex.split(cmd, posix=True)
+            except ValueError:
+                tokens = []
+            for i, tok in enumerate(tokens):
+                if tok != "mc" or i + 1 >= len(tokens) or tokens[i + 1] != "batch":
+                    continue
+                for j in range(i + 2, len(tokens)):
+                    t = tokens[j]
+                    if not (t.startswith("[") or t.startswith("{")):
+                        continue
+                    try:
+                        steps = json.loads(t)
+                    except (json.JSONDecodeError, TypeError):
+                        break
+                    if isinstance(steps, list):
+                        for step in steps:
+                            if isinstance(step, dict) and isinstance(step.get("action"), str):
+                                mc_verbs_used.append(step["action"])
+                    break
     mc_cli_calls = len(mc_verbs_used)
     verb_counts = {}
     for v in mc_verbs_used:

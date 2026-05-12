@@ -31,7 +31,12 @@ export const PROTECTED_DIG_BLOCKS = new Set([
   'oak_stairs', 'birch_stairs', 'spruce_stairs', 'cobblestone_stairs', 'stone_stairs',
   'oak_slab', 'birch_slab', 'spruce_slab', 'cobblestone_slab', 'stone_slab',
   'stone_bricks', 'bricks', 'smooth_stone',
-  'crafting_table', 'furnace', 'chest', 'barrel', 'bookshelf',
+  // crafting_table NOT protected — the bot legitimately needs to relocate
+  // its own table when it ends up blocking a shelter wall (G20 v32/v33
+  // failure mode). Other utility blocks (furnace, chest, bed) stay
+  // protected because losing one to an accidental dig is more painful
+  // than a lost table.
+  'furnace', 'chest', 'barrel', 'bookshelf',
   'torch', 'wall_torch', 'lantern', 'ladder',
   'bed', 'white_bed', 'red_bed',
 ]);
