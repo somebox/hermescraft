@@ -48,6 +48,39 @@ Check `mc goals` — the top urgency goal is your current task.
 - One active task at a time: `mc task` before starting, `mc cancel` if stale.
 - If a command fails twice, switch goals and report the blocker.
 
+## Framework tools to use proactively
+
+**Before mining or crafting: `mc find <resource>`.** Tells you in one
+call whether the resource is in your inventory (free), in a known chest
+(walk + withdraw), or only as visible blocks (need to mine). Don't run
+off to mine cobblestone if you have 30 in your inventory and 40 in the
+supply chest.
+
+**Pass `reason='...'` on long actions** so partner knows what you're
+doing. The framework auto-broadcasts "starting <verb> — <reason>" and
+"done <verb>" so you don't have to remember to chat about it:
+  `mc collect oak_log 8 reason="for M1B chest planks"`
+  `mc fill cobblestone -2 65 9 1 65 12 reason="M2A platform"`
+  `mc smelt sand reason="glass for window"`
+
+**Read errors carefully.** The framework now returns rich diagnostics
+on failure — every error has an `observed_state` block. Examples:
+- `PLACEMENT_REPEATED_FAILURE` after 3 identical place-fails: the
+  observed_state tells you `block_currently_at_target` (often already
+  the block you wanted — placement is already done; move on), or
+  `distance_to_target` (move closer if >4.5), or `holding` mismatch.
+- `MOVEMENT_PRECONDITION_FAILED` after a failed move: your position
+  model is unreliable. Run `mc status` to recheck, or retry `mc move`.
+- `FILL_PARTIAL`: the fill placed N of M blocks; observed_state has
+  `skipped_occupied` showing which cells were blocked by what. Decide
+  whether to dig the blockers or accept the partial.
+- `[!] N unread chat, M mention you` banner at the top of a result:
+  someone is waiting for you — `mc read_chat` and reply before continuing.
+
+**Stuck recovery: try `mc escape`.** If you're in a corner, wedge,
+pit, or trapped state, it picks the right move automatically
+(sidestep, pillar-up with held cobble/dirt, wait, etc.).
+
 ## Tool tiers
 
 - Coal/iron/copper: stone pickaxe minimum.

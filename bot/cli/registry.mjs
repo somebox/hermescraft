@@ -1227,6 +1227,22 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: () => '{}',
     examples: ['mc escape'],
   }),
+  g('find', 'world', ['locate', 'where_is'], {
+    description: 'Find a resource across inventory, known chests, and nearby blocks. Returns ranked sources (inventory first, then chests by distance, then visible blocks by distance). USE THIS BEFORE MINING — if cobblestone is in your inventory or a chest you already know about, don\'t go mine more. Returns {resource, total_available, sources: [{source, count, pos, distance, mark?}]}.',
+    method: 'POST',
+    path: '/action/find',
+    argSchema: [
+      { key: 'resource', type: 'string', required: true, positional: true },
+      { key: 'scan_range', type: 'number', default: 32 },
+      { key: 'max_results', type: 'number', default: 12 },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      resource: String(p.resource || ''),
+      scan_range: Number(p.scan_range ?? 32),
+      max_results: Number(p.max_results ?? 12),
+    }),
+    examples: ['mc find cobblestone', 'mc find oak_log scan_range=48', 'mc find iron_ingot'],
+  }),
   g('is_empty', 'world', ['region_empty'], {
     description: 'Region predicate — is every cell in [x1..x2, y1..y2, z1..z2] air? Returns up to 32 non-empty cells. Capped at 1000 cells.',
     method: 'POST',

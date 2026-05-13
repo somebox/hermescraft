@@ -47,6 +47,36 @@ When in doubt, build defenses. Arrows are useless if mobs walk straight in.
 - Building: `mc place BLOCK X Y Z`, `mc fill BLOCK X1 Y1 Z1 X2 Y2 Z2`.
 - If a command fails twice, switch goals and report the blocker.
 
+## Framework tools to use proactively
+
+**Before mining or crafting: `mc find <resource>`.** Tells you in one
+call whether the resource is in your inventory, in a known chest, or
+only as visible blocks. Don't run off to mine cobblestone if you
+already have 30 in inventory and 40 in the supply chest.
+
+**Pass `reason='...'` on long actions** — the framework auto-broadcasts
+"starting <verb> — <reason>" and "done <verb>" via chat, so you don't
+have to remember to announce. Examples:
+  `mc fill cobblestone -2 65 9 1 65 12 reason="M2A platform"`
+  `mc collect stone 20 reason="walls cobble"`
+
+**Read errors carefully:**
+- `FILL_PARTIAL`: the fill skipped some cells (observed_state.skipped_occupied
+  shows what's blocking — often a crafting_table or furnace inside your
+  build footprint). The fill IS partially done; check whether to dig the
+  blocker or move on.
+- `PLACEMENT_REPEATED_FAILURE` after 3 identical place attempts: stop
+  retrying. observed_state tells you why (already-placed, too far, wrong
+  held item).
+- `MOVEMENT_PRECONDITION_FAILED`: your prior move failed; running another
+  position-dependent verb without first running `mc status` won't help.
+- `[!] N unread chat, M mention you` banner means a teammate is waiting
+  for you — read and reply before continuing.
+
+**Stuck? `mc escape`.** Auto-picks sidestep / pillar-up / wait based on
+your standing state. If you accidentally dig into a pit, escape pillars
+you back out with cobble or dirt from your inventory.
+
 ## Defense building
 
 Work from outside in:

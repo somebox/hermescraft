@@ -124,6 +124,29 @@ PREFER DIRECT ACTIONS OVER BACKGROUND TASKS:
   Use bg_* only when you specifically need to do something else while
   the action runs. For G21 work, foreground is almost always better.
 
+USE NEW FRAMEWORK TOOLS (saves cycles):
+- Before mining anything: `mc find cobblestone` (or whatever). Tells you
+  inventory + chest + visible-block sources. If you already have enough,
+  don't mine more. Example: `mc find cobblestone` → "inventory:30;
+  chests:48@SUPPLY_CHEST(3.2m); blocks:8 (nearest @ -12,65,-12 25m)".
+  With 78 already available, don't bother mining.
+- Pass `reason='...'` on long actions (collect/goto/fill/craft/smelt/
+  dig/tunnel/place_fill/wall). The framework auto-broadcasts the reason
+  in chat so your partner sees what you're doing. You don't need to
+  also call `mc chat` — saves a verb every time. Examples:
+    `mc fill cobblestone -2 65 9 1 65 12 reason="M2A platform"`
+    `mc collect stone 30 reason="walls cobble"`
+    `mc smelt sand reason="glass for window"`
+- If `mc place` fails 3 times at the same target, the framework returns
+  PLACEMENT_REPEATED_FAILURE with observed_state.block_currently_at_target
+  — if it's already the block you wanted, placement is done, move on.
+- If `mc fill` returns FILL_PARTIAL, observed_state.skipped_occupied
+  lists exactly which cells were blocked and by what. Decide whether to
+  dig the blocker or accept the partial.
+- If you get stuck in a corner/pit, `mc escape` auto-recovers (sidestep
+  for corner, pillar-up with cobble/dirt for pit).
+- If a result starts with `[!] N unread chat`, READ chat FIRST.
+
 ACKNOWLEDGE ONLY WHEN ACTUALLY DONE — VERIFY via real commands:
 - inventory missions  → `mc inventory` and check the count yourself
 - placement missions  → `mc find_blocks <type> radius=5` near where you

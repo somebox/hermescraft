@@ -811,6 +811,29 @@ export function createBotHttpListener(deps) {
         try { ensureBot().pathfinder.setGoal(null); } catch {}
       }
 
+      // F53.6: reason= auto-announce. If body has a `reason` string AND
+      // the action is in the LONG_VERBS set (expected to take >5s), emit
+      // a chat "<name>: starting <verb> — <reason>" before the action.
+      // Brain doesn't have to remember to announce — passing reason='intent'
+      // gets it for free. Coordination signal that addressed the G21 v4
+      // "Mason silent while doing M1A" pattern.
+      const LONG_VERBS = new Set([
+        'collect', 'goto', 'goto_near', 'go_mark', 'move',
+        'fill', 'place_fill', 'wall',
+        'craft', 'smelt',
+        'dig', 'tunnel', 'stair_up', 'stair_down',
+      ]);
+      const announceReason = (typeof body?.reason === 'string' && body.reason.trim().length > 0)
+        ? body.reason.trim().slice(0, 120)
+        : null;
+      const announceStart = (announceReason && LONG_VERBS.has(actionName));
+      if (announceStart) {
+        try {
+          const myName = ctx.bot?.username || 'bot';
+          ensureBot().chat(`${myName}: starting ${actionName} — ${announceReason}`);
+        } catch { /* never block the action on the announce */ }
+      }
+
       const syncStart = Date.now();
       try {
         const result = await actionFn(body);
@@ -819,6 +842,21 @@ export function createBotHttpListener(deps) {
         // and so action_stats_5m counts them correctly.
         const softFailure = result && typeof result === 'object' && result.ok === false;
         const status = softFailure ? 'error' : 'done';
+        // F53.6: completion announce. Only fire if we announced the start
+        // AND the action took >3s (so quick failures don't spam chat).
+        if (announceStart) {
+          const elapsedMs = Date.now() - syncStart;
+          if (elapsedMs > 3000) {
+            try {
+              const myName = ctx.bot?.username || 'bot';
+              const elapsedS = Math.round(elapsedMs / 100) / 10;
+              const verb = softFailure
+                ? `${actionName} failed (${result.error?.code || 'error'}) after ${elapsedS}s`
+                : `done ${actionName} (${elapsedS}s)`;
+              ensureBot().chat(`${myName}: ${verb}`);
+            } catch { /* ignore */ }
+          }
+        }
         const errorMsg = softFailure ? (result.error?.message || result.error?.code || 'soft failure') : null;
         // F53.2: record place outcomes for the repeat-failure guard.
         if (actionName === 'place' && ctx.recentPlaceFailures) {
