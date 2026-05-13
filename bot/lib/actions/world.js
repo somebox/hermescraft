@@ -692,11 +692,32 @@ export function createWorldActions(deps) {
       }
     }
 
+    // F53.1: track structured fill outcomes instead of silently swallowing.
+    // - placed_count = blocks newly placed
+    // - skipped_already_blockname = cell already had the desired block (idempotent)
+    // - skipped_occupied = cell had a different non-air block; the brain
+    //   needs to know about this so it doesn't think the fill is done.
+    //   For each skipped cell we record the blocker's name so the brain
+    //   can recognize "ah, a crafting_table is in the way".
+    // - place_failures = cells we tried to place but b.placeBlock threw
+    //   (typically LOS or face-availability problems).
     const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
     let placed = 0;
+    let skipped_already = 0;
+    const skipped_occupied = [];  // [{x,y,z,by:blockname}]
+    const place_failures = [];    // [{x,y,z,reason}]
+    const occupied_by_counts = {}; // {block_name: count}
     for (const pos of positions) {
       const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
-      if (existing && existing.name !== 'air' && existing.name !== 'cave_air') continue;
+      if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
+        if (existing.name === blockName) {
+          skipped_already++;
+        } else {
+          skipped_occupied.push({ x: pos.x, y: pos.y, z: pos.z, by: existing.name });
+          occupied_by_counts[existing.name] = (occupied_by_counts[existing.name] || 0) + 1;
+        }
+        continue;
+      }
 
       const item = b.inventory.items().find(i => i.name === blockName);
       if (!item) throw new Error(`Out of ${blockName} (placed ${placed}/${positions.length})`);
@@ -706,18 +727,56 @@ export function createWorldActions(deps) {
         try { await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3)); } catch {}
       }
 
+      let placedThis = false;
+      let lastErr = null;
       for (const [dx, dy, dz] of offsets) {
         const ref = b.blockAt(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz));
         if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
           try {
             await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
             placed++;
-          } catch {}
+            placedThis = true;
+          } catch (e) {
+            lastErr = e?.message || String(e);
+          }
           break;
         }
       }
+      if (!placedThis) {
+        place_failures.push({ x: pos.x, y: pos.y, z: pos.z, reason: lastErr || 'no_adjacent_face' });
+      }
     }
-    return { result: `Placed ${placed}/${positions.length} ${blockName} blocks (${hollow ? 'hollow' : 'solid'})` };
+
+    const skipped_total = skipped_occupied.length + place_failures.length;
+    // Result message: if anything was skipped or failed, surface it loudly.
+    // Brain should not mistake a 15/16 fill for a 16/16 success.
+    const occupied_summary = Object.entries(occupied_by_counts)
+      .sort((a, c) => c[1] - a[1])
+      .slice(0, 3)
+      .map(([name, n]) => `${n}× ${name}`)
+      .join(', ');
+    let resultMsg;
+    if (skipped_total === 0) {
+      resultMsg = `Placed ${placed}/${positions.length} ${blockName} blocks (${hollow ? 'hollow' : 'solid'})`;
+    } else {
+      const parts = [`Placed ${placed}/${positions.length} ${blockName}`];
+      if (skipped_already > 0) parts.push(`${skipped_already} already-correct`);
+      if (skipped_occupied.length > 0) parts.push(`${skipped_occupied.length} occupied (${occupied_summary})`);
+      if (place_failures.length > 0) parts.push(`${place_failures.length} placement-failed`);
+      resultMsg = `FILL_PARTIAL: ${parts.join('; ')}. Check observed_state.skipped_occupied to see what's blocking.`;
+    }
+    return {
+      result: resultMsg,
+      data: {
+        placed,
+        skipped_already,
+        skipped_occupied,
+        place_failures,
+        occupied_by_counts,
+        total: positions.length,
+        partial: skipped_total > 0,
+      },
+    };
   },
 
   /**
@@ -2712,6 +2771,198 @@ export function createWorldActions(deps) {
     }
     const resultMsg = `${s.classification} at ${s.cell.x},${s.cell.y},${s.cell.z} — blocked: [${s.blocked_dirs.join(',') || '-'}] open: [${s.open_dirs.join(',') || '-'}]${s.cliff_dirs.length ? ` cliff: [${s.cliff_dirs.join(',')}]` : ''}${s.head_blocked ? ' head_blocked' : ''}${s.foot_support === false ? ' no_foot_support' : ''}${s.ceiling_within !== null ? ` ceiling_at_+${s.ceiling_within}` : ''}`;
     return { ok: true, data: s, result: resultMsg };
+  },
+
+  /**
+   * F53.3: mc escape — "get me unstuck" primitive. Reads the standing-state
+   * classifier and picks a recovery strategy:
+   *   corner / three_walled / wedge → sidestep to the most-open dir
+   *   trapped (4 walls, no ceiling)  → pillar up with held cobble / dirt
+   *   edge                            → step away from cliff
+   *   in_air                          → wait briefly (let physics settle)
+   *   enclosure_inside                → return error (defer to mc dig)
+   *   open / alley                    → no-op success
+   *
+   * Returns {action_taken, from, to, classification_before, classification_after, success}.
+   * Brain can call this proactively when it sees a sticky standing state,
+   * or after MOVEMENT_PRECONDITION_FAILED to recover.
+   */
+  async escape() {
+    const b = ensureBot();
+    const before = standingState(b);
+    if (before.error === 'no_bot') {
+      return { ok: false, error: { code: 'NO_BOT', message: 'bot not ready', retry_safe: true } };
+    }
+    const cls = before.classification;
+    const cell = before.cell;
+    const fromPos = { ...before.position };
+
+    // Trivial: already free.
+    if (cls === 'open' || cls === 'alley') {
+      return {
+        ok: true,
+        data: { action_taken: 'none', from: fromPos, to: fromPos, classification_before: cls, classification_after: cls, success: true },
+        result: `Already ${cls} at ${cell.x},${cell.y},${cell.z} — no escape needed.`,
+      };
+    }
+
+    // Wait out airborne state.
+    if (cls === 'in_air') {
+      await new Promise(r => setTimeout(r, 600));
+      const after = standingState(b);
+      return {
+        ok: true,
+        data: { action_taken: 'wait_for_landing', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, success: after.classification !== 'in_air' },
+        result: `Waited 600ms for physics; now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+      };
+    }
+
+    // Sidestep for corner/three_walled/wedge/edge.
+    if (cls === 'corner' || cls === 'three_walled' || cls === 'wedge' || cls === 'edge') {
+      const DIR_VEC = {
+        N: { dx: 0, dz: -1 }, E: { dx: 1, dz: 0 }, S: { dx: 0, dz: 1 }, W: { dx: -1, dz: 0 },
+      };
+      // For edge, prefer dirs that are NOT cliff. For corner/three_walled,
+      // prefer the most-open dir. open_dirs is already filtered to walkable.
+      const candidates = before.open_dirs.filter(d => DIR_VEC[d]);
+      if (candidates.length === 0) {
+        return {
+          ok: false,
+          error: {
+            code: 'ESCAPE_NO_OPEN_DIR',
+            message: `Classified ${cls} but no open cardinal direction to sidestep into. Try mc dig to break out, or mc inspect neighbors.`,
+            observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, cliff_dirs: before.cliff_dirs },
+            retry_safe: false,
+          },
+        };
+      }
+      // Pick first open dir (classifier already orders cardinally N,E,S,W).
+      const pickDir = candidates[0];
+      const v = DIR_VEC[pickDir];
+      const targetCell = { x: cell.x + v.dx, y: cell.y, z: cell.z + v.dz };
+      try {
+        const goal = new goals.GoalBlock(targetCell.x, targetCell.y, targetCell.z);
+        await Promise.race([
+          b.pathfinder.goto(goal),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('escape_sidestep_timeout')), 3000)),
+        ]);
+      } catch {
+        try { b.pathfinder.setGoal(null); } catch {}
+      }
+      const after = standingState(b);
+      return {
+        ok: true,
+        data: { action_taken: `sidestep_${pickDir}`, from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, success: after.classification === 'open' || after.classification === 'alley' },
+        result: `Sidestepped ${pickDir} from ${cls} cell. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+      };
+    }
+
+    // Trapped: pillar up if no ceiling, else fail (brain should mc dig).
+    if (cls === 'trapped') {
+      if (before.ceiling_within !== null && before.ceiling_within <= 2) {
+        return {
+          ok: false,
+          error: {
+            code: 'ESCAPE_CEILING_BLOCKED',
+            message: `Trapped with ceiling at +${before.ceiling_within}. Cannot pillar up — mc dig the ceiling or a wall first.`,
+            observed_state: { classification: cls, ceiling_within: before.ceiling_within, blocked_dirs: before.blocked_dirs },
+            retry_safe: false,
+          },
+        };
+      }
+      // Look for a placeable pillar block in inventory (cobblestone, dirt,
+      // stone, cobbled_deepslate, anything generic & cheap).
+      const PILLAR_BLOCKS = ['cobblestone', 'dirt', 'stone', 'cobbled_deepslate', 'granite', 'andesite', 'diorite', 'netherrack'];
+      const item = b.inventory.items().find(it => PILLAR_BLOCKS.includes(it.name));
+      if (!item) {
+        return {
+          ok: false,
+          error: {
+            code: 'ESCAPE_NO_PILLAR_BLOCK',
+            message: `Trapped and no pillar block (cobblestone/dirt/stone) in inventory. Get one of: ${PILLAR_BLOCKS.join(', ')}. Or mc dig a wall.`,
+            observed_state: { classification: cls, blocked_dirs: before.blocked_dirs },
+            retry_safe: false,
+          },
+        };
+      }
+      try {
+        await b.equip(item, 'hand');
+        // Look down and jump-place: stand at current cell, look at the block
+        // directly below, jump, place. Mineflayer doesn't have a built-in
+        // pillar, so we do it manually.
+        const groundPos = new Vec3(cell.x, cell.y - 1, cell.z);
+        const groundBlock = b.blockAt(groundPos);
+        if (!groundBlock || groundBlock.boundingBox !== 'block') {
+          return {
+            ok: false,
+            error: {
+              code: 'ESCAPE_NO_GROUND',
+              message: `No solid block below to pillar from. mc dig or jump to a solid spot first.`,
+              observed_state: { classification: cls },
+              retry_safe: true,
+            },
+          };
+        }
+        await b.lookAt(groundPos.offset(0.5, 0.5, 0.5));
+        b.setControlState('jump', true);
+        await new Promise(r => setTimeout(r, 250));
+        try {
+          await b.placeBlock(groundBlock, new Vec3(0, 1, 0));
+        } catch (e) {
+          // ignore place errors here; physics may have caught up
+        }
+        b.setControlState('jump', false);
+        await new Promise(r => setTimeout(r, 500));
+        const after = standingState(b);
+        return {
+          ok: true,
+          data: {
+            action_taken: `pillar_up_${item.name}`,
+            from: fromPos,
+            to: after.position,
+            classification_before: cls,
+            classification_after: after.classification,
+            success: after.cell.y > cell.y,
+          },
+          result: `Pillared up with ${item.name}. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+        };
+      } catch (e) {
+        return {
+          ok: false,
+          error: {
+            code: 'ESCAPE_PILLAR_FAILED',
+            message: `Pillar-up failed: ${e?.message || String(e)}. Try mc dig instead.`,
+            observed_state: { classification: cls },
+            retry_safe: true,
+          },
+        };
+      }
+    }
+
+    // enclosure_inside: defer — brain should use mc dig to break out, or
+    // navigate to the door slot if there is one.
+    if (cls === 'enclosure_inside') {
+      return {
+        ok: false,
+        error: {
+          code: 'ESCAPE_ENCLOSURE',
+          message: `You're inside a built structure (walls in all 4 dirs within 4 cells, ceiling within 4 cells). Use mc dig to break a wall, or mc move to a door slot if one exists. mc escape can't solve this case (yet).`,
+          observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, ceiling_within: before.ceiling_within },
+          retry_safe: false,
+        },
+      };
+    }
+
+    // Fallback for unknown classification.
+    return {
+      ok: false,
+      error: {
+        code: 'ESCAPE_UNHANDLED',
+        message: `No escape strategy for classification "${cls}". Try mc dig or mc move.`,
+        observed_state: before,
+        retry_safe: false,
+      },
+    };
   },
 
   /**

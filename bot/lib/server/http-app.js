@@ -2,6 +2,7 @@
  * Mineflayer bot HTTP listener factory — extracted from server.js for readability and testing.
  */
 import fs from 'fs';
+import { Vec3 } from 'vec3';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -739,6 +740,66 @@ export function createBotHttpListener(deps) {
         }
       }
 
+      // F53.2: Placement-repeat-failure guard. After 2 consecutive identical
+      // failed mc place TYPE X Y Z, intercept the 3rd attempt and return a
+      // structured diagnostic. Mirror of F51.2 for placement verbs.
+      // Triggers on Flint's G21 v4 door-thrash (20+ identical attempts).
+      if (actionName === 'place' && ctx.recentPlaceFailures) {
+        const tx = Math.floor(Number(body?.x));
+        const ty = Math.floor(Number(body?.y));
+        const tz = Math.floor(Number(body?.z));
+        const blk = String(body?.block || '?');
+        // 30s decay
+        const cutoff = Date.now() - 30_000;
+        ctx.recentPlaceFailures = ctx.recentPlaceFailures.filter(f => f.ts > cutoff);
+        const sameTarget = ctx.recentPlaceFailures.filter(f =>
+          f.target.x === tx && f.target.y === ty && f.target.z === tz && f.block === blk
+        );
+        if (sameTarget.length >= 2 && Number.isFinite(tx)) {
+          // 3rd attempt incoming — intercept.
+          let blockAtTarget = null;
+          let distance = null;
+          let holding = null;
+          try {
+            const b = ensureBot();
+            const blk0 = b.blockAt(new Vec3(tx, ty, tz));
+            blockAtTarget = blk0 ? blk0.name : 'unknown';
+            distance = Number(b.entity.position.distanceTo(new Vec3(tx, ty, tz)).toFixed(2));
+            holding = b.heldItem ? b.heldItem.name : 'empty';
+          } catch { /* keep nulls */ }
+          let suggested = `Try \`mc inspect ${tx} ${ty} ${tz}\` to confirm what's there.`;
+          if (blockAtTarget && blockAtTarget !== 'air' && blockAtTarget !== 'cave_air') {
+            if (blockAtTarget === blk) {
+              suggested = `Block ${blk} is already at ${tx},${ty},${tz} — placement is complete here. Move on.`;
+            } else {
+              suggested = `Cell ${tx},${ty},${tz} is occupied by ${blockAtTarget}. mc dig it first, or place ${blk} at a different cell.`;
+            }
+          } else if (distance !== null && distance > 4.5) {
+            suggested = `You're ${distance} blocks from the target — too far for placement. mc move closer (distance <= 4.5) then retry.`;
+          } else if (holding && holding !== blk) {
+            suggested = `You're holding ${holding}, not ${blk}. mc equip ${blk} first, then retry.`;
+          }
+          return respond(res, 200, {
+            ok: false,
+            error: {
+              code: 'PLACEMENT_REPEATED_FAILURE',
+              message: `mc place ${blk} at ${tx},${ty},${tz} has failed ${sameTarget.length} times consecutively. ${suggested}`,
+              observed_state: {
+                attempted_block: blk,
+                attempted_target: { x: tx, y: ty, z: tz },
+                block_currently_at_target: blockAtTarget,
+                distance_to_target: distance,
+                holding,
+                last_attempts: sameTarget,
+                suggested_action: suggested,
+              },
+              retry_safe: false,
+            },
+            state: briefState(),
+          });
+        }
+      }
+
       ctx.lastApiError = null;
       ctx.syncActionInFlight = true;
       ctx.syncActionName = actionName;
@@ -759,9 +820,59 @@ export function createBotHttpListener(deps) {
         const softFailure = result && typeof result === 'object' && result.ok === false;
         const status = softFailure ? 'error' : 'done';
         const errorMsg = softFailure ? (result.error?.message || result.error?.code || 'soft failure') : null;
+        // F53.2: record place outcomes for the repeat-failure guard.
+        if (actionName === 'place' && ctx.recentPlaceFailures) {
+          const tx = Math.floor(Number(body?.x));
+          const ty = Math.floor(Number(body?.y));
+          const tz = Math.floor(Number(body?.z));
+          const blk = String(body?.block || '?');
+          if (Number.isFinite(tx)) {
+            if (softFailure) {
+              ctx.recentPlaceFailures.push({
+                ts: Date.now(),
+                target: { x: tx, y: ty, z: tz },
+                block: blk,
+                error_code: result.error?.code || 'unknown',
+              });
+              if (ctx.recentPlaceFailures.length > 8) ctx.recentPlaceFailures.shift();
+            } else {
+              // Success — clear any pending entries for this exact target+block.
+              ctx.recentPlaceFailures = ctx.recentPlaceFailures.filter(f =>
+                !(f.target.x === tx && f.target.y === ty && f.target.z === tz && f.block === blk)
+              );
+            }
+          }
+        }
         pushAction(ctx, actionName, status, syncStart, result, errorMsg);
         recordActionOutcome(ctx, actionName, status, errorMsg);
-        return respond(res, 200, { ok: true, ...result, state: briefState() });
+        // F53.5: chat banner — prepend a [!] line to the result string when
+        // there are unread messages, especially ones mentioning the bot by
+        // name. Brain can't easily miss this even if it ignores state.new_chat.
+        // Skip the banner for read_chat / chat / whisper itself to avoid
+        // recursion and noise on chat-handling turns.
+        const state = briefState();
+        const noBanner = new Set(['read_chat', 'chat', 'whisper']);
+        if (result && state && state.new_chat && state.new_chat.length > 0 && !noBanner.has(actionName)) {
+          const myName = ctx.bot?.username || '';
+          const myNameLower = myName.toLowerCase();
+          const mentions = state.new_chat.filter(m => {
+            const msg = String(m.message || '').toLowerCase();
+            return myName && (msg.includes(`@${myNameLower}`) || msg.includes(myNameLower + ':') || msg.includes(myNameLower + ','));
+          });
+          const directCount = state.new_chat.filter(m => m.direct).length;
+          if (mentions.length > 0 || directCount > 0 || state.new_chat.length >= 3) {
+            const parts = [`[!] ${state.new_chat.length} unread chat`];
+            if (mentions.length > 0) parts.push(`${mentions.length} mention you`);
+            if (directCount > 0) parts.push(`${directCount} direct`);
+            const banner = parts.join(', ') + ' — see state.new_chat or call mc read_chat';
+            if (typeof result.result === 'string') {
+              result = { ...result, result: `${banner}\n${result.result}` };
+            } else {
+              result = { ...result, result: banner };
+            }
+          }
+        }
+        return respond(res, 200, { ok: true, ...result, state });
       } finally {
         ctx.syncActionInFlight = false;
         ctx.syncActionName = null;

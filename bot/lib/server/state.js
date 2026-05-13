@@ -51,6 +51,15 @@ export function createBotState(config) {
       null
     ),
 
+    /** F53.2: Ring buffer of recent failed placement attempts. Used by the
+     *  placement-repeat-failure guard in http-app.js to intercept the 3rd
+     *  consecutive identical mc place at the same target. Cleared on
+     *  successful place at that target, on mc status, or 30s decay.
+     *  Capped at 8 entries. */
+    recentPlaceFailures: /** @type {Array<{ts:number, target:{x:number,y:number,z:number}, block:string, error_code:string}>} */ (
+      []
+    ),
+
     goalsStore: { goals: [], deficitSince: {} },
     chestSnapshots: {},
     MAX_TASK_HISTORY: 50,

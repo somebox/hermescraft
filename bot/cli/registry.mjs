@@ -1220,6 +1220,13 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: () => '{}',
     examples: ['mc standing'],
   }),
+  g('escape', 'world', ['unstuck', 'free_me'], {
+    description: 'Get unstuck. Reads your standing state and picks the right recovery: sidestep for corner/wedge/edge/three_walled; pillar up with cobble/dirt for trapped; wait for in_air. Returns {action_taken, from, to, classification_before, classification_after, success}. If trapped with ceiling, you need to mc dig first. If inside an enclosure, mc dig a wall.',
+    method: 'POST',
+    path: '/action/escape',
+    bodyFn: () => '{}',
+    examples: ['mc escape'],
+  }),
   g('is_empty', 'world', ['region_empty'], {
     description: 'Region predicate — is every cell in [x1..x2, y1..y2, z1..z2] air? Returns up to 32 non-empty cells. Capped at 1000 cells.',
     method: 'POST',
