@@ -836,7 +836,9 @@ export function createBotHttpListener(deps) {
 
       const syncStart = Date.now();
       try {
-        const result = await actionFn(body);
+        // `let` (not const) — F53.5 banner code path reassigns this on
+        // turns where new_chat banner is prepended to result.result.
+        let result = await actionFn(body);
         // Phase-2 action contract: handlers may return { ok: false, error: {...} }
         // for soft failures. Record those as 'error' so observe.action_loop fires
         // and so action_stats_5m counts them correctly.
