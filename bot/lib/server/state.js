@@ -43,6 +43,14 @@ export function createBotState(config) {
       null
     ),
 
+    /** F51.2: Last failed movement attempt. Set by movement handlers on
+     *  NAV_TIMEOUT/NAV_BLOCKED/NAV_FAILED; consulted by position-dependent
+     *  verb guard in http-app.js to short-circuit dependent commands.
+     *  Cleared on next successful move, on mc status, or after 30s. */
+    lastMoveFailed: /** @type {{ ts: number, intended_target: {x:number,y:number,z:number}, actual_pos: {x:number,y:number,z:number}, reason: string, verb: string } | null} */ (
+      null
+    ),
+
     goalsStore: { goals: [], deficitSince: {} },
     chestSnapshots: {},
     MAX_TASK_HISTORY: 50,

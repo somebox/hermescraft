@@ -110,3 +110,174 @@ export function findClosestStandable(b, tx, ty, tz, maxScan = 3) {
   }
   return null;
 }
+
+// Cardinal directions in Minecraft coords. North is -Z by convention.
+const DIRS = [
+  { name: 'N', dx: 0, dz: -1 },
+  { name: 'E', dx: 1, dz: 0 },
+  { name: 'S', dx: 0, dz: 1 },
+  { name: 'W', dx: -1, dz: 0 },
+];
+
+/**
+ * Why is direction `d` blocked from cell (bx, by, bz)?
+ *   - 'open'        — can walk that way at same Y
+ *   - 'foot_solid'  — solid block at foot level (wall)
+ *   - 'head_solid'  — air at foot but solid at head (low ceiling)
+ *   - 'no_support'  — foot+head clear but no ground below (cliff edge)
+ *   - 'unknown'     — chunk not loaded
+ *
+ * We DON'T consider hop-up / drop-down here. Those are pathfinder moves,
+ * not "is this direction immediately walkable". Stair geometry is
+ * classified as `foot_solid` because the bot can't walk into a stair
+ * side without a jump; the brain still gets the right signal.
+ */
+function neighborStatus(b, bx, by, bz, dx, dz) {
+  const fx = bx + dx, fz = bz + dz;
+  const foot = b.blockAt(new Vec3(fx, by, fz));
+  const head = b.blockAt(new Vec3(fx, by + 1, fz));
+  const below = b.blockAt(new Vec3(fx, by - 1, fz));
+  if (!foot || !head || !below) return 'unknown';
+  if (!TRAVERSABLE_FOOT.has(foot.name)) return 'foot_solid';
+  if (!AIR_NAMES.has(head.name)) return 'head_solid';
+  if (below.boundingBox !== 'block') return 'no_support';
+  return 'open';
+}
+
+/**
+ * Classify the bot's current standing situation.
+ *
+ * Returns { position, cell, classification, blocked_dirs, open_dirs,
+ *           head_blocked, foot_support, ceiling_within, wedge_offset,
+ *           neighbor_status }.
+ *
+ * Classifications:
+ *   'in_air'             — bot not on solid ground (falling / floating)
+ *   'trapped'            — all 4 cardinal dirs blocked at foot or head
+ *   'enclosure_inside'   — walls visible in all 4 dirs within 4 cells
+ *                          AND a ceiling within 4 cells above (we're
+ *                          inside a built structure)
+ *   'corner'             — 2 perpendicular dirs blocked (N+E, E+S, S+W, W+N)
+ *   'alley'              — 2 opposite dirs blocked (N+S or E+W)
+ *   'three_walled'       — 3 dirs blocked (one escape)
+ *   'edge'               — ≥1 dir has 'no_support' (cliff)
+ *   'wedge'              — bot's position is fractionally between two cells
+ *   'open'               — 0–1 dirs blocked, no cliff, on solid ground
+ *
+ * Order matters: in_air > trapped > enclosure_inside > three_walled >
+ * corner > alley > wedge > edge > open.
+ */
+export function standingState(b) {
+  if (!b || !b.entity || !b.entity.position) {
+    return { classification: 'unknown', error: 'no_bot' };
+  }
+  const p = b.entity.position;
+  const bx = Math.floor(p.x);
+  const by = Math.floor(p.y);
+  const bz = Math.floor(p.z);
+
+  const below = b.blockAt(new Vec3(bx, by - 1, bz));
+  const head = b.blockAt(new Vec3(bx, by + 1, bz));
+  const foot_support = below ? below.boundingBox === 'block' : null;
+  const head_blocked = head ? !AIR_NAMES.has(head.name) : null;
+
+  const neighbor_status = {};
+  for (const d of DIRS) {
+    neighbor_status[d.name] = neighborStatus(b, bx, by, bz, d.dx, d.dz);
+  }
+  const blocked_dirs = DIRS.filter(d => {
+    const s = neighbor_status[d.name];
+    return s === 'foot_solid' || s === 'head_solid';
+  }).map(d => d.name);
+  const open_dirs = DIRS.filter(d => neighbor_status[d.name] === 'open').map(d => d.name);
+  const cliff_dirs = DIRS.filter(d => neighbor_status[d.name] === 'no_support').map(d => d.name);
+
+  // How close is the nearest solid ceiling above? (caps at 4)
+  let ceiling_within = null;
+  for (let dy = 1; dy <= 4; dy++) {
+    const block = b.blockAt(new Vec3(bx, by + dy, bz));
+    if (block && block.boundingBox === 'block') {
+      ceiling_within = dy;
+      break;
+    }
+  }
+
+  // Wedge detection: bot's center should be at cell-center ±0.3 (cell
+  // centers are at .5). >0.3 from .5 in either X or Z means we're
+  // straddling two cells.
+  const dxFromCenter = Math.abs((p.x - bx) - 0.5);
+  const dzFromCenter = Math.abs((p.z - bz) - 0.5);
+  const isWedged = dxFromCenter > 0.3 || dzFromCenter > 0.3;
+  const wedge_offset = isWedged ? { dx: Math.round(dxFromCenter * 100) / 100, dz: Math.round(dzFromCenter * 100) / 100 } : null;
+
+  // Enclosure check: walk outward in each cardinal up to 4 cells; if
+  // every direction hits a solid block at foot or head level AND there's
+  // a ceiling within 4 above, we're inside a built structure.
+  let enclosed = true;
+  let max_wall_distance = 0;
+  for (const d of DIRS) {
+    let wallAt = null;
+    for (let r = 1; r <= 4; r++) {
+      const cx = bx + d.dx * r;
+      const cz = bz + d.dz * r;
+      const fb = b.blockAt(new Vec3(cx, by, cz));
+      const hb = b.blockAt(new Vec3(cx, by + 1, cz));
+      if (!fb || !hb) break;
+      const fSolid = !TRAVERSABLE_FOOT.has(fb.name);
+      const hSolid = !AIR_NAMES.has(hb.name);
+      if (fSolid || hSolid) {
+        wallAt = r;
+        break;
+      }
+    }
+    if (wallAt === null) {
+      enclosed = false;
+      break;
+    }
+    if (wallAt > max_wall_distance) max_wall_distance = wallAt;
+  }
+  const enclosure_inside = enclosed && ceiling_within !== null;
+
+  // Classify by priority order
+  let classification;
+  if (foot_support === false && !blocked_dirs.length) {
+    classification = 'in_air';
+  } else if (blocked_dirs.length === 4) {
+    classification = 'trapped';
+  } else if (enclosure_inside && max_wall_distance > 1) {
+    // Inside a built structure (walls all around but not pressed against
+    // them). Different from `trapped` — bot has room but no exit visible.
+    classification = 'enclosure_inside';
+  } else if (blocked_dirs.length === 3) {
+    classification = 'three_walled';
+  } else if (blocked_dirs.length === 2) {
+    // Perpendicular = corner, opposite = alley
+    const set = new Set(blocked_dirs);
+    if ((set.has('N') && set.has('S')) || (set.has('E') && set.has('W'))) {
+      classification = 'alley';
+    } else {
+      classification = 'corner';
+    }
+  } else if (isWedged) {
+    classification = 'wedge';
+  } else if (cliff_dirs.length > 0 && blocked_dirs.length === 0) {
+    classification = 'edge';
+  } else {
+    classification = 'open';
+  }
+
+  return {
+    position: { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100, z: Math.round(p.z * 100) / 100 },
+    cell: { x: bx, y: by, z: bz },
+    classification,
+    blocked_dirs,
+    open_dirs,
+    cliff_dirs,
+    head_blocked,
+    foot_support,
+    ceiling_within,
+    wedge_offset,
+    enclosure_inside,
+    neighbor_status,
+  };
+}

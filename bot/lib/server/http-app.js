@@ -195,6 +195,10 @@ export function createBotHttpListener(deps) {
 
       if (path === '/status') {
         const lean = url.searchParams.get('lean') === 'true';
+        // F51.2: mc status is the brain's explicit "let me check my
+        // position" — clear any lingering lastMoveFailed flag so the
+        // next position-dependent verb runs normally.
+        if (ctx.lastMoveFailed) ctx.lastMoveFailed = null;
         return respond(res, 200, { ok: true, data: getFullState({ lean }) });
       }
 
@@ -225,7 +229,17 @@ export function createBotHttpListener(deps) {
 
       if (path === '/scene') {
         const range = parseInt(url.searchParams.get('range') || '16');
-        return respond(res, 200, { ok: true, data: buildSceneSummary({ range: Math.min(range, 24) }) });
+        const lean = url.searchParams.get('lean') === 'true';
+        const data = buildSceneSummary({ range: Math.min(range, 24) });
+        if (lean && data) {
+          // Drop the heaviest fields: full ray-hit array and detailed entity
+          // list. Keep summary (text), aggregate visible_blocks, hazards,
+          // looking_at, and short entity preview.
+          const { visible_block_hits, visible_entities, ...rest } = data;
+          rest.visible_entities = (visible_entities || []).slice(0, 4);
+          return respond(res, 200, { ok: true, data: rest });
+        }
+        return respond(res, 200, { ok: true, data });
       }
 
       if (path === '/social') {
@@ -662,6 +676,67 @@ export function createBotHttpListener(deps) {
       if (!actionFn) {
         const available = actionRegistry.names().join(', ');
         return respond(res, 400, { ok: false, error: `Unknown action "${actionName}". Available: ${available}` });
+      }
+
+      // F51.2: Position-dependent verb guard. After a failed mc move/goto/
+      // goto_near, the bot's position model is unreliable. Subsequent verbs
+      // that target a coordinate near the failed-move target are highly
+      // likely to fail — and in prior G21 runs they cascaded into 5–10
+      // wasted commands per failure. Short-circuit them with a structured
+      // diagnostic. Passives (chat, status, inventory, scene, nearby,
+      // standing, look, craft, smelt, equip, wait, marks, memory, task,
+      // cancel, stop) are always allowed so the brain can recover.
+      //
+      // Flag clears on: next successful move, mc status call (explicit
+      // acknowledgement), or 30s decay.
+      const POSITION_DEPENDENT_VERBS = new Set([
+        'place', 'dig', 'safe_dig', 'fill',
+        'interact', 'through',
+        'deposit', 'withdraw', 'chest_search',
+        'place_at_mark',
+        'fence', 'tunnel', 'stair_up', 'stair_down',
+      ]);
+      // mc status clears the flag (explicit acknowledgement that brain
+      // checked its position).
+      if (actionName === 'status' && ctx.lastMoveFailed) {
+        ctx.lastMoveFailed = null;
+      }
+      // 30s decay: if the last failure is old, drop it.
+      if (ctx.lastMoveFailed && (Date.now() - ctx.lastMoveFailed.ts) > 30_000) {
+        ctx.lastMoveFailed = null;
+      }
+      if (POSITION_DEPENDENT_VERBS.has(actionName) && ctx.lastMoveFailed) {
+        const lmf = ctx.lastMoveFailed;
+        // Extract primary target coord from body. Most verbs use {x, y, z};
+        // chest_search may include them; fill uses x1/y1/z1.
+        const tx = Number.isFinite(Number(body?.x)) ? Number(body.x) : (Number.isFinite(Number(body?.x1)) ? Number(body.x1) : null);
+        const ty = Number.isFinite(Number(body?.y)) ? Number(body.y) : (Number.isFinite(Number(body?.y1)) ? Number(body.y1) : null);
+        const tz = Number.isFinite(Number(body?.z)) ? Number(body.z) : (Number.isFinite(Number(body?.z1)) ? Number(body.z1) : null);
+        let nearFailedTarget = false;
+        if (tx !== null && ty !== null && tz !== null) {
+          const dx = tx - lmf.intended_target.x;
+          const dy = ty - lmf.intended_target.y;
+          const dz = tz - lmf.intended_target.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          nearFailedTarget = dist <= 5;
+        }
+        if (nearFailedTarget) {
+          const ageS = Math.round((Date.now() - lmf.ts) / 100) / 10;
+          return respond(res, 200, {
+            ok: false,
+            error: {
+              code: 'MOVEMENT_PRECONDITION_FAILED',
+              message: `Can't run mc ${actionName} at ${tx},${ty},${tz} — your previous mc ${lmf.verb} to ${lmf.intended_target.x},${lmf.intended_target.y},${lmf.intended_target.z} failed ${ageS}s ago (${lmf.reason}). You're at ${lmf.actual_pos?.x ?? '?'},${lmf.actual_pos?.y ?? '?'},${lmf.actual_pos?.z ?? '?'}, not where you intended. Run \`mc status\` to recheck your position, or retry \`mc move\` first. (Flag clears on next successful move OR mc status OR 30s.)`,
+              observed_state: {
+                attempted_verb: actionName,
+                attempted_target: { x: tx, y: ty, z: tz },
+                last_failed_move: lmf,
+              },
+              retry_safe: false,
+            },
+            state: briefState(),
+          });
+        }
       }
 
       ctx.lastApiError = null;

@@ -457,10 +457,28 @@ def setup_hermes_home(name: str) -> Path:
     # SOUL.md (always re-copy in case the source changed)
     if SOUL_FILE.exists():
         (agent_home / "SOUL.md").write_text(SOUL_FILE.read_text())
-    # config.yaml
+    # config.yaml — copy with aggressive compression overrides so bots
+    # compact context early. Defaults (threshold 0.5, protect_last_n 20)
+    # let conversations reach 60-100K tokens before firing; bots churn
+    # through tool calls faster than humans and need to compact sooner.
+    #
+    # Critical: also override model.context_length. Hermes's bundled
+    # metadata records deepseek-v4-flash at 1_000_000 tokens (see
+    # agent/model_metadata.py:180). With threshold=0.25 that means the
+    # compactor doesn't fire until ~250K tokens — past where OpenRouter
+    # starts to slow down. Pin to 131072 so threshold becomes ~33K tokens.
     src_config = HOME_DIR / ".hermes" / "config.yaml"
     if src_config.exists():
-        (agent_home / "config.yaml").write_text(src_config.read_text())
+        import yaml as _yaml
+        cfg = _yaml.safe_load(src_config.read_text()) or {}
+        comp = cfg.setdefault("compression", {})
+        comp["enabled"] = True
+        comp["threshold"] = 0.25         # compress at 25% of model context window
+        comp["target_ratio"] = 0.15      # tighter summary
+        comp["protect_last_n"] = 8       # keep only last 8 turns verbatim
+        mdl = cfg.setdefault("model", {})
+        mdl["context_length"] = 131072   # override the 1M default for deepseek-flash
+        (agent_home / "config.yaml").write_text(_yaml.safe_dump(cfg, sort_keys=False))
     # Symlink shared skills/credentials — these are NOT memory, just static
     # tooling that all bots can share.
     for f in ("skills", "credentials.json"):
@@ -471,6 +489,19 @@ def setup_hermes_home(name: str) -> Path:
                 target.symlink_to(src)
             except OSError:
                 pass
+
+    # Symlink the per-bot sessions dir TO the shared ~/.hermes/sessions/ so
+    # the Hermes dashboard (port 9119, reads only the central HERMES_HOME)
+    # can display bot work. Without this, sessions are isolated in
+    # ~/.hermes-landfolk-<name>/sessions/ and the dashboard sees nothing.
+    sessions_target = agent_home / "sessions"
+    sessions_src = HOME_DIR / ".hermes" / "sessions"
+    sessions_src.mkdir(parents=True, exist_ok=True)
+    if not sessions_target.exists():
+        try:
+            sessions_target.symlink_to(sessions_src)
+        except OSError:
+            pass
     return agent_home
 
 

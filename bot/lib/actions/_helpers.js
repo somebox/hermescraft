@@ -117,12 +117,17 @@ export async function withWallclockCap({
  *  internal `gotoWithTimeout` already caps each pathfind at 6-10s, so
  *  the outer cap only fires if every batch element legitimately exhausted
  *  its inner budget AND the bot still has more to do. */
+// F50.3: pathfinder caps tightened. Empirically (G21 v2 logs), a real
+// goto/goto_near either succeeds in <2s or hangs to the cap due to
+// mineflayer-pathfinder issue #273 (partial-path stuck). Lower caps
+// catch those hangs ~3× sooner. `go_mark` stays at 15s because it
+// allows long-haul travel by design.
 export const ACTION_CAPS_MS = Object.freeze({
   place: 8000,
-  goto: 15000,
-  goto_near: 15000,
+  goto: 5000,
+  goto_near: 8000,
   go_mark: 15000,
-  move: 20000,
+  move: 12000,
   collect: 40000,
   dig: 10000,
   craft: 30000,

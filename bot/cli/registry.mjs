@@ -90,11 +90,17 @@ export const RAW_COMMAND_DEFS = [
   }),
   g('look', 'observe', ['survey'], { description: 'What the bot is currently facing', method: 'GET', path: '/look', examples: ['mc look'] }),
   g('scene', 'observe', ['perceive', 'vision'], {
-    description: 'Visible entities + landmarks in vision range',
+    description: 'Visible entities + landmarks in vision range. Lean by default (drops raw block-hit array). Use `mc scene --full` for ray-level detail.',
     method: 'GET',
-    pathFn: (p) => `/scene?range=${encodeURIComponent(Number(p.range ?? p.radius) || 16)}`,
-    argSchema: [{ key: 'range', type: 'number', default: 16 }],
-    examples: ['mc scene 16'],
+    pathFn: (p) => {
+      const range = encodeURIComponent(Number(p.range ?? p.radius) || 16);
+      return p.full ? `/scene?range=${range}` : `/scene?range=${range}&lean=true`;
+    },
+    argSchema: [
+      { key: 'range', type: 'number', default: 16 },
+      { key: 'full', type: 'boolean', default: false },
+    ],
+    examples: ['mc scene 16', 'mc scene --full'],
   }),
   g('screenshot_meta', 'observe', ['ss_meta'], {
     method: 'GET',
@@ -1206,6 +1212,13 @@ export const RAW_COMMAND_DEFS = [
       range: Number(p.range ?? 3),
     }),
     examples: ['mc reachable 0 65 12', 'mc reachable 0 65 12 range=4'],
+  }),
+  g('standing', 'world', ['stand_state', 'where_am_i'], {
+    description: 'Classify your current standing state. Returns {classification, blocked_dirs, open_dirs, cliff_dirs, head_blocked, foot_support, ceiling_within, wedge_offset, neighbor_status}. classification ∈ {open, alley, corner, trapped, three_walled, enclosure_inside, wedge, edge, in_air}. Use this BEFORE issuing a move/place/goto that might fail — if you are in a corner or trapped, sidestep to an open_dir first, or run `mc escape`.',
+    method: 'POST',
+    path: '/action/standing',
+    bodyFn: () => '{}',
+    examples: ['mc standing'],
   }),
   g('is_empty', 'world', ['region_empty'], {
     description: 'Region predicate — is every cell in [x1..x2, y1..y2, z1..z2] air? Returns up to 32 non-empty cells. Capped at 1000 cells.',

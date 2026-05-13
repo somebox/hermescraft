@@ -2,7 +2,7 @@ import { Vec3 } from 'vec3';
 import { equipForDig, PROTECTED_DIG_BLOCKS, RELOCATABLE_INFRASTRUCTURE, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards, suggestedToolForBlock, isDigProtected } from '../bot/dig-tools.js';
 import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
-import { isStandableCell, standabilityReason, findClosestStandable } from './_nav-helpers.js';
+import { isStandableCell, standabilityReason, findClosestStandable, standingState } from './_nav-helpers.js';
 
 export function createWorldActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveInventoryItem, rememberSocialEvent, getMyName, ACTIONS, hasLineOfSight, eyePosition } = deps;
@@ -2692,6 +2692,26 @@ export function createWorldActions(deps) {
       },
       result: resultMsg,
     };
+  },
+
+  /**
+   * F50.1: Classify the bot's current standing state. Returns the
+   * classification ({open, alley, corner, trapped, three_walled,
+   * enclosure_inside, wedge, edge, in_air}), the blocked/open cardinal
+   * directions, and supporting detail (head_blocked, foot_support,
+   * ceiling_within, wedge_offset). Building block for F50.2-50.8 — used
+   * both internally (to enrich movement errors and decide escape
+   * strategy) and externally (`mc standing` lets the brain self-check
+   * before issuing a goto / place that's likely to fail).
+   */
+  async standing() {
+    const b = ensureBot();
+    const s = standingState(b);
+    if (s.error === 'no_bot') {
+      return { ok: false, error: { code: 'NO_BOT', message: 'bot not ready', retry_safe: true } };
+    }
+    const resultMsg = `${s.classification} at ${s.cell.x},${s.cell.y},${s.cell.z} — blocked: [${s.blocked_dirs.join(',') || '-'}] open: [${s.open_dirs.join(',') || '-'}]${s.cliff_dirs.length ? ` cliff: [${s.cliff_dirs.join(',')}]` : ''}${s.head_blocked ? ' head_blocked' : ''}${s.foot_support === false ? ' no_foot_support' : ''}${s.ceiling_within !== null ? ` ceiling_at_+${s.ceiling_within}` : ''}`;
+    return { ok: true, data: s, result: resultMsg };
   },
 
   /**
