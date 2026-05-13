@@ -3,30 +3,54 @@
  */
 import { Vec3 } from 'vec3';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
+import { findClosestStandable, standabilityReason } from './_nav-helpers.js';
 
 export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }) {
+  // F48: When a nav verb fails, scan a small region around the target
+  // for a standable cell and include it in observed_state. Mason in
+  // G21 v2 sat through three 15s OPERATION_TIMEOUTs at the same
+  // (0,65,12) because every adjacent cell had a wall block at head
+  // height — but the error gave him no signal about (0,65,13) being
+  // 1 block away and valid. With the closest_standable hint the brain
+  // can immediately retry with a working target instead of looping.
+  const enrichWithStand = (b, observedState, x, y, z) => {
+    try {
+      const tx = Math.floor(Number(x));
+      const ty = Math.floor(Number(y));
+      const tz = Math.floor(Number(z));
+      const reason = standabilityReason(b, tx, ty, tz);
+      const best = findClosestStandable(b, tx, ty, tz, 3);
+      observedState.target_standable = (reason === 'ok');
+      observedState.target_reason = reason;
+      observedState.closest_standable = best
+        ? { x: best.x, y: best.y, z: best.z, distance: best.distance }
+        : null;
+    } catch { /* never let diagnostic enrichment break the error path */ }
+    return observedState;
+  };
+
   // Pathfinder is read-only (no canDig, no scaffolding). When it can't find
   // a path, it returns "No path to the goal!" — that's the agent's signal
   // that the route is blocked and intentional action is needed (mc through
   // for a door, mc tunnel/dig_area to clear terrain). These helpers shape
   // those failures into a consistent action-contract response.
-  const navBlockedError = (pos, x, y, z, dist) => ({
+  const navBlockedError = (b, pos, x, y, z, dist) => ({
     ok: false,
     error: {
       code: 'NAV_BLOCKED',
       message: `Pathfinder gave up at ${pos.x},${pos.y},${pos.z} — ${dist.toFixed(1)} blocks from target ${fmt(x)},${fmt(y)},${fmt(z)}. The path is blocked. Try mc through GX GY GZ for a door/gate, or mc tunnel / mc dig_area to clear terrain explicitly.`,
-      observed_state: { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)) },
+      observed_state: enrichWithStand(b, { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)) }, x, y, z),
       retry_safe: false,
     },
   });
-  const navFailureError = (pos, x, y, z, msg) => {
+  const navFailureError = (b, pos, x, y, z, msg) => {
     if (msg === 'timeout') {
       return {
         ok: false,
         error: {
           code: 'NAV_TIMEOUT',
           message: `Walked toward ${fmt(x)},${fmt(y)},${fmt(z)} for 15s, now at ${pos.x},${pos.y},${pos.z}. Use mc bg_goto for long distances or mc through for doors.`,
-          observed_state: { current: pos, target: { x, y, z } },
+          observed_state: enrichWithStand(b, { current: pos, target: { x, y, z } }, x, y, z),
           retry_safe: true,
         },
       };
@@ -37,14 +61,14 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
         error: {
           code: 'NAV_BLOCKED',
           message: `No path to ${fmt(x)},${fmt(y)},${fmt(z)} from ${pos.x},${pos.y},${pos.z}. Pathfinder is non-destructive — if a door blocks the path use mc through GX GY GZ; if terrain blocks it use mc tunnel or mc dig_area to clear it explicitly.`,
-          observed_state: { current: pos, target: { x, y, z } },
+          observed_state: enrichWithStand(b, { current: pos, target: { x, y, z } }, x, y, z),
           retry_safe: false,
         },
       };
     }
     return {
       ok: false,
-      error: { code: 'NAV_FAILED', message: `Navigation failed: ${msg}`, observed_state: { current: pos, target: { x, y, z } }, retry_safe: false },
+      error: { code: 'NAV_FAILED', message: `Navigation failed: ${msg}`, observed_state: enrichWithStand(b, { current: pos, target: { x, y, z } }, x, y, z), retry_safe: false },
     };
   };
 
@@ -81,18 +105,18 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
         const pos = posObj();
         const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
         if (dist > 2) {
-          return navBlockedError(pos, x, y, z, dist);
+          return navBlockedError(b, pos, x, y, z, dist);
         }
         return { result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
         if (e instanceof OperationTimeoutError) {
           return timeoutError('goto', ACTION_CAPS_MS.goto,
-            { target: { x, y, z }, current: posObj() },
-            `Pathfinder didn't finish in time. Try mc goto_near for a slacker range, or clear the route with mc dig / mc through.`);
+            enrichWithStand(b, { target: { x, y, z }, current: posObj() }, x, y, z),
+            `Pathfinder didn't finish in time. If observed_state.closest_standable is set, retry mc goto there instead.`);
         }
         const pos = posObj();
-        return navFailureError(pos, x, y, z, e?.message || String(e));
+        return navFailureError(b, pos, x, y, z, e?.message || String(e));
       }
     },
 
@@ -104,18 +128,18 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
         const pos = posObj();
         const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
         if (dist > range + 1.5) {
-          return navBlockedError(pos, x, y, z, dist);
+          return navBlockedError(b, pos, x, y, z, dist);
         }
         return { result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
         if (e instanceof OperationTimeoutError) {
           return timeoutError('goto_near', ACTION_CAPS_MS.goto_near,
-            { target: { x, y, z }, current: posObj(), range },
-            `Pathfinder didn't finish in time. Try a wider range or clear obstacles.`);
+            enrichWithStand(b, { target: { x, y, z }, current: posObj(), range }, x, y, z),
+            `Pathfinder didn't finish in time. If observed_state.closest_standable is set, retry mc goto_near with those coords.`);
         }
         const pos = posObj();
-        return navFailureError(pos, x, y, z, e?.message || String(e));
+        return navFailureError(b, pos, x, y, z, e?.message || String(e));
       }
     },
 

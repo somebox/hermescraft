@@ -1025,3 +1025,31 @@ These remain as fixtures for the strategy/agent layer once that work begins.
   - D: no other player online (proxy for "is this still NO_THREAT") → `NO_THREAT`. Regression check: if a partner ever shows up nearby and `mc flee` without `from` fires on them, this scenario flips to `ok=true` and FAILS.
 - **Verdict.** F47 done. Two of the three F45.2/F46 deferred items are now closed (`mc task` semantics, `mc flee` misfire). F48 (observation budget) is the last deferred item. The G21 re-run on deepseek-flash should now show cleaner chat — no more spurious flee narration when a bot is just stuck on a goto error.
 
+### G21 v2 (deepseek-flash, post-F47) — partial run, Mason stuck repro
+
+- **Setup.** G21 spec on `deepseek/deepseek-v4-flash`, F45+F46+F47 in. Run aborted ~22 min in after Mason stuck on a wall-corner geometry that he couldn't escape via `mc goto_near` / `mc place`.
+- **Progress observed:** M0 RADIO_CHECK ✓, M1A DONE ✓ (Mason — 56 cobble), M1B DONE ✓ (Flint — chest + 20 planks), M2A SLAB READY ✓ (Mason — platform built, deposited 16 cobble in M1B chest), M2B in progress (Flint crafting door). Wallclock to M2B start was ~10 min — on pace for the <15 min target.
+- **Bug: coordination breakdown on M3.** Both bots independently kicked off house wall construction. Mason ran `mc fill cobblestone -2 66 9 1 68 12 true` (the place_fill async task). Flint started digging what he thought was a south-wall door cutout — but he only mined the foot block at (0,65,9), leaving the head block (0,66,9) still in place. Result: 1-block-tall opening that no bot can pass through.
+- **Bug: Mason wedged at the NE corner.** With walls at y=66, x∈[-2,1], z∈[9,12], Mason was outside at (2.3, 65, 12.7). To place the last missing block at (0,68,12) he needed to stand near (0,65,12) — but every range=1 stand cell has a wall block at head height. `mc goto_near 0 65 12 range=1` ran for 15s then OPERATION_TIMEOUT. The previous error message just said "Pathfinder didn't finish" — no signal about WHY. Mason looped three more 15s timeouts on the same target (also on `mc chest -3 65 11` because his straight path west was blocked by walls at head height).
+- **No spurious mc flee fires.** F47 fix held — zero hostile-mob-misfire events. The 2 grep matches in the combined log were just prompt-text mentions.
+- **Carry-forwards for F48 / G22 prompt:**
+  - **Navigation introspection** — pathfinder error contracts need to surface WHY a cell is unreachable so the brain can adapt instead of looping. (Addressed by F48 below.)
+  - **Coordination structure** — both bots tried to build the same walls. The G21 spec says "decide together: who does what" but the prompt doesn't enforce it. Needs a claim/lease protocol or explicit role partition.
+  - **Door-cut helper** — a single primitive that digs BOTH foot and head blocks atomically. Closes the "Flint dug half a door" pattern.
+  - **Stuck-state escalation** — after 3 errored actions on the same coord, the system should nudge the brain to chat for help instead of retrying.
+  - **`mc collect` taking 25–34 s** — F45's 40 s cap absorbed it, but the underlying cost is real. F49 (observation budget) plus deeper-tier mining heuristics would help.
+
+### F48. Navigation introspection — `mc reachable` + enriched nav errors
+
+- **Bug.** G21 v2 Mason stuck pattern: `mc goto_near 0 65 12 range=1` returned `OPERATION_TIMEOUT` with no signal about WHY the cell wasn't reachable. The cell had a wall block at head height — but the bot had no field on which to base a retry, so it looped the same call.
+- **Fix.**
+  - **New module `bot/lib/actions/_nav-helpers.js`** with `isStandableCell(b, x, y, z)`, `standabilityReason(b, x, y, z)` (returns `ok`/`head_blocked`/`foot_blocked`/`no_foot_support`/`unknown`), and `findClosestStandable(b, x, y, z, maxScan)` (BFS-style search over a small region, returns closest cell where the bot could actually stand).
+  - **New action `mc reachable X Y Z [range=3]`** in `world.js`. Geometry-only pre-flight: returns `{target_standable, target_reason, best_stand: {x, y, z, distance}}`. The brain calls this BEFORE committing to a goto so it picks a valid stand-spot upfront.
+  - **`goto` / `goto_near` enriched errors** in `movement.js`. On any nav failure (NAV_BLOCKED, NAV_TIMEOUT, NAV_FAILED, or OPERATION_TIMEOUT), the error's `observed_state` now carries `target_standable`, `target_reason`, and `closest_standable`. Mason's exact OPERATION_TIMEOUT case now surfaces `target_reason: "head_blocked"`, `closest_standable: {x:0, y:65, z:11, distance:1}` — enough for the brain to retry on a working coord instead of looping.
+- **Smoke test** — `scripts/test-nav-reachable.py` (4 scenarios, all PASS) against Mason's exact wall-corner trap:
+  - A: `mc reachable 0 65 12` → `target_standable=false, target_reason='head_blocked', best_stand={x:0,y:65,z:11,distance:1}`.
+  - B: `mc reachable 0 65 13` → `target_standable=true, target_reason='ok'`.
+  - C: `mc goto_near 0 65 12 range=1` → `OPERATION_TIMEOUT` after 15.1s WITH `observed_state.closest_standable={x:0,y:65,z:11,distance:1}` and `target_reason='head_blocked'`.
+  - D: bot TP'd to a different position, `mc reachable 0 65 12` still reports `head_blocked` — confirms the check is pose-independent (geometry of the target, not the bot's current state).
+- **Verdict.** F48 done. The class-of-bug ("nav fails silently and brain loops") is converted into a self-explaining error contract. The G22 prompt should add a one-line hint: "if a nav action fails, check `observed_state.closest_standable` — try that coord instead of retrying."
+

@@ -2,6 +2,7 @@ import { Vec3 } from 'vec3';
 import { equipForDig, PROTECTED_DIG_BLOCKS, RELOCATABLE_INFRASTRUCTURE, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards, suggestedToolForBlock, isDigProtected } from '../bot/dig-tools.js';
 import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
+import { isStandableCell, standabilityReason, findClosestStandable } from './_nav-helpers.js';
 
 export function createWorldActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveInventoryItem, rememberSocialEvent, getMyName, ACTIONS, hasLineOfSight, eyePosition } = deps;
@@ -2634,6 +2635,65 @@ export function createWorldActions(deps) {
    * Use after building a shelter to verify it's actually sealed before
    * settling in for the night.
    */
+  /**
+   * F48: Reachability pre-flight. Given a target cell, report whether
+   * the bot could physically STAND there (foot air, head air, ground
+   * solid below). If not, find the closest cell that IS standable and
+   * report its coords + distance + the reason the original cell failed.
+   *
+   * This is the cure for the G21 v2 Mason stuck pattern: `goto_near`
+   * was failing on a cell whose head was a wall block, and the bot
+   * had no signal about which nearby cell DID work. After F48 the
+   * brain can just call `mc reachable X Y Z` first and pick the
+   * suggested `best_stand` for the actual goto.
+   *
+   * Note: this is geometry-only — does NOT verify a PATH exists from
+   * the bot's current position. A cell can be standable but cut off
+   * by walls. For path verification, follow up with the actual `goto`.
+   */
+  async reachable({ x, y, z, range = 3 }) {
+    const b = ensureBot();
+    if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_COORD',
+          message: 'mc reachable requires numeric x, y, z',
+          retry_safe: false,
+        },
+      };
+    }
+    const ix = Math.floor(Number(x));
+    const iy = Math.floor(Number(y));
+    const iz = Math.floor(Number(z));
+    const maxScan = Math.max(1, Math.min(6, Number(range) || 3));
+    const target_reason = standabilityReason(b, ix, iy, iz);
+    const target_standable = target_reason === 'ok';
+    const best = findClosestStandable(b, ix, iy, iz, maxScan);
+
+    let resultMsg;
+    if (target_standable) {
+      resultMsg = `Cell ${ix},${iy},${iz} is standable.`;
+    } else if (best) {
+      resultMsg = `Cell ${ix},${iy},${iz} is NOT standable (${target_reason}). Closest standable cell: ${best.x},${best.y},${best.z} (distance ${best.distance}).`;
+    } else {
+      resultMsg = `Cell ${ix},${iy},${iz} is NOT standable (${target_reason}), and no standable cell within range ${maxScan}.`;
+    }
+
+    return {
+      ok: true,
+      data: {
+        target: { x: ix, y: iy, z: iz },
+        target_standable,
+        target_reason,
+        best_stand: best ? { x: best.x, y: best.y, z: best.z, distance: best.distance } : null,
+        bot_position: posObj(b.entity.position),
+        scan_range: maxScan,
+      },
+      result: resultMsg,
+    };
+  },
+
   /**
    * F45.6: Inspect a single cell — what's the block, can it be dug, is it
    * relocatable, what tool should be used, and which entities (players /

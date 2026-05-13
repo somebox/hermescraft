@@ -1191,6 +1191,22 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
     examples: ['mc inspect 10 64 -3'],
   }),
+  g('reachable', 'world', ['standable', 'can_stand'], {
+    description: 'Reachability pre-flight: can the bot STAND at (x,y,z)? Returns {target_standable, target_reason (ok|head_blocked|foot_blocked|no_foot_support), best_stand: {x,y,z,distance}}. If target_standable is false, use best_stand for your actual goto. Geometry-only — does not verify a path exists from your current position.',
+    method: 'POST',
+    path: '/action/reachable',
+    argSchema: [
+      { key: 'x', type: 'number', required: true, positional: true },
+      { key: 'y', type: 'number', required: true, positional: true },
+      { key: 'z', type: 'number', required: true, positional: true },
+      { key: 'range', type: 'number', default: 3 },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x: Number(p.x), y: Number(p.y), z: Number(p.z),
+      range: Number(p.range ?? 3),
+    }),
+    examples: ['mc reachable 0 65 12', 'mc reachable 0 65 12 range=4'],
+  }),
   g('is_empty', 'world', ['region_empty'], {
     description: 'Region predicate — is every cell in [x1..x2, y1..y2, z1..z2] air? Returns up to 32 non-empty cells. Capped at 1000 cells.',
     method: 'POST',
