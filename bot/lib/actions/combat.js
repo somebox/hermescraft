@@ -260,19 +260,58 @@ export function createCombatActions(deps) {
 
       const markTo = typeof to === 'string' && to.trim() ? to.trim() : '';
 
+      // F47: 'player' removed from the default hostiles list. In G21 v1
+      // with Flint+Mason+Re44 all online, calling `mc flee 16` without a
+      // `from` argument made the bot flee from its own partner because
+      // 'player' matched any visible bot/user entity. Players now count
+      // as threats only when (a) explicitly named via `from`, or (b)
+      // recently damaged the bot (reactive layer handles damage-driven
+      // flee via state.recently_damaged, not via this verb).
+      const MOB_HOSTILES = [
+        'zombie', 'skeleton', 'spider', 'creeper', 'enderman', 'witch',
+        'drowned', 'husk', 'stray', 'phantom', 'blaze', 'wither_skeleton',
+        'vindicator', 'pillager', 'ravager', 'vex', 'evoker', 'magma_cube',
+        'ghast', 'hoglin', 'zoglin', 'piglin_brute', 'warden',
+      ];
+
       let threat;
+      let threatReason;
       if (!markTo) {
-        const hostiles = ['zombie', 'skeleton', 'spider', 'creeper', 'enderman', 'witch', 'drowned', 'husk', 'stray', 'phantom', 'blaze', 'wither_skeleton', 'player'];
+        const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+        const visible = filterEntitiesFairPlay(rawEnts);
         if (from) {
-          const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
-          const visible = filterEntitiesFairPlay(rawEnts);
-          threat = visible.find(e => (e.name || '').toLowerCase().includes(from.toLowerCase()) || (e.username || '').toLowerCase().includes(from.toLowerCase()));
+          // Explicit target: any entity (mob or player) whose name/username
+          // matches `from` is the threat. The brain takes responsibility
+          // for the targeting decision.
+          threat = visible.find(e =>
+            (e.name || '').toLowerCase().includes(from.toLowerCase()) ||
+            (e.username || '').toLowerCase().includes(from.toLowerCase())
+          );
+          if (threat) threatReason = `explicit:${from}`;
         } else {
-          const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
-          const visible = filterEntitiesFairPlay(rawEnts);
-          threat = visible.find(e => hostiles.some(h => (e.name || '').includes(h)));
+          // Default: only flee from genuinely hostile MOBS, not players.
+          threat = visible.find(e => MOB_HOSTILES.some(h => (e.name || '').toLowerCase().includes(h)));
+          if (threat) threatReason = `hostile_mob:${threat.name}`;
         }
-        if (!threat && !markTo) return { result: 'No threats nearby' };
+        if (!threat) {
+          return {
+            ok: false,
+            error: {
+              code: 'NO_THREAT',
+              message: from
+                ? `No entity matching "${from}" nearby — nothing to flee from.`
+                : 'No hostile mobs nearby. mc flee with no args only fires on visible hostile mobs (zombies, skeletons, etc.); to flee from a specific player or named entity, pass from=<name>.',
+              observed_state: {
+                visible_entities: visible.slice(0, 8).map((e) => ({
+                  name: e.name || null,
+                  username: e.username || null,
+                  type: e.type || null,
+                })),
+              },
+              retry_safe: false,
+            },
+          };
+        }
       }
 
       if (markTo) {
@@ -295,7 +334,12 @@ export function createCombatActions(deps) {
           result: threat
             ? `Fled threats then moved toward mark '${markTo}'`
             : `Moving to mark '${markTo}' (${Math.round(distance)} steps context)`,
-          data: { to: markTo, position: { x: tgt.x, y: tgt.y, z: tgt.z } },
+          data: {
+            to: markTo,
+            position: { x: tgt.x, y: tgt.y, z: tgt.z },
+            flee_reason: threat ? threatReason : 'mark_only',
+            threat: threat ? { name: threat.name || null, username: threat.username || null } : null,
+          },
         };
       }
 
@@ -307,9 +351,27 @@ export function createCombatActions(deps) {
 
       try {
         await b.pathfinder.goto(new goals.GoalNear(fleeX, b.entity.position.y, fleeZ, 3));
-        return { result: `Fled ${distance} blocks from ${threat.name}` };
+        return {
+          ok: true,
+          data: {
+            flee_reason: threatReason,
+            threat: { name: threat.name || null, username: threat.username || null, distance: Math.round(threat.position.distanceTo(b.entity.position) * 10) / 10 },
+            fled_blocks: distance,
+            final_position: posObj(b.entity.position),
+          },
+          result: `Fled ${distance} blocks from ${threat.name} (${threatReason})`,
+        };
       } catch {
-        return { result: `Tried to flee, moved partially. Health: ${b.health}` };
+        return {
+          ok: true,
+          data: {
+            flee_reason: threatReason,
+            threat: { name: threat.name || null, username: threat.username || null },
+            partial: true,
+            health: b.health,
+          },
+          result: `Tried to flee from ${threat.name}, moved partially. Health: ${b.health}`,
+        };
       }
     },
 

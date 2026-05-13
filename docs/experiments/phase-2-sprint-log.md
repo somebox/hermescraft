@@ -1010,3 +1010,18 @@ These remain as fixtures for the strategy/agent layer once that work begins.
   - D: `/task/start mc wait 3` → observed `task.status` transition `'running'` → `'done'`, `last.action='wait'`.
 - **Verdict.** F46 done. The brain prompt update (one line: "`mc task` returns three slots — check `last` to see what just finished") can land alongside the G22 prompt rewrite. Next: F47 (`mc flee` misfire repro) or the G21 re-run on deepseek-flash, whichever the user prefers.
 
+### F47. `mc flee` misfire — stop auto-targeting players
+
+- **Bug.** `bot/lib/actions/combat.js` `flee()` listed `'player'` in its default hostiles array. In G21 v1 with Flint + Mason + Re44 all online, a bot calling `mc flee 16` (no `from` argument) would find the OTHER PLAYER via `e.name.includes('player')` and pathfind away from it — fleeing its own partner or the human, then narrating "stuck and fleeing" in chat. The reactive layer's flee triggers were correctly gated on real hostiles; this was the explicit `mc flee` verb itself.
+- **Fix.** `bot/lib/actions/combat.js:256`:
+  - Default hostiles list is now MOB-ONLY (zombie/skeleton/spider/creeper/etc., plus the rest of vanilla 1.21 hostiles: vindicator, pillager, ravager, vex, evoker, magma_cube, ghast, hoglin, zoglin, piglin_brute, warden). Players are removed.
+  - Players can still be flee targets, but only when the brain explicitly passes `from=<name>` — taking responsibility for the targeting choice.
+  - The "No threats nearby" no-op return is replaced with a structured `{ok:false, error:{code:"NO_THREAT", message, observed_state:{visible_entities}, retry_safe:false}}`. The brain stops misreading silence as success.
+  - Success path returns `data.flee_reason` (`hostile_mob:<name>` or `explicit:<from>`) and `data.threat` (name/username/distance) so the action is self-narrating.
+- **Smoke test** — `scripts/test-flee-no-threat.py` (4 scenarios, all PASS):
+  - A: empty arena, `mc flee 16` → `{ok:false, error.code='NO_THREAT'}`.
+  - B: passive cow at (3,65,0), `mc flee 16` → `NO_THREAT`. Cow is not a hostile.
+  - C: live zombie at (3,65,0), `mc flee 16` → `{ok:true, data.threat={name:'zombie', distance:12.1}, flee_reason:'hostile_mob:zombie'}`.
+  - D: no other player online (proxy for "is this still NO_THREAT") → `NO_THREAT`. Regression check: if a partner ever shows up nearby and `mc flee` without `from` fires on them, this scenario flips to `ok=true` and FAILS.
+- **Verdict.** F47 done. Two of the three F45.2/F46 deferred items are now closed (`mc task` semantics, `mc flee` misfire). F48 (observation budget) is the last deferred item. The G21 re-run on deepseek-flash should now show cleaner chat — no more spurious flee narration when a bot is just stuck on a goto error.
+
