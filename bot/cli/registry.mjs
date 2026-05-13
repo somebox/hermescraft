@@ -319,7 +319,7 @@ export const RAW_COMMAND_DEFS = [
     examples: [`mc pillar_step`, `mc pillar_step 5`, `mc pillar_step cobblestone 10`, `mc pillar_step dirt 20`],
   }),
   g('pickup', 'world', ['p'], { description: 'Walk to + collect a nearby item drop', method: 'POST', path: '/action/pickup', bodyFn: () => empty }),
-  g('find_blocks', 'world', ['find', 'fb'], {
+  g('find_blocks', 'world', ['fb'], {
     description: 'Locate blocks of TYPE within radius (no mining)',
     method: 'POST',
     path: '/action/find_blocks',
@@ -855,7 +855,7 @@ export const RAW_COMMAND_DEFS = [
         pickup: p.pickup !== false,
       }),
   }),
-  g('stair_up', 'world', ['stairs_up', 'escape'], {
+  g('stair_up', 'world', ['stairs_up'], {
     method: 'POST',
     path: '/action/stair_up',
     description:
