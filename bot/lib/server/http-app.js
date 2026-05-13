@@ -283,11 +283,45 @@ export function createBotHttpListener(deps) {
       }
 
       if (path === '/task') {
+        // F46: /task now reports three independent slots so the brain
+        // can tell "async bg task" from "sync action in flight" from
+        // "what just finished":
+        //   task — async ctx.currentTask (POST /task/start), null otherwise
+        //   sync — currently-running synchronous /action/<name>, null otherwise
+        //   last — most recent completed sync OR async action, null if never
+        // Pre-F46 callers that only read data.task continue to work; the
+        // sync/last fields are additive. The point is to kill the polling
+        // spam from G21 v1 where Mason called `mc task` 22× after a
+        // synchronous `mc fill` completed and got `{task: null}` every time.
         refreshLeaseCheckpoint(ctx.currentTask);
-        if (!ctx.currentTask) return respond(res, 200, { ok: true, data: { task: null }, state: briefState() });
+        const now = Date.now();
+        const sync = ctx.syncActionInFlight
+          ? {
+              action: ctx.syncActionName,
+              started_at_ms: ctx.syncActionStartedAt,
+              elapsed_s: ctx.syncActionStartedAt
+                ? Math.round((now - ctx.syncActionStartedAt) / 1000)
+                : 0,
+            }
+          : null;
+        const history = Array.isArray(ctx.actionHistory) ? ctx.actionHistory : [];
+        const recent = history.length > 0 ? history[history.length - 1] : null;
+        const last = recent
+          ? {
+              action: recent.action,
+              status: recent.status,
+              finished_at_ms: recent.finished_at,
+              age_s: Math.round((now - recent.finished_at) / 1000),
+              detail: recent.detail || null,
+            }
+          : null;
         return respond(res, 200, {
           ok: true,
-          data: { task: taskToApi(ctx.currentTask) },
+          data: {
+            task: ctx.currentTask ? taskToApi(ctx.currentTask) : null,
+            sync,
+            last,
+          },
           state: briefState(),
         });
       }
@@ -633,6 +667,7 @@ export function createBotHttpListener(deps) {
       ctx.lastApiError = null;
       ctx.syncActionInFlight = true;
       ctx.syncActionName = actionName;
+      ctx.syncActionStartedAt = Date.now();
 
       // Clear any running bg task's pathfinder goal so sync action can use pathfinder
       // without triggering "goal was changed" on the sync action.
@@ -655,6 +690,7 @@ export function createBotHttpListener(deps) {
       } finally {
         ctx.syncActionInFlight = false;
         ctx.syncActionName = null;
+        ctx.syncActionStartedAt = null;
         ctx._lastSyncStuckLogAt = null;
       }
     }

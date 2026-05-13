@@ -991,3 +991,22 @@ These remain as fixtures for the strategy/agent layer once that work begins.
   - **bg_* task registry + heartbeat.** New module, not a small edit.
 - **Verdict:** F45 frozen. Eight carry-forwards converted to structured action-contract returns with primitive coverage; the brain now has explicit pre-flight + post-failure signals (`mc inspect`, region predicates, `is_diggable`, `is_relocatable`, `NO_LINE_OF_SIGHT`, `OPERATION_TIMEOUT`) instead of having to infer them from silence. Next session: G21 re-run on deepseek-flash with target wallclock <15 min and `mc place` failure rate <15%.
 
+### F46. `mc task` semantics rework
+
+- **Bug.** G21 v1 captured Mason calling `mc task` 22 times in a row after a synchronous `mc fill` completed. `GET /task` only reported the async `ctx.currentTask` (started via `POST /task/start`). Synchronous actions set `ctx.syncActionInFlight` for the duration of the request but it was wiped the moment the action returned, so `mc task` always answered `{task:null}` for sync work. The brain read the silence as "still running" and kept polling.
+- **Fix.** Extend `GET /task` to expose three additive slots: `{task, sync, last}`.
+  - `task` — async bg task (existing `ctx.currentTask`), null when no `/task/start` is running.
+  - `sync` — `{action, started_at_ms, elapsed_s}` while a synchronous `/action/<name>` is in flight; null otherwise.
+  - `last` — `{action, status, finished_at_ms, age_s, detail}` echoing `ctx.actionHistory[-1]` so the brain can see what just finished without polling.
+  - Pre-F46 callers that only read `data.task` still work; `sync`/`last` are additive.
+- **Implementation.**
+  - `bot/lib/server/http-app.js:285` — `/task` handler reads `ctx.syncActionInFlight` + `ctx.syncActionStartedAt` and `ctx.actionHistory` to compose the new shape.
+  - `bot/lib/server/http-app.js:636` — sync-action wrapper now stamps `ctx.syncActionStartedAt = Date.now()` on entry and clears it in `finally`.
+  - `bot/cli/registry.mjs` — `mc task` verb description rewritten so the brain prompt sees the three-slot contract.
+- **Smoke test** — `scripts/test-task-semantics.py` (4 scenarios, all PASS):
+  - A: idle bot → `{task:null, sync:null}` confirmed.
+  - B: `mc look` then `mc task` → `last={action:'look', status:'done', age_s:0}`.
+  - C: `mc move` to a far target, parallel `/task` polling → 81 snapshots, caught `sync.action='move'` with `elapsed_s=6`.
+  - D: `/task/start mc wait 3` → observed `task.status` transition `'running'` → `'done'`, `last.action='wait'`.
+- **Verdict.** F46 done. The brain prompt update (one line: "`mc task` returns three slots — check `last` to see what just finished") can land alongside the G22 prompt rewrite. Next: F47 (`mc flee` misfire repro) or the G21 re-run on deepseek-flash, whichever the user prefers.
+

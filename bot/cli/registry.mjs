@@ -1440,7 +1440,12 @@ export const RAW_COMMAND_DEFS = [
     customParse: true,
     bodyFn: (p) => JSON.stringify(p),
   }),
-  g('task', 'task', ['task_status'], { description: 'Status of background task by id', method: 'GET', path: '/task', examples: [`mc task`] }),
+  g('task', 'task', ['task_status'], {
+    description: 'Activity status. Returns {task, sync, last}: task=async bg task if any, sync=currently-running synchronous action (mc place, mc collect, etc.), last=most recent completed action with status. If task and sync are both null, the bot is idle — check `last` to see what just finished.',
+    method: 'GET',
+    path: '/task',
+    examples: [`mc task`],
+  }),
   g('task_pause', 'task', [], { description: 'Pause running task', method: 'POST', path: '/task/pause', bodyFn: () => empty }),
   g('task_resume', 'task', [], {
     description: 'Resume paused task',
