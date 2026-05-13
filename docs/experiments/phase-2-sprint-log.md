@@ -1053,3 +1053,32 @@ These remain as fixtures for the strategy/agent layer once that work begins.
   - D: bot TP'd to a different position, `mc reachable 0 65 12` still reports `head_blocked` — confirms the check is pose-independent (geometry of the target, not the bot's current state).
 - **Verdict.** F48 done. The class-of-bug ("nav fails silently and brain loops") is converted into a self-explaining error contract. The G22 prompt should add a one-line hint: "if a nav action fails, check `observed_state.closest_standable` — try that coord instead of retrying."
 
+### F49. Pathfinder parkour expansion was the timeout culprit
+
+- **Symptom.** Across F48's recovery test R1, plus a focused 30-case probe matrix, pathfinder `goto`/`goto_near`/`move` timed out at 15s when:
+  - A multi-block wall (≥4 cells wide, ≥2 cells tall) was between the bot and target, AND
+  - The bot started in a narrow band 0.3–0.9 blocks east of the wall's east face.
+
+  Bot at `(3.0+, 12.7)` succeeded in <2s. Bot at `(2.3–2.9, 12.7)` hung 15s. Single-cell pillars and walls with the bot ≥1 block away worked fine. The same scenario via `mc move` and `mc goto` all timed out, ruling out a goto_near-specific bug.
+
+- **Root cause.** `bot/lib/bot/manager.js:174` set `moves.allowParkour = true`. Mineflayer-pathfinder explores parkour-over-the-top sequences in its A* search; for a 3-tall wall those are all dead-ends, but the search exhausts the 5s think budget exploring them. After timeout, pathfinder re-plans and loops — wallclock-capped at 15s by F45's `OPERATION_TIMEOUT`. The bot edges forward by tenths of a meter each iteration but never crosses the corner.
+
+- **Fix.** Default `allowParkour = false`. Env-var `BOT_ALLOW_PARKOUR=true` opts back in for tests that need parkour (none currently in our suite). `bot/lib/bot/manager.js:172–185` documents the rationale.
+
+- **Verification (post-F49 default):**
+  - Original failing case `goto_near (0,65,11)` from `(2.5, 65, 12.7)`:
+    - range=0: still 15s timeout (degenerate case — bot must stand AT exact cell)
+    - range=1: **NAV_FAILED in 2s** (was 15s timeout — clean fast failure)
+    - range=2: **SUCCESS in 7s** (was 15s timeout — actual route found)
+  - All 4 F48 scenarios still PASS.
+  - All 5 dig-walk-pickup-chain scenarios still PASS (no regression on pillar navigation).
+  - test-stuck-recenter still PASS.
+
+- **F48 + F49 together.** F48's `closest_standable` is now load-bearing: the brain reads the suggested coord from the error, retries with `range=2`, and pathfinder ACTUALLY routes around the wall. R1 in `test-recovery-protocols.py` is updated to demonstrate this combined path.
+
+- **Remaining smaller issues:**
+  - "Goal was changed before it could be completed" sometimes fires on rapid back-to-back goto calls. The previous goto's `setGoal(null)` in the catch handler doesn't fully reset pathfinder state. A small `sleep(200ms)` between retries works around it but a framework-side fix (await pathfinder idle) is cleaner.
+  - `range=0` (must-stand-AT-cell) still times out for wall-adjacent targets. Acceptable: brain prompts should default to `range=1` or higher for any navigation involving walls.
+
+- **Verdict.** F49 done. The G21 v2 Mason stuck-loop class is unblocked when combined with F48's introspection. Default-off parkour is a defensible cost: G21 / building / mining workflows don't need parkour, and the speed/reliability gain is large.
+

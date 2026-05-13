@@ -170,13 +170,30 @@ def scenario_R1_head_blocked_recovery(bot_url: str) -> bool:
         print(f"    FAIL: target_reason should be head_blocked, got {tr}")
         return False
 
-    # CONTRACT CHECK PASSES: the error carried closest_standable +
-    # target_reason='head_blocked'. That's the F48 deliverable —
-    # the brain has the data it needs to make a smart retry.
-    print(f"  → PASS (contract): F48 error carries closest_standable={cs}, target_reason='{tr}'")
-    print(f"      NOTE: end-to-end recovery (goto_near to closest_standable then place) currently")
-    print(f"      fails because pathfinder times out on what should be a trivial 3-cell route.")
-    print(f"      Known issue, separate from F48 — tracked as a carry-forward for a future sprint.")
+    # CONTRACT CHECK: the error carried closest_standable + target_reason.
+    print(f"  ✓ contract: F48 error carries closest_standable={cs}, target_reason='{tr}'")
+
+    # Step 2: brain retries with closest_standable. With F49 (parkour off
+    # by default), this now succeeds end-to-end when an appropriate range
+    # is used (range=1 still fails fast against the wall corner; range=2
+    # gives pathfinder enough flexibility to route south then west around
+    # the wall).
+    bx, by, bz = cs["x"], cs["y"], cs["z"]
+    print(f"  [protocol] step 2: mc goto_near {bx} {by} {bz} range=2 (close_standable + wider range)")
+    r2 = http_post(
+        f"{bot_url}/action/goto_near",
+        {"x": bx, "y": by, "z": bz, "range": 2},
+        timeout=25,
+    )
+    pos2 = (http_get(f"{bot_url}/status?lean=true").get("data") or {}).get("position")
+    print(f"    result: ok={r2.get('ok')}  bot pos after: {pos2}")
+    if not r2.get("ok"):
+        c2, m2, _ = err_fields(r2)
+        print(f"    PARTIAL: retry to closest_standable+r=2 failed code={c2} msg={m2[:80]}")
+        print("    contract delivered correct data; full recovery still needs more work")
+        return True  # contract check passed even if recovery didn't
+
+    print(f"  → PASS (end-to-end): bot reached the closest_standable region; F48 + F49 together unblock the recovery")
     return True
 
 

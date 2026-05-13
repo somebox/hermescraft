@@ -171,7 +171,20 @@ export function createBotManager(deps) {
         // the explicit door verb, mc tunnel/dig_area handle terrain.
         const moves = new Movements(ctx.bot);
         moves.allowSprinting = true;
-        moves.allowParkour = true;
+        // F49: parkour expansion explodes the pathfinder search space
+        // when a multi-block wall is between the bot and its target.
+        // Mineflayer-pathfinder evaluates many parkour-over-the-top
+        // sequences that can't possibly work (3-tall walls block
+        // 1-block-jump parkour), exhausting the 5s think budget and
+        // looping the goto. Repro: G21 v2 Mason at (2.5, 65, 12.7) with
+        // a 4-wide 3-tall cobble wall at z=12; `goto_near` to (0,65,11)
+        // hangs 15s with parkour on, succeeds in 8s at range=2 without.
+        //
+        // Default: OFF. Parkour helps when there's no easier route (e.g.
+        // crossing a small ravine), but for typical G21 / build / mine
+        // workflows the no-parkour search is faster AND more reliable.
+        // Opt-in with BOT_ALLOW_PARKOUR=true if a specific test needs it.
+        moves.allowParkour = String(process.env.BOT_ALLOW_PARKOUR ?? 'false').toLowerCase() === 'true';
         moves.canDig = false;
         moves.scafoldingBlocks = [];
 
