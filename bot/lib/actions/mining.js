@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards } from '../bot/dig-tools.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards, isDigProtected } from '../bot/dig-tools.js';
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/perception.js';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
 /**
  * Race pathfinder.goto against a hard wall-clock timeout. Without this, the
@@ -12,26 +13,19 @@ import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/pe
  * @param {import('mineflayer').Bot} b
  * @param {object} goal - mineflayer-pathfinder goal
  * @param {number} timeoutMs
- * @throws Error("pathfinder_timeout") on timeout, or the underlying
- *         pathfinder error otherwise.
+ * @throws OperationTimeoutError on timeout, or the underlying pathfinder
+ *         error otherwise. Callers can detect timeout via `instanceof
+ *         OperationTimeoutError` or `err.code === 'OPERATION_TIMEOUT'`.
  */
 async function gotoWithTimeout(b, goal, timeoutMs) {
-  let timer;
   try {
-    await Promise.race([
-      b.pathfinder.goto(goal),
-      new Promise((_, rej) => {
-        timer = setTimeout(() => rej(new Error('pathfinder_timeout')), timeoutMs);
-      }),
-    ]);
+    await raceWithTimeout(b.pathfinder.goto(goal), timeoutMs, 'goto');
   } catch (err) {
-    if (/** @type {Error} */ (err).message === 'pathfinder_timeout') {
+    if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
       try { b.pathfinder.stop(); } catch { /* ignore */ }
       try { b.clearControlStates?.(); } catch { /* ignore */ }
     }
     throw err;
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
@@ -799,7 +793,7 @@ export function createMiningActions(deps) {
         };
       }
 
-      if (PROTECTED_DIG_BLOCKS.has(target.name)) {
+      if (isDigProtected(target.name)) {
         return {
           ok: false,
           error: {
@@ -836,8 +830,16 @@ export function createMiningActions(deps) {
 
       if (distance > 4.5) {
         try {
-          await gotoWithTimeout(b, new goals.GoalNear(x, y, z, 3), 10000);
+          await gotoWithTimeout(b, new goals.GoalNear(x, y, z, 3), ACTION_CAPS_MS.dig);
         } catch (err) {
+          if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+            return timeoutError('dig', ACTION_CAPS_MS.dig, {
+              block_at_target: target.name,
+              requested_coord: { x, y, z },
+              distance: Math.round(distance * 10) / 10,
+              bot_position: posObj(b.entity.position),
+            }, 'Pathfind to dig target was canceled. Move closer manually or try a different cell.');
+          }
           return {
             ok: false,
             error: {
@@ -1166,5 +1168,49 @@ export function createMiningActions(deps) {
       return handlers.dig({ x: tx, y: ty, z: tz });
     },
   };
+
+  // ─ F45.2: wrap long-running actions with a wallclock cap ─
+  // collect can run many pathfind+dig cycles; dig has the dig step itself.
+  // Each inner pathfind has its own cap via gotoWithTimeout, but the outer
+  // cap below is a defense-in-depth backstop so the brain never blocks on
+  // a runaway. On timeout we stop pathfinder/dig and return a structured
+  // OPERATION_TIMEOUT action-result.
+  const _origCollect = handlers.collect;
+  handlers.collect = async function (args) {
+    try {
+      return await raceWithTimeout(_origCollect(args), ACTION_CAPS_MS.collect, 'collect');
+    } catch (err) {
+      if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+        const b = ensureBot();
+        try { b.pathfinder.setGoal(null); } catch { /* ignore */ }
+        try { b.stopDigging(); } catch { /* ignore */ }
+        return timeoutError('collect', ACTION_CAPS_MS.collect, {
+          requested_block: args?.block,
+          requested_count: args?.count,
+          bot_position: posObj(b.entity.position),
+        }, 'Collect was canceled. Inventory may be partially updated; check with mc inventory.');
+      }
+      throw err;
+    }
+  };
+
+  const _origDig = handlers.dig;
+  handlers.dig = async function (args) {
+    try {
+      return await raceWithTimeout(_origDig(args), ACTION_CAPS_MS.dig, 'dig');
+    } catch (err) {
+      if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+        const b = ensureBot();
+        try { b.pathfinder.setGoal(null); } catch { /* ignore */ }
+        try { b.stopDigging(); } catch { /* ignore */ }
+        return timeoutError('dig', ACTION_CAPS_MS.dig, {
+          requested_coord: { x: args?.x, y: args?.y, z: args?.z },
+          bot_position: posObj(b.entity.position),
+        }, 'Dig was canceled.');
+      }
+      throw err;
+    }
+  };
+
   return handlers;
 }

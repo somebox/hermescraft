@@ -1,9 +1,10 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards } from '../bot/dig-tools.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, RELOCATABLE_INFRASTRUCTURE, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards, suggestedToolForBlock, isDigProtected } from '../bot/dig-tools.js';
 import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
 export function createWorldActions(deps) {
-  const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveInventoryItem, rememberSocialEvent, getMyName, ACTIONS } = deps;
+  const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveInventoryItem, rememberSocialEvent, getMyName, ACTIONS, hasLineOfSight, eyePosition } = deps;
   const cardinalDelta = (direction) => {
     const d = String(direction || '').toLowerCase();
     switch (d) {
@@ -189,7 +190,7 @@ export function createWorldActions(deps) {
       for (const y of [baseFy + 1, baseFy + 2]) {
         const blk = b.blockAt(new Vec3(ix, y, iz));
         if (!blk || isAirLike(blk) || blk.boundingBox !== 'block') continue;
-        if (PROTECTED_DIG_BLOCKS.has(blk.name)) continue;
+        if (isDigProtected(blk.name)) continue;
         try {
           await equipForDig(b, blk);
           await b.dig(blk, true);
@@ -424,17 +425,36 @@ export function createWorldActions(deps) {
     // Only a non-replaceable block at target counts as occupied.
     const existing = b.blockAt(targetPos);
     if (existing && !isReplaceable(existing)) {
+      // F45.4: enrich with diggability + relocatability + suggested tool.
+      const isDiggable = !isDigProtected(existing.name);
+      const isRelocatable = RELOCATABLE_INFRASTRUCTURE.has(existing.name);
+      const suggestedTool = suggestedToolForBlock(existing.name);
+      let hint;
+      let nextActionHint;
+      if (isRelocatable) {
+        hint = `${existing.name} is relocatable — dig it (mc dig ${x} ${y} ${z}) and re-place it somewhere else (mc place ${existing.name} <X> <Y> <Z>).`;
+        nextActionHint = `mc dig ${x} ${y} ${z}`;
+      } else if (isDiggable) {
+        hint = `Block is diggable — clear with mc dig ${x} ${y} ${z} (use ${suggestedTool}).`;
+        nextActionHint = `mc dig ${x} ${y} ${z}`;
+      } else {
+        hint = `Block is protected (part of a building). Choose another cell.`;
+        nextActionHint = null;
+      }
       return {
         ok: false,
         error: {
           code: 'TARGET_OCCUPIED',
-          message: `Cannot place at ${x}, ${y}, ${z}: block is already ${existing.name}. Dig it first or choose another cell.`,
+          message: `Cannot place at ${x}, ${y}, ${z}: block is already ${existing.name}. ${hint}`,
           observed_state: {
             requested_block: blockName,
             requested_coord: { x, y, z },
             existing_block: existing.name,
+            is_diggable: isDiggable,
+            is_relocatable: isRelocatable,
+            suggested_tool: suggestedTool,
           },
-          next_action_hint: `mc dig ${x} ${y} ${z}`,
+          ...(nextActionHint ? { next_action_hint: nextActionHint } : {}),
           retry_safe: false,
         },
       };
@@ -488,8 +508,21 @@ export function createWorldActions(deps) {
     const distance = b.entity.position.distanceTo(targetPos);
     if (distance > 4.5) {
       try {
-        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+        await raceWithTimeout(
+          b.pathfinder.goto(new goals.GoalNear(x, y, z, 3)),
+          ACTION_CAPS_MS.place,
+          'place',
+        );
       } catch (err) {
+        if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+          try { b.pathfinder.setGoal(null); } catch { /* ignore */ }
+          return timeoutError('place', ACTION_CAPS_MS.place, {
+            requested_block: blockName,
+            requested_coord: { x, y, z },
+            distance: Math.round(distance * 10) / 10,
+            bot_position: posObj(b.entity.position),
+          }, 'Pathfind to target was canceled. Re-evaluate route or try a closer cell.');
+        }
         return {
           ok: false,
           error: {
@@ -505,6 +538,61 @@ export function createWorldActions(deps) {
           },
         };
       }
+    }
+
+    // ── NO_LINE_OF_SIGHT ──
+    // F45.3: Without LOS, bot can place blocks through walls / through its
+    // own body (parallel to the G20 attack-through-walls hole F42 closed).
+    // Raycast from bot eye toward each candidate face of the target cell;
+    // accept if ANY face is visible. Aim 0.02 inward so the ray endpoint
+    // sits in air, not inside the target — avoids false-negative where
+    // the ray ends inside the block itself.
+    if (typeof hasLineOfSight === 'function' && typeof eyePosition === 'function') {
+      const eye = eyePosition();
+      if (!eye) {
+        // Bot not yet spawned with a position — skip the LOS check and
+        // fall through to the place loop. Should not happen in practice.
+      } else {
+      const cx = x + 0.5;
+      const cy = y + 0.5;
+      const cz = z + 0.5;
+      const faceCandidates = [
+        { x: cx, y: cy, z: cz - 0.48 },
+        { x: cx, y: cy, z: cz + 0.48 },
+        { x: cx - 0.48, y: cy, z: cz },
+        { x: cx + 0.48, y: cy, z: cz },
+        { x: cx, y: cy - 0.48, z: cz },
+        { x: cx, y: cy + 0.48, z: cz },
+        { x: cx, y: cy, z: cz },
+      ];
+      const seesAnyFace = faceCandidates.some((p) => hasLineOfSight(eye, p));
+      if (!seesAnyFace) {
+        // Identify the blocker on the center ray for the message.
+        let blocker = null;
+        try {
+          const raw = b.world?.raycast?.(
+            eye,
+            { x: cx - eye.x, y: cy - eye.y, z: cz - eye.z },
+            6,
+          );
+          blocker = raw?.name || null;
+        } catch { /* ignore */ }
+        return {
+          ok: false,
+          error: {
+            code: 'NO_LINE_OF_SIGHT',
+            message: `Cannot place at ${x},${y},${z} — your view to the target is blocked${blocker ? ` by ${blocker}` : ''}. Move to a position with clear sight of the cell, or dig the obstruction first.`,
+            observed_state: {
+              requested_block: blockName,
+              requested_coord: { x, y, z },
+              bot_position: posObj(b.entity.position),
+              blocker: blocker || null,
+            },
+            retry_safe: false,
+          },
+        };
+      }
+      } // end if (eye)
     }
 
     await b.equip(item, 'hand');
@@ -1139,7 +1227,7 @@ export function createWorldActions(deps) {
           const py = targetY + dy;
           const blk = b.blockAt(new Vec3(x, py, z));
           if (!blk || isAirLike(blk)) continue;
-          if (PROTECTED_DIG_BLOCKS.has(blk.name)) { skipped++; continue; }
+          if (isDigProtected(blk.name)) { skipped++; continue; }
           if (b.entity.position.distanceTo(blk.position) > 4.5) {
             try { await b.pathfinder.goto(new goals.GoalNear(x, py, z, 3)); } catch {}
           }
@@ -1543,7 +1631,7 @@ export function createWorldActions(deps) {
           skipped++;
           continue;
         }
-        if (PROTECTED_DIG_BLOCKS.has(target.name)) {
+        if (isDigProtected(target.name)) {
           skipped++;
           continue;
         }
@@ -2546,6 +2634,208 @@ export function createWorldActions(deps) {
    * Use after building a shelter to verify it's actually sealed before
    * settling in for the night.
    */
+  /**
+   * F45.6: Inspect a single cell — what's the block, can it be dug, is it
+   * relocatable, what tool should be used, and which entities (players /
+   * mobs) overlap that cell. Use proactively to avoid place-fail-then-recover.
+   */
+  async inspect({ x, y, z }) {
+    const b = ensureBot();
+    if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_COORD',
+          message: 'mc inspect requires numeric x, y, z',
+          retry_safe: false,
+        },
+      };
+    }
+    const ix = Math.floor(Number(x));
+    const iy = Math.floor(Number(y));
+    const iz = Math.floor(Number(z));
+    const cellPos = new Vec3(ix, iy, iz);
+    const blk = b.blockAt(cellPos);
+    const blockName = blk?.name || 'unknown';
+    const hardness = (typeof blk?.hardness === 'number') ? blk.hardness : null;
+    const boundingBox = blk?.boundingBox || null;
+    const isAir = blockName === 'air' || blockName === 'cave_air' || blockName === 'void_air';
+    const isDiggable = !isAir && !isDigProtected(blockName);
+    const isRelocatable = RELOCATABLE_INFRASTRUCTURE.has(blockName);
+    const suggestedTool = isAir ? null : suggestedToolForBlock(blockName);
+
+    // Entities occupying this cell (foot or head). 1.8-block tall entities
+    // occupy floor(ey) and floor(ey)+1.
+    const entitiesAt = [];
+    for (const e of Object.values(b.entities || {})) {
+      if (!e || !e.position) continue;
+      const ex = Math.floor(e.position.x);
+      const ez = Math.floor(e.position.z);
+      const ey = Math.floor(e.position.y);
+      if (ex !== ix || ez !== iz) continue;
+      if (ey !== iy && ey + 1 !== iy) continue;
+      entitiesAt.push({
+        type: e.type || null,
+        name: e.name || null,
+        username: e.username || null,
+        position: { x: e.position.x, y: e.position.y, z: e.position.z },
+      });
+    }
+
+    const occupied = (!isAir) || entitiesAt.length > 0;
+    return {
+      ok: true,
+      data: {
+        coord: { x: ix, y: iy, z: iz },
+        block: {
+          name: blockName,
+          is_air: isAir,
+          is_diggable: isDiggable,
+          is_relocatable: isRelocatable,
+          is_protected: !isAir && !isDiggable,
+          suggested_tool: suggestedTool,
+          hardness,
+          bounding_box: boundingBox,
+        },
+        entities_at: entitiesAt,
+        occupied,
+      },
+      result: `Block at ${ix},${iy},${iz}: ${blockName}${entitiesAt.length ? ` (${entitiesAt.length} entity${entitiesAt.length > 1 ? 'ies' : ''} here)` : ''}`,
+    };
+  },
+
+  /**
+   * F45.7: Region predicate — is every cell in [x1..x2, y1..y2, z1..z2] air-like?
+   * Returns up to 32 non-empty cells with their block names. Capped at 1000 cells.
+   */
+  async is_empty({ x1, y1, z1, x2, y2, z2 }) {
+    const b = ensureBot();
+    const coords = [x1, y1, z1, x2, y2, z2].map((v) => Number(v));
+    if (!coords.every((v) => Number.isFinite(v))) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_COORD', message: 'mc is_empty requires numeric x1,y1,z1,x2,y2,z2', retry_safe: false },
+      };
+    }
+    const [X1, Y1, Z1, X2, Y2, Z2] = [
+      Math.min(Math.floor(coords[0]), Math.floor(coords[3])),
+      Math.min(Math.floor(coords[1]), Math.floor(coords[4])),
+      Math.min(Math.floor(coords[2]), Math.floor(coords[5])),
+      Math.max(Math.floor(coords[0]), Math.floor(coords[3])),
+      Math.max(Math.floor(coords[1]), Math.floor(coords[4])),
+      Math.max(Math.floor(coords[2]), Math.floor(coords[5])),
+    ];
+    const cells = (X2 - X1 + 1) * (Y2 - Y1 + 1) * (Z2 - Z1 + 1);
+    if (cells > 1000) {
+      return {
+        ok: false,
+        error: {
+          code: 'REGION_TOO_LARGE',
+          message: `Region has ${cells} cells (max 1000). Shrink the bounds.`,
+          observed_state: { total_cells: cells, max_cells: 1000 },
+          retry_safe: false,
+        },
+      };
+    }
+    const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
+    const nonEmpty = [];
+    for (let yy = Y1; yy <= Y2; yy++) {
+      for (let zz = Z1; zz <= Z2; zz++) {
+        for (let xx = X1; xx <= X2; xx++) {
+          const blk = b.blockAt(new Vec3(xx, yy, zz));
+          const nm = blk?.name || 'unknown';
+          if (!AIR_NAMES.has(nm)) {
+            nonEmpty.push({ coord: { x: xx, y: yy, z: zz }, name: nm });
+            if (nonEmpty.length >= 32) break;
+          }
+        }
+        if (nonEmpty.length >= 32) break;
+      }
+      if (nonEmpty.length >= 32) break;
+    }
+    const empty = nonEmpty.length === 0;
+    return {
+      ok: true,
+      data: {
+        empty,
+        non_empty_blocks: nonEmpty,
+        total_cells: cells,
+        sampled: nonEmpty.length >= 32,
+        bounds: { x1: X1, y1: Y1, z1: Z1, x2: X2, y2: Y2, z2: Z2 },
+      },
+      result: empty ? `Region ${X1},${Y1},${Z1} → ${X2},${Y2},${Z2} (${cells} cells) is EMPTY` : `Region NOT empty: ${nonEmpty.length}${nonEmpty.length >= 32 ? '+' : ''} non-air cells (first: ${nonEmpty[0].name} at ${nonEmpty[0].coord.x},${nonEmpty[0].coord.y},${nonEmpty[0].coord.z})`,
+    };
+  },
+
+  /**
+   * F45.7: Region predicate — is every cell in [x1..x2, y1..y2, z1..z2]
+   * filled with `material`? Returns up to 32 mismatching cells. Capped at 1000.
+   */
+  async is_filled({ x1, y1, z1, x2, y2, z2, material }) {
+    const b = ensureBot();
+    if (!material || typeof material !== 'string') {
+      return {
+        ok: false,
+        error: { code: 'MISSING_MATERIAL', message: 'mc is_filled requires a material name (e.g. "cobblestone")', retry_safe: false },
+      };
+    }
+    const coords = [x1, y1, z1, x2, y2, z2].map((v) => Number(v));
+    if (!coords.every((v) => Number.isFinite(v))) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_COORD', message: 'mc is_filled requires numeric x1,y1,z1,x2,y2,z2', retry_safe: false },
+      };
+    }
+    const [X1, Y1, Z1, X2, Y2, Z2] = [
+      Math.min(Math.floor(coords[0]), Math.floor(coords[3])),
+      Math.min(Math.floor(coords[1]), Math.floor(coords[4])),
+      Math.min(Math.floor(coords[2]), Math.floor(coords[5])),
+      Math.max(Math.floor(coords[0]), Math.floor(coords[3])),
+      Math.max(Math.floor(coords[1]), Math.floor(coords[4])),
+      Math.max(Math.floor(coords[2]), Math.floor(coords[5])),
+    ];
+    const cells = (X2 - X1 + 1) * (Y2 - Y1 + 1) * (Z2 - Z1 + 1);
+    if (cells > 1000) {
+      return {
+        ok: false,
+        error: {
+          code: 'REGION_TOO_LARGE',
+          message: `Region has ${cells} cells (max 1000). Shrink the bounds.`,
+          observed_state: { total_cells: cells, max_cells: 1000 },
+          retry_safe: false,
+        },
+      };
+    }
+    const missing = [];
+    for (let yy = Y1; yy <= Y2; yy++) {
+      for (let zz = Z1; zz <= Z2; zz++) {
+        for (let xx = X1; xx <= X2; xx++) {
+          const blk = b.blockAt(new Vec3(xx, yy, zz));
+          const nm = blk?.name || 'unknown';
+          if (nm !== material) {
+            missing.push({ coord: { x: xx, y: yy, z: zz }, actual_name: nm });
+            if (missing.length >= 32) break;
+          }
+        }
+        if (missing.length >= 32) break;
+      }
+      if (missing.length >= 32) break;
+    }
+    const filled = missing.length === 0;
+    return {
+      ok: true,
+      data: {
+        filled,
+        material,
+        missing,
+        total_cells: cells,
+        sampled: missing.length >= 32,
+        bounds: { x1: X1, y1: Y1, z1: Z1, x2: X2, y2: Y2, z2: Z2 },
+      },
+      result: filled ? `Region ${X1},${Y1},${Z1} → ${X2},${Y2},${Z2} (${cells} cells) is FILLED with ${material}` : `Region NOT fully ${material}: ${missing.length}${missing.length >= 32 ? '+' : ''} mismatching cells (first: ${missing[0].actual_name} at ${missing[0].coord.x},${missing[0].coord.y},${missing[0].coord.z})`,
+    };
+  },
+
   async is_sheltered({ radius = 20 } = {}) {
     const b = ensureBot();
     const start = b.entity.position;

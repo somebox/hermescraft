@@ -41,6 +41,29 @@ export const PROTECTED_DIG_BLOCKS = new Set([
   'bed', 'white_bed', 'red_bed',
 ]);
 
+/**
+ * F45.5: When BOT_ALLOW_DIG_INFRASTRUCTURE=true, downgrade the protected
+ * list to only the truly irreplaceable items so the bot can relocate
+ * furniture (crafting table / furnace / chest / barrel) that ended up
+ * blocking a build. Beds and bookshelves stay protected because they
+ * carry expensive durable items (string, books) that bots should not
+ * lose to an accidental dig.
+ *
+ * G21 orchestrator sets this true on body launch. G20 and other tests
+ * keep the full protection by default.
+ */
+const ALWAYS_PROTECTED = new Set([
+  'bed', 'white_bed', 'red_bed', 'bookshelf',
+]);
+
+export function isDigProtected(blockName) {
+  if (!blockName) return false;
+  if (String(process.env.BOT_ALLOW_DIG_INFRASTRUCTURE || '').toLowerCase() === 'true') {
+    return ALWAYS_PROTECTED.has(blockName);
+  }
+  return PROTECTED_DIG_BLOCKS.has(blockName);
+}
+
 export const DIG_PASSABLE_NAMES = new Set(['air', 'cave_air', 'void_air']);
 export const DIG_FLUID_NAMES = new Set(['water', 'lava']);
 export const FALLING_BLOCK_NAMES = new Set([
@@ -167,6 +190,39 @@ export function blockNeedsPickaxeHarvest(blockName) {
 
 export function isLeavesBlockName(nm) {
   return nm ? /(_leaves$|^azalea_leaves$|^flowering_azalea_leaves$)/.test(nm) : false;
+}
+
+/**
+ * Blocks that the bot can usefully dig and re-place elsewhere — utility
+ * fixtures like crafting tables and storage. Used by `mc place` to hint
+ * that a TARGET_OCCUPIED block can be cleared via `mc dig` + re-placed.
+ */
+export const RELOCATABLE_INFRASTRUCTURE = new Set([
+  'crafting_table', 'furnace', 'blast_furnace', 'smoker', 'chest', 'trapped_chest', 'barrel',
+]);
+
+/**
+ * Best-guess of the tool tier needed to dig a block. Returns one of:
+ *   'hand'                — soft blocks, plants, etc. (no tool required)
+ *   'wooden_pickaxe'      — stone family
+ *   'wooden_axe'          — logs / planks / wood
+ *   'wooden_shovel'       — sand / dirt / gravel (drop-without-tool is fine but
+ *                            shovel is faster)
+ *   'iron_pickaxe'        — diamond, emerald, gold ores (requires iron tier)
+ *   'diamond_pickaxe'     — obsidian, ancient_debris
+ *   'shears'              — wool, leaves (for drops)
+ * Coarse — not a full tier table, just enough for a hint.
+ */
+export function suggestedToolForBlock(blockName) {
+  if (!blockName) return 'hand';
+  if (blockNeedsAxeHarvest(blockName)) return 'wooden_axe';
+  if (/obsidian|crying_obsidian|ancient_debris/i.test(blockName)) return 'diamond_pickaxe';
+  if (/(diamond|emerald|gold)_ore|deepslate_(diamond|emerald|gold)_ore/i.test(blockName)) return 'iron_pickaxe';
+  if (/(iron|lapis|redstone|copper)_ore|deepslate_(iron|lapis|redstone|copper)_ore/i.test(blockName)) return 'stone_pickaxe';
+  if (blockNeedsPickaxeHarvest(blockName)) return 'wooden_pickaxe';
+  if (/^(sand|red_sand|gravel|dirt|grass_block|podzol|coarse_dirt|rooted_dirt|mud|snow|snow_block|clay)$/i.test(blockName)) return 'wooden_shovel';
+  if (/^(wool|cobweb)$|_wool$|_leaves$/i.test(blockName)) return 'shears';
+  return 'hand';
 }
 
 export function firstInvItemByPriority(b, names) {

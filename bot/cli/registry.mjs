@@ -1179,6 +1179,56 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ radius: Number(p.radius ?? 20) }),
     examples: ['mc is_sheltered', 'mc is_sheltered radius=30'],
   }),
+  g('inspect', 'world', ['block_at', 'cell_info'], {
+    description: 'Inspect a single cell — block name, is_diggable, is_relocatable, suggested_tool, and entities standing in that cell. Use to plan place/dig without trial-and-error.',
+    method: 'POST',
+    path: '/action/inspect',
+    argSchema: [
+      { key: 'x', type: 'number', required: true, positional: true },
+      { key: 'y', type: 'number', required: true, positional: true },
+      { key: 'z', type: 'number', required: true, positional: true },
+    ],
+    bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
+    examples: ['mc inspect 10 64 -3'],
+  }),
+  g('is_empty', 'world', ['region_empty'], {
+    description: 'Region predicate — is every cell in [x1..x2, y1..y2, z1..z2] air? Returns up to 32 non-empty cells. Capped at 1000 cells.',
+    method: 'POST',
+    path: '/action/is_empty',
+    argSchema: [
+      { key: 'x1', type: 'number', required: true, positional: true },
+      { key: 'y1', type: 'number', required: true, positional: true },
+      { key: 'z1', type: 'number', required: true, positional: true },
+      { key: 'x2', type: 'number', required: true, positional: true },
+      { key: 'y2', type: 'number', required: true, positional: true },
+      { key: 'z2', type: 'number', required: true, positional: true },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x1: Number(p.x1), y1: Number(p.y1), z1: Number(p.z1),
+      x2: Number(p.x2), y2: Number(p.y2), z2: Number(p.z2),
+    }),
+    examples: ['mc is_empty 0 64 0 5 67 5'],
+  }),
+  g('is_filled', 'world', ['region_filled', 'is_built'], {
+    description: 'Region predicate — is every cell in [x1..x2, y1..y2, z1..z2] filled with MATERIAL? Returns up to 32 mismatching cells. Capped at 1000 cells.',
+    method: 'POST',
+    path: '/action/is_filled',
+    argSchema: [
+      { key: 'x1', type: 'number', required: true, positional: true },
+      { key: 'y1', type: 'number', required: true, positional: true },
+      { key: 'z1', type: 'number', required: true, positional: true },
+      { key: 'x2', type: 'number', required: true, positional: true },
+      { key: 'y2', type: 'number', required: true, positional: true },
+      { key: 'z2', type: 'number', required: true, positional: true },
+      { key: 'material', type: 'string', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x1: Number(p.x1), y1: Number(p.y1), z1: Number(p.z1),
+      x2: Number(p.x2), y2: Number(p.y2), z2: Number(p.z2),
+      material: String(p.material),
+    }),
+    examples: ['mc is_filled 0 64 0 3 64 3 material=cobblestone'],
+  }),
 
   /* chat_to / whisper */
   g('chat_to', 'social', [], {

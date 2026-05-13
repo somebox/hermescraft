@@ -461,7 +461,9 @@ export function createObservation(deps) {
         nearbyPlayers: entities.filter(e => e.kind === 'player').map(p => ({ name: p.username || p.type, distance: p.distance, position: p.position })),
       } : {}),
       lookingAt,
-      unreadChat: unreadChat.length > 0 ? unreadChat : undefined,
+      // F45.8: always present so the brain has a stable signal of "you have
+      // unread messages" without needing to call /chat to know whether to ask.
+      unreadChat: { count: unreadChat.length, recent: unreadChat.slice(-3) },
       ...(ctx.deathLog.length > 0 ? { deaths: ctx.deathLog.length } : {}),
       ...(ctx.lastDeath ? { lastDeath: { position: ctx.lastDeath.position, seconds_ago: Math.round((Date.now()-ctx.lastDeath.time)/1000) } } : {}),
       ...(lean ? {} : { onGround: b.entity.onGround }),

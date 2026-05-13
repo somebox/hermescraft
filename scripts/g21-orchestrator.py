@@ -396,6 +396,11 @@ def launch_bot_body(name: str, port: int, env_extra: dict[str, str], log_path: P
         # into overhearLog, where `mc read_chat` can't see it — bots
         # think their partner is mute.
         "BOT_HEAR_ALL": "true",
+        # F45.5: allow bots to dig and relocate placed infrastructure
+        # (crafting_table / furnace / chest / barrel) that ended up in the
+        # wrong spot. Beds and bookshelves remain protected. This is
+        # opt-in per-orchestrator; G20 and other tests keep full protection.
+        "BOT_ALLOW_DIG_INFRASTRUCTURE": "true",
     })
     # PAPERMCP_TOKEN and friends from repo .env, if present.
     env_file = HERE / ".env"

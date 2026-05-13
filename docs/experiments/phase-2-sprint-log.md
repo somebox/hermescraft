@@ -962,3 +962,32 @@ These remain as fixtures for the strategy/agent layer once that work begins.
     - Communication: bots emitted progress notes intermittently but didn't share *decisions* before acting ("I'll do the south wall" type announcements were rare).
 - **Verdict:** G21 v1 proves the chat-driven orchestrator pattern works end-to-end on the first reliable run. Both bots cooperated, smelted glass, built a verifiable structure, and signalled completion via keyword. The remaining instability is dominated by **framework-level action-timeout and verification gaps**, not coordination or prompt drift. The cleanest next step is **F45: a focused bot-framework hardening sprint** that addresses the seven carry-forwards above before we try G22 (3+ bot coordination, harder mission graph).
 
+### F45. Bot-framework hardening — wallclock caps, place-LOS, inspect/region predicates
+
+- **Scope.** Eight of the eleven F44 carry-forwards landed as focused edits. Three deferred to F45.2/F46 (bg_* heartbeat, observation budget, mc task / mc flee semantics) — each needs investigation, not just an edit.
+- **What shipped:**
+  - **Centralised timeout helper** (`bot/lib/actions/_helpers.js`). Exports `OperationTimeoutError`, `raceWithTimeout(promise, capMs, opName)`, `timeoutError(...)`, `withWallclockCap(...)`, and a frozen `ACTION_CAPS_MS` table (place=8 s, goto/goto_near/go_mark=15 s, move=20 s, collect=20 s, dig=10 s, craft=30 s). Replaces the inline `Promise.race` boilerplate that was scattered across movement/mining.
+  - **Wallclock caps applied to** `place`, `goto`, `goto_near`, `move`, `go_mark` (containers.js), `collect`, `dig`, `craft`. Each returns a structured `{ok:false, error:{code:"OPERATION_TIMEOUT", message, observed_state:{op, cap_ms, ...}, retry_safe:true}}` on timeout and cancels pathfinder/dig before returning. The existing mining-only `gotoWithTimeout` was refactored to throw `OperationTimeoutError` so all paths share the contract.
+  - **`placeBlock` raycast LOS guard** (world.js:550+). Tests 7 candidate face points on the target cell; if `hasLineOfSight` rejects all of them, returns `{ok:false, error:{code:"NO_LINE_OF_SIGHT", observed_state:{blocker, ...}}}`. Closes the place-through-walls hole parallel to the G20 attack-through-walls fix.
+  - **`TARGET_OCCUPIED` hint extension.** Error now carries `is_diggable`, `is_relocatable` (true for crafting_table / furnace / blast_furnace / smoker / chest / trapped_chest / barrel), `suggested_tool`, and a human-readable hint string. Saves the brain a planning cycle.
+  - **`BOT_ALLOW_DIG_INFRASTRUCTURE` env-var** (dig-tools.js). New `isDigProtected(name)` function — when env var is `true`, only beds and bookshelves stay protected; relocatable infrastructure becomes dig-allowed. Migrated 5 callers in world.js + mining.js. Orchestrator sets it on every body launch alongside `BOT_HEAR_ALL`.
+  - **`mc inspect X Y Z`** primitive (world.js + cli/registry.mjs). Returns `{block:{name, is_air, is_diggable, is_relocatable, is_protected, suggested_tool, hardness, bounding_box}, entities_at:[…], occupied}`. Lets the brain plan place/dig without trial-and-error.
+  - **`mc is_empty x1 y1 z1 x2 y2 z2`** and **`mc is_filled … material`** region predicates. Bounded at 1000 cells (returns `REGION_TOO_LARGE` otherwise). Returns up to 32 sample mismatches with their coords. Useful for "is the interior cleared?" / "are all 12 perimeter cells filled?" checks before emitting DONE.
+  - **`unread_chat` always-present in `/status`** (observation.js:464). Was `unreadChat.length > 0 ? unreadChat : undefined`; now `{count, recent: slice(-3)}` always. Stable signal of waiting messages without a `mc chat` poll.
+- **Primitive test results** (against landfolk-test world with Flint bot at localhost:3001):
+  - `scripts/test-action-timeouts.py` — A (place unreachable) PASS, B (goto sealed) PASS.
+  - `scripts/test-place-los.py` — A (wall blocks LOS) PASS with `NO_LINE_OF_SIGHT`, B (clear LOS) PASS with place success.
+  - `scripts/test-inspect.py` — A (air) PASS, B (crafting_table → is_relocatable=true) PASS, C (cobblestone → suggested_tool='wooden_pickaxe') PASS.
+  - `scripts/test-region-predicates.py` — A/B (is_empty true/false) PASS, C/D (is_filled true/false with correct missing-cell coord) PASS, E (REGION_TOO_LARGE) PASS.
+  - **12/12 scenarios across 4 tests green.**
+- **G21 re-run on deepseek-flash** — deferred to a separate sit-down. Implementation + smoke tests are stable; the integration test belongs in its own session so the live combined log can be observed end-to-end.
+- **Files touched.**
+  - New: `bot/lib/actions/_helpers.js`, `scripts/test-{action-timeouts,place-los,inspect,region-predicates}.py`.
+  - Modified: `bot/lib/actions/{world,movement,mining,crafting,containers}.js` (wallclock caps + new actions + LOS guard + TARGET_OCCUPIED hint), `bot/lib/bot/dig-tools.js` (RELOCATABLE_INFRASTRUCTURE, suggestedToolForBlock, isDigProtected), `bot/lib/bot/observation.js` (unread_chat always present), `bot/cli/registry.mjs` (3 new verbs), `scripts/g21-orchestrator.py` (BOT_ALLOW_DIG_INFRASTRUCTURE on body launch).
+- **Deferred to F45.2 / F46.**
+  - **`mc task` rename / semantics rework.** Needs a backward-compat decision; bots currently mistake silence for progress.
+  - **`mc flee` misfire investigation.** Needs a clean repro of the G21 case where flee fired after a generic goto error.
+  - **Observation payload budget.** Needs token-cost profiling against deepseek-flash before we trim `/observe` / `/scene`.
+  - **bg_* task registry + heartbeat.** New module, not a small edit.
+- **Verdict:** F45 frozen. Eight carry-forwards converted to structured action-contract returns with primitive coverage; the brain now has explicit pre-flight + post-failure signals (`mc inspect`, region predicates, `is_diggable`, `is_relocatable`, `NO_LINE_OF_SIGHT`, `OPERATION_TIMEOUT`) instead of having to infer them from silence. Next session: G21 re-run on deepseek-flash with target wallclock <15 min and `mc place` failure rate <15%.
+

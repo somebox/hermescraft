@@ -1,4 +1,5 @@
 import { Vec3 } from 'vec3';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
 // ─ Phase-2 chest contract helpers (see docs/phase-2/action-contracts.md mc chest) ─
 
@@ -588,7 +589,23 @@ export function createContainerActions(deps) {
       if (!locs[name]) return { result: `No location '${name}'` };
       const l = locs[name];
       const b = ensureBot();
-      await b.pathfinder.goto(new goals.GoalNear(l.x, l.y, l.z, 2));
+      try {
+        await raceWithTimeout(
+          b.pathfinder.goto(new goals.GoalNear(l.x, l.y, l.z, 2)),
+          ACTION_CAPS_MS.go_mark,
+          'go_mark',
+        );
+      } catch (err) {
+        if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+          try { b.pathfinder.setGoal(null); } catch { /* ignore */ }
+          return timeoutError('go_mark', ACTION_CAPS_MS.go_mark, {
+            mark: name,
+            target: { x: l.x, y: l.y, z: l.z },
+            current: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+          }, `Could not reach mark '${name}'. Path may be blocked.`);
+        }
+        throw err;
+      }
       l.last_visited = new Date().toISOString();
       l.visit_count = (l.visit_count || 0) + 1;
       saveLocations(locs);

@@ -2,6 +2,7 @@
  * Movement action handlers: goto, goto_near, follow, look, stop, move.
  */
 import { Vec3 } from 'vec3';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
 export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }) {
   // Pathfinder is read-only (no canDig, no scaffolding). When it can't find
@@ -75,9 +76,8 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
         };
       }
       const goal = new goals.GoalBlock(tx, ty, tz);
-      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000));
       try {
-        await Promise.race([b.pathfinder.goto(goal), timeout]);
+        await raceWithTimeout(b.pathfinder.goto(goal), ACTION_CAPS_MS.goto, 'goto');
         const pos = posObj();
         const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
         if (dist > 2) {
@@ -86,6 +86,11 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
         return { result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
+        if (e instanceof OperationTimeoutError) {
+          return timeoutError('goto', ACTION_CAPS_MS.goto,
+            { target: { x, y, z }, current: posObj() },
+            `Pathfinder didn't finish in time. Try mc goto_near for a slacker range, or clear the route with mc dig / mc through.`);
+        }
         const pos = posObj();
         return navFailureError(pos, x, y, z, e?.message || String(e));
       }
@@ -94,9 +99,8 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
     async goto_near({ x, y, z, range = 2 }) {
       const b = ensureBot();
       const goal = new goals.GoalNear(Math.floor(x), Math.floor(y), Math.floor(z), range);
-      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000));
       try {
-        await Promise.race([b.pathfinder.goto(goal), timeout]);
+        await raceWithTimeout(b.pathfinder.goto(goal), ACTION_CAPS_MS.goto_near, 'goto_near');
         const pos = posObj();
         const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
         if (dist > range + 1.5) {
@@ -105,6 +109,11 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
         return { result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
+        if (e instanceof OperationTimeoutError) {
+          return timeoutError('goto_near', ACTION_CAPS_MS.goto_near,
+            { target: { x, y, z }, current: posObj(), range },
+            `Pathfinder didn't finish in time. Try a wider range or clear obstacles.`);
+        }
         const pos = posObj();
         return navFailureError(pos, x, y, z, e?.message || String(e));
       }
@@ -227,11 +236,10 @@ export function createMovementActions({ ensureBot, goals, fmt, posObj, ACTIONS }
       for (let leg = 1; leg <= maxDoors + 1; leg++) {
         // Try direct pathfinder.goto.
         const goal = new goals.GoalBlock(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z));
-        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 15000));
         try {
-          await Promise.race([b.pathfinder.goto(goal), timeout]);
+          await raceWithTimeout(b.pathfinder.goto(goal), ACTION_CAPS_MS.move, 'move');
         } catch (e) {
-          lastPathfinderError = e?.message || String(e);
+          lastPathfinderError = (e instanceof OperationTimeoutError) ? 'timeout' : (e?.message || String(e));
           try { b.pathfinder.setGoal(null); } catch {}
         }
 

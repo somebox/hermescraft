@@ -1,10 +1,11 @@
 import { Vec3 } from 'vec3';
 import { ingredientCountsFromSlots, recipeIngredientMap } from '../shared/recipe-ingredients.js';
 import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
 export function createCraftingActions(deps) {
   const { ctx, ensureBot, goals, sleep, resolveCraftItemName, buildCraftPlan, ACTIONS, loadLocations, getMyName, log } = deps;
-  return {
+  const handlers = {
     async craft({ item, count = 1 }) {
       // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc craft) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
@@ -663,6 +664,31 @@ export function createCraftingActions(deps) {
       };
     },
   };
+
+  // ─ F45.2: wallclock cap on craft ─
+  // craft pathfind-to-table + opens the crafting window + does the actual
+  // recipe — Paper 1.21 can stall inside the inventory window if the
+  // server is slow. ACTION_CAPS_MS.craft (30s) is the wallclock backstop.
+  const _origCraft = handlers.craft;
+  handlers.craft = async function (args) {
+    try {
+      return await raceWithTimeout(_origCraft(args), ACTION_CAPS_MS.craft, 'craft');
+    } catch (err) {
+      if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+        const b = ensureBot();
+        try { b.pathfinder.setGoal(null); } catch { /* ignore */ }
+        try { b.closeWindow?.(b.currentWindow); } catch { /* ignore */ }
+        return timeoutError('craft', ACTION_CAPS_MS.craft, {
+          requested_item: args?.item,
+          requested_count: args?.count,
+          bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+        }, 'Craft was canceled. Inventory may be partially updated; check with mc inventory.');
+      }
+      throw err;
+    }
+  };
+
+  return handlers;
 }
 
 /**
