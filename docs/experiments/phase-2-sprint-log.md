@@ -1082,3 +1082,21 @@ These remain as fixtures for the strategy/agent layer once that work begins.
 
 - **Verdict.** F49 done. The G21 v2 Mason stuck-loop class is unblocked when combined with F48's introspection. Default-off parkour is a defensible cost: G21 / building / mining workflows don't need parkour, and the speed/reliability gain is large.
 
+### Upstream pathfinder bug — root cause confirmed (closeout)
+
+After F49 we attempted an F51 fix for "Goal was changed before it could be completed!" errors on consecutive gotos. The fix made things worse, then a deeper investigation found the real root cause: **[mineflayer-pathfinder issue #273](https://github.com/PrismarineJS/mineflayer-pathfinder/issues/273)** (OPEN since June 2022).
+
+The bug is in `lib/goto.js`'s `noPathListener`: when A* returns a `partial` result with `path.length > 0`, NONE of the cleanup branches fire — the goto promise hangs forever. This is exactly our 15-second-timeout pattern. The upstream package is on its last release (2.4.5, Sept 2023, latest is also 2.4.5) with no open PR for the fix.
+
+**Why our existing framework is correct:**
+- **F45 wallclock cap** is THE workaround. Without it, gotos hang indefinitely. The 15s timeout fires, our code calls `setGoal(null)`, the still-subscribed `goalChangedListener` rejects the hung promise via `GoalChanged`, and we return a structured `OPERATION_TIMEOUT` error.
+- **F49 parkour-off** reduces how often A* returns `partial` (smaller search space, more clean `noPath` results) — fewer hangs in the first place.
+- **F48's `closest_standable`** in the error gives the brain the data needed to retry with a working coord.
+- **F47's clean `mc flee` contract** prevents the brain from misreading the timeout as a hostile threat.
+
+**Why the F51 attempt failed:** issue #261 confirms that "GoalChanged" / "PathStopped" errors are **by design** when `setGoal(null)` interrupts a hanging goto. Our `setGoal(null)` is the *mechanism* by which the wallclock cap force-rejects the hung promise. Removing it (F51) left the promise hanging across calls, which is worse.
+
+**The IParallel fork** (`https://github.com/IParallel/mineflayer-pathfinder`) has a fix: track `lastNodeTime`, emit `resetPath('stuck')` after 3500ms of no waypoint progress, add a `pathReset` listener in `goto.js` that rejects with `Stucked`. ~40 lines total. We are NOT applying it now — the fork is single-author, stale (Aug 2024), and bundles a massive `index.js` refactor. If our agent system matures past prototype, we'll either submit an upstream PR cherry-picking the fix, or maintain a `patch-package` patch locally.
+
+**For now: F45 + F48 + F49 are the correct workaround stack.** Document the upstream bug, point future fixes at it, and move on.
+
