@@ -60,7 +60,7 @@ def http_post(url: str, body: dict, timeout: float = 30.0) -> dict:
             return {"ok": False, "error": {"message": str(e), "code": "HTTP_ERROR"}}
 
 
-def reset_arena() -> None:
+def reset_arena(bot_url: str = DEFAULT_BOT_URL) -> None:
     rcon_batch([
         f"execute in {WORLD} run difficulty peaceful",
         f"execute in {WORLD} run gamerule doDaylightCycle false",
@@ -70,12 +70,18 @@ def reset_arena() -> None:
         f"execute in {WORLD} run fill -10 64 -10 10 64 10 minecraft:stone",
         f"execute in {WORLD} run clear Tester",
     ])
+    # F58: clear ctx.recentEscapes + ctx.recentStuckCells via mc status so
+    # F57's loop-detector / blackball don't fire from previous scenarios.
+    try:
+        http_get(f"{bot_url}/status?lean=true", timeout=5)
+    except Exception:
+        pass
     time.sleep(1.0)
 
 
 def scenario_three_walled(bot_url: str) -> bool:
     print("\n=== A: bot in 3-walled cell (walls N/E/S, open W) → escape via W ===")
-    reset_arena()
+    reset_arena(bot_url)
     # Walls at (0,65,-1) N, (1,65,0) E, (0,65,1) S. Bot at (0,65,0). Open W to (-1,65,0).
     rcon_batch([
         f"execute in {WORLD} run setblock 0 65 -1 minecraft:cobblestone",
@@ -101,7 +107,7 @@ def scenario_three_walled(bot_url: str) -> bool:
 
 def scenario_corner(bot_url: str) -> bool:
     print("\n=== B: bot in corner (walls N and W) → escape via E or S ===")
-    reset_arena()
+    reset_arena(bot_url)
     # Walls at (0,65,-1) N, (-1,65,0) W. Bot at (0,65,0). Open E and S.
     rcon_batch([
         f"execute in {WORLD} run setblock 0 65 -1 minecraft:cobblestone",
@@ -124,7 +130,7 @@ def scenario_corner(bot_url: str) -> bool:
 
 def scenario_trapped(bot_url: str) -> bool:
     print("\n=== C: bot fully trapped, no pillar block → structured error ===")
-    reset_arena()
+    reset_arena(bot_url)
     rcon_batch([
         # 4 walls
         f"execute in {WORLD} run setblock 0 65 -1 minecraft:bedrock",

@@ -1,0 +1,217 @@
+# M1 — solo bot pathfinding + building stress test.
+#
+# A single bot ("Builder") walks an OBSIDIAN-marker layout on the
+# ground and places 2-block-tall cobblestone walls ON TOP of every
+# marker. The markers are obsidian specifically so bots can't mine
+# them with a stone_pickaxe — the template stays intact.
+#
+# The layout is a 37-cell serpentine path with 7 right-angle corners —
+# designed to stress F58 (pathfinder arrival tolerance) and F57 (stuck
+# recovery) as the bot's own constructed walls narrow the corridor.
+#
+# No cooperation, no chat dialogue overhead, no resource gathering.
+# Just navigate-and-build. The verify_after_keyword block prevents the
+# bot from emitting MAZE COMPLETE without actually building the walls.
+
+agent_test_id: M1_solo_maze
+world: landfolk-test
+description: |
+  Solo navigation + building test. The bot is given a serpentine
+  obsidian-marker path at y=64 and a MATERIAL_CHEST full of cobble.
+  It must place 2-block-tall cobble walls (y=65 + y=66) on top of
+  every marker — 37 markers → 74 wall blocks. Pass if ≥60 of 74
+  wall blocks present after MAZE COMPLETE.
+
+bots:
+  - name: Builder
+    port: 3002
+    profile: builder
+
+# Pre-test world setup. Wipes a 30×12×30 arena then draws the maze.
+world_setup:
+  - rcon: 'execute in landfolk-test run time set 5000'
+  - rcon: 'execute in landfolk-test run gamerule doDaylightCycle true'
+  - rcon: 'execute in landfolk-test run gamerule keepInventory true'
+  - rcon: 'execute in landfolk-test run gamerule doMobSpawning false'
+  - rcon: 'execute in landfolk-test run gamerule commandModificationBlockLimit 100000'
+  - rcon: 'execute in landfolk-test run weather clear 9999'
+
+  - rcon: 'execute in landfolk-test run kill @e[type=!player]'
+  - rcon: 'execute in landfolk-test run kill @e[type=!player]'
+
+  # Clear an arena (-15..15 X, 62..71 Y, -15..15 Z). 30×30 = 900 cells
+  # per Y-slice; multi-slice fills well under Paper's 32768 cell cap.
+  - rcon: 'execute in landfolk-test run fill -15 62 -15 15 71 15 air replace'
+
+  # Ground: stone → dirt → grass.
+  - rcon: 'execute in landfolk-test run fill -15 62 -15 15 62 15 minecraft:stone'
+  - rcon: 'execute in landfolk-test run fill -15 63 -15 15 63 15 minecraft:dirt'
+  - rcon: 'execute in landfolk-test run fill -15 64 -15 15 64 15 minecraft:grass_block'
+
+  # Maze markers (stone at y=64). Continuous meandering path with 7
+  # right-angle corners — 37 cells. Path traces a serpentine from
+  # (-5,64,-5) [NW] to (5,64,5) [SE] via a Z-pattern. As the bot builds
+  # walls on top, the path narrows from open arena into 1-block corridors,
+  # stress-testing F58 arrival tolerance + F57 stuck recovery.
+  - rcon: 'execute in landfolk-test run fill -5 64 -5 -5 64 0 minecraft:obsidian'   # W column (6) — obsidian so bots can't mine the markers
+  - rcon: 'execute in landfolk-test run fill -4 64 0 0 64 0 minecraft:obsidian'     # row z=0 east (5)
+  - rcon: 'execute in landfolk-test run fill 0 64 -4 0 64 -1 minecraft:obsidian'    # column x=0 up (4)
+  - rcon: 'execute in landfolk-test run fill 1 64 -4 4 64 -4 minecraft:obsidian'    # top row east (4)
+  - rcon: 'execute in landfolk-test run fill 4 64 -3 4 64 2 minecraft:obsidian'     # right column down (6)
+  - rcon: 'execute in landfolk-test run fill 0 64 2 3 64 2 minecraft:obsidian'      # row z=2 west (4)
+  - rcon: 'execute in landfolk-test run fill 0 64 3 0 64 5 minecraft:obsidian'      # column x=0 down (3)
+  - rcon: 'execute in landfolk-test run fill 1 64 5 5 64 5 minecraft:obsidian'      # bottom row east (5)
+
+  # MATERIAL_CHEST west of the maze — 192 cobble + tools + food.
+  # Paper 1.21+ NBT uses lowercase `count:` (with no `b` byte-suffix);
+  # capital `Count:64b` is silently ignored and each slot ends up at 1.
+  - rcon: 'execute in landfolk-test run setblock -8 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:cobblestone",count:64},{Slot:1b,id:"minecraft:cobblestone",count:64},{Slot:2b,id:"minecraft:cobblestone",count:64},{Slot:3b,id:"minecraft:stone_pickaxe",count:1},{Slot:4b,id:"minecraft:stone_pickaxe",count:1},{Slot:5b,id:"minecraft:bread",count:16}]}'
+
+  # Spawn point — set BEFORE bot body connects. Just east of the chest,
+  # facing east into the maze.
+  - rcon: 'execute in landfolk-test run setworldspawn -7 65 0'
+  - rcon: 'execute in landfolk-test run spawnpoint Builder -7 65 0'
+
+# Post-bot-connect setup. Clears inventory, restores HP, TPs to start.
+post_connect_setup:
+  - rcon: 'execute in landfolk-test run effect clear Builder'
+  - rcon: 'execute in landfolk-test run effect give Builder minecraft:saturation 5 10'
+  - rcon: 'execute in landfolk-test run effect give Builder minecraft:instant_health 1 4'
+  - rcon: 'execute in landfolk-test run clear Builder'
+  - rcon: 'execute in landfolk-test run clear Builder'
+  - rcon: 'execute in landfolk-test run xp set Builder 0 levels'
+  - rcon: 'execute in landfolk-test run tp Builder -7 65 0 90 0'   # face east toward maze
+
+marks:
+  MATERIAL_CHEST: { x: -8, y: 65, z: 0,  note: "192 cobble + 2 stone_pickaxe + 16 bread pre-stocked" }
+  MAZE_START:     { x: -5, y: 65, z: -5, note: "NW corner of the serpentine marker path (first marker)" }
+  MAZE_END:       { x:  5, y: 65, z:  5, note: "SE corner of the marker path (last marker)" }
+
+phases:
+  # The orchestrator's PASS/FAIL verdict hardcodes phase id "M3", so we
+  # name our single phase M3 for compatibility. Solo test; one phase.
+  - id: M3
+    parallel: false
+    missions:
+      - id: MAZE
+        to: Builder
+        text:
+          - '@builder COLOR-BY-NUMBERS TASK. There are obsidian markers placed on the ground (at y=64) within a 12-block radius. For each obsidian block, stack 2 cobblestone blocks DIRECTLY ABOVE it. Nothing else. No coordinates to memorize — just find obsidian, stack cobble.'
+          - 'NEVER MINE THE OBSIDIAN. It is the template. Your stone_pickaxe cannot break obsidian anyway, so do not try.'
+          - 'TOOL: `mc find_blocks obsidian 32` lists every obsidian block within 32 blocks of you, with coordinates. Use this to discover the marker positions — no need to be told them in advance.'
+          - 'TOOL: `mc place cobblestone X Y Z` places one cobble at that coordinate. If you find obsidian at (a, 64, c), place cobble at (a, 65, c) and (a, 66, c). That is the rule for every marker.'
+          - 'WORKFLOW: (1) walk to MATERIAL_CHEST at (-8,65,0) — there are 192 cobblestone + 2 stone_pickaxe + 16 bread waiting. Withdraw cobble with `mc withdraw cobblestone 64 -8 65 0` (the trailing coords are the chest position). DO NOT use mc bg_collect for chests — that is for mining. (2) Run `mc find_blocks obsidian 32` to get the marker list. (3) For each marker (a, 64, c) in the list, run `mc place cobblestone a 65 c` and `mc place cobblestone a 66 c`. (4) Refill from MATERIAL_CHEST when low — `mc withdraw cobblestone 64 -8 65 0` again. (5) Run `mc find_blocks obsidian 32` again to confirm none are missing walls — for each obsidian, check via `mc inspect` that the cells at y=65 and y=66 above are cobble. (6) Emit "MAZE COMPLETE".'
+          - 'The steward will REJECT the keyword if too few walls are present. Build them all before declaring done.'
+        deadline_tick: 30000
+        done_keyword: "MAZE COMPLETE"
+        keyword_from: Builder
+        verify_after_keyword:
+          world: landfolk-test
+          checks:
+            - label: walls_y65
+              # y=65 layer (lower wall) — 37 cells matching the marker path
+              cells:
+                # W column z=-5..0 at x=-5 (6)
+                - [-5, 65, -5]
+                - [-5, 65, -4]
+                - [-5, 65, -3]
+                - [-5, 65, -2]
+                - [-5, 65, -1]
+                - [-5, 65, 0]
+                # Row z=0 east, x=-4..0 (5)
+                - [-4, 65, 0]
+                - [-3, 65, 0]
+                - [-2, 65, 0]
+                - [-1, 65, 0]
+                - [0, 65, 0]
+                # Column x=0 up, z=-4..-1 (4)
+                - [0, 65, -4]
+                - [0, 65, -3]
+                - [0, 65, -2]
+                - [0, 65, -1]
+                # Top row east, x=1..4, z=-4 (4)
+                - [1, 65, -4]
+                - [2, 65, -4]
+                - [3, 65, -4]
+                - [4, 65, -4]
+                # Right column down, x=4, z=-3..2 (6)
+                - [4, 65, -3]
+                - [4, 65, -2]
+                - [4, 65, -1]
+                - [4, 65, 0]
+                - [4, 65, 1]
+                - [4, 65, 2]
+                # Row z=2 west, x=0..3, z=2 (4)
+                - [3, 65, 2]
+                - [2, 65, 2]
+                - [1, 65, 2]
+                - [0, 65, 2]
+                # Column x=0 down, z=3..5 (3)
+                - [0, 65, 3]
+                - [0, 65, 4]
+                - [0, 65, 5]
+                # Bottom row east, x=1..5, z=5 (5)
+                - [1, 65, 5]
+                - [2, 65, 5]
+                - [3, 65, 5]
+                - [4, 65, 5]
+                - [5, 65, 5]
+              allow: [cobblestone, mossy_cobblestone, stone]
+              min_match: 30   # 30/37 ≈ 80%
+            - label: walls_y66
+              # y=66 layer (upper wall) — same 37 cells, +1 Y
+              cells:
+                - [-5, 66, -5]
+                - [-5, 66, -4]
+                - [-5, 66, -3]
+                - [-5, 66, -2]
+                - [-5, 66, -1]
+                - [-5, 66, 0]
+                - [-4, 66, 0]
+                - [-3, 66, 0]
+                - [-2, 66, 0]
+                - [-1, 66, 0]
+                - [0, 66, 0]
+                - [0, 66, -4]
+                - [0, 66, -3]
+                - [0, 66, -2]
+                - [0, 66, -1]
+                - [1, 66, -4]
+                - [2, 66, -4]
+                - [3, 66, -4]
+                - [4, 66, -4]
+                - [4, 66, -3]
+                - [4, 66, -2]
+                - [4, 66, -1]
+                - [4, 66, 0]
+                - [4, 66, 1]
+                - [4, 66, 2]
+                - [3, 66, 2]
+                - [2, 66, 2]
+                - [1, 66, 2]
+                - [0, 66, 2]
+                - [0, 66, 3]
+                - [0, 66, 4]
+                - [0, 66, 5]
+                - [1, 66, 5]
+                - [2, 66, 5]
+                - [3, 66, 5]
+                - [4, 66, 5]
+                - [5, 66, 5]
+              allow: [cobblestone, mossy_cobblestone, stone]
+              min_match: 30
+
+warning_lead_ticks: 1500
+hard_overtime_ticks: 3000
+global_wallclock_max_seconds: 1500   # 25 min hard kill — solo task should finish in 10-15
+poll_interval_seconds: 3
+chat_history_count: 30
+hermes_session_max_turns: 1500
+launch_settle_seconds: 6
+
+cleanup:
+  - rcon: 'execute in landfolk-test run kill @e[type=item]'
+
+expect:
+  m3_done: true   # orchestrator looks at last phase; we have one phase, label-agnostic
+  global_timeout_not_hit: true

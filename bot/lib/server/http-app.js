@@ -200,6 +200,11 @@ export function createBotHttpListener(deps) {
         // position" — clear any lingering lastMoveFailed flag so the
         // next position-dependent verb runs normally.
         if (ctx.lastMoveFailed) ctx.lastMoveFailed = null;
+        // F58: also clear F57.1 escape-loop counter + F57.2 stuck-cell
+        // registry. Brain is rethinking; don't hold prior escapes /
+        // stalls against the next plan for the next 90s.
+        ctx.recentEscapes = [];
+        ctx.recentStuckCells = [];
         return respond(res, 200, { ok: true, data: getFullState({ lean }) });
       }
 
@@ -701,6 +706,14 @@ export function createBotHttpListener(deps) {
       // checked its position).
       if (actionName === 'status' && ctx.lastMoveFailed) {
         ctx.lastMoveFailed = null;
+      }
+      // F58: mc status is also an explicit "I'm rethinking" — clear the
+      // F57.1 escape-loop counter and F57.2 stuck-cell registry. Brain
+      // has acknowledged the loop and is planning differently; don't
+      // hold prior escapes against it for the next 90s.
+      if (actionName === 'status') {
+        ctx.recentEscapes = [];
+        ctx.recentStuckCells = [];
       }
       // 30s decay: if the last failure is old, drop it.
       if (ctx.lastMoveFailed && (Date.now() - ctx.lastMoveFailed.ts) > 30_000) {

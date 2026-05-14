@@ -60,6 +60,30 @@ export function createBotState(config) {
       []
     ),
 
+    /** F57.1: Ring buffer of recent mc escape calls — each entry is the
+     *  cell the bot was IN when escape ran. Used by the escape-loop
+     *  detector to surface ESCAPE_RECURRING_LOOP on the 3rd escape inside
+     *  a 90s window. Capped at 6 entries. Decays lazily on read. */
+    recentEscapes: /** @type {Array<{ts:number, cell:{x:number,y:number,z:number}, classification_before:string}>} */ (
+      []
+    ),
+
+    /** F57.2: Ring buffer of cells where movement actually stalled
+     *  (NoProgressError) or where mc escape was needed. Pathfinder
+     *  preflight in goto/goto_near/move blackballs targets within 1
+     *  block of a recent stuck cell. Capped at 12 entries. Decays on
+     *  successful move OR after 90s. */
+    recentStuckCells: /** @type {Array<{ts:number, cell:{x:number,y:number,z:number}, source:'no_progress'|'escape', hit_count:number}>} */ (
+      []
+    ),
+
+    /** F59: timestamp of last public-chat emit (mc chat / chat_to /
+     *  whisper). Used by the chat rate limiter to auto-sleep when
+     *  successive chats arrive within MC_CHAT_MIN_INTERVAL_MS (default
+     *  2500 ms) — prevents the burst-of-6-lines-in-200ms pattern that
+     *  desynchronised G26's bot dialogue. */
+    lastChatTs: 0,
+
     goalsStore: { goals: [], deficitSince: {} },
     chestSnapshots: {},
     MAX_TASK_HISTORY: 50,

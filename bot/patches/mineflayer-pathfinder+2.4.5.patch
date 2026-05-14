@@ -1,0 +1,39 @@
+diff --git a/node_modules/mineflayer-pathfinder/index.js b/node_modules/mineflayer-pathfinder/index.js
+index b38bd30..8d85b18 100644
+--- a/node_modules/mineflayer-pathfinder/index.js
++++ b/node_modules/mineflayer-pathfinder/index.js
+@@ -576,8 +576,12 @@ function inject (bot) {
+     let dx = nextPoint.x - p.x
+     const dy = nextPoint.y - p.y
+     let dz = nextPoint.z - p.z
+-    if (Math.abs(dx) <= 0.35 && Math.abs(dz) <= 0.35 && Math.abs(dy) < 1) {
+-      // arrived at next point
++    if (Math.abs(dx) <= 0.20 && Math.abs(dz) <= 0.20 && Math.abs(dy) < 1) {
++      // arrived at next point — F58 patch: tightened XZ tolerance from 0.35
++      // to 0.20 so the bot's hitbox doesn't scrape adjacent wall corners
++      // when landing off-center. Stock 0.35 + bot 0.6-wide hitbox left a
++      // ~0.7-block tolerance square that caused wedge/corner stucks in
++      // G21–G23. Patched via patch-package on mineflayer-pathfinder 2.4.5.
+       lastNodeTime = performance.now()
+       if (stopPathing) {
+         stop()
+diff --git a/node_modules/mineflayer-pathfinder/lib/movements.js b/node_modules/mineflayer-pathfinder/lib/movements.js
+index a7e3505..68d2e81 100644
+--- a/node_modules/mineflayer-pathfinder/lib/movements.js
++++ b/node_modules/mineflayer-pathfinder/lib/movements.js
+@@ -436,6 +436,15 @@ class Movements {
+     }
+     if (cost > 100) return
+ 
++    // F63 corner-cut prevention: refuse the diagonal when EITHER perpendicular
++    // intermediate cell at body height is physical. The bot's 0.6-wide hitbox
++    // clips the corner of that block during the diagonal step, even though
++    // the bot's center traces an "air" path — so the bot snags on corners,
++    // ends up off-grid, and pathfinder oscillates. Forcing the move to go
++    // cardinal (two axis-aligned steps) keeps the bot grid-aligned and
++    // prevents the stuck-on-corner failure mode entirely.
++    if (blockC1.physical || blockB1.physical || blockC2.physical || blockB2.physical) return
++
+     cost += this.safeOrBreak(this.getBlock(node, dir.x, y, dir.z), toBreak)
+     if (cost > 100) return
+     cost += this.safeOrBreak(this.getBlock(node, dir.x, y + 1, dir.z), toBreak)

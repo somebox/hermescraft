@@ -8,7 +8,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "log-view": "node scripts/landfolk-log-view.mjs"
+    "log-view": "node scripts/landfolk-log-view.mjs",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "blessed": "^0.1.81",
@@ -24,5 +25,8 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  }
 }

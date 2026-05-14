@@ -761,6 +761,84 @@ export function createWorldActions(deps) {
       }
     }
 
+    // F60+F62: cluster cells by reach-from-a-safe-standpoint. The bot
+    // walks to a standpoint (a safe cell OUTSIDE the fill region),
+    // places every cell reachable from there, then walks to the next
+    // standpoint. This is both more realistic-looking (visible bursts
+    // separated by short walks instead of one motionless 26-block dump)
+    // AND fixes the F55.2 self-blocking case at the source — by
+    // construction the bot is never standing inside the region. We also
+    // pace placements with a small inter-cell delay so the server has
+    // time to confirm each placeBlock packet (mineflayer otherwise
+    // times out waiting for blockUpdate on long bursts).
+    const STANDPOINT_REACH = 4.0;        // mineflayer placeBlock reach limit ≈ 4.5
+    const INTER_PLACE_DELAY_MS = 180;
+    const inFillRegion = (x, y, z) =>
+      x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
+    const airy = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air');
+    const solid = (blk) => blk && blk.boundingBox === 'block';
+    const isStandpoint = (sx, sy, sz) => {
+      // Bot occupies feet (sx, sy) and head (sx, sy+1). Neither may be in
+      // the fill region (would block placement of own foot/head cell).
+      if (inFillRegion(sx, sy, sz) || inFillRegion(sx, sy + 1, sz)) return false;
+      const feet = b.blockAt(new Vec3(sx, sy, sz));
+      const head = b.blockAt(new Vec3(sx, sy + 1, sz));
+      const below = b.blockAt(new Vec3(sx, sy - 1, sz));
+      return airy(feet) && airy(head) && solid(below);
+    };
+    const findStandpointFor = (cell) => {
+      // Spiral search around the target cell at multiple y offsets.
+      for (let r = 1; r <= 4; r++) {
+        for (const dy of [0, -1, 1, -2]) {
+          for (let dx = -r; dx <= r; dx++) {
+            for (let dz = -r; dz <= r; dz++) {
+              if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;  // ring at radius r
+              const sx = cell.x + dx, sy = cell.y + dy, sz = cell.z + dz;
+              if (!isStandpoint(sx, sy, sz)) continue;
+              const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              if (d <= STANDPOINT_REACH) return [sx, sy, sz];
+            }
+          }
+        }
+      }
+      return null;
+    };
+
+    // Greedy cluster assignment: each remaining cell seeds a new cluster
+    // with its standpoint; all remaining cells within reach get assigned
+    // to it. Same standpoint serves multiple cells, so we visibly walk
+    // O(positions / cluster_size) times instead of pathfinding per cell.
+    const cellKey = (p) => `${p.x},${p.y},${p.z}`;
+    const assigned = new Set();
+    const clusters = [];  // [{ standpoint: [x,y,z]|null, cells: [pos] }]
+    for (const seed of positions) {
+      if (assigned.has(cellKey(seed))) continue;
+      const sp = findStandpointFor(seed);
+      const cluster = { standpoint: sp, cells: [] };
+      if (!sp) {
+        // No reachable standpoint — keep the seed alone; per-cell loop
+        // will pathfind closest-fit and rely on F55.2 detection if it
+        // ends up self-blocking.
+        cluster.cells.push(seed);
+        assigned.add(cellKey(seed));
+      } else {
+        for (const p of positions) {
+          if (assigned.has(cellKey(p))) continue;
+          const d = Math.sqrt(
+            (sp[0] - p.x) * (sp[0] - p.x) +
+            (sp[1] - p.y) * (sp[1] - p.y) +
+            (sp[2] - p.z) * (sp[2] - p.z)
+          );
+          if (d <= STANDPOINT_REACH + 0.5) {
+            cluster.cells.push(p);
+            assigned.add(cellKey(p));
+          }
+        }
+      }
+      clusters.push(cluster);
+    }
+    let autoDisplaced = null;
+
     // F53.1: track structured fill outcomes instead of silently swallowing.
     // - placed_count = blocks newly placed
     // - skipped_already_blockname = cell already had the desired block (idempotent)
@@ -776,43 +854,63 @@ export function createWorldActions(deps) {
     const skipped_occupied = [];  // [{x,y,z,by:blockname}]
     const place_failures = [];    // [{x,y,z,reason}]
     const occupied_by_counts = {}; // {block_name: count}
-    for (const pos of positions) {
-      const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
-      if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
-        if (existing.name === blockName) {
-          skipped_already++;
-        } else {
-          skipped_occupied.push({ x: pos.x, y: pos.y, z: pos.z, by: existing.name });
-          occupied_by_counts[existing.name] = (occupied_by_counts[existing.name] || 0) + 1;
-        }
-        continue;
-      }
-
-      const item = b.inventory.items().find(i => i.name === blockName);
-      if (!item) throw new Error(`Out of ${blockName} (placed ${placed}/${positions.length})`);
-      await b.equip(item, 'hand');
-
-      if (b.entity.position.distanceTo(new Vec3(pos.x, pos.y, pos.z)) > 4.5) {
-        try { await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3)); } catch {}
-      }
-
-      let placedThis = false;
-      let lastErr = null;
-      for (const [dx, dy, dz] of offsets) {
-        const ref = b.blockAt(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz));
-        if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
+    for (const cluster of clusters) {
+      // Walk to the cluster's standpoint (skip if at one already).
+      if (cluster.standpoint) {
+        const [sx, sy, sz] = cluster.standpoint;
+        const cur = b.entity.position;
+        const d = Math.sqrt((cur.x - sx) ** 2 + (cur.y - sy) ** 2 + (cur.z - sz) ** 2);
+        if (d > 1.5) {
           try {
-            await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
-            placed++;
-            placedThis = true;
-          } catch (e) {
-            lastErr = e?.message || String(e);
-          }
-          break;
+            await b.pathfinder.goto(new goals.GoalBlock(sx, sy, sz));
+            if (!autoDisplaced) {
+              autoDisplaced = { from: { x: Math.floor(cur.x), y: Math.floor(cur.y), z: Math.floor(cur.z) }, to: { x: sx, y: sy, z: sz } };
+            }
+          } catch {}
         }
       }
-      if (!placedThis) {
-        place_failures.push({ x: pos.x, y: pos.y, z: pos.z, reason: lastErr || 'no_adjacent_face' });
+      for (const pos of cluster.cells) {
+        const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+        if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
+          if (existing.name === blockName) {
+            skipped_already++;
+          } else {
+            skipped_occupied.push({ x: pos.x, y: pos.y, z: pos.z, by: existing.name });
+            occupied_by_counts[existing.name] = (occupied_by_counts[existing.name] || 0) + 1;
+          }
+          continue;
+        }
+
+        const item = b.inventory.items().find(i => i.name === blockName);
+        if (!item) throw new Error(`Out of ${blockName} (placed ${placed}/${positions.length})`);
+        await b.equip(item, 'hand');
+
+        // Fallback per-cell pathfind only if no standpoint was found for this cluster.
+        if (!cluster.standpoint && b.entity.position.distanceTo(new Vec3(pos.x, pos.y, pos.z)) > 4.5) {
+          try { await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3)); } catch {}
+        }
+
+        let placedThis = false;
+        let lastErr = null;
+        for (const [dx, dy, dz] of offsets) {
+          const ref = b.blockAt(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz));
+          if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
+            try {
+              await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+              placed++;
+              placedThis = true;
+            } catch (e) {
+              lastErr = e?.message || String(e);
+            }
+            break;
+          }
+        }
+        if (!placedThis) {
+          place_failures.push({ x: pos.x, y: pos.y, z: pos.z, reason: lastErr || 'no_adjacent_face' });
+        }
+        // Small delay between placements — looks more natural AND gives
+        // the server time to confirm blockUpdate before the next packet.
+        await sleep(INTER_PLACE_DELAY_MS);
       }
     }
 
@@ -863,6 +961,7 @@ export function createWorldActions(deps) {
         occupied_by_counts,
         total: positions.length,
         partial: skipped_total > 0,
+        ...(autoDisplaced ? { auto_displaced: autoDisplaced } : {}),
         ...(botWasInsideRegion ? {
           bot_was_inside_region: true,
           bot_blocked_cells: botBlockedCells,
@@ -2140,6 +2239,40 @@ export function createWorldActions(deps) {
       observed: { block_at_target: block.name },
     });
     if (!reach.ok) return reach;
+    // F65: line-of-sight guard. Mirrors F45.3 (mc place) and F64 (chest
+    // open). Bot must be able to see the target block to interact with
+    // it — no opening doors through walls.
+    if (typeof hasLineOfSight === 'function' && typeof eyePosition === 'function') {
+      const eye = eyePosition();
+      if (eye) {
+        const cx = x + 0.5, cy = y + 0.5, cz = z + 0.5;
+        const faces = [
+          { x: cx, y: cy, z: cz - 0.48 },
+          { x: cx, y: cy, z: cz + 0.48 },
+          { x: cx - 0.48, y: cy, z: cz },
+          { x: cx + 0.48, y: cy, z: cz },
+          { x: cx, y: cy - 0.48, z: cz },
+          { x: cx, y: cy + 0.48, z: cz },
+          { x: cx, y: cy, z: cz },
+        ];
+        if (!faces.some((p) => hasLineOfSight(eye, p))) {
+          return {
+            ok: false,
+            error: {
+              code: 'NO_LINE_OF_SIGHT',
+              message: `Cannot see ${block.name} at ${x},${y},${z} — a block is between you and the target.`,
+              observed_state: {
+                target: { x, y, z },
+                block_at_target: block.name,
+                bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+              },
+              next_action_hint: `Navigate around the obstruction; try mc goto_near ${x} ${y} ${z} range=2`,
+              retry_safe: false,
+            },
+          };
+        }
+      }
+    }
     await b.activateBlock(block);
     return { result: `Interacted with ${block.name} at ${x}, ${y}, ${z}` };
   },
@@ -2418,7 +2551,40 @@ export function createWorldActions(deps) {
   // ── Utility ──────────────────────────────────────
   async chat({ message }) {
     const b = ensureBot();
+    // F59: chat rate limiter. G26 showed bots emitting 4-6 chat lines in a
+    // single burst (within 200ms of each other), faster than partners
+    // could read or respond. We auto-sleep to enforce a minimum interval
+    // between sent chats. This is transparent — the brain still calls
+    // `mc chat "..."` and gets ok=true; it just takes a bit longer when
+    // the bot is chatting rapidly. Override with MC_CHAT_MIN_INTERVAL_MS
+    // env var if needed.
+    const MIN_INTERVAL_MS = Number(process.env.MC_CHAT_MIN_INTERVAL_MS) || 2500;
+    if (ctx) {
+      const now = Date.now();
+      const elapsed = now - (ctx.lastChatTs || 0);
+      if (elapsed < MIN_INTERVAL_MS) {
+        const wait = MIN_INTERVAL_MS - elapsed;
+        await new Promise((r) => setTimeout(r, wait));
+      }
+      ctx.lastChatTs = Date.now();
+    }
     b.chat(message);
+    // Mineflayer's 'chat' event early-returns on the bot's own username, so
+    // self-sent messages never reach ctx.chatLog via the normal handler.
+    // That's invisible in 2-bot tests (the other bot sees you) but breaks
+    // solo-bot tests where the orchestrator polls THIS bot's /chat endpoint
+    // for keyword acks. Echo it back here so /chat reflects what we said.
+    if (ctx) {
+      ctx.chatLog.push({
+        time: Date.now(),
+        from: getMyName(),
+        message,
+        private: false,
+        channel: 'public',
+        self: true,
+      });
+      if (ctx.chatLog.length > ctx.MAX_LOG) ctx.chatLog.shift();
+    }
     rememberSocialEvent({ actor: getMyName(), kind: 'sent', channel: 'public', message });
     return { result: `Sent: ${message}` };
   },
@@ -2852,7 +3018,22 @@ export function createWorldActions(deps) {
   async chat_to({ player, message }) {
     const b = ensureBot();
     const text = `@${player} ${message}`;
+    // F59 rate limit (shared budget with mc chat — these all emit to the
+    // same public chat channel).
+    const MIN_INTERVAL_MS = Number(process.env.MC_CHAT_MIN_INTERVAL_MS) || 2500;
+    if (ctx) {
+      const elapsed = Date.now() - (ctx.lastChatTs || 0);
+      if (elapsed < MIN_INTERVAL_MS) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS - elapsed));
+      ctx.lastChatTs = Date.now();
+    }
     b.chat(text);
+    if (ctx) {
+      ctx.chatLog.push({
+        time: Date.now(), from: getMyName(), message: text,
+        private: false, channel: 'public', self: true,
+      });
+      if (ctx.chatLog.length > ctx.MAX_LOG) ctx.chatLog.shift();
+    }
     rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'public_mention', message: text });
     return { result: `[@${player}]: ${message}` };
   },
@@ -2860,7 +3041,20 @@ export function createWorldActions(deps) {
   async whisper({ player, message }) {
     const b = ensureBot();
     const text = `@${player} ${message}`;
+    const MIN_INTERVAL_MS = Number(process.env.MC_CHAT_MIN_INTERVAL_MS) || 2500;
+    if (ctx) {
+      const elapsed = Date.now() - (ctx.lastChatTs || 0);
+      if (elapsed < MIN_INTERVAL_MS) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS - elapsed));
+      ctx.lastChatTs = Date.now();
+    }
     b.chat(text);
+    if (ctx) {
+      ctx.chatLog.push({
+        time: Date.now(), from: getMyName(), message: text,
+        private: false, channel: 'public', self: true,
+      });
+      if (ctx.chatLog.length > ctx.MAX_LOG) ctx.chatLog.shift();
+    }
     rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'public_mention', message: text });
     return { result: `[@${player}]: ${message}` };
   },
@@ -3039,6 +3233,39 @@ export function createWorldActions(deps) {
     const cell = before.cell;
     const fromPos = { ...before.position };
 
+    // F57.1 — escape-loop detector. If the brain has been hammering
+    // mc escape because every subsequent attempt re-traps the bot, calling
+    // escape a 3rd time inside 90s tells us the terrain (or the brain's
+    // plan) keeps routing back to the same trap. Surface a strong error
+    // pointing at root-cause options instead of doing another sidestep.
+    const ESCAPE_LOOP_WINDOW_MS = 90_000;
+    const recentEscapes = Array.isArray(ctx?.recentEscapes) ? ctx.recentEscapes : [];
+    const cutoff = Date.now() - ESCAPE_LOOP_WINDOW_MS;
+    const recent = recentEscapes.filter(e => e.ts > cutoff);
+    if (cls !== 'open' && cls !== 'alley' && recent.length >= 2) {
+      const lastFailed = ctx?.lastMoveFailed?.intended_target || null;
+      const ages = recent.map(e => Math.round((Date.now() - e.ts) / 100) / 10);
+      return {
+        ok: false,
+        error: {
+          code: 'ESCAPE_RECURRING_LOOP',
+          message: `mc escape called ${recent.length + 1}× in last ${ESCAPE_LOOP_WINDOW_MS / 1000}s — terrain or plan is re-trapping you (current: ${cls} at ${cell.x},${cell.y},${cell.z}). Don't escape-spam. Options: (a) mc dig at the wall/lip that keeps trapping you (mc inspect <neighbor> to identify it), (b) mc go_mark to a known-safe coord and approach the original target from a different side, (c) ask your partner for help.${lastFailed ? ` Stop retrying mc goto ${lastFailed.x} ${lastFailed.y} ${lastFailed.z} — pick a different destination.` : ''}`,
+          observed_state: {
+            classification: cls,
+            blocked_dirs: before.blocked_dirs,
+            open_dirs: before.open_dirs,
+            recent_escape_ages_s: ages,
+            do_not_retry_goto: lastFailed,
+            your_cell: cell,
+          },
+          next_action_hint: lastFailed
+            ? `mc inspect ${lastFailed.x} ${lastFailed.y} ${lastFailed.z}`
+            : `mc inspect ${cell.x} ${cell.y} ${cell.z}`,
+          retry_safe: false,
+        },
+      };
+    }
+
     // Trivial: already free.
     if (cls === 'open' || cls === 'alley') {
       return {
@@ -3048,15 +3275,42 @@ export function createWorldActions(deps) {
       };
     }
 
+    // F57.1 + F57.2 success bookkeeping. Push the pre-escape cell into
+    // the stuck-cell registry (so pathfind preflight blackballs it on
+    // any subsequent goto whose target lands within 1 of it) and append
+    // to recentEscapes for the loop detector.
+    const recordEscapeSuccess = (resp) => {
+      if (ctx) {
+        if (!Array.isArray(ctx.recentStuckCells)) ctx.recentStuckCells = [];
+        const cx = cell.x, cy = cell.y, cz = cell.z;
+        const existing = ctx.recentStuckCells.find(e => e.cell.x === cx && e.cell.y === cy && e.cell.z === cz);
+        if (existing) { existing.ts = Date.now(); existing.hit_count += 1; }
+        else {
+          ctx.recentStuckCells.push({ ts: Date.now(), cell: { x: cx, y: cy, z: cz }, source: 'escape', hit_count: 1 });
+          if (ctx.recentStuckCells.length > 12) ctx.recentStuckCells.shift();
+        }
+        if (!Array.isArray(ctx.recentEscapes)) ctx.recentEscapes = [];
+        ctx.recentEscapes.push({ ts: Date.now(), cell: { x: cx, y: cy, z: cz }, classification_before: cls });
+        if (ctx.recentEscapes.length > 6) ctx.recentEscapes.shift();
+      }
+      // Surface do_not_retry_goto on success too — telling the brain to
+      // plan a fresh approach instead of re-firing the failed coord.
+      const lastFailed = ctx?.lastMoveFailed?.intended_target || null;
+      if (lastFailed && resp?.data && typeof resp.data === 'object') {
+        resp.data.do_not_retry_goto = lastFailed;
+      }
+      return resp;
+    };
+
     // Wait out airborne state.
     if (cls === 'in_air') {
       await new Promise(r => setTimeout(r, 600));
       const after = standingState(b);
-      return {
+      return recordEscapeSuccess({
         ok: true,
         data: { action_taken: 'wait_for_landing', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, success: after.classification !== 'in_air' },
         result: `Waited 600ms for physics; now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
-      };
+      });
     }
 
     // Sidestep for corner/three_walled/wedge/edge.
@@ -3098,7 +3352,7 @@ export function createWorldActions(deps) {
         const intermediate = standingState(b);
         attempts.push({ dir: pickDir, after: intermediate.classification });
         if (intermediate.classification === 'open' || intermediate.classification === 'alley') {
-          return {
+          return recordEscapeSuccess({
             ok: true,
             data: {
               action_taken: `sidestep_${pickDir}`,
@@ -3110,7 +3364,7 @@ export function createWorldActions(deps) {
               success: true,
             },
             result: `Sidestepped ${pickDir} from ${cls} cell. Now ${intermediate.classification} at ${intermediate.cell.x},${intermediate.cell.y},${intermediate.cell.z}.`,
-          };
+          });
         }
       }
       // Pathfinder failed every direction. Brute-force fallback: face each
@@ -3133,7 +3387,7 @@ export function createWorldActions(deps) {
         const intermediate = standingState(b);
         attempts.push({ dir: pickDir, after: intermediate.classification, mode: 'burst' });
         if (intermediate.classification === 'open' || intermediate.classification === 'alley') {
-          return {
+          return recordEscapeSuccess({
             ok: true,
             data: {
               action_taken: `burst_${pickDir}`,
@@ -3145,7 +3399,7 @@ export function createWorldActions(deps) {
               success: true,
             },
             result: `Brute-force burst ${pickDir} from ${cls} cell. Now ${intermediate.classification} at ${intermediate.cell.x},${intermediate.cell.y},${intermediate.cell.z}.`,
-          };
+          });
         }
       }
       // Nothing worked. Report the final state with the full attempt
@@ -3226,7 +3480,7 @@ export function createWorldActions(deps) {
         b.setControlState('jump', false);
         await new Promise(r => setTimeout(r, 500));
         const after = standingState(b);
-        return {
+        return recordEscapeSuccess({
           ok: true,
           data: {
             action_taken: `pillar_up_${item.name}`,
@@ -3237,7 +3491,7 @@ export function createWorldActions(deps) {
             success: after.cell.y > cell.y,
           },
           result: `Pillared up with ${item.name}. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
-        };
+        });
       } catch (e) {
         return {
           ok: false,

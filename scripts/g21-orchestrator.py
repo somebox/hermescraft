@@ -194,7 +194,82 @@ START SEQUENCE (run these in order):
 3. `mc inventory`           — see what you start with.
 4. `mc chat "READY: {name} standing by"` — handshake to the steward.
 5. `mc read_chat 30`        — check for orders that arrived early.
-6. If no order is active, `mc wait 8` and loop to step 5.
+
+THIS IS A LONG-RUNNING SESSION. **DO NOT STOP. DO NOT EXIT. DO NOT
+SUMMARIZE AND CONCLUDE.** The steward sends orders over a 45-minute
+window. Your job is to stay alive and responsive the entire time.
+
+MAIN LOOP — after the start sequence, ALWAYS keep going:
+- If chat from the steward addresses your missions (M0A/M0B/M1A/M1B/
+  M2A/M2B/M3): act on them now. Plan, then execute via `mc` commands.
+- If no order is active: `mc wait 20` then `mc read_chat 30`, repeat.
+- `mc wait` interrupts early on mention or direct message — when it
+  does, immediately read chat and respond. The wait is your idle loop;
+  the chat-interrupt is your wake-up signal.
+- After completing a mission and emitting the keyword, **continue
+  waiting for the next mission**. The session is not over until you
+  run out of turns or the steward declares the test complete.
+
+NEVER conclude with "I'll be waiting" and end the session — that
+silences you. **Keep calling tools.** Even a no-op `mc wait 20` keeps
+the session alive and listening.
+
+GO.
+""".strip()
+
+
+# Solo-bot brain prompt (single-bot tests, no partner / coordination).
+SOLO_BRAIN_PROMPT_TEMPLATE = """
+ABSOLUTE RULE: every command MUST start with `mc `. The ONLY way to act
+in this run is via `mc` commands (mc status, mc chat, mc place, etc).
+FORBIDDEN: cat, head, tail, ls, cd, pwd, grep, find, ps, which, curl,
+python, node, echo, pipes, redirections, or reading any file under
+/Users/foz/. The host filesystem is OFF LIMITS. Reading the orchestrator
+source, YAML specs, or any local file is cheating and ends the test.
+If you don't know what to do next: `mc read_chat 30` then `mc wait 10`.
+
+You are {name}, alone in this run — no partner. A scripted steward
+broadcasts mission orders. In `mc read_chat`, steward messages have
+`from=STEWARD` (literal) and are addressed to `@{name_lower}` like:
+
+    @{name_lower} build a stone wall along the markers ...
+
+Mission(s) in this run:
+{missions_block}
+
+YOUR JOB IS TO LISTEN AND EXECUTE THE MISSION. Read steward orders,
+plan, build/move/dig as needed, then emit the EXACT done-keyword
+specified in the mission (no decoration, no surrounding text — just
+the keyword, sent via `mc chat`).
+
+START SEQUENCE (run these in order):
+1. `mc status`         — note current tick + position.
+2. `mc marks`          — confirm any pre-placed marks.
+3. `mc inventory`      — see what you start with.
+4. `mc chat "READY: {name} standing by"` — handshake to the steward.
+5. `mc read_chat 30`   — check for orders.
+6. If no mission text yet, poll tight: `mc wait 5` then `mc read_chat 10`
+   in a loop until you see a line addressed to you (`@{name_lower}` or
+   `MISSION M<n>`). DO NOT use long `mc wait` values at the start —
+   missions arrive within ~10 seconds of your READY handshake.
+
+THIS IS A LONG-RUNNING SESSION. **DO NOT STOP. DO NOT EXIT.** Keep
+calling tools until each mission is acknowledged via its keyword. Between
+missions, poll with `mc wait 10` + `mc read_chat 10` so the next steward
+order is picked up quickly.
+
+When you're building, work systematically — go to a cell, place, move
+to the next cell, place. If a `mc place` or `mc goto` fails:
+1. Check `observed_state` for the reason (often `holding` mismatch,
+   `distance_to_target` too far, or `your_standing_state` showing
+   you're in a corner/wedge).
+2. Try the suggested fix from `next_action_hint`.
+3. After 2 failed attempts at the same coord, MOVE ON to another cell
+   and come back later — don't loop on the same failure.
+
+Stuck recovery: `mc escape` auto-handles corner/wedge/three_walled
+classifications. After escape, plan a fresh approach — don't fire the
+same goto target that failed.
 
 GO.
 """.strip()
@@ -238,6 +313,87 @@ def run_rcon_batch(cmds: list[str], timeout: int = 60) -> str:
         return result.stdout or ""
     except subprocess.TimeoutExpired:
         return ""
+
+
+def verify_after_keyword(spec_block: dict) -> tuple[bool, list[dict]]:
+    """Run post-keyword verification against the live world via rcon.
+
+    Accepts a `verify_after_keyword` block from a mission spec:
+        verify_after_keyword:
+          world: landfolk-test
+          checks:
+            - label: walls
+              cells: [[x, y, z], ...]   # explicit cells
+              allow: [cobblestone, oak_planks, ...]
+              min_match: 30
+            - label: roof
+              region: {x1, y1, z1, x2, y2, z2}   # OR a bounding box
+              allow: [cobblestone, ...]
+              min_match: 12
+
+    Returns (all_passed, per_check_results). Each check result is
+    {label, matched, total, min_match, passed}.
+    """
+    world = spec_block.get("world", "landfolk-test")
+    checks = spec_block.get("checks") or []
+    results: list[dict] = []
+    all_pass = True
+    for check in checks:
+        label = check.get("label", "unnamed")
+        allow = check.get("allow") or []
+        min_match = int(check.get("min_match", 0))
+        # Build list of cells from either `cells:` or `region:`.
+        cells: list[tuple[int, int, int]] = []
+        if check.get("cells"):
+            for c in check["cells"]:
+                cells.append((int(c[0]), int(c[1]), int(c[2])))
+        elif check.get("region"):
+            r = check["region"]
+            x1, x2 = sorted([int(r["x1"]), int(r["x2"])])
+            y1, y2 = sorted([int(r["y1"]), int(r["y2"])])
+            z1, z2 = sorted([int(r["z1"]), int(r["z2"])])
+            for x in range(x1, x2 + 1):
+                for y in range(y1, y2 + 1):
+                    for z in range(z1, z2 + 1):
+                        cells.append((x, y, z))
+        else:
+            results.append({"label": label, "error": "no cells or region", "passed": False})
+            all_pass = False
+            continue
+        # Build the rcon batch: one `execute in <world> if block X Y Z BLOCK`
+        # per (cell, allowed-block) pair. rcon-cli echoes one "Test passed" /
+        # "Test failed" line per command, so we can read the result by batch
+        # index. (Earlier versions used `... run say MARK_x_y_z` but `say`
+        # output is broadcast to chat and NOT captured by rcon-cli stdout —
+        # so every cell came back unmatched.)
+        batch: list[str] = []
+        cell_for_line: list[tuple[int, int, int]] = []
+        for (x, y, z) in cells:
+            for blk in allow:
+                bn = blk.split(":")[-1]
+                batch.append(f"execute in {world} if block {x} {y} {z} minecraft:{bn}")
+                cell_for_line.append((x, y, z))
+        out = run_rcon_batch(batch, timeout=120) if batch else ""
+        # Parse aligned line-for-line; rcon-cli prefixes each response with "> ".
+        marks: set[tuple[int, int, int]] = set()
+        lines = [ln for ln in out.splitlines() if ln.strip()]
+        for line_idx, ln in enumerate(lines):
+            if line_idx >= len(cell_for_line):
+                break
+            if "Test passed" in ln:
+                marks.add(cell_for_line[line_idx])
+        matched = len(marks)
+        passed = matched >= min_match
+        if not passed:
+            all_pass = False
+        results.append({
+            "label": label,
+            "matched": matched,
+            "total": len(cells),
+            "min_match": min_match,
+            "passed": passed,
+        })
+    return all_pass, results
 
 
 def steward_say(text: str) -> None:
@@ -502,9 +658,11 @@ def setup_hermes_home(name: str) -> Path:
         mdl = cfg.setdefault("model", {})
         mdl["context_length"] = 131072   # override the 1M default for deepseek-flash
         (agent_home / "config.yaml").write_text(_yaml.safe_dump(cfg, sort_keys=False))
-    # Symlink shared skills/credentials — these are NOT memory, just static
-    # tooling that all bots can share.
-    for f in ("skills", "credentials.json"):
+    # Symlink shared skills/credentials/auth — these are NOT memory, just
+    # static tooling/keys that all bots can share. Without auth.json + .env,
+    # the brain can't resolve the OpenRouter API key and exits immediately
+    # with "Provider resolver returned an empty API key".
+    for f in ("skills", "credentials.json", "auth.json", "auth.lock", ".env"):
         target = agent_home / f
         src = HOME_DIR / ".hermes" / f
         if src.exists() and not target.exists():
@@ -530,9 +688,12 @@ def setup_hermes_home(name: str) -> Path:
 
 def build_brain_prompt(name: str, role_prompt_path: Path, spec: dict) -> str:
     """Concatenate role prompt + G21 directive with mission IDs filled in
-    from the spec, so each bot knows which mission IDs are its own."""
+    from the spec, so each bot knows which mission IDs are its own.
+    Solo-bot runs (single bot in spec) get a different directive that omits
+    partner/coordination references."""
     role_text = role_prompt_path.read_text() if role_prompt_path.exists() else ""
-    partner = "Mason" if name == "Flint" else "Flint"
+    bots = spec.get("bots") or []
+    solo = len(bots) <= 1
 
     mine: list[str] = []
     theirs: list[str] = []
@@ -551,18 +712,26 @@ def build_brain_prompt(name: str, role_prompt_path: Path, spec: dict) -> str:
                 theirs.append(line)
 
     missions_block = "\n".join(mine + team) if (mine or team) else "  (none)"
-    partner_missions = ", ".join(m.split()[1].rstrip(":") for m in theirs) or "(none)"
-    missions_for_you = [m.split()[1].rstrip(":") for m in mine + team] or ["(none)"]
 
-    directive = G21_BRAIN_PROMPT_TEMPLATE.format(
-        name=name,
-        partner=partner,
-        name_lower=name.lower(),
-        partner_lower=partner.lower(),
-        missions_block=missions_block,
-        missions_for_you=missions_for_you,
-        partner_missions=partner_missions,
-    )
+    if solo:
+        directive = SOLO_BRAIN_PROMPT_TEMPLATE.format(
+            name=name,
+            name_lower=name.lower(),
+            missions_block=missions_block,
+        )
+    else:
+        partner = "Mason" if name == "Flint" else "Flint"
+        partner_missions = ", ".join(m.split()[1].rstrip(":") for m in theirs) or "(none)"
+        missions_for_you = [m.split()[1].rstrip(":") for m in mine + team] or ["(none)"]
+        directive = G21_BRAIN_PROMPT_TEMPLATE.format(
+            name=name,
+            partner=partner,
+            name_lower=name.lower(),
+            partner_lower=partner.lower(),
+            missions_block=missions_block,
+            missions_for_you=missions_for_you,
+            partner_missions=partner_missions,
+        )
     return f"{role_text}\n\n---\n\n{directive}"
 
 
@@ -602,7 +771,7 @@ def wait_for_chat_phrase(bots: list[dict], phrase: str, timeout_s: int, from_eac
     If `from_each` is a list, returns True only when *every* sender in the
     list has emitted a message containing `phrase`. Used so we wait for
     both bots' READY handshakes, not just one."""
-    targets = set(from_each or [])
+    targets_lower = {t.lower() for t in (from_each or [])}
     seen_from: set[str] = set()
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -611,14 +780,14 @@ def wait_for_chat_phrase(bots: list[dict], phrase: str, timeout_s: int, from_eac
             for rec in history:
                 if phrase not in (rec.get("message") or ""):
                     continue
-                sender = (rec.get("from") or "")
-                if not targets:
+                sender_lower = (rec.get("from") or "").lower()
+                if not targets_lower:
                     return True
-                if sender in targets:
-                    seen_from.add(sender)
-        if targets and targets.issubset(seen_from):
+                if sender_lower in targets_lower:
+                    seen_from.add(sender_lower)
+        if targets_lower and targets_lower.issubset(seen_from):
             return True
-        time.sleep(2)
+        time.sleep(1)
     return False
 
 
@@ -882,8 +1051,8 @@ def main() -> int:
         return 2
     spec = load_spec(spec_path)
     bots = spec.get("bots") or []
-    if len(bots) < 2:
-        print("ERROR: spec must define at least 2 bots", file=sys.stderr)
+    if len(bots) < 1:
+        print("ERROR: spec must define at least 1 bot", file=sys.stderr)
         return 2
 
     print(f"G21 orchestrator: spec={spec.get('agent_test_id')}")
@@ -1024,10 +1193,11 @@ def main() -> int:
         print(f"  combined brain log → {combined_path}")
         # Wait for both brains to emit "READY:" in chat (their startup handshake).
         ready_targets = [b["name"] for b in bots]
-        print(f"  waiting up to 90s for READY handshakes from {ready_targets}...")
-        if not wait_for_chat_phrase(bots, "READY:", timeout_s=90, from_each=ready_targets):
-            print(f"  WARN: did not see READY from all brains within 90s — proceeding anyway.")
-        settle = int(spec.get("launch_settle_seconds", 4))
+        ready_timeout = int(spec.get("ready_handshake_timeout_s", 45))
+        print(f"  waiting up to {ready_timeout}s for READY handshakes from {ready_targets}...")
+        if not wait_for_chat_phrase(bots, "READY:", timeout_s=ready_timeout, from_each=ready_targets):
+            print(f"  WARN: did not see READY from all brains within {ready_timeout}s — proceeding anyway.")
+        settle = int(spec.get("launch_settle_seconds", 2))
         print(f"  settle: {settle}s before first mission")
         time.sleep(settle)
     elif args.no_launch_brains and not args.dry_run:
@@ -1082,21 +1252,25 @@ def main() -> int:
         correct case (`Mason`). Exact-case filtering rejects the steward-side
         false positive while accepting real bot acks. Also rejects sender
         names like `Rcon` / empty / `Server`."""
-        bot_names = {b["name"] for b in bots}
+        bot_names_lower = {b["name"].lower() for b in bots}
         for r in records:
             if keyword in r.message:
+                sender_lower = (r.sender or "").lower()
                 # Always reject steward-side echoes — the mission text itself
                 # quotes the keyword phrase (e.g. `emit "M1A DONE" when done`)
                 # so a steward broadcast trivially contains the keyword.
-                if (r.sender or "").lower() in ("", "server", "rcon", "steward"):
+                if sender_lower in ("", "server", "rcon", "steward"):
                     continue
+                # Case-insensitive sender match. Mineflayer's own outgoing-chat
+                # echo can come through lowercased (config.mc.username path),
+                # so we normalize both sides.
                 if sender_filter and sender_filter.lower() != "any":
-                    if (r.sender or "") != sender_filter:
+                    if sender_lower != sender_filter.lower():
                         continue
                 else:
                     # `keyword_from: any` still requires the sender to be one
                     # of the known bots; rejects rogue players or plugin echoes.
-                    if (r.sender or "") not in bot_names:
+                    if sender_lower not in bot_names_lower:
                         continue
                 return r
         return None
@@ -1152,10 +1326,19 @@ def main() -> int:
         ph.start_wallclock = time.time() - started_at
         print(f"\n── phase {ph.spec.get('id')} ── start_tick={ph.start_tick} wall={ph.start_wallclock:.0f}s")
 
-        # Broadcast each mission's text. `text` may be a string OR a list
-        # of strings — lists are broadcast as separate consecutive chat
-        # lines so long missions don't get truncated at 240 chars.
+        # Broadcast each mission's text. Per-mission `pre_rcon` list runs
+        # first — used to e.g. restock a chest just before the bot is told
+        # to go withdraw from it. Then `text` is broadcast; may be a string
+        # OR a list of strings — lists go as separate consecutive chat lines
+        # so long missions don't truncate at 240 chars.
         for mn in ph.missions:
+            pre_cmds = mn.spec.get("pre_rcon") or []
+            if pre_cmds:
+                cmds = [c.get("rcon", c) if isinstance(c, dict) else c for c in pre_cmds]
+                cmds = [c for c in cmds if isinstance(c, str) and c.strip()]
+                if cmds:
+                    print(f"  pre_rcon ({mn.spec.get('id')}): {len(cmds)} cmds")
+                    run_rcon_batch(cmds, timeout=30)
             txt = mn.spec.get("text", "")
             if not txt:
                 continue
@@ -1192,6 +1375,29 @@ def main() -> int:
                 if kw:
                     hit = find_keyword(new_recs, kw, kw_from)
                     if hit:
+                        # F59 G27: optional post-keyword verification — run rcon
+                        # block-presence checks. Catches bots that emit the
+                        # keyword without actually building the thing.
+                        verify_spec = mn.spec.get("verify_after_keyword")
+                        verify_passed = True
+                        verify_results: list[dict] = []
+                        if verify_spec:
+                            print(f"  · {mn.spec.get('id')} keyword received from {hit.sender or 'Server'} — running verify...")
+                            verify_passed, verify_results = verify_after_keyword(verify_spec)
+                            for r in verify_results:
+                                err = r.get("error")
+                                if err:
+                                    print(f"    verify [{r['label']}]: ERROR {err}")
+                                else:
+                                    flag = "✓" if r["passed"] else "✗"
+                                    print(f"    verify {flag} [{r['label']}]: matched {r['matched']}/{r['total']} (need ≥{r['min_match']})")
+                        if verify_spec and not verify_passed:
+                            mn.done = True
+                            mn.done_reason = "keyword_unverified"
+                            mn.done_at_tick = cur_tick
+                            mn.done_at_wallclock = time.time() - started_at
+                            print(f"  ✗ {mn.spec.get('id')} keyword '{kw}' from {hit.sender or 'Server'} REJECTED by verify at tick {cur_tick}")
+                            continue
                         mn.done = True
                         mn.done_reason = "keyword"
                         mn.done_at_tick = cur_tick
@@ -1207,7 +1413,13 @@ def main() -> int:
                     print(f"  ✓ {mn.spec.get('id')} inventory fallback at tick {cur_tick}")
                     continue
                 # Warning (one-shot) if we crossed soft deadline.
-                deadline = int(mn.spec.get("deadline_tick", 0) or 0)
+                # `deadline_tick` in the YAML is treated as a RELATIVE budget
+                # in ticks counted from this phase's start_tick. (Earlier
+                # convention was absolute world-tick, which made spec files
+                # depend on whatever tick the world happened to be at when
+                # the test launched — unusable for long multi-phase chains.)
+                deadline_rel = int(mn.spec.get("deadline_tick", 0) or 0)
+                deadline = (ph.start_tick + deadline_rel) if deadline_rel else 0
                 if deadline and not mn.warning_fired:
                     if cur_tick >= (deadline - warning_lead):
                         mn.warning_fired = True
@@ -1238,14 +1450,20 @@ def main() -> int:
         ph.end_wallclock = time.time() - started_at
         print(f"── phase {ph.spec.get('id')} done at tick {ph.end_tick} ({ph.end_wallclock:.0f}s wall)")
 
-    # Determine verdict. M3 keyword/predicate done = PASS.
-    m3_done_well = False
-    for ph in phases:
-        if ph.spec.get("id") == "M3":
-            for mn in ph.missions:
-                if mn.done and mn.done_reason in ("keyword", "predicate"):
-                    m3_done_well = True
-    final_verdict = "PASS" if m3_done_well else "FAIL"
+    # Determine verdict. PASS iff every phase has at least one mission that
+    # completed via keyword or predicate. (Multi-phase chains need all-pass;
+    # a single-phase run reduces to "did that one phase pass?".)
+    if phases:
+        all_phases_ok = all(
+            any(
+                mn.done and mn.done_reason in ("keyword", "predicate")
+                for mn in ph.missions
+            )
+            for ph in phases
+        )
+    else:
+        all_phases_ok = False
+    final_verdict = "PASS" if all_phases_ok else "FAIL"
 
     # Run cleanup RCON.
     if not args.dry_run:

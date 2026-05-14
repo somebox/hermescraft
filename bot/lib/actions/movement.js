@@ -19,7 +19,25 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
     };
   };
   // Clear the failure flag — called on successful moves.
-  const clearMoveFailure = () => { if (ctx) ctx.lastMoveFailed = null; };
+  // F57.2: on success, also expire any stuck-cell entries near the bot's
+  // current position. A successful pathfind that crossed (or skirted) a
+  // previously-stuck cell is good evidence that the route is workable
+  // again; keep the rest of the registry for unrelated regions.
+  const clearMoveFailure = () => {
+    if (!ctx) return;
+    ctx.lastMoveFailed = null;
+    if (!Array.isArray(ctx.recentStuckCells) || ctx.recentStuckCells.length === 0) return;
+    try {
+      const p = ctx.bot?.entity?.position;
+      if (!p) return;
+      ctx.recentStuckCells = ctx.recentStuckCells.filter(e => {
+        const dx = e.cell.x - p.x;
+        const dy = e.cell.y - p.y;
+        const dz = e.cell.z - p.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz) > 2.5;
+      });
+    } catch { /* never let cleanup break success */ }
+  };
   // F48: When a nav verb fails, scan a small region around the target
   // for a standable cell and include it in observed_state. Mason in
   // G21 v2 sat through three 15s OPERATION_TIMEOUTs at the same
@@ -52,19 +70,61 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
     return observedState;
   };
 
+  // F57.2: stuck-cell registry helpers. After a NoProgressError (or
+  // after `mc escape` runs), the cell where the bot stalled gets pushed
+  // here so future pathfinds toward the same region can short-circuit
+  // instead of repeating the same failed attempt. 90s TTL.
+  const RECENT_STUCK_TTL_MS = 90_000;
+  const pushStuckCell = (cell, source) => {
+    if (!ctx || !cell) return;
+    if (!Array.isArray(ctx.recentStuckCells)) ctx.recentStuckCells = [];
+    const cutoff = Date.now() - RECENT_STUCK_TTL_MS;
+    ctx.recentStuckCells = ctx.recentStuckCells.filter(e => e.ts > cutoff);
+    const cx = Math.floor(Number(cell.x));
+    const cy = Math.floor(Number(cell.y));
+    const cz = Math.floor(Number(cell.z));
+    const existing = ctx.recentStuckCells.find(e => e.cell.x === cx && e.cell.y === cy && e.cell.z === cz);
+    if (existing) {
+      existing.ts = Date.now();
+      existing.hit_count += 1;
+    } else {
+      ctx.recentStuckCells.push({ ts: Date.now(), cell: { x: cx, y: cy, z: cz }, source, hit_count: 1 });
+      if (ctx.recentStuckCells.length > 12) ctx.recentStuckCells.shift();
+    }
+  };
+  // Find any recent-stuck cell within `radius` of (tx,ty,tz). Used by
+  // the pre-pathfind blackball check. Returns the entry or null.
+  const recentStuckNear = (tx, ty, tz, radius = 1) => {
+    if (!ctx || !Array.isArray(ctx.recentStuckCells) || ctx.recentStuckCells.length === 0) return null;
+    const cutoff = Date.now() - RECENT_STUCK_TTL_MS;
+    let best = null;
+    for (const e of ctx.recentStuckCells) {
+      if (e.ts <= cutoff) continue;
+      const dx = e.cell.x - tx;
+      const dy = e.cell.y - ty;
+      const dz = e.cell.z - tz;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d <= radius && (!best || e.hit_count > best.hit_count)) best = e;
+    }
+    return best;
+  };
+
   // F50.2: Pre-flight checks before invoking the pathfinder. Catches
   // doomed calls in <5ms (one classify + one closest-standable scan)
   // instead of paying the 5-15s wallclock cap to discover the same
   // thing. Returns null if the call should proceed; otherwise an
   // error response ready to be returned to the caller.
   //
-  // Two reasons we short-circuit:
+  // Reasons we short-circuit:
   //   1. BOT_TRAPPED — bot has all 4 cardinal dirs blocked at foot or
   //      head level. With parkour disabled (F49) pathfinder cannot
   //      escape; brain must dig/escape first.
   //   2. NAV_TARGET_UNSTANDABLE — no standable cell exists within
   //      `range` of the target (target is in solid rock / floating).
   //      No path possible regardless of where bot is.
+  //   3. F57.2 NAV_RECURRING_STUCK — target is within 1 block of a cell
+  //      where the bot stalled twice or more in the last 90s. Refuse the
+  //      attempt and direct the brain to mc dig or alternative route.
   const preflightNav = (b, x, y, z, range) => {
     let ss;
     try { ss = standingState(b); } catch { return null; }
@@ -88,6 +148,33 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
     const tx = Math.floor(Number(x));
     const ty = Math.floor(Number(y));
     const tz = Math.floor(Number(z));
+    // F57.2 blackball: if the brain is sending the bot back to a place
+    // it just stalled in (hit_count >= 2), refuse early.
+    const stuck = recentStuckNear(tx, ty, tz, 1);
+    if (stuck && stuck.hit_count >= 2) {
+      const ageS = Math.round((Date.now() - stuck.ts) / 100) / 10;
+      return {
+        ok: false,
+        error: {
+          code: 'NAV_RECURRING_STUCK',
+          message: `Refusing to pathfind to ${tx},${ty},${tz} — the bot has stalled near ${stuck.cell.x},${stuck.cell.y},${stuck.cell.z} ${stuck.hit_count}× in the last ${ageS}s. The route is trapping you. Options: (a) mc dig at the blocking cell — run mc inspect to identify it; (b) approach from a different side via mc go_mark; (c) call mc status to clear this flag if you've moved.`,
+          observed_state: {
+            target: { x: tx, y: ty, z: tz },
+            recurring_cell: stuck.cell,
+            hit_count: stuck.hit_count,
+            source: stuck.source,
+            age_s: ageS,
+            your_standing_state: ss ? {
+              classification: ss.classification,
+              blocked_dirs: ss.blocked_dirs,
+              open_dirs: ss.open_dirs,
+            } : null,
+          },
+          next_action_hint: `mc inspect ${stuck.cell.x} ${stuck.cell.y} ${stuck.cell.z}`,
+          retry_safe: false,
+        },
+      };
+    }
     const scan = Math.max(1, Math.min(4, Number.isFinite(range) ? range : 1));
     let best;
     try { best = findClosestStandable(b, tx, ty, tz, scan); } catch { return null; }
@@ -270,6 +357,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         try { b.pathfinder.setGoal(null); } catch {}
         if (e instanceof NoProgressError) {
           recordMoveFailure('goto', x, y, z, posObj(), 'no_progress');
+          pushStuckCell(e.info?.stalled_position, 'no_progress');
           return {
             ok: false,
             error: {
@@ -386,6 +474,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         try { b.pathfinder.setGoal(null); } catch {}
         if (e instanceof NoProgressError) {
           recordMoveFailure('goto_near', x, y, z, posObj(), 'no_progress');
+          pushStuckCell(e.info?.stalled_position, 'no_progress');
           return {
             ok: false,
             error: {
@@ -543,8 +632,10 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
             capMs: ACTION_CAPS_MS.move,
           });
         } catch (e) {
-          if (e instanceof NoProgressError) lastPathfinderError = `no_progress:${e.info?.no_progress_for_ms || '?'}ms`;
-          else if (e instanceof OperationTimeoutError) lastPathfinderError = 'timeout';
+          if (e instanceof NoProgressError) {
+            lastPathfinderError = `no_progress:${e.info?.no_progress_for_ms || '?'}ms`;
+            pushStuckCell(e.info?.stalled_position, 'no_progress');
+          } else if (e instanceof OperationTimeoutError) lastPathfinderError = 'timeout';
           else lastPathfinderError = e?.message || String(e);
           try { b.pathfinder.setGoal(null); } catch {}
         }
