@@ -1,5 +1,5 @@
 diff --git a/node_modules/mineflayer-pathfinder/index.js b/node_modules/mineflayer-pathfinder/index.js
-index b38bd30..59fcb6a 100644
+index b38bd30..c4ada3a 100644
 --- a/node_modules/mineflayer-pathfinder/index.js
 +++ b/node_modules/mineflayer-pathfinder/index.js
 @@ -520,8 +520,45 @@ function inject (bot) {
@@ -64,8 +64,34 @@ index b38bd30..59fcb6a 100644
        lastNodeTime = performance.now()
        if (stopPathing) {
          stop()
+@@ -608,6 +649,25 @@ function inject (bot) {
+     bot.setControlState('forward', true)
+     bot.setControlState('jump', false)
+ 
++    // F69b: sneak when the bot is in or about to enter an openable cell
++    // (door). The open-door's 0.1875-thick slab plus the bot's 0.6-wide
++    // hitbox leaves ~0.0125 of clearance per side; without sneak the
++    // bot's lateral drift clips the slab edge and stalls. Sneaking caps
++    // movement speed at ~1.3 m/s with no strafe accel, tracking look()
++    // tightly. Verified to flip dir=south from FAIL to PASS in the
++    // door-traversal matrix.
++    try {
++      const _floor = (v) => Math.floor(v)
++      const _botCell = bot.blockAt(new Vec3(_floor(bot.entity.position.x), _floor(bot.entity.position.y), _floor(bot.entity.position.z)))
++      const _nextCell = bot.blockAt(new Vec3(_floor(nextPoint.x), _floor(nextPoint.y), _floor(nextPoint.z)))
++      const _isOpenable = (b) => b && stateMovements.openable && stateMovements.openable.has(b.type)
++      if (_isOpenable(_botCell) || _isOpenable(_nextCell)) {
++        bot.setControlState('sneak', true)
++      } else if (!placing && !digging) {
++        bot.setControlState('sneak', false)
++      }
++    } catch (_) {}
++
+     if (bot.entity.isInWater) {
+       bot.setControlState('jump', true)
+       bot.setControlState('sprint', false)
 diff --git a/node_modules/mineflayer-pathfinder/lib/movements.js b/node_modules/mineflayer-pathfinder/lib/movements.js
-index a7e3505..241057c 100644
+index a7e3505..db0931f 100644
 --- a/node_modules/mineflayer-pathfinder/lib/movements.js
 +++ b/node_modules/mineflayer-pathfinder/lib/movements.js
 @@ -92,8 +92,14 @@ class Movements {
@@ -85,7 +111,7 @@ index a7e3505..241057c 100644
          this.openable.add(block.id)
        }
      })
-@@ -384,13 +390,18 @@ class Movements {
+@@ -384,13 +390,40 @@ class Movements {
        cost += this.placeCost // additional cost for placing a block
      }
  
@@ -93,22 +119,46 @@ index a7e3505..241057c 100644
 -    if (cost > 100) return
 -
 -    // Open fence gates
+-    if (this.canOpenDoors && blockC.openable && blockC.shapes && blockC.shapes.length !== 0) {
+-      toPlace.push({ x: node.x + dir.x, y: node.y, z: node.z + dir.z, dx: 0, dy: 0, dz: 0, useOne: true }) // Indicate that a block should be used on this block not placed
 +    // F66 expansion: when blockC (foot cell into) is an openable door, the
 +    // block above (blockB) is the upper half of the SAME door. Don't try
 +    // to safeOrBreak it — the door's open animation moves both halves
 +    // simultaneously. Stock code would attempt to "break" the upper half,
 +    // which fails when canDig=false and rejects the move entirely.
-     if (this.canOpenDoors && blockC.openable && blockC.shapes && blockC.shapes.length !== 0) {
-+      // The door's upper half is implicitly part of the door — opening
-+      // the lower half clears both. Skip the blockB cost check here.
-       toPlace.push({ x: node.x + dir.x, y: node.y, z: node.z + dir.z, dx: 0, dy: 0, dz: 0, useOne: true }) // Indicate that a block should be used on this block not placed
++    //
++    // F69 (refinement of F66): the original guard required
++    // `blockC.shapes.length !== 0`, but for some door states (notably
++    // north/south facing open doors) mineflayer-data reports an empty
++    // shapes array — the F66 branch never fired, safeOrBreak ran on the
++    // door cell, returned >100 (door is non-diggable), and the bot
++    // stalled outside the doorframe. Fire on `openable` alone — for any
++    // openable block, the right action is to interact, not to break it.
++    if (this.canOpenDoors && blockC.openable) {
++      // F69: only push useOne when the door is actually closed. Open
++      // doors still expose a thin hinge slab in `block.shapes`, so a
++      // blanket useOne would toggle them SHUT and the bot would collide
++      // on its next forward step. Read the blockstate properties to
++      // distinguish open from closed.
++      let doorAlreadyOpen = false
++      try {
++        const props = (typeof blockC.getProperties === 'function') ? blockC.getProperties() : null
++        if (props && (props.open === 'true' || props.open === true)) {
++          doorAlreadyOpen = true
++        }
++      } catch (_) {}
++      if (!doorAlreadyOpen) {
++        toPlace.push({ x: node.x + dir.x, y: node.y, z: node.z + dir.z, dx: 0, dy: 0, dz: 0, useOne: true }) // Indicate that a block should be used on this block not placed
++      }
++      // Either way: skip the safeOrBreak check on blockB and blockC — both
++      // halves of a door are walkable once it's open.
      } else {
 +      cost += this.safeOrBreak(blockB, toBreak)
 +      if (cost > 100) return
        cost += this.safeOrBreak(blockC, toBreak)
        if (cost > 100) return
      }
-@@ -436,6 +447,15 @@ class Movements {
+@@ -436,6 +469,15 @@ class Movements {
      }
      if (cost > 100) return
  
