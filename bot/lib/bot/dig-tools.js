@@ -64,6 +64,27 @@ export function isDigProtected(blockName) {
   return PROTECTED_DIG_BLOCKS.has(blockName);
 }
 
+/**
+ * F54.1 — detect blocks that support a door or fence_gate directly above.
+ * Digging the support drops the door/gate as a loose item entity, which
+ * the bot then can't easily recover (mc collect on item entities is fiddly,
+ * and the brain typically doesn't realize what happened). Returns the
+ * supported block's name + coord, or null when safe.
+ *
+ * Trapdoors are wall-mounted and don't have a floor support, so we ignore
+ * them. Beds also have two halves but losing one is recoverable.
+ */
+export function getSupportedDoorAbove(b, x, y, z) {
+  const above = b.blockAt(new Vec3(x, y + 1, z));
+  if (!above) return null;
+  const name = above.name;
+  if (!name) return null;
+  if (name.endsWith('_door') || name.endsWith('_fence_gate')) {
+    return { name, x, y: y + 1, z };
+  }
+  return null;
+}
+
 export const DIG_PASSABLE_NAMES = new Set(['air', 'cave_air', 'void_air']);
 export const DIG_FLUID_NAMES = new Set(['water', 'lava']);
 export const FALLING_BLOCK_NAMES = new Set([

@@ -2,7 +2,7 @@
  * Movement action handlers: goto, goto_near, follow, look, stop, move.
  */
 import { Vec3 } from 'vec3';
-import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 import { findClosestStandable, standabilityReason, standingState, isStandableCell } from './_nav-helpers.js';
 
 export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTIONS }) {
@@ -244,14 +244,20 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
           error: {
             code: 'NAV_TARGET_OCCUPIED',
             message: `Target ${tx},${ty},${tz} is inside a solid block (${blocker.name}). You can't stand there. Use \`mc goto_near ${tx} ${ty} ${tz}\` to reach an adjacent walkable tile instead.`,
-            observed_state: { target: { x: tx, y: ty, z: tz }, blocker: blocker.name, current: pos },
+            observed_state: enrichWithStand(b, { target: { x: tx, y: ty, z: tz }, blocker: blocker.name, current: pos }, tx, ty, tz),
             retry_safe: false,
           },
         };
       }
       const goal = new goals.GoalBlock(tx, ty, tz);
       try {
-        await raceWithTimeout(b.pathfinder.goto(goal), ACTION_CAPS_MS.goto, 'goto');
+        await pathfindWithProgressWatchdog({
+          bot: b,
+          pathfinderGoto: () => b.pathfinder.goto(goal),
+          onStall: () => { try { b.pathfinder.setGoal(null); } catch {} },
+          opName: 'goto',
+          capMs: ACTION_CAPS_MS.goto,
+        });
         const pos = posObj();
         const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
         if (dist > 2) {
@@ -262,6 +268,18 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         return { result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
+        if (e instanceof NoProgressError) {
+          recordMoveFailure('goto', x, y, z, posObj(), 'no_progress');
+          return {
+            ok: false,
+            error: {
+              code: 'NAV_NO_PROGRESS',
+              message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)}. Often means a 1-block lip, a wedged corner, or a sealed route. Try mc escape, mc dig at the blocker, or pick a different target.`,
+              observed_state: enrichWithStand(b, { target: { x, y, z }, current: posObj(), ...e.info }, x, y, z),
+              retry_safe: false,
+            },
+          };
+        }
         if (e instanceof OperationTimeoutError) {
           recordMoveFailure('goto', x, y, z, posObj(), 'wallclock_timeout');
           return timeoutError('goto', ACTION_CAPS_MS.goto,
@@ -286,7 +304,13 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       await preNudgeIfSticky(b, Math.floor(x), Math.floor(y), Math.floor(z));
       const goal = new goals.GoalNear(Math.floor(x), Math.floor(y), Math.floor(z), range);
       try {
-        await raceWithTimeout(b.pathfinder.goto(goal), ACTION_CAPS_MS.goto_near, 'goto_near');
+        await pathfindWithProgressWatchdog({
+          bot: b,
+          pathfinderGoto: () => b.pathfinder.goto(goal),
+          onStall: () => { try { b.pathfinder.setGoal(null); } catch {} },
+          opName: 'goto_near',
+          capMs: ACTION_CAPS_MS.goto_near,
+        });
         const pos = posObj();
         const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
         if (dist > range + 1.5) {
@@ -360,6 +384,18 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         return { result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
+        if (e instanceof NoProgressError) {
+          recordMoveFailure('goto_near', x, y, z, posObj(), 'no_progress');
+          return {
+            ok: false,
+            error: {
+              code: 'NAV_NO_PROGRESS',
+              message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)} (range ${range}). Likely a 1-block lip, wedge, or sealed route. Try mc escape, mc dig at the blocker, or use mc goto_near with different coords.`,
+              observed_state: enrichWithStand(b, { target: { x, y, z }, range, current: posObj(), ...e.info }, x, y, z),
+              retry_safe: false,
+            },
+          };
+        }
         if (e instanceof OperationTimeoutError) {
           recordMoveFailure('goto_near', x, y, z, posObj(), 'wallclock_timeout');
           return timeoutError('goto_near', ACTION_CAPS_MS.goto_near,
@@ -499,9 +535,17 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         // Try direct pathfinder.goto.
         const goal = new goals.GoalBlock(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z));
         try {
-          await raceWithTimeout(b.pathfinder.goto(goal), ACTION_CAPS_MS.move, 'move');
+          await pathfindWithProgressWatchdog({
+            bot: b,
+            pathfinderGoto: () => b.pathfinder.goto(goal),
+            onStall: () => { try { b.pathfinder.setGoal(null); } catch {} },
+            opName: 'move',
+            capMs: ACTION_CAPS_MS.move,
+          });
         } catch (e) {
-          lastPathfinderError = (e instanceof OperationTimeoutError) ? 'timeout' : (e?.message || String(e));
+          if (e instanceof NoProgressError) lastPathfinderError = `no_progress:${e.info?.no_progress_for_ms || '?'}ms`;
+          else if (e instanceof OperationTimeoutError) lastPathfinderError = 'timeout';
+          else lastPathfinderError = e?.message || String(e);
           try { b.pathfinder.setGoal(null); } catch {}
         }
 
@@ -553,7 +597,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
             error: {
               code: 'NAV_BLOCKED',
               message: `No path to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} from ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} and no door/gate between to use. Use mc tunnel or mc dig_area to clear terrain explicitly.`,
-              observed_state: { current: pos, target, doors_used, nearby_doors: nearbyDoorList(), pathfinder_error: lastPathfinderError },
+              observed_state: enrichWithStand(b, { current: pos, target, doors_used, nearby_doors: nearbyDoorList(), pathfinder_error: lastPathfinderError }, target.x, target.y, target.z),
               retry_safe: false,
             },
           };
@@ -571,7 +615,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
             error: {
               code: 'NAV_BLOCKED',
               message: `Could not traverse ${chosen.block} at ${chosen.pos.x},${chosen.pos.y},${chosen.pos.z}: ${through.error?.message || 'through failed'}`,
-              observed_state: { current: posObj(), target, doors_used, failed_door: { x: chosen.pos.x, y: chosen.pos.y, z: chosen.pos.z, block: chosen.block }, through_error: through.error },
+              observed_state: enrichWithStand(b, { current: posObj(), target, doors_used, failed_door: { x: chosen.pos.x, y: chosen.pos.y, z: chosen.pos.z, block: chosen.block }, through_error: through.error }, target.x, target.y, target.z),
               retry_safe: through.error?.retry_safe ?? false,
             },
           };
@@ -589,7 +633,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         error: {
           code: 'TOO_MANY_DOORS',
           message: `Used max ${maxDoors} doors without reaching ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)}. Building may have a routing loop or be too complex; try mc move --door X Y Z to pick a specific door.`,
-          observed_state: { doors_used, target, current: posObj() },
+          observed_state: enrichWithStand(b, { doors_used, target, current: posObj() }, target.x, target.y, target.z),
           retry_safe: false,
         },
       };

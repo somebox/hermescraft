@@ -175,10 +175,16 @@ export function buildEnvelope({ command, httpRes, parsedParams, globals }) {
   if (globals?.limit != null) shaped = /** @type {Record<string,unknown>} */ (deepCloneTrim(shaped, globals.limit));
   if (globals?.fields?.length) shaped = /** @type {Record<string,unknown>} */ (projectFields(shaped, globals.fields));
 
+  // Preserve any top-level `result` string from the action. Action handlers
+  // return { ok, data, result, ... } and the result string is meant to be
+  // a human-readable one-liner ("Block at X,Y,Z: chest", or the F53.5
+  // unread-chat banner). Dropping it silently meant the brain only saw the
+  // JSON dump minus this prominent summary line. Bug found 2026-05-14.
   const base = {
     ok: true,
     command,
     data: shaped,
+    ...(typeof js.result === 'string' ? { result: js.result } : {}),
     ...(state ? { state } : {}),
     ...(emptyInfo.empty ? { empty: true, hint: emptyInfo.hint } : {}),
   };

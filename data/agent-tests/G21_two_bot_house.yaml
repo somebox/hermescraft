@@ -71,6 +71,18 @@ world_setup:
   # separate broken commands, so the chest never gets placed.
   - rcon: 'execute in landfolk-test run setblock 0 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:wooden_pickaxe",Count:1b},{Slot:1b,id:"minecraft:wooden_pickaxe",Count:1b},{Slot:2b,id:"minecraft:wooden_axe",Count:1b},{Slot:3b,id:"minecraft:wooden_axe",Count:1b},{Slot:4b,id:"minecraft:bread",Count:16b},{Slot:5b,id:"minecraft:apple",Count:8b},{Slot:6b,id:"minecraft:cooked_beef",Count:8b}]}'
 
+  # F56-T1: STONE_PILE — on-site cobblestone for M3 house construction.
+  # Bots run out of materials during M3 and ran across map to MINING_HINT
+  # (and sometimes dug the test floor). 18 cobblestone blocks in a
+  # 3x2x3 stack 3 blocks east of the platform. Enough for walls + roof
+  # with material to spare.
+  - rcon: 'execute in landfolk-test run fill 5 65 9 6 66 11 minecraft:cobblestone replace grass_block'
+  - rcon: 'execute in landfolk-test run fill 5 65 9 6 66 11 minecraft:cobblestone replace air'
+  # A small additional cluster 2 blocks further east so it doesn't look
+  # like a uniform 2x2x3 box.
+  - rcon: 'execute in landfolk-test run setblock 7 65 10 minecraft:cobblestone'
+  - rcon: 'execute in landfolk-test run setblock 6 67 10 minecraft:cobblestone'
+
   # Stone outcrop — small hill SW. ~84 stones in a stepped pyramid plus
   # 6 scattered outliers so it doesn't look like a perfect cube.
   # Resource budget: M1A asks for 80 cobble, plenty here.
@@ -169,7 +181,8 @@ post_connect_setup:
 marks:
   SUPPLY_CHEST: { x: 0,   y: 65, z: 0,   note: "Shared tools — share with your partner" }
   KEEP_SITE:    { x: 0,   y: 65, z: 10,  note: "Central build site (platform + house here)" }
-  MINING_HINT:  { x: -12, y: 65, z: -12, note: "Scattered stone outcrop SW" }
+  STONE_PILE:   { x: 5,   y: 65, z: 10,  note: "On-site cobblestone — 3 blocks east of the platform. Mine here for house materials, do NOT dig the test floor." }
+  MINING_HINT:  { x: -12, y: 65, z: -12, note: "Scattered stone outcrop SW (farther — STONE_PILE near the platform is closer)" }
   BEACH:        { x: 12,  y: 64, z: 12,  note: "Sand + water pond NE — sand for glass" }
 
 # Phase graph. Mission text is intentionally free of player names like
@@ -275,11 +288,12 @@ phases:
         # truncation and gives the bots time to process each line.
         text:
           - '@flint @mason please build a small house ON the platform at (-2 to 1, 65, 9 to 12).'
-          - 'specs: WALLS 3 high around the perimeter (cobble at y=66, 67, 68). The INTERIOR must be empty so a player can stand inside.'
-          - 'add 1 DOOR (wooden, in any wall) and 1 WINDOW (glass or glass_pane, in any wall).'
-          - 'sand for glass is at the BEACH mark (12, 64, 12). decide together: smelt glass or use cobble for that wall slot.'
+          - 'STONE_PILE at (5,65,10) has on-site cobblestone to mine — 3 blocks east of the platform. Use it for walls + roof. Do NOT dig the test floor for materials.'
+          - 'specs: WALLS 3 high around the perimeter (cobble at y=66, 67, 68). Add a ROOF at y=69 (cobble OR oak_planks — your choice). The INTERIOR must be empty so a player can stand inside.'
+          - 'add 1 DOOR (Flint has oak_doors from M2B) and 1 WINDOW (glass — smelt from BEACH sand, or skip and use cobble).'
           - 'first DECIDE who does what — chat to claim sub-tasks (e.g. "I will build the south + west walls"). DO NOT duplicate work.'
-          - 'BEFORE emitting "HOUSE COMPLETE", one of you MUST stand inside the house and run `mc is_sheltered` to verify it''s enclosed.'
+          - 'ANNOUNCE before each major step: chat "name: doing <thing>" so your partner sees it. RE-ANNOUNCE when you change plans.'
+          - 'BEFORE emitting "HOUSE COMPLETE", one of you MUST stand inside the house and run `mc is_sheltered walls=-2,66,9,1,68,12` to verify enclosure + wall completeness.'
           - 'deadline tick 29000. emit "HOUSE COMPLETE" only after is_sheltered confirms the structure is sealed.'
         deadline_tick: 29000
         done_keyword: "HOUSE COMPLETE"

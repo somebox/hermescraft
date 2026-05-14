@@ -1,5 +1,5 @@
 import { Vec3 } from 'vec3';
-import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS, ensureWithinReach } from './_helpers.js';
 
 // ─ Phase-2 chest contract helpers (see docs/phase-2/action-contracts.md mc chest) ─
 
@@ -70,26 +70,14 @@ async function openContainerStructured(deps, body) {
   }
 
   const x = block.position.x, y = block.position.y, z = block.position.z;
-  const distance = b.entity.position.distanceTo(block.position);
-  if (distance > 4.5) {
-    try {
-      await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
-    } catch (err) {
-      return {
-        ok: false,
-        error: {
-          code: 'OUT_OF_RANGE',
-          message: `Chest at (${x}, ${y}, ${z}) is ${Math.round(distance * 10) / 10} blocks away and pathfind failed: ${/** @type {Error} */(err).message}`,
-          observed_state: {
-            chest_position: { x, y, z },
-            distance: Math.round(distance * 10) / 10,
-            bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
-          },
-          retry_safe: false,
-        },
-      };
-    }
-  }
+  // F55.3: uniform reach precheck with wallclock cap. Replaces uncapped
+  // pathfinder.goto() that could hang 10-15s on hard paths during G21 v6
+  // chest interactions.
+  const reach = await ensureWithinReach({ bot: b, goals }, { x, y, z }, {
+    range: 4.5,
+    observed: { container_position: { x, y, z } },
+  });
+  if (!reach.ok) return reach;
 
   let chest;
   try {

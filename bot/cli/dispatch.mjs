@@ -152,6 +152,55 @@ function customParse(canonicalName, positional) {
       out.z = Number(positionals[2]);
       return out;
     }
+    case 'dig': {
+      // mc dig X Y Z [--force]   (F54.1)
+      const q = positional.slice();
+      const out = {};
+      const positionals = [];
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--force') { q.shift(); out.force = true; }
+        else if (t.startsWith('@')) { out.mark = String(q.shift()).slice(1); }
+        else { positionals.push(q.shift()); }
+      }
+      if (positionals.length < 3) throw new Error('missing:coords');
+      out.x = Number(positionals[0]);
+      out.y = Number(positionals[1]);
+      out.z = Number(positionals[2]);
+      return out;
+    }
+    case 'wait': {
+      // mc wait [SECONDS] [--no-interrupt]   (F55.5)
+      const q = positional.slice();
+      const out = {};
+      for (const t of q) {
+        const s = String(t);
+        if (s === '--no-interrupt' || s === '--no_interrupt') { out.interrupt = false; }
+        else if (!isNaN(Number(s))) { out.seconds = Number(s); }
+      }
+      if (out.seconds == null) out.seconds = 5;
+      return out;
+    }
+    case 'is_sheltered': {
+      // mc is_sheltered [radius=N] [walls=X1,Y1,Z1,X2,Y2,Z2]   (F55.7)
+      const q = positional.slice();
+      const out = {};
+      for (const t of q) {
+        const s = String(t);
+        if (s.startsWith('radius=')) {
+          out.radius = Number(s.slice('radius='.length));
+        } else if (s.startsWith('walls=')) {
+          const parts = s.slice('walls='.length).split(',').map((x) => Number(String(x).trim()));
+          if (parts.length === 6 && parts.every(Number.isFinite)) {
+            out.walls = { x1: parts[0], y1: parts[1], z1: parts[2], x2: parts[3], y2: parts[4], z2: parts[5] };
+          }
+        } else if (!isNaN(Number(s)) && out.radius == null) {
+          // Positional radius: mc is_sheltered 20
+          out.radius = Number(s);
+        }
+      }
+      return out;
+    }
     case 'move': {
       // mc move X Y Z [--max-doors N] [--door GX GY GZ]
       const q = positional.slice();

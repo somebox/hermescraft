@@ -503,9 +503,16 @@ export function createObservation(deps) {
   function getInventory() {
     const b = ensureBot();
     const items = b.inventory.items();
-    if (items.length === 0) return { items: [], summary: 'empty' };
+    if (items.length === 0) {
+      return {
+        items: [],
+        summary: 'empty',
+        advisories: ['inventory empty — no tools to mine, chop, or fight. craft basics first'],
+      };
+    }
 
     const categories = {};
+    const toolWear = []; // F54.3: collect durability info for advisories
     items.forEach(item => {
       const n = item.name;
       let cat = 'other';
@@ -518,9 +525,46 @@ export function createObservation(deps) {
 
       if (!categories[cat]) categories[cat] = [];
       categories[cat].push({ name: n, count: item.count });
+
+      // F54.3: track wear on durable items so we can flag near-broken tools.
+      // Mineflayer 1.21 surfaces damage via item.components (array of
+      // {type,data}); legacy item.durability/nbt fallback for older versions.
+      if (cat === 'tools' || cat === 'weapons' || cat === 'armor') {
+        const max = item.maxDurability;
+        if (max && max > 0) {
+          let damage = 0;
+          if (Array.isArray(item.components)) {
+            const dmg = item.components.find((c) => c && c.type === 'damage');
+            if (dmg && typeof dmg.data === 'number') damage = dmg.data;
+          } else if (item.durability != null) {
+            damage = item.durability;
+          }
+          const remaining = Math.max(0, max - damage);
+          const pct = Math.max(0, Math.min(100, Math.round((remaining / max) * 100)));
+          toolWear.push({ name: n, remaining, max, pct });
+        }
+      }
     });
 
-    return { categories, totalSlots: items.length };
+    // F54.3: derive state-describing advisories. State only — no goal
+    // semantics (which would be coordination, not primitive correctness).
+    const advisories = [];
+    const tools = categories.tools || [];
+    const hasPickaxe = tools.some((t) => t.name.endsWith('_pickaxe'));
+    const hasAxe = tools.some((t) => t.name.endsWith('_axe') && !t.name.endsWith('_pickaxe'));
+    if (!hasPickaxe) advisories.push('no pickaxe — cannot mine stone/ore. craft wooden_pickaxe (3 planks + 2 sticks)');
+    if (!hasAxe) advisories.push('no axe — wood chopping is slow without one. craft wooden_axe (3 planks + 2 sticks)');
+    for (const td of toolWear) {
+      if (td.pct <= 10) {
+        advisories.push(`${td.name} near breaking (${td.remaining}/${td.max} durability, ${td.pct}%) — craft a spare`);
+      }
+    }
+
+    return {
+      categories,
+      totalSlots: items.length,
+      ...(advisories.length ? { advisories } : {}),
+    };
   }
 
   function getNearby(radius = 32) {

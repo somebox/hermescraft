@@ -226,9 +226,10 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc collect BLOCK [COUNT]',
   }),
   g('dig', 'world', ['d'], {
-    description: 'Break the block at X Y Z (single block, raw — no hazard checks). Prefer mc safe_dig for general use.',
+    description: 'Break the block at X Y Z (single block, raw — no hazard checks). Refuses (SUPPORT_BLOCK) if a door or fence_gate sits directly above. Pass --force to override that guard. Prefer mc safe_dig for general use.',
     method: 'POST',
     path: '/action/dig',
+    customParse: true,
     argSchema: [
       { key: 'x', type: 'number', required: true },
       { key: 'y', type: 'number', required: true },
@@ -237,10 +238,16 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) =>
       JSON.stringify({
         ...(p.mark ? { mark: String(p.mark).replace(/^@/, '') } : {}),
-        x: p.x,
-        y: p.y,
-        z: p.z,
+        x: Number(p.x),
+        y: Number(p.y),
+        z: Number(p.z),
+        ...(p.force ? { force: true } : {}),
       }),
+    usage: 'mc dig X Y Z [--force]',
+    examples: [
+      'mc dig 0 64 5',
+      'mc dig 0 64 5 --force',
+    ],
   }),
   g('scout', 'observe', [], {
     description: 'Hazard observation in a radius around X Y Z (or bot position). Read-only — lists lava cells (with source/flowing flag), water, falling-block columns (sand/gravel/anvil/concrete_powder), bedrock proximity, and hostile mobs. Use before mining at depth.',
@@ -716,7 +723,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('through', 'world', [], {
-    description: 'Pass through a fence_gate, door, or trapdoor: opens it, walks to the far side, closes it behind. Destination defaults to 2 blocks past the gate on the opposite side from the bot.',
+    description: 'Pass through a fence_gate, door, or trapdoor at GX GY GZ: opens it, walks to the far side, closes it behind. Destination defaults to 2 blocks past the gate on the opposite side from the bot. If the target is air (door missing/destroyed), returns NOT_A_DOOR with a hint to mc place a door from inventory. For just toggling without walking through, use mc interact X Y Z.',
     method: 'POST',
     path: '/action/through',
     customParse: true,
@@ -902,7 +909,7 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
   g('interact', 'world', ['use_block'], {
-    description: 'Right-click block at X Y Z (door/lever/button)',
+    description: 'Right-click the block at X Y Z. Toggle a door/trapdoor/fence_gate open or closed without walking through it (contrast: mc through actually traverses; mc use is for held items only).',
     method: 'POST',
     path: '/action/interact',
     argSchema: [
@@ -914,7 +921,7 @@ export const RAW_COMMAND_DEFS = [
   }),
   g('close', 'world', [], { description: 'Close currently-open container', method: 'POST', path: '/action/close_screen', bodyFn: () => empty }),
 
-  g('use', 'world', ['u'], { description: 'Activate held item (right-click in air)', method: 'POST', path: '/action/use', bodyFn: () => empty }),
+  g('use', 'world', ['u'], { description: 'Activate the HELD ITEM (eat food, shoot bow, place door wherever facing). Right-click in air. Does NOT target a block coord — for that use mc interact X Y Z, or mc through X Y Z to walk through a door.', method: 'POST', path: '/action/use', bodyFn: () => empty }),
 
   g('surface', 'world', ['swim_up'], {
     description: 'Swim up to the water surface. Hold jump until head is in air or 30s elapses. No-op if not in water.',
@@ -1171,19 +1178,37 @@ export const RAW_COMMAND_DEFS = [
     }),
   }),
   g('wait', 'world', ['w'], {
-    description: 'Pause N seconds (no-op until timeout)',
+    description: 'Pause up to N seconds. Returns early when a chat message @-mentions you or arrives as direct/whisper. Pass --no-interrupt to disable chat-interrupt and wait the full duration regardless.',
     method: 'POST',
     path: '/action/wait',
+    customParse: true,
     argSchema: [{ key: 'seconds', type: 'number', default: 5 }],
-    bodyFn: (p) => JSON.stringify({ seconds: Number(p.seconds ?? 5) }),
+    bodyFn: (p) => JSON.stringify({
+      seconds: Number(p.seconds ?? 5),
+      ...(p['no-interrupt'] || p.no_interrupt ? { interrupt: false } : {}),
+    }),
+    usage: 'mc wait [SECONDS] [--no-interrupt]',
+    examples: ['mc wait 10', 'mc wait 30 --no-interrupt'],
   }),
   g('is_sheltered', 'world', ['shelter_check', 'sealed'], {
-    description: 'Pathfinder enclosure test — can the bot walk OUT of here? Mob pathfinding is symmetric, so if YES then mobs can walk IN. Use this to verify a shelter before settling in.',
+    description: 'Pathfinder enclosure test — can the bot walk OUT of here? Mob pathfinding is symmetric, so if YES then mobs can walk IN. Pass walls=X1,Y1,Z1,X2,Y2,Z2 to also verify every perimeter cell of that box is filled (catches the "I forgot a wall block" failure).',
     method: 'POST',
     path: '/action/is_sheltered',
+    customParse: true,
     argSchema: [{ key: 'radius', type: 'number', default: 20 }],
-    bodyFn: (p) => JSON.stringify({ radius: Number(p.radius ?? 20) }),
-    examples: ['mc is_sheltered', 'mc is_sheltered radius=30'],
+    bodyFn: (p) => {
+      const out = { radius: Number(p.radius ?? 20) };
+      if (p.walls && typeof p.walls === 'string') {
+        const parts = p.walls.split(',').map((s) => Number(String(s).trim()));
+        if (parts.length === 6 && parts.every(Number.isFinite)) {
+          out.walls = { x1: parts[0], y1: parts[1], z1: parts[2], x2: parts[3], y2: parts[4], z2: parts[5] };
+        }
+      } else if (p.walls && typeof p.walls === 'object') {
+        out.walls = p.walls;
+      }
+      return JSON.stringify(out);
+    },
+    examples: ['mc is_sheltered', 'mc is_sheltered radius=30', 'mc is_sheltered walls=-2,66,9,1,68,12'],
   }),
   g('inspect', 'world', ['block_at', 'cell_info'], {
     description: 'Inspect a single cell — block name, is_diggable, is_relocatable, suggested_tool, and entities standing in that cell. Use to plan place/dig without trial-and-error.',
@@ -1284,7 +1309,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* chat_to / whisper */
   g('chat_to', 'social', [], {
-    description: 'Direct chat to PLAYER',
+    description: 'Address PLAYER in public chat — equivalent to `mc chat "@PLAYER MSG"`. Visible to everyone; triggers wait-interrupt on the recipient (F55.5).',
     method: 'POST',
     path: '/action/chat_to',
     argSchema: [
@@ -1294,7 +1319,7 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ player: p.player, message: p.message }),
   }),
   g('whisper', 'social', ['dm', 'tell', 'private'], {
-    description: 'Whisper (private) to PLAYER',
+    description: 'Address PLAYER in public chat — same as mc chat_to. Aliases retained for ergonomics, but no longer private (private /msg did not reliably reach partner bots; F55.6).',
     method: 'POST',
     path: '/action/whisper',
     argSchema: [

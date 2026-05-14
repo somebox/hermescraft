@@ -501,7 +501,7 @@ The runner accepts a YAML `expect:` block with these predicate types:
 
 These were called out in `experiments/phase-1-summary.md` §"Branch-scope refactors needed" but not addressed in Sprint A. The agent-test suite makes them easier to attempt safely:
 
-- `mc observe_lean` — strip nearby-block lists from the default observe payload; ~90% of token spend in long G-series runs is observe responses.
+- `mc observe_lean` — strip or shrink heavy fields in the default `/observe` snapshot (and document lean alternatives to `mc status` / `mc nearby` / `mc scene`). **Cost note:** experiment 1.1 showed ~90% of Hermes **tool-role message bytes** were terminal outputs (all `mc` JSON), not uniquely “observe”; G-series runs should re-measure if we need token-level figures.
 - Custom metric registration in `bot/lib/goals/engine.js` — accept arbitrary metric names so the steward can drive goal-preset urgency for free-form objectives.
 - `/api-spec` route on the bot HTTP server — OpenAPI listing of available actions/queries for skill / prompt generation.
 - Per-character `--ignore-rules` invocation for kanban-spawned workers (hermes-side, not hermescraft) — prevent cross-session memory contamination between unrelated missions.

@@ -1,5 +1,5 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards, isDigProtected } from '../bot/dig-tools.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards, isDigProtected, getSupportedDoorAbove } from '../bot/dig-tools.js';
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/perception.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
@@ -336,6 +336,32 @@ export function createMiningActions(deps) {
               mined_count: 0,
               candidates_found: found.length,
               candidates_safely_reachable: 0,
+            },
+            retry_safe: false,
+          },
+        };
+      }
+
+      // F54.4: if EVERY candidate is in/under water, refuse upfront. The
+      // bot drowns trying to dig submerged blocks (sand-in-pond was the
+      // G21 v5 Mason-stuck case). isFlooded is the same predicate the
+      // existing sort uses; this just elevates "all flooded" to a hard
+      // failure with an actionable hint instead of letting the bot walk
+      // into the pond.
+      const dryCandidates = safe.filter((pos) => !isFlooded(pos));
+      if (dryCandidates.length === 0) {
+        return {
+          ok: false,
+          error: {
+            code: 'TARGET_IN_WATER',
+            message: `All ${safe.length} ${blockName} candidates are in/under water — bot would drown trying to mine them. Drain the pond first, approach from a dry side, or look for a drier deposit.`,
+            observed_state: {
+              requested_block: blockName,
+              requested_count: count,
+              mined_count: 0,
+              candidates_dry: 0,
+              candidates_flooded: safe.length,
+              suggested_dry_search_radius: 32,
             },
             retry_safe: false,
           },
@@ -773,7 +799,7 @@ export function createMiningActions(deps) {
       };
     },
 
-    async dig({ x, y, z }) {
+    async dig({ x, y, z, force }) {
       const b = ensureBot();
       const target = b.blockAt(new Vec3(x, y, z));
 
@@ -803,6 +829,50 @@ export function createMiningActions(deps) {
             retry_safe: false,
           },
         };
+      }
+
+      // F54.4: refuse to dig while the bot is submerged. mineflayer's
+      // b.dig with the bot's head/feet in water either silently times
+      // out (G21 v5 Mason in pond) or drowns the bot mid-swing. Force
+      // flag overrides for power-users who know they have breathing room.
+      if (!force && b.entity?.isInWater === true) {
+        return {
+          ok: false,
+          error: {
+            code: 'SUBMERGED',
+            message: `Cannot dig at (${x}, ${y}, ${z}) — bot is submerged in water. Swim to the surface (mc escape, or place a block under your feet to pillar up) before digging. Re-run with --force if you have breathing room.`,
+            observed_state: {
+              block_at_target: target.name,
+              bot_in_water: true,
+              requested_coord: { x, y, z },
+            },
+            next_action_hint: 'mc escape',
+            retry_safe: false,
+          },
+        };
+      }
+
+      // F54.1: refuse to dig a block that supports a door/fence_gate above —
+      // doing so drops the door as a loose item, an expensive recovery the
+      // brain rarely realizes happened. Honors force flag.
+      if (!force) {
+        const supported = getSupportedDoorAbove(b, x, y, z);
+        if (supported) {
+          return {
+            ok: false,
+            error: {
+              code: 'SUPPORT_BLOCK',
+              message: `Cannot dig ${target.name} at (${x}, ${y}, ${z}) — it supports ${supported.name} at (${supported.x}, ${supported.y}, ${supported.z}). Digging will drop the door/gate as a loose item. Re-run with --force if intentional.`,
+              observed_state: {
+                block_at_target: target.name,
+                supported_block: supported,
+                requested_coord: { x, y, z },
+              },
+              next_action_hint: `mc dig ${x} ${y} ${z} --force`,
+              retry_safe: false,
+            },
+          };
+        }
       }
 
       const distance = b.entity.position.distanceTo(target.position);
@@ -1128,7 +1198,7 @@ export function createMiningActions(deps) {
         return { ok: false, error: { code: 'INVALID_COORD', message: 'mc safe_dig requires numeric x, y, z', retry_safe: false } };
       }
       const tx = Math.floor(Number(x)), ty = Math.floor(Number(y)), tz = Math.floor(Number(z));
-      if (force) return handlers.dig({ x: tx, y: ty, z: tz });
+      if (force) return handlers.dig({ x: tx, y: ty, z: tz, force: true });
 
       const target = b.blockAt(new Vec3(tx, ty, tz));
       if (!target || target.name === 'air' || target.name === 'cave_air' || target.name === 'void_air') {

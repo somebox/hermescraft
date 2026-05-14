@@ -13,6 +13,14 @@ export function stripGlobalFlags(argv) {
   let limit;
   /** @type {string[]|undefined} */
   let fields;
+  // F56: accept `reason=...` (and `reason="..."`) as free-form metadata.
+  // Bots use this for logging/announcing intent ("reason=M2A platform 4x4").
+  // Shell tokenization may split a quoted reason across several tokens;
+  // we glue them back together. The value is preserved for telemetry on
+  // the brain side but NOT forwarded to the HTTP body (we just stop the
+  // CLI from erroring on it).
+  /** @type {string|undefined} */
+  let reason;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--json') json = true;
@@ -33,6 +41,32 @@ export function stripGlobalFlags(argv) {
         .map((x) => x.trim())
         .filter(Boolean);
       i++;
+    } else if (typeof a === 'string' && /^reason=/i.test(a)) {
+      // Consume tokens until we either reach a `--flag`, a `key=value`
+      // pair for a different key, or the end of argv. Strip the leading
+      // `reason=` and surrounding quotes from the joined string.
+      const chunks = [a.slice('reason='.length)];
+      const openQuote = chunks[0].startsWith('"') || chunks[0].startsWith("'");
+      let j = i + 1;
+      while (j < argv.length) {
+        const t = argv[j];
+        if (typeof t !== 'string') break;
+        if (t.startsWith('--')) break;
+        if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)) break;
+        chunks.push(t);
+        if (openQuote && (t.endsWith('"') || t.endsWith("'"))) {
+          j++;
+          break;
+        }
+        if (!openQuote) {
+          // Single bare token — don't grab everything after.
+          j++;
+          break;
+        }
+        j++;
+      }
+      reason = chunks.join(' ').replace(/^["']|["']$/g, '');
+      i = j - 1;
     } else rest.push(a);
   }
 
@@ -43,6 +77,7 @@ export function stripGlobalFlags(argv) {
       help,
       ...(limit !== undefined && !Number.isNaN(limit) ? { limit } : {}),
       ...(fields?.length ? { fields } : {}),
+      ...(reason ? { reason } : {}),
     },
     rest,
   };

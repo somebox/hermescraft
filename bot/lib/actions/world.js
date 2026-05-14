@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3';
 import { equipForDig, PROTECTED_DIG_BLOCKS, RELOCATABLE_INFRASTRUCTURE, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards, suggestedToolForBlock, isDigProtected } from '../bot/dig-tools.js';
 import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
-import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS, ensureWithinReach } from './_helpers.js';
 import { isStandableCell, standabilityReason, findClosestStandable, standingState } from './_nav-helpers.js';
 
 export function createWorldActions(deps) {
@@ -578,17 +578,53 @@ export function createWorldActions(deps) {
           );
           blocker = raw?.name || null;
         } catch { /* ignore */ }
+        // F56: scan a 5-block ring around the target at the bot's foot
+        // level to find a stand cell where LOS to the target would be
+        // clear. Return that as next_action_hint so the brain can move
+        // there instead of guessing. Costs ~24 cheap raycasts.
+        let suggestedStand = null;
+        try {
+          const ringRadius = 3;
+          const standY = y - 1; // bot stands here, eye at standY+1.62
+          const standCandidates = [];
+          for (let dx = -ringRadius; dx <= ringRadius; dx++) {
+            for (let dz = -ringRadius; dz <= ringRadius; dz++) {
+              if (dx === 0 && dz === 0) continue;
+              const sx = x + dx;
+              const sz = z + dz;
+              // Must have a solid floor to stand on, and air at head/foot.
+              const floor = b.blockAt(new Vec3(sx, standY, sz));
+              const feet = b.blockAt(new Vec3(sx, standY + 1, sz));
+              const head = b.blockAt(new Vec3(sx, standY + 2, sz));
+              if (!floor || floor.boundingBox !== 'block') continue;
+              if (feet && feet.boundingBox === 'block') continue;
+              if (head && head.boundingBox === 'block') continue;
+              const fakeEye = { x: sx + 0.5, y: standY + 1 + 1.62, z: sz + 0.5 };
+              const sees = faceCandidates.some((p) => hasLineOfSight(fakeEye, p));
+              if (sees) {
+                const dist = Math.abs(dx) + Math.abs(dz);
+                standCandidates.push({ x: sx, y: standY + 1, z: sz, dist });
+              }
+            }
+          }
+          standCandidates.sort((a, c) => a.dist - c.dist);
+          suggestedStand = standCandidates[0] || null;
+        } catch { /* ignore */ }
         return {
           ok: false,
           error: {
             code: 'NO_LINE_OF_SIGHT',
-            message: `Cannot place at ${x},${y},${z} — your view to the target is blocked${blocker ? ` by ${blocker}` : ''}. Move to a position with clear sight of the cell, or dig the obstruction first.`,
+            message: suggestedStand
+              ? `Cannot place at ${x},${y},${z} — view blocked${blocker ? ` by ${blocker}` : ''}. Stand at (${suggestedStand.x}, ${suggestedStand.y}, ${suggestedStand.z}) for clear sight: mc move ${suggestedStand.x} ${suggestedStand.y} ${suggestedStand.z}`
+              : `Cannot place at ${x},${y},${z} — your view to the target is blocked${blocker ? ` by ${blocker}` : ''} and no nearby stand position has clear sight. Dig the obstruction first, or approach the target from another side.`,
             observed_state: {
               requested_block: blockName,
               requested_coord: { x, y, z },
               bot_position: posObj(b.entity.position),
               blocker: blocker || null,
+              suggested_stand: suggestedStand,
             },
+            ...(suggestedStand ? { next_action_hint: `mc move ${suggestedStand.x} ${suggestedStand.y} ${suggestedStand.z}` } : {}),
             retry_safe: false,
           },
         };
@@ -596,7 +632,40 @@ export function createWorldActions(deps) {
       } // end if (eye)
     }
 
-    await b.equip(item, 'hand');
+    // F55.1: verify equip actually landed. mineflayer's equip can no-op
+    // silently when an item reference is stale (just-crafted items have
+    // a different slot id than the snapshot we passed). Verify; if held
+    // item still doesn't match, re-resolve from a fresh inventory pass
+    // and retry once. Failing both, return EQUIP_FAILED so the brain
+    // knows what to fix instead of seeing a generic placement timeout.
+    try {
+      await b.equip(item, 'hand');
+    } catch (err) {
+      // Fall through to re-resolve check below.
+    }
+    if (b.heldItem?.name !== blockName) {
+      await sleep(200);
+      const fresh = b.inventory.items().find((i) => i.name === blockName);
+      if (fresh) {
+        try { await b.equip(fresh, 'hand'); } catch { /* swallow */ }
+      }
+      if (b.heldItem?.name !== blockName) {
+        return {
+          ok: false,
+          error: {
+            code: 'EQUIP_FAILED',
+            message: `${blockName} is in inventory but couldn't be equipped to hand (held=${b.heldItem?.name ?? 'empty'}). Try mc equip ${blockName} then mc place again.`,
+            observed_state: {
+              requested_block: blockName,
+              held: b.heldItem?.name ?? null,
+              inv_count: b.inventory.items().filter((i) => i.name === blockName).reduce((s, i) => s + i.count, 0),
+            },
+            next_action_hint: `mc equip ${blockName}`,
+            retry_safe: true,
+          },
+        };
+      }
+    }
 
     // ── Try each face that has a solid neighbor ──
     // Fluids (water/lava) and other replaceables are NOT valid reference blocks
@@ -748,6 +817,22 @@ export function createWorldActions(deps) {
     }
 
     const skipped_total = skipped_occupied.length + place_failures.length;
+    // F55.2: detect when the bot was standing inside the fill region
+    // (their foot/head cells block placement, mineflayer fails silently).
+    // Tag the offending place_failures and surface a top-level flag so
+    // the brain can't misread "FILL_PARTIAL because of me" as "complete".
+    const botFootX = Math.floor(b.entity.position.x);
+    const botFootY = Math.floor(b.entity.position.y);
+    const botFootZ = Math.floor(b.entity.position.z);
+    const botBlockedCells = [];
+    for (const f of place_failures) {
+      if (f.x === botFootX && f.z === botFootZ && (f.y === botFootY || f.y === botFootY + 1)) {
+        f.reason = 'bot_self_blocking';
+        botBlockedCells.push({ x: f.x, y: f.y, z: f.z });
+      }
+    }
+    const botWasInsideRegion = botBlockedCells.length > 0;
+
     // Result message: if anything was skipped or failed, surface it loudly.
     // Brain should not mistake a 15/16 fill for a 16/16 success.
     const occupied_summary = Object.entries(occupied_by_counts)
@@ -763,7 +848,10 @@ export function createWorldActions(deps) {
       if (skipped_already > 0) parts.push(`${skipped_already} already-correct`);
       if (skipped_occupied.length > 0) parts.push(`${skipped_occupied.length} occupied (${occupied_summary})`);
       if (place_failures.length > 0) parts.push(`${place_failures.length} placement-failed`);
-      resultMsg = `FILL_PARTIAL: ${parts.join('; ')}. Check observed_state.skipped_occupied to see what's blocking.`;
+      const selfNote = botWasInsideRegion
+        ? ` — YOU were standing inside the region (${botBlockedCells.length} cell${botBlockedCells.length > 1 ? 's' : ''} blocked by your body). Move outside the region and re-run mc fill to complete it.`
+        : '';
+      resultMsg = `FILL_PARTIAL: ${parts.join('; ')}.${selfNote} Check observed_state.skipped_occupied to see what's blocking.`;
     }
     return {
       result: resultMsg,
@@ -775,6 +863,11 @@ export function createWorldActions(deps) {
         occupied_by_counts,
         total: positions.length,
         partial: skipped_total > 0,
+        ...(botWasInsideRegion ? {
+          bot_was_inside_region: true,
+          bot_blocked_cells: botBlockedCells,
+          next_action_hint: `Move outside the region (mc goto_near <outside coord>), then mc fill ${blockName} ${x1} ${y1} ${z1} ${x2} ${y2} ${z2}`,
+        } : {}),
       },
     };
   },
@@ -2030,10 +2123,23 @@ export function createWorldActions(deps) {
   async interact({ x, y, z }) {
     const b = ensureBot();
     const block = b.blockAt(new Vec3(x, y, z));
-    if (!block) throw new Error(`No block at ${x}, ${y}, ${z}`);
-    if (b.entity.position.distanceTo(block.position) > 4.5) {
-      await b.pathfinder.goto(new goals.GoalNear(x, y, z, 2));
+    if (!block) {
+      return {
+        ok: false,
+        error: {
+          code: 'NO_BLOCK_AT_COORD',
+          message: `No block at ${x}, ${y}, ${z}`,
+          observed_state: { requested_coord: { x, y, z } },
+          retry_safe: false,
+        },
+      };
     }
+    // F55.3: uniform reach precheck.
+    const reach = await ensureWithinReach({ bot: b, goals }, { x, y, z }, {
+      range: 4.5,
+      observed: { block_at_target: block.name },
+    });
+    if (!reach.ok) return reach;
     await b.activateBlock(block);
     return { result: `Interacted with ${block.name} at ${x}, ${y}, ${z}` };
   },
@@ -2052,13 +2158,56 @@ export function createWorldActions(deps) {
       return { ok: false, error: { code: 'INVALID_COORD', message: 'mc through requires numeric gate coords', retry_safe: false } };
     }
 
-    const gate = b.blockAt(gateVec);
+    let gate = b.blockAt(gateVec);
+    // F55.4: when the first blockAt returns air, the door may have just
+    // been placed by a partner (G21 v6 case: Mason called through right
+    // after Flint placed). Mineflayer's block snapshot occasionally lags
+    // a tick or two behind the server. Re-fetch once after a short delay
+    // before deciding it's truly absent.
+    if (gate && /^(?:air|cave_air|void_air)$/.test(gate.name)) {
+      await sleep(150);
+      gate = b.blockAt(gateVec);
+    }
     if (!gate) {
       return { ok: false, error: { code: 'GATE_NOT_FOUND', message: `No block at gate position ${gx}, ${gy}, ${gz}`, retry_safe: false } };
     }
     const isPassable = /(_fence_gate|_door|_trapdoor)$/.test(gate.name);
     if (!isPassable) {
-      return { ok: false, error: { code: 'NOT_A_DOOR', message: `Block at ${gx}, ${gy}, ${gz} is "${gate.name}", not a fence_gate/door/trapdoor`, retry_safe: false } };
+      // F54.5: when the target isn't a door, give the brain a concrete
+      // next-step. The G21 v5 case was "I dug the door's support block,
+      // door fell out, now mc through fails on air" — bots looped on the
+      // command instead of placing a new door. If we hold a door in
+      // inventory AND the target is air, suggest the exact place call.
+      // For a wall-block, suggest dig or pick a real door coord.
+      const isAir = /^(?:air|cave_air|void_air)$/.test(gate.name);
+      let nextActionHint = `Block is "${gate.name}", not a door. Find a real door/gate coord, or mc dig to clear an obstacle.`;
+      let inventoryDoor = null;
+      if (isAir) {
+        const doorItem = b.inventory.items().find((it) =>
+          /(_door|_fence_gate|_trapdoor)$/.test(it.name),
+        );
+        if (doorItem) {
+          inventoryDoor = doorItem.name;
+          nextActionHint = `No door at (${gx}, ${gy}, ${gz}) — block is air. You have ${doorItem.name} in inventory. Try: mc place ${doorItem.name} ${gx} ${gy} ${gz}`;
+        } else {
+          nextActionHint = `No door at (${gx}, ${gy}, ${gz}) — block is air. Either pick a different door/gate coord, or craft a door (mc craft oak_door) and mc place it here.`;
+        }
+      }
+      return {
+        ok: false,
+        error: {
+          code: 'NOT_A_DOOR',
+          message: `Block at ${gx}, ${gy}, ${gz} is "${gate.name}", not a fence_gate/door/trapdoor. ${nextActionHint}`,
+          observed_state: {
+            block_at_target: gate.name,
+            requested_coord: { x: Number(gx), y: Number(gy), z: Number(gz) },
+            inventory_door: inventoryDoor,
+            is_air: isAir,
+          },
+          next_action_hint: nextActionHint,
+          retry_safe: false,
+        },
+      };
     }
 
     // Infer destination if not provided: 2 blocks past the gate, opposite side from bot.
@@ -2076,11 +2225,31 @@ export function createWorldActions(deps) {
     }
 
     // Approach the gate so it's reachable.
-    if (b.entity.position.distanceTo(gate.position) > 4.5) {
-      try { await b.pathfinder.goto(new goals.GoalNear(gate.position.x, gate.position.y, gate.position.z, 2)); }
-      catch (e) {
-        return { ok: false, error: { code: 'TRAVERSAL_FAILED', message: `Could not approach gate: ${e?.message || e}`, retry_safe: true } };
-      }
+    // F55.3 + F55.4: uniform reach precheck with wallclock cap. On
+    // failure, surface door_state and gate distance so the brain has
+    // structured signal (not just "could not approach").
+    const reach = await ensureWithinReach({ bot: b, goals }, { x: gate.position.x, y: gate.position.y, z: gate.position.z }, {
+      range: 4.5,
+      observed: {
+        gate_pos: { x: gate.position.x, y: gate.position.y, z: gate.position.z },
+        gate_block: gate.name,
+        door_state: (typeof gate.getProperties === 'function') ? (gate.getProperties().open === 'true' || gate.getProperties().open === true ? 'open' : 'closed') : null,
+      },
+    });
+    if (!reach.ok) {
+      // Re-frame OUT_OF_RANGE from the reach helper as TRAVERSAL_FAILED so
+      // it stays in the `mc through` contract that callers already handle.
+      const inner = reach.error || {};
+      return {
+        ok: false,
+        error: {
+          code: 'TRAVERSAL_FAILED',
+          message: `Could not approach gate at (${gx}, ${gy}, ${gz}): ${inner.message || 'unreachable'}`,
+          observed_state: inner.observed_state || {},
+          next_action_hint: inner.next_action_hint || null,
+          retry_safe: true,
+        },
+      };
     }
 
     // Safety: before opening the gate, check for passive animals adjacent
@@ -2138,21 +2307,25 @@ export function createWorldActions(deps) {
     await b.lookAt(destPos);
 
     const traverseStart = Date.now();
-    // Keep traversal SHORT so the gate isn't left open longer than needed —
-    // every extra second is a chance for a passive mob to slip through.
-    // The actual crossing is sub-second; 2.5s is comfortable headroom.
-    const TRAVERSAL_TIMEOUT_MS = 2500;
+    // Slightly longer than 2.5s so a step-up + walk + step-down has time.
+    // F56: doors sit on raised platforms in real builds; the bot often
+    // needs to jump up 1 block to enter the doorway. Detection-based
+    // jump nudges handle this without flailing.
+    const TRAVERSAL_TIMEOUT_MS = 3500;
     let crossedGate = false;
     let reached = false;
     b.setControlState('forward', true);
+    let lastPos = { x: b.entity.position.x, z: b.entity.position.z };
+    let stallStart = 0;
+    let jumpUntil = 0;
     try {
       while (Date.now() - traverseStart < TRAVERSAL_TIMEOUT_MS) {
         await sleep(100);
+        const now = Date.now();
         const me = b.entity.position;
         const dist = me.distanceTo(destPos);
         // Detect when we've crossed the gate plane (so we can close it after).
         if (!crossedGate) {
-          // Direction vector start→dest, normalized roughly to a sign per axis.
           const sx = Math.sign(destX - me.x);
           const sz = Math.sign(destZ - me.z);
           const passedX = Math.abs(sx) > 0.01 ? (sx > 0 ? me.x > gate.position.x + 0.5 : me.x < gate.position.x + 0.5) : true;
@@ -2160,10 +2333,32 @@ export function createWorldActions(deps) {
           if (passedX && passedZ) crossedGate = true;
         }
         if (dist < 1.0) { reached = true; break; }
-        // If bot stopped moving (collision with frame, etc), nudge with jump.
+
+        // F56: stall + jump-nudge. If bot's XZ has barely changed over
+        // 250ms, it's collided with the doorframe / platform edge.
+        // Trigger a 400ms jump pulse to step up 1 block. Repeat at most
+        // every 600ms to avoid jump-spam.
+        const dx = me.x - lastPos.x;
+        const dz = me.z - lastPos.z;
+        const moved = Math.hypot(dx, dz);
+        if (moved < 0.05) {
+          if (stallStart === 0) stallStart = now;
+          else if (now - stallStart >= 250 && now >= jumpUntil) {
+            b.setControlState('jump', true);
+            jumpUntil = now + 600;
+            stallStart = 0;
+          }
+        } else {
+          stallStart = 0;
+        }
+        if (now >= jumpUntil) {
+          try { b.setControlState('jump', false); } catch { /* ignore */ }
+        }
+        lastPos = { x: me.x, z: me.z };
       }
     } finally {
       b.setControlState('forward', false);
+      try { b.setControlState('jump', false); } catch { /* ignore */ }
     }
 
     if (!reached) {
@@ -2228,10 +2423,49 @@ export function createWorldActions(deps) {
     return { result: `Sent: ${message}` };
   },
 
-  async wait({ seconds = 5 }) {
-    ensureBot();
-    await sleep(Math.min(seconds, 60) * 1000);
-    return { result: `Waited ${seconds}s` };
+  async wait({ seconds = 5, until_mention, until_direct, interrupt }) {
+    const b = ensureBot();
+    const cap = Math.min(Number(seconds) || 5, 60) * 1000;
+    // F55.5: opt-out via `interrupt=false` (or both flags false). Default
+    // is to interrupt on @-mention or direct/whisper — see G21 v6 finding
+    // that bots couldn't coordinate because chat arrived during waits.
+    const optOut = interrupt === false || interrupt === 'false';
+    const wantMention = !optOut && (until_mention === undefined || until_mention === true || until_mention === 'true');
+    const wantDirect = !optOut && (until_direct === undefined || until_direct === true || until_direct === 'true');
+    const start = Date.now();
+    const myName = String(b.username || '').toLowerCase();
+    const chatLogLenAtStart = (ctx.chatLog || []).length;
+    if (!wantMention && !wantDirect) {
+      await sleep(cap);
+      return { result: `Waited ${Math.round(cap / 100) / 10}s`, data: { interrupted: false, elapsed_s: Math.round(cap / 100) / 10 } };
+    }
+    while (Date.now() - start < cap) {
+      await sleep(250);
+      const log = ctx.chatLog || [];
+      if (log.length <= chatLogLenAtStart) continue;
+      for (let i = chatLogLenAtStart; i < log.length; i++) {
+        const m = log[i];
+        if (!m || m.from === b.username || m.from === 'Server') continue;
+        const msg = String(m.message || '').toLowerCase();
+        const isMention = wantMention && myName && (msg.includes(`@${myName}`) || msg.includes(`${myName}:`) || msg.includes(`${myName},`));
+        const isDirect = wantDirect && (m.private === true || m.whisper === true);
+        if (isMention || isDirect) {
+          const elapsed_s = Math.round((Date.now() - start) / 100) / 10;
+          return {
+            result: `Wait interrupted by chat after ${elapsed_s}s — ${m.from}: ${m.message}`,
+            data: {
+              interrupted: true,
+              by: m.from,
+              message: m.message,
+              elapsed_s,
+              reason: isMention ? 'mention' : 'direct',
+            },
+          };
+        }
+      }
+    }
+    const elapsed_s = Math.round((Date.now() - start) / 100) / 10;
+    return { result: `Waited ${elapsed_s}s`, data: { interrupted: false, elapsed_s } };
   },
 
   async use() {
@@ -2609,18 +2843,26 @@ export function createWorldActions(deps) {
   },
 
   // ── Chat / Whisper ──────────────────────────────
+  // F55.6: route addressed messages through public chat with @<player>
+  // prefix. The /msg private system on Paper doesn't reliably surface to
+  // mineflayer chat listeners — partner bots missed Flint's "roof done"
+  // whisper in G21 v6. Public @-mention is captured by the standard chat
+  // log AND triggers F55.5's wait-interrupt. Same behavior for chat_to
+  // and whisper — both are "address one player".
   async chat_to({ player, message }) {
     const b = ensureBot();
-    b.chat(`/msg ${player} ${message}`);
-    rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'whisper', message });
-    return { result: `[→${player}]: ${message}` };
+    const text = `@${player} ${message}`;
+    b.chat(text);
+    rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'public_mention', message: text });
+    return { result: `[@${player}]: ${message}` };
   },
 
   async whisper({ player, message }) {
     const b = ensureBot();
-    b.chat(`/msg ${player} ${message}`);
-    rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'whisper', message });
-    return { result: `[→${player}]: ${message}` };
+    const text = `@${player} ${message}`;
+    b.chat(text);
+    rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'public_mention', message: text });
+    return { result: `[@${player}]: ${message}` };
   },
 
   // ── Death / Respawn ─────────────────────────────────
@@ -2822,8 +3064,6 @@ export function createWorldActions(deps) {
       const DIR_VEC = {
         N: { dx: 0, dz: -1 }, E: { dx: 1, dz: 0 }, S: { dx: 0, dz: 1 }, W: { dx: -1, dz: 0 },
       };
-      // For edge, prefer dirs that are NOT cliff. For corner/three_walled,
-      // prefer the most-open dir. open_dirs is already filtered to walkable.
       const candidates = before.open_dirs.filter(d => DIR_VEC[d]);
       if (candidates.length === 0) {
         return {
@@ -2836,24 +3076,96 @@ export function createWorldActions(deps) {
           },
         };
       }
-      // Pick first open dir (classifier already orders cardinally N,E,S,W).
-      const pickDir = candidates[0];
-      const v = DIR_VEC[pickDir];
-      const targetCell = { x: cell.x + v.dx, y: cell.y, z: cell.z + v.dz };
-      try {
-        const goal = new goals.GoalBlock(targetCell.x, targetCell.y, targetCell.z);
-        await Promise.race([
-          b.pathfinder.goto(goal),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('escape_sidestep_timeout')), 3000)),
-        ]);
-      } catch {
-        try { b.pathfinder.setGoal(null); } catch {}
+      // F56: try EACH open direction in order (was just the first). Each
+      // attempt gets a tight 1.2s pathfinder cap. After each, re-classify;
+      // bail out as soon as we reach open/alley. If pathfinder fails ALL
+      // directions, fall through to a brute-force jump+forward sweep —
+      // catches the 0.3-block-ledge / door-frame-stub geometry that
+      // pathfinder mis-models.
+      const attempts = [];
+      for (const pickDir of candidates) {
+        const v = DIR_VEC[pickDir];
+        const targetCell = { x: cell.x + v.dx, y: cell.y, z: cell.z + v.dz };
+        try {
+          const goal = new goals.GoalBlock(targetCell.x, targetCell.y, targetCell.z);
+          await Promise.race([
+            b.pathfinder.goto(goal),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('sidestep_to')), 1200)),
+          ]);
+        } catch {
+          try { b.pathfinder.setGoal(null); } catch {}
+        }
+        const intermediate = standingState(b);
+        attempts.push({ dir: pickDir, after: intermediate.classification });
+        if (intermediate.classification === 'open' || intermediate.classification === 'alley') {
+          return {
+            ok: true,
+            data: {
+              action_taken: `sidestep_${pickDir}`,
+              from: fromPos,
+              to: intermediate.position,
+              classification_before: cls,
+              classification_after: intermediate.classification,
+              attempts,
+              success: true,
+            },
+            result: `Sidestepped ${pickDir} from ${cls} cell. Now ${intermediate.classification} at ${intermediate.cell.x},${intermediate.cell.y},${intermediate.cell.z}.`,
+          };
+        }
       }
+      // Pathfinder failed every direction. Brute-force fallback: face each
+      // open dir and burst forward+jump for 400ms. Mineflayer-pathfinder
+      // can't model the "step over a 0.3-block-tall door-frame stub" case,
+      // but the bot's physics can usually carry it across with a jump.
+      for (const pickDir of candidates) {
+        const v = DIR_VEC[pickDir];
+        try {
+          await b.lookAt(new Vec3(cell.x + 0.5 + v.dx * 1.5, cell.y + 1.62, cell.z + 0.5 + v.dz * 1.5));
+          b.setControlState('forward', true);
+          b.setControlState('jump', true);
+          await new Promise(r => setTimeout(r, 450));
+          b.setControlState('forward', false);
+          b.setControlState('jump', false);
+          await new Promise(r => setTimeout(r, 150));
+        } catch {
+          try { b.setControlState('forward', false); b.setControlState('jump', false); } catch {}
+        }
+        const intermediate = standingState(b);
+        attempts.push({ dir: pickDir, after: intermediate.classification, mode: 'burst' });
+        if (intermediate.classification === 'open' || intermediate.classification === 'alley') {
+          return {
+            ok: true,
+            data: {
+              action_taken: `burst_${pickDir}`,
+              from: fromPos,
+              to: intermediate.position,
+              classification_before: cls,
+              classification_after: intermediate.classification,
+              attempts,
+              success: true,
+            },
+            result: `Brute-force burst ${pickDir} from ${cls} cell. Now ${intermediate.classification} at ${intermediate.cell.x},${intermediate.cell.y},${intermediate.cell.z}.`,
+          };
+        }
+      }
+      // Nothing worked. Report the final state with the full attempt
+      // breakdown so the brain knows escape exhausted its options.
       const after = standingState(b);
       return {
-        ok: true,
-        data: { action_taken: `sidestep_${pickDir}`, from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, success: after.classification === 'open' || after.classification === 'alley' },
-        result: `Sidestepped ${pickDir} from ${cls} cell. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+        ok: false,
+        error: {
+          code: 'ESCAPE_STUCK',
+          message: `Tried ${attempts.length} sidestep + burst attempt(s); still ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}. Dig a wall (mc dig) or pick a different angle (mc move).`,
+          observed_state: {
+            classification_before: cls,
+            classification_after: after.classification,
+            attempts,
+            blocked_dirs: after.blocked_dirs,
+            open_dirs: after.open_dirs,
+            bot_position: after.position,
+          },
+          retry_safe: false,
+        },
       };
     }
 
@@ -3313,7 +3625,7 @@ export function createWorldActions(deps) {
     };
   },
 
-  async is_sheltered({ radius = 20 } = {}) {
+  async is_sheltered({ radius = 20, walls } = {}) {
     const b = ensureBot();
     const start = b.entity.position;
     const movements = b.pathfinder.movements;
@@ -3326,6 +3638,75 @@ export function createWorldActions(deps) {
           retry_safe: false,
         },
       };
+    }
+
+    // F55.7: optional perimeter wall verification. When called with
+    // walls={x1,y1,z1,x2,y2,z2}, sweep the box's perimeter at every Y in
+    // [y1..y2] BEFORE the pathfinder check. If any cell is air, refuse
+    // upfront with WALLS_INCOMPLETE listing the gap cells. This catches
+    // the v6 case where Mason ran is_sheltered claiming the platform was
+    // done, but blocks were missing — pathfinder alone said "sealed"
+    // because adjacent walls existed but the verification didn't check
+    // for COMPLETE coverage.
+    if (walls && typeof walls === 'object') {
+      const w = walls;
+      const coords = ['x1', 'y1', 'z1', 'x2', 'y2', 'z2'].map((k) => Number(w[k]));
+      if (!coords.every(Number.isFinite)) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_WALLS',
+            message: 'walls must be {x1,y1,z1,x2,y2,z2} all numeric',
+            observed_state: { received: walls },
+            retry_safe: false,
+          },
+        };
+      }
+      const [X1, Y1, Z1, X2, Y2, Z2] = [
+        Math.min(Math.floor(coords[0]), Math.floor(coords[3])),
+        Math.min(Math.floor(coords[1]), Math.floor(coords[4])),
+        Math.min(Math.floor(coords[2]), Math.floor(coords[5])),
+        Math.max(Math.floor(coords[0]), Math.floor(coords[3])),
+        Math.max(Math.floor(coords[1]), Math.floor(coords[4])),
+        Math.max(Math.floor(coords[2]), Math.floor(coords[5])),
+      ];
+      const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
+      const missing = [];
+      let totalPerimeter = 0;
+      for (let yy = Y1; yy <= Y2; yy++) {
+        for (let xx = X1; xx <= X2; xx++) {
+          for (let zz = Z1; zz <= Z2; zz++) {
+            // Perimeter only: cells on the box edge (x == X1 || x == X2 || z == Z1 || z == Z2).
+            // Interior cells (between the walls) are not checked — those
+            // should be air for a house.
+            const onPerimeter = xx === X1 || xx === X2 || zz === Z1 || zz === Z2;
+            if (!onPerimeter) continue;
+            totalPerimeter++;
+            const blk = b.blockAt(new Vec3(xx, yy, zz));
+            const nm = blk?.name || 'unknown';
+            if (AIR_NAMES.has(nm)) {
+              if (missing.length < 16) missing.push({ x: xx, y: yy, z: zz });
+            }
+          }
+        }
+      }
+      if (missing.length > 0) {
+        return {
+          ok: false,
+          error: {
+            code: 'WALLS_INCOMPLETE',
+            message: `${missing.length} perimeter cell${missing.length > 1 ? 's' : ''} missing in walls region (${totalPerimeter} total). Fill the gaps before checking enclosure.`,
+            observed_state: {
+              walls_region: { x1: X1, y1: Y1, z1: Z1, x2: X2, y2: Y2, z2: Z2 },
+              total_perimeter_cells: totalPerimeter,
+              missing_cells: missing,
+              total_missing: missing.length,
+            },
+            next_action_hint: `mc fill cobblestone ${missing[0].x} ${missing[0].y} ${missing[0].z} ${missing[0].x} ${missing[0].y} ${missing[0].z}`,
+            retry_safe: false,
+          },
+        };
+      }
     }
 
     // Try cardinal targets at `radius` blocks horizontally + one straight up.

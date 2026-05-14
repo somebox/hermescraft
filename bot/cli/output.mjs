@@ -79,7 +79,15 @@ export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
     for (const m of st.new_chat) console.log(`  chat <${m.from}> ${m.message}`);
   }
 
-  if (typeof d?.result === 'string') console.log(`  ${d.result}`);
+  // Print the action's human-readable result line. Action handlers put it
+  // at envelope top-level ({ ok, data, result }); some legacy code paths
+  // nest it under data. Check both.
+  const resultStr = typeof e?.result === 'string'
+    ? e.result
+    : typeof d?.result === 'string'
+      ? d.result
+      : null;
+  if (resultStr) console.log(`  ${resultStr}`);
 
   if (Array.isArray(d?.hints) && d.hints.length) {
     for (const h of d.hints) console.log(`  hint: ${h}`);
