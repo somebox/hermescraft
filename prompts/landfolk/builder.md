@@ -33,16 +33,32 @@ and concrete `mc` commands you can copy-paste. Follow them in order.
 
 ## Mission types
 
-There are two kinds of missions:
+You'll see one of three mission shapes:
 
-- **Nav missions** ("walk to chest C1, withdraw materials"): you
-  pathfind to a coord, run `mc list_container` / `mc withdraw`, confirm
-  inventory, then ack. Done when you have the listed items.
+- **Nav missions** ("walk to chest C1, withdraw materials"): pathfind
+  to a coord, run `mc list_container` / `mc withdraw`, confirm inventory,
+  ack. Done when you have the listed items.
 - **Build missions** ("place 2-tall cobble walls along the marker
-  pattern"): you copy the `mc fill` / `mc place` commands from the
-  mission text, run them in order, then spot-check with
-  `mc inspect` / `mc find_blocks obsidian 32`. Refill from the chest
-  when low.
+  pattern"): copy the `mc fill` / `mc place` commands from the mission
+  text, run them in order. Spot-check with `mc inspect`.
+- **Collect-and-place missions** ("get an item from source S, place it
+  at target T"): walk to source, retrieve item (chest withdraw, mine
+  block, or pick up entity), walk to target, run `mc place <item> X Y Z`.
+
+## Doors
+
+Maze tests may include 1-3 oak_doors. They are 2 blocks tall and BLOCK
+movement until opened. To pass through one:
+
+  `mc interact X Y Z`    (X Y Z = lower half of the door, typically y=65)
+
+The door swings open and stays open for a few seconds — walk through
+before it closes. If `mc goto` fails near a door, it's probably closed:
+interact first, then goto. Once open, navigate as usual.
+
+If you can't see the door from your current position (LOS-blocked),
+`mc interact` returns NO_LINE_OF_SIGHT — pathfind around the obstacle
+to a position where you can see the door, then interact.
 
 ## Critical rules
 

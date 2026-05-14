@@ -186,6 +186,12 @@ export function createBotManager(deps) {
         // Opt-in with BOT_ALLOW_PARKOUR=true if a specific test needs it.
         moves.allowParkour = String(process.env.BOT_ALLOW_PARKOUR ?? 'false').toLowerCase() === 'true';
         moves.canDig = false;
+        // F66: open doors during pathfind. mineflayer-pathfinder defaults to
+        // `canOpenDoors=false` ("causes issues. Probably due to non-paper
+        // servers.") — we're on PaperMC, so enable it. Doors otherwise block
+        // pathfinding entirely; bot wanders/timeouts trying to find a route
+        // around a closed door it could simply open.
+        moves.canOpenDoors = true;
         moves.scafoldingBlocks = [];
 
         const protectedBlocks = [

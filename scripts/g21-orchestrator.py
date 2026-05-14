@@ -764,6 +764,103 @@ def launch_brain(name: str, port: int, model: str | None, provider: str, prompt:
     return proc
 
 
+# F70: weak-model brains (deepseek-v4-flash, etc.) sometimes emit a final
+# text-only assistant message instead of a tool call. `hermes chat -q` treats
+# that as end-of-turn and exits cleanly — the orchestrator then sits polling
+# chat from a dead brain until the wallclock cap fires. Recover by parsing
+# the session id from the log and re-spawning `hermes chat --resume <id> -q`.
+_RESUME_NUDGE = (
+    "CRITICAL: Your previous turn ended without a tool call, so the session "
+    "froze. Your ONLY allowed response right now is a tool call — no plain "
+    "text, no narration, no markup like </tool_calls>. "
+    "Immediately call `mc status` so we re-establish where you are. After "
+    "that result lands, call `mc read_chat 30` to re-read steward orders. "
+    "Then continue the active mission until you emit its DONE keyword. "
+    "Every turn from here on MUST issue exactly one mc tool call."
+)
+
+
+def _extract_session_id_from_log(log_path: Path) -> str | None:
+    """Pull the last 'Session: <id>' or '--resume <id>' line from the brain log."""
+    if not log_path.exists():
+        return None
+    try:
+        text = log_path.read_text(errors="replace")
+    except Exception:
+        return None
+    import re
+    # Prefer the explicit "Session:" footer; fall back to "--resume <id>".
+    matches = re.findall(r"^Session:\s+(\S+)", text, re.MULTILINE)
+    if not matches:
+        matches = re.findall(r"--resume\s+(\S+)", text)
+    return matches[-1] if matches else None
+
+
+def _newest_session_file(agent_home: Path, after_mtime: float) -> str | None:
+    """Fallback: newest session_*.json under agent_home/sessions modified after
+    `after_mtime` (brain start time). Resolves the symlink to ~/.hermes/sessions."""
+    sess_dir = (agent_home / "sessions").resolve()
+    if not sess_dir.is_dir():
+        return None
+    candidates = []
+    for p in sess_dir.glob("session_*.json"):
+        try:
+            mt = p.stat().st_mtime
+            if mt >= after_mtime:
+                candidates.append((mt, p))
+        except OSError:
+            continue
+    if not candidates:
+        return None
+    _, newest = max(candidates)
+    # session file name is `session_<id>.json`
+    return newest.stem[len("session_"):] if newest.stem.startswith("session_") else None
+
+
+def relaunch_brain(name: str, port: int, model: str | None, provider: str,
+                   max_turns: int, log_path: Path, brain_start_time: float) -> tuple[subprocess.Popen, str] | None:
+    """Re-spawn a dead brain via `hermes chat --yolo --resume <session_id>`.
+    Returns (proc, session_id) on success, None if the session id can't be
+    recovered. Appends to the existing log file so the combined-log tee picks
+    up resumed output without confusing the seek offset."""
+    import os
+    session_id = _extract_session_id_from_log(log_path)
+    agent_home = HOME_DIR / f".hermes-landfolk-{name.lower()}"
+    if not session_id:
+        session_id = _newest_session_file(agent_home, brain_start_time)
+    if not session_id:
+        return None
+    env = os.environ.copy()
+    for k in ("MODEL", "HERMES_MODEL", "PROVIDER", "HERMES_PROVIDER"):
+        env.pop(k, None)
+    env["HERMES_HOME"] = str(agent_home)
+    env["MC_API_URL"] = f"http://localhost:{port}"
+    env["_MC_API_URL_LOCKED"] = f"http://localhost:{port}"
+    env["MC_USERNAME"] = name
+    cmd = [
+        "hermes", "chat", "--yolo",
+        "--max-turns", str(max_turns),
+        "-t", "terminal,memory",
+        "-s", "minecraft-goals",
+        "--resume", session_id,
+        "-q", _RESUME_NUDGE,
+    ]
+    if model:
+        cmd.extend(["-m", model])
+    if provider:
+        cmd.extend(["--provider", provider])
+    lf = open(log_path, "a")
+    # Write a separator into the log so a human reading it can see exactly
+    # where the resume boundary is. The tee thread picks this up too.
+    try:
+        lf.write(f"\n──────── F70 RESUME (session={session_id}) ────────\n")
+        lf.flush()
+    except Exception:
+        pass
+    proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT, env=env)
+    return proc, session_id
+
+
 def wait_for_chat_phrase(bots: list[dict], phrase: str, timeout_s: int, from_each: list[str] | None = None) -> bool:
     """Poll bots' /chat until `phrase` is seen FROM each named sender.
 
@@ -1172,13 +1269,19 @@ def main() -> int:
 
     # Launch Hermes brains AFTER marks are in place — so the bot's `mc marks`
     # at start-of-session returns the G21 marks rather than an empty list.
+    brain_start_times: dict[str, float] = {}
+    brain_log_paths: dict[str, Path] = {}
+    brain_resume_counts: dict[str, int] = {}
+    max_turns = int(spec.get("hermes_session_max_turns", 800))
     if not args.no_launch_brains and not args.dry_run:
-        max_turns = int(spec.get("hermes_session_max_turns", 800))
         for b in bots:
             role_prompt = PROMPTS_DIR / f"{b['profile']}.md"
             prompt = build_brain_prompt(b["name"], role_prompt, spec)
             log = log_dir / f"brain-{b['name'].lower()}.log"
             print(f"  starting brain {b['name']} model={args.model or '(env)'} → log={log}")
+            brain_log_paths[b["name"]] = log
+            brain_start_times[b["name"]] = time.time()
+            brain_resume_counts[b["name"]] = 0
             brain_procs[b["name"]] = launch_brain(
                 b["name"], int(b["port"]),
                 model=args.model, provider=args.provider,
@@ -1365,6 +1468,41 @@ def main() -> int:
 
             new_recs = poll_chat()
             cur_tick = get_current_tick()
+
+            # F70: detect dead brains (text-only exit, OOM, etc.) and relaunch
+            # via --resume. Cap relaunches per brain so a brain that *keeps*
+            # dying doesn't burn the whole wallclock budget on respawn churn.
+            if not args.no_launch_brains and not args.dry_run:
+                for _bn, _bproc in list(brain_procs.items()):
+                    if _bproc.poll() is None:
+                        continue
+                    _b_port = next((b["port"] for b in bots if b["name"] == _bn), None)
+                    if _b_port is None:
+                        continue
+                    _count = brain_resume_counts.get(_bn, 0)
+                    if _count >= 8:
+                        print(f"  ⚲ brain {_bn} died (rc={_bproc.returncode}) — resume cap (8) reached, giving up on it")
+                        del brain_procs[_bn]
+                        continue
+                    _log = brain_log_paths.get(_bn)
+                    _started = brain_start_times.get(_bn, started_at)
+                    if _log is None:
+                        del brain_procs[_bn]
+                        continue
+                    result = relaunch_brain(
+                        _bn, int(_b_port),
+                        model=args.model, provider=args.provider,
+                        max_turns=max_turns, log_path=_log,
+                        brain_start_time=_started,
+                    )
+                    if result is None:
+                        print(f"  ⚲ brain {_bn} died (rc={_bproc.returncode}) — no session id, can't resume")
+                        del brain_procs[_bn]
+                        continue
+                    new_proc, sid = result
+                    brain_procs[_bn] = new_proc
+                    brain_resume_counts[_bn] = _count + 1
+                    print(f"  ⚲ brain {_bn} died (rc={_bproc.returncode}) — relaunched --resume {sid} (attempt {_count + 1})")
 
             for mn in ph.missions:
                 if mn.done:

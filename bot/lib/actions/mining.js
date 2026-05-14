@@ -927,6 +927,43 @@ export function createMiningActions(deps) {
       }
 
       const targetPos = target.position;
+
+      // F67: LOS raycast guard. Mirrors F45.3 / F64 / F65 — bot can't dig
+      // a block it can't see (no mining through walls / through its own
+      // body / through floors). Uses the same 7-face raycast pattern.
+      if (typeof hasLineOfSight === 'function' && typeof eyePosition === 'function') {
+        const eye = eyePosition();
+        if (eye) {
+          const cx = x + 0.5, cy = y + 0.5, cz = z + 0.5;
+          const faces = [
+            { x: cx, y: cy, z: cz - 0.48 },
+            { x: cx, y: cy, z: cz + 0.48 },
+            { x: cx - 0.48, y: cy, z: cz },
+            { x: cx + 0.48, y: cy, z: cz },
+            { x: cx, y: cy - 0.48, z: cz },
+            { x: cx, y: cy + 0.48, z: cz },
+            { x: cx, y: cy, z: cz },
+          ];
+          if (!faces.some((p) => hasLineOfSight(eye, p))) {
+            return {
+              ok: false,
+              error: {
+                code: 'NO_LINE_OF_SIGHT',
+                message: `Cannot see ${target.name} at ${x},${y},${z} — a block is between you and the target.`,
+                observed_state: {
+                  block_at_target: target.name,
+                  requested_coord: { x, y, z },
+                  bot_position: posObj(b.entity.position),
+                  distance: Math.round(b.entity.position.distanceTo(target.position) * 10) / 10,
+                },
+                next_action_hint: `Navigate around the obstruction; try mc goto_near ${x} ${y} ${z} range=2`,
+                retry_safe: false,
+              },
+            };
+          }
+        }
+      }
+
       const beforeDropIds = new Set(
         Object.values(b.entities)
           .filter((e) => e.name === 'item' || e.displayName === 'Item')

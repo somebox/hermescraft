@@ -1,8 +1,55 @@
 diff --git a/node_modules/mineflayer-pathfinder/index.js b/node_modules/mineflayer-pathfinder/index.js
-index b38bd30..8d85b18 100644
+index b38bd30..59fcb6a 100644
 --- a/node_modules/mineflayer-pathfinder/index.js
 +++ b/node_modules/mineflayer-pathfinder/index.js
-@@ -576,8 +576,12 @@ function inject (bot) {
+@@ -520,8 +520,45 @@ function inject (bot) {
+ 
+       // Open gates or doors
+       if (placingBlock?.useOne) {
++        // F68: LOS + range guard. Without this, the planner could in rare
++        // edge cases toggle a gate the bot can't actually see. Mirrors
++        // the F65 raycast pattern (cast to 7 face candidates; require
++        // ≥1 face reachable from the bot's eye).
++        const gatePos = new Vec3(placingBlock.x, placingBlock.y, placingBlock.z)
++        const eye = bot.entity.position.offset(0, bot.entity.height, 0)
++        const cx = placingBlock.x + 0.5
++        const cy = placingBlock.y + 0.5
++        const cz = placingBlock.z + 0.5
++        if (eye.distanceTo(new Vec3(cx, cy, cz)) > 3.5) {
++          resetPath('use_block_out_of_range')
++          return
++        }
++        const faces = [
++          new Vec3(cx,         cy,         cz - 0.48),
++          new Vec3(cx,         cy,         cz + 0.48),
++          new Vec3(cx - 0.48,  cy,         cz),
++          new Vec3(cx + 0.48,  cy,         cz),
++          new Vec3(cx,         cy - 0.48,  cz),
++          new Vec3(cx,         cy + 0.48,  cz),
++          new Vec3(cx,         cy,         cz)
++        ]
++        let sawFace = false
++        for (const face of faces) {
++          const dir = face.minus(eye)
++          const d = dir.norm()
++          if (d < 1e-6) { sawFace = true; break }
++          const hit = bot.world.raycast(eye, dir.scaled(1 / d), d + 0.05)
++          if (!hit || (hit.position.x === placingBlock.x && hit.position.y === placingBlock.y && hit.position.z === placingBlock.z)) {
++            sawFace = true
++            break
++          }
++        }
++        if (!sawFace) {
++          resetPath('use_block_no_los')
++          return
++        }
+         if (!lockUseBlock.tryAcquire()) return
+-        bot.activateBlock(bot.blockAt(new Vec3(placingBlock.x, placingBlock.y, placingBlock.z))).then(() => {
++        bot.activateBlock(bot.blockAt(gatePos)).then(() => {
+           lockUseBlock.release()
+           placingBlock = nextPoint.toPlace.shift()
+         }, err => {
+@@ -576,8 +613,12 @@ function inject (bot) {
      let dx = nextPoint.x - p.x
      const dy = nextPoint.y - p.y
      let dz = nextPoint.z - p.z
@@ -18,10 +65,50 @@ index b38bd30..8d85b18 100644
        if (stopPathing) {
          stop()
 diff --git a/node_modules/mineflayer-pathfinder/lib/movements.js b/node_modules/mineflayer-pathfinder/lib/movements.js
-index a7e3505..68d2e81 100644
+index a7e3505..241057c 100644
 --- a/node_modules/mineflayer-pathfinder/lib/movements.js
 +++ b/node_modules/mineflayer-pathfinder/lib/movements.js
-@@ -436,6 +436,15 @@ class Movements {
+@@ -92,8 +92,14 @@ class Movements {
+       }
+     })
+     registry.blocksArray.forEach(block => {
+-      if (this.interactableBlocks.has(block.name) && block.name.toLowerCase().includes('gate') && !block.name.toLowerCase().includes('iron')) {
+-        // console.info(block)
++      const name = block.name.toLowerCase()
++      // F66 expansion: add regular doors to the openable set in addition to
++      // fence_gates. Stock pathfinder only marks fence_gates as openable,
++      // so `canOpenDoors=true` is a no-op for plain wooden/oak doors. We
++      // include any non-iron block in the interactable list whose name
++      // ends in `_door` or contains `gate`. Iron doors stay closed (they
++      // require power, not bot interact).
++      if (this.interactableBlocks.has(block.name) && (name.endsWith('_door') || name.includes('gate')) && !name.includes('iron')) {
+         this.openable.add(block.id)
+       }
+     })
+@@ -384,13 +390,18 @@ class Movements {
+       cost += this.placeCost // additional cost for placing a block
+     }
+ 
+-    cost += this.safeOrBreak(blockB, toBreak)
+-    if (cost > 100) return
+-
+-    // Open fence gates
++    // F66 expansion: when blockC (foot cell into) is an openable door, the
++    // block above (blockB) is the upper half of the SAME door. Don't try
++    // to safeOrBreak it — the door's open animation moves both halves
++    // simultaneously. Stock code would attempt to "break" the upper half,
++    // which fails when canDig=false and rejects the move entirely.
+     if (this.canOpenDoors && blockC.openable && blockC.shapes && blockC.shapes.length !== 0) {
++      // The door's upper half is implicitly part of the door — opening
++      // the lower half clears both. Skip the blockB cost check here.
+       toPlace.push({ x: node.x + dir.x, y: node.y, z: node.z + dir.z, dx: 0, dy: 0, dz: 0, useOne: true }) // Indicate that a block should be used on this block not placed
+     } else {
++      cost += this.safeOrBreak(blockB, toBreak)
++      if (cost > 100) return
+       cost += this.safeOrBreak(blockC, toBreak)
+       if (cost > 100) return
+     }
+@@ -436,6 +447,15 @@ class Movements {
      }
      if (cost > 100) return
  

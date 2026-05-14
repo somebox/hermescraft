@@ -5,7 +5,7 @@ import { Vec3 } from 'vec3';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 import { findClosestStandable, standabilityReason, standingState, isStandableCell } from './_nav-helpers.js';
 
-export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTIONS }) {
+export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTIONS, hasLineOfSight, eyePosition }) {
   // F51.2: mark a movement failure so the position-dependent verb guard
   // can short-circuit dependent commands until the bot acknowledges.
   const recordMoveFailure = (verb, x, y, z, actualPos, reason) => {
@@ -380,7 +380,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       }
     },
 
-    async goto_near({ x, y, z, range = 2 }) {
+    async goto_near({ x, y, z, range = 2, los = undefined }) {
       const b = ensureBot();
       // F50.2: pre-flight checks (bot-trapped, target-unstandable).
       const pre = preflightNav(b, x, y, z, range);
@@ -390,7 +390,61 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       }
       // F51.1: silent pre-nudge from sticky start position.
       await preNudgeIfSticky(b, Math.floor(x), Math.floor(y), Math.floor(z));
-      const goal = new goals.GoalNear(Math.floor(x), Math.floor(y), Math.floor(z), range);
+      const tx = Math.floor(x), ty = Math.floor(y), tz = Math.floor(z);
+
+      // F71: LOS-aware landing for solid targets. Plain GoalNear can land
+      // the bot 'within range' but on the wrong side of a wall — distance
+      // 2.0 with a cobble wall in between still counts as success, then
+      // the follow-up dig/place/interact trips its LOS guard. When the
+      // target cell is a solid block, pick the closest standable cell
+      // *within range* that has LOS to at least one face of the target,
+      // and pathfind exactly there. Opt out via `los=false` for callers
+      // that explicitly want raw "be near this air cell" behavior.
+      let goal = new goals.GoalNear(tx, ty, tz, range);
+      let losPicked = null;
+      if (los !== false && typeof hasLineOfSight === 'function') {
+        const targetBlock = b.blockAt(new Vec3(tx, ty, tz));
+        const targetIsSolid = !!(targetBlock
+          && targetBlock.boundingBox === 'block'
+          && targetBlock.name !== 'air'
+          && targetBlock.name !== 'cave_air');
+        if (targetIsSolid) {
+          const cBx = tx + 0.5, cBy = ty + 0.5, cBz = tz + 0.5;
+          const faces = [
+            { x: cBx, y: cBy, z: cBz - 0.48 },
+            { x: cBx, y: cBy, z: cBz + 0.48 },
+            { x: cBx - 0.48, y: cBy, z: cBz },
+            { x: cBx + 0.48, y: cBy, z: cBz },
+            { x: cBx, y: cBy - 0.48, z: cBz },
+            { x: cBx, y: cBy + 0.48, z: cBz },
+            { x: cBx, y: cBy, z: cBz },
+          ];
+          const cands = [];
+          const R = Math.max(1, Math.floor(range));
+          for (let dx = -R; dx <= R; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dz = -R; dz <= R; dz++) {
+                if (dx === 0 && dy === 0 && dz === 0) continue;
+                const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (d > range) continue;
+                const cx = tx + dx, cy = ty + dy, cz = tz + dz;
+                if (!isStandableCell(b, cx, cy, cz)) continue;
+                // Hypothetical eye position at this candidate cell.
+                // Use the same height scaling as eyePosition() (1.377m).
+                const candEye = { x: cx + 0.5, y: cy + 1.377, z: cz + 0.5 };
+                if (faces.some((p) => hasLineOfSight(candEye, p))) {
+                  cands.push({ cx, cy, cz, d });
+                }
+              }
+            }
+          }
+          if (cands.length > 0) {
+            cands.sort((a, c) => a.d - c.d);
+            losPicked = cands[0];
+            goal = new goals.GoalBlock(losPicked.cx, losPicked.cy, losPicked.cz);
+          }
+        }
+      }
       try {
         await pathfindWithProgressWatchdog({
           bot: b,
@@ -420,7 +474,6 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
           if (ugly.includes(ss.classification)) {
             // Find candidate cells around target within range
             let suggested = null;
-            const tx = Math.floor(x), ty = Math.floor(y), tz = Math.floor(z);
             const candidates = [];
             for (let dx = -range; dx <= range; dx++) {
               for (let dy = -1; dy <= 1; dy++) {
@@ -464,9 +517,18 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
           const note = landingInfo.suggested_correction
             ? ` (landed in ${landingInfo.landed_in} — observed_state.suggested_correction shows a cleaner cell within range)`
             : ` (landed in ${landingInfo.landed_in} — no cleaner cell within range)`;
+          if (losPicked) {
+            landingInfo.los_cell_picked = { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz };
+          }
           return {
             result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${note}`,
             observed_state: landingInfo,
+          };
+        }
+        if (losPicked) {
+          return {
+            result: `Arrived at LOS cell ${losPicked.cx}, ${losPicked.cy}, ${losPicked.cz} (clear sight to target ${fmt(x)}, ${fmt(y)}, ${fmt(z)})`,
+            observed_state: { los_cell_picked: { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz } },
           };
         }
         return { result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };

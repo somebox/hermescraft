@@ -2385,6 +2385,44 @@ export function createWorldActions(deps) {
       };
     }
 
+    // F68: line-of-sight guard. Reach is only euclidean distance, so the
+    // bot can be 4.5 blocks away with a solid wall between it and the
+    // gate and still pass reach. Require LOS to at least one face of the
+    // gate before activating — no opening doors/gates through walls.
+    if (typeof hasLineOfSight === 'function' && typeof eyePosition === 'function') {
+      const eye = eyePosition();
+      if (eye) {
+        const cx = gate.position.x + 0.5;
+        const cy = gate.position.y + 0.5;
+        const cz = gate.position.z + 0.5;
+        const faces = [
+          { x: cx, y: cy, z: cz - 0.48 },
+          { x: cx, y: cy, z: cz + 0.48 },
+          { x: cx - 0.48, y: cy, z: cz },
+          { x: cx + 0.48, y: cy, z: cz },
+          { x: cx, y: cy - 0.48, z: cz },
+          { x: cx, y: cy + 0.48, z: cz },
+          { x: cx, y: cy, z: cz },
+        ];
+        if (!faces.some((p) => hasLineOfSight(eye, p))) {
+          return {
+            ok: false,
+            error: {
+              code: 'NO_LINE_OF_SIGHT',
+              message: `Cannot see ${gate.name} at ${gx},${gy},${gz} — a block is between you and the gate.`,
+              observed_state: {
+                gate: { x: gate.position.x, y: gate.position.y, z: gate.position.z },
+                gate_block: gate.name,
+                bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+              },
+              next_action_hint: `Navigate to a cell with direct sight to the gate first; mc goto_near ${gx} ${gy} ${gz} range=2`,
+              retry_safe: false,
+            },
+          };
+        }
+      }
+    }
+
     // Safety: before opening the gate, check for passive animals adjacent
     // to it. If any are within 1.5 blocks of the gate centerline, opening
     // exposes a window for them to escape through. Return ANIMAL_AT_GATE
