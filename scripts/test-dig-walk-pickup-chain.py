@@ -182,6 +182,9 @@ def dig_walk_pickup_iteration(
     else:
         yaw = 0 if dz > 0 else 180   # south / north
     tp_bot(approach_x + 0.5, 65, approach_z + 0.5, yaw)
+    safe_ok, safe_reason = assert_safe_pose(bot_url, label)
+    if not safe_ok:
+        return (False, f"unsafe pose after approach TP: {safe_reason}")
 
     # 2. mc dig the target block.
     r = http_post(
@@ -194,8 +197,22 @@ def dig_walk_pickup_iteration(
         err_msg = err.get("message") if isinstance(err, dict) else str(err)
         return (False, f"dig failed: {str(err_msg)[:120]}")
 
-    # 3. TP to the opposite side so a STANDING pillar is between bot and drop.
-    tp_bot(opposite_x + 0.5, 65, opposite_z + 0.5, 0.0)
+    # 3. TP to the opposite side. `opposite_(x,z)` names the still-standing
+    # pillar that should be between bot and drop, NOT the bot's standing
+    # cell — that would put the bot inside a pillar. The bot's destination
+    # is the cell one step PAST the opposite pillar, away from the target,
+    # outside the grid. This preserves the test's intent (obstacle between
+    # bot and drop) while keeping the geometry valid.
+    odx = target_x - opposite_x
+    odz = target_z - opposite_z
+    step_x = (-1 if odx > 0 else 1) if odx != 0 else 0
+    step_z = (-1 if odz > 0 else 1) if odz != 0 else 0
+    stand_x = opposite_x + step_x + 0.5
+    stand_z = opposite_z + step_z + 0.5
+    tp_bot(stand_x, 65, stand_z, 0.0)
+    safe_ok, safe_reason = assert_safe_pose(bot_url, label)
+    if not safe_ok:
+        return (False, f"unsafe pose after opposite TP: {safe_reason}")
 
     # 4. goto_near drop coord — pathfinder MUST route around the obstacle.
     t0 = time.time()
