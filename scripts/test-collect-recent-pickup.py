@@ -75,10 +75,26 @@ time.sleep(1.0)
 dig = post("/action/dig", {"x": -2, "y": 65, "z": 2})
 print(f"  dig ok={dig.get('ok')} dropped={dig.get('data', {}).get('dropped_items')}")
 
-time.sleep(1.0)  # let auto-pickup finish
+# Auto-magnet has variable timing — the drop is within range but the
+# physics tick may not have fired by the time we read inventory. Poll
+# briefly, falling back to an explicit pickup verb if the magnet hasn't
+# caught up. Either path populates the recentPickups cache that
+# F72's mc-collect short-circuit reads from.
+def andesite_in_inv() -> int:
+    inv = get("/status?lean=true")["data"].get("inventory", [])
+    return next((i["count"] for i in inv if i["name"] == "andesite"), 0)
 
-inv = get("/status?lean=true")["data"].get("inventory", [])
-andesite_count = next((i["count"] for i in inv if i["name"] == "andesite"), 0)
+deadline = time.time() + 2.0
+andesite_count = 0
+while time.time() < deadline:
+    andesite_count = andesite_in_inv()
+    if andesite_count > 0:
+        break
+    time.sleep(0.2)
+if andesite_count == 0:
+    post("/action/pickup", {})
+    time.sleep(0.5)
+    andesite_count = andesite_in_inv()
 print(f"  inventory andesite count after dig: {andesite_count}")
 
 c = post("/action/collect", {"block": "andesite", "count": 1})
