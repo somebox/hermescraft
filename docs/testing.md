@@ -3,6 +3,13 @@
 HermesCraft has five tiers of tests with different prerequisites and
 runtimes. Only Tier 1 runs in CI today; the rest are manual / local.
 
+**Related documents:**
+- [`docs/test-inventory.md`](test-inventory.md) — per-test catalog (overlaps, gaps, validation notes)
+- [`docs/testing-migration.md`](testing-migration.md) — porting `scripts/test-*.py` to the pytest harness
+- [`config/hermescraft.yaml`](../config/hermescraft.yaml) — central MC/rcon/bot/model/logging config
+- [`tests/README.md`](../tests/README.md) — pytest tree overview
+- [`bot/lib/config/README.md`](../bot/lib/config/README.md) — bot server's env-var schema
+
 | Tier | What | Time | Prerequisites | CI? |
 |---|---|---|---|---|
 | 1 | Node unit tests (`bot/test/`) | ~0.5 s | none | ✅ on every push |
