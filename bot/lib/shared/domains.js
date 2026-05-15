@@ -1,6 +1,6 @@
 /**
  * Public capability domains shared by CLI categories ([bot/cli/registry.mjs])
- * and server-side action metadata ([bot/lib/action-registry.js]).
+ * and server-side action metadata ([bot/lib/server/action-registry.js]).
  */
 export const DOMAINS = Object.freeze([
   'platform',

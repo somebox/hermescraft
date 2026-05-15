@@ -19,7 +19,7 @@ From primitives upward (full rationale in `MC_TARGET_ARCHITECTURE.md`):
 | Area | Role |
 |------|------|
 | `lib/actions/` | Domain action handlers: movement, mining, crafting, combat, world, containers. |
-| `lib/bot/` | Mineflayer lifecycle, observation snapshots, locations, fair-play, optional PaperMCP bridge. |
+| `lib/runtime/` | Mineflayer lifecycle, observation snapshots, locations, fair-play, optional PaperMCP bridge. |
 | `lib/server/` | HTTP routing, config load, single-process runtime state (`ctx`). |
 | `lib/shared/` | Pure helpers: chat routing, perception, recipe math, schemas, resolver. |
 | `lib/goals/` | Goal store, scoring, presets, task lease helpers. |

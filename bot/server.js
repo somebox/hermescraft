@@ -43,7 +43,7 @@ import {
   stripInlineNameMention,
   applySocialEvent,
   summarizeSocialGraph,
-} from './lib/chat.js';
+} from './lib/shared/chat.js';
 import {
   ingredientCountsFromSlots,
   recipeIngredientMap as _recipeIngredientMap,
@@ -57,21 +57,21 @@ import {
   loadPreset,
   listPresets,
   mergePresetIntoStore,
-} from './lib/goals.js';
-import { createTaskRecord, refreshLeaseCheckpoint, renewLease, taskToApi } from './lib/tasks.js';
-import { loadConfig } from './lib/config.js';
-import { createBotState } from './lib/state.js';
-import { resolveInventoryItem, resolveCraftTarget, resolveBlockQuery } from './lib/resolver.js';
-import { FAIR_PLAY } from './lib/fair-play-constants.js';
-import { createFairPlaySuite } from './lib/fair-play.js';
-import { createSpatial } from './lib/spatial.js';
-import { createActionRegistry } from './lib/action-registry.js';
-import { createBotHttpListener } from './lib/router.js';
-import { createBotManager } from './lib/bot-manager.js';
-import { createReactive } from './lib/bot/reactive.js';
-import { createLocationsStore, isContainerBlock, findNearbyContainer } from './lib/bot/locations.js';
+} from './lib/goals/engine.js';
+import { createTaskRecord, refreshLeaseCheckpoint, renewLease, taskToApi } from './lib/goals/tasks.js';
+import { loadConfig } from './lib/config/index.js';
+import { createBotState } from './lib/server/state.js';
+import { resolveInventoryItem, resolveCraftTarget, resolveBlockQuery } from './lib/shared/resolver.js';
+import { FAIR_PLAY } from './lib/runtime/fair-play-constants.js';
+import { createFairPlaySuite } from './lib/runtime/fair-play.js';
+import { createSpatial } from './lib/runtime/spatial.js';
+import { createActionRegistry } from './lib/server/action-registry.js';
+import { createBotHttpListener } from './lib/server/http-app.js';
+import { createBotManager } from './lib/runtime/manager.js';
+import { createReactive } from './lib/runtime/reactive.js';
+import { createLocationsStore, isContainerBlock, findNearbyContainer } from './lib/runtime/locations.js';
 import { createAllActions } from './lib/actions/index.js';
-import { createObservation } from './lib/bot/observation.js';
+import { createObservation } from './lib/runtime/observation.js';
 
 // Per-bot locations file to prevent race conditions in multi-agent mode
 const DATA_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'data');
@@ -260,7 +260,7 @@ async function handleChat(username, message) {
   // Human players are not in CURRENT_CAST so they always pass through.
   // BOT_HEAR_ALL=true bypasses this entirely — for coordinated multi-agent
   // tests where bots need to hear each other regardless of distance.
-  const hearAll = (process.env.BOT_HEAR_ALL || '').toLowerCase() === 'true';
+  const hearAll = config.behaviors.hearAll;
   if (!hearAll && forMe && routing.isBroadcast && ctx.bot && ctx.botReady) {
     const senderLower = username.toLowerCase();
     const isOtherAgent = CURRENT_CAST.includes(senderLower) && senderLower !== getMyName().toLowerCase();
@@ -381,7 +381,7 @@ function ensureBot() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Fair Play — Line-of-Sight & Perception (see lib/fair-play.js)
+// Fair Play — Line-of-Sight & Perception (see lib/runtime/fair-play.js)
 // ═══════════════════════════════════════════════════════════════════
 
 const fairPlayApi = createFairPlaySuite({
@@ -525,11 +525,11 @@ const actionRegistry = createActionRegistry(ACTIONS);
 // Default-on; ticks every 400ms, no-ops while bot is disconnected.
 // Agent picks the policy via `mc mode normal | guard | hold`.
 // Disable entirely with REACTIVE=off env var.
-const reactiveOn = String(process.env.REACTIVE ?? 'on').toLowerCase() !== 'off';
+const reactiveOn = config.behaviors.reactiveOn;
 if (reactiveOn) {
   // COMBAT_SKILL env var lets per-character launchers default the bot to
   // soldier (0.9) or farmer (0.2) without an explicit `mc combat_skill` call.
-  const skillEnv = process.env.COMBAT_SKILL;
+  const skillEnv = config.behaviors.combatSkill;
   if (skillEnv !== undefined && skillEnv !== '') {
     const n = Number(skillEnv);
     if (Number.isFinite(n)) ctx.combat_skill = Math.max(0, Math.min(1, n));
@@ -589,9 +589,9 @@ httpServer.listen(config.api.port, () => {
   log(`║  MC:   ${config.mc.host}:${config.mc.port}                ║`);
   log(`║  User: ${config.mc.username.padEnd(28)}║`);
   log(`╚═══════════════════════════════════════╝`);
-  const profile = process.env.AGENT_PROFILE || config.mc.username;
-  const agentModel = (process.env.AGENT_MODEL || '').trim();
-  const agentProvider = (process.env.AGENT_PROVIDER || '').trim();
+  const profile = config.agent.profile;
+  const agentModel = config.agent.model;
+  const agentProvider = config.agent.provider;
   log(`LLM routing (AGENT_* → /health, /dashboard): profile=${profile}`);
   if (agentModel) {
     log(`LLM model:   ${agentModel}`);

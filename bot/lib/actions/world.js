@@ -1,11 +1,11 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS, RELOCATABLE_INFRASTRUCTURE, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards, suggestedToolForBlock, isDigProtected } from '../bot/dig-tools.js';
-import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, RELOCATABLE_INFRASTRUCTURE, DIG_PASSABLE_NAMES, FALLING_BLOCK_NAMES, columnTopSolid, nudgeOffStandPillar, detectDigHazards, suggestedToolForBlock, isDigProtected } from '../runtime/dig-tools.js';
+import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS, ensureWithinReach } from './_helpers.js';
 import { isStandableCell, standabilityReason, findClosestStandable, standingState } from './_nav-helpers.js';
 
 export function createWorldActions(deps) {
-  const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveInventoryItem, rememberSocialEvent, getMyName, ACTIONS, hasLineOfSight, eyePosition } = deps;
+  const { ctx, config, ensureBot, goals, fmt, posObj, sleep, log, resolveInventoryItem, rememberSocialEvent, getMyName, ACTIONS, hasLineOfSight, eyePosition } = deps;
   const cardinalDelta = (direction) => {
     const d = String(direction || '').toLowerCase();
     switch (d) {
@@ -2596,7 +2596,7 @@ export function createWorldActions(deps) {
     // `mc chat "..."` and gets ok=true; it just takes a bit longer when
     // the bot is chatting rapidly. Override with MC_CHAT_MIN_INTERVAL_MS
     // env var if needed.
-    const MIN_INTERVAL_MS = Number(process.env.MC_CHAT_MIN_INTERVAL_MS) || 2500;
+    const MIN_INTERVAL_MS = config.behaviors.chatMinIntervalMs;
     if (ctx) {
       const now = Date.now();
       const elapsed = now - (ctx.lastChatTs || 0);
@@ -3058,7 +3058,7 @@ export function createWorldActions(deps) {
     const text = `@${player} ${message}`;
     // F59 rate limit (shared budget with mc chat — these all emit to the
     // same public chat channel).
-    const MIN_INTERVAL_MS = Number(process.env.MC_CHAT_MIN_INTERVAL_MS) || 2500;
+    const MIN_INTERVAL_MS = config.behaviors.chatMinIntervalMs;
     if (ctx) {
       const elapsed = Date.now() - (ctx.lastChatTs || 0);
       if (elapsed < MIN_INTERVAL_MS) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS - elapsed));
@@ -3079,7 +3079,7 @@ export function createWorldActions(deps) {
   async whisper({ player, message }) {
     const b = ensureBot();
     const text = `@${player} ${message}`;
-    const MIN_INTERVAL_MS = Number(process.env.MC_CHAT_MIN_INTERVAL_MS) || 2500;
+    const MIN_INTERVAL_MS = config.behaviors.chatMinIntervalMs;
     if (ctx) {
       const elapsed = Date.now() - (ctx.lastChatTs || 0);
       if (elapsed < MIN_INTERVAL_MS) await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS - elapsed));

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBotHttpListener } from '../../lib/http-app.js';
+import { createBotHttpListener } from '../../lib/server/http-app.js';
 
 /** Minimal deps so GET /health and OPTIONS succeed without a Mineflayer bot. */
 function stubDeps() {
@@ -10,6 +10,7 @@ function stubDeps() {
     config: {
       api: { port: 0 },
       mc: { username: 'TestBot', host: '127.0.0.1', port: 25565 },
+      agent: { profile: 'TestBot', model: '', provider: '', modelsJsonPath: null },
     },
     ctx: {
       botReady: false,

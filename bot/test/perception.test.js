@@ -7,7 +7,7 @@ import {
   makeBlockMemoryKey,
   summarizeVisibleBlocks,
   summarizeSceneText,
-} from '../lib/perception.js';
+} from '../lib/shared/perception.js';
 
 test('angleDiffDegrees wraps across 360 cleanly', () => {
   assert.equal(angleDiffDegrees(10, 350), 20);

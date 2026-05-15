@@ -86,16 +86,15 @@ export async function executeServerCommand({ host, port, token }, command) {
   }
 }
 
+import { getConfig } from '../config/index.js';
+
 /**
- * Build PaperMCP config from environment, returns null if token not set.
+ * Build PaperMCP config, returns null if token not set.
+ * Reads from the central config singleton (loaded once at server startup).
  * @returns {{ host: string, port: number, token: string } | null}
  */
 export function paperMcpConfig() {
-  const token = process.env.PAPERMCP_TOKEN;
-  if (!token) return null;
-  return {
-    host: process.env.PAPERMCP_HOST || process.env.MC_HOST || 'localhost',
-    port: parseInt(process.env.PAPERMCP_PORT || '25577', 10),
-    token,
-  };
+  const { papermcp } = getConfig();
+  if (!papermcp.token) return null;
+  return { host: papermcp.host, port: papermcp.port, token: papermcp.token };
 }

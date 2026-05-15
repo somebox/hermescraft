@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FAIR_PLAY } from '../lib/fair-play-constants.js';
+import { FAIR_PLAY } from '../lib/runtime/fair-play-constants.js';
 
 test('FAIR_PLAY exposes bounded numeric tunables', () => {
   assert.equal(typeof FAIR_PLAY.LOS_ENTITY_RANGE, 'number');

@@ -7,7 +7,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 
 const BOAT_NAMES = new Set([
   'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',

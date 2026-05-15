@@ -13,7 +13,7 @@ version: 1.0.0
 
 # Minecraft — Goals, tasks, and deliberation
 
-Use this skill when the agent runs with the **goal engine** enabled (`bot/lib/goals.js` + HTTP/CLI on the bot server).
+Use this skill when the agent runs with the **goal engine** enabled (`bot/lib/goals/engine.js` + HTTP/CLI on the bot server).
 
 ## Read the scoreboard
 

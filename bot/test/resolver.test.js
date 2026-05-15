@@ -8,7 +8,7 @@ import {
   resolveResourceGroup,
   isKnownBlock,
   isKnownItem,
-} from '../lib/resolver.js';
+} from '../lib/shared/resolver.js';
 
 const mcData = minecraftData('1.20');
 

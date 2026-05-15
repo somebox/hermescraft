@@ -1,6 +1,6 @@
 import { Vec3 } from 'vec3';
 import { ingredientCountsFromSlots, recipeIngredientMap } from '../shared/recipe-ingredients.js';
-import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
 export function createCraftingActions(deps) {

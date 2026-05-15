@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createActionRegistry } from '../lib/action-registry.js';
+import { createActionRegistry } from '../lib/server/action-registry.js';
 
 test('createActionRegistry lists only callable handlers', () => {
   const reg = createActionRegistry({

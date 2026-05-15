@@ -306,7 +306,7 @@ Primary files:
 - `scripts/run-landfolk-agent.sh` — launch one Landfolk Hermes brain cleanly
 - `bot/server.js` — wiring entrypoint (~600 LOC): config, dependency injection, HTTP startup
 - `bot/lib/actions/` — domain action modules (movement, mining, crafting, combat, world, containers)
-- `bot/lib/bot/` — Mineflayer-dependent gameplay (manager, fair-play, spatial, locations, dig-tools, observation)
+- `bot/lib/runtime/` — Mineflayer-dependent gameplay (manager, fair-play, spatial, locations, dig-tools, observation)
 - `bot/lib/server/` — HTTP infrastructure (config, state, http-app, action-registry)
 - `bot/lib/shared/` — pure utilities (perception, resolver, chat, domains, schemas)
 - `bot/lib/goals/` — goal engine and task management

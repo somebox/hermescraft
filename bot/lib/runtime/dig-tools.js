@@ -3,6 +3,7 @@
  * All functions are stateless — they operate on the bot instance passed in.
  */
 import { Vec3 } from 'vec3';
+import { getConfig } from '../config/index.js';
 
 export const HARVEST_AXE_PRIORITY = [
   'netherite_axe',
@@ -58,7 +59,7 @@ const ALWAYS_PROTECTED = new Set([
 
 export function isDigProtected(blockName) {
   if (!blockName) return false;
-  if (String(process.env.BOT_ALLOW_DIG_INFRASTRUCTURE || '').toLowerCase() === 'true') {
+  if (getConfig().behaviors.allowDigInfrastructure) {
     return ALWAYS_PROTECTED.has(blockName);
   }
   return PROTECTED_DIG_BLOCKS.has(blockName);
@@ -368,11 +369,11 @@ async function preferShearsForLeaves(b, block) {
 export function guardSlowDigEstimate(b, block) {
   const t = b.tool;
   if (!block?.name || typeof t?.getDigTime !== 'function' || typeof t.itemInHand !== 'function') return;
-  if (process.env.MC_ALLOW_SLOW_DIG === 'true') return;
+  const { behaviors } = getConfig();
+  if (behaviors.allowSlowDig) return;
   if (isSoftLandscapeBlock(block)) return;
 
-  let maxTicks = Number(process.env.MC_SLOW_DIG_TICKS_MAX);
-  if (!Number.isFinite(maxTicks) || maxTicks < 40) maxTicks = 280;
+  const maxTicks = behaviors.slowDigTicksMax;
 
   const held = effectiveHeldForDig(b);
   const hn = held?.name ?? '';

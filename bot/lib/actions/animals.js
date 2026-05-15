@@ -8,7 +8,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 
 // Species → array of items in inventory that can breed them.
 // First entry is the canonical choice when bot has multiple options.

@@ -184,7 +184,7 @@ export function createBotManager(deps) {
         // crossing a small ravine), but for typical G21 / build / mine
         // workflows the no-parkour search is faster AND more reliable.
         // Opt-in with BOT_ALLOW_PARKOUR=true if a specific test needs it.
-        moves.allowParkour = String(process.env.BOT_ALLOW_PARKOUR ?? 'false').toLowerCase() === 'true';
+        moves.allowParkour = deps.config?.behaviors?.allowParkour ?? false;
         moves.canDig = false;
         // F66: open doors during pathfind. mineflayer-pathfinder defaults to
         // `canOpenDoors=false` ("causes issues. Probably due to non-paper

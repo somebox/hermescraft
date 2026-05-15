@@ -5,7 +5,7 @@ import {
   readCurrentForMetric,
   mergePresetIntoStore,
   loadGoalsStore,
-} from '../lib/goals.js';
+} from '../lib/goals/engine.js';
 
 describe('goals lib', () => {
   it('threat metric: high threat = urgent', () => {

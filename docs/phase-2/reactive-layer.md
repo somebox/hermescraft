@@ -1,6 +1,6 @@
 # Phase 2 — Reactive layer (Layer 2)
 
-Section 16 of the Phase 2 architecture (the autonomy-layers revision dated 2026-05-10). Authoritative spec for the reactive autopilot in `bot/lib/bot/reactive.js`.
+Section 16 of the Phase 2 architecture (the autonomy-layers revision dated 2026-05-10). Authoritative spec for the reactive autopilot in `bot/lib/runtime/reactive.js`.
 
 ## 16. Plan revision — autonomy layers (added 2026-05-10)
 
@@ -84,7 +84,7 @@ The same reactive layer runs independently in each bot's process — Flint and G
 
 The signal layer (§16.3) is also per-bot. Cross-bot coordination ("Flint sees zombie, Mason should help") is a Layer 3 strategic decision the agent makes by reading both bots' observations.
 
-**Mode invocation:** `mc mode <name>` returns the previous mode name. Mode persists until changed. Default on bot start: `normal`. Implementation in `bot/lib/bot/reactive.js`.
+**Mode invocation:** `mc mode <name>` returns the previous mode name. Mode persists until changed. Default on bot start: `normal`. Implementation in `bot/lib/runtime/reactive.js`.
 
 ### 16.2b Implemented micro-actions (as of 2026-05-10)
 

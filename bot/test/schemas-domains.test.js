@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { DOMAINS, isDomain } from '../lib/domains.js';
-import { okEnvelope, errEnvelope, assertDomain } from '../lib/schemas.js';
-import { createBotState } from '../lib/state.js';
-import { loadConfig } from '../lib/config.js';
+import { DOMAINS, isDomain } from '../lib/shared/domains.js';
+import { okEnvelope, errEnvelope, assertDomain } from '../lib/shared/schemas.js';
+import { createBotState } from '../lib/server/state.js';
+import { loadConfig } from '../lib/config/index.js';
 
 describe('domains', () => {
   it('DOMAINS matches CLI category vocabulary length', () => {

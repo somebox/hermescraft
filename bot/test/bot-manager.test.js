@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { reconnectBackoffMs, STUCK_MOVEMENT_ACTIONS } from '../lib/bot-manager.js';
+import { reconnectBackoffMs, STUCK_MOVEMENT_ACTIONS } from '../lib/runtime/manager.js';
 
 test('reconnectBackoffMs caps exponential delay', () => {
   assert.equal(reconnectBackoffMs(0), 5000);

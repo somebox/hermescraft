@@ -134,7 +134,7 @@ the bot library exposes). It cannot call UP. Layer 2 must NEVER invoke
 long-running Layer 1 macros — that breaks the per-tick re-evaluation
 property and was the original Layer 2 mistake before the F39–F42 refactor.
 
-**How to check:** soft. If Layer 2 code (`bot/lib/bot/reactive.js`) ever
+**How to check:** soft. If Layer 2 code (`bot/lib/runtime/reactive.js`) ever
 imports a Layer 1 action handler that runs longer than one tick, it's a
 violation.
 

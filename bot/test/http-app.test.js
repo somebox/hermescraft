@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'events';
-import { parseBody } from '../lib/router.js';
+import { parseBody } from '../lib/server/http-app.js';
 
 function mockReq(chunks) {
   const req = new EventEmitter();

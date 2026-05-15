@@ -104,7 +104,7 @@ export function createBotState(config) {
     reminders: [],
     remindersNextId: 1,
 
-    fairPlayMode: process.env.FAIR_PLAY !== 'false',
+    fairPlayMode: config.behaviors.fairPlay,
 
     soundEvents: [],
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSpatial } from '../lib/spatial.js';
+import { createSpatial } from '../lib/runtime/spatial.js';
 
 test('getCardinal maps deltas to compass labels (MC +X east, +Z south)', () => {
   const spatial = createSpatial({

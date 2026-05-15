@@ -4,7 +4,7 @@ These profiles are **design references** for future presets. They validate that 
 
 ## Shared schema notes
 
-- **metric** — must be computable from bot state (inventory, nearby, chest snapshots, marks). Some metrics may require new evaluators in `bot/lib/goals.js` before a preset ships.
+- **metric** — must be computable from bot state (inventory, nearby, chest snapshots, marks). Some metrics may require new evaluators in `bot/lib/goals/engine.js` before a preset ships.
 - **preempt_class** — `critical` for defense/survival; `normal` for logistics.
 - **strategies_available** — hints for the LLM, not automatic planners.
 

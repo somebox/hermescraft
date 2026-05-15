@@ -8,7 +8,7 @@ import {
   firstInvItemByPriority,
   HARVEST_AXE_PRIORITY,
   HARVEST_PICK_PRIORITY,
-} from '../lib/bot/dig-tools.js';
+} from '../lib/runtime/dig-tools.js';
 
 test('blockNeedsAxeHarvest recognizes log types', () => {
   assert.ok(blockNeedsAxeHarvest('oak_log'));

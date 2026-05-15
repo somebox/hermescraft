@@ -1,5 +1,5 @@
 import { Vec3 } from 'vec3';
-import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards, isDigProtected, getSupportedDoorAbove } from '../bot/dig-tools.js';
+import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards, isDigProtected, getSupportedDoorAbove } from '../runtime/dig-tools.js';
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/perception.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 
@@ -55,7 +55,7 @@ function sourceBlocksForItem(mcData, itemName) {
 }
 
 export function createMiningActions(deps) {
-  const { ctx, ensureBot, goals, fmt, posObj, sleep, log, resolveMiningBlockName, fairPlayHarvestTrunkCandidates, findVisibleBlocksByNameWithPhysicalSweep, entitiesMatchingAfterLookSweep, rememberSocialEvent, hasLineOfSight, eyePosition } = deps;
+  const { ctx, config, ensureBot, goals, fmt, posObj, sleep, log, resolveMiningBlockName, fairPlayHarvestTrunkCandidates, findVisibleBlocksByNameWithPhysicalSweep, entitiesMatchingAfterLookSweep, rememberSocialEvent, hasLineOfSight, eyePosition } = deps;
 
   // Raycast from bot eye to a point just OUTSIDE the target block on the
   // bot-facing face. Returns true if the ray reaches that face with no
@@ -1027,7 +1027,7 @@ export function createMiningActions(deps) {
       // (default 300ms; tunable via MC_DIG_DROP_SCAN_MS) then collect any item
       // entities that weren't there before, restricted to ≤2.5 blocks of the
       // broken coord (drops can scatter slightly with falling-block physics).
-      const dropScanMs = Number(process.env.MC_DIG_DROP_SCAN_MS) || 300;
+      const dropScanMs = config.behaviors.digDropScanMs;
       await sleep(dropScanMs);
       const dropped = [];
       for (const e of Object.values(b.entities)) {

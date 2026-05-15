@@ -9,7 +9,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { executeServerCommand, paperMcpConfig } from '../bot/paper-mcp.js';
+import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 
 const HOE_NAMES = ['netherite_hoe', 'diamond_hoe', 'iron_hoe', 'stone_hoe', 'golden_hoe', 'wooden_hoe'];
 const TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'dirt_path']);

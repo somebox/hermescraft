@@ -9,7 +9,7 @@ import {
   stripInlineNameMention,
   applySocialEvent,
   summarizeSocialGraph,
-} from '../lib/chat.js';
+} from '../lib/shared/chat.js';
 
 test('known names include current cast and nearby names', () => {
   const known = buildKnownNames('HermesBot', ['Alex', 'Elena']);
