@@ -119,6 +119,44 @@ export function createMiningActions(deps) {
       const startedInventory = inventoryAt();
       const startedBlockCount = startedInventory[blockName] || 0;
 
+      // F72: short-circuit when the bot just auto-picked up the requested
+      // item from a recent dig. Previously this path returned
+      // NO_VISIBLE_BLOCKS because there were no drops left on the ground
+      // — the brain misread it as "dig failed" and went into recovery
+      // (often wall-digging). Consult ctx.recentPickups within a 30s
+      // window: if the bot picked up enough of the item via auto-magnet
+      // after a dig, mark this collect as done and consume the entries.
+      if (Array.isArray(ctx.recentPickups) && ctx.recentPickups.length > 0) {
+        const now = Date.now();
+        ctx.recentPickups = ctx.recentPickups.filter((p) => (now - p.ts) < 30_000);
+        let available = 0;
+        for (const p of ctx.recentPickups) {
+          if (p.item === blockName) available += p.count;
+        }
+        if (available >= count && (startedInventory[blockName] || 0) >= count) {
+          // Consume `count` from the matching entries (oldest-first).
+          let remaining = count;
+          for (const p of ctx.recentPickups) {
+            if (remaining <= 0) break;
+            if (p.item !== blockName) continue;
+            const take = Math.min(p.count, remaining);
+            p.count -= take;
+            remaining -= take;
+          }
+          ctx.recentPickups = ctx.recentPickups.filter((p) => p.count > 0);
+          return {
+            ok: true,
+            data: {
+              block_name: blockName,
+              mined_count: 0,
+              dropped_items_collected: count,
+              source: 'recent_pickup',
+            },
+            result: `Already have ${count} ${blockName} in inventory — auto-picked up from a recent dig.`,
+          };
+        }
+      }
+
       /** @type {Vec3[]} */
       let found = [];
       const isTrunkHarvest = /_log$|_stem$|^crimson_stem$|^warped_stem$/i.test(blockName);
@@ -1008,6 +1046,26 @@ export function createMiningActions(deps) {
           count,
           position: posObj(e.position),
         });
+      }
+
+      // F72: push the dig's drops to ctx.recentPickups. The auto-pickup
+      // magnet (1.5-block radius) typically grabs these within a tick
+      // or two after the drop appears — earlier than this handler can
+      // reliably snapshot inventory. The collect-side handler will
+      // double-check that the bot's current inventory actually has the
+      // item before short-circuiting, so a drop that lands outside
+      // pickup range won't lead to a false success.
+      const _now = Date.now();
+      if (Array.isArray(ctx.recentPickups)) {
+        ctx.recentPickups = ctx.recentPickups
+          .filter((p) => (_now - p.ts) < 30_000)
+          .slice(-11);
+      } else {
+        ctx.recentPickups = [];
+      }
+      for (const d of dropped) {
+        if (!d?.name || !(d.count > 0)) continue;
+        ctx.recentPickups.push({ ts: _now, item: d.name, count: d.count, source: 'dig' });
       }
 
       const tips = [...new Set(hints)];

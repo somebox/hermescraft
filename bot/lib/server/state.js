@@ -68,6 +68,18 @@ export function createBotState(config) {
       []
     ),
 
+    /** F72: Items the bot auto-picked-up from recent mc dig calls.
+     *  Cleared lazily (30s window) or consumed by mc collect when the
+     *  caller asks for exactly those items. The point is to give
+     *  `mc collect <item> N` a clean success path when the item was
+     *  already grabbed via mineflayer's auto-pickup magnet after the
+     *  mc dig that produced it — previously this path returned
+     *  NO_VISIBLE_BLOCKS because there were no more drops on the
+     *  ground, which the brain misread as "dig failed". */
+    recentPickups: /** @type {Array<{ts:number, item:string, count:number, source:string}>} */ (
+      []
+    ),
+
     /** F57.2: Ring buffer of cells where movement actually stalled
      *  (NoProgressError) or where mc escape was needed. Pathfinder
      *  preflight in goto/goto_near/move blackballs targets within 1
