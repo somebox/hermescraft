@@ -82,11 +82,11 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc nearby 48'],
   }),
   g('map', 'observe', ['m'], {
-    description: 'Compact ASCII map of nearby terrain',
+    description: 'Compact ASCII map of nearby terrain (radius default 12, max 16; larger values clamped).',
     method: 'GET',
-    pathFn: (p) => `/map?radius=${encodeURIComponent(Number(p.radius) || 16)}`,
-    argSchema: [{ key: 'radius', type: 'number', default: 16 }],
-    examples: ['mc map 16'],
+    pathFn: (p) => `/map?radius=${encodeURIComponent(Number(p.radius) || 12)}`,
+    argSchema: [{ key: 'radius', type: 'number', default: 12 }],
+    examples: ['mc map', 'mc map 12'],
   }),
   g('look', 'observe', ['survey'], { description: 'What the bot is currently facing', method: 'GET', path: '/look', examples: ['mc look'] }),
   g('scene', 'observe', ['perceive', 'vision'], {

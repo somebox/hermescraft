@@ -222,10 +222,17 @@ export function createBotHttpListener(deps) {
         return respond(res, 200, { ok: true, data: getNearby(radius) });
       }
 
-      // ASCII top-down map of surroundings
+      // ASCII top-down map of surroundings.
+      // Radius clamped: default 12, max 16. A 33×33 grid (r=16) is already
+      // ~1k chars of payload — brains have called r=32 (65×65 ≈ 4k chars)
+      // when stuck, blowing the token budget for no value. Cap loudly so
+      // the prompt-side rule sticks.
       if (path === '/map') {
-        const radius = parseInt(url.searchParams.get('radius') || '16');
-        return respond(res, 200, { ok: true, data: spatial.generateMap(radius) });
+        const raw = parseInt(url.searchParams.get('radius') || '12');
+        const radius = Math.max(4, Math.min(16, Number.isFinite(raw) ? raw : 12));
+        const data = spatial.generateMap(radius);
+        if (data && raw !== radius) data.radius_clamped_from = raw;
+        return respond(res, 200, { ok: true, data });
       }
 
       // Narrative description of what you see (human-readable)

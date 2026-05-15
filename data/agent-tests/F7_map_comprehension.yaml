@@ -1,0 +1,107 @@
+# F7 — map comprehension: agent must read `mc map` and translate symbol
+# positions into world coords, then act on them in three different
+# directions to prove it understands both the legend and the orientation.
+#
+# Setup: open grass arena, bot at (0, 65, 0). Three landmarks placed at
+# distinct cardinal directions from origin:
+#   - crafting_table at (-5, 65,  0)  → 'C', WEST of bot
+#   - furnace        at ( 5, 65,  0)  → 'F', EAST of bot
+#   - chest          at ( 0, 65, -5)  → 'B', NORTH of bot
+# Map scale is 1 char = 1 block per the legend. N at top of grid = -z;
+# S bottom = +z; E right = +x; W left = -x.
+#
+# Mission: place one dirt block adjacent to EACH landmark, each in a
+# different compass direction, so passing the test requires both
+# legend comprehension (C ≠ F ≠ B) and orientation comprehension
+# (E ≠ S ≠ W maps to different axes):
+#   - dirt at (-4, 65,  0)   EAST of the crafting_table
+#   - dirt at ( 5, 65,  1)   SOUTH of the furnace
+#   - dirt at (-1, 65, -5)   WEST of the chest
+#
+# A naive agent will:
+#   - skip mc map entirely (uses scene/look memory)
+#   - misread N/S/E/W markers on the map
+#   - confuse two same-shape symbols if it doesn't read the legend
+#   - mis-sign a coordinate (S=+z, N=-z)
+# A good agent reads the map header, counts chars from P to each
+# letter, applies the right axis+sign, walks, and places correctly.
+
+agent_test_id: F7_map_comprehension
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH.
+
+  Task: there are three landmarks within 16 blocks of you — a
+  crafting_table, a furnace, and a chest. Find each one using
+  `mc map` (NOT mc scene, NOT mc find_blocks — read the ASCII map
+  only), then place a dirt block adjacent to each landmark in the
+  direction specified below.
+
+  Map orientation cheatsheet (legend will confirm):
+    N at top of grid    = -z direction
+    S at bottom of grid = +z direction
+    E on right side     = +x direction
+    W on left side      = -x direction
+    1 character = 1 block. Your position is 'P'.
+    Legend: C=crafting_table, F=furnace, B=chest.
+
+  Placement plan (note the direction is different for each):
+    1. Dirt EAST  of the crafting_table  (one block in +x from C)
+    2. Dirt SOUTH of the furnace         (one block in +z from F)
+    3. Dirt WEST  of the chest           (one block in -x from B)
+
+  Steps:
+    1. `mc map`  (default radius is fine — do NOT request radius > 16)
+    2. Read the grid. Note the N/S/E/W anchors. Count chars from P
+       to each letter, apply the correct sign, and you have world
+       coords for each landmark.
+    3. For each placement, `mc goto_near <px> <py> <pz> 1` then
+       `mc place dirt <px> <py> <pz>`.
+    4. After all three are placed, emit `MAP_DONE` in chat.
+
+  Do NOT place at any other cell. Do NOT mine anything.
+
+skills: [minecraft-survival]
+max_turns: 20
+timeout_seconds: 360
+
+expect:
+  mc_cli_invocations_max: 30
+  # Post-run cell-specific checks (resolved via rcon `if block` predicate).
+  # All three must match for PASS. Tests that the bot read the map AND
+  # mapped N/S/E/W → axis+sign correctly for each landmark.
+  world_block_at:
+    - { x: -4, y: 65, z:  0, block: dirt }  # E of crafting_table at (-5,65,0)
+    - { x:  5, y: 65, z:  1, block: dirt }  # S of furnace        at ( 5,65,0)
+    - { x: -1, y: 65, z: -5, block: dirt }  # W of chest          at ( 0,65,-5)
+
+# Confirm prep landed the three landmarks before launching the agent.
+verify_after_prep:
+  - { block: crafting_table, min_count: 1 }
+  - { block: furnace,        min_count: 1 }
+  - { block: chest,          min_count: 1 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run forceload add -16 -16 16 16"
+  - "execute in landfolk-test run fill -16 60 -16 16 80 16 minecraft:air"
+  - "execute in landfolk-test run fill -16 64 -16 16 64 16 minecraft:grass_block"
+  - "execute in landfolk-test run setblock -5 65  0 minecraft:crafting_table"
+  - "execute in landfolk-test run setblock  5 65  0 minecraft:furnace"
+  - "execute in landfolk-test run setblock  0 65 -5 minecraft:chest"
+  - "mvtp Flint landfolk-test"
+  - "execute as Flint at @s in landfolk-test run tp @s 0 65 0 0 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:dirt 8"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -16 60 -16 16 80 16 minecraft:air"
+  - "execute in landfolk-test run forceload remove all"

@@ -45,34 +45,60 @@ You'll see one of three mission shapes:
   at target T"): walk to source, retrieve item (chest withdraw, mine
   block, or pick up entity), walk to target, run `mc place <item> X Y Z`.
 
-## Doors
+## Doors and fence gates
 
-Maze tests may include 1-3 oak_doors. They are 2 blocks tall and BLOCK
-movement until opened. To pass through one:
+Maze tests may include oak_doors and oak_fence_gates. Both block
+movement when closed and both can be opened by interacting. The
+pathfinder will open them on its own when you `mc goto` / `mc goto_near`
+through them — you usually don't need to call `mc interact` first.
 
-  `mc interact X Y Z`    (X Y Z = lower half of the door, typically y=65)
+Two cases need explicit handling:
 
-The door swings open and stays open for a few seconds — walk through
-before it closes. If `mc goto` fails near a door, it's probably closed:
-interact first, then goto. Once open, navigate as usual.
+1. **Gate/door behind a wall** — if you call `mc interact X Y Z` from a
+   position without line-of-sight, it returns `NO_LINE_OF_SIGHT`.
+   Pathfind around the obstacle first (`mc goto_near X Y Z range=2`)
+   then retry interact.
 
-If you can't see the door from your current position (LOS-blocked),
-`mc interact` returns NO_LINE_OF_SIGHT — pathfind around the obstacle
-to a position where you can see the door, then interact.
+2. **North-bound traversal of a closed oak_door** — pathfinder reliably
+   walks through doors when the bot's travel direction is east, west,
+   or south, but stalls when entering a closed door from the north side
+   (mineflayer-physics edge case). If `mc goto_near` hits
+   `NAV_NO_PROGRESS` outside a door whose facing is `north`, fall back
+   to:
+
+     `mc through <door_x> <door_y> <door_z> <dest_x> <dest_y> <dest_z>`
+
+   `mc through` opens the door, manually walks forward through it,
+   and closes it behind. Reliable on all 4 directions. Use it any time
+   pathfinder stalls within 2 blocks of a closed door.
+
+Fence gates have no direction-specific limit — they work via pathfinder
+in all four cardinal directions.
 
 ## Critical rules
 
-1. **NEVER mine the obsidian floor markers.** They are the maze
-   template and bound the build pattern. Your stone_pickaxe can't break
-   obsidian anyway — don't waste turns trying. If you find yourself
-   walled in, dig **cobble** (your own walls) to escape, not obsidian.
-2. **Use the exact done-keyword.** The steward listens for the literal
+1. **NEVER dig pre-existing walls or scenery.** Maze walls (cobble,
+   obsidian, stone) and arena perimeters were built BEFORE your turn —
+   they are immutable for the whole test. Digging them is always the
+   wrong answer, even when you're stuck. Your stone_pickaxe can't break
+   obsidian anyway. The ONLY blocks you may dig are blocks YOU placed
+   during the current mission (e.g. you placed a cobble at (3,65,1) and
+   need to re-place it elsewhere — that's fine).
+2. **When stuck, use the hint, don't dig.** If a nav command returned
+   `observed_state.next_hop_suggestion`, call `mc goto_near
+   <hop.x> <hop.y> <hop.z> 1` — that cell is reachable and gets you
+   around the obstacle. Other escape tools, in order of preference:
+   `mc through <door>` for a closed door/gate; `mc escape` for a 1-block
+   lip; backtrack via `mc goto_near` to a known-good cell. Digging a
+   maze wall is NEVER on this list.
+3. **Use the exact done-keyword.** The steward listens for the literal
    string (e.g. `M2 DONE`). Send it via `mc chat "M2 DONE"` as the
    entire message — no decoration, no "I am ready M2".
-3. **Don't seal yourself in.** Door slots (mission text names them
-   D1, D2, …) stay empty until M5 — leave them. If you trap yourself
-   with cobble, `mc dig` your way out and re-place after exiting.
-4. **`mc withdraw`, NOT `mc bg_collect`.** `bg_collect` mines blocks
+4. **Don't seal yourself in.** Door slots (mission text names them
+   D1, D2, …) stay empty until M5 — leave them. If you accidentally
+   place a block of YOUR OWN that blocks your exit, `mc dig` THAT block
+   (not the maze) and re-place after exiting.
+5. **`mc withdraw`, NOT `mc bg_collect`.** `bg_collect` mines blocks
    from the ground; chest withdrawal is `mc withdraw <item> <count> X Y Z`.
 
 ## Command rules
@@ -120,12 +146,18 @@ immediately retry the same goto target.
 - `MOVEMENT_PRECONDITION_FAILED`: a recent goto failed; run `mc status`
   to clear, or successfully move first.
 - `NAV_RECURRING_STUCK`: you've stalled at the same cell repeatedly.
-  Pick a DIFFERENT approach side, or `mc dig` the blocker shown in
-  `observed_state.recurring_cell`.
+  Pick a DIFFERENT approach side. Only dig the blocker shown in
+  `observed_state.recurring_cell` if it's a block YOU placed — not if
+  it's a maze wall (see critical rule 1).
 - `ESCAPE_RECURRING_LOOP`: 3+ `mc escape` calls in 90s. Stop. Read
   `observed_state.do_not_retry_goto` and pick a different destination.
 - `NAV_NO_PROGRESS`: pathfinder gave up. Check `your_standing_state`
   and `closest_standable`. Often a 1-block lip — `mc escape` clears it.
+- `NAV_BLOCKED`: pathfinder couldn't find a route. If
+  `observed_state.next_hop_suggestion` is present, that cell IS reachable
+  and is adjacent to (or near) your target — call `mc goto_near
+  <hop.x> <hop.y> <hop.z> 1`, then try the original action from there.
+  This is much faster than `mc escape` / `mc dig` guessing.
 
 ## Workflow tips
 

@@ -92,6 +92,93 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       if (ctx.recentStuckCells.length > 12) ctx.recentStuckCells.shift();
     }
   };
+  // F74: Reachability check. Short BFS over walkable cells from the
+  // bot's current position toward the target. Used by:
+  //   - goto_near success path (F73): tell the brain when it landed
+  //     near-but-wrong-side-of-wall and suggest a next-hop cell.
+  //   - goto/goto_near stall handler (F74): when the pathfinder gave up
+  //     mid-route, surface the same hint so the brain can route around
+  //     the obstacle instead of looping on `mc escape` / `mc dig`.
+  // Returns { walkable_to_target, distance_from_target, next_hop_suggestion? }
+  // or null if anything throws.
+  const computeReachability = (b, target, maxVisit = 96) => {
+    try {
+      const tx = Math.floor(Number(target.x));
+      const ty = Math.floor(Number(target.y));
+      const tz = Math.floor(Number(target.z));
+      const startCell = {
+        x: Math.floor(b.entity.position.x),
+        y: Math.floor(b.entity.position.y),
+        z: Math.floor(b.entity.position.z),
+      };
+      const dist3 = (ax, ay, az, bx, by, bz) => Math.sqrt(
+        (ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2,
+      );
+      const isWalkable = (cx, cy, cz) => {
+        const foot = b.blockAt(new Vec3(cx, cy, cz));
+        if (!foot) return false;
+        const name = foot.name || '';
+        if (/(_door|_fence_gate|_trapdoor)$/.test(name)) return true;
+        return isStandableCell(b, cx, cy, cz);
+      };
+      const startKey = `${startCell.x},${startCell.y},${startCell.z}`;
+      const visited = new Set([startKey]);
+      const queue = [{ ...startCell }];
+      let bestCell = startCell;
+      let bestDist = dist3(startCell.x, startCell.y, startCell.z, tx, ty, tz);
+      let reached = false;
+      const NEIGHBORS = [
+        [1, 0, 0], [-1, 0, 0],
+        [0, 0, 1], [0, 0, -1],
+        [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
+        [0, 1, 0], [0, -1, 0],
+      ];
+      while (queue.length > 0 && visited.size < maxVisit) {
+        const cur = queue.shift();
+        const d = dist3(cur.x, cur.y, cur.z, tx, ty, tz);
+        if (d < bestDist) { bestDist = d; bestCell = cur; }
+        if (Math.abs(cur.x - tx) <= 1 && Math.abs(cur.y - ty) <= 1 && Math.abs(cur.z - tz) <= 1) {
+          reached = true; break;
+        }
+        for (const [dxn, dyn, dzn] of NEIGHBORS) {
+          const nx = cur.x + dxn, ny = cur.y + dyn, nz = cur.z + dzn;
+          const key = `${nx},${ny},${nz}`;
+          if (visited.has(key)) continue;
+          visited.add(key);
+          if (!isWalkable(nx, ny, nz)) continue;
+          queue.push({ x: nx, y: ny, z: nz });
+        }
+      }
+      const startToTarget = dist3(startCell.x, startCell.y, startCell.z, tx, ty, tz);
+      const out = {
+        distance_from_target: Math.round(startToTarget * 10) / 10,
+        walkable_to_target: reached,
+      };
+      if (!reached) {
+        // Prefer a walkable cell adjacent to the target; fall back to
+        // the BFS frontier cell that came closest.
+        let hop = null;
+        const adjCandidates = [];
+        for (const [dxn, dyn, dzn] of NEIGHBORS) {
+          const cx = tx + dxn, cy = ty + dyn, cz = tz + dzn;
+          if (!isWalkable(cx, cy, cz)) continue;
+          adjCandidates.push({
+            x: cx, y: cy, z: cz,
+            dist: dist3(cx, cy, cz, startCell.x, startCell.y, startCell.z),
+          });
+        }
+        adjCandidates.sort((a, c) => a.dist - c.dist);
+        if (adjCandidates.length > 0) {
+          hop = { x: adjCandidates[0].x, y: adjCandidates[0].y, z: adjCandidates[0].z };
+        } else if (bestCell.x !== startCell.x || bestCell.y !== startCell.y || bestCell.z !== startCell.z) {
+          hop = bestCell;
+        }
+        if (hop) out.next_hop_suggestion = hop;
+      }
+      return out;
+    } catch { return null; }
+  };
+
   // Find any recent-stuck cell within `radius` of (tx,ty,tz). Used by
   // the pre-pathfind blackball check. Returns the entry or null.
   const recentStuckNear = (tx, ty, tz, radius = 1) => {
@@ -263,15 +350,26 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
   // that the route is blocked and intentional action is needed (mc through
   // for a door, mc tunnel/dig_area to clear terrain). These helpers shape
   // those failures into a consistent action-contract response.
-  const navBlockedError = (b, pos, x, y, z, dist) => ({
-    ok: false,
-    error: {
-      code: 'NAV_BLOCKED',
-      message: `Pathfinder gave up at ${pos.x},${pos.y},${pos.z} — ${dist.toFixed(1)} blocks from target ${fmt(x)},${fmt(y)},${fmt(z)}. The path is blocked. Try mc through GX GY GZ for a door/gate, or mc tunnel / mc dig_area to clear terrain explicitly.`,
-      observed_state: enrichWithStand(b, { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)) }, x, y, z),
-      retry_safe: false,
-    },
-  });
+  const navBlockedError = (b, pos, x, y, z, dist) => {
+    // F74: reachability hint on NAV_BLOCKED. When pathfinder gives up
+    // (no-path), the brain has no waypoint. BFS over walkable cells
+    // surfaces a next-hop that IS routable, or confirms unreachable.
+    const reach = computeReachability(b, { x, y, z }, 144);
+    const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
+      ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`
+      : ' Try mc through GX GY GZ for a door/gate, or mc tunnel / mc dig_area to clear terrain explicitly.';
+    const obs = enrichWithStand(b, { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)) }, x, y, z);
+    if (reach) Object.assign(obs, reach);
+    return {
+      ok: false,
+      error: {
+        code: 'NAV_BLOCKED',
+        message: `Pathfinder gave up at ${pos.x},${pos.y},${pos.z} — ${dist.toFixed(1)} blocks from target ${fmt(x)},${fmt(y)},${fmt(z)}. The path is blocked.${hopNote}`,
+        observed_state: obs,
+        retry_safe: false,
+      },
+    };
+  };
   const navFailureError = (b, pos, x, y, z, msg) => {
     if (msg === 'timeout') {
       return {
@@ -285,12 +383,19 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       };
     }
     if (/no path/i.test(msg)) {
+      // F74: reachability hint when pathfinder reports no path.
+      const reach = computeReachability(b, { x, y, z }, 144);
+      const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
+        ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`
+        : ' Pathfinder is non-destructive — if a door blocks the path use mc through GX GY GZ; if terrain blocks it use mc tunnel or mc dig_area to clear it explicitly.';
+      const obs = enrichWithStand(b, { current: pos, target: { x, y, z } }, x, y, z);
+      if (reach) Object.assign(obs, reach);
       return {
         ok: false,
         error: {
           code: 'NAV_BLOCKED',
-          message: `No path to ${fmt(x)},${fmt(y)},${fmt(z)} from ${pos.x},${pos.y},${pos.z}. Pathfinder is non-destructive — if a door blocks the path use mc through GX GY GZ; if terrain blocks it use mc tunnel or mc dig_area to clear it explicitly.`,
-          observed_state: enrichWithStand(b, { current: pos, target: { x, y, z } }, x, y, z),
+          message: `No path to ${fmt(x)},${fmt(y)},${fmt(z)} from ${pos.x},${pos.y},${pos.z}.${hopNote}`,
+          observed_state: obs,
           retry_safe: false,
         },
       };
@@ -358,12 +463,20 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         if (e instanceof NoProgressError) {
           recordMoveFailure('goto', x, y, z, posObj(), 'no_progress');
           pushStuckCell(e.info?.stalled_position, 'no_progress');
+          // F74: reachability hint on stall. Widened cap (144) since the
+          // brain has no other clue where to route next.
+          const reach = computeReachability(b, { x, y, z }, 144);
+          const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
+            ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`
+            : ' Try mc escape, mc dig at the blocker, or pick a different target.';
+          const obs = enrichWithStand(b, { target: { x, y, z }, current: posObj(), ...e.info }, x, y, z);
+          if (reach) Object.assign(obs, reach);
           return {
             ok: false,
             error: {
               code: 'NAV_NO_PROGRESS',
-              message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)}. Often means a 1-block lip, a wedged corner, or a sealed route. Try mc escape, mc dig at the blocker, or pick a different target.`,
-              observed_state: enrichWithStand(b, { target: { x, y, z }, current: posObj(), ...e.info }, x, y, z),
+              message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)}. Often means a 1-block lip, a wedged corner, or a sealed route.${hopNote}`,
+              observed_state: obs,
               retry_safe: false,
             },
           };
@@ -513,6 +626,14 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
             };
           }
         } catch { /* never let landing inspection break success */ }
+        // F73: graph-reachability check. GoalNear succeeds at any cell
+        // within `range` euclidean blocks — but pathfinder stops at the
+        // first one it finds, which is often on the WRONG side of a
+        // wall. Surface walkable_to_target / next_hop_suggestion so the
+        // brain can route around the wall instead of looping mc dig.
+        // F74: helper is shared with the stall handler below.
+        const reachability = computeReachability(b, { x: tx, y: ty, z: tz }, 96);
+
         if (landingInfo) {
           const note = landingInfo.suggested_correction
             ? ` (landed in ${landingInfo.landed_in} — observed_state.suggested_correction shows a cleaner cell within range)`
@@ -520,29 +641,52 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
           if (losPicked) {
             landingInfo.los_cell_picked = { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz };
           }
+          if (reachability) Object.assign(landingInfo, reachability);
+          const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
+            ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
+            : '';
           return {
-            result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${note}`,
+            result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${note}${reachNote}`,
             observed_state: landingInfo,
           };
         }
         if (losPicked) {
+          const obs = { los_cell_picked: { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz } };
+          if (reachability) Object.assign(obs, reachability);
+          const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
+            ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
+            : '';
           return {
-            result: `Arrived at LOS cell ${losPicked.cx}, ${losPicked.cy}, ${losPicked.cz} (clear sight to target ${fmt(x)}, ${fmt(y)}, ${fmt(z)})`,
-            observed_state: { los_cell_picked: { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz } },
+            result: `Arrived at LOS cell ${losPicked.cx}, ${losPicked.cy}, ${losPicked.cz} (clear sight to target ${fmt(x)}, ${fmt(y)}, ${fmt(z)})${reachNote}`,
+            observed_state: obs,
           };
         }
-        return { result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
+        const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
+          ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
+          : '';
+        return {
+          result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${reachNote}`,
+          ...(reachability ? { observed_state: reachability } : {}),
+        };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
         if (e instanceof NoProgressError) {
           recordMoveFailure('goto_near', x, y, z, posObj(), 'no_progress');
           pushStuckCell(e.info?.stalled_position, 'no_progress');
+          // F74: reachability hint on stall. Widened cap (144) since the
+          // brain has no other clue where to route next.
+          const reach = computeReachability(b, { x, y, z }, 144);
+          const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
+            ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`
+            : ' Try mc escape, mc dig at the blocker, or use mc goto_near with different coords.';
+          const obs = enrichWithStand(b, { target: { x, y, z }, range, current: posObj(), ...e.info }, x, y, z);
+          if (reach) Object.assign(obs, reach);
           return {
             ok: false,
             error: {
               code: 'NAV_NO_PROGRESS',
-              message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)} (range ${range}). Likely a 1-block lip, wedge, or sealed route. Try mc escape, mc dig at the blocker, or use mc goto_near with different coords.`,
-              observed_state: enrichWithStand(b, { target: { x, y, z }, range, current: posObj(), ...e.info }, x, y, z),
+              message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)} (range ${range}). Likely a 1-block lip, wedge, or sealed route.${hopNote}`,
+              observed_state: obs,
               retry_safe: false,
             },
           };
