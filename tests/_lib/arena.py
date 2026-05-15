@@ -69,3 +69,89 @@ class Arena:
         return self.rcon.run(
             f"execute in {self.world} run tp {self.bot_name} {x} {y} {z} {yaw} {pitch}"
         )
+
+    def flat_arena(
+        self,
+        bbox: tuple[int, int, int, int, int, int],
+        floor: str = "grass_block",
+        floor_y: int | None = None,
+    ) -> str:
+        """Build a flat playing field: air-fill `bbox`, then lay a single floor
+        layer at the bottom (or at `floor_y` if specified).
+
+        Replaces the legacy 4-line preamble that 30+ scripts duplicate:
+            fill x1 y1 z1 x2 y2 z2 air
+            fill x1 y1 z1 x2 y1 z2 <floor>
+
+        Args:
+            bbox: (x1, y1, z1, x2, y2, z2). y1 is the floor layer; y2 is the
+                  top of the air column.
+            floor: block name for the floor layer (default grass_block).
+                  Pass 'minecraft:<kind>' or bare 'kind' — prefix added if missing.
+            floor_y: override the floor row (default = y1 from bbox).
+        """
+        x1, y1, z1, x2, y2, z2 = bbox
+        fy = y1 if floor_y is None else floor_y
+        floor_full = floor if ":" in floor else f"minecraft:{floor}"
+        return self.rcon.batch([
+            f"execute in {self.world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
+            f"execute in {self.world} run fill {x1} {fy} {z1} {x2} {fy} {z2} {floor_full}",
+        ])
+
+    def grid_3x3(
+        self,
+        center: tuple[int, int, int] = (4, 65, 4),
+        block: str = "cobblestone",
+        height: int = 1,
+        clear_bbox: tuple[int, int, int, int, int, int] | None = None,
+        floor: str = "grass_block",
+    ) -> str:
+        """Build the canonical 3×3 pillar grid used by mining-family tests.
+
+        Pillar foot-cells sit at `(cx±2, cy, cz±2)` and `(cx, cy, cz)` — i.e.
+        x ∈ {cx-2, cx, cx+2}, z ∈ {cz-2, cz, cz+2}, with `height` blocks each
+        stacked up from cy. With the default center (4,65,4) the grid
+        matches the legacy test geometry (pillars at x∈{2,4,6}, z∈{2,4,6}).
+
+        If `clear_bbox` is given, the area is air-filled and floored first.
+        Otherwise the caller is expected to have called `flat_arena` already.
+        """
+        cx, cy, cz = center
+        cmds: list[str] = []
+        if clear_bbox is not None:
+            x1, y1, z1, x2, y2, z2 = clear_bbox
+            floor_full = floor if ":" in floor else f"minecraft:{floor}"
+            cmds.append(f"execute in {self.world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air")
+            cmds.append(f"execute in {self.world} run fill {x1} {y1} {z1} {x2} {y1} {z2} {floor_full}")
+        block_full = block if ":" in block else f"minecraft:{block}"
+        for dx in (-2, 0, 2):
+            for dz in (-2, 0, 2):
+                for dy in range(height):
+                    cmds.append(
+                        f"execute in {self.world} run setblock {cx + dx} {cy + dy} {cz + dz} {block_full}"
+                    )
+        return self.rcon.batch(cmds)
+
+    def forceload(self, bbox: tuple[int, int, int] | tuple[int, int, int, int]) -> str:
+        """Forceload a chunk or rectangular chunk range. Accepts either
+        (cx, cz) for a single chunk or (cx1, cz1, cx2, cz2) for a range.
+
+        Coordinates are CHUNK coords, not block coords. To forceload a region
+        around block coord 0,0 → chunk (0,0) → call forceload((0,0)).
+
+        Forceload is required if a test runs against chunks that aren't
+        already loaded (e.g. fresh `landfolk-test` world startups). The
+        legacy tests issued `forceload add ... ; forceload remove all`
+        bracketing their runs; the harness defaults to NOT issuing these
+        because most test runs hit already-loaded chunks. Tests that
+        explicitly need it should call this helper.
+        """
+        if len(bbox) == 2:
+            cx, cz = bbox
+            return self.rcon.run(f"execute in {self.world} run forceload add {cx} {cz}")
+        cx1, cz1, cx2, cz2 = bbox
+        return self.rcon.run(f"execute in {self.world} run forceload add {cx1} {cz1} {cx2} {cz2}")
+
+    def forceload_remove_all(self) -> str:
+        """Mirror of `forceload`. Removes all forceloaded chunks in the world."""
+        return self.rcon.run(f"execute in {self.world} run forceload remove all")

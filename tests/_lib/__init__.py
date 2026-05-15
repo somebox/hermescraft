@@ -19,6 +19,7 @@ from .config import load_config
 from .fixture_loader import Fixture, load_fixture
 from .predicates import PredicateResult, Predicates
 from .rcon import RconClient
+from .util import extract_error
 
 __all__ = [
     "Arena",
@@ -27,6 +28,7 @@ __all__ = [
     "PredicateResult",
     "Predicates",
     "RconClient",
+    "extract_error",
     "load_config",
     "load_fixture",
 ]

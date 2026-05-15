@@ -64,12 +64,48 @@ def rcon(config):
     return RconClient(config)
 
 
+def _resolve_bot_url(config: dict, role: str) -> str:
+    """Look up `role` in config.bot.roles, falling back to default_api_url."""
+    roles = (config.get("bot") or {}).get("roles") or {}
+    if role in roles:
+        return roles[role]
+    if role == "flint":
+        # Flint role is the implicit default — fall back to default_api_url
+        # when the roles map omits it. This keeps trivial configs working.
+        return config["bot"]["default_api_url"]
+    raise KeyError(f"unknown bot role {role!r}; config.bot.roles has {list(roles)}")
+
+
 @pytest.fixture(scope="session")
-def bot(config):
-    """BotClient for the entire session. NOT waited-on at construction;
-    functional tests should call `bot.wait_until_ready()` themselves so unit
-    tests in the same run don't spin on a missing bot."""
-    return BotClient(config)
+def flint_bot(config):
+    """Session-scoped Flint bot. Used by session- or module-scoped fixtures
+    that need a stable BotClient reference (the function-scoped `bot`
+    fixture below would cause ScopeMismatch when consumed from broader
+    scopes). Most tests should consume `bot` instead.
+    """
+    return BotClient(config, base_url=_resolve_bot_url(config, "flint"))
+
+
+@pytest.fixture(scope="session")
+def tester_bot(config):
+    """Session-scoped Tester bot. Symmetric to `flint_bot` for module-
+    scoped fixtures that explicitly target the Tester role."""
+    return BotClient(config, base_url=_resolve_bot_url(config, "tester"))
+
+
+@pytest.fixture
+def bot(config, request, flint_bot, tester_bot):
+    """Role-aware function-scoped bot. Returns `tester_bot` when the test
+    declares `@pytest.mark.tester`, else `flint_bot`. Function-scoped so
+    role switching is per-test without rebuilding the client.
+
+    Note: wait_until_ready is NOT called at construction — tests should
+    call it themselves so unit tests sharing the same session don't spin
+    on a missing bot.
+    """
+    if request.node.get_closest_marker("tester"):
+        return tester_bot
+    return flint_bot
 
 
 @pytest.fixture

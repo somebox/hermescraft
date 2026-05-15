@@ -21,11 +21,15 @@ import pytest
 # Module-scoped fixture: build the Mason trap once for all four tests in
 # this file. Scenarios B, C, and D depend on the geometry set up by A in
 # the original test — preserving that semantic by sharing the arena.
+#
+# Consumes `flint_bot` (session-scoped) rather than `bot` (function-scoped)
+# because the fixture itself runs at module scope. The function-scoped
+# `bot` parameter on each test below resolves to the same flint_bot.
 @pytest.fixture(scope="module")
-def mason_trap(rcon, config, bot):
+def mason_trap(rcon, config, flint_bot):
     """Build cobble wall at y=66 z=12 (x: -2..1), grass floor at y=64,
     teleport Flint to (2.5, 65, 12.7). Cleanup on teardown."""
-    bot.wait_until_ready(timeout=10)
+    flint_bot.wait_until_ready(timeout=10)
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run difficulty peaceful",

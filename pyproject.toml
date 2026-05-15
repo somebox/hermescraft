@@ -5,6 +5,7 @@ markers = [
   "functional: live MC server required; no LLM",
   "integration: live MC server + LLM API key required",
   "slow: takes >30s, skip in fast feedback loops",
+  "tester: uses the Tester bot at config.bot.roles.tester (default :3004) instead of Flint",
 ]
 addopts = "-ra --strict-markers"
 python_files = ["test_*.py"]

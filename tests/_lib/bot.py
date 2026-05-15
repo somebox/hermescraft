@@ -10,7 +10,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 
 class BotClient:
@@ -64,3 +64,101 @@ class BotClient:
             return self.get("/observe", timeout=10.0)
         except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
             return {}
+
+    # ── State convenience accessors ──────────────────────────────────────
+    # Wrap the /status?lean=true endpoint that every legacy test queries
+    # for position/inventory. Read-only; consult fresh state on each call.
+
+    def status_lean(self) -> dict[str, Any]:
+        """GET /status?lean=true → response.data (the bot's lean status block)."""
+        resp = self.get("/status?lean=true", timeout=5.0)
+        return resp.get("data") or {}
+
+    def position(self) -> dict[str, float]:
+        """Bot's current world position {x, y, z}. Empty dict on read failure."""
+        return self.status_lean().get("position") or {}
+
+    def inventory(self) -> dict[str, int]:
+        """Bot inventory flattened to {item_name: count}.
+
+        The /status endpoint returns a list of {name, count, ...} items;
+        most legacy tests iterate it looking for a specific item. Returning
+        a dict is the canonical form.
+        """
+        items = self.status_lean().get("inventory") or []
+        out: dict[str, int] = {}
+        for it in items:
+            name = it.get("name")
+            if not name:
+                continue
+            try:
+                out[name] = out.get(name, 0) + int(it.get("count") or 0)
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def inventory_delta(
+        self,
+        item: str,
+        timeout: float = 2.0,
+        baseline: int | None = None,
+        fallback_pickup: bool = True,
+    ) -> int:
+        """Poll inventory until `item`'s count exceeds `baseline` (default: current).
+
+        Replaces the magnet-wait pattern used in dig-then-collect tests:
+        after a dig, the dropped item enters auto-pickup range but the
+        physics tick that moves it into inventory has variable latency.
+        Tests that read inventory immediately after a dig sometimes see 0.
+
+        If the magnet hasn't fired by `timeout`, optionally call
+        `/action/pickup` once to force an explicit sweep — both paths
+        populate the bot's recentPickups cache that F72's mc-collect
+        short-circuit reads from.
+
+        Returns the final count (which may equal baseline if nothing
+        arrived even after the pickup fallback).
+        """
+        if baseline is None:
+            baseline = self.inventory().get(item, 0)
+        deadline = time.time() + max(0.0, timeout)
+        while time.time() < deadline:
+            cur = self.inventory().get(item, 0)
+            if cur > baseline:
+                return cur
+            time.sleep(0.2)
+        if fallback_pickup:
+            try:
+                self.post("/action/pickup", {}, timeout=5.0)
+            except Exception:
+                pass
+            time.sleep(0.3)
+            return self.inventory().get(item, 0)
+        return self.inventory().get(item, 0)
+
+    def wait_for_condition(
+        self,
+        predicate: Callable[[], bool],
+        timeout: float = 10.0,
+        interval: float = 0.2,
+    ) -> bool:
+        """Poll `predicate()` until it returns truthy or `timeout` expires.
+
+        Generic physics wait loop. Default interval 0.2s matches the legacy
+        norm — anything tighter risks thrashing /status. Tests that pass a
+        predicate calling /status N times per check should still budget
+        with timeout, not raise interval below 0.1.
+
+        Returns True if the predicate succeeded, False on timeout. Does
+        NOT raise — callers `assert` on the return when the deadline is
+        a contract.
+        """
+        deadline = time.time() + max(0.0, timeout)
+        while time.time() < deadline:
+            try:
+                if predicate():
+                    return True
+            except Exception:
+                pass
+            time.sleep(interval)
+        return False
