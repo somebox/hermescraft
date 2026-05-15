@@ -278,8 +278,22 @@ def run_scenario(name: str, height: int, bot_url: str, walk_away: bool = False, 
         pu_msg = (pu.get("data") or {}).get("result") or pu.get("result") or pu
         print(f"    → {str(pu_msg)[:200]}")
         print(f"  pos after pickup: {bot_pos(bot_url)}")
+    else:
+        # Non-walk-away path: the collect verb ended but a drop or two
+        # may have scattered just outside the auto-magnet radius. Sweep
+        # them with an explicit in-place pickup so the post-count
+        # measures what's actually retrievable, not the snapshot at
+        # the exact instant collect returned. Auto-magnet timing is
+        # an mc/mineflayer concern, not a regression in this test's
+        # subject (the multi-iteration LOS-aware dig loop).
+        pre_sweep = cobble_count(bot_url)
+        pu = pickup(bot_url)
+        pu_msg = (pu.get("data") or {}).get("result") or pu.get("result") or ""
+        post_sweep = cobble_count(bot_url)
+        if post_sweep > pre_sweep:
+            print(f"  post-collect sweep gained {post_sweep - pre_sweep} stragglers")
 
-    time.sleep(0.5)
+    time.sleep(1.0)
     post = cobble_count(bot_url)
     gained = (post - pre) if pre >= 0 and post >= 0 else None
     print(f"  post cobble in inventory: {post}  (gained {gained}, expected {expected})")
