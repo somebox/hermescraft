@@ -429,6 +429,62 @@ exit code is still 0 → CI sees PASS.
 Recommendation: **B** during Round 3 migration. The xfail captures
 the carry-forward intent without lying about test status.
 
+### `test-dig-walk-pickup-chain.py` — bot was TP'd inside a still-standing pillar (fixed)
+
+`TEST_PILLARS` declares `opposite_(x,z)` for each scenario, intended as
+the *obstacle pillar* between the bot's new position and the dropped
+item. The original implementation interpreted those coords as the
+bot's standing cell and ran:
+
+```python
+tp_bot(opposite_x + 0.5, 65, opposite_z + 0.5, 0.0)
+```
+
+For all three TEST_PILLARS entries, `opposite_(x,z)` is a pillar
+location (`(6,2)`, `(2,2)`, `(4,6)`) — so the TP put the bot *inside*
+a still-standing cobble pillar block. The test passed by accident
+because Paper's tp auto-pushes the entity up onto the pillar's top
+when the destination is occupied, and the subsequent pathfind worked
+from `y=66` instead of `y=65`. The recorded geometry was nonsensical.
+
+**Fixed in this round:**
+- The "opposite" TP now computes the bot's stand cell as one block
+  past the opposite pillar, in the direction away from the target —
+  outside the grid, with the opposite pillar between bot and drop.
+- Added `assert_safe_pose()` calls after BOTH TPs in
+  `dig_walk_pickup_iteration` so any future regression is caught
+  before the rest of the iteration runs.
+
+### Auto-pickup magnet timing — flakiness pattern, fixed in 3 tests
+
+Pattern: a test digs a block (or several), then within ~1s reads
+inventory or calls `mc collect`. mineflayer's auto-pickup magnet has
+variable timing — it usually fires within the first physics tick
+after a drop lands within ~1.5 blocks, but if the drop scatters
+slightly out of range or the tick is delayed, the inventory hasn't
+been updated yet. The test then sees `gained = 0` or `count = 0` and
+fails, even though the dig and pickup mechanisms themselves are
+correct.
+
+Fixed across three tests in this round with two complementary patterns:
+
+1. **Explicit follow-up pickup** (`test-mine-collect-grid.py`,
+   `test-collect-recent-pickup.py`): after the dig/collect, call
+   `mc pickup` once to sweep any stragglers and populate the
+   recentPickups cache. The pickup verb is a noop if items are
+   already in inventory, so it's safe to add unconditionally.
+2. **Cumulative-count tolerance**
+   (`test-dig-walk-pickup-chain.py:scenario_height2`): instead of
+   asserting per-iteration `gained >= 1`, track total cobble across
+   all iterations and assert against the cumulative target. Allows
+   the magnet to defer a drop by one iteration without breaking
+   the test.
+
+Both patterns preserve the test's actual subject (dig/walk/pathfind
+correctness) while excusing the auto-magnet's known timing
+variance — that variance is an mc/mineflayer concern, not a
+regression in any test's subject.
+
 ### Suspected obsolescence — flagged for Round 3+
 
 None of the 44 Python tests is obviously obsolete. Every one was added
