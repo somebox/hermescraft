@@ -1,0 +1,84 @@
+# B4 — fetch_smelt_descent: chest 5 blocks BELOW the platform; bot must
+# dig down or pillar-step down to reach it, then climb back up.
+#
+# Goal: same — end with >= 1 iron_ingot in inventory.
+#
+# World setup:
+#   Bot at (0.5, 65, 0.5), EMPTY inventory + 16 cobblestone (for pillar-up).
+#   Furnace at (-3, 65, 0).
+#   A 1×1 vertical SHAFT carved through the platform at (5, 60..64, 0):
+#     - (5, 60, 0) chest with 4 raw_iron + 4 coal
+#     - (5, 61..64, 0) air (the shaft)
+#     - The wall around the shaft is platform stone — bot can fall in but
+#       has to climb out.
+#   Platform stones below the rest of the area are stone (from the
+#   "fill -5 50 -5 10 64 5 stone" extension we'll add in prep).
+#
+# Expected strategy:
+#   1. mc scene / mc nearby reveals the shaft and chest below.
+#   2. Bot drops in (controlled fall — 5 blocks = 4 hearts damage; or
+#      pillar-step down by placing cobble below itself).
+#   3. mc list_container 5 60 0 / mc withdraw raw_iron 4
+#   4. mc pillar_step 5 to climb out. Pillar auto-stops when a lateral
+#      exit becomes available (platform top reached) and returns
+#      `lateral_exit: { x, y, z }` — the worker should goto_near those
+#      coords to step out of the shaft column.
+#   5. mc goto_near -3 65 0; mc bg_smelt raw_iron coal 4
+#   NOTE: pillar from a chest top works (multi-ref + 600ms place timeout
+#   handles the chest's partial-collision-box quirk — see F29/F30).
+#
+# Common failure modes:
+#   - Bot drops 5 blocks → 4 damage. With saturation effect HP regen is
+#     fast; without, the bot might die over 2-3 attempts.
+#   - Bot tries to pillar UP from inside the shaft — but the shaft is
+#     1x1 and the bot is centered. pillar_step works.
+#   - Worker never realizes there's a chest below; just keeps doing
+#     surface-only search. Test surfaces this if scene/discover/nearby
+#     don't expose the underground chest.
+#   - Worker digs around the shaft wall thinking it's the way in.
+#     Should recognize the existing 1x1 shaft as the access.
+#
+# Success predicate:
+#   inventory.iron_ingot >= 1, bot is alive (HP > 0).
+#
+# Tunable on FAIL:
+#   skills/gaming/minecraft-navigation/SKILL.md — "vertical descent" rule
+#   skills/gaming/minecraft-survival/SKILL.md — "controlled drop" rule
+#   add: "if target is below you in a 1-wide shaft, controlled drop is OK
+#        (5 blocks = 4 damage = 80% HP, you'll recover). For deeper drops,
+#        place water or use staircase descent."
+
+mode: behavior_test
+required_consecutive_pass: 3
+strategy_under_test: "skills/gaming/minecraft-navigation/SKILL.md (vertical descent + climb)"
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  # Build a stone region under the platform x=-10..15 z=-10..10 from Y=50 to Y=63
+  # so the bot can't dig sideways to reach the chest from below.
+  - "execute in landfolk-test run fill -10 50 -10 15 63 10 minecraft:stone"
+  # Carve a 1x1 vertical shaft at (5, 60..64, 0)
+  - "execute in landfolk-test run fill 5 60 0 5 64 0 minecraft:air"
+  # Place chest at the bottom of the shaft
+  - 'execute in landfolk-test run setblock 5 60 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:raw_iron",count:4},{Slot:1b,id:"minecraft:coal",count:4}]}'
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  # tp directly onto the platform (Y=65). slow_falling messes with pillar_step's
+  # jump-apex check (the cobble must clear the bot's hitbox to land), so we only
+  # use it for the controlled drop INTO the shaft — applied AFTER teleport.
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "clear Flint"
+  - "give Flint minecraft:cobblestone 16"
+  # effect give <player> <effect> <seconds> <amplifier>  (amplifier ≤ 255)
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 5 10 true"
+
+cleanup:
+  # Restore the platform area
+  - "execute in landfolk-test run fill -10 50 -10 15 63 10 minecraft:air"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..50]"

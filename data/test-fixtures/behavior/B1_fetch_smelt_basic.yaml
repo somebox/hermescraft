@@ -1,0 +1,57 @@
+# B1 — fetch_smelt_basic: baseline multi-step plan, no obstacles.
+#
+# Goal (the bot is told this; it must figure out HOW):
+#   "End with at least 1 iron_ingot in inventory."
+#
+# World setup:
+#   Bot at (0.5, 65, 0.5) on the spawn platform with EMPTY inventory.
+#   Chest at (8, 65, 0)  preloaded with 4 raw_iron + 4 coal.
+#   Furnace at (-3, 65, 0).
+#   No obstacles between bot, chest, and furnace.
+#
+# Expected strategy (what a good worker SHOULD do — order may vary):
+#   1. mc chest_search raw_iron      → finds chest at (8,65,0)
+#      OR mc nearby / mc scene to discover the placed chest.
+#   2. mc go_mark or mc goto_near 8 65 0
+#   3. mc withdraw raw_iron 4   x:8 y:65 z:0       (also withdraw coal 4)
+#   4. mc goto_near -3 65 0
+#   5. mc bg_smelt raw_iron count=4
+#   6. mc task (poll) until done
+#   7. mc inventory shows iron_ingot:4
+#
+# Common failure modes a bad worker will hit:
+#   - tries mc smelt without checking inventory (NO_INPUT)
+#   - tries mc smelt without going to the furnace first (NO_FURNACE)
+#   - withdraws by substring, ambiguous (none here, but pattern matters)
+#   - forgets to mc task and reports done before smelt completes
+#   - withdraws too few (asks for 1 when 4 are needed)
+#
+# Success predicate (steward checks at end):
+#   inventory.iron_ingot >= 1  (>= 4 = full credit)
+#
+# This is the BASELINE — a worker that can't solve B1 won't solve B2-B4.
+
+mode: behavior_test
+required_consecutive_pass: 3
+strategy_under_test: "skills/gaming/minecraft-goals/SKILL.md, plus SOUL.md"
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  - 'execute in landfolk-test run setblock 8 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:raw_iron",count:4},{Slot:1b,id:"minecraft:coal",count:4}]}'
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  # effect give <player> <effect> <seconds> <amplifier>  (amplifier ≤ 255)
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 60 0 true"
+
+cleanup:
+  - "execute in landfolk-test run setblock 8 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..50]"

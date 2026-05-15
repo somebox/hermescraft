@@ -1,0 +1,90 @@
+# B3 — fetch_smelt_walled: chest sealed in a 1-wide cobblestone room.
+#
+# Goal: same — end with >= 1 iron_ingot in inventory.
+#
+# World setup:
+#   Bot at (0.5, 65, 0.5) on platform, EMPTY inventory.
+#   Furnace at (-3, 65, 0).
+#   Chest at (8, 65, 0).
+#   Cobblestone wall completely surrounding the chest 1 block out:
+#     - (7, 65, -1..1) west face
+#     - (7, 66, -1..1)
+#     - (9, 65, -1..1) east face
+#     - (9, 66, -1..1)
+#     - (8, 65, -1) and (8, 66, -1) north face
+#     - (8, 65, 1)  and (8, 66, 1)  south face
+#     - roof at (7..9, 67, -1..1) — fully sealed
+#   The chest itself is at (8, 65, 0); the only way in is to break a wall
+#   block. We give the bot a wooden_pickaxe to dig cobble fast.
+#
+# Expected strategy:
+#   1. discover/scene shows the wall and chest behind it (might also see
+#      via the chest_search if the snapshot was populated earlier — but
+#      since this is a fresh fixture, snapshots are empty).
+#   2. Bot must REACH the chest. With a wall in the way:
+#      - mc goto_near 8 65 0  pathfinder may already break-and-enter.
+#      - Or explicitly: mc dig 7 65 0 (break the wall block adjacent to bot)
+#        then walk through.
+#   3. mc list_container x:8 y:65 z:0 — confirm raw_iron+coal
+#   4. mc withdraw raw_iron 4 x:8 y:65 z:0
+#   5. (optional) mc place cobblestone 7 65 0  to repair the wall
+#   6. mc goto_near -3 65 0
+#   7. mc bg_smelt raw_iron count=4 → poll to done
+#
+# Common failure modes:
+#   - Pathfinder unable to reach because the cell is blocked → returns
+#     OUT_OF_RANGE on the withdraw call. Worker must recognize and dig.
+#   - Worker tries mc dig at (8, 65, 0) — that's the CHEST itself, which
+#     is PROTECTED_DIG_BLOCKS. Should hit PROTECTED_BLOCK error. Worker
+#     must dig the WALL not the chest.
+#   - Worker doesn't have a pickaxe path mode. Cobble breaks slow with
+#     bare hands (~7-10s per block) but works. Wooden_pickaxe makes it
+#     ~1s. Provide pickaxe in inventory.
+#
+# Success predicate:
+#   inventory.iron_ingot >= 1 within ~3 minutes wall-clock.
+#
+# Tunable on FAIL:
+#   skills/gaming/minecraft-navigation/SKILL.md — "if path is blocked by
+#   a breakable block AND you have a tool, break the block."
+#   PROTECTED_DIG_BLOCKS list in dig-tools.js — chest is protected; bot
+#   must NOT confuse "dig to enter chest" with "dig the chest itself."
+
+mode: behavior_test
+required_consecutive_pass: 3
+strategy_under_test: "skills/gaming/minecraft-navigation/SKILL.md, dig-tools.js PROTECTED_DIG_BLOCKS interaction"
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:furnace"
+  # Walls — 5×3×3 box centered on the chest.
+  # West face (x=7)
+  - "execute in landfolk-test run fill 7 65 -1 7 66 1 minecraft:cobblestone"
+  # East face (x=9)
+  - "execute in landfolk-test run fill 9 65 -1 9 66 1 minecraft:cobblestone"
+  # North face (z=-1) — 1 wide × 2 tall, plus the corners are already filled
+  - "execute in landfolk-test run fill 8 65 -1 8 66 -1 minecraft:cobblestone"
+  # South face (z=1)
+  - "execute in landfolk-test run fill 8 65 1 8 66 1 minecraft:cobblestone"
+  # Roof
+  - "execute in landfolk-test run fill 7 67 -1 9 67 1 minecraft:cobblestone"
+  # Place chest (after walls so the chest isn't crushed)
+  - 'execute in landfolk-test run setblock 8 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:raw_iron",count:4},{Slot:1b,id:"minecraft:coal",count:4}]}'
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:wooden_pickaxe 1"
+  # effect give <player> <effect> <seconds> <amplifier>  (amplifier ≤ 255)
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 60 0 true"
+
+cleanup:
+  # Tear down the walls + chest + furnace
+  - "execute in landfolk-test run fill 7 65 -1 9 67 1 minecraft:air"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..50]"

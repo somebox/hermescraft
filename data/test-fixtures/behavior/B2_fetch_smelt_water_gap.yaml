@@ -1,0 +1,80 @@
+# B2 — fetch_smelt_water_gap: 3-wide water trench between bot and chest.
+#
+# Goal: same as B1 — end with >= 1 iron_ingot in inventory.
+#
+# World setup:
+#   Bot at (0.5, 65, 0.5) on platform, EMPTY inventory.
+#   Chest at (8, 65, 0) — 4 raw_iron + 4 coal.
+#   Furnace at (-3, 65, 0).
+#   Water trench at x=3..5, z=-2..2 — platform stones at Y=64 in that
+#   region replaced with WATER, so the bot's normal path east is blocked
+#   by a 3×5 water hazard. Y=63 below is also water (depth 2) so the bot
+#   can dive but will need to swim up.
+#   We give the bot 16 cobblestone in inventory so it CAN bridge over
+#   the water — testing whether the strategy chooses to bridge vs swim.
+#
+# Expected strategy (bot has cobble + raw_iron access):
+#   Option A (good — bridge-by-replacement): the trench has water at Y=63
+#     and Y=64. Walk to (2,65,0) at the edge; place cobble at (3,64,0),
+#     (4,64,0), (5,64,0), each one replacing a water cell (cobble has a
+#     solid lateral neighbor — the previous cobble or the platform stone
+#     at (2,64,0)). Walk across the new cobble path at Y=65.
+#     NOTE: placing at Y=65 over water is *impossible* — the cell at
+#     (3,65,0) has no solid neighbors (water is not solid; cells around
+#     it are air). The bot MUST place at Y=64 to replace the water.
+#   Option B (passable): swim through the water. Risk = SUBMERGED hazard
+#     reported in /scene; bot must mc stop + jump up if at surface.
+#   Option C (bad): try to walk straight through → splash into water →
+#     SUBMERGED → potentially drown.
+#
+# Common failure modes:
+#   - SOUL.md "drowning / water hazards" rule says "stop, jump up, navigate
+#     to dry land" but doesn't mention BRIDGING — so the worker may always
+#     swim. Acceptable but slow.
+#   - Pathfinder may try to swim regardless of bot's stated goal.
+#   - With slow_falling effect (5s), bot's vertical control is weird in
+#     water — may not float predictably. The fixture's slow_falling is
+#     for the spawn drop only; should be expired by the time the bot
+#     reaches the trench.
+#
+# Success predicate:
+#   inventory.iron_ingot >= 1, AND bot is alive at end (not dead from drown).
+#
+# Tunable on FAIL:
+#   skills/gaming/minecraft-survival/SKILL.md "drowning / water hazards"
+#   skills/gaming/minecraft-navigation/SKILL.md (if exists; else add)
+#   add: "if a water gap blocks your path AND you have 4+ stackable blocks,
+#        bridge over it instead of swimming."
+
+mode: behavior_test
+required_consecutive_pass: 3
+strategy_under_test: "skills/gaming/minecraft-survival/SKILL.md (drowning rule)"
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  # Carve the trench: replace platform stone in this 3-wide × 5-long strip
+  # with water, two blocks deep (Y=64 + Y=63).
+  - "execute in landfolk-test run fill 3 63 -2 5 64 2 minecraft:water"
+  # Chest + furnace
+  - 'execute in landfolk-test run setblock 8 65 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:raw_iron",count:4},{Slot:1b,id:"minecraft:coal",count:4}]}'
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:furnace"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 72 0"
+  - "clear Flint"
+  - "give Flint minecraft:cobblestone 16"
+  # effect give <player> <effect> <seconds> <amplifier>  (amplifier ≤ 255)
+  - "effect give Flint minecraft:saturation 600 1"
+  - "effect give Flint minecraft:water_breathing 600 1 true"
+  - "effect give Flint minecraft:instant_health 1 10 true"
+  - "effect give Flint minecraft:slow_falling 60 0 true"
+
+cleanup:
+  # Drain trench (water back to stone), remove furnaces/chests, restore platform
+  - "execute in landfolk-test run fill 3 63 -2 5 64 2 minecraft:stone"
+  - "execute in landfolk-test run setblock 8 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock -3 65 0 minecraft:air"
+  - "execute in landfolk-test run fill -10 65 -10 15 80 10 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..50]"
