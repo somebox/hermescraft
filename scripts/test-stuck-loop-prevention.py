@@ -34,7 +34,8 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULT_BOT_URL = "http://localhost:3004"
+from _test_lib import default_bot_url
+DEFAULT_BOT_URL = default_bot_url("tester")
 WORLD = "landfolk-test"
 
 

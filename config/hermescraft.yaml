@@ -35,6 +35,14 @@ bot:
   base_api_port: 3001                       # multi-bot port allocation starts here
   health_poll_interval_s: 0.5               # how often BotClient.wait_until_ready polls /health
   health_poll_timeout_s: 60                 # give up after this long
+  # Per-role URLs for legacy scripts/test-*.py that need a specific bot.
+  # `flint` is the general-purpose test bot. `tester` is a separate identity
+  # that keeps a clean inventory/locations/history for tests that need isolation
+  # (currently 6 tests use it). The shared helper scripts/_test_lib.py reads
+  # this; the HERMESCRAFT_BOT_URL env var overrides any role lookup.
+  roles:
+    flint: http://localhost:3001
+    tester: http://localhost:3004
 
 models:
   # Default model + provider for tests that don't pin one. Tests that

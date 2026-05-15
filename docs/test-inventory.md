@@ -67,10 +67,20 @@ LLM — uses stubbed deps). Leave it where it is; the path is grandfathered.
 
 ## Tier 2 — Python functional tests (`scripts/test-*.py`)
 
-44 tests, all requiring: live MC server + running bot at the test's
-configured URL + SSH/rcon access to the MC host. Every test reimplements
-`rcon`, `rcon_batch`, `http_get`, `http_post` and a near-identical setup
-preamble (kill mobs, peaceful, time noon, clear inv, give saturation).
+44 tests, all requiring: live MC server + running bot at the role's
+configured URL + SSH/rcon access to the MC host.
+
+**Standardized in Round 2.5:** all 44 tests now import
+`scripts/_test_lib.default_bot_url(role)` instead of hardcoding a port.
+Role resolution: `flint` → `localhost:3001` (38 tests); `tester` →
+`localhost:3004` (6 tests). The shared helper reads
+`config/hermescraft.yaml`; override per-run by exporting
+`HERMESCRAFT_BOT_URL`. Run the whole suite with `scripts/run-functional.sh`
+(supports `--filter`, `--exclude`, `--role`, `--bail`).
+
+Each test still reimplements `rcon`, `rcon_batch`, `http_get`,
+`http_post` locally — Round 3 will fold these into `_test_lib` too
+(currently only `default_bot_url` is shared).
 
 ### Inventory (sorted by LOC desc)
 

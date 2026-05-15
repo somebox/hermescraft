@@ -59,18 +59,34 @@ docker exec → rcon-cli). No bot needed — this only manipulates the world.
 `scripts/test-*.py` (44 files) — regression tests for the bot's behavior
 contracts (pathfinding, mining LOS, recovery protocols, task semantics,
 …). Each test sets up world state via rcon, drives the bot via its HTTP
-API (`http://localhost:3001` by default), and asserts inventory/position
-state plus error envelopes.
+API, and asserts inventory/position state plus error envelopes.
+
+**Bot URL is config-driven.** Every test calls
+`scripts/_test_lib.default_bot_url(role)` which reads
+`config/hermescraft.yaml`. 38 tests target the `flint` role
+(`localhost:3001`); 6 target `tester` (`localhost:3004`).
+`HERMESCRAFT_BOT_URL` env var force-overrides for one-off runs.
 
 ```bash
-# Prereqs: Paper server running, bot server running at :3001
-scripts/test-nav-reachable.py --bot-url http://localhost:3001
-scripts/test-mine-collect-grid.py --bot-url http://localhost:3001 --skip-clean
+# Run a single test (default URL resolved from config):
+scripts/test-nav-reachable.py
+
+# Override the URL one-off:
+HERMESCRAFT_BOT_URL=http://other-host:3001 scripts/test-nav-reachable.py
+
+# Or still use the legacy --bot-url flag:
+scripts/test-mine-collect-grid.py --bot-url http://localhost:3001
+
+# Run the whole suite with the runner:
+scripts/run-functional.sh                  # all 44
+scripts/run-functional.sh --filter mine    # only tests with "mine" in name
+scripts/run-functional.sh --role flint     # only Flint-role tests
+scripts/run-functional.sh --bail           # stop on first failure
 ```
 
-Common flags:
-- `--bot-url URL` — bot HTTP endpoint (default `http://localhost:3001`)
-- `--only SCENARIO` — run a single scenario
+Common test flags:
+- `--bot-url URL` — bot HTTP endpoint (override the config default)
+- `--only SCENARIO` — run a single scenario within a test
 - `--skip-clean` — leave world state in place for faster re-runs
 
 Exit codes: 0 = all pass, 1 = one or more scenarios failed, 2 = server

@@ -10,9 +10,8 @@ side and the follow-up dig trips F67 NO_LINE_OF_SIGHT.
 import json, subprocess, time, urllib.request, sys
 
 WORLD = "landfolk-test"
-URL = "http://localhost:3002"
-
-
+from _test_lib import default_bot_url
+URL = default_bot_url("flint")
 def rcon(cmds):
     subprocess.run(
         ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"],

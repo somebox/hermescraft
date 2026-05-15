@@ -3,8 +3,8 @@
 import json, subprocess, time, urllib.request, sys
 
 WORLD = "landfolk-test"
-URL = "http://localhost:3002"
-
+from _test_lib import default_bot_url
+URL = default_bot_url("flint")
 def rcon(cmds):
     subprocess.run(
         ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"],
