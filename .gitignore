@@ -3,6 +3,10 @@ bot/node_modules/
 __pycache__/
 *.pyc
 .env
+!.env.example
+secrets.yaml
+secrets.*.yaml
+!secrets.example.yaml
 /tmp/
 *.log
 *.pid

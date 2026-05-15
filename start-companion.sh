@@ -33,11 +33,8 @@ export MC_API_URL="http://localhost:$API_PORT"
 export MC_USERNAME
 
 # Load API keys from hermes .env
-_OR_KEY=$(grep "^OPENROUTER_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_OR_KEY" ] && export OPENROUTER_API_KEY="$_OR_KEY"
-_AN_KEY=$(grep "^ANTHROPIC_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_AN_KEY" ] && export ANTHROPIC_API_KEY="$_AN_KEY"
-unset _OR_KEY _AN_KEY
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/scripts/load-hermes-env.sh"
 
 # Copy SOUL prompt
 cp "$SCRIPT_DIR/SOUL-minecraft.md" "$HOME/.hermes/SOUL.md"

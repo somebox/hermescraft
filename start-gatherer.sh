@@ -38,12 +38,9 @@ STARTED_MONITOR=false
 BOT_PID=""
 MONITOR_PID=""
 
-# Optional API keys (same pattern as start-landfolk.sh)
-_OR_KEY=$(grep "^OPENROUTER_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_OR_KEY" ] && export OPENROUTER_API_KEY="$_OR_KEY"
-_AN_KEY=$(grep "^ANTHROPIC_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_AN_KEY" ] && export ANTHROPIC_API_KEY="$_AN_KEY"
-unset _OR_KEY _AN_KEY
+# Optional API keys from hermes .env (same loader as start-landfolk.sh)
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/scripts/load-hermes-env.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

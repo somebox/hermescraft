@@ -17,15 +17,12 @@
 
 set -euo pipefail
 
-# Load API key from hermes .env (OpenRouter or Anthropic)
-# Claude Code sets ANTHROPIC_API_KEY="" in subprocesses, so load explicitly.
-_HERMES_KEY=$(grep "^ANTHROPIC_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_HERMES_KEY" ] && export ANTHROPIC_API_KEY="$_HERMES_KEY"
-_OR_KEY=$(grep "^OPENROUTER_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_OR_KEY" ] && export OPENROUTER_API_KEY="$_OR_KEY"
-unset _HERMES_KEY _OR_KEY
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Load API keys from hermes .env so subprocesses inherit them. (Claude Code
+# clears ANTHROPIC_API_KEY in child shells, so we re-export explicitly.)
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/scripts/load-hermes-env.sh"
 BOT_DIR="$SCRIPT_DIR/bot"
 BIN_DIR="$SCRIPT_DIR/bin"
 

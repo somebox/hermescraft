@@ -18,12 +18,9 @@ LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 BOTS_ONLY=false
 AGENTS_ONLY=false
 
-# Load API keys
-_OR_KEY=$(grep "^OPENROUTER_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_OR_KEY" ] && export OPENROUTER_API_KEY="$_OR_KEY"
-_AN_KEY=$(grep "^ANTHROPIC_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)
-[ -n "$_AN_KEY" ] && export ANTHROPIC_API_KEY="$_AN_KEY"
-unset _OR_KEY _AN_KEY
+# Load API keys from hermes .env
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/scripts/load-hermes-env.sh"
 
 AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
 RESOLVE_AM="$SCRIPT_DIR/scripts/resolve-agent-model.py"
