@@ -7,14 +7,18 @@ bot to a safe cell outside the region BEFORE iterating, so all cells
 place cleanly the first time.
 
 Scenarios:
-  A — Bot is teleported INSIDE the fill region (foot at center, region
-      includes that cell). Expected: place_fill auto-displaces the bot
-      out, places ALL 9 cells, and the result has no `bot_was_inside_region`
-      flag and no `partial`.
-  B — Bot is OUTSIDE the region from the start. Expected: same behavior
-      as before — fill completes fully, no displacement attempt logged.
-  C — Bot stands on the wall (head cell in region, feet below). Expected:
-      bot auto-moves sideways off the wall, fill completes.
+  A — Bot is teleported INSIDE a 3×1×3 fill region at Y=66 (foot cell
+      at center, region includes that cell). Expected: place_fill
+      auto-displaces the bot out, places ALL 9 cells, and the result
+      has no `bot_was_inside_region` flag and no `partial`.
+  B — Bot is OUTSIDE the region from the start, on the same plane as
+      the fill. Per-cell pathfind may drag the bot into the region as
+      it walks to reach each cell — F60 must still produce a clean fill.
+  C — Bot is teleported INTO a larger 5×1×3 fill region at Y=65 (foot
+      cell in the middle of the wall run, the kind of fill the M2 maze
+      uses). Same auto-displace path as A, exercised with the wider
+      region geometry. Verifies the bot's final standing cell is air
+      (not stuck inside placed cobble).
 """
 from __future__ import annotations
 
@@ -28,6 +32,17 @@ import urllib.request
 
 DEFAULT_BOT_URL = "http://localhost:3002"
 WORLD = "landfolk-test"
+
+
+def rcon(cmd: str) -> str:
+    r = subprocess.run(
+        ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"],
+        input=cmd + "\n",
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    return r.stdout.strip()
 
 
 def rcon_batch(cmds: list[str]) -> str:
@@ -136,7 +151,10 @@ def scenario_on_wall(bot_url: str) -> bool:
     print("\n=== C: bot inside large 5×3 region — must displace and complete ===")
     reset_arena()
     # Larger region (5×1×3 = 15 cells) with bot inside — the kind of fill
-    # the M2 maze uses (long wall runs). Floor at y=64 provides reference.
+    # the M2 maze uses (long wall runs). Floor at y=64 provides reference;
+    # bot tp'd to (2, 65, 1) lands on top of the floor (feet at y=65), and
+    # its foot cell (2, 65, 1) is in the middle of the fill region. F60
+    # must auto-displace the bot before placing the cell it stands in.
     rcon_batch([
         f"execute in {WORLD} run tp Flint 2 65 1 90 0",  # middle of region
     ])
@@ -152,8 +170,17 @@ def scenario_on_wall(bot_url: str) -> bool:
     total = data.get("total", 0)
     bot_inside = data.get("bot_was_inside_region")
     displaced = data.get("auto_displaced")
+    # Verify the bot ended up in a SAFE position — feet in air, not stuck
+    # inside a freshly-placed cobble block. A regression where the bot is
+    # left clipped into a wall would have slipped through if we only
+    # checked the placement count and bot_was_inside flag.
+    pos = (http_get(f"{bot_url}/status?lean=true").get("data") or {}).get("position") or {}
+    px, py, pz = int(pos.get("x", 0)), int(pos.get("y", 0)), int(pos.get("z", 0))
+    foot_check = rcon(f"execute in {WORLD} if block {px} {py} {pz} minecraft:air")
+    foot_is_air = "Test passed" in foot_check
     print(f"  ok={ok} placed={placed}/{total} bot_was_inside={bot_inside} auto_displaced={displaced}")
-    passed = ok and placed == total and not bot_inside
+    print(f"  final bot pos=({px},{py},{pz})  foot_cell=air? {foot_is_air}")
+    passed = ok and placed == total and not bot_inside and foot_is_air
     print(f"  → {'PASS' if passed else 'FAIL'}")
     return passed
 

@@ -240,6 +240,44 @@ returning false-ok could go un-noticed. The reach-pathing tests are
 less risky because the auto-pathfind code rarely returns ok=true
 without moving (would require a serious framework bug).
 
+### `test-fill-self-displace.py` — docstring/code mismatch in scenario C
+
+The module-level docstring claims scenario C is:
+
+> C — Bot stands on the wall (head cell in region, feet below). Expected:
+> bot auto-moves sideways off the wall, fill completes.
+
+But the implementation does something different — it puts the bot's **foot
+cell** in the region (same family as scenario A, just on a 5×3 fill instead
+of 3×3):
+
+```python
+def scenario_on_wall(bot_url: str) -> bool:
+    print("\n=== C: bot inside large 5×3 region — must displace and complete ===")
+    # ... bot tp'd to (2, 65, 1) with floor at y=64 → feet at y=65, foot cell IN region
+```
+
+The `print` line correctly describes what happens; the docstring at the top
+of the file claims something else. The "head in region, feet below" case
+(bot standing on a y=64 block while the fill is at y=66) is never tested.
+
+**Visual effect users may notice:** During scenario C the bot briefly
+appears "inside a wall" as cobble is placed around it before F60's
+auto-displace moves it out. The behavior is correct — F60's whole purpose
+is to detect and resolve this — but the appearance can mislead a viewer.
+
+**Fixed in this round:**
+- Updated docstring to match the actual implementation.
+- Added a post-fill safety assertion: query the bot's final position and
+  verify its foot cell is air (not stuck inside a placed cobble block).
+  A regression where F60 displaces to an unsafe cell would have slipped
+  through under the prior `not bot_inside` check alone.
+
+**Still TODO (Round 3):** implement the originally-claimed "head in
+region, feet below" scenario if it adds coverage, OR drop the claim from
+the docstring permanently. The current implementation tests larger-region
+displacement, which is a valid scenario in its own right.
+
 ### `test-recovery-protocols.py` — "PARTIAL pass returns True"
 
 This test's docstring claims:
