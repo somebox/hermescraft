@@ -28,6 +28,17 @@ DEFAULT_BOT_URL = "http://localhost:3002"
 WORLD = "landfolk-test"
 
 
+def rcon(cmd: str) -> str:
+    r = subprocess.run(
+        ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"],
+        input=cmd + "\n",
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    return r.stdout.strip()
+
+
 def rcon_batch(cmds: list[str]) -> str:
     if not cmds:
         return ""
@@ -39,6 +50,14 @@ def rcon_batch(cmds: list[str]) -> str:
         timeout=60,
     )
     return r.stdout
+
+
+def block_is(x: int, y: int, z: int, kind: str) -> bool:
+    """Test-mode helper: ask the server whether the block at (x,y,z) is the
+    given kind. Uses rcon `execute if block ...` which prints `Test passed`
+    on match and nothing (with non-zero exit) otherwise."""
+    out = rcon(f"execute in {WORLD} if block {x} {y} {z} minecraft:{kind}")
+    return "Test passed" in out
 
 
 def http_get(url: str, timeout: float = 10.0) -> dict:
@@ -100,23 +119,28 @@ def scenario_door_support(bot_url: str) -> bool:
 
 
 def scenario_door_support_force(bot_url: str) -> bool:
-    print("\n=== B: dig support block with --force → ok=true ===")
+    print("\n=== B: dig support block with --force → ok=true AND block actually broken ===")
     r = http_post(f"{bot_url}/action/dig", {"x": 5, "y": 64, "z": 0, "force": True}, timeout=20)
     ok = bool(r.get("ok"))
     err = (r.get("error") or {}) if not ok else {}
-    print(f"  ok={ok}  err.code={err.get('code')}  err.message={err.get('message')}")
-    passed = ok
+    # Verify side-effect: the block should now be air. A regression where
+    # the action returns ok=true without actually breaking the block would
+    # have slipped through if we only checked the HTTP response.
+    is_air = block_is(5, 64, 0, "air")
+    print(f"  ok={ok}  err.code={err.get('code')}  err.message={err.get('message')}  block_after=air? {is_air}")
+    passed = ok and is_air
     print(f"  → {'PASS' if passed else 'FAIL'}")
     return passed
 
 
 def scenario_plain_cobble(bot_url: str) -> bool:
-    print("\n=== C: dig plain cobblestone (no door above) → ok=true ===")
+    print("\n=== C: dig plain cobblestone (no door above) → ok=true AND block actually broken ===")
     r = http_post(f"{bot_url}/action/dig", {"x": 7, "y": 64, "z": 0}, timeout=20)
     ok = bool(r.get("ok"))
     err = (r.get("error") or {}) if not ok else {}
-    print(f"  ok={ok}  err.code={err.get('code')}  err.message={err.get('message')}")
-    passed = ok
+    is_air = block_is(7, 64, 0, "air")
+    print(f"  ok={ok}  err.code={err.get('code')}  err.message={err.get('message')}  block_after=air? {is_air}")
+    passed = ok and is_air
     print(f"  → {'PASS' if passed else 'FAIL'}")
     return passed
 

@@ -144,13 +144,17 @@ each test's docstring and main scenario:
    - F66/F69: open/closed door matrix with hinge variants
    Each exercises code that the others don't. Keep all three.
 
-4. **`test-movement-errors-enriched.py` (F48) vs `test-nav-reachable.py`
-   (F48/F73)** — **PARTIAL overlap.** Both inspect nav error envelopes.
-   Reading the docstrings: errors-enriched focuses on the `stuck_cell`
-   field; nav-reachable focuses on the `closest_standable` and
-   `reachability` fields. Adjacent but not duplicate. **Round 3
-   recommendation:** merge into one `test-nav-error-envelopes.py` with
-   sections per field, ~half the LOC of the two.
+4. **`test-movement-errors-enriched.py` (F50.6) vs `test-nav-reachable.py`
+   (F48)** — **NOT a true overlap** (corrected on re-read). Both inspect
+   the nav error envelope but on **orthogonal facets**:
+   - `nav-reachable` checks the *target-side* fields: `target_standable`,
+     `target_reason`, `closest_standable`, `best_stand`.
+   - `movement-errors-enriched` checks the *bot-side* field:
+     `your_standing_state.classification` (corner / alley / trapped) on
+     every error code path (`NAV_TARGET_OCCUPIED`, `NAV_BLOCKED`,
+     `BOT_TRAPPED`).
+   They exercise different code paths in the bot's state assembler.
+   Keep both.
 
 5. **`test-stuck-loop-prevention.py` (F57) vs `test-stuck-recenter.py`
    (F45) vs `test-recovery-protocols.py` (F45–F48)** — **NOT redundant.**
@@ -203,6 +207,79 @@ Validated by reading `bot/lib/actions/` and checking for corresponding tests:
 5. **No tests for the `mc` CLI's argument parsing for compound
    coordinates** (e.g. `~X+offset`). `bot/test/cli/args.test.js` (47
    LOC) covers simple parsing only.
+
+### Tests with potentially invalid conclusions — flagged for Round 3+
+
+These tests pass when their HTTP response says `ok=true` but don't
+verify the *side effect* the test name implies. A regression where the
+bot returns `ok=true` without actually changing world state (e.g. dig
+says success but the block is still there, place says success but
+nothing is placed) would slip through silently.
+
+| Test | Scenario | Pass condition | What's missing |
+|---|---|---|---|
+| `test-action-reach-pathing.py:86` | A: chest_far | `passed = ok` | Should verify bot moved within reach of chest (pos delta) |
+| `test-action-reach-pathing.py:157` | D: lever_far | `passed = ok` | Should verify bot moved within reach of lever |
+| `test-dig-door-support.py:108` | B: dig_with_force | `passed = ok` | Should verify the block is now air |
+| `test-dig-door-support.py:119` | C: plain_cobble | `passed = ok` | Should verify the block is now air + cobble in inventory |
+| `test-collect-underwater.py:126` | A: dry_sand_baseline | `passed = ok` | Should verify sand inventory delta |
+| `test-place-fresh-craft.py:96` | A: ... | `passed = ok` | Should verify block placed at target coord |
+| `test-place-fresh-craft.py:115` | B: ... | `passed = ok` | Should verify block placed at target coord |
+| `test-through-recovery.py:143` | ... | `passed = ok` | Should verify bot crossed the gate |
+
+**Pattern fix (~3 lines per callsite):** add a single rcon `if block
+<x> <y> <z> minecraft:<kind>` check or a pre/post inventory delta via
+the bot's `/inventory` endpoint. The legacy tests already have helpers
+that show how — see `test-mine-collect-grid.py:cobble_count` for the
+inventory pattern, and `test-mine-behind-wall.py` for the `if block`
+pattern.
+
+**Severity ranking:** dig-door-support scenarios B/C and
+place-fresh-craft are the riskiest — a real regression in dig/place
+returning false-ok could go un-noticed. The reach-pathing tests are
+less risky because the auto-pathfind code rarely returns ok=true
+without moving (would require a serious framework bug).
+
+### `test-recovery-protocols.py` — "PARTIAL pass returns True"
+
+This test's docstring claims:
+
+> Asserts the final goal state was achieved AND each intermediate
+> step produced the contract-promised data.
+
+But scenarios R1 (line 192–194) and R2 (line 240) **return `True` even
+when the end-to-end recovery did not work**:
+
+```python
+# scenario_R1, line 192:
+if not r2.get("ok"):
+    print(f"    PARTIAL: retry to closest_standable+r=2 failed code={c2}")
+    print("    contract delivered correct data; full recovery still needs more work")
+    return True  # contract check passed even if recovery didn't
+
+# scenario_R2, line ~234:
+# NOTE: end-to-end recovery (mc dig the table) currently fails because
+# mineflayer's getDigTime reports ~95s for wooden_axe on crafting_table
+# (real MC value is ~1.25s). guardSlowDigEstimate rejects. Separate from
+# F48 — tracked as a carry-forward for a future framework sprint.
+return True
+```
+
+So the test passes when the contract data is correctly delivered, *even
+if the documented recovery procedure ultimately fails*. The author is
+explicit about this in the print output ("PARTIAL"), but the test's
+exit code is still 0 → CI sees PASS.
+
+**Round 3 fix options:**
+- **A**: Restructure the scenarios to return three states (`PASS`,
+  `PARTIAL`, `FAIL`). Main exit code = 0 only if all `PASS`.
+- **B**: Use pytest `xfail(reason="...")` after the test is migrated
+  — fail-by-default, succeed if the framework issue is fixed.
+- **C**: Mark these scenarios skip-by-default and require an
+  explicit `--include-blocked` flag to run them.
+
+Recommendation: **B** during Round 3 migration. The xfail captures
+the carry-forward intent without lying about test status.
 
 ### Suspected obsolescence — flagged for Round 3+
 
