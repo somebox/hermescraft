@@ -182,6 +182,37 @@ each test's docstring and main scenario:
    tests for clarity, but a shared `fixtures/los_arena.py` helper could
    reduce per-test setup duplication ~150 LOC.
 
+### Within-test setup boilerplate (not redundancy, but pytest will fix it)
+
+A user observation prompted an audit of the mining/pickup test family:
+
+| Test | LOC | Distinct concern |
+|---|---|---|
+| `test-mine-collect-grid` | 350 | `mc collect` high-level verb, multi-iteration LOS re-eval |
+| `test-mine-behind-wall` | 414 | `mc collect` fair-play LOS guard |
+| `test-dig-walk-pickup-chain` | 766 | `mc dig + goto_near + pickup` primitives, corner-touch wedge |
+| `test-collect-recent-pickup` | 115 | F72 recent-dig short-circuit |
+| `test-collect-underwater` | 188 | Liquid suffocation during collect |
+| `test-pickup-blocked` | 199 | G20 v28 — pickup wedge on drops behind walls |
+
+**Verdict:** none of these is redundant — each maps to a specific
+F-fix or G-incident with a different code path. But the **setup
+boilerplate is heavily duplicated**: each test reimplements its own
+3×3 grid placer, its own deep-clean, and its own per-scenario reset
+loop (~50 LOC each). Within a single test, scenarios call
+`setup_scenario()` 4-5 times consecutively, each rebuilding the same
+geometry from scratch.
+
+This duplication is what Round 3's pytest harness solves directly: a
+shared `arena.clean()` fixture (already in `tests/_lib/arena.py`)
+plus a `grid_3x3` fixture parameterized by height would let the 6
+tests above share one arena with per-scenario reset. Estimated dedup:
+~250 LOC across the family, plus runtime savings (each `setup_scenario`
+batch is 1–2s of rcon round-trips that pytest fixtures would reuse).
+
+For now, the tests stay individually correct. The dedup is a
+Round 3 batch-migration target.
+
 ### Suspected gaps — flagged for Round 3+
 
 Validated by reading `bot/lib/actions/` and checking for corresponding tests:
@@ -249,6 +280,43 @@ place-fresh-craft are the riskiest — a real regression in dig/place
 returning false-ok could go un-noticed. The reach-pathing tests are
 less risky because the auto-pathfind code rarely returns ok=true
 without moving (would require a serious framework bug).
+
+### `test-dig-door-support.py` — F66 LOS guard invalidated original geometry (fixed)
+
+The original geometry placed cobble supports AT y=64 (the floor level)
+with doors above at y=65/66. When F66 added the dig LOS guard, the
+bot's raycast from eye (~y=66.62) down to the cobble face had to
+traverse y=64 cells full of surrounding floor stone, and got refused
+for `NO_LINE_OF_SIGHT`. Three further compounding issues:
+
+1. Scenarios A, B, C, D placed targets at x=3, 5, 7 along the same z-row,
+   so even after lifting the supports out of the floor, scenario B's
+   raycast to (5, 65, 0) still transited the cobble at (3, 65, 0)
+   placed for scenario D.
+
+**Fixes landed in this round:**
+- Lifted all support cobbles to y=65 (above the y=64 floor) and shifted
+  the doors/fence-gates above each to y=66/67.
+- Added `tp_adjacent(x, z)` helper that teleports the bot one block
+  west of each scenario's target before the dig. Each scenario's LOS
+  is now isolated from sibling-scenario blocks.
+
+All 4 scenarios now PASS against live infra. The state-verification
+assertions added earlier (Round 2.5 cleanup) continue to catch any
+regression where the dig returns ok=true without actually breaking
+the block.
+
+### `test-fill-self-blocking.py` — DELETED (obsoleted by F60)
+
+Was testing F55.2 (post-hoc "bot was inside fill region" detection).
+F60 supersedes that with prevention (auto-displace before placement),
+so the bot is never inside the region during fill — the detection
+flag is never set. Test couldn't pass against current code without
+also disabling F60.
+
+Coverage of F60's prevention path is now in `test-fill-self-displace.py`.
+If F60 ever gains a `bypass_displace` flag (e.g. for testing F55.2
+in isolation), a replacement test should be added.
 
 ### `test-fill-self-displace.py` — docstring/code mismatch in scenario C
 
