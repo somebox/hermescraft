@@ -582,13 +582,17 @@ const httpServer = http.createServer(
 // ═══════════════════════════════════════════════════════════════════
 
 httpServer.listen(config.api.port, () => {
-  log(`╔═══════════════════════════════════════╗`);
-  log(`║     HermesCraft Bot Server v4.0      ║`);
-  log(`╠═══════════════════════════════════════╣`);
-  log(`║  API:  http://localhost:${config.api.port}          ║`);
-  log(`║  MC:   ${config.mc.host}:${config.mc.port}                ║`);
-  log(`║  User: ${config.mc.username.padEnd(28)}║`);
-  log(`╚═══════════════════════════════════════╝`);
+  if (config.logging.banner) {
+    log(`╔═══════════════════════════════════════╗`);
+    log(`║     HermesCraft Bot Server v4.0      ║`);
+    log(`╠═══════════════════════════════════════╣`);
+    log(`║  API:  http://localhost:${config.api.port}          ║`);
+    log(`║  MC:   ${config.mc.host}:${config.mc.port}                ║`);
+    log(`║  User: ${config.mc.username.padEnd(28)}║`);
+    log(`╚═══════════════════════════════════════╝`);
+  } else {
+    log(`HermesCraft bot ready: API :${config.api.port} | MC ${config.mc.host}:${config.mc.port} | user ${config.mc.username}`);
+  }
   const profile = config.agent.profile;
   const agentModel = config.agent.model;
   const agentProvider = config.agent.provider;

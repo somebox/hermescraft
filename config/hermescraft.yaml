@@ -1,0 +1,81 @@
+# HermesCraft cross-cutting configuration.
+#
+# Loaded by the pytest harness (tests/_lib/config.py) and by launch scripts
+# that need values not covered by bot/lib/config/index.js (the bot server's
+# env-var schema). Env vars remain the final override layer — anything set in
+# the environment wins over this file.
+#
+# Per-machine overrides live in $overrides at the bottom, keyed by either:
+#   - hostname (matched against `uname -n`), OR
+#   - the value of HERMESCRAFT_PROFILE if that env var is set
+#
+# To diverge a single value for one machine, copy the top-level key into
+# $overrides.<hostname or profile> and edit. Deep-merged onto the base.
+
+mc:
+  host: localhost              # Minecraft server hostname / IP
+  port: 25565                  # Minecraft server TCP port
+  auth: offline                # offline | microsoft
+  world: landfolk-test         # default world name used by tests
+  connect_timeout_ms: 55000    # mineflayer TCP/login deadline (clamped 15s..120s)
+
+rcon:
+  # How tests reach the MC server console. Currently always shells out via
+  # ssh+docker+rcon-cli; the `mode` field reserves space for a future native
+  # rcon protocol implementation.
+  mode: ssh                    # ssh | direct
+  ssh_host: ubuntu-host        # hostname/alias passed to `ssh`
+  docker_container: minecraft  # docker container running paper
+  cli: rcon-cli                # rcon CLI binary name inside the container
+  command_timeout_s: 20        # default per-command timeout
+  batch_timeout_s: 60          # batched-command timeout (multiple cmds via stdin)
+
+bot:
+  default_api_url: http://localhost:3001   # tests use this when --bot-url not given
+  base_api_port: 3001                       # multi-bot port allocation starts here
+  health_poll_interval_s: 0.5               # how often BotClient.wait_until_ready polls /health
+  health_poll_timeout_s: 60                 # give up after this long
+
+models:
+  # Default model + provider for tests that don't pin one. Tests that
+  # specifically exercise model behavior (benchmarks, eval-grammar) pin
+  # their own; that override channel is the existing data/agent-models.json
+  # for agents, and scripts/benchmark/models.json for benchmark runs.
+  default:
+    model: google/gemini-2.5-flash
+    provider: openrouter
+  # For pytest integration tests that drive a Hermes agent and need a
+  # reasonable default. Picked for stability + low cost per run.
+  integration_default:
+    model: google/gemini-2.5-flash
+    provider: openrouter
+
+test:
+  settle_seconds: 1.5          # wait after world prep before assertions
+  default_timeout_seconds: 180 # cap on any single test
+  silence_banner: true         # suppress the bot ASCII banner during test runs
+  # When true, the conftest session fixture exports LOG_BANNER=0 before any
+  # bot subprocess is launched. Off-by-default for interactive use so the
+  # banner stays useful in `./hermescraft.sh` runs.
+
+logging:
+  dir: /tmp/hermescraft        # root of all log output
+  banner: true                 # default for the bot server's startup banner
+  # Subdir layout under `dir`:
+  #   bot/<name>.log            bot server stdout/stderr
+  #   agent/<name>.log          Hermes agent stdout/stderr
+  #   mc/<name>.log             MC_DEBUG_LOG (CLI command trace)
+  #   progress/<name>.log       progress JSONL
+  #   tests/<run-id>/...        per-pytest-run captures (see tests/conftest.py)
+
+# Per-machine / per-profile overrides. Empty by default. Resolution order:
+#   1. $HERMESCRAFT_PROFILE if set
+#   2. uname -n (hostname)
+# First matching key wins; deep-merged onto the base above.
+$overrides:
+  # Example:
+  # ci.example.com:
+  #   mc: { host: 10.0.0.5 }
+  #   rcon: { ssh_host: ci-mc-host }
+  # foz-laptop:
+  #   logging: { banner: false }

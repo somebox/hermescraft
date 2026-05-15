@@ -60,6 +60,7 @@ a `config` in scope.
 | `LOG_DIR` | *(unset)* | Hermes / bot log directory |
 | `MC_DEBUG_LOG` | *(unset)* | Debug log path for the `mc` CLI |
 | `MC_CLI_ERRORS_MULTILINE` | `false` | Multi-line error formatting for `mc` CLI output |
+| `LOG_BANNER` | `true` | Set to `false`/`0` to suppress the startup ASCII banner; pytest harness sets this when `config.test.silence_banner` is true |
 
 ## Secrets
 

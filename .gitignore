@@ -94,3 +94,5 @@ server/world_the_end/DIM1/region/r.-1.-1.mca
 server/world_the_end/DIM1/region/r.-1.0.mca
 server/world_the_end/DIM1/region/r.0.-1.mca
 server/world_the_end/DIM1/region/r.0.0.mca
+
+.venv/

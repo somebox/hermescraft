@@ -84,22 +84,40 @@ function colorizeLine(line) {
 
 function listLogFiles(dir) {
   if (!fs.existsSync(dir)) return [];
-  return fs
+  const flat = fs
     .readdirSync(dir)
-    .filter((f) => f.endsWith('.log') && !f.includes('.backup'))
-    .sort((a, b) => {
-      const rank = (n) => {
-        if (n.startsWith('bot-')) return 0;
-        if (n.startsWith('agent-')) return 1;
-        if (n.startsWith('watchdog-')) return 2;
-        if (n.startsWith('hermes-')) return 3;
-        if (n.startsWith('progress-')) return 4;
-        if (n.startsWith('mc-')) return 5;
-        return 9;
-      };
-      const d = rank(a) - rank(b);
-      return d !== 0 ? d : a.localeCompare(b);
-    });
+    .filter((f) => f.endsWith('.log') && !f.includes('.backup'));
+
+  // Also surface per-pytest-run files at <LOG_DIR>/tests/<run-id>/*.log
+  // so the viewer can tail an active test run.
+  const testRunDir = path.join(dir, 'tests');
+  const testRuns = [];
+  if (fs.existsSync(testRunDir)) {
+    for (const runId of fs.readdirSync(testRunDir).sort().reverse().slice(0, 5)) {
+      const runPath = path.join(testRunDir, runId);
+      if (!fs.statSync(runPath).isDirectory()) continue;
+      for (const f of fs.readdirSync(runPath)) {
+        if (f.endsWith('.log') && !f.includes('.backup')) {
+          testRuns.push(path.join('tests', runId, f));
+        }
+      }
+    }
+  }
+
+  return [...flat, ...testRuns].sort((a, b) => {
+    const rank = (n) => {
+      if (n.startsWith('bot-')) return 0;
+      if (n.startsWith('agent-')) return 1;
+      if (n.startsWith('watchdog-')) return 2;
+      if (n.startsWith('hermes-')) return 3;
+      if (n.startsWith('progress-')) return 4;
+      if (n.startsWith('mc-')) return 5;
+      if (n.startsWith('tests/')) return 8;
+      return 9;
+    };
+    const d = rank(a) - rank(b);
+    return d !== 0 ? d : a.localeCompare(b);
+  });
 }
 
 async function fetchHealth(port) {

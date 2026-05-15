@@ -95,6 +95,10 @@ export function loadConfig(argv = process.argv) {
       dir: env.LOG_DIR || null,
       debugLog: env.MC_DEBUG_LOG || null,
       cliErrorsMultiline: boolEnv(env.MC_CLI_ERRORS_MULTILINE, false),
+      /** LOG_BANNER=false (or 0) suppresses the bot's startup ASCII banner.
+       *  Set automatically by the pytest conftest when config.test.silence_banner
+       *  is true; useful for any test or CI run capturing bot stdout. */
+      banner: boolEnv(env.LOG_BANNER, true),
     },
   };
 
