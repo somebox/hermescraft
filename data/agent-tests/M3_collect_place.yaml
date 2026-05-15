@@ -201,7 +201,7 @@ phases:
           - '@builder M1: walk to the andesite block at (-2,65,2), `mc dig -2 65 2` then `mc collect andesite 1`.'
           - 'Then walk to target (1,65,1) and `mc place andesite 1 65 1`.'
           - 'Verify with `mc inspect 1 65 1`, then emit `M1 DONE`.'
-        deadline_tick: 3600
+        deadline_tick: 4800
         done_keyword: "M1 DONE"
         keyword_from: Builder
         verify_after_keyword:
@@ -248,7 +248,7 @@ phases:
           - '@builder M3: walk to the granite block at (-1,65,0), `mc dig -1 65 0` then `mc collect granite 1`.'
           - 'Then walk to target (-10,65,0) and `mc place granite -10 65 0`.'
           - 'Verify with `mc inspect -10 65 0`, then emit `M3 DONE`.'
-        deadline_tick: 3600
+        deadline_tick: 4800
         done_keyword: "M3 DONE"
         keyword_from: Builder
         verify_after_keyword:
@@ -391,7 +391,7 @@ phases:
           - '@builder M9: walk to the diorite block at (10,65,2), `mc dig 10 65 2` then `mc collect diorite 1`.'
           - 'Then walk to target (8,65,2) and `mc place diorite 8 65 2`.'
           - 'Verify with `mc inspect 8 65 2`, then emit `M9 DONE`.'
-        deadline_tick: 3600
+        deadline_tick: 4800
         done_keyword: "M9 DONE"
         keyword_from: Builder
         verify_after_keyword:

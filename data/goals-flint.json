@@ -112,9 +112,9 @@
       },
       "id": "supply_cobblestone",
       "metric": "stone_total",
-      "target_min": 2,
-      "target_ok": 4,
-      "priority": 250
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 60
     },
     {
       "enabled": true,
@@ -183,11 +183,11 @@
     }
   ],
   "deficitSince": {
-    "maintain_food": 1778291550869,
     "supply_iron": 1778291550869,
     "supply_coal": 1778291550869,
     "supply_cobblestone": 1778291550869,
     "supply_diamond": 1778291550869,
-    "maintain_pickaxe": 1778292484680
+    "maintain_food": 1778775067176,
+    "maintain_pickaxe": 1778775067176
   }
 }

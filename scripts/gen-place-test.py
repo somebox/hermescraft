@@ -572,10 +572,19 @@ bots:
         line3 = f"Verify with `mc inspect {tx} 65 {tz}`, then emit `{mid} DONE`."
 
         allow_yaml = ", ".join(allow)
-        # chest_outside missions inherently need ~50% more wallclock — bot
-        # must exit through D0, walk to C_OUT, re-enter, then place. M3 v7
-        # M6 timed out by 3s on the default 3600-tick (180s) budget.
-        deadline = 5400 if kind == "chest_outside" else 3600
+        # Per-kind deadlines tuned to observed timing margins:
+        #  - chest_outside (180s + extra ~90s out-and-back through D0) → 5400
+        #  - mine (180s + extra ~75s for find_blocks + LOS-aware approach
+        #    + dig + collect + travel-to-target) → 4800. M3 v9 with F72
+        #    landed 4s past the 3600-tick hard cap on a granite mine; the
+        #    margin matters.
+        #  - chest_inside → 3600 (baseline)
+        if kind == "chest_outside":
+            deadline = 5400
+        elif kind == "mine":
+            deadline = 4800
+        else:
+            deadline = 3600
         parts.append(f"""  - id: {mid}
     parallel: false
     missions:
