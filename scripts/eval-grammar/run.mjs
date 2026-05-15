@@ -2,25 +2,26 @@
 /**
  * Eval grammar v1 (flat) vs v2 (categorical) on production OpenRouter models.
  *
- * Usage: node scripts/eval-grammar/run.mjs
+ * Usage: node scripts/eval-grammar/run.mjs [--timeout-ms 120000]
  *
  * Reads:  scripts/eval-grammar/tasks.json
  *         docs/mc-cheatsheet.md       (v1 = flat)
  *         docs/mc-cheatsheet-v2.md    (v2 = categorical)
- * Writes: scripts/eval-grammar/results.json
+ * Writes: scripts/eval-grammar/results.json (rewritten after each API call so
+ *          interrupting the process still leaves partial results).
  *
  * Cost is a few cents — DeepSeek + Nemotron at ~12 tasks × 2 grammars each.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import yaml from 'node:fs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HERE = join(ROOT, 'scripts/eval-grammar');
+const RESULTS_FILE = join(HERE, 'results.json');
 
 // API key from homelab secrets.yaml
-const SECRETS = '/Users/foz/homelab/secrets.yaml';
+const SECRETS = '/Users/foz/hermescraft/secrets.yaml';
 const secretsText = readFileSync(SECRETS, 'utf8');
 const keyMatch = secretsText.match(/openrouter_api_key:\s*(\S+)/);
 if (!keyMatch) {
@@ -28,6 +29,18 @@ if (!keyMatch) {
   process.exit(1);
 }
 const OPENROUTER_KEY = keyMatch[1].trim();
+
+const argv = process.argv.slice(2);
+const arg = (flag) => {
+  const i = argv.indexOf(flag);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
+const timeoutArg = arg('--timeout-ms');
+let TIMEOUT_MS = 120000;
+if (timeoutArg != null) {
+  const n = Number(timeoutArg);
+  if (Number.isFinite(n) && n > 0) TIMEOUT_MS = n;
+}
 
 const MODELS = [
   { id: 'deepseek/deepseek-v4-flash', label: 'deepseek-v4-flash' },
@@ -81,27 +94,36 @@ function partialCheatsheetV2(label) {
 }
 
 async function callOR(model, prompt) {
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/foz/hermescraft',
-      'X-Title': 'mc grammar eval',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 600,
-      temperature: 0.1,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OR ${res.status}: ${text.slice(0, 200)}`);
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/foz/hermescraft',
+        'X-Title': 'mc grammar eval',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 600,
+        temperature: 0.1,
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`OR ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() ?? '';
+  } catch (e) {
+    const name = /** @type {{ name?: string }} */ (e).name;
+    if (name === 'AbortError' || name === 'TimeoutError') {
+      throw Object.assign(new Error(`timeout after ${TIMEOUT_MS}ms`), { timed_out: true });
+    }
+    throw e;
   }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
 }
 
 function gradeOutput(output, correctList) {
@@ -124,7 +146,13 @@ function gradeOutput(output, correctList) {
   return { pass: false, matchType: 'none', match: null, mc_lines: lines };
 }
 
+function persistResults(rows) {
+  writeFileSync(RESULTS_FILE, JSON.stringify(rows, null, 2));
+}
+
 const results = [];
+persistResults(results);
+console.error(`HTTP timeout per request: ${TIMEOUT_MS}ms (--timeout-ms to override)\n`);
 
 for (const task of tasks.direct) {
   for (const model of MODELS) {
@@ -145,10 +173,22 @@ for (const task of tasks.direct) {
           correct,
           ...grade,
         });
+        persistResults(results);
         console.error(`  → ${grade.pass ? 'PASS' : 'FAIL'} (${grade.matchType})`);
       } catch (e) {
-        results.push({ kind: 'direct', task_id: task.id, grammar, model: model.label, error: String(e.message || e), pass: false });
-        console.error(`  → ERROR: ${e.message}`);
+        const timedOut = /** @type {{ timed_out?: boolean }} */ (e).timed_out === true;
+        results.push({
+          kind: 'direct',
+          task_id: task.id,
+          grammar,
+          model: model.label,
+          correct,
+          error: String(e.message || e),
+          pass: false,
+          ...(timedOut ? { timed_out: true, request_timeout_ms: TIMEOUT_MS } : {}),
+        });
+        persistResults(results);
+        console.error(timedOut ? `  → TIMEOUT (${TIMEOUT_MS}ms)` : `  → ERROR: ${e.message}`);
       }
     }
   }
@@ -172,28 +212,42 @@ for (const task of tasks.prediction) {
         correct: task.v2_correct,
         ...grade,
       });
+      persistResults(results);
       console.error(`  → ${grade.pass ? 'PASS' : 'FAIL'} (${grade.matchType})`);
     } catch (e) {
-      results.push({ kind: 'prediction', task_id: task.id, grammar: 'v2-partial', model: model.label, error: String(e.message || e), pass: false });
-      console.error(`  → ERROR: ${e.message}`);
+      const timedOut = /** @type {{ timed_out?: boolean }} */ (e).timed_out === true;
+      results.push({
+        kind: 'prediction',
+        task_id: task.id,
+        grammar: 'v2-partial',
+        model: model.label,
+        correct: task.v2_correct,
+        error: String(e.message || e),
+        pass: false,
+        ...(timedOut ? { timed_out: true, request_timeout_ms: TIMEOUT_MS } : {}),
+      });
+      persistResults(results);
+      console.error(timedOut ? `  → TIMEOUT (${TIMEOUT_MS}ms)` : `  → ERROR: ${e.message}`);
     }
   }
 }
 
-writeFileSync(join(HERE, 'results.json'), JSON.stringify(results, null, 2));
-console.error(`\nWrote ${results.length} results to scripts/eval-grammar/results.json`);
+persistResults(results);
+console.error(`\nFinished ${results.length} results → scripts/eval-grammar/results.json`);
 
 // Summary
 const summary = {};
 for (const r of results) {
   const key = `${r.kind}/${r.grammar}/${r.model}`;
-  if (!summary[key]) summary[key] = { pass: 0, fail: 0, total: 0 };
+  if (!summary[key]) summary[key] = { pass: 0, fail: 0, timeout: 0, total: 0 };
   summary[key].total++;
   if (r.pass) summary[key].pass++;
   else summary[key].fail++;
+  if (r.timed_out) summary[key].timeout++;
 }
 console.error('\n=== SUMMARY ===');
 for (const [k, v] of Object.entries(summary).sort()) {
   const pct = ((v.pass / v.total) * 100).toFixed(0);
-  console.error(`  ${k.padEnd(45)}  ${v.pass}/${v.total}  (${pct}%)`);
+  const to = v.timeout ? `  timeouts=${v.timeout}` : '';
+  console.error(`  ${k.padEnd(45)}  ${v.pass}/${v.total}  (${pct}%)${to}`);
 }

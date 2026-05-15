@@ -1,0 +1,2616 @@
+{
+  "timestamp": "2026-05-10T23:13:22.754Z",
+  "model_id": "google/gemini-2.5-flash-lite",
+  "model_label": "gemini-2.5-flash-lite",
+  "suite_models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-v4-flash"
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "label": "grok-4.1-fast"
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "label": "gemini-2.5-flash-lite"
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "label": "nemotron-3-super-120b-free"
+    },
+    {
+      "id": "stepfun/step-3.5-flash",
+      "label": "step-3.5-flash"
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "label": "gpt-oss-120b"
+    },
+    {
+      "id": "openrouter/owl-alpha",
+      "label": "owl-alpha"
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "label": "gpt-4o-mini"
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "label": "minimax-m2.5"
+    },
+    {
+      "id": "poolside/laguna-m.1:free",
+      "label": "laguna-m.1-free"
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "label": "gemma-4-31b-it"
+    },
+    {
+      "id": "qwen/qwen3.5-flash-02-23",
+      "label": "qwen3.5-flash"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it",
+      "label": "gemma-4-26b-a4b-it"
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-2507",
+      "label": "qwen3-235b-a22b-2507"
+    },
+    {
+      "id": "mistralai/mistral-nemo",
+      "label": "mistral-nemo"
+    },
+    {
+      "id": "inclusionai/ring-2.6-1t:free",
+      "label": "ring-2.6-1t-free"
+    },
+    {
+      "id": "z-ai/glm-4.5-air",
+      "label": "glm-4.5-air"
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "label": "gpt-5-nano"
+    },
+    {
+      "id": "meta-llama/llama-3.1-8b-instruct",
+      "label": "llama-3.1-8b-instruct"
+    }
+  ],
+  "git_sha": "8215740cdd4c5c031fa22848f2bc4306876a2bd8",
+  "realistic": true,
+  "parallel": false,
+  "request_timeout_ms": 10000,
+  "cheatsheet_bytes": 12568,
+  "persona_bytes": 2946,
+  "skill_bytes": 4695,
+  "observe_bytes": 9330,
+  "task_groups": [
+    "challenges",
+    "composition",
+    "direct"
+  ],
+  "results": [
+    {
+      "group": "challenges",
+      "task_id": "scout_hazards_before_mining",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 514,
+      "usage": {
+        "prompt_tokens": 11580,
+        "completion_tokens": 17,
+        "total_tokens": 11597,
+        "cost": 0.0011648,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011648,
+          "upstream_inference_prompt_cost": 0.001158,
+          "upstream_inference_completions_cost": 0.0000068
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11580,
+        "completion_tokens": 17,
+        "total_tokens": 11597
+      },
+      "cost_reported_usd": 0.0011648,
+      "upstream_inference_cost_usd": 0.0011648,
+      "cost_usd": 0.0011648,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc scout 20 12 20 8\n```",
+      "response_id": "gen-1778455227-q2AzSOBQJ1KY091rbVZV",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc scout 20 12 20 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc scout 20 12 20 8",
+          "known_command": true,
+          "canonical_name": "scout",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/scout",
+            "body": "{\"x\":20,\"y\":12,\"z\":20,\"radius\":8}",
+            "params": {
+              "x": 20,
+              "y": 12,
+              "z": 20,
+              "radius": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "prefer_safe_dig_over_raw_dig",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 724,
+      "usage": {
+        "prompt_tokens": 11566,
+        "completion_tokens": 15,
+        "total_tokens": 11581,
+        "cost": 0.0011626,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011626,
+          "upstream_inference_prompt_cost": 0.0011566,
+          "upstream_inference_completions_cost": 0.000006
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11566,
+        "completion_tokens": 15,
+        "total_tokens": 11581
+      },
+      "cost_reported_usd": 0.0011626,
+      "upstream_inference_cost_usd": 0.0011626,
+      "cost_usd": 0.0011626,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc safe_dig 8 64 8\n```",
+      "response_id": "gen-1778455227-dgi2Em1YE5xNbL7tTNTq",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc safe_dig 8 64 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc safe_dig 8 64 8",
+          "known_command": true,
+          "canonical_name": "safe_dig",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/safe_dig",
+            "body": "{\"x\":8,\"y\":64,\"z\":8}",
+            "params": {
+              "x": 8,
+              "y": 64,
+              "z": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "navigate_building_use_move",
+      "category": "movement",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 1291,
+      "usage": {
+        "prompt_tokens": 11571,
+        "completion_tokens": 14,
+        "total_tokens": 11585,
+        "cost": 0.0011627,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011627,
+          "upstream_inference_prompt_cost": 0.0011571,
+          "upstream_inference_completions_cost": 0.0000056
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11571,
+        "completion_tokens": 14,
+        "total_tokens": 11585
+      },
+      "cost_reported_usd": 0.0011627,
+      "upstream_inference_cost_usd": 0.0011627,
+      "cost_usd": 0.0011627,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc move 5 65 12\n```",
+      "response_id": "gen-1778455228-KWHqWPRFWuEnjJT8R7yd",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc move 5 65 12"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc move 5 65 12",
+          "known_command": true,
+          "canonical_name": "move",
+          "category": "movement",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/move",
+            "body": "{\"x\":5,\"y\":65,\"z\":12}",
+            "params": {
+              "x": 5,
+              "y": 65,
+              "z": 12
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "search_cached_chests_for_item",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 618,
+      "usage": {
+        "prompt_tokens": 11560,
+        "completion_tokens": 9,
+        "total_tokens": 11569,
+        "cost": 0.0011596,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011596,
+          "upstream_inference_prompt_cost": 0.001156,
+          "upstream_inference_completions_cost": 0.0000036
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11560,
+        "completion_tokens": 9,
+        "total_tokens": 11569
+      },
+      "cost_reported_usd": 0.0011596,
+      "upstream_inference_cost_usd": 0.0011596,
+      "cost_usd": 0.0011596,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc chest_search diamond\n```",
+      "response_id": "gen-1778455229-eWkcw64r1ZxmEGRqX6wT",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc chest_search diamond"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc chest_search diamond",
+          "known_command": true,
+          "canonical_name": "chest_search",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/chest_search",
+            "body": "{\"item\":\"diamond\",\"max_results\":10,\"exact\":true}",
+            "params": {
+              "item": "diamond",
+              "max_results": 10,
+              "exact": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "list_known_furnaces",
+      "category": "observe",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 490,
+      "usage": {
+        "prompt_tokens": 11549,
+        "completion_tokens": 2,
+        "total_tokens": 11551,
+        "cost": 0.0011557,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011557,
+          "upstream_inference_prompt_cost": 0.0011549,
+          "upstream_inference_completions_cost": 8e-7
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11549,
+        "completion_tokens": 2,
+        "total_tokens": 11551
+      },
+      "cost_reported_usd": 0.0011557,
+      "upstream_inference_cost_usd": 0.0011557,
+      "cost_usd": 0.0011557,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "mc furnaces",
+      "response_id": "gen-1778455230-nL2EG4FKXSDBT9Iyfcx9",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc furnaces"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc furnaces",
+          "known_command": true,
+          "canonical_name": "furnaces",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/furnaces",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "cancel_running_background_task",
+      "category": "task",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 493,
+      "usage": {
+        "prompt_tokens": 11548,
+        "completion_tokens": 6,
+        "total_tokens": 11554,
+        "cost": 0.0011572,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011572,
+          "upstream_inference_prompt_cost": 0.0011548,
+          "upstream_inference_completions_cost": 0.0000024
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11548,
+        "completion_tokens": 6,
+        "total_tokens": 11554
+      },
+      "cost_reported_usd": 0.0011572,
+      "upstream_inference_cost_usd": 0.0011572,
+      "cost_usd": 0.0011572,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc cancel\n```",
+      "response_id": "gen-1778455230-JtMxxiD2hstnU9KRkjTu",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc cancel"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc cancel",
+          "known_command": true,
+          "canonical_name": "cancel",
+          "category": "task",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/task/cancel",
+            "body": "{}",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "background_smelt_batch",
+      "category": "craft",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 701,
+      "usage": {
+        "prompt_tokens": 11570,
+        "completion_tokens": 17,
+        "total_tokens": 11587,
+        "cost": 0.0011638,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011638,
+          "upstream_inference_prompt_cost": 0.001157,
+          "upstream_inference_completions_cost": 0.0000068
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11570,
+        "completion_tokens": 17,
+        "total_tokens": 11587
+      },
+      "cost_reported_usd": 0.0011638,
+      "upstream_inference_cost_usd": 0.0011638,
+      "cost_usd": 0.0011638,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc bg_smelt cobblestone 8 oak_planks\n```",
+      "response_id": "gen-1778455231-eALsHYptk7KP2rR92wLC",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": false,
+      "semantic_score": 0.55,
+      "parse_ok_rate": 0,
+      "mc_lines": [
+        "mc bg_smelt cobblestone 8 oak_planks"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc bg_smelt cobblestone 8 oak_planks",
+          "known_command": true,
+          "canonical_name": "bg_smelt",
+          "category": "task",
+          "parse_ok": false,
+          "parse_error": "bg_smelt:count:not_number"
+        }
+      ],
+      "challenge_reasons": [
+        "reference_answer_mismatch",
+        "cli_parse_error"
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "terrain_surface_height_sample",
+      "category": "observe",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 621,
+      "usage": {
+        "prompt_tokens": 11560,
+        "completion_tokens": 14,
+        "total_tokens": 11574,
+        "cost": 0.0011616,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011616,
+          "upstream_inference_prompt_cost": 0.001156,
+          "upstream_inference_completions_cost": 0.0000056
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11560,
+        "completion_tokens": 14,
+        "total_tokens": 11574
+      },
+      "cost_reported_usd": 0.0011616,
+      "upstream_inference_cost_usd": 0.0011616,
+      "cost_usd": 0.0011616,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc terrain_top 30 40\n```",
+      "response_id": "gen-1778455232-U3TEfE7OxR4b8tSZMNbW",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc terrain_top 30 40"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc terrain_top 30 40",
+          "known_command": true,
+          "canonical_name": "terrain_top",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/terrain_top",
+            "body": "{\"x\":30,\"z\":40,\"radius\":0}",
+            "params": {
+              "x": 30,
+              "z": 40,
+              "radius": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "dump_cli_registry_json",
+      "category": "platform",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 604,
+      "usage": {
+        "prompt_tokens": 11549,
+        "completion_tokens": 6,
+        "total_tokens": 11555,
+        "cost": 0.0011573,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011573,
+          "upstream_inference_prompt_cost": 0.0011549,
+          "upstream_inference_completions_cost": 0.0000024
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11549,
+        "completion_tokens": 6,
+        "total_tokens": 11555
+      },
+      "cost_reported_usd": 0.0011573,
+      "upstream_inference_cost_usd": 0.0011573,
+      "cost_usd": 0.0011573,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc commands\n```",
+      "response_id": "gen-1778455232-bi2vdbrIyEJ6yiPZGd0T",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc commands"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc commands",
+          "known_command": true,
+          "canonical_name": "commands",
+          "category": "platform",
+          "parse_ok": true,
+          "simulated_request": {
+            "kind": "cli_introspection",
+            "method": "META",
+            "path": "mc commands"
+          }
+        }
+      ]
+    },
+    {
+      "group": "composition",
+      "task_id": "shelter_corner",
+      "category": "world+craft",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 517,
+      "usage": {
+        "prompt_tokens": 11592,
+        "completion_tokens": 39,
+        "total_tokens": 11631,
+        "cost": 0.0011748,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011748,
+          "upstream_inference_prompt_cost": 0.0011592,
+          "upstream_inference_completions_cost": 0.0000156
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11592,
+        "completion_tokens": 39,
+        "total_tokens": 11631
+      },
+      "cost_reported_usd": 0.0011748,
+      "upstream_inference_cost_usd": 0.0011748,
+      "cost_usd": 0.0011748,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc place cobblestone 5 65 5\nmc place cobblestone 5 66 5\nmc place cobblestone 5 67 5\n```",
+      "response_id": "gen-1778455233-az5BhcFcWz7yNVE9E0Yv",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "matched": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "mc_lines": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc place cobblestone 5 65 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":65,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 65,
+              "z": 5
+            }
+          }
+        },
+        {
+          "raw": "mc place cobblestone 5 66 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":66,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 66,
+              "z": 5
+            }
+          }
+        },
+        {
+          "raw": "mc place cobblestone 5 67 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":67,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 67,
+              "z": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "composition",
+      "task_id": "smelt_iron_pipeline",
+      "category": "craft",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 781,
+      "usage": {
+        "prompt_tokens": 11581,
+        "completion_tokens": 24,
+        "total_tokens": 11605,
+        "cost": 0.0011677,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011677,
+          "upstream_inference_prompt_cost": 0.0011581,
+          "upstream_inference_completions_cost": 0.0000096
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11581,
+        "completion_tokens": 24,
+        "total_tokens": 11605
+      },
+      "cost_reported_usd": 0.0011677,
+      "upstream_inference_cost_usd": 0.0011677,
+      "cost_usd": 0.0011677,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc smelt raw_iron coal 4\nmc furnace_check 0 64 0\n```",
+      "response_id": "gen-1778455233-dtAumUE7sAarej4Ztl0B",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "matched": [
+        "mc smelt raw_iron 4",
+        "mc furnace_check 0 64 0"
+      ],
+      "mc_lines": [
+        "mc smelt raw_iron coal 4",
+        "mc furnace_check 0 64 0"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc smelt raw_iron coal 4",
+          "known_command": true,
+          "canonical_name": "smelt",
+          "category": "craft",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/smelt",
+            "body": "{\"input\":\"raw_iron\",\"count\":4,\"fuel\":\"coal\"}",
+            "params": {
+              "input": "raw_iron",
+              "fuel": "coal",
+              "count": 4
+            }
+          }
+        },
+        {
+          "raw": "mc furnace_check 0 64 0",
+          "known_command": true,
+          "canonical_name": "furnace_check",
+          "category": "craft",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/furnace_check",
+            "body": "{\"x\":0,\"y\":64,\"z\":0}",
+            "params": {
+              "x": 0,
+              "y": 64,
+              "z": 0
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "composition",
+      "task_id": "rescue_to_safehome",
+      "category": "movement+combat",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 513,
+      "usage": {
+        "prompt_tokens": 11561,
+        "completion_tokens": 16,
+        "total_tokens": 11577,
+        "cost": 0.0011625,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011625,
+          "upstream_inference_prompt_cost": 0.0011561,
+          "upstream_inference_completions_cost": 0.0000064
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11561,
+        "completion_tokens": 16,
+        "total_tokens": 11577
+      },
+      "cost_reported_usd": 0.0011625,
+      "upstream_inference_cost_usd": 0.0011625,
+      "cost_usd": 0.0011625,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc flee --to death_10\nmc mode guard\n```",
+      "response_id": "gen-1778455234-VEAFRUjlPImJJdPKtaG8",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": false,
+      "matched": [
+        null,
+        "mc mode guard"
+      ],
+      "mc_lines": [
+        "mc flee --to death_10",
+        "mc mode guard"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc flee --to death_10",
+          "known_command": true,
+          "canonical_name": "flee",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/flee",
+            "body": "{\"distance\":16,\"to\":\"death_10\"}",
+            "params": {
+              "distance": 16,
+              "to": "death_10"
+            }
+          }
+        },
+        {
+          "raw": "mc mode guard",
+          "known_command": true,
+          "canonical_name": "mode",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mode",
+            "body": "{\"name\":\"guard\"}",
+            "params": {
+              "name": "guard"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 0.42
+    },
+    {
+      "group": "composition",
+      "task_id": "scout_then_report",
+      "category": "observe+social",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 803,
+      "usage": {
+        "prompt_tokens": 11578,
+        "completion_tokens": 19,
+        "total_tokens": 11597,
+        "cost": 0.0011654,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011654,
+          "upstream_inference_prompt_cost": 0.0011578,
+          "upstream_inference_completions_cost": 0.0000076
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11578,
+        "completion_tokens": 19,
+        "total_tokens": 11597
+      },
+      "cost_reported_usd": 0.0011654,
+      "upstream_inference_cost_usd": 0.0011654,
+      "cost_usd": 0.0011654,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc find_entities hostile 32\nmc chat \"all clear\"\n```",
+      "response_id": "gen-1778455235-fX4zclQnRHEij5RZztsR",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "matched": [
+        "mc find_entities",
+        "mc chat \"all clear\""
+      ],
+      "mc_lines": [
+        "mc find_entities hostile 32",
+        "mc chat \"all clear\""
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc find_entities hostile 32",
+          "known_command": true,
+          "canonical_name": "find_entities",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/find_entities",
+            "body": "{\"type\":\"hostile\",\"radius\":32}",
+            "params": {
+              "type": "hostile",
+              "radius": 32
+            }
+          }
+        },
+        {
+          "raw": "mc chat \"all clear\"",
+          "known_command": true,
+          "canonical_name": "chat",
+          "category": "social",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/chat",
+            "body": "{\"message\":\"all clear\"}",
+            "params": {
+              "message": "all clear"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 768,
+      "usage": {
+        "prompt_tokens": 11556,
+        "completion_tokens": 17,
+        "total_tokens": 11573,
+        "cost": 0.0011624,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011624,
+          "upstream_inference_prompt_cost": 0.0011556,
+          "upstream_inference_completions_cost": 0.0000068
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11556,
+        "completion_tokens": 17,
+        "total_tokens": 11573
+      },
+      "cost_reported_usd": 0.0011624,
+      "upstream_inference_cost_usd": 0.0011624,
+      "cost_usd": 0.0011624,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc goto 100 64 200\n```",
+      "response_id": "gen-1778455235-TQ5aKsLokIJKjQl8mz7v",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc goto 100 64 200"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc goto 100 64 200",
+          "known_command": true,
+          "canonical_name": "goto",
+          "category": "movement",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/goto",
+            "body": "{\"x\":100,\"y\":64,\"z\":200}",
+            "params": {
+              "x": 100,
+              "y": 64,
+              "z": 200
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 449,
+      "usage": {
+        "prompt_tokens": 11548,
+        "completion_tokens": 9,
+        "total_tokens": 11557,
+        "cost": 0.0011584,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011584,
+          "upstream_inference_prompt_cost": 0.0011548,
+          "upstream_inference_completions_cost": 0.0000036
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11548,
+        "completion_tokens": 9,
+        "total_tokens": 11557
+      },
+      "cost_reported_usd": 0.0011584,
+      "upstream_inference_cost_usd": 0.0011584,
+      "cost_usd": 0.0011584,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc collect stone 4\n```",
+      "response_id": "gen-1778455236-1acLqGPi54x2LHSciw5v",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": false,
+      "mc_lines": [
+        "mc collect stone 4"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc collect stone 4",
+          "known_command": true,
+          "canonical_name": "collect",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/collect",
+            "body": "{\"block\":\"stone\",\"count\":4}",
+            "params": {
+              "block": "stone",
+              "count": 4
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 0.42
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 655,
+      "usage": {
+        "prompt_tokens": 11565,
+        "completion_tokens": 19,
+        "total_tokens": 11584,
+        "cost": 0.0011641,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011641,
+          "upstream_inference_prompt_cost": 0.0011565,
+          "upstream_inference_completions_cost": 0.0000076
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11565,
+        "completion_tokens": 19,
+        "total_tokens": 11584
+      },
+      "cost_reported_usd": 0.0011641,
+      "upstream_inference_cost_usd": 0.0011641,
+      "cost_usd": 0.0011641,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc place oak_planks 10 65 10\n```",
+      "response_id": "gen-1778455237-tdIAvXC436MZowLlgnBg",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc place oak_planks 10 65 10"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc place oak_planks 10 65 10",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"oak_planks\",\"x\":10,\"y\":65,\"z\":10}",
+            "params": {
+              "block": "oak_planks",
+              "x": 10,
+              "y": 65,
+              "z": 10
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 475,
+      "usage": {
+        "prompt_tokens": 11552,
+        "completion_tokens": 3,
+        "total_tokens": 11555,
+        "cost": 0.0011564,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011564,
+          "upstream_inference_prompt_cost": 0.0011552,
+          "upstream_inference_completions_cost": 0.0000012
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11552,
+        "completion_tokens": 3,
+        "total_tokens": 11555
+      },
+      "cost_reported_usd": 0.0011564,
+      "upstream_inference_cost_usd": 0.0011564,
+      "cost_usd": 0.0011564,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "mc mark shelter",
+      "response_id": "gen-1778455237-jAw1hNyKUeHZK0jRpQgA",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mark shelter"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mark shelter",
+          "known_command": true,
+          "canonical_name": "mark",
+          "category": "memory",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mark",
+            "body": "{\"name\":\"shelter\",\"note\":\"\"}",
+            "params": {
+              "name": "shelter",
+              "note": ""
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 432,
+      "usage": {
+        "prompt_tokens": 11542,
+        "completion_tokens": 2,
+        "total_tokens": 11544,
+        "cost": 0.001155,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.001155,
+          "upstream_inference_prompt_cost": 0.0011542,
+          "upstream_inference_completions_cost": 8e-7
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11542,
+        "completion_tokens": 2,
+        "total_tokens": 11544
+      },
+      "cost_reported_usd": 0.001155,
+      "upstream_inference_cost_usd": 0.001155,
+      "cost_usd": 0.001155,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "mc goals",
+      "response_id": "gen-1778455238-t1QA8SQvgDoCGfT5lPxM",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc goals"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc goals",
+          "known_command": true,
+          "canonical_name": "goals",
+          "category": "goals",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/goals",
+            "params": {}
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 443,
+      "usage": {
+        "prompt_tokens": 11548,
+        "completion_tokens": 6,
+        "total_tokens": 11554,
+        "cost": 0.0011572,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011572,
+          "upstream_inference_prompt_cost": 0.0011548,
+          "upstream_inference_completions_cost": 0.0000024
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11548,
+        "completion_tokens": 6,
+        "total_tokens": 11554
+      },
+      "cost_reported_usd": 0.0011572,
+      "upstream_inference_cost_usd": 0.0011572,
+      "cost_usd": 0.0011572,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc eat\n```",
+      "response_id": "gen-1778455238-lbj7oC9OwC4KqQixi2Nt",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc eat"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc eat",
+          "known_command": true,
+          "canonical_name": "eat",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/eat",
+            "body": "{}",
+            "params": {}
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 439,
+      "usage": {
+        "prompt_tokens": 11546,
+        "completion_tokens": 10,
+        "total_tokens": 11556,
+        "cost": 0.0011586,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011586,
+          "upstream_inference_prompt_cost": 0.0011546,
+          "upstream_inference_completions_cost": 0.000004
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11546,
+        "completion_tokens": 10,
+        "total_tokens": 11556
+      },
+      "cost_reported_usd": 0.0011586,
+      "upstream_inference_cost_usd": 0.0011586,
+      "cost_usd": 0.0011586,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc read_chat 5\n```",
+      "response_id": "gen-1778455239-VGlWEd9lViKX0nJhjrcr",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc read_chat 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc read_chat 5",
+          "known_command": true,
+          "canonical_name": "read_chat",
+          "category": "social",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/chat?count=5",
+            "params": {
+              "count": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 496,
+      "usage": {
+        "prompt_tokens": 11555,
+        "completion_tokens": 12,
+        "total_tokens": 11567,
+        "cost": 0.0011603,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011603,
+          "upstream_inference_prompt_cost": 0.0011555,
+          "upstream_inference_completions_cost": 0.0000048
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11555,
+        "completion_tokens": 12,
+        "total_tokens": 11567
+      },
+      "cost_reported_usd": 0.0011603,
+      "upstream_inference_cost_usd": 0.0011603,
+      "cost_usd": 0.0011603,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc combat_skill 0.9\n```",
+      "response_id": "gen-1778455239-Ar3MfIHRVPjhzU0vNr48",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc combat_skill 0.9"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc combat_skill 0.9",
+          "known_command": true,
+          "canonical_name": "combat_skill",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/combat_skill",
+            "body": "{\"value\":\"0.9\"}",
+            "params": {
+              "value": "0.9"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 680,
+      "usage": {
+        "prompt_tokens": 11555,
+        "completion_tokens": 12,
+        "total_tokens": 11567,
+        "cost": 0.0011603,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011603,
+          "upstream_inference_prompt_cost": 0.0011555,
+          "upstream_inference_completions_cost": 0.0000048
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11555,
+        "completion_tokens": 12,
+        "total_tokens": 11567
+      },
+      "cost_reported_usd": 0.0011603,
+      "upstream_inference_cost_usd": 0.0011603,
+      "cost_usd": 0.0011603,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc feed_mob cow --item wheat\n```",
+      "response_id": "gen-1778455240-JGYwdcEtID89iwDWAkal",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": false,
+      "mc_lines": [
+        "mc feed_mob cow --item wheat"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc feed_mob cow --item wheat",
+          "known_command": true,
+          "canonical_name": "feed_mob",
+          "category": "world",
+          "parse_ok": false,
+          "parse_error": "extra_arguments:feed_mob"
+        }
+      ],
+      "parse_ok_rate": 0,
+      "semantic_score": 0.12
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 664,
+      "usage": {
+        "prompt_tokens": 11558,
+        "completion_tokens": 14,
+        "total_tokens": 11572,
+        "cost": 0.0011614,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011614,
+          "upstream_inference_prompt_cost": 0.0011558,
+          "upstream_inference_completions_cost": 0.0000056
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11558,
+        "completion_tokens": 14,
+        "total_tokens": 11572
+      },
+      "cost_reported_usd": 0.0011614,
+      "upstream_inference_cost_usd": 0.0011614,
+      "cost_usd": 0.0011614,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc find_blocks iron_ore 32\n```",
+      "response_id": "gen-1778455240-MowLcJXsMnBPfWdv0YX0",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc find_blocks iron_ore 32"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc find_blocks iron_ore 32",
+          "known_command": true,
+          "canonical_name": "find_blocks",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/find_blocks",
+            "body": "{\"block\":\"iron_ore\",\"radius\":32,\"count\":10}",
+            "params": {
+              "block": "iron_ore",
+              "radius": 32,
+              "count": 10
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 677,
+      "usage": {
+        "prompt_tokens": 11547,
+        "completion_tokens": 3,
+        "total_tokens": 11550,
+        "cost": 0.0011559,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011559,
+          "upstream_inference_prompt_cost": 0.0011547,
+          "upstream_inference_completions_cost": 0.0000012
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11547,
+        "completion_tokens": 3,
+        "total_tokens": 11550
+      },
+      "cost_reported_usd": 0.0011559,
+      "upstream_inference_cost_usd": 0.0011559,
+      "cost_usd": 0.0011559,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "mc chest treasure",
+      "response_id": "gen-1778455241-mvFbtBNbfkcioZHQq1OI",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": false,
+      "mc_lines": [
+        "mc chest treasure"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc chest treasure",
+          "known_command": true,
+          "canonical_name": "chest",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/list_container",
+            "body": "{\"x\":null,\"y\":null,\"z\":null}",
+            "params": {
+              "x": null,
+              "y": null,
+              "z": null
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 0.42
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 718,
+      "usage": {
+        "prompt_tokens": 11557,
+        "completion_tokens": 9,
+        "total_tokens": 11566,
+        "cost": 0.0011593,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011593,
+          "upstream_inference_prompt_cost": 0.0011557,
+          "upstream_inference_completions_cost": 0.0000036
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11557,
+        "completion_tokens": 9,
+        "total_tokens": 11566
+      },
+      "cost_reported_usd": 0.0011593,
+      "upstream_inference_cost_usd": 0.0011593,
+      "cost_usd": 0.0011593,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc fight zombie 6\n```",
+      "response_id": "gen-1778455242-gmBv7LiB1MZwBQuHLjoe",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc fight zombie 6"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc fight zombie 6",
+          "known_command": true,
+          "canonical_name": "fight",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/fight",
+            "body": "{\"target\":\"zombie\",\"retreat_health\":6,\"duration\":30}",
+            "params": {
+              "target": "zombie",
+              "retreat_health": 6,
+              "duration": 30
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 381,
+      "usage": {
+        "prompt_tokens": 11560,
+        "completion_tokens": 7,
+        "total_tokens": 11567,
+        "cost": 0.00014585,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11255,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00014585,
+          "upstream_inference_prompt_cost": 0.00014305,
+          "upstream_inference_completions_cost": 0.0000028
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11560,
+        "completion_tokens": 7,
+        "total_tokens": 11567
+      },
+      "cost_reported_usd": 0.00014585,
+      "upstream_inference_cost_usd": 0.00014585,
+      "cost_usd": 0.00014585,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc mode guard\n```",
+      "response_id": "gen-1778455242-Fvv6PEyUIA7atv5mxd5y",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mode guard"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mode guard",
+          "known_command": true,
+          "canonical_name": "mode",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mode",
+            "body": "{\"name\":\"guard\"}",
+            "params": {
+              "name": "guard"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 421,
+      "usage": {
+        "prompt_tokens": 11553,
+        "completion_tokens": 14,
+        "total_tokens": 11567,
+        "cost": 0.0011609,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011609,
+          "upstream_inference_prompt_cost": 0.0011553,
+          "upstream_inference_completions_cost": 0.0000056
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11553,
+        "completion_tokens": 14,
+        "total_tokens": 11567
+      },
+      "cost_reported_usd": 0.0011609,
+      "upstream_inference_cost_usd": 0.0011609,
+      "cost_usd": 0.0011609,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc deposit iron_ingot 32 vault\n```",
+      "response_id": "gen-1778455243-1iSCvELp0vdwF1QnaKYv",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc deposit iron_ingot 32 vault"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc deposit iron_ingot 32 vault",
+          "known_command": true,
+          "canonical_name": "deposit",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/deposit",
+            "body": "{\"item\":\"iron_ingot\",\"count\":32,\"mark\":\"vault\"}",
+            "params": {
+              "item": "iron_ingot",
+              "count": 32,
+              "mark": "vault"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 404,
+      "usage": {
+        "prompt_tokens": 11549,
+        "completion_tokens": 8,
+        "total_tokens": 11557,
+        "cost": 0.00014515,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11255,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00014515,
+          "upstream_inference_prompt_cost": 0.00014195,
+          "upstream_inference_completions_cost": 0.0000032
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11549,
+        "completion_tokens": 8,
+        "total_tokens": 11557
+      },
+      "cost_reported_usd": 0.00014515,
+      "upstream_inference_cost_usd": 0.00014515,
+      "cost_usd": 0.00014515,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc scene 8\n```",
+      "response_id": "gen-1778455243-NgWdzhdfJBarHCQ2mk3M",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc scene 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc scene 8",
+          "known_command": true,
+          "canonical_name": "scene",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/scene?range=8",
+            "params": {
+              "range": 8
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_3block_wall",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 482,
+      "usage": {
+        "prompt_tokens": 11563,
+        "completion_tokens": 22,
+        "total_tokens": 11585,
+        "cost": 0.0011651,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011651,
+          "upstream_inference_prompt_cost": 0.0011563,
+          "upstream_inference_completions_cost": 0.0000088
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11563,
+        "completion_tokens": 22,
+        "total_tokens": 11585
+      },
+      "cost_reported_usd": 0.0011651,
+      "upstream_inference_cost_usd": 0.0011651,
+      "cost_usd": 0.0011651,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc wall cobblestone 3 65 0 3 67 0\n```",
+      "response_id": "gen-1778455244-PNEkevdyiuruu5imfKcu",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc wall cobblestone 3 65 0 3 67 0"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc wall cobblestone 3 65 0 3 67 0",
+          "known_command": true,
+          "canonical_name": "wall",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/wall",
+            "body": "{\"block\":\"cobblestone\",\"x1\":3,\"y1\":65,\"z1\":0,\"x2\":3,\"y2\":67,\"z2\":0}",
+            "params": {
+              "block": "cobblestone",
+              "x1": 3,
+              "y1": 65,
+              "z1": 0,
+              "x2": 3,
+              "y2": 67,
+              "z2": 0
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_fenced_enclosure",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 465,
+      "usage": {
+        "prompt_tokens": 11569,
+        "completion_tokens": 20,
+        "total_tokens": 11589,
+        "cost": 0.0011649,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011649,
+          "upstream_inference_prompt_cost": 0.0011569,
+          "upstream_inference_completions_cost": 0.000008
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11569,
+        "completion_tokens": 20,
+        "total_tokens": 11589
+      },
+      "cost_reported_usd": 0.0011649,
+      "upstream_inference_cost_usd": 0.0011649,
+      "cost_usd": 0.0011649,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc fence oak_fence -2 -2 2 2 --gate south\n```",
+      "response_id": "gen-1778455244-cDnZRWCqhFTUXZJIYPRd",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc fence oak_fence -2 -2 2 2 --gate south"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc fence oak_fence -2 -2 2 2 --gate south",
+          "known_command": true,
+          "canonical_name": "fence",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/fence",
+            "body": "{\"block\":\"oak_fence\",\"x1\":-2,\"z1\":-2,\"x2\":2,\"z2\":2,\"gate\":\"south\"}",
+            "params": {
+              "block": "oak_fence",
+              "x1": -2,
+              "z1": -2,
+              "x2": 2,
+              "z2": 2,
+              "gate": "south"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "dig_3x3_pit",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 457,
+      "usage": {
+        "prompt_tokens": 11565,
+        "completion_tokens": 18,
+        "total_tokens": 11583,
+        "cost": 0.0011637,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011637,
+          "upstream_inference_prompt_cost": 0.0011565,
+          "upstream_inference_completions_cost": 0.0000072
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11565,
+        "completion_tokens": 18,
+        "total_tokens": 11583
+      },
+      "cost_reported_usd": 0.0011637,
+      "upstream_inference_cost_usd": 0.0011637,
+      "cost_usd": 0.0011637,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc dig_pit 0 0 3 3 3\n```",
+      "response_id": "gen-1778455245-feGPP9wnXI40sOVA2P1e",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc dig_pit 0 0 3 3 3"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc dig_pit 0 0 3 3 3",
+          "known_command": true,
+          "canonical_name": "dig_pit",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/dig_pit",
+            "body": "{\"x\":0,\"z\":0,\"w\":3,\"l\":3,\"d\":3}",
+            "params": {
+              "x": 0,
+              "z": 0,
+              "w": 3,
+              "l": 3,
+              "d": 3
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "level_5x5_to_y64",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 469,
+      "usage": {
+        "prompt_tokens": 11573,
+        "completion_tokens": 18,
+        "total_tokens": 11591,
+        "cost": 0.00015155,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11255,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00015155,
+          "upstream_inference_prompt_cost": 0.00014435,
+          "upstream_inference_completions_cost": 0.0000072
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11573,
+        "completion_tokens": 18,
+        "total_tokens": 11591
+      },
+      "cost_reported_usd": 0.00015155,
+      "upstream_inference_cost_usd": 0.00015155,
+      "cost_usd": 0.00015155,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc level 0 0 6 6 64 dirt\n```",
+      "response_id": "gen-1778455245-2Phix9IuB5Gee4rb7Jyw",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc level 0 0 6 6 64 dirt"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc level 0 0 6 6 64 dirt",
+          "known_command": true,
+          "canonical_name": "level",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/level",
+            "body": "{\"x1\":0,\"z1\":0,\"x2\":6,\"z2\":6,\"y\":64,\"block\":\"dirt\"}",
+            "params": {
+              "x1": 0,
+              "z1": 0,
+              "x2": 6,
+              "z2": 6,
+              "y": 64,
+              "block": "dirt"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_4step_staircase",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 490,
+      "usage": {
+        "prompt_tokens": 11554,
+        "completion_tokens": 13,
+        "total_tokens": 11567,
+        "cost": 0.0011606,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011606,
+          "upstream_inference_prompt_cost": 0.0011554,
+          "upstream_inference_completions_cost": 0.0000052
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11554,
+        "completion_tokens": 13,
+        "total_tokens": 11567
+      },
+      "cost_reported_usd": 0.0011606,
+      "upstream_inference_cost_usd": 0.0011606,
+      "cost_usd": 0.0011606,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc build_stairs cobblestone north 4\n```",
+      "response_id": "gen-1778455245-UTz6bIjqtliwvQrxbVA9",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc build_stairs cobblestone north 4"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc build_stairs cobblestone north 4",
+          "known_command": true,
+          "canonical_name": "build_stairs",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/build_stairs",
+            "body": "{\"block\":\"cobblestone\",\"direction\":\"north\",\"length\":4}",
+            "params": {
+              "block": "cobblestone",
+              "direction": "north",
+              "length": 4
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "make_dirt_path",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 431,
+      "usage": {
+        "prompt_tokens": 11578,
+        "completion_tokens": 17,
+        "total_tokens": 11595,
+        "cost": 0.0011646,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011646,
+          "upstream_inference_prompt_cost": 0.0011578,
+          "upstream_inference_completions_cost": 0.0000068
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11578,
+        "completion_tokens": 17,
+        "total_tokens": 11595
+      },
+      "cost_reported_usd": 0.0011646,
+      "upstream_inference_cost_usd": 0.0011646,
+      "cost_usd": 0.0011646,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc path 0 0 4 0 64\n```",
+      "response_id": "gen-1778455246-tDXVzJEFo5kum7YdokkQ",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc path 0 0 4 0 64"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc path 0 0 4 0 64",
+          "known_command": true,
+          "canonical_name": "path",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/path",
+            "body": "{\"x1\":0,\"z1\":0,\"x2\":4,\"z2\":0,\"y\":64}",
+            "params": {
+              "x1": 0,
+              "z1": 0,
+              "x2": 4,
+              "z2": 0,
+              "y": 64
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "pass_through_gate",
+      "category": "world",
+      "model": "gemini-2.5-flash-lite",
+      "elapsed_ms": 440,
+      "usage": {
+        "prompt_tokens": 11578,
+        "completion_tokens": 20,
+        "total_tokens": 11598,
+        "cost": 0.0011658,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0011658,
+          "upstream_inference_prompt_cost": 0.0011578,
+          "upstream_inference_completions_cost": 0.000008
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11578,
+        "completion_tokens": 20,
+        "total_tokens": 11598
+      },
+      "cost_reported_usd": 0.0011658,
+      "upstream_inference_cost_usd": 0.0011658,
+      "cost_usd": 0.0011658,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc through 0 65 2 0 65 5\n```",
+      "response_id": "gen-1778455246-FMd6yHosiGtjZ6vIuMhN",
+      "response_model": "google/gemini-2.5-flash-lite",
+      "finish_reason": "stop",
+      "native_finish_reason": "STOP",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc through 0 65 2 0 65 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc through 0 65 2 0 65 5",
+          "known_command": true,
+          "canonical_name": "through",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/through",
+            "body": "{\"gx\":0,\"gy\":65,\"gz\":2,\"dx\":0,\"dy\":65,\"dz\":5}",
+            "params": {
+              "gx": 0,
+              "gy": 65,
+              "gz": 2,
+              "dx": 0,
+              "dy": 65,
+              "dz": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    }
+  ],
+  "usage_totals": {
+    "calls": 35,
+    "calls_with_usage": 35,
+    "prompt_tokens_sum": 404636,
+    "completion_tokens_sum": 471,
+    "total_tokens_sum": 405107,
+    "cost_reported_usd_sum": 0.03761315,
+    "upstream_inference_cost_usd_sum": 0.03761315,
+    "cost_usd_sum": 0.03761315
+  }
+}

@@ -13,11 +13,16 @@
   {
     "id": "smelt_iron_pipeline",
     "category": "craft",
-    "task": "You have raw_iron in inventory and you're standing next to a furnace. Smelt 4 raw_iron into iron_ingot, then check the furnace's status.",
+    "task": "You have raw_iron in inventory. The furnace block is at (0, 64, 0). Smelt 4 raw_iron into iron_ingot, then check that furnace's status.",
     "correct_lines_required": [
       "mc smelt raw_iron 4",
-      "mc furnace_check"
+      "mc furnace_check 0 64 0"
     ],
+    "correct_line_groups": [
+      ["mc smelt raw_iron 4"],
+      ["mc furnace_check 0 64 0", "mc furnaces"]
+    ],
+    "rubric_note": "Slot 2 accepts coordinate-specific furnace_check OR listing known furnaces via furnaces (cheatsheet observe path).",
     "scoring": "all_lines_present_any_order_partial_args_ok"
   },
   {
@@ -28,6 +33,11 @@
       "mc go_mark home",
       "mc mode guard"
     ],
+    "correct_line_groups": [
+      ["mc go_mark home", "mc flee --to @home"],
+      ["mc mode guard"]
+    ],
+    "rubric_note": "Slot 1 accepts walking to the mark OR cheatsheet emergency path flee --to @home.",
     "scoring": "all_lines_present"
   },
   {
@@ -36,7 +46,7 @@
     "task": "Scan for hostile entities within 32 blocks, then send a public chat message saying \"all clear\" if none found. Output both commands; the chat is conditional on the agent reading the find result.",
     "correct_lines_required": [
       "mc find_entities",
-      "mc chat"
+      "mc chat \"all clear\""
     ],
     "scoring": "all_lines_present_partial_args_ok"
   }

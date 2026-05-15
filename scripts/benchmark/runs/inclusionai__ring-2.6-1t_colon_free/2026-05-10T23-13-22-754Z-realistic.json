@@ -1,0 +1,1872 @@
+{
+  "timestamp": "2026-05-10T23:13:22.754Z",
+  "model_id": "inclusionai/ring-2.6-1t:free",
+  "model_label": "ring-2.6-1t-free",
+  "suite_models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-v4-flash"
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "label": "grok-4.1-fast"
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "label": "gemini-2.5-flash-lite"
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "label": "nemotron-3-super-120b-free"
+    },
+    {
+      "id": "stepfun/step-3.5-flash",
+      "label": "step-3.5-flash"
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "label": "gpt-oss-120b"
+    },
+    {
+      "id": "openrouter/owl-alpha",
+      "label": "owl-alpha"
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "label": "gpt-4o-mini"
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "label": "minimax-m2.5"
+    },
+    {
+      "id": "poolside/laguna-m.1:free",
+      "label": "laguna-m.1-free"
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "label": "gemma-4-31b-it"
+    },
+    {
+      "id": "qwen/qwen3.5-flash-02-23",
+      "label": "qwen3.5-flash"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it",
+      "label": "gemma-4-26b-a4b-it"
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-2507",
+      "label": "qwen3-235b-a22b-2507"
+    },
+    {
+      "id": "mistralai/mistral-nemo",
+      "label": "mistral-nemo"
+    },
+    {
+      "id": "inclusionai/ring-2.6-1t:free",
+      "label": "ring-2.6-1t-free"
+    },
+    {
+      "id": "z-ai/glm-4.5-air",
+      "label": "glm-4.5-air"
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "label": "gpt-5-nano"
+    },
+    {
+      "id": "meta-llama/llama-3.1-8b-instruct",
+      "label": "llama-3.1-8b-instruct"
+    }
+  ],
+  "git_sha": "8215740cdd4c5c031fa22848f2bc4306876a2bd8",
+  "realistic": true,
+  "parallel": false,
+  "request_timeout_ms": 10000,
+  "cheatsheet_bytes": 12568,
+  "persona_bytes": 2946,
+  "skill_bytes": 4695,
+  "observe_bytes": 9330,
+  "task_groups": [
+    "challenges",
+    "composition",
+    "direct"
+  ],
+  "results": [
+    {
+      "group": "challenges",
+      "task_id": "scout_hazards_before_mining",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2827,
+      "usage": {
+        "prompt_tokens": 11662,
+        "completion_tokens": 72,
+        "total_tokens": 11734,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 46,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11662,
+        "completion_tokens": 72,
+        "total_tokens": 11734
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc scout 20 12 20 8\n</tool_call>",
+      "response_id": "gen-1778456865-sZ8ZCytGLt5UuRDGNcav",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "semantic_score": 0,
+      "parse_ok_rate": null,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "challenge_reasons": [
+        "reference_answer_mismatch",
+        "missing:scout"
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "prefer_safe_dig_over_raw_dig",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 5508,
+      "usage": {
+        "prompt_tokens": 11647,
+        "completion_tokens": 342,
+        "total_tokens": 11989,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 278,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11647,
+        "completion_tokens": 342,
+        "total_tokens": 11989
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc goto 8 64 8\n```",
+      "response_id": "gen-1778456868-JVBocqmamDHM1B6kZsC0",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "semantic_score": 0,
+      "parse_ok_rate": null,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "challenge_reasons": [
+        "reference_answer_mismatch",
+        "required_any_missing"
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "navigate_building_use_move",
+      "category": "movement",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 3291,
+      "usage": {
+        "prompt_tokens": 11654,
+        "completion_tokens": 189,
+        "total_tokens": 11843,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 144,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11654,
+        "completion_tokens": 189,
+        "total_tokens": 11843
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc move 5 65 12\n```",
+      "response_id": "gen-1778456873-rp1PIP3gnzJefzUKPoPd",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc move 5 65 12"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc move 5 65 12",
+          "known_command": true,
+          "canonical_name": "move",
+          "category": "movement",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/move",
+            "body": "{\"x\":5,\"y\":65,\"z\":12}",
+            "params": {
+              "x": 5,
+              "y": 65,
+              "z": 12
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "search_cached_chests_for_item",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 3328,
+      "usage": {
+        "prompt_tokens": 11643,
+        "completion_tokens": 50,
+        "total_tokens": 11693,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 49,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11643,
+        "completion_tokens": 50,
+        "total_tokens": 11693
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc chest_search diamond\n</tool_call>",
+      "response_id": "gen-1778456876-OnWrnwpJXhd3cqERIS60",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "semantic_score": 0,
+      "parse_ok_rate": null,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "challenge_reasons": [
+        "reference_answer_mismatch",
+        "missing:chest_search"
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "list_known_furnaces",
+      "category": "observe",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 1657,
+      "usage": {
+        "prompt_tokens": 11633,
+        "completion_tokens": 49,
+        "total_tokens": 11682,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 40,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11633,
+        "completion_tokens": 49,
+        "total_tokens": 11682
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc furnaces\n```",
+      "response_id": "gen-1778456880-0L4ONkondu8GqZRrHmv0",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc furnaces"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc furnaces",
+          "known_command": true,
+          "canonical_name": "furnaces",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/furnaces",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "cancel_running_background_task",
+      "category": "task",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2203,
+      "usage": {
+        "prompt_tokens": 11630,
+        "completion_tokens": 69,
+        "total_tokens": 11699,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 68,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11630,
+        "completion_tokens": 69,
+        "total_tokens": 11699
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc cancel\n```",
+      "response_id": "gen-1778456881-qUvOH2wOHBdmriRXz3Jw",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc cancel"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc cancel",
+          "known_command": true,
+          "canonical_name": "cancel",
+          "category": "task",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/task/cancel",
+            "body": "{}",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "background_smelt_batch",
+      "category": "craft",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 3777,
+      "usage": {
+        "prompt_tokens": 11657,
+        "completion_tokens": 233,
+        "total_tokens": 11890,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 204,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11657,
+        "completion_tokens": 233,
+        "total_tokens": 11890
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc bg_smelt cobblestone oak_planks 8\n```",
+      "response_id": "gen-1778456883-pk40ZU9AyPVnWpnGqPU5",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc bg_smelt cobblestone oak_planks 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc bg_smelt cobblestone oak_planks 8",
+          "known_command": true,
+          "canonical_name": "bg_smelt",
+          "category": "task",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/task/smelt",
+            "body": "{\"input\":\"cobblestone\",\"count\":8,\"fuel\":\"oak_planks\"}",
+            "params": {
+              "input": "cobblestone",
+              "fuel": "oak_planks",
+              "count": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "terrain_surface_height_sample",
+      "category": "observe",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2108,
+      "usage": {
+        "prompt_tokens": 11643,
+        "completion_tokens": 67,
+        "total_tokens": 11710,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 51,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11643,
+        "completion_tokens": 67,
+        "total_tokens": 11710
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc terrain_top 30 40\n</tool_call>",
+      "response_id": "gen-1778456887-iWyAFjhZp8DFAoK9gUmL",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "semantic_score": 0,
+      "parse_ok_rate": null,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "challenge_reasons": [
+        "reference_answer_mismatch",
+        "missing:terrain_top"
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "dump_cli_registry_json",
+      "category": "platform",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 10000,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "timeout after 10000ms",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "composition",
+      "task_id": "shelter_corner",
+      "category": "world+craft",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2832,
+      "usage": {
+        "prompt_tokens": 11675,
+        "completion_tokens": 142,
+        "total_tokens": 11817,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 67,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11675,
+        "completion_tokens": 142,
+        "total_tokens": 11817
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc place cobblestone 5 65 5\nmc place cobblestone 5 66 5\nmc place cobblestone 5 67 5\n```",
+      "response_id": "gen-1778456899-qJ5N0ZSlnNN7ZKYm8Lyz",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "matched": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "mc_lines": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc place cobblestone 5 65 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":65,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 65,
+              "z": 5
+            }
+          }
+        },
+        {
+          "raw": "mc place cobblestone 5 66 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":66,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 66,
+              "z": 5
+            }
+          }
+        },
+        {
+          "raw": "mc place cobblestone 5 67 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":67,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 67,
+              "z": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "composition",
+      "task_id": "smelt_iron_pipeline",
+      "category": "craft",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 3089,
+      "usage": {
+        "prompt_tokens": 11663,
+        "completion_tokens": 115,
+        "total_tokens": 11778,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 83,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11663,
+        "completion_tokens": 115,
+        "total_tokens": 11778
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc smelt raw_iron 4\n</tool_call>",
+      "response_id": "gen-1778456902-ByAk0EvUTAJ0utawhsAg",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "matched": [
+        null,
+        null
+      ],
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "composition",
+      "task_id": "rescue_to_safehome",
+      "category": "movement+combat",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 8857,
+      "usage": {
+        "prompt_tokens": 11644,
+        "completion_tokens": 301,
+        "total_tokens": 11945,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 273,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11644,
+        "completion_tokens": 301,
+        "total_tokens": 11945
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc marks\n\n</tool_call>\n<tool_call>mc health\n\n</tool_call>",
+      "response_id": "gen-1778456905-PIMFQihYMt78FxtWTXQT",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "matched": [
+        null,
+        null
+      ],
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "composition",
+      "task_id": "scout_then_report",
+      "category": "observe+social",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 10001,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 10002,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 10003,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 10010,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 3113,
+      "usage": {
+        "prompt_tokens": 11635,
+        "completion_tokens": 157,
+        "total_tokens": 11792,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 122,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11635,
+        "completion_tokens": 157,
+        "total_tokens": 11792
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc mark shelter\n```",
+      "response_id": "gen-1778456954-lkJ4UD0tDrvOI1qL409T",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mark shelter"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mark shelter",
+          "known_command": true,
+          "canonical_name": "mark",
+          "category": "memory",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mark",
+            "body": "{\"name\":\"shelter\",\"note\":\"\"}",
+            "params": {
+              "name": "shelter",
+              "note": ""
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2459,
+      "usage": {
+        "prompt_tokens": 11625,
+        "completion_tokens": 65,
+        "total_tokens": 11690,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10137,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 57,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11625,
+        "completion_tokens": 65,
+        "total_tokens": 11690
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc goals\n```",
+      "response_id": "gen-1778456957-xKeImsDWnj4RDV7LVnBR",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc goals"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc goals",
+          "known_command": true,
+          "canonical_name": "goals",
+          "category": "goals",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/goals",
+            "params": {}
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 1974,
+      "usage": {
+        "prompt_tokens": 11630,
+        "completion_tokens": 76,
+        "total_tokens": 11706,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10137,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 57,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11630,
+        "completion_tokens": 76,
+        "total_tokens": 11706
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc eat\n```",
+      "response_id": "gen-1778456960-llaNSFCeUpoHB39Ygmur",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc eat"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc eat",
+          "known_command": true,
+          "canonical_name": "eat",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/eat",
+            "body": "{}",
+            "params": {}
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2211,
+      "usage": {
+        "prompt_tokens": 11629,
+        "completion_tokens": 51,
+        "total_tokens": 11680,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 32,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11629,
+        "completion_tokens": 51,
+        "total_tokens": 11680
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc read_chat 5\n```",
+      "response_id": "gen-1778456962-vPv62s1OhcLF6TuGFvVq",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc read_chat 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc read_chat 5",
+          "known_command": true,
+          "canonical_name": "read_chat",
+          "category": "social",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/chat?count=5",
+            "params": {
+              "count": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 1725,
+      "usage": {
+        "prompt_tokens": 11636,
+        "completion_tokens": 48,
+        "total_tokens": 11684,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 31,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11636,
+        "completion_tokens": 48,
+        "total_tokens": 11684
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc combat_skill 0.9\n```",
+      "response_id": "gen-1778456964-B9yWPOyHjA8PGhvO5Vhl",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc combat_skill 0.9"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc combat_skill 0.9",
+          "known_command": true,
+          "canonical_name": "combat_skill",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/combat_skill",
+            "body": "{\"value\":\"0.9\"}",
+            "params": {
+              "value": "0.9"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 1650,
+      "usage": {
+        "prompt_tokens": 11637,
+        "completion_tokens": 58,
+        "total_tokens": 11695,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10137,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 42,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11637,
+        "completion_tokens": 58,
+        "total_tokens": 11695
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc inventory\n\n</tool_call>\n<tool_call>mc nearby\n</tool_call>",
+      "response_id": "gen-1778456966-eyunStmLz3OWi1FTUt9R",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2425,
+      "usage": {
+        "prompt_tokens": 11640,
+        "completion_tokens": 61,
+        "total_tokens": 11701,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 45,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11640,
+        "completion_tokens": 61,
+        "total_tokens": 11701
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc find_blocks iron_ore 32",
+      "response_id": "gen-1778456967-lvmLhqA5YG4XGZoQPZQt",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 3004,
+      "usage": {
+        "prompt_tokens": 11631,
+        "completion_tokens": 126,
+        "total_tokens": 11757,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 122,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11631,
+        "completion_tokens": 126,
+        "total_tokens": 11757
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc marks\n</tool_call>",
+      "response_id": "gen-1778456970-5KczrLGL8QZgGXn9rkDk",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 3144,
+      "usage": {
+        "prompt_tokens": 11640,
+        "completion_tokens": 132,
+        "total_tokens": 11772,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 105,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11640,
+        "completion_tokens": 132,
+        "total_tokens": 11772
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc nearby 10\n</tool_call>\n<tool_call>mc scene 10</arg_value>\n</tool_call>",
+      "response_id": "gen-1778456973-GIxewNqu5DfcW0XDsxb7",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2709,
+      "usage": {
+        "prompt_tokens": 11641,
+        "completion_tokens": 68,
+        "total_tokens": 11709,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 56,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11641,
+        "completion_tokens": 68,
+        "total_tokens": 11709
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc mode guard\n```",
+      "response_id": "gen-1778456976-ooqvpoJjmqpZXXHVvRtB",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mode guard"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mode guard",
+          "known_command": true,
+          "canonical_name": "mode",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mode",
+            "body": "{\"name\":\"guard\"}",
+            "params": {
+              "name": "guard"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2927,
+      "usage": {
+        "prompt_tokens": 11637,
+        "completion_tokens": 88,
+        "total_tokens": 11725,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 74,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11637,
+        "completion_tokens": 88,
+        "total_tokens": 11725
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc inventory\n</tool_call>\n<tool_call>mc chest @vault</arg_value>\n</tool_call>",
+      "response_id": "gen-1778456979-8pGTDCWEaQgjhhpfgs06",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 1571,
+      "usage": {
+        "prompt_tokens": 11632,
+        "completion_tokens": 51,
+        "total_tokens": 11683,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 39,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11632,
+        "completion_tokens": 51,
+        "total_tokens": 11683
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc scene 8\n```",
+      "response_id": "gen-1778456982-TJrgz1N9MJrSSir0EmAP",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc scene 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc scene 8",
+          "known_command": true,
+          "canonical_name": "scene",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/scene?range=8",
+            "params": {
+              "range": 8
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_3block_wall",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 26,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"16\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1778457000000\"},\"provider_name\":null}},\"user_id\":\"user_34Yj943kkVGmKSKjcngRWIB18OE\"}",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "build_fenced_enclosure",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 6128,
+      "usage": {
+        "prompt_tokens": 11652,
+        "completion_tokens": 171,
+        "total_tokens": 11823,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 116,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11652,
+        "completion_tokens": 171,
+        "total_tokens": 11823
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc fence oak_fence -2 -2 2 2 --gate south\n```",
+      "response_id": "gen-1778456985-yGmJ29g6d6sqBjQTuOS4",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc fence oak_fence -2 -2 2 2 --gate south"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc fence oak_fence -2 -2 2 2 --gate south",
+          "known_command": true,
+          "canonical_name": "fence",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/fence",
+            "body": "{\"block\":\"oak_fence\",\"x1\":-2,\"z1\":-2,\"x2\":2,\"z2\":2,\"gate\":\"south\"}",
+            "params": {
+              "block": "oak_fence",
+              "x1": -2,
+              "z1": -2,
+              "x2": 2,
+              "z2": 2,
+              "gate": "south"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "dig_3x3_pit",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2397,
+      "usage": {
+        "prompt_tokens": 11648,
+        "completion_tokens": 76,
+        "total_tokens": 11724,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 50,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11648,
+        "completion_tokens": 76,
+        "total_tokens": 11724
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc terrain_top 0 0\n</tool_call>",
+      "response_id": "gen-1778456989-zr3dCvgt2WGOw6nxvlyT",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "level_5x5_to_y64",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 37,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"16\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1778457000000\"},\"provider_name\":null}},\"user_id\":\"user_34Yj943kkVGmKSKjcngRWIB18OE\"}",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "build_4step_staircase",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 2434,
+      "usage": {
+        "prompt_tokens": 11638,
+        "completion_tokens": 138,
+        "total_tokens": 11776,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 8192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 133,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11638,
+        "completion_tokens": 138,
+        "total_tokens": 11776
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "<tool_call>mc inventory\n</tool_call>",
+      "response_id": "gen-1778456992-hlKwPSKioflr9AaBK37R",
+      "response_model": "inclusionai/ring-2.6-1t-20260508:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "make_dirt_path",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 39,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"16\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1778457000000\"},\"provider_name\":null}},\"user_id\":\"user_34Yj943kkVGmKSKjcngRWIB18OE\"}",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "pass_through_gate",
+      "category": "world",
+      "model": "ring-2.6-1t-free",
+      "elapsed_ms": 48,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"16\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1778457000000\"},\"provider_name\":null}},\"user_id\":\"user_34Yj943kkVGmKSKjcngRWIB18OE\"}",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    }
+  ],
+  "usage_totals": {
+    "calls": 35,
+    "calls_with_usage": 26,
+    "prompt_tokens_sum": 302702,
+    "completion_tokens_sum": 2995,
+    "total_tokens_sum": 305697,
+    "cost_reported_usd_sum": 0,
+    "upstream_inference_cost_usd_sum": 0,
+    "cost_usd_sum": 0
+  }
+}

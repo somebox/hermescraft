@@ -1,0 +1,2225 @@
+{
+  "timestamp": "2026-05-10T23:13:22.754Z",
+  "model_id": "openai/gpt-oss-120b",
+  "model_label": "gpt-oss-120b",
+  "suite_models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-v4-flash"
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "label": "grok-4.1-fast"
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "label": "gemini-2.5-flash-lite"
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "label": "nemotron-3-super-120b-free"
+    },
+    {
+      "id": "stepfun/step-3.5-flash",
+      "label": "step-3.5-flash"
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "label": "gpt-oss-120b"
+    },
+    {
+      "id": "openrouter/owl-alpha",
+      "label": "owl-alpha"
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "label": "gpt-4o-mini"
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "label": "minimax-m2.5"
+    },
+    {
+      "id": "poolside/laguna-m.1:free",
+      "label": "laguna-m.1-free"
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "label": "gemma-4-31b-it"
+    },
+    {
+      "id": "qwen/qwen3.5-flash-02-23",
+      "label": "qwen3.5-flash"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it",
+      "label": "gemma-4-26b-a4b-it"
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-2507",
+      "label": "qwen3-235b-a22b-2507"
+    },
+    {
+      "id": "mistralai/mistral-nemo",
+      "label": "mistral-nemo"
+    },
+    {
+      "id": "inclusionai/ring-2.6-1t:free",
+      "label": "ring-2.6-1t-free"
+    },
+    {
+      "id": "z-ai/glm-4.5-air",
+      "label": "glm-4.5-air"
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "label": "gpt-5-nano"
+    },
+    {
+      "id": "meta-llama/llama-3.1-8b-instruct",
+      "label": "llama-3.1-8b-instruct"
+    }
+  ],
+  "git_sha": "8215740cdd4c5c031fa22848f2bc4306876a2bd8",
+  "realistic": true,
+  "parallel": false,
+  "request_timeout_ms": 10000,
+  "cheatsheet_bytes": 12568,
+  "persona_bytes": 2946,
+  "skill_bytes": 4695,
+  "observe_bytes": 9330,
+  "task_groups": [
+    "challenges",
+    "composition",
+    "direct"
+  ],
+  "results": [
+    {
+      "group": "challenges",
+      "task_id": "scout_hazards_before_mining",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 4513,
+      "usage": {
+        "prompt_tokens": 10246,
+        "completion_tokens": 78,
+        "total_tokens": 10324,
+        "cost": 0.0005474,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0005474,
+          "upstream_inference_prompt_cost": 0.0005123,
+          "upstream_inference_completions_cost": 0.0000351
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 64,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10246,
+        "completion_tokens": 78,
+        "total_tokens": 10324
+      },
+      "cost_reported_usd": 0.0005474,
+      "upstream_inference_cost_usd": 0.0005474,
+      "cost_usd": 0.0005474,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc scout 20 12 20 8\n```",
+      "response_id": "gen-1778455729-cCC9qIIJNQcxVXxckSkt",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc scout 20 12 20 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc scout 20 12 20 8",
+          "known_command": true,
+          "canonical_name": "scout",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/scout",
+            "body": "{\"x\":20,\"y\":12,\"z\":20,\"radius\":8}",
+            "params": {
+              "x": 20,
+              "y": 12,
+              "z": 20,
+              "radius": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "prefer_safe_dig_over_raw_dig",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 1805,
+      "usage": {
+        "prompt_tokens": 10234,
+        "completion_tokens": 82,
+        "total_tokens": 10316,
+        "cost": 0.0015843,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0015843,
+          "upstream_inference_prompt_cost": 0.0015351,
+          "upstream_inference_completions_cost": 0.0000492
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 47,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10234,
+        "completion_tokens": 82,
+        "total_tokens": 10316
+      },
+      "cost_reported_usd": 0.0015843,
+      "upstream_inference_cost_usd": 0.0015843,
+      "cost_usd": 0.0015843,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc safe_dig 8 64 8 \n```",
+      "response_id": "gen-1778455733-WjiMUQehTHbQ0wxqUyYd",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc safe_dig 8 64 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc safe_dig 8 64 8",
+          "known_command": true,
+          "canonical_name": "safe_dig",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/safe_dig",
+            "body": "{\"x\":8,\"y\":64,\"z\":8}",
+            "params": {
+              "x": 8,
+              "y": 64,
+              "z": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "navigate_building_use_move",
+      "category": "movement",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 3524,
+      "usage": {
+        "prompt_tokens": 10240,
+        "completion_tokens": 70,
+        "total_tokens": 10310,
+        "cost": 0.0005435,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0005435,
+          "upstream_inference_prompt_cost": 0.000512,
+          "upstream_inference_completions_cost": 0.0000315
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 58,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10240,
+        "completion_tokens": 70,
+        "total_tokens": 10310
+      },
+      "cost_reported_usd": 0.0005435,
+      "upstream_inference_cost_usd": 0.0005435,
+      "cost_usd": 0.0005435,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc move 5 65 12 \n```",
+      "response_id": "gen-1778455735-vSGqVbJAbNZ8BRvbauRV",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc move 5 65 12"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc move 5 65 12",
+          "known_command": true,
+          "canonical_name": "move",
+          "category": "movement",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/move",
+            "body": "{\"x\":5,\"y\":65,\"z\":12}",
+            "params": {
+              "x": 5,
+              "y": 65,
+              "z": 12
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "search_cached_chests_for_item",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 3078,
+      "usage": {
+        "prompt_tokens": 10127,
+        "completion_tokens": 8,
+        "total_tokens": 10135,
+        "cost": 0.000396393,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000396393,
+          "upstream_inference_prompt_cost": 0.000394953,
+          "upstream_inference_completions_cost": 0.00000144
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 125,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10127,
+        "completion_tokens": 8,
+        "total_tokens": 10135
+      },
+      "cost_reported_usd": 0.000396393,
+      "upstream_inference_cost_usd": 0.000396393,
+      "cost_usd": 0.000396393,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc chest_search diamond\n```",
+      "response_id": "gen-1778455739-eCZ2U3B6dPP2CtDf6dlO",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc chest_search diamond"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc chest_search diamond",
+          "known_command": true,
+          "canonical_name": "chest_search",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/chest_search",
+            "body": "{\"item\":\"diamond\",\"max_results\":10,\"exact\":true}",
+            "params": {
+              "item": "diamond",
+              "max_results": 10,
+              "exact": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "list_known_furnaces",
+      "category": "observe",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 1699,
+      "usage": {
+        "prompt_tokens": 10208,
+        "completion_tokens": 57,
+        "total_tokens": 10265,
+        "cost": 0.000408942,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000408942,
+          "upstream_inference_prompt_cost": 0.000398112,
+          "upstream_inference_completions_cost": 0.00001083
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 46,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10208,
+        "completion_tokens": 57,
+        "total_tokens": 10265
+      },
+      "cost_reported_usd": 0.000408942,
+      "upstream_inference_cost_usd": 0.000408942,
+      "cost_usd": 0.000408942,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc furnaces \n```",
+      "response_id": "gen-1778455742-MYxIRXQqkvCbHJlo0iEW",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc furnaces"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc furnaces",
+          "known_command": true,
+          "canonical_name": "furnaces",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/furnaces",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "cancel_running_background_task",
+      "category": "task",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 1566,
+      "usage": {
+        "prompt_tokens": 10218,
+        "completion_tokens": 40,
+        "total_tokens": 10258,
+        "cost": 0.00146852,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00146852,
+          "upstream_inference_prompt_cost": 0.00143052,
+          "upstream_inference_completions_cost": 0.000038
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 26,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10218,
+        "completion_tokens": 40,
+        "total_tokens": 10258
+      },
+      "cost_reported_usd": 0.00146852,
+      "upstream_inference_cost_usd": 0.00146852,
+      "cost_usd": 0.00146852,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc cancel \n```",
+      "response_id": "gen-1778455744-fZqj0qu7kpJnsXwySDcb",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc cancel"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc cancel",
+          "known_command": true,
+          "canonical_name": "cancel",
+          "category": "task",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/task/cancel",
+            "body": "{}",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "background_smelt_batch",
+      "category": "craft",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 5533,
+      "usage": {
+        "prompt_tokens": 10244,
+        "completion_tokens": 122,
+        "total_tokens": 10366,
+        "cost": 0.0005671,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0005671,
+          "upstream_inference_prompt_cost": 0.0005122,
+          "upstream_inference_completions_cost": 0.0000549
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 106,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10244,
+        "completion_tokens": 122,
+        "total_tokens": 10366
+      },
+      "cost_reported_usd": 0.0005671,
+      "upstream_inference_cost_usd": 0.0005671,
+      "cost_usd": 0.0005671,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc bg_smelt cobblestone oak_planks 8 \n```",
+      "response_id": "gen-1778455745-M55ItHMWJm5fLra4ZLS3",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc bg_smelt cobblestone oak_planks 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc bg_smelt cobblestone oak_planks 8",
+          "known_command": true,
+          "canonical_name": "bg_smelt",
+          "category": "task",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/task/smelt",
+            "body": "{\"input\":\"cobblestone\",\"count\":8,\"fuel\":\"oak_planks\"}",
+            "params": {
+              "input": "cobblestone",
+              "fuel": "oak_planks",
+              "count": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "terrain_surface_height_sample",
+      "category": "observe",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 2236,
+      "usage": {
+        "prompt_tokens": 10216,
+        "completion_tokens": 74,
+        "total_tokens": 10290,
+        "cost": 0.000412484,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000412484,
+          "upstream_inference_prompt_cost": 0.000398424,
+          "upstream_inference_completions_cost": 0.00001406
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 47,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10216,
+        "completion_tokens": 74,
+        "total_tokens": 10290
+      },
+      "cost_reported_usd": 0.000412484,
+      "upstream_inference_cost_usd": 0.000412484,
+      "cost_usd": 0.000412484,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc terrain_top 30 40 \n```",
+      "response_id": "gen-1778455751-iAPeyp0WQoUDUeiLugTx",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc terrain_top 30 40"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc terrain_top 30 40",
+          "known_command": true,
+          "canonical_name": "terrain_top",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/terrain_top",
+            "body": "{\"x\":30,\"z\":40,\"radius\":0}",
+            "params": {
+              "x": 30,
+              "z": 40,
+              "radius": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "dump_cli_registry_json",
+      "category": "platform",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 2969,
+      "usage": {
+        "prompt_tokens": 10221,
+        "completion_tokens": 43,
+        "total_tokens": 10264,
+        "cost": 0.0005304,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0005304,
+          "upstream_inference_prompt_cost": 0.00051105,
+          "upstream_inference_completions_cost": 0.00001935
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 37,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10221,
+        "completion_tokens": 43,
+        "total_tokens": 10264
+      },
+      "cost_reported_usd": 0.0005304,
+      "upstream_inference_cost_usd": 0.0005304,
+      "cost_usd": 0.0005304,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc commands \n```",
+      "response_id": "gen-1778455753-hE6jy6wmjUB2N77qF4Pa",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc commands"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc commands",
+          "known_command": true,
+          "canonical_name": "commands",
+          "category": "platform",
+          "parse_ok": true,
+          "simulated_request": {
+            "kind": "cli_introspection",
+            "method": "META",
+            "path": "mc commands"
+          }
+        }
+      ]
+    },
+    {
+      "group": "composition",
+      "task_id": "shelter_corner",
+      "category": "world+craft",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 5207,
+      "usage": {
+        "prompt_tokens": 10262,
+        "completion_tokens": 238,
+        "total_tokens": 10500,
+        "cost": 0.0005726,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0005726,
+          "upstream_inference_prompt_cost": 0.0005131,
+          "upstream_inference_completions_cost": 0.0000595
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 167,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10262,
+        "completion_tokens": 238,
+        "total_tokens": 10500
+      },
+      "cost_reported_usd": 0.0005726,
+      "upstream_inference_cost_usd": 0.0005726,
+      "cost_usd": 0.0005726,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc place cobblestone 5 65 5\nmc place cobblestone 5 66 5\nmc place cobblestone 5 67 5\n```",
+      "response_id": "gen-1778455756-8n9H3iwtYYvvCCeY8RVu",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "matched": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "mc_lines": [
+        "mc place cobblestone 5 65 5",
+        "mc place cobblestone 5 66 5",
+        "mc place cobblestone 5 67 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc place cobblestone 5 65 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":65,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 65,
+              "z": 5
+            }
+          }
+        },
+        {
+          "raw": "mc place cobblestone 5 66 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":66,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 66,
+              "z": 5
+            }
+          }
+        },
+        {
+          "raw": "mc place cobblestone 5 67 5",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"cobblestone\",\"x\":5,\"y\":67,\"z\":5}",
+            "params": {
+              "block": "cobblestone",
+              "x": 5,
+              "y": 67,
+              "z": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "composition",
+      "task_id": "smelt_iron_pipeline",
+      "category": "craft",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 3612,
+      "usage": {
+        "prompt_tokens": 10236,
+        "completion_tokens": 160,
+        "total_tokens": 10396,
+        "cost": 0.000429604,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000429604,
+          "upstream_inference_prompt_cost": 0.000399204,
+          "upstream_inference_completions_cost": 0.0000304
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 121,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10236,
+        "completion_tokens": 160,
+        "total_tokens": 10396
+      },
+      "cost_reported_usd": 0.000429604,
+      "upstream_inference_cost_usd": 0.000429604,
+      "cost_usd": 0.000429604,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc smelt raw_iron 4\nmc furnace_check 0 64 0\n```",
+      "response_id": "gen-1778455761-PaakJpggr2FfpOg8yuf4",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "matched": [
+        "mc smelt raw_iron 4",
+        "mc furnace_check 0 64 0"
+      ],
+      "mc_lines": [
+        "mc smelt raw_iron 4",
+        "mc furnace_check 0 64 0"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc smelt raw_iron 4",
+          "known_command": true,
+          "canonical_name": "smelt",
+          "category": "craft",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/smelt",
+            "body": "{\"input\":\"raw_iron\",\"count\":1,\"fuel\":\"4\"}",
+            "params": {
+              "input": "raw_iron",
+              "fuel": "4",
+              "count": 1
+            }
+          }
+        },
+        {
+          "raw": "mc furnace_check 0 64 0",
+          "known_command": true,
+          "canonical_name": "furnace_check",
+          "category": "craft",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/furnace_check",
+            "body": "{\"x\":0,\"y\":64,\"z\":0}",
+            "params": {
+              "x": 0,
+              "y": 64,
+              "z": 0
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "composition",
+      "task_id": "rescue_to_safehome",
+      "category": "movement+combat",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 6939,
+      "usage": {
+        "prompt_tokens": 10232,
+        "completion_tokens": 244,
+        "total_tokens": 10476,
+        "cost": 0.0006214,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0006214,
+          "upstream_inference_prompt_cost": 0.0005116,
+          "upstream_inference_completions_cost": 0.0001098
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 232,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10232,
+        "completion_tokens": 244,
+        "total_tokens": 10476
+      },
+      "cost_reported_usd": 0.0006214,
+      "upstream_inference_cost_usd": 0.0006214,
+      "cost_usd": 0.0006214,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc go_mark home\nmc mode guard\n```",
+      "response_id": "gen-1778455765-8XYKonkxx2laNnCHpGnI",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "matched": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "mc_lines": [
+        "mc go_mark home",
+        "mc mode guard"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc go_mark home",
+          "known_command": true,
+          "canonical_name": "go_mark",
+          "category": "memory",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/go_mark",
+            "body": "{\"name\":\"home\"}",
+            "params": {
+              "name": "home"
+            }
+          }
+        },
+        {
+          "raw": "mc mode guard",
+          "known_command": true,
+          "canonical_name": "mode",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mode",
+            "body": "{\"name\":\"guard\"}",
+            "params": {
+              "name": "guard"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "composition",
+      "task_id": "scout_then_report",
+      "category": "observe+social",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 7272,
+      "usage": {
+        "prompt_tokens": 10250,
+        "completion_tokens": 354,
+        "total_tokens": 10604,
+        "cost": 0.000601,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000601,
+          "upstream_inference_prompt_cost": 0.0005125,
+          "upstream_inference_completions_cost": 0.0000885
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 375,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10250,
+        "completion_tokens": 354,
+        "total_tokens": 10604
+      },
+      "cost_reported_usd": 0.000601,
+      "upstream_inference_cost_usd": 0.000601,
+      "cost_usd": 0.000601,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc find_entities hostile 32\nmc chat \"all clear\"\n```",
+      "response_id": "gen-1778455772-p8dMVJcJop0vFZaEG1FP",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "matched": [
+        "mc find_entities",
+        "mc chat \"all clear\""
+      ],
+      "mc_lines": [
+        "mc find_entities hostile 32",
+        "mc chat \"all clear\""
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc find_entities hostile 32",
+          "known_command": true,
+          "canonical_name": "find_entities",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/find_entities",
+            "body": "{\"type\":\"hostile\",\"radius\":32}",
+            "params": {
+              "type": "hostile",
+              "radius": 32
+            }
+          }
+        },
+        {
+          "raw": "mc chat \"all clear\"",
+          "known_command": true,
+          "canonical_name": "chat",
+          "category": "social",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/chat",
+            "body": "{\"message\":\"all clear\"}",
+            "params": {
+              "message": "all clear"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 2010,
+      "usage": {
+        "prompt_tokens": 10209,
+        "completion_tokens": 70,
+        "total_tokens": 10279,
+        "cost": 0.000411451,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000411451,
+          "upstream_inference_prompt_cost": 0.000398151,
+          "upstream_inference_completions_cost": 0.0000133
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 43,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10209,
+        "completion_tokens": 70,
+        "total_tokens": 10279
+      },
+      "cost_reported_usd": 0.000411451,
+      "upstream_inference_cost_usd": 0.000411451,
+      "cost_usd": 0.000411451,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc goto 100 64 200 \n```",
+      "response_id": "gen-1778455779-8IWWmi6KFSgJt5Av88iy",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc goto 100 64 200"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc goto 100 64 200",
+          "known_command": true,
+          "canonical_name": "goto",
+          "category": "movement",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/goto",
+            "body": "{\"x\":100,\"y\":64,\"z\":200}",
+            "params": {
+              "x": 100,
+              "y": 64,
+              "z": 200
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 3915,
+      "usage": {
+        "prompt_tokens": 10206,
+        "completion_tokens": 161,
+        "total_tokens": 10367,
+        "cost": 0.000428624,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000428624,
+          "upstream_inference_prompt_cost": 0.000398034,
+          "upstream_inference_completions_cost": 0.00003059
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 142,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10206,
+        "completion_tokens": 161,
+        "total_tokens": 10367
+      },
+      "cost_reported_usd": 0.000428624,
+      "upstream_inference_cost_usd": 0.000428624,
+      "cost_usd": 0.000428624,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc collect stone 4 \n```",
+      "response_id": "gen-1778455781-gKZdxWRTyXtB3BehmDVF",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [
+        "mc collect stone 4"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc collect stone 4",
+          "known_command": true,
+          "canonical_name": "collect",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/collect",
+            "body": "{\"block\":\"stone\",\"count\":4}",
+            "params": {
+              "block": "stone",
+              "count": 4
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 0.42
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 739,
+      "usage": {
+        "prompt_tokens": 10243,
+        "completion_tokens": 82,
+        "total_tokens": 10325,
+        "cost": 0.0010653,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0010653,
+          "upstream_inference_prompt_cost": 0.0010243,
+          "upstream_inference_completions_cost": 0.000041
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10243,
+        "completion_tokens": 82,
+        "total_tokens": 10325
+      },
+      "cost_reported_usd": 0.0010653,
+      "upstream_inference_cost_usd": 0.0010653,
+      "cost_usd": 0.0010653,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc place oak_planks 10 65 10\n```",
+      "response_id": "gen-1778455785-HlKHafnb3FXu7p2DD5Q5",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc place oak_planks 10 65 10"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc place oak_planks 10 65 10",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"oak_planks\",\"x\":10,\"y\":65,\"z\":10}",
+            "params": {
+              "block": "oak_planks",
+              "x": 10,
+              "y": 65,
+              "z": 10
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 605,
+      "usage": {
+        "prompt_tokens": 10234,
+        "completion_tokens": 62,
+        "total_tokens": 10296,
+        "cost": 0.0010544,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0010544,
+          "upstream_inference_prompt_cost": 0.0010234,
+          "upstream_inference_completions_cost": 0.000031
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10234,
+        "completion_tokens": 62,
+        "total_tokens": 10296
+      },
+      "cost_reported_usd": 0.0010544,
+      "upstream_inference_cost_usd": 0.0010544,
+      "cost_usd": 0.0010544,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc mark shelter \n```",
+      "response_id": "gen-1778455786-uYQL44VYaqqNWSA8ImZb",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mark shelter"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mark shelter",
+          "known_command": true,
+          "canonical_name": "mark",
+          "category": "memory",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mark",
+            "body": "{\"name\":\"shelter\",\"note\":\"\"}",
+            "params": {
+              "name": "shelter",
+              "note": ""
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 692,
+      "usage": {
+        "prompt_tokens": 10217,
+        "completion_tokens": 130,
+        "total_tokens": 10347,
+        "cost": 0.00096633,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00096633,
+          "upstream_inference_prompt_cost": 0.00091953,
+          "upstream_inference_completions_cost": 0.0000468
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 129,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10217,
+        "completion_tokens": 130,
+        "total_tokens": 10347
+      },
+      "cost_reported_usd": 0.00096633,
+      "upstream_inference_cost_usd": 0.00096633,
+      "cost_usd": 0.00096633,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc goals \n```",
+      "response_id": "gen-1778455786-LwnpyM8R3SvP6CfLim33",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc goals"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc goals",
+          "known_command": true,
+          "canonical_name": "goals",
+          "category": "goals",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/goals",
+            "params": {}
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10011,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 1999,
+      "usage": {
+        "prompt_tokens": 10113,
+        "completion_tokens": 9,
+        "total_tokens": 10122,
+        "cost": 0.000396027,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000396027,
+          "upstream_inference_prompt_cost": 0.000394407,
+          "upstream_inference_completions_cost": 0.00000162
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 49,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10113,
+        "completion_tokens": 9,
+        "total_tokens": 10122
+      },
+      "cost_reported_usd": 0.000396027,
+      "upstream_inference_cost_usd": 0.000396027,
+      "cost_usd": 0.000396027,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc read_chat 5 \n```",
+      "response_id": "gen-1778455797-3o9NapsgFgGvvJOF6yDg",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc read_chat 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc read_chat 5",
+          "known_command": true,
+          "canonical_name": "read_chat",
+          "category": "social",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/chat?count=5",
+            "params": {
+              "count": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 1851,
+      "usage": {
+        "prompt_tokens": 10120,
+        "completion_tokens": 11,
+        "total_tokens": 10131,
+        "cost": 0.00039666,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00039666,
+          "upstream_inference_prompt_cost": 0.00039468,
+          "upstream_inference_completions_cost": 0.00000198
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 48,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10120,
+        "completion_tokens": 11,
+        "total_tokens": 10131
+      },
+      "cost_reported_usd": 0.00039666,
+      "upstream_inference_cost_usd": 0.00039666,
+      "cost_usd": 0.00039666,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc combat_skill 0.9 \n```",
+      "response_id": "gen-1778455799-IGEAmYOiOrkeY5ZBfQJn",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc combat_skill 0.9"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc combat_skill 0.9",
+          "known_command": true,
+          "canonical_name": "combat_skill",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/combat_skill",
+            "body": "{\"value\":\"0.9\"}",
+            "params": {
+              "value": "0.9"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10009,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 3002,
+      "usage": {
+        "prompt_tokens": 10226,
+        "completion_tokens": 69,
+        "total_tokens": 10295,
+        "cost": 0.00061571,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00061571,
+          "upstream_inference_prompt_cost": 0.00056396,
+          "upstream_inference_completions_cost": 0.00005175
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 47,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10226,
+        "completion_tokens": 69,
+        "total_tokens": 10295
+      },
+      "cost_reported_usd": 0.00061571,
+      "upstream_inference_cost_usd": 0.00061571,
+      "cost_usd": 0.00061571,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc find_blocks iron_ore 32\n```",
+      "response_id": "gen-1778455811-JkHz2fdGBetQLxbOVqCT",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc find_blocks iron_ore 32"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc find_blocks iron_ore 32",
+          "known_command": true,
+          "canonical_name": "find_blocks",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/find_blocks",
+            "body": "{\"block\":\"iron_ore\",\"radius\":32,\"count\":10}",
+            "params": {
+              "block": "iron_ore",
+              "radius": 32,
+              "count": 10
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 2913,
+      "usage": {
+        "prompt_tokens": 10219,
+        "completion_tokens": 65,
+        "total_tokens": 10284,
+        "cost": 0.00061201,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00061201,
+          "upstream_inference_prompt_cost": 0.00056326,
+          "upstream_inference_completions_cost": 0.00004875
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 40,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10219,
+        "completion_tokens": 65,
+        "total_tokens": 10284
+      },
+      "cost_reported_usd": 0.00061201,
+      "upstream_inference_cost_usd": 0.00061201,
+      "cost_usd": 0.00061201,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc chest @treasure \n```",
+      "response_id": "gen-1778455814-QTJVwkTbhuPvucygkUb1",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc chest @treasure"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc chest @treasure",
+          "known_command": true,
+          "canonical_name": "chest",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/list_container",
+            "body": "{\"mark\":\"treasure\"}",
+            "params": {
+              "mark": "treasure"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10003,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 2843,
+      "usage": {
+        "prompt_tokens": 10228,
+        "completion_tokens": 58,
+        "total_tokens": 10286,
+        "cost": 0.00060766,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00060766,
+          "upstream_inference_prompt_cost": 0.00056416,
+          "upstream_inference_completions_cost": 0.0000435
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 42,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10228,
+        "completion_tokens": 58,
+        "total_tokens": 10286
+      },
+      "cost_reported_usd": 0.00060766,
+      "upstream_inference_cost_usd": 0.00060766,
+      "cost_usd": 0.00060766,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc mode guard \n```",
+      "response_id": "gen-1778455827-XR0TesJ4lGe3hj6ujCdS",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mode guard"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mode guard",
+          "known_command": true,
+          "canonical_name": "mode",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mode",
+            "body": "{\"name\":\"guard\"}",
+            "params": {
+              "name": "guard"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10002,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 3748,
+      "usage": {
+        "prompt_tokens": 10220,
+        "completion_tokens": 84,
+        "total_tokens": 10304,
+        "cost": 0.00062636,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00062636,
+          "upstream_inference_prompt_cost": 0.00056336,
+          "upstream_inference_completions_cost": 0.000063
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 72,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10220,
+        "completion_tokens": 84,
+        "total_tokens": 10304
+      },
+      "cost_reported_usd": 0.00062636,
+      "upstream_inference_cost_usd": 0.00062636,
+      "cost_usd": 0.00062636,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc scene 8\n```",
+      "response_id": "gen-1778455840-7s7AGbvkJoiwjOxDHETE",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc scene 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc scene 8",
+          "known_command": true,
+          "canonical_name": "scene",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/scene?range=8",
+            "params": {
+              "range": 8
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_3block_wall",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 7559,
+      "usage": {
+        "prompt_tokens": 10232,
+        "completion_tokens": 177,
+        "total_tokens": 10409,
+        "cost": 0.00069731,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00069731,
+          "upstream_inference_prompt_cost": 0.00056456,
+          "upstream_inference_completions_cost": 0.00013275
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 101,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10232,
+        "completion_tokens": 177,
+        "total_tokens": 10409
+      },
+      "cost_reported_usd": 0.00069731,
+      "upstream_inference_cost_usd": 0.00069731,
+      "cost_usd": 0.00069731,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc wall cobblestone 3 65 0 3 67 0 \n```",
+      "response_id": "gen-1778455843-1UpMXH6lyJI8l6gobXW9",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc wall cobblestone 3 65 0 3 67 0"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc wall cobblestone 3 65 0 3 67 0",
+          "known_command": true,
+          "canonical_name": "wall",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/wall",
+            "body": "{\"block\":\"cobblestone\",\"x1\":3,\"y1\":65,\"z1\":0,\"x2\":3,\"y2\":67,\"z2\":0}",
+            "params": {
+              "block": "cobblestone",
+              "x1": 3,
+              "y1": 65,
+              "z1": 0,
+              "x2": 3,
+              "y2": 67,
+              "z2": 0
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_fenced_enclosure",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10007,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "dig_3x3_pit",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10001,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "level_5x5_to_y64",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 8233,
+      "usage": {
+        "prompt_tokens": 10243,
+        "completion_tokens": 155,
+        "total_tokens": 10398,
+        "cost": 0.00068191,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00068191,
+          "upstream_inference_prompt_cost": 0.00056566,
+          "upstream_inference_completions_cost": 0.00011625
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 86,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10243,
+        "completion_tokens": 155,
+        "total_tokens": 10398
+      },
+      "cost_reported_usd": 0.00068191,
+      "upstream_inference_cost_usd": 0.00068191,
+      "cost_usd": 0.00068191,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc level 0 0 6 6 64 dirt \n```",
+      "response_id": "gen-1778455871-AGW7lF6OM8637AZdTFRO",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc level 0 0 6 6 64 dirt"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc level 0 0 6 6 64 dirt",
+          "known_command": true,
+          "canonical_name": "level",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/level",
+            "body": "{\"x1\":0,\"z1\":0,\"x2\":6,\"z2\":6,\"y\":64,\"block\":\"dirt\"}",
+            "params": {
+              "x1": 0,
+              "z1": 0,
+              "x2": 6,
+              "z2": 6,
+              "y": 64,
+              "block": "dirt"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_4step_staircase",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10001,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "make_dirt_path",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 6586,
+      "usage": {
+        "prompt_tokens": 10246,
+        "completion_tokens": 138,
+        "total_tokens": 10384,
+        "cost": 0.00066946,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 10192,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00066946,
+          "upstream_inference_prompt_cost": 0.00056596,
+          "upstream_inference_completions_cost": 0.0001035
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 70,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 10246,
+        "completion_tokens": 138,
+        "total_tokens": 10384
+      },
+      "cost_reported_usd": 0.00066946,
+      "upstream_inference_cost_usd": 0.00066946,
+      "cost_usd": 0.00066946,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "``` \nmc path 0 0 4 0 64 \n```",
+      "response_id": "gen-1778455889-uysCPlKaJeFMClTxHkbQ",
+      "response_model": "openai/gpt-oss-120b",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc path 0 0 4 0 64"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc path 0 0 4 0 64",
+          "known_command": true,
+          "canonical_name": "path",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/path",
+            "body": "{\"x1\":0,\"z1\":0,\"x2\":4,\"z2\":0,\"y\":64}",
+            "params": {
+              "x1": 0,
+              "z1": 0,
+              "x2": 4,
+              "z2": 0,
+              "y": 64
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "pass_through_gate",
+      "category": "world",
+      "model": "gpt-oss-120b",
+      "elapsed_ms": 10003,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    }
+  ],
+  "usage_totals": {
+    "calls": 35,
+    "calls_with_usage": 27,
+    "prompt_tokens_sum": 275890,
+    "completion_tokens_sum": 2841,
+    "total_tokens_sum": 278731,
+    "cost_reported_usd_sum": 0.017912855000000002,
+    "upstream_inference_cost_usd_sum": 0.017912855000000002,
+    "cost_usd_sum": 0.017912855000000002
+  }
+}

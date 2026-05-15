@@ -1,65 +1,196 @@
 {
-  "comment": "OpenRouter models to benchmark. Costs shown in USD per 1M tokens (input/output). Update when pricing changes. To benchmark a different model, uncomment or add an entry.",
+  "comment": "Order and $/1M prices match the OpenRouter models browse list you captured (top-weekly-style ranking, cheap tier). IDs resolved via api/v1/models display names (2026-05-11). Excluded Qwen3 Embedding 8B (not chat completion). Several rows exceed a $0.20/M output cap — kept as shown on the site. Per-model \"enabled\": false omits that row from full-suite runs (still runnable via --models label or id). Root timeout_ms is the default HTTP timeout when run.mjs omits --timeout-ms.",
+  "timeout_ms": 15000,
   "models": [
     {
       "id": "deepseek/deepseek-v4-flash",
       "label": "deepseek-v4-flash",
-      "cost_per_1m_in": 0.07,
-      "cost_per_1m_out": 0.14,
-      "tier": "cheap",
-      "in_production": true,
-      "production_role": "Flint, Mason, Gatherer (default agent model)"
+      "cost_per_1m_in": 0.14,
+      "cost_per_1m_out": 0.28,
+      "tier": "cheap"
+    },
+    {
+      "id": "tencent/hy3-preview",
+      "enabled": false,
+      "label": "hy3-preview",
+      "cost_per_1m_in": 0.066,
+      "cost_per_1m_out": 0.26,
+      "tier": "cheap"
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "enabled": false,
+      "label": "grok-4.1-fast",
+      "cost_per_1m_in": 0.2,
+      "cost_per_1m_out": 0.5,
+      "tier": "cheap"
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "label": "gemini-2.5-flash-lite",
+      "cost_per_1m_in": 0.1,
+      "cost_per_1m_out": 0.4,
+      "tier": "cheap-google"
     },
     {
       "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "enabled": false,
       "label": "nemotron-3-super-120b-free",
       "cost_per_1m_in": 0,
       "cost_per_1m_out": 0,
-      "tier": "free",
-      "in_production": true,
-      "production_role": "Barley"
+      "tier": "free"
     },
     {
-      "id": "anthropic/claude-haiku-4.5",
-      "label": "claude-haiku-4.5",
-      "cost_per_1m_in": 1.00,
-      "cost_per_1m_out": 5.00,
-      "tier": "cheap-anthropic",
-      "in_production": false
+      "id": "stepfun/step-3.5-flash",
+      "enabled": false,
+      "label": "step-3.5-flash",
+      "cost_per_1m_in": 0.1,
+      "cost_per_1m_out": 0.3,
+      "tier": "cheap"
     },
     {
-      "id": "google/gemini-2.5-flash",
-      "label": "gemini-2.5-flash",
-      "cost_per_1m_in": 0.30,
-      "cost_per_1m_out": 2.50,
-      "tier": "cheap-google",
-      "in_production": false
+      "id": "openai/gpt-oss-120b",
+      "label": "gpt-oss-120b",
+      "cost_per_1m_in": 0.039,
+      "cost_per_1m_out": 0.18,
+      "tier": "cheap-openai"
     },
     {
-      "id": "openai/gpt-5-mini",
-      "label": "gpt-5-mini",
-      "cost_per_1m_in": 0.25,
-      "cost_per_1m_out": 2.00,
-      "tier": "cheap-openai",
-      "in_production": false
+      "id": "openrouter/owl-alpha",
+      "enabled": false,
+      "label": "owl-alpha",
+      "cost_per_1m_in": 0,
+      "cost_per_1m_out": 0,
+      "tier": "free"
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "enabled": false,
+      "label": "gpt-4o-mini",
+      "cost_per_1m_in": 0.15,
+      "cost_per_1m_out": 0.6,
+      "tier": "cheap-openai"
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "enabled": false,
+      "label": "minimax-m2.5",
+      "cost_per_1m_in": 0.15,
+      "cost_per_1m_out": 1.15,
+      "tier": "cheap"
+    },
+    {
+      "id": "poolside/laguna-m.1:free",
+      "label": "laguna-m.1-free",
+      "cost_per_1m_in": 0,
+      "cost_per_1m_out": 0,
+      "tier": "free"
     },
     {
       "id": "google/gemma-4-31b-it",
       "label": "gemma-4-31b-it",
-      "cost_per_1m_in": 0.10,
-      "cost_per_1m_out": 0.40,
-      "tier": "cheap-google",
-      "in_production": false,
-      "note": "prices are placeholders — verify against OpenRouter"
+      "cost_per_1m_in": 0.13,
+      "cost_per_1m_out": 0.38,
+      "tier": "cheap-google"
     },
     {
-      "id": "minimax/minimax-m2.5",
-      "label": "minimax-m2.5",
-      "cost_per_1m_in": 0.20,
-      "cost_per_1m_out": 1.00,
-      "tier": "cheap",
-      "in_production": false,
-      "note": "prices are placeholders — verify against OpenRouter"
+      "id": "qwen/qwen3.5-flash-02-23",
+      "label": "qwen3.5-flash",
+      "cost_per_1m_in": 0.065,
+      "cost_per_1m_out": 0.26,
+      "tier": "cheap"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it",
+      "label": "gemma-4-26b-a4b-it",
+      "cost_per_1m_in": 0.06,
+      "cost_per_1m_out": 0.33,
+      "tier": "cheap-google"
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-2507",
+      "label": "qwen3-235b-a22b-2507",
+      "cost_per_1m_in": 0.071,
+      "cost_per_1m_out": 0.1,
+      "tier": "cheap"
+    },
+    {
+      "id": "openai/gpt-oss-120b:free",
+      "enabled": false,
+      "label": "gpt-oss-120b-free",
+      "cost_per_1m_in": 0,
+      "cost_per_1m_out": 0,
+      "tier": "free"
+    },
+    {
+      "id": "mistralai/mistral-nemo",
+      "label": "mistral-nemo",
+      "cost_per_1m_in": 0.02,
+      "cost_per_1m_out": 0.03,
+      "tier": "cheap"
+    },
+    {
+      "id": "inclusionai/ring-2.6-1t:free",
+      "enabled": false,
+      "label": "ring-2.6-1t-free",
+      "cost_per_1m_in": 0,
+      "cost_per_1m_out": 0,
+      "tier": "free"
+    },
+    {
+      "id": "xiaomi/mimo-v2-flash",
+      "enabled": false,
+      "label": "mimo-v2-flash",
+      "cost_per_1m_in": 0.1,
+      "cost_per_1m_out": 0.3,
+      "tier": "cheap"
+    },
+    {
+      "id": "z-ai/glm-4.5-air",
+      "enabled": false,
+      "label": "glm-4.5-air",
+      "cost_per_1m_in": 0.13,
+      "cost_per_1m_out": 0.85,
+      "tier": "cheap"
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "enabled": false,
+      "label": "gpt-5-nano",
+      "cost_per_1m_in": 0.05,
+      "cost_per_1m_out": 0.4,
+      "tier": "cheap-openai"
+    },
+    {
+      "id": "google/gemini-2.0-flash-001",
+      "enabled": false,
+      "label": "gemini-2.0-flash",
+      "cost_per_1m_in": 0.1,
+      "cost_per_1m_out": 0.4,
+      "tier": "cheap-google"
+    },
+    {
+      "id": "openai/gpt-5.4-nano",
+      "enabled": false,
+      "label": "gpt-5.4-nano",
+      "cost_per_1m_in": 0.2,
+      "cost_per_1m_out": 1.25,
+      "tier": "cheap-openai"
+    },
+    {
+      "id": "x-ai/grok-4-fast",
+      "enabled": false,
+      "label": "grok-4-fast",
+      "cost_per_1m_in": 0.2,
+      "cost_per_1m_out": 0.5,
+      "tier": "cheap"
+    },
+    {
+      "id": "meta-llama/llama-3.1-8b-instruct",
+      "label": "llama-3.1-8b-instruct",
+      "cost_per_1m_in": 0.02,
+      "cost_per_1m_out": 0.05,
+      "tier": "cheap"
     }
   ]
 }

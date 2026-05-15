@@ -1,0 +1,2294 @@
+{
+  "timestamp": "2026-05-10T23:13:22.754Z",
+  "model_id": "poolside/laguna-m.1:free",
+  "model_label": "laguna-m.1-free",
+  "suite_models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "deepseek-v4-flash"
+    },
+    {
+      "id": "x-ai/grok-4.1-fast",
+      "label": "grok-4.1-fast"
+    },
+    {
+      "id": "google/gemini-2.5-flash-lite",
+      "label": "gemini-2.5-flash-lite"
+    },
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "label": "nemotron-3-super-120b-free"
+    },
+    {
+      "id": "stepfun/step-3.5-flash",
+      "label": "step-3.5-flash"
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "label": "gpt-oss-120b"
+    },
+    {
+      "id": "openrouter/owl-alpha",
+      "label": "owl-alpha"
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "label": "gpt-4o-mini"
+    },
+    {
+      "id": "minimax/minimax-m2.5",
+      "label": "minimax-m2.5"
+    },
+    {
+      "id": "poolside/laguna-m.1:free",
+      "label": "laguna-m.1-free"
+    },
+    {
+      "id": "google/gemma-4-31b-it",
+      "label": "gemma-4-31b-it"
+    },
+    {
+      "id": "qwen/qwen3.5-flash-02-23",
+      "label": "qwen3.5-flash"
+    },
+    {
+      "id": "google/gemma-4-26b-a4b-it",
+      "label": "gemma-4-26b-a4b-it"
+    },
+    {
+      "id": "qwen/qwen3-235b-a22b-2507",
+      "label": "qwen3-235b-a22b-2507"
+    },
+    {
+      "id": "mistralai/mistral-nemo",
+      "label": "mistral-nemo"
+    },
+    {
+      "id": "inclusionai/ring-2.6-1t:free",
+      "label": "ring-2.6-1t-free"
+    },
+    {
+      "id": "z-ai/glm-4.5-air",
+      "label": "glm-4.5-air"
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "label": "gpt-5-nano"
+    },
+    {
+      "id": "meta-llama/llama-3.1-8b-instruct",
+      "label": "llama-3.1-8b-instruct"
+    }
+  ],
+  "git_sha": "8215740cdd4c5c031fa22848f2bc4306876a2bd8",
+  "realistic": true,
+  "parallel": false,
+  "request_timeout_ms": 10000,
+  "cheatsheet_bytes": 12568,
+  "persona_bytes": 2946,
+  "skill_bytes": 4695,
+  "observe_bytes": 9330,
+  "task_groups": [
+    "challenges",
+    "composition",
+    "direct"
+  ],
+  "results": [
+    {
+      "group": "challenges",
+      "task_id": "scout_hazards_before_mining",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2378,
+      "usage": {
+        "prompt_tokens": 11476,
+        "completion_tokens": 101,
+        "total_tokens": 11577,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 81,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11476,
+        "completion_tokens": 101,
+        "total_tokens": 11577
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc scout 20 12 20 8\n```",
+      "response_id": "gen-1778456230-HH1hA7fgaSoajN9y0B8V",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc scout 20 12 20 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc scout 20 12 20 8",
+          "known_command": true,
+          "canonical_name": "scout",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/scout",
+            "body": "{\"x\":20,\"y\":12,\"z\":20,\"radius\":8}",
+            "params": {
+              "x": 20,
+              "y": 12,
+              "z": 20,
+              "radius": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "prefer_safe_dig_over_raw_dig",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2136,
+      "usage": {
+        "prompt_tokens": 11461,
+        "completion_tokens": 93,
+        "total_tokens": 11554,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 75,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11461,
+        "completion_tokens": 93,
+        "total_tokens": 11554
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc safe_dig 8 64 8\n```",
+      "response_id": "gen-1778456233-xKLLAd4sPGUfGWxCyZw0",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc safe_dig 8 64 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc safe_dig 8 64 8",
+          "known_command": true,
+          "canonical_name": "safe_dig",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/safe_dig",
+            "body": "{\"x\":8,\"y\":64,\"z\":8}",
+            "params": {
+              "x": 8,
+              "y": 64,
+              "z": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "navigate_building_use_move",
+      "category": "movement",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 3532,
+      "usage": {
+        "prompt_tokens": 11468,
+        "completion_tokens": 227,
+        "total_tokens": 11695,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 210,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11468,
+        "completion_tokens": 227,
+        "total_tokens": 11695
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc move 5 65 12\n```",
+      "response_id": "gen-1778456235-QLECeT5qYTm83rbvlsAT",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc move 5 65 12"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc move 5 65 12",
+          "known_command": true,
+          "canonical_name": "move",
+          "category": "movement",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/move",
+            "body": "{\"x\":5,\"y\":65,\"z\":12}",
+            "params": {
+              "x": 5,
+              "y": 65,
+              "z": 12
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "search_cached_chests_for_item",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2864,
+      "usage": {
+        "prompt_tokens": 11457,
+        "completion_tokens": 72,
+        "total_tokens": 11529,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 61,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11457,
+        "completion_tokens": 72,
+        "total_tokens": 11529
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc chest_search diamond\n```",
+      "response_id": "gen-1778456238-IDP550EDkiKQ9khhk1iN",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc chest_search diamond"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc chest_search diamond",
+          "known_command": true,
+          "canonical_name": "chest_search",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/chest_search",
+            "body": "{\"item\":\"diamond\",\"max_results\":10,\"exact\":true}",
+            "params": {
+              "item": "diamond",
+              "max_results": 10,
+              "exact": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "list_known_furnaces",
+      "category": "observe",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 1799,
+      "usage": {
+        "prompt_tokens": 11447,
+        "completion_tokens": 63,
+        "total_tokens": 11510,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 53,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11447,
+        "completion_tokens": 63,
+        "total_tokens": 11510
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc furnaces\n```",
+      "response_id": "gen-1778456241-xNQGMkivgatjp4pbAQcV",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc furnaces"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc furnaces",
+          "known_command": true,
+          "canonical_name": "furnaces",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/furnaces",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "cancel_running_background_task",
+      "category": "task",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2526,
+      "usage": {
+        "prompt_tokens": 11444,
+        "completion_tokens": 113,
+        "total_tokens": 11557,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 104,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11444,
+        "completion_tokens": 113,
+        "total_tokens": 11557
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc cancel\n```",
+      "response_id": "gen-1778456243-6GInqakGOiPXjvGm2iTp",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc cancel"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc cancel",
+          "known_command": true,
+          "canonical_name": "cancel",
+          "category": "task",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/task/cancel",
+            "body": "{}",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "background_smelt_batch",
+      "category": "craft",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 7812,
+      "usage": {
+        "prompt_tokens": 11471,
+        "completion_tokens": 204,
+        "total_tokens": 11675,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 185,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11471,
+        "completion_tokens": 204,
+        "total_tokens": 11675
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc bg_smelt cobblestone oak_planks 8\n```",
+      "response_id": "gen-1778456245-v702dSpyxswwxoeiadMa",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc bg_smelt cobblestone oak_planks 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc bg_smelt cobblestone oak_planks 8",
+          "known_command": true,
+          "canonical_name": "bg_smelt",
+          "category": "task",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/task/smelt",
+            "body": "{\"input\":\"cobblestone\",\"count\":8,\"fuel\":\"oak_planks\"}",
+            "params": {
+              "input": "cobblestone",
+              "fuel": "oak_planks",
+              "count": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "terrain_surface_height_sample",
+      "category": "observe",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2469,
+      "usage": {
+        "prompt_tokens": 11457,
+        "completion_tokens": 132,
+        "total_tokens": 11589,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 116,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11457,
+        "completion_tokens": 132,
+        "total_tokens": 11589
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc terrain_top 30 40\n```",
+      "response_id": "gen-1778456253-xawnVKQLMLAc2Ip4glly",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc terrain_top 30 40"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc terrain_top 30 40",
+          "known_command": true,
+          "canonical_name": "terrain_top",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/terrain_top",
+            "body": "{\"x\":30,\"z\":40,\"radius\":0}",
+            "params": {
+              "x": 30,
+              "z": 40,
+              "radius": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "group": "challenges",
+      "task_id": "dump_cli_registry_json",
+      "category": "platform",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2007,
+      "usage": {
+        "prompt_tokens": 11446,
+        "completion_tokens": 61,
+        "total_tokens": 11507,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 52,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11446,
+        "completion_tokens": 61,
+        "total_tokens": 11507
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc commands\n```",
+      "response_id": "gen-1778456256-YtHBLxuO1WTFSrMgJggn",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "semantic_score": 1,
+      "parse_ok_rate": 1,
+      "mc_lines": [
+        "mc commands"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc commands",
+          "known_command": true,
+          "canonical_name": "commands",
+          "category": "platform",
+          "parse_ok": true,
+          "simulated_request": {
+            "kind": "cli_introspection",
+            "method": "META",
+            "path": "mc commands"
+          }
+        }
+      ]
+    },
+    {
+      "group": "composition",
+      "task_id": "shelter_corner",
+      "category": "world+craft",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 7042,
+      "usage": {
+        "prompt_tokens": 11489,
+        "completion_tokens": 600,
+        "total_tokens": 12089,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11489,
+        "completion_tokens": 600,
+        "total_tokens": 12089
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "",
+      "response_id": "gen-1778456258-SQ5lOwQmlVYXxG6dRfgj",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "length",
+      "native_finish_reason": "length",
+      "pass": false,
+      "matched": [
+        null,
+        null,
+        null
+      ],
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "composition",
+      "task_id": "smelt_iron_pipeline",
+      "category": "craft",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 5272,
+      "usage": {
+        "prompt_tokens": 11477,
+        "completion_tokens": 291,
+        "total_tokens": 11768,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 264,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11477,
+        "completion_tokens": 291,
+        "total_tokens": 11768
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc smelt raw_iron coal 4\nmc furnace_check 0 64 0\n```",
+      "response_id": "gen-1778456265-7Nu7mH5h7Rz53vaq0v3t",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "matched": [
+        "mc smelt raw_iron 4",
+        "mc furnace_check 0 64 0"
+      ],
+      "mc_lines": [
+        "mc smelt raw_iron coal 4",
+        "mc furnace_check 0 64 0"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc smelt raw_iron coal 4",
+          "known_command": true,
+          "canonical_name": "smelt",
+          "category": "craft",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/smelt",
+            "body": "{\"input\":\"raw_iron\",\"count\":4,\"fuel\":\"coal\"}",
+            "params": {
+              "input": "raw_iron",
+              "fuel": "coal",
+              "count": 4
+            }
+          }
+        },
+        {
+          "raw": "mc furnace_check 0 64 0",
+          "known_command": true,
+          "canonical_name": "furnace_check",
+          "category": "craft",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/furnace_check",
+            "body": "{\"x\":0,\"y\":64,\"z\":0}",
+            "params": {
+              "x": 0,
+              "y": 64,
+              "z": 0
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "composition",
+      "task_id": "rescue_to_safehome",
+      "category": "movement+combat",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 8078,
+      "usage": {
+        "prompt_tokens": 11458,
+        "completion_tokens": 600,
+        "total_tokens": 12058,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11458,
+        "completion_tokens": 600,
+        "total_tokens": 12058
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "",
+      "response_id": "gen-1778456270-t4EueM0HlP6EDtJPxY0X",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "length",
+      "native_finish_reason": "length",
+      "pass": false,
+      "matched": [
+        null,
+        null
+      ],
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "composition",
+      "task_id": "scout_then_report",
+      "category": "observe+social",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 10003,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "walk_to_coords",
+      "category": "movement",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 5493,
+      "usage": {
+        "prompt_tokens": 11453,
+        "completion_tokens": 157,
+        "total_tokens": 11610,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 137,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11453,
+        "completion_tokens": 157,
+        "total_tokens": 11610
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc goto 100 64 200\n```",
+      "response_id": "gen-1778456288-7L5m0nRhMW9Q28qlyYGR",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc goto 100 64 200"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc goto 100 64 200",
+          "known_command": true,
+          "canonical_name": "goto",
+          "category": "movement",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/goto",
+            "body": "{\"x\":100,\"y\":64,\"z\":200}",
+            "params": {
+              "x": 100,
+              "y": 64,
+              "z": 200
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "mine_4_cobble",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 8023,
+      "usage": {
+        "prompt_tokens": 11446,
+        "completion_tokens": 600,
+        "total_tokens": 12046,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11446,
+        "completion_tokens": 600,
+        "total_tokens": 12046
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "",
+      "response_id": "gen-1778456294-PpA7GUeLpT0HwUXfLkNw",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "length",
+      "native_finish_reason": "length",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "place_block",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2883,
+      "usage": {
+        "prompt_tokens": 11461,
+        "completion_tokens": 132,
+        "total_tokens": 11593,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 111,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11461,
+        "completion_tokens": 132,
+        "total_tokens": 11593
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc place oak_planks 10 65 10\n```",
+      "response_id": "gen-1778456302-i8BOQJ5nlnNySjBlSawM",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc place oak_planks 10 65 10"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc place oak_planks 10 65 10",
+          "known_command": true,
+          "canonical_name": "place",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/place",
+            "body": "{\"block\":\"oak_planks\",\"x\":10,\"y\":65,\"z\":10}",
+            "params": {
+              "block": "oak_planks",
+              "x": 10,
+              "y": 65,
+              "z": 10
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "save_mark",
+      "category": "memory",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2249,
+      "usage": {
+        "prompt_tokens": 11449,
+        "completion_tokens": 108,
+        "total_tokens": 11557,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 98,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11449,
+        "completion_tokens": 108,
+        "total_tokens": 11557
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc mark shelter\n```",
+      "response_id": "gen-1778456305-SSMatqZIbZLLegR79zdL",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mark shelter"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mark shelter",
+          "known_command": true,
+          "canonical_name": "mark",
+          "category": "memory",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mark",
+            "body": "{\"name\":\"shelter\",\"note\":\"\"}",
+            "params": {
+              "name": "shelter",
+              "note": ""
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "list_goals",
+      "category": "goals",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 1717,
+      "usage": {
+        "prompt_tokens": 11439,
+        "completion_tokens": 79,
+        "total_tokens": 11518,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 70,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11439,
+        "completion_tokens": 79,
+        "total_tokens": 11518
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc goals\n```",
+      "response_id": "gen-1778456307-UZlGD16ZSEu1mTkiOjqe",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc goals"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc goals",
+          "known_command": true,
+          "canonical_name": "goals",
+          "category": "goals",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/goals",
+            "params": {}
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "eat_food",
+      "category": "combat",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 10003,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "read_chat",
+      "category": "social",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 3638,
+      "usage": {
+        "prompt_tokens": 11443,
+        "completion_tokens": 116,
+        "total_tokens": 11559,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 104,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11443,
+        "completion_tokens": 116,
+        "total_tokens": 11559
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc read_chat 5\n```",
+      "response_id": "gen-1778456319-Gx4zFNLCxUC9294ZMEpX",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc read_chat 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc read_chat 5",
+          "known_command": true,
+          "canonical_name": "read_chat",
+          "category": "social",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/chat?count=5",
+            "params": {
+              "count": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "set_combat_skill",
+      "category": "combat",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 3790,
+      "usage": {
+        "prompt_tokens": 11450,
+        "completion_tokens": 192,
+        "total_tokens": 11642,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 178,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11450,
+        "completion_tokens": 192,
+        "total_tokens": 11642
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc combat_skill 0.9\n```",
+      "response_id": "gen-1778456322-EOOiFb7M6BLCTCKDeyew",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc combat_skill 0.9"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc combat_skill 0.9",
+          "known_command": true,
+          "canonical_name": "combat_skill",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/combat_skill",
+            "body": "{\"value\":\"0.9\"}",
+            "params": {
+              "value": "0.9"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "feed_cow",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 8810,
+      "usage": {
+        "prompt_tokens": 11451,
+        "completion_tokens": 600,
+        "total_tokens": 12051,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 600,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11451,
+        "completion_tokens": 600,
+        "total_tokens": 12051
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "",
+      "response_id": "gen-1778456326-7tvf3em1dXUX0NXPUg50",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "length",
+      "native_finish_reason": "length",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "find_iron",
+      "category": "observe",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2206,
+      "usage": {
+        "prompt_tokens": 11454,
+        "completion_tokens": 105,
+        "total_tokens": 11559,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 89,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11454,
+        "completion_tokens": 105,
+        "total_tokens": 11559
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc find_blocks iron_ore 32\n```",
+      "response_id": "gen-1778456335-HkYDEwPkU0dkKmjYZjbr",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc find_blocks iron_ore 32"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc find_blocks iron_ore 32",
+          "known_command": true,
+          "canonical_name": "find_blocks",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/find_blocks",
+            "body": "{\"block\":\"iron_ore\",\"radius\":32,\"count\":10}",
+            "params": {
+              "block": "iron_ore",
+              "radius": 32,
+              "count": 10
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "open_chest_mark",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 1664,
+      "usage": {
+        "prompt_tokens": 11445,
+        "completion_tokens": 104,
+        "total_tokens": 11549,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 92,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11445,
+        "completion_tokens": 104,
+        "total_tokens": 11549
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc chest @treasure\n```",
+      "response_id": "gen-1778456337-LFjA6r9a9QMdO1aIguOR",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc chest @treasure"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc chest @treasure",
+          "known_command": true,
+          "canonical_name": "chest",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/list_container",
+            "body": "{\"mark\":\"treasure\"}",
+            "params": {
+              "mark": "treasure"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "fight_zombie",
+      "category": "combat",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 3662,
+      "usage": {
+        "prompt_tokens": 11453,
+        "completion_tokens": 239,
+        "total_tokens": 11692,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 230,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11453,
+        "completion_tokens": 239,
+        "total_tokens": 11692
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc nearby\n```",
+      "response_id": "gen-1778456339-X3YtmHXTlUxLRWPaLDB0",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [
+        "mc nearby"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc nearby",
+          "known_command": true,
+          "canonical_name": "nearby",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/nearby?radius=32",
+            "params": {
+              "radius": 32
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 0.42
+    },
+    {
+      "group": "direct",
+      "task_id": "set_reactive_mode",
+      "category": "combat",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 1908,
+      "usage": {
+        "prompt_tokens": 11455,
+        "completion_tokens": 69,
+        "total_tokens": 11524,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 59,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11455,
+        "completion_tokens": 69,
+        "total_tokens": 11524
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc mode guard\n```",
+      "response_id": "gen-1778456342-bfLO23JWePXJtgfWyS2E",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc mode guard"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc mode guard",
+          "known_command": true,
+          "canonical_name": "mode",
+          "category": "combat",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/mode",
+            "body": "{\"name\":\"guard\"}",
+            "params": {
+              "name": "guard"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "deposit_iron",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 9425,
+      "usage": {
+        "prompt_tokens": 11450,
+        "completion_tokens": 416,
+        "total_tokens": 11866,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 407,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11450,
+        "completion_tokens": 416,
+        "total_tokens": 11866
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc inventory\n```",
+      "response_id": "gen-1778456344-g8LwTciYlmP2UUIjcD8H",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": false,
+      "mc_lines": [
+        "mc inventory"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc inventory",
+          "known_command": true,
+          "canonical_name": "inventory",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/inventory",
+            "params": {}
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 0.42
+    },
+    {
+      "group": "direct",
+      "task_id": "scene_8",
+      "category": "observe",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 1882,
+      "usage": {
+        "prompt_tokens": 11446,
+        "completion_tokens": 128,
+        "total_tokens": 11574,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 116,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11446,
+        "completion_tokens": 128,
+        "total_tokens": 11574
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc scene 8\n```",
+      "response_id": "gen-1778456354-xQ6j8omApjzkZ45OakDx",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc scene 8"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc scene 8",
+          "known_command": true,
+          "canonical_name": "scene",
+          "category": "observe",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "GET",
+            "path": "/scene?range=8",
+            "params": {
+              "range": 8
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_3block_wall",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 10002,
+      "tokens_reported": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null
+      },
+      "cost_reported_usd": null,
+      "upstream_inference_cost_usd": null,
+      "cost_usd": null,
+      "cost_basis": null,
+      "pass": false,
+      "error": "response JSON parse failed: The operation was aborted due to timeout",
+      "semantic_score": 0,
+      "parse_ok_rate": null
+    },
+    {
+      "group": "direct",
+      "task_id": "build_fenced_enclosure",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 8053,
+      "usage": {
+        "prompt_tokens": 11465,
+        "completion_tokens": 600,
+        "total_tokens": 12065,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 599,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11465,
+        "completion_tokens": 600,
+        "total_tokens": 12065
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "",
+      "response_id": "gen-1778456366-FnDtj3Np4na9fH4xdm3O",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "length",
+      "native_finish_reason": "length",
+      "pass": false,
+      "mc_lines": [],
+      "simulated_lines": [],
+      "parse_ok_rate": null,
+      "semantic_score": 0
+    },
+    {
+      "group": "direct",
+      "task_id": "dig_3x3_pit",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 4090,
+      "usage": {
+        "prompt_tokens": 11462,
+        "completion_tokens": 370,
+        "total_tokens": 11832,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 349,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11462,
+        "completion_tokens": 370,
+        "total_tokens": 11832
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc dig_pit 0 0 3 3 3\n```",
+      "response_id": "gen-1778456374-qI7RJfKufgJ7f0rIgUlm",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc dig_pit 0 0 3 3 3"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc dig_pit 0 0 3 3 3",
+          "known_command": true,
+          "canonical_name": "dig_pit",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/dig_pit",
+            "body": "{\"x\":0,\"z\":0,\"w\":3,\"l\":3,\"d\":3}",
+            "params": {
+              "x": 0,
+              "z": 0,
+              "w": 3,
+              "l": 3,
+              "d": 3
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "level_5x5_to_y64",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2777,
+      "usage": {
+        "prompt_tokens": 11470,
+        "completion_tokens": 192,
+        "total_tokens": 11662,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 171,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11470,
+        "completion_tokens": 192,
+        "total_tokens": 11662
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc level 0 0 6 6 64 dirt\n```",
+      "response_id": "gen-1778456378-nSg1zKh6mIV56sRjZufj",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc level 0 0 6 6 64 dirt"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc level 0 0 6 6 64 dirt",
+          "known_command": true,
+          "canonical_name": "level",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/level",
+            "body": "{\"x1\":0,\"z1\":0,\"x2\":6,\"z2\":6,\"y\":64,\"block\":\"dirt\"}",
+            "params": {
+              "x1": 0,
+              "z1": 0,
+              "x2": 6,
+              "z2": 6,
+              "y": 64,
+              "block": "dirt"
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "build_4step_staircase",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 5857,
+      "usage": {
+        "prompt_tokens": 11452,
+        "completion_tokens": 172,
+        "total_tokens": 11624,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 155,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11452,
+        "completion_tokens": 172,
+        "total_tokens": 11624
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc build_stairs cobblestone north 4\n```",
+      "response_id": "gen-1778456380-EIJalPbdXD0IOLpwztu4",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc build_stairs cobblestone north 4"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc build_stairs cobblestone north 4",
+          "known_command": true,
+          "canonical_name": "build_stairs",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/build_stairs",
+            "body": "{\"block\":\"cobblestone\",\"direction\":\"north\",\"length\":4}",
+            "params": {
+              "block": "cobblestone",
+              "direction": "north",
+              "length": 4
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "make_dirt_path",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 2944,
+      "usage": {
+        "prompt_tokens": 11474,
+        "completion_tokens": 224,
+        "total_tokens": 11698,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 32,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 204,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11474,
+        "completion_tokens": 224,
+        "total_tokens": 11698
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc path 0 0 4 0 64\n```",
+      "response_id": "gen-1778456386-AcG4n0JXh2zj7SGXvs68",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc path 0 0 4 0 64"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc path 0 0 4 0 64",
+          "known_command": true,
+          "canonical_name": "path",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/path",
+            "body": "{\"x1\":0,\"z1\":0,\"x2\":4,\"z2\":0,\"y\":64}",
+            "params": {
+              "x1": 0,
+              "z1": 0,
+              "x2": 4,
+              "z2": 0,
+              "y": 64
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    },
+    {
+      "group": "direct",
+      "task_id": "pass_through_gate",
+      "category": "world",
+      "model": "laguna-m.1-free",
+      "elapsed_ms": 8572,
+      "usage": {
+        "prompt_tokens": 11475,
+        "completion_tokens": 507,
+        "total_tokens": 11982,
+        "cost": 0,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 11424,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0,
+          "upstream_inference_prompt_cost": 0,
+          "upstream_inference_completions_cost": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 484,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "tokens_reported": {
+        "prompt_tokens": 11475,
+        "completion_tokens": 507,
+        "total_tokens": 11982
+      },
+      "cost_reported_usd": 0,
+      "upstream_inference_cost_usd": 0,
+      "cost_usd": 0,
+      "cost_basis": "openrouter.usage.cost",
+      "output": "```\nmc through 0 65 2 0 65 5\n```",
+      "response_id": "gen-1778456389-9GZiD69TIrrVMsfO24G4",
+      "response_model": "poolside/laguna-m.1-20260312:free",
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "pass": true,
+      "match": "exact",
+      "mc_lines": [
+        "mc through 0 65 2 0 65 5"
+      ],
+      "simulated_lines": [
+        {
+          "raw": "mc through 0 65 2 0 65 5",
+          "known_command": true,
+          "canonical_name": "through",
+          "category": "world",
+          "parse_ok": true,
+          "simulated_request": {
+            "method": "POST",
+            "path": "/action/through",
+            "body": "{\"gx\":0,\"gy\":65,\"gz\":2,\"dx\":0,\"dy\":65,\"dz\":5}",
+            "params": {
+              "gx": 0,
+              "gy": 65,
+              "gz": 2,
+              "dx": 0,
+              "dy": 65,
+              "dz": 5
+            }
+          }
+        }
+      ],
+      "parse_ok_rate": 1,
+      "semantic_score": 1
+    }
+  ],
+  "usage_totals": {
+    "calls": 35,
+    "calls_with_usage": 32,
+    "prompt_tokens_sum": 366644,
+    "completion_tokens_sum": 7667,
+    "total_tokens_sum": 374311,
+    "cost_reported_usd_sum": 0,
+    "upstream_inference_cost_usd_sum": 0,
+    "cost_usd_sum": 0
+  }
+}

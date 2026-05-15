@@ -34,16 +34,23 @@
  *   node scripts/benchmark/run-two-tier.mjs --models deepseek-v4-flash,gemma-4-31b-it
  *   node scripts/benchmark/run-two-tier.mjs --decomposer gemma-4-31b-it --executor deepseek-v4-flash
  *
+ * --timeout-ms N matches run.mjs (default models.json timeout_ms or 120000).
+ *
  * If --decomposer / --executor not given, both roles use each model in --models.
  * That gives same-model two-tier (vs single-shot of the same model).
  *
  * Mixed-model mode (decomposer = capable, executor = cheap) is the
  * production-relevant configuration to evaluate.
+ *
+ * Output: runs/two-tier/<pair_slug>/<stamp>-two-tier.json (runs-layout.mjs).
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { extractReportedBilling, rollupUsages, summarizeTwoTierBilling } from './billing-extract.mjs';
+import { TWO_TIER_ROOT, slugFromModelId } from './runs-layout.mjs';
+import { gradeCompositionMc } from './grading.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HERE = join(ROOT, 'scripts/benchmark');
@@ -53,12 +60,21 @@ mkdirSync(RUNS_DIR, { recursive: true });
 const argv = process.argv.slice(2);
 const arg = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : undefined; };
 
-const SECRETS = '/Users/foz/homelab/secrets.yaml';
+const SECRETS = '/Users/foz/hermescraft/secrets.yaml';
 const keyMatch = readFileSync(SECRETS, 'utf8').match(/openrouter_api_key:\s*(\S+)/);
 if (!keyMatch) { console.error('No openrouter_api_key'); process.exit(1); }
 const OPENROUTER_KEY = keyMatch[1].trim();
 
 const modelsCfg = JSON.parse(readFileSync(join(HERE, 'models.json'), 'utf8'));
+
+const timeoutArg = arg('--timeout-ms');
+let TIMEOUT_MS = 120000;
+if (timeoutArg != null) {
+  const n = Number(timeoutArg);
+  if (Number.isFinite(n) && n > 0) TIMEOUT_MS = n;
+} else if (typeof modelsCfg.timeout_ms === 'number' && modelsCfg.timeout_ms > 0) {
+  TIMEOUT_MS = modelsCfg.timeout_ms;
+}
 
 const filterModels = arg('--models')?.split(',').map((s) => s.trim());
 const explicitDecomposer = arg('--decomposer');
@@ -160,23 +176,55 @@ ${stepDescription}`;
 
 async function callOR(modelId, prompt, maxTokens) {
   const t0 = Date.now();
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/foz/hermescraft',
-      'X-Title': 'mc benchmark two-tier',
-    },
-    body: JSON.stringify({ model: modelId, messages: [{ role: 'user', content: prompt }], max_tokens: maxTokens, temperature: 0.1 }),
-  });
-  const elapsed = Date.now() - t0;
+  let res;
+  try {
+    res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/foz/hermescraft',
+        'X-Title': 'mc benchmark two-tier',
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.1,
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (e) {
+    const elapsed = Date.now() - t0;
+    const name = /** @type {{ name?: string }} */ (e).name;
+    if (name === 'AbortError' || name === 'TimeoutError') {
+      return { error: `timeout after ${TIMEOUT_MS}ms`, elapsed_ms: elapsed };
+    }
+    return { error: String(/** @type {{ message?: string }} */ (e).message || e), elapsed_ms: elapsed };
+  }
   if (!res.ok) {
     const text = await res.text();
+    const elapsed = Date.now() - t0;
     return { error: `${res.status}: ${text.slice(0, 300)}`, elapsed_ms: elapsed };
   }
-  const data = await res.json();
-  return { content: data.choices?.[0]?.message?.content?.trim() ?? '', usage: data.usage ?? null, elapsed_ms: elapsed };
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    const elapsed = Date.now() - t0;
+    return {
+      error: `response JSON parse failed: ${/** @type {{ message?: string }} */ (e).message || e}`,
+      elapsed_ms: elapsed,
+    };
+  }
+  const elapsed = Date.now() - t0;
+  const choice = data.choices?.[0];
+  const usage = data.usage ?? choice?.usage ?? null;
+  return {
+    content: choice?.message?.content?.trim() ?? '',
+    usage,
+    elapsed_ms: elapsed,
+  };
 }
 
 function extractMcLines(content) {
@@ -194,29 +242,11 @@ function parseSteps(decomposerOutput) {
   return steps;
 }
 
-function gradeChain(commands, requiredLines, scoring) {
-  const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-  const partialArgsOk = scoring && scoring.includes('partial_args_ok');
-  const matched = [];
-  for (const required of requiredLines) {
-    const r = norm(required);
-    let hit = false;
-    for (const line of commands) {
-      const l = norm(line);
-      if (partialArgsOk) {
-        const reqVerb = r.split(/\s+/).slice(0, 2).join(' ');
-        if (l.startsWith(reqVerb)) { hit = true; break; }
-      } else {
-        if (l === r || l.startsWith(r)) { hit = true; break; }
-      }
-    }
-    matched.push(hit ? required : null);
-  }
-  return { pass: matched.every(Boolean), matched };
-}
-
 function computeCost(model, usage) {
   if (!usage) return null;
+  if (typeof usage.cost === 'number' && Number.isFinite(usage.cost)) return usage.cost;
+  const upstream = usage.cost_details?.upstream_inference_cost;
+  if (typeof upstream === 'number' && Number.isFinite(upstream)) return upstream;
   const inM = (usage.prompt_tokens || 0) / 1e6;
   const outM = (usage.completion_tokens || 0) / 1e6;
   return inM * (model.cost_per_1m_in || 0) + outM * (model.cost_per_1m_out || 0);
@@ -230,7 +260,14 @@ const run = {
   timestamp: new Date().toISOString(),
   git_sha: gitSha,
   mode: 'two-tier',
-  pairs: pairs.map((p) => ({ label: p.label, decomposer: p.decomposer.label, executor: p.executor.label })),
+  layout_root: TWO_TIER_ROOT,
+  pairs: pairs.map((p) => ({
+    label: p.label,
+    decomposer: p.decomposer.label,
+    executor: p.executor.label,
+    decomposer_id: p.decomposer.id,
+    executor_id: p.executor.id,
+  })),
   results: [],
 };
 
@@ -257,7 +294,12 @@ for (const pair of pairs) {
     const stepCommands = stepResponses.flatMap((r) => r.error ? [] : extractMcLines(r.content));
 
     // Grade
-    const grade = gradeChain(stepCommands, task.correct_lines_required, task.scoring);
+    const grade = gradeCompositionMc(
+      stepCommands,
+      task.correct_lines_required,
+      task.scoring,
+      task.correct_line_groups,
+    );
 
     const decCost = computeCost(pair.decomposer, decResp.usage) ?? 0;
     const execCost = stepResponses.reduce((sum, r) => sum + (computeCost(pair.executor, r.usage) ?? 0), 0);
@@ -272,6 +314,9 @@ for (const pair of pairs) {
     return {
       pair: pair.label,
       task_id: task.id,
+      decomposer_usage: decResp.usage ?? null,
+      decomposer_billing: extractReportedBilling(decResp.usage),
+      api_rollups: rollupUsages([decResp.usage, ...stepResponses.map((r) => r.usage)]),
       decomposer_output: decResp.content,
       decomposed_steps: steps,
       step_responses: stepResponses.map((r, i) => ({
@@ -279,6 +324,7 @@ for (const pair of pairs) {
         output: r.error ? `<error: ${r.error}>` : r.content,
         elapsed_ms: r.elapsed_ms,
         usage: r.usage,
+        ...extractReportedBilling(r.usage),
       })),
       step_commands: stepCommands,
       ...grade,
@@ -292,8 +338,21 @@ for (const pair of pairs) {
   run.results.push(...results);
 }
 
+run.usage_totals = summarizeTwoTierBilling(
+  /** @type {Record<string, unknown>[]} */ (run.results),
+);
+
 const stamp = run.timestamp.replace(/[:.]/g, '-');
-const outPath = join(RUNS_DIR, `${stamp}-two-tier.json`);
+const tierDir =
+  pairs.length === 1
+    ? join(
+        RUNS_DIR,
+        TWO_TIER_ROOT,
+        `${slugFromModelId(pairs[0].decomposer.id)}__${slugFromModelId(pairs[0].executor.id)}`,
+      )
+    : join(RUNS_DIR, TWO_TIER_ROOT, '_multi_pair');
+mkdirSync(tierDir, { recursive: true });
+const outPath = join(tierDir, `${stamp}-two-tier.json`);
 writeFileSync(outPath, JSON.stringify(run, null, 2));
 console.error(`\nWrote ${outPath}`);
 console.error(`Total wallclock: ${((Date.now() - startTime) / 1000).toFixed(1)}s\n`);

@@ -96,6 +96,45 @@ def main():
         if len(rows) > 15:
             rest = sum(b for _, b in rows[15:])
             print(f"  {'...':<25}  {rest:>5} B  (~{rest // 4:>5} tok)  ({len(rows) - 15} more)")
+        print()
+
+    # Top heavy tool responses — most actionable diagnostic for bloat,
+    # since per-turn token cost is dominated by repeated large tool outputs.
+    tool_msgs = []
+    for i, m in enumerate(msgs):
+        if m.get("role") != "tool":
+            continue
+        c = m.get("content", "")
+        if isinstance(c, list):
+            c = json.dumps(c)
+        tool_msgs.append((i, len(str(c)), str(c)))
+    if tool_msgs:
+        tool_msgs.sort(key=lambda x: -x[1])
+        print(f"Top {min(10, len(tool_msgs))} largest tool responses:")
+        for i, b, c in tool_msgs[:10]:
+            head = c[:140].replace("\n", " ")
+            print(f"  msg #{i:>3}  {b:>5} B  (~{b // 4:>4} tok)  {head}…")
+        print()
+
+    # Per-turn growth: shows whether the conversation accumulates linearly.
+    # Each "turn" here = one assistant call. Sum of bytes-up-to-and-
+    # including each assistant message ≈ what gets re-sent on the NEXT call.
+    print("Per-turn cumulative bytes (what each request roughly sends):")
+    fixed = sp_bytes + tools_bytes
+    cum = 0
+    turn = 0
+    for m in msgs:
+        r = m.get("role", "?")
+        c = m.get("content", "")
+        if isinstance(c, list):
+            c = json.dumps(c)
+        cum += len(str(c))
+        if r == "assistant":
+            turn += 1
+            total_this = fixed + cum
+            if turn <= 3 or turn % 5 == 0 or turn == len(msgs):
+                print(f"  turn {turn:>3}: ~{total_this // 4:>5} tok  (msgs={cum} B, fixed={fixed} B)")
+    print()
 
 
 if __name__ == "__main__":

@@ -51,7 +51,7 @@
     "id": "feed_cow",
     "category": "world",
     "task": "Feed wheat to a nearby cow (right-click the cow with wheat already in hand).",
-    "correct": ["mc feed_mob cow wheat", "mc feed_mob cow --item wheat"]
+    "correct": ["mc feed_mob cow wheat", "mc feed_mob --item wheat cow"]
   },
   {
     "id": "find_iron",

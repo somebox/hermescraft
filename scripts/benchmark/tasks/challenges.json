@@ -1,0 +1,103 @@
+[
+  {
+    "id": "scout_hazards_before_mining",
+    "category": "world",
+    "task": "Before mining at block coordinates (20, 12, 20), run a read-only hazard scout in radius 8 around that point (lava, water, falling-block columns, etc.).",
+    "challenge": {
+      "required_canonical_all": ["scout"],
+      "correct": ["mc scout 20 12 20 8"],
+      "require_parse_ok": true,
+      "max_mc_lines": 4
+    }
+  },
+  {
+    "id": "prefer_safe_dig_over_raw_dig",
+    "category": "world",
+    "task": "Break the block at (8, 64, 8). Use hazard-aware digging — not the raw single-block dig primitive.",
+    "challenge": {
+      "required_canonical_any": ["safe_dig"],
+      "forbidden_canonical": ["dig"],
+      "require_parse_ok": true,
+      "correct": ["mc safe_dig 8 64 8"],
+      "max_mc_lines": 3
+    }
+  },
+  {
+    "id": "navigate_building_use_move",
+    "category": "movement",
+    "task": "Walk to coordinates (5, 65, 12). Assume fence gates or doors might block the route — use navigation that opens doors without digging new tunnels.",
+    "challenge": {
+      "required_canonical_all": ["move"],
+      "forbidden_canonical": ["goto"],
+      "correct": ["mc move 5 65 12"],
+      "require_parse_ok": true,
+      "max_mc_lines": 3
+    }
+  },
+  {
+    "id": "search_cached_chests_for_item",
+    "category": "world",
+    "task": "Search known chest snapshots (cached from earlier opens) for diamond across all marks — do not open a chest yet.",
+    "challenge": {
+      "required_canonical_all": ["chest_search"],
+      "correct": ["mc chest_search diamond"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "list_known_furnaces",
+    "category": "observe",
+    "task": "List furnace marks you already know about and their smelt status.",
+    "challenge": {
+      "required_canonical_all": ["furnaces"],
+      "correct": ["mc furnaces"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "cancel_running_background_task",
+    "category": "task",
+    "task": "Cancel the bot's currently running task if any.",
+    "challenge": {
+      "required_canonical_all": ["cancel"],
+      "correct": ["mc cancel"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "background_smelt_batch",
+    "category": "craft",
+    "task": "Start a background smelt job: smelt 8 cobblestone using oak_planks as fuel. Use the mc verb meant for background smelting (returns a task id).",
+    "challenge": {
+      "required_canonical_all": ["bg_smelt"],
+      "correct": ["mc bg_smelt cobblestone oak_planks 8"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "terrain_surface_height_sample",
+    "category": "observe",
+    "task": "Find the top solid block height in column X=30 Z=40 (no radius — single column).",
+    "challenge": {
+      "required_canonical_all": ["terrain_top"],
+      "correct": ["mc terrain_top 30 40"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "dump_cli_registry_json",
+    "category": "platform",
+    "task": "Dump the full mc CLI registry metadata as JSON for introspection.",
+    "challenge": {
+      "required_canonical_all": ["commands"],
+      "correct": ["mc commands"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  }
+]
