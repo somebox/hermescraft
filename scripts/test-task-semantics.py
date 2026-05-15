@@ -83,18 +83,30 @@ def setup_arena() -> None:
 
 
 def scenario_idle(bot_url: str) -> bool:
-    print("\n=== A: idle bot — task and sync must both be null ===")
+    print("\n=== A: idle bot — no active task and no in-flight sync ===")
     setup_arena()
     # Give the bot a moment to settle so any startup action history clears.
     time.sleep(1.0)
+    # Cancel any active async task that prior tests may have left running.
+    # No-op when nothing is active — the bot returns ok with no error.
+    try:
+        http_post(f"{bot_url}/task/cancel", {}, timeout=5)
+    except Exception:
+        pass
+    time.sleep(0.5)
     r = get_task(bot_url)
     data = r.get("data") or {}
     task = data.get("task")
     sync = data.get("sync")
     last = data.get("last")
+    task_status = (task or {}).get("status")
     print(f"  task={task}  sync={sync}  last_action={last.get('action') if last else None}")
-    passed = task is None and sync is None
-    print(f"  → {'PASS' if passed else 'FAIL'} (need task=null AND sync=null)")
+    # "Idle" means no in-flight sync AND any task slot is either null or
+    # in a terminal state (done/cancelled/failed). The bot keeps the last
+    # task in `currentTask` for history; that's not the same as "running".
+    task_idle = (task is None) or task_status in ("done", "cancelled", "failed")
+    passed = task_idle and sync is None
+    print(f"  → {'PASS' if passed else 'FAIL'} (need sync=null AND (task=null OR task.status in done/cancelled/failed))")
     return passed
 
 

@@ -154,10 +154,22 @@ def scenario_R1_head_blocked_recovery(bot_url: str) -> bool:
     code1, _, obs1 = err_fields(r1)
     print(f"    result: ok={ok1}  code={code1}")
     if ok1:
-        # If goto_near unexpectedly succeeded, the test geometry didn't
-        # actually trap the bot — still a useful signal but not the
-        # intended path.
-        print("    nav unexpectedly succeeded — geometry didn't trap. PROTOCOL UNUSED.")
+        # F48+F49 transparent substitution: range=1 from (0,65,12) reaches
+        # either (0,65,13) (north of wall) OR (0,65,11) (south of wall) at
+        # distance 1.0 each. The framework picks whichever its A* finds
+        # first and walks the bot there instead of erroring. The brain's
+        # recovery protocol is unneeded because the framework already
+        # used closest_standable. Verify the bot ended up at one of those.
+        pos = (http_get(f"{bot_url}/status?lean=true").get("data") or {}).get("position") or {}
+        px, pz = pos.get("x", 0), pos.get("z", 0)
+        at_north = abs(px - 0.5) < 0.8 and abs(pz - 13.5) < 0.8
+        at_south = abs(px - 0.5) < 0.8 and abs(pz - 11.5) < 0.8
+        if at_north or at_south:
+            side = "north (0,65,13)" if at_north else "south (0,65,11)"
+            print(f"    nav succeeded via transparent F48/F49 substitution: bot at ({px:.2f},{pz:.2f}) → {side}")
+            print("  → PASS (framework substituted closest_standable; recovery protocol unneeded)")
+            return True
+        print(f"    nav succeeded but bot at unexpected ({px:.2f},{pz:.2f}) — geometry didn't trap correctly.")
         return False
 
     # Contract assertion: error must carry closest_standable
