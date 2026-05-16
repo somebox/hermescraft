@@ -135,6 +135,77 @@ function checkCombatTargetTags() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// P16: module size budget ≤500 LOC.
+// Files in bot/lib/**/*.js over 500 LOC must carry a top-of-file
+// `// @size-exempt: <reason>` annotation.
+// ─────────────────────────────────────────────────────────────────────
+const SIZE_BUDGET = 500;
+
+function checkModuleSizeBudget() {
+  const violations = [];
+  const libRoot = join(ROOT, 'bot/lib');
+  if (!statSync(libRoot, { throwIfNoEntry: false })) return violations;
+  const files = walk(libRoot, (f) => f.endsWith('.js'));
+  for (const path of files) {
+    const text = readFileSync(path, 'utf8');
+    const lineCount = text.split('\n').length;
+    if (lineCount <= SIZE_BUDGET) continue;
+    // Annotation must appear in the first 20 lines (above first declaration).
+    const head = text.split('\n').slice(0, 20).join('\n');
+    const exempt = /@size-exempt:\s*\S/.test(head);
+    if (exempt) continue;
+    violations.push({
+      file: relative(ROOT, path),
+      line: 1,
+      message: `${lineCount} LOC exceeds ${SIZE_BUDGET}-line budget (P16). Split the module or add a top-of-file '// @size-exempt: <reason>' annotation.`,
+    });
+  }
+  return violations;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// P20: createMockServices key parity with createServices.
+// Bidirectional Object.keys check — top-level + per-bundle.
+// ─────────────────────────────────────────────────────────────────────
+async function checkMockServicesParity() {
+  const violations = [];
+  let services, mockServices;
+  try {
+    services = await import(join(ROOT, 'bot/lib/server/services.js'));
+    mockServices = await import(join(ROOT, 'bot/lib/server/mock-services.js'));
+  } catch (err) {
+    violations.push({
+      file: 'bot/lib/server/mock-services.js',
+      line: null,
+      message: `unable to import services module(s): ${err.message} (P20)`,
+    });
+    return violations;
+  }
+  const mock = mockServices.createMockServices();
+  const mockTopKeys = Object.keys(mock).sort();
+  const realTopKeys = [...services.SERVICES_KEYS].sort();
+  if (JSON.stringify(mockTopKeys) !== JSON.stringify(realTopKeys)) {
+    violations.push({
+      file: 'bot/lib/server/mock-services.js',
+      line: null,
+      message: `top-level keys drift from SERVICES_KEYS (P20). mock=${JSON.stringify(mockTopKeys)} real=${JSON.stringify(realTopKeys)}`,
+    });
+  }
+  for (const [bundle, expected] of Object.entries(services.SERVICE_BUNDLE_KEYS)) {
+    const actual = Object.keys(mock[bundle] || {}).sort();
+    const want = [...expected].sort();
+    if (JSON.stringify(actual) !== JSON.stringify(want)) {
+      violations.push({
+        file: 'bot/lib/server/mock-services.js',
+        line: null,
+        message: `bundle '${bundle}' keys drift from SERVICE_BUNDLE_KEYS (P20). mock=${JSON.stringify(actual)} real=${JSON.stringify(want)}`,
+      });
+    }
+  }
+  return violations;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Run all checks.
 // ─────────────────────────────────────────────────────────────────────
 const CHECKS = [
@@ -142,6 +213,8 @@ const CHECKS = [
   { name: 'P4: fixture safe-home cleanup', fn: checkFixtureSafeHome },
   { name: 'P4: fixture world declaration', fn: checkFixtureWorld },
   { name: 'P4: combat fixture target tags', fn: checkCombatTargetTags },
+  { name: 'P16: module size budget ≤500 LOC', fn: checkModuleSizeBudget },
+  { name: 'P20: mock-services key parity', fn: checkMockServicesParity },
 ];
 
 let total = 0;

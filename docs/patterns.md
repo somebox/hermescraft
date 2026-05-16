@@ -245,3 +245,50 @@ If the check fails, fix the violation (don't suppress the check).
 **How to extend:** add a check function in the script. Each check should
 return a list of violations with file/line. The script exits non-zero if
 any check fails.
+
+---
+
+## P16. Module size budget ≤500 LOC
+
+**Pattern:** modules in `bot/lib/**/*.js` should stay under 500 lines.
+Exceeding the budget is a signal — usually the module is doing two
+things and wants to be split. If the size is intentional (e.g. a
+domain module bundling 9 related actions), add a top-of-file
+annotation explaining why:
+
+```js
+// @size-exempt: <one-line reason>
+```
+
+The reason should name what cohesion is keeping the module together
+(e.g. "all building-related verbs", "thin GET dispatcher + handlers").
+
+**Why:** introduced in the 2026 refactor (see
+`docs/archive/refactor-plan-2026.md`) after `actions/world.js` grew to
+4121 lines. The split into six modules dropped the median below 500;
+the budget keeps it there.
+
+**How to check:** `node scripts/check-conventions.mjs` reports any
+unannotated file over budget. Fix by splitting OR by adding
+`@size-exempt` with a defensible reason.
+
+---
+
+## P20. createMockServices key parity
+
+**Pattern:** `bot/lib/server/mock-services.js` MUST expose the same
+top-level keys as `bot/lib/server/services.js` (`SERVICES_KEYS`), and
+the same field names per service bundle (`SERVICE_BUNDLE_KEYS`).
+Drift in either direction is a test failure — real-services grows a
+field → mock must add it; mock has a stale extra key → mock must drop
+it.
+
+**Why:** without parity, every middleware test reinvents its own
+mock shape, and a real-services-gains-field change can silently leave
+the mocks misaligned. The bidirectional check forces both sides to
+stay in sync.
+
+**How to check:** the assertion lives in
+`bot/test/foundation.test.js` (Phase 1 of the 2026 refactor) and runs
+on every `node --test`. `scripts/check-conventions.mjs` also asserts
+the parity as a belt-and-suspenders.
