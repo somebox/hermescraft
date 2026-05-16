@@ -1,3 +1,4 @@
+/** @size-exempt: shared block/tool classification tables + sweep helpers */
 /**
  * Tool selection, guard logic, and dig utilities for mining actions.
  * All functions are stateless — they operate on the bot instance passed in.

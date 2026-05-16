@@ -1,3 +1,4 @@
+/** @size-exempt: all combat verbs share threat-filter helpers */
 /**
  * Combat action handlers: attack, eat, feed_mob, fight, flee,
  * sneak, shield_block, shoot, sprint_attack, critical_hit, strafe, combo,
@@ -39,8 +40,8 @@ export function createCombatActions(deps) {
       if (!name) {
         return {
           ok: true,
-          data: { current: ctx.mode || 'normal', valid: VALID_MODES },
-          result: `Reactive mode: ${ctx.mode || 'normal'}`,
+          data: { current: ctx.reactive.mode || 'normal', valid: VALID_MODES },
+          result: `Reactive mode: ${ctx.reactive.mode || 'normal'}`,
         };
       }
       const next = String(name).toLowerCase().trim();
@@ -50,13 +51,13 @@ export function createCombatActions(deps) {
           error: {
             code: 'INVALID_MODE',
             message: `Mode must be one of ${VALID_MODES.join(', ')}.`,
-            observed_state: { requested: next, current: ctx.mode || 'normal' },
+            observed_state: { requested: next, current: ctx.reactive.mode || 'normal' },
             retry_safe: false,
           },
         };
       }
-      const previous = ctx.mode || 'normal';
-      ctx.mode = next;
+      const previous = ctx.reactive.mode || 'normal';
+      ctx.reactive.mode = next;
       return {
         ok: true,
         data: { previous, current: next },
@@ -65,15 +66,15 @@ export function createCombatActions(deps) {
     },
 
     /**
-     * Combat skill setter — clamps to [0, 1]. Reactive layer reads ctx.combat_skill
+     * Combat skill setter — clamps to [0, 1]. Reactive layer reads ctx.reactive.combat_skill
      * to decide multi-target probability and tick rate. soldier ≈ 0.9, farmer ≈ 0.2.
      */
     async combat_skill({ value }) {
       if (value === undefined || value === null) {
         return {
           ok: true,
-          data: { current: ctx.combat_skill ?? 0.5 },
-          result: `combat_skill = ${(ctx.combat_skill ?? 0.5).toFixed(2)}`,
+          data: { current: ctx.reactive.combat_skill ?? 0.5 },
+          result: `combat_skill = ${(ctx.reactive.combat_skill ?? 0.5).toFixed(2)}`,
         };
       }
       const num = Number(value);
@@ -88,8 +89,8 @@ export function createCombatActions(deps) {
         };
       }
       const clamped = Math.max(0, Math.min(1, num));
-      const previous = ctx.combat_skill ?? 0.5;
-      ctx.combat_skill = clamped;
+      const previous = ctx.reactive.combat_skill ?? 0.5;
+      ctx.reactive.combat_skill = clamped;
       return {
         ok: true,
         data: { previous, current: clamped },
@@ -123,9 +124,9 @@ export function createCombatActions(deps) {
 
     async eat() {
       const b = ensureBot();
-      const foods = b.inventory.items().filter(i => ctx.mcData.foodsByName?.[i.name]);
+      const foods = b.inventory.items().filter(i => ctx.world.mcData.foodsByName?.[i.name]);
       if (foods.length === 0) throw new Error('No food in inventory.');
-      foods.sort((a, c) => (ctx.mcData.foodsByName[c.name]?.foodPoints || 0) - (ctx.mcData.foodsByName[a.name]?.foodPoints || 0));
+      foods.sort((a, c) => (ctx.world.mcData.foodsByName[c.name]?.foodPoints || 0) - (ctx.world.mcData.foodsByName[a.name]?.foodPoints || 0));
       await b.equip(foods[0], 'hand');
       await b.consume();
       return { result: `Ate ${foods[0].name}. Health: ${fmt(b.health)}, Food: ${b.food}` };
@@ -213,7 +214,7 @@ export function createCombatActions(deps) {
             -(entity.position.z - b.entity.position.z) * 2
           );
           try { await b.pathfinder.goto(new goals.GoalNear(fleePos.x, fleePos.y, fleePos.z, 2)); } catch {}
-          const food = b.inventory.items().find(i => ctx.mcData.foodsByName?.[i.name]);
+          const food = b.inventory.items().find(i => ctx.world.mcData.foodsByName?.[i.name]);
           if (food) { await b.equip(food, 'hand'); try { await b.consume(); } catch {} }
           return { result: `Retreated from ${targetName} at ${b.health} HP. ${hits} hits dealt.` };
         }
@@ -379,7 +380,7 @@ export function createCombatActions(deps) {
     async sneak({ enable = true }) {
       const b = ensureBot();
       b.setControlState('sneak', !!enable);
-      ctx.isSneaking = !!enable;
+      ctx.team.isSneaking = !!enable;
       return { result: enable ? 'Sneaking — nameplate hidden, reduced detection range' : 'Stopped sneaking' };
     },
 

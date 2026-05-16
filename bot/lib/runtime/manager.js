@@ -1,3 +1,4 @@
+// @size-exempt: createBot lifecycle + stuck watchdog kept together for shared closure
 /** Mineflayer connect/events/reconnect/hardcore + stuck watchdog. */
 
 /** Actions used by stuck watchdog when task.status === 'running'. */
@@ -19,7 +20,7 @@ export const STUCK_MOVEMENT_ACTIONS = [
 /** Min ms with almost no position change before declaring stuck (pathfinder can crawl in tight caves). */
 const STUCK_IDLE_MS = 20000;
 
-/** Delay before reconnect; `attempts` matches ctx.reconnectAttempts before increment. */
+/** Delay before reconnect; `attempts` matches ctx.death.reconnectAttempts before increment. */
 export function reconnectBackoffMs(attempts) {
   return Math.min(5000 * Math.pow(2, attempts), 60000);
 }
@@ -57,48 +58,48 @@ export function createBotManager(deps) {
   function createBot(opts = {}) {
     const force = opts.force === true;
     // Same TCP session can briefly lack entity or isAlive during death screen — never spawn a second mineflayer bot.
-    if (!force && ctx.bot && ctx.botReady) {
-      if (ctx.bot.entity || ctx.bot.isAlive === false) {
-        return Promise.resolve(ctx.bot);
+    if (!force && ctx.world.bot && ctx.world.botReady) {
+      if (ctx.world.bot.entity || ctx.world.bot.isAlive === false) {
+        return Promise.resolve(ctx.world.bot);
       }
     }
 
     if (force) {
-      const p = Promise.resolve(ctx.connectPromise)
+      const p = Promise.resolve(ctx.world.connectPromise)
         .catch(() => {})
         .then(() => sleep(300))
         .then(() => runConnectAttempt(true))
         .finally(() => {
-          if (ctx.connectPromise === p) ctx.connectPromise = null;
+          if (ctx.world.connectPromise === p) ctx.world.connectPromise = null;
         });
-      ctx.connectPromise = p;
+      ctx.world.connectPromise = p;
       return p;
     }
 
-    if (!ctx.connectPromise) {
+    if (!ctx.world.connectPromise) {
       const attempt = runConnectAttempt(false).finally(() => {
-        if (ctx.connectPromise === attempt) ctx.connectPromise = null;
+        if (ctx.world.connectPromise === attempt) ctx.world.connectPromise = null;
       });
-      ctx.connectPromise = attempt;
+      ctx.world.connectPromise = attempt;
     }
-    return ctx.connectPromise;
+    return ctx.world.connectPromise;
   }
 
   function runConnectAttempt(force) {
     return new Promise((resolve, reject) => {
       void (async () => {
         try {
-          if (ctx.bot && (force || !ctx.botReady)) {
-            ctx.suppressEndReconnect = true;
+          if (ctx.world.bot && (force || !ctx.world.botReady)) {
+            ctx.death.suppressEndReconnect = true;
             try {
-              ctx.bot.quit();
+              ctx.world.bot.quit();
             } catch {}
-            ctx.bot = null;
-            ctx.botReady = false;
+            ctx.world.bot = null;
+            ctx.world.botReady = false;
             await sleep(1000);
           }
         } catch (e) {
-          ctx.suppressEndReconnect = false;
+          ctx.death.suppressEndReconnect = false;
           reject(e);
           return;
         }
@@ -112,15 +113,15 @@ export function createBotManager(deps) {
           auth: config.mc.auth,
         });
 
-        ctx.bot = botInstance;
+        ctx.world.bot = botInstance;
 
         const cleanupFailedAttempt = () => {
           try {
             botInstance.quit();
           } catch {}
-          if (ctx.bot === botInstance) ctx.bot = null;
-          ctx.botReady = false;
-          ctx.suppressEndReconnect = false;
+          if (ctx.world.bot === botInstance) ctx.world.bot = null;
+          ctx.world.botReady = false;
+          ctx.death.suppressEndReconnect = false;
         };
 
         const connectMs =
@@ -147,14 +148,14 @@ export function createBotManager(deps) {
             log(`Bot error: ${err.message}`);
           });
 
-          ctx.mcData = minecraftData(ctx.bot.version);
+          ctx.world.mcData = minecraftData(ctx.world.bot.version);
         loadGoalsFromDisk();
         loadReminders();
 
-        ctx.bot.loadPlugin(pathfinder);
-        ctx.bot.loadPlugin(armorManager);
-        ctx.bot.loadPlugin(autoEatLoader);
-        ctx.bot.loadPlugin(collectBlock);
+        ctx.world.bot.loadPlugin(pathfinder);
+        ctx.world.bot.loadPlugin(armorManager);
+        ctx.world.bot.loadPlugin(autoEatLoader);
+        ctx.world.bot.loadPlugin(collectBlock);
 
         // Pathfinder is READ-ONLY navigation. No digging, no scaffolding,
         // no destructive side effects from "go from A to B". Agents must be
@@ -169,7 +170,7 @@ export function createBotManager(deps) {
         //   - open door → used the door (the only safe case)
         // canDig=false makes navigation strictly read-only; mc through is
         // the explicit door verb, mc tunnel/dig_area handle terrain.
-        const moves = new Movements(ctx.bot);
+        const moves = new Movements(ctx.world.bot);
         moves.allowSprinting = true;
         // F49: parkour expansion explodes the pathfinder search space
         // when a multi-block wall is between the bot and its target.
@@ -255,62 +256,62 @@ export function createBotManager(deps) {
           'red_bed',
         ];
         for (const name of protectedBlocks) {
-          const block = ctx.mcData.blocksByName[name];
+          const block = ctx.world.mcData.blocksByName[name];
           if (block) moves.blocksCantBreak.add(block.id);
         }
 
-        ctx.bot.pathfinder.setMovements(moves);
+        ctx.world.bot.pathfinder.setMovements(moves);
 
-        ctx.bot.autoEat.options = {
+        ctx.world.bot.autoEat.options = {
           priority: 'foodPoints',
           startAt: 14,
           bannedFood: [],
         };
 
-        ctx.bot.on('chat', (username, message) => {
-          if (username === ctx.bot.username) return;
+        ctx.world.bot.on('chat', (username, message) => {
+          if (username === ctx.world.bot.username) return;
           handleChat(username, message).catch((e) => log(`Chat handler error: ${e.message}`));
         });
 
-        ctx.bot.on('whisper', (username, message) => {
-          if (username === ctx.bot.username) return;
-          ctx.chatLog.push({ time: Date.now(), from: username, message, whisper: true });
-          if (ctx.chatLog.length > ctx.MAX_LOG) ctx.chatLog.shift();
+        ctx.world.bot.on('whisper', (username, message) => {
+          if (username === ctx.world.bot.username) return;
+          ctx.social.chatLog.push({ time: Date.now(), from: username, message, whisper: true });
+          if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
           log(`[Whisper] <${username}> ${message}`);
-          ctx.commandQueue.push({
+          ctx.social.commandQueue.push({
             time: Date.now(),
             from: username,
             command: message,
             originalMessage: message,
             status: 'pending',
           });
-          if (ctx.commandQueue.length > ctx.MAX_QUEUE) ctx.commandQueue.shift();
+          if (ctx.social.commandQueue.length > ctx.social.MAX_QUEUE) ctx.social.commandQueue.shift();
         });
 
-        ctx.bot.on('health', () => {
-          if (ctx.bot.health < ctx.lastHealth) {
-            const damage = ctx.lastHealth - ctx.bot.health;
-            ctx.combatStats.damageTaken += damage;
-            ctx.lastDamageEvent = {
+        ctx.world.bot.on('health', () => {
+          if (ctx.world.bot.health < ctx.death.lastHealth) {
+            const damage = ctx.death.lastHealth - ctx.world.bot.health;
+            ctx.team.combatStats.damageTaken += damage;
+            ctx.death.lastDamageEvent = {
               amount: Math.round(damage * 100) / 100,
-              hp: Math.round(ctx.bot.health * 100) / 100,
+              hp: Math.round(ctx.world.bot.health * 100) / 100,
               ts: Date.now(),
             };
-            log(`Took ${damage.toFixed(1)} damage (HP: ${ctx.bot.health.toFixed(1)})`);
+            log(`Took ${damage.toFixed(1)} damage (HP: ${ctx.world.bot.health.toFixed(1)})`);
           }
-          ctx.lastHealth = ctx.bot.health;
+          ctx.death.lastHealth = ctx.world.bot.health;
         });
 
-        ctx.bot.on('blockBreakProgressObserved', (block, destroyStage, entity) => {
-          if (entity && entity !== ctx.bot.entity) {
+        ctx.world.bot.on('blockBreakProgressObserved', (block, destroyStage, entity) => {
+          if (entity && entity !== ctx.world.bot.entity) {
             addSoundEvent('mining', block.position, FAIR_PLAY.SOUND_MINE_RADIUS);
           }
         });
 
         botInstance._soundCheckInterval = setInterval(() => {
-          if (!ctx.bot || !ctx.botReady) return;
+          if (!ctx.world.bot || !ctx.world.botReady) return;
           Object.values(botInstance.entities).forEach((e) => {
-            if (e === ctx.bot.entity || !e.position) return;
+            if (e === ctx.world.bot.entity || !e.position) return;
             const vel = e.velocity;
             if (!vel) return;
             const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
@@ -319,24 +320,24 @@ export function createBotManager(deps) {
           });
         }, 2000);
 
-        ctx.bot.on('death', () => {
-          ctx.combatStats.deaths++;
-          ctx.lastDeath = {
+        ctx.world.bot.on('death', () => {
+          ctx.team.combatStats.deaths++;
+          ctx.death.lastDeath = {
             time: Date.now(),
             position: posObj(),
-            inventory: ctx.bot.inventory.items().map((i) => ({ name: i.name, count: i.count })),
-            deathNumber: ctx.deathLog.length + 1,
+            inventory: ctx.world.bot.inventory.items().map((i) => ({ name: i.name, count: i.count })),
+            deathNumber: ctx.death.deathLog.length + 1,
           };
           const entry = { time: Date.now(), position: posObj() };
-          ctx.deathLog.push(entry);
+          ctx.death.deathLog.push(entry);
           const locs = loadLocations();
-          locs[`death_${ctx.deathLog.length}`] = { ...posObj(), saved: new Date().toISOString() };
+          locs[`death_${ctx.death.deathLog.length}`] = { ...posObj(), saved: new Date().toISOString() };
           saveLocations(locs);
 
-          if (ctx.bot.game?.hardcore || ctx.hardcoreDead) {
-            ctx.hardcoreDead = true;
+          if (ctx.world.bot.game?.hardcore || ctx.death.hardcoreDead) {
+            ctx.death.hardcoreDead = true;
             log('☠ HARDCORE DEATH! This character is PERMANENTLY DEAD. No reconnect.');
-            ctx.chatLog.push({
+            ctx.social.chatLog.push({
               time: Date.now(),
               from: 'SYSTEM',
               message: 'YOU DIED IN HARDCORE MODE. You are permanently dead. Your story is over.',
@@ -357,17 +358,17 @@ export function createBotManager(deps) {
             botInstance.clearControlStates();
           } catch {}
 
-          if (ctx.currentTask?.status === 'running') {
-            ctx.currentTask.status = 'cancelled';
-            ctx.currentTask.error = 'Interrupted by player death';
-            pushTaskHistoryRecord(ctx.currentTask, 'cancelled');
+          if (ctx.tasks.currentTask?.status === 'running') {
+            ctx.tasks.currentTask.status = 'cancelled';
+            ctx.tasks.currentTask.error = 'Interrupted by player death';
+            pushTaskHistoryRecord(ctx.tasks.currentTask, 'cancelled');
           }
 
           // mineflayer auto-respawns once from health.js; some servers/packet timing need a retry.
           const nudgeMs = [0, 200, 500, 1200, 2500, 5000, 8000];
           for (const ms of nudgeMs) {
             setTimeout(() => {
-              if (ctx.bot !== botInstance || ctx.hardcoreDead) return;
+              if (ctx.world.bot !== botInstance || ctx.death.hardcoreDead) return;
               try {
                 if (typeof botInstance.respawn === 'function' && botInstance.isAlive === false) {
                   botInstance.respawn();
@@ -381,24 +382,24 @@ export function createBotManager(deps) {
 
         // Fires again after death recovery (mineflayer health plugin) — clear any stale path goal.
         botInstance.on('spawn', () => {
-          if (ctx.bot !== botInstance) return;
+          if (ctx.world.bot !== botInstance) return;
           try {
             botInstance.pathfinder?.setGoal?.(null);
           } catch {}
-          ctx.reconnectAttempts = 0;
+          ctx.death.reconnectAttempts = 0;
         });
 
-        ctx.bot.on('kicked', (reason) => {
+        ctx.world.bot.on('kicked', (reason) => {
           log(`Kicked: ${JSON.stringify(reason)}`);
-          ctx.botReady = false;
+          ctx.world.botReady = false;
         });
 
-        ctx.bot.on('end', (reason) => {
+        ctx.world.bot.on('end', (reason) => {
           log(`Disconnected: ${reason}`);
-          ctx.botReady = false;
-          ctx.positionHistory = [];
-          const skipReconnect = ctx.suppressEndReconnect;
-          if (ctx.suppressEndReconnect) ctx.suppressEndReconnect = false;
+          ctx.world.botReady = false;
+          ctx.world.positionHistory = [];
+          const skipReconnect = ctx.death.suppressEndReconnect;
+          if (ctx.death.suppressEndReconnect) ctx.death.suppressEndReconnect = false;
 
           try {
             if (botInstance._soundCheckInterval) {
@@ -411,33 +412,33 @@ export function createBotManager(deps) {
             log('Reconnect timer skipped — session replacement already in flight.');
           }
 
-          if (ctx.hardcoreDead) {
+          if (ctx.death.hardcoreDead) {
             log('☠ Hardcore death — staying disconnected. RIP.');
             return;
           }
 
           if (skipReconnect) return;
 
-          const delay = reconnectBackoffMs(ctx.reconnectAttempts);
-          ctx.reconnectAttempts++;
-          log(`Reconnecting in ${delay / 1000}s (attempt ${ctx.reconnectAttempts})...`);
+          const delay = reconnectBackoffMs(ctx.death.reconnectAttempts);
+          ctx.death.reconnectAttempts++;
+          log(`Reconnecting in ${delay / 1000}s (attempt ${ctx.death.reconnectAttempts})...`);
           setTimeout(() => {
             log('Attempting reconnect...');
             createBot().catch((e) => log(`Reconnect failed: ${e.message}`));
           }, delay);
         });
 
-        ctx.botReady = true;
-        ctx.reconnectAttempts = 0;
+        ctx.world.botReady = true;
+        ctx.death.reconnectAttempts = 0;
         const spawnLocs = loadLocations();
         if (!spawnLocs.spawn) {
           spawnLocs.spawn = { ...posObj(), saved: new Date().toISOString() };
           saveLocations(spawnLocs);
         }
         log(
-          `Connected! Spawned at ${fmt(ctx.bot.entity.position.x)}, ${fmt(ctx.bot.entity.position.y)}, ${fmt(ctx.bot.entity.position.z)}`,
+          `Connected! Spawned at ${fmt(ctx.world.bot.entity.position.x)}, ${fmt(ctx.world.bot.entity.position.y)}, ${fmt(ctx.world.bot.entity.position.z)}`,
         );
-        resolve(ctx.bot);
+        resolve(ctx.world.bot);
         });
       })();
     });
@@ -445,33 +446,33 @@ export function createBotManager(deps) {
 
   function startStuckWatchdog(intervalMs = 5000) {
     return setInterval(() => {
-      if (!ctx.bot || !ctx.botReady) return;
-      const pos = ctx.bot.entity.position;
-      ctx.positionHistory.push({ time: Date.now(), x: pos.x, y: pos.y, z: pos.z });
-      ctx.positionHistory = ctx.positionHistory.filter((p) => Date.now() - p.time < 60000);
+      if (!ctx.world.bot || !ctx.world.botReady) return;
+      const pos = ctx.world.bot.entity.position;
+      ctx.world.positionHistory.push({ time: Date.now(), x: pos.x, y: pos.y, z: pos.z });
+      ctx.world.positionHistory = ctx.world.positionHistory.filter((p) => Date.now() - p.time < 60000);
 
       if (
-        ctx.currentTask &&
-        ctx.currentTask.status === 'running' &&
-        STUCK_MOVEMENT_ACTIONS.includes(ctx.currentTask.action) &&
-        !ctx.syncActionInFlight
+        ctx.tasks.currentTask &&
+        ctx.tasks.currentTask.status === 'running' &&
+        STUCK_MOVEMENT_ACTIONS.includes(ctx.tasks.currentTask.action) &&
+        !ctx.tasks.syncActionInFlight
       ) {
-        const old = ctx.positionHistory.find((p) => Date.now() - p.time > STUCK_IDLE_MS);
+        const old = ctx.world.positionHistory.find((p) => Date.now() - p.time > STUCK_IDLE_MS);
         if (old) {
           const dist = Math.sqrt((pos.x - old.x) ** 2 + (pos.y - old.y) ** 2 + (pos.z - old.z) ** 2);
           if (dist < 2) {
             try {
-              ctx.bot.pathfinder.setGoal(null);
+              ctx.world.bot.pathfinder.setGoal(null);
             } catch {}
             try {
-              ctx.bot.stopDigging();
+              ctx.world.bot.stopDigging();
             } catch {}
             try {
-              ctx.bot.clearControlStates();
+              ctx.world.bot.clearControlStates();
             } catch {}
-            ctx.currentTask.status = 'stuck';
-            ctx.currentTask.error = `Stuck at ${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)} — try a different approach`;
-            pushTaskHistoryRecord(ctx.currentTask, 'stuck');
+            ctx.tasks.currentTask.status = 'stuck';
+            ctx.tasks.currentTask.error = `Stuck at ${Math.round(pos.x)},${Math.round(pos.y)},${Math.round(pos.z)} — try a different approach`;
+            pushTaskHistoryRecord(ctx.tasks.currentTask, 'stuck');
             log(`STUCK detected (${STUCK_IDLE_MS / 1000}s no movement) — task cancelled`);
           }
         }
@@ -493,15 +494,15 @@ export function createBotManager(deps) {
         'place_fill', 'wall', 'tunnel',
       ]);
       const SYNC_STUCK_IDLE_MS = 8000;
-      if (ctx.syncActionInFlight && SYNC_STUCK_ACTIONS.has(ctx.syncActionName)) {
-        const old = ctx.positionHistory.find((p) => Date.now() - p.time > SYNC_STUCK_IDLE_MS);
+      if (ctx.tasks.syncActionInFlight && SYNC_STUCK_ACTIONS.has(ctx.tasks.syncActionName)) {
+        const old = ctx.world.positionHistory.find((p) => Date.now() - p.time > SYNC_STUCK_IDLE_MS);
         if (old) {
           const dxz = Math.hypot(pos.x - old.x, pos.z - old.z);
           if (dxz < 0.5) {
             const now = Date.now();
             // Log + unstick at most once every 5s per stuck-streak.
-            if (!ctx._lastSyncStuckLogAt || now - ctx._lastSyncStuckLogAt > 5000) {
-              ctx._lastSyncStuckLogAt = now;
+            if (!ctx.runtime._lastSyncStuckLogAt || now - ctx.runtime._lastSyncStuckLogAt > 5000) {
+              ctx.runtime._lastSyncStuckLogAt = now;
 
               // Track repeated activations at the same spot. v33 demonstrated
               // a terrain wedge (mined-out deposit, 1-block depression) where
@@ -509,10 +510,10 @@ export function createBotManager(deps) {
               // required a jump to escape and pathfinder wasn't issuing one.
               // After 3 stuck events within 30s at the same spot, escalate:
               // cancel pathfinder goal + sustained jump+forward burst.
-              if (!Array.isArray(ctx._stuckActivations)) ctx._stuckActivations = [];
-              ctx._stuckActivations = ctx._stuckActivations
+              if (!Array.isArray(ctx.runtime._stuckActivations)) ctx.runtime._stuckActivations = [];
+              ctx.runtime._stuckActivations = ctx.runtime._stuckActivations
                 .filter((s) => now - s.time < 30000);
-              const sameSpot = ctx._stuckActivations
+              const sameSpot = ctx.runtime._stuckActivations
                 .filter((s) => Math.hypot(s.x - pos.x, s.z - pos.z) < 1.5);
               const escalate = sameSpot.length >= 2; // this would be the 3rd
 
@@ -526,11 +527,11 @@ export function createBotManager(deps) {
               const mode = escalate
                 ? 'ESCALATE'
                 : offCentre ? 'wiggling+recentre' : 'wiggling';
-              log(`STUCK (sync) ${ctx.syncActionName}: no horizontal movement (${dxz.toFixed(2)}m) in ${(SYNC_STUCK_IDLE_MS/1000)|0}s at ${pos.x.toFixed(1)},${pos.y.toFixed(0)},${pos.z.toFixed(1)}${offCentre ? ` (off-centre ${offDist.toFixed(2)}m)` : ''}${escalate ? ` [${sameSpot.length + 1} same-spot activations]` : ''} — ${mode}`);
+              log(`STUCK (sync) ${ctx.tasks.syncActionName}: no horizontal movement (${dxz.toFixed(2)}m) in ${(SYNC_STUCK_IDLE_MS/1000)|0}s at ${pos.x.toFixed(1)},${pos.y.toFixed(0)},${pos.z.toFixed(1)}${offCentre ? ` (off-centre ${offDist.toFixed(2)}m)` : ''}${escalate ? ` [${sameSpot.length + 1} same-spot activations]` : ''} — ${mode}`);
 
               // Always: clear active pathfinder commands. Frees the bot
               // from whatever direction pathfinder was pushing toward.
-              try { ctx.bot.clearControlStates(); } catch {}
+              try { ctx.world.bot.clearControlStates(); } catch {}
 
               if (escalate) {
                 // Terrain wedge: cancel the pathfinder goal entirely and
@@ -540,65 +541,65 @@ export function createBotManager(deps) {
                 // case where vertical clearance is also needed. Combining
                 // both handles wall-wedge AND hole-wedge geometries.
                 // 500ms is enough for a 1-block step + jump arc.
-                try { ctx.bot.pathfinder.setGoal(null); } catch {}
+                try { ctx.world.bot.pathfinder.setGoal(null); } catch {}
                 try {
-                  ctx.bot.setControlState('jump', true);
-                  ctx.bot.setControlState('back', true);
+                  ctx.world.bot.setControlState('jump', true);
+                  ctx.world.bot.setControlState('back', true);
                   setTimeout(() => {
                     try {
-                      ctx.bot.setControlState('jump', false);
-                      ctx.bot.setControlState('back', false);
+                      ctx.world.bot.setControlState('jump', false);
+                      ctx.world.bot.setControlState('back', false);
                     } catch {}
                   }, 500);
                 } catch {}
                 // Reset activation tracking — the escalation will either
                 // free the bot or the next stuck-streak starts fresh.
-                ctx._stuckActivations = [];
+                ctx.runtime._stuckActivations = [];
               } else if (offCentre) {
                 // Step toward cell centre. mineflayer's setControlState
                 // moves relative to current yaw, so we use lookAt + brief
                 // forward step to nudge the bot back to (.5, .5).
                 try {
-                  const target = ctx.bot.entity.position.offset(-offX, 0, -offZ);
-                  ctx.bot.lookAt(target, true).then(() => {
-                    try { ctx.bot.setControlState('forward', true); } catch {}
+                  const target = ctx.world.bot.entity.position.offset(-offX, 0, -offZ);
+                  ctx.world.bot.lookAt(target, true).then(() => {
+                    try { ctx.world.bot.setControlState('forward', true); } catch {}
                     setTimeout(() => {
-                      try { ctx.bot.setControlState('forward', false); } catch {}
+                      try { ctx.world.bot.setControlState('forward', false); } catch {}
                     }, 250);
                   }).catch(() => {});
                 } catch {}
-                ctx._stuckActivations.push({ x: pos.x, z: pos.z, time: now });
+                ctx.runtime._stuckActivations.push({ x: pos.x, z: pos.z, time: now });
               } else {
                 // Centred but stuck — likely vertical (block above
                 // hitbox). Brief jump as before.
                 try {
-                  ctx.bot.setControlState('jump', true);
-                  setTimeout(() => { try { ctx.bot.setControlState('jump', false); } catch {} }, 250);
+                  ctx.world.bot.setControlState('jump', true);
+                  setTimeout(() => { try { ctx.world.bot.setControlState('jump', false); } catch {} }, 250);
                 } catch {}
-                ctx._stuckActivations.push({ x: pos.x, z: pos.z, time: now });
+                ctx.runtime._stuckActivations.push({ x: pos.x, z: pos.z, time: now });
               }
             }
-          } else if (ctx._lastSyncStuckLogAt) {
+          } else if (ctx.runtime._lastSyncStuckLogAt) {
             // Made progress — clear the streak.
-            ctx._lastSyncStuckLogAt = null;
-            ctx._stuckActivations = [];
+            ctx.runtime._lastSyncStuckLogAt = null;
+            ctx.runtime._stuckActivations = [];
           }
         }
       }
 
-      if ((!ctx.currentTask || ctx.currentTask.status !== 'running') && !ctx.syncActionInFlight) {
-        const recent = ctx.positionHistory.filter((p) => Date.now() - p.time < 8000);
+      if ((!ctx.tasks.currentTask || ctx.tasks.currentTask.status !== 'running') && !ctx.tasks.syncActionInFlight) {
+        const recent = ctx.world.positionHistory.filter((p) => Date.now() - p.time < 8000);
         if (recent.length >= 3) {
           const allSameSpot = recent.every(
             (p) =>
               Math.abs(p.x - recent[0].x) < 1.5 && Math.abs(p.z - recent[0].z) < 1.5,
           );
-          if (allSameSpot && !ctx.bot.entity.onGround) {
+          if (allSameSpot && !ctx.world.bot.entity.onGround) {
             try {
-              ctx.bot.clearControlStates();
+              ctx.world.bot.clearControlStates();
             } catch {}
             try {
-              ctx.bot.pathfinder.setGoal(null);
+              ctx.world.bot.pathfinder.setGoal(null);
             } catch {}
             log('Jump-stuck detected — cleared controls');
           }

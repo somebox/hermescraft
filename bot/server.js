@@ -61,6 +61,7 @@ import {
 import { createTaskRecord, refreshLeaseCheckpoint, renewLease, taskToApi } from './lib/goals/tasks.js';
 import { loadConfig } from './lib/config/index.js';
 import { createBotState } from './lib/server/state.js';
+import { createServices } from './lib/server/services.js';
 import { resolveInventoryItem, resolveCraftTarget, resolveBlockQuery } from './lib/shared/resolver.js';
 import { FAIR_PLAY } from './lib/runtime/fair-play-constants.js';
 import { createFairPlaySuite } from './lib/runtime/fair-play.js';
@@ -88,9 +89,9 @@ function normalizeDepositWithdrawItems(body) { return locations.normalizeDeposit
 function resolveContainerCoords(body) { return locations.resolveContainerCoords(body); }
 
 function buildMarksListApi() {
-  const b = ctx.bot && ctx.botReady ? ctx.bot : null;
+  const b = ctx.world.bot && ctx.world.botReady ? ctx.world.bot : null;
   const pos = b ? b.entity.position : null;
-  return locations.buildMarksList({ botPos: pos, chestSnapshots: ctx.chestSnapshots });
+  return locations.buildMarksList({ botPos: pos, chestSnapshots: ctx.goals.chestSnapshots });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -113,29 +114,29 @@ function loadReminders() {
   try {
     const raw = fs.readFileSync(remindersFilePath(), 'utf8');
     const data = JSON.parse(raw);
-    ctx.reminders = Array.isArray(data.reminders) ? data.reminders : [];
-    ctx.remindersNextId = typeof data.nextId === 'number' ? data.nextId : (ctx.reminders.length ? Math.max(...ctx.reminders.map(r => r.id)) + 1 : 1);
+    ctx.reminders.reminders = Array.isArray(data.reminders) ? data.reminders : [];
+    ctx.reminders.remindersNextId = typeof data.nextId === 'number' ? data.nextId : (ctx.reminders.reminders.length ? Math.max(...ctx.reminders.reminders.map(r => r.id)) + 1 : 1);
   } catch {
-    ctx.reminders = [];
-    ctx.remindersNextId = 1;
+    ctx.reminders.reminders = [];
+    ctx.reminders.remindersNextId = 1;
   }
 }
 
 function saveReminders() {
   const dir = path.dirname(remindersFilePath());
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(remindersFilePath(), JSON.stringify({ reminders: ctx.reminders, nextId: ctx.remindersNextId }, null, 2));
+  fs.writeFileSync(remindersFilePath(), JSON.stringify({ reminders: ctx.reminders.reminders, nextId: ctx.reminders.remindersNextId }, null, 2));
 }
 
 function getDueReminders() {
   const now = Date.now();
-  return ctx.reminders.filter(r => now - (r.last_fired || r.created) >= r.interval_ms);
+  return ctx.reminders.reminders.filter(r => now - (r.last_fired || r.created) >= r.interval_ms);
 }
 
 function fireDueReminders() {
   const now = Date.now();
   const due = [];
-  for (const r of ctx.reminders) {
+  for (const r of ctx.reminders.reminders) {
     if (now - (r.last_fired || r.created) >= r.interval_ms) {
       due.push({ id: r.id, note: r.note, mark: r.mark || null });
       r.last_fired = now;
@@ -149,12 +150,12 @@ function goalsPath() {
   return goalsFileForUser(config.mc.username);
 }
 function loadGoalsFromDisk() {
-  ctx.goalsStore = loadGoalsStore(goalsPath());
+  ctx.goals.goalsStore = loadGoalsStore(goalsPath());
 }
 function persistGoalsToDisk() {
   saveGoalsStore(goalsPath(), {
-    goals: ctx.goalsStore.goals,
-    deficitSince: ctx.goalsStore.deficitSince || {},
+    goals: ctx.goals.goalsStore.goals,
+    deficitSince: ctx.goals.goalsStore.deficitSince || {},
   });
 }
 
@@ -172,7 +173,7 @@ function snapshotChestAtPosition(x, y, z, containerItems) {
       break;
     }
   }
-  ctx.chestSnapshots[markName] = {
+  ctx.goals.chestSnapshots[markName] = {
     at: new Date().toISOString(),
     position: { x: ix, y: iy, z: iz },
     total,
@@ -183,7 +184,7 @@ function snapshotChestAtPosition(x, y, z, containerItems) {
 function pushTaskHistoryRecord(task, finalStatus) {
   if (!task) return;
   const ended = Date.now();
-  ctx.taskHistory.unshift({
+  ctx.tasks.taskHistory.unshift({
     id: task.id,
     action: task.action,
     status: finalStatus,
@@ -192,23 +193,23 @@ function pushTaskHistoryRecord(task, finalStatus) {
     parent_goal_id: task.parent_goal_id || null,
     error: task.error || undefined,
   });
-  ctx.taskHistory = ctx.taskHistory.slice(0, ctx.MAX_TASK_HISTORY);
+  ctx.tasks.taskHistory = ctx.tasks.taskHistory.slice(0, ctx.tasks.MAX_TASK_HISTORY);
 }
 
 
 function recipeIngredientMap(recipe) {
-  return _recipeIngredientMap(recipe, ctx.mcData);
+  return _recipeIngredientMap(recipe, ctx.world.mcData);
 }
 
 function bestRecipeForInventory(recipes, b, wantCount) {
-  return _bestRecipeForInventory(recipes, b.inventory.items(), wantCount, ctx.mcData);
+  return _bestRecipeForInventory(recipes, b.inventory.items(), wantCount, ctx.world.mcData);
 }
 
 function buildCraftPlan(b, itemName, wantCount = 1) {
-  const itemType = ctx.mcData.itemsByName[itemName];
+  const itemType = ctx.world.mcData.itemsByName[itemName];
   if (!itemType) return { ok: false, error: `Unknown item "${itemName}"` };
   const table = b.findBlock({
-    matching: ctx.mcData.blocksByName.crafting_table?.id,
+    matching: ctx.world.mcData.blocksByName.crafting_table?.id,
     maxDistance: 4,
   });
   let recipes = b.recipesFor(itemType.id, null, 1, null);
@@ -219,8 +220,8 @@ function buildCraftPlan(b, itemName, wantCount = 1) {
     try { recipes = b.recipesAll(itemType.id, null, 1); } catch { recipes = null; }
   }
   return buildCraftPlanFromRecipes({
-    recipes, invItems: b.inventory.items(), mcData: ctx.mcData,
-    chestSnapshots: ctx.chestSnapshots, itemName, wantCount,
+    recipes, invItems: b.inventory.items(), mcData: ctx.world.mcData,
+    chestSnapshots: ctx.goals.chestSnapshots, itemName, wantCount,
   });
 }
 
@@ -229,21 +230,21 @@ function getMyName() {
 }
 
 function getNearbyPlayerNames() {
-  if (!ctx.bot) return [];
-  return Object.values(ctx.bot.entities || {})
+  if (!ctx.world.bot) return [];
+  return Object.values(ctx.world.bot.entities || {})
     .map((entity) => entity.username)
     .filter(Boolean);
 }
 
 function rememberSocialEvent(event) {
   const withTime = { time: Date.now(), ...event };
-  ctx.socialEvents.push(withTime);
-  ctx.socialEvents = ctx.socialEvents.filter((entry) => Date.now() - entry.time < 30 * 60 * 1000).slice(-200);
-  if (withTime.actor) applySocialEvent(ctx.socialGraph, withTime);
+  ctx.social.socialEvents.push(withTime);
+  ctx.social.socialEvents = ctx.social.socialEvents.filter((entry) => Date.now() - entry.time < 30 * 60 * 1000).slice(-200);
+  if (withTime.actor) applySocialEvent(ctx.social.socialGraph, withTime);
 }
 
 function getMemoryHints(limit = 4) {
-  const hints = [...ctx.observedBlocks.values()]
+  const hints = [...ctx.reactive.observedBlocks.values()]
     .sort((a, b) => b.lastSeen - a.lastSeen)
     .slice(0, limit)
     .map((entry) => `${entry.name} ${entry.bearing} ${entry.distance}m (${Math.round((Date.now() - entry.lastSeen) / 1000)}s ago)`);
@@ -261,17 +262,17 @@ async function handleChat(username, message) {
   // BOT_HEAR_ALL=true bypasses this entirely — for coordinated multi-agent
   // tests where bots need to hear each other regardless of distance.
   const hearAll = config.behaviors.hearAll;
-  if (!hearAll && forMe && routing.isBroadcast && ctx.bot && ctx.botReady) {
+  if (!hearAll && forMe && routing.isBroadcast && ctx.world.bot && ctx.world.botReady) {
     const senderLower = username.toLowerCase();
     const isOtherAgent = CURRENT_CAST.includes(senderLower) && senderLower !== getMyName().toLowerCase();
     if (isOtherAgent) {
-      const senderEntity = Object.values(ctx.bot.entities || {}).find(
+      const senderEntity = Object.values(ctx.world.bot.entities || {}).find(
         e => e.username && e.username.toLowerCase() === senderLower
       );
-      const dist = senderEntity ? ctx.bot.entity.position.distanceTo(senderEntity.position) : Infinity;
+      const dist = senderEntity ? ctx.world.bot.entity.position.distanceTo(senderEntity.position) : Infinity;
       if (dist > FAIR_PLAY.LOS_ENTITY_RANGE) {
-        ctx.overheardLog.push({ time: Date.now(), from: username, message: routing.body, channel: 'distant_broadcast', to: [] });
-        if (ctx.overheardLog.length > ctx.MAX_LOG) ctx.overheardLog.shift();
+        ctx.social.overheardLog.push({ time: Date.now(), from: username, message: routing.body, channel: 'distant_broadcast', to: [] });
+        if (ctx.social.overheardLog.length > ctx.social.MAX_LOG) ctx.social.overheardLog.shift();
         rememberSocialEvent({ actor: username, kind: 'heard', channel: 'overheard_distant', message: routing.body });
         return;
       }
@@ -279,8 +280,8 @@ async function handleChat(username, message) {
   }
 
   if (forMe) {
-    // Message is for us — add to ctx.chatLog (visible in mc read_chat / mc status)
-    ctx.chatLog.push({
+    // Message is for us — add to ctx.social.chatLog (visible in mc read_chat / mc status)
+    ctx.social.chatLog.push({
       time: Date.now(),
       from: username,
       message: routing.body,
@@ -288,12 +289,12 @@ async function handleChat(username, message) {
       channel: routing.channel,
       targets: routing.targets.length > 0 ? routing.targets : undefined,
     });
-    if (ctx.chatLog.length > ctx.MAX_LOG) ctx.chatLog.shift();
+    if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
     log(`[Chat${routing.isBroadcast ? '' : ' @me'}] <${username}> ${routing.body}`);
     
     // If directly addressed (Name: msg format), queue as command
     if (!routing.isBroadcast) {
-      ctx.commandQueue.push({
+      ctx.social.commandQueue.push({
         time: Date.now(),
         from: username,
         command: routing.body,
@@ -302,7 +303,7 @@ async function handleChat(username, message) {
         status: 'pending',
       });
       rememberSocialEvent({ actor: username, kind: 'heard', channel: routing.channel, command: true, message: routing.body });
-      if (ctx.commandQueue.length > ctx.MAX_QUEUE) ctx.commandQueue.shift();
+      if (ctx.social.commandQueue.length > ctx.social.MAX_QUEUE) ctx.social.commandQueue.shift();
       log(`[Queued] ${username}: ${routing.body}`);
     } else {
       // Broadcast but mentions our name at start? Also queue as command.
@@ -312,7 +313,7 @@ async function handleChat(username, message) {
           ? stripMentionPrefix(routing.body, mention)
           : stripInlineNameMention(routing.body, getMyName());
       if (command) {
-        ctx.commandQueue.push({
+        ctx.social.commandQueue.push({
           time: Date.now(),
           from: username,
           command,
@@ -327,7 +328,7 @@ async function handleChat(username, message) {
           command: true,
           message: command,
         });
-        if (ctx.commandQueue.length > ctx.MAX_QUEUE) ctx.commandQueue.shift();
+        if (ctx.social.commandQueue.length > ctx.social.MAX_QUEUE) ctx.social.commandQueue.shift();
         log(`[Queued via mention] ${username}: ${command}`);
       } else {
         rememberSocialEvent({ actor: username, kind: 'heard', channel: routing.channel, message: routing.body });
@@ -335,9 +336,9 @@ async function handleChat(username, message) {
     }
   } else {
     // Message is NOT for us — overheard only
-    ctx.overheardLog.push({ time: Date.now(), from: username, message: routing.body,
+    ctx.social.overheardLog.push({ time: Date.now(), from: username, message: routing.body,
                         channel: routing.channel, to: routing.targets });
-    if (ctx.overheardLog.length > ctx.MAX_LOG) ctx.overheardLog.shift();
+    if (ctx.social.overheardLog.length > ctx.social.MAX_LOG) ctx.social.overheardLog.shift();
     rememberSocialEvent({ actor: username, kind: 'heard', channel: `overheard_${routing.channel}`, message: routing.body });
     log(`[Overheard] <${username}> → [${routing.targets.join(',')}] ${routing.body}`);
   }
@@ -356,7 +357,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function fmt(v) { return typeof v === 'number' ? Math.round(v * 10) / 10 : v; }
 
 function posObj(pos) {
-  const p = pos || ctx.bot?.entity?.position;
+  const p = pos || ctx.world.bot?.entity?.position;
   if (!p) return null;
   return { x: fmt(p.x), y: fmt(p.y), z: fmt(p.z) };
 }
@@ -367,17 +368,17 @@ function itemStr(item) {
 }
 
 function ensureBot() {
-  if (!ctx.bot || !ctx.botReady) {
+  if (!ctx.world.bot || !ctx.world.botReady) {
     throw new Error('Bot not connected. POST /connect to retry.');
   }
   // mineflayer health plugin: isAlive false while on death screen / respawn packet in flight
-  if (ctx.bot.isAlive === false) {
+  if (ctx.world.bot.isAlive === false) {
     throw new Error('Bot dead — respawn in progress. Retry in 1–2s (mineflayer auto-respawn + server).');
   }
-  if (!ctx.bot.entity) {
+  if (!ctx.world.bot.entity) {
     throw new Error('Bot not connected. POST /connect to retry.');
   }
-  return ctx.bot;
+  return ctx.world.bot;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -407,6 +408,32 @@ const {
 
 const spatial = createSpatial({ ensureBot, fmt, posObj });
 
+// Central services container (Phase 1 — additive). `services.state` is the
+// flat ctx for now; sliced from Phase 3. `getActions` is late-bound below
+// once ACTIONS is constructed. Existing factory call sites stay on the
+// legacy deps shape; pilot migration starts in Phase 2 (crafting.js).
+const actionsRef = { value: {} };
+const services = createServices({
+  config,
+  state: ctx,
+  ensureBot,
+  resolver: { resolveInventoryItem, resolveCraftTarget, resolveBlockQuery },
+  // `craft` bundle wires the server-built closures (over ctx.world.mcData,
+  // ctx.goals.chestSnapshots) so crafting handlers can read them from services
+  // instead of receiving them as flat deps. Phase 2 onward.
+  craft: {
+    resolveCraftItemName,
+    buildCraftPlan,
+    bestRecipeForInventory,
+  },
+  fairPlay: fairPlayApi,
+  spatial,
+  locations,
+  social: { rememberSocialEvent, getMyName, getNearbyPlayerNames },
+  utils: { fmt, posObj, sleep, log, itemStr },
+  getActions: () => actionsRef.value,
+});
+
 const { createBot, startStuckWatchdog } = createBotManager({
   ctx,
   config,
@@ -435,9 +462,9 @@ startStuckWatchdog();
 
 /** Resolve CLI-style block query (incl. groups like wood → oak_log). */
 function resolveMiningBlockName(raw) {
-  let br = resolveBlockQuery({ mcData: ctx.mcData, query: String(raw), policy: 'exact_required' });
+  let br = resolveBlockQuery({ mcData: ctx.world.mcData, query: String(raw), policy: 'exact_required' });
   if (!br.ok && br.code === 'ambiguous_query') {
-    br = resolveBlockQuery({ mcData: ctx.mcData, query: String(raw), policy: 'cheapest_craftable' });
+    br = resolveBlockQuery({ mcData: ctx.world.mcData, query: String(raw), policy: 'cheapest_craftable' });
   }
   if (!br.ok) {
     throw new Error(
@@ -449,8 +476,8 @@ function resolveMiningBlockName(raw) {
 
 /** Resolve craft target (exact id or alias like axe → wooden_axe). */
 function resolveCraftItemName(raw) {
-  let cr = resolveCraftTarget({ mcData: ctx.mcData, query: String(raw), policy: 'cheapest_craftable' });
-  if (!cr.ok) cr = resolveCraftTarget({ mcData: ctx.mcData, query: String(raw), policy: 'exact_required' });
+  let cr = resolveCraftTarget({ mcData: ctx.world.mcData, query: String(raw), policy: 'cheapest_craftable' });
+  if (!cr.ok) cr = resolveCraftTarget({ mcData: ctx.world.mcData, query: String(raw), policy: 'exact_required' });
   if (!cr.ok) throw new Error(cr.message || `Unknown item "${raw}". Check spelling.`);
   return cr.selected.name;
 }
@@ -483,6 +510,10 @@ const {
 // ═══════════════════════════════════════════════════════════════════
 
 const ACTIONS = createAllActions({
+  // Phase 2: services is available alongside the legacy deps. Migrated
+  // factories (crafting.js) use services; others still use the flat deps.
+  // Removed in Phase 3 when every factory is on services.
+  services,
   ctx,
   config,
   ensureBot,
@@ -519,6 +550,11 @@ const ACTIONS = createAllActions({
   saveReminders,
 });
 
+// Phase 1: late-bind actions into services.getActions(). Cross-module
+// action refs are still done via the legacy ACTIONS map in Phase 1;
+// future phases switch callers to services.getActions().
+actionsRef.value = ACTIONS;
+
 const actionRegistry = createActionRegistry(ACTIONS);
 
 // ── Reactive layer (Layer 2) ───────────────────────────────────────────
@@ -532,7 +568,7 @@ if (reactiveOn) {
   const skillEnv = config.behaviors.combatSkill;
   if (skillEnv !== undefined && skillEnv !== '') {
     const n = Number(skillEnv);
-    if (Number.isFinite(n)) ctx.combat_skill = Math.max(0, Math.min(1, n));
+    if (Number.isFinite(n)) ctx.reactive.combat_skill = Math.max(0, Math.min(1, n));
   }
   const reactive = createReactive({ ctx, log, ACTIONS, sleep, hasLineOfSight, eyePosition });
   reactive.start();
@@ -604,7 +640,7 @@ httpServer.listen(config.api.port, () => {
     log('LLM model:   (AGENT_MODEL not set — Hermes uses its own -m/--provider; dashboard may show null)');
   }
 
-  // Connect ctx.bot
+  // Connect ctx.world.bot
   createBot().catch(e => {
     log(`Initial connection failed: ${e.message}`);
     log('Bot server is running — POST /connect when Minecraft is ready.');

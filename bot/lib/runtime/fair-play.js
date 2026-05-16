@@ -115,7 +115,7 @@ export function createFairPlaySuite(deps) {
   }
 
   function hasLineOfSight(from, to) {
-    if (!ctx.bot || !ctx.botReady) return false;
+    if (!ctx.world.bot || !ctx.world.botReady) return false;
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
@@ -127,15 +127,15 @@ export function createFairPlaySuite(deps) {
       const x = from.x + dx * t;
       const y = from.y + dy * t;
       const z = from.z + dz * t;
-      const block = ctx.bot.blockAt(new Vec3(Math.floor(x), Math.floor(y), Math.floor(z)));
+      const block = ctx.world.bot.blockAt(new Vec3(Math.floor(x), Math.floor(y), Math.floor(z)));
       if (block && block.boundingBox === 'block') return false;
     }
     return true;
   }
 
   function canDetectEntity(entity) {
-    if (!ctx.fairPlayMode || !ctx.bot || !ctx.botReady) return true;
-    const pos = ctx.bot.entity.position;
+    if (!ctx.reactive.fairPlayMode || !ctx.world.bot || !ctx.world.botReady) return true;
+    const pos = ctx.world.bot.entity.position;
     const dist = entity.position.distanceTo(pos);
 
     if (dist < 3) return true;
@@ -146,7 +146,7 @@ export function createFairPlaySuite(deps) {
 
     if (dist > FAIR_PLAY.LOS_ENTITY_RANGE) return false;
 
-    const eyeHeight = ctx.bot.entity.height * 0.85;
+    const eyeHeight = ctx.world.bot.entity.height * 0.85;
     const eyePos = pos.offset(0, eyeHeight, 0);
     const targetCenter = entity.position.offset(0, (entity.height || 1.8) * 0.5, 0);
 
@@ -156,11 +156,11 @@ export function createFairPlaySuite(deps) {
   }
 
   function filterEntitiesFairPlay(entities) {
-    if (!ctx.fairPlayMode) return entities;
+    if (!ctx.reactive.fairPlayMode) return entities;
     return entities.filter((e) => canDetectEntity(e));
   }
 
-  function eyePosition(entity = ctx.bot?.entity) {
+  function eyePosition(entity = ctx.world.bot?.entity) {
     if (!entity?.position) return null;
     return entity.position.offset(0, (entity.height || 1.62) * 0.85, 0);
   }
@@ -172,7 +172,7 @@ export function createFairPlaySuite(deps) {
         origin.y + direction.y * distance,
         origin.z + direction.z * distance,
       );
-      const block = ctx.bot.blockAt(new Vec3(Math.floor(sample.x), Math.floor(sample.y), Math.floor(sample.z)));
+      const block = ctx.world.bot.blockAt(new Vec3(Math.floor(sample.x), Math.floor(sample.y), Math.floor(sample.z)));
       if (block && block.boundingBox === 'block' && block.name !== 'air' && block.name !== 'cave_air') {
         return { block, distance };
       }
@@ -181,15 +181,15 @@ export function createFairPlaySuite(deps) {
   }
 
   function rememberObservedBlock(entry) {
-    ctx.observedBlocks.set(makeBlockMemoryKey(entry.position, entry.name), {
+    ctx.reactive.observedBlocks.set(makeBlockMemoryKey(entry.position, entry.name), {
       ...entry,
       lastSeen: Date.now(),
     });
-    if (ctx.observedBlocks.size > 200) {
-      const oldest = [...ctx.observedBlocks.entries()]
+    if (ctx.reactive.observedBlocks.size > 200) {
+      const oldest = [...ctx.reactive.observedBlocks.entries()]
         .sort((a, b) => a[1].lastSeen - b[1].lastSeen)
-        .slice(0, ctx.observedBlocks.size - 200);
-      oldest.forEach(([key]) => ctx.observedBlocks.delete(key));
+        .slice(0, ctx.reactive.observedBlocks.size - 200);
+      oldest.forEach(([key]) => ctx.reactive.observedBlocks.delete(key));
     }
   }
 
@@ -262,7 +262,7 @@ export function createFairPlaySuite(deps) {
 
   function buildSceneSummary({ range = 16 } = {}) {
     const b = ensureBot();
-    const visibleBlocks = ctx.fairPlayMode
+    const visibleBlocks = ctx.reactive.fairPlayMode
       ? scanVisibleBlocks({ range, yawPans: FAIR_PLAY.SCAN_YAW_PANS })
       : scanVisibleBlocks({
           range: Math.min(range, 24),
@@ -294,7 +294,7 @@ export function createFairPlaySuite(deps) {
       visibleBlocks,
       visibleEntities,
       hazards,
-      sounds: ctx.soundEvents.slice(-5),
+      sounds: ctx.runtime.soundEvents.slice(-5),
       memoryHints: getMemoryHints(),
     });
 
@@ -305,16 +305,16 @@ export function createFairPlaySuite(deps) {
       visible_entities: visibleEntities,
       hazards,
       looking_at: lookingAt ? { name: lookingAt.name, position: posObj(lookingAt.position) } : null,
-      sounds: ctx.soundEvents.slice(-5),
+      sounds: ctx.runtime.soundEvents.slice(-5),
       memory_hints: getMemoryHints(),
-      fair_play: ctx.fairPlayMode,
+      fair_play: ctx.reactive.fairPlayMode,
       range,
     };
   }
 
   function findVisibleBlocksByName(blockName, { range = 16, count = 10, yawPans } = {}) {
     const needle = String(blockName || '').toLowerCase();
-    const pans = yawPans ?? (ctx.fairPlayMode ? FAIR_PLAY.SCAN_YAW_PANS : 1);
+    const pans = yawPans ?? (ctx.reactive.fairPlayMode ? FAIR_PLAY.SCAN_YAW_PANS : 1);
     return scanVisibleBlocks({ range, yawPans: pans })
       .filter((entry) => entry.name.toLowerCase() === needle)
       .slice(0, count);
@@ -329,7 +329,7 @@ export function createFairPlaySuite(deps) {
     const startPitch = b.entity.pitch;
     const n = Math.max(
       2,
-      Math.min(12, Number(headings) || (ctx.fairPlayMode ? FAIR_PLAY.LOOK_SWEEP_HEADINGS : 4)),
+      Math.min(12, Number(headings) || (ctx.reactive.fairPlayMode ? FAIR_PLAY.LOOK_SWEEP_HEADINGS : 4)),
     );
     const ms = Math.max(0, Math.min(250, Number(settleMs) || FAIR_PLAY.LOOK_SETTLE_MS));
     const seen = new Set();
@@ -417,12 +417,12 @@ export function createFairPlaySuite(deps) {
   }
 
   function addSoundEvent(type, position, radius) {
-    if (!ctx.bot || !ctx.botReady) return;
-    const dist = ctx.bot.entity.position.distanceTo(position);
+    if (!ctx.world.bot || !ctx.world.botReady) return;
+    const dist = ctx.world.bot.entity.position.distanceTo(position);
     if (dist > radius) return;
 
-    const dx = position.x - ctx.bot.entity.position.x;
-    const dz = position.z - ctx.bot.entity.position.z;
+    const dx = position.x - ctx.world.bot.entity.position.x;
+    const dz = position.z - ctx.world.bot.entity.position.z;
     const angle = (Math.atan2(dz, dx) * 180) / Math.PI;
     let dir;
     if (angle > -22.5 && angle <= 22.5) dir = 'east';
@@ -434,18 +434,18 @@ export function createFairPlaySuite(deps) {
     else if (angle > -112.5 && angle <= -67.5) dir = 'north';
     else dir = 'northeast';
 
-    ctx.soundEvents.push({
+    ctx.runtime.soundEvents.push({
       time: Date.now(),
       type,
       direction: dir,
       distance: fmt(dist),
       approximate: true,
     });
-    ctx.soundEvents = ctx.soundEvents.filter((e) => Date.now() - e.time < 30000).slice(-20);
+    ctx.runtime.soundEvents = ctx.runtime.soundEvents.filter((e) => Date.now() - e.time < 30000).slice(-20);
   }
 
   async function reactionDelay() {
-    if (!ctx.fairPlayMode) return;
+    if (!ctx.reactive.fairPlayMode) return;
     const delay =
       FAIR_PLAY.REACTION_MIN_MS +
       Math.random() * (FAIR_PLAY.REACTION_MAX_MS - FAIR_PLAY.REACTION_MIN_MS);

@@ -1,25 +1,26 @@
+// @size-exempt: observe-payload builders + goal scoreboard + dashboard signals
 import { Vec3 } from 'vec3';
 import { scoreGoals } from '../goals/engine.js';
 import { refreshLeaseCheckpoint, taskToApi } from '../goals/tasks.js';
 import { summarizeSocialGraph } from '../shared/chat.js';
-import { buildActionStats, classifyIdleReason } from '../server/http-app.js';
+import { buildActionStats, classifyIdleReason } from '../server/diagnostics.js';
 
 export function createObservation(deps) {
   const { ctx, ensureBot, fmt, posObj, loadLocations, filterEntitiesFairPlay, buildSceneSummary, fireDueReminders, FAIR_PLAY, itemStr } = deps;
 
   function getGoalsScoreboard() {
-    if (!ctx.bot || !ctx.botReady || !ctx.mcData) return { scored: [], context: null };
-    const { scored, context, deficitSince } = scoreGoals(ctx.bot, ctx.mcData, ctx.goalsStore, ctx.chestSnapshots);
-    ctx.goalsStore.deficitSince = deficitSince;
+    if (!ctx.world.bot || !ctx.world.botReady || !ctx.world.mcData) return { scored: [], context: null };
+    const { scored, context, deficitSince } = scoreGoals(ctx.world.bot, ctx.world.mcData, ctx.goals.goalsStore, ctx.goals.chestSnapshots);
+    ctx.goals.goalsStore.deficitSince = deficitSince;
     return { scored, context };
   }
 
   function buildTypedAlerts() {
-    if (!ctx.bot || !ctx.botReady) return [];
+    if (!ctx.world.bot || !ctx.world.botReady) return [];
     const list = [];
-    const pos = ctx.bot.entity.position;
+    const pos = ctx.world.bot.entity.position;
     const hostiles = ['zombie', 'skeleton', 'creeper', 'spider', 'witch', 'enderman', 'drowned', 'phantom', 'husk', 'stray'];
-    const ents = Object.values(ctx.bot.entities || {}).filter((e) => e !== ctx.bot.entity && e.position);
+    const ents = Object.values(ctx.world.bot.entities || {}).filter((e) => e !== ctx.world.bot.entity && e.position);
     const visible = filterEntitiesFairPlay(ents);
     for (const e of visible) {
       if (e.type !== 'mob') continue;
@@ -34,7 +35,7 @@ export function createObservation(deps) {
         threat_score: Math.round(threat * 1000) / 1000,
       });
     }
-    for (const s of ctx.soundEvents.slice(-5)) {
+    for (const s of ctx.runtime.soundEvents.slice(-5)) {
       list.push({
         type: 'sound',
         kind: s.type,
@@ -42,7 +43,7 @@ export function createObservation(deps) {
         distance: s.distance,
       });
     }
-    if (ctx.bot.entity.isInWater) {
+    if (ctx.world.bot.entity.isInWater) {
       list.push({ type: 'hazard', kind: 'water', message: 'submerged' });
     }
     return list;
@@ -50,7 +51,7 @@ export function createObservation(deps) {
 
   /** Keywords → coarse topics for dashboard ("Hermes wants chickens" vs scored goals store). */
   function buildDashboardSignals() {
-    const pending = ctx.commandQueue
+    const pending = ctx.social.commandQueue
       .filter((c) => c.status === 'pending')
       .slice(0, 10)
       .map((c) => ({
@@ -59,7 +60,7 @@ export function createObservation(deps) {
         channel: c.channel || null,
         status: 'pending',
       }));
-    const active = ctx.commandQueue
+    const active = ctx.social.commandQueue
       .filter((c) => c.status === 'acknowledged')
       .slice(0, 10)
       .map((c) => ({
@@ -92,7 +93,7 @@ export function createObservation(deps) {
     const seen = new Set();
     /** @type {{ tag: string, label: string, from?: string, snippet: string }[]} */
     const chat_topics = [];
-    const merged = [...ctx.chatLog, ...ctx.overheardLog].sort((a, b) => (b.time || 0) - (a.time || 0));
+    const merged = [...ctx.social.chatLog, ...ctx.social.overheardLog].sort((a, b) => (b.time || 0) - (a.time || 0));
     for (const line of merged.slice(0, 55)) {
       const text = line.message || '';
       for (const t of topics) {
@@ -131,14 +132,14 @@ export function createObservation(deps) {
   }
 
   function briefState() {
-    if (!ctx.bot || !ctx.botReady) return null;
+    if (!ctx.world.bot || !ctx.world.botReady) return null;
 
     // Grab recent chat so AI sees messages that arrived during action.
     // Player messages use a longer window (2 min) so they survive long-running actions.
     // Nearby broadcasts are capped at 2 most recent to reduce cascade noise.
     const now = Date.now();
-    const playerMsgs = ctx.chatLog
-      .filter(m => now - m.time < 120000 && m.from !== ctx.bot.username && m.from !== 'Server');
+    const playerMsgs = ctx.social.chatLog
+      .filter(m => now - m.time < 120000 && m.from !== ctx.world.bot.username && m.from !== 'Server');
     const directMsgs = playerMsgs.filter(m => m.private || m.whisper);
     const broadcastMsgs = playerMsgs.filter(m => !m.private && !m.whisper).slice(-3);
     const recentChat = [...directMsgs, ...broadcastMsgs]
@@ -151,34 +152,34 @@ export function createObservation(deps) {
       }));
 
     // Grab active commands (pending or acknowledged)
-    const pending = ctx.commandQueue.filter(c => c.status === 'pending');
-    const acknowledged = ctx.commandQueue.filter(c => c.status === 'acknowledged');
+    const pending = ctx.social.commandQueue.filter(c => c.status === 'pending');
+    const acknowledged = ctx.social.commandQueue.filter(c => c.status === 'acknowledged');
 
     const state = {
-      health: fmt(ctx.bot.health),
-      food: ctx.bot.food,
+      health: fmt(ctx.world.bot.health),
+      food: ctx.world.bot.food,
       position: posObj(),
-      holding: ctx.bot.heldItem?.name || 'empty',
-      time: ctx.bot.time.timeOfDay,
-      isDay: ctx.bot.time.timeOfDay < 12000,
+      holding: ctx.world.bot.heldItem?.name || 'empty',
+      time: ctx.world.bot.time.timeOfDay,
+      isDay: ctx.world.bot.time.timeOfDay < 12000,
     };
     // Surface combat tallies in the brief view so the agent can see at
     // a glance how dangerous the session has been (and whether it's
     // landing kills back). Both fields omitted when zero.
-    if (ctx.combatStats?.kills > 0) state.kills = ctx.combatStats.kills;
-    if (ctx.deathLog?.length > 0) state.deaths = ctx.deathLog.length;
-    if (ctx.bot.isAlive === false) {
+    if (ctx.team.combatStats?.kills > 0) state.kills = ctx.team.combatStats.kills;
+    if (ctx.death.deathLog?.length > 0) state.deaths = ctx.death.deathLog.length;
+    if (ctx.world.bot.isAlive === false) {
       state.respawn_pending = true;
     }
 
     // Nearby utility blocks — so the AI knows what resources are at hand
     try {
       const utilIds = ['crafting_table', 'furnace', 'chest', 'anvil', 'smithing_table', 'enchanting_table']
-        .map(n => ctx.mcData.blocksByName[n]?.id).filter(id => id != null);
-      const found = ctx.bot.findBlocks({ matching: utilIds, maxDistance: 16, count: 10 });
+        .map(n => ctx.world.mcData.blocksByName[n]?.id).filter(id => id != null);
+      const found = ctx.world.bot.findBlocks({ matching: utilIds, maxDistance: 16, count: 10 });
       if (found.length > 0) {
         state.nearby_utilities = found.slice(0, 6).map(p => {
-          const bl = ctx.bot.blockAt(p);
+          const bl = ctx.world.bot.blockAt(p);
           return { name: bl?.name || '?', x: p.x, y: p.y, z: p.z };
         });
       }
@@ -202,38 +203,38 @@ export function createObservation(deps) {
         since: Math.round((now - (c.acknowledged_at || c.time)) / 1000) + 's',
       }));
     }
-    const recentSocial = ctx.socialEvents.filter((entry) => now - entry.time < 60000).slice(-3)
+    const recentSocial = ctx.social.socialEvents.filter((entry) => now - entry.time < 60000).slice(-3)
       .map((entry) => `${entry.actor} ${entry.kind} via ${entry.channel}`);
     if (recentSocial.length > 0) state.social = recentSocial;
 
     // Water hazard — surfaces immediately so agent can react
-    if (ctx.bot.entity?.isInWater) {
+    if (ctx.world.bot.entity?.isInWater) {
       state.hazard = 'SUBMERGED in water — mc stop then mc jump to swim up, navigate to shore';
     }
 
     // Repeated-failure loop detection
-    const recent3 = ctx.actionHistory.slice(-3);
+    const recent3 = ctx.tasks.actionHistory.slice(-3);
     if (recent3.length === 3 && recent3.every(e => e.status !== 'done' && e.action === recent3[0].action)) {
       state.action_loop = `You've tried "${recent3[0].action}" 3 times and failed — check mc inventory first, then try something different`;
     }
 
     // Show count of overheard messages (other agents' private conversations)
-    const recentOverheard = ctx.overheardLog.filter(m => now - m.time < 60000).length;
+    const recentOverheard = ctx.social.overheardLog.filter(m => now - m.time < 60000).length;
     if (recentOverheard > 0) state.overheard_nearby = recentOverheard;
-    if (ctx.currentTask && ctx.currentTask.status === 'stuck') state.task_stuck = ctx.currentTask.error;
-    if (ctx.currentTask && ctx.currentTask.status === 'running') {
-      state.task = { action: ctx.currentTask.action, elapsed: Math.round((Date.now() - ctx.currentTask.started) / 1000) + 's' };
-    } else if (ctx.currentTask && ctx.currentTask.status === 'done') {
-      state.task_done = ctx.currentTask.result?.result || 'completed';
-    } else if (ctx.currentTask && ctx.currentTask.status === 'error') {
-      state.task_error = ctx.currentTask.error;
+    if (ctx.tasks.currentTask && ctx.tasks.currentTask.status === 'stuck') state.task_stuck = ctx.tasks.currentTask.error;
+    if (ctx.tasks.currentTask && ctx.tasks.currentTask.status === 'running') {
+      state.task = { action: ctx.tasks.currentTask.action, elapsed: Math.round((Date.now() - ctx.tasks.currentTask.started) / 1000) + 's' };
+    } else if (ctx.tasks.currentTask && ctx.tasks.currentTask.status === 'done') {
+      state.task_done = ctx.tasks.currentTask.result?.result || 'completed';
+    } else if (ctx.tasks.currentTask && ctx.tasks.currentTask.status === 'error') {
+      state.task_error = ctx.tasks.currentTask.error;
     }
 
-    refreshLeaseCheckpoint(ctx.currentTask);
-    const tapi = taskToApi(ctx.currentTask);
+    refreshLeaseCheckpoint(ctx.tasks.currentTask);
+    const tapi = taskToApi(ctx.tasks.currentTask);
     if (tapi?.needs_checkpoint) state.checkpoint_due = true;
 
-    if (ctx.bot && ctx.mcData) {
+    if (ctx.world.bot && ctx.world.mcData) {
       try {
         const { scored } = getGoalsScoreboard();
         if (scored[0]) {
@@ -256,21 +257,21 @@ export function createObservation(deps) {
       /* ignore */
     }
 
-    if (ctx.hardcoreDead) state.hardcore_dead = true;
+    if (ctx.death.hardcoreDead) state.hardcore_dead = true;
 
-    if (ctx.lastDeath) {
-      const ageS = Math.round((now - ctx.lastDeath.time) / 1000);
+    if (ctx.death.lastDeath) {
+      const ageS = Math.round((now - ctx.death.lastDeath.time) / 1000);
       state.death_recent = ageS < 900;
       state.last_death_age_s = ageS;
-      state.death_death_number = ctx.lastDeath.deathNumber;
+      state.death_death_number = ctx.death.lastDeath.deathNumber;
       state.seconds_until_despawn_approx = Math.max(0, ITEM_DESPAWN_APPROX_SECONDS - ageS);
     }
 
-    if (ctx.lastDamageEvent && now - ctx.lastDamageEvent.ts < 20000) {
+    if (ctx.death.lastDamageEvent && now - ctx.death.lastDamageEvent.ts < 20000) {
       state.damage_telemetry = {
-        last_damage: ctx.lastDamageEvent.amount,
-        hp_after: ctx.lastDamageEvent.hp,
-        seconds_ago: Math.round((now - ctx.lastDamageEvent.ts) / 1000),
+        last_damage: ctx.death.lastDamageEvent.amount,
+        hp_after: ctx.death.lastDamageEvent.hp,
+        seconds_ago: Math.round((now - ctx.death.lastDamageEvent.ts) / 1000),
       };
     }
 
@@ -281,10 +282,10 @@ export function createObservation(deps) {
     const lean = opts.lean === true;
     const brief = briefState();
     const { scored, context } = getGoalsScoreboard();
-    refreshLeaseCheckpoint(ctx.currentTask);
-    const task = taskToApi(ctx.currentTask);
+    refreshLeaseCheckpoint(ctx.tasks.currentTask);
+    const task = taskToApi(ctx.tasks.currentTask);
     const alerts = buildTypedAlerts();
-    const inv = ctx.bot && ctx.botReady ? ctx.bot.inventory.items() : [];
+    const inv = ctx.world.bot && ctx.world.botReady ? ctx.world.bot.inventory.items() : [];
     const invSummary = {};
     for (const i of inv) {
       invSummary[i.name] = (invSummary[i.name] || 0) + i.count;
@@ -295,7 +296,7 @@ export function createObservation(deps) {
     let nearbyMarks;
     try {
       const locs = loadLocations();
-      const botPos = ctx.bot?.entity?.position;
+      const botPos = ctx.world.bot?.entity?.position;
       if (botPos && locs) {
         nearbyMarks = Object.entries(locs)
           .map(([name, l]) => {
@@ -317,23 +318,23 @@ export function createObservation(deps) {
 
     const payload = {
       ok: true,
-      time: ctx.bot?.time?.timeOfDay,
-      is_day: ctx.bot ? ctx.bot.time.timeOfDay < 12000 : null,
+      time: ctx.world.bot?.time?.timeOfDay,
+      is_day: ctx.world.bot ? ctx.world.bot.time.timeOfDay < 12000 : null,
       state: brief,
       goals: lean ? leanGoals(scored) : scored.slice(0, 12),
       ...(lean ? {} : { goals_context: context, goals_plan_hints: buildGoalsPlanHints(scored) }),
       task,
       alerts,
       inventory_summary: invSummary,
-      chest_snapshots: ctx.chestSnapshots,
+      chest_snapshots: ctx.goals.chestSnapshots,
       nearby_marks: nearbyMarks?.length ? nearbyMarks : undefined,
       ...(lean ? {} : { dashboard_signals: buildDashboardSignals() }),
-      last_api_error: ctx.lastApiError,
+      last_api_error: ctx.tasks.lastApiError,
       recent_actions: lean
-        ? [...ctx.actionHistory].slice(-5).reverse()
-        : [...ctx.actionHistory].reverse(),
+        ? [...ctx.tasks.actionHistory].slice(-5).reverse()
+        : [...ctx.tasks.actionHistory].reverse(),
       ...(lean ? {} : { action_stats_5m: buildActionStats(ctx) }),
-      auto_action_log: ctx.autoActionLog ? [...ctx.autoActionLog].slice(lean ? -4 : -16) : [],
+      auto_action_log: ctx.reactive.autoActionLog ? [...ctx.reactive.autoActionLog].slice(lean ? -4 : -16) : [],
       idle_reason: classifyIdleReason(ctx),
     };
     if (dueReminders.length) payload.reminders_due = dueReminders;
@@ -342,7 +343,7 @@ export function createObservation(deps) {
 
   function buildLogisticsPayload() {
     const { scored } = getGoalsScoreboard();
-    const inv = ctx.bot && ctx.botReady ? ctx.bot.inventory.items() : [];
+    const inv = ctx.world.bot && ctx.world.botReady ? ctx.world.bot.inventory.items() : [];
     const invSummary = {};
     for (const i of inv) {
       invSummary[i.name] = (invSummary[i.name] || 0) + i.count;
@@ -358,7 +359,7 @@ export function createObservation(deps) {
       ok: true,
       inventory: invSummary,
       goals_deficits: deficits,
-      chest_snapshots: ctx.chestSnapshots,
+      chest_snapshots: ctx.goals.chestSnapshots,
       marks: loadLocations(),
     };
   }
@@ -372,7 +373,7 @@ export function createObservation(deps) {
 
     // Nearby entities (fair-play filtered)
     const rawEntities = Object.values(b.entities)
-      .filter(e => e !== b.entity && e.position.distanceTo(pos) < (ctx.fairPlayMode ? FAIR_PLAY.LOS_ENTITY_RANGE : 24));
+      .filter(e => e !== b.entity && e.position.distanceTo(pos) < (ctx.reactive.fairPlayMode ? FAIR_PLAY.LOS_ENTITY_RANGE : 24));
     const visibleEntities = filterEntitiesFairPlay(rawEntities);
     const entities = visibleEntities
       .sort((a, c) => a.position.distanceTo(pos) - c.position.distanceTo(pos))
@@ -429,7 +430,7 @@ export function createObservation(deps) {
     const biome = b.blockAt(pos)?.biome?.name || 'unknown';
 
     // Unread chat
-    const unreadChat = ctx.chatLog.length > 0 ? ctx.chatLog.slice(-5).map(m => ({
+    const unreadChat = ctx.social.chatLog.length > 0 ? ctx.social.chatLog.slice(-5).map(m => ({
       from: m.from, message: m.message,
       ago: Math.round((Date.now() - m.time) / 1000) + 's',
     })) : [];
@@ -450,7 +451,7 @@ export function createObservation(deps) {
       time: time,
       ...(lean ? {} : { isDay: time < 12000 }),
       ...(lean ? {} : { timePhase: time < 6000 ? 'morning' : time < 12000 ? 'afternoon' : time < 18000 ? 'evening' : 'night' }),
-      holding: ctx.bot.heldItem ? itemStr(ctx.bot.heldItem) : 'empty',
+      holding: ctx.world.bot.heldItem ? itemStr(ctx.world.bot.heldItem) : 'empty',
       ...(lean ? {} : { experience: { level: b.experience?.level || 0 } }),
       inventory: inv.map(i => ({ name: i.name, count: i.count })),
       ...(lean ? {} : { inventoryCount: inv.length }),
@@ -464,39 +465,39 @@ export function createObservation(deps) {
       // F45.8: always present so the brain has a stable signal of "you have
       // unread messages" without needing to call /chat to know whether to ask.
       unreadChat: { count: unreadChat.length, recent: unreadChat.slice(-3) },
-      ...(ctx.deathLog.length > 0 ? { deaths: ctx.deathLog.length } : {}),
-      ...(ctx.lastDeath ? { lastDeath: { position: ctx.lastDeath.position, seconds_ago: Math.round((Date.now()-ctx.lastDeath.time)/1000) } } : {}),
+      ...(ctx.death.deathLog.length > 0 ? { deaths: ctx.death.deathLog.length } : {}),
+      ...(ctx.death.lastDeath ? { lastDeath: { position: ctx.death.lastDeath.position, seconds_ago: Math.round((Date.now()-ctx.death.lastDeath.time)/1000) } } : {}),
       ...(lean ? {} : { onGround: b.entity.onGround }),
       ...(b.isRaining ? { isRaining: true } : {}),
-      ...(ctx.isSneaking ? { isSneaking: true } : {}),
+      ...(ctx.team.isSneaking ? { isSneaking: true } : {}),
       // Fair play: sound events (directional hints without exact positions)
-      ...(ctx.soundEvents.length > 0 ? {
-        sounds: ctx.soundEvents.slice(lean ? -2 : -5),
+      ...(ctx.runtime.soundEvents.length > 0 ? {
+        sounds: ctx.runtime.soundEvents.slice(lean ? -2 : -5),
       } : {}),
       scene: leanScene || scene,
-      ...(lean ? {} : { social_summary: summarizeSocialGraph(ctx.socialGraph) }),
+      ...(lean ? {} : { social_summary: summarizeSocialGraph(ctx.social.socialGraph) }),
       // Team info
-      ...(ctx.teamConfig.team ? {
+      ...(ctx.team.teamConfig.team ? {
         team: {
-          name: ctx.teamConfig.team,
-          role: ctx.teamConfig.role,
-          rallyPoint: ctx.teamConfig.rallyPoint,
-          recentTeamChat: ctx.teamConfig.teamChat.slice(-3),
+          name: ctx.team.teamConfig.team,
+          role: ctx.team.teamConfig.role,
+          rallyPoint: ctx.team.teamConfig.rallyPoint,
+          recentTeamChat: ctx.team.teamConfig.teamChat.slice(-3),
         },
       } : {}),
       // Combat stats
-      ...((ctx.combatStats.kills + ctx.combatStats.deaths > 0) ? { combatStats: ctx.combatStats } : {}),
+      ...((ctx.team.combatStats.kills + ctx.team.combatStats.deaths > 0) ? { combatStats: ctx.team.combatStats } : {}),
       // Active furnaces
-      ...(ctx.activeFurnaces.length > 0 ? {
-        activeFurnaces: ctx.activeFurnaces.map(f => ({
+      ...(ctx.team.activeFurnaces.length > 0 ? {
+        activeFurnaces: ctx.team.activeFurnaces.map(f => ({
           position: { x: f.x, y: f.y, z: f.z },
           input: f.input,
           estimatedDone: f.estimatedDone ? Math.max(0, Math.round((f.estimatedDone - Date.now()) / 1000)) + 's' : 'unknown',
         })),
       } : {}),
-      ...(lean ? {} : { fairPlay: ctx.fairPlayMode }),
+      ...(lean ? {} : { fairPlay: ctx.reactive.fairPlayMode }),
       ...(b.game?.hardcore ? { hardcore: true } : {}),
-      ...(ctx.hardcoreDead ? { permanentlyDead: true } : {}),
+      ...(ctx.death.hardcoreDead ? { permanentlyDead: true } : {}),
     };
   }
 
@@ -521,7 +522,7 @@ export function createObservation(deps) {
       else if (n.includes('helmet') || n.includes('chestplate') || n.includes('leggings') || n.includes('boots') || n === 'shield') cat = 'armor';
       else if (n.includes('cooked') || n.includes('bread') || n.includes('apple') || n.includes('steak') || n.includes('porkchop') || n.includes('chicken') || n.includes('salmon') || n.includes('potato') || n === 'mushroom_stew') cat = 'food';
       else if (n.includes('ingot') || n.includes('diamond') || n.includes('coal') || n.includes('redstone') || n.includes('lapis') || n.includes('stick') || n.includes('string') || n.includes('flint') || n.includes('blaze') || n.includes('ender_pearl')) cat = 'materials';
-      else if (ctx.mcData?.blocksByName[n]) cat = 'blocks';
+      else if (ctx.world.mcData?.blocksByName[n]) cat = 'blocks';
 
       if (!categories[cat]) categories[cat] = [];
       categories[cat].push({ name: n, count: item.count });

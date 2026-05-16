@@ -1,3 +1,4 @@
+/** @size-exempt: goto / goto_near / move share pathfinder + stall recovery */
 /**
  * Movement action handlers: goto, goto_near, follow, look, stop, move.
  */
@@ -10,7 +11,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
   // can short-circuit dependent commands until the bot acknowledges.
   const recordMoveFailure = (verb, x, y, z, actualPos, reason) => {
     if (!ctx) return;
-    ctx.lastMoveFailed = {
+    ctx.runtime.lastMoveFailed = {
       ts: Date.now(),
       intended_target: { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) },
       actual_pos: actualPos ? { x: Math.round(actualPos.x * 10) / 10, y: Math.round(actualPos.y * 10) / 10, z: Math.round(actualPos.z * 10) / 10 } : null,
@@ -25,12 +26,12 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
   // again; keep the rest of the registry for unrelated regions.
   const clearMoveFailure = () => {
     if (!ctx) return;
-    ctx.lastMoveFailed = null;
-    if (!Array.isArray(ctx.recentStuckCells) || ctx.recentStuckCells.length === 0) return;
+    ctx.runtime.lastMoveFailed = null;
+    if (!Array.isArray(ctx.runtime.recentStuckCells) || ctx.runtime.recentStuckCells.length === 0) return;
     try {
-      const p = ctx.bot?.entity?.position;
+      const p = ctx.world.bot?.entity?.position;
       if (!p) return;
-      ctx.recentStuckCells = ctx.recentStuckCells.filter(e => {
+      ctx.runtime.recentStuckCells = ctx.runtime.recentStuckCells.filter(e => {
         const dx = e.cell.x - p.x;
         const dy = e.cell.y - p.y;
         const dz = e.cell.z - p.z;
@@ -77,19 +78,19 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
   const RECENT_STUCK_TTL_MS = 90_000;
   const pushStuckCell = (cell, source) => {
     if (!ctx || !cell) return;
-    if (!Array.isArray(ctx.recentStuckCells)) ctx.recentStuckCells = [];
+    if (!Array.isArray(ctx.runtime.recentStuckCells)) ctx.runtime.recentStuckCells = [];
     const cutoff = Date.now() - RECENT_STUCK_TTL_MS;
-    ctx.recentStuckCells = ctx.recentStuckCells.filter(e => e.ts > cutoff);
+    ctx.runtime.recentStuckCells = ctx.runtime.recentStuckCells.filter(e => e.ts > cutoff);
     const cx = Math.floor(Number(cell.x));
     const cy = Math.floor(Number(cell.y));
     const cz = Math.floor(Number(cell.z));
-    const existing = ctx.recentStuckCells.find(e => e.cell.x === cx && e.cell.y === cy && e.cell.z === cz);
+    const existing = ctx.runtime.recentStuckCells.find(e => e.cell.x === cx && e.cell.y === cy && e.cell.z === cz);
     if (existing) {
       existing.ts = Date.now();
       existing.hit_count += 1;
     } else {
-      ctx.recentStuckCells.push({ ts: Date.now(), cell: { x: cx, y: cy, z: cz }, source, hit_count: 1 });
-      if (ctx.recentStuckCells.length > 12) ctx.recentStuckCells.shift();
+      ctx.runtime.recentStuckCells.push({ ts: Date.now(), cell: { x: cx, y: cy, z: cz }, source, hit_count: 1 });
+      if (ctx.runtime.recentStuckCells.length > 12) ctx.runtime.recentStuckCells.shift();
     }
   };
   // F74: Reachability check. Short BFS over walkable cells from the
@@ -182,10 +183,10 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
   // Find any recent-stuck cell within `radius` of (tx,ty,tz). Used by
   // the pre-pathfind blackball check. Returns the entry or null.
   const recentStuckNear = (tx, ty, tz, radius = 1) => {
-    if (!ctx || !Array.isArray(ctx.recentStuckCells) || ctx.recentStuckCells.length === 0) return null;
+    if (!ctx || !Array.isArray(ctx.runtime.recentStuckCells) || ctx.runtime.recentStuckCells.length === 0) return null;
     const cutoff = Date.now() - RECENT_STUCK_TTL_MS;
     let best = null;
-    for (const e of ctx.recentStuckCells) {
+    for (const e of ctx.runtime.recentStuckCells) {
       if (e.ts <= cutoff) continue;
       const dx = e.cell.x - tx;
       const dy = e.cell.y - ty;

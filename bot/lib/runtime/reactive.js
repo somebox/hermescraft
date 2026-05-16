@@ -1,3 +1,4 @@
+/** @size-exempt: Layer-2 reactive autopilot kept as single-purpose module (refactor plan) */
 /**
  * Reactive layer (Layer 2 per docs/phase-2/reactive-layer.md).
  *
@@ -23,7 +24,7 @@
  *   hold   — no auto-actions. Pure observation.
  *
  * Tunables:
- *   ctx.combat_skill ∈ [0, 1] — soldier vs farmer. Scales multi-target hit
+ *   ctx.reactive.combat_skill ∈ [0, 1] — soldier vs farmer. Scales multi-target hit
  *                               probability and tick rate. Set via mc combat_skill.
  *
  * Stuck escalation (shared across all movement steps):
@@ -32,7 +33,7 @@
  *   stuckTicks=2+ → fully random 360° angle (may move toward the enemy);
  *                   plus a jump to dislodge from 1-block lips and mob pins
  *
- * Auto-fired actions are recorded in ctx.autoActionLog for the agent to read.
+ * Auto-fired actions are recorded in ctx.reactive.autoActionLog for the agent to read.
  */
 
 import { Vec3 } from 'vec3';
@@ -101,12 +102,12 @@ export function createReactive(deps) {
   }
 
   function isHostile(entity) {
-    if (!entity || !entity.position || entity === ctx.bot?.entity) return false;
+    if (!entity || !entity.position || entity === ctx.world.bot?.entity) return false;
     return HOSTILE_NAMES.has((entity.name || '').toLowerCase());
   }
 
   function readState() {
-    const b = ctx.bot;
+    const b = ctx.world.bot;
     if (!b || !b.entity) return null;
     const myPos = b.entity.position;
     const hostiles = Object.values(b.entities)
@@ -119,17 +120,17 @@ export function createReactive(deps) {
       }))
       .sort((a, c) => a.distance - c.distance);
 
-    const damageEvent = ctx.lastDamageEvent;
+    const damageEvent = ctx.death.lastDamageEvent;
     const recentlyDamaged = damageEvent && (Date.now() - damageEvent.ts) < RECENT_DAMAGE_MS;
     const weapon = b.inventory.items().find((i) => WEAPON_PATTERN.test(i.name));
     const armorCount = [5, 6, 7, 8].filter((s) => b.inventory.slots[s]).length;
 
     // Anchor: where the bot was at the most recent moment Layer 2 was idle.
     // (For now, default to the bot's current position when no anchor set.)
-    if (!ctx.reactiveAnchor) {
-      ctx.reactiveAnchor = { x: myPos.x, y: myPos.y, z: myPos.z };
+    if (!ctx.reactive.reactiveAnchor) {
+      ctx.reactive.reactiveAnchor = { x: myPos.x, y: myPos.y, z: myPos.z };
     }
-    const anchor = ctx.reactiveAnchor;
+    const anchor = ctx.reactive.reactiveAnchor;
     const distFromAnchor = Math.sqrt(
       (myPos.x - anchor.x) ** 2 + (myPos.z - anchor.z) ** 2,
     );
@@ -182,7 +183,7 @@ export function createReactive(deps) {
   }
 
   function decide(state) {
-    const mode = ctx.mode || 'normal';
+    const mode = ctx.reactive.mode || 'normal';
     if (mode === 'hold') return null;
 
     const anchorRange = mode === 'guard' ? ANCHOR_RANGE_GUARD : ANCHOR_RANGE_NORMAL;
@@ -287,7 +288,7 @@ export function createReactive(deps) {
    */
   async function attackStep(state) {
     const b = state.bot;
-    const skill = clampSkill(ctx.combat_skill);
+    const skill = clampSkill(ctx.reactive.combat_skill);
     // Equip best available weapon ONCE for this tick (not per target).
     if (state.weapon && b.heldItem?.name !== state.weapon) {
       const item = b.inventory.items().find((i) => i.name === state.weapon);
@@ -494,7 +495,7 @@ export function createReactive(deps) {
   let stuckTicks = 0;     // count of recent ticks where flee/strafe failed to move
 
   async function tick() {
-    if (!ctx.bot || !ctx.botReady || inFlight) return;
+    if (!ctx.world.bot || !ctx.world.botReady || inFlight) return;
     const state = readState();
     if (!state) return;
     const decision = decide(state);
@@ -503,7 +504,7 @@ export function createReactive(deps) {
     // means the anchor follows the agent's explicit movements, but it doesn't
     // drift during reactive's own micro-movements.
     if (!decision || decision.action === 'hold') {
-      ctx.reactiveAnchor = { x: state.myPos.x, y: state.myPos.y, z: state.myPos.z };
+      ctx.reactive.reactiveAnchor = { x: state.myPos.x, y: state.myPos.y, z: state.myPos.z };
       lastDecisionWhy = null;
       attackTickGate = 0;
       return;
@@ -513,7 +514,7 @@ export function createReactive(deps) {
     // ticks; full-skill soldier never skips. Flee is never throttled — we
     // never want a low-skill bot to *fail to dodge*.
     if (decision.action === 'attack_step') {
-      const skill = clampSkill(ctx.combat_skill);
+      const skill = clampSkill(ctx.reactive.combat_skill);
       // Guarantee at least 1 swing per ~3 ticks even at skill 0; otherwise
       // skill scales linearly between minSkip and 0 skipped ticks.
       const skipBudget = Math.round((1 - skill) * 2); // 0..2 ticks skipped
@@ -526,13 +527,13 @@ export function createReactive(deps) {
 
     // Log on transition (don't spam every tick of an ongoing engagement).
     if (decision.why !== lastDecisionWhy) {
-      const skill = clampSkill(ctx.combat_skill);
+      const skill = clampSkill(ctx.reactive.combat_skill);
       log(
-        `[reactive] mode=${ctx.mode} skill=${skill.toFixed(2)} hp=${state.hp.toFixed(1)} weap=${state.weapon || 'none'} armor=${state.armor_count} hostile=${state.closest_hostile?.name || 'none'}@${state.closest_hostile?.distance?.toFixed(1) || '-'} → ${decision.action} (${decision.why})`,
+        `[reactive] mode=${ctx.reactive.mode} skill=${skill.toFixed(2)} hp=${state.hp.toFixed(1)} weap=${state.weapon || 'none'} armor=${state.armor_count} hostile=${state.closest_hostile?.name || 'none'}@${state.closest_hostile?.distance?.toFixed(1) || '-'} → ${decision.action} (${decision.why})`,
       );
       pushAutoEvent({
         kind: 'auto_action_started',
-        mode: ctx.mode,
+        mode: ctx.reactive.mode,
         action: decision.action,
         why: decision.why,
         target: state.closest_hostile?.name,
@@ -654,26 +655,26 @@ export function createReactive(deps) {
   }
 
   function pushAutoEvent(event) {
-    if (!ctx.autoActionLog) ctx.autoActionLog = [];
-    ctx.autoActionLog.push({ ...event, ts: Date.now() });
-    if (ctx.autoActionLog.length > 32) ctx.autoActionLog.shift();
+    if (!ctx.reactive.autoActionLog) ctx.reactive.autoActionLog = [];
+    ctx.reactive.autoActionLog.push({ ...event, ts: Date.now() });
+    if (ctx.reactive.autoActionLog.length > 32) ctx.reactive.autoActionLog.shift();
   }
 
   return {
     start() {
-      if (ctx._reactiveInterval) clearInterval(ctx._reactiveInterval);
-      if (!ctx.mode) ctx.mode = 'normal';
-      ctx.reactiveAnchor = null; // re-set on first tick
-      ctx._reactiveInterval = setInterval(() => {
+      if (ctx.reactive._reactiveInterval) clearInterval(ctx.reactive._reactiveInterval);
+      if (!ctx.reactive.mode) ctx.reactive.mode = 'normal';
+      ctx.reactive.reactiveAnchor = null; // re-set on first tick
+      ctx.reactive._reactiveInterval = setInterval(() => {
         tick().catch((e) => log(`[reactive] tick error: ${/** @type {Error} */ (e).message || e}`));
       }, TICK_MS);
-      if (ctx.combat_skill === undefined) ctx.combat_skill = 0.5;
-      log(`[reactive] started (mode=${ctx.mode}, skill=${ctx.combat_skill}, tick=${TICK_MS}ms, anchor=${ANCHOR_RANGE_NORMAL}/${ANCHOR_RANGE_GUARD})`);
+      if (ctx.reactive.combat_skill === undefined) ctx.reactive.combat_skill = 0.5;
+      log(`[reactive] started (mode=${ctx.reactive.mode}, skill=${ctx.reactive.combat_skill}, tick=${TICK_MS}ms, anchor=${ANCHOR_RANGE_NORMAL}/${ANCHOR_RANGE_GUARD})`);
     },
     stop() {
-      if (ctx._reactiveInterval) {
-        clearInterval(ctx._reactiveInterval);
-        ctx._reactiveInterval = null;
+      if (ctx.reactive._reactiveInterval) {
+        clearInterval(ctx.reactive._reactiveInterval);
+        ctx.reactive._reactiveInterval = null;
       }
     },
   };

@@ -1,37 +1,75 @@
 /**
  * Assembles all action handlers from domain modules into one ACTIONS map.
+ *
+ * The actions-manifest.test.js asserts every `create*Actions` factory under
+ * `bot/lib/actions/` is wired here. Skip-prefix: filenames starting with `_`
+ * are excluded (helpers, not factories).
  */
 import { createMovementActions } from './movement.js';
 import { createMiningActions } from './mining.js';
 import { createCraftingActions } from './crafting.js';
 import { createCombatActions } from './combat.js';
-import { createWorldActions } from './world.js';
+import { createInventoryActions } from './inventory.js';
+import { createBuildingActions } from './building.js';
+import { createExcavationActions } from './excavation.js';
+import { createInteractionActions } from './interaction.js';
+import { createLifecycleActions } from './lifecycle.js';
+import { createQueriesActions } from './queries.js';
 import { createContainerActions } from './containers.js';
+import { createMarksActions } from './marks.js';
+import { createFurnaceActions } from './furnace.js';
+import { createTeamActions } from './team.js';
+import { createRemindersActions } from './reminders.js';
 import { createFarmingActions } from './farming.js';
 import { createAnimalsActions } from './animals.js';
 import { createWaterActions } from './water.js';
 
 export function createAllActions(deps) {
+  // Modules already on services use deps.services; modules still on the
+  // legacy deps bag use deps directly. Single instantiation per module
+  // (no Phase-0 double-build) — cross-action calls go through
+  // services.getActions() which is late-bound by server.js to actionsRef.
+  const services = deps.services;
+
+  // Modules already migrated to `services`. These come from the Phase 4 split.
+  const inventory = createInventoryActions(services);
+  const building = createBuildingActions(services);
+  const excavation = createExcavationActions(services);
+  const interaction = createInteractionActions(services);
+  const lifecycle = createLifecycleActions(services);
+  const queries = createQueriesActions(services);
+  const crafting = createCraftingActions(services);
+
+  // Modules still on the legacy deps bag — they will migrate to services in
+  // a future sweep. Phase 5 splits containers.js into 5 focused modules but
+  // keeps them on deps for now.
   const base = {
+    ...inventory,
+    ...building,
+    ...excavation,
+    ...interaction,
+    ...lifecycle,
+    ...queries,
+    ...crafting,
     ...createMovementActions(deps),
     ...createMiningActions(deps),
-    ...createWorldActions(deps),
     ...createContainerActions(deps),
+    ...createMarksActions(deps),
+    ...createFurnaceActions(deps),
+    ...createTeamActions(deps),
+    ...createRemindersActions(deps),
   };
 
-  // Combat, crafting, farming, animals, world, and movement modules reference
-  // ACTIONS (for combo/discover, dig_area, pickup, mc move calling mc through,
-  // harvest reusing pickup, and shear/hunt reusing pickup), so we pass the
-  // partial map in and merge after.
+  // Combat, farming, animals, movement, water still need `ACTIONS` for
+  // cross-action calls until they're migrated. We pass the partial map in
+  // and merge after.
   const withSelf = { ...deps, ACTIONS: base };
   const combat = createCombatActions(withSelf);
-  const crafting = createCraftingActions(withSelf);
-  const world = createWorldActions(withSelf);
   const movement = createMovementActions(withSelf);
   const farming = createFarmingActions(withSelf);
   const animals = createAnimalsActions(withSelf);
   const water = createWaterActions(withSelf);
 
-  Object.assign(base, combat, crafting, world, movement, farming, animals, water);
+  Object.assign(base, combat, movement, farming, animals, water);
   return base;
 }

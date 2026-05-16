@@ -139,7 +139,7 @@ export function bestRecipeForInventory(recipes, invItems, wantCount, mcData) {
  * @param {object[]} opts.recipes        Mineflayer recipe array for the target item
  * @param {object[]} opts.invItems       bot.inventory.items()
  * @param {object}   opts.mcData         minecraft-data instance
- * @param {object}   opts.chestSnapshots ctx.chestSnapshots (mark → { items })
+ * @param {object}   opts.chestSnapshots ctx.goals.chestSnapshots (mark → { items })
  * @param {string}   opts.itemName       Target item name
  * @param {number}   opts.wantCount      Desired quantity
  */

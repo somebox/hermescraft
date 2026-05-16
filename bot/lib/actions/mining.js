@@ -1,3 +1,4 @@
+// @size-exempt: collect + dig oversized; Phase 9 (deferred) extracts helpers
 import { Vec3 } from 'vec3';
 import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards, isDigProtected, getSupportedDoorAbove } from '../runtime/dig-tools.js';
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/perception.js';
@@ -97,7 +98,7 @@ export function createMiningActions(deps) {
 
       const b = ensureBot();
       const blockName = resolveMiningBlockName(block);
-      const blockType = ctx.mcData.blocksByName[blockName];
+      const blockType = ctx.world.mcData.blocksByName[blockName];
       if (!blockType) {
         return {
           ok: false,
@@ -123,27 +124,27 @@ export function createMiningActions(deps) {
       // item from a recent dig. Previously this path returned
       // NO_VISIBLE_BLOCKS because there were no drops left on the ground
       // — the brain misread it as "dig failed" and went into recovery
-      // (often wall-digging). Consult ctx.recentPickups within a 30s
+      // (often wall-digging). Consult ctx.runtime.recentPickups within a 30s
       // window: if the bot picked up enough of the item via auto-magnet
       // after a dig, mark this collect as done and consume the entries.
-      if (Array.isArray(ctx.recentPickups) && ctx.recentPickups.length > 0) {
+      if (Array.isArray(ctx.runtime.recentPickups) && ctx.runtime.recentPickups.length > 0) {
         const now = Date.now();
-        ctx.recentPickups = ctx.recentPickups.filter((p) => (now - p.ts) < 30_000);
+        ctx.runtime.recentPickups = ctx.runtime.recentPickups.filter((p) => (now - p.ts) < 30_000);
         let available = 0;
-        for (const p of ctx.recentPickups) {
+        for (const p of ctx.runtime.recentPickups) {
           if (p.item === blockName) available += p.count;
         }
         if (available >= count && (startedInventory[blockName] || 0) >= count) {
           // Consume `count` from the matching entries (oldest-first).
           let remaining = count;
-          for (const p of ctx.recentPickups) {
+          for (const p of ctx.runtime.recentPickups) {
             if (remaining <= 0) break;
             if (p.item !== blockName) continue;
             const take = Math.min(p.count, remaining);
             p.count -= take;
             remaining -= take;
           }
-          ctx.recentPickups = ctx.recentPickups.filter((p) => p.count > 0);
+          ctx.runtime.recentPickups = ctx.runtime.recentPickups.filter((p) => p.count > 0);
           return {
             ok: true,
             data: {
@@ -161,7 +162,7 @@ export function createMiningActions(deps) {
       let found = [];
       const isTrunkHarvest = /_log$|_stem$|^crimson_stem$|^warped_stem$/i.test(blockName);
       const isNonSolidPlant = blockType.boundingBox !== 'block';
-      if (ctx.fairPlayMode) {
+      if (ctx.reactive.fairPlayMode) {
         if (isTrunkHarvest) {
           found = fairPlayHarvestTrunkCandidates(blockName, blockType.id, batchSize, b);
         }
@@ -268,12 +269,12 @@ export function createMiningActions(deps) {
       let resolvedFromSource = null;
       const acceptedTargetNames = new Set([blockName]);
       if (found.length === 0) {
-        const sources = sourceBlocksForItem(ctx.mcData, blockName);
+        const sources = sourceBlocksForItem(ctx.world.mcData, blockName);
         for (const altName of sources) {
-          const altType = ctx.mcData.blocksByName[altName];
+          const altType = ctx.world.mcData.blocksByName[altName];
           if (!altType) continue;
           let altFound = [];
-          if (ctx.fairPlayMode && !isNonSolidPlant) {
+          if (ctx.reactive.fairPlayMode && !isNonSolidPlant) {
             // Fair-play: only consider blocks the bot can actually SEE
             // (raycast line-of-sight). No fallback to plain findBlocks —
             // that would expose underground worldgen stone the bot has
@@ -320,7 +321,7 @@ export function createMiningActions(deps) {
           ok: false,
           error: {
             code: 'NO_VISIBLE_BLOCKS',
-            message: ctx.fairPlayMode
+            message: ctx.reactive.fairPlayMode
               ? isTrunkHarvest
                 ? `No ${blockName} with harvest line-of-sight in range (leaves/water between you and the trunk are ok; dirt/stone/other wood are not).`
                 : `Can't see any ${blockName} right now. Turn, move, or use mc scene/mc look before collecting.`
@@ -329,8 +330,8 @@ export function createMiningActions(deps) {
               requested_block: blockName,
               requested_count: count,
               mined_count: 0,
-              fair_play: ctx.fairPlayMode,
-              search_range: ctx.fairPlayMode ? 16 : 64,
+              fair_play: ctx.reactive.fairPlayMode,
+              search_range: ctx.reactive.fairPlayMode ? 16 : 64,
             },
             retry_safe: false,
           },
@@ -480,7 +481,7 @@ export function createMiningActions(deps) {
       // Built from `acceptedTargetNames` so the source-block fallback (e.g.
       // requesting cobblestone → mining stone) still scans for the right id.
       const acceptedBlockIds = Array.from(acceptedTargetNames)
-        .map((n) => ctx.mcData.blocksByName[n]?.id)
+        .map((n) => ctx.world.mcData.blocksByName[n]?.id)
         .filter((id) => typeof id === 'number');
 
       // Re-gather candidate pool from the bot's CURRENT position. Uses raw
@@ -564,7 +565,7 @@ export function createMiningActions(deps) {
           attempted++;
 
           // Cancel-flag handling. The check only applies when collect is
-          // RUNNING AS the background task — i.e. ctx.currentTask is this
+          // RUNNING AS the background task — i.e. ctx.tasks.currentTask is this
           // very collect call. If currentTask references an earlier task
           // (e.g. a completed `mc fill` placed via /task/place_fill), its
           // status will be 'done'/'stuck' but UNRELATED to this collect:
@@ -572,10 +573,10 @@ export function createMiningActions(deps) {
           // attempted=N, collected=0, all causes=0 → "MIXED_FAILURE 0/N".
           // syncActionInFlight is true for /action/collect, so guard there.
           if (
-            ctx.currentTask &&
-            ctx.currentTask.action === 'collect' &&
-            ctx.currentTask.status !== 'running' &&
-            !ctx.syncActionInFlight
+            ctx.tasks.currentTask &&
+            ctx.tasks.currentTask.action === 'collect' &&
+            ctx.tasks.currentTask.status !== 'running' &&
+            !ctx.tasks.syncActionInFlight
           ) {
             stallRounds = MAX_STALL_ROUNDS;
             break;
@@ -1038,7 +1039,7 @@ export function createMiningActions(deps) {
         // Both shapes carry { itemId, itemCount } as the slot data.
         const meta = e.metadata?.[8] || e.metadata?.[7];
         const itemName = meta?.itemId
-          ? (ctx.mcData.items[meta.itemId]?.name || `item:${meta.itemId}`)
+          ? (ctx.world.mcData.items[meta.itemId]?.name || `item:${meta.itemId}`)
           : (e.displayName || 'unknown');
         const count = meta?.itemCount ?? meta?.count ?? 1;
         dropped.push({
@@ -1048,7 +1049,7 @@ export function createMiningActions(deps) {
         });
       }
 
-      // F72: push the dig's drops to ctx.recentPickups. The auto-pickup
+      // F72: push the dig's drops to ctx.runtime.recentPickups. The auto-pickup
       // magnet (1.5-block radius) typically grabs these within a tick
       // or two after the drop appears — earlier than this handler can
       // reliably snapshot inventory. The collect-side handler will
@@ -1056,16 +1057,16 @@ export function createMiningActions(deps) {
       // item before short-circuiting, so a drop that lands outside
       // pickup range won't lead to a false success.
       const _now = Date.now();
-      if (Array.isArray(ctx.recentPickups)) {
-        ctx.recentPickups = ctx.recentPickups
+      if (Array.isArray(ctx.runtime.recentPickups)) {
+        ctx.runtime.recentPickups = ctx.runtime.recentPickups
           .filter((p) => (_now - p.ts) < 30_000)
           .slice(-11);
       } else {
-        ctx.recentPickups = [];
+        ctx.runtime.recentPickups = [];
       }
       for (const d of dropped) {
         if (!d?.name || !(d.count > 0)) continue;
-        ctx.recentPickups.push({ ts: _now, item: d.name, count: d.count, source: 'dig' });
+        ctx.runtime.recentPickups.push({ ts: _now, item: d.name, count: d.count, source: 'dig' });
       }
 
       const tips = [...new Set(hints)];
@@ -1164,7 +1165,7 @@ export function createMiningActions(deps) {
     async find_blocks({ block, radius = 32, count = 10 }) {
       const b = ensureBot();
       const blockName = resolveMiningBlockName(block);
-      const blockType = ctx.mcData.blocksByName[blockName];
+      const blockType = ctx.world.mcData.blocksByName[blockName];
       if (!blockType) throw new Error(`Unknown block "${blockName}".`);
 
       const r = Math.min(Math.max(parseInt(String(radius), 10) || 32, 1), 96);
@@ -1202,7 +1203,7 @@ export function createMiningActions(deps) {
         sector: entry.sector,
       }));
 
-      const fpNote = ctx.fairPlayMode ? ` (scout; mc collect needs trunk in sight)` : '';
+      const fpNote = ctx.reactive.fairPlayMode ? ` (scout; mc collect needs trunk in sight)` : '';
       return { result: `Found ${found.length} ${blockName}${fpNote}`, locations };
     },
 
@@ -1212,7 +1213,7 @@ export function createMiningActions(deps) {
       const r = Math.min(96, Math.max(4, parseInt(String(radius), 10) || 32));
 
       let raw;
-      if (ctx.fairPlayMode) {
+      if (ctx.reactive.fairPlayMode) {
         raw = await entitiesMatchingAfterLookSweep(b, pos, r, type);
       } else {
         raw = Object.values(b.entities).filter((e) => e !== b.entity && e.position.distanceTo(pos) < r);
@@ -1238,15 +1239,15 @@ export function createMiningActions(deps) {
         }));
 
       return {
-        result: `Found ${entities.length} ${type || 'entities'}${ctx.fairPlayMode ? ' (look sweep)' : ''}`,
+        result: `Found ${entities.length} ${type || 'entities'}${ctx.reactive.fairPlayMode ? ' (look sweep)' : ''}`,
         locations: entities.map((e) => ({ ...e.position, distance: e.distance, type: e.type })),
         entities,
       };
     },
 
     async complete_command({ index = 0, message }) {
-      if (ctx.commandQueue.length === 0) return { result: 'No commands in queue.' };
-      const pending = ctx.commandQueue.filter(c => c.status === 'pending' || c.status === 'acknowledged');
+      if (ctx.social.commandQueue.length === 0) return { result: 'No commands in queue.' };
+      const pending = ctx.social.commandQueue.filter(c => c.status === 'pending' || c.status === 'acknowledged');
       if (index >= pending.length) return { result: 'No pending command at that index.' };
       const cmd = pending[index];
       cmd.status = 'completed';
@@ -1257,7 +1258,7 @@ export function createMiningActions(deps) {
     },
 
     async acknowledge_command({ index = 0, plan }) {
-      const pending = ctx.commandQueue.filter(c => c.status === 'pending');
+      const pending = ctx.social.commandQueue.filter(c => c.status === 'pending');
       if (pending.length === 0) return { result: 'No pending commands to acknowledge.' };
       if (index >= pending.length) return { result: 'No pending command at that index.' };
       const cmd = pending[index];
@@ -1269,7 +1270,7 @@ export function createMiningActions(deps) {
     },
 
     async cancel_command({ index = 0, reason }) {
-      const active = ctx.commandQueue.filter(c => c.status === 'pending' || c.status === 'acknowledged');
+      const active = ctx.social.commandQueue.filter(c => c.status === 'pending' || c.status === 'acknowledged');
       if (active.length === 0) return { result: 'No active commands to cancel.' };
       if (index >= active.length) return { result: 'No command at that index.' };
       const cmd = active[index];

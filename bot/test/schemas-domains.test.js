@@ -42,9 +42,9 @@ describe('createBotState', () => {
     const config = loadConfig(['node', 'server.js']);
     const a = createBotState(config);
     const b = createBotState(config);
-    a.chatLog.push({ x: 1 });
-    assert.strictEqual(b.chatLog.length, 0);
-    assert.notStrictEqual(a.observedBlocks, b.observedBlocks);
+    a.social.chatLog.push({ x: 1 });
+    assert.strictEqual(b.social.chatLog.length, 0);
+    assert.notStrictEqual(a.reactive.observedBlocks, b.reactive.observedBlocks);
   });
 
   it('stores config reference', () => {

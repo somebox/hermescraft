@@ -1,3 +1,4 @@
+/** @size-exempt: all animal-handling verbs (breed/feed/shear/hunt/lure) share fair-play helpers */
 /**
  * Animal husbandry verbs (Sprint 9): mc breed / shear / milk_cow / hunt / lure.
  *
