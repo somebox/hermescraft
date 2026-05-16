@@ -54,43 +54,44 @@ scripts/run-fixture.sh cleanup data/test-fixtures/L0/L0.1_health_connected.yaml
 Requires SSH to the host running the Paper server (default `ubuntu-host`
 docker exec → rcon-cli). No bot needed — this only manipulates the world.
 
-## Tier 3 — Python integration tests
+## Tier 3 — Python functional tests (pytest)
 
-`scripts/test-*.py` (44 files) — regression tests for the bot's behavior
-contracts (pathfinding, mining LOS, recovery protocols, task semantics,
-…). Each test sets up world state via rcon, drives the bot via its HTTP
-API, and asserts inventory/position state plus error envelopes.
+`tests/functional/test_*.py` (~30 files) — regression tests for the
+bot's behavior contracts (pathfinding, mining LOS, recovery protocols,
+task semantics, …). Each test sets up world state via rcon, drives the
+bot via its HTTP API, and asserts inventory/position state plus error
+envelopes.
 
-**Bot URL is config-driven.** Every test calls
-`scripts/_test_lib.default_bot_url(role)` which reads
-`config/hermescraft.yaml`. 38 tests target the `flint` role
-(`localhost:3001`); 6 target `tester` (`localhost:3004`).
-`HERMESCRAFT_BOT_URL` env var force-overrides for one-off runs.
+**Bot URL is config-driven** via `config/hermescraft.yaml`. Tests use
+the Flint role (`localhost:3001`) by default; tests that need the
+isolated Tester bot (`localhost:3004`) declare `@pytest.mark.tester`.
 
 ```bash
-# Run a single test (default URL resolved from config):
-scripts/test-nav-reachable.py
+# Run the entire functional suite (Flint + Tester):
+pytest -m functional
 
-# Override the URL one-off:
-HERMESCRAFT_BOT_URL=http://other-host:3001 scripts/test-nav-reachable.py
+# Just one tier:
+pytest -m functional -k mine             # only "mine"-named tests
+pytest -m tester                          # Tester-bot tests only
+pytest -m "functional and not slow"      # skip @pytest.mark.slow tests
 
-# Or still use the legacy --bot-url flag:
-scripts/test-mine-collect-grid.py --bot-url http://localhost:3001
-
-# Run the whole suite with the runner:
-scripts/run-functional.sh                  # all 44
-scripts/run-functional.sh --filter mine    # only tests with "mine" in name
-scripts/run-functional.sh --role flint     # only Flint-role tests
-scripts/run-functional.sh --bail           # stop on first failure
+# Single file or test:
+pytest tests/functional/test_nav_reachable.py -v
+pytest tests/functional/test_dig_los.py::test_dig_refused_when_target_behind_wall
 ```
 
-Common test flags:
-- `--bot-url URL` — bot HTTP endpoint (override the config default)
-- `--only SCENARIO` — run a single scenario within a test
-- `--skip-clean` — leave world state in place for faster re-runs
+The harness in `tests/_lib/` provides:
+- `rcon`/`bot` clients (session-scoped, config-driven URLs)
+- `arena` (function-scoped helper for flat-arena / forceload / settle)
+- `extract_error()` for normalizing error envelopes
+- `bot.inventory_delta()` / `bot.position()` for state polling
 
-Exit codes: 0 = all pass, 1 = one or more scenarios failed, 2 = server
-unreachable.
+In-game **test announcements** broadcast via rcon `say` right before
+each functional test's body runs ("[test #N] file::test_name") — visible
+in MC chat / server console / spectator overlay.
+
+Pytest exit codes: 0 = all pass (xfail/xpass don't fail the suite),
+non-zero = at least one real failure.
 
 These are **not** in CI because they require live infrastructure. Run
 them locally after any change to bot behavior, especially:

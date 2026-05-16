@@ -82,22 +82,32 @@ LLM — uses stubbed deps). Leave it where it is; the path is grandfathered.
 
 ---
 
-## Tier 2 — Python functional tests (`scripts/test-*.py`)
+## Tier 2 — Python functional tests (`tests/functional/`)
 
-44 tests, all requiring: live MC server + running bot at the role's
-configured URL + SSH/rcon access to the MC host.
+**Round 3 complete:** all functional tests live under `tests/functional/`
+as pytest cases. Zero `scripts/test-*.py` remain. The harness
+(`tests/_lib/`) provides `rcon`, `bot`, `arena`, `extract_error()`,
+`bot.inventory_delta()`, etc. Bot URL is config-driven via
+`config/hermescraft.yaml`; tests declare `@pytest.mark.tester` to use
+the Tester bot at :3004 instead of the default Flint at :3001.
 
-**Standardized in Round 2.5:** all 44 tests now import
-`scripts/_test_lib.default_bot_url(role)` instead of hardcoding a port.
-Role resolution: `flint` → `localhost:3001` (38 tests); `tester` →
-`localhost:3004` (6 tests). The shared helper reads
-`config/hermescraft.yaml`; override per-run by exporting
-`HERMESCRAFT_BOT_URL`. Run the whole suite with `scripts/run-functional.sh`
-(supports `--filter`, `--exclude`, `--role`, `--bail`).
+Run options:
 
-Each test still reimplements `rcon`, `rcon_batch`, `http_get`,
-`http_post` locally — Round 3 will fold these into `_test_lib` too
-(currently only `default_bot_url` is shared).
+```bash
+pytest -m functional                   # full suite (both Flint + Tester)
+pytest -m functional -k los            # filter by name
+pytest -m tester                       # Tester-bot only
+pytest -m "functional and not slow"    # skip @pytest.mark.slow
+pytest tests/functional/test_nav_reachable.py -v
+```
+
+**Verification baseline as of 2026-05-16:**
+- Flint functional: 111 pass + 13 xfail (see "documented xfail" section
+  below) on `pytest -m functional` (excluding tester).
+- Tester functional: 16 pass on `pytest -m tester`.
+- Unit: 15 pass on `pytest -m unit`.
+- Two known suite-only flakes (pass alone, fail mid-suite) — see
+  "Known suite-only flakes" at the top of this document.
 
 ### Inventory (sorted by LOC desc)
 
