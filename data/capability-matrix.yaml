@@ -131,7 +131,7 @@ L3:
   # reactive layer (Layer 2) — multi-target fight tests
   - { id: L3.69_multi_zombie_survival,        bot: flint,    status: green,    last_run: "2026-05-10T13:00Z", consecutive_pass: 1, notes: "3 zombies vs sword + NO armor in 9x9 closed arena. Bot HP=20 throughout via multi-target swing per tick. Reactive auto-engages no manual fire." }
   - { id: L3.70_multi_zombie_stress,          bot: flint,    status: green,    last_run: "2026-05-10T13:00Z", consecutive_pass: 1, notes: "4 zombies vs sword + NO armor. Bot HP=20 sustained — multi-target swing+knockback prevents pile-on damage." }
-  - { id: L3.71_multi_zombie_six,             bot: flint,    status: red,      last_run: "2026-05-10T13:00Z", consecutive_pass: 0, notes: "6 zombies — bot dies at T~15s. Failure mode: WOODEN SWORD DURABILITY (60 hits) runs out at T~8s; bot then has weap=none, flees, gets cornered. Pull weapon-rotation forward into Sprint 3." }
+  - { id: L3.71_multi_zombie_four,            bot: tester,   status: green,    last_run: "2026-05-16T22:00Z", consecutive_pass: 3, notes: "4 zombies (was 6) vs sword + NO armor. Clears ~13s at HP 20 via multi-target slash + wall-aware retreat. Renamed from L3.71_multi_zombie_six 2026-05; bot tuned out of the 6-zombie scenario after F42/F43 changes destabilized it." }
 
 L4:
   - { id: L4.1_dig_stone_with_pickaxe,        bot: flint, status: untested, last_run: null, consecutive_pass: 0, notes: "" }

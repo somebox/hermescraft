@@ -34,14 +34,14 @@ prep:
   - "execute in landfolk-test run setblock 0 66 2 minecraft:torch"
   - "execute in landfolk-test run setblock 12 66 -2 minecraft:torch"
   - "execute in landfolk-test run setblock 12 66 2 minecraft:torch"
-  - "mvtp Flint landfolk-test"
-  - "execute in landfolk-test run tp Flint 0 65 0"
-  - "clear Flint"
-  - "give Flint minecraft:wooden_sword 1"
-  - "give Flint minecraft:iron_helmet 1"
-  - "item replace entity Flint armor.head with minecraft:iron_helmet 1"
-  - "effect give Flint minecraft:saturation 600 1"
-  - "effect give Flint minecraft:instant_health 5 10 true"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 0 65 0"
+  - "clear Tester"
+  - "give Tester minecraft:wooden_sword 1"
+  - "give Tester minecraft:iron_helmet 1"
+  - "item replace entity Tester armor.head with minecraft:iron_helmet 1"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "effect give Tester minecraft:instant_health 5 10 true"
   # NOTE: Paper does not auto-equip bows on summon — must specify HandItems explicitly
   # or skeleton just walks around in melee.
   - 'execute in landfolk-test run summon minecraft:skeleton 10 65 0 {PersistenceRequired:1b,Tags:["target"],HandItems:[{id:"minecraft:bow",Count:1b},{}]}'
@@ -51,4 +51,4 @@ cleanup:
   - "execute in landfolk-test run difficulty peaceful"
   - "execute in landfolk-test run gamerule doDaylightCycle true"
   - "execute in landfolk-test run fill -5 65 -5 25 80 5 minecraft:air"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Tester 52 65 52"

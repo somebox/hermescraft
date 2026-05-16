@@ -83,20 +83,19 @@ export function createReactive(deps) {
     // Vertical reach check. Foot-to-foot 3D distance can be ≤4 even
     // when the target is straight overhead (skeleton on shelter roof,
     // spider in a tree, zombie that fell into a pit). The bot's actual
-    // swing reach is ~3.5 blocks from EYE to target centre. A mob 2
-    // blocks straight up has eyeDist > 3.5 if the bot is short and
-    // can't fluidly pitch to 80° — swing animation plays but no hit
-    // lands, and reactive locks into an unproductive attack loop.
-    // Refuse the swing if eye-to-target exceeds the swing radius.
+    // swing reach is ~3.5 blocks from EYE to target centre when there's
+    // pitch involved. Only applies when there's significant vertical
+    // separation — at same level the foot-to-foot MELEE_RANGE governs,
+    // and a 3.5m cap silently filters swings at the edge of melee.
     const dx = target.x - eye.x;
     const dy = target.y - eye.y;
     const dz = target.z - eye.z;
     const eyeDist = Math.hypot(dx, dy, dz);
-    if (eyeDist > 3.5) return false;
+    const horizDist = Math.hypot(dx, dz);
+    if (Math.abs(dy) > 0.8 && eyeDist > 3.5) return false;
     // Also skip if the target is mostly vertical from the bot — even
     // within 3.5m, hitting straight up/down with pitch >65° is finicky
     // and the bot tends to spin in place doing nothing useful.
-    const horizDist = Math.hypot(dx, dz);
     if (horizDist < 0.7 && Math.abs(dy) > 1.5) return false;
     return hasLineOfSight(eye, target);
   }
@@ -239,9 +238,12 @@ export function createReactive(deps) {
       || (state.weapon && state.closest_ranged);
     if (!triggered) return null;
 
-    // No weapon → bounded flee instead of fight.
-    if (!state.weapon) {
-      return { action: 'flee_step', threat: state.closest_hostile, why: 'no_weapon' };
+    // No weapon: only flee if the threat is OUTSIDE melee range. At melee
+    // range the bot can punch (1 damage per swing) — slow but viable against
+    // a single zombie/spider, especially with saturation regen offsetting
+    // the hits taken. Ranged-no-weapon was already handled above.
+    if (!state.weapon && dist > MELEE_RANGE + 0.5) {
+      return { action: 'flee_step', threat: state.closest_hostile, why: 'no_weapon_distant' };
     }
     // Disengage if HP is shaky and we're being hit.
     if (state.hp <= LOW_HP_DISENGAGE && state.recently_damaged) {
@@ -326,7 +328,7 @@ export function createReactive(deps) {
     // After the volley, mix retreat directions so the bot doesn't get pushed
     // into a corner. Strafing combined with sprint produces a real lateral
     // step (not just a wiggle); settleStuck escalates to a jump if blocked.
-    const dir = pickRetreatDir();
+    const dir = pickRetreatDir(state);
     // Snapshot — state.myPos is a live mineflayer Vec3 that moves with the
     // bot, so we'd diff zero if we passed it through.
     const startPos = { x: state.myPos.x, z: state.myPos.z };
@@ -347,13 +349,47 @@ export function createReactive(deps) {
     await settleStuck(b, startPos, 0.3);
   }
 
-  function pickRetreatDir() {
-    // Heavier strafe bias when stuck — corner-pinned bot gets out via the
-    // sides, not by pressing harder against the wall behind it.
-    const r = Math.random();
-    if (stuckTicks >= 1) return r < 0.5 ? 'left' : 'right';
-    if (r < 0.4) return 'back';
-    return r < 0.7 ? 'left' : 'right';
+  function pickRetreatDir(state) {
+    // Wall-aware retreat: peek at the cell each candidate direction would
+    // land in (1.5 blocks out) and reject any blocked direction so we don't
+    // back into the corner we're trying to escape. If all three are blocked
+    // we still pick 'back' — settleStuck's jump may dislodge a 1-block lip.
+    const b = state.bot;
+    const yaw = b.entity.yaw;
+    // mineflayer convention: forward = (-sin(yaw), -cos(yaw)).
+    const dirs = {
+      back:  { dx:  Math.sin(yaw), dz:  Math.cos(yaw) },
+      left:  { dx: -Math.cos(yaw), dz:  Math.sin(yaw) },
+      right: { dx:  Math.cos(yaw), dz: -Math.sin(yaw) },
+    };
+    const passable = {};
+    for (const [name, { dx, dz }] of Object.entries(dirs)) {
+      const tx = Math.floor(state.myPos.x + dx * 1.5);
+      const ty = Math.floor(state.myPos.y);
+      const tz = Math.floor(state.myPos.z + dz * 1.5);
+      const feet = b.blockAt(new Vec3(tx, ty, tz));
+      const head = b.blockAt(new Vec3(tx, ty + 1, tz));
+      passable[name] = (!feet || feet.boundingBox === 'empty')
+        && (!head || head.boundingBox === 'empty');
+    }
+
+    // Stuck escalation: strafe only — pressing 'back' into a wall just
+    // pins the bot harder. Prefer the passable side when only one is open.
+    if (stuckTicks >= 1) {
+      if (passable.left && !passable.right) return 'left';
+      if (passable.right && !passable.left) return 'right';
+      return Math.random() < 0.5 ? 'left' : 'right';
+    }
+
+    // Normal: weighted random over PASSABLE directions only. Back is
+    // double-weighted to keep the ~40% back / 30% / 30% baseline when no
+    // wall is in the way.
+    const pool = [];
+    if (passable.back) pool.push('back', 'back');
+    if (passable.left) pool.push('left');
+    if (passable.right) pool.push('right');
+    if (pool.length === 0) return 'back';
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function clampSkill(v) {
@@ -389,7 +425,12 @@ export function createReactive(deps) {
    *  Each tick takes ~1.5 blocks of forward sprint, so a skeleton at 10
    *  blocks is reached in ~7 ticks (~3s). No pathfinder, no goto — bounded
    *  per-tick movement so the next tick can re-evaluate. settleStuck
-   *  triggers a jump if a barrier blocks the straight line to the target. */
+   *  triggers a jump if a barrier blocks the straight line to the target.
+   *
+   *  When closing on a ranged hostile (skeleton, blaze, ghast), the
+   *  forward sprint is combined with a randomly chosen lateral strafe so
+   *  the bot zig-zags during approach instead of presenting a straight-
+   *  line target for lead-shot arrows. */
   async function advanceStep(state, target) {
     const b = state.bot;
     if (state.weapon && b.heldItem?.name !== state.weapon) {
@@ -398,15 +439,39 @@ export function createReactive(deps) {
         try { await b.equip(item, 'hand'); } catch {}
       }
     }
+    const isRanged = RANGED_HOSTILE_NAMES.has((target.name || '').toLowerCase());
+    // Flip lateral each tick so the bot zig-zags during approach. With the
+    // ~360ms hold below, that gives a ~720ms cycle (left → right → left …)
+    // — long enough for sprint to engage on each side, short enough that
+    // skeleton lead-shots can't reliably hit.
+    if (isRanged) {
+      if (advanceLateralHold <= 0) {
+        advanceLateral = advanceLateral === 'left' ? 'right'
+                       : advanceLateral === 'right' ? 'left'
+                       : (Math.random() < 0.5 ? 'left' : 'right');
+        advanceLateralHold = 1;
+      }
+      advanceLateralHold--;
+    } else {
+      advanceLateral = null;
+      advanceLateralHold = 0;
+    }
+    const lateral = advanceLateral;
     const startPos = { x: state.myPos.x, z: state.myPos.z };
     try {
       await b.lookAt(target.position.offset(0, (target.height || 1.8) * 0.6, 0), true);
-      b.setControlState('sprint', true);
       b.setControlState('forward', true);
-      await sleep(220);
+      b.setControlState('sprint', true);
+      if (lateral) b.setControlState(lateral, true);
+      // Hold for nearly the full tick interval — releasing controls before
+      // the next tick fires causes the bot to coast/stop in the inter-tick
+      // gap, which reads as "pausing between zig-zags" and prevents sprint
+      // physics from engaging at all.
+      await sleep(360);
     } finally {
       b.setControlState('forward', false);
       b.setControlState('sprint', false);
+      if (lateral) b.setControlState(lateral, false);
     }
     await settleStuck(b, startPos, 0.3);
   }
@@ -465,34 +530,124 @@ export function createReactive(deps) {
    *  SAFE_DISTANCE. Wall-aware (rotates angle if blocked) and zig-zags so
    *  ranged threats can't lead-shot a stationary target. settleStuck
    *  escalates to fully random angles via pickFleeDirection when the bot
-   *  is repeatedly pinned in a corner. */
+   *  is repeatedly pinned in a corner.
+   *
+   *  Creeper escapes are direct (no lateral jitter) — the goal is to
+   *  maximize distance before fuse expires, and zig-zag would slow the
+   *  away-vector. Other threats (skeletons, etc.) keep the zig-zag so
+   *  arrows can't lead-shot. Sleep matches the tick interval so the bot
+   *  sprints continuously instead of stopping in the inter-tick gap. */
   async function fleeStep(state, threat) {
     const b = state.bot;
     const isRanged = RANGED_HOSTILE_NAMES.has((threat.name || '').toLowerCase());
+    const isCreeper = (threat.name || '').toLowerCase() === 'creeper';
     if (!isRanged && threat.distance >= SAFE_DISTANCE) {
       stuckTicks = 0; // moving freely, reset stuck counter
       return;
     }
     const startPos = { x: state.myPos.x, z: state.myPos.z };
-    const { rotX, rotZ } = pickFleeDirection(state, threat, stuckTicks);
+    const startDist = threat.distance;
+    let rotX, rotZ;
+    if (isCreeper) {
+      // Hold the chosen direction for 2 ticks so sprint physics engage,
+      // but bail out immediately and re-pick if we DIDN'T increase distance
+      // last tick — that means we're pushing into a wall or the chosen
+      // direction is no longer optimal (creeper moved).
+      if (creeperFleeHold > 0 && creeperFleeDir && startDist >= (creeperFleeLastDist ?? 0) - 0.1) {
+        rotX = creeperFleeDir.rotX;
+        rotZ = creeperFleeDir.rotZ;
+        creeperFleeHold--;
+      } else {
+        const pick = pickMaxDistanceDirection(state, threat);
+        rotX = pick.rotX;
+        rotZ = pick.rotZ;
+        creeperFleeDir = pick;
+        creeperFleeHold = 1; // 2 ticks total (this + 1 hold)
+      }
+      creeperFleeLastDist = startDist;
+    } else {
+      const pick = pickFleeDirection(state, threat, stuckTicks);
+      rotX = pick.rotX;
+      rotZ = pick.rotZ;
+    }
     const stepX = state.myPos.x + rotX * 2;
     const stepZ = state.myPos.z + rotZ * 2;
     try {
       await b.lookAt(new Vec3(stepX, state.myPos.y + 1.6, stepZ), true);
-      b.setControlState('sprint', true);
       b.setControlState('forward', true);
-      await sleep(260);
+      b.setControlState('sprint', true);
+      await sleep(360);
     } finally {
       b.setControlState('forward', false);
       b.setControlState('sprint', false);
     }
-    await settleStuck(b, startPos, 0.4);
+    // Creeper flee skips settleStuck: jumping into a wall wastes 150ms and
+    // doesn't help. Distance progress is policed by the re-pick guard above.
+    if (!isCreeper) {
+      await settleStuck(b, startPos, 0.4);
+    }
+  }
+
+  /** Sample 12 candidate directions around the bot and pick the one whose
+   *  2-block projection results in the greatest distance from the threat.
+   *  This implements "increase distance, travelling along the wall or in
+   *  any direction that works" — when straight-away is blocked, the
+   *  perpendicular wall-slide naturally scores highest among passable
+   *  options because anything else either re-approaches the threat or is
+   *  also blocked. If all candidates are blocked, falls back to a unit
+   *  direct-away vector. Used for creeper flee where distance matters
+   *  more than dodge unpredictability. */
+  function pickMaxDistanceDirection(state, threat) {
+    const b = state.bot;
+    const myX = state.myPos.x;
+    const myZ = state.myPos.z;
+    const tx0 = threat.position.x;
+    const tz0 = threat.position.z;
+    const ty = Math.floor(state.myPos.y);
+    const candidates = [];
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * 2 * Math.PI;
+      const rotX = Math.cos(angle);
+      const rotZ = Math.sin(angle);
+      let passable = true;
+      // Sample at 1.0, 2.0, 3.0 — every-block coverage catches a wall
+      // 1 block away. (Sub-block sample distances like 1.5 floor past a
+      // close wall and report the void beyond as passable, which is the
+      // bug L3.62 exposed when the bot wouldn't slide along walls.)
+      for (const dist of [1.0, 2.0, 3.0]) {
+        const px = Math.floor(myX + rotX * dist);
+        const pz = Math.floor(myZ + rotZ * dist);
+        const feet = b.blockAt(new Vec3(px, ty, pz));
+        const head = b.blockAt(new Vec3(px, ty + 1, pz));
+        if ((feet && feet.boundingBox !== 'empty') || (head && head.boundingBox !== 'empty')) {
+          passable = false;
+          break;
+        }
+      }
+      if (!passable) continue;
+      const newX = myX + rotX * 2;
+      const newZ = myZ + rotZ * 2;
+      candidates.push({ rotX, rotZ, dist: Math.hypot(newX - tx0, newZ - tz0) });
+    }
+    if (candidates.length === 0) {
+      const dx = myX - tx0;
+      const dz = myZ - tz0;
+      const len = Math.sqrt(dx * dx + dz * dz) || 1;
+      return { rotX: dx / len, rotZ: dz / len };
+    }
+    candidates.sort((a, c) => c.dist - a.dist);
+    return { rotX: candidates[0].rotX, rotZ: candidates[0].rotZ };
   }
 
   let inFlight = false;
   let lastDecisionWhy = null;
-  let attackTickGate = 0; // counts ticks since last attack — used by low-skill throttle
-  let stuckTicks = 0;     // count of recent ticks where flee/strafe failed to move
+  let attackTickGate = 0;       // counts ticks since last attack — used by low-skill throttle
+  let stuckTicks = 0;            // count of recent ticks where flee/strafe failed to move
+  let advanceLateral = null;     // last chosen lateral strafe during advance ('left'|'right'|null)
+  let advanceLateralHold = 0;    // ticks remaining before flipping advanceLateral
+  let creeperFleeDir = null;     // last chosen flee vector during creeper escape (held across ticks)
+  let creeperFleeHold = 0;       // ticks remaining before re-evaluating creeperFleeDir
+  let creeperFleeLastDist = 0;   // distance to creeper at last flee tick — used to detect lack of progress
 
   async function tick() {
     if (!ctx.world.bot || !ctx.world.botReady || inFlight) return;
@@ -512,11 +667,11 @@ export function createReactive(deps) {
 
     // Skill-based attack throttling: a 0.0-skill farmer skips ~2/3 of attack
     // ticks; full-skill soldier never skips. Flee is never throttled — we
-    // never want a low-skill bot to *fail to dodge*.
+    // never want a low-skill bot to *fail to dodge*. The skip is what gives
+    // attackStep its multi-target opportunity — at skill 0.5 each attack
+    // catches several zombies converging into melee range during the gap.
     if (decision.action === 'attack_step') {
       const skill = clampSkill(ctx.reactive.combat_skill);
-      // Guarantee at least 1 swing per ~3 ticks even at skill 0; otherwise
-      // skill scales linearly between minSkip and 0 skipped ticks.
       const skipBudget = Math.round((1 - skill) * 2); // 0..2 ticks skipped
       if (attackTickGate < skipBudget) {
         attackTickGate++;
@@ -660,6 +815,28 @@ export function createReactive(deps) {
     if (ctx.reactive.autoActionLog.length > 32) ctx.reactive.autoActionLog.shift();
   }
 
+  // Reset closure-local state on every death event so a fresh respawn
+  // doesn't carry stale stuckTicks/anchor from the pre-death situation
+  // (anchor would point at the death cell, which a respawned bot is
+  // typically far from — every subsequent tick would 'hold' until the
+  // anchor naturally resets). Also makes deaths visible in the reactive
+  // log alongside attack/flee decisions.
+  function onDeath() {
+    stuckTicks = 0;
+    attackTickGate = 0;
+    inFlight = false;
+    lastDecisionWhy = null;
+    advanceLateral = null;
+    advanceLateralHold = 0;
+    creeperFleeDir = null;
+    creeperFleeHold = 0;
+    creeperFleeLastDist = 0;
+    ctx.reactive.reactiveAnchor = null;
+    const n = ctx.death.deathLog?.length ?? '?';
+    log(`[reactive] death #${n} — reset stuckTicks/anchor, mode=${ctx.reactive.mode}`);
+    pushAutoEvent({ action: 'death_reset', death_number: n });
+  }
+
   return {
     start() {
       if (ctx.reactive._reactiveInterval) clearInterval(ctx.reactive._reactiveInterval);
@@ -669,6 +846,13 @@ export function createReactive(deps) {
         tick().catch((e) => log(`[reactive] tick error: ${/** @type {Error} */ (e).message || e}`));
       }, TICK_MS);
       if (ctx.reactive.combat_skill === undefined) ctx.reactive.combat_skill = 0.5;
+      // Hook the death event once per bot instance. on() with the same
+      // listener twice would double-fire on subsequent deaths.
+      const b = ctx.world.bot;
+      if (b && !b._reactiveDeathHookInstalled) {
+        b.on('death', onDeath);
+        b._reactiveDeathHookInstalled = true;
+      }
       log(`[reactive] started (mode=${ctx.reactive.mode}, skill=${ctx.reactive.combat_skill}, tick=${TICK_MS}ms, anchor=${ANCHOR_RANGE_NORMAL}/${ANCHOR_RANGE_GUARD})`);
     },
     stop() {

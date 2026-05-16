@@ -1,31 +1,38 @@
-# L3.67 — fight_two_zombies_obstacles: 2 zombies in a constrained arena
-# with single-block obstacles the bot must dodge AROUND. Tests that the
-# reactive layer can fight while navigating obstacles.
+# L3.67 — fight_two_zombies_obstacles: 2 zombies approaching from opposite
+# sides, with 4 pillars ringing the bot at diagonal positions. Tests that
+# the reactive layer can fight + reposition with mandatory obstacles in
+# every cardinal escape direction.
 #
 # Setup:
 #   landfolk-test EASY, NIGHT.
-#   Closed 11×9 arena, walls at z=±4, x=±5.
-#   Two single-block pillars at (-1, 65, -2) and (1, 65, 2) — small enough
-#   that zombies path around them, but the bot must side-step to avoid
-#   walking into them while retreating.
+#   Closed 13×13 arena, walls at x=±6, z=±6.
+#   Four 2-block-tall pillars at (±2, 65-66, ±2) — diagonals from the bot.
+#   Bot at (0, 65, 0). Zombies in opposite diagonal corners at (-5, 65, -5)
+#   and (5, 65, 5) — they pathfind AROUND the pillars en route.
 #
-#   Layout (top-down):
-#       z=-4 #  #  #  #  #  #  #  #  #  #  #
-#       z=-3 #  .  .  .  .  .  .  .  .  .  #
-#       z=-2 #  .  .  .  P  .  .  .  .  .  #   pillar at x=-1
-#       z=-1 #  .  .  .  .  .  .  .  .  .  #
-#       z= 0 #  .  .  .  B  .  .  .  Z  .  #   bot, zombie1 at x=4
-#       z= 1 #  .  .  .  .  .  .  .  .  .  #
-#       z= 2 #  .  .  .  .  .  P  .  .  .  #   pillar at x=1
-#       z= 3 #  .  .  .  .  .  .  .  Z  .  #   zombie2 at (4, 3)
-#       z= 4 #  #  #  #  #  #  #  #  #  #  #
+#   Layout (top-down, bot looking east):
+#       z=-6 # # # # # # # # # # # # # #
+#       z=-5 # Z  .  .  .  .  .  .  .  .  .  .  . #   zombie NW (-5,-5)
+#       z=-4 # .  .  .  .  .  .  .  .  .  .  .  . #
+#       z=-3 # .  .  .  .  .  .  .  .  .  .  .  . #
+#       z=-2 # .  .  .  .  P  .  .  .  P  .  .  . #   pillars NW (-2,-2) NE (2,-2)
+#       z=-1 # .  .  .  .  .  .  .  .  .  .  .  . #
+#       z= 0 # .  .  .  .  .  .  B  .  .  .  .  . #   bot (0,0)
+#       z= 1 # .  .  .  .  .  .  .  .  .  .  .  . #
+#       z= 2 # .  .  .  .  P  .  .  .  P  .  .  . #   pillars SW (-2, 2) SE (2, 2)
+#       z= 3 # .  .  .  .  .  .  .  .  .  .  .  . #
+#       z= 4 # .  .  .  .  .  .  .  .  .  .  .  . #
+#       z= 5 # .  .  .  .  .  .  .  .  .  .  .  Z #   zombie SE ( 5, 5)
+#       z= 6 # # # # # # # # # # # # # #
 #
-#   Both zombies at distance ~4 and ~5 from bot — within engageRange.
-#   They WILL reach the bot (no path-blocking obstacles).
+#   Zombies attack from opposite diagonals so the bot must turn to engage
+#   while pillars constrain its retreat options. pickRetreatDir needs to
+#   pick passable sides; advance toward one zombie exposes the back to
+#   the other.
 #
-# Expected: reactive engages zombie1 first, kills it, then engages zombie2.
-#   Bot may be pushed against the wall but the lateral strafe in attack_step
-#   keeps it from getting permanently cornered. Both zombies dead < 25s.
+# Expected: bot engages closer zombie first; attack_step's multi-target slash
+#   reaches both as they converge. The wall-aware retreat keeps the bot from
+#   crashing into a diagonal pillar. Clear < 25s, HP > 15.
 
 world: landfolk-test
 
@@ -35,34 +42,38 @@ prep:
   - "execute in landfolk-test run gamerule doDaylightCycle false"
   - "execute in landfolk-test run gamerule mobGriefing false"
   - "execute in landfolk-test run kill @e[type=!player]"
-  # Closed 11×9 arena
-  - "execute in landfolk-test run fill -6 65 -5 6 70 5 minecraft:air"
-  - "execute in landfolk-test run fill -6 64 -5 6 64 5 minecraft:stone"
-  - "execute in landfolk-test run fill -5 65 -4 5 67 -4 minecraft:cobblestone"
-  - "execute in landfolk-test run fill -5 65 4 5 67 4 minecraft:cobblestone"
-  - "execute in landfolk-test run fill -5 65 -4 -5 67 4 minecraft:cobblestone"
-  - "execute in landfolk-test run fill 5 65 -4 5 67 4 minecraft:cobblestone"
-  # Two single-block pillars (1×2) — bot can squeeze past, zombies can path around
-  - "execute in landfolk-test run fill -1 65 -2 -1 66 -2 minecraft:stone"
-  - "execute in landfolk-test run fill 1 65 2 1 66 2 minecraft:stone"
-  # Torches
-  - "execute in landfolk-test run setblock -4 66 -3 minecraft:torch"
-  - "execute in landfolk-test run setblock 4 66 -3 minecraft:torch"
-  - "execute in landfolk-test run setblock -4 66 3 minecraft:torch"
-  - "execute in landfolk-test run setblock 4 66 3 minecraft:torch"
-  - "mvtp Flint landfolk-test"
-  - "execute in landfolk-test run tp Flint 0 65 0"
-  - "clear Flint"
-  - "give Flint minecraft:wooden_sword 1"
-  - "give Flint minecraft:iron_helmet 1"
-  - "item replace entity Flint armor.head with minecraft:iron_helmet 1"
-  - "effect give Flint minecraft:saturation 600 1"
-  - 'execute in landfolk-test run summon minecraft:zombie 4 65 0 {PersistenceRequired:1b,Tags:["target"]}'
-  - 'execute in landfolk-test run summon minecraft:zombie 4 65 3 {PersistenceRequired:1b,Tags:["target"]}'
+  # Closed 13×13 arena
+  - "execute in landfolk-test run fill -7 65 -7 7 70 7 minecraft:air"
+  - "execute in landfolk-test run fill -7 64 -7 7 64 7 minecraft:stone"
+  - "execute in landfolk-test run fill -6 65 -6 6 67 -6 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -6 65 6 6 67 6 minecraft:cobblestone"
+  - "execute in landfolk-test run fill -6 65 -6 -6 67 6 minecraft:cobblestone"
+  - "execute in landfolk-test run fill 6 65 -6 6 67 6 minecraft:cobblestone"
+  # Four 2-block pillars at diagonals, 2 blocks from bot
+  - "execute in landfolk-test run fill -2 65 -2 -2 66 -2 minecraft:stone"
+  - "execute in landfolk-test run fill  2 65 -2  2 66 -2 minecraft:stone"
+  - "execute in landfolk-test run fill -2 65  2 -2 66  2 minecraft:stone"
+  - "execute in landfolk-test run fill  2 65  2  2 66  2 minecraft:stone"
+  # Torches at corners (light the room)
+  - "execute in landfolk-test run setblock -5 66 -5 minecraft:torch"
+  - "execute in landfolk-test run setblock  5 66 -5 minecraft:torch"
+  - "execute in landfolk-test run setblock -5 66  5 minecraft:torch"
+  - "execute in landfolk-test run setblock  5 66  5 minecraft:torch"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 0 65 0"
+  - "clear Tester"
+  - "give Tester minecraft:wooden_sword 1"
+  - "give Tester minecraft:iron_helmet 1"
+  - "item replace entity Tester armor.head with minecraft:iron_helmet 1"
+  - "effect give Tester minecraft:saturation 600 1"
+  # Zombies in opposite diagonal corners — they must path AROUND the
+  # diagonal pillars at (±2, ±2) to reach the bot in the centre.
+  - 'execute in landfolk-test run summon minecraft:zombie -5 65 -5 {PersistenceRequired:1b,Tags:["target"]}'
+  - 'execute in landfolk-test run summon minecraft:zombie  5 65  5 {PersistenceRequired:1b,Tags:["target"]}'
 
 cleanup:
   - "execute in landfolk-test run kill @e[type=!player]"
   - "execute in landfolk-test run difficulty peaceful"
   - "execute in landfolk-test run gamerule doDaylightCycle true"
-  - "execute in landfolk-test run fill -6 65 -5 6 70 5 minecraft:air"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run fill -7 65 -7 7 70 7 minecraft:air"
+  - "execute in landfolk-test run tp Tester 52 65 52"

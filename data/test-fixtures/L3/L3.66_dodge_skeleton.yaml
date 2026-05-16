@@ -39,9 +39,9 @@ prep:
   - "execute in landfolk-test run setblock 0 66 2 minecraft:torch"
   - "execute in landfolk-test run setblock 4 66 -2 minecraft:torch"
   - "execute in landfolk-test run setblock 4 66 2 minecraft:torch"
-  - "execute in landfolk-test run tp Flint -6 65 0"
-  - "effect give Flint minecraft:saturation 600 1"
-  - "clear Flint"
+  - "execute in landfolk-test run tp Tester -6 65 0"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "clear Tester"
   # Paper does not auto-equip bows — explicit HandItems required.
   - 'execute in landfolk-test run summon minecraft:skeleton 6 66 0 {PersistenceRequired:1b,Tags:["target"],HandItems:[{id:"minecraft:bow",Count:1b},{}]}'
 
@@ -50,4 +50,4 @@ cleanup:
   - "execute in landfolk-test run difficulty peaceful"
   - "execute in landfolk-test run gamerule doDaylightCycle true"
   - "execute in landfolk-test run fill -10 65 -5 10 80 5 minecraft:air"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Tester 52 65 52"

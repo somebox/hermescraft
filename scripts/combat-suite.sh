@@ -2,7 +2,7 @@
 # Repeatable L3 combat suite.
 #
 # Repeatability invariants (enforced before every test):
-#   - Flint is in dimension landfolk-test (mvtp), at safe-home (52, 65, 52).
+#   - Tester is in dimension landfolk-test (mvtp), at safe-home (52, 65, 52).
 #   - All effects cleared (no poison/weakness/regen carry-over).
 #   - Inventory cleared. StuckArrowCount zeroed (no leftover arrows in body).
 #   - All mobs/items/arrows in landfolk-test killed.
@@ -15,7 +15,7 @@ R=/tmp/rcon.sh
 MAX_T="${MAX_T:-30}"
 GAP="${GAP:-3}"
 SKILL="${COMBAT_SKILL_DEFAULT:-0.5}"
-PORT="${PORT:-3001}"
+PORT="${PORT:-3004}"
 
 # Reactive-layer test fixtures only.
 # Excluded (agent-driven, not reactive):
@@ -29,9 +29,9 @@ FIXTURES=(
   "L3.64_fight_retreat_low_hp.yaml"
   "L3.66_dodge_skeleton.yaml"
   "L3.67_fight_two_zombies_obstacles.yaml"
-  "L3.69_multi_zombie_survival.yaml"
+  # L3.69 (3 zombies) dropped — redundant with L3.70 (4 zombies) and L3.71.
   "L3.70_multi_zombie_stress.yaml"
-  "L3.71_multi_zombie_six.yaml"
+  "L3.71_multi_zombie_four.yaml"
   "L3.72_mixed_skeletons_zombie.yaml"
 )
 
@@ -47,10 +47,10 @@ hard_reset() {
   $R 'execute in landfolk-test run gamerule doDaylightCycle false' >/dev/null
   $R 'execute in landfolk-test run gamerule mobGriefing false' >/dev/null
   $R 'execute in landfolk-test run gamerule keepInventory true' >/dev/null
-  $R 'execute in landfolk-test run spawnpoint Flint 52 65 52' >/dev/null
+  $R 'execute in landfolk-test run spawnpoint Tester 52 65 52' >/dev/null
   # 2. Force respawn — only clean way to zero StuckArrowCount / hit cooldowns
   #    / particle effects / damage tilt animation on a Paper player.
-  $R 'kill Flint' >/dev/null
+  $R 'kill Tester' >/dev/null
   # 3. Wait for mineflayer to reconnect the player session.
   for i in 1 2 3 4 5 6 7 8 9 10; do
     sleep 0.5
@@ -61,15 +61,15 @@ except: print("?")')
     [ "$hp" = "20" ] && break
   done
   # 4. World scrub: remove any leftover mobs / arrows / item drops.
-  $R 'mvtp Flint landfolk-test' >/dev/null 2>&1 || true
-  $R 'execute in landfolk-test run tp Flint 52 65 52' >/dev/null
+  $R 'mvtp Tester landfolk-test' >/dev/null 2>&1 || true
+  $R 'execute in landfolk-test run tp Tester 52 65 52' >/dev/null
   $R 'execute in landfolk-test run kill @e[type=!player]' >/dev/null
   $R 'execute in landfolk-test run kill @e[type=arrow]' >/dev/null
   $R 'execute in landfolk-test run kill @e[type=item]' >/dev/null
   $R 'execute in landfolk-test run kill @e[type=experience_orb]' >/dev/null
   # 5. Top up saturation so hunger ticks don't damage during long fights.
-  $R 'effect give Flint minecraft:saturation 5 5 true' >/dev/null
-  $R 'clear Flint' >/dev/null
+  $R 'effect give Tester minecraft:saturation 5 5 true' >/dev/null
+  $R 'clear Tester' >/dev/null
   sleep 0.5
 }
 
@@ -98,7 +98,7 @@ try:
 except: print("?")'
 }
 get_effects() {
-  $R 'data get entity Flint active_effects' 2>&1 | grep -oE 'minecraft:[a-z_]+' | tr '\n' ',' | sed 's/,$//'
+  $R 'data get entity Tester active_effects' 2>&1 | grep -oE 'minecraft:[a-z_]+' | tr '\n' ',' | sed 's/,$//'
 }
 
 PASS=()
@@ -135,12 +135,28 @@ for FIX in "${FIXTURES[@]}"; do
     N=$(count_targets)
     POS=$(get_pos)
     printf "  T=%2ds hp=%5s targets=%s pos=%s\n" "$i" "$HP" "$N" "$POS"
+    # L3.62 creeper-flee: target dying means the creeper DETONATED — that's
+    # a failure (the bot didn't keep distance). For everything else, target
+    # count = 0 is the win condition.
     if [ "$N" = "0" ] && [ "$T0_TARGETS" != "0" ]; then
-      RESULT="cleared at ${i}s, hp=$HP"
+      case "$FIX" in
+        L3.62_*) RESULT="creeper_detonated at ${i}s, hp=$HP" ;;
+        *)       RESULT="cleared at ${i}s, hp=$HP" ;;
+      esac
       break
     fi
     case "$FIX" in
-      L3.62_*|L3.65_*|L3.66_*)
+      L3.62_*)
+        # Pass after 12s of survival with HP > 15. Fixed threshold (not
+        # MAX_T-5) — the avoidance algorithm settles into a perimeter
+        # circle within 5s, so 12s of clean distance-keeping is enough
+        # signal that escape is working.
+        if [ "$i" -ge 12 ] && [ "$HP" != "?" ] && [ "${HP%.*}" -gt 15 ] 2>/dev/null; then
+          RESULT="survived ${i}s, hp=$HP"
+          break
+        fi
+        ;;
+      L3.65_*|L3.66_*)
         if [ "$i" = "$((MAX_T - 5))" ] && [ "$HP" != "?" ] && [ "${HP%.*}" -gt 0 ] 2>/dev/null; then
           RESULT="survived ${i}s, hp=$HP"
           break

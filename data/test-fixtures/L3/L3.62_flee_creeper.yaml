@@ -1,18 +1,28 @@
-# L3.62 — flee_creeper: live creeper pursues bot; reactive layer must keep
-# distance until creeper despawns / fuse aborts.
+# L3.62 — flee_creeper: live creeper pursues bot; reactive layer must
+# evade via continuous sprint, turning along walls to keep maximizing
+# distance instead of jumping in place when cornered.
 #
 # Setup:
 #   landfolk-test EASY. Bot at (0, 65, 0), no armor, no weapon.
 #   Creeper at (5, 65, 0) — full AI enabled, will sprint toward bot and
 #   start fizzing within CREEPER_FLEE_RANGE (6).
 #
-# Reactive policy:
-#   Creeper proximity ≤ 6 always triggers flee_step (zig-zag) regardless of
-#   mode. Bot bumps along forward (NOT a long-running goto) so it keeps
-#   re-checking distance every tick.
+#   17×17 arena. The bot must NOT panic into the wall — it has to read the
+#   wall as a constraint and rotate flee direction along it (perpendicular)
+#   before getting pinned. This exercises the wall-aware fallback in
+#   pickDirectAwayDirection: if straight-away is blocked, the bot rotates
+#   by 90° to slide along the wall (still sprinting, perpendicular to
+#   creeper's approach axis).
 #
-# Expected: bot survives 30s. Creeper either fails to detonate (bot keeps
-#   ahead) or detonates harmlessly (>3 blocks away). HP > 0 at end.
+# Reactive policy:
+#   Creeper proximity ≤ 6 always triggers flee_step (DIRECT away, no
+#   jitter — see pickDirectAwayDirection). When wall is hit, direction
+#   rotates to perpendicular and is held across ticks.
+#
+# Pass criterion (combat-suite.sh):
+#   Survive ≥ MAX_T-5 seconds with HP > 10. A nearby detonation drops HP
+#   by ~10 (5-damage radius), so a tight escape that ends in a close
+#   detonation FAILS — the bot must keep distance, not just survive.
 
 world: landfolk-test
 
@@ -22,8 +32,7 @@ prep:
   - "execute in landfolk-test run gamerule doDaylightCycle false"
   - "execute in landfolk-test run gamerule mobGriefing false"
   - "execute in landfolk-test run kill @e[type=!player]"
-  # 17×17 closed arena — bot can circle-flee indefinitely, creeper pursues
-  # but can't corner. No void edges to fall into.
+  # 17×17 closed arena — small enough to force wall-aware evasion.
   - "execute in landfolk-test run fill -8 65 -8 8 70 8 minecraft:air"
   - "execute in landfolk-test run fill -8 64 -8 8 64 8 minecraft:stone"
   - "execute in landfolk-test run fill -8 65 -8 8 67 -8 minecraft:cobblestone"
@@ -36,10 +45,10 @@ prep:
   - "execute in landfolk-test run setblock -7 66 7 minecraft:torch"
   - "execute in landfolk-test run setblock 7 66 7 minecraft:torch"
   - "execute in landfolk-test run setblock 0 66 0 minecraft:torch"
-  - "mvtp Flint landfolk-test"
-  - "execute in landfolk-test run tp Flint 0 65 0"
-  - "clear Flint"
-  - "effect give Flint minecraft:saturation 600 1"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 0 65 0"
+  - "clear Tester"
+  - "effect give Tester minecraft:saturation 600 1"
   # Live creeper — full AI. Will pursue bot and start fizzing inside ~3 blocks.
   - 'execute in landfolk-test run summon minecraft:creeper 5 65 0 {PersistenceRequired:1b,Tags:["target"]}'
 
@@ -48,4 +57,4 @@ cleanup:
   - "execute in landfolk-test run difficulty peaceful"
   - "execute in landfolk-test run gamerule doDaylightCycle true"
   - "execute in landfolk-test run fill -8 65 -8 8 70 8 minecraft:air"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Tester 52 65 52"
