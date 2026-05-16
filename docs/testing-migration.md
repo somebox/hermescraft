@@ -1,8 +1,60 @@
 # Migrating tests to the pytest harness
 
+> **Round 3 complete (2026-05-16):** all 44 functional tests migrated.
+> This document survives as the cookbook for future test additions and
+> as a reference for the patterns that emerged. Zero `scripts/test-*.py`
+> remain — `scripts/_test_lib.py` and `scripts/run-functional.sh` are
+> deleted.
+
 This is the Round 3 cookbook for converting a `scripts/test-*.py`
 functional test into a `tests/functional/test_*.py` pytest test using
-the new harness (Round 2 deliverable).
+the harness (Round 2 deliverable).
+
+## Patterns that surfaced during Round 3
+
+Beyond the basic Before/After example below, these patterns emerged
+repeatedly during the migration and are now codified:
+
+1. **Sub-floor packing**: `arena.flat_arena((..., y1, ..., y2, ...))`
+   only fills `y1..y2`. Prior tests' world detritus at `y<floor_y` can
+   drop the bot into the void mid-pathfind. For tests that risk pathfinding
+   over a wide area, the fixture should `fill x1 60 z1 x2 63 z2 stone`
+   explicitly as a sub-floor.
+
+2. **Bot state pollution between tests**: dying respawns the bot
+   outside `landfolk-test` (at the overworld spawn). `mvtp Flint
+   <world>` + `execute as Flint at @s in <world> run tp @s 0 100 0`
+   ensures the bot is in the right dimension before the arena rebuild.
+   For Tester tests, the same applies — `mvtp Tester <world>` first.
+
+3. **F58 escape-state reset**: a GET `/status?lean=true` call clears
+   `ctx.recentEscapes` + `ctx.recentStuckCells` + `ctx.lastMoveFailed`.
+   Required between tests that fire `mc escape` — otherwise F57.1's
+   ESCAPE_RECURRING_LOOP trips before the per-test geometry is exercised.
+
+4. **Auto-pickup magnet flakiness**: mineflayer's 1.5-block magnet has
+   variable timing on `mc collect`/`mc dig` drops, especially for
+   gravity blocks (sand/falling_block conversion). Tests should:
+   - Use `bot.inventory_delta(item, timeout, fallback_pickup=True)`
+     instead of immediate inventory polling.
+   - Or assert on `mined_count` (the verb's claim) when an inventory
+     delta isn't reliable.
+   - Or apply a `(expected - 1)` tolerance on multi-drop scenarios.
+
+5. **Forceload for chest/door windows**: mineflayer's `windowOpen`
+   event may not fire if the chest is in an unloaded chunk. Use
+   `arena.forceload((-1, -1, 1, 1))` (chunk coords, not block) for
+   tests that exercise `mc list_container`/`mc withdraw`/`mc deposit`.
+
+6. **Test announcement (conftest hook)**: `pytest_runtest_call` fires
+   an rcon `say [test #N] file::test` right before each functional
+   test body executes (after setup completes). Visible in MC chat /
+   server console for live observation.
+
+7. **xfail strict=False**: use for known framework limitations that
+   the test contract still describes. The test runs (proving the
+   framework error envelope is correct) but the XPASS flips automatically
+   if the framework gains a fix.
 
 The 44 `scripts/test-*.py` files keep working unchanged until they're
 explicitly migrated — there's no flag day. Pick a test, port it,
