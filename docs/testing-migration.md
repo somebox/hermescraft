@@ -276,6 +276,43 @@ python3 -m venv .venv
 
 ---
 
+## Combat suite migration (2026-05, commit 0aec72e)
+
+The L3 combat fixtures (`data/test-fixtures/L3/L3.60–L3.72`) are a
+separate suite from the pytest functional tests. They're driven by
+`scripts/combat-suite.sh` against a live bot and exercise the
+reactive layer's per-tick attack/flee/dodge behaviors. They were
+**not** migrated to pytest — the workflow (kill-and-respawn world
+scrub, per-fixture prep via `scripts/run-fixture.sh`, target-tag
+counting via rcon `tag add`) doesn't map cleanly onto pytest's
+`arena.clean()` model.
+
+In the same commit:
+
+- **Flint → Tester**: every `tp Flint`, `give Flint`, `effect give
+  Flint`, etc. in the L3.6x/L3.7x YAMLs and in
+  `scripts/combat-suite.sh` was rewritten to `Tester`. The
+  combat-suite now targets `:3004` (Tester) instead of `:3001`
+  (Flint). This matches the Phase G migration for the pytest
+  functional suite; only the combat fixtures had been missed.
+- **L3.71 renamed** `multi_zombie_six → multi_zombie_four`: the
+  fixture was tuned down from 6 zombies (hex pattern) to 4
+  (cardinals). The 6-zombie scenario had relied on a mid-test
+  death + mop-up that was brittle to changes in the reactive
+  policy; 4 cardinals cleanly validates the same multi-target
+  slash + wall-aware retreat behavior at default skill 0.5.
+- **L3.69 (3 zombies) dropped** from the `FIXTURES` array —
+  redundant with L3.70 (4 zombies) and L3.71 (4 cardinal).
+
+The combat-suite is still useful as a regression check for the
+reactive layer (most recent reactive fixes in this same commit:
+vertical-only `eyeDist` gate, advance zig-zag, wall-aware retreat,
+creeper max-distance flee, unarmed melee). Future work could port
+the suite to pytest once the per-fixture arena/reset story
+generalizes.
+
+---
+
 ## Batch suggestion for Round 3
 
 Per [`docs/test-inventory.md`](test-inventory.md), the 44 functional

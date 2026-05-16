@@ -168,11 +168,12 @@ each test's docstring and main scenario:
 1. **`test-chest-los.py` (F64) vs `test-interact-los.py` (F65)**
    — **NOT a true overlap.** Different code paths: `openContainer` in
    `bot/lib/actions/containers.js` vs `activateBlock` in
-   `bot/lib/actions/world.js`. Each maps to a specific F-fix. Keep both.
+   `bot/lib/actions/interaction.js` (was `world.js` pre-refactor).
+   Each maps to a specific F-fix. Keep both.
 
 2. **`test-mine-behind-wall.py` vs `test-attack-through-wall.py`**
    — **NOT a true overlap.** Both test "fair-play LOS" but on different
-   action modules: `world.js` (mining) vs `combat.js` (attack). Each
+   action modules: `mining.js` (mining) vs `combat.js` (attack). Each
    exercises a different swing-packet / dig-packet code path. Keep both.
 
 3. **`test-through-fresh-door.py` (F55.4) vs `test-through-elevated-door.py`
@@ -518,10 +519,12 @@ regression in any test's subject.
 
 None of the 44 Python tests is obviously obsolete. Every one was added
 in the past 4 weeks (F45–F74 = 2026-04–2026-05 sprint) and references
-a still-existing code path. **Round 3 should re-validate** after the
-larger code is split (e.g. `bot/lib/actions/world.js` 4121 LOC). Tests
-that exercise a section of `world.js` may need updating if the split
-moves logic to `world-build.js` / `world-excavate.js` / `world-query.js`.
+a still-existing code path. The 2026-05 refactor (Phases 1-7) split
+`bot/lib/actions/world.js` (4121 LOC) into six modules: `inventory.js`,
+`building.js`, `excavation.js`, `interaction.js`, `queries.js`,
+`lifecycle.js`. Tests that referenced `world.js` were unaffected because
+they exercise behavior through the HTTP API, not direct imports — see
+the heatmap below for the post-split coverage breakdown.
 
 ---
 
@@ -616,18 +619,31 @@ Stay under `scripts/`. Useful tools; not test code.
 
 ## Tests-per-area heatmap
 
+Post-refactor (Phases 1-7) — `world.js` was split into six modules and
+`containers.js` had marks/furnace/team/reminders extracted. Coverage
+counts reflect the new layout:
+
 ```
-bot/lib/actions/world.js     ████████████████ 16+ tests touch this
+bot/lib/actions/queries.js   █████ 5+ (inspect, scout, find, reachable, …)
 bot/lib/actions/mining.js    ███████ 7+
 bot/lib/actions/movement.js  ██████ 6+
+bot/lib/actions/interaction.js ████ 4+ (through, interact, close_screen, use)
 bot/lib/actions/combat.js    ████ 4+
+bot/lib/actions/building.js  ███ 3+ (place_fill, wall, dig_pit, …)
 bot/lib/actions/containers.js ███ 3+
+bot/lib/actions/excavation.js ██ 2+ (tunnel, stair_*, dig_area)
+bot/lib/actions/lifecycle.js ██ 2+ (wait, chat, sleep_bed)
+bot/lib/actions/inventory.js █ 1+ (equip / unequip)
 bot/lib/actions/crafting.js  ██ 2+ (mostly via agent-tests)
+bot/lib/actions/furnace.js   █ 1+ (smelt — moved from crafting in Phase 5)
 bot/lib/actions/farming.js   █ 1+ (mostly L8/L9 fixtures)
 bot/lib/actions/animals.js   █ 1+ (mostly L9 fixtures)
-bot/lib/actions/water.js     █ 1+ (mostly L10 fixtures)
+bot/lib/actions/water.js     █ 1+ (mostly L10 fixtures; absorbs bucket_*)
+bot/lib/actions/marks.js     ░ 0 unit-level (covered by L7 agent-tests)
+bot/lib/actions/team.js      ░ 0 unit-level
+bot/lib/actions/reminders.js ░ 0 unit-level
 bot/lib/runtime/manager.js   ░ 0 unit-level (only integration cover)
-bot/lib/runtime/reactive.js  ░ 0 unit-level
+bot/lib/runtime/reactive.js  ░ 0 unit-level (covered by combat-suite.sh)
 bot/lib/runtime/observation.js ░ 0 unit-level (covered by listener-health stub)
 bot/lib/goals/engine.js      █ 1 unit test (goals.test.js)
 ```
