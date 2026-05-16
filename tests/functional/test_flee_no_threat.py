@@ -25,13 +25,13 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def empty_world(rcon, arena, flint_bot, config):
+def empty_world(rcon, arena, tester_bot, config):
     """Empty grass arena, peaceful, no mob spawning. Bot at (0,65,0)."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Flint {world}")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.batch([
         f"execute in {world} run difficulty peaceful",
         f"execute in {world} run gamerule doDaylightCycle false",
@@ -41,15 +41,15 @@ def empty_world(rcon, arena, flint_bot, config):
     ])
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
     rcon.batch([
-        f"execute in {world} run tp Flint 0 65 0 0 0",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
+        f"execute in {world} run tp Tester 0 65 0 0 0",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
     ])
     arena.settle()
     yield
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
-        f"execute in {world} run tp Flint 0 100 0 0 0",
+        f"execute in {world} run tp Tester 0 100 0 0 0",
     ])
     arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="grass_block")
 

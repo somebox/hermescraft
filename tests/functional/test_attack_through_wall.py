@@ -24,13 +24,13 @@ import pytest
 
 
 @pytest.fixture
-def combat_arena(rcon, arena, flint_bot, config):
+def combat_arena(rcon, arena, tester_bot, config):
     """Open stone-floored region + iron armor + iron sword + saturation +
     midnight (avoid sunburn drain). Each scenario then places the
     zombie + optional cobble shelter."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
@@ -46,7 +46,7 @@ def combat_arena(rcon, arena, flint_bot, config):
     ])
     arena.settle(seconds=0.5)
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.batch([
         f"execute in {world} run kill @e[type=zombie]",
         f"execute in {world} run fill -6 60 -6 6 70 6 minecraft:air",
@@ -55,7 +55,7 @@ def combat_arena(rcon, arena, flint_bot, config):
 
 
 def _stage_combat(rcon, world: str, sealed: bool) -> None:
-    """Place optional cobble shell + Flint at center + zombie + gear.
+    """Place optional cobble shell + Tester at center + zombie + gear.
 
     The settle at the end is load-bearing: with <2s, mineflayer's
     bot.entity.position lags the server TP and `mc attack` swings from
@@ -74,16 +74,16 @@ def _stage_combat(rcon, world: str, sealed: bool) -> None:
             )
     zombie_x = 3 if not sealed else 2
     cmds += [
-        f"execute in {world} run tp Flint 0 65 0 90 0",
-        "clear Flint",
-        "give Flint minecraft:iron_sword 1",
-        "give Flint minecraft:iron_helmet 1",
-        "give Flint minecraft:iron_chestplate 1",
-        "give Flint minecraft:iron_leggings 1",
-        "give Flint minecraft:iron_boots 1",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
-        f"execute in {world} run effect give Flint instant_health 1 4",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
+        "clear Tester",
+        "give Tester minecraft:iron_sword 1",
+        "give Tester minecraft:iron_helmet 1",
+        "give Tester minecraft:iron_chestplate 1",
+        "give Tester minecraft:iron_leggings 1",
+        "give Tester minecraft:iron_boots 1",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
+        f"execute in {world} run effect give Tester instant_health 1 4",
         f'execute in {world} run summon zombie {zombie_x} 65 0 '
         f'{{NoAI:1b,Silent:1b,PersistenceRequired:1b,CustomName:\'"target"\',Health:20f}}',
     ]

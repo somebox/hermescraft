@@ -19,12 +19,12 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def chest_arena(rcon, arena, flint_bot, config):
+def chest_arena(rcon, arena, tester_bot, config):
     """Flat stone floor. Each test places its own chest + optional wall."""
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
-    rcon.run("clear Flint")
+    rcon.run("clear Tester")
     arena.settle()
     yield
     arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
@@ -38,7 +38,7 @@ def test_list_container_refused_when_chest_behind_wall(bot, rcon, arena, config,
         f"execute in {world} run setblock 2 65 0 minecraft:chest",
         f"execute in {world} run setblock 1 65 0 minecraft:obsidian",
         f"execute in {world} run setblock 1 66 0 minecraft:obsidian",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     r = bot.post("/action/list_container", {"x": 2, "y": 65, "z": 0}, timeout=15)
@@ -53,7 +53,7 @@ def test_list_container_succeeds_with_clear_view(bot, rcon, arena, config, chest
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run setblock 2 65 0 minecraft:chest",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     r = bot.post("/action/list_container", {"x": 2, "y": 65, "z": 0}, timeout=15)

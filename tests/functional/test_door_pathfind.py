@@ -95,7 +95,7 @@ def _build_box(rcon, world: str, direction: str, door_facing: str, hinge: str, d
         f"minecraft:oak_door[half=upper,facing={door_facing},open={open_str},hinge={hinge}]"
     )
     bx, bz = geo["bot_start"]
-    cmds.append(f"execute in {world} run tp Flint {bx} 65 {bz} 0 0")
+    cmds.append(f"execute in {world} run tp Tester {bx} 65 {bz} 0 0")
     rcon.batch(cmds)
     time.sleep(1.5)
 
@@ -115,26 +115,26 @@ _KNOWN_NS_CLOSED_FLAKY_REASON = (
 
 
 @pytest.fixture
-def door_arena(rcon, arena, flint_bot, config):
+def door_arena(rcon, arena, tester_bot, config):
     """Reset arena: forceload + packed sub-floor (y=60..63 stone) + grass
     cap at y=64 — actually we use stone floor + air above. The packed
     sub-floor is the load-bearing fix: without it, prior tests' lava /
     voids at y<64 chunk through and kill the bot mid-pathfind."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute in {world} run fill -16 60 -16 16 80 16 minecraft:air",
         f"execute in {world} run fill -16 60 -16 16 63 16 minecraft:stone",
         f"execute in {world} run fill -16 64 -16 16 64 16 minecraft:stone",
-        "effect give Flint minecraft:resistance 600 4",
-        "effect give Flint minecraft:saturation 600 1",
+        "effect give Tester minecraft:resistance 600 4",
+        "effect give Tester minecraft:saturation 600 1",
     ])
     arena.settle(seconds=0.5)
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.run(f"execute in {world} run fill -16 60 -16 16 80 16 minecraft:air")
     arena.forceload_remove_all()
 

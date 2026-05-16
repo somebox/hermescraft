@@ -46,7 +46,6 @@ def landing_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_landing_in_three_walled_pocket_reports_classification(bot, rcon, config, landing_arena):
     """A: 3-wall pocket around target (5,65,0); range=0 forces bot to
     stand on the target cell itself. landed_in must surface a sticky
@@ -70,7 +69,6 @@ def test_landing_in_three_walled_pocket_reports_classification(bot, rcon, config
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_clean_landing_in_open_arena_has_no_landed_in(bot, rcon, config, landing_arena):
     """B: no walls; landed_in must be absent (clean success path)."""
     world = config["mc"]["world"]

@@ -49,7 +49,6 @@ def movement_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_goto_into_solid_in_alley_carries_standing_state(bot, rcon, config, movement_arena):
     """A: alley (N+S walls) + goto into solid → NAV_TARGET_OCCUPIED with
     your_standing_state.classification='alley' + blocked={N,S}.
@@ -77,7 +76,6 @@ def test_goto_into_solid_in_alley_carries_standing_state(bot, rcon, config, move
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_move_inside_walled_box_carries_standing_state(bot, rcon, config, movement_arena):
     """B: bot in 3×3 walled box + move out → NAV_BLOCKED or BOT_TRAPPED
     with classification populated."""
@@ -99,7 +97,6 @@ def test_move_inside_walled_box_carries_standing_state(bot, rcon, config, moveme
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_trapped_bot_carries_trapped_standing_state(bot, rcon, config, movement_arena):
     """C: bot trapped on all 4 sides + goto → BOT_TRAPPED with
     your_standing_state.classification='trapped'."""

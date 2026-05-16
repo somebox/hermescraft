@@ -74,7 +74,6 @@ def precondition_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_failed_move_taints_nearby_interact(bot, rcon, config, precondition_arena):
     """A: failed goto + interact at (8,65,5) → MOVEMENT_PRECONDITION_FAILED."""
     world = config["mc"]["world"]
@@ -94,7 +93,6 @@ def test_failed_move_taints_nearby_interact(bot, rcon, config, precondition_aren
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_status_clears_precondition_flag(bot, rcon, tester_bot, config, precondition_arena):
     """B: failed goto + mc status + interact → precondition NOT raised
     (status acknowledged the failed move)."""
@@ -117,7 +115,6 @@ def test_status_clears_precondition_flag(bot, rcon, tester_bot, config, precondi
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_far_target_not_intercepted(bot, rcon, config, precondition_arena):
     """C: failed goto + interact >5 blocks away → guard does NOT fire."""
     world = config["mc"]["world"]

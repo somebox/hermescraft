@@ -30,15 +30,15 @@ def test_rcon_client_constructs(rcon, config):
 
 @pytest.mark.unit
 def test_bot_client_base_url(bot, config):
-    """BotClient base URL comes from config.bot.default_api_url."""
-    assert bot.base == config["bot"]["default_api_url"].rstrip("/")
+    """BotClient base URL is the Tester role URL (bot fixture standardized on Tester)."""
+    assert bot.base == config["bot"]["roles"]["tester"].rstrip("/")
 
 
 @pytest.mark.unit
 def test_arena_uses_world_from_config(arena, config):
     """Arena resolves world name and bot name from config."""
     assert arena.world == config["mc"]["world"]
-    assert arena.bot_name  # default 'Flint' or override
+    assert arena.bot_name == "Tester"
 
 
 @pytest.mark.unit
@@ -182,10 +182,9 @@ def test_rcon_block_is_normalizes_kind_prefix(config):
 
 
 @pytest.mark.unit
-def test_bot_fixture_picks_role_from_tester_marker(config, request):
-    """The conftest `bot` fixture uses config.bot.roles[role] keyed on the
-    @pytest.mark.tester marker. This unit test exercises the resolver helper
-    directly to avoid the marker-application complexity."""
+def test_resolve_bot_url_role_lookup(config, request):
+    """_resolve_bot_url returns config.bot.roles[role] when present, and
+    falls back to default_api_url only for the implicit 'flint' role."""
     from tests.conftest import _resolve_bot_url
     assert _resolve_bot_url(config, "flint") == config["bot"]["roles"]["flint"]
     assert _resolve_bot_url(config, "tester") == config["bot"]["roles"]["tester"]

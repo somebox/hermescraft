@@ -7,8 +7,7 @@ Migrated from scripts/test-escape-multidir.py. Three scenarios:
      (ESCAPE_NO_OPEN_DIR / ESCAPE_ENCLOSURE / ESCAPE_CEILING_BLOCKED /
      ESCAPE_NO_PILLAR_BLOCK / ESCAPE_STUCK).
 
-Uses the Tester bot at config.bot.roles.tester (declared via the
-@pytest.mark.tester marker).
+Uses the Tester bot at config.bot.roles.tester.
 """
 
 from __future__ import annotations
@@ -55,7 +54,6 @@ def escape_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_escape_from_three_walled_cell(bot, rcon, config, escape_arena):
     """A: walls N/E/S, open W → escape, end classification open/alley."""
     world = config["mc"]["world"]
@@ -76,7 +74,6 @@ def test_escape_from_three_walled_cell(bot, rcon, config, escape_arena):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_escape_from_corner(bot, rcon, config, escape_arena):
     """B: corner (N+W walls, open E+S) → escape via E or S → open/alley."""
     world = config["mc"]["world"]
@@ -95,7 +92,6 @@ def test_escape_from_corner(bot, rcon, config, escape_arena):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_escape_fully_trapped_returns_structured_error(bot, rcon, config, escape_arena):
     """C: 4 walls + ceiling, no pillar block → structured error."""
     world = config["mc"]["world"]

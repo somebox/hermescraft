@@ -13,17 +13,17 @@ import pytest
 
 
 @pytest.fixture
-def inspect_arena(rcon, arena, flint_bot, config):
+def inspect_arena(rcon, arena, tester_bot, config):
     """Stone floor at y=64, crafting_table at (3,65,3), cobble at (5,65,5).
     Bot at (0,65,0) facing east."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
         f"execute in {world} run setblock 3 65 3 minecraft:crafting_table",
         f"execute in {world} run setblock 5 65 5 minecraft:cobblestone",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     yield

@@ -27,7 +27,7 @@ from tests._lib import extract_error
 
 
 @pytest.fixture(scope="module")
-def dig_support_arena(rcon, config, flint_bot):
+def dig_support_arena(rcon, config, tester_bot):
     """Build all 4 scenarios' geometry once. Each test calls `tp_adjacent`
     via the helper below to position the bot for its own dig.
 
@@ -38,7 +38,7 @@ def dig_support_arena(rcon, config, flint_bot):
     consumed, which is fine since the module then teardown-cleans.
     """
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     rcon.batch([
         f"execute in {world} run difficulty peaceful",
         f"execute in {world} run gamerule doDaylightCycle false",
@@ -55,23 +55,23 @@ def dig_support_arena(rcon, config, flint_bot):
         # Fence-gate-on-support (D)
         f"execute in {world} run setblock 3 65 0 minecraft:cobblestone",
         f"execute in {world} run setblock 3 66 0 minecraft:oak_fence_gate",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
-        "clear Flint",
-        "give Flint minecraft:wooden_pickaxe 1",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
+        "clear Tester",
+        "give Tester minecraft:wooden_pickaxe 1",
     ])
     time.sleep(1.5)
     yield
     rcon.batch([
         f"execute in {world} run fill -10 65 -10 10 80 10 minecraft:air",
-        f"execute in {world} run tp Flint 52 65 52",
+        f"execute in {world} run tp Tester 52 65 52",
     ])
 
 
 def _tp_adjacent(rcon, world: str, x: int, z: int) -> None:
-    """TP Flint one block west of (x,65,z) facing east. Required so each
+    """TP Tester one block west of (x,65,z) facing east. Required so each
     scenario's eye-to-target raycast stays clean of sibling scenario
     blocks placed along x ∈ {3,5,7}."""
-    rcon.run(f"execute in {world} run tp Flint {x - 1} 65 {z} 270 0")
+    rcon.run(f"execute in {world} run tp Tester {x - 1} 65 {z} 270 0")
     time.sleep(0.4)
 
 

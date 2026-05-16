@@ -49,7 +49,6 @@ def elev_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_through_steps_up_onto_elevated_door(bot, rcon, config, elev_arena):
     """A: 4x4 platform at y=65 with 3-tall walls; door on south wall at
     (0,66,12)/(0,67,12). Bot at grass level (y=65 standing on y=64
@@ -82,7 +81,6 @@ def test_through_steps_up_onto_elevated_door(bot, rcon, config, elev_arena):
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_through_flat_door_still_works(bot, rcon, config, elev_arena):
     """B: door at same y as bot, no step-up needed. Sanity check the
     F56 changes didn't break the simple case."""

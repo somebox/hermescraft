@@ -20,16 +20,16 @@ def _advisories(bot) -> list[str]:
 
 
 @pytest.fixture
-def _ready(rcon, flint_bot, config):
-    flint_bot.wait_until_ready(timeout=10)
-    return flint_bot
+def _ready(rcon, tester_bot, config):
+    tester_bot.wait_until_ready(timeout=10)
+    return tester_bot
 
 
 @pytest.mark.functional
 def test_cleared_inventory_warns_no_pickaxe_and_no_axe(rcon, bot, _ready):
     rcon.batch([
-        "clear Flint",
-        "give Flint minecraft:bread 4",
+        "clear Tester",
+        "give Tester minecraft:bread 4",
     ])
     time.sleep(1.0)
     advisories = _advisories(bot)
@@ -40,9 +40,9 @@ def test_cleared_inventory_warns_no_pickaxe_and_no_axe(rcon, bot, _ready):
 @pytest.mark.functional
 def test_full_durability_tools_emit_no_warnings(rcon, bot, _ready):
     rcon.batch([
-        "clear Flint",
-        "give Flint minecraft:wooden_pickaxe 1",
-        "give Flint minecraft:wooden_axe 1",
+        "clear Tester",
+        "give Tester minecraft:wooden_pickaxe 1",
+        "give Tester minecraft:wooden_axe 1",
     ])
     time.sleep(1.0)
     advisories = _advisories(bot)
@@ -56,9 +56,9 @@ def test_damaged_pickaxe_emits_near_breaking_advisory(rcon, bot, _ready):
     """1.21 component format: [minecraft:damage=N]. wooden_pickaxe max
     durability is 59; damage 56 ≈ 5% remaining → near-breaking trigger."""
     rcon.batch([
-        "clear Flint",
-        "give Flint minecraft:wooden_pickaxe[minecraft:damage=56] 1",
-        "give Flint minecraft:wooden_axe 1",
+        "clear Tester",
+        "give Tester minecraft:wooden_pickaxe[minecraft:damage=56] 1",
+        "give Tester minecraft:wooden_axe 1",
     ])
     time.sleep(1.0)
     advisories = _advisories(bot)

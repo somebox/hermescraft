@@ -17,18 +17,18 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def los_arena(rcon, arena, flint_bot, config):
-    """Air-fill a small region around origin, stone-floor at y=64, give Flint
+def los_arena(rcon, arena, tester_bot, config):
+    """Air-fill a small region around origin, stone-floor at y=64, give Tester
     a stone_pickaxe, park at (0,65,0) facing east. Each test then places
     its own diorite/obsidian arrangement before exercising dig."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
-        f"clear Flint",
-        f"execute in {world} run give Flint minecraft:stone_pickaxe 1",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
+        f"clear Tester",
+        f"execute in {world} run give Tester minecraft:stone_pickaxe 1",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     yield

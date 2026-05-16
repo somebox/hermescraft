@@ -10,9 +10,11 @@ actual source files (not just filename heuristics) — see "Validation
 notes" at the end of each section.
 
 **Last verified:** 2026-05-16
-**Verification baseline:** 113 Node unit tests + 15 pytest unit tests + 111 pytest
-functional tests green (Flint role only). 13 xfail (documented framework limitations).
-The 6 Tester-bot tests are deferred until the Tester bot at :3004 is running.
+**Verification baseline:** 113 Node unit tests + 15 pytest unit tests + 127 pytest
+functional tests green against the **Tester bot at :3004** (Phase G: all
+functional tests standardized on Tester; Flint role kept available via
+`flint_bot` fixture but no test uses it). 13 xfail (documented framework
+limitations).
 
 **Known suite-only flakes** — pass in isolation, fail mid-suite due to cumulative
 bot state pollution. Not framework regressions:
@@ -87,9 +89,9 @@ LLM — uses stubbed deps). Leave it where it is; the path is grandfathered.
 **Round 3 complete:** all functional tests live under `tests/functional/`
 as pytest cases. Zero `scripts/test-*.py` remain. The harness
 (`tests/_lib/`) provides `rcon`, `bot`, `arena`, `extract_error()`,
-`bot.inventory_delta()`, etc. Bot URL is config-driven via
-`config/hermescraft.yaml`; tests declare `@pytest.mark.tester` to use
-the Tester bot at :3004 instead of the default Flint at :3001.
+`bot.inventory_delta()`, etc. The `bot` fixture is now session-scoped
+**Tester at :3004** for every functional test (Phase G); Flint stays
+running for the landfolk scenario but the test suite never touches it.
 
 Run options:
 

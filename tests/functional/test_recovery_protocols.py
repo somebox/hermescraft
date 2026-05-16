@@ -44,15 +44,15 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def recovery_arena(rcon, arena, flint_bot, config):
+def recovery_arena(rcon, arena, tester_bot, config):
     """Clean grass arena over packed stone sub-floor (y=60..63), peaceful
     mode, bot prepared with saturation. Sub-floor matters: without it,
     gaps left by prior tests can drop the bot into the void mid-pathfind."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Flint {world}")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     # Forceload the test-region chunks so chest-open events can fire.
     arena.forceload((-1, -1, 1, 1))
@@ -60,15 +60,15 @@ def recovery_arena(rcon, arena, flint_bot, config):
         f"execute in {world} run fill -10 60 -10 15 70 18 minecraft:air",
         f"execute in {world} run fill -10 60 -10 15 63 18 minecraft:stone",
         f"execute in {world} run fill -10 64 -10 15 64 18 minecraft:grass_block",
-        "clear Flint",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
-        "effect give Flint minecraft:resistance 600 4",  # absorb chip damage
-        "effect give Flint minecraft:regeneration 600 4",
+        "clear Tester",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
+        "effect give Tester minecraft:resistance 600 4",  # absorb chip damage
+        "effect give Tester minecraft:regeneration 600 4",
     ])
     arena.settle()
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.run(f"execute in {world} run fill -10 60 -10 15 70 18 minecraft:air")
     arena.forceload_remove_all()
 
@@ -86,8 +86,8 @@ def test_R1_head_blocked_uses_closest_standable(bot, rcon, arena, config, recove
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run fill -2 66 12 1 68 12 minecraft:cobblestone",
-        f"execute in {world} run tp Flint 2.5 65 12.7 0 0",
-        "give Flint minecraft:cobblestone 5",
+        f"execute in {world} run tp Tester 2.5 65 12.7 0 0",
+        "give Tester minecraft:cobblestone 5",
     ])
     arena.settle()
 
@@ -124,9 +124,9 @@ def test_R2_target_occupied_carries_is_relocatable(bot, rcon, arena, config, rec
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run setblock 3 65 3 minecraft:crafting_table",
-        f"execute in {world} run tp Flint 0 65 0 270 0",
-        "give Flint minecraft:cobblestone 5",
-        "give Flint minecraft:wooden_axe 1",
+        f"execute in {world} run tp Tester 0 65 0 270 0",
+        "give Tester minecraft:cobblestone 5",
+        "give Tester minecraft:wooden_axe 1",
     ])
     arena.settle()
 
@@ -153,9 +153,9 @@ def test_R2_end_to_end_dig_replace_table(bot, rcon, arena, config, recovery_aren
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run setblock 3 65 3 minecraft:crafting_table",
-        f"execute in {world} run tp Flint 0 65 0 270 0",
-        "give Flint minecraft:cobblestone 5",
-        "give Flint minecraft:wooden_axe 1",
+        f"execute in {world} run tp Tester 0 65 0 270 0",
+        "give Tester minecraft:cobblestone 5",
+        "give Tester minecraft:wooden_axe 1",
     ])
     arena.settle()
     # The recovery: dig table → re-place at (5,65,5) → place cobble at (3,65,3).
@@ -178,8 +178,8 @@ def test_R3_inventory_missing_recovery_via_chest_withdraw(bot, rcon, arena, conf
         f"execute in {world} run setblock 4 65 4 minecraft:chest",
         f'execute in {world} run data merge block 4 65 4 '
         f'{{Items:[{{Slot:0b,id:"minecraft:cobblestone",Count:32b}}]}}',
-        f"execute in {world} run tp Flint 0 65 0 270 0",
-        "clear Flint minecraft:cobblestone",
+        f"execute in {world} run tp Tester 0 65 0 270 0",
+        "clear Tester minecraft:cobblestone",
     ])
     arena.settle()
     assert bot.inventory().get("cobblestone", 0) == 0

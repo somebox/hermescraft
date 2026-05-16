@@ -17,7 +17,7 @@ from .rcon import RconClient
 class Arena:
     """Test-world setup/teardown helper. Pass an RconClient and the config dict."""
 
-    def __init__(self, rcon: RconClient, config: dict, bot_name: str = "Flint"):
+    def __init__(self, rcon: RconClient, config: dict, bot_name: str = "Tester"):
         self.rcon = rcon
         self.config = config
         self.world = config["mc"]["world"]

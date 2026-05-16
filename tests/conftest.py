@@ -77,35 +77,35 @@ def _resolve_bot_url(config: dict, role: str) -> str:
 
 
 @pytest.fixture(scope="session")
+def tester_bot(config):
+    """Session-scoped Tester bot — the canonical test-only bot at
+    config.bot.roles.tester (:3004 by default). Used by all functional
+    tests. The dedicated Tester identity keeps test runs isolated from
+    the landfolk-scenario bots (Flint, Mason, etc.).
+
+    wait_until_ready is NOT called at construction so unit tests don't
+    spin on a missing bot.
+    """
+    return BotClient(config, base_url=_resolve_bot_url(config, "tester"))
+
+
+@pytest.fixture(scope="session")
 def flint_bot(config):
-    """Session-scoped Flint bot. Used by session- or module-scoped fixtures
-    that need a stable BotClient reference (the function-scoped `bot`
-    fixture below would cause ScopeMismatch when consumed from broader
-    scopes). Most tests should consume `bot` instead.
+    """Session-scoped Flint bot — the landfolk-scenario player. Functional
+    tests should NOT use this (it interferes with whatever the landfolk
+    world is doing with Flint). Kept available for any future test that
+    explicitly needs to exercise Flint's identity.
     """
     return BotClient(config, base_url=_resolve_bot_url(config, "flint"))
 
 
-@pytest.fixture(scope="session")
-def tester_bot(config):
-    """Session-scoped Tester bot. Symmetric to `flint_bot` for module-
-    scoped fixtures that explicitly target the Tester role."""
-    return BotClient(config, base_url=_resolve_bot_url(config, "tester"))
-
-
 @pytest.fixture
-def bot(config, request, flint_bot, tester_bot):
-    """Role-aware function-scoped bot. Returns `tester_bot` when the test
-    declares `@pytest.mark.tester`, else `flint_bot`. Function-scoped so
-    role switching is per-test without rebuilding the client.
-
-    Note: wait_until_ready is NOT called at construction — tests should
-    call it themselves so unit tests sharing the same session don't spin
-    on a missing bot.
-    """
-    if request.node.get_closest_marker("tester"):
-        return tester_bot
-    return flint_bot
+def bot(tester_bot):
+    """Function-scoped bot — always Tester. Tests use this for all
+    bot interactions. The `tester_bot` session-scoped fixture is the
+    backing client; this wrapper exists so future tests can override
+    per-case if needed."""
+    return tester_bot
 
 
 @pytest.fixture

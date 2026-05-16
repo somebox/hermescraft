@@ -35,14 +35,14 @@ def _build_enclosure(rcon, world: str, missing_cell: tuple[int, int, int] | None
                 continue
             rcon.run(f"execute in {world} run setblock {x} {y} {z} minecraft:cobblestone")
     rcon.run(f"execute in {world} run fill 0 68 0 2 68 2 minecraft:cobblestone")
-    rcon.run(f"execute in {world} run tp Flint 1 66 1 90 0")
+    rcon.run(f"execute in {world} run tp Tester 1 66 1 90 0")
     time.sleep(1.0)
 
 
 @pytest.fixture
-def shelter_arena(rcon, arena, flint_bot, config):
+def shelter_arena(rcon, arena, tester_bot, config):
     """Stone floor; each test builds its own enclosure with or without a gap."""
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     arena.settle()

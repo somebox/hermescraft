@@ -21,17 +21,17 @@ import pytest
 
 
 @pytest.fixture
-def reachability_arena(rcon, arena, flint_bot, config):
+def reachability_arena(rcon, arena, tester_bot, config):
     """Flat 21×21 grass-floored area, forceload chunks, peaceful mode.
-    Each test sets its own walls + starts Flint at its own coord."""
+    Each test sets its own walls + starts Tester at its own coord."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute in {world} run difficulty peaceful",
         f"execute in {world} run gamerule keepInventory true",
         # Cross-dim safe — if bot is elsewhere, bring it home first.
-        f"execute as Flint at @s in {world} run tp @s 0 65 0",
+        f"execute as Tester at @s in {world} run tp @s 0 65 0",
     ])
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
     arena.settle()
@@ -52,8 +52,8 @@ def test_unreachable_target_surfaces_walkable_false_and_next_hop(bot, rcon, aren
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run fill -3 65 1 3 66 1 minecraft:obsidian",
-        "clear Flint",
-        f"execute in {world} run tp Flint 0 65 -1 0 0",
+        "clear Tester",
+        f"execute in {world} run tp Tester 0 65 -1 0 0",
     ])
     arena.settle()
     r = bot.post("/action/goto_near", {"x": 0, "y": 65, "z": 2, "range": 2}, timeout=30)
@@ -68,8 +68,8 @@ def test_reachable_target_reports_walkable_true(bot, rcon, arena, config, reacha
     next_hop_suggestion (F73 only emits the hint when navigation is blocked)."""
     world = config["mc"]["world"]
     rcon.batch([
-        "clear Flint",
-        f"execute in {world} run tp Flint 0 65 0 0 0",
+        "clear Tester",
+        f"execute in {world} run tp Tester 0 65 0 0 0",
     ])
     arena.settle()
     r = bot.post("/action/goto_near", {"x": 5, "y": 65, "z": 5, "range": 1}, timeout=30)

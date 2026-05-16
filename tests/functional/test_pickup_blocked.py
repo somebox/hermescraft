@@ -30,23 +30,23 @@ def _spawn_cobble_drop(rcon, world: str, x: float, y: float, z: float) -> None:
 
 
 @pytest.fixture
-def pickup_arena(rcon, arena, flint_bot, config):
+def pickup_arena(rcon, arena, tester_bot, config):
     """Grass floor, peaceful, no mob spawning. Bot at (3,65,1) facing west.
     Each test spawns its own drops + obstacles."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-8, 64, -8, 8, 70, 8), floor="grass_block")
     rcon.batch([
-        f"execute in {world} run tp Flint 3 65 1 270 0",  # face west (-x)
-        "clear Flint",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
+        f"execute in {world} run tp Tester 3 65 1 270 0",  # face west (-x)
+        "clear Tester",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
     ])
     # Hold mode — disables the reactive layer's auto-pickup so the test
     # measures the EXPLICIT pickup verb only.
     try:
-        flint_bot.post("/action/mode", {"name": "hold"}, timeout=5)
+        tester_bot.post("/action/mode", {"name": "hold"}, timeout=5)
     except Exception:
         pass
     arena.settle(seconds=3.5)

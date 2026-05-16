@@ -21,19 +21,19 @@ import pytest
 
 
 @pytest.fixture
-def task_arena(rcon, arena, flint_bot, config):
+def task_arena(rcon, arena, tester_bot, config):
     """Open grass arena; bot at (0,65,0). Cross-dim safe re-home first."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Flint {world}")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     arena.flat_arena((-1, 64, -1, 30, 70, 30), floor="grass_block")
-    rcon.run(f"execute in {world} run tp Flint 0 65 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     arena.settle(seconds=1.0)
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.flat_arena((-1, 60, -1, 30, 70, 30), floor="grass_block")
 
 

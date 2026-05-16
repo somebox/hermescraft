@@ -21,9 +21,9 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def through_arena_v2(rcon, arena, flint_bot, config):
+def through_arena_v2(rcon, arena, tester_bot, config):
     """Larger arena (31×31) so the bot at z=1 reaching z=3+ stays in-bounds."""
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-10, 64, -10, 20, 80, 20), floor="stone")
     arena.settle()
@@ -46,9 +46,9 @@ def test_through_air_with_door_in_inv_suggests_place(bot, rcon, arena, config, t
     'mc place oak_door' + inventory_door='oak_door'."""
     world = config["mc"]["world"]
     rcon.batch([
-        "clear Flint",
-        "give Flint minecraft:oak_door 2",
-        f"execute in {world} run tp Flint 3 65 3 0 0",
+        "clear Tester",
+        "give Tester minecraft:oak_door 2",
+        f"execute in {world} run tp Tester 3 65 3 0 0",
     ])
     arena.settle()
     r = bot.post("/action/through", {"gx": 4, "gy": 65, "gz": 3}, timeout=20)
@@ -68,8 +68,8 @@ def test_through_wall_block_suggests_dig_or_real_door(bot, rcon, arena, config, 
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run setblock 4 65 3 minecraft:cobblestone",
-        "clear Flint",
-        f"execute in {world} run tp Flint 3 65 3 0 0",
+        "clear Tester",
+        f"execute in {world} run tp Tester 3 65 3 0 0",
     ])
     arena.settle()
     r = bot.post("/action/through", {"gx": 4, "gy": 65, "gz": 3}, timeout=20)
@@ -92,8 +92,8 @@ def test_through_real_door_traverses(bot, rcon, arena, config, through_arena_v2)
         f"execute in {world} run fill 2 65 2 6 67 4 minecraft:air",
         f"execute in {world} run setblock 4 65 3 minecraft:oak_door[half=lower,facing=south]",
         f"execute in {world} run setblock 4 66 3 minecraft:oak_door[half=upper,facing=south]",
-        "clear Flint",
-        f"execute in {world} run tp Flint 4 65 1 180 0",
+        "clear Tester",
+        f"execute in {world} run tp Tester 4 65 1 180 0",
     ])
     arena.settle(seconds=2.0)
     r = bot.post("/action/through", {"gx": 4, "gy": 65, "gz": 3}, timeout=30)

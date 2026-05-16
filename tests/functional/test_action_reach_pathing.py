@@ -31,13 +31,13 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def reach_arena(rcon, arena, flint_bot, config):
+def reach_arena(rcon, arena, tester_bot, config):
     """Larger flat region (61×61) so the 25-block test distances stay
     inside the cleared area. Each test places its own props."""
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-30, 64, -30, 30, 80, 30), floor="stone")
-    rcon.run("clear Flint")
+    rcon.run("clear Tester")
     arena.settle()
     yield
     arena.flat_arena((-30, 60, -30, 30, 80, 30), floor="stone")
@@ -56,7 +56,7 @@ def test_chest_reach_pathfinds_from_10m_away(bot, rcon, arena, config, reach_are
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run setblock 10 65 0 minecraft:chest",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     r = bot.post("/action/list_container", {"x": 10, "y": 65, "z": 0}, timeout=20)
@@ -74,7 +74,7 @@ def test_chest_adjacent_returns_fast_with_no_pathfind(bot, rcon, arena, config, 
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run setblock 0 65 0 minecraft:chest",
-        f"execute in {world} run tp Flint 1 65 0 90 0",
+        f"execute in {world} run tp Tester 1 65 0 90 0",
     ])
     arena.settle()
     t0 = time.time()
@@ -91,9 +91,9 @@ def test_chest_unreachable_returns_out_of_range(bot, rcon, arena, config, reach_
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run setblock 25 65 0 minecraft:chest",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
-        "clear Flint",
-        f"execute in {world} run give Flint minecraft:cobblestone 8",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
+        "clear Tester",
+        f"execute in {world} run give Tester minecraft:cobblestone 8",
         # Six-sided bedrock cage around foot+head cells of (0,65,0).
         f"execute in {world} run setblock 1 65 0 minecraft:bedrock",
         f"execute in {world} run setblock 1 66 0 minecraft:bedrock",
@@ -130,7 +130,7 @@ def test_interact_reach_pathfinds_to_lever(bot, rcon, arena, config, reach_arena
     rcon.batch([
         f"execute in {world} run setblock 10 65 0 minecraft:cobblestone",
         f"execute in {world} run setblock 10 66 0 minecraft:lever[face=floor,facing=north,powered=false]",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     r = bot.post("/action/interact", {"x": 10, "y": 66, "z": 0}, timeout=20)

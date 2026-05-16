@@ -21,20 +21,20 @@ import pytest
 
 
 @pytest.fixture
-def fill_arena(rcon, arena, flint_bot, config):
+def fill_arena(rcon, arena, tester_bot, config):
     """Stone floor at y=64, 64 cobble in inventory, peaceful mode."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
-        "clear Flint",
-        "give Flint minecraft:cobblestone 64",
+        "clear Tester",
+        "give Tester minecraft:cobblestone 64",
     ])
     arena.settle()
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
 
 
@@ -44,7 +44,7 @@ def test_bot_inside_region_auto_displaces(bot, rcon, arena, config, fill_arena):
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run fill 0 65 0 2 65 2 minecraft:stone",
-        f"execute in {world} run tp Flint 1 66 1 90 0",
+        f"execute in {world} run tp Tester 1 66 1 90 0",
     ])
     arena.settle(seconds=2.0)
     r = bot.post("/action/place_fill", {
@@ -67,7 +67,7 @@ def test_bot_outside_region_completes_clean(bot, rcon, arena, config, fill_arena
     """B: bot at (5,65,5), region 0..2/65/0..2 → clean fill regardless
     of whether per-cell pathfind dragged the bot inside mid-loop."""
     world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run tp Flint 5 65 5 90 0")
+    rcon.run(f"execute in {world} run tp Tester 5 65 5 90 0")
     arena.settle(seconds=2.0)
     r = bot.post("/action/place_fill", {
         "block": "cobblestone",
@@ -85,7 +85,7 @@ def test_large_region_bot_inside_ends_in_safe_cell(bot, rcon, arena, config, fil
     """C: bot inside 5×1×3 region → displace, fill, AND bot's final foot
     cell is air (not stuck inside placed cobble — safety check)."""
     world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run tp Flint 2 65 1 90 0")
+    rcon.run(f"execute in {world} run tp Tester 2 65 1 90 0")
     arena.settle(seconds=2.0)
     r = bot.post("/action/place_fill", {
         "block": "cobblestone",

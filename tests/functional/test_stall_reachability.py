@@ -19,12 +19,12 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def boxed_in_bot(rcon, arena, flint_bot, config):
-    """Build the pen BEFORE teleporting Flint in — if the bot is cross-dim
+def boxed_in_bot(rcon, arena, tester_bot, config):
+    """Build the pen BEFORE teleporting Tester in — if the bot is cross-dim
     from a previous test, the first tp lands in the target dim and the
     floor must exist or the bot drops into the void."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute in {world} run difficulty peaceful",
@@ -36,10 +36,10 @@ def boxed_in_bot(rcon, arena, flint_bot, config):
         f"execute in {world} run fill -2 65 -2 2 68 2 minecraft:obsidian",
         # Carve a 3×3×4 inner cell.
         f"execute in {world} run fill -1 65 -1 1 68 1 minecraft:air",
-        "clear Flint",
-        # Cross-dim safe form: `execute as Flint at @s in <world>` resolves
-        # selectors in Flint's current dim then teleports him into <world>.
-        f"execute as Flint at @s in {world} run tp @s 0.5 65 0.5 0 0",
+        "clear Tester",
+        # Cross-dim safe form: `execute as Tester at @s in <world>` resolves
+        # selectors in Tester's current dim then teleports him into <world>.
+        f"execute as Tester at @s in {world} run tp @s 0.5 65 0.5 0 0",
     ])
     arena.settle(seconds=3.0)  # extra settle — the pen build is substantial
     yield

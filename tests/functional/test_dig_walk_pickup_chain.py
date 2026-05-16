@@ -87,17 +87,17 @@ def _setup_grid(rcon, world: str, height: int) -> None:
             for dy in range(height):
                 cmds.append(f"execute in {world} run setblock {x} {65 + dy} {z} minecraft:cobblestone")
     cmds.extend([
-        "clear Flint",
-        f"execute in {world} run give Flint minecraft:stone_pickaxe",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
+        "clear Tester",
+        f"execute in {world} run give Tester minecraft:stone_pickaxe",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
     ])
     rcon.batch(cmds)
     time.sleep(2.0)
 
 
 def _tp_bot(rcon, world: str, x: float, y: float, z: float, yaw: float = 0.0) -> None:
-    rcon.run(f"execute in {world} run tp Flint {x} {y} {z} {yaw} 0")
+    rcon.run(f"execute in {world} run tp Tester {x} {y} {z} {yaw} 0")
     time.sleep(0.5)
 
 
@@ -131,12 +131,12 @@ def _assert_safe_pose(bot, label: str) -> None:
 
 
 @pytest.fixture
-def pillar_arena(rcon, arena, flint_bot, config):
+def pillar_arena(rcon, arena, tester_bot, config):
     """Stone sub-floor (y=60..63) + grass floor at y=64 + forceload.
     Each scenario builds its own pillars on top."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
@@ -146,7 +146,7 @@ def pillar_arena(rcon, arena, flint_bot, config):
     ])
     arena.settle(seconds=1.0)
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.run(f"execute in {world} run fill -1 60 -1 9 70 9 minecraft:air")
     arena.forceload_remove_all()
 
@@ -272,7 +272,7 @@ def _wedge_iter(bot, rcon, world: str, op: dict, verb: str) -> None:
     pre = bot.inventory().get("cobblestone", 0)
 
     _tp_bot(rcon, world, cx, 65, cz, 0.0)
-    rcon.run(f"execute in {world} run effect give Flint instant_health 1 4")
+    rcon.run(f"execute in {world} run effect give Tester instant_health 1 4")
     time.sleep(0.4)
     _assert_safe_pose(bot, op["name"])
 
@@ -330,20 +330,20 @@ def _build_then_navigate(bot, rcon, world: str, drop_x: int, drop_z: int, verb: 
         bot.post("/task/cancel", {}, timeout=5)
     except Exception:
         pass
-    rcon.run(f"mvtp Flint {world}")
+    rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute as Flint at @s in {world} run tp @s 0 100 0")
+    rcon.run(f"execute as Tester at @s in {world} run tp @s 0 100 0")
     time.sleep(0.5)
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -1 60 -1 9 70 9 minecraft:air",
         f"execute in {world} run fill -1 60 -1 9 63 9 minecraft:stone",
         f"execute in {world} run fill -1 64 -1 9 64 9 minecraft:grass_block",
-        "clear Flint",
-        f"execute in {world} run give Flint minecraft:cobblestone 64",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
-        "effect give Flint minecraft:instant_health 1 5",
+        "clear Tester",
+        f"execute in {world} run give Tester minecraft:cobblestone 64",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
+        "effect give Tester minecraft:instant_health 1 5",
     ])
     time.sleep(3.0)
     _tp_bot(rcon, world, 3.5, 65, 4.5, 270.0)

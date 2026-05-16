@@ -62,17 +62,19 @@ task semantics, …). Each test sets up world state via rcon, drives the
 bot via its HTTP API, and asserts inventory/position state plus error
 envelopes.
 
-**Bot URL is config-driven** via `config/hermescraft.yaml`. Tests use
-the Flint role (`localhost:3001`) by default; tests that need the
-isolated Tester bot (`localhost:3004`) declare `@pytest.mark.tester`.
+**Bot URL is config-driven** via `config/hermescraft.yaml`. All
+functional tests use the dedicated **Tester bot at `localhost:3004`**
+(`config.bot.roles.tester`) — the `bot` pytest fixture is hard-wired
+to it. Flint (`localhost:3001`) keeps running for the landfolk scenario
+but the test suite never touches it, which prevents test-driven world
+edits from interfering with whatever Flint is doing.
 
 ```bash
-# Run the entire functional suite (Flint + Tester):
+# Run the entire functional suite:
 pytest -m functional
 
-# Just one tier:
+# Filter:
 pytest -m functional -k mine             # only "mine"-named tests
-pytest -m tester                          # Tester-bot tests only
 pytest -m "functional and not slow"      # skip @pytest.mark.slow tests
 
 # Single file or test:

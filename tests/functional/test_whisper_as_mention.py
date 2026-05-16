@@ -10,7 +10,7 @@ prefix that the agent's mention-detection still matches.
 Scenarios:
   A: `mc whisper Mason hello there` → result contains `@Mason` + message.
   B: `mc chat_to Steward status update` → result contains `@Steward` + message.
-  C: rcon-impersonated `@flint please respond` reaches the bot's unreadChat.
+  C: rcon-impersonated `@tester please respond` reaches the bot's unreadChat.
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ import pytest
 
 
 @pytest.fixture
-def chat_bot(rcon, flint_bot):
+def chat_bot(rcon, tester_bot):
     """No arena setup — these tests don't touch the world, only chat I/O."""
-    flint_bot.wait_until_ready(timeout=10)
-    return flint_bot
+    tester_bot.wait_until_ready(timeout=10)
+    return tester_bot
 
 
 @pytest.mark.functional
@@ -47,18 +47,18 @@ def test_chat_to_routes_as_at_mention(chat_bot):
 
 @pytest.mark.functional
 def test_external_at_mention_reaches_bot_unread_chat(rcon, chat_bot, config):
-    """C: an rcon-sent `say @flint ...` lands in the bot's unreadChat queue.
+    """C: an rcon-sent `say @tester ...` lands in the bot's unreadChat queue.
 
     The bot's own messages get filtered out of new_chat; the easiest way
     to prove the broadcast channel is wired is to impersonate a remote
     player via the server's `say` command and verify the bot saw it.
     """
     world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run say @flint please respond")
+    rcon.run(f"execute in {world} run say @tester please respond")
     import time
     time.sleep(0.5)
     s = chat_bot.get("/status?lean=true", timeout=10)
     unread = (s.get("data") or {}).get("unreadChat") or {}
     recent = unread.get("recent") or []
-    matched = any("@flint" in (m.get("message") or "").lower() for m in recent)
+    matched = any("@tester" in (m.get("message") or "").lower() for m in recent)
     assert matched, unread

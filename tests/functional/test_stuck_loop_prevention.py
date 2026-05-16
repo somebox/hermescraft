@@ -62,7 +62,6 @@ def _rebuild_corner(rcon, world: str) -> None:
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_F57_1_escape_recurring_loop_after_3_within_90s(bot, rcon, config, stuck_arena):
     """A: 3 escapes from same corner within 90s → 3rd (or retry#4)
     returns ESCAPE_RECURRING_LOOP. Re-trap between each so classification
@@ -86,7 +85,6 @@ def test_F57_1_escape_recurring_loop_after_3_within_90s(bot, rcon, config, stuck
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_F57_2_repeated_goto_to_unreachable_target_fails_clearly(bot, rcon, config, stuck_arena):
     """B: 4 consecutive gotos to a sealed/lipped target. Pass if either
     NAV_RECURRING_STUCK appears OR every attempt returns a clear nav
@@ -125,7 +123,6 @@ def test_F57_2_repeated_goto_to_unreachable_target_fails_clearly(bot, rcon, conf
 
 
 @pytest.mark.functional
-@pytest.mark.tester
 def test_F57_3_successful_escape_carries_do_not_retry_goto(bot, rcon, config, stuck_arena):
     """C: failed goto records ctx.lastMoveFailed; subsequent successful
     escape returns observed_state.do_not_retry_goto = that intended

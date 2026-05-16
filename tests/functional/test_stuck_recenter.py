@@ -21,13 +21,13 @@ import pytest
 
 
 @pytest.fixture
-def wedge_arena(rcon, arena, flint_bot, config):
+def wedge_arena(rcon, arena, tester_bot, config):
     """Grass floor, 3-block-tall cobble wall at x=3, bot pressed against
     east face at (3.9, 65, 0.5) — hitbox crosses the x=4 boundary so the
     direct west step is blocked by the wall's east face.
     """
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-16, 64, -16, 16, 70, 16), floor="grass_block")
     rcon.batch([
@@ -38,7 +38,7 @@ def wedge_arena(rcon, arena, flint_bot, config):
         f"execute in {world} run setblock 3 66 -1 minecraft:cobblestone",
         f"execute in {world} run setblock 3 66 0 minecraft:cobblestone",
         f"execute in {world} run setblock 3 66 1 minecraft:cobblestone",
-        f"execute in {world} run tp Flint 3.9 65 0.5 90 0",  # yaw 90 = facing west
+        f"execute in {world} run tp Tester 3.9 65 0.5 90 0",  # yaw 90 = facing west
     ])
     arena.settle(seconds=2.0)
     yield

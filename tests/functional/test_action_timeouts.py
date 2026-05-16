@@ -24,12 +24,12 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def sealed_island_arena(rcon, arena, flint_bot, config):
+def sealed_island_arena(rcon, arena, tester_bot, config):
     """Stone-floored area with a sealed bedrock 3×3×3 island at (15,66,15)
     that can't be entered or built into. Bot starts at (0,65,0) with 64
     cobblestone."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-20, 64, -20, 20, 80, 20), floor="stone")
     rcon.batch([
@@ -41,10 +41,10 @@ def sealed_island_arena(rcon, arena, flint_bot, config):
         f"execute in {world} run fill 14 65 14 16 67 14 minecraft:bedrock",
         f"execute in {world} run fill 14 65 16 16 67 16 minecraft:bedrock",
         f"execute in {world} run fill 14 67 14 16 67 16 minecraft:bedrock",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
-        "clear Flint",
-        "give Flint minecraft:cobblestone 64",
-        "effect clear Flint",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
+        "clear Tester",
+        "give Tester minecraft:cobblestone 64",
+        "effect clear Tester",
     ])
     arena.settle()
     yield

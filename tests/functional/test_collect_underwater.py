@@ -22,7 +22,7 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def underwater_arena(rcon, arena, flint_bot, config):
+def underwater_arena(rcon, arena, tester_bot, config):
     """Grass-floored 31×31 area with stone below, ready for per-test water
     pockets and sand placement.
 
@@ -32,9 +32,9 @@ def underwater_arena(rcon, arena, flint_bot, config):
     the bot in solid blocks and mineflayer's internal position would
     desync from the server's even after a subsequent TP.
     """
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.batch([
         f"execute in {world} run fill -10 60 -10 20 80 20 minecraft:air",
         f"execute in {world} run fill -10 60 -10 20 63 20 minecraft:stone",
@@ -43,7 +43,7 @@ def underwater_arena(rcon, arena, flint_bot, config):
     arena.clean()  # peaceful, kill mobs, clear inv (no fill)
     arena.settle(seconds=2.0)
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.run(f"execute in {world} run fill -10 60 -10 20 80 20 minecraft:air")
 
 
@@ -58,8 +58,8 @@ def test_collect_pond_only_sand_returns_target_in_water(bot, rcon, arena, config
         f"execute in {world} run fill 4 63 5 6 63 7 minecraft:sand",
         # 3×3 water surface at y=64
         f"execute in {world} run fill 4 64 5 6 64 7 minecraft:water",
-        f"execute in {world} run tp Flint 5 65 1 0 0",
-        "clear Flint",
+        f"execute in {world} run tp Tester 5 65 1 0 0",
+        "clear Tester",
     ])
     arena.settle(seconds=2.0)
     pre_sand = bot.inventory().get("sand", 0)
@@ -86,9 +86,9 @@ def test_collect_prefers_dry_sand_over_flooded(bot, rcon, arena, config, underwa
         # Pond
         f"execute in {world} run fill 4 63 5 6 63 7 minecraft:sand",
         f"execute in {world} run setblock 5 64 5 minecraft:water",
-        f"execute in {world} run tp Flint 5 65 0 0 0",
-        "clear Flint",
-        "give Flint minecraft:wooden_pickaxe 1",
+        f"execute in {world} run tp Tester 5 65 0 0 0",
+        "clear Tester",
+        "give Tester minecraft:wooden_pickaxe 1",
     ])
     arena.settle(seconds=2.0)
     r = bot.post("/action/collect", {"block": "sand", "count": 1}, timeout=60)
@@ -116,7 +116,7 @@ def test_dig_while_submerged_returns_submerged(bot, rcon, arena, config, underwa
         f"execute in {world} run setblock 5 64 0 minecraft:water",
         f"execute in {world} run setblock 5 65 0 minecraft:water",
         f"execute in {world} run setblock 4 64 0 minecraft:stone",
-        f"execute in {world} run tp Flint 5.5 64 0.5 0 0",
+        f"execute in {world} run tp Tester 5.5 64 0.5 0 0",
     ])
     arena.settle(seconds=2.5)
     r = bot.post("/action/dig", {"x": 4, "y": 64, "z": 0}, timeout=15)

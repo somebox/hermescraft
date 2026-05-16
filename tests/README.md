@@ -62,7 +62,7 @@ def test_pickup_after_dig(arena, bot):
     arena.clean()                              # canonical blank slate
     arena.prep([                               # custom rcon prep
         f"execute in {arena.world} run setblock 0 65 5 cobblestone",
-        "give Flint diamond_pickaxe",
+        "give Tester diamond_pickaxe",
     ])
     arena.teleport_bot(0, 65, 4)
     arena.settle()                             # let perception catch up

@@ -4,8 +4,8 @@ Migrated from scripts/test-wait-chat-interrupt.py. Bots that can't be
 interrupted during a `mc wait` are deaf to coordination requests. F55.5
 adds the early-return logic. Four scenarios:
   A: wait 10 with no chat → full duration, interrupted=false.
-  B: wait 10 + @flint mention at ~2s → returns ~2s, interrupted=true.
-  C: wait 10 with interrupt=false + @flint mention → full duration.
+  B: wait 10 + @tester mention at ~2s → returns ~2s, interrupted=true.
+  C: wait 10 with interrupt=false + @tester mention → full duration.
   D: wait 10 + non-mention public chat at ~2s → full duration.
 """
 
@@ -18,9 +18,9 @@ import pytest
 
 
 @pytest.fixture
-def chat_bot(flint_bot):
-    flint_bot.wait_until_ready(timeout=10)
-    return flint_bot
+def chat_bot(tester_bot):
+    tester_bot.wait_until_ready(timeout=10)
+    return tester_bot
 
 
 def _delayed_say(rcon, world: str, delay: float, msg: str) -> threading.Thread:
@@ -47,8 +47,8 @@ def test_wait_no_chat_runs_full_duration(chat_bot):
 
 @pytest.mark.functional
 def test_wait_interrupts_on_at_mention(rcon, chat_bot, config):
-    """B: @flint mention at 2s → wait returns ~2s, interrupted=true, reason=mention."""
-    _delayed_say(rcon, config["mc"]["world"], 2.0, "@flint hi there")
+    """B: @tester mention at 2s → wait returns ~2s, interrupted=true, reason=mention."""
+    _delayed_say(rcon, config["mc"]["world"], 2.0, "@tester hi there")
     t0 = time.time()
     r = chat_bot.post("/action/wait", {"seconds": 10}, timeout=15)
     elapsed = time.time() - t0
@@ -62,7 +62,7 @@ def test_wait_interrupts_on_at_mention(rcon, chat_bot, config):
 @pytest.mark.functional
 def test_wait_with_no_interrupt_ignores_mention(rcon, chat_bot, config):
     """C: same mention but interrupt=false → full duration (opt-out honored)."""
-    _delayed_say(rcon, config["mc"]["world"], 2.0, "@flint anybody home")
+    _delayed_say(rcon, config["mc"]["world"], 2.0, "@tester anybody home")
     t0 = time.time()
     r = chat_bot.post("/action/wait", {"seconds": 10, "interrupt": False}, timeout=15)
     elapsed = time.time() - t0

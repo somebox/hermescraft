@@ -18,12 +18,12 @@ import pytest
 
 
 @pytest.fixture
-def maze_target(rcon, arena, flint_bot, config):
+def maze_target(rcon, arena, tester_bot, config):
     """Build the M3 M1 maze fragment: andesite at (-2,65,2) with cobble
     wall at (-2,65,1)/(-2,66,1) blocking south-side LOS. Bot starts at
     (-2,65,-2) facing north."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute in {world} run difficulty peaceful",
@@ -34,10 +34,10 @@ def maze_target(rcon, arena, flint_bot, config):
         f"execute in {world} run setblock -2 65 2 minecraft:andesite",
         f"execute in {world} run setblock -2 65 1 minecraft:cobblestone",
         f"execute in {world} run setblock -2 66 1 minecraft:cobblestone",
-        "clear Flint",
-        f"execute in {world} run give Flint minecraft:stone_pickaxe 1",
-        f"execute in {world} run effect give Flint minecraft:instant_health 1 5",
-        f"execute in {world} run tp Flint -2 65 -2 0 0",
+        "clear Tester",
+        f"execute in {world} run give Tester minecraft:stone_pickaxe 1",
+        f"execute in {world} run effect give Tester minecraft:instant_health 1 5",
+        f"execute in {world} run tp Tester -2 65 -2 0 0",
     ])
     arena.settle(seconds=2.5)
     yield

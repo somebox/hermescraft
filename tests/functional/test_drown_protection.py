@@ -20,12 +20,12 @@ import pytest
 
 
 @pytest.fixture
-def pool_arena(rcon, arena, flint_bot, config):
+def pool_arena(rcon, arena, tester_bot, config):
     """Stone bowl at y=60..63 with a 3×3 water column carved from y=61..63
     and a grass cap around the pool at y=64. Bot starts NOT in the water
     — each test TPs it underwater explicitly after the fixture builds."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     # Clean 12×12 area
     arena.flat_arena((-6, 60, -6, 6, 70, 6), floor="stone", floor_y=60)
@@ -46,12 +46,12 @@ def pool_arena(rcon, arena, flint_bot, config):
 
 
 def _tp_underwater(rcon, world: str) -> None:
-    """TP Flint to (0,61,0), clear inventory, give long saturation."""
+    """TP Tester to (0,61,0), clear inventory, give long saturation."""
     rcon.batch([
-        f"execute in {world} run tp Flint 0 61 0 0 0",
-        "clear Flint",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
+        f"execute in {world} run tp Tester 0 61 0 0 0",
+        "clear Tester",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
     ])
     time.sleep(1.5)
 

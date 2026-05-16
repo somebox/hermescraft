@@ -27,13 +27,13 @@ import pytest
 
 
 @pytest.fixture
-def mine_arena(rcon, arena, flint_bot, config):
+def mine_arena(rcon, arena, tester_bot, config):
     """Wide clean area + packed sub-floor + grass cap. Bot at (3,65,0)
     facing west — gives 4-7m to candidates at x=-1..-4 (within visibility
     scan's FOV)."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
@@ -43,22 +43,22 @@ def mine_arena(rcon, arena, flint_bot, config):
     ])
     arena.settle(seconds=1.0)
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.run(f"execute in {world} run fill -16 60 -16 16 80 16 minecraft:air")
     arena.forceload_remove_all()
 
 
 def _stage_arena_and_bot(rcon, world: str, extra_cmds: list[str]) -> None:
-    """Apply extra setup, then re-TP Flint to (3,65,0) facing west, with
+    """Apply extra setup, then re-TP Tester to (3,65,0) facing west, with
     pickaxe + saturation. The 3.5s settle is load-bearing for the bot
     to perceive newly-placed blocks before the test runs collect."""
     cmds = list(extra_cmds)
     cmds += [
-        f"execute in {world} run tp Flint 3 65 0 90 0",
-        "clear Flint",
-        "give Flint minecraft:stone_pickaxe 1",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
+        f"execute in {world} run tp Tester 3 65 0 90 0",
+        "clear Tester",
+        "give Tester minecraft:stone_pickaxe 1",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
     ]
     rcon.batch(cmds)
     time.sleep(3.5)

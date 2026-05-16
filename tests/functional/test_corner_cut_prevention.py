@@ -24,12 +24,12 @@ import pytest
 
 
 @pytest.fixture
-def flat_floor(rcon, arena, flint_bot, config):
+def flat_floor(rcon, arena, tester_bot, config):
     """Flat stone floor; each test places its own obstacles + bot start pose."""
-    flint_bot.wait_until_ready(timeout=10)
+    tester_bot.wait_until_ready(timeout=10)
     arena.clean()
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
-    rcon.run("clear Flint")
+    rcon.run("clear Tester")
     arena.settle()
     yield
     arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
@@ -44,7 +44,7 @@ def test_routes_around_single_pillar(bot, rcon, arena, config, flat_floor):
     rcon.batch([
         f"execute in {world} run setblock 1 65 1 minecraft:obsidian",
         f"execute in {world} run setblock 1 66 1 minecraft:obsidian",
-        f"execute in {world} run tp Flint -1 65 -1 90 0",
+        f"execute in {world} run tp Tester -1 65 -1 90 0",
     ])
     arena.settle()
     t0 = time.time()
@@ -64,7 +64,7 @@ def test_routes_around_inside_corner_of_l_wall(bot, rcon, arena, config, flat_fl
     rcon.batch([
         f"execute in {world} run fill 0 65 2 5 66 2 minecraft:obsidian",
         f"execute in {world} run fill 5 65 2 5 66 7 minecraft:obsidian",
-        f"execute in {world} run tp Flint 0 65 0 90 0",
+        f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     t0 = time.time()

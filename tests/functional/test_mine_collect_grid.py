@@ -34,15 +34,15 @@ GRID_PILLAR_CELLS = {(x, z) for x in (2, 4, 6) for z in (2, 4, 6)}
 
 
 @pytest.fixture
-def grid_arena(rcon, arena, flint_bot, config):
+def grid_arena(rcon, arena, tester_bot, config):
     """Reset the test world to a known-clean baseline + ensure a SOLID
     sub-floor at y=60..63. Without the packed sub-floor, gaps left by
     prior tests can let the bot fall through y=64 during mc collect."""
     world = config["mc"]["world"]
-    flint_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Flint {world}")
+    tester_bot.wait_until_ready(timeout=10)
+    rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
     # Solid stone packed from y=60..63 prevents fall-through; grass on top at y=64.
     rcon.batch([
@@ -52,7 +52,7 @@ def grid_arena(rcon, arena, flint_bot, config):
     ])
     arena.settle(seconds=1.0)
     yield
-    rcon.run(f"execute in {world} run tp Flint 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.run(f"execute in {world} run fill -1 60 0 7 70 8 minecraft:air")
 
 
@@ -66,11 +66,11 @@ def _build_grid(rcon, world: str, height: int) -> None:
                     f"execute in {world} run setblock {x} {65 + dy} {z} minecraft:cobblestone"
                 )
     cmds.extend([
-        f"execute in {world} run tp Flint 0 65 4 270 0",  # facing east
-        "clear Flint",
-        f"execute in {world} run give Flint minecraft:stone_pickaxe",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
+        f"execute in {world} run tp Tester 0 65 4 270 0",  # facing east
+        "clear Tester",
+        f"execute in {world} run give Tester minecraft:stone_pickaxe",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
     ])
     rcon.batch(cmds)
     time.sleep(2.0)
@@ -107,7 +107,7 @@ def _run_collect_scenario(
     source = (r.get("data") or {}).get("source")
 
     if walk_away:
-        rcon.run(f"execute in {world} run tp Flint -5 65 -5 0 0")
+        rcon.run(f"execute in {world} run tp Tester -5 65 -5 0 0")
         time.sleep(0.5)
         # inventory_delta calls /action/pickup internally as fallback.
         post = bot.inventory_delta("cobblestone", timeout=3.0, baseline=pre, fallback_pickup=True)

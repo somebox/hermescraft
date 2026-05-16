@@ -10,7 +10,7 @@ This file exists to prove the new pytest harness end-to-end. The Round 3
 migration of the other 43 functional tests will follow the same pattern.
 
 Requires: live MC server + bot running at config.bot.default_api_url with
-the bot named `Flint` (see config/hermescraft.yaml).
+the bot named `Tester` (see config/hermescraft.yaml).
 """
 
 from __future__ import annotations
@@ -22,14 +22,14 @@ import pytest
 # this file. Scenarios B, C, and D depend on the geometry set up by A in
 # the original test — preserving that semantic by sharing the arena.
 #
-# Consumes `flint_bot` (session-scoped) rather than `bot` (function-scoped)
+# Consumes `tester_bot` (session-scoped) rather than `bot` (function-scoped)
 # because the fixture itself runs at module scope. The function-scoped
-# `bot` parameter on each test below resolves to the same flint_bot.
+# `bot` parameter on each test below resolves to the same tester_bot.
 @pytest.fixture(scope="module")
-def mason_trap(rcon, config, flint_bot):
+def mason_trap(rcon, config, tester_bot):
     """Build cobble wall at y=66 z=12 (x: -2..1), grass floor at y=64,
-    teleport Flint to (2.5, 65, 12.7). Cleanup on teardown."""
-    flint_bot.wait_until_ready(timeout=10)
+    teleport Tester to (2.5, 65, 12.7). Cleanup on teardown."""
+    tester_bot.wait_until_ready(timeout=10)
     world = config["mc"]["world"]
     rcon.batch([
         f"execute in {world} run difficulty peaceful",
@@ -40,17 +40,17 @@ def mason_trap(rcon, config, flint_bot):
         f"execute in {world} run fill -5 64 5 5 64 18 minecraft:grass_block",
         # North wall at z=12, x=-2..1, y=66..68 (3 high) — the trap.
         f"execute in {world} run fill -2 66 12 1 68 12 minecraft:cobblestone",
-        f"execute in {world} run tp Flint 2.5 65 12.7 0 0",
-        "effect clear Flint",
-        "effect give Flint minecraft:saturation 600 1",
+        f"execute in {world} run tp Tester 2.5 65 12.7 0 0",
+        "effect clear Tester",
+        "effect give Tester minecraft:saturation 600 1",
     ])
     import time
     time.sleep(config["test"]["settle_seconds"])
     yield
-    # Teardown: fill the test box with air and park Flint at home.
+    # Teardown: fill the test box with air and park Tester at home.
     rcon.batch([
         f"execute in {world} run fill -5 65 5 5 70 18 minecraft:air",
-        f"execute in {world} run tp Flint 52 65 52",
+        f"execute in {world} run tp Tester 52 65 52",
     ])
 
 
@@ -104,7 +104,7 @@ def test_goto_near_enriches_error_with_closest_standable(bot, mason_trap):
 def test_reachable_is_pose_independent(rcon, bot, config, mason_trap):
     """D: bot at (0,65,13), mc reachable 0 65 12 still reports head_blocked."""
     world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run tp Flint 0.5 65 13.5 180 0")
+    rcon.run(f"execute in {world} run tp Tester 0.5 65 13.5 180 0")
     import time
     time.sleep(0.5)
     r = bot.post("/action/reachable", {"x": 0, "y": 65, "z": 12}, timeout=10)
