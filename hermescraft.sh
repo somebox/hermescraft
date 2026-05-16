@@ -3,16 +3,20 @@
 # hermescraft — Start Hermes playing Minecraft
 #
 # Usage:
-#   HERMES_MODEL=openrouter/anthropic/claude-sonnet-4 ./hermescraft.sh
-#   ./hermescraft.sh --model openrouter/anthropic/claude-sonnet-4 "build me a castle"
+#   ./hermescraft.sh                       # uses cheap default from data/agent-models.json
+#   HERMES_MODEL=deepseek/deepseek-v4-flash ./hermescraft.sh
+#   ./hermescraft.sh --model deepseek/deepseek-v4-flash "build me a castle"
 #   ./hermescraft.sh --bot-only            # bot only — no LLM (no model needed)
 #
 # Environment:
 #   MC_HOST      Minecraft server host (default: localhost)
 #   MC_PORT      Minecraft server port (default: 25565)
 #   MC_USERNAME  Bot name (default: HermesBot)
-#   HERMES_MODEL Required unless you pass --model (e.g. openrouter/anthropic/claude-sonnet-4)
-#   HERMES_PROVIDER Provider for hermes chat (default: openrouter). Use anthropic for native API slugs.
+#   HERMES_MODEL Optional. Defaults to data/agent-models.json defaults.model
+#                (currently deepseek/deepseek-v4-flash). Override carefully —
+#                claude-sonnet-4 is ~30× more expensive.
+#   HERMES_PROVIDER Provider for hermes chat (default: openrouter or
+#                data/agent-models.json defaults.provider).
 # ═══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -53,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo "hermescraft — Hermes plays Minecraft with you"
             echo ""
             echo "Usage: ./hermescraft.sh [options] [goal]"
-            echo "       HERMES_MODEL=openrouter/ORG/MODEL ./hermescraft.sh [goal]"
+            echo "       HERMES_MODEL=deepseek/deepseek-v4-flash ./hermescraft.sh [goal]"
             echo "       ./hermescraft.sh --bot-only"
             echo ""
             echo "Options:"
@@ -70,7 +74,7 @@ while [[ $# -gt 0 ]]; do
             echo "  MC_PORT           Minecraft server port (default: 25565)"
             echo "  MC_USERNAME       Bot name (default: HermesBot)"
             echo "  API_PORT          Bot API port (default: 3001)"
-            echo "  HERMES_MODEL      Required for Hermes chat (avoids defaulting to expensive models)"
+            echo "  HERMES_MODEL      LLM model slug (default: data/agent-models.json defaults.model = deepseek/deepseek-v4-flash)"
             echo "  HERMES_PROVIDER   Optional (default: openrouter)"
             echo "  AUTO_RESUME       If true (default), restart Hermes after each round (required because"
             echo "                    \`hermes chat -q\` exits after one agent turn). Set false for a single turn."
@@ -89,14 +93,33 @@ BOT_LOG="$LOG_DIR/bot-${MC_USERNAME_LC}.log"
 MODEL="${HERMES_MODEL:-${MODEL:-}}"
 PROVIDER="${HERMES_PROVIDER:-${PROVIDER:-openrouter}}"
 
+# Fall back to the cheap default in data/agent-models.json when neither
+# --model nor HERMES_MODEL is set. This prevents the previous failure mode
+# where a user copying the help text would launch on claude-sonnet-4
+# (~30× the cost of the deepseek default). Override via env or --model.
+if [ "$BOT_ONLY" != true ] && [ -z "$MODEL" ]; then
+    MODELS_JSON="$SCRIPT_DIR/data/agent-models.json"
+    if [ -f "$MODELS_JSON" ]; then
+        DEFAULT_MODEL=$(python3 -c "import json; d=json.load(open('$MODELS_JSON')); print(d['defaults']['model'])" 2>/dev/null || echo "")
+        DEFAULT_PROVIDER=$(python3 -c "import json; d=json.load(open('$MODELS_JSON')); print(d['defaults']['provider'])" 2>/dev/null || echo "")
+        if [ -n "$DEFAULT_MODEL" ]; then
+            MODEL="$DEFAULT_MODEL"
+            if [ -z "${HERMES_PROVIDER:-}" ] && [ -n "$DEFAULT_PROVIDER" ]; then
+                PROVIDER="$DEFAULT_PROVIDER"
+            fi
+            echo "  ℹ Using default model $MODEL ($PROVIDER) from data/agent-models.json"
+        fi
+    fi
+fi
+
 # Set API_URL after arg parsing so --port takes effect
 API_URL="http://localhost:$API_PORT"
 
 if [ "$BOT_ONLY" != true ] && [ -z "$MODEL" ]; then
-    echo "  ✗ No LLM model set — refusing Hermes default (can fall back to an expensive model)."
+    echo "  ✗ No LLM model set and no default in data/agent-models.json."
     echo "    Set HERMES_MODEL or pass --model, e.g.:"
-    echo "      HERMES_MODEL=openrouter/anthropic/claude-sonnet-4 ./hermescraft.sh"
-    echo "      ./hermescraft.sh --model claude-sonnet-4 --provider anthropic"
+    echo "      HERMES_MODEL=deepseek/deepseek-v4-flash ./hermescraft.sh"
+    echo "      ./hermescraft.sh --model anthropic/claude-sonnet-4 --provider openrouter   # expensive!"
     exit 1
 fi
 
@@ -257,11 +280,16 @@ else
 Start by running \`mc status\`."
 fi
 
-CONTINUE_PROMPT="Continue the Minecraft session. Follow the OBSERVE→PLAN→ACT loop:
+# Env-var overrides for non-default modes (e.g. steward-driven sessions).
+# HERMESCRAFT_PROMPT overrides the round-1 boot prompt; HERMESCRAFT_CONTINUE_PROMPT
+# overrides the subsequent rounds. Both default to the goal-loop language above.
+[ -n "${HERMESCRAFT_PROMPT:-}" ] && PROMPT="$HERMESCRAFT_PROMPT"
+
+CONTINUE_PROMPT="${HERMESCRAFT_CONTINUE_PROMPT:-Continue the Minecraft session. Follow the OBSERVE→PLAN→ACT loop:
 1. Run \`mc status\`, \`mc read_chat\`, \`mc commands\`, \`mc goals\`.
 2. Pick the top-urgency goal. State your one-line plan.
 3. Execute 3-8 commands, then re-check goals/status.
-Do not idle or wait. Act on player requests immediately. Make measurable progress every round."
+Do not idle or wait. Act on player requests immediately. Make measurable progress every round.}"
 
 ROUND=0
 FINAL_EC=0

@@ -109,13 +109,14 @@ expected end states. `scripts/agent-test.py` drives a Hermes agent
 through the scenario and grades the outcome.
 
 ```bash
-scripts/agent-test.py --model openrouter/anthropic/claude-sonnet-4 \
+scripts/agent-test.py --model deepseek/deepseek-v4-flash \
   data/test-fixtures/behavior/B1_fetch_smelt_basic.yaml
 ```
 
 Requires: MC server, bot server, LLM key (OPENROUTER_API_KEY or
-ANTHROPIC_API_KEY in `$HOME/.hermes/.env`). Each run costs cents to
-dollars and takes several minutes.
+ANTHROPIC_API_KEY in `$HOME/.hermes/.env`). Each run on the cheap default
+costs cents and takes several minutes; premium models (claude-sonnet-4,
+gpt-5) cost ~30× more per run.
 
 Results land in `data/agent-tests/runs/<test_id>-<timestamp>.json`.
 
@@ -127,7 +128,7 @@ generated `mc` commands against gold answers. **No Minecraft server
 required** — the harness simulates the world.
 
 ```bash
-node scripts/benchmark/run.mjs --model anthropic/claude-sonnet-4
+node scripts/benchmark/run.mjs --model deepseek/deepseek-v4-flash
 ```
 
 Requires `secrets.yaml` with an `openrouter_api_key` (see

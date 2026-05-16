@@ -195,10 +195,10 @@ If you already have a world open to LAN and want the generic single-agent flow i
 
 ```bash
 cd ~/hermescraft
-HERMES_MODEL=openrouter/anthropic/claude-sonnet-4 MC_PORT=<LAN_PORT> ./hermescraft.sh
+MC_PORT=<LAN_PORT> ./hermescraft.sh
 ```
 
-(`hermescraft.sh` requires `HERMES_MODEL` or `--model` so it never falls back to an expensive global Hermes default. `--bot-only` skips the LLM and does not need a model.)
+(`hermescraft.sh` reads its default model from `data/agent-models.json` — currently `deepseek/deepseek-v4-flash` on openrouter. Override with `HERMES_MODEL=...` or `--model`. `--bot-only` skips the LLM and does not need a model. Be careful with premium models like `anthropic/claude-sonnet-4` — they are ~30× the cost of the default.)
 
 Examples in chat:
 - `hermes follow me`
