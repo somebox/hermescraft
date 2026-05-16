@@ -96,3 +96,11 @@ server/world_the_end/DIM1/region/r.0.-1.mca
 server/world_the_end/DIM1/region/r.0.0.mca
 
 .venv/
+server/world/entities/r.0.-1.mca
+server/world/entities/r.0.0.mca
+server/world/poi/r.0.-1.mca
+server/world/poi/r.0.0.mca
+server/world/region/r.0.-1.mca
+server/world/region/r.0.0.mca
+server/world/region/r.0.1.mca
+.claude/scheduled_tasks.lock
