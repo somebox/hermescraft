@@ -9,8 +9,25 @@ Each suspected overlap and gap below was validated by reading the
 actual source files (not just filename heuristics) — see "Validation
 notes" at the end of each section.
 
-**Last verified:** 2026-05-15
-**Verification baseline:** 113 Node unit tests + 6 pytest unit tests green.
+**Last verified:** 2026-05-16
+**Verification baseline:** 113 Node unit tests + 15 pytest unit tests + 111 pytest
+functional tests green (Flint role only). 13 xfail (documented framework limitations).
+The 6 Tester-bot tests are deferred until the Tester bot at :3004 is running.
+
+**Known suite-only flakes** — pass in isolation, fail mid-suite due to cumulative
+bot state pollution. Not framework regressions:
+- `test_attack_through_wall::test_reactive_self_defense_does_not_attack_through_wall`
+  — sometimes shows the reactive layer damaging the zombie through walls (HP 20 → ~14).
+  Suspected: bot's reactive-mode state lags the test's mode switch when run after the
+  hold-mode scenarios in the same file.
+- `test_wait_chat_interrupt::test_wait_interrupts_on_at_mention` — sometimes shows the
+  wait running its full 10s with `interrupted=false`. Suspected: chat queue saturation
+  (the conftest test-name announcements + prior tests' mentions accumulate in unreadChat
+  and possibly mask the new mention).
+
+Both reproduce when running the full `pytest -m functional` suite; both pass when
+the file is run alone. Re-evaluate when adding per-test bot state-reset
+(e.g. `mc clear_chat`, `mc cancel_task`, mode→hold→normal handshake).
 
 ---
 
