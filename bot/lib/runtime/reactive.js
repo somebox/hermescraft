@@ -147,7 +147,13 @@ export function createReactive(deps) {
     let onFire = !!b.entity.metadata?.[0] && (b.entity.metadata[0] & 0x01) !== 0;
     const footPos = myPos.floored();
     const lavaNeighbors = [];
+    // Head-in-water detection: distinguishes wading (foot only) from
+    // submerged (head also). swim_up should fire when head is wet even
+    // before oxygen drops — surfaces the bot promptly.
+    let headInWater = false;
     if (typeof b.blockAt === 'function') {
+      const headBlock = b.blockAt(footPos.offset(0, 1, 0));
+      headInWater = !!headBlock && (headBlock.name === 'water' || headBlock.name === 'flowing_water');
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const probe = b.blockAt(footPos.offset(dx, 0, dz));
         if (probe?.name === 'lava') lavaNeighbors.push({ x: footPos.x + dx, y: footPos.y, z: footPos.z + dz });
@@ -177,6 +183,7 @@ export function createReactive(deps) {
       lava_neighbors: lavaNeighbors,
       adjacent_lava: lavaNeighbors.length > 0,
       in_water: inWater,
+      head_in_water: headInWater,
       oxygen: typeof b.oxygenLevel === 'number' ? b.oxygenLevel : 20,
     };
   }
@@ -206,6 +213,15 @@ export function createReactive(deps) {
     // could override a pathfinder goal that was driving it deeper.
     if (state.in_water && state.oxygen <= 14) {
       return { action: 'swim_up', oxygen: state.oxygen, why: 'low_oxygen' };
+    }
+    // In-water, non-drowning: bot is wading. If we've been in water for
+    // multiple ticks without lateral progress (creeperFleeLastDist-style
+    // detection isn't right for this — we just want "head dipping into
+    // water"), surface via swim_up so head clears and oxygen tops back up.
+    // This is the "standing in a 1-block flowing current" case from the
+    // experiment session — bot was being pushed around and couldn't act.
+    if (state.in_water && state.head_in_water) {
+      return { action: 'swim_up', oxygen: state.oxygen, why: 'head_in_water' };
     }
 
     // Always-on safety: creeper proximity flees regardless of mode.

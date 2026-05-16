@@ -162,10 +162,15 @@ function neighborStatus(b, bx, by, bz, dx, dz) {
  *   'three_walled'       — 3 dirs blocked (one escape)
  *   'edge'               — ≥1 dir has 'no_support' (cliff)
  *   'wedge'              — bot's position is fractionally between two cells
+ *   'in_flowing_water'   — foot block is flowing_water; current pushes the
+ *                          bot every tick. Special escape needed (sprint
+ *                          perpendicular / place block / pillar up).
+ *   'in_water'           — foot block is water source (still). Bot can
+ *                          stand but pathfinder may struggle.
  *   'open'               — 0–1 dirs blocked, no cliff, on solid ground
  *
- * Order matters: in_air > trapped > enclosure_inside > three_walled >
- * corner > alley > wedge > edge > open.
+ * Order matters: in_air > in_flowing_water > in_water > trapped >
+ * enclosure_inside > three_walled > corner > alley > wedge > edge > open.
  */
 export function standingState(b) {
   if (!b || !b.entity || !b.entity.position) {
@@ -177,9 +182,13 @@ export function standingState(b) {
   const bz = Math.floor(p.z);
 
   const below = b.blockAt(new Vec3(bx, by - 1, bz));
+  const foot = b.blockAt(new Vec3(bx, by, bz));
   const head = b.blockAt(new Vec3(bx, by + 1, bz));
   const foot_support = below ? below.boundingBox === 'block' : null;
   const head_blocked = head ? !AIR_NAMES.has(head.name) : null;
+  const foot_in_water = !!foot && (foot.name === 'water' || foot.name === 'flowing_water');
+  const foot_in_flowing = !!foot && foot.name === 'flowing_water';
+  const head_in_water = !!head && (head.name === 'water' || head.name === 'flowing_water');
 
   const neighbor_status = {};
   for (const d of DIRS) {
@@ -240,8 +249,18 @@ export function standingState(b) {
 
   // Classify by priority order
   let classification;
-  if (foot_support === false && !blocked_dirs.length) {
+  if (foot_support === false && !blocked_dirs.length && !foot_in_water) {
     classification = 'in_air';
+  } else if (foot_in_flowing) {
+    // Foot in flowing water: current pushes the bot every tick. Highest
+    // priority after in_air because the bot can't reliably do anything
+    // else (mine, place, walk) until clear of the current.
+    classification = 'in_flowing_water';
+  } else if (foot_in_water) {
+    // Foot in source water: bot can stand, but pathfinder swim physics
+    // and the SUBMERGED-dig guard create their own issues. Worth
+    // classifying separately so mc escape can pick a water strategy.
+    classification = 'in_water';
   } else if (blocked_dirs.length === 4) {
     classification = 'trapped';
   } else if (enclosure_inside && max_wall_distance > 1) {
@@ -278,6 +297,9 @@ export function standingState(b) {
     ceiling_within,
     wedge_offset,
     enclosure_inside,
+    foot_in_water,
+    foot_in_flowing,
+    head_in_water,
     neighbor_status,
   };
 }

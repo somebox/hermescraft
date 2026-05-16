@@ -355,12 +355,20 @@ export function createMiningActions(deps) {
       const isFlooded = (pos) => {
         const above = b.blockAt(pos.offset(0, 1, 0));
         if (above && (above.name === 'water' || above.name === 'flowing_water')) return true;
-        let wn = 0;
+        // Any adjacent FLOWING water → the dug cell will flood within
+        // a few ticks (flowing water spreads into newly opened space).
+        // Source water needs 2+ adjacent before we call it flooded —
+        // a single source block at the same Y can't flow into the dug
+        // cell unless the cell is at a lower Y, which is rare for the
+        // dirt/sand the bot mines for fill.
+        let waterSources = 0;
         for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
           const nb = b.blockAt(pos.offset(dx, 0, dz));
-          if (nb && (nb.name === 'water' || nb.name === 'flowing_water')) wn++;
+          if (!nb) continue;
+          if (nb.name === 'flowing_water') return true;
+          if (nb.name === 'water') waterSources++;
         }
-        return wn >= 2;
+        return waterSources >= 2;
       };
 
       if (safe.length === 0) {

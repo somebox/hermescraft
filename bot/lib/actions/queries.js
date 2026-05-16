@@ -326,6 +326,168 @@ export function createQueriesActions(services) {
       });
     }
 
+    // Water escape: in_water or in_flowing_water. Strategies in order:
+    //   1. Find nearest dry standable cell within 4 cardinals; pathfind +
+    //      brute-force sprint to it. Solves the "river crossing" case.
+    //   2. Place a block under feet from any placeable in inventory
+    //      (dirt/cobble/sand/planks). Creates a foothold above water.
+    //   3. Pillar up: jump+place under feet repeatedly to climb out.
+    // Reactive layer's `swim_up` only handles drowning (oxygen ≤ 14); this
+    // verb handles the standing-in-current case where the bot isn't yet
+    // drowning but is stuck.
+    if (cls === 'in_water' || cls === 'in_flowing_water') {
+      const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
+      const DIR_VEC = {
+        N: { dx: 0, dz: -1 }, E: { dx: 1, dz: 0 }, S: { dx: 0, dz: 1 }, W: { dx: -1, dz: 0 },
+      };
+      // 1. Scan 4 cardinals for a dry standable within 4 blocks.
+      let bestDry = null;
+      for (const [dirName, v] of Object.entries(DIR_VEC)) {
+        for (let r = 1; r <= 4; r++) {
+          const tx = cell.x + v.dx * r;
+          const ty = cell.y;
+          const tz = cell.z + v.dz * r;
+          const floor = b.blockAt(new Vec3(tx, ty - 1, tz));
+          const footAt = b.blockAt(new Vec3(tx, ty, tz));
+          const headAt = b.blockAt(new Vec3(tx, ty + 1, tz));
+          if (!floor || !footAt || !headAt) break;
+          const solidFloor = floor.boundingBox === 'block' && floor.name !== 'water' && floor.name !== 'flowing_water';
+          const openFoot = AIR_NAMES.has(footAt.name);
+          const openHead = AIR_NAMES.has(headAt.name);
+          if (solidFloor && openFoot && openHead) {
+            if (!bestDry || r < bestDry.r) bestDry = { dir: dirName, r, target: { x: tx, y: ty, z: tz } };
+            break;
+          }
+        }
+      }
+      const attempts = [];
+      // 2. Try pathfinder + sprint toward nearest dry cell.
+      if (bestDry) {
+        try {
+          const goal = new goals.GoalBlock(bestDry.target.x, bestDry.target.y, bestDry.target.z);
+          await Promise.race([
+            b.pathfinder.goto(goal),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('water_to')), 2500)),
+          ]);
+        } catch {
+          try { b.pathfinder.setGoal(null); } catch {}
+        }
+        let after = standingState(b);
+        attempts.push({ method: 'pathfinder', dir: bestDry.dir, after: after.classification });
+        if (!after.foot_in_water) {
+          return recordEscapeSuccess({
+            ok: true,
+            data: { action_taken: `swim_${bestDry.dir}`, from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, target: bestDry.target, attempts, success: true },
+            result: `Swam to dry ground ${bestDry.dir} (${bestDry.r} blocks). Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+          });
+        }
+        // Brute-force: look at the dry target and burst forward+sprint+jump
+        try {
+          await b.lookAt(new Vec3(bestDry.target.x + 0.5, cell.y + 1.6, bestDry.target.z + 0.5));
+          b.setControlState('forward', true);
+          b.setControlState('sprint', true);
+          b.setControlState('jump', true);
+          await new Promise(r => setTimeout(r, 900));
+        } finally {
+          try { b.setControlState('forward', false); b.setControlState('sprint', false); b.setControlState('jump', false); } catch {}
+        }
+        after = standingState(b);
+        attempts.push({ method: 'sprint_jump', dir: bestDry.dir, after: after.classification });
+        if (!after.foot_in_water) {
+          return recordEscapeSuccess({
+            ok: true,
+            data: { action_taken: `sprint_${bestDry.dir}`, from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, target: bestDry.target, attempts, success: true },
+            result: `Sprinted out to dry ground ${bestDry.dir}. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+          });
+        }
+      }
+      // 3. Place a block under feet or pillar up.
+      const PLACEABLE_RE = /^(dirt|coarse_dirt|cobblestone|stone|sand|gravel|.*_planks|netherrack)$/;
+      const placeable = b.inventory.items().find(i => PLACEABLE_RE.test(i.name));
+      if (placeable) {
+        try {
+          await b.equip(placeable, 'hand');
+          // Look down at the block below us; place block on its top face.
+          const refBlock = b.blockAt(new Vec3(cell.x, cell.y - 1, cell.z));
+          if (refBlock && refBlock.boundingBox === 'block') {
+            await b.placeBlock(refBlock, new Vec3(0, 1, 0));
+          } else {
+            // Floor is also water — try side-place from a solid neighbor below
+            for (const v of Object.values(DIR_VEC)) {
+              const sideBlock = b.blockAt(new Vec3(cell.x + v.dx, cell.y - 1, cell.z + v.dz));
+              if (sideBlock && sideBlock.boundingBox === 'block') {
+                try {
+                  await b.placeBlock(sideBlock, new Vec3(-v.dx, 1, -v.dz));
+                  break;
+                } catch {}
+              }
+            }
+          }
+          await new Promise(r => setTimeout(r, 400));
+        } catch (e) {
+          attempts.push({ method: 'place_floor', error: e?.message || String(e) });
+        }
+        let after = standingState(b);
+        attempts.push({ method: 'place_floor', after: after.classification, placed: placeable.name });
+        if (!after.foot_in_water) {
+          return recordEscapeSuccess({
+            ok: true,
+            data: { action_taken: 'place_floor', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, placed: placeable.name, attempts, success: true },
+            result: `Placed ${placeable.name} as foothold. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+          });
+        }
+        // Pillar up: jump+place under feet repeatedly.
+        try {
+          for (let i = 0; i < 3; i++) {
+            // Look straight down so place targets the block we're standing on
+            await b.lookAt(new Vec3(cell.x + 0.5, cell.y - 0.5, cell.z + 0.5));
+            b.setControlState('jump', true);
+            await new Promise(r => setTimeout(r, 300));
+            const ref = b.blockAt(new Vec3(cell.x, cell.y, cell.z));
+            // After the jump the bot's foot cell becomes air briefly;
+            // place targets a solid neighbor 1 below the jump apex.
+            const refBelow = b.blockAt(new Vec3(cell.x, cell.y - 1, cell.z));
+            if (refBelow && refBelow.boundingBox === 'block') {
+              try { await b.placeBlock(refBelow, new Vec3(0, 1, 0)); } catch {}
+            }
+            b.setControlState('jump', false);
+            await new Promise(r => setTimeout(r, 200));
+          }
+        } catch {
+          try { b.setControlState('jump', false); } catch {}
+        }
+        after = standingState(b);
+        attempts.push({ method: 'pillar_up', after: after.classification });
+        if (!after.foot_in_water) {
+          return recordEscapeSuccess({
+            ok: true,
+            data: { action_taken: 'pillar_up', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, placed: placeable.name, attempts, success: true },
+            result: `Pillared up out of water with ${placeable.name}. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+          });
+        }
+      }
+      // Nothing worked.
+      return {
+        ok: false,
+        error: {
+          code: 'STUCK_IN_WATER',
+          message: `Stuck in ${cls === 'in_flowing_water' ? 'flowing ' : ''}water at (${cell.x},${cell.y},${cell.z}). ${bestDry ? `Nearest dry ground is ${bestDry.r} blocks ${bestDry.dir} but couldn't reach it.` : 'No dry ground within 4 blocks in any cardinal direction.'}${placeable ? ` Tried placing ${placeable.name} but still in water.` : ' No placeable blocks (dirt/cobble/sand/planks) in inventory to make a foothold.'}`,
+          observed_state: {
+            classification: cls,
+            foot_in_water: before.foot_in_water,
+            head_in_water: before.head_in_water,
+            nearest_dry: bestDry,
+            has_placeable: !!placeable,
+            attempts,
+          },
+          next_action_hint: placeable
+            ? 'Position has flowing water on all sides — try mc dig the water source above (if any), or call from a different cell.'
+            : 'mc collect 8 dirt or cobblestone from a dry spot, then call mc escape again.',
+          retry_safe: false,
+        },
+      };
+    }
+
     // Sidestep for corner/three_walled/wedge/edge.
     if (cls === 'corner' || cls === 'three_walled' || cls === 'wedge' || cls === 'edge') {
       const DIR_VEC = {
