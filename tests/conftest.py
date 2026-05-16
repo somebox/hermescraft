@@ -129,32 +129,39 @@ def predicates():
 
 
 # ── In-game test announcement (functional tier only) ─────────────────
-# When watching the Minecraft server live, an autouse fixture broadcasts
-# the test number + name via rcon `say` at the start of each functional
-# test. This shows up in MC chat / server console / spectator overlay,
-# making it easy to correlate in-world events with which pytest case
-# is running. Skipped for unit/integration tiers because (a) unit has
-# no live world, (b) integration broadcasts its own LLM-driven chat.
+# When watching the Minecraft server live, broadcast each functional
+# test's number + nodeid via rcon `say` AT TEST START — after all fixture
+# setup has completed, so the setup rcon commands don't push the
+# announcement off the chat log before the test actually runs.
+#
+# Implementation: pytest_runtest_call hook fires right before the test
+# body executes (after all setup fixtures resolve). Skipped for
+# unit/integration tiers because (a) unit has no live world, (b)
+# integration broadcasts its own LLM-driven chat.
 
 _test_counter = {"n": 0}
 
 
-@pytest.fixture(autouse=True)
-def _announce_functional_test(request, rcon, config):
-    """Broadcast the test number + nodeid via rcon `say` at start of every
-    functional-tier test. No-op for non-functional tests."""
-    if not request.node.get_closest_marker("functional"):
+def pytest_runtest_call(item):
+    """Broadcast the test number + short nodeid via rcon `say` at the
+    exact moment the test body is about to execute.
+
+    Resolves the `rcon` and `config` session fixtures via the item's
+    `_request`. rcon hiccups are swallowed — the announcement is purely
+    for human observation, not a contract.
+    """
+    if not item.get_closest_marker("functional"):
+        return
+    try:
+        config = item._request.getfixturevalue("config")
+        rcon = item._request.getfixturevalue("rcon")
+    except Exception:
         return
     _test_counter["n"] += 1
     n = _test_counter["n"]
-    # `request.node.nodeid` is "tests/functional/test_foo.py::test_bar".
-    # Keep the in-game broadcast short — drop the directory prefix.
-    nodeid = request.node.nodeid
-    short = nodeid.split("tests/functional/", 1)[-1]
+    short = item.nodeid.split("tests/functional/", 1)[-1]
     world = config["mc"]["world"]
     try:
         rcon.run(f'execute in {world} run say [test #{n}] {short}')
     except Exception:
-        # rcon hiccup shouldn't fail the test — the announcement is
-        # purely for human observation.
         pass
