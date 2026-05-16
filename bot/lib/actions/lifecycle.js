@@ -233,14 +233,35 @@ export function createLifecycleActions(services) {
   },
 
   // ── Death / Respawn ─────────────────────────────────
-  async respawn({ confirm } = {}) {
+  async respawn({ confirm, force } = {}) {
     if (String(confirm) !== 'yes') {
-      return { error: 'Respawn uses /kill — you die and drop all items. Pass confirm=yes to proceed.' };
+      return { error: 'Respawn uses /kill — you die and DROP ALL ITEMS. Pass confirm=yes to proceed. If you just want to go home, use mc go_mark home or mc goto.' };
     }
     const b = ensureBot();
     const pos = posObj();
     const username = getMyName();
     const items = b.inventory.items().map((i) => `${i.name}x${i.count}`);
+    // Safety guard: refuse to /kill a live, healthy bot. Voluntary respawn
+    // at HP > 6 is almost always misuse (agent interpreting "go back to
+    // base" as a respawn cue). Force=yes lets a deliberate user opt out.
+    const hp = b.health ?? 20;
+    const isAlive = b.isAlive !== false;
+    if (isAlive && hp > 6 && String(force) !== 'yes') {
+      return {
+        ok: false,
+        error: {
+          code: 'RESPAWN_REFUSED_HEALTHY',
+          message: `Refusing /kill — bot is alive with HP=${hp.toFixed(1)} (> 6). Voluntary respawn while healthy almost always destroys inventory needlessly. Use mc go_mark home / mc goto to travel, or mc escape if stuck. If you really need to die, pass force=yes.`,
+          observed_state: {
+            hp,
+            inventory_size: items.length,
+            position: pos,
+            alternatives: ['mc go_mark home', 'mc goto X Y Z', 'mc escape'],
+          },
+          retry_safe: false,
+        },
+      };
+    }
     log(`Voluntary respawn at ${pos.x},${pos.y},${pos.z}. Dropping: ${items.join(', ') || 'nothing'}`);
 
     // Primary: use PaperMCP to run /kill server-side (bypasses chat protocol issues)

@@ -1335,13 +1335,14 @@ export const RAW_COMMAND_DEFS = [
   g('respawn', 'world', [], {
     method: 'POST',
     path: '/action/respawn',
-    description: 'Kill and respawn at spawn point. Use when hopelessly stuck underground with no tools or resources to escape. All inventory is dropped at the death location.',
-    usage: 'mc respawn yes',
-    examples: ['mc respawn yes'],
+    description: 'LAST RESORT — kills the bot via /kill and respawns at spawn point. DESTROYS ALL INVENTORY at the death location. Do NOT use this to travel home; use `mc go_mark home` or `mc goto` instead. Refused while alive with HP > 6 unless force=yes is also passed — at full HP this is almost always a misuse. Reserved for hopelessly stuck cases with no other escape (deep cave-in, void edge, drowning loop with no placeable blocks).',
+    usage: 'mc respawn yes [force=yes]',
+    examples: ['mc respawn yes', 'mc respawn yes force=yes  # only when alive+healthy and TRULY stuck'],
     argSchema: [
-      { key: 'confirm', type: 'string', required: true, description: 'Must be "yes" to confirm' },
+      { key: 'confirm', type: 'string', required: true, description: 'Must be "yes" to confirm; this DROPS ALL ITEMS.' },
+      { key: 'force', type: 'string', required: false, description: 'Pass "yes" to override the HP>6 safety guard when alive.' },
     ],
-    bodyFn: (p) => JSON.stringify({ confirm: p.confirm }),
+    bodyFn: (p) => JSON.stringify({ confirm: p.confirm, ...(p.force ? { force: p.force } : {}) }),
   }),
 
   /* chest */
