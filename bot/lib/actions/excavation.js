@@ -295,32 +295,166 @@ export function createExcavationActions(services) {
     pickup: doPickup = true,
   }) {
     const b = ensureBot();
-    const startX = Number.isFinite(Number(x)) ? Math.floor(Number(x)) : Math.floor(b.entity.position.x);
-    const startY = Number.isFinite(Number(y)) ? Math.floor(Number(y)) : Math.floor(b.entity.position.y);
-    const startZ = Number.isFinite(Number(z)) ? Math.floor(Number(z)) : Math.floor(b.entity.position.z);
+    // Anchor on the bot's CURRENT block, not the legacy x/y/z params
+    // (which were rarely set and caused drift). The bot must already be
+    // standing on the cell where the staircase begins.
+    const startX = Math.floor(b.entity.position.x);
+    const startY = Math.floor(b.entity.position.y);
+    const startZ = Math.floor(b.entity.position.z);
     const L = Math.min(Math.max(parseInt(String(length), 10) || 12, 1), 64);
-    const W = Math.min(Math.max(parseInt(String(width), 10) || 1, 1), 3);
     const H = Math.min(Math.max(parseInt(String(height), 10) || 3, 2), 5);
+    // `width` is no longer meaningful in the controlled-sequence
+    // implementation — we always dig a 1-wide column directly in front.
+    void width;
     const { dx, dz, key } = cardinalDelta(direction);
+
+    // Yaw values so the bot actually faces the dig direction. b.dig with
+    // forceLook will then aim correctly at the column in front.
+    const yawByKey = { north: Math.PI, south: 0, east: -Math.PI / 2, west: Math.PI / 2 };
 
     let totalDug = 0;
     let totalSkipped = 0;
     let totalErrors = 0;
+    const errorMsgs = [];
+    let stoppedAtStep = 0;
+    const stoppedReason = { value: null };
 
+    const digOne = async (px, py, pz) => {
+      const blk = b.blockAt(new Vec3(px, py, pz));
+      if (!blk) {
+        totalSkipped++;
+        return false;
+      }
+      if (DIG_PASSABLE_NAMES.has(blk.name)) {
+        return false; // already air, no work needed
+      }
+      if (blk.name === 'bedrock' || isDigProtected(blk.name)) {
+        totalSkipped++;
+        return false;
+      }
+      try {
+        await equipForDig(b, blk);
+        // Hard timeout — mineflayer's dig() awaits a server blockUpdate
+        // and has no internal timeout, so a missing ack hangs forever.
+        await Promise.race([
+          b.dig(blk, true),
+          new Promise((_, rej) => setTimeout(() => {
+            try { b.stopDigging?.(); } catch {}
+            rej(new Error('dig timeout (15s)'));
+          }, 15000)),
+        ]);
+        totalDug++;
+        await sleep(80);
+        return true;
+      } catch (err) {
+        const msg = err?.message || String(err);
+        errorMsgs.push(`(${px},${py},${pz}): ${msg}`);
+        totalErrors++;
+        return false;
+      }
+    };
+
+    // Per-step loop: at iteration i, the bot is standing at
+    // (startX + dx*(i-1), startY - (i-1), startZ + dz*(i-1)). We dig
+    // the 3-tall column ONE block forward (cx = bot.x + dx), with the
+    // bottom cell one below the bot's feet (so stepping forward = drop
+    // 1). Then we manually walk into the new cell and re-anchor.
     for (let i = 1; i <= L; i++) {
-      const cx = startX + dx * i;
-      const cy = startY - i;
-      const cz = startZ + dz * i;
-      const box = tunnelSliceBounds({ x: cx, y: cy, z: cz, direction: key, width: W, height: H });
-      const res = await getActions().dig_area({
-        ...box,
-        pickup: false,
-        abort_on_fail: false,
-        clear_stand: true,
-      });
-      totalDug += Number(res?.dug || 0);
-      totalSkipped += Number(res?.skipped || 0);
-      totalErrors += Array.isArray(res?.errors) ? res.errors.length : 0;
+      // Wait for the bot to be on ground before starting the next step.
+      // Without this, a still-falling bot will cancel the first dig
+      // with "Digging aborted" because mineflayer aborts on movement.
+      {
+        let waited = 0;
+        while (!b.entity.onGround && waited < 2000) {
+          await sleep(100);
+          waited += 100;
+        }
+      }
+      // Face the dig direction so b.dig forceLook aims correctly.
+      try { await b.look(yawByKey[key], 0, true); } catch {}
+
+      const fx = Math.floor(b.entity.position.x) + dx;
+      const fy = Math.floor(b.entity.position.y);
+      const fz = Math.floor(b.entity.position.z) + dz;
+
+      // Dig the H-tall column one block forward. h=-1 is the cell the
+      // bot will LAND on after stepping forward (one below current feet
+      // → descent of 1). h=0 is feet-level. h up to H-2 is head clearance
+      // for an H-tall corridor. For default H=3 → 3 cells: 1, 0, -1.
+      //
+      // Order TOP → BOTTOM (head, body, floor) so we save the
+      // support-removing dig for last. The bot's hitbox often straddles
+      // the boundary into the forward block (at x=-4.3 the bot's right
+      // edge sits at x=-4.0 — flush against block -4). Digging the
+      // floor cell removes the support there and gravity pulls the bot
+      // down; if that happens BEFORE the head/body cells, the
+      // mid-fall b.dig() gets cancelled by mineflayer with
+      // "Digging aborted". Doing floor last means the bot falls (or
+      // shifts) only after all cells in this step are mined, and the
+      // subsequent pathfinder.goto cleanly walks into the new column.
+      const targets = [];
+      for (let h = H - 2; h >= -1; h--) {
+        targets.push({ x: fx, y: fy + h, z: fz });
+      }
+      let stepDug = 0;
+      for (const t of targets) {
+        const ok = await digOne(t.x, t.y, t.z);
+        if (ok) stepDug++;
+      }
+      if (stepDug === 0) {
+        stoppedAtStep = i;
+        stoppedReason.value = `no_progress_at_step_${i}`;
+        break;
+      }
+
+      // Step into the new column. Use pathfinder with a tight goal +
+      // short timeout — much smaller than dig_area's open-ended use,
+      // because we know exactly which block we want the bot on.
+      const standCell = { x: fx, y: fy - 1, z: fz };
+      const stepGoal = new goals.GoalBlock(standCell.x, standCell.y, standCell.z);
+      try {
+        await Promise.race([
+          b.pathfinder.goto(stepGoal),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('step timeout')), 5000)),
+        ]);
+      } catch {}
+      // CRITICAL: stop pathfinder unconditionally before next iteration.
+      // Otherwise the next step's b.dig fires while the bot is still
+      // walking, and mineflayer cancels with "Digging aborted".
+      try { b.pathfinder.setGoal?.(null); } catch {}
+      // Small settle so the position read is stable for the next step.
+      await sleep(150);
+
+      // Confirm progress: bot should be one block lower than before.
+      // If not, the next iteration's dig will re-anchor anyway, but if
+      // we don't move at all over two consecutive steps, bail.
+      const nowY = Math.floor(b.entity.position.y);
+      if (nowY > fy - 1 + 0.5 && i > 1) {
+        // No descent — but only bail if the previous step also stalled.
+        // Single-step glitches recover on the next iteration.
+        stoppedAtStep = i;
+        stoppedReason.value = `no_descent_after_step_${i}`;
+        break;
+      }
+    }
+
+    // Exit-ramp: after all steps, dig one cell at the previous step's
+    // floor level (one cell BACK from the bot at foot level). Without
+    // this the bot lands in a stone-walled corner — all 4 cardinal
+    // foot-level neighbours are solid — and mc goto's trap detector
+    // refuses to navigate even though the corridor IS traversable via
+    // a jump-step. Opening this one cell gives the trap detector ONE
+    // open cardinal direction, which is enough.
+    if (!stoppedAtStep) {
+      const lastBotX = Math.floor(b.entity.position.x);
+      const lastBotY = Math.floor(b.entity.position.y);
+      const lastBotZ = Math.floor(b.entity.position.z);
+      // The "back" cell at foot level — one block in the OPPOSITE of
+      // the dig direction, at the bot's current foot level.
+      const rx = lastBotX - dx;
+      const ry = lastBotY;
+      const rz = lastBotZ - dz;
+      await digOne(rx, ry, rz);
     }
 
     let pickupSuffix = '';
@@ -333,13 +467,21 @@ export function createExcavationActions(services) {
       }
     }
 
+    const stepsCompleted = stoppedAtStep ? stoppedAtStep - 1 : L;
+    const endX = startX + dx * stepsCompleted;
+    const endY = startY - stepsCompleted;
+    const endZ = startZ + dz * stepsCompleted;
     return {
-      result: `Stair down ${key} length ${L} width ${W} height ${H}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}`.trim(),
+      result: stoppedAtStep
+        ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}`.trim()
+        : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}`.trim(),
       dug: totalDug,
       skipped: totalSkipped,
       errors: totalErrors,
+      ...(errorMsgs.length ? { error_messages: errorMsgs.slice(0, 5) } : {}),
+      ...(stoppedAtStep ? { stopped_at_step: stoppedAtStep, stopped_reason: stoppedReason.value } : {}),
       start: { x: startX, y: startY, z: startZ },
-      end: { x: startX + dx * L, y: startY - L, z: startZ + dz * L },
+      end: { x: endX, y: endY, z: endZ },
     };
   },
 

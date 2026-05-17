@@ -98,7 +98,7 @@ def pit_arena(rcon, arena, tester_bot, config):
     time.sleep(0.5)
     # Always rescue first: peaceful + creative + safe TP. Survives any
     # prior-test crash, void-fall, or mid-respawn state.
-    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]))
+    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]), bot=tester_bot)
     arena.clean()
 
     x1, y1, z1, x2, y2, z2 = VOLUME

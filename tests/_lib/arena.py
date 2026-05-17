@@ -68,21 +68,28 @@ class Arena:
         self,
         *,
         safe_xyz: tuple[float, float, float] = (0.0, 100.0, 0.0),
+        bot: "BotClient | None" = None,
     ) -> None:
         """Force the Tester bot into a clean, alive, invulnerable state.
 
         Use at the TOP of every fixture so it doesn't matter how the previous
         test (or an external command) left the bot. Sequence:
 
-          1. difficulty peaceful — auto-regen + no mob aggro
-          2. gamemode creative   — immediate full HP, invulnerable, no fall dmg
-          3. tp to safe coords   — preempt void/lava interactions
+          1. POST /action/stop — clear any in-flight pathfinder goal from
+             a prior test (e.g. one that timed out mid-walk)
+          2. difficulty peaceful — auto-regen + no mob aggro
+          3. gamemode creative   — immediate full HP, invulnerable, no fall dmg
+          4. tp to safe coords   — preempt void/lava interactions
 
-        Caller's fixture is expected to flip back to survival later, after
-        the arena is built and the bot is positioned. This helper is purely
-        about reaching a known-good baseline without assumptions about the
-        bot's prior state (e.g. dead-mid-respawn, in the void, on fire).
+        Pass `bot` if you have a BotClient handy — without it the
+        /action/stop step is skipped (a stale pathfinder goal will still
+        be cleared next time it crosses /action/stop or similar).
         """
+        if bot is not None:
+            try:
+                bot.post("/action/stop", {}, timeout=3.0)
+            except Exception:
+                pass
         sx, sy, sz = safe_xyz
         self.rcon.batch([
             f"execute in {self.world} run difficulty peaceful",

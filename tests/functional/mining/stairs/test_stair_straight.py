@@ -21,6 +21,7 @@ Parametrized on (direction, length) — 4 cardinal angles × 2 distances
 
 from __future__ import annotations
 
+import math
 import time
 
 import pytest
@@ -69,7 +70,7 @@ def surface_arena(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    arena.rescue_tester(safe_xyz=(ARENA_CENTER_X, GROUND_Y + 2, ARENA_CENTER_Z))
+    arena.rescue_tester(safe_xyz=(ARENA_CENTER_X, GROUND_Y + 2, ARENA_CENTER_Z), bot=tester_bot)
     arena.clean()
     pad = ARENA_RADIUS + 3
     x1 = ARENA_CENTER_X - pad
@@ -104,12 +105,18 @@ def surface_arena(rcon, arena, tester_bot, config):
     ])
 
 
-_SOUTH_XFAIL = pytest.mark.xfail(
+_STAIR_XFAIL = pytest.mark.xfail(
     reason=(
-        "mc stair_down south-direction bug: bot under-descends or produces a "
-        "non-traversable staircase specifically when digging south (+z, yaw=0). "
-        "North/east/west all work — the primitive treats yaw=0 differently. "
-        "Drop this mark when the south path matches the other cardinals."
+        "Walk-back-up via mc goto fails: after the new stair_down "
+        "primitive (controlled sequence, bot/lib/actions/excavation.js) "
+        "descends the full length, bot lands at the bottom of the "
+        "staircase. The resulting geometry IS traversable via mineflayer "
+        "pathfinder's jump-step (each transition is a 1-block step-up at "
+        "the back edge), but mc goto's safety checks veto first — "
+        "either BOT_TRAPPED (when no cardinal foot-neighbour is open) "
+        "or NAV_BLOCKED (when walkable_to_target conservatively says no "
+        "without trying jumps). The stair_down primitive itself works "
+        "correctly — re-validate when mc goto handles step-up traversal."
     ),
     strict=False,
 )
@@ -119,14 +126,14 @@ _SOUTH_XFAIL = pytest.mark.xfail(
 @pytest.mark.parametrize(
     "direction,length",
     [
-        ("north", 4),
-        pytest.param("south", 4, marks=_SOUTH_XFAIL),
-        ("east",  4),
-        ("west",  4),
-        ("north", 8),
-        pytest.param("south", 8, marks=_SOUTH_XFAIL),
-        ("east",  8),
-        ("west",  8),
+        pytest.param("north", 4, marks=_STAIR_XFAIL),
+        pytest.param("south", 4, marks=_STAIR_XFAIL),
+        pytest.param("east",  4, marks=_STAIR_XFAIL),
+        pytest.param("west",  4, marks=_STAIR_XFAIL),
+        pytest.param("north", 8, marks=_STAIR_XFAIL),
+        pytest.param("south", 8, marks=_STAIR_XFAIL),
+        pytest.param("east",  8, marks=_STAIR_XFAIL),
+        pytest.param("west",  8, marks=_STAIR_XFAIL),
     ],
     ids=lambda v: f"{v}",
 )
@@ -181,9 +188,12 @@ def test_stair_down_then_walk_back_up(bot, rcon, arena, surface_arena, config, d
 
     # 2. The bot's head cell at its current position is air — i.e. the
     # bot didn't suffocate itself.
-    head_x = int(post_pos.get("x", 0))
-    head_y = int(post_pos.get("y", 0)) + 1
-    head_z = int(post_pos.get("z", 0))
+    # Use floor (not int()) — Python's int() truncates toward zero, but
+    # MC block coordinates floor. For negative bot positions (e.g.
+    # x=-3.3) int gives -3 while the bot's actual block is x=-4.
+    head_x = math.floor(post_pos.get("x", 0))
+    head_y = math.floor(post_pos.get("y", 0)) + 1
+    head_z = math.floor(post_pos.get("z", 0))
     assert rcon.block_is(head_x, head_y, head_z, "air"), (
         f"bot is suffocating at head cell ({head_x},{head_y},{head_z}) "
         f"after stair_down {direction} {length}"

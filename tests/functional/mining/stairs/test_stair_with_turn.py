@@ -37,7 +37,7 @@ def stair_cube(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    arena.rescue_tester(safe_xyz=(CUBE_CENTER[0], PLATFORM_Y + 2, CUBE_CENTER[2]))
+    arena.rescue_tester(safe_xyz=(CUBE_CENTER[0], PLATFORM_Y + 2, CUBE_CENTER[2]), bot=tester_bot)
     arena.clean()
     pad = 4
     rcon.batch([

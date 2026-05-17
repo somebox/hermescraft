@@ -72,7 +72,7 @@ def water_arena(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]))
+    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]), bot=tester_bot)
     arena.clean()
     x1, y1, z1, x2, y2, z2 = VOLUME
     cmds = [
