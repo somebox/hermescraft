@@ -866,7 +866,12 @@ export function createMiningActions(deps) {
       if (collected === 0) {
         let code;
         let message;
-        if (wasCancelled) {
+        // `wasCancelled` is set inside the inner for-loop; but if
+        // cancelRequested was already true at entry to the outer while
+        // (e.g. set during the initial visibility scan), the loop never
+        // iterates and the local flag stays false. Trust the source flag
+        // too so the response code matches the actual reason for failure.
+        if (wasCancelled || ctx.tasks.cancelRequested) {
           code = 'CANCELLED';
           message = `Collect cancelled by mc stop before any ${blockName} was mined.`;
         } else if (attempted === 0) {
