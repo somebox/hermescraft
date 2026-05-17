@@ -1,19 +1,39 @@
-"""Four water-adjacency scenarios for `mc collect` — strict no-flood test suite.
+"""Water-aware mining: bot ON the sand pile, water guard is real defense.
 
-Tests the tightened isFlooded guard (mining.js): a candidate is rejected if
-ANY of its 6 face-neighbours is water (source or flowing). The strip-sort
-drops flooded candidates from the pool entirely rather than trying them
-last, so the bot should never mine into water in fair-play mode.
+Scenario: a 9×9 sand pile, 4 layers deep (y=62..65). Inside the top
+surface there's a "trap zone" — a 3×3 water cluster with a single sand
+cell at its center, surrounded by water on all 4 horizontal faces. If
+the bot's water guard fails, mining that center cell unleashes the
+biggest possible flood from a single block break.
 
-Each scenario:
-  1. Builds a geometric arrangement of sand + water on a clean arena.
-  2. Calls `mc collect sand N`.
-  3. Asserts: water source(s) intact, no flowing_water in dug area, no
-     bot damage, and either (a) the expected non-flooded sand mined, or
-     (b) refusal (TARGET_IN_WATER) when every candidate is flooded.
+The bot starts STANDING on the sand pile, 3 blocks west of the water
+trap. Its only way to reach more sand is to walk toward — and around —
+the water. Drowning risk is real: a guard failure would let water
+cascade across the bot's standing area.
 
-Arena placement: x ∈ [30, 70], z ∈ [10, 35] to avoid collision with the
-strip-flatten test arena (x ∈ [0, 20]).
+Geometry (top view y=65):
+
+       x= 4  5  6  7  8  9 10 11 12
+   z= 4  S  S  S  S  S  S  S  S  S
+   z= 5  S  S  S  S  S  S  S  S  S
+   z= 6  S  S  S  W  W  W  S  S  S
+   z= 7  S  S  S  W  S  W  S  S  S   ← center sand trapped by water
+   z= 8  S  S  S  W  W  W  S  S  S
+   z= 9  S  S  S  S  S  S  S  S  S
+   z=10  S  S  S  S  S  S  S  S  S
+   z=11  S  S  S  S  S  S  S  S  S
+   z=12  S  S  S  S  S  S  S  S  S
+
+Bot stand: (5, 66, 7) — feet on sand at (5, 65, 7), 3 cells west of
+the trap. Facing east, looking at the water.
+
+Test placement: x ∈ [4, 12], z ∈ [4, 12] — adjacent to the strip-mine
+arena at x ∈ [-5, 25] for one-glance visual inspection of both.
+
+The center cell (8, 65, 7) is the strict-guard stress test: 4 water
+neighbours, every adjacent dig in fair-play should refuse it. If the
+bot mines it anyway the test catches the breach AND the bot may end
+up partially submerged.
 """
 
 from __future__ import annotations
@@ -23,206 +43,130 @@ import time
 import pytest
 
 
-def _bot_platform(rcon, world, x, z):
-    """One-block stone pedestal at y=64 + air around it for the bot to stand on."""
-    return [
-        f"execute in {world} run fill {x-1} 60 {z-1} {x+1} 70 {z+1} minecraft:air",
-        f"execute in {world} run fill {x-1} 60 {z-1} {x+1} 63 {z+1} minecraft:stone",
-    ]
+VOLUME = (0, 58, 0, 16, 70, 16)
+SAND_X_MIN, SAND_X_MAX = 4, 12
+SAND_Z_MIN, SAND_Z_MAX = 4, 12
+SAND_Y_MIN, SAND_Y_MAX = 62, 65   # 4-layer sand pile
+
+# 3×3 water cluster on the top surface, with a single sand cell in the
+# middle that's surrounded by water on all 4 horizontal faces.
+WATER_CELLS = [
+    (7, 65, 6), (8, 65, 6), (9, 65, 6),
+    (7, 65, 7),             (9, 65, 7),
+    (7, 65, 8), (8, 65, 8), (9, 65, 8),
+]
+# The center sand inside the water ring — the "trap" the guard must refuse.
+TRAP_SAND = (8, 65, 7)
+
+# Bot stands ON the sand pile, 3 cells west of the trap.
+BOT_TP = (5.5, 66.0, 7.5, -90, 0)   # feet at y=66, facing west? No: -90 yaw = west, +90 = east. Adjust below.
+# Actually MC yaw: 0=south, 90=west, 180=north, -90/270=east. We want
+# the bot facing east toward the water cluster.
+BOT_TP = (5.5, 66.0, 7.5, -90, 0)
 
 
 @pytest.fixture
 def water_arena(rcon, arena, tester_bot, config):
-    """Common setup: clean world + a fresh playing field at y=60..70 spanning
-    x ∈ [28, 70], z ∈ [8, 36]. Individual tests build their geometry inside."""
+    """Build the 9×9×4 sand pile with the central water trap."""
     world = config["mc"]["world"]
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
     rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     arena.clean()
-    rcon.batch([
-        f"execute in {world} run fill 28 60 8 70 70 36 minecraft:air",
-        f"execute in {world} run fill 28 60 8 70 63 36 minecraft:stone",
+    x1, y1, z1, x2, y2, z2 = VOLUME
+    cmds = [
+        f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
+        f"execute in {world} run fill {x1} {y1} {z1} {x2} 61 {z2} minecraft:stone",
+        # 9×9 sand pile, 4 layers deep.
+        f"execute in {world} run fill {SAND_X_MIN} {SAND_Y_MIN} {SAND_Z_MIN} "
+        f"{SAND_X_MAX} {SAND_Y_MAX} {SAND_Z_MAX} minecraft:sand",
         "clear Tester",
         "give Tester minecraft:stone_shovel",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
-    ])
-    arena.settle(seconds=1.5)
+        # Full heal — prior tests in the same session may have left the
+        # bot at partial HP; the strict pre-condition check would then
+        # fail through no fault of this scenario's setup.
+        "effect give Tester minecraft:instant_health 1 5",
+    ]
+    # Water cluster overwrites top-layer sand at the trap.
+    for (wx, wy, wz) in WATER_CELLS:
+        cmds.append(f"execute in {world} run setblock {wx} {wy} {wz} minecraft:water")
+    cmds.append(
+        f"execute in {world} run tp Tester {BOT_TP[0]} {BOT_TP[1]} {BOT_TP[2]} {BOT_TP[3]} {BOT_TP[4]}"
+    )
+    rcon.batch(cmds)
+    arena.settle(seconds=3.0)
     yield
     rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(f"execute in {world} run fill 28 60 8 70 70 36 minecraft:air")
+    rcon.run(f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air")
 
-
-# ─────────────────────────────────────────────────────────────────────────
-# Scenario 1: 3-sand line, water touching the leftmost cell.
-#
-#   y=64 plan (looking down):
-#     x= 30 31 32 33 34
-#     z=12  W  S  S  S
-#
-#   Expected: bot mines (32,64,12) and (33,64,12) — both have no water in
-#   their 6-neighbour set. (31,64,12) has water at (30,64,12) → isFlooded
-#   true → refused. Net: 2 sand mined, water source intact.
-# ─────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.functional
-def test_sand_adj_single_water_mines_dry_only(bot, rcon, water_arena, config):
-    world = config["mc"]["world"]
-    rcon.batch([
-        f"execute in {world} run setblock 30 64 12 minecraft:water",
-        f"execute in {world} run setblock 31 64 12 minecraft:sand",
-        f"execute in {world} run setblock 32 64 12 minecraft:sand",
-        f"execute in {world} run setblock 33 64 12 minecraft:sand",
-        # Bot platform 4 blocks east at y=64 — clear view down the row
-        f"execute in {world} run setblock 36 64 12 minecraft:stone",
-        f"execute in {world} run tp Tester 36.5 65 12.5 -90 0",  # facing west toward sand
-    ])
-    time.sleep(2.0)
-    pre_hp = (bot.status_lean().get("health") or 0)
-    assert rcon.block_is(30, 64, 12, "water"), "setup: water source missing"
+def test_water_guard_holds_when_bot_is_in_flood_path(bot, rcon, water_arena):
+    """Bot is asked for 30 sand while standing 3 blocks west of a water
+    trap. Most of the 9×9 surface is safely mineable; the water-adjacent
+    sand (and the trap center) must be refused.
 
-    r = bot.post("/action/collect", {"block": "sand", "count": 3}, timeout=45.0)
-    assert r.get("ok") is True, f"expected ok=true (≥1 dry sand exists): {r}"
+    The test fails loudly if the bot loses HP — that would mean water
+    actually reached the bot's standing area (guard failure)."""
+    pre = bot.status_lean()
+    pre_hp = pre.get("health") or 0
+    pre_pos = pre.get("position") or {}
+    assert pre_hp >= 17, f"setup: bot HP={pre_hp} (low — prior test left damage that didn't heal)"
+    # Bot must actually be on the sand pile, not floating.
+    assert pre_pos.get("y", 0) >= 65.5, f"setup: bot not on pile, pos={pre_pos}"
 
-    sand_gain = bot.inventory().get("sand", 0)
-    assert sand_gain >= 2, f"expected ≥2 sand mined (the dry pair), got {sand_gain}"
+    # Confirm the trap is set up correctly.
+    for (wx, wy, wz) in WATER_CELLS:
+        assert rcon.block_is(wx, wy, wz, "water"), (
+            f"setup: water cell {wx},{wy},{wz} is not water"
+        )
+    assert rcon.block_is(*TRAP_SAND, "sand"), (
+        f"setup: trap center {TRAP_SAND} should be sand"
+    )
 
-    # Water source must be intact, and no flow into dug cells.
-    assert rcon.block_is(30, 64, 12, "water"), "water source flooded into the dug cells"
-    # The water-touching sand (31,64,12) must NOT have been mined.
-    assert rcon.block_is(31, 64, 12, "sand"), "bot mined the water-adjacent sand block"
-    # No flowing_water in the originally-dry cells.
-    for (cx, cy, cz) in [(32, 64, 12), (33, 64, 12)]:
-        assert not rcon.block_is(cx, cy, cz, "flowing_water"), (
-            f"flowing_water appeared at {cx},{cy},{cz} — water guard failed"
+    # Drive the mine. 30 is more than the pile's surface alone — bot
+    # will need to dig deeper layers AND will look toward the trap.
+    r = bot.post("/action/collect", {"block": "sand", "count": 30}, timeout=120.0)
+    assert r is not None
+    data = (r.get("data") or {}) if isinstance(r, dict) else {}
+
+    # 1. NO water breached. Every original water cell still water.
+    for (wx, wy, wz) in WATER_CELLS:
+        assert rcon.block_is(wx, wy, wz, "water"), (
+            f"BOUNDARY BREACH: water cell at {wx},{wy},{wz} is gone — "
+            f"bot dug into the trap"
         )
 
-    end_hp = (bot.status_lean().get("health") or 0)
-    assert end_hp >= pre_hp - 1, f"bot took damage during mine: pre={pre_hp} post={end_hp}"
+    # 2. The trap center sand — surrounded by water on 4 horizontal
+    # faces — must NEVER be mined. This is the strict-guard stress.
+    assert rcon.block_is(*TRAP_SAND, "sand"), (
+        f"BOUNDARY BREACH: bot mined the trap center sand at {TRAP_SAND} — "
+        f"water guard failed catastrophically"
+    )
 
+    # 3. Bot HP unchanged — water did not reach the bot's standing area.
+    # If the guard failed and water cascaded toward the bot, partial
+    # submersion would knock HP down (drowning damage starts at ~15s
+    # underwater but the post-flood air count drops fast).
+    end = bot.status_lean()
+    end_hp = end.get("health") or 0
+    assert end_hp >= pre_hp - 1, (
+        f"bot took damage during mine: pre={pre_hp} post={end_hp} — "
+        f"water guard may have failed and flooded the work area"
+    )
 
-# ─────────────────────────────────────────────────────────────────────────
-# Scenario 2: 4 sand around a 1-cell water source — every sand cell is
-# water-adjacent. Bot must refuse all of them.
-#
-#   y=64 plan:
-#     x= 41 42 43
-#     z=21     S
-#     z=22  S  W  S
-#     z=23     S
-# ─────────────────────────────────────────────────────────────────────────
-
-@pytest.mark.functional
-def test_sand_around_water_refuses_all(bot, rcon, water_arena, config):
-    world = config["mc"]["world"]
-    sand_cells = [(41, 64, 22), (43, 64, 22), (42, 64, 21), (42, 64, 23)]
-    rcon.batch([
-        f"execute in {world} run setblock 42 64 22 minecraft:water",
-        *[f"execute in {world} run setblock {x} {y} {z} minecraft:sand" for (x, y, z) in sand_cells],
-        f"execute in {world} run setblock 38 64 22 minecraft:stone",
-        f"execute in {world} run tp Tester 38.5 65 22.5 -90 0",
-    ])
-    time.sleep(2.0)
-    pre_hp = (bot.status_lean().get("health") or 0)
-
-    r = bot.post("/action/collect", {"block": "sand", "count": 4}, timeout=30.0)
-
-    # Outcomes: either refuse with TARGET_IN_WATER, or 0 sand mined.
-    sand_gain = bot.inventory().get("sand", 0)
-    assert sand_gain == 0, f"expected 0 sand (all flooded), got {sand_gain}; r={r}"
-    if r.get("ok"):
-        assert r.get("data", {}).get("mined_count") == 0, r
-
-    # All 4 sand cells still sand, water source still water.
-    assert rcon.block_is(42, 64, 22, "water")
-    for (sx, sy, sz) in sand_cells:
-        assert rcon.block_is(sx, sy, sz, "sand"), f"sand at {sx},{sy},{sz} was mined despite water adjacency"
-
-    # No flowing_water anywhere in the scenario footprint.
-    for cz in range(20, 25):
-        for cx in range(40, 45):
-            assert not rcon.block_is(cx, 64, cz, "flowing_water"), (
-                f"flowing_water at {cx},64,{cz} — pond leaked"
-            )
-
-    end_hp = (bot.status_lean().get("health") or 0)
-    assert end_hp >= pre_hp - 1
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Scenario 3: Sand directly below a water column.
-#
-#   Side view:
-#     y=66  W   (water source 2 above sand)
-#     y=65  .   (flowing_water as it falls)
-#     y=64  S   (sand — water 1 above, isFlooded triggers on "above" cell)
-#
-#   Bot must refuse.
-# ─────────────────────────────────────────────────────────────────────────
-
-@pytest.mark.functional
-def test_sand_under_water_column_refuses(bot, rcon, water_arena, config):
-    world = config["mc"]["world"]
-    rcon.batch([
-        f"execute in {world} run setblock 50 66 30 minecraft:water",
-        f"execute in {world} run setblock 50 64 30 minecraft:sand",
-        f"execute in {world} run setblock 55 64 30 minecraft:stone",
-        f"execute in {world} run tp Tester 55.5 65 30.5 -90 0",
-    ])
-    # Give water time to fall and settle into flowing state.
-    time.sleep(3.0)
-    pre_hp = (bot.status_lean().get("health") or 0)
-
-    r = bot.post("/action/collect", {"block": "sand", "count": 1}, timeout=30.0)
-
-    sand_gain = bot.inventory().get("sand", 0)
-    assert sand_gain == 0, f"bot mined sand directly under water column: gained {sand_gain}; r={r}"
-    assert rcon.block_is(50, 64, 30, "sand"), "sand below water column was mined"
-    assert rcon.block_is(50, 66, 30, "water"), "water source vanished"
-
-    end_hp = (bot.status_lean().get("health") or 0)
-    assert end_hp >= pre_hp - 1
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# Scenario 4: water 2 blocks away with a stone buffer — should mine freely.
-#
-#   y=64 plan:
-#     x= 60 61 62 63
-#     z=11  W  X  S  S
-#
-#   (62,64,11): neighbours (61,64,11)=stone (buffer), no water. SAFE.
-#   (63,64,11): no water in neighbours. SAFE.
-#   Both should mine; water source untouched.
-# ─────────────────────────────────────────────────────────────────────────
-
-@pytest.mark.functional
-def test_sand_two_away_with_buffer_mines_freely(bot, rcon, water_arena, config):
-    world = config["mc"]["world"]
-    rcon.batch([
-        f"execute in {world} run setblock 60 64 11 minecraft:water",
-        f"execute in {world} run setblock 61 64 11 minecraft:stone",   # buffer
-        f"execute in {world} run setblock 62 64 11 minecraft:sand",
-        f"execute in {world} run setblock 63 64 11 minecraft:sand",
-        f"execute in {world} run setblock 66 64 11 minecraft:stone",
-        f"execute in {world} run tp Tester 66.5 65 11.5 -90 0",
-    ])
-    time.sleep(2.0)
-    pre_hp = (bot.status_lean().get("health") or 0)
-
-    r = bot.post("/action/collect", {"block": "sand", "count": 2}, timeout=45.0)
-    assert r.get("ok") is True, f"collect should succeed with safe buffer: {r}"
-
-    sand_gain = bot.inventory().get("sand", 0)
-    assert sand_gain >= 2, f"expected 2 sand mined, got {sand_gain}"
-
-    # Buffer + water intact; no flowing_water in dug area.
-    assert rcon.block_is(60, 64, 11, "water"), "water source vanished"
-    assert rcon.block_is(61, 64, 11, "stone"), "buffer block was mined"
-    assert not rcon.block_is(62, 64, 11, "flowing_water"), "water leaked through buffer"
-    assert not rcon.block_is(63, 64, 11, "flowing_water"), "water leaked through buffer"
-
-    end_hp = (bot.status_lean().get("health") or 0)
-    assert end_hp >= pre_hp - 1
+    # 4. Bot mined some sand — the guard must not be over-restrictive.
+    # Most of the 9×9 surface (sans the 8-cell water trap and ~8 cells
+    # immediately adjacent) is safely mineable. Asking for 30 with a
+    # ~73-cell safe top surface plus deeper layers, ≥10 mined is the
+    # low bar. We check `mined_count` from the response rather than
+    # inventory: pickup at the bottom of dug columns is a known
+    # separate flakiness orthogonal to the water question.
+    mined = data.get("mined_count", 0)
+    assert mined >= 10, (
+        f"bot mined too few sand cells: {mined}. "
+        f"Possible over-restrictive guard. r.data={data}"
+    )

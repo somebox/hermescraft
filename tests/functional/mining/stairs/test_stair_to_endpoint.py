@@ -63,6 +63,8 @@ def stair_cube(rcon, arena, tester_bot, config):
         "give Tester minecraft:stone_pickaxe",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
+        # Full heal — prior tests may have left HP partial.
+        "effect give Tester minecraft:instant_health 1 5",
     ])
     arena.settle(seconds=1.5)
     yield
