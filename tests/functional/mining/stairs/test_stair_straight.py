@@ -105,35 +105,18 @@ def surface_arena(rcon, arena, tester_bot, config):
     ])
 
 
-_STAIR_XFAIL = pytest.mark.xfail(
-    reason=(
-        "Walk-back-up via mc goto fails: after the new stair_down "
-        "primitive (controlled sequence, bot/lib/actions/excavation.js) "
-        "descends the full length, bot lands at the bottom of the "
-        "staircase. The resulting geometry IS traversable via mineflayer "
-        "pathfinder's jump-step (each transition is a 1-block step-up at "
-        "the back edge), but mc goto's safety checks veto first — "
-        "either BOT_TRAPPED (when no cardinal foot-neighbour is open) "
-        "or NAV_BLOCKED (when walkable_to_target conservatively says no "
-        "without trying jumps). The stair_down primitive itself works "
-        "correctly — re-validate when mc goto handles step-up traversal."
-    ),
-    strict=False,
-)
-
-
 @pytest.mark.functional
 @pytest.mark.parametrize(
     "direction,length",
     [
-        pytest.param("north", 4, marks=_STAIR_XFAIL),
-        pytest.param("south", 4, marks=_STAIR_XFAIL),
-        pytest.param("east",  4, marks=_STAIR_XFAIL),
-        pytest.param("west",  4, marks=_STAIR_XFAIL),
-        pytest.param("north", 8, marks=_STAIR_XFAIL),
-        pytest.param("south", 8, marks=_STAIR_XFAIL),
-        pytest.param("east",  8, marks=_STAIR_XFAIL),
-        pytest.param("west",  8, marks=_STAIR_XFAIL),
+        ("north", 4),
+        ("south", 4),
+        ("east",  4),
+        ("west",  4),
+        ("north", 8),
+        ("south", 8),
+        ("east",  8),
+        ("west",  8),
     ],
     ids=lambda v: f"{v}",
 )

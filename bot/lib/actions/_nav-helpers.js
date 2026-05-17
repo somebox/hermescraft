@@ -154,6 +154,14 @@ function neighborStatus(b, bx, by, bz, dx, dz) {
  * Classifications:
  *   'in_air'             — bot not on solid ground (falling / floating)
  *   'trapped'            — all 4 cardinal dirs blocked at foot or head
+ *                          AND no step-up escape (true geometric trap)
+ *   'step_up_only'       — all 4 cardinal dirs blocked at foot or head,
+ *                          BUT at least one direction has a 1-block
+ *                          step-up available (head clear, neighbour
+ *                          foot solid, neighbour up + neighbour up2
+ *                          both air). Pathfinder can jump out — NOT
+ *                          actually trapped. Bottom of a stair_down
+ *                          staircase is the canonical case.
  *   'enclosure_inside'   — walls visible in all 4 dirs within 4 cells
  *                          AND a ceiling within 4 cells above (we're
  *                          inside a built structure)
@@ -170,7 +178,8 @@ function neighborStatus(b, bx, by, bz, dx, dz) {
  *   'open'               — 0–1 dirs blocked, no cliff, on solid ground
  *
  * Order matters: in_air > in_flowing_water > in_water > trapped >
- * enclosure_inside > three_walled > corner > alley > wedge > edge > open.
+ * step_up_only > enclosure_inside > three_walled > corner > alley >
+ * wedge > edge > open.
  */
 export function standingState(b) {
   if (!b || !b.entity || !b.entity.position) {
@@ -200,6 +209,35 @@ export function standingState(b) {
   }).map(d => d.name);
   const open_dirs = DIRS.filter(d => neighbor_status[d.name] === 'open').map(d => d.name);
   const cliff_dirs = DIRS.filter(d => neighbor_status[d.name] === 'no_support').map(d => d.name);
+
+  // Step-up escape: even with all 4 foot-neighbours solid, the bot can
+  // still walk OUT by jump-stepping onto an adjacent block whose top
+  // face is at (by + 1). Required conditions per direction:
+  //   - bot's own head (bx, by+1, bz) is air (room to jump up)
+  //   - neighbour foot (fx, by, fz) is solid (the block we step onto)
+  //   - neighbour cell (fx, by+1, fz) is air (target foot)
+  //   - neighbour cell (fx, by+2, fz) is air (target head clearance)
+  // This is exactly how the bot exits the bottom of a stair_down
+  // staircase: the back-direction has a 1-block step-up to the next
+  // stair tread.
+  const head_air = head && AIR_NAMES.has(head.name);
+  const step_up_dirs = [];
+  if (head_air) {
+    for (const d of DIRS) {
+      const fx = bx + d.dx;
+      const fz = bz + d.dz;
+      const nFoot = b.blockAt(new Vec3(fx, by, fz));
+      const nUp = b.blockAt(new Vec3(fx, by + 1, fz));
+      const nUp2 = b.blockAt(new Vec3(fx, by + 2, fz));
+      if (!nFoot || !nUp || !nUp2) continue;
+      const footSolid = !TRAVERSABLE_FOOT.has(nFoot.name);
+      const upAir = AIR_NAMES.has(nUp.name);
+      const up2Air = AIR_NAMES.has(nUp2.name);
+      if (footSolid && upAir && up2Air) {
+        step_up_dirs.push(d.name);
+      }
+    }
+  }
 
   // How close is the nearest solid ceiling above? (caps at 4)
   let ceiling_within = null;
@@ -261,8 +299,14 @@ export function standingState(b) {
     // and the SUBMERGED-dig guard create their own issues. Worth
     // classifying separately so mc escape can pick a water strategy.
     classification = 'in_water';
-  } else if (blocked_dirs.length === 4) {
+  } else if (blocked_dirs.length === 4 && step_up_dirs.length === 0) {
     classification = 'trapped';
+  } else if (blocked_dirs.length === 4 && step_up_dirs.length > 0) {
+    // All 4 cardinal foot-neighbours solid BUT at least one direction
+    // has a 1-block step-up available — e.g. the bot is at the bottom
+    // of a staircase. Pathfinder's jump-move can handle this; do NOT
+    // refuse the call as 'trapped'.
+    classification = 'step_up_only';
   } else if (enclosure_inside && max_wall_distance > 1) {
     // Inside a built structure (walls all around but not pressed against
     // them). Different from `trapped` — bot has room but no exit visible.
@@ -292,6 +336,7 @@ export function standingState(b) {
     blocked_dirs,
     open_dirs,
     cliff_dirs,
+    step_up_dirs,
     head_blocked,
     foot_support,
     ceiling_within,

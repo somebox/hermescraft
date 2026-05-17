@@ -122,6 +122,26 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         if (/(_door|_fence_gate|_trapdoor)$/.test(name)) return true;
         return isStandableCell(b, cx, cy, cz);
       };
+      // Step-up neighbour: from (cx, cy, cz) the bot can jump-step
+      // diagonally to (cx+dx, cy+1, cz+dz) iff the bot's own head is
+      // clear AND the target cell has head clearance. Pathfinder's
+      // jump-move handles this natively, so the reachability BFS
+      // should too — otherwise it falsely flags a stair_down
+      // staircase as unreachable.
+      const AIR_LIKE = new Set(['air', 'cave_air', 'void_air']);
+      const isAirAt = (cx, cy, cz) => {
+        const blk = b.blockAt(new Vec3(cx, cy, cz));
+        return blk ? AIR_LIKE.has(blk.name) : false;
+      };
+      const canStepUp = (cx, cy, cz, dx, dz) => {
+        // Bot's current head must be air (room to rise).
+        if (!isAirAt(cx, cy + 1, cz)) return false;
+        // Target cell must be standable.
+        if (!isWalkable(cx + dx, cy + 1, cz + dz)) return false;
+        // Target head clearance.
+        if (!isAirAt(cx + dx, cy + 2, cz + dz)) return false;
+        return true;
+      };
       const startKey = `${startCell.x},${startCell.y},${startCell.z}`;
       const visited = new Set([startKey]);
       const queue = [{ ...startCell }];
@@ -133,6 +153,12 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         [0, 0, 1], [0, 0, -1],
         [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
         [0, 1, 0], [0, -1, 0],
+      ];
+      // Step-up directions: forward+up in each cardinal. Diagonal +up
+      // is omitted (pathfinder doesn't reliably do it).
+      const STEP_UP_DIRS = [
+        [1, 1, 0], [-1, 1, 0],
+        [0, 1, 1], [0, 1, -1],
       ];
       while (queue.length > 0 && visited.size < maxVisit) {
         const cur = queue.shift();
@@ -147,6 +173,17 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
           if (visited.has(key)) continue;
           visited.add(key);
           if (!isWalkable(nx, ny, nz)) continue;
+          queue.push({ x: nx, y: ny, z: nz });
+        }
+        // Also try jump-step neighbours: forward+up in each cardinal,
+        // gated by head clearance. Lets the BFS climb a staircase.
+        for (const [dxn, dyn, dzn] of STEP_UP_DIRS) {
+          const nx = cur.x + dxn, ny = cur.y + dyn, nz = cur.z + dzn;
+          const key = `${nx},${ny},${nz}`;
+          if (visited.has(key)) continue;
+          const dx = dxn, dz = dzn; // dyn is always 1
+          if (!canStepUp(cur.x, cur.y, cur.z, dx, dz)) continue;
+          visited.add(key);
           queue.push({ x: nx, y: ny, z: nz });
         }
       }

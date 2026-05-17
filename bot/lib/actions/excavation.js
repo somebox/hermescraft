@@ -332,16 +332,22 @@ export function createExcavationActions(services) {
         totalSkipped++;
         return false;
       }
+      let digTimer = null;
       try {
         await equipForDig(b, blk);
         // Hard timeout — mineflayer's dig() awaits a server blockUpdate
         // and has no internal timeout, so a missing ack hangs forever.
+        // CRITICAL: clearTimeout in the finally below, otherwise a stale
+        // setTimeout fires later and calls b.stopDigging() during the
+        // NEXT dig, cascading aborts across stair_down calls.
         await Promise.race([
           b.dig(blk, true),
-          new Promise((_, rej) => setTimeout(() => {
-            try { b.stopDigging?.(); } catch {}
-            rej(new Error('dig timeout (15s)'));
-          }, 15000)),
+          new Promise((_, rej) => {
+            digTimer = setTimeout(() => {
+              try { b.stopDigging?.(); } catch {}
+              rej(new Error('dig timeout (15s)'));
+            }, 15000);
+          }),
         ]);
         totalDug++;
         await sleep(80);
@@ -351,6 +357,8 @@ export function createExcavationActions(services) {
         errorMsgs.push(`(${px},${py},${pz}): ${msg}`);
         totalErrors++;
         return false;
+      } finally {
+        if (digTimer !== null) clearTimeout(digTimer);
       }
     };
 
@@ -438,24 +446,14 @@ export function createExcavationActions(services) {
       }
     }
 
-    // Exit-ramp: after all steps, dig one cell at the previous step's
-    // floor level (one cell BACK from the bot at foot level). Without
-    // this the bot lands in a stone-walled corner — all 4 cardinal
-    // foot-level neighbours are solid — and mc goto's trap detector
-    // refuses to navigate even though the corridor IS traversable via
-    // a jump-step. Opening this one cell gives the trap detector ONE
-    // open cardinal direction, which is enough.
-    if (!stoppedAtStep) {
-      const lastBotX = Math.floor(b.entity.position.x);
-      const lastBotY = Math.floor(b.entity.position.y);
-      const lastBotZ = Math.floor(b.entity.position.z);
-      // The "back" cell at foot level — one block in the OPPOSITE of
-      // the dig direction, at the bot's current foot level.
-      const rx = lastBotX - dx;
-      const ry = lastBotY;
-      const rz = lastBotZ - dz;
-      await digOne(rx, ry, rz);
-    }
+    // No exit-ramp dig. The bot at the bottom is in a stone-walled
+    // corner BY DESIGN — that's what makes the staircase walkable: the
+    // back-direction's foot block IS the SUPPORT for the step-up to
+    // the previous tread. Removing it (as an earlier version did)
+    // dropped the support and made the staircase un-walkable. The
+    // updated trap-detector recognises step-up escapes and classifies
+    // this position as 'step_up_only' (not 'trapped'), so mc goto
+    // routes the bot back up via pathfinder's jump-step.
 
     let pickupSuffix = '';
     if (doPickup) {

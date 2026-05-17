@@ -63,15 +63,6 @@ def stair_cube(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.xfail(
-    reason=(
-        "Inherits the test_stair_straight south-direction bug: leg 1 digs south, "
-        "which is the broken cardinal. Drop this mark when stair_down south works "
-        "(at which point this L-shape should pass naturally — the east leg already "
-        "works in test_stair_straight)."
-    ),
-    strict=False,
-)
 def test_stair_south_then_east_with_traversal(bot, rcon, arena, stair_cube, config):
     """Stair south 5, turn, stair east 5, then traverse the L back up."""
     world = config["mc"]["world"]
