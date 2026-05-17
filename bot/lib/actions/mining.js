@@ -364,27 +364,24 @@ export function createMiningActions(deps) {
             pos.y < Math.floor(botPos.y)) return false;
         return true;
       });
-      // Flag flooded candidates so the order-step can de-prioritize them.
-      // Mining a submerged block floods the access path and the bot
-      // typically drowns. We don't filter — agent sees the candidate
-      // count — but dry blocks try first.
+      // Strict water-adjacency: a block is "flooded" if ANY of the 6
+      // adjacent cells (up, down, N/S/E/W) is water — source OR flowing.
+      // The previous "2+ sources" loosening was empirically too lax:
+      // a single water source touching one face is enough to flood the
+      // newly-dug cell within a few ticks once the supporting wall is
+      // broken. Per the user's session-#2 brief: never mine into water;
+      // refuse the candidate entirely (don't just de-prioritize).
       const isFlooded = (pos) => {
-        const above = b.blockAt(pos.offset(0, 1, 0));
-        if (above && (above.name === 'water' || above.name === 'flowing_water')) return true;
-        // Any adjacent FLOWING water → the dug cell will flood within
-        // a few ticks (flowing water spreads into newly opened space).
-        // Source water needs 2+ adjacent before we call it flooded —
-        // a single source block at the same Y can't flow into the dug
-        // cell unless the cell is at a lower Y, which is rare for the
-        // dirt/sand the bot mines for fill.
-        let waterSources = 0;
-        for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-          const nb = b.blockAt(pos.offset(dx, 0, dz));
-          if (!nb) continue;
-          if (nb.name === 'flowing_water') return true;
-          if (nb.name === 'water') waterSources++;
+        const NEIGHBOURS = [
+          [0, 1, 0], [0, -1, 0],
+          [1, 0, 0], [-1, 0, 0],
+          [0, 0, 1], [0, 0, -1],
+        ];
+        for (const [dx, dy, dz] of NEIGHBOURS) {
+          const nb = b.blockAt(pos.offset(dx, dy, dz));
+          if (nb && (nb.name === 'water' || nb.name === 'flowing_water')) return true;
         }
-        return waterSources >= 2;
+        return false;
       };
 
       if (safe.length === 0) {
@@ -475,16 +472,17 @@ export function createMiningActions(deps) {
         // exactly the failure mode re44 called out in session #1
         // ("you're mining too close to the base, making holes").
         //
-        // New order: dry first, then by Y proximity to bot, then row
-        // (perpendicular axis nearest to bot), then march along the
-        // strip axis. Strip axis is the one with greater spread in the
-        // candidate cloud — gives a long row instead of a 1-block strip.
-        // The bot stays on a row until it's exhausted before stepping
-        // to the next, producing a tidy horizontal slice through the
-        // deposit. Flooded candidates still sort LAST since mining
-        // them floods the access path.
+        // New order: by Y proximity to bot, then row (perpendicular
+        // axis nearest to bot), then march along the strip axis. Strip
+        // axis is the one with greater spread in the candidate cloud —
+        // gives a long row instead of a 1-block strip. The bot stays on
+        // a row until it's exhausted before stepping to the next,
+        // producing a tidy horizontal slice through the deposit.
+        // Flooded candidates are DROPPED, not sorted last: the previous
+        // "try wet after dry" path eventually flooded the work area
+        // once dry candidates ran out. The TARGET_IN_WATER refusal
+        // upstream already catches the "all flooded" case.
         const dryCands = safe.filter((p) => !isFlooded(p));
-        const wetCands = safe.filter((p) => isFlooded(p));
 
         let stripAxis = 'x';
         if (dryCands.length >= 2) {
@@ -524,7 +522,7 @@ export function createMiningActions(deps) {
           return a.y - c.y;
         });
 
-        sorted = [...stripSort(dryCands), ...stripSort(wetCands)];
+        sorted = stripSort(dryCands);
       }
 
       let collected = 0;
@@ -545,6 +543,11 @@ export function createMiningActions(deps) {
       const tipSet = new Set();
       /** @type {Set<string>} */
       const triedKeys = new Set();
+      // Cells where the last dig flooded — refreshPool skips them so we
+      // don't re-mine the freshly-plugged spot and start the water cycle
+      // again. Distinct from triedKeys: a triedKey is "attempted once
+      // already"; a noMineKey is "actively dangerous, do not approach".
+      const noMineKeys = new Set();
       const posKey = (p) => `${p.x},${p.y},${p.z}`;
 
       // Block IDs we'll accept for cheap rediscovery scans (raw b.findBlocks).
@@ -590,14 +593,12 @@ export function createMiningActions(deps) {
           // up and mine this".
           const above = b.blockAt(p.offset(0, 1, 0));
           if (above && !AIR_ABOVE.has(above.name)) continue;
-          // Also reject candidates surrounded by water on 2+ sides —
-          // mining them floods the access path.
-          let waterNeighbours = 0;
-          for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-            const nb = b.blockAt(p.offset(dx, 0, dz));
-            if (nb && (nb.name === 'water' || nb.name === 'flowing_water')) waterNeighbours++;
-          }
-          if (waterNeighbours >= 2) continue;
+          // Strict water-adjacency: any of the 6 face-neighbours being
+          // water (source or flowing) → skip. Matches isFlooded above.
+          if (isFlooded(p)) continue;
+          // Defensively skip cells we marked no-mine after a previous
+          // dig flooded (reactive plug path).
+          if (noMineKeys.has(k)) continue;
           out.push(p);
         }
         if (!isTrunkHarvest) {
@@ -771,6 +772,24 @@ export function createMiningActions(deps) {
             triedKeys.add(k);
             consecInstantFails = 0;
             await sleep(200);
+            // Reactive water guard: if water flowed into the just-dug
+            // cell (a hidden source we couldn't see pre-dig), mark the
+            // cell + its 4 horizontal neighbours as no-mine so the next
+            // refreshPool() doesn't return them. We don't try to place
+            // a plug block here (that needs equip + face-targeting
+            // logic) — we just stop digging into the wet zone and rely
+            // on the agent / next call to recover. Sleep an extra
+            // 400ms after detection so flowing water has time to spread
+            // to its final shape before refreshPool inspects neighbours.
+            const postDig = b.blockAt(pos);
+            if (postDig && (postDig.name === 'water' || postDig.name === 'flowing_water')) {
+              log(`[collect] dig at ${pos.x},${pos.y},${pos.z} produced water — adding cell + neighbours to no-mine list`);
+              noMineKeys.add(k);
+              for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                noMineKeys.add(`${pos.x + dx},${pos.y},${pos.z + dz}`);
+              }
+              await sleep(400);
+            }
           } catch (err) {
             const m = /** @type {Error} */ (err).message || String(err);
             const digElapsed = digStartedAt ? Date.now() - digStartedAt : 0;
