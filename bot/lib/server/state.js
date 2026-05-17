@@ -57,6 +57,8 @@ export function createTasksState() {
     syncActionInFlight: false,
     syncActionName: /** @type {string | null} */ (null),
     syncActionStartedAt: /** @type {number | null} */ (null),
+    /** Set by mc stop; long-running sync actions poll this and bail out cleanly. */
+    cancelRequested: false,
     actionHistory: /** @type {Array<{action:string, status:string, started_at:number, finished_at:number, detail:string}>} */ ([]),
     /** Rolling action counters for diagnostics (populated by recordActionOutcome). */
     actionCounters: {
@@ -201,7 +203,7 @@ export function createBotState(config) {
 export const FIELD_SLICE_MAP = Object.freeze({
   world:     ['bot', 'mcData', 'botReady', 'connectPromise', 'positionHistory', 'bootTime'],
   social:    ['chatLog', 'overheardLog', 'commandQueue', 'socialGraph', 'socialEvents', 'lastChatTs', 'MAX_LOG', 'MAX_QUEUE'],
-  tasks:     ['currentTask', 'taskHistory', 'syncActionInFlight', 'syncActionName', 'syncActionStartedAt', 'actionHistory', 'actionCounters', 'lastApiError', 'MAX_ACTION_HISTORY', 'MAX_TASK_HISTORY'],
+  tasks:     ['currentTask', 'taskHistory', 'syncActionInFlight', 'syncActionName', 'syncActionStartedAt', 'cancelRequested', 'actionHistory', 'actionCounters', 'lastApiError', 'MAX_ACTION_HISTORY', 'MAX_TASK_HISTORY'],
   runtime:   ['lastMoveFailed', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentPickups', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
   goals:     ['goalsStore', 'chestSnapshots'],
   team:      ['teamConfig', 'combatStats', 'recentDamagers', 'activeFurnaces', 'isSneaking'],

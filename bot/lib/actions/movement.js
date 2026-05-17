@@ -728,6 +728,11 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       b.pathfinder.setGoal(null);
       try { b.stopDigging(); } catch {}
       if (b.pvp) try { b.pvp.stop(); } catch {}
+      // Signal long-running sync actions (e.g. mc collect) to bail out at
+      // their next iteration. They poll ctx.tasks.cancelRequested and
+      // reset it on entry, so leaving this true between stop and the next
+      // collect is fine — collect will clear it.
+      ctx.tasks.cancelRequested = true;
       return { result: 'Stopped all actions.' };
     },
 

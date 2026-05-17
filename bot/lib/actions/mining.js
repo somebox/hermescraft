@@ -97,6 +97,10 @@ export function createMiningActions(deps) {
       // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
 
       const b = ensureBot();
+      // Fresh entry — clear any stale cancel flag from a previous mc stop.
+      // Without this, a stop ran 10 minutes ago would abort this brand-new
+      // collect before it tried anything. The flag exists for THIS run.
+      ctx.tasks.cancelRequested = false;
       const blockName = resolveMiningBlockName(block);
       const blockType = ctx.world.mcData.blocksByName[blockName];
       if (!blockType) {
@@ -258,18 +262,21 @@ export function createMiningActions(deps) {
         });
       }
 
-      // Source-block fallback: user asked for an item (e.g. "cobblestone")
-      // but there are no blocks of that name in the world. In survival
-      // you have to mine the source block (stone → cobblestone, coal_ore
-      // → coal). Look up which block(s) drop the requested item and try
-      // mining those instead. We accumulate accepted target names so the
-      // dig-loop's `target.name !== blockName` filter doesn't reject the
-      // substituted positions. Inventory accounting stays on blockName
-      // (the requested item) since that's what gets dropped.
+      // Source-block fallback: user asked for an item (e.g. "cobblestone",
+      // "dirt") but the world has few/no visible blocks of that name. In
+      // survival you have to mine the source block (stone → cobblestone,
+      // grass_block → dirt, coal_ore → coal). We *append* source-block
+      // candidates whenever the primary pool is smaller than a full batch,
+      // so the bot has options when the cliff-face/cave dirt all turns out
+      // to be behind a wall and we'd otherwise return MIXED_FAILURE.
+      // `acceptedTargetNames` lets the dig-loop accept either type;
+      // inventory accounting tracks the *requested* item name (what
+      // actually lands in inventory after each break).
       let resolvedFromSource = null;
       const acceptedTargetNames = new Set([blockName]);
-      if (found.length === 0) {
+      if (found.length < batchSize) {
         const sources = sourceBlocksForItem(ctx.world.mcData, blockName);
+        const initialFoundCount = found.length;
         for (const altName of sources) {
           const altType = ctx.world.mcData.blocksByName[altName];
           if (!altType) continue;
@@ -307,10 +314,19 @@ export function createMiningActions(deps) {
           });
           if (surface.length > 0) altFound = surface;
           if (altFound.length > 0) {
-            found = altFound;
+            // Append, don't replace. Original-block candidates (if any)
+            // stay in the pool and still get tried first by distance.
+            for (const p of altFound) found.push(p);
             acceptedTargetNames.add(altName);
-            resolvedFromSource = altName;
-            log(`[collect] No ${blockName} blocks visible; mining ${altName} as source (drops ${blockName}).`);
+            if (resolvedFromSource === null) resolvedFromSource = altName;
+            if (initialFoundCount === 0) {
+              log(`[collect] No ${blockName} visible; mining ${altName} as source (drops ${blockName}).`);
+            } else {
+              log(`[collect] Only ${initialFoundCount} ${blockName} visible; augmenting with ${altFound.length} ${altName} (drops ${blockName}).`);
+            }
+            // One source-block type is enough — the dig-loop has plenty
+            // of options now. Avoid stacking multiple alt types so the
+            // pool doesn't blow past its sort/sweep budget.
             break;
           }
         }
@@ -469,6 +485,7 @@ export function createMiningActions(deps) {
       let collected = 0;
       let lastCollectErr = '';
       let attempted = 0;
+      let wasCancelled = false;
       // Per-cause attempt counters — these are why ok=true with mined_count=0
       // used to slip through. Now every `continue` in the loop bumps a counter.
       const causes = {
@@ -550,33 +567,49 @@ export function createMiningActions(deps) {
       let pool = sorted.slice();
 
       // Time + stall caps so collect never spins forever on a stuck deposit.
-      // The slow physical sweep is gated behind the time cap too.
+      // Inner budget intentionally below the outer ACTION_CAPS_MS.collect
+      // (40000ms) so we get a graceful exit + structured response BEFORE
+      // the outer wrapper fires its OPERATION_TIMEOUT envelope.
       const COLLECT_START_MS = Date.now();
-      const COLLECT_BUDGET_MS = 60000;
+      const COLLECT_BUDGET_MS = 35000;
       const MAX_STALL_ROUNDS = 3;
+      // Anti-cascade: if b.dig throws "Digging aborted" in <100ms it's
+      // not the block's fault — the bot is in a broken state (pathfinder
+      // residual, world transition, server hiccup). Two in a row means we
+      // bail this round so refreshPool() can reset.
+      const INSTANT_FAIL_THRESHOLD_MS = 100;
+      const MAX_CONSEC_INSTANT_FAILS = 2;
       let stallRounds = 0;
 
       while (
         collected < count &&
         Date.now() - COLLECT_START_MS < COLLECT_BUDGET_MS &&
-        stallRounds < MAX_STALL_ROUNDS
+        stallRounds < MAX_STALL_ROUNDS &&
+        !ctx.tasks.cancelRequested
       ) {
         const beforeRoundMined = collected;
         const remainingNeeded = count - collected;
         const roundBatch = Math.min(remainingNeeded, batchSize);
+        // Anti-cascade tracker — reset per round.
+        let consecInstantFails = 0;
 
         for (const pos of pool.slice(0, roundBatch)) {
           if (collected >= count) break;
+          // mc stop sets ctx.tasks.cancelRequested. Works for both sync and
+          // background paths — unlike the legacy background-task check below
+          // which is gated on !syncActionInFlight.
+          if (ctx.tasks.cancelRequested) {
+            wasCancelled = true;
+            break;
+          }
           const k = posKey(pos);
           if (triedKeys.has(k)) continue;
-          triedKeys.add(k);
-          attempted++;
 
-          // Cancel-flag handling. The check only applies when collect is
-          // RUNNING AS the background task — i.e. ctx.tasks.currentTask is this
-          // very collect call. If currentTask references an earlier task
-          // (e.g. a completed `mc fill` placed via /task/place_fill), its
-          // status will be 'done'/'stuck' but UNRELATED to this collect:
+          // Background-task cancel handling. The check only applies when
+          // collect is RUNNING AS the background task — i.e. ctx.tasks.currentTask
+          // is this very collect call. If currentTask references an earlier
+          // task (e.g. a completed `mc fill` placed via /task/place_fill),
+          // its status will be 'done'/'stuck' but UNRELATED to this collect:
           // we must NOT break, otherwise the loop exits silently with
           // attempted=N, collected=0, all causes=0 → "MIXED_FAILURE 0/N".
           // syncActionInFlight is true for /action/collect, so guard there.
@@ -589,10 +622,17 @@ export function createMiningActions(deps) {
             stallRounds = MAX_STALL_ROUNDS;
             break;
           }
+          // triedKeys marking happens per-outcome below — instant-fail dig
+          // aborts (cascade) intentionally do NOT mark the candidate tried,
+          // so a recovered bot can retry it next round via refreshPool().
+          attempted++;
+          let digStartedAt = 0;
           try {
             const target = b.blockAt(pos);
             if (!target || !acceptedTargetNames.has(target.name)) {
               causes.not_target_block++;
+              triedKeys.add(k);
+              consecInstantFails = 0;
               continue;
             }
             const { hints } = await equipForDig(b, target);
@@ -622,6 +662,8 @@ export function createMiningActions(deps) {
               }
               if (!pathOk) {
                 causes.pathfind_failed++;
+                triedKeys.add(k);
+                consecInstantFails = 0;
                 continue;
               }
             }
@@ -629,11 +671,15 @@ export function createMiningActions(deps) {
             const recheck = b.blockAt(pos);
             if (!recheck || !acceptedTargetNames.has(recheck.name)) {
               causes.not_target_block++;
+              triedKeys.add(k);
+              consecInstantFails = 0;
               continue;
             }
             const curPos = b.entity.position;
             if (curPos.distanceTo(pos) > 5.5) {
               causes.out_of_range_post_path++;
+              triedKeys.add(k);
+              consecInstantFails = 0;
               continue;
             }
             const feetY = Math.floor(curPos.y);
@@ -641,6 +687,8 @@ export function createMiningActions(deps) {
                 Math.abs(pos.x - Math.floor(curPos.x)) < 1 &&
                 Math.abs(pos.z - Math.floor(curPos.z)) < 1) {
               causes.skipped_self_block++;
+              triedKeys.add(k);
+              consecInstantFails = 0;
               continue;
             }
 
@@ -654,23 +702,50 @@ export function createMiningActions(deps) {
             // produce an unfair "stab through stone" mine. Refuse here.
             if (!canSeeMinableFace(pos)) {
               causes.behind_wall++;
+              triedKeys.add(k);
+              consecInstantFails = 0;
               continue;
             }
 
+            digStartedAt = Date.now();
             await Promise.race([
               b.dig(recheck, true),
               new Promise((_, rej) => setTimeout(() => rej(new Error('dig_timeout')), 12000)),
             ]);
             collected++;
+            triedKeys.add(k);
+            consecInstantFails = 0;
             await sleep(200);
           } catch (err) {
             const m = /** @type {Error} */ (err).message || String(err);
+            const digElapsed = digStartedAt ? Date.now() - digStartedAt : 0;
+            const isInstantAbort = digStartedAt > 0
+              && digElapsed < INSTANT_FAIL_THRESHOLD_MS
+              && /aborted/i.test(m);
             if (m === 'dig_timeout') {
               try { b.stopDigging(); } catch {}
             }
             causes.dig_failed++;
             lastCollectErr = m;
-            log(`[collect] Error mining ${blockName} at ${pos.x},${pos.y},${pos.z}: ${m}`);
+            log(`[collect] Error mining ${blockName} at ${pos.x},${pos.y},${pos.z}: ${m}${isInstantAbort ? ' (instant — not marking tried)' : ''}`);
+            if (isInstantAbort) {
+              // Don't burn the candidate; refreshPool can re-discover it.
+              consecInstantFails++;
+              if (consecInstantFails >= MAX_CONSEC_INSTANT_FAILS) {
+                log(`[collect] ${consecInstantFails} consecutive instant aborts — bailing this round so the bot can recover state.`);
+                // Try to clear any residual pathfinder/dig state before
+                // the next round starts.
+                try { b.pathfinder.stop(); } catch {}
+                try { b.clearControlStates?.(); } catch {}
+                try { b.stopDigging(); } catch {}
+                break;
+              }
+            } else {
+              // Real dig failure (timeout or server reject). Burn the
+              // candidate so we don't retry forever.
+              triedKeys.add(k);
+              consecInstantFails = 0;
+            }
           }
         }
 
@@ -767,7 +842,21 @@ export function createMiningActions(deps) {
 
       const endedInventory = inventoryAt();
       const endedBlockCount = endedInventory[blockName] || 0;
+      // pickedUp tracks the *requested* item's inventory gain. That's the
+      // right answer for `mc collect dirt` (mined via grass_block source —
+      // blockName='dirt' matches the drop). It's WRONG for `mc collect
+      // grass_block` because grass_block drops dirt (bare hands / shovel,
+      // no silk-touch), so endedBlockCount stays 0 even though 16 dirt
+      // entered the inventory. Compute the inventory-wide delta too so
+      // callers can see what actually got picked up.
       pickedUp = Math.max(0, endedBlockCount - startedBlockCount);
+      const inventoryGains = {};
+      for (const [name, endCount] of Object.entries(endedInventory)) {
+        const startCount = startedInventory[name] || 0;
+        const delta = endCount - startCount;
+        if (delta > 0) inventoryGains[name] = delta;
+      }
+      const totalGain = Object.values(inventoryGains).reduce((s, n) => s + n, 0);
 
       const tips = [...tipSet];
       const tipsSuffix = tips.length ? ` Tips: ${tips.join(' | ')}` : '';
@@ -777,7 +866,10 @@ export function createMiningActions(deps) {
       if (collected === 0) {
         let code;
         let message;
-        if (attempted === 0) {
+        if (wasCancelled) {
+          code = 'CANCELLED';
+          message = `Collect cancelled by mc stop before any ${blockName} was mined.`;
+        } else if (attempted === 0) {
           // Should be impossible — `safe.length === 0` already returned NO_VISIBLE_BLOCKS.
           code = 'NO_VISIBLE_BLOCKS';
           message = `Found candidates but none made it into the harvest queue.`;
@@ -822,9 +914,10 @@ export function createMiningActions(deps) {
       const sourceNote = resolvedFromSource
         ? ` [mined ${resolvedFromSource} as source]`
         : '';
+      const cancelNote = wasCancelled ? ' [cancelled mid-task]' : '';
       const msg = remaining > 0
-        ? `Mined ${collected} ${blockName} (${remaining} more needed). Have ${endedBlockCount} ${blockName} in inventory.${sourceNote}${tipsSuffix}`
-        : `Mined ${collected}/${count} ${blockName}. Have ${endedBlockCount} ${blockName} in inventory.${sourceNote}${tipsSuffix}`;
+        ? `Mined ${collected} ${blockName} (${remaining} more needed). Have ${endedBlockCount} ${blockName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`
+        : `Mined ${collected}/${count} ${blockName}. Have ${endedBlockCount} ${blockName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`;
 
       return {
         ok: true,
@@ -838,7 +931,14 @@ export function createMiningActions(deps) {
           ended_inventory: endedInventory,
           dropped_items_collected: pickedUp,
           dropped_item_positions: pickedUpPositions,
+          // C: inventory-wide gain — catches the case where blockName ≠
+          // drop name (e.g. `mc collect grass_block` drops dirt). Empty
+          // object only when nothing was picked up. total_inventory_gain
+          // is the scalar sum for quick "did anything land?" checks.
+          inventory_gain: inventoryGains,
+          total_inventory_gain: totalGain,
           ...(resolvedFromSource ? { mined_source_block: resolvedFromSource } : {}),
+          ...(wasCancelled ? { cancelled: true } : {}),
         },
         // Legacy fields for goal engine + existing tests.
         result: msg,
