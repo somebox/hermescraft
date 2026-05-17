@@ -402,6 +402,72 @@ export function createMiningActions(deps) {
         };
       }
 
+      // Strip-plane lock: anchor the dig to the Y level of the deepest
+      // initially-visible candidate. As cells get mined and refreshPool
+      // exposes newly-uncovered blocks BELOW the strip plane (their
+      // ceilings just became air), we reject them — otherwise the bot
+      // dives down through the deposit instead of mining laterally.
+      // The lock is the entire reason re44 saw "you're mining too
+      // close to the base, making holes" in session #1: top layer of
+      // a pit got cleared, refreshPool found the next layer's cells
+      // (now LOS-visible), bot dug down. With this lock the bot will
+      // surface as MIXED_FAILURE / partial count when the strip plane
+      // is exhausted, and the agent can reposition + recall to mine
+      // a deeper layer deliberately.
+      //
+      // Trunk harvests (trees) span multiple Y by design — skip the
+      // lock for those.
+      const stripPlaneFloorY = isTrunkHarvest
+        ? -Infinity
+        : Math.min(...safe.map((p) => p.y));
+
+      // Strip-mine axis selection. Hoisted to outer scope so refreshPool
+      // can use the same sort logic — without this, refreshPool sorted
+      // by raw distance-from-bot, producing star-shape scatter as the
+      // bot moved around. Anchored on the BOT's CURRENT position each
+      // call so the row-march advances naturally with the bot.
+      let stripAxis = 'x';
+      let perpAxis = 'z';
+      // Anchor + direction. The perp anchor stays LOCKED at the bot's
+      // initial integer-block position so refreshPool doesn't drift the
+      // sort each call (which produces scatter). The perp direction
+      // (+1 or -1) is chosen once based on which side of the anchor has
+      // more candidates — without a signed direction, |z - anchor|
+      // treats z=1 and z=3 equally, producing chaotic zig-zag instead
+      // of monotonic row-by-row marching.
+      // perpAxis, initialPerpAnchor, and perpDirection are finalized
+      // a few lines below after stripAxis is picked from the cloud
+      // spread.
+      let initialPerpAnchor = Math.floor(b.entity.position[perpAxis]);
+      let perpDirection = 1;
+      const initialYAnchor = Math.floor(b.entity.position.y);
+      const stripSort = (list) => {
+        const botStrip = Math.floor(b.entity.position[stripAxis]);
+        return list.slice().sort((a, c) => {
+          // 1. Y plane: nearest to initial Y first.
+          const ay = Math.abs(a.y - initialYAnchor);
+          const cy = Math.abs(c.y - initialYAnchor);
+          if (ay !== cy) return ay - cy;
+          // 2. Row: SIGNED perp-axis offset in the chosen direction.
+          //    Cells in the bot's row (offset 0) come first, then
+          //    perp+1, perp+2, ... or perp-1, perp-2, ... depending
+          //    on perpDirection. Cells in the opposite direction get
+          //    a large penalty so they're mined last (only if the
+          //    primary side is fully exhausted).
+          const apRaw = (a[perpAxis] - initialPerpAnchor) * perpDirection;
+          const cpRaw = (c[perpAxis] - initialPerpAnchor) * perpDirection;
+          const ap = apRaw >= 0 ? apRaw : 1000 - apRaw;
+          const cp = cpRaw >= 0 ? cpRaw : 1000 - cpRaw;
+          if (ap !== cp) return ap - cp;
+          // 3. March: along the strip axis, nearest first (follows bot).
+          const as = Math.abs(a[stripAxis] - botStrip);
+          const cs = Math.abs(c[stripAxis] - botStrip);
+          if (as !== cs) return as - cs;
+          // 4. Final tiebreak: lower Y first.
+          return a.y - c.y;
+        });
+      };
+
       // F54.4: if EVERY candidate is in/under water, refuse upfront. The
       // bot drowns trying to dig submerged blocks (sand-in-pond was the
       // G21 v5 Mason-stuck case). isFlooded is the same predicate the
@@ -484,7 +550,6 @@ export function createMiningActions(deps) {
         // upstream already catches the "all flooded" case.
         const dryCands = safe.filter((p) => !isFlooded(p));
 
-        let stripAxis = 'x';
         if (dryCands.length >= 2) {
           let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
           for (const p of dryCands) {
@@ -495,32 +560,21 @@ export function createMiningActions(deps) {
           }
           stripAxis = (maxX - minX) >= (maxZ - minZ) ? 'x' : 'z';
         }
-        const perpAxis = stripAxis === 'x' ? 'z' : 'x';
-        const botStrip = botPos[stripAxis];
-        const botPerp = botPos[perpAxis];
-        const botY = botPos.y;
-
-        const stripSort = (list) => list.slice().sort((a, c) => {
-          // 1. Y plane: nearest to bot's Y first. Strict integer
-          //    distance so candidates at the same Y don't lose to
-          //    slightly-closer 3D neighbours at a different Y.
-          const ay = Math.abs(a.y - botY);
-          const cy = Math.abs(c.y - botY);
-          if (ay !== cy) return ay - cy;
-          // 2. Row: perpendicular-axis distance from bot. Candidates
-          //    in the bot's row come first; then the next row, etc.
-          const ap = Math.abs(a[perpAxis] - botPerp);
-          const cp = Math.abs(c[perpAxis] - botPerp);
-          if (ap !== cp) return ap - cp;
-          // 3. March: along the strip axis, nearest first. Bot mines
-          //    its way along the row in one direction before zig-zagging.
-          const as = Math.abs(a[stripAxis] - botStrip);
-          const cs = Math.abs(c[stripAxis] - botStrip);
-          if (as !== cs) return as - cs;
-          // 4. Final tiebreak: lower Y first (clears top before reaching
-          //    higher columns, same as the legacy behavior).
-          return a.y - c.y;
-        });
+        perpAxis = stripAxis === 'x' ? 'z' : 'x';
+        // Re-anchor now that perpAxis is finalized.
+        initialPerpAnchor = Math.floor(b.entity.position[perpAxis]);
+        // Pick the perp march direction by counting candidates on each
+        // side of the anchor. The bot will march toward whichever side
+        // has more material, mining contiguous rows. With only +1/-1
+        // possible and an even split, default to +1.
+        let posCount = 0;
+        let negCount = 0;
+        for (const p of dryCands) {
+          const d = p[perpAxis] - initialPerpAnchor;
+          if (d > 0) posCount += 1;
+          else if (d < 0) negCount += 1;
+        }
+        perpDirection = negCount > posCount ? -1 : 1;
 
         sorted = stripSort(dryCands);
       }
@@ -588,6 +642,11 @@ export function createMiningActions(deps) {
           const k = posKey(p);
           if (triedKeys.has(k)) continue;
           if (!canSeeMinableFace(p)) continue;
+          // Strip-plane lock: don't auto-dive below the initial scan's
+          // deepest Y. Newly-uncovered cells whose ceiling just became
+          // air would otherwise turn a flat strip into a downward
+          // tunnel. Trunk harvests bypass this above.
+          if (p.y < stripPlaneFloorY) continue;
           // Reject candidates with anything-but-air directly above —
           // grass, water, lava, leaves all signal "you can't just walk
           // up and mine this".
@@ -602,7 +661,11 @@ export function createMiningActions(deps) {
           out.push(p);
         }
         if (!isTrunkHarvest) {
-          out.sort((a, c) => botPosNow.distanceTo(a) - botPosNow.distanceTo(c));
+          // Use the same strip-mine sort as the initial pool so the
+          // pattern stays a strip as the bot moves. The earlier plain
+          // distance-sort produced star-pattern scatter once
+          // refreshPool kicked in.
+          return stripSort(out);
         }
         return out;
       };

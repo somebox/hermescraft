@@ -142,14 +142,18 @@ def pit_arena(rcon, arena, tester_bot, config):
 @pytest.mark.functional
 @pytest.mark.xfail(
     reason=(
-        "Two compounding gaps surface here: (a) mc collect has no Y-boundary "
-        "lock, so once the top layer's local pool is exhausted refreshPool "
-        "exposes lower-layer cells whose ceiling is now air, and the bot "
-        "digs down. (b) The strip-mine sort orders cells by perp-axis "
-        "distance per Y plane, which is row-like at one level but does "
-        "not constrain the bot to mine top-down columnarly. Test documents "
-        "the desired strip behavior; flip xfail off when both gaps are "
-        "addressed."
+        "Plane lock landed (depth-breach assertions #2/#3 now PASS — middle "
+        "and bottom layers stay intact). Remaining failure is the strip-"
+        "pattern shape (assertion #4): the bot starts ON TOP of the pit so "
+        "the only cells it can initially see are its own foot block + a "
+        "few clutter; mining the foot block drops the bot, then expansion "
+        "happens radially in all directions (lateral LOS is symmetric), "
+        "producing a roughly-square 10×10 cluster rather than a thin "
+        "strip. A clean strip requires starting at the EDGE of a deposit "
+        "and tunnelling inward, or a separate primitive that integrates "
+        "with stair_down / tunnel. Track in follow-up — flip xfail off "
+        "once mc collect produces strips when bot is positioned on a "
+        "deposit edge (or once a higher-level strip-mine wrapper exists)."
     ),
     strict=False,
 )
