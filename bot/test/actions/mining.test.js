@@ -48,7 +48,13 @@ function makeStubBot(opts = {}) {
       goal: null,
     },
     clearControlStates: opts.clearControlStates || (() => {}),
-    tool: { itemInHand: () => null },
+    tool: {
+      itemInHand: () => null,
+      // mineflayer-tool plugin method called by dig-tools.preferHarvestToolForBlock /
+      // equipForDig. Stub as a no-op so tests can drive the inner dig loop.
+      equipForBlock: async () => {},
+    },
+    equip: async () => {},
     entities: opts.entities || {},
   };
 }
@@ -324,4 +330,56 @@ test('mining.collect: NO_VISIBLE_BLOCKS conforms to contract when no candidates 
   assert.equal(r.error.code, 'NO_VISIBLE_BLOCKS');
   assert.equal(r.error.observed_state.requested_block, 'dirt');
   assert.equal(r.error.observed_state.requested_count, 4);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 10. Strip-mine ordering (Fix E) — non-trunk harvests follow rows along
+//     the densest axis instead of 3D-distance star pattern.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: non-trunk sort follows the bot row before stepping to next row', async () => {
+  // Bot at (0, 64, 0). Candidates form a 7x3 patch at y=63:
+  //   x = -3..3, z = -1..1  (21 cells, but we'll use a subset)
+  // x-spread (6) > z-spread (2) ⇒ stripAxis=x, perpAxis=z.
+  // Expected ordering: ALL z=0 candidates before any z=±1.
+  const positions = [];
+  for (const x of [-3, -2, -1, 1, 2, 3]) positions.push(new Vec3(x, 63, 0));
+  for (const x of [-1, 1]) positions.push(new Vec3(x, 63, 1));
+  for (const x of [-1, 1]) positions.push(new Vec3(x, 63, -1));
+  // 6 z=0 candidates first, then 4 in z=±1 rows.
+
+  const digOrder = [];
+  const deps = makeDeps({
+    findVisible: async (name) => name === 'dirt' ? positions.map((p) => ({ position: p })) : [],
+    bot: makeStubBot({
+      // accepted target so the loop reaches the dig step
+      blockAtByPos: () => ({ name: 'dirt', getProperties: () => ({}) }),
+      dig: async (block) => {
+        digOrder.push({ x: block.position?.x ?? null, y: block.position?.y ?? null, z: block.position?.z ?? null });
+        throw new Error('test_no_dig');  // non-instant non-aborted — burns the candidate cleanly
+      },
+    }),
+  });
+  // Wire blockAt to return positions on the actual Vec3 so the recheck
+  // step gets a usable target. We override the stub helper here:
+  deps.ensureBot().blockAt = (pos) => ({
+    name: 'dirt',
+    position: pos,
+    getProperties: () => ({}),
+  });
+
+  const actions = createMiningActions(deps);
+  await actions.collect({ block: 'dirt', count: 10 });
+
+  // Verify: the first 6 dig attempts all share z=0 (the bot's row).
+  // With the old 3D-distance sort, z=±1 candidates at distance 1.0
+  // would interleave with z=0 ones at distance 1.0/2.0 — i.e.
+  // (0,63,1), (1,63,0), (0,63,-1), (-1,63,0), (1,63,1), ... .
+  assert.ok(digOrder.length >= 6, `expected >= 6 dig attempts, got ${digOrder.length}: ${JSON.stringify(digOrder)}`);
+  const firstSixZ = digOrder.slice(0, 6).map((p) => p.z);
+  assert.deepEqual(
+    firstSixZ,
+    [0, 0, 0, 0, 0, 0],
+    `expected first 6 digs at bot's row z=0 (strip-mine), got z values ${JSON.stringify(firstSixZ)} (full order: ${JSON.stringify(digOrder)})`,
+  );
 });

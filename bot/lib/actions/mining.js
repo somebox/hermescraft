@@ -467,19 +467,64 @@ export function createMiningActions(deps) {
         });
         sorted = clusters.flat();
       } else {
-        // 3D distance, nearest first. Flooded blocks sort LAST (they're
-        // still attempted but only after dry candidates) since mining
-        // them floods the access path. Tiebreak by lower Y so we tend
-        // to clear the top surface before reaching higher columns.
-        sorted = [...safe].sort((a, c) => {
-          const aF = isFlooded(a) ? 1 : 0;
-          const cF = isFlooded(c) ? 1 : 0;
-          if (aF !== cF) return aF - cF;
-          const aD = botPos.distanceTo(a);
-          const cD = botPos.distanceTo(c);
-          if (Math.abs(aD - cD) > 0.01) return aD - cD;
+        // Strip-mine ordering for non-trunk harvests. Pure 3D-distance
+        // sort (the previous behavior) produced a "star pattern" —
+        // bot mines one east, one west, one north, one south, etc. —
+        // because half a dozen candidates around the bot tie on
+        // distance. The result is jagged holes scattered around the bot,
+        // exactly the failure mode re44 called out in session #1
+        // ("you're mining too close to the base, making holes").
+        //
+        // New order: dry first, then by Y proximity to bot, then row
+        // (perpendicular axis nearest to bot), then march along the
+        // strip axis. Strip axis is the one with greater spread in the
+        // candidate cloud — gives a long row instead of a 1-block strip.
+        // The bot stays on a row until it's exhausted before stepping
+        // to the next, producing a tidy horizontal slice through the
+        // deposit. Flooded candidates still sort LAST since mining
+        // them floods the access path.
+        const dryCands = safe.filter((p) => !isFlooded(p));
+        const wetCands = safe.filter((p) => isFlooded(p));
+
+        let stripAxis = 'x';
+        if (dryCands.length >= 2) {
+          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+          for (const p of dryCands) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.z < minZ) minZ = p.z;
+            if (p.z > maxZ) maxZ = p.z;
+          }
+          stripAxis = (maxX - minX) >= (maxZ - minZ) ? 'x' : 'z';
+        }
+        const perpAxis = stripAxis === 'x' ? 'z' : 'x';
+        const botStrip = botPos[stripAxis];
+        const botPerp = botPos[perpAxis];
+        const botY = botPos.y;
+
+        const stripSort = (list) => list.slice().sort((a, c) => {
+          // 1. Y plane: nearest to bot's Y first. Strict integer
+          //    distance so candidates at the same Y don't lose to
+          //    slightly-closer 3D neighbours at a different Y.
+          const ay = Math.abs(a.y - botY);
+          const cy = Math.abs(c.y - botY);
+          if (ay !== cy) return ay - cy;
+          // 2. Row: perpendicular-axis distance from bot. Candidates
+          //    in the bot's row come first; then the next row, etc.
+          const ap = Math.abs(a[perpAxis] - botPerp);
+          const cp = Math.abs(c[perpAxis] - botPerp);
+          if (ap !== cp) return ap - cp;
+          // 3. March: along the strip axis, nearest first. Bot mines
+          //    its way along the row in one direction before zig-zagging.
+          const as = Math.abs(a[stripAxis] - botStrip);
+          const cs = Math.abs(c[stripAxis] - botStrip);
+          if (as !== cs) return as - cs;
+          // 4. Final tiebreak: lower Y first (clears top before reaching
+          //    higher columns, same as the legacy behavior).
           return a.y - c.y;
         });
+
+        sorted = [...stripSort(dryCands), ...stripSort(wetCands)];
       }
 
       let collected = 0;
@@ -708,10 +753,20 @@ export function createMiningActions(deps) {
             }
 
             digStartedAt = Date.now();
-            await Promise.race([
-              b.dig(recheck, true),
-              new Promise((_, rej) => setTimeout(() => rej(new Error('dig_timeout')), 12000)),
-            ]);
+            // Race b.dig against a 12s timeout. Capture the timer handle so
+            // we can clear it on dig success/failure — otherwise each dig
+            // leaks a pending setTimeout that keeps Node's event loop
+            // alive for 12s after the call returns. Cumulative across a
+            // long collect, that's many seconds of phantom tail latency.
+            let digTimer;
+            const digTimeoutP = new Promise((_, rej) => {
+              digTimer = setTimeout(() => rej(new Error('dig_timeout')), 12000);
+            });
+            try {
+              await Promise.race([b.dig(recheck, true), digTimeoutP]);
+            } finally {
+              clearTimeout(digTimer);
+            }
             collected++;
             triedKeys.add(k);
             consecInstantFails = 0;

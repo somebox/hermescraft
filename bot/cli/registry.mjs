@@ -250,7 +250,7 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
   g('scout', 'observe', [], {
-    description: 'Hazard observation in a radius around X Y Z (or bot position). Read-only — lists lava cells (with source/flowing flag), water, falling-block columns (sand/gravel/anvil/concrete_powder), bedrock proximity, and hostile mobs. Use before mining at depth.',
+    description: 'Hazard + (optional) target-block survey in a radius. Read-only. Always reports lava, water, falling-block columns, bedrock, and hostile mobs. When --block BLOCK is set, also counts exposed/buried/under-liquid candidates of that block, gives a centroid, and a verdict (mine_here|move_to|not_enough|unsafe). Use before mining at depth or to decide whether to relocate.',
     method: 'POST',
     path: '/action/scout',
     bodyFn: (p) =>
@@ -259,17 +259,21 @@ export const RAW_COMMAND_DEFS = [
         ...(p.y !== undefined ? { y: Number(p.y) } : {}),
         ...(p.z !== undefined ? { z: Number(p.z) } : {}),
         ...(p.radius !== undefined ? { radius: Number(p.radius) } : {}),
+        ...(p.block ? { block: String(p.block) } : {}),
       }),
     argSchema: [
       { key: 'x', type: 'number' },
       { key: 'y', type: 'number' },
       { key: 'z', type: 'number' },
       { key: 'radius', type: 'number', default: 8 },
+      { key: 'block', type: 'string' },
     ],
-    usage: 'mc scout [X Y Z] [RADIUS]',
+    usage: 'mc scout [X Y Z] [RADIUS] [--block BLOCK]',
     examples: [
       'mc scout',
       'mc scout 0 -50 0 8',
+      'mc scout --block coal_ore',
+      'mc scout 100 64 100 12 --block dirt',
     ],
   }),
   g('safe_dig', 'world', ['sd'], {
