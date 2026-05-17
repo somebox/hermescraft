@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._lib import Arena, BotClient, Predicates, RconClient, load_config
+from tests._lib import Arena, BotClient, BotTrace, Predicates, RconClient, load_config
 
 
 @pytest.fixture(scope="session")
@@ -165,3 +165,33 @@ def pytest_runtest_call(item):
         rcon.run(f'execute in {world} run say [test #{n}] {short}')
     except Exception:
         pass
+
+
+# ── Auto bot-position trace (functional tier only) ──────────────────
+# Every functional test gets a background poller that snapshots the
+# bot's /status?lean=true every 0.4s into <log_dir>/traces/<nodeid>.log.
+# When a primitive hangs, the trace shows exactly where the bot stalled.
+# Autouse + marker-gate so unit tests don't pay the cost.
+
+@pytest.fixture(autouse=True)
+def bot_trace(request, tester_bot, log_dir):
+    """Record bot position throughout each functional test. No-op for
+    unit/integration markers."""
+    if not request.node.get_closest_marker("functional"):
+        yield None
+        return
+    safe = (
+        request.node.nodeid
+        .replace("tests/functional/", "")
+        .replace("/", "_")
+        .replace("::", "__")
+        .replace("[", "_")
+        .replace("]", "")
+    )
+    trace_path = log_dir / "traces" / f"{safe}.trace.log"
+    trace = BotTrace(tester_bot.base, trace_path)
+    trace.start()
+    try:
+        yield trace
+    finally:
+        trace.stop()

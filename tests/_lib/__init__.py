@@ -19,11 +19,13 @@ from .config import load_config
 from .fixture_loader import Fixture, load_fixture
 from .predicates import PredicateResult, Predicates
 from .rcon import RconClient
+from .trace import BotTrace
 from .util import extract_error
 
 __all__ = [
     "Arena",
     "BotClient",
+    "BotTrace",
     "Fixture",
     "PredicateResult",
     "Predicates",

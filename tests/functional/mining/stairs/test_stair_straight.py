@@ -21,18 +21,18 @@ Parametrized on (direction, length) — 4 cardinal angles × 2 distances
 
 from __future__ import annotations
 
-import math
 import time
 
 import pytest
 
 
-# Surface center + extent — keep close to origin so it's visually adjacent
-# to the other mining-test arenas (strip-flatten at x ∈ [-5, 25], water
-# at x ∈ [0, 16]).
-ARENA_CENTER_X = 60
-ARENA_CENTER_Z = 60
-ARENA_RADIUS = 18                  # stone slab is (radius*2+1) × (radius*2+1)
+# Surface centered on ORIGIN to match the older mining-test convention
+# (test_mine_collect_grid, test_mine_behind_wall, test_dig_door_support,
+# test_collect_underwater all center their arena on x=0,z=0 at y=64–65).
+# One easy fly-around vantage covers every mining test.
+ARENA_CENTER_X = 0
+ARENA_CENTER_Z = 0
+ARENA_RADIUS = 12                  # stone slab is (radius*2+1) × (radius*2+1)
 GROUND_Y = 64                       # top of the stone slab / grass cap
 PLAYER_FEET_Y = GROUND_Y + 1        # bot's feet when on grass — y=65
 STONE_FLOOR_Y = 50                  # bottom of the stone column under the arena
@@ -69,7 +69,7 @@ def surface_arena(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    arena.rescue_tester(safe_xyz=(ARENA_CENTER_X, GROUND_Y + 2, ARENA_CENTER_Z))
     arena.clean()
     pad = ARENA_RADIUS + 3
     x1 = ARENA_CENTER_X - pad
@@ -77,6 +77,8 @@ def surface_arena(rcon, arena, tester_bot, config):
     z1 = ARENA_CENTER_Z - pad
     z2 = ARENA_CENTER_Z + pad
     rcon.batch([
+        # Force-load the chunks so fills land.
+        f"execute in {world} run forceload add {x1} {z1} {x2} {z2}",
         # Clear the working volume from STONE_FLOOR_Y to plenty of air above.
         f"execute in {world} run fill {x1} {STONE_FLOOR_Y} {z1} {x2} 80 {z2} minecraft:air",
         # Stone column under the arena.
@@ -88,40 +90,47 @@ def surface_arena(rcon, arena, tester_bot, config):
         "give Tester minecraft:stone_pickaxe",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
-        # Full heal — prior tests may have left HP partial.
         "effect give Tester minecraft:instant_health 1 5",
     ])
     arena.settle(seconds=1.5)
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(f"execute in {world} run fill {x1} {STONE_FLOOR_Y} {z1} {x2} 80 {z2} minecraft:air")
+    # Creative on teardown so the bot can't take damage in the gap
+    # between fixtures (parametrized re-setup, next file's fixture, etc.).
+    rcon.batch([
+        "gamemode creative Tester",
+        f"execute in {world} run tp Tester 0 100 0 0 0",
+        f"execute in {world} run fill {x1} {STONE_FLOOR_Y} {z1} {x2} 80 {z2} minecraft:air",
+        f"execute in {world} run forceload remove {x1} {z1} {x2} {z2}",
+    ])
 
 
-@pytest.mark.functional
-@pytest.mark.xfail(
+_SOUTH_XFAIL = pytest.mark.xfail(
     reason=(
-        "mc stair_down primitive bug: consistently descends only 2-3 cells when "
-        "asked for 4+, and the resulting staircase is not walkable back up. "
-        "Bot ends 3-walled at the bottom. Test documents the expected behavior; "
-        "flip to expected pass when the primitive is fixed."
+        "mc stair_down south-direction bug: bot under-descends or produces a "
+        "non-traversable staircase specifically when digging south (+z, yaw=0). "
+        "North/east/west all work — the primitive treats yaw=0 differently. "
+        "Drop this mark when the south path matches the other cardinals."
     ),
     strict=False,
 )
+
+
+@pytest.mark.functional
 @pytest.mark.parametrize(
     "direction,length",
     [
         ("north", 4),
-        ("south", 4),
+        pytest.param("south", 4, marks=_SOUTH_XFAIL),
         ("east",  4),
         ("west",  4),
         ("north", 8),
-        ("south", 8),
+        pytest.param("south", 8, marks=_SOUTH_XFAIL),
         ("east",  8),
         ("west",  8),
     ],
     ids=lambda v: f"{v}",
 )
-def test_stair_down_then_walk_back_up(bot, rcon, surface_arena, config, direction, length):
+def test_stair_down_then_walk_back_up(bot, rcon, arena, surface_arena, config, direction, length):
     """Dig a descending staircase, then walk back up via mc goto.
 
     The traversal step is the real test: the dug staircase has to be
@@ -130,15 +139,23 @@ def test_stair_down_then_walk_back_up(bot, rcon, surface_arena, config, directio
     world = config["mc"]["world"]
     sx, sy, sz = _start_pos_for(direction)
     yaw = DIR_YAW[direction]
-    rcon.run(f"execute in {world} run tp Tester {sx} {sy} {sz} {yaw} 0")
+    # Switch back to survival per-case, TP onto grass at the start
+    # point, then heal so the bot is full HP for the dig.
+    rcon.batch([
+        "gamemode survival Tester",
+        f"execute in {world} run tp Tester {sx} {sy} {sz} {yaw} 0",
+        "effect give Tester minecraft:instant_health 1 5",
+    ])
     time.sleep(1.5)
 
-    pre = bot.status_lean()
-    pre_pos = pre.get("position") or {}
-    assert math.isclose(pre_pos.get("y", 0), PLAYER_FEET_Y, abs_tol=1.0), (
-        f"setup: bot not on grass — pre={pre_pos}"
+    # Pre-test conditions: survival, on grass at the dig start, full HP.
+    arena.verify_tester_ready(
+        bot,
+        expected_xz=(sx, sz),
+        expected_y_at_least=PLAYER_FEET_Y - 1.0,
+        min_hp=19.5,
+        xz_tol=1.5,
     )
-    assert (pre.get("health") or 0) >= 19.5, f"setup: bot HP={pre.get('health')}"
 
     # Drive the descent.
     r = bot.post(

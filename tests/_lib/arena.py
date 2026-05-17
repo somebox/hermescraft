@@ -64,6 +64,82 @@ class Arena:
         perception catch up with world state before assertions."""
         time.sleep(seconds if seconds is not None else self._settle_seconds)
 
+    def rescue_tester(
+        self,
+        *,
+        safe_xyz: tuple[float, float, float] = (0.0, 100.0, 0.0),
+    ) -> None:
+        """Force the Tester bot into a clean, alive, invulnerable state.
+
+        Use at the TOP of every fixture so it doesn't matter how the previous
+        test (or an external command) left the bot. Sequence:
+
+          1. difficulty peaceful — auto-regen + no mob aggro
+          2. gamemode creative   — immediate full HP, invulnerable, no fall dmg
+          3. tp to safe coords   — preempt void/lava interactions
+
+        Caller's fixture is expected to flip back to survival later, after
+        the arena is built and the bot is positioned. This helper is purely
+        about reaching a known-good baseline without assumptions about the
+        bot's prior state (e.g. dead-mid-respawn, in the void, on fire).
+        """
+        sx, sy, sz = safe_xyz
+        self.rcon.batch([
+            f"execute in {self.world} run difficulty peaceful",
+            f"gamemode creative {self.bot_name}",
+            f"execute in {self.world} run tp {self.bot_name} {sx} {sy} {sz} 0 0",
+        ])
+
+    def verify_tester_ready(
+        self,
+        bot,
+        *,
+        expected_xz: tuple[float, float] | None = None,
+        expected_y_at_least: float | None = None,
+        min_hp: float = 19.5,
+        xz_tol: float = 1.5,
+    ) -> dict:
+        """Assert pre-test conditions: Tester in survival mode, on the
+        expected cell, at full (or near-full) HP.
+
+        Returns the bot's lean status dict so the caller can reuse position
+        / health values it already fetched. Raises AssertionError with a
+        descriptive message on mismatch.
+        """
+        gm = self.rcon.run(
+            f"execute in {self.world} run data get entity {self.bot_name} playerGameType"
+        )
+        # Survival=0, creative=1, adventure=2, spectator=3. Response looks
+        # like "> Tester has the following entity data: 0\n>" — rcon-cli
+        # tacks on prompt chars, so search for "data: <N>" rather than
+        # using endswith.
+        import re
+        m = re.search(r"data:\s*([0-3])", gm)
+        assert m and m.group(1) == "0", (
+            f"setup: {self.bot_name} not in survival gamemode (rcon said: {gm!r}). "
+            f"Check that the fixture flipped back from creative."
+        )
+        status = bot.status_lean()
+        hp = status.get("health") or 0
+        assert hp >= min_hp, (
+            f"setup: {self.bot_name} HP={hp} (need ≥{min_hp}) — "
+            f"prior test damage didn't heal or the heal didn't propagate"
+        )
+        pos = status.get("position") or {}
+        if expected_xz is not None:
+            ex, ez = expected_xz
+            dx = abs((pos.get("x") or 0) - ex)
+            dz = abs((pos.get("z") or 0) - ez)
+            assert dx <= xz_tol and dz <= xz_tol, (
+                f"setup: {self.bot_name} at {pos}, expected x≈{ex} z≈{ez} (tol {xz_tol})"
+            )
+        if expected_y_at_least is not None:
+            assert (pos.get("y") or 0) >= expected_y_at_least, (
+                f"setup: {self.bot_name} y={pos.get('y')}, expected ≥{expected_y_at_least} "
+                f"(bot may have fallen off the test surface)"
+            )
+        return status
+
     def teleport_bot(self, x: float, y: float, z: float, yaw: float = 0.0, pitch: float = 0.0) -> str:
         """Convenience: tp the configured bot into the test world at coords."""
         return self.rcon.run(

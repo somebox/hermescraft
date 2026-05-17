@@ -72,30 +72,30 @@ def water_arena(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]))
     arena.clean()
     x1, y1, z1, x2, y2, z2 = VOLUME
     cmds = [
         f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
         f"execute in {world} run fill {x1} {y1} {z1} {x2} 61 {z2} minecraft:stone",
-        # 9×9 sand pile, 4 layers deep.
+        # 9×9 sand pile, 4 layers deep — bot at y=66 lands on top y=65.
         f"execute in {world} run fill {SAND_X_MIN} {SAND_Y_MIN} {SAND_Z_MIN} "
         f"{SAND_X_MAX} {SAND_Y_MAX} {SAND_Z_MAX} minecraft:sand",
         "clear Tester",
         "give Tester minecraft:stone_shovel",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
-        # Full heal — prior tests in the same session may have left the
-        # bot at partial HP; the strict pre-condition check would then
-        # fail through no fault of this scenario's setup.
-        "effect give Tester minecraft:instant_health 1 5",
     ]
     # Water cluster overwrites top-layer sand at the trap.
     for (wx, wy, wz) in WATER_CELLS:
         cmds.append(f"execute in {world} run setblock {wx} {wy} {wz} minecraft:water")
-    cmds.append(
-        f"execute in {world} run tp Tester {BOT_TP[0]} {BOT_TP[1]} {BOT_TP[2]} {BOT_TP[3]} {BOT_TP[4]}"
-    )
+    # Back to survival, re-TP onto the sand top, then heal — so the
+    # bot lands cleanly and instant_health propagates while stationary.
+    cmds.extend([
+        "gamemode survival Tester",
+        f"execute in {world} run tp Tester {BOT_TP[0]} {BOT_TP[1]} {BOT_TP[2]} {BOT_TP[3]} {BOT_TP[4]}",
+        "effect give Tester minecraft:instant_health 1 5",
+    ])
     rcon.batch(cmds)
     arena.settle(seconds=3.0)
     yield
@@ -104,19 +104,22 @@ def water_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-def test_water_guard_holds_when_bot_is_in_flood_path(bot, rcon, water_arena):
+def test_water_guard_holds_when_bot_is_in_flood_path(bot, rcon, arena, water_arena):
     """Bot is asked for 30 sand while standing 3 blocks west of a water
     trap. Most of the 9×9 surface is safely mineable; the water-adjacent
     sand (and the trap center) must be refused.
 
     The test fails loudly if the bot loses HP — that would mean water
     actually reached the bot's standing area (guard failure)."""
-    pre = bot.status_lean()
+    # Pre-test conditions: survival, on the pile (y≥65.5), full HP.
+    pre = arena.verify_tester_ready(
+        bot,
+        expected_xz=(BOT_TP[0], BOT_TP[2]),
+        expected_y_at_least=65.5,
+        min_hp=17,
+        xz_tol=1.5,
+    )
     pre_hp = pre.get("health") or 0
-    pre_pos = pre.get("position") or {}
-    assert pre_hp >= 17, f"setup: bot HP={pre_hp} (low — prior test left damage that didn't heal)"
-    # Bot must actually be on the sand pile, not floating.
-    assert pre_pos.get("y", 0) >= 65.5, f"setup: bot not on pile, pos={pre_pos}"
 
     # Confirm the trap is set up correctly.
     for (wx, wy, wz) in WATER_CELLS:

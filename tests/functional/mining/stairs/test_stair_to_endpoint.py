@@ -38,8 +38,9 @@ import time
 import pytest
 
 
-CUBE_CENTER = (100, 65, 100)
-CUBE_HALF = 11
+# Centered on ORIGIN to match the older mining-test convention.
+CUBE_CENTER = (0, 65, 0)
+CUBE_HALF = 8
 PLATFORM_Y = CUBE_CENTER[1] + CUBE_HALF + 1
 
 
@@ -53,35 +54,51 @@ def stair_cube(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    arena.rescue_tester(safe_xyz=(cx, PLATFORM_Y + 2, cz))
     arena.clean()
     pad = 4
     rcon.batch([
+        f"execute in {world} run forceload add {x1-pad} {z1-pad} {x2+pad} {z2+pad}",
         f"execute in {world} run fill {x1-pad} {y1-pad} {z1-pad} {x2+pad} {y2+pad} {z2+pad} minecraft:air",
         f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:stone",
         "clear Tester",
         "give Tester minecraft:stone_pickaxe",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
-        # Full heal — prior tests may have left HP partial.
-        "effect give Tester minecraft:instant_health 1 5",
     ])
     arena.settle(seconds=1.5)
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(f"execute in {world} run fill {x1-pad} {y1-pad} {z1-pad} {x2+pad} {y2+pad} {z2+pad} minecraft:air")
+    rcon.batch([
+        "gamemode creative Tester",
+        f"execute in {world} run tp Tester 0 100 0 0 0",
+        f"execute in {world} run fill {x1-pad} {y1-pad} {z1-pad} {x2+pad} {y2+pad} {z2+pad} minecraft:air",
+        f"execute in {world} run forceload remove {x1-pad} {z1-pad} {x2+pad} {z2+pad}",
+    ])
 
 
 @pytest.mark.functional
 @pytest.mark.xfail(reason="mc stair_to <coords> primitive not yet implemented (spec only)", strict=False)
-def test_stair_to_endpoint_with_auto_turn(bot, rcon, stair_cube, config):
+def test_stair_to_endpoint_with_auto_turn(bot, rcon, arena, stair_cube, config):
     """Endpoint is 5 south + 5 east + 6 down from start; expect the bot
     to dig an L-shaped descent that lands within ~1 block of the endpoint."""
     world = config["mc"]["world"]
     start_x = CUBE_CENTER[0] - CUBE_HALF + 2.5
     start_z = CUBE_CENTER[2] - CUBE_HALF + 0.5
-    rcon.run(f"execute in {world} run tp Tester {start_x} {PLATFORM_Y} {start_z} 0 0")
+    rcon.batch([
+        "gamemode survival Tester",
+        f"execute in {world} run tp Tester {start_x} {PLATFORM_Y} {start_z} 0 0",
+        "effect give Tester minecraft:instant_health 1 5",
+    ])
     time.sleep(1.5)
+
+    # Pre-test conditions: survival, on the platform top, full HP.
+    arena.verify_tester_ready(
+        bot,
+        expected_xz=(start_x, start_z),
+        expected_y_at_least=PLATFORM_Y - 1.0,
+        min_hp=19.5,
+        xz_tol=1.5,
+    )
 
     end_x = int(start_x) + 5
     end_y = int(PLATFORM_Y) - 6

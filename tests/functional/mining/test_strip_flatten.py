@@ -21,14 +21,14 @@ Geometry:
 
 Top view (y=66 dirt extent — 16×16 footprint):
 
-       x=20 .. 35
-   z=20  D D D D D D D D D D D D D D D D
-   z=21  D D D D D D D D D D D D D D D D
+       x= 0 .. 15
+   z= 0  D D D D D D D D D D D D D D D D
+   z= 1  D D D D D D D D D D D D D D D D
    ...                                       (16 rows)
-   z=35  D D D D D D D D D D D D D D D D
+   z=15  D D D D D D D D D D D D D D D D
 
 Bumps at y=67 (scatter — single cells + 2-3 cell clusters): see
-SURFACE_CLUTTER. Bot starts on the pile at (22, 67, 22) — corner of
+SURFACE_CLUTTER. Bot starts on the pile at (2.5, 68, 2.5) — corner of
 the surface, facing into the pile.
 
 Assertions:
@@ -55,9 +55,12 @@ import time
 import pytest
 
 
-# Pit footprint — 16×16 at x ∈ [20, 35], z ∈ [20, 35].
-PIT_X_MIN, PIT_X_MAX = 20, 35
-PIT_Z_MIN, PIT_Z_MAX = 20, 35
+# Pit footprint — 16×16 at x ∈ [0, 15], z ∈ [0, 15]. Centred near
+# origin to match the existing mining-test arenas (test_mine_collect_grid,
+# test_dig_walk_pickup_chain, etc.) so observers can fly to ~spawn and
+# watch every test in the suite from one vantage point.
+PIT_X_MIN, PIT_X_MAX = 0, 15
+PIT_Z_MIN, PIT_Z_MAX = 0, 15
 PIT_TOP_Y = 66      # the strip-mine target level
 PIT_MIDDLE_Y = 65   # protect
 PIT_BOTTOM_Y = 64   # protect
@@ -67,18 +70,18 @@ SUBFLOOR_Y = 63     # stone
 # and 2-3 cell clusters so it looks like natural detritus.
 SURFACE_CLUTTER = [
     # Single bumps
-    (22, 67, 25), (28, 67, 21), (33, 67, 24),
-    (24, 67, 31), (30, 67, 33), (34, 67, 29),
+    (2, 67, 5), (8, 67, 1), (13, 67, 4),
+    (4, 67, 11), (10, 67, 13), (14, 67, 9),
     # 2-cell cluster
-    (26, 67, 27), (27, 67, 27),
+    (6, 67, 7), (7, 67, 7),
     # 3-cell cluster
-    (31, 67, 22), (32, 67, 22), (32, 67, 23),
+    (11, 67, 2), (12, 67, 2), (12, 67, 3),
     # Another 2-cell cluster
-    (21, 67, 29), (21, 67, 30),
+    (1, 67, 9), (1, 67, 10),
 ]
 
-BOT_TP = (22.5, 68.0, 22.5, -45, 0)   # on top of the pile corner, facing SE
-VOLUME = (15, 58, 15, 40, 72, 40)
+BOT_TP = (2.5, 68.0, 2.5, -45, 0)   # on top of the pile corner, facing SE
+VOLUME = (-5, 58, -5, 20, 72, 20)
 
 REQUESTED_COUNT = 32
 # 16×16 = 256 cells per layer. Bot has count=32. With strip-sort it
@@ -93,7 +96,9 @@ def pit_arena(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    # Always rescue first: peaceful + creative + safe TP. Survives any
+    # prior-test crash, void-fall, or mid-respawn state.
+    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]))
     arena.clean()
 
     x1, y1, z1, x2, y2, z2 = VOLUME
@@ -117,15 +122,21 @@ def pit_arena(rcon, arena, tester_bot, config):
         "give Tester minecraft:stone_shovel",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
-        "effect give Tester minecraft:instant_health 1 5",
+        # Survival + re-TP onto the pile, then heal — order matters so
+        # instant_health propagates UpdateHealth with the bot stationary.
+        "gamemode survival Tester",
         f"execute in {world} run tp Tester {BOT_TP[0]} {BOT_TP[1]} {BOT_TP[2]} {BOT_TP[3]} {BOT_TP[4]}",
+        "effect give Tester minecraft:instant_health 1 5",
     ])
     rcon.batch(cmds)
     arena.settle(seconds=3.0)
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air")
-    rcon.run(f"execute in {world} run forceload remove {x1} {z1} {x2} {z2}")
+    rcon.batch([
+        "gamemode creative Tester",
+        f"execute in {world} run tp Tester 0 100 0 0 0",
+        f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
+        f"execute in {world} run forceload remove {x1} {z1} {x2} {z2}",
+    ])
 
 
 @pytest.mark.functional
@@ -142,15 +153,17 @@ def pit_arena(rcon, arena, tester_bot, config):
     ),
     strict=False,
 )
-def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, pit_arena):
+def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
     """Mine 32 dirt from the top two levels (clutter + y=66), leave the
     middle (y=65) and bottom (y=64) of the pit untouched. Mined cells
     should cluster as a strip, not scatter."""
-    start = bot.status_lean()
-    assert (start.get("health") or 0) >= 17, f"setup: bot HP={start.get('health')}"
-    pre_pos = start.get("position") or {}
-    assert pre_pos.get("y", 0) >= PIT_TOP_Y + 1, (
-        f"setup: bot is not on the pile, pos={pre_pos}"
+    # Pre-test conditions: survival mode, on the pile, full HP.
+    arena.verify_tester_ready(
+        bot,
+        expected_xz=(BOT_TP[0], BOT_TP[2]),
+        expected_y_at_least=PIT_TOP_Y + 1,
+        min_hp=17,
+        xz_tol=1.5,
     )
 
     # Drive the mine.
@@ -226,16 +239,48 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, pit_arena):
             f"Strip should be thin (≤5) in one axis. diag={diag}"
         )
 
-    # 5. **Boundary held** — pit perimeter (the bordering dirt cells
-    # at x=20/35 or z=20/35 at y=66) was mineable; the boundary check
+        # 4b. **Contiguity**: 4-neighbour flood-fill on the mined cells
+        # at y=66 should yield one dominant connected component holding
+        # most of the cells. A scattered "stars around the bot" pattern
+        # produces many tiny disconnected components.
+        mined_set = set(top_mined)
+        seen: set[tuple[int, int]] = set()
+        components: list[int] = []
+        for cell in mined_set:
+            if cell in seen:
+                continue
+            stack = [cell]
+            size = 0
+            while stack:
+                cur = stack.pop()
+                if cur in seen or cur not in mined_set:
+                    continue
+                seen.add(cur)
+                size += 1
+                cx_, cz_ = cur
+                stack.extend([(cx_+1, cz_), (cx_-1, cz_), (cx_, cz_+1), (cx_, cz_-1)])
+            components.append(size)
+        components.sort(reverse=True)
+        biggest = components[0] if components else 0
+        # Require the largest component to hold at least 70% of mined cells.
+        # A strip naturally is one connected run; ≥70% leaves slack for a
+        # handful of incidental clutter pickups (surface bumps).
+        threshold = max(1, int(len(top_mined) * 0.7))
+        assert biggest >= threshold, (
+            f"mined cells at y={PIT_TOP_Y} are NOT contiguous — largest "
+            f"connected component is {biggest}/{len(top_mined)} cells "
+            f"(want ≥{threshold}); component sizes={components}. diag={diag}"
+        )
+
+    # 5. **Boundary held** — pit perimeter is mineable; the boundary check
     # is "no cells OUTSIDE the pit were touched". The fixture air-fills
     # the working volume, so there's nothing to mine outside. We check
     # one neighbouring cell at each side just to be safe.
     OUTSIDE_SAMPLES = [
-        (PIT_X_MIN - 1, PIT_TOP_Y, 27),
-        (PIT_X_MAX + 1, PIT_TOP_Y, 27),
-        (27, PIT_TOP_Y, PIT_Z_MIN - 1),
-        (27, PIT_TOP_Y, PIT_Z_MAX + 1),
+        (PIT_X_MIN - 1, PIT_TOP_Y, (PIT_Z_MIN + PIT_Z_MAX) // 2),
+        (PIT_X_MAX + 1, PIT_TOP_Y, (PIT_Z_MIN + PIT_Z_MAX) // 2),
+        ((PIT_X_MIN + PIT_X_MAX) // 2, PIT_TOP_Y, PIT_Z_MIN - 1),
+        ((PIT_X_MIN + PIT_X_MAX) // 2, PIT_TOP_Y, PIT_Z_MAX + 1),
     ]
     for (sx, sy, sz) in OUTSIDE_SAMPLES:
         # Outside the pit there's only air at y=66 (no dirt was placed).

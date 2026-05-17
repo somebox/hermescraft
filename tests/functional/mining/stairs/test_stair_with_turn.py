@@ -15,14 +15,16 @@ be DRY but the imports are simpler if we duplicate the constants).
 
 from __future__ import annotations
 
-import math
 import time
 
 import pytest
 
 
-CUBE_CENTER = (100, 65, 100)
-CUBE_HALF = 11
+# Centered on ORIGIN to match the older mining-test convention. The
+# floating cube is 17×17×17 around (0, 65, 0) — visible from the same
+# vantage as the other mining tests.
+CUBE_CENTER = (0, 65, 0)
+CUBE_HALF = 8
 CUBE_X_MIN, CUBE_X_MAX = CUBE_CENTER[0] - CUBE_HALF, CUBE_CENTER[0] + CUBE_HALF
 CUBE_Y_MIN, CUBE_Y_MAX = CUBE_CENTER[1] - CUBE_HALF, CUBE_CENTER[1] + CUBE_HALF
 CUBE_Z_MIN, CUBE_Z_MAX = CUBE_CENTER[2] - CUBE_HALF, CUBE_CENTER[2] + CUBE_HALF
@@ -35,10 +37,11 @@ def stair_cube(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    arena.rescue_tester(safe_xyz=(CUBE_CENTER[0], PLATFORM_Y + 2, CUBE_CENTER[2]))
     arena.clean()
     pad = 4
     rcon.batch([
+        f"execute in {world} run forceload add {CUBE_X_MIN-pad} {CUBE_Z_MIN-pad} {CUBE_X_MAX+pad} {CUBE_Z_MAX+pad}",
         f"execute in {world} run fill {CUBE_X_MIN-pad} {CUBE_Y_MIN-pad} {CUBE_Z_MIN-pad} "
         f"{CUBE_X_MAX+pad} {CUBE_Y_MAX+pad} {CUBE_Z_MAX+pad} minecraft:air",
         f"execute in {world} run fill {CUBE_X_MIN} {CUBE_Y_MIN} {CUBE_Z_MIN} "
@@ -47,28 +50,29 @@ def stair_cube(rcon, arena, tester_bot, config):
         "give Tester minecraft:stone_pickaxe",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
-        # Full heal — prior tests may have left HP partial.
-        "effect give Tester minecraft:instant_health 1 5",
     ])
     arena.settle(seconds=1.5)
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(
+    rcon.batch([
+        "gamemode creative Tester",
+        f"execute in {world} run tp Tester 0 100 0 0 0",
         f"execute in {world} run fill {CUBE_X_MIN-pad} {CUBE_Y_MIN-pad} {CUBE_Z_MIN-pad} "
-        f"{CUBE_X_MAX+pad} {CUBE_Y_MAX+pad} {CUBE_Z_MAX+pad} minecraft:air"
-    )
+        f"{CUBE_X_MAX+pad} {CUBE_Y_MAX+pad} {CUBE_Z_MAX+pad} minecraft:air",
+        f"execute in {world} run forceload remove {CUBE_X_MIN-pad} {CUBE_Z_MIN-pad} {CUBE_X_MAX+pad} {CUBE_Z_MAX+pad}",
+    ])
 
 
 @pytest.mark.functional
 @pytest.mark.xfail(
     reason=(
-        "mc stair_down primitive doesn't reliably descend the requested length "
-        "or produce a walkable staircase — see test_stair_straight.py. The "
-        "L-shape variant inherits the same issue and adds the turn case on top."
+        "Inherits the test_stair_straight south-direction bug: leg 1 digs south, "
+        "which is the broken cardinal. Drop this mark when stair_down south works "
+        "(at which point this L-shape should pass naturally — the east leg already "
+        "works in test_stair_straight)."
     ),
     strict=False,
 )
-def test_stair_south_then_east_with_traversal(bot, rcon, stair_cube, config):
+def test_stair_south_then_east_with_traversal(bot, rcon, arena, stair_cube, config):
     """Stair south 5, turn, stair east 5, then traverse the L back up."""
     world = config["mc"]["world"]
     # Start at the north-west corner of the cube top: south leg goes
@@ -76,11 +80,21 @@ def test_stair_south_then_east_with_traversal(bot, rcon, stair_cube, config):
     # go SOUTH (+z) across the cube top.
     start_x = CUBE_X_MIN + 2.5
     start_z = CUBE_Z_MIN + 0.5
-    rcon.run(f"execute in {world} run tp Tester {start_x} {PLATFORM_Y} {start_z} 0 0")
+    rcon.batch([
+        "gamemode survival Tester",
+        f"execute in {world} run tp Tester {start_x} {PLATFORM_Y} {start_z} 0 0",
+        "effect give Tester minecraft:instant_health 1 5",
+    ])
     time.sleep(1.5)
 
-    pre = bot.status_lean()
-    assert (pre.get("health") or 0) >= 19.5
+    # Pre-test conditions: survival, on the platform top, full HP.
+    arena.verify_tester_ready(
+        bot,
+        expected_xz=(start_x, start_z),
+        expected_y_at_least=PLATFORM_Y - 1.0,
+        min_hp=19.5,
+        xz_tol=1.5,
+    )
 
     # Leg 1: south, length 5.
     r1 = bot.post("/action/stair_down", {"direction": "south", "length": 5}, timeout=60.0)
