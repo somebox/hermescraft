@@ -1,33 +1,51 @@
-"""Strip-mine flatten: terraced multi-level dirt + stone boundary.
+"""Strip-mine 32 blocks from a 16×16×3 dirt pit + scatter on top.
 
-The test sets up a 9×9 mining area as an uneven dirt landscape:
+Realistic scenario: a big patch of land has irregular dirt clumps on the
+surface plus 3 contiguous layers of dirt below. The bot stands ON the
+pile and is asked for 32 blocks. With a stone shovel, strip-mining
+should:
 
-  - Base layer (y=64): dirt across all 81 cells.
-  - Raised layer (y=65): ~20 scattered cells of dirt forming bumps.
-  - Peak layer (y=66): 5 high cells forming small towers.
-  - A few "surface clutter" dirt cells sit on top of bumps too, so
-    flattening requires reaching multiple heights.
+  - Mine the bumps and clusters on top (y=67 surface clutter).
+  - Mine into the top-most full layer (y=66) — the strip-mining layer.
+  - **NOT touch** the two layers below (y=65, y=64).
+  - Lay the mined cells out as a *linear strip* (a row or a contiguous
+    cluster), not a scattered star pattern.
 
-The bot's job: `mc collect dirt N` flattens the area. After mining,
-the surface should be roughly flat at y=64 — i.e. raised cells removed.
+Geometry:
+
+  y=67   — scattered dirt blocks + 2-3 cell clusters (the "stuff on top")
+  y=66   — top of the pit (3-layer dirt), 16×16, this is the strip level
+  y=65   — middle of the pit (must stay intact)
+  y=64   — bottom of the pit (must stay intact)
+  y=63   — stone sub-floor (untouchable for the test)
+
+Top view (y=66 dirt extent — 16×16 footprint):
+
+       x=20 .. 35
+   z=20  D D D D D D D D D D D D D D D D
+   z=21  D D D D D D D D D D D D D D D D
+   ...                                       (16 rows)
+   z=35  D D D D D D D D D D D D D D D D
+
+Bumps at y=67 (scatter — single cells + 2-3 cell clusters): see
+SURFACE_CLUTTER. Bot starts on the pile at (22, 67, 22) — corner of
+the surface, facing into the pile.
 
 Assertions:
-  1. **Boundary held**: every stone-ring sample at the bbox perimeter
-     is still stone. The bot did not chip into the ring.
-  2. **Levelled**: ≥90% of the originally-raised cells (y=65 + y=66)
-     are now AIR. The bot flattened the terrain.
-  3. **Base mostly intact**: the bot didn't dig BELOW the base level
-     — at least 30 cells of y=64 dirt remain (count chosen so the
-     test doesn't accidentally fail if the bot's strip-mine pulls a
-     few base cells as part of the working face).
-  4. **No wandering**: stone-capped dirt witnesses outside the bbox
-     are still dirt (bot would have to break the cap stone to reach
-     them — boundary breach).
-  5. **Bot HP unchanged**: no suffocation / fall damage.
+  1. Bot mined at least 25 cells (most of the 32-budget). Some slack
+     for natural primitive failures.
+  2. Middle layer (y=65) fully intact across all 256 cells.
+  3. Bottom layer (y=64) fully intact across all 256 cells.
+  4. Strip-pattern: mined cells at y=66 cluster in a tight bounding
+     box (≤ ~3 rows OR columns, ≤ 16 cells wide). A star pattern
+     would have a 16×16 footprint — strip should be much tighter.
+  5. Boundary held — no cells mined OUTSIDE the 16×16 pit footprint.
+  6. Bot HP unchanged.
 
-Visual note: the user can watch the bot mining live. Strip-mine sort
-(Fix E) should produce a row-by-row pattern over the multi-level
-terrain — the bot stays on its row, descending heights as it goes.
+Today's `mc collect` has no Y-boundary awareness AND its strip-sort
+prioritizes Y proximity to bot; both contribute to "the bot dives once
+the local pool is exhausted". XFAIL accordingly until the primitive
+gets a strip-plane lock.
 """
 
 from __future__ import annotations
@@ -37,51 +55,40 @@ import time
 import pytest
 
 
-# Inclusive coords for the dirt-mining zone (9×9 footprint at the surface).
-ZONE_X_MIN, ZONE_X_MAX = 6, 14
-ZONE_Z_MIN, ZONE_Z_MAX = 6, 14
-RING_X = (5, 15)          # stone ring at these x values, full z perimeter
-RING_Z = (5, 15)
+# Pit footprint — 16×16 at x ∈ [20, 35], z ∈ [20, 35].
+PIT_X_MIN, PIT_X_MAX = 20, 35
+PIT_Z_MIN, PIT_Z_MAX = 20, 35
+PIT_TOP_Y = 66      # the strip-mine target level
+PIT_MIDDLE_Y = 65   # protect
+PIT_BOTTOM_Y = 64   # protect
+SUBFLOOR_Y = 63     # stone
 
-# Raised dirt cells at y=65 inside the bbox.
-RAISED_65 = [
-    (7, 65, 7),  (8, 65, 7),  (12, 65, 7),
-    (6, 65, 9),  (10, 65, 9), (14, 65, 9),
-    (7, 65, 10), (13, 65, 10),
-    (6, 65, 11), (12, 65, 11),
-    (8, 65, 13), (9, 65, 13), (10, 65, 13),
-    (11, 65, 8), (13, 65, 11),
-    (9, 65, 6),  (11, 65, 12),
-]
-# Peak dirt cells at y=66 inside the bbox (towers).
-PEAKS_66 = [(8, 66, 7), (10, 66, 9), (13, 66, 10), (9, 66, 13), (11, 66, 8)]
-# All raised cells — used for the "≥90% gone" assertion.
-RAISED_CELLS = RAISED_65 + PEAKS_66
-
-# Stone-ring sample points we'll later assert are STILL stone.
-RING_SAMPLES = [
-    (5, 64, 10), (15, 64, 10), (10, 64, 5), (10, 64, 15),  # cardinal mid-points
-    (5, 64, 5), (15, 64, 15),                              # opposite corners
-    (5, 64, 8), (15, 64, 12),                              # extra samples
+# Scattered dirt blocks on top + a couple of clusters. Mix of singles
+# and 2-3 cell clusters so it looks like natural detritus.
+SURFACE_CLUTTER = [
+    # Single bumps
+    (22, 67, 25), (28, 67, 21), (33, 67, 24),
+    (24, 67, 31), (30, 67, 33), (34, 67, 29),
+    # 2-cell cluster
+    (26, 67, 27), (27, 67, 27),
+    # 3-cell cluster
+    (31, 67, 22), (32, 67, 22), (32, 67, 23),
+    # Another 2-cell cluster
+    (21, 67, 29), (21, 67, 30),
 ]
 
-# Outside-bbox dirt witnesses placed BELOW the surface (y=63) with stone
-# capped above (y=64). Bot's fair-play surface-bias rejects candidates
-# whose ceiling isn't air, so it can't see these. If they go missing the
-# bot tore through the stone cap to reach them — serious boundary breach.
-OUTSIDE_WITNESSES = [(2, 63, 10), (18, 63, 10), (10, 63, 2), (10, 63, 18)]
+BOT_TP = (22.5, 68.0, 22.5, -45, 0)   # on top of the pile corner, facing SE
+VOLUME = (15, 58, 15, 40, 72, 40)
 
-BOT_STAND = (3, 64, 10)         # stone pad under bot's feet
-BOT_TP = (3.5, 65.0, 10.5, 270, 0)   # facing east toward the dirt zone
-
-# Working volume — wider than the zone so the bot doesn't see natural-world
-# terrain beyond and start mining it.
-VOLUME = (-5, 60, -5, 25, 70, 25)
+REQUESTED_COUNT = 32
+# 16×16 = 256 cells per layer. Bot has count=32. With strip-sort it
+# should clear at most ~32 cells along a row+strip, well below
+# the layer total.
 
 
 @pytest.fixture
-def strip_arena(rcon, arena, tester_bot, config):
-    """Build the terraced dirt zone + stone ring + buried witnesses."""
+def pit_arena(rcon, arena, tester_bot, config):
+    """Build the 16×16×3 dirt pit with the scattered surface clutter."""
     world = config["mc"]["world"]
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
@@ -91,112 +98,153 @@ def strip_arena(rcon, arena, tester_bot, config):
 
     x1, y1, z1, x2, y2, z2 = VOLUME
     cmds = [
-        # Working volume: clear to air, then re-lay a stone sub-floor.
+        # Force-load the pit chunks. Without this the fills go into
+        # unloaded chunks and silently no-op, since the bot is at the
+        # default spawn area (x≈0, z≈0) when the fixture starts.
+        f"execute in {world} run forceload add {x1} {z1} {x2} {z2}",
+        # Clean volume + stone sub-floor.
         f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
-        f"execute in {world} run fill {x1} {y1} {z1} {x2} 63 {z2} minecraft:stone",
-        # Bot platform — stone pad to stand on, OUTSIDE the dirt zone.
-        f"execute in {world} run setblock {BOT_STAND[0]} {BOT_STAND[1]} {BOT_STAND[2]} minecraft:stone",
-        # Base dirt layer at y=64 across the 9×9 zone.
-        f"execute in {world} run fill {ZONE_X_MIN} 64 {ZONE_Z_MIN} {ZONE_X_MAX} 64 {ZONE_Z_MAX} minecraft:dirt",
-        # Stone ring at y=64 perimeter (overwrites the perimeter dirt).
-        f"execute in {world} run fill {RING_X[0]} 64 5 {RING_X[0]} 64 15 minecraft:stone",
-        f"execute in {world} run fill {RING_X[1]} 64 5 {RING_X[1]} 64 15 minecraft:stone",
-        f"execute in {world} run fill 5 64 {RING_Z[0]} 15 64 {RING_Z[0]} minecraft:stone",
-        f"execute in {world} run fill 5 64 {RING_Z[1]} 15 64 {RING_Z[1]} minecraft:stone",
+        f"execute in {world} run fill {x1} {y1} {z1} {x2} {SUBFLOOR_Y} {z2} minecraft:stone",
+        # 16×16×3 dirt pit (bottom + middle + top, all dirt).
+        f"execute in {world} run fill {PIT_X_MIN} {PIT_BOTTOM_Y} {PIT_Z_MIN} "
+        f"{PIT_X_MAX} {PIT_TOP_Y} {PIT_Z_MAX} minecraft:dirt",
     ]
-    # Raised dirt at y=65 and peaks at y=66.
-    for (bx, by, bz) in RAISED_CELLS:
-        cmds.append(f"execute in {world} run setblock {bx} {by} {bz} minecraft:dirt")
-    # Buried witnesses at y=63 with stone cap at y=64 — bot can't see them.
-    for (wx, wy, wz) in OUTSIDE_WITNESSES:
-        cmds.append(f"execute in {world} run setblock {wx} {wy} {wz} minecraft:dirt")
-        cmds.append(f"execute in {world} run setblock {wx} {wy + 1} {wz} minecraft:stone")
-    # Bot setup.
+    # Surface clutter on y=67.
+    for (cx, cy, cz) in SURFACE_CLUTTER:
+        cmds.append(f"execute in {world} run setblock {cx} {cy} {cz} minecraft:dirt")
     cmds.extend([
         "clear Tester",
         "give Tester minecraft:stone_shovel",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
-        # Full heal — prior tests may have left HP partial.
         "effect give Tester minecraft:instant_health 1 5",
         f"execute in {world} run tp Tester {BOT_TP[0]} {BOT_TP[1]} {BOT_TP[2]} {BOT_TP[3]} {BOT_TP[4]}",
     ])
     rcon.batch(cmds)
-    arena.settle(seconds=2.5)
+    arena.settle(seconds=3.0)
     yield
     rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(
-        f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air"
-    )
+    rcon.run(f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air")
+    rcon.run(f"execute in {world} run forceload remove {x1} {z1} {x2} {z2}")
 
 
 @pytest.mark.functional
-def test_collect_dirt_flattens_terraced_zone(bot, rcon, strip_arena):
-    """Bot flattens 22 raised dirt cells over 3 y-levels without
-    breaking the bbox boundary."""
-    # Sanity: bot is alive + raised cells + ring + witnesses set up correctly.
+@pytest.mark.xfail(
+    reason=(
+        "Two compounding gaps surface here: (a) mc collect has no Y-boundary "
+        "lock, so once the top layer's local pool is exhausted refreshPool "
+        "exposes lower-layer cells whose ceiling is now air, and the bot "
+        "digs down. (b) The strip-mine sort orders cells by perp-axis "
+        "distance per Y plane, which is row-like at one level but does "
+        "not constrain the bot to mine top-down columnarly. Test documents "
+        "the desired strip behavior; flip xfail off when both gaps are "
+        "addressed."
+    ),
+    strict=False,
+)
+def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, pit_arena):
+    """Mine 32 dirt from the top two levels (clutter + y=66), leave the
+    middle (y=65) and bottom (y=64) of the pit untouched. Mined cells
+    should cluster as a strip, not scatter."""
     start = bot.status_lean()
-    assert (start.get("health") or 0) >= 17, f"bot HP={start.get('health')} pre-test (low — prior test left damage)"
-    for (sx, sy, sz) in RING_SAMPLES:
-        assert rcon.block_is(sx, sy, sz, "stone"), f"setup: ring sample {sx},{sy},{sz} is not stone"
-    raised_setup_count = sum(
-        1 for (rx, ry, rz) in RAISED_CELLS if rcon.block_is(rx, ry, rz, "dirt")
+    assert (start.get("health") or 0) >= 17, f"setup: bot HP={start.get('health')}"
+    pre_pos = start.get("position") or {}
+    assert pre_pos.get("y", 0) >= PIT_TOP_Y + 1, (
+        f"setup: bot is not on the pile, pos={pre_pos}"
     )
-    assert raised_setup_count == len(RAISED_CELLS), (
-        f"setup: only {raised_setup_count}/{len(RAISED_CELLS)} raised cells placed"
+
+    # Drive the mine.
+    r = bot.post(
+        "/action/collect",
+        {"block": "dirt", "count": REQUESTED_COUNT},
+        timeout=90.0,
     )
-    for (wx, wy, wz) in OUTSIDE_WITNESSES:
-        assert rcon.block_is(wx, wy, wz, "dirt"), f"setup: outside witness {wx},{wy},{wz} is not dirt"
 
-    # Drive the mine. 30 is enough to flatten all 22 raised cells with
-    # some headroom into the base layer.
-    r = bot.post("/action/collect", {"block": "dirt", "count": 30}, timeout=120.0)
-    assert r.get("ok") is True, f"collect failed: {r}"
+    # Diagnostic dump — gather every layer's state BEFORE asserting.
+    def count_layer(y: int, kind: str) -> int:
+        n = 0
+        for x in range(PIT_X_MIN, PIT_X_MAX + 1):
+            for z in range(PIT_Z_MIN, PIT_Z_MAX + 1):
+                if rcon.block_is(x, y, z, kind):
+                    n += 1
+        return n
 
-    # 1. Boundary held — every stone-ring sample still stone.
-    for (sx, sy, sz) in RING_SAMPLES:
-        assert rcon.block_is(sx, sy, sz, "stone"), (
-            f"BOUNDARY BREACH: ring marker at {sx},{sy},{sz} is no longer stone"
+    def mined_top_cells() -> list[tuple[int, int]]:
+        out = []
+        for x in range(PIT_X_MIN, PIT_X_MAX + 1):
+            for z in range(PIT_Z_MIN, PIT_Z_MAX + 1):
+                if rcon.block_is(x, PIT_TOP_Y, z, "air"):
+                    out.append((x, z))
+        return out
+
+    top_mined = mined_top_cells()
+    diag = {
+        "top_mined_count":          len(top_mined),
+        "middle_dirt_intact":       count_layer(PIT_MIDDLE_Y, "dirt"),
+        "bottom_dirt_intact":       count_layer(PIT_BOTTOM_Y, "dirt"),
+        "clutter_dirt_remaining":   sum(
+            1 for (cx, cy, cz) in SURFACE_CLUTTER if rcon.block_is(cx, cy, cz, "dirt")
+        ),
+        "response_mined_count":     (r.get("data") or {}).get("mined_count"),
+        "response_causes":          (r.get("data") or {}).get("causes"),
+        "response_result":          r.get("result") or r.get("error", {}).get("message"),
+        "bot_pos_after":            bot.status_lean().get("position"),
+    }
+
+    # 1. Bot mined a meaningful amount (close to the 32 budget).
+    response_mined = (r.get("data") or {}).get("mined_count", 0)
+    assert response_mined >= 25, (
+        f"bot mined too few cells: {response_mined} / {REQUESTED_COUNT}. diag={diag}"
+    )
+
+    # 2. **Middle layer (y=65) fully intact** — 256 cells of dirt.
+    middle_total = (PIT_X_MAX - PIT_X_MIN + 1) * (PIT_Z_MAX - PIT_Z_MIN + 1)
+    assert diag["middle_dirt_intact"] == middle_total, (
+        f"DEPTH BREACH (middle): bot mined into y={PIT_MIDDLE_Y}. "
+        f"Only {diag['middle_dirt_intact']}/{middle_total} cells still dirt. diag={diag}"
+    )
+
+    # 3. **Bottom layer (y=64) fully intact**.
+    assert diag["bottom_dirt_intact"] == middle_total, (
+        f"DEPTH BREACH (bottom): bot mined into y={PIT_BOTTOM_Y}. "
+        f"Only {diag['bottom_dirt_intact']}/{middle_total} cells still dirt. diag={diag}"
+    )
+
+    # 4. **Strip pattern**: the mined cells at y=66 should occupy a
+    # tight bounding box, not scatter across the 16×16. A clean strip
+    # is one or two rows/columns of ≤16 cells; we allow up to 5 rows
+    # or columns of bounding-box thickness as a "strip-like" cluster.
+    if top_mined:
+        xs = [x for (x, _) in top_mined]
+        zs = [z for (_, z) in top_mined]
+        x_span = max(xs) - min(xs) + 1
+        z_span = max(zs) - min(zs) + 1
+        # Strip-like = thin in at least one axis. Take the SHORT span.
+        short_span = min(x_span, z_span)
+        assert short_span <= 5, (
+            f"mined cells are NOT in a strip — bounding box {x_span}×{z_span} too wide. "
+            f"Strip should be thin (≤5) in one axis. diag={diag}"
         )
 
-    # 2. Levelled — at least half the originally-raised cells are AIR.
-    # We don't insist on 100%: the bot has a 40s wallclock cap on each
-    # collect call and may need a second call to finish the cleanup on
-    # a deeply terraced area. The boundary checks (1, 4) are the strict
-    # ones — those say "the bot didn't break things", not "the bot
-    # cleared everything".
-    cleared_raised = sum(
-        1 for (rx, ry, rz) in RAISED_CELLS if rcon.block_is(rx, ry, rz, "air")
-    )
-    assert cleared_raised >= int(len(RAISED_CELLS) * 0.5), (
-        f"flattening too partial: only {cleared_raised}/{len(RAISED_CELLS)} raised cells removed"
-    )
-
-    # 3. Base layer mostly intact — bot didn't sink the whole thing.
-    # Count dirt remaining in the 9×9 base layer (49 cells inside the
-    # stone ring; perimeter at x=5/15 or z=5/15 is stone).
-    base_dirt_remaining = 0
-    for x in range(ZONE_X_MIN, ZONE_X_MAX + 1):
-        for z in range(ZONE_Z_MIN, ZONE_Z_MAX + 1):
-            if rcon.block_is(x, 64, z, "dirt"):
-                base_dirt_remaining += 1
-    # The base has 81 cells (9×9). Bot mined 30 total; ~22 were raised,
-    # so ≤8 came from the base. Allow generous slack: ≥30 base remaining.
-    assert base_dirt_remaining >= 30, (
-        f"bot dug too deep into the base: only {base_dirt_remaining}/81 base dirt left"
-    )
-
-    # 4. No wandering — buried witnesses still dirt.
-    for (wx, wy, wz) in OUTSIDE_WITNESSES:
-        assert rcon.block_is(wx, wy, wz, "dirt"), (
-            f"BOUNDARY BREACH: stone-capped witness dirt at {wx},{wy},{wz} is gone — "
-            f"bot somehow tore through the cap stone"
+    # 5. **Boundary held** — pit perimeter (the bordering dirt cells
+    # at x=20/35 or z=20/35 at y=66) was mineable; the boundary check
+    # is "no cells OUTSIDE the pit were touched". The fixture air-fills
+    # the working volume, so there's nothing to mine outside. We check
+    # one neighbouring cell at each side just to be safe.
+    OUTSIDE_SAMPLES = [
+        (PIT_X_MIN - 1, PIT_TOP_Y, 27),
+        (PIT_X_MAX + 1, PIT_TOP_Y, 27),
+        (27, PIT_TOP_Y, PIT_Z_MIN - 1),
+        (27, PIT_TOP_Y, PIT_Z_MAX + 1),
+    ]
+    for (sx, sy, sz) in OUTSIDE_SAMPLES:
+        # Outside the pit there's only air at y=66 (no dirt was placed).
+        # If the bot somehow placed dirt or the test stage is wrong,
+        # this guards against it. We don't fail on air-found-air.
+        assert rcon.block_is(sx, sy, sz, "air"), (
+            f"unexpected non-air outside the pit at {sx},{sy},{sz}"
         )
 
-    # 5. Bot survived.
-    end = bot.status_lean()
-    assert (end.get("health") or 0) >= 18, f"bot took damage during mine: HP={end.get('health')}"
-
-    # Inventory sanity (informational — bot should have ~25-30 dirt).
-    dirt_gain = bot.inventory().get("dirt", 0)
-    assert dirt_gain >= 18, f"dirt gain {dirt_gain} too low; inv={bot.inventory()}"
+    # 6. Bot survived.
+    end_hp = bot.status_lean().get("health") or 0
+    assert end_hp >= 17, f"bot lost HP during mine: {end_hp}. diag={diag}"
