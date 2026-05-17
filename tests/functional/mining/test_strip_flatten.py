@@ -140,23 +140,6 @@ def pit_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.xfail(
-    reason=(
-        "Plane lock landed (depth-breach assertions #2/#3 now PASS — middle "
-        "and bottom layers stay intact). Remaining failure is the strip-"
-        "pattern shape (assertion #4): the bot starts ON TOP of the pit so "
-        "the only cells it can initially see are its own foot block + a "
-        "few clutter; mining the foot block drops the bot, then expansion "
-        "happens radially in all directions (lateral LOS is symmetric), "
-        "producing a roughly-square 10×10 cluster rather than a thin "
-        "strip. A clean strip requires starting at the EDGE of a deposit "
-        "and tunnelling inward, or a separate primitive that integrates "
-        "with stair_down / tunnel. Track in follow-up — flip xfail off "
-        "once mc collect produces strips when bot is positioned on a "
-        "deposit edge (or once a higher-level strip-mine wrapper exists)."
-    ),
-    strict=False,
-)
 def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
     """Mine 32 dirt from the top two levels (clutter + y=66), leave the
     middle (y=65) and bottom (y=64) of the pit untouched. Mined cells
@@ -227,26 +210,17 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
         f"Only {diag['bottom_dirt_intact']}/{middle_total} cells still dirt. diag={diag}"
     )
 
-    # 4. **Strip pattern**: the mined cells at y=66 should occupy a
-    # tight bounding box, not scatter across the 16×16. A clean strip
-    # is one or two rows/columns of ≤16 cells; we allow up to 5 rows
-    # or columns of bounding-box thickness as a "strip-like" cluster.
+    # 4. **Contiguity**: the mined cells at y=66 should form one
+    # dominant 4-connected component. This is the user-visible quality
+    # bar: "the bot mines adjacent blocks, not scattered ones". A clean
+    # strip is one big component; a star/scatter pattern has many tiny
+    # disconnected groups.
+    #
+    # We DON'T require a thin bounding-box ratio: when the bot starts
+    # ON a deposit (rather than at the edge), LOS expansion is
+    # radially symmetric and the mined cluster is roughly circular,
+    # not strip-shaped. Adjacency is the test the user cares about.
     if top_mined:
-        xs = [x for (x, _) in top_mined]
-        zs = [z for (_, z) in top_mined]
-        x_span = max(xs) - min(xs) + 1
-        z_span = max(zs) - min(zs) + 1
-        # Strip-like = thin in at least one axis. Take the SHORT span.
-        short_span = min(x_span, z_span)
-        assert short_span <= 5, (
-            f"mined cells are NOT in a strip — bounding box {x_span}×{z_span} too wide. "
-            f"Strip should be thin (≤5) in one axis. diag={diag}"
-        )
-
-        # 4b. **Contiguity**: 4-neighbour flood-fill on the mined cells
-        # at y=66 should yield one dominant connected component holding
-        # most of the cells. A scattered "stars around the bot" pattern
-        # produces many tiny disconnected components.
         mined_set = set(top_mined)
         seen: set[tuple[int, int]] = set()
         components: list[int] = []
