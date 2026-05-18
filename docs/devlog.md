@@ -196,3 +196,112 @@ Added "Mine infrastructure" as a major section ("this is half your job") with a 
 - `prompts/landfolk/*.md` -- all 8 agent prompts updated with communication protocol; Flint, Mason, Gatherer substantially rewritten with priority orders and detailed strategies
 - `bot/lib/bot/paper-mcp.js` -- PaperMCP WebSocket integration
 - `bot/dashboard.html` -- dynamic agent discovery, richer metrics, reduced console noise
+
+---
+
+## Session: May 10-18, 2026
+
+### Overview
+
+Two weeks of single-player focus: Steve became "re44's helpful Minecraft buddy" alongside the user (re44). Multi-agent (Mason / Barley / Gatherer) work paused. Most of the effort went into mining/navigation primitives that kept failing in subtle ways during real play, and into a serious context-bloat investigation that dominated the back end of the period.
+
+The pre-existing devlog ended at the post-refactor stabilisation of multi-agent operations. From there, the agent-experience layer was the bottleneck — Steve's plans were fine, the primitives kept letting him down.
+
+---
+
+### 1. PaperMCP craft fallback (issue #98)
+
+**Problem**: `mc craft oak_fence` would silently no-op on Paper 1.21 even with full ingredients. mineflayer's `b.craft` returns delta=0 (or sometimes throws "missing ingredients") for some 3×3 recipes; a race in the click sequence vs. the open-window packet.
+
+**Solution**: When `paperMcpConfig()` is set and ingredients ARE present, fall through to a PaperMCP server-side craft (`execute as <bot> run ...`). Wired into both the delta=0 path and the throw-with-"missing" path in `bot/lib/actions/crafting.js`. Token (`PAPERMCP_TOKEN`) is now sourced from the repo-local `.env` by `hermescraft.sh` (it was only being read from `~/.hermes/.env` before, which made the fallback silently dormant).
+
+**Status**: Verified in-game: `Crafted oak_fence x3 (server-side fallback)`.
+
+---
+
+### 2. Vertical movement: pillar_down + on_pillar awareness (#99)
+
+**Problem**: Steve would `pillar_step` up to reach a treetop or ledge and then get stuck at the top — pathfinder refused to plan because every cardinal neighbour was a cliff. The agent kept looping `mc move` with no progress signal that would help it self-correct.
+
+**Solution (three parts)**:
+1. New `'on_pillar'` classification in `standingState()` (`_nav-helpers.js`): all 4 cardinals are cliffs.
+2. `mc move` / `goto` / `goto_near` preflight refuses early with `BOT_ON_PILLAR` and a `next_action_hint: mc pillar_down N`.
+3. New `mc pillar_down` action in `actions/excavation.js` — mines block-underfoot, drops one, repeats until ground (3+ cardinal cells with solid floor) or until lava/void/bedrock stops it.
+
+Also reordered the `pillar_step` block cascade to prefer dirt/sand/gravel/netherrack first, falling back to cobblestone. Saves the agent from pillaring up with cobble when dirt is available and easier to re-mine.
+
+---
+
+### 3. Autonomous chores (#89)
+
+**Problem**: Steve was idle whenever re44 wasn't directing him.
+
+**Solution**: New `minecraft-chores` skill — preloaded in `hermescraft.sh -s minecraft-goals,minecraft-navigation,minecraft-chores`. Defines a priority cycle for idle time: source food (hunt / breed / fish / harvest), cook, smelt ore, stock crafting staples (planks/sticks/torches), plant saplings, organize chests. The soul prompt (`prompts/landfolk/steve.md`) was expanded with bootstrap rules ("from zero: chop wood with hands → planks → sticks → wooden_pickaxe → cobble → stone_pickaxe"), tree-cutting rules ("never chop a sapling, never chop fewer than 4 stacked log blocks"), and a "goal scoreboard caveat" clarifying that `mc goals` is BASE stockpile (inventory + chests) not personal inventory — so chest withdraws are for USE only, not for satisfying a stockpile gap.
+
+---
+
+### 4. Mining-primitive cleanups (the punch list from session #1)
+
+After watching Steve mine, four recurring failures surfaced:
+
+- **Y-grace fallback in mc goto/goto_near/move (#102)**: agent's coord guesses for Y were often a few blocks off (aiming at a hill top, ending up inside the hill). Now: ±5 same-XZ vertical search; on success the response carries `observed_state.y_adjusted: {from,to,dy,reason}` so the brain learns the right Y next time. Replaces premature `NAV_TARGET_UNSTANDABLE` / `NAV_TARGET_OCCUPIED` refusals.
+- **recentPlaces exemption (#101)**: bot couldn't tear down its own chicken-pen fences ("chop it down, make it bigger" → 7 straight `PROTECTED_BLOCK` refusals). New `ctx.runtime.recentPlaces` ring buffer (15-min TTL, capped at 64) — agent-placed cells in `PROTECTED_DIG_BLOCKS` are now exempt from `isDigProtected`. Wired into all 6 placement verbs and all 7 isDigProtected call sites.
+- **auto-mark crafting tables (#100)**: agent kept placing new tables instead of reusing existing ones. `mc craft` now auto-saves a `craft_table_X_Y_Z` mark on every successful craft AND on every `mc place crafting_table`. The existing `/craft/i` regex in the marks fallback picks them up from any distance. Idempotent within 3 blocks.
+- **mc inspect / mc place hints (carryover from earlier)**: `is_diggable` on inspect now reflects the recentPlaces exemption so the agent knows it CAN re-mine its own builds.
+
+---
+
+### 5. Context-bloat postmortem (May 17 → 18)
+
+**Symptom**: Steve sessions ballooning to 311k tokens with no compression event ever firing.
+
+**Investigation summary** (full details in this devlog's git blame):
+
+| finding | impact |
+|---|---|
+| deepseek-v4-flash context window = 1,048,576 tokens; `compression.threshold: 0.3` → fires at 314,572 | confirmed compression IS configured correctly |
+| `Auxiliary auto-detect` was healthy for the live session — compression fired exactly once at ~417k | not a config-broken issue |
+| Session resumed and grew back to 311k before we killed it — would have triggered next compression at 314k | trim, not bug |
+| **`<available_skills>` block in system_prompt = 2,889 tokens per call** — Hermes injects all 101 globally-available skills | **biggest fixable bloat** |
+| MEMORY block 98% full (2,165/2,200 chars) with stale Flint-era iron-ingot quest notes | small but trivially purgeable |
+| Tools schema 13.7KB ≈ 3,416 tokens per call (fixed overhead) | unfixable here — Hermes-level concern |
+| `mc terrain_top` shipped a `columns` array (radius=4 → 81 cells × 35B ≈ 2.8K per call) | **fixable; default-off now** |
+| `mc goals` payload had verbose per-goal fields (strategies_available, constraints, metric, time_in_deficit_s) — ~50% of payload | fixable; lean shape default now |
+| `player_requests` carried a 100B `hint` string per request, capped at 5 entries | fixable; lifted hint once, capped 3, truncate 140 chars |
+| `cli/results.mjs` double-emitted `state` when server returned a flat shape (`equip` etc.) | bug; fixed |
+
+**Quick wins applied (May 18 evening)**:
+1. Memory purge: `~/.hermes/memories/MEMORY.md` 2183 → 1071 chars (−278 tokens/call).
+2. Skills scoping: `skills.platform_disabled.hermescraft` in `~/.hermes/config.yaml` disables 90 non-Minecraft skills; activated via `HERMES_PLATFORM=hermescraft` exported by `hermescraft.sh` (−2,800 tokens/call).
+3. Compression threshold 0.3 → 0.2: compress at ~210k instead of ~315k.
+4. Code-side trims: `terrain_top` drops `columns` by default, `mc goals` lean shape, `player_requests` cap + truncate, `cli/results.mjs` state-dup fix.
+
+Combined: ~3,100 tokens/call saved × ~700 calls/session = ~2.2M tokens of avoided traffic per long Steve run.
+
+---
+
+### 6. Code structure changes this period
+
+- `bot/lib/actions/_nav-helpers.js` (new) — `findClosestStandable`, `findStandableSameXZ`, `standabilityReason`, `standingState`, `computeReachability`, `annotateReachability` extracted from `movement.js`. Single home for navigation queries used by movement, find, find_blocks, inspect.
+- `bot/lib/actions/excavation.js` — `pillar_down` added; `stair_up` now clears the head cell before each step.
+- `bot/lib/runtime/dig-tools.js` — `isDigProtected(name, cell?, ctx?)` accepts optional cell + ctx for the recentPlaces exemption; new `recordRecentPlace(ctx, cell, blockName)`.
+- `bot/lib/server/state.js` — new `recentPlaces` slice in `runtime`.
+- `bot/lib/runtime/observation.js` — `briefState` trimmed (no nearby_utilities, no spawn_point); `player_requests` capped + truncated.
+- `bot/lib/server/http-app.js` — `/goals` lean by default, `?full=true` for the dashboard.
+- `bot/cli/results.mjs` — flat-shape envelope no longer double-emits `state`.
+- `bot/lib/actions/crafting.js` — `autoMarkCraftingTable` helper exposed on services; wired into both normal-craft and PaperMCP-fallback success paths.
+- `bot/lib/actions/building.js` — `mc place crafting_table` auto-marks; every successful placement records to `recentPlaces`.
+- `skills/minecraft-chores.md`, `skills/minecraft-navigation.md` — new + revised skill docs.
+- `prompts/landfolk/steve.md` — substantially rewritten (priority order, autonomous chores, mining bootstrap, tree rules, goal-scoreboard caveat).
+- `hermescraft.sh` — sources repo-local `.env` (for `PAPERMCP_TOKEN`), preloads `skills` toolset (so `skill_view` works), exports `HERMES_PLATFORM=hermescraft`, persists `SESSION_ID` to a file for proper `--continue` rounds.
+
+---
+
+### Carry-overs / open items
+
+1. **mc collect "Digging aborted" cascade** (mining.js): same-second clusters of instant rejections (~10ms each) — inner-loop candidate burn from stale pathfinder state. Not yet root-caused.
+2. **F72 short-circuit** (recent-dig pickup): logs show it never fires in practice. Probably the guard is just narrow by design — verify before changing.
+3. **Strip-mine ordering**: `mc collect` sorts candidates by 3D euclidean distance, producing a "star pattern" of holes around the bot near the base. Should prefer same-y-level strip layout. Punch-list item from session #1, still open.
+4. **Hermes-side bloat (out of scope for this repo)**: `<available_skills>` listing is now trimmed via `platform_disabled`; tools schema (13.7K) is the remaining unfixable-from-this-repo per-call cost.
+5. **28 uncommitted files** from this period still in working tree: dashboard/, prompts/landfolk/steve-steward-mode.md, skills/minecraft-chores.md (already integrated into the soul but un-staged), READMEs, start-dashboard.sh, landfolk.sh, scripts/run-landfolk-bots.sh. Worth a sweep to either land or discard.
+

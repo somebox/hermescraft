@@ -61,7 +61,7 @@ the P16 budget (≤500 LOC) or carry `// @size-exempt: <reason>`.
 |---|---|---|
 | `actions/inventory.js` | `equip` `unequip` `toss` | hand + slot ops |
 | `actions/building.js` | `pillar_step` `place` `place_fill` `wall` `fence` `path` `dig_pit` `level` `build_stairs` | all block-placement verbs |
-| `actions/excavation.js` | `dig_area` `tunnel` `stair_down` `stair_up` | owns cardinalDelta + tunnelSliceBounds |
+| `actions/excavation.js` | `dig_area` `tunnel` `stair_down` `stair_up` `pillar_down` | owns cardinalDelta + tunnelSliceBounds; `pillar_down` (#99) is the inverse of `pillar_step` — mines underfoot until ground |
 | `actions/interaction.js` | `interact` `through` `close_screen` `use` | door / button / lever / GUI |
 | `actions/queries.js` | `scout` `terrain_top` `find` `inspect` `reachable` `standing` `escape` `is_empty` `is_filled` `is_sheltered` | read-only world queries |
 | `actions/lifecycle.js` | `chat` `wait` `surface` `sleep_bed` `set_home` `chat_to` `whisper` `respawn` `deathpoint` | bot lifecycle + chat verbs |
@@ -87,7 +87,7 @@ the P16 budget (≤500 LOC) or carry `// @size-exempt: <reason>`.
 | `world` | Mineflayer bot, mcData, connect state, position history, boot time |
 | `social` | chat logs, command queue, social graph, MAX_LOG/MAX_QUEUE caps |
 | `tasks` | currentTask, history, action counters, sync-in-flight state, lastApiError, history caps |
-| `runtime` | F-numbered stuck-detection diagnostics + sound events |
+| `runtime` | F-numbered stuck-detection diagnostics + sound events + `recentPickups` (#F72) + `recentPlaces` (#101 — exempts agent-placed protected blocks from `isDigProtected` for 15 min) |
 | `goals` | goalsStore, chest snapshots |
 | `team` | team config, combat stats, recent damagers, active furnaces, isSneaking |
 | `reminders` | recurring-reminder store |
