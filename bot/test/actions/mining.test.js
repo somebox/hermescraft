@@ -383,3 +383,60 @@ test('mining.collect: non-trunk sort follows the bot row before stepping to next
     `expected first 6 digs at bot's row z=0 (strip-mine), got z values ${JSON.stringify(firstSixZ)} (full order: ${JSON.stringify(digOrder)})`,
   );
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pre-dig refusal bail — equipForDig throwing "Refusing to dig X with empty
+// hand" BEFORE the dig starts used to fall into the burn-candidate branch,
+// producing same-second cascades of 20+ refusals. Bail the whole call.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: pre-dig tool refusal bails the call with TOOL_INADEQUATE (no cascade)', async () => {
+  let digCalls = 0;
+  const stonePositions = [];
+  for (let dx = -3; dx <= 3; dx++) {
+    for (let dz = -3; dz <= 3; dz++) {
+      if (dx === 0 && dz === 0) continue;
+      stonePositions.push(new Vec3(dx, 63, dz));
+    }
+  }
+  const bot = makeStubBot({
+    inventoryItems: [],
+    position: new Vec3(0, 64, 0),
+    findBlocksByName: () => stonePositions,
+    dig: async () => { digCalls++; },
+  });
+  bot.blockAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    hardness: 1.5,
+    type: 1,
+  });
+  bot.heldItem = null;
+  // Stub mineflayer-tool's getDigTime to return a slow estimate so the
+  // guardSlowDigEstimate inside equipForDig throws "Refusing to dig …".
+  // (Default slowDigTicksMax is 280; bare-hand stone is ~7500 ticks IRL.)
+  bot.tool.getDigTime = () => 7500;
+  const deps = makeDeps({
+    bot,
+    mcData: {
+      blocksByName: { stone: { id: 1, drops: [4], boundingBox: 'block' } },
+      itemsByName: { cobblestone: { id: 4 } },
+      items: { 1: { name: 'stone' }, 4: { name: 'cobblestone' } },
+    },
+    findVisible: async () => stonePositions.map((p) => ({ position: p })),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'stone', count: 32 });
+  const v = validate(r);
+  assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'TOOL_INADEQUATE');
+  assert.match(r.error.message, /Refusing to dig/);
+  assert.equal(digCalls, 0, 'no dig should have been attempted; bailed pre-dig');
+  assert.ok(
+    r.error.observed_state.attempted <= 1,
+    `expected attempted <= 1, got ${r.error.observed_state.attempted}`,
+  );
+});

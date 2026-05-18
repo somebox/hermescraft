@@ -690,6 +690,15 @@ export function createMiningActions(deps) {
       const INSTANT_FAIL_THRESHOLD_MS = 100;
       const MAX_CONSEC_INSTANT_FAILS = 2;
       let stallRounds = 0;
+      // Set by the per-candidate catch when equipForDig refuses (no
+      // suitable tool in inventory + dig would exceed maxTicks). This is
+      // a per-CALL problem, not per-candidate — every block of the same
+      // type will fail the same way. We bail the whole collect with a
+      // structured TOOL_INADEQUATE rather than silently churning the pool
+      // (which previously produced the "Refusing to dig … (~Ns break time)"
+      // cascade — 21 same-second log entries against bare-hand stone).
+      /** @type {Error | null} */
+      let preDigRefusal = null;
 
       while (
         collected < count &&
@@ -860,6 +869,17 @@ export function createMiningActions(deps) {
             const isInstantAbort = digStartedAt > 0
               && digElapsed < INSTANT_FAIL_THRESHOLD_MS
               && /aborted/i.test(m);
+            // Pre-dig refusal from equipForDig/assertCanDig — thrown
+            // BEFORE digStartedAt was set. "Refusing to dig X with empty
+            // hand" or "Wrong hand for X". Same outcome for every
+            // candidate of this block, so bail the call.
+            const isPreDigRefusal = digStartedAt === 0
+              && (/^Refusing to dig/i.test(m) || /^Wrong hand for/i.test(m));
+            if (isPreDigRefusal) {
+              preDigRefusal = /** @type {Error} */ (err);
+              log(`[collect] ${m} — bailing (no point retrying ${pool.length - 1} more ${blockName} blocks with the same hand)`);
+              break;  // exit per-candidate loop; while loop will detect preDigRefusal and break
+            }
             if (m === 'dig_timeout') {
               try { b.stopDigging(); } catch {}
             }
@@ -887,6 +907,8 @@ export function createMiningActions(deps) {
           }
         }
 
+        if (preDigRefusal) break;  // bail the while loop too
+
         if (collected === beforeRoundMined) stallRounds++;
         else stallRounds = 0;
 
@@ -897,6 +919,31 @@ export function createMiningActions(deps) {
         // into LOS during pathfinding) get picked up here.
         pool = refreshPool();
         if (pool.length === 0) stallRounds++;
+      }
+
+      // If we bailed because of a pre-dig refusal (no suitable tool),
+      // surface that to the brain as TOOL_INADEQUATE — same code that
+      // mc dig uses for the equivalent failure. Critical that this comes
+      // BEFORE the pickup pass: there are no drops to collect, and we
+      // want the brain to act on the equip problem, not the empty pickup.
+      if (preDigRefusal) {
+        return {
+          ok: false,
+          error: {
+            code: 'TOOL_INADEQUATE',
+            message: preDigRefusal.message,
+            observed_state: {
+              block_name: blockName,
+              requested_count: count,
+              mined_count: collected,
+              attempted,
+              held: b.heldItem?.name || null,
+              candidates_remaining: pool.length,
+            },
+            next_action_hint: preDigRefusal.message,
+            retry_safe: false,
+          },
+        };
       }
 
       // Pickup pass — collect drops the digs created.
