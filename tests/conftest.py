@@ -15,6 +15,8 @@ Markers are declared in pyproject.toml; --strict-markers forbids typos.
 from __future__ import annotations
 
 import os
+import time
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -128,103 +130,182 @@ def predicates():
     return _make
 
 
-# ── In-game test announcement (functional tier only) ─────────────────
-# When watching the Minecraft server live, broadcast each functional
-# test's number + nodeid via rcon `say` AT TEST START — after all fixture
-# setup has completed, so the setup rcon commands don't push the
-# announcement off the chat log before the test actually runs.
+# ── Functional-test harness (consolidated autouse + hooks) ──────────
+# A single autouse fixture for functional-tier tests handles, in order:
 #
-# Implementation: pytest_runtest_call hook fires right before the test
-# body executes (after all setup fixtures resolve). Skipped for
-# unit/integration tiers because (a) unit has no live world, (b)
-# integration broadcasts its own LLM-driven chat.
+#   1. Pre-test rescue (creative + safe-tp + wait stationary)
+#   2. Announce via rcon `say [test #N] <nodeid>` — this is the visible
+#      boundary between "harness done" and "per-test fixture starting"
+#      for anyone watching the server live.
+#   3. Write a structured `# TEST_START n=<N> nodeid=<full> ts=<iso>
+#      bot_pos=<x,y,z>` line to the per-test trace log.
+#   4. Start the BotTrace 0.4s poller against the same file (it opens
+#      in append mode, so the START header survives).
+#   5. yield — per-test fixtures + test body run here.
+#   6. Stop the poller.
+#   7. Append `# TEST_END n=<N> elapsed=<s> outcome=<pass|fail|error>`.
+#   8. Announce via rcon `say [done #N] <elapsed>s <outcome>`.
+#   9. move_to_safe — park the bot outside the arena.
+#
+# Each sub-step is wrapped in its own try/except so a single failure
+# (e.g. a transient rcon hiccup during announce) doesn't sabotage the
+# others. The exception type+message is appended to the trace footer so
+# silent harness degradation is detectable across runs.
+#
+# Previously these concerns were spread across three places
+# (pytest_runtest_call hook + _functional_rescue autouse + bot_trace
+# autouse). The new single fixture is the canonical, greppable entry
+# point for "what runs around every functional test."
 
 _test_counter = {"n": 0}
 
 
-def pytest_runtest_call(item):
-    """Broadcast the test number + short nodeid via rcon `say` at the
-    exact moment the test body is about to execute.
-
-    Resolves the `rcon` and `config` session fixtures via the item's
-    `_request`. rcon hiccups are swallowed — the announcement is purely
-    for human observation, not a contract.
-    """
-    if not item.get_closest_marker("functional"):
-        return
-    try:
-        config = item._request.getfixturevalue("config")
-        rcon = item._request.getfixturevalue("rcon")
-    except Exception:
-        return
-    _test_counter["n"] += 1
-    n = _test_counter["n"]
-    short = item.nodeid.split("tests/functional/", 1)[-1]
-    world = config["mc"]["world"]
-    try:
-        rcon.run(f'execute in {world} run say [test #{n}] {short}')
-    except Exception:
-        pass
-
-
-# ── Auto bot-position trace (functional tier only) ──────────────────
-# Every functional test gets a background poller that snapshots the
-# bot's /status?lean=true every 0.4s into <log_dir>/traces/<nodeid>.log.
-# When a primitive hangs, the trace shows exactly where the bot stalled.
-# Autouse + marker-gate so unit tests don't pay the cost.
-
-# Pre-test rescue — autouse on functional tier. Runs BEFORE the per-test
-# arena fixture so every test starts with Tester (a) alive, (b) in creative
-# mode invulnerable, (c) actually stationary on a known floor — no
-# mid-air races. Previously each fixture had to remember to call
-# arena.rescue_tester() and most didn't, so a death cascade in one test
-# would leak failing physics state into the next test's setup. See
-# arena.rescue_tester docstring for the sequence.
-@pytest.fixture(autouse=True)
-def _functional_rescue(request, config, rcon, tester_bot):
-    """Pre/post test rescue. Functional-tier only.
-
-    Implements steps 2 and 4 of the canonical test sequence:
-      1. (per-test fixture) setup test area
-      2. PRE: rescue_tester — bot in creative, safe coords, WAIT until
-         stationary. Guarantees the test starts against a bot that has
-         landed; no more mid-air races.
-      3. (per-test fixture) run test
-      4. POST: move_to_safe — park bot outside the test arena so its
-         geometry doesn't decide the NEXT test's bot fate.
-      5. (next test) per-test fixture rebuilds arena
-    """
-    if not request.node.get_closest_marker("functional"):
-        yield
-        return
-    from tests._lib import Arena
-    arena = Arena(rcon, config)
-    arena.rescue_tester(bot=tester_bot, wait=True)
-    try:
-        yield
-    finally:
-        arena.move_to_safe(bot=tester_bot)
-
-
-@pytest.fixture(autouse=True)
-def bot_trace(request, tester_bot, log_dir):
-    """Record bot position throughout each functional test. No-op for
-    unit/integration markers."""
-    if not request.node.get_closest_marker("functional"):
-        yield None
-        return
-    safe = (
-        request.node.nodeid
+def _safe_nodeid(nodeid: str) -> str:
+    """Filesystem-safe slug of a pytest nodeid for use as a filename."""
+    return (
+        nodeid
         .replace("tests/functional/", "")
         .replace("/", "_")
         .replace("::", "__")
         .replace("[", "_")
         .replace("]", "")
     )
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Stash the per-phase report on the item so the harness teardown
+    can read the outcome (call.passed / .failed / .skipped) and write
+    it into the trace footer. Standard pytest pattern."""
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, f"rep_{rep.when}", rep)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Drift detection: any test under tests/functional/ that is
+    missing @pytest.mark.functional silently bypasses the harness
+    (announce/rescue/trace/park). Warn at collection time so the
+    mistake is caught early instead of at first cumulative-state
+    cascade failure."""
+    for item in items:
+        if "tests/functional/" in item.nodeid and not item.get_closest_marker("functional"):
+            warnings.warn(
+                f"{item.nodeid} lives under tests/functional/ but is missing "
+                f"@pytest.mark.functional — the functional harness will NOT "
+                f"run for this test. Add the marker.",
+                stacklevel=0,
+            )
+
+
+@pytest.fixture(autouse=True)
+def _functional_harness(request, config, rcon, tester_bot, log_dir):
+    """Canonical setup/teardown wrapper for functional-tier tests.
+
+    Marker-gated: a no-op for unit/integration tests. See the section
+    header above for the full sequence and rationale.
+    """
+    if not request.node.get_closest_marker("functional"):
+        yield
+        return
+
+    world = config["mc"]["world"]
+    _test_counter["n"] += 1
+    n = _test_counter["n"]
+    short = request.node.nodeid.split("tests/functional/", 1)[-1]
+    safe = _safe_nodeid(request.node.nodeid)
     trace_path = log_dir / "traces" / f"{safe}.trace.log"
-    trace = BotTrace(tester_bot.base, trace_path)
-    trace.start()
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+
+    arena = Arena(rcon, config)
+    harness_errors: list[str] = []
+
+    # 1. Rescue.
     try:
-        yield trace
+        arena.rescue_tester(bot=tester_bot, wait=True)
+    except Exception as e:  # noqa: BLE001 — record + continue
+        harness_errors.append(f"rescue_tester: {type(e).__name__}: {e}")
+
+    # 2. Announce.
+    try:
+        rcon.run(f'execute in {world} run say [test #{n}] {short}')
+    except Exception as e:  # noqa: BLE001
+        harness_errors.append(f"announce_start: {type(e).__name__}: {e}")
+
+    # 3. TEST_START marker. Capture the bot's pos via the trace's
+    #    own preserve=true status call so we don't perturb runtime state.
+    bot_pos = "?"
+    try:
+        p = tester_bot.position() or {}
+        if p:
+            bot_pos = f"{p.get('x')},{p.get('y')},{p.get('z')}"
+    except Exception as e:  # noqa: BLE001
+        harness_errors.append(f"start_pos: {type(e).__name__}: {e}")
+    ts_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    try:
+        with open(trace_path, "w") as f:
+            f.write(
+                f"# TEST_START n={n} nodeid={request.node.nodeid} "
+                f"ts={ts_start} bot_pos={bot_pos}\n"
+            )
+    except Exception as e:  # noqa: BLE001
+        harness_errors.append(f"write_start: {type(e).__name__}: {e}")
+
+    # 4. Start trace poller (appends after the header).
+    trace = BotTrace(tester_bot.base, trace_path)
+    try:
+        trace.start()
+    except Exception as e:  # noqa: BLE001
+        harness_errors.append(f"trace_start: {type(e).__name__}: {e}")
+
+    t0 = time.time()
+
+    try:
+        yield
     finally:
-        trace.stop()
+        elapsed = time.time() - t0
+
+        # 6. Stop poller.
+        try:
+            trace.stop()
+        except Exception as e:  # noqa: BLE001
+            harness_errors.append(f"trace_stop: {type(e).__name__}: {e}")
+
+        # Resolve test outcome from the makereport-stashed report.
+        rep_call = getattr(request.node, "rep_call", None)
+        rep_setup = getattr(request.node, "rep_setup", None)
+        if rep_call is None and rep_setup is not None and rep_setup.failed:
+            outcome = "error"  # failed in setup, body never ran
+        elif rep_call is None:
+            outcome = "unknown"
+        elif rep_call.passed:
+            outcome = "pass"
+        elif rep_call.skipped:
+            outcome = "skip"
+        else:
+            outcome = "fail"
+
+        # 7. TEST_END marker.
+        ts_end = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        try:
+            with open(trace_path, "a") as f:
+                f.write(
+                    f"# TEST_END n={n} ts={ts_end} elapsed={elapsed:.2f}s "
+                    f"outcome={outcome}\n"
+                )
+                for err in harness_errors:
+                    f.write(f"# HARNESS_ERR {err}\n")
+        except Exception:  # noqa: BLE001 — never let trace write break teardown
+            pass
+
+        # 8. Done announcement.
+        try:
+            rcon.run(f'execute in {world} run say [done #{n}] {elapsed:.1f}s {outcome}')
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 9. Park.
+        try:
+            arena.move_to_safe(bot=tester_bot)
+        except Exception:  # noqa: BLE001
+            pass

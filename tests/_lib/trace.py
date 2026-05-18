@@ -52,9 +52,13 @@ class BotTrace:
 
     def _loop(self) -> None:
         prev_pos: tuple[float, float, float] | None = None
-        with open(self.output_path, "w") as f:
+        # Append mode — the functional harness writes a structured
+        # `# TEST_START ...` header to this file BEFORE start() is
+        # called, and appends a `# TEST_END ...` footer AFTER stop().
+        # See tests/conftest.py::_functional_harness.
+        with open(self.output_path, "a") as f:
             f.write(
-                f"# Bot trace started {time.strftime('%Y-%m-%dT%H:%M:%S')} "
+                f"# trace_poller_started {time.strftime('%Y-%m-%dT%H:%M:%S')} "
                 f"url={self.base_url} interval={self.interval}s\n"
             )
             f.flush()
