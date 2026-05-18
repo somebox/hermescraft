@@ -145,6 +145,16 @@ class Arena:
         floor_y = int(sy) - 1
         ix, iz = int(sx), int(sz)
         self.rcon.batch([
+            # FIRST: Multiverse-Core cross-world placement. `execute in
+            # <world> run tp` changes the rcon executor's dimension but
+            # does NOT reliably move a player across Multiverse worlds
+            # — if Tester respawned in production `world` after a death
+            # (mineflayer's respawn() defers to whatever world-spawn the
+            # server has set), all subsequent `execute in landfolk-test`
+            # commands no-op against the wrong-world bot. `mvtp` is the
+            # Multiverse primitive that guarantees the cross-world jump.
+            # See devlog 2026-05-18 (Phase 3.1) for the cascade trace.
+            f"mvtp {self.bot_name} {self.world}",
             f"execute in {self.world} run difficulty peaceful",
             # Creative for the safe TP — invulnerable, full HP, no fall dmg.
             # We flip back to survival below so the test body sees the
