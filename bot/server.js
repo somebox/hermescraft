@@ -16,6 +16,7 @@
  *   MC_USERNAME   Bot username (default: HermesBot)
  *   MC_AUTH       Auth type: offline|microsoft (default: offline)
  *   API_PORT      HTTP API port (default: 3001)
+ *   VIEWER_PORT   If set, starts prismarine-viewer FPV web UI on this TCP port (e.g. 4001)
  */
 
 import fs from 'fs';
@@ -101,6 +102,13 @@ function buildMarksListApi() {
 const config = loadConfig(process.argv);
 locations = createLocationsStore({ dataDir: DATA_DIR, username: config.mc.username });
 const ctx = createBotState(config);
+
+const viewerPortOpt = (() => {
+  const raw = process.env.VIEWER_PORT;
+  if (raw == null || String(raw).trim() === '') return null;
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n > 0 && n <= 65535 ? n : null;
+})();
 
 // ═══════════════════════════════════════════════════════════════════
 // Bot Manager (mutable state lives on ctx)
@@ -456,6 +464,7 @@ const { createBot, startStuckWatchdog } = createBotManager({
   loadLocations,
   saveLocations,
   pushTaskHistoryRecord,
+  viewerPort: viewerPortOpt,
 });
 
 startStuckWatchdog();

@@ -70,8 +70,9 @@ if [ "$AGENTS_ONLY" = false ]; then
   for i in "${!AGENTS[@]}"; do
     IFS=':' read -r name role <<< "${AGENTS[$i]}"
     PORT=$((BASE_API_PORT + i))
+    VIEWER_PORT=$((PORT + 1000))
     cd "$BOT_DIR"
-    MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$name" API_PORT="$PORT" node server.js > "/tmp/bot-${name,,}.log" 2>&1 &
+    MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$name" API_PORT="$PORT" VIEWER_PORT="$VIEWER_PORT" node server.js > "/tmp/bot-${name,,}.log" 2>&1 &
     BOT_PIDS+=($!)
     cd "$SCRIPT_DIR"
     sleep 2

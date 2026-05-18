@@ -1,0 +1,64 @@
+{
+  "defaultWorld": "world",
+  "worlds": [
+    { "name": "world", "type": "NORMAL" },
+    { "name": "landfolk-test", "type": "NORMAL" },
+    { "name": "testflat", "type": "NORMAL" },
+    { "name": "world_nether", "type": "NETHER" },
+    { "name": "world_the_end", "type": "THE_END" }
+  ],
+  "kanbanBoardIdsByWorld": {
+    "world": "Kanban/world.md",
+    "landfolk-test": "Kanban/landfolk-test.md",
+    "testflat": "Kanban/testflat.md",
+    "world_nether": "Kanban/world_nether.md",
+    "world_the_end": "Kanban/world_the_end.md"
+  },
+  "agents": [
+    {
+      "name": "Steve",
+      "api_port": 3001,
+      "role": "friend",
+      "world": "world",
+      "model": "deepseek/deepseek-v4-flash",
+      "viewer_port": 4001,
+      "radar_port": null
+    },
+    {
+      "name": "Reed",
+      "api_port": 3002,
+      "role": "water",
+      "world": "world",
+      "model": "deepseek/deepseek-v4-flash",
+      "viewer_port": 4002,
+      "radar_port": null
+    },
+    {
+      "name": "Moss",
+      "api_port": 3003,
+      "role": "garden",
+      "world": "world",
+      "model": "deepseek/deepseek-v4-flash",
+      "viewer_port": 4003,
+      "radar_port": null
+    },
+    {
+      "name": "Flint",
+      "api_port": 3004,
+      "role": "stone",
+      "world": "world",
+      "model": "deepseek/deepseek-v4-flash",
+      "viewer_port": 4004,
+      "radar_port": null
+    },
+    {
+      "name": "Ember",
+      "api_port": 3005,
+      "role": "fire",
+      "world": "world",
+      "model": "deepseek/deepseek-v4-flash",
+      "viewer_port": 4005,
+      "radar_port": null
+    }
+  ]
+}

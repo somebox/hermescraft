@@ -49,6 +49,7 @@ export function createBotManager(deps) {
     loadLocations,
     saveLocations,
     pushTaskHistoryRecord,
+    viewerPort = null,
   } = deps;
 
   /**
@@ -194,6 +195,16 @@ export function createBotManager(deps) {
         // around a closed door it could simply open.
         moves.canOpenDoors = true;
         moves.scafoldingBlocks = [];
+        // #85: bias the pathfinder AWAY from water. Default liquidCost=1
+        // treats water as equivalent to land — pathfinder happily routes
+        // bots through lakes, where mineflayer's swim handling is fragile
+        // and bots routinely get stuck (see #85 repro: Steve stair_up'd
+        // into a lake at y=63, mc move then looped on un-reachable
+        // shorelines). Setting liquidCost=5 still allows water as a
+        // last resort but heavily prefers dry routes when they exist.
+        if (typeof moves.liquidCost !== 'undefined') {
+          moves.liquidCost = 5;
+        }
 
         const protectedBlocks = [
           'oak_planks',
@@ -383,6 +394,9 @@ export function createBotManager(deps) {
         // Fires again after death recovery (mineflayer health plugin) — clear any stale path goal.
         botInstance.on('spawn', () => {
           if (ctx.world.bot !== botInstance) return;
+          if (ctx.world.mcSessionStartedAt == null) {
+            ctx.world.mcSessionStartedAt = Date.now();
+          }
           try {
             botInstance.pathfinder?.setGoal?.(null);
           } catch {}
@@ -397,9 +411,14 @@ export function createBotManager(deps) {
         ctx.world.bot.on('end', (reason) => {
           log(`Disconnected: ${reason}`);
           ctx.world.botReady = false;
+          ctx.world.mcSessionStartedAt = null;
           ctx.world.positionHistory = [];
           const skipReconnect = ctx.death.suppressEndReconnect;
           if (ctx.death.suppressEndReconnect) ctx.death.suppressEndReconnect = false;
+
+          try {
+            botInstance.viewer?.close?.();
+          } catch {}
 
           try {
             if (botInstance._soundCheckInterval) {
@@ -438,6 +457,25 @@ export function createBotManager(deps) {
         log(
           `Connected! Spawned at ${fmt(ctx.world.bot.entity.position.x)}, ${fmt(ctx.world.bot.entity.position.y)}, ${fmt(ctx.world.bot.entity.position.z)}`,
         );
+
+        if (viewerPort) {
+          void import('prismarine-viewer')
+            .then((mod) => {
+              const mv = mod.mineflayer;
+              if (typeof mv !== 'function') {
+                log('prismarine-viewer: missing mineflayer export');
+                return;
+              }
+              try {
+                mv(botInstance, { port: viewerPort, firstPerson: true });
+                log(`FPV prismarine-viewer → http://127.0.0.1:${viewerPort} (open from dashboard FPV tab)`);
+              } catch (e) {
+                log(`prismarine-viewer: ${/** @type {Error} */ (e).message || e}`);
+              }
+            })
+            .catch((e) => log(`prismarine-viewer load: ${/** @type {Error} */ (e).message || e}`));
+        }
+
         resolve(ctx.world.bot);
         });
       })();

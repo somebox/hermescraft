@@ -1,0 +1,6 @@
+{
+  "name": "hermescraft-dashboard",
+  "private": true,
+  "type": "module",
+  "description": "Standalone fleet dashboard aggregator for HermesCraft bots"
+}

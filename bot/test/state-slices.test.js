@@ -145,4 +145,5 @@ test('every default field has a sensible empty/zero value', () => {
   // bootTime is "now" at construction.
   assert.ok(state.world.bootTime > 0);
   assert.ok(Math.abs(state.world.bootTime - Date.now()) < 1000);
+  assert.equal(state.world.mcSessionStartedAt, null);
 });

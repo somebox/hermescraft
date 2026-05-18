@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HermesCraft — Command Center</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>HermesCraft Command Center</h1>
+    <div class="header-controls">
+      <label class="world-label">
+        <span class="muted">World</span>
+        <select id="worldSelect" aria-label="World"></select>
+      </label>
+      <span id="dayNight" class="badge off" title="Day / night from bot observe">—</span>
+      <span id="openrouterBal" class="badge muted" title="OpenRouter credits">$ —</span>
+      <span id="openrouterUse" class="badge muted" title="OpenRouter total usage">use —</span>
+      <span id="liveCount" class="badge ok">live 0/0</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="pane pane-left" aria-label="Agents">
+      <h2 class="pane-title">Agents</h2>
+      <div id="agentList" class="agent-list"></div>
+    </section>
+
+    <section class="pane pane-center" aria-label="Center tabs">
+      <nav class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="map" role="tab" aria-selected="true">Map</button>
+        <button type="button" class="tab" data-tab="kanban" role="tab" aria-selected="false">Kanban</button>
+        <button type="button" class="tab" data-tab="fpv" role="tab" aria-selected="false">FPV</button>
+      </nav>
+      <div class="tab-panels">
+        <div id="panel-map" class="tab-panel active" role="tabpanel">
+          <div class="map-wrap">
+            <canvas id="mapCanvas" width="640" height="400" aria-label="2D world map"></canvas>
+            <div class="map-footer">
+              <p id="mapMeta" class="muted map-meta"></p>
+              <p class="muted map-hint">X/Z plane · +X east · +Z south · click to select</p>
+              <ul class="map-legend" aria-label="Map legend">
+                <li><span class="swatch swatch-poi"></span> POI</li>
+                <li><span class="swatch swatch-human"></span> Human</li>
+                <li><span class="swatch swatch-bot"></span> Bot</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div id="panel-kanban" class="tab-panel" role="tabpanel" hidden>
+          <div id="kanbanBoard" class="kanban-board"></div>
+          <p id="kanbanStatus" class="muted kanban-status"></p>
+        </div>
+        <div id="panel-fpv" class="tab-panel" role="tabpanel" hidden>
+          <div class="fpv-wrap">
+            <div id="fpvPlaceholder" class="fpv-placeholder muted">Select an agent with viewer enabled, then open FPV.</div>
+            <iframe id="fpvFrame" class="fpv-frame" title="First-person view"></iframe>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane pane-right" aria-label="Details">
+      <h2 class="pane-title">Details</h2>
+      <div id="detailPanel" class="detail-panel muted">Select an agent or map item.</div>
+      <div class="chat-strip">
+        <button type="button" id="chatToggle" class="chat-toggle" aria-expanded="true">Chat</button>
+        <div id="chatBody" class="chat-body"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

@@ -4,25 +4,29 @@
 
 The existing dashboard (`bot/dashboard.html`, ~2700 lines, served by every bot at `/dashboard`) is a fleet view that polls each bot's HTTP API. It works but its model is "one HTML file embedded in every Mineflayer process, polled across ports" — that makes it awkward to add cross-cutting features that don't belong to any one bot (OpenRouter balance, Hermes usage, world-level maps, click-through FPV streaming).
 
-We're replacing it with a single standalone aggregator service. Same data on the per-bot side (the bot HTTP API stays as-is — it's already rich), but a new process owns the fleet view, talks to OpenRouter and Hermes' usage API directly, and embeds the live world views: a Paper-server squaremap (world overview) and per-bot `prismarine-viewer` 3D FPV in the center pane, and a small `mineflayer-radar` tile inside the right-pane details. The server runs Multiverse-Core (worlds confirmed: `landfolk-test`, `testflat`, `world`, `world_nether`, `world_the_end`), and bots can be in different worlds — so the dashboard has a world selector that scopes the map and the player list.
+We're replacing it with a single standalone aggregator service. Same data on the per-bot side (the bot HTTP API stays as-is — it's already rich), but a new process owns the fleet view, talks to OpenRouter and Hermes APIs directly, and embeds the live world views: a simple 2D coordinate map for world overview + POIs and per-bot `prismarine-viewer` 3D FPV in the center pane, plus a small `mineflayer-radar` tile inside the right-pane details. The server runs Multiverse-Core (worlds confirmed: `landfolk-test`, `testflat`, `world`, `world_nether`, `world_the_end`), and bots can be in different worlds — so the dashboard has a world selector that scopes the map and the player list.
 
-Layout is three panes: a **left player list with quick stats**, a **center area that switches between Map / Kanban / Player FPV**, and a **right details pane** whose contents depend on what the user has clicked (player, point-of-interest marker, or kanban card). Hermes kanban is read from `~/.hermes/kanban.db` (SQLite) for v1.
+Layout is three panes: a **left player list with quick stats**, a **center area that switches between Map / Kanban / Player FPV**, and a **right details pane** whose contents depend on what the user has clicked (player, point-of-interest marker, or kanban card). Hermes kanban is fetched from Hermes web API endpoints for v1.
 
-User decisions locked: replace dashboard.html outright, standalone aggregator on a fixed port, vanilla HTML/JS no build step, FPV+squaremap+radar all in, cost panel = OpenRouter balance + per-agent live spend rate.
+User decisions locked: replace dashboard.html outright, standalone aggregator on a fixed port, vanilla HTML/JS no build step, FPV+radar+visual 2D POI map in v1, cost panel = OpenRouter balance + per-agent live spend rate.
 
-## Alignment with the refactored bot codebase
+## Post-refactor codebase context (added after `d2a1483` + `42631c6`)
 
-This plan assumes the **post-2026 refactor** layout of `bot/lib/` (navigation: [`docs/architecture-map.md`](architecture-map.md); history: [`docs/archive/refactor-plan-2026.md`](archive/refactor-plan-2026.md)).
+The bot's `lib/` layer was decomposed for testability in commits `d2a1483` (Phases 1-7: services container + state slicing + world.js split + middleware extraction) and `42631c6` (Phase 10: conventions). Read `docs/architecture-map.md` for the navigation reference; key facts relevant to this plan:
 
-| Topic | Implication for the dashboard effort |
-|--------|--------------------------------------|
-| **Source of truth** ([`docs/MC_AGENT_BOUNDARIES.md`](MC_AGENT_BOUNDARIES.md)) | Live world state, marks, inventory, tasks, and operational memory come from **each bot’s HTTP API**. The aggregator adds fleet UX and talks to OpenRouter / Hermes analytics for **cost and usage**; it must not treat Hermes as the only copy of world truth. |
-| **Sliced runtime state** ([`docs/architecture-map.md`](architecture-map.md) — *State slices*) | Server code owns `world`, `social`, `tasks`, `goals`, etc. via `bot/lib/server/state.js` (`FIELD_SLICE_MAP`). The dashboard only sees the **HTTP JSON** contract (`/observe`, `/marks`, …), not slices. When debugging or extending observe payloads, follow `bot/lib/runtime/observation.js` (`briefState`, `buildObservePayload`); avoid mentally mapping UI fields to a flat `ctx`. |
-| **Layering P8** ([`docs/patterns.md`](patterns.md)) | Viewer/radar hooks belong in **`lib/runtime/manager.js`** (spawn lifecycle), not in action handlers. The aggregator is a **separate Node process**: integrate only via HTTP + external APIs, not by importing `bot/lib`. |
-| **Action contract P9** ([`docs/phase-2/action-contracts.md`](phase-2/action-contracts.md), [`docs/patterns.md`](patterns.md)) | v1 mostly **GET**-drives the UI. If later work surfaces `POST /action/*` results or task/history JSON in the dashboard, use the same `ok` / `error.code` / `retry_safe` envelope as every `mc` handler — no parallel invented shapes. |
-| **Conventions P14 + module budget P16** ([`docs/patterns.md`](patterns.md)) | Any edit under `bot/lib/**` should pass `node scripts/check-conventions.mjs`. New bot-side code should respect the ≤500 LOC rule for `bot/lib` (or `// @size-exempt:`); the new `dashboard/` tree is outside that tree but should stay modular for the same reason. |
-| **Mock parity P20** | If Phase 9 or follow-ons add tests that build **`createMockServices()`** / touch `SERVICES_KEYS`, keep **[`bot/lib/server/mock-services.js`](../bot/lib/server/mock-services.js)** aligned with **[`bot/lib/server/services.js`](../bot/lib/server/services.js)**. |
-| **Testing** ([`docs/testing.md`](testing.md)) | After **`http-app.js`** or **`manager.js`** changes, keep **Tier 1** green (`cd bot && npm test`). Prefer a **Tier 3** smoke on a live bot when runtime/HTTP behavior might regress. Phase 9 updates (`listener-health.test.js`, …) are part of that gate. |
+- **Layered architecture (P8 — no upward calls)**:
+  - `bot/lib/server/` — HTTP listener, dispatch, middleware, services container, sliced state
+  - `bot/lib/runtime/` — Layer 2 reactive + perception (`observation.js`, `manager.js`, `reactive.js`, `paper-mcp.js`, …)
+  - `bot/lib/actions/` — Layer 1 `mc <verb>` handlers, one per domain
+  - `bot/lib/shared/` — domain-pure helpers (`action-contract.js`, `resolver.js`, etc.)
+- **Services container** (`bot/lib/server/services.js`) — central DI with `state`, `ensureBot`, `resolver`, `craft`, `fairPlay`, `spatial`, `locations`, `social`, `utils`, `getActions`. Mock mirror in `mock-services.js`. `SERVICES_KEYS` exported for parity.
+- **Sliced state** — `createBotState()` returns `{ config, world, social, tasks, runtime, goals, team, reminders, death, reactive }`. Field→slice mapping in `FIELD_SLICE_MAP` (exported from `bot/lib/server/state.js`). Internal access is now `ctx.world.bot`, `ctx.social.chatLog`, `ctx.tasks.taskHistory`, etc. — never the flat `ctx.bot` / `ctx.chatLog` of pre-refactor.
+- **The `/observe` payload shape did NOT change.** All field names exposed over HTTP are stable; only internal ctx access patterns shifted. The dashboard aggregator polls HTTP and is unaffected by the slicing.
+- **Middleware pipeline** — `dispatchAction` lives in `bot/lib/server/middleware/task-lifecycle.js`; pre/post lists declared in `pipeline.js`. Only relevant if we ever add new actions (we don't).
+- **Module size budget (P16)** — `bot/lib/**/*.js` must stay under 500 LOC unless annotated `// @size-exempt: <reason>`. Our touch points (http-app.js, bot/server.js) are size-exempt already. The new dashboard service lives at `hermescraft/dashboard/` (outside `bot/lib/`) so P16 doesn't apply, but we'll keep modules small anyway.
+- **Convention check** — `node scripts/check-conventions.mjs` must pass before commit. Enforces P3 (CLI descriptions), P4 (test fixtures), P16 (size budget), P20 (services/mock-services parity).
+- **`npm test` defaults to `HERMES_VALIDATE=1`** — the dispatchAction validator now runs in CI. Touching dispatch code requires that validation pass; we don't, so this is informational.
+- **`bot/lib/actions/world.js` is gone** — split in Phase 4 into `inventory.js` / `building.js` / `excavation.js` / `interaction.js` / `queries.js` / `lifecycle.js`. `bucket_fill`/`bucket_empty` moved into `water.js`. Doesn't change any HTTP endpoint, but the architecture-map's action-domain table is the canonical reference.
 
 ## Architecture
 
@@ -35,6 +39,7 @@ This plan assumes the **post-2026 refactor** layout of `bot/lib/` (navigation: [
 │  • 30s poll: PaperMCP `mv list` + `mv where <bot>` per bot        │
 │  • 60s poll: OpenRouter /api/v1/credits                           │
 │  • 60s poll: Hermes web server /api/analytics/usage               │
+│  • 5s poll (kanban tab active): Hermes /api/kanban/*              │
 │  • Serves single-page dashboard at /                              │
 │  • Exposes /api/fleet merged JSON for the frontend                │
 │  • Exposes /api/worlds for the world-selector dropdown            │
@@ -46,7 +51,6 @@ This plan assumes the **post-2026 refactor** layout of `bot/lib/` (navigation: [
 
   bot:4001-4007  ◄── prismarine-viewer (per-bot opt-in, iframed on click)
   bot:5001-5007  ◄── mineflayer-radar (per-bot opt-in, iframed in card)
-  paper:8080     ◄── squaremap plugin (multi-world overview, iframed)
   paper:25577    ◄── PaperMCP (multiverse `mv list` / `mv where` queries)
 ```
 
@@ -61,22 +65,22 @@ This plan assumes the **post-2026 refactor** layout of `bot/lib/` (navigation: [
 - `hermescraft/dashboard/lib/hermes-usage.js` — Hermes `/api/analytics/usage` client.
 - `hermescraft/dashboard/lib/poll.js` — parallel fan-out poller for bot endpoints.
 - `hermescraft/dashboard/lib/multiverse.js` — PaperMCP WS client; runs `mv list` once at startup + `mv where <bot>` per refresh; caches `bot_name → world_name`.
-- `hermescraft/dashboard/lib/kanban.js` — read-only SQLite client for `~/.hermes/kanban.db` (uses `better-sqlite3`, opened with `readonly: true, fileMustExist: true`). Returns rows grouped by status for the center-pane board, plus a `getTask(id)` for the right-pane details view. Pinned columns: `id, title, status, assignee, board, created_at, updated_at` (schema reference: `~/.hermes/hermes-agent/hermes_cli/kanban_db.py:80-180`).
+- `hermescraft/dashboard/lib/kanban.js` — Hermes API client for read-only kanban endpoints. Returns grouped task rows for the center-pane board, plus `getTask(id)` for the right-pane details view.
 - `hermescraft/data/agent-registry.json` — extends existing `data/agent-models.json` shape with `api_port`, `viewer_port`, `radar_port`, `role`, `model`.
 - `hermescraft/start-dashboard.sh` — launcher (port + env wiring; mirrors `start-steve.sh` style).
-- `hermescraft/docs/dashboard.md` — operational notes (how to run, squaremap install, port map).
+- `hermescraft/docs/dashboard.md` — operational notes (how to run, port map, world-board mapping).
+- `hermescraft/dashboard/lib/map2d.js` — coordinate projection helpers for the v1 2D world map and POI markers.
 
 ## Files to modify
 
-- `hermescraft/bot/lib/runtime/manager.js` — opt-in viewer + radar startup inside the **existing** `bot.once('spawn', …)` handler (same place the bot is fully wired after connect). Read `VIEWER_PORT` and `RADAR_PORT`; if set, load `prismarine-viewer` and `mineflayer-radar` there — do **not** add a separate top-level hook in `bot/server.js`. Both stay no-ops when env unset → zero impact on civilization-mode (7 bots × 3 ports each would be too many).
+- `hermescraft/bot/server.js` — opt-in viewer + radar startup. Hook into the bot creation flow (the file ends with `httpServer.listen(...)` calling `createBot()` at line 644; `createBot()` is defined earlier in the same file). The cleanest hook is `bot.once('spawn', ...)` inside or right after the create flow, where the live bot instance is available. Read `VIEWER_PORT` and `RADAR_PORT` env vars; if set, `await import('prismarine-viewer')` and `bot.loadPlugin(require('mineflayer-radar'))`. Both stay no-ops when env unset → zero impact on civilization-mode (7 bots × 3 ports each would be too many). Note: `bot/server.js` is already `@size-exempt` (655 LOC), so adding ~20 LOC for the env-gated block is fine.
 - `hermescraft/bot/package.json` — add `prismarine-viewer` and `mineflayer-radar` to deps.
-- `hermescraft/bot/lib/server/http-app.js:402-410` — replace `/dashboard` handler with a 302 to the aggregator URL (default `http://localhost:3000`), configurable via `DASHBOARD_URL` env var. Keeps `mc dashboard` working.
+- `hermescraft/bot/lib/server/http-app.js:322-330` — replace the `/dashboard` handler (currently reads `dashboardHtmlPath` and serves the HTML) with a 302 to the aggregator URL (default `http://127.0.0.1:3000` for on-host use), configurable via `DASHBOARD_URL` env var for LAN access. Keeps `mc dashboard` working. The file is `@size-exempt` (583 LOC); the change is net-shrinking.
 - `hermescraft/bin/mc` (CLI's `dashboard` subcommand at `bot/cli/`) — point to `DASHBOARD_URL` instead of `${bot}/dashboard`.
 - `hermescraft/scripts/run-landfolk-bots.sh` — export `VIEWER_PORT=$((4000 + i))` and `RADAR_PORT=$((5000 + i))` per bot.
 - `hermescraft/landfolk.sh` — same env additions in the per-name launch block (lines 22-28, 103).
 - `hermescraft/civilization.sh` — leave viewer/radar OFF by default (too many ports for 7 bots); add `--with-viewer` flag for opt-in.
 - `hermescraft/README.md` — add dashboard section pointing to `docs/dashboard.md`.
-- `docker/minecraft/docker-compose.yml` (in `homelab` repo) — expose port 8080 for squaremap web tiles.
 
 ## Port allocation convention
 
@@ -85,7 +89,6 @@ This plan assumes the **post-2026 refactor** layout of `bot/lib/` (navigation: [
 | Bot HTTP API         | 3001–3007  | existing                             |
 | prismarine-viewer    | 4001–4007  | new, per-bot, env-gated              |
 | mineflayer-radar     | 5001–5007  | new, per-bot, env-gated              |
-| squaremap web tiles  | 8080       | Paper plugin, single instance        |
 | Dashboard aggregator | 3000       | new, single instance, fixed          |
 
 ## Dashboard layout (vanilla HTML, single page)
@@ -100,14 +103,14 @@ Three panes, fixed: **LEFT** = player list with quick stats. **CENTER** = tabbed
 │ Players          │ ┌──[Map]─[Kanban]─[FPV: Steve]──┐    │ DETAILS            │
 │ (filtered by     │ │                               │    │ (context-driven)   │
 │  world)          │ │                               │    │                    │
-│                  │ │  Map: squaremap iframe        │    │ Selected: Steve    │
-│ ┌──────────────┐ │ │   ?world=<selected>           │    │ ─────────────────  │
-│ │ Steve   ◄sel │ │ │   markers: bots + POIs        │    │ Model: Sonnet 4    │
+│                  │ │  Map: simple 2D world plane   │    │ Selected: Steve    │
+│ ┌──────────────┐ │ │   points: bots + humans + POI │    │ ─────────────────  │
+│ │ Steve   ◄sel │ │ │   centered by world extents   │    │ Model: Sonnet 4    │
 │ │ ❤9 🍗7       │ │ │                               │    │ World: landfolk... │
 │ │ oak_log      │ │ │  Kanban: swim lanes by status │    │ Spend: $0.12/hr    │
 │ │ chopping     │ │ │   (todo · ready · running ·   │    │ Pos: 372, 65,-591  │
 │ ├──────────────┤ │ │    blocked · done)            │    │ Holding: oak_log   │
-│ │ Reed         │ │ │   from ~/.hermes/kanban.db    │    │ Task: bg_collect   │
+│ │ Reed         │ │ │   from Hermes API             │    │ Task: bg_collect   │
 │ │ ❤7 🍗9 idle  │ │ │                               │    │ Top goal:          │
 │ ├──────────────┤ │ │  FPV: prismarine-viewer       │    │   wood_supply      │
 │ │ Moss   ❤10   │ │ │   for currently-selected bot  │    │ Recent actions:    │
@@ -122,7 +125,7 @@ Three panes, fixed: **LEFT** = player list with quick stats. **CENTER** = tabbed
 │                  │                                      │  [w] Steve: ...    │
 └──────────────────┴──────────────────────────────────────┴────────────────────┘
 
-World selector: All · world · landfolk-test · testflat · world_nether · world_the_end
+World selector: world · landfolk-test · testflat · world_nether · world_the_end
 Center tabs:     Map (default) · Kanban · FPV
 Right pane modes (mutually exclusive, set by what was clicked):
   • Player details  (click left-pane row or a map bot-marker)
@@ -135,8 +138,8 @@ Right pane modes (mutually exclusive, set by what was clicked):
 
 | User action                          | `selection.kind` | Right pane             | Center FPV tab               |
 |--------------------------------------|------------------|------------------------|------------------------------|
-| Click player in left list            | `player`         | Player details         | FPV tab targets that bot     |
-| Click bot marker on map              | `player`         | Player details         | FPV tab targets that bot     |
+| Click player in left list            | `player`         | Player details         | FPV tab derives port by selected player id |
+| Click bot marker on map              | `player`         | Player details         | FPV tab derives port by selected player id |
 | Click POI/mark on map                | `poi`            | POI details            | unchanged                    |
 | Click kanban card                    | `task`           | Kanban task details    | unchanged                    |
 | Switch center to FPV with no player  | (selection req'd)| highlight player list  | shows greyed placeholder     |
@@ -190,7 +193,9 @@ Right pane modes (mutually exclusive, set by what was clicked):
 }
 ```
 
-**`/api/kanban` payload** (refreshed every 5s when center tab = Kanban, otherwise on-demand):
+Later build enhancement: include per-world live counts (`active_agents`, `humans`) in this payload so the world selector can show `world (3)` style badges.
+
+**`/api/kanban` payload** (refreshed every 5s when center tab = Kanban, world-scoped):
 
 ```jsonc
 {
@@ -207,46 +212,51 @@ Right pane modes (mutually exclusive, set by what was clicked):
 
 **`/api/kanban/:id`** — single task detail for the right pane (title, body/spec, comments, links, full event timeline).
 
-**`/api/poi`** — points of interest aggregated from each bot's `/marks` endpoint, deduped by `(world, name)`, merged with proximity hints. Right-pane POI details: name, world, x/y/z, note, last-visited-by (which bot's marks list contains it).
+Kanban model: one board per world. The selected world determines which board is queried (for example `board=landfolk-test`). Workflow contract is API-driven (no hard permission enforcement in dashboard): bots read tasks, take the next task, add progress comments, and mark tasks as review-ready before steward/human closes them.
 
-**Per-bot fetches** (parallel, per tick): `GET /observe?lean=true` provides most of the per-agent fields above. The payload is built in `bot/lib/runtime/observation.js` (`briefState()`, `buildObservePayload()`), reading sliced state as described in **`docs/architecture-map.md`** — *State slices*. For `holding` and equipment we may need to also hit `/inventory` if the lean observe payload proves insufficient — confirm during implementation. For human players, we get presence + position from any nearby bot's `/nearby`.
+**`/api/poi`** — points of interest aggregated from each bot's `/marks` endpoint, deduped by `(world, name, x, y, z)` (with integer-rounded coordinates), merged with proximity hints. Right-pane POI details: name, world, x/y/z, note, last-visited-by (which bot's marks list contains it).
+
+**Per-bot fetches** (parallel, per tick): `GET /observe?lean=true` provides 90% of the per-agent fields above (`bot/lib/runtime/observation.js:281`, `briefState()` at line 134). The payload shape is unchanged by the Phase 1-7 refactor — only internal ctx access patterns shifted (e.g. `ctx.world.bot.heldItem`, `ctx.social.chatLog`). For `holding` and equipment we may need to also hit `/inventory` if `state.holding` proves insufficient — confirm during implementation. For human players, we get presence + position from any nearby bot's `/nearby`.
 
 **OpenRouter** — `GET https://openrouter.ai/api/v1/credits` with `Authorization: Bearer $OPENROUTER_API_KEY`. Returns `{ data: { total_credits, total_usage } }`. Polled every 60s, cached.
 
 **Hermes usage** — `GET http://<hermes-web-host>/api/analytics/usage` (web_server.py:2803-2850). Returns daily/by-model aggregates. To get per-agent spend rate: group sessions by model, map model → agent via `data/agent-models.json`, compute USD spent in trailing 5 min × 12 → USD/hr. Caveat: model-to-agent mapping is ambiguous when two agents share a model (e.g. both Steve and Reed on `claude-sonnet-4`). Document this limitation in v1; v2 can inject agent name into Hermes session metadata.
 
-**Multiverse / world tracking** — at startup, aggregator runs `mv list` via PaperMCP `minecraft_execute_command` to populate `/api/worlds`. Every 30s it runs `mv where <bot_name>` for each online bot to refresh the world cache. The bot's own `bot.game.dimension` (already in `/observe`) is reported alongside as `dimension`. For human players, world is detected from any nearby bot's `/social` or via `mv where <human>` when needed. Frontend world selector filters `agents[]` and `humans[]` client-side by `world === selected` (or shows all when "All" is chosen). Squaremap iframe `src` updates to `?world=<selected>` (or hides when "All").
+**Multiverse / world tracking** — at startup, aggregator runs `mv list` via PaperMCP `minecraft_execute_command` to populate `/api/worlds`. Every 30s it runs `mv where <bot_name>` for each online bot to refresh the world cache. The bot's own `bot.game.dimension` (already in `/observe`) is reported alongside as `dimension`. For human players, world is inferred from aggregated `/nearby` observations first, with `mv where <human>` as fallback when unknown. Frontend world selector filters `agents[]` and `humans[]` client-side by `world === selected`, and the left pane only renders active (`online===true`) agents in the selected world.
 
-## Squaremap setup (one-time, manual)
+## v1 map approach (simple 2D)
 
-1. Download `squaremap-paper-mc1.21.4-*.jar` from https://github.com/jpenilla/squaremap/releases.
-2. `scp` to `ubuntu-host:/opt/stacks/minecraft/data/plugins/`.
-3. Add `8080:8080` to ports in `docker/minecraft/docker-compose.yml`.
-4. `./scripts/deploy-service.sh minecraft --restart` (from homelab repo).
-5. Configure `data/plugins/squaremap/config.yml`: `WEB_ADDRESS: 0.0.0.0`, `LIVE_PLAYER_TRACKER.ENABLED: true`. Squaremap enumerates all worlds Paper has loaded — so Multiverse worlds (`landfolk-test`, `testflat`, `world`, `world_nether`, `world_the_end`) appear automatically with no extra config.
-6. Trigger first render for each world: `/squaremap fullrender <world>` via rcon — at minimum `world`, `landfolk-test`, `testflat`.
-7. Document in `docs/minecraft.md` and `hermescraft/docs/dashboard.md`.
+Map tab uses a simple 2D coordinate plane rendered in the dashboard (canvas or SVG), world-scoped to the selected world. It plots:
+
+1. Active bot markers (`/api/fleet` positions).
+2. Human markers when positions are known.
+3. POI markers from `/api/poi`.
+
+Projection is linear in x/z world coordinates, fitted to a moving viewport over recent positions + POIs in that world. If no coordinates are available for the selected world, show an explicit empty-state card.
 
 ## Frontend implementation notes
 
 - Single `index.html` with `<script type="module" src="/static/app.js">`.
 - `app.js` polls `/api/fleet` every 2s, `/api/worlds` every 30s, and `/api/kanban` every 5s while the Kanban tab is visible. Renders imperatively (no framework). Use template literals + `replaceChildren()` for tile updates.
-- Global app state: `{ world: string|'all', selection: {kind, id} | null, centerTab: 'map'|'kanban'|'fpv' }`. Persisted in `localStorage`. Selection drives both right-pane content and (for `kind==='player'`) the FPV iframe src.
-- **Left pane (player list)**: rows show name, ❤/🍗 bars, holding, one-line task status. Filtered by selected world (or all). Selected row gets an accent border. Clicking a row sets `selection = {kind:'player', id:name}`.
+- Global app state: `{ world: string, selection: {kind, id} | null, centerTab: 'map'|'kanban'|'fpv' }`. World defaults to `world` on first load, then follows `localStorage`. Selection drives both right-pane content and (for `kind==='player'`) the FPV iframe src.
+- **Left pane (player list)**: rows show name, ❤/🍗 bars, holding, one-line task status. Filtered to active agents in the selected world only. Selected row gets an accent border. Clicking a row sets `selection = {kind:'player', id:name}`.
 - **Center tabs**: simple top-of-pane tab strip. Each tab is a separate `<section>`, only one visible.
-  - **Map**: `<iframe src="http://<paper-host>:8080/?world=<selected>">`. When "All" is selected, leave squaremap on its default world (it has its own world picker). Bot/player position dots come from squaremap's own live-player-tracker. POIs overlaid as DOM markers on top of the iframe using percentage positioning from `/api/poi` (best-effort; if alignment is brittle, skip overlay for v1 and only render POIs in a sidebar list).
+  - **Map**: simple 2D coordinate view (canvas/SVG) for selected world, rendering bots/humans/POIs as markers with click-through selection.
   - **Kanban**: 5-7 column swim-lane board (triage · todo · ready · running · blocked · done · archived). Each card shows title + assignee + status icon. Click → `selection = {kind:'task', id}` and right pane switches.
-  - **FPV**: `<iframe id="fpv">` with `src = http://<bot-host>:<viewer_port>` derived from `selection`. Greyed placeholder when no player selected or selection is a human.
+  - **FPV**: `<iframe id="fpv">` with `src = http://<bot-host>:<viewer_port>` derived by looking up the selected player id in `agents[]`. Greyed placeholder when no player selected or selection is a human.
 - **Right pane**: switches on `selection.kind`. Player details pulls from `/api/fleet` entry + `/inventory` + `/marks` + recent `/observe` extras. Includes the per-bot mineflayer-radar mini-iframe (~250×180). POI details from `/api/poi`. Task details from `/api/kanban/:id`.
+- **Kanban comments in dashboard**: read-only in v1 (view timeline/comments only; no comment form in dashboard UI).
 - **Chat strip**: docked at the bottom of the right pane, collapsible. Merges `state.new_chat` from each bot's `/observe`, dedupes by (from, message, second-precision ts), shows last 30 with world-tag prefix (e.g. `[lt]`, `[w]`). Toggle to filter to current world.
 - Spend rate per player surfaced in left-pane row footer and in right-pane details.
 
 ## Reuse from existing code
 
 - Color palette and badge styles: copy from `bot/dashboard.html:8-60` (CSS custom properties).
-- Chat merge logic shape: existing `state.new_chat` already pre-merges direct + overheard messages per-bot (`buildObservePayload` in `bot/lib/runtime/observation.js`); just union across bots.
+- Chat merge logic shape: existing `state.new_chat` already pre-merges direct + overheard messages per-bot (`buildObservePayload` at `bot/lib/runtime/observation.js:281`); just union across bots.
 - Fair-play perception is already applied server-side in `/observe` — frontend doesn't re-filter.
-- `briefState()` in `bot/lib/runtime/observation.js` gives a card-sized summary per bot (health, food, position, holding, task, top_goal, recent action). This is the per-card data source.
+- `briefState()` at `bot/lib/runtime/observation.js:134` already gives a card-sized summary per bot (health, food, position, holding, task, top_goal, recent action). This is the per-card data source.
+- `bot/lib/server/diagnostics.js` exposes `buildActionStats` + `classifyIdleReason` as pure functions — usable from the aggregator if we want a server-side action-stats panel without re-implementing the math.
+- `docs/architecture-map.md` is the navigation reference for any future bot-side changes.
 
 ## What is intentionally dropped from the current dashboard
 
@@ -263,9 +273,8 @@ If any of these turn out to be load-bearing during use, we add them back as a pe
 
 Out of scope for v1, explicitly:
 
-- Kanban write actions (create/move/edit tasks). v1 is read-only; right-pane shows details but no buttons. v2 adds POST endpoints that shell out to `hermes kanban`.
+- Kanban status and description edits from dashboard UI. Steward controls these in Hermes; dashboard remains read-oriented for task state.
 - Per-bot reasoning log / action stats modal.
-- POI marker overlay on squaremap iframe — if alignment is brittle (iframe coordinate translation), fall back to a POI list inside the Map tab. Squaremap's own player tracker covers live bot positions.
 - Per-model `$/Mtok` reference cards.
 - Cumulative session cost in headline (per-row only).
 - Bot discovery via port-scan fallback (registry file is required for v1).
@@ -277,7 +286,7 @@ Each phase is independently testable — the dashboard is usable at the end of e
 
 ### Phase 1 — Skeleton: aggregator, left pane, right pane player details
 
-**Goal:** standalone dashboard at `http://localhost:3000` that lists every online bot with live stats, and shows player details on click. No center pane content yet (just "Map / Kanban / FPV — coming" placeholders). No bot changes. No external deps.
+**Goal:** standalone dashboard at `http://localhost:3000` that lists active bots in the selected world with live stats, and shows player details on click. No center pane content yet (just "Map / Kanban / FPV — coming" placeholders). No bot changes. No external deps.
 
 **Build:**
 - `dashboard/server.js` — minimal HTTP server: serves `index.html` + static files; `/api/fleet` polls each bot's `/observe?lean=true` in parallel every 2s and merges.
@@ -288,7 +297,7 @@ Each phase is independently testable — the dashboard is usable at the end of e
 
 **Test:**
 - `./scripts/run-landfolk-bots.sh <PORT>` then `./start-dashboard.sh`. Open `http://localhost:3000`.
-- Left pane shows 5 bots with health/food/holding/task; offline bots greyed.
+- Left pane shows only online bots in the selected world with health/food/holding/task.
 - Click a bot → right pane shows player details (model, pos, holding, task, top goal, recent actions, inventory summary).
 - Selection persists in `localStorage` across reload.
 - Sanity: `node --check dashboard/server.js`, `bash -n start-dashboard.sh`.
@@ -314,33 +323,30 @@ Each phase is independently testable — the dashboard is usable at the end of e
 - `dashboard/lib/multiverse.js` — PaperMCP WS client: `mv list` once at startup (cache worlds), `mv where <bot>` per refresh (30s, parallel).
 - Add `world` + `dimension` to per-agent entries in `/api/fleet`.
 - Add `/api/worlds` endpoint.
-- Header dropdown: All + each world from `/api/worlds`.
+- Header dropdown: each world from `/api/worlds` (default `world` on first load).
 - Left-pane filter by selected world; selection state persisted.
 
 **Test:**
 - `mv list` matches dropdown contents.
-- All 5 landfolk bots show `world: landfolk-test` (or wherever they spawned).
+- Landfolk bots show `world: landfolk-test` (or wherever they spawned).
 - `mv tp Steve testflat` via rcon → within 30s, Steve's row moves to `testflat` filter.
-- Selecting "All" shows every bot regardless of world.
+- Switching world updates the left pane to only active agents in that world.
+- Later build: world selector badges show per-world live player counts.
 
-### Phase 4 — Center pane: Map tab (squaremap)
+### Phase 4 — Center pane: Map tab (simple 2D POI map)
 
-**Goal:** center pane Map tab embeds squaremap; switching world selector retargets the iframe.
-
-**Build (server-side):**
-- Install squaremap Paper plugin on ubuntu-host minecraft container (see "Squaremap setup" section above).
-- Expose port 8080 in `docker/minecraft/docker-compose.yml`.
-- Trigger `fullrender` for `world`, `landfolk-test`, `testflat`.
+**Goal:** center pane Map tab shows a visual 2D map for the selected world with live markers for bots/humans/POIs.
 
 **Build (dashboard):**
-- Center Map tab: `<iframe src="http://<paper-host>:8080/?world=<selected>">`.
-- World selector change updates iframe src.
+- `dashboard/lib/map2d.js` for world-coordinate projection and viewport fitting.
+- Center Map tab canvas/SVG with marker layers for agents/humans/POIs.
+- Marker clicks set `selection` (`player` or `poi`) and drive right pane.
+- World selector change re-renders map with selected-world dataset.
 
 **Test:**
-- Map renders, all five worlds reachable via the dropdown.
-- Bot positions show up as squaremap's own live-player markers.
-- Switching worlds in the header updates the iframe within one second.
-- If `X-Frame-Options: DENY` appears, document and add `/api/squaremap/*` proxy in phase 4.1.
+- Map renders with visible markers for selected world.
+- Click bot marker -> player details; click POI marker -> POI details.
+- Switching worlds in the header updates map dataset within one second.
 
 ### Phase 5 — Per-bot radar in right pane
 
@@ -348,13 +354,14 @@ Each phase is independently testable — the dashboard is usable at the end of e
 
 **Build:**
 - `bot/package.json` — add `mineflayer-radar`.
-- `bot/lib/runtime/manager.js` — env-gated `RADAR_PORT` opt-in: inside the existing `bot.once('spawn', …)` callback, call `bot.loadPlugin(require('mineflayer-radar'))` when `RADAR_PORT` is set (after spawn so the live `bot` instance is available).
+- `bot/server.js` — env-gated `RADAR_PORT` opt-in. Hook into the bot creation flow (e.g. `bot.once('spawn', ...)` inside `createBot()`) so the live `bot` instance can be passed to `bot.loadPlugin(require('mineflayer-radar'))`.
 - `scripts/run-landfolk-bots.sh`, `landfolk.sh` — set `RADAR_PORT=$((5000 + i))` per bot.
 - Right pane: add `<iframe class="radar-mini" src="http://<bot-host>:<radar_port>">` (~250×180) when selected entity is a bot with a radar port.
 
 **Test:**
-- `./start-steve.sh` with no env → no port 5001 listening; nothing breaks.
+- `./start-steve.sh` with no env → no port 5001 listening; nothing breaks. Verify with `npm test` in `bot/` (no regressions).
 - With `RADAR_PORT=5001` → `curl localhost:5001` returns the radar page; clicking Steve in the dashboard shows his radar mini-iframe.
+- `node scripts/check-conventions.mjs` still green.
 
 ### Phase 6 — Per-bot FPV in center pane
 
@@ -362,14 +369,15 @@ Each phase is independently testable — the dashboard is usable at the end of e
 
 **Build:**
 - `bot/package.json` — add `prismarine-viewer`.
-- `bot/lib/runtime/manager.js` — env-gated `VIEWER_PORT` opt-in in the **same** `bot.once('spawn', …)` path as phase 5: `await import('prismarine-viewer').then(({ mineflayer }) => mineflayer(bot, { port, firstPerson: true }))` when `VIEWER_PORT` is set.
+- `bot/server.js` — env-gated `VIEWER_PORT` opt-in (alongside the radar opt-in from phase 5; same `bot.once('spawn', ...)` hook). `await import('prismarine-viewer').then(({ mineflayer }) => mineflayer(bot, { port, firstPerson: true }))`.
 - `scripts/run-landfolk-bots.sh`, `landfolk.sh` — set `VIEWER_PORT=$((4000 + i))`.
-- Center FPV tab: `<iframe id="fpv">` whose `src` comes from `selection.viewer_port`; greyed placeholder when no bot selected or selection is a human.
+- Center FPV tab: `<iframe id="fpv">` whose `src` is computed from selected player id -> `agents[]` entry -> `viewer_port`; greyed placeholder when no bot selected or selection is a human.
 
 **Test:**
 - `VIEWER_PORT=4001 ./start-steve.sh` → `curl localhost:4001` returns the prismarine-viewer page.
 - Select Steve in left pane → center FPV tab → live 3D view of Steve's surroundings updates as he moves.
 - Selection = human (re44) → FPV tab shows "no FPV for human players" placeholder.
+- `node scripts/check-conventions.mjs` still green.
 
 ### Phase 7 — Hermes spend rate per agent
 
@@ -387,41 +395,43 @@ Each phase is independently testable — the dashboard is usable at the end of e
 - Active agent shows non-zero rate; idle agent trends to 0.
 - Total in header ≈ sum of per-agent rates (within model-ambiguity caveat).
 
-### Phase 8 — Kanban tab + POI overlay + task details
+### Phase 8 — Kanban tab + task details
 
-**Goal:** center Kanban tab renders the Hermes kanban board; clicking a card opens task details in the right pane. POIs aggregated for map markers.
+**Goal:** center Kanban tab renders the Hermes kanban board for the selected world; clicking a card opens task details in the right pane.
 
 **Build:**
-- `dashboard/package.json` adds `better-sqlite3` (fallback: `sql.js` if native build is unhappy).
-- `dashboard/lib/kanban.js` — read-only open of `~/.hermes/kanban.db`; group by status; pin to documented columns; fail-soft on schema drift.
-- `/api/kanban` (5s poll while tab visible) + `/api/kanban/:id` endpoints.
-- `dashboard/lib/poi.js` + `/api/poi` — union of each bot's `/marks`, deduped by (world, name).
+- `dashboard/lib/kanban.js` — Hermes API client for kanban list/detail endpoints; normalize responses into grouped lanes and query board-by-world.
+- `/api/kanban` (5s poll while tab visible) + `/api/kanban/:id` proxy/transform endpoints.
+- `dashboard/lib/poi.js` + `/api/poi` — union of each bot's `/marks`, deduped by `(world, name, x, y, z)` using integer-rounded coordinates.
 - Center Kanban tab: swim lanes (triage · todo · ready · running · blocked · done · archived). Card click → `selection = {kind:'task', id}` → right pane shows task details.
-- Right pane: POI details mode (clicking a POI in the Map tab POI sidebar list).
+- Workflow contract for v1: bots read tasks, pick next, add comments, and mark tasks review-ready; steward/human performs final close. No hard permission checks are enforced by dashboard code.
+- Right pane: POI details mode (clicking a POI marker in the Map tab).
 
 **Test:**
 - Kanban tab renders all current tasks grouped correctly.
+- Switching selected world swaps to that world's board.
 - Click a task → right pane shows title, body/spec, comments, event timeline.
-- Create a task via `hermes kanban create ...` → appears within 5s.
-- Schema drift sim: rename a column in a sandbox DB → dashboard renders "kanban schema changed" instead of crashing.
+- Add comment via Hermes API -> comment appears in task details within 5s.
+- Dashboard keeps comments read-only (no comment input control in UI).
+- Hermes API failure sim (network/auth): kanban tab renders a degraded "kanban unavailable" state instead of crashing.
 
 ### Phase 9 — Retire the old dashboard
 
 **Goal:** old `bot/dashboard.html` and `/dashboard` endpoint redirect to the new aggregator; `mc dashboard` CLI opens the new URL.
 
 **Build:**
-- `bot/lib/server/http-app.js:402-410` — replace `/dashboard` handler with `302` → `${DASHBOARD_URL:-http://localhost:3000}`.
-- `bin/mc` `dashboard` subcommand → opens `$DASHBOARD_URL`.
+- `bot/lib/server/http-app.js:322-330` — replace `/dashboard` handler with `302` → `${DASHBOARD_URL:-http://127.0.0.1:3000}`. Drop the `dashboardHtmlPath` import (line 58) from the deps bag, and remove its construction in `bot/server.js:582`.
+- `bot/cli/registry.mjs` — update the `mc dashboard` subcommand to open `$DASHBOARD_URL`. P3 requires a non-empty description; keep it descriptive.
 - Delete `bot/dashboard.html` from the codebase (git history retains it).
-- `bot/test/integration/listener-health.test.js` — update or remove the `dashboardHtmlPath` mock: it assumes the old static `/dashboard` handler; after the 302, the test should assert redirect behavior (or stop stubbing that path).
-- `bot/test/dashboard-reasoning-format.test.js` — drop or repoint.
-- `docs/dashboard.md` — operational notes (running, port map, squaremap install, troubleshooting).
+- `bot/test/dashboard-reasoning-format.test.js` — drop or repoint to the aggregator.
+- `docs/dashboard.md` — operational notes (running, port map, world-board mapping, troubleshooting).
 - `hermescraft/README.md` — point at `docs/dashboard.md`.
 
 **Test:**
-- `curl -I localhost:3001/dashboard` → `302 Location: http://localhost:3000`.
+- `curl -I localhost:3001/dashboard` → `302 Location: http://127.0.0.1:3000` (or configured `DASHBOARD_URL`).
 - `mc dashboard` opens browser at the new URL.
-- `cd bot && npm test` passes.
+- `cd bot && npm test` passes (with default `HERMES_VALIDATE=1`).
+- `node scripts/check-conventions.mjs` passes (P3 description, P16 size budget).
 - `node --check bot/server.js`, `bash -n` on all touched shell scripts.
 
 ### Phase ordering rationale
@@ -431,11 +441,11 @@ Each phase is independently testable — the dashboard is usable at the end of e
 | 1     | none    | no                 | low  | functional dashboard |
 | 2     | none    | no                 | low  | balance number |
 | 3     | none    | no (uses PaperMCP) | low  | world filter |
-| 4     | none    | **squaremap install** | med | the map |
+| 4     | none    | no                 | low  | visual POI map |
 | 5     | `mineflayer-radar` | no       | low  | radar tiles |
 | 6     | `prismarine-viewer` | no      | med (port/asset weight) | the FPV |
 | 7     | none    | no                 | low  | $/hr per agent |
-| 8     | `better-sqlite3` | no        | med (native build) | kanban |
+| 8     | none    | no                 | med (Hermes API coupling) | kanban |
 | 9     | none    | no                 | low  | cleanup |
 
 ## Risks & landmines
@@ -444,9 +454,8 @@ Each phase is independently testable — the dashboard is usable at the end of e
 - **Port pressure**: 5 bots × 3 ports each = 15 ports for landfolk; manageable. Civilization (7 bots) intentionally skips viewer/radar to avoid 21 ports.
 - **OpenRouter `/credits` rate limit**: 60s poll cadence is conservative. If the endpoint changes shape, fail soft (show "—" not crash).
 - **Hermes usage attribution ambiguity**: two agents on the same model → can't split their spend. Note in `docs/dashboard.md`; v2 fix is injecting agent name into session metadata.
-- **squaremap CSP**: some Paper plugin web servers set `X-Frame-Options: DENY` which would block the iframe. If so, fall back to a link-out tile or proxy through the aggregator (`/api/squaremap/*` strips the header).
+- **2D map projection drift**: a simple fitted x/z viewport can look jumpy if marker extents change rapidly. Mitigate with smoothed viewport bounds (lerp) and a reset-viewport control.
 - **Schema drift on `/observe`**: the aggregator should fail soft if any expected field is missing (treat as `null`, don't crash the page).
 - **`mv where` parsing**: `mv where` output is human-formatted with color codes (e.g. `[34mlandfolk-test - [32mNORMAL`). Strip ANSI + parse the world name. If the command format changes in a future Multiverse update, fall back to mapping via `bot.game.dimension` + a per-bot launch-time `MC_WORLD` env var.
 - **World-change latency**: world tracking is on a 30s refresh; teleports won't appear instantly. Acceptable for v1. v2 could subscribe to PaperMCP events if/when streaming is supported.
-- **Kanban schema drift**: pinning to `id, title, status, assignee, board, created_at, updated_at` columns means a Hermes upgrade that renames columns will break the panel. The aggregator should catch `SQLITE_ERROR: no such column` and render a degraded "kanban schema changed — see logs" message rather than crash.
-- **better-sqlite3 native build**: adding it means `npm install` needs a build toolchain on whatever host runs the aggregator. Documented as a prereq. (Alternative: `sql.js` pure-WASM, slower but no native deps — keep in pocket.)
+- **Hermes kanban API coupling**: if Hermes changes kanban response shape or auth behavior, the dashboard kanban panel can degrade. Fail soft with "kanban unavailable" and keep map/player panes running.

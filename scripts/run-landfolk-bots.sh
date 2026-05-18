@@ -11,8 +11,9 @@ cd "$BOT_DIR"
 run_bot() {
   local name="$1"
   local api_port="$2"
-  echo "[bot] starting $name on API $api_port -> $MC_HOST:$MC_PORT"
-  MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$name" API_PORT="$api_port" node server.js > "/tmp/bot-${name,,}.log" 2>&1 &
+  local viewer_port=$((api_port + 1000))
+  echo "[bot] starting $name on API $api_port viewer $viewer_port -> $MC_HOST:$MC_PORT"
+  MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$name" API_PORT="$api_port" VIEWER_PORT="$viewer_port" node server.js > "/tmp/bot-${name,,}.log" 2>&1 &
 }
 
 run_bot Steve 3001

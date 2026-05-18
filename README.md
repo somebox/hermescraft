@@ -299,7 +299,8 @@ This matters for both believability and demo integrity.
 ## Repository guide
 
 Primary files:
-- `hermescraft.sh` — single-agent companion launcher
+- `start-dashboard.sh` — fleet dashboard aggregator (see `docs/dashboard.md`)
+- `dashboard/` — standalone command-center UI (polls bot HTTP APIs + optional Kanban bridge)
 - `civilization.sh` — multi-agent civilization launcher
 - `landfolk.sh` — small-cast LAN launcher
 - `scripts/run-landfolk-bots.sh` — start the 5 Landfolk bot bodies
@@ -316,7 +317,7 @@ Primary files:
 - `SOUL-civilization.md` — civilization behavior
 - `SOUL-landfolk.md` — landfolk behavior
 - `prompts/` — character prompts
-- `docs/` — mode notes and hackathon/demo docs (`docs/MC_AGENT_BOUNDARIES.md`: Hermes vs server when using `mc`)
+- `docs/` — mode notes and hackathon/demo docs (`docs/MC_AGENT_BOUNDARIES.md`: Hermes vs server when using `mc`; `docs/dashboard.md`: command center)
 - `data/` — persistent per-bot data (goals, presets, locations, reminders)
 
 Archived reference / experimental material:
@@ -340,7 +341,7 @@ bash -n landfolk.sh
 bash -n setup.sh
 bash -n server/start.sh
 bash -n scripts/run-landfolk-agent.sh
-bash -n scripts/run-landfolk-bots.sh
+bash -n start-dashboard.sh
 ```
 
 ## Known limitations
