@@ -418,9 +418,20 @@ export function createMiningActions(deps) {
       //
       // Trunk harvests (trees) span multiple Y by design — skip the
       // lock for those.
+      // Strip-plane floor: the lower of (deepest initially-visible candidate)
+      // and (bot's foot Y). The intent is "don't dive below the strip plane
+      // into a downward tunnel" — but the floor should NEVER rise above the
+      // bot's own feet. Without the bot-Y cap, mining 3×3 pillars whose only
+      // initially-visible cells are the TOPS at y=botY+1 would lock the
+      // floor at botY+1 and reject the pillar BOTTOMS at y=botY (at-level
+      // mining, not tunneling). Caused suite-position flake of
+      // test_collect_eighteen_blocks_height2 — see devlog session 2026-05-18.
       const stripPlaneFloorY = isTrunkHarvest
         ? -Infinity
-        : Math.min(...safe.map((p) => p.y));
+        : Math.min(
+            Math.min(...safe.map((p) => p.y)),
+            Math.floor(b.entity.position.y),
+          );
 
       // Strip-mine axis selection. Hoisted to outer scope so refreshPool
       // can use the same sort logic — without this, refreshPool sorted
