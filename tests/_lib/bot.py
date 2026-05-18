@@ -70,8 +70,14 @@ class BotClient:
     # for position/inventory. Read-only; consult fresh state on each call.
 
     def status_lean(self) -> dict[str, Any]:
-        """GET /status?lean=true → response.data (the bot's lean status block)."""
-        resp = self.get("/status?lean=true", timeout=5.0)
+        """GET /status?lean=true → response.data (the bot's lean status block).
+
+        Uses ?preserve=true so test-side polling (wait_until_stationary,
+        verify_tester_ready, etc.) doesn't trip the agent-facing F51.2/F58
+        reset of lastMoveFailed / recentEscapes / recentStuckCells — that
+        reset is reserved for the agent's explicit `mc status` calls.
+        """
+        resp = self.get("/status?lean=true&preserve=true", timeout=5.0)
         return resp.get("data") or {}
 
     def position(self) -> dict[str, float]:

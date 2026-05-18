@@ -709,7 +709,7 @@ def main():
                     early_exit_last_poll = time.time()
                     try:
                         import urllib.request
-                        with urllib.request.urlopen(f"{early_exit_bot_url}/status?lean=true", timeout=3) as resp:
+                        with urllib.request.urlopen(f"{early_exit_bot_url}/status?lean=true&preserve=true", timeout=3) as resp:
                             sdata = (json.loads(resp.read().decode()).get("data") or {})
                         s_time = int(sdata.get("time") or 0)
                         s_hp = float(sdata.get("health") or 0)

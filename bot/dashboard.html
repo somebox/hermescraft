@@ -2611,7 +2611,7 @@
 
       try {
         const [statusPayload, h, statsRes] = await Promise.all([
-          jBaseQuiet(modalNeeds.base, '/status'),
+          jBaseQuiet(modalNeeds.base, '/status?preserve=true'),
           jBaseQuiet(modalNeeds.base, '/task/history'),
           jBaseQuiet(modalNeeds.base, '/stats'),
         ]);

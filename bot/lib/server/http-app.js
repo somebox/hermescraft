@@ -121,15 +121,21 @@ export function createBotHttpListener(deps) {
 
       if (path === '/status') {
         const lean = url.searchParams.get('lean') === 'true';
-        // F51.2: mc status is the brain's explicit "let me check my
-        // position" — clear any lingering lastMoveFailed flag so the
-        // next position-dependent verb runs normally.
-        if (ctx.runtime.lastMoveFailed) ctx.runtime.lastMoveFailed = null;
-        // F58: also clear F57.1 escape-loop counter + F57.2 stuck-cell
-        // registry. Brain is rethinking; don't hold prior escapes /
-        // stalls against the next plan for the next 90s.
-        ctx.runtime.recentEscapes = [];
-        ctx.runtime.recentStuckCells = [];
+        // F51.2 / F58: the agent's `mc status` (GET /status) is its
+        // explicit "I'm rethinking" — clear lastMoveFailed, the
+        // escape-loop counter, and the stuck-cell registry so the next
+        // position-dependent verb runs fresh.
+        //
+        // `?preserve=true` opts OUT for diagnostic callers (dashboard
+        // poll, test-suite bot_trace, observability harnesses) that
+        // need to read state without perturbing it. The agent never
+        // sets this flag.
+        const preserve = url.searchParams.get('preserve') === 'true';
+        if (!preserve) {
+          if (ctx.runtime.lastMoveFailed) ctx.runtime.lastMoveFailed = null;
+          ctx.runtime.recentEscapes = [];
+          ctx.runtime.recentStuckCells = [];
+        }
         return respond(res, 200, { ok: true, data: getFullState({ lean }) });
       }
 

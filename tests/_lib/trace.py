@@ -62,7 +62,7 @@ class BotTrace:
                 ts = time.strftime("%H:%M:%S") + f".{int(time.time() * 1000) % 1000:03d}"
                 try:
                     with urllib.request.urlopen(
-                        f"{self.base_url}/status?lean=true", timeout=2.0
+                        f"{self.base_url}/status?lean=true&preserve=true", timeout=2.0
                     ) as r:
                         d = (json.loads(r.read()) or {}).get("data") or {}
                 except Exception as e:  # noqa: BLE001 — trace is observe-only
