@@ -2,6 +2,112 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## Session: 2026-05-18 — functional-test remediation (continuation)
+
+Continuing the previous session's triage of the functional-test suite
+against the live Tester bot. The starting point (per `.claude/plans/
+please-review-the-recent-vectorized-boole.md`) was 4 remaining failures.
+Per-failure verdict + fix below.
+
+### 1. `test_F57_3_successful_escape_carries_do_not_retry_goto`
+
+**Verdict**: observability infra corrupting SUT. `do_not_retry_goto`
+came back null even though `mc escape` correctly classified the corner
+and sidestepped. Root cause: the autouse `bot_trace` fixture
+(`tests/_lib/trace.py`) polls `GET /status?lean=true` every 0.4s, and
+that endpoint clears `ctx.runtime.lastMoveFailed` (F51.2/F58 contract
+for the agent's `mc status` rethink). Trace was wiping the flag
+between the goto-fail and the escape on every test.
+
+**Fix** (`fa62575`): added `?preserve=true` to GET /status — opt-out
+for diagnostic callers that need a non-mutating read. Carve-out
+preserves the agent's `mc status` reset semantics (no flag → still
+clears, verified by `test_status_clears_precondition_flag`). Wired
+preserve into: `BotClient.status_lean`, `BotTrace` poller, dashboard
+modal-detail poll, agent-test early-exit watchdog.
+
+### 2. `test_F57_1_escape_recurring_loop_after_3_within_90s`
+
+**Verdict**: same root cause as F57_3. `bot_trace` was also clearing
+`ctx.runtime.recentEscapes` every 0.4s, so the F57.1 loop detector
+(`queries.js:391-394`) never saw a 3rd entry within 90s. Live evidence:
+4 sequential escapes all returned `OK`, never `ESCAPE_RECURRING_LOOP`.
+
+**Fix**: subsumed by the same `?preserve=true` change.
+
+### 3. `test_collect_eighteen_blocks_height2`
+
+**Verdict**: test contract too strict. The verb is functioning
+correctly — curl repro yields `mined_count=17, attempted=19, causes={
+pathfind_failed:1, behind_wall:1 }` in 23.6s. Graceful exit with full
+structured context. Per user steer, the test's purpose is NOT to
+assert perfect throughput (mineflayer auto-magnet timing + occasional
+LOS-blocked corner blocks make 18/18 non-deterministic), it's to
+prove the bot doesn't hang / wedge / blow past the outer cap, and
+that partial results carry actionable context back to the agent.
+
+**Fix**: rewrote `_run_collect_scenario` to assert: (1) no wedge
+(elapsed < 45s), (2) on partial, `causes` dict + `partial_failure:
+true` are present, (3) `mined_count ≥ ceil(want_count * 0.85)`.
+Threshold gives 1 miss on 9-block runs, 2 on 18, strict on 1. All 4
+grid scenarios pass.
+
+### 4. `test_goto_into_solid_in_alley_carries_standing_state`
+
+**Verdict**: test asserted obsolete contract. With the #102 Y-grace
+patch in `movement.js:412`, a goto to a solid target now searches
+y±5 for a standable cell; if it finds one (e.g. y+2 on a flat stone
+floor), pathfinder runs against the real terrain and returns
+`NAV_BLOCKED` with the y-shifted target. The previous
+`NAV_TARGET_OCCUPIED` only fires when Y-grace finds no standable Y.
+The standing-state enrichment (`classification='alley'`,
+`blocked_dirs=[N,S]`, plus new `closest_standable` and
+`next_hop_suggestion`) is still attached on the new code path.
+
+**Fix**: accept either `NAV_TARGET_OCCUPIED` or `NAV_BLOCKED` for
+this scenario; the regression-relevant signal — standing-state on
+movement failure — remains the primary assertion. The docstring
+explains why.
+
+### Framework note — the F58 contract decision
+
+Per the plan's verification step 3, the `/status` F51.2/F58 contract
+is now: agent's `mc status` (GET /status without `preserve=true`)
+clears `lastMoveFailed` + `recentEscapes` + `recentStuckCells`.
+Diagnostic GETs (`preserve=true`) leave state alone. The unused
+POST `/action/status` clear at `http-app.js:558` is dead but harmless
+— no caller hits it (mc status maps to GET via `registry.mjs:35`).
+
+### Full-suite verification
+
+Cold-run full functional pass after the 4 fixes (fresh Tester,
+landfolk-test on ubuntu-host): **139 passed, 2 failed, 1 skipped, 6
+xfailed, 8 xpassed in 1691.88s**. Down from the session-start 4
+failures.
+
+The 2 remaining failures are **cumulative-state cascade flakes** — both
+pass cleanly when re-run in isolation on a fresh bot:
+
+- `test_collect_eighteen_blocks_height2` — passes standalone in 25s;
+  fails inside the suite after ~90 prior tests have left arena state
+  + bot position fragmented. Same family of flakes as the documented
+  `test_build_then_navigate[*]` XPASS set.
+- `test_wait_chat_interrupt::test_wait_interrupts_on_at_mention` —
+  passes standalone (40s for the pair). Likely residual chat-handler
+  / wait-task state from prior tests; outside the plan's scope.
+
+Plan acceptance bar was ≤1 failing on cold-run with a doc note for
+the remainder. We're at 2, both standalone-clean. Next session can
+either land the framework changes from Phase 3 of the plan (audit
+fixtures still doing raw `tp Tester ...` without `place_player` or
+flat_arena pre-place) or accept the current state.
+
+### Commits this session
+- `fa62575` http+tests: ?preserve=true on GET /status; trace + dashboard opt in
+- (next commit) tests: height-2 collect contract by percentage; alley goto accepts NAV_BLOCKED post-Y-grace
+
+---
+
 ## Session: May 8-9, 2026
 
 ### Overview

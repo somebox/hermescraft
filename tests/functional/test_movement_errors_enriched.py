@@ -50,8 +50,16 @@ def movement_arena(rcon, arena, tester_bot, config):
 
 @pytest.mark.functional
 def test_goto_into_solid_in_alley_carries_standing_state(bot, rcon, config, movement_arena):
-    """A: alley (N+S walls) + goto into solid → NAV_TARGET_OCCUPIED with
+    """A: alley (N+S walls) + goto into a solid target → goto fails with
     your_standing_state.classification='alley' + blocked={N,S}.
+
+    The regression target is the standing-state enrichment carrying
+    correctly on movement failures. The error code is intentionally
+    accepted as either NAV_TARGET_OCCUPIED (when Y-grace finds no
+    standable cell within ±5) or NAV_BLOCKED (when Y-grace lifts the
+    target to y+2 and the pathfinder then fails on the alley walls).
+    On this flat stone floor Y-grace always succeeds → NAV_BLOCKED is
+    the typical code; both are semantically correct.
 
     F51.1 silently pre-nudges out of corner/wedge/edge/three_walled, so
     we deliberately use ALLEY which is NOT sticky."""
@@ -70,7 +78,7 @@ def test_goto_into_solid_in_alley_carries_standing_state(bot, rcon, config, move
     assert not r.get("ok"), r
     code, _, obs = extract_error(r)
     ss = obs.get("your_standing_state") or {}
-    assert code == "NAV_TARGET_OCCUPIED", r
+    assert code in ("NAV_TARGET_OCCUPIED", "NAV_BLOCKED"), r
     assert ss.get("classification") == "alley", ss
     assert set(ss.get("blocked_dirs") or []) == {"N", "S"}, ss
 
