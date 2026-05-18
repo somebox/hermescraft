@@ -497,7 +497,10 @@ export function computeReachability(b, target, maxVisit = 96) {
     };
     if (reached && arrived) {
       out.arrived_cell = arrived;
-      out.next_hop_suggestion = arrived;
+      // next_hop_suggestion is the "where to go next when the target is
+      // NOT directly walkable" hint — leave it unset on success. All
+      // consumers gate on !walkable_to_target, and the functional contract
+      // (test_goto_near_reachability.py) expects it absent on success.
     } else if (!reached) {
       let hop = null;
       const adjCandidates = [];

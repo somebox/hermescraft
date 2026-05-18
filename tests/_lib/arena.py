@@ -64,11 +64,56 @@ class Arena:
         perception catch up with world state before assertions."""
         time.sleep(seconds if seconds is not None else self._settle_seconds)
 
+    def wait_until_stationary(
+        self,
+        bot,
+        *,
+        timeout_s: float = 6.0,
+        stable_for_s: float = 0.6,
+        tolerance: float = 0.15,
+    ) -> dict:
+        """Poll /health until the bot's (x,y,z) holds steady within `tolerance`
+        for `stable_for_s`. The bot just got tp'd and Tester often arrives
+        airborne (test world has voids below y=64 in places); without this
+        wait, the per-test arena fixture finishes BEFORE the bot lands and
+        the test body runs against a falling/dying bot — exactly the symptom
+        re44 spotted as recurring across the functional suite.
+
+        Returns the last /health snapshot. Raises on timeout so the failure
+        is loud and points at the right thing instead of cascading into a
+        generic "test body failed" error.
+        """
+        deadline = time.time() + timeout_s
+        last_pos = None
+        stable_since = None
+        last_health = None
+        while time.time() < deadline:
+            last_health = bot.get("/health", timeout=2.0)
+            pos = last_health.get("position") or {}
+            if last_pos is not None:
+                dx = abs((pos.get("x") or 0) - (last_pos.get("x") or 0))
+                dy = abs((pos.get("y") or 0) - (last_pos.get("y") or 0))
+                dz = abs((pos.get("z") or 0) - (last_pos.get("z") or 0))
+                if max(dx, dy, dz) <= tolerance:
+                    if stable_since is None:
+                        stable_since = time.time()
+                    elif time.time() - stable_since >= stable_for_s:
+                        return last_health
+                else:
+                    stable_since = None
+            last_pos = pos
+            time.sleep(0.15)
+        raise AssertionError(
+            f"wait_until_stationary: {self.bot_name} never settled within {timeout_s}s "
+            f"(last pos={last_pos}, tolerance={tolerance})"
+        )
+
     def rescue_tester(
         self,
         *,
         safe_xyz: tuple[float, float, float] = (0.0, 100.0, 0.0),
         bot: "BotClient | None" = None,
+        wait: bool = True,
     ) -> None:
         """Force the Tester bot into a clean, alive, invulnerable state.
 
@@ -79,11 +124,18 @@ class Arena:
              a prior test (e.g. one that timed out mid-walk)
           2. difficulty peaceful — auto-regen + no mob aggro
           3. gamemode creative   — immediate full HP, invulnerable, no fall dmg
-          4. tp to safe coords   — preempt void/lava interactions
+          4. setblock floor at safe_xyz — guarantee a landing surface so a
+             gravity-affected TP into landfolk-test's voids doesn't drop
+             Tester into the abyss while the test fixture is still building
+             walls/pillars upstairs
+          5. tp to safe coords + small floor
+          6. wait_until_stationary (when `wait=True`) — block until Tester
+             reports an unchanged position for 0.6s. Without this, fixtures
+             have raced setblock-vs-gravity for years; tests sporadically
+             see the bot mid-air at start.
 
         Pass `bot` if you have a BotClient handy — without it the
-        /action/stop step is skipped (a stale pathfinder goal will still
-        be cleared next time it crosses /action/stop or similar).
+        /action/stop and wait steps are skipped.
         """
         if bot is not None:
             try:
@@ -91,11 +143,33 @@ class Arena:
             except Exception:
                 pass
         sx, sy, sz = safe_xyz
+        floor_y = int(sy) - 1
+        ix, iz = int(sx), int(sz)
         self.rcon.batch([
             f"execute in {self.world} run difficulty peaceful",
+            # Creative for the safe TP — invulnerable, full HP, no fall dmg.
+            # We flip back to survival below so the test body sees the
+            # normal-bot behavior tests assert on (dig drops, fall damage,
+            # gamemode == 0 in verify_tester_ready).
             f"gamemode creative {self.bot_name}",
+            # Small safe platform under the landing spot — 3x3 stone at
+            # floor_y. Cheap, idempotent, and immune to the void-below
+            # problem in landfolk-test where (sx, sy-1, sz) is often air.
+            f"execute in {self.world} run fill {ix - 1} {floor_y} {iz - 1} {ix + 1} {floor_y} {iz + 1} minecraft:stone",
+            f"execute in {self.world} run fill {ix - 1} {int(sy)} {iz - 1} {ix + 1} {int(sy) + 2} {iz + 1} minecraft:air",
             f"execute in {self.world} run tp {self.bot_name} {sx} {sy} {sz} 0 0",
+            # Flip back to survival so dig-drop tests, inventory_advisory
+            # tests, and verify_tester_ready (which asserts gameType==0)
+            # see the bot in its normal mode. Saturation effect keeps
+            # hunger from interfering with multi-step arenas.
+            f"gamemode survival {self.bot_name}",
+            f"effect give {self.bot_name} minecraft:saturation 600 1",
+            # Top off HP — leaving creative drops you to whatever HP you
+            # had pre-creative, which is 0 if you died last test.
+            f"effect give {self.bot_name} minecraft:instant_health 1 10",
         ])
+        if bot is not None and wait:
+            self.wait_until_stationary(bot, timeout_s=6.0, stable_for_s=0.5)
 
     def verify_tester_ready(
         self,
@@ -152,6 +226,56 @@ class Arena:
         return self.rcon.run(
             f"execute in {self.world} run tp {self.bot_name} {x} {y} {z} {yaw} {pitch}"
         )
+
+    def place_player(
+        self,
+        bot,
+        x: float,
+        y: float,
+        z: float,
+        *,
+        yaw: float = 0.0,
+        pitch: float = 0.0,
+        wait: bool = True,
+    ) -> dict | None:
+        """Step 2 of the canonical test sequence (per user contract,
+        2026-05-18): "place player at correct world coordinates".
+
+        Tps the bot then WAITS until it reports an unchanged position —
+        without this, fixtures that tp + immediately fire the test body
+        race against gravity (Tester arrives airborne, falls into a void
+        in landfolk-test, the test body runs against a falling/dying bot).
+
+        Returns the post-settle /health snapshot (or None when wait=False).
+        """
+        self.teleport_bot(x, y, z, yaw, pitch)
+        if wait:
+            return self.wait_until_stationary(bot, timeout_s=4.0, stable_for_s=0.4)
+        return None
+
+    def move_to_safe(self, bot=None, *, safe_xyz: tuple[float, float, float] = (0.0, 100.0, 0.0)) -> None:
+        """Step 4 of the canonical test sequence: park the bot at a known
+        safe coord OUTSIDE the test arena. Run from a post-test cleanup
+        hook so test #N's geometry (open pits, lava blocks, etc.) doesn't
+        decide test #N+1's bot fate before #N+1's fixture has a chance to
+        rebuild. Idempotent; safe to call multiple times.
+        """
+        sx, sy, sz = safe_xyz
+        floor_y = int(sy) - 1
+        ix, iz = int(sx), int(sz)
+        self.rcon.batch([
+            f"execute in {self.world} run fill {ix - 1} {floor_y} {iz - 1} {ix + 1} {floor_y} {iz + 1} minecraft:stone",
+            f"execute in {self.world} run fill {ix - 1} {int(sy)} {iz - 1} {ix + 1} {int(sy) + 2} {iz + 1} minecraft:air",
+            f"execute in {self.world} run tp {self.bot_name} {sx} {sy} {sz} 0 0",
+        ])
+        if bot is not None:
+            try:
+                self.wait_until_stationary(bot, timeout_s=4.0, stable_for_s=0.3)
+            except AssertionError:
+                # Post-test teardown is best-effort — a failure here
+                # shouldn't mask the actual test result. Next test's
+                # autouse pre-rescue picks up the slack.
+                pass
 
     def flat_arena(
         self,

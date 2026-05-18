@@ -173,6 +173,39 @@ def pytest_runtest_call(item):
 # When a primitive hangs, the trace shows exactly where the bot stalled.
 # Autouse + marker-gate so unit tests don't pay the cost.
 
+# Pre-test rescue — autouse on functional tier. Runs BEFORE the per-test
+# arena fixture so every test starts with Tester (a) alive, (b) in creative
+# mode invulnerable, (c) actually stationary on a known floor — no
+# mid-air races. Previously each fixture had to remember to call
+# arena.rescue_tester() and most didn't, so a death cascade in one test
+# would leak failing physics state into the next test's setup. See
+# arena.rescue_tester docstring for the sequence.
+@pytest.fixture(autouse=True)
+def _functional_rescue(request, config, rcon, tester_bot):
+    """Pre/post test rescue. Functional-tier only.
+
+    Implements steps 2 and 4 of the canonical test sequence:
+      1. (per-test fixture) setup test area
+      2. PRE: rescue_tester — bot in creative, safe coords, WAIT until
+         stationary. Guarantees the test starts against a bot that has
+         landed; no more mid-air races.
+      3. (per-test fixture) run test
+      4. POST: move_to_safe — park bot outside the test arena so its
+         geometry doesn't decide the NEXT test's bot fate.
+      5. (next test) per-test fixture rebuilds arena
+    """
+    if not request.node.get_closest_marker("functional"):
+        yield
+        return
+    from tests._lib import Arena
+    arena = Arena(rcon, config)
+    arena.rescue_tester(bot=tester_bot, wait=True)
+    try:
+        yield
+    finally:
+        arena.move_to_safe(bot=tester_bot)
+
+
 @pytest.fixture(autouse=True)
 def bot_trace(request, tester_bot, log_dir):
     """Record bot position throughout each functional test. No-op for
