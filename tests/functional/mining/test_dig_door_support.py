@@ -55,11 +55,14 @@ def dig_support_arena(rcon, config, tester_bot):
         # Fence-gate-on-support (D)
         f"execute in {world} run setblock 3 65 0 minecraft:cobblestone",
         f"execute in {world} run setblock 3 66 0 minecraft:oak_fence_gate",
-        f"execute in {world} run tp Tester 0 65 0 90 0",
         "clear Tester",
         "give Tester minecraft:wooden_pickaxe 1",
     ])
-    time.sleep(1.5)
+    # Canonical step 2: place_player tps + waits stationary instead of
+    # raw tp + fixed sleep — eliminates the gravity-race a test body
+    # would hit if the bot arrived airborne.
+    from tests._lib import Arena
+    Arena(rcon, config).place_player(tester_bot, 0, 65, 0, yaw=90.0)
     yield
     rcon.batch([
         f"execute in {world} run fill -10 65 -10 10 80 10 minecraft:air",

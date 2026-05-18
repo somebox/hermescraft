@@ -28,7 +28,7 @@ import pytest
 @pytest.fixture(scope="module")
 def mason_trap(rcon, config, tester_bot):
     """Build cobble wall at y=66 z=12 (x: -2..1), grass floor at y=64,
-    teleport Tester to (2.5, 65, 12.7). Cleanup on teardown."""
+    place Tester at (2.5, 65, 12.7). Cleanup on teardown."""
     tester_bot.wait_until_ready(timeout=10)
     world = config["mc"]["world"]
     rcon.batch([
@@ -40,12 +40,13 @@ def mason_trap(rcon, config, tester_bot):
         f"execute in {world} run fill -5 64 5 5 64 18 minecraft:grass_block",
         # North wall at z=12, x=-2..1, y=66..68 (3 high) — the trap.
         f"execute in {world} run fill -2 66 12 1 68 12 minecraft:cobblestone",
-        f"execute in {world} run tp Tester 2.5 65 12.7 0 0",
         "effect clear Tester",
         "effect give Tester minecraft:saturation 600 1",
     ])
-    import time
-    time.sleep(config["test"]["settle_seconds"])
+    # Canonical step 2: place_player tps + waits stationary. Avoids the
+    # mid-air race a raw tp + fixed sleep had (gravity vs. assert).
+    from tests._lib import Arena
+    Arena(rcon, config).place_player(tester_bot, 2.5, 65, 12.7)
     yield
     # Teardown: fill the test box with air and park Tester at home.
     rcon.batch([
