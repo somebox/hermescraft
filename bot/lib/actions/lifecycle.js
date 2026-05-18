@@ -66,18 +66,24 @@ export function createLifecycleActions(services) {
     const wantDirect = !optOut && (until_direct === undefined || until_direct === true || until_direct === 'true');
     const start = Date.now();
     const myName = String(b.username || '').toLowerCase();
-    const chatLogLenAtStart = (ctx.social.chatLog || []).length;
     if (!wantMention && !wantDirect) {
       await sleep(cap);
       return { result: `Waited ${Math.round(cap / 100) / 10}s`, data: { interrupted: false, elapsed_s: Math.round(cap / 100) / 10 } };
     }
+    // Time-based cursor: chatLog is capped at MAX_LOG=100 with shift()
+    // on overflow. An index-based cursor (`chatLog.length` at start)
+    // desyncs on the first trim that lands mid-wait — push+shift keeps
+    // length steady so `length <= startLen` skips the new entry. Walk
+    // the log newest→oldest each tick and stop when entries predate
+    // `start`; entries are time-ordered so this is O(new since start).
     while (Date.now() - start < cap) {
       await sleep(250);
       const log = ctx.social.chatLog || [];
-      if (log.length <= chatLogLenAtStart) continue;
-      for (let i = chatLogLenAtStart; i < log.length; i++) {
+      for (let i = log.length - 1; i >= 0; i--) {
         const m = log[i];
-        if (!m || m.from === b.username || m.from === 'Server') continue;
+        if (!m) continue;
+        if (typeof m.time === 'number' && m.time < start) break;
+        if (m.from === b.username || m.from === 'Server') continue;
         const msg = String(m.message || '').toLowerCase();
         const isMention = wantMention && myName && (msg.includes(`@${myName}`) || msg.includes(`${myName}:`) || msg.includes(`${myName},`));
         const isDirect = wantDirect && (m.private === true || m.whisper === true);
