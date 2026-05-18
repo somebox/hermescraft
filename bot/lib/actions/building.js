@@ -1,7 +1,7 @@
 // @size-exempt: all block-placement verbs from former world.js split (Phase 4)
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
-import { equipForDig, RELOCATABLE_INFRASTRUCTURE, suggestedToolForBlock, isDigProtected } from '../runtime/dig-tools.js';
+import { equipForDig, RELOCATABLE_INFRASTRUCTURE, suggestedToolForBlock, isDigProtected, recordRecentPlace } from '../runtime/dig-tools.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
 import { ok } from '../shared/action-contract.js';
 
@@ -29,8 +29,13 @@ export function createBuildingActions(services) {
 
     const cascade = [];
     if (blockName) cascade.push(String(blockName));
+    // #99: prefer dirt/sand/gravel/netherrack — bare-hand-diggable so the
+    // bot can recover the pillar after climbing. Cobblestone / stone /
+    // granite-family need at least a wooden pickaxe to re-mine, so they
+    // come last as fallbacks. Bottom-of-cascade planks are last resort.
     cascade.push(
-      'cobblestone', 'stone', 'dirt', 'sand', 'gravel', 'netherrack',
+      'dirt', 'sand', 'gravel', 'netherrack',
+      'cobblestone', 'stone',
       'granite', 'andesite', 'diorite', 'deepslate', 'cobbled_deepslate',
       'oak_planks', 'spruce_planks', 'birch_planks',
     );
@@ -98,7 +103,7 @@ export function createBuildingActions(services) {
       for (const y of [baseFy + 1, baseFy + 2]) {
         const blk = b.blockAt(new Vec3(ix, y, iz));
         if (!blk || isAirLike(blk) || blk.boundingBox !== 'block') continue;
-        if (isDigProtected(blk.name)) continue;
+        if (isDigProtected(blk.name, { x: ix, y, z: iz }, ctx)) continue;
         try {
           await equipForDig(b, blk);
           await b.dig(blk, true);
@@ -240,9 +245,44 @@ export function createBuildingActions(services) {
       );
     }
 
+    // #93: post-pillar shaft detection. If the bot finished pillaring
+    // with no lateral exit AND all 4 cardinal neighbors at head height
+    // are solid, the bot is trapped in a 1×1 vertical shaft. Surface a
+    // shaft_trap flag + hint so the agent picks a recovery strategy
+    // (pillar further, dig a wall, mc escape) instead of looping.
+    let shaftTrap = null;
+    if (!lateralExit && placed > 0) {
+      const cx = Math.floor(pos.x);
+      const cz = Math.floor(pos.z);
+      const headY = endY + 1;
+      const cardinals = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      const wallSides = [];
+      let allSolid = true;
+      for (const [dx, dz] of cardinals) {
+        const neighbor = b.blockAt(new Vec3(cx + dx, headY, cz + dz));
+        if (!neighbor || neighbor.boundingBox !== 'block') {
+          allSolid = false;
+          break;
+        }
+        wallSides.push({ dir: dx === 1 ? 'east' : dx === -1 ? 'west' : dz === 1 ? 'south' : 'north', block: neighbor.name });
+      }
+      if (allSolid) {
+        // Also check the cell directly above the bot's head — if open,
+        // pillaring further is viable. If blocked, dig is the only way out.
+        const above = b.blockAt(new Vec3(cx, headY + 1, cz));
+        const canPillarFurther = !above || above.boundingBox !== 'block';
+        const hint = canPillarFurther
+          ? `In a 1×1 shaft at (${cx},${endY},${cz}). Pillar 2-3 more to reach surface, OR mc dig one of the wall blocks to make a sideways exit.`
+          : `In a 1×1 shaft at (${cx},${endY},${cz}) with ceiling overhead. mc dig ${cx} ${headY} ${cz} (a wall block) to make a sideways exit, then mc move to open ground.`;
+        shaftTrap = { walls: wallSides, can_pillar_further: canPillarFurther, hint };
+      }
+    }
+
     const exitSuffix = lateralExit
       ? `. Lateral exit at ${lateralExit.x},${lateralExit.y},${lateralExit.z} (floor ${lateralExit.floor}) — caller should: mc goto_near ${lateralExit.x} ${lateralExit.y} ${lateralExit.z} 1.`
-      : '';
+      : shaftTrap
+        ? `. ⚠ ${shaftTrap.hint}`
+        : '';
     return {
       result: `pillar_step climbed ${placed} block${placed !== 1 ? 's' : ''}: Y ${startY} → ${endY} (pos ${Math.floor(pos.x)},${endY},${Math.floor(pos.z)})${exitSuffix}`,
       placed,
@@ -250,6 +290,7 @@ export function createBuildingActions(services) {
       endY,
       position: { x: Math.floor(pos.x), y: endY, z: Math.floor(pos.z) },
       ...(lateralExit ? { lateral_exit: lateralExit } : {}),
+      ...(shaftTrap ? { shaft_trap: shaftTrap } : {}),
     };
   },
 
@@ -334,7 +375,7 @@ export function createBuildingActions(services) {
     const existing = b.blockAt(targetPos);
     if (existing && !isReplaceable(existing)) {
       // F45.4: enrich with diggability + relocatability + suggested tool.
-      const isDiggable = !isDigProtected(existing.name);
+      const isDiggable = !isDigProtected(existing.name, { x, y, z }, ctx);
       const isRelocatable = RELOCATABLE_INFRASTRUCTURE.has(existing.name);
       const suggestedTool = suggestedToolForBlock(existing.name);
       let hint;
@@ -593,6 +634,13 @@ export function createBuildingActions(services) {
           continue;
         }
 
+        recordRecentPlace(ctx, { x, y, z }, blockName);
+        // #100: auto-mark a freshly-placed crafting_table so future
+        // mc craft calls find it via the marks fallback (the existing
+        // /craft/i regex match in crafting.js).
+        if (blockName === 'crafting_table' && typeof services.autoMarkCraftingTable === 'function') {
+          services.autoMarkCraftingTable({ x, y, z });
+        }
         return {
           ok: true,
           data: {
@@ -804,6 +852,7 @@ export function createBuildingActions(services) {
           if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
             try {
               await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+              recordRecentPlace(ctx, pos, blockName);
               placed++;
               placedThis = true;
             } catch (e) {
@@ -995,6 +1044,7 @@ export function createBuildingActions(services) {
         if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
           try {
             await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+            recordRecentPlace(ctx, pos, blockName);
             placed++;
             success = true;
           } catch {}
@@ -1113,6 +1163,7 @@ export function createBuildingActions(services) {
         if (ref && ref.name !== 'air' && ref.name !== 'cave_air') {
           try {
             await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
+            recordRecentPlace(ctx, pos, itemName);
             return 'placed';
           } catch {}
           break;
@@ -1386,7 +1437,7 @@ export function createBuildingActions(services) {
           const py = targetY + dy;
           const blk = b.blockAt(new Vec3(x, py, z));
           if (!blk || isAirLike(blk)) continue;
-          if (isDigProtected(blk.name)) { skipped++; continue; }
+          if (isDigProtected(blk.name, { x, y: py, z }, ctx)) { skipped++; continue; }
           if (b.entity.position.distanceTo(blk.position) > 4.5) {
             try { await b.pathfinder.goto(new goals.GoalNear(x, py, z, 3)); } catch {}
           }
@@ -1417,6 +1468,7 @@ export function createBuildingActions(services) {
             if (ref && !isAirLike(ref) && ref.boundingBox === 'block') {
               try {
                 await b.placeBlock(ref, new Vec3(-ox, -oy, -oz));
+                recordRecentPlace(ctx, { x, y: targetY, z }, blockName);
                 didPlace = true;
                 placed++;
                 break;
@@ -1531,6 +1583,7 @@ export function createBuildingActions(services) {
           if (ref && !isAirLike(ref) && ref.boundingBox === 'block') {
             try {
               await b.placeBlock(ref, new Vec3(-ox, -oy, -oz));
+              recordRecentPlace(ctx, { x: cx, y: cy, z: cz }, blockName);
               didPlace = true;
               placed++;
               break;

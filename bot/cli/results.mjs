@@ -165,7 +165,16 @@ export function buildEnvelope({ command, httpRes, parsedParams, globals }) {
     };
   }
 
-  const data = /** @type {Record<string,unknown>} */ (js.data !== undefined ? js.data : js);
+  // #103: when the server returns a flat shape (no `data` key) like equip's
+  // { ok:true, result:"...", state:{...} }, we used to fall back to `js`
+  // wholesale — which then re-emitted `state` both inside `data` AND at the
+  // envelope top level. Strip envelope-meta keys when synthesizing `data`
+  // so each field appears exactly once.
+  const data = /** @type {Record<string,unknown>} */ (() => {
+    if (js.data !== undefined) return js.data;
+    const { ok: _ok, state: _state, result: _result, command: _command, ...rest } = /** @type {Record<string,unknown>} */ (js);
+    return rest;
+  })();
   const state = /** @type {Record<string,unknown>|undefined} */ (js.state);
 
   const emptyInfo = detectEmpty(command, data);

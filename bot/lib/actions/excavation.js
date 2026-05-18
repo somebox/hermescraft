@@ -127,7 +127,7 @@ export function createExcavationActions(services) {
           skipped++;
           continue;
         }
-        if (isDigProtected(target.name)) {
+        if (isDigProtected(target.name, pos, ctx)) {
           skipped++;
           continue;
         }
@@ -328,7 +328,7 @@ export function createExcavationActions(services) {
       if (DIG_PASSABLE_NAMES.has(blk.name)) {
         return false; // already air, no work needed
       }
-      if (blk.name === 'bedrock' || isDigProtected(blk.name)) {
+      if (blk.name === 'bedrock' || isDigProtected(blk.name, { x: px, y: py, z: pz }, ctx)) {
         totalSkipped++;
         return false;
       }
@@ -525,6 +525,25 @@ export function createExcavationActions(services) {
       const cy = startY + i;
       const cz = startZ + dz * i;
 
+      // #88: clear the "ceiling" cell directly above the bot's CURRENT
+      // head before each step. tunnelSliceBounds digs the slice at the
+      // NEW position (offset horizontally), so the cell at (curX, curY+2,
+      // curZ) — the cell the bot's head passes through during its jump —
+      // is NOT covered. Without this, stair_up bonks into a low ceiling
+      // a few steps in and hangs.
+      const bx = Math.floor(b.entity.position.x);
+      const by = Math.floor(b.entity.position.y);
+      const bz = Math.floor(b.entity.position.z);
+      const ceilingPos = new Vec3(bx, by + 2, bz);
+      const ceilingBlk = b.blockAt(ceilingPos);
+      if (ceilingBlk && ceilingBlk.boundingBox === 'block' && !isDigProtected(ceilingBlk.name, { x: bx, y: by + 2, z: bz }, ctx)) {
+        try {
+          await equipForDig(b, ceilingBlk);
+          await b.dig(ceilingBlk, true);
+          totalDug++;
+        } catch { /* not catastrophic; dig_area may compensate */ }
+      }
+
       const box = tunnelSliceBounds({ x: cx, y: cy, z: cz, direction: key, width: W, height: H });
       const res = await getActions().dig_area({
         ...box,
@@ -599,6 +618,114 @@ export function createExcavationActions(services) {
       errors: totalErrors,
       start: { x: startX, y: startY, z: startZ },
       end: { x: startX + dx * L, y: endY, z: startZ + dz * L },
+    };
+  },
+
+  /**
+   * #99: pillar_down — descend the column the bot is standing on.
+   *
+   * Iteratively dig the block directly underfoot, allow the bot to drop
+   * one cell, then repeat. Inverse of mc pillar_step. Use when stuck on
+   * top of a 1×1 column climbed with pillar_step (or any other reason
+   * the bot ended up on an isolated platform).
+   *
+   * Safety:
+   *   - Stops if the block 2 below is lava or void air (we don't drop
+   *     into a hazard).
+   *   - Stops on bedrock or any dig-protected block (we can't mine it).
+   *   - Stops when the new foot level has solid ground in ≥3 cardinal
+   *     directions (we've reached a surface, no longer pillar-stuck).
+   *
+   * Picks up drops after each step by default; set `pickup: false` to
+   * skip (faster, but the agent has to call mc pickup later).
+   */
+  async pillar_down({ count: rawCount, pickup: doPickup = true } = {}) {
+    const b = ensureBot();
+    const maxSteps = Math.min(Math.max(parseInt(rawCount, 10) || 12, 1), 64);
+
+    const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
+    const isHazardBelow = (blk) => {
+      if (!blk) return false;
+      return blk.name === 'lava' || blk.name === 'void_air';
+    };
+
+    const startY = Math.floor(b.entity.position.y);
+    let dugCount = 0;
+    let stopReason = null;
+    let lastDugBlock = null;
+
+    for (let step = 0; step < maxSteps; step++) {
+      const fx = Math.floor(b.entity.position.x);
+      const fy = Math.floor(b.entity.position.y);
+      const fz = Math.floor(b.entity.position.z);
+      const underfoot = b.blockAt(new Vec3(fx, fy - 1, fz));
+
+      if (!underfoot || isAirLike(underfoot)) {
+        // Nothing to dig — bot is already in air, will fall naturally.
+        stopReason = 'no_support_below';
+        break;
+      }
+      // Refuse to dig if doing so drops the bot into lava / void.
+      const twoBelow = b.blockAt(new Vec3(fx, fy - 2, fz));
+      if (isHazardBelow(twoBelow)) {
+        stopReason = `hazard_below:${twoBelow?.name || 'unknown'}`;
+        break;
+      }
+      if (isDigProtected(underfoot.name, { x: fx, y: fy - 1, z: fz }, ctx) || underfoot.name === 'bedrock') {
+        stopReason = `cant_break:${underfoot.name}`;
+        break;
+      }
+
+      try {
+        await equipForDig(b, underfoot);
+        await b.dig(underfoot, true);
+        dugCount++;
+        lastDugBlock = underfoot.name;
+        // Let the bot settle on the new platform.
+        await sleep(150);
+      } catch (err) {
+        stopReason = `dig_failed:${/** @type {Error} */ (err).message || 'unknown'}`;
+        break;
+      }
+
+      // Check: did we reach a surface? If 3+ cardinal cells at the NEW
+      // foot level have solid floor beneath, we've landed on real ground.
+      const newFy = Math.floor(b.entity.position.y);
+      let solidNeighbors = 0;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const neighborFloor = b.blockAt(new Vec3(fx + dx, newFy - 1, fz + dz));
+        const neighborFoot = b.blockAt(new Vec3(fx + dx, newFy, fz + dz));
+        if (neighborFloor && neighborFloor.boundingBox === 'block' && isAirLike(neighborFoot)) {
+          solidNeighbors++;
+        }
+      }
+      if (solidNeighbors >= 3) {
+        stopReason = 'reached_surface';
+        break;
+      }
+    }
+
+    let pickupSuffix = '';
+    if (doPickup && dugCount > 0) {
+      try {
+        const pu = await getActions().pickup();
+        pickupSuffix = pu?.result ? ` ${pu.result}` : '';
+      } catch {
+        pickupSuffix = ' (pickup skipped)';
+      }
+    }
+
+    const endY = Math.floor(b.entity.position.y);
+    if (!stopReason && dugCount === maxSteps) stopReason = 'max_steps_reached';
+
+    return {
+      result: `pillar_down dug ${dugCount} block${dugCount === 1 ? '' : 's'}: Y ${startY} → ${endY}${lastDugBlock ? ` (last: ${lastDugBlock})` : ''}. Stop reason: ${stopReason || 'unknown'}.${pickupSuffix}`,
+      dug: dugCount,
+      startY,
+      endY,
+      stop_reason: stopReason,
+      last_block: lastDugBlock,
+      position: { x: Math.floor(b.entity.position.x), y: endY, z: Math.floor(b.entity.position.z) },
     };
   },
 

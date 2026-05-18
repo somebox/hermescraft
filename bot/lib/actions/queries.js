@@ -2,7 +2,7 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { RELOCATABLE_INFRASTRUCTURE, FALLING_BLOCK_NAMES, columnTopSolid, suggestedToolForBlock, isDigProtected } from '../runtime/dig-tools.js';
-import { standabilityReason, findClosestStandable, standingState } from './_nav-helpers.js';
+import { standabilityReason, findClosestStandable, standingState, annotateReachability } from './_nav-helpers.js';
 import { ok, fail } from '../shared/action-contract.js';
 
 const { goals } = pathfinderPkg;
@@ -240,7 +240,7 @@ export function createQueriesActions(services) {
     };
   },
 
-  async terrain_top({ x, z, radius = 0 }) {
+  async terrain_top({ x, z, radius = 0, full = false }) {
     const b = ensureBot();
     const cx = Math.floor(Number(x));
     const cz = Math.floor(Number(z));
@@ -276,6 +276,10 @@ export function createQueriesActions(services) {
     }
 
     const feetYHint = maxTopY + 1;
+    // #103 context-trim: omit the per-column array by default. The summary
+    // (topY, blockName, columnX/Z, feetYHint) is enough for the common
+    // "where can I stand near here" case. Pass `full: true` to opt back in
+    // — needed when the agent really wants a full per-cell heightmap.
     return {
       result: `Top solid ≈Y${maxTopY} (${maxBlock}) at ${maxAt.x},${maxAt.z}${r ? ` (max over radius ${r})` : ''}`,
       topY: maxTopY,
@@ -283,7 +287,8 @@ export function createQueriesActions(services) {
       columnX: maxAt.x,
       columnZ: maxAt.z,
       feetYHint,
-      ...(r > 0 ? { columns } : {}),
+      columns_omitted: !full && r > 0 ? columns.length : undefined,
+      ...(r > 0 && full ? { columns } : {}),
     };
   },
 
@@ -926,16 +931,25 @@ export function createQueriesActions(services) {
           maxDistance: scanR,
           count: maxN,
         });
-        // Group nearby blocks into a single source (clusters near same xz).
-        // For now, list each one — brain can decide which cluster.
-        for (const p of positions) {
-          const dist = Math.round(botPos.distanceTo(p) * 10) / 10;
+        // #92: build raw locations, then annotate with reachability +
+        // approach_cell so the brain doesn't pick a buried / floating
+        // candidate it can't actually walk to. annotateReachability
+        // sorts reachable-first.
+        const rawLocs = positions.map((p) => ({
+          x: p.x, y: p.y, z: p.z,
+          distance: Math.round(botPos.distanceTo(p) * 10) / 10,
+        }));
+        const annotated = annotateReachability(b, rawLocs, 512);
+        for (const loc of annotated) {
           sources.push({
             source: 'block',
             name: target,
             count: 1,
-            pos: { x: p.x, y: p.y, z: p.z },
-            distance: dist,
+            pos: { x: loc.x, y: loc.y, z: loc.z },
+            distance: loc.distance,
+            approach_cell: loc.approach_cell || null,
+            reachable: loc.reachable,
+            unreachable_reason: loc.unreachable_reason || null,
           });
         }
       }
@@ -1009,7 +1023,7 @@ export function createQueriesActions(services) {
     const hardness = (typeof blk?.hardness === 'number') ? blk.hardness : null;
     const boundingBox = blk?.boundingBox || null;
     const isAir = blockName === 'air' || blockName === 'cave_air' || blockName === 'void_air';
-    const isDiggable = !isAir && !isDigProtected(blockName);
+    const isDiggable = !isAir && !isDigProtected(blockName, { x: ix, y: iy, z: iz }, ctx);
     const isRelocatable = RELOCATABLE_INFRASTRUCTURE.has(blockName);
     const suggestedTool = isAir ? null : suggestedToolForBlock(blockName);
 

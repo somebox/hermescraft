@@ -58,12 +58,66 @@ const ALWAYS_PROTECTED = new Set([
   'bed', 'white_bed', 'red_bed', 'bookshelf',
 ]);
 
-export function isDigProtected(blockName) {
+// #101: how long a recently-placed block stays exempt from the dig
+// protection list. 15 minutes — long enough to cover a "place fences →
+// realize pen is too small → tear down and rebuild" loop, short enough
+// that the bot doesn't accumulate stale exemptions for blocks the
+// player later considers permanent infrastructure.
+const RECENT_PLACE_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Checks whether a block name (and optionally its cell + runtime ctx)
+ * is on the protected-dig list. When `cell` and `ctx` are provided AND
+ * the bot itself placed that block in the last RECENT_PLACE_TTL_MS,
+ * the protection is bypassed — the bot is allowed to mine its own
+ * recently-placed blocks. This unblocks rebuild flows (e.g. "the pen
+ * is too small, chop it down and make it bigger") where the bot would
+ * otherwise refuse to break its own fences.
+ *
+ * Legacy single-arg call (`isDigProtected(name)`) is preserved.
+ */
+export function isDigProtected(blockName, cell = null, ctx = null) {
   if (!blockName) return false;
   if (getConfig().behaviors.allowDigInfrastructure) {
-    return ALWAYS_PROTECTED.has(blockName);
+    if (ALWAYS_PROTECTED.has(blockName)) return true;
+    return false;
   }
-  return PROTECTED_DIG_BLOCKS.has(blockName);
+  if (!PROTECTED_DIG_BLOCKS.has(blockName)) return false;
+  // Protected — but check if WE placed it recently.
+  if (cell && ctx && Array.isArray(ctx.runtime?.recentPlaces)) {
+    const cutoff = Date.now() - RECENT_PLACE_TTL_MS;
+    const cx = Math.floor(cell.x), cy = Math.floor(cell.y), cz = Math.floor(cell.z);
+    for (const entry of ctx.runtime.recentPlaces) {
+      if (entry.ts <= cutoff) continue;
+      if (entry.cell.x === cx && entry.cell.y === cy && entry.cell.z === cz) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * #101: record a successful place so future digs at the same cell
+ * bypass isDigProtected. Caller should invoke this after a confirmed
+ * place. Bounded at 64 entries (FIFO drop oldest).
+ */
+export function recordRecentPlace(ctx, cell, blockName) {
+  if (!ctx || !cell || !blockName) return;
+  if (!Array.isArray(ctx.runtime?.recentPlaces)) return;
+  const cutoff = Date.now() - RECENT_PLACE_TTL_MS;
+  // Decay first.
+  ctx.runtime.recentPlaces = ctx.runtime.recentPlaces.filter(e => e.ts > cutoff);
+  const cx = Math.floor(cell.x), cy = Math.floor(cell.y), cz = Math.floor(cell.z);
+  // Refresh timestamp if same cell already present.
+  const existing = ctx.runtime.recentPlaces.find(e => e.cell.x === cx && e.cell.y === cy && e.cell.z === cz);
+  if (existing) {
+    existing.ts = Date.now();
+    existing.block = blockName;
+    return;
+  }
+  ctx.runtime.recentPlaces.push({ ts: Date.now(), cell: { x: cx, y: cy, z: cz }, block: blockName });
+  if (ctx.runtime.recentPlaces.length > 64) ctx.runtime.recentPlaces.shift();
 }
 
 /**

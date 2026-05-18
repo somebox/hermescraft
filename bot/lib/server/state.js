@@ -30,6 +30,8 @@ export function createWorldState() {
     connectPromise: /** @type {Promise<import('mineflayer').Bot> | null} */ (null),
     positionHistory: /** @type {Array<{time:number, x:number, y:number, z:number}>} */ ([]),
     bootTime: Date.now(),
+    /** Wall time of last mineflayer `spawn` for this connection; cleared on `end`. Used for session duration in /health. */
+    mcSessionStartedAt: /** @type {number | null} */ (null),
   };
 }
 
@@ -96,6 +98,12 @@ export function createRuntimeState() {
     ),
     /** F72: Items auto-picked-up from recent mc dig calls; 30s decay window. */
     recentPickups: /** @type {Array<{ts:number, item:string, count:number, source:string}>} */ (
+      []
+    ),
+    /** #101: Blocks the bot placed recently — capped at 64 entries, 15-min
+     *  TTL. Exempts these from isDigProtected so the bot can rebuild or
+     *  relocate its own structures (chicken pens, scaffolding, etc.). */
+    recentPlaces: /** @type {Array<{ts:number, cell:{x:number,y:number,z:number}, block:string}>} */ (
       []
     ),
     soundEvents: /** @type {Array<{type:string, position:any, distance:number, direction:string, time:number}>} */ ([]),
@@ -173,6 +181,11 @@ export function createReactiveState(config) {
     _reactiveInterval: /** @type {NodeJS.Timeout | null} */ (null),
     /** Perception memory cache: blockKey → { name, bearing, distance, lastSeen }. */
     observedBlocks: new Map(),
+    /** #97: engagement tracker for kiting-stalemate detection. Records the
+     *  last few engage_step distances against a specific hostile. When
+     *  distance fails to decrease across a sliding window, the controller
+     *  declares stalemate and disengages. Reset when the target changes. */
+    engageHistory: /** @type {{ target_id: number | null, target_name: string | null, distances: number[], started_at: number } | null} */ (null),
   };
 }
 
@@ -201,13 +214,13 @@ export function createBotState(config) {
  *  Exported so the state-slices test can verify field placement
  *  against the slice constructors without re-listing fields. */
 export const FIELD_SLICE_MAP = Object.freeze({
-  world:     ['bot', 'mcData', 'botReady', 'connectPromise', 'positionHistory', 'bootTime'],
+  world:     ['bot', 'mcData', 'botReady', 'connectPromise', 'positionHistory', 'bootTime', 'mcSessionStartedAt'],
   social:    ['chatLog', 'overheardLog', 'commandQueue', 'socialGraph', 'socialEvents', 'lastChatTs', 'MAX_LOG', 'MAX_QUEUE'],
   tasks:     ['currentTask', 'taskHistory', 'syncActionInFlight', 'syncActionName', 'syncActionStartedAt', 'cancelRequested', 'actionHistory', 'actionCounters', 'lastApiError', 'MAX_ACTION_HISTORY', 'MAX_TASK_HISTORY'],
-  runtime:   ['lastMoveFailed', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentPickups', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
+  runtime:   ['lastMoveFailed', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentPickups', 'recentPlaces', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
   goals:     ['goalsStore', 'chestSnapshots'],
   team:      ['teamConfig', 'combatStats', 'recentDamagers', 'activeFurnaces', 'isSneaking'],
   reminders: ['reminders', 'remindersNextId'],
   death:     ['deathLog', 'lastDeath', 'hardcoreDead', 'lastDamageEvent', 'lastHealth', 'reconnectAttempts', 'suppressEndReconnect'],
-  reactive:  ['fairPlayMode', 'mode', 'combat_skill', 'reactiveAnchor', 'autoActionLog', '_reactiveInterval', 'observedBlocks'],
+  reactive:  ['fairPlayMode', 'mode', 'combat_skill', 'reactiveAnchor', 'autoActionLog', '_reactiveInterval', 'observedBlocks', 'engageHistory'],
 });

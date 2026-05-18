@@ -8,6 +8,8 @@ import {
   firstInvItemByPriority,
   HARVEST_AXE_PRIORITY,
   HARVEST_PICK_PRIORITY,
+  isDigProtected,
+  recordRecentPlace,
 } from '../lib/runtime/dig-tools.js';
 
 test('blockNeedsAxeHarvest recognizes log types', () => {
@@ -83,4 +85,57 @@ test('firstInvItemByPriority returns null when nothing matches', () => {
     },
   };
   assert.equal(firstInvItemByPriority(fakeBot, HARVEST_AXE_PRIORITY), null);
+});
+
+// #101: recentPlaces exemption — bot can mine its own recently-placed
+// protected blocks (e.g. tear down its own fence to rebuild bigger).
+
+test('isDigProtected: protected list still refuses when no cell+ctx', () => {
+  assert.equal(isDigProtected('oak_fence'), true);
+  assert.equal(isDigProtected('stone'), false);
+});
+
+test('isDigProtected: empty recentPlaces still refuses protected block', () => {
+  const ctx = { runtime: { recentPlaces: [] } };
+  assert.equal(isDigProtected('oak_fence', { x: 1, y: 64, z: 1 }, ctx), true);
+});
+
+test('isDigProtected: recently-placed cell is EXEMPT', () => {
+  const ctx = { runtime: { recentPlaces: [] } };
+  recordRecentPlace(ctx, { x: 1, y: 64, z: 1 }, 'oak_fence');
+  assert.equal(isDigProtected('oak_fence', { x: 1, y: 64, z: 1 }, ctx), false);
+});
+
+test('isDigProtected: different cell with same name stays protected', () => {
+  const ctx = { runtime: { recentPlaces: [] } };
+  recordRecentPlace(ctx, { x: 1, y: 64, z: 1 }, 'oak_fence');
+  assert.equal(isDigProtected('oak_fence', { x: 99, y: 64, z: 99 }, ctx), true);
+});
+
+test('isDigProtected: expired recentPlace entry no longer exempts', () => {
+  const ctx = { runtime: { recentPlaces: [] } };
+  // Manually inject a stale entry (16 min old).
+  ctx.runtime.recentPlaces.push({
+    ts: Date.now() - 16 * 60 * 1000,
+    cell: { x: 1, y: 64, z: 1 },
+    block: 'oak_fence',
+  });
+  assert.equal(isDigProtected('oak_fence', { x: 1, y: 64, z: 1 }, ctx), true);
+});
+
+test('recordRecentPlace: caps the ring buffer at 64 entries', () => {
+  const ctx = { runtime: { recentPlaces: [] } };
+  for (let i = 0; i < 70; i++) {
+    recordRecentPlace(ctx, { x: i, y: 64, z: 0 }, 'oak_planks');
+  }
+  assert.equal(ctx.runtime.recentPlaces.length, 64);
+  // First few entries dropped (FIFO).
+  assert.equal(ctx.runtime.recentPlaces[0].cell.x, 6);
+});
+
+test('recordRecentPlace: idempotent on same cell (refreshes ts, no duplicate)', () => {
+  const ctx = { runtime: { recentPlaces: [] } };
+  recordRecentPlace(ctx, { x: 5, y: 64, z: 5 }, 'oak_fence');
+  recordRecentPlace(ctx, { x: 5, y: 64, z: 5 }, 'oak_fence');
+  assert.equal(ctx.runtime.recentPlaces.length, 1);
 });

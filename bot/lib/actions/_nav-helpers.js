@@ -79,6 +79,46 @@ export function standabilityReason(b, x, y, z) {
  * sort by Euclidean distance from the target, return the first
  * standable one. O(N³) but small (N≤7 → ~343 cells worst case).
  */
+/**
+ * Y-axis grace search: keep (x, z) fixed and search for the closest
+ * standable cell along Y within ±maxDy. Returns
+ *   { x, y, z, dy, target_reason }  or  null
+ * Used when the agent gave a target with the wrong Y (target inside
+ * solid, or floating with no foot support) but the right XZ — typical
+ * cause: aiming at a tree-top / hill-side / surface coordinate where
+ * the agent guessed Y. Search direction is biased by the target's
+ * own standability reason: head_blocked / foot_blocked → search UP
+ * first (likely a hill side); no_foot_support → search DOWN first
+ * (likely a floating-target estimate). Both directions are explored
+ * within maxDy regardless.
+ */
+export function findStandableSameXZ(b, tx, ty, tz, maxDy = 5) {
+  const target_reason = standabilityReason(b, tx, ty, tz);
+  if (target_reason === 'ok') {
+    return { x: tx, y: ty, z: tz, dy: 0, target_reason };
+  }
+  if (target_reason === 'unknown') return null;
+  const preferDown = (target_reason === 'no_foot_support');
+  // Build a candidate list ordered by |dy| ascending, tiebreaking by
+  // preferred direction first.
+  const candidates = [];
+  for (let d = 1; d <= maxDy; d++) {
+    if (preferDown) {
+      candidates.push(-d);
+      candidates.push(d);
+    } else {
+      candidates.push(d);
+      candidates.push(-d);
+    }
+  }
+  for (const dy of candidates) {
+    if (isStandableCell(b, tx, ty + dy, tz)) {
+      return { x: tx, y: ty + dy, z: tz, dy, target_reason };
+    }
+  }
+  return null;
+}
+
 export function findClosestStandable(b, tx, ty, tz, maxScan = 3) {
   const target_reason = standabilityReason(b, tx, ty, tz);
   if (target_reason === 'ok') {
@@ -323,6 +363,13 @@ export function standingState(b) {
     }
   } else if (isWedged) {
     classification = 'wedge';
+  } else if (cliff_dirs.length === 4 && blocked_dirs.length === 0) {
+    // #99: bot is standing on a 1×1 column with empty air in every
+    // cardinal direction at foot level. mc move has nowhere walkable to
+    // go; callers get this classification + the next_action_hint should
+    // suggest `mc pillar_down` to descend or `mc dig` the supporting
+    // block to drop one level.
+    classification = 'on_pillar';
   } else if (cliff_dirs.length > 0 && blocked_dirs.length === 0) {
     classification = 'edge';
   } else {
@@ -347,4 +394,185 @@ export function standingState(b) {
     head_in_water,
     neighbor_status,
   };
+}
+
+/**
+ * Reachability BFS: can the bot walk from its current position to a
+ * standable cell adjacent to (target.x, target.y, target.z)?
+ *
+ * Returns null on any throw. Otherwise:
+ *   {
+ *     walkable_to_target: boolean,
+ *     distance_from_target: number,        // straight-line bot→target
+ *     visited_cells: number,               // BFS work done
+ *     arrived_cell?: {x,y,z},              // present when walkable: the
+ *                                          // BFS cell within 1 of target
+ *     next_hop_suggestion?: {x,y,z},       // when not walkable: the best
+ *                                          // adjacent or frontier cell
+ *   }
+ *
+ * Used by:
+ *   - mc move / mc goto / mc goto_near error responses (existing)
+ *   - mc find / mc find_blocks / mc discover result annotation (#92)
+ */
+export function computeReachability(b, target, maxVisit = 96) {
+  try {
+    const tx = Math.floor(Number(target.x));
+    const ty = Math.floor(Number(target.y));
+    const tz = Math.floor(Number(target.z));
+    const startCell = {
+      x: Math.floor(b.entity.position.x),
+      y: Math.floor(b.entity.position.y),
+      z: Math.floor(b.entity.position.z),
+    };
+    const dist3 = (ax, ay, az, bx, by, bz) => Math.sqrt(
+      (ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2,
+    );
+    const isWalkable = (cx, cy, cz) => {
+      const foot = b.blockAt(new Vec3(cx, cy, cz));
+      if (!foot) return false;
+      const name = foot.name || '';
+      if (/(_door|_fence_gate|_trapdoor)$/.test(name)) return true;
+      return isStandableCell(b, cx, cy, cz);
+    };
+    const isAirAt = (cx, cy, cz) => {
+      const blk = b.blockAt(new Vec3(cx, cy, cz));
+      return blk ? AIR_NAMES.has(blk.name) : false;
+    };
+    const canStepUp = (cx, cy, cz, dx, dz) => {
+      if (!isAirAt(cx, cy + 1, cz)) return false;
+      if (!isWalkable(cx + dx, cy + 1, cz + dz)) return false;
+      if (!isAirAt(cx + dx, cy + 2, cz + dz)) return false;
+      return true;
+    };
+    const startKey = `${startCell.x},${startCell.y},${startCell.z}`;
+    const visited = new Set([startKey]);
+    const queue = [{ ...startCell }];
+    let bestCell = startCell;
+    let bestDist = dist3(startCell.x, startCell.y, startCell.z, tx, ty, tz);
+    let arrived = null;
+    let reached = false;
+    const NEIGHBORS = [
+      [1, 0, 0], [-1, 0, 0],
+      [0, 0, 1], [0, 0, -1],
+      [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
+      [0, 1, 0], [0, -1, 0],
+    ];
+    const STEP_UP_DIRS = [
+      [1, 1, 0], [-1, 1, 0],
+      [0, 1, 1], [0, 1, -1],
+    ];
+    while (queue.length > 0 && visited.size < maxVisit) {
+      const cur = queue.shift();
+      const d = dist3(cur.x, cur.y, cur.z, tx, ty, tz);
+      if (d < bestDist) { bestDist = d; bestCell = cur; }
+      if (Math.abs(cur.x - tx) <= 1 && Math.abs(cur.y - ty) <= 1 && Math.abs(cur.z - tz) <= 1) {
+        reached = true;
+        arrived = { x: cur.x, y: cur.y, z: cur.z };
+        break;
+      }
+      for (const [dxn, dyn, dzn] of NEIGHBORS) {
+        const nx = cur.x + dxn, ny = cur.y + dyn, nz = cur.z + dzn;
+        const key = `${nx},${ny},${nz}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        if (!isWalkable(nx, ny, nz)) continue;
+        queue.push({ x: nx, y: ny, z: nz });
+      }
+      for (const [dxn, dyn, dzn] of STEP_UP_DIRS) {
+        const nx = cur.x + dxn, ny = cur.y + dyn, nz = cur.z + dzn;
+        const key = `${nx},${ny},${nz}`;
+        if (visited.has(key)) continue;
+        const dx = dxn, dz = dzn;
+        if (!canStepUp(cur.x, cur.y, cur.z, dx, dz)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny, z: nz });
+      }
+    }
+    const startToTarget = dist3(startCell.x, startCell.y, startCell.z, tx, ty, tz);
+    const out = {
+      distance_from_target: Math.round(startToTarget * 10) / 10,
+      walkable_to_target: reached,
+      visited_cells: visited.size,
+    };
+    if (reached && arrived) {
+      out.arrived_cell = arrived;
+      out.next_hop_suggestion = arrived;
+    } else if (!reached) {
+      let hop = null;
+      const adjCandidates = [];
+      for (const [dxn, dyn, dzn] of NEIGHBORS) {
+        const cx = tx + dxn, cy = ty + dyn, cz = tz + dzn;
+        if (!isWalkable(cx, cy, cz)) continue;
+        adjCandidates.push({
+          x: cx, y: cy, z: cz,
+          dist: dist3(cx, cy, cz, startCell.x, startCell.y, startCell.z),
+        });
+      }
+      adjCandidates.sort((a, c) => a.dist - c.dist);
+      if (adjCandidates.length > 0) {
+        hop = { x: adjCandidates[0].x, y: adjCandidates[0].y, z: adjCandidates[0].z };
+      } else if (bestCell.x !== startCell.x || bestCell.y !== startCell.y || bestCell.z !== startCell.z) {
+        hop = bestCell;
+      }
+      if (hop) out.next_hop_suggestion = hop;
+    }
+    return out;
+  } catch { return null; }
+}
+
+/**
+ * Enrich a list of block-location results with reachability info.
+ *
+ * For each location, runs a capped BFS via computeReachability and adds:
+ *   - approach_cell: {x,y,z} — the cell the bot would actually walk TO
+ *     (the cell adjacent to the block, not the block itself which can't
+ *     be stood in). Present whether the target is reachable or not.
+ *   - reachable: boolean
+ *   - unreachable_reason: 'no_standable_neighbor' | 'bfs_exhausted' |
+ *                        'no_path' | null
+ *
+ * Sorts reachable results first (preserving relative order), unreachable
+ * last. The caller can still see all results, but defaults to chasing
+ * reachable ones.
+ *
+ * maxVisit caps work-per-target. 96 is the same default movement.js uses
+ * elsewhere. With 10-12 candidates this is ~50-300ms total, vs. the
+ * 30+ seconds the agent would spend discovering un-reachability live.
+ */
+export function annotateReachability(b, locations, maxVisit = 96) {
+  if (!Array.isArray(locations) || locations.length === 0) return locations;
+  const enriched = locations.map((loc) => {
+    const reach = computeReachability(b, { x: loc.x, y: loc.y, z: loc.z }, maxVisit);
+    if (!reach) {
+      return { ...loc, reachable: null, unreachable_reason: 'unknown' };
+    }
+    if (reach.walkable_to_target) {
+      return {
+        ...loc,
+        approach_cell: reach.arrived_cell || null,
+        reachable: true,
+      };
+    }
+    let reason;
+    if (!reach.next_hop_suggestion) {
+      reason = 'no_standable_neighbor';
+    } else if (reach.visited_cells >= maxVisit) {
+      reason = 'bfs_exhausted';
+    } else {
+      reason = 'no_path';
+    }
+    return {
+      ...loc,
+      approach_cell: reach.next_hop_suggestion || null,
+      reachable: false,
+      unreachable_reason: reason,
+    };
+  });
+  enriched.sort((a, c) => {
+    const ar = a.reachable === true ? 0 : 1;
+    const cr = c.reachable === true ? 0 : 1;
+    return ar - cr;
+  });
+  return enriched;
 }

@@ -4,7 +4,15 @@
  */
 import { Vec3 } from 'vec3';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
-import { findClosestStandable, standabilityReason, standingState, isStandableCell } from './_nav-helpers.js';
+import { findClosestStandable, findStandableSameXZ, standabilityReason, standingState, isStandableCell, computeReachability } from './_nav-helpers.js';
+
+// Y-grace: when an agent calls mc move / goto / goto_near with the right
+// XZ but a wrong Y (target inside a hill, floating in air), we rescue by
+// snapping to the closest standable Y at the same (x,z). ±5 covers the
+// common "aimed at a treetop instead of the ground" / "aimed at the
+// ground instead of a 3-block ledge" case without silently teleporting
+// the agent across major elevation changes.
+const Y_GRACE_MAX_DY = 5;
 
 export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTIONS, hasLineOfSight, eyePosition }) {
   // F51.2: mark a movement failure so the position-dependent verb guard
@@ -93,129 +101,9 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       if (ctx.runtime.recentStuckCells.length > 12) ctx.runtime.recentStuckCells.shift();
     }
   };
-  // F74: Reachability check. Short BFS over walkable cells from the
-  // bot's current position toward the target. Used by:
-  //   - goto_near success path (F73): tell the brain when it landed
-  //     near-but-wrong-side-of-wall and suggest a next-hop cell.
-  //   - goto/goto_near stall handler (F74): when the pathfinder gave up
-  //     mid-route, surface the same hint so the brain can route around
-  //     the obstacle instead of looping on `mc escape` / `mc dig`.
-  // Returns { walkable_to_target, distance_from_target, next_hop_suggestion? }
-  // or null if anything throws.
-  const computeReachability = (b, target, maxVisit = 96) => {
-    try {
-      const tx = Math.floor(Number(target.x));
-      const ty = Math.floor(Number(target.y));
-      const tz = Math.floor(Number(target.z));
-      const startCell = {
-        x: Math.floor(b.entity.position.x),
-        y: Math.floor(b.entity.position.y),
-        z: Math.floor(b.entity.position.z),
-      };
-      const dist3 = (ax, ay, az, bx, by, bz) => Math.sqrt(
-        (ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2,
-      );
-      const isWalkable = (cx, cy, cz) => {
-        const foot = b.blockAt(new Vec3(cx, cy, cz));
-        if (!foot) return false;
-        const name = foot.name || '';
-        if (/(_door|_fence_gate|_trapdoor)$/.test(name)) return true;
-        return isStandableCell(b, cx, cy, cz);
-      };
-      // Step-up neighbour: from (cx, cy, cz) the bot can jump-step
-      // diagonally to (cx+dx, cy+1, cz+dz) iff the bot's own head is
-      // clear AND the target cell has head clearance. Pathfinder's
-      // jump-move handles this natively, so the reachability BFS
-      // should too — otherwise it falsely flags a stair_down
-      // staircase as unreachable.
-      const AIR_LIKE = new Set(['air', 'cave_air', 'void_air']);
-      const isAirAt = (cx, cy, cz) => {
-        const blk = b.blockAt(new Vec3(cx, cy, cz));
-        return blk ? AIR_LIKE.has(blk.name) : false;
-      };
-      const canStepUp = (cx, cy, cz, dx, dz) => {
-        // Bot's current head must be air (room to rise).
-        if (!isAirAt(cx, cy + 1, cz)) return false;
-        // Target cell must be standable.
-        if (!isWalkable(cx + dx, cy + 1, cz + dz)) return false;
-        // Target head clearance.
-        if (!isAirAt(cx + dx, cy + 2, cz + dz)) return false;
-        return true;
-      };
-      const startKey = `${startCell.x},${startCell.y},${startCell.z}`;
-      const visited = new Set([startKey]);
-      const queue = [{ ...startCell }];
-      let bestCell = startCell;
-      let bestDist = dist3(startCell.x, startCell.y, startCell.z, tx, ty, tz);
-      let reached = false;
-      const NEIGHBORS = [
-        [1, 0, 0], [-1, 0, 0],
-        [0, 0, 1], [0, 0, -1],
-        [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
-        [0, 1, 0], [0, -1, 0],
-      ];
-      // Step-up directions: forward+up in each cardinal. Diagonal +up
-      // is omitted (pathfinder doesn't reliably do it).
-      const STEP_UP_DIRS = [
-        [1, 1, 0], [-1, 1, 0],
-        [0, 1, 1], [0, 1, -1],
-      ];
-      while (queue.length > 0 && visited.size < maxVisit) {
-        const cur = queue.shift();
-        const d = dist3(cur.x, cur.y, cur.z, tx, ty, tz);
-        if (d < bestDist) { bestDist = d; bestCell = cur; }
-        if (Math.abs(cur.x - tx) <= 1 && Math.abs(cur.y - ty) <= 1 && Math.abs(cur.z - tz) <= 1) {
-          reached = true; break;
-        }
-        for (const [dxn, dyn, dzn] of NEIGHBORS) {
-          const nx = cur.x + dxn, ny = cur.y + dyn, nz = cur.z + dzn;
-          const key = `${nx},${ny},${nz}`;
-          if (visited.has(key)) continue;
-          visited.add(key);
-          if (!isWalkable(nx, ny, nz)) continue;
-          queue.push({ x: nx, y: ny, z: nz });
-        }
-        // Also try jump-step neighbours: forward+up in each cardinal,
-        // gated by head clearance. Lets the BFS climb a staircase.
-        for (const [dxn, dyn, dzn] of STEP_UP_DIRS) {
-          const nx = cur.x + dxn, ny = cur.y + dyn, nz = cur.z + dzn;
-          const key = `${nx},${ny},${nz}`;
-          if (visited.has(key)) continue;
-          const dx = dxn, dz = dzn; // dyn is always 1
-          if (!canStepUp(cur.x, cur.y, cur.z, dx, dz)) continue;
-          visited.add(key);
-          queue.push({ x: nx, y: ny, z: nz });
-        }
-      }
-      const startToTarget = dist3(startCell.x, startCell.y, startCell.z, tx, ty, tz);
-      const out = {
-        distance_from_target: Math.round(startToTarget * 10) / 10,
-        walkable_to_target: reached,
-      };
-      if (!reached) {
-        // Prefer a walkable cell adjacent to the target; fall back to
-        // the BFS frontier cell that came closest.
-        let hop = null;
-        const adjCandidates = [];
-        for (const [dxn, dyn, dzn] of NEIGHBORS) {
-          const cx = tx + dxn, cy = ty + dyn, cz = tz + dzn;
-          if (!isWalkable(cx, cy, cz)) continue;
-          adjCandidates.push({
-            x: cx, y: cy, z: cz,
-            dist: dist3(cx, cy, cz, startCell.x, startCell.y, startCell.z),
-          });
-        }
-        adjCandidates.sort((a, c) => a.dist - c.dist);
-        if (adjCandidates.length > 0) {
-          hop = { x: adjCandidates[0].x, y: adjCandidates[0].y, z: adjCandidates[0].z };
-        } else if (bestCell.x !== startCell.x || bestCell.y !== startCell.y || bestCell.z !== startCell.z) {
-          hop = bestCell;
-        }
-        if (hop) out.next_hop_suggestion = hop;
-      }
-      return out;
-    } catch { return null; }
-  };
+  // F74: computeReachability is imported from _nav-helpers.js — same
+  // helper is used by mc find / mc find_blocks (task #92) to annotate
+  // search results with reachability + approach_cell.
 
   // Find any recent-stuck cell within `radius` of (tx,ty,tz). Used by
   // the pre-pathfind blackball check. Returns the entry or null.
@@ -270,6 +158,28 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         },
       };
     }
+    // #99: on_pillar — bot is on a 1×1 column with cliffs in every
+    // cardinal direction. mc move's pathfinder has nowhere to go from
+    // here. Surface the specific recovery: pillar_down. Refuse early
+    // to save pathfinder thrash.
+    if (ss && ss.classification === 'on_pillar') {
+      const tx = Math.floor(Number(x));
+      const ty = Math.floor(Number(y));
+      const tz = Math.floor(Number(z));
+      return {
+        ok: false,
+        error: {
+          code: 'BOT_ON_PILLAR',
+          message: `You're on top of a 1×1 column at ${ss.cell.x},${ss.cell.y},${ss.cell.z} — every cardinal direction is a cliff. Call \`mc pillar_down\` to descend (mines the block underfoot, drops 1, repeats until you reach ground). Then retry the navigation.`,
+          observed_state: {
+            your_standing_state: ss,
+            target: { x: tx, y: ty, z: tz },
+          },
+          next_action_hint: `mc pillar_down ${Math.max(4, Math.min(16, ss.cell.y - Math.floor(Number(y))))}`,
+          retry_safe: false,
+        },
+      };
+    }
     const tx = Math.floor(Number(x));
     const ty = Math.floor(Number(y));
     const tz = Math.floor(Number(z));
@@ -304,14 +214,34 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
     let best;
     try { best = findClosestStandable(b, tx, ty, tz, scan); } catch { return null; }
     if (!best) {
+      // Y-grace: before refusing, try a same-XZ vertical rescue. If the
+      // agent picked the right column but the wrong Y (target inside a
+      // hill, or floating in air), redirect to the nearest standable Y
+      // at this (x,z). The caller swaps Y and annotates the success
+      // response with y_adjusted so the brain learns what we did.
+      let vert;
+      try { vert = findStandableSameXZ(b, tx, ty, tz, Y_GRACE_MAX_DY); } catch { vert = null; }
+      if (vert && vert.dy !== 0) {
+        return {
+          y_adjusted: {
+            from: ty,
+            to: vert.y,
+            dy: vert.dy,
+            reason: vert.target_reason,
+            x: tx,
+            z: tz,
+          },
+        };
+      }
       return {
         ok: false,
         error: {
           code: 'NAV_TARGET_UNSTANDABLE',
-          message: `No standable cell within ${scan} of ${tx},${ty},${tz}. Target area is solid or floating. Pick a different destination, or mc dig to clear blocks first.`,
+          message: `No standable cell within ${scan} of ${tx},${ty},${tz}, and no standable Y within ±${Y_GRACE_MAX_DY} at the same (x,z). Target area is solid or floating. Pick a different destination, or mc dig to clear blocks first.`,
           observed_state: {
             target: { x: tx, y: ty, z: tz },
             scan_range: scan,
+            y_grace_searched: Y_GRACE_MAX_DY,
             your_standing_state: ss ? {
               classification: ss.classification,
               blocked_dirs: ss.blocked_dirs,
@@ -449,9 +379,17 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       const b = ensureBot();
       // F50.2: bot-trapped + target-unstandable pre-flight.
       const pre = preflightNav(b, x, y, z, 1);
-      if (pre) {
+      if (pre && (pre.error || pre.ok === false)) {
         recordMoveFailure('goto', x, y, z, posObj(), pre.error?.code || 'preflight');
         return pre;
+      }
+      // #102 Y-grace: preflight may have rescued a wrong-Y target by
+      // snapping (x,z) to the closest standable Y. Swap y and remember
+      // the original so the success response can report it.
+      let yAdjusted = null;
+      if (pre && pre.y_adjusted) {
+        yAdjusted = pre.y_adjusted;
+        y = pre.y_adjusted.to;
       }
       // F51.1: silent pre-nudge from sticky start position.
       await preNudgeIfSticky(b, Math.floor(x), Math.floor(y), Math.floor(z));
@@ -461,23 +399,34 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       // Common case: agent calls `mc goto 1 65 1` to reach a crafting
       // table at (1,65,1) — pathfinder spends 15s before giving up.
       // Catch it early with an actionable hint pointing at goto_near.
-      const tx = Math.floor(x), ty = Math.floor(y), tz = Math.floor(z);
+      let tx = Math.floor(x), ty = Math.floor(y), tz = Math.floor(z);
       const blockAtTarget = b.blockAt(new Vec3(tx, ty, tz));
       const blockAtHead = b.blockAt(new Vec3(tx, ty + 1, tz));
       const isSolid = (blk) => blk && blk.name !== 'air' && blk.name !== 'cave_air'
         && blk.name !== 'void_air' && blk.boundingBox === 'block';
       if (isSolid(blockAtTarget) || isSolid(blockAtHead)) {
-        const blocker = isSolid(blockAtTarget) ? blockAtTarget : blockAtHead;
-        const pos = posObj();
-        return {
-          ok: false,
-          error: {
-            code: 'NAV_TARGET_OCCUPIED',
-            message: `Target ${tx},${ty},${tz} is inside a solid block (${blocker.name}). You can't stand there. Use \`mc goto_near ${tx} ${ty} ${tz}\` to reach an adjacent walkable tile instead.`,
-            observed_state: enrichWithStand(b, { target: { x: tx, y: ty, z: tz }, blocker: blocker.name, current: pos }, tx, ty, tz),
-            retry_safe: false,
-          },
-        };
+        // #102 Y-grace: same-XZ vertical rescue before refusing.
+        // Common case: agent aims at the top of a hill but their Y is
+        // 2 blocks inside it. Snap to nearest standable Y at (tx,tz).
+        let vert;
+        try { vert = findStandableSameXZ(b, tx, ty, tz, Y_GRACE_MAX_DY); } catch { vert = null; }
+        if (vert && vert.dy !== 0) {
+          yAdjusted = { from: ty, to: vert.y, dy: vert.dy, reason: vert.target_reason, x: tx, z: tz };
+          y = vert.y;
+          ty = vert.y;
+        } else {
+          const blocker = isSolid(blockAtTarget) ? blockAtTarget : blockAtHead;
+          const pos = posObj();
+          return {
+            ok: false,
+            error: {
+              code: 'NAV_TARGET_OCCUPIED',
+              message: `Target ${tx},${ty},${tz} is inside a solid block (${blocker.name}), and no standable Y within ±${Y_GRACE_MAX_DY} at this (x,z). Use \`mc goto_near ${tx} ${ty} ${tz}\` to reach an adjacent walkable tile instead.`,
+              observed_state: enrichWithStand(b, { target: { x: tx, y: ty, z: tz }, blocker: blocker.name, current: pos, y_grace_searched: Y_GRACE_MAX_DY }, tx, ty, tz),
+              retry_safe: false,
+            },
+          };
+        }
       }
       const goal = new goals.GoalBlock(tx, ty, tz);
       try {
@@ -495,6 +444,12 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
           return navBlockedError(b, pos, x, y, z, dist);
         }
         clearMoveFailure();
+        if (yAdjusted) {
+          return {
+            result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`,
+            observed_state: { y_adjusted: yAdjusted },
+          };
+        }
         return { result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
@@ -535,9 +490,15 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       const b = ensureBot();
       // F50.2: pre-flight checks (bot-trapped, target-unstandable).
       const pre = preflightNav(b, x, y, z, range);
-      if (pre) {
+      if (pre && (pre.error || pre.ok === false)) {
         recordMoveFailure('goto_near', x, y, z, posObj(), pre.error?.code || 'preflight');
         return pre;
+      }
+      // #102 Y-grace
+      let yAdjusted = null;
+      if (pre && pre.y_adjusted) {
+        yAdjusted = pre.y_adjusted;
+        y = pre.y_adjusted.to;
       }
       // F51.1: silent pre-nudge from sticky start position.
       await preNudgeIfSticky(b, Math.floor(x), Math.floor(y), Math.floor(z));
@@ -672,6 +633,9 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         // F74: helper is shared with the stall handler below.
         const reachability = computeReachability(b, { x: tx, y: ty, z: tz }, 96);
 
+        const yAdjNote = yAdjusted
+          ? ` (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`
+          : '';
         if (landingInfo) {
           const note = landingInfo.suggested_correction
             ? ` (landed in ${landingInfo.landed_in} — observed_state.suggested_correction shows a cleaner cell within range)`
@@ -680,31 +644,35 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
             landingInfo.los_cell_picked = { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz };
           }
           if (reachability) Object.assign(landingInfo, reachability);
+          if (yAdjusted) landingInfo.y_adjusted = yAdjusted;
           const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
             ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
             : '';
           return {
-            result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${note}${reachNote}`,
+            result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${yAdjNote}${note}${reachNote}`,
             observed_state: landingInfo,
           };
         }
         if (losPicked) {
           const obs = { los_cell_picked: { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz } };
           if (reachability) Object.assign(obs, reachability);
+          if (yAdjusted) obs.y_adjusted = yAdjusted;
           const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
             ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
             : '';
           return {
-            result: `Arrived at LOS cell ${losPicked.cx}, ${losPicked.cy}, ${losPicked.cz} (clear sight to target ${fmt(x)}, ${fmt(y)}, ${fmt(z)})${reachNote}`,
+            result: `Arrived at LOS cell ${losPicked.cx}, ${losPicked.cy}, ${losPicked.cz} (clear sight to target ${fmt(x)}, ${fmt(y)}, ${fmt(z)})${yAdjNote}${reachNote}`,
             observed_state: obs,
           };
         }
         const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
           ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
           : '';
+        const obs = reachability ? { ...reachability } : {};
+        if (yAdjusted) obs.y_adjusted = yAdjusted;
         return {
-          result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${reachNote}`,
-          ...(reachability ? { observed_state: reachability } : {}),
+          result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${yAdjNote}${reachNote}`,
+          ...(Object.keys(obs).length ? { observed_state: obs } : {}),
         };
       } catch (e) {
         try { b.pathfinder.setGoal(null); } catch {}
@@ -792,9 +760,15 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       // F50.2: pre-flight (bot-trapped, target-unstandable). mc move uses
       // pathfinder for each leg, so the same protections apply.
       const pre = preflightNav(b, x, y, z, 1);
-      if (pre) {
+      if (pre && (pre.error || pre.ok === false)) {
         recordMoveFailure('move', x, y, z, posObj(), pre.error?.code || 'preflight');
         return pre;
+      }
+      // #102 Y-grace
+      let yAdjusted = null;
+      if (pre && pre.y_adjusted) {
+        yAdjusted = pre.y_adjusted;
+        y = pre.y_adjusted.to;
       }
       // F51.1: silent pre-nudge from sticky start position.
       await preNudgeIfSticky(b, Math.floor(Number(x)), Math.floor(Number(y)), Math.floor(Number(z)));
@@ -805,13 +779,18 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       const isPassable = (name) =>
         (/(_door|_fence_gate)$/.test(name)) && !name.startsWith('iron_') && !name.endsWith('_trapdoor');
 
-      const findBestDoor = () => {
+      // #91: door scan defaults to 32m. When that finds nothing AND the
+      // pathfinder thinks the target is unreachable, the caller retries
+      // with maxDistance=64 (see line ~810). This rescues the "approaching
+      // base from far away" case where Steve pathfinds to within ~35m of
+      // the house but the door scan can't see the door 3m past its radius.
+      const findBestDoor = (maxDistance = 32) => {
         const me = b.entity.position;
         const targetVec = new Vec3(target.x, target.y, target.z);
         const myDist = me.distanceTo(targetVec);
         const positions = b.findBlocks({
           matching: (block) => isPassable(block.name),
-          maxDistance: 32,
+          maxDistance,
           count: 30,
         });
         let best = null;
@@ -851,10 +830,10 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         return best;
       };
 
-      const nearbyDoorList = () =>
+      const nearbyDoorList = (maxDistance = 32) =>
         b.findBlocks({
           matching: (block) => isPassable(block.name),
-          maxDistance: 32,
+          maxDistance,
           count: 8,
         }).map((p) => {
           const blk = b.blockAt(p);
@@ -893,14 +872,18 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         const dist = Math.hypot(pos.x - target.x, pos.y - target.y, pos.z - target.z);
         if (dist <= 2) {
           clearMoveFailure();
+          const yAdjNote = yAdjusted
+            ? ` (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`
+            : '';
           return {
             ok: true,
             data: {
               doors_used,
               legs: leg,
               end_position: pos,
+              ...(yAdjusted ? { y_adjusted: yAdjusted } : {}),
             },
-            result: `Arrived at ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)}${doors_used.length ? ` via ${doors_used.length} door${doors_used.length > 1 ? 's' : ''}` : ''}`,
+            result: `Arrived at ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)}${doors_used.length ? ` via ${doors_used.length} door${doors_used.length > 1 ? 's' : ''}` : ''}${yAdjNote}`,
           };
         }
 
@@ -927,17 +910,39 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
             : new Vec3(dPos.x, target.y, dPos.z + Math.sign(ddz || 1) * 2);
           chosen = { pos: dPos, block: dBlock.name, far_side: farSide };
         } else {
-          chosen = findBestDoor();
+          // #91: try 32m first (fast path). If no candidate found and
+          // the target is genuinely further out, expand to 64m before
+          // giving up. The expanded search costs ~8× more blocks but
+          // only fires on actual misses, so the steady-state cost is
+          // the same as before.
+          chosen = findBestDoor(32);
+          if (!chosen) chosen = findBestDoor(64);
         }
 
         if (!chosen) {
           recordMoveFailure('move', target.x, target.y, target.z, pos, lastPathfinderError || 'no_door');
+          // For the error report, prefer the broader 64m list — if we
+          // couldn't pick a door at 32 but found one at 64, the agent
+          // still wants to see the wider context.
+          const doorList = (() => {
+            const near = nearbyDoorList(32);
+            return near.length > 0 ? near : nearbyDoorList(64);
+          })();
+          // #85: when nav fails AND the bot is currently in water,
+          // suggest `mc escape` — it has a dedicated water-escape strategy
+          // that knows how to swim to shore. Otherwise the agent loops
+          // mc move targeting the same un-reachable shoreline coord.
+          const botInWater = !!b.entity.isInWater;
+          let extraHint = ' Use mc tunnel or mc dig_area to clear terrain explicitly.';
+          if (botInWater) {
+            extraHint = ' You are in water — call `mc escape` to swim to the nearest shore before retrying navigation.';
+          }
           return {
             ok: false,
             error: {
               code: 'NAV_BLOCKED',
-              message: `No path to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} from ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} and no door/gate between to use. Use mc tunnel or mc dig_area to clear terrain explicitly.`,
-              observed_state: enrichWithStand(b, { current: pos, target, doors_used, nearby_doors: nearbyDoorList(), pathfinder_error: lastPathfinderError }, target.x, target.y, target.z),
+              message: `No path to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} from ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} and no door/gate between to use.${extraHint}`,
+              observed_state: enrichWithStand(b, { current: pos, target, doors_used, nearby_doors: doorList, pathfinder_error: lastPathfinderError, in_water: botInWater }, target.x, target.y, target.z),
               retry_safe: false,
             },
           };

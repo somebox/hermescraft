@@ -86,7 +86,9 @@ export function createBotHttpListener(deps) {
         const connected = !!(ctx.world.botReady && alive);
         const pos = connected && ctx.world.bot?.entity ? ctx.world.bot.entity.position : null;
         const boot = typeof ctx.world.bootTime === 'number' ? ctx.world.bootTime : Date.now();
-        const uptimeSec = Math.round((Date.now() - boot) / 1000);
+        const sessionStart =
+          typeof ctx.world.mcSessionStartedAt === 'number' ? ctx.world.mcSessionStartedAt : boot;
+        const uptimeSec = Math.round((Date.now() - sessionStart) / 1000);
         let moveRate = null;
         const positionHistory = ctx.world.positionHistory || [];
         if (positionHistory.length >= 2) {
@@ -108,6 +110,9 @@ export function createBotHttpListener(deps) {
           provider: config.agent.provider || null,
           server: `${config.mc.host}:${config.mc.port}`,
           uptime_sec: uptimeSec,
+          session_started_at: connected && typeof ctx.world.mcSessionStartedAt === 'number'
+            ? ctx.world.mcSessionStartedAt
+            : null,
           holding: connected && ctx.world.bot?.heldItem ? ctx.world.bot.heldItem.name : null,
           position: pos ? { x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), z: +pos.z.toFixed(1) } : null,
           move_rate: moveRate,
@@ -277,9 +282,25 @@ export function createBotHttpListener(deps) {
         ensureBot();
         const { scored, context } = getGoalsScoreboard();
         persistGoalsToDisk();
+        // #103 context-trim: lean by default — drop verbose fields the
+        // agent rarely needs on every poll (strategies_available, metric,
+        // constraints, time_in_deficit_s, enabled, note). Pass ?full=true
+        // to get the original shape (dashboard still uses the rich form
+        // via dashboard-specific endpoints if needed).
+        const full = url.searchParams.get('full') === 'true' || url.searchParams.get('full') === '1';
+        const goals = full ? scored : scored.map(g => ({
+          id: g.id,
+          current: g.current,
+          target_min: g.target_min,
+          target_ok: g.target_ok,
+          gap: g.gap,
+          priority: g.priority,
+          urgency: g.urgency,
+          satisfied: g.satisfied,
+        }));
         return respond(res, 200, {
           ok: true,
-          data: { goals: scored, context },
+          data: { goals, context },
         });
       }
 

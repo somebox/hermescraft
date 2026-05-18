@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import { equipForDig, PROTECTED_DIG_BLOCKS, detectDigHazards, isDigProtected, getSupportedDoorAbove } from '../runtime/dig-tools.js';
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../shared/perception.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
+import { annotateReachability } from './_nav-helpers.js';
 
 /**
  * Race pathfinder.goto against a hard wall-clock timeout. Without this, the
@@ -1108,7 +1109,7 @@ export function createMiningActions(deps) {
         };
       }
 
-      if (isDigProtected(target.name)) {
+      if (isDigProtected(target.name, { x, y, z }, ctx)) {
         return {
           ok: false,
           error: {
@@ -1444,7 +1445,7 @@ export function createMiningActions(deps) {
         return { result: `No ${blockName} found within ${r} blocks.`, locations: [] };
       }
 
-      const locations = found.map((entry) => ({
+      const rawLocations = found.map((entry) => ({
         x: entry.position.x,
         y: entry.position.y,
         z: entry.position.z,
@@ -1452,9 +1453,19 @@ export function createMiningActions(deps) {
         bearing: entry.bearing,
         sector: entry.sector,
       }));
+      // #92: enrich with reachability + approach_cell so the agent
+      // doesn't burn 30s walking toward a buried/floating candidate.
+      // Sorted reachable-first by annotateReachability. maxVisit=512
+      // gives the BFS ~D=8-15 coverage in typical terrain — enough for
+      // 32-block scan_range while keeping latency under ~200ms total.
+      const locations = annotateReachability(b, rawLocations, 512);
+      const nReachable = locations.filter((l) => l.reachable).length;
 
       const fpNote = ctx.reactive.fairPlayMode ? ` (scout; mc collect needs trunk in sight)` : '';
-      return { result: `Found ${found.length} ${blockName}${fpNote}`, locations };
+      const reachNote = nReachable === locations.length
+        ? ''
+        : ` — ${nReachable}/${locations.length} reachable`;
+      return { result: `Found ${found.length} ${blockName}${fpNote}${reachNote}`, locations };
     },
 
     async find_entities({ type, radius = 32 }) {

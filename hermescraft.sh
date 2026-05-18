@@ -27,6 +27,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # clears ANTHROPIC_API_KEY in child shells, so we re-export explicitly.)
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/scripts/load-hermes-env.sh"
+
+# #98: also source the repo-local .env (PAPERMCP_TOKEN lives here, not in
+# ~/.hermes/.env). Without this, paperMcpConfig() returns null and the
+# craft-fallback path in bot/lib/actions/crafting.js can't fire — which
+# is exactly the Paper-1.21 oak_fence repro from Steve's chicken-pen task.
+# `set -a` exports every variable assigned by the .env file so the node
+# child inherits PAPERMCP_TOKEN.
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$SCRIPT_DIR/.env"
+    set +a
+fi
 BOT_DIR="$SCRIPT_DIR/bot"
 BIN_DIR="$SCRIPT_DIR/bin"
 
@@ -74,6 +87,7 @@ while [[ $# -gt 0 ]]; do
             echo "  MC_PORT           Minecraft server port (default: 25565)"
             echo "  MC_USERNAME       Bot name (default: HermesBot)"
             echo "  API_PORT          Bot API port (default: 3001)"
+            echo "  VIEWER_PORT       Optional prismarine-viewer FPV web port (e.g. 4001; dashboard iframe)"
             echo "  HERMES_MODEL      LLM model slug (default: data/agent-models.json defaults.model = deepseek/deepseek-v4-flash)"
             echo "  HERMES_PROVIDER   Optional (default: openrouter)"
             echo "  AUTO_RESUME       If true (default), restart Hermes after each round (required because"
@@ -92,6 +106,21 @@ BOT_LOG="$LOG_DIR/bot-${MC_USERNAME_LC}.log"
 
 MODEL="${HERMES_MODEL:-${MODEL:-}}"
 PROVIDER="${HERMES_PROVIDER:-${PROVIDER:-openrouter}}"
+
+# Context compaction. On continue rounds we swap the long prompt for a
+# short one and cap tool calls per round (HERMES_MAX_TURNS) so the
+# session pages out before context bloats.
+CONTEXT_MINIMAL_CONTINUE="${CONTEXT_MINIMAL_CONTINUE:-true}"
+CONTEXT_REFRESH_EVERY_ROUNDS="${CONTEXT_REFRESH_EVERY_ROUNDS:-24}"
+HERMES_MAX_TURNS="${HERMES_MAX_TURNS:-100}"
+
+# Scope the system-prompt `<available_skills>` list to just the
+# Minecraft skills Steve actually uses. Hermes reads
+# `skills.platform_disabled.hermescraft` from ~/.hermes/config.yaml
+# when HERMES_PLATFORM=hermescraft, dropping all unrelated skills
+# (apple-notes, songsee, audiocraft, …) from every request. Saves
+# ~2,800 tokens/call. See agent/skill_utils.py:get_disabled_skill_names.
+export HERMES_PLATFORM="${HERMES_PLATFORM:-hermescraft}"
 
 # Fall back to the cheap default in data/agent-models.json when neither
 # --model nor HERMES_MODEL is set. This prevents the previous failure mode
@@ -153,6 +182,7 @@ if curl -sf "$API_URL/health" &>/dev/null; then
 else
     echo "  Starting bot server ($MC_USERNAME → $MC_HOST:$MC_PORT)..."
     cd "$BOT_DIR"
+    [ -n "${VIEWER_PORT:-}" ] && export VIEWER_PORT
     FAIR_PLAY="${FAIR_PLAY:-true}" \
       MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$MC_USERNAME" API_PORT="$API_PORT" \
       node server.js > "$BOT_LOG" 2>&1 &
@@ -215,7 +245,7 @@ fi
 # Sync mc skills for on-demand loading via skill_view()
 # Include minecraft-goals first — matches goal-directed stack (observe / goals / dashboard); see start-gatherer.sh.
 HERMES_SKILLS_DIR="$HOME/.hermes/skills/gaming"
-for sk in minecraft-goals minecraft-survival minecraft-farming minecraft-building minecraft-combat minecraft-navigation minecraft-planning; do
+for sk in minecraft-goals minecraft-survival minecraft-farming minecraft-building minecraft-combat minecraft-navigation minecraft-planning minecraft-chores; do
     local_src="$SCRIPT_DIR/skills/${sk}.md"
     if [ -f "$local_src" ]; then
         mkdir -p "$HERMES_SKILLS_DIR/$sk"
@@ -226,6 +256,12 @@ done
 AUTO_RESUME="${AUTO_RESUME:-true}"
 RESTART_SLEEP_S="${RESTART_SLEEP_S:-5}"
 SESSION_NAME="hermescraft-${MC_USERNAME_LC}"
+# #90: session-ID file (per bot) — round-1 captures the actual session
+# ID, rounds 2+ pass it to `--continue` exactly. Avoids the prefix-match
+# bug where renamed archived sessions like `hermescraft-steve-archived-*`
+# would shadow `--continue hermescraft-steve`.
+SESSION_ID_FILE="$LOG_DIR/session-${MC_USERNAME_LC}.id"
+SESSION_ID=""
 AGENT_LOG="$LOG_DIR/hermes-${MC_USERNAME_LC}.log"
 MC_DEBUG_LOG="$LOG_DIR/mc-${MC_USERNAME_LC}.log"
 
@@ -285,26 +321,43 @@ fi
 # overrides the subsequent rounds. Both default to the goal-loop language above.
 [ -n "${HERMESCRAFT_PROMPT:-}" ] && PROMPT="$HERMESCRAFT_PROMPT"
 
-CONTINUE_PROMPT="${HERMESCRAFT_CONTINUE_PROMPT:-Continue the Minecraft session. Follow the OBSERVE→PLAN→ACT loop:
+CONTINUE_PROMPT_FULL="${HERMESCRAFT_CONTINUE_PROMPT:-Continue the Minecraft session. Follow the OBSERVE→PLAN→ACT loop:
 1. Run \`mc status\`, \`mc read_chat\`, \`mc commands\`, \`mc goals\`.
 2. Pick the top-urgency goal. State your one-line plan.
 3. Execute 3-8 commands, then re-check goals/status.
 Do not idle or wait. Act on player requests immediately. Make measurable progress every round.}"
 
+CONTINUE_PROMPT_MINIMAL="${HERMESCRAFT_CONTINUE_PROMPT_MINIMAL:-Continue. Run: mc status, mc read_chat, mc commands, mc goals.
+Pick the top-urgency goal or player request, execute one focused subtask (3-8 mc commands), report one short progress line.
+Only use mc commands. If blocked twice, switch goals.}"
+
 ROUND=0
 FINAL_EC=0
 while true; do
     ROUND=$((ROUND + 1))
+
+    # Pick continue prompt: minimal by default, full on round 1 and every Nth refresh.
+    CONTINUE_PROMPT="$CONTINUE_PROMPT_FULL"
+    if [ "$ROUND" -gt 1 ] && [ "$(printf '%s' "$CONTEXT_MINIMAL_CONTINUE" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
+        if [ "$CONTEXT_REFRESH_EVERY_ROUNDS" -gt 0 ] && [ $((ROUND % CONTEXT_REFRESH_EVERY_ROUNDS)) -ne 0 ]; then
+            CONTINUE_PROMPT="$CONTINUE_PROMPT_MINIMAL"
+        fi
+    fi
+
     set +e
     set +o pipefail
     if [ "$ROUND" -eq 1 ]; then
-        MC_DEBUG_LOG="$MC_DEBUG_LOG" "$HERMES" chat --yolo --max-turns 500 -m "$MODEL" --provider "$PROVIDER" \
-            -t terminal,memory -s minecraft-goals \
+        MC_DEBUG_LOG="$MC_DEBUG_LOG" "$HERMES" chat --yolo --max-turns "$HERMES_MAX_TURNS" -m "$MODEL" --provider "$PROVIDER" \
+            -t terminal,memory,skills -s minecraft-goals,minecraft-navigation,minecraft-chores \
             -q "$PROMPT" 2>&1 | tee -a "$AGENT_LOG"
     else
-        MC_DEBUG_LOG="$MC_DEBUG_LOG" "$HERMES" chat --yolo --max-turns 500 -m "$MODEL" --provider "$PROVIDER" \
-            -t terminal,memory -s minecraft-goals \
-            --continue "$SESSION_NAME" \
+        # #90: prefer exact session-ID match. Only fall back to the
+        # friendly name if we somehow lost the ID (first round of a
+        # restarted-mid-loop script).
+        CONTINUE_TARGET="${SESSION_ID:-$SESSION_NAME}"
+        MC_DEBUG_LOG="$MC_DEBUG_LOG" "$HERMES" chat --yolo --max-turns "$HERMES_MAX_TURNS" -m "$MODEL" --provider "$PROVIDER" \
+            -t terminal,memory,skills -s minecraft-goals,minecraft-navigation,minecraft-chores \
+            --continue "$CONTINUE_TARGET" \
             -q "$CONTINUE_PROMPT" 2>&1 | tee -a "$AGENT_LOG"
     fi
     FINAL_EC=${PIPESTATUS[0]}
@@ -314,6 +367,8 @@ while true; do
     if [ "$ROUND" -eq 1 ]; then
         SID=$(grep -oE 'Session:[[:space:]]+[0-9]{8}_[0-9]{6}_[a-f0-9]+' "$AGENT_LOG" 2>/dev/null | tail -1 | awk '{print $2}')
         if [ -n "${SID:-}" ]; then
+            SESSION_ID="$SID"
+            printf '%s\n' "$SID" > "$SESSION_ID_FILE"
             "$HERMES" sessions rename "$SID" "$SESSION_NAME" 2>/dev/null || true
         fi
     fi

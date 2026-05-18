@@ -172,28 +172,27 @@ export function createObservation(deps) {
       state.respawn_pending = true;
     }
 
-    // Nearby utility blocks — so the AI knows what resources are at hand
-    try {
-      const utilIds = ['crafting_table', 'furnace', 'chest', 'anvil', 'smithing_table', 'enchanting_table']
-        .map(n => ctx.world.mcData.blocksByName[n]?.id).filter(id => id != null);
-      const found = ctx.world.bot.findBlocks({ matching: utilIds, maxDistance: 16, count: 10 });
-      if (found.length > 0) {
-        state.nearby_utilities = found.slice(0, 6).map(p => {
-          const bl = ctx.world.bot.blockAt(p);
-          return { name: bl?.name || '?', x: p.x, y: p.y, z: p.z };
-        });
-      }
-    } catch { /* ignore */ }
+    // Nearby utility blocks — moved out of the default briefState to keep
+    // every action response lean. Callers that need them should hit
+    // `mc scene` or `mc nearby`. The observe endpoints (which DO want them)
+    // reinstate via `_nearby_utilities` recomputation below.
 
     if (recentChat.length > 0) state.new_chat = recentChat;
     if (pending.length > 0) {
-      state.player_requests = pending.slice(0, 5).map(c => ({
-        from: c.from,
-        request: c.command,
-        channel: c.channel,
-        ago: Math.round((now - c.time) / 1000) + 's',
-        hint: 'Use mc acknowledge_command to confirm, mc complete_command when done, or mc cancel_command if impossible.',
-      }));
+      // #103 context-trim: cap to 3 requests (was 5), drop per-request hint
+      // (lift to array level once), truncate long requests to 140 chars.
+      state.player_requests = pending.slice(0, 3).map(c => {
+        const req = String(c.command || '');
+        return {
+          from: c.from,
+          request: req.length > 140 ? req.slice(0, 137) + '...' : req,
+          channel: c.channel,
+          ago: Math.round((now - c.time) / 1000) + 's',
+        };
+      });
+      if (pending.length > 0) {
+        state.player_requests_hint = 'mc acknowledge_command / mc complete_command / mc cancel_command';
+      }
     }
     if (acknowledged.length > 0) {
       state.active_tasks = acknowledged.slice(0, 5).map(c => ({
@@ -248,14 +247,9 @@ export function createObservation(deps) {
     // Death / spawn context for recovery agents (item despawn is heuristic)
     const ITEM_DESPAWN_APPROX_SECONDS = 300;
 
-    try {
-      const locs = loadLocations();
-      if (locs.spawn?.x !== undefined && locs.spawn?.y !== undefined && locs.spawn?.z !== undefined) {
-        state.spawn_point = { x: locs.spawn.x, y: locs.spawn.y, z: locs.spawn.z };
-      }
-    } catch {
-      /* ignore */
-    }
+    // spawn_point moved out of the default briefState — it's static and
+    // pads every action response. Callers needing it should hit
+    // `/observe` or `mc marks` (where it's now surfaced as a nearby mark).
 
     if (ctx.death.hardcoreDead) state.hardcore_dead = true;
 
@@ -316,6 +310,10 @@ export function createObservation(deps) {
       id: g.id, urgency: g.urgency, satisfied: g.satisfied, gap: g.gap,
     }));
 
+    // Lean mode: drop inventory_summary + chest_snapshots — Steve uses
+    // `mc inventory` / `mc chest`/`mc chest_search` on demand. Full
+    // observe (lean=false) still carries them for the dashboard +
+    // debugging.
     const payload = {
       ok: true,
       time: ctx.world.bot?.time?.timeOfDay,
@@ -325,8 +323,7 @@ export function createObservation(deps) {
       ...(lean ? {} : { goals_context: context, goals_plan_hints: buildGoalsPlanHints(scored) }),
       task,
       alerts,
-      inventory_summary: invSummary,
-      chest_snapshots: ctx.goals.chestSnapshots,
+      ...(lean ? {} : { inventory_summary: invSummary, chest_snapshots: ctx.goals.chestSnapshots }),
       nearby_marks: nearbyMarks?.length ? nearbyMarks : undefined,
       ...(lean ? {} : { dashboard_signals: buildDashboardSignals() }),
       last_api_error: ctx.tasks.lastApiError,

@@ -19,7 +19,50 @@ export function createCraftingActions(services) {
   const { sleep, log } = utils;
   const { getMyName } = social;
   const loadLocations = locations.load;
+  const saveLocations = locations.save;
   const { resolveCraftItemName, buildCraftPlan, bestRecipeForInventory } = craft;
+
+  // #100: auto-mark a crafting_table the bot just used (or just placed)
+  // so future `mc craft` calls find it via the existing /craft/i name
+  // regex in the marks fallback (loadLocations branch above). Idempotent:
+  // skip if a craft-marked location already exists within 3 blocks. The
+  // bot is welcome to rename or delete auto-marks later via `mc mark`.
+  const autoMarkCraftingTable = (pos) => {
+    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return false;
+    try {
+      // Clone — some locations backends return the live store by reference
+      // and clear it on save (mock-services). Cloning makes the helper
+      // resilient to either contract.
+      const locs = { ...loadLocations() };
+      const px = Math.round(pos.x), py = Math.round(pos.y), pz = Math.round(pos.z);
+      for (const [n, l] of Object.entries(locs)) {
+        if (!l || typeof l.x !== 'number') continue;
+        const isCraftMark = /craft/i.test(n) || /craft/i.test(l.note || '');
+        if (!isCraftMark) continue;
+        const dx = l.x - px, dy = l.y - py, dz = l.z - pz;
+        if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 3) return false;
+      }
+      const name = `craft_table_${px}_${py}_${pz}`;
+      if (locs[name]) return false;
+      const now = new Date().toISOString();
+      locs[name] = {
+        x: px, y: py, z: pz,
+        note: 'crafting_table (auto-marked)',
+        saved: now, updated: now,
+        category: 'auto', radius: null, mode: null,
+        stale: false, stale_reason: null,
+        last_visited: null, visit_count: 0,
+      };
+      saveLocations(locs);
+      try { log?.(`[craft] auto-marked crafting_table at ${px},${py},${pz} as ${name}`); } catch {}
+      return true;
+    } catch { return false; }
+  };
+  // Stash on the services bag so building.js (place handler) can call it
+  // too when crafting_table is placed but never crafted at.
+  if (services && !services.autoMarkCraftingTable) {
+    services.autoMarkCraftingTable = autoMarkCraftingTable;
+  }
 
   const handlers = {
     async craft({ item, count = 1, reason }) {
@@ -202,6 +245,32 @@ export function createCraftingActions(services) {
           );
         }
         if (/missing/i.test(msg)) {
+          // #98: mineflayer occasionally throws "missing ingredients" for
+          // 3x3 recipes (fence/bed/etc) even when the bot has plenty —
+          // a recipe-slot-layout bug related to the Paper 1.21 click
+          // sequence. Before surrendering, check the REAL inventory
+          // state: if ingredients ARE present, try the PaperMCP
+          // server-side fallback (same path the delta=0 branch uses).
+          const requiredIngs = recipeIngredientMap(recipe, ctx.world.mcData);
+          const ingsIntact = Object.entries(requiredIngs).every(
+            ([n, perCraft]) => (startedInventory[n] || 0) >= perCraft * invocations,
+          );
+          if (requiresBench && ingsIntact && paperMcpConfig()) {
+            const fb = await serverSideCraftFallback({
+              itemName, count: invocations, recipe, ctx, b,
+              getMyName, log, sleep, inventoryAt,
+              startedInventory, requiredIngs, expectedDelta: invocations * resultPerCraft, reason,
+            });
+            if (fb) {
+              // #100: server-side fallback succeeded — the table at
+              // `table.position` proved usable; auto-mark it.
+              if (table?.position) autoMarkCraftingTable(table.position);
+              return fb;
+            }
+          }
+          // Fallback didn't run or didn't help — return the original
+          // missing-ingredients diagnostic. ingredientCountsFromSlots
+          // computes per-recipe requirements for the agent.
           const slots = recipe.inShape ? recipe.inShape.flat() : recipe.ingredients?.flat() || [];
           const ings = ingredientCountsFromSlots(slots, ctx.world.mcData, count);
           return fail(
@@ -255,24 +324,65 @@ export function createCraftingActions(services) {
             getMyName, log, sleep, inventoryAt,
             startedInventory, requiredIngs, expectedDelta, reason,
           });
-          if (fb) return fb;
+          if (fb) {
+            // #100: server-side fallback succeeded — auto-mark the table.
+            if (table?.position) autoMarkCraftingTable(table.position);
+            return fb;
+          }
+        }
+        // #86: turn the cryptic "delta=0" error into something actionable.
+        // Compare each ingredient's need vs have. If anything's short, this
+        // is really MISSING_INGREDIENTS (the pre-flight may have missed it
+        // for an alt-recipe). Otherwise, materials WERE present but the
+        // craft no-op'd anyway (Paper bug, no PaperMCP fallback configured).
+        const shortfall = Object.entries(requiredIngs).map(([name, perCraft]) => {
+          const have = endedInventory[name] || 0;
+          const need = perCraft * invocations;
+          return { name, have, need, short: Math.max(0, need - have) };
+        });
+        const missing = shortfall.filter((s) => s.short > 0);
+        if (missing.length > 0) {
+          return fail(
+            'MISSING_INGREDIENTS',
+            `Can't craft ${itemName} x${count} — missing: ${missing.map((s) => `${s.short}× ${s.name} (have ${s.have}/${s.need})`).join(', ')}.`,
+            {
+              observed_state: {
+                item: itemName,
+                requested_count: count,
+                expected_delta: expectedDelta,
+                observed_delta: craftedDelta,
+                missing: missing.map((s) => ({ name: s.name, short: s.short, have: s.have, need: s.need })),
+                ingredients_status: shortfall,
+                started_inventory: startedInventory,
+              },
+              retry_safe: false,
+            },
+          );
         }
         return fail(
-          'INTERRUPTED',
-          `mineflayer.craft returned but inventory shows no new ${itemName} (delta=${craftedDelta}).`,
+          'CRAFT_NO_OP',
+          `Craft of ${itemName} x${count} produced 0 — materials present (${shortfall.map((s) => `${s.name} ${s.have}/${s.need}`).join(', ')}) but mineflayer.craft did not deliver. Likely a server-side window race. Try once more, or place a fresh crafting_table closer to the bot.`,
           {
             observed_state: {
               item: itemName,
               requested_count: count,
               expected_delta: expectedDelta,
               observed_delta: craftedDelta,
+              ingredients_status: shortfall,
               started_inventory: startedInventory,
               ended_inventory: endedInventory,
             },
             retry_safe: true,
+            next_action_hint: requiresBench
+              ? `Verify a crafting_table is within 4 blocks (mc inspect TABLE_X TABLE_Y TABLE_Z), look at it (mc face TABLE_X TABLE_Y TABLE_Z), then retry.`
+              : `Retry once. If it fails again, this is a known mineflayer/Paper bug; try a different recipe path.`,
           },
         );
       }
+
+      // #100: auto-mark a freshly-confirmed crafting_table so future
+      // crafts find it via the marks fallback.
+      if (requiresBench && table?.position) autoMarkCraftingTable(table.position);
 
       return ok({
         data: {
