@@ -31,21 +31,25 @@ Bumps at y=67 (scatter — single cells + 2-3 cell clusters): see
 SURFACE_CLUTTER. Bot starts on the pile at (2.5, 68, 2.5) — corner of
 the surface, facing into the pile.
 
-Assertions:
+Assertions (codify the strip-mine primitive's contract: mine X/Z rows
+and columns in level-by-level order — drop Y only when the current
+plane has no more in-range candidates):
+
   1. Bot mined at least 25 cells (most of the 32-budget). Some slack
      for natural primitive failures.
   2. Middle layer (y=65) fully intact across all 256 cells.
   3. Bottom layer (y=64) fully intact across all 256 cells.
-  4. Strip-pattern: mined cells at y=66 cluster in a tight bounding
-     box (≤ ~3 rows OR columns, ≤ 16 cells wide). A star pattern
-     would have a 16×16 footprint — strip should be much tighter.
-  5. Boundary held — no cells mined OUTSIDE the 16×16 pit footprint.
-  6. Bot HP unchanged.
-
-Today's `mc collect` has no Y-boundary awareness AND its strip-sort
-prioritizes Y proximity to bot; both contribute to "the bot dives once
-the local pool is exhausted". XFAIL accordingly until the primitive
-gets a strip-plane lock.
+  4. **Strict contiguity at y=66**: mined cells at the strip level
+     form ONE 4-connected component. Stray cells outside the largest
+     component are only allowed if they sit directly under a mined
+     y=67 clutter cell — legitimate "dig-through-column" pattern.
+  5. **Top-before-bottom in-column**: for any surviving y=67 clutter
+     cell, the y=66 cell directly below MUST still be dirt. The bot
+     must clear the higher cell in a column before digging the lower
+     one.
+  6. Boundary held — pit perimeter at y=66 stays air (no cells mined
+     OUTSIDE the 16×16 pit footprint).
+  7. Bot HP unchanged.
 """
 
 from __future__ import annotations
@@ -210,47 +214,71 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
         f"Only {diag['bottom_dirt_intact']}/{middle_total} cells still dirt. diag={diag}"
     )
 
-    # 4. **Contiguity**: the mined cells at y=66 should form one
-    # dominant 4-connected component. This is the user-visible quality
-    # bar: "the bot mines adjacent blocks, not scattered ones". A clean
-    # strip is one big component; a star/scatter pattern has many tiny
-    # disconnected groups.
+    # 4. **Strict contiguity at y=66**: mined cells at the strip level
+    # form one 4-connected component. Any stray (= cells in a smaller
+    # component) is only allowed if it sits directly under a mined
+    # y=67 clutter cell — the bot legitimately dug through a column
+    # to clear a higher block, leaving the y=66 cell below as an
+    # isolated dig site.
     #
-    # We DON'T require a thin bounding-box ratio: when the bot starts
-    # ON a deposit (rather than at the edge), LOS expansion is
-    # radially symmetric and the mined cluster is roughly circular,
-    # not strip-shaped. Adjacency is the test the user cares about.
+    # The OLD 70%-largest-component rule let scatter patterns slip
+    # through. The strict rule reflects the SUT's actual contract:
+    # mine X/Z rows and columns in level-by-level order.
     if top_mined:
         mined_set = set(top_mined)
-        seen: set[tuple[int, int]] = set()
-        components: list[int] = []
+        visited: set[tuple[int, int]] = set()
+        components: list[set[tuple[int, int]]] = []
         for cell in mined_set:
-            if cell in seen:
+            if cell in visited:
                 continue
             stack = [cell]
-            size = 0
+            comp: set[tuple[int, int]] = set()
             while stack:
                 cur = stack.pop()
-                if cur in seen or cur not in mined_set:
+                if cur in visited or cur not in mined_set:
                     continue
-                seen.add(cur)
-                size += 1
+                visited.add(cur)
+                comp.add(cur)
                 cx_, cz_ = cur
-                stack.extend([(cx_+1, cz_), (cx_-1, cz_), (cx_, cz_+1), (cx_, cz_-1)])
-            components.append(size)
-        components.sort(reverse=True)
-        biggest = components[0] if components else 0
-        # Require the largest component to hold at least 70% of mined cells.
-        # A strip naturally is one connected run; ≥70% leaves slack for a
-        # handful of incidental clutter pickups (surface bumps).
-        threshold = max(1, int(len(top_mined) * 0.7))
-        assert biggest >= threshold, (
-            f"mined cells at y={PIT_TOP_Y} are NOT contiguous — largest "
-            f"connected component is {biggest}/{len(top_mined)} cells "
-            f"(want ≥{threshold}); component sizes={components}. diag={diag}"
+                for n in ((cx_+1, cz_), (cx_-1, cz_), (cx_, cz_+1), (cx_, cz_-1)):
+                    if n in mined_set and n not in visited:
+                        stack.append(n)
+            components.append(comp)
+        components.sort(key=len, reverse=True)
+        strip = components[0]
+        unexplained_strays = []
+        for comp in components[1:]:
+            for (sx, sz) in comp:
+                # Allowed iff y=67 above was also mined (clutter dig-through).
+                if not rcon.block_is(sx, PIT_TOP_Y + 1, sz, "air"):
+                    unexplained_strays.append((sx, sz))
+        assert not unexplained_strays, (
+            f"strip at y={PIT_TOP_Y} has scatter — mined cells outside "
+            f"the largest connected component AND not under a mined "
+            f"clutter column: {unexplained_strays}. "
+            f"largest_strip={len(strip)} cells, "
+            f"total_mined_y66={len(top_mined)}, "
+            f"component_sizes={[len(c) for c in components]}. diag={diag}"
         )
 
-    # 5. **Boundary held** — pit perimeter is mineable; the boundary check
+    # 5. **Top-before-bottom in-column**: for any SURVIVING y=67 clutter
+    # cell, the y=66 cell directly below MUST still be dirt. The bot
+    # must clear the higher cell in a column before digging the lower
+    # one in that same column. Captures level-by-level order without
+    # requiring global y=67 clearance (some clutter may be out of
+    # range within the 32-budget).
+    column_violations = []
+    for (cx, cy, cz) in SURFACE_CLUTTER:
+        if rcon.block_is(cx, cy, cz, "dirt"):           # clutter survived
+            if rcon.block_is(cx, PIT_TOP_Y, cz, "air"):  # but y=66 below was mined
+                column_violations.append((cx, cz))
+    assert not column_violations, (
+        f"top-before-bottom violation: bot mined y={PIT_TOP_Y} at columns "
+        f"where y={PIT_TOP_Y+1} above was still clutter. "
+        f"Columns: {column_violations}. diag={diag}"
+    )
+
+    # 6. **Boundary held** — pit perimeter is mineable; the boundary check
     # is "no cells OUTSIDE the pit were touched". The fixture air-fills
     # the working volume, so there's nothing to mine outside. We check
     # one neighbouring cell at each side just to be safe.
@@ -268,6 +296,6 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
             f"unexpected non-air outside the pit at {sx},{sy},{sz}"
         )
 
-    # 6. Bot survived.
+    # 7. Bot survived.
     end_hp = bot.status_lean().get("health") or 0
     assert end_hp >= 17, f"bot lost HP during mine: {end_hp}. diag={diag}"
