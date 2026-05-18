@@ -27,8 +27,6 @@ def dig_and_collect_arena(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
-        f"execute in {world} run difficulty peaceful",
-        f"execute in {world} run gamerule keepInventory true",
         f"execute as Tester at @s in {world} run tp @s 0 65 0",
     ])
     arena.settle(seconds=2.5)

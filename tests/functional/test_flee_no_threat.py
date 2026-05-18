@@ -33,10 +33,6 @@ def empty_world(rcon, arena, tester_bot, config):
     time.sleep(0.5)
     rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.batch([
-        f"execute in {world} run difficulty peaceful",
-        f"execute in {world} run gamerule doDaylightCycle false",
-        f"execute in {world} run gamerule doMobSpawning false",
-        f"execute in {world} run time set noon",
         f"execute in {world} run kill @e[type=!player]",
     ])
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")

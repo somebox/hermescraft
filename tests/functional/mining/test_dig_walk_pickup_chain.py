@@ -78,9 +78,6 @@ def _setup_grid(rcon, world: str, height: int) -> None:
     """Build the 3×3 cobble grid (pillars at x∈{2,4,6}, z∈{2,4,6})."""
     cmds = [
         f"execute in {world} run kill @e[type=!player]",
-        f"execute in {world} run difficulty peaceful",
-        f"execute in {world} run gamerule doDaylightCycle false",
-        f"execute in {world} run time set noon",
     ]
     for x in (2, 4, 6):
         for z in (2, 4, 6):

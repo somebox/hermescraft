@@ -110,6 +110,44 @@ def bot(tester_bot):
     return tester_bot
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _functional_session_setup(config, rcon):
+    """One-time per-pytest-invocation world setup for functional tests.
+
+    Sets the gamerules + difficulty + time that every functional test
+    depends on. Previously each per-test fixture re-applied these
+    (12+ duplicate sites). Centralizing avoids per-fixture drift and
+    saves ~6 rcon round-trips per test (≈15s across a 150-test suite).
+
+    The functional harness itself is marker-gated; this session-scope
+    fixture intentionally is NOT, because pytest evaluates session
+    autouse fixtures even when no functional test runs (the cost is
+    one rcon batch at startup, negligible).
+
+    `doImmediateRespawn true` is set deliberately: it skips the
+    death-screen pause, which lets the rescue-tester sequence catch
+    the bot before it can drift into a respawn-outside-landfolk
+    cascade between tests. (See the 8 documented XPASS scenarios
+    around test_dig_walk_pickup_chain for the underlying problem.)
+    """
+    world = config["mc"]["world"]
+    try:
+        rcon.batch([
+            f"execute in {world} run difficulty peaceful",
+            f"execute in {world} run gamerule doDaylightCycle false",
+            f"execute in {world} run gamerule doMobSpawning false",
+            f"execute in {world} run gamerule keepInventory true",
+            f"execute in {world} run gamerule doImmediateRespawn true",
+            f"execute in {world} run time set noon",
+            f"execute in {world} run weather clear",
+        ])
+    except Exception:
+        # Unit-only invocations may have no rcon target; the
+        # functional harness will re-attempt rcon at test time and
+        # fail with a clear error there.
+        pass
+
+
 @pytest.fixture
 def arena(config, rcon):
     """Per-test world prep/cleanup helper. Use `arena.clean()` to reset state."""

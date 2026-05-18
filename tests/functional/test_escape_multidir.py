@@ -33,9 +33,6 @@ def escape_arena(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.batch([
-        f"execute in {world} run difficulty peaceful",
-        f"execute in {world} run gamerule doDaylightCycle false",
-        f"execute in {world} run time set noon",
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -10 60 -10 10 80 10 minecraft:air",
         f"execute in {world} run fill -10 60 -10 10 63 10 minecraft:stone",

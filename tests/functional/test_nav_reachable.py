@@ -32,9 +32,6 @@ def mason_trap(rcon, config, tester_bot):
     tester_bot.wait_until_ready(timeout=10)
     world = config["mc"]["world"]
     rcon.batch([
-        f"execute in {world} run difficulty peaceful",
-        f"execute in {world} run gamerule doDaylightCycle false",
-        f"execute in {world} run time set noon",
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -5 65 5 5 70 18 minecraft:air",
         f"execute in {world} run fill -5 64 5 5 64 18 minecraft:grass_block",

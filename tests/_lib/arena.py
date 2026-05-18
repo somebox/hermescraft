@@ -34,13 +34,12 @@ class Arena:
         Returns:
             Combined rcon stdout from the batched commands.
         """
+        # difficulty / gamerules / time / weather are now set once at
+        # session scope (see tests/conftest.py::_functional_session_setup).
+        # arena.clean() handles only per-test world reset: entity kill,
+        # inventory clear, fresh saturation effect.
         cmds = [
             f"execute in {self.world} run kill @e[type=!player]",
-            f"execute in {self.world} run difficulty peaceful",
-            f"execute in {self.world} run gamerule doDaylightCycle false",
-            f"execute in {self.world} run gamerule doMobSpawning false",
-            f"execute in {self.world} run time set noon",
-            f"execute in {self.world} run weather clear",
             f"clear {self.bot_name}",
             f"effect clear {self.bot_name}",
             f"effect give {self.bot_name} minecraft:saturation 600 1",

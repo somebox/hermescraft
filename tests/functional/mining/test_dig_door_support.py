@@ -40,9 +40,6 @@ def dig_support_arena(rcon, config, tester_bot):
     world = config["mc"]["world"]
     tester_bot.wait_until_ready(timeout=10)
     rcon.batch([
-        f"execute in {world} run difficulty peaceful",
-        f"execute in {world} run gamerule doDaylightCycle false",
-        f"execute in {world} run time set noon",
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -10 65 -10 10 80 10 minecraft:air",
         f"execute in {world} run fill -10 64 -10 10 64 10 minecraft:stone",

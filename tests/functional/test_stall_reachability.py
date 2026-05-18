@@ -27,8 +27,6 @@ def boxed_in_bot(rcon, arena, tester_bot, config):
     tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
-        f"execute in {world} run difficulty peaceful",
-        f"execute in {world} run gamerule keepInventory true",
     ])
     arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
     rcon.batch([
