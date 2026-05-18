@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:*)",
+      "Bash(curl -s \"http://localhost:*)",
+      "Bash(curl -s 'http://localhost:*)",
+      "Bash(curl -sf http://localhost:*)",
+      "Bash(curl -s -m * http://*)",
+      "Bash(curl -sI *)",
+      "Bash(/tmp/rcon.sh 'data get*)",
+      "Bash(/tmp/rcon.sh 'list*)",
+      "Bash(hermes sessions list*)",
+      "Bash(hermes kanban list*)",
+      "Bash(hermes kanban show*)",
+      "mcp__minecraft__minecraft_read_chat",
+      "mcp__minecraft__minecraft_server_info"
+    ]
+  }
+}

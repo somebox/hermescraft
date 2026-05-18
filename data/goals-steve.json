@@ -1,0 +1,107 @@
+{
+  "goals": [
+    {
+      "enabled": true,
+      "strategies_available": [
+        "collect_logs",
+        "mc discover logs",
+        "mc collect"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_wood",
+      "metric": "logs_total",
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 70
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "hunt",
+        "gather",
+        "mc discover food"
+      ],
+      "constraints": {
+        "preempt_class": "high"
+      },
+      "id": "maintain_food",
+      "metric": "food_score",
+      "target_min": 30,
+      "target_ok": 60,
+      "priority": 80
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "mine_stone",
+        "mc discover stone"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_stone",
+      "metric": "stone_total",
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 55
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "craft_tools",
+        "mc craft_plan wooden_axe",
+        "mc craft_plan wooden_pickaxe",
+        "mc equip",
+        "mc unequip"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_tools",
+      "metric": "tool_durability_pct",
+      "target_min": 25,
+      "target_ok": 45,
+      "priority": 85
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "eat",
+        "flee",
+        "heal"
+      ],
+      "constraints": {
+        "preempt_class": "critical"
+      },
+      "id": "survive",
+      "metric": "survive_score",
+      "target_min": 70,
+      "target_ok": 90,
+      "priority": 95
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "flee",
+        "fight",
+        "hold_position"
+      ],
+      "constraints": {
+        "preempt_class": "critical"
+      },
+      "id": "low_threat",
+      "metric": "threat_score",
+      "target_min": 0,
+      "target_ok": 0,
+      "priority": 100
+    }
+  ],
+  "deficitSince": {
+    "maintain_wood": 1779054534804,
+    "maintain_stone": 1779054960991,
+    "maintain_food": 1779056090029,
+    "survive": 1779060806980
+  }
+}

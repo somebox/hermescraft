@@ -104,3 +104,6 @@ server/world/region/r.0.-1.mca
 server/world/region/r.0.0.mca
 server/world/region/r.0.1.mca
 .claude/scheduled_tasks.lock
+# Per-machine Claude Code allowlist (auto-grown from session activity;
+# settings.json holds the shared curated list).
+.claude/settings.local.json
