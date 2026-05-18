@@ -43,7 +43,7 @@ def landing_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-def test_landing_in_three_walled_pocket_reports_classification(bot, rcon, config, landing_arena):
+def test_landing_in_three_walled_pocket_reports_classification(bot, rcon, arena, config, landing_arena):
     """A: 3-wall pocket around target (5,65,0); range=0 forces bot to
     stand on the target cell itself. landed_in must surface a sticky
     classification."""
@@ -55,9 +55,8 @@ def test_landing_in_three_walled_pocket_reports_classification(bot, rcon, config
         f"execute in {world} run setblock 6 66 0 minecraft:cobblestone",
         f"execute in {world} run setblock 5 65 1 minecraft:cobblestone",
         f"execute in {world} run setblock 5 66 1 minecraft:cobblestone",
-        f"execute in {world} run tp Tester 0 65 0 0 0",
     ])
-    time.sleep(2.0)
+    arena.place_player(bot, 0, 65, 0)
     r = bot.post("/action/goto_near", {"x": 5, "y": 65, "z": 0, "range": 0}, timeout=20)
     assert r.get("ok"), r
     obs = r.get("observed_state") or {}
@@ -66,11 +65,9 @@ def test_landing_in_three_walled_pocket_reports_classification(bot, rcon, config
 
 
 @pytest.mark.functional
-def test_clean_landing_in_open_arena_has_no_landed_in(bot, rcon, config, landing_arena):
+def test_clean_landing_in_open_arena_has_no_landed_in(bot, rcon, arena, config, landing_arena):
     """B: no walls; landed_in must be absent (clean success path)."""
-    world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
-    time.sleep(2.0)
+    arena.place_player(bot, 0, 65, 0)
     r = bot.post("/action/goto_near", {"x": 5, "y": 65, "z": 0, "range": 2}, timeout=20)
     assert r.get("ok"), r
     obs = r.get("observed_state") or {}

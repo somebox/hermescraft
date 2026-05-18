@@ -99,12 +99,9 @@ def test_goto_near_enriches_error_with_closest_standable(bot, mason_trap):
 
 
 @pytest.mark.functional
-def test_reachable_is_pose_independent(rcon, bot, config, mason_trap):
+def test_reachable_is_pose_independent(rcon, bot, arena, config, mason_trap):
     """D: bot at (0,65,13), mc reachable 0 65 12 still reports head_blocked."""
-    world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run tp Tester 0.5 65 13.5 180 0")
-    import time
-    time.sleep(0.5)
+    arena.place_player(bot, 0.5, 65, 13.5, yaw=180.0)
     r = bot.post("/action/reachable", {"x": 0, "y": 65, "z": 12}, timeout=10)
     data = r.get("data") or {}
     assert data.get("target_standable") is False, data

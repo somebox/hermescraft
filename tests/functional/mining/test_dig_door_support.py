@@ -67,19 +67,18 @@ def dig_support_arena(rcon, config, tester_bot):
     ])
 
 
-def _tp_adjacent(rcon, world: str, x: int, z: int) -> None:
-    """TP Tester one block west of (x,65,z) facing east. Required so each
-    scenario's eye-to-target raycast stays clean of sibling scenario
-    blocks placed along x ∈ {3,5,7}."""
-    rcon.run(f"execute in {world} run tp Tester {x - 1} 65 {z} 270 0")
-    time.sleep(0.4)
+def _tp_adjacent(arena, bot, x: int, z: int) -> None:
+    """Place Tester one block west of (x,65,z) facing east. Required so
+    each scenario's eye-to-target raycast stays clean of sibling scenario
+    blocks placed along x ∈ {3,5,7}. arena.place_player wraps tp +
+    wait_until_stationary (gravity-race-safe)."""
+    arena.place_player(bot, x - 1, 65, z, yaw=270.0)
 
 
 @pytest.mark.functional
-def test_dig_support_under_door_returns_support_block(bot, rcon, config, dig_support_arena):
+def test_dig_support_under_door_returns_support_block(bot, rcon, arena, config, dig_support_arena):
     """A: SUPPORT_BLOCK with supported_block.name='oak_door'."""
-    world = config["mc"]["world"]
-    _tp_adjacent(rcon, world, 5, 0)
+    _tp_adjacent(arena, bot, 5, 0)
     r = bot.post("/action/dig", {"x": 5, "y": 65, "z": 0}, timeout=15)
     assert not r.get("ok"), r
     code, _, obs = extract_error(r)
@@ -89,31 +88,28 @@ def test_dig_support_under_door_returns_support_block(bot, rcon, config, dig_sup
 
 
 @pytest.mark.functional
-def test_dig_support_with_force_breaks_block(bot, rcon, config, dig_support_arena):
+def test_dig_support_with_force_breaks_block(bot, rcon, arena, config, dig_support_arena):
     """B: force=true overrides the guard AND the cobble actually becomes air
     (inventory-flagged upgrade: legacy used to only check ok=true)."""
-    world = config["mc"]["world"]
-    _tp_adjacent(rcon, world, 5, 0)
+    _tp_adjacent(arena, bot, 5, 0)
     r = bot.post("/action/dig", {"x": 5, "y": 65, "z": 0, "force": True}, timeout=20)
     assert r.get("ok"), r
     assert rcon.block_is(5, 65, 0, "air"), "force dig ok=true but cobble still present"
 
 
 @pytest.mark.functional
-def test_dig_plain_cobble_succeeds(bot, rcon, config, dig_support_arena):
+def test_dig_plain_cobble_succeeds(bot, rcon, arena, config, dig_support_arena):
     """C: cobble at (7,65,0) with no door above → ok AND block is air."""
-    world = config["mc"]["world"]
-    _tp_adjacent(rcon, world, 7, 0)
+    _tp_adjacent(arena, bot, 7, 0)
     r = bot.post("/action/dig", {"x": 7, "y": 65, "z": 0}, timeout=20)
     assert r.get("ok"), r
     assert rcon.block_is(7, 65, 0, "air"), "plain dig ok=true but cobble still present"
 
 
 @pytest.mark.functional
-def test_dig_support_under_fence_gate_returns_support_block(bot, rcon, config, dig_support_arena):
+def test_dig_support_under_fence_gate_returns_support_block(bot, rcon, arena, config, dig_support_arena):
     """D: SUPPORT_BLOCK with supported_block.name='oak_fence_gate'."""
-    world = config["mc"]["world"]
-    _tp_adjacent(rcon, world, 3, 0)
+    _tp_adjacent(arena, bot, 3, 0)
     r = bot.post("/action/dig", {"x": 3, "y": 65, "z": 0}, timeout=15)
     assert not r.get("ok"), r
     code, _, obs = extract_error(r)

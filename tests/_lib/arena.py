@@ -179,6 +179,19 @@ class Arena:
         ])
         if bot is not None and wait:
             self.wait_until_stationary(bot, timeout_s=6.0, stable_for_s=0.5)
+        # F51.2/F58 reset between tests. wait_until_stationary above
+        # uses ?preserve=true (BotClient.status_lean) so it does NOT
+        # clear lastMoveFailed / recentEscapes / recentStuckCells —
+        # those persist by design for the agent's own decision-making
+        # within a single agent session. But across pytest tests we
+        # want a clean slate: a prior test's failed goto must not
+        # poison the next test's position-guard. Hit GET /status
+        # WITHOUT preserve=true to invoke the agent-style reset.
+        if bot is not None:
+            try:
+                bot.get("/status?lean=true", timeout=3.0)
+            except Exception:
+                pass
 
     def verify_tester_ready(
         self,

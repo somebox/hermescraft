@@ -277,6 +277,32 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
         p = tester_bot.position() or {}
         if p:
             bot_pos = f"{p.get('x')},{p.get('y')},{p.get('z')}"
+            # Sentinel: post-rescue, the bot should be parked near
+            # (0, 100, 0). If it's anywhere else, rescue_tester ran but
+            # didn't successfully place the bot (cross-world failure,
+            # rcon hiccup, mineflayer cache lag). Don't fail the test —
+            # rcon-based test bodies may still cope — but emit a
+            # UserWarning so pytest's warning summary makes the bad
+            # rescue visible in-run (a trace-only `# HARNESS_WARN` is
+            # too silent to attribute downstream test failures to).
+            try:
+                bx = float(p.get("x") or 0)
+                by = float(p.get("y") or 0)
+                bz = float(p.get("z") or 0)
+                if abs(bx) > 2 or abs(by - 100) > 5 or abs(bz) > 2:
+                    msg = (
+                        f"bot_not_at_safe_park: pos={bx:.1f},{by:.1f},{bz:.1f} "
+                        f"(expected near 0,100,0) — rescue_tester ran but did "
+                        f"not place the bot; downstream test failures in this "
+                        f"and adjacent tests may be cascade-attributable."
+                    )
+                    harness_errors.append(msg)
+                    warnings.warn(
+                        f"[harness] {request.node.nodeid}: {msg}",
+                        stacklevel=0,
+                    )
+            except (TypeError, ValueError):
+                pass
     except Exception as e:  # noqa: BLE001
         harness_errors.append(f"start_pos: {type(e).__name__}: {e}")
     ts_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")

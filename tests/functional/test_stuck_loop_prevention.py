@@ -45,44 +45,46 @@ def stuck_arena(rcon, arena, tester_bot, config):
     rcon.run(f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air")
 
 
-def _rebuild_corner(rcon, world: str) -> None:
+def _rebuild_corner(arena, bot, world: str) -> None:
     """Walls at N+W of (0,65,0). After each escape the bot is at (1,65,0)
-    or (0,65,1) — both open — we re-trap so classification stays sticky."""
-    rcon.batch([
+    or (0,65,1) — both open — we re-trap so classification stays sticky.
+
+    arena.place_player wraps tp + wait_until_stationary so we don't
+    race gravity (the prior raw tp + fixed 1.5s sleep was best-effort)."""
+    arena.rcon.batch([
         f"execute in {world} run setblock 0 65 -1 minecraft:cobblestone",
         f"execute in {world} run setblock 0 66 -1 minecraft:cobblestone",
         f"execute in {world} run setblock -1 65 0 minecraft:cobblestone",
         f"execute in {world} run setblock -1 66 0 minecraft:cobblestone",
-        f"execute in {world} run tp Tester 0 65 0 0 0",
     ])
-    time.sleep(1.5)
+    arena.place_player(bot, 0, 65, 0)
 
 
 @pytest.mark.functional
-def test_F57_1_escape_recurring_loop_after_3_within_90s(bot, rcon, config, stuck_arena):
+def test_F57_1_escape_recurring_loop_after_3_within_90s(bot, rcon, arena, config, stuck_arena):
     """A: 3 escapes from same corner within 90s → 3rd (or retry#4)
     returns ESCAPE_RECURRING_LOOP. Re-trap between each so classification
     stays sticky."""
     world = config["mc"]["world"]
-    _rebuild_corner(rcon, world)
+    _rebuild_corner(arena, bot, world)
     codes = []
     for i in range(3):
         r = bot.post("/action/escape", {}, timeout=15)
         codes.append(extract_error(r)[0] if not r.get("ok") else "OK")
         if i < 2:
-            _rebuild_corner(rcon, world)
+            _rebuild_corner(arena, bot, world)
     # Mineflayer's stickiness can shuffle which call trips the detector.
     # Accept ESCAPE_RECURRING_LOOP in any of the 3 calls; if not, do one
     # more retry.
     if "ESCAPE_RECURRING_LOOP" not in codes:
-        _rebuild_corner(rcon, world)
+        _rebuild_corner(arena, bot, world)
         r4 = bot.post("/action/escape", {}, timeout=15)
         codes.append(extract_error(r4)[0] if not r4.get("ok") else "OK")
     assert "ESCAPE_RECURRING_LOOP" in codes, f"never saw ESCAPE_RECURRING_LOOP; codes={codes}"
 
 
 @pytest.mark.functional
-def test_F57_2_repeated_goto_to_unreachable_target_fails_clearly(bot, rcon, config, stuck_arena):
+def test_F57_2_repeated_goto_to_unreachable_target_fails_clearly(bot, rcon, arena, config, stuck_arena):
     """B: 4 consecutive gotos to a sealed/lipped target. Pass if either
     NAV_RECURRING_STUCK appears OR every attempt returns a clear nav
     failure code (the contract is that the bot doesn't silently spin)."""
@@ -94,9 +96,8 @@ def test_F57_2_repeated_goto_to_unreachable_target_fails_clearly(bot, rcon, conf
         f"execute in {world} run setblock 3 66 3 minecraft:cobblestone",
         f"execute in {world} run setblock 4 66 3 minecraft:cobblestone",
         f"execute in {world} run setblock 5 66 3 minecraft:cobblestone",
-        f"execute in {world} run tp Tester 0 65 0 0 0",
     ])
-    time.sleep(2.0)
+    arena.place_player(bot, 0, 65, 0)
     seen = []
     target = {"x": 8, "y": 65, "z": 8}
     for _ in range(4):
@@ -120,7 +121,7 @@ def test_F57_2_repeated_goto_to_unreachable_target_fails_clearly(bot, rcon, conf
 
 
 @pytest.mark.functional
-def test_F57_3_successful_escape_carries_do_not_retry_goto(bot, rcon, config, stuck_arena):
+def test_F57_3_successful_escape_carries_do_not_retry_goto(bot, rcon, arena, config, stuck_arena):
     """C: failed goto records ctx.lastMoveFailed; subsequent successful
     escape returns observed_state.do_not_retry_goto = that intended
     target (x=5 here).
@@ -136,11 +137,10 @@ def test_F57_3_successful_escape_carries_do_not_retry_goto(bot, rcon, config, st
         for (x, z) in [(5, 4), (5, 6), (4, 5), (6, 5)]:
             walls.append(f"execute in {world} run setblock {x} {y} {z} minecraft:cobblestone")
     walls.append(f"execute in {world} run setblock 5 68 5 minecraft:cobblestone")
-    walls.append(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch(walls)
-    time.sleep(2.0)
+    arena.place_player(bot, 0, 65, 0)
     bot.post("/action/goto", {"x": 5, "y": 65, "z": 5}, timeout=15)
-    _rebuild_corner(rcon, world)
+    _rebuild_corner(arena, bot, world)
     r = bot.post("/action/escape", {}, timeout=15)
     assert r.get("ok"), r
     data = r.get("data") or {}

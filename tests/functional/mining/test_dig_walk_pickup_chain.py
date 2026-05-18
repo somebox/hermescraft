@@ -93,9 +93,10 @@ def _setup_grid(rcon, world: str, height: int) -> None:
     time.sleep(2.0)
 
 
-def _tp_bot(rcon, world: str, x: float, y: float, z: float, yaw: float = 0.0) -> None:
-    rcon.run(f"execute in {world} run tp Tester {x} {y} {z} {yaw} 0")
-    time.sleep(0.5)
+def _tp_bot(arena, bot, x: float, y: float, z: float, yaw: float = 0.0) -> None:
+    """tp + wait-stationary via arena.place_player. Replaces a raw rcon tp
+    + fixed 0.5s sleep — gravity-race-safe."""
+    arena.place_player(bot, x, y, z, yaw=yaw)
 
 
 def _spawn_drop(rcon, world: str, x: int, y: int, z: int, count: int = 1) -> None:
@@ -151,7 +152,7 @@ def pillar_arena(rcon, arena, tester_bot, config):
 # ── Helpers used across A/B ──────────────────────────────────────────
 
 
-def _dig_walk_pickup(bot, rcon, world: str, target_x: int, target_y: int, target_z: int,
+def _dig_walk_pickup(bot, rcon, arena, world: str, target_x: int, target_y: int, target_z: int,
                      approach_x: int, approach_z: int, opposite_x: int, opposite_z: int,
                      label: str) -> int:
     """One dig→walk→pickup iteration. Returns cobble gained.
@@ -173,7 +174,7 @@ def _dig_walk_pickup(bot, rcon, world: str, target_x: int, target_y: int, target
         yaw = 270 if dx > 0 else 90
     else:
         yaw = 0 if dz > 0 else 180
-    _tp_bot(rcon, world, approach_x + 0.5, 65, approach_z + 0.5, yaw)
+    _tp_bot(arena, bot, approach_x + 0.5, 65, approach_z + 0.5, yaw)
     _assert_safe_pose(bot, f"{label}: after approach TP")
 
     # 2. Dig target.
@@ -185,7 +186,7 @@ def _dig_walk_pickup(bot, rcon, world: str, target_x: int, target_y: int, target
     odz = target_z - opposite_z
     step_x = (-1 if odx > 0 else 1) if odx != 0 else 0
     step_z = (-1 if odz > 0 else 1) if odz != 0 else 0
-    _tp_bot(rcon, world, opposite_x + step_x + 0.5, 65, opposite_z + step_z + 0.5, 0.0)
+    _tp_bot(arena, bot, opposite_x + step_x + 0.5, 65, opposite_z + step_z + 0.5, 0.0)
     _assert_safe_pose(bot, f"{label}: after opposite TP")
 
     # 4. goto_near drop.
@@ -204,30 +205,30 @@ def _dig_walk_pickup(bot, rcon, world: str, target_x: int, target_y: int, target
 
 @pytest.mark.functional
 @pytest.mark.slow
-def test_height1_three_pillars_routed(bot, rcon, config, pillar_arena):
+def test_height1_three_pillars_routed(bot, rcon, arena, config, pillar_arena):
     """A: height=1, 3 pillar dig+walk-around+pickup iterations."""
     world = config["mc"]["world"]
     _setup_grid(rcon, world, height=1)
-    _tp_bot(rcon, world, -1, 65, 4, 0)
+    _tp_bot(arena, bot, -1, 65, 4, 0)
     for p in TEST_PILLARS:
         tx, tz = p["target"]
         ax, az = p["approach"]
         ox, oz = p["opposite"]
         label = f"target=({tx},65,{tz})"
-        gained = _dig_walk_pickup(bot, rcon, world, tx, 65, tz, ax, az, ox, oz, label)
+        gained = _dig_walk_pickup(bot, rcon, arena, world, tx, 65, tz, ax, az, ox, oz, label)
         # Strict 1-per-iteration for height=1: drops don't pile up.
         assert gained >= 1, f"[{label}] pickup didn't gain cobble"
 
 
 @pytest.mark.functional
 @pytest.mark.slow
-def test_height2_six_blocks_top_down(bot, rcon, config, pillar_arena):
+def test_height2_six_blocks_top_down(bot, rcon, arena, config, pillar_arena):
     """B: height=2, top-down 6 dig iterations. Cumulative-cobble tolerance:
     when the y=66 drop hasn't landed by pickup time, the auto-magnet
     sweeps it during the y=65 iteration (which then sees +2). Track total."""
     world = config["mc"]["world"]
     _setup_grid(rcon, world, height=2)
-    _tp_bot(rcon, world, -1, 65, 4, 0)
+    _tp_bot(arena, bot, -1, 65, 4, 0)
     pre_total = bot.inventory().get("cobblestone", 0)
     nav_failures = []
     for p in TEST_PILLARS:
@@ -237,7 +238,7 @@ def test_height2_six_blocks_top_down(bot, rcon, config, pillar_arena):
         for ty in (66, 65):  # top-down
             label = f"target=({tx},{ty},{tz})"
             try:
-                _dig_walk_pickup(bot, rcon, world, tx, ty, tz, ax, az, ox, oz, label)
+                _dig_walk_pickup(bot, rcon, arena, world, tx, ty, tz, ax, az, ox, oz, label)
             except AssertionError as e:
                 msg = str(e)
                 # Only treat dig/nav errors as real failures; magnet
@@ -256,7 +257,7 @@ def test_height2_six_blocks_top_down(bot, rcon, config, pillar_arena):
 # ── Scenarios C, D ───────────────────────────────────────────────────
 
 
-def _wedge_iter(bot, rcon, world: str, op: dict, verb: str) -> None:
+def _wedge_iter(bot, rcon, arena, world: str, op: dict, verb: str) -> None:
     """One wedge op: spawn drop at op['drop'], TP bot corner-touching
     op['pillar'][op['side']], call verb, verify drop picked up."""
     drop_x, drop_z = op["drop"]
@@ -268,7 +269,7 @@ def _wedge_iter(bot, rcon, world: str, op: dict, verb: str) -> None:
     _spawn_drop(rcon, world, drop_x, 65, drop_z)
     pre = bot.inventory().get("cobblestone", 0)
 
-    _tp_bot(rcon, world, cx, 65, cz, 0.0)
+    _tp_bot(arena, bot, cx, 65, cz, 0.0)
     rcon.run(f"execute in {world} run effect give Tester instant_health 1 4")
     time.sleep(0.4)
     _assert_safe_pose(bot, op["name"])
@@ -289,48 +290,38 @@ def _wedge_iter(bot, rcon, world: str, op: dict, verb: str) -> None:
 @pytest.mark.functional
 @pytest.mark.slow
 @pytest.mark.parametrize("op", WEDGE_OPS, ids=lambda op: op["name"])
-def test_corner_touch_wedge_goto_near(bot, rcon, config, pillar_arena, op):
+def test_corner_touch_wedge_goto_near(bot, rcon, arena, config, pillar_arena, op):
     """C: corner-touch wedge at height=2 pillars, verb=goto_near."""
     world = config["mc"]["world"]
     _setup_grid(rcon, world, height=2)
-    _tp_bot(rcon, world, -1, 65, 4, 0)
-    _wedge_iter(bot, rcon, world, op, verb="goto_near")
+    _tp_bot(arena, bot, -1, 65, 4, 0)
+    _wedge_iter(bot, rcon, arena, world, op, verb="goto_near")
 
 
 @pytest.mark.functional
 @pytest.mark.slow
 @pytest.mark.parametrize("op", WEDGE_OPS, ids=lambda op: op["name"])
-def test_corner_touch_wedge_move(bot, rcon, config, pillar_arena, op):
+def test_corner_touch_wedge_move(bot, rcon, arena, config, pillar_arena, op):
     """D: corner-touch wedge at height=2 pillars, verb=move."""
     world = config["mc"]["world"]
     _setup_grid(rcon, world, height=2)
-    _tp_bot(rcon, world, -1, 65, 4, 0)
-    _wedge_iter(bot, rcon, world, op, verb="move")
+    _tp_bot(arena, bot, -1, 65, 4, 0)
+    _wedge_iter(bot, rcon, arena, world, op, verb="move")
 
 
 # ── Scenario E: build-then-navigate ──────────────────────────────────
 
 
-def _build_then_navigate(bot, rcon, world: str, drop_x: int, drop_z: int, verb: str,
+def _build_then_navigate(bot, rcon, arena, world: str, drop_x: int, drop_z: int, verb: str,
                           corner_side: str | None, label: str) -> None:
     """Bot places a 2-tall cobble pillar at (4,4), then navigates to a
     drop on the diagonal corner. If corner_side is set, the bot is
     TP'd to corner-touching pose before navigation (exercises the wild
-    failure mode "stuck on corner of pillar")."""
-    # Aggressive per-iteration reset. Cumulative state across the
-    # parametrize iterations (death + respawn at world-spawn outside
-    # landfolk-test, stale wait tasks, pathfinder retry counters) was
-    # leaving the bot in a state where mc place returned INTERRUPTED
-    # repeatedly. Re-home via cross-dim-safe `execute as`, cancel any
-    # active task, give a generous post-reset settle.
-    try:
-        bot.post("/task/cancel", {}, timeout=5)
-    except Exception:
-        pass
-    rcon.run(f"mvtp Tester {world}")
-    time.sleep(0.5)
-    rcon.run(f"execute as Tester at @s in {world} run tp @s 0 100 0")
-    time.sleep(0.5)
+    failure mode "stuck on corner of pillar").
+
+    Per-iteration arena rebuild (no manual mvtp/sleep dance — the
+    autouse `_functional_harness` already does cross-world rescue +
+    safe-park between parametrize iterations as of Phase 3.1)."""
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -1 60 -1 9 70 9 minecraft:air",
@@ -338,12 +329,8 @@ def _build_then_navigate(bot, rcon, world: str, drop_x: int, drop_z: int, verb: 
         f"execute in {world} run fill -1 64 -1 9 64 9 minecraft:grass_block",
         "clear Tester",
         f"execute in {world} run give Tester minecraft:cobblestone 64",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
-        "effect give Tester minecraft:instant_health 1 5",
     ])
-    time.sleep(3.0)
-    _tp_bot(rcon, world, 3.5, 65, 4.5, 270.0)
+    _tp_bot(arena, bot, 3.5, 65, 4.5, 270.0)
 
     # Place 2-tall pillar at (4, 65..66, 4).
     p1 = bot.post("/action/place", {"block": "cobblestone", "x": 4, "y": 65, "z": 4}, timeout=15)
@@ -353,7 +340,7 @@ def _build_then_navigate(bot, rcon, world: str, drop_x: int, drop_z: int, verb: 
 
     if corner_side is not None:
         cx, cz = _corner_touch_pos(4, 4, corner_side)
-        _tp_bot(rcon, world, cx, 65, cz, 0.0)
+        _tp_bot(arena, bot, cx, 65, cz, 0.0)
 
     _assert_safe_pose(bot, label)
 
@@ -378,20 +365,16 @@ def _build_then_navigate(bot, rcon, world: str, drop_x: int, drop_z: int, verb: 
 @pytest.mark.slow
 @pytest.mark.parametrize("verb", ["goto_near", "move"])
 @pytest.mark.parametrize("op", BUILD_DROPS, ids=lambda op: op["name"])
-@pytest.mark.xfail(
-    strict=False,
-    reason="Scenario E (build-then-corner-touch then navigate) flakes due to "
-           "cumulative bot state across parametrize iterations: deaths respawn "
-           "the bot outside landfolk-test, stale wait tasks linger, place verb "
-           "returns INTERRUPTED repeatedly. The other 4 scenarios already cover "
-           "the corner-touch + obstacle-routing paths (test_corner_touch_wedge_*); "
-           "E adds 'bot placed the obstacle itself' which is mostly a duplicate "
-           "of the C/D coverage. Re-evaluate if the framework gains better "
-           "post-death state recovery.",
-)
-def test_build_then_navigate(bot, rcon, config, pillar_arena, op, verb):
+def test_build_then_navigate(bot, rcon, arena, config, pillar_arena, op, verb):
     """E: bot builds 2-tall pillar then routes around it to a diagonal-
-    corner drop. 4 corner variants × 2 verbs = 8 cases."""
+    corner drop. 4 corner variants × 2 verbs = 8 cases.
+
+    Previously xfailed due to cumulative state across parametrize
+    iterations (deaths respawned the bot outside landfolk-test, stale
+    wait tasks lingered, place returned INTERRUPTED repeatedly). The
+    rescue_tester mvtp fix (Phase 3.1, P-A1) closes the cross-world
+    cascade — verify post-fix and re-add xfail only if the family
+    regresses."""
     world = config["mc"]["world"]
     dx, dz = op["drop"]
-    _build_then_navigate(bot, rcon, world, dx, dz, verb, op.get("corner"), op["name"])
+    _build_then_navigate(bot, rcon, arena, world, dx, dz, verb, op.get("corner"), op["name"])
