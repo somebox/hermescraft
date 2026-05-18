@@ -329,6 +329,22 @@ export const RAW_COMMAND_DEFS = [
     },
     examples: [`mc pillar_step`, `mc pillar_step 5`, `mc pillar_step cobblestone 10`, `mc pillar_step dirt 20`],
   }),
+  g('pillar_down', 'world', ['descend', 'pillardown'], {
+    method: 'POST',
+    path: '/action/pillar_down',
+    description: 'Descend a vertical pillar — mine the block directly underfoot, drop 1, repeat. Stops on bedrock, lava, or when surface is reached (multiple solid floor cells around the bot at the new level). Use when stuck on top of a 1×1 column you climbed with mc pillar_step.',
+    argSchema: [
+      { key: 'count', type: 'number', description: 'max blocks to descend (default 12, max 64)' },
+      { key: 'pickup', type: 'string', description: 'true|false — pickup drops as you go (default true)' },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      ...(p.count !== undefined ? { count: Number(p.count) } : {}),
+      ...(p.pickup !== undefined && `${p.pickup}`.trim() !== ''
+        ? { pickup: p.pickup === true || `${p.pickup}`.toLowerCase() === 'true' || `${p.pickup}` === '1' }
+        : {}),
+    }),
+    examples: [`mc pillar_down`, `mc pillar_down 8`, `mc pillar_down 20 pickup=false`],
+  }),
   g('pickup', 'world', ['p'], { description: 'Walk to + collect a nearby item drop', method: 'POST', path: '/action/pickup', bodyFn: () => empty }),
   g('find_blocks', 'world', ['fb'], {
     description: 'Locate blocks of TYPE within radius (no mining)',

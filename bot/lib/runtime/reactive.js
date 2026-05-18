@@ -105,6 +105,20 @@ export function createReactive(deps) {
     return HOSTILE_NAMES.has((entity.name || '').toLowerCase());
   }
 
+  // #84: pure line-of-sight check (no reach/vertical caps). Used to gate
+  // ENGAGE decisions on visibility — a skeleton in an adjacent cave that
+  // the bot can't see should not pull it out of its task. Safety triggers
+  // (creeper flee, critical-HP flee, ranged-no-weapon flee) still use the
+  // LOS-blind hostiles list because those threats stay dangerous even when
+  // they round a corner.
+  function reactiveCanSee(entity) {
+    if (!hasLineOfSight || !eyePosition) return true; // pre-wire safety
+    const eye = eyePosition();
+    if (!eye || !entity?.position) return true;
+    const target = entity.position.offset(0, (entity.height || 1.8) * 0.5, 0);
+    return hasLineOfSight(eye, target);
+  }
+
   function readState() {
     const b = ctx.world.bot;
     if (!b || !b.entity) return null;
@@ -116,6 +130,9 @@ export function createReactive(deps) {
         name: e.name,
         position: e.position,
         distance: e.position.distanceTo(myPos),
+        // #84: visibility flag — true if bot's eye can raycast to the
+        // entity's chest. Used downstream to gate engage decisions.
+        visible: reactiveCanSee(e),
       }))
       .sort((a, c) => a.distance - c.distance);
 
@@ -136,6 +153,12 @@ export function createReactive(deps) {
 
     const closestRanged = hostiles.find(
       (h) => RANGED_HOSTILE_NAMES.has((h.name || '').toLowerCase()) && h.distance <= RANGED_AWARE_RANGE,
+    ) || null;
+
+    // #84: visible-only variants for engage decisions.
+    const closestVisibleHostile = hostiles.find((h) => h.visible) || null;
+    const closestVisibleRanged = hostiles.find(
+      (h) => h.visible && RANGED_HOSTILE_NAMES.has((h.name || '').toLowerCase()) && h.distance <= RANGED_AWARE_RANGE,
     ) || null;
 
     // Environmental hazard scan: read foot / head / immediate-cardinal blocks.
@@ -175,6 +198,9 @@ export function createReactive(deps) {
       closest_hostile: hostiles[0] || null,
       closest_creeper: hostiles.find((h) => h.name === 'creeper') || null,
       closest_ranged: closestRanged,
+      // #84: visible-only variants — decide() uses these for engage paths.
+      closest_visible_hostile: closestVisibleHostile,
+      closest_visible_ranged: closestVisibleRanged,
       weapon: weapon ? weapon.name : null,
       armor_count: armorCount,
       // Environmental hazards
@@ -242,7 +268,20 @@ export function createReactive(deps) {
     }
 
     if (!state.closest_hostile) return null;
-    const dist = state.closest_hostile.distance;
+
+    // #84: gate ENGAGE decisions on visibility. A hostile in an adjacent
+    // cave (no LOS) shouldn't pull the bot out of its task. Use the
+    // visible-only fields here. Safety triggers above (creeper flee,
+    // critical-HP flee, ranged-no-weapon flee) still use the LOS-blind
+    // hostiles list because those threats stay relevant even when hidden.
+    if (!state.closest_visible_hostile) {
+      // Nothing visible to engage. If we're being damaged by something
+      // unseen (skeleton firing arrows through a gap), bail to the agent —
+      // it can decide to shelter / patch the wall / move.
+      return null;
+    }
+    const visibleHostile = state.closest_visible_hostile;
+    const dist = visibleHostile.distance;
     const engageRange = mode === 'guard' ? GUARD_RANGE : MELEE_RANGE;
     // Triggered when:
     //   - hostile is in melee/guard range (always engage)
@@ -251,7 +290,7 @@ export function createReactive(deps) {
     //     stand still and soak shots)
     const triggered = dist <= engageRange
       || (mode === 'normal' && state.recently_damaged)
-      || (state.weapon && state.closest_ranged);
+      || (state.weapon && state.closest_visible_ranged);
     if (!triggered) return null;
 
     // No weapon: only flee if the threat is OUTSIDE melee range. At melee
@@ -259,11 +298,11 @@ export function createReactive(deps) {
     // a single zombie/spider, especially with saturation regen offsetting
     // the hits taken. Ranged-no-weapon was already handled above.
     if (!state.weapon && dist > MELEE_RANGE + 0.5) {
-      return { action: 'flee_step', threat: state.closest_hostile, why: 'no_weapon_distant' };
+      return { action: 'flee_step', threat: visibleHostile, why: 'no_weapon_distant' };
     }
     // Disengage if HP is shaky and we're being hit.
     if (state.hp <= LOW_HP_DISENGAGE && state.recently_damaged) {
-      return { action: 'flee_step', threat: state.closest_hostile, why: 'shaky_hp' };
+      return { action: 'flee_step', threat: visibleHostile, why: 'shaky_hp' };
     }
 
     // Don't chase past anchor range — fall through to no-op so the agent's
@@ -272,21 +311,64 @@ export function createReactive(deps) {
       return { action: 'hold', why: 'anchor_limit' };
     }
 
+    // #97: kiting-stalemate detection. Track recent distances against
+    // THIS specific hostile. If we've fired engage_step ≥ 15 ticks
+    // (~6s at 400ms/tick) and the AVERAGE distance hasn't decreased
+    // (delta < 0.5m), we're stuck in a kiting loop — disengage one tick
+    // to let the agent's task continue. Stalemate logic doesn't apply
+    // in melee range (dist <= MELEE_RANGE+0.5) — bot is hitting things.
+    const targetId = visibleHostile.entity?.id ?? null;
+    let history = ctx.reactive.engageHistory;
+    if (!history || history.target_id !== targetId) {
+      // New target or first engagement — reset tracker.
+      history = {
+        target_id: targetId,
+        target_name: visibleHostile.name || null,
+        distances: [],
+        started_at: Date.now(),
+      };
+      ctx.reactive.engageHistory = history;
+    }
+    history.distances.push(dist);
+    if (history.distances.length > 20) history.distances.shift();
+    if (
+      dist > MELEE_RANGE + 0.5 &&
+      history.distances.length >= 15
+    ) {
+      const oldestSample = history.distances[0];
+      const newestSample = history.distances[history.distances.length - 1];
+      const closeBy = oldestSample - newestSample; // positive = closing in
+      if (closeBy < 0.5) {
+        // Stalemate. Disengage for one tick by yielding (return null) so
+        // the agent's task continues. Reset the tracker so next time we
+        // re-engage fresh (e.g. if the bot pillars up and the angle
+        // changes). Log explicitly so observers see what happened.
+        log(
+          `[reactive] stalemate vs ${history.target_name || 'hostile'}@${dist.toFixed(1)} after ` +
+          `${history.distances.length} ticks, closeBy=${closeBy.toFixed(1)} — disengaging`,
+        );
+        ctx.reactive.engageHistory = null;
+        return null;
+      }
+    }
+
     // Hostile is in sight but out of melee → advance one bounded step.
     // This is what makes the bot close on a ranged attacker (skeleton) instead
     // of standing still soaking arrows.
     if (dist > MELEE_RANGE + 0.5) {
       return {
         action: 'advance_step',
-        target: state.closest_hostile,
+        target: visibleHostile,
         why: state.recently_damaged ? 'close_under_fire' : 'engage_distant',
       };
     }
 
-    // Engage: single-swing attack + backstep dance.
+    // Engage: single-swing attack + backstep dance. Reset stalemate
+    // tracker — we're actually landing hits now, no longer in a chase.
+    ctx.reactive.engageHistory = null;
     return {
       action: 'attack_step',
-      target: state.closest_hostile,
+      target: visibleHostile,
       why: mode === 'guard' ? 'guard_engage' : 'self_defense',
     };
   }

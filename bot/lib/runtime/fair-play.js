@@ -114,6 +114,28 @@ export function createFairPlaySuite(deps) {
     return harvestable.map((p) => new Vec3(p.x, p.y, p.z));
   }
 
+  // #95: open doors / fence_gates / trapdoors report boundingBox='block'
+  // (their FULL collision box including the closed extents). When OPEN
+  // the actual collision is a thin sliver to the side that doesn't block
+  // a typical eye-to-target raycast — Minecraft players can see through
+  // and click through them just fine. Treat open ones as passable so
+  // mc chest / mc place / mc attack don't false-positive on a door
+  // between the bot and its target.
+  function isPassableForLOS(block) {
+    if (!block) return true;
+    if (block.boundingBox !== 'block') return true;
+    const name = block.name || '';
+    if (!/(_door|_fence_gate|_trapdoor)$/.test(name)) return false;
+    // Iron doors only open via redstone, not a click — but if they're
+    // open in-state they're still passable for LOS purposes.
+    try {
+      const props = typeof block.getProperties === 'function' ? block.getProperties() : {};
+      return props.open === true || props.open === 'true';
+    } catch {
+      return false;
+    }
+  }
+
   function hasLineOfSight(from, to) {
     if (!ctx.world.bot || !ctx.world.botReady) return false;
     const dx = to.x - from.x;
@@ -128,7 +150,7 @@ export function createFairPlaySuite(deps) {
       const y = from.y + dy * t;
       const z = from.z + dz * t;
       const block = ctx.world.bot.blockAt(new Vec3(Math.floor(x), Math.floor(y), Math.floor(z)));
-      if (block && block.boundingBox === 'block') return false;
+      if (block && !isPassableForLOS(block)) return false;
     }
     return true;
   }

@@ -98,7 +98,28 @@ export function createLocationsStore({ dataDir, username }) {
       y = place.y;
       z = place.z;
     }
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) throw new Error('Need x,y,z or mark/at/at_mark');
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      // #94: enrich the error with what we received + a swap-detection hint.
+      // Agents commonly call `mc withdraw 365 65 -597 oak_log 32` (coords
+      // first) instead of the correct `mc withdraw oak_log 32 365 65 -597`
+      // — the prior bare-bones error didn't surface the mistake.
+      const bodyParts = [];
+      if (body.item != null) bodyParts.push(`item='${body.item}'`);
+      if (body.count != null) bodyParts.push(`count=${body.count}`);
+      if (body.x != null) bodyParts.push(`x=${body.x}`);
+      if (body.y != null) bodyParts.push(`y=${body.y}`);
+      if (body.z != null) bodyParts.push(`z=${body.z}`);
+      if (body.mark) bodyParts.push(`mark=${body.mark}`);
+      const itemIsNumeric = body.item != null && Number.isFinite(Number(body.item));
+      const yIsNonNumeric = body.y != null && !Number.isFinite(Number(body.y));
+      let hint = '';
+      if (itemIsNumeric && yIsNonNumeric) {
+        hint = ` Args look swapped — try: mc <verb> ${body.y} ${body.z ?? '<count>'} ${body.item} <y> <z> (order is ITEM COUNT X Y Z).`;
+      }
+      throw new Error(
+        `Need x,y,z or mark/at/at_mark. Usage: mc deposit/withdraw/chest ITEM COUNT X Y Z (or pass mark=NAME). Got: ${bodyParts.join(', ') || '(no args)'}.${hint}`,
+      );
+    }
     return { ix: Math.floor(x), iy: Math.floor(y), iz: Math.floor(z) };
   }
 

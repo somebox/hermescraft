@@ -158,11 +158,21 @@ export function createInteractionActions(services) {
     // F55.3 + F55.4: uniform reach precheck with wallclock cap. On
     // failure, surface door_state and gate distance so the brain has
     // structured signal (not just "could not approach").
+    //
+    // #96: scale the wallclock cap by gate distance. Default 8s covers
+    // close-by doors (typical case) but is too tight for the door
+    // distances surfaced by #91's 64m fallback. Allow ~1s per block,
+    // clamped to [8s, 30s].
+    const gateDistance = b.entity.position.distanceTo(gate.position);
+    const reachCapMs = Math.min(30000, Math.max(8000, Math.floor(gateDistance * 1000)));
     const reach = await ensureWithinReach({ bot: b, goals }, { x: gate.position.x, y: gate.position.y, z: gate.position.z }, {
       range: 4.5,
+      capMs: reachCapMs,
       observed: {
         gate_pos: { x: gate.position.x, y: gate.position.y, z: gate.position.z },
         gate_block: gate.name,
+        gate_distance: Math.round(gateDistance * 10) / 10,
+        approach_cap_ms: reachCapMs,
         door_state: (typeof gate.getProperties === 'function') ? (gate.getProperties().open === 'true' || gate.getProperties().open === true ? 'open' : 'closed') : null,
       },
     });
