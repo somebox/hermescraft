@@ -157,12 +157,18 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
         xz_tol=1.5,
     )
 
-    # Drive the mine.
+    # Drive the mine. timeout=60 (not 90) — the SUT's inner budget is
+    # 35s; add 25s slack for pickup. If the verb exceeds 60s the SUT
+    # is failing to bail when it should (no-progress watchdog isn't
+    # firing) and we want that to fail the test, not silently hide
+    # behind a generous timeout.
+    t0 = time.time()
     r = bot.post(
         "/action/collect",
         {"block": "dirt", "count": REQUESTED_COUNT},
-        timeout=90.0,
+        timeout=60.0,
     )
+    verb_elapsed = time.time() - t0
 
     # Diagnostic dump — gather every layer's state BEFORE asserting.
     def count_layer(y: int, kind: str) -> int:
@@ -182,6 +188,35 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
         return out
 
     top_mined = mined_top_cells()
+    top_mined_set = set(top_mined)
+
+    # Visual: ASCII grid of the y=66 layer post-mine.
+    # '#' = dirt remaining, '.' = mined (air), 'c' = dig-through under
+    # cleared clutter, 'C' = still-clutter column (y=67 dirt above).
+    clutter_xz = {(cx, cz) for (cx, cy, cz) in SURFACE_CLUTTER}
+    grid_lines = []
+    grid_lines.append("  y=66 mined layout (x=0..15 left-right, z=0..15 top-down)")
+    grid_lines.append("     " + " ".join(f"{x:>2}" for x in range(PIT_X_MIN, PIT_X_MAX + 1)))
+    for z in range(PIT_Z_MIN, PIT_Z_MAX + 1):
+        row = [f"z={z:>2}"]
+        for x in range(PIT_X_MIN, PIT_X_MAX + 1):
+            if (x, z) in top_mined_set:
+                # Mined at y=66. Differentiate dig-through (clutter
+                # above also mined) from strip cells.
+                if (x, z) in clutter_xz and rcon.block_is(x, PIT_TOP_Y + 1, z, "air"):
+                    row.append(" c")
+                else:
+                    row.append(" .")
+            else:
+                # Dirt at y=66. Mark if clutter still above (violation
+                # candidate) vs clean dirt.
+                if (x, z) in clutter_xz and rcon.block_is(x, PIT_TOP_Y + 1, z, "dirt"):
+                    row.append(" C")
+                else:
+                    row.append(" #")
+        grid_lines.append(" ".join(row))
+    grid_visual = "\n".join(grid_lines)
+
     diag = {
         "top_mined_count":          len(top_mined),
         "middle_dirt_intact":       count_layer(PIT_MIDDLE_Y, "dirt"),
@@ -189,59 +224,71 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
         "clutter_dirt_remaining":   sum(
             1 for (cx, cy, cz) in SURFACE_CLUTTER if rcon.block_is(cx, cy, cz, "dirt")
         ),
+        "verb_elapsed_s":           round(verb_elapsed, 1),
         "response_mined_count":     (r.get("data") or {}).get("mined_count"),
         "response_causes":          (r.get("data") or {}).get("causes"),
         "response_result":          r.get("result") or r.get("error", {}).get("message"),
         "bot_pos_after":            bot.status_lean().get("position"),
     }
+    diag_str = f"{diag}\n{grid_visual}"
 
     # 1. Bot mined a meaningful amount (close to the 32 budget).
     response_mined = (r.get("data") or {}).get("mined_count", 0)
     assert response_mined >= 25, (
-        f"bot mined too few cells: {response_mined} / {REQUESTED_COUNT}. diag={diag}"
+        f"bot mined too few cells: {response_mined} / {REQUESTED_COUNT}.\n{diag_str}"
+    )
+
+    # 1b. **Verb completed within budget.** SUT inner budget is 35s;
+    # 50s ceiling allows for pickup pass + slack. Full-budget runs
+    # indicate the no-progress watchdog isn't firing when the bot
+    # stops making progress — that's a real regression even if all
+    # the other end-state assertions happen to hold.
+    assert verb_elapsed <= 50, (
+        f"verb exceeded its budget: {verb_elapsed:.1f}s (want ≤50s). "
+        f"stallRounds watchdog should bail the loop when the bot "
+        f"stops mining; a long run means it's not firing.\n{diag_str}"
     )
 
     # 2. **Middle layer (y=65) fully intact** — 256 cells of dirt.
     middle_total = (PIT_X_MAX - PIT_X_MIN + 1) * (PIT_Z_MAX - PIT_Z_MIN + 1)
     assert diag["middle_dirt_intact"] == middle_total, (
         f"DEPTH BREACH (middle): bot mined into y={PIT_MIDDLE_Y}. "
-        f"Only {diag['middle_dirt_intact']}/{middle_total} cells still dirt. diag={diag}"
+        f"Only {diag['middle_dirt_intact']}/{middle_total} cells still dirt.\n{diag_str}"
     )
 
     # 3. **Bottom layer (y=64) fully intact**.
     assert diag["bottom_dirt_intact"] == middle_total, (
         f"DEPTH BREACH (bottom): bot mined into y={PIT_BOTTOM_Y}. "
-        f"Only {diag['bottom_dirt_intact']}/{middle_total} cells still dirt. diag={diag}"
+        f"Only {diag['bottom_dirt_intact']}/{middle_total} cells still dirt.\n{diag_str}"
     )
 
     # 4. **Strict contiguity at y=66**: mined cells at the strip level
-    # form one 4-connected component. Any stray (= cells in a smaller
-    # component) is only allowed if it sits directly under a mined
-    # y=67 clutter cell — the bot legitimately dug through a column
-    # to clear a higher block, leaving the y=66 cell below as an
-    # isolated dig site.
+    # form one 4-connected component. Any stray (cell in a smaller
+    # component) is only allowed if the fixture placed clutter at this
+    # (x,z) AND the clutter was actually mined (y=67 above is now
+    # air) — legitimate dig-through-column.
     #
-    # The OLD 70%-largest-component rule let scatter patterns slip
-    # through. The strict rule reflects the SUT's actual contract:
-    # mine X/Z rows and columns in level-by-level order.
+    # Air-above ALONE is not enough: most y=66 cells have always-air
+    # above (no clutter ever placed there), so the prior check
+    # ("y=67 air ⇒ stray allowed") trivially passed regardless of
+    # scatter. Requiring (x,z) ∈ SURFACE_CLUTTER closes that hole.
     if top_mined:
-        mined_set = set(top_mined)
         visited: set[tuple[int, int]] = set()
         components: list[set[tuple[int, int]]] = []
-        for cell in mined_set:
+        for cell in top_mined_set:
             if cell in visited:
                 continue
             stack = [cell]
             comp: set[tuple[int, int]] = set()
             while stack:
                 cur = stack.pop()
-                if cur in visited or cur not in mined_set:
+                if cur in visited or cur not in top_mined_set:
                     continue
                 visited.add(cur)
                 comp.add(cur)
                 cx_, cz_ = cur
                 for n in ((cx_+1, cz_), (cx_-1, cz_), (cx_, cz_+1), (cx_, cz_-1)):
-                    if n in mined_set and n not in visited:
+                    if n in top_mined_set and n not in visited:
                         stack.append(n)
             components.append(comp)
         components.sort(key=len, reverse=True)
@@ -249,16 +296,19 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
         unexplained_strays = []
         for comp in components[1:]:
             for (sx, sz) in comp:
-                # Allowed iff y=67 above was also mined (clutter dig-through).
-                if not rcon.block_is(sx, PIT_TOP_Y + 1, sz, "air"):
+                is_clutter_xz = (sx, sz) in clutter_xz
+                clutter_above_mined = (
+                    is_clutter_xz and rcon.block_is(sx, PIT_TOP_Y + 1, sz, "air")
+                )
+                if not clutter_above_mined:
                     unexplained_strays.append((sx, sz))
         assert not unexplained_strays, (
             f"strip at y={PIT_TOP_Y} has scatter — mined cells outside "
-            f"the largest connected component AND not under a mined "
-            f"clutter column: {unexplained_strays}. "
+            f"the largest connected component AND not at a mined-"
+            f"clutter (x,z): {unexplained_strays}. "
             f"largest_strip={len(strip)} cells, "
             f"total_mined_y66={len(top_mined)}, "
-            f"component_sizes={[len(c) for c in components]}. diag={diag}"
+            f"component_sizes={[len(c) for c in components]}.\n{diag_str}"
         )
 
     # 5. **Top-before-bottom in-column**: for any SURVIVING y=67 clutter
@@ -275,7 +325,7 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
     assert not column_violations, (
         f"top-before-bottom violation: bot mined y={PIT_TOP_Y} at columns "
         f"where y={PIT_TOP_Y+1} above was still clutter. "
-        f"Columns: {column_violations}. diag={diag}"
+        f"Columns: {column_violations}.\n{diag_str}"
     )
 
     # 6. **Boundary held** — pit perimeter is mineable; the boundary check
@@ -298,4 +348,4 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
 
     # 7. Bot survived.
     end_hp = bot.status_lean().get("health") or 0
-    assert end_hp >= 17, f"bot lost HP during mine: {end_hp}. diag={diag}"
+    assert end_hp >= 17, f"bot lost HP during mine: {end_hp}.\n{diag_str}"
