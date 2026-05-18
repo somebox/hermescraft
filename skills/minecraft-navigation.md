@@ -30,7 +30,28 @@ mc status                 # check position, biome, dimension
 mc find_blocks BLOCK      # find block types nearby
 mc nearby [radius]        # scan surroundings (default: 32)
 mc look_at X Y Z          # look at position
+mc stair_down DIR [LEN]   # dig descending staircase (walkable both ways)
+mc stair_up DIR [LEN]     # dig ascending staircase, places floor over voids
+mc pillar_step BLK [N]    # climb up by placing blocks underfoot
+mc pillar_down [N]        # descend a pillar by mining the block underfoot
+mc escape                 # last-resort unstuck — handles water, trapped, on-pillar
 ```
+
+## Vertical movement — never dig straight down
+
+Vertical mining is risky (lava, deep caves). Use staircases for routine
+descent, pillars only when you need height.
+
+| Want to | Use |
+|---|---|
+| Surface → mining depth | `mc stair_down DIR LENGTH` |
+| Deep mine → surface | `mc stair_up DIR LENGTH` (places floor over voids) |
+| Climb 1-8 blocks to reach something high (a treetop / shelf) | `mc pillar_step dirt 5` (dirt cheap to re-dig) |
+| Stuck on top of a pillar with no walkable neighbours | **`mc pillar_down`** — mines block-underfoot, drops 1, repeats until you reach ground |
+
+`mc move` refuses to plan from a 1×1 pillar — it'll surface
+`BOT_ON_PILLAR` with `mc pillar_down N` as the next-action hint. Always
+descend the pillar BEFORE trying to navigate from it.
 
 ## Picking the right movement verb
 
