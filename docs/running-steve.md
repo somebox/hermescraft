@@ -18,7 +18,35 @@ scripts/watch-advise.py                 # live digest pipeline log
 ```
 
 FPV viewer: <http://localhost:4001/>. Dashboard (main hermes):
-<http://localhost:9119/>.
+<http://localhost:9119/>. Fleet dashboard: <http://localhost:3000/>
+(start separately with `./start-dashboard.sh`).
+
+## For QA test runs: use `scripts/exp.sh` instead
+
+For structured, observable test runs (long expeditions, postmortem-ready
+log capture), use the per-run logging harness in
+[`docs/experiments/run-logging.md`](experiments/run-logging.md). It
+launches the same agent + bot but adds:
+
+- One dir per run at `/tmp/hermescraft/runs/<YYYYMMDD-HHMMSS-slug>/`
+- `positions.jsonl` (30 s polls) + `events.jsonl` (death, low_hp,
+  nav_error, midcheck) for objective post-analysis
+- `current` symlink so monitoring scripts find the active run without
+  hardcoding the ID
+- `scripts/exp.sh watch` — single live tail of thinking + tool calls +
+  positions + events (merged)
+
+```bash
+scripts/exp.sh start expedition         # create run dir, launch agent + poller
+scripts/exp.sh watch                    # one-pane live view (Ctrl-C to exit)
+scripts/exp.sh status                   # one-shot snapshot
+scripts/exp.sh midcheck                 # write timestamped snapshot to disk
+scripts/exp.sh analyze [<run-id>]       # distance / events / pace stats
+scripts/exp.sh stop                     # kill agent, write summary, clear current
+```
+
+`run-steve.sh` is still the way to launch Steve for ad-hoc / chore play.
+Use `exp.sh` when you want the run to produce a structured postmortem.
 
 ## Prereqs
 
