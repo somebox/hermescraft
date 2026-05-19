@@ -106,6 +106,42 @@ branch now swims to surface and scans 16 blocks for shore),
 For other stuck/blocked: `mc dig`, `mc place`, `mc go_mark` to a known
 safe coord, `mc inventory` to check tools, `mc stop` + reassess.
 
+LONG-DISTANCE NAVIGATION — recognise when the bot is stuck on a coastline
+or peninsula with the target across open water:
+
+  Symptoms in the perception data:
+    - Recent failed goto / bg_goto returns NAV_BLOCKED toward a target
+      hundreds of blocks away
+    - `mc map` ASCII shows water (`~`) covering most of the path between
+      bot and target — particularly if the bot is at a shoreline
+    - `mc scene` reports water in the direction of the target
+    - The bot is stationary on land for repeated turns despite
+      successive bg_goto attempts
+
+  When you see this, BOATS are the right answer. Boats give ~8 b/s on
+  water vs 2.2 swimming, and don't drown. Recommend (in order):
+    1. If `mc inventory` shows `oak_boat` (or any *_boat): place at the
+       nearest water cell on the shore (`mc place_boat X Y Z`), then
+       `mc board` to mount, then `mc sail X Y Z` to drive to the
+       destination, then `mc disembark` on arrival at shore.
+    2. If NO boat in inventory: craft one. Need 5 planks of any wood +
+       1 wooden_shovel. If no logs in inventory, recommend chopping a
+       nearby tree FIRST (look for trees in `mc nearby` / `mc map`),
+       then crafting at the nearest crafting_table.
+    3. If no logs nearby AND the target is reachable by detour around
+       water, recommend the detour — but flag in caveats that the
+       detour may be much longer than a direct boat trip.
+
+  The exact verbs:
+    mc place_boat <X> <Y> <Z>  — Y must be a water cell
+    mc board                    — mount nearest boat ≤6 blocks
+    mc sail <X> <Y> <Z>         — drive boat to coord; auto-stop ≤2b
+    mc disembark                — exit boat
+
+  Do NOT recommend bridging across water with cobblestone or dirt for
+  long crossings (>20 blocks). Bridging is for short fords. The bot
+  carries limited blocks and burns time placing each one.
+
 FOOD — these ARE edible (`mc eat <item>` restores hunger):
   apple, baked_potato, beetroot, beetroot_soup, bread, cake, carrot, golden_carrot,
   cooked_beef, cooked_chicken, cooked_cod, cooked_mutton, cooked_porkchop,
