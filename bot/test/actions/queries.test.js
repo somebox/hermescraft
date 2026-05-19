@@ -513,3 +513,89 @@ test('queries.escape: trapped + no placeable refuses with ESCAPE_NO_PILLAR_BLOCK
   assert.equal(r.error.code, 'ESCAPE_NO_PILLAR_BLOCK');
   assert.equal(pillarStepCalls, 0, 'must not delegate when inventory has no pillar block');
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// `mc escape` — step_up_only classification (round-N3 sustained-farm bug).
+// Pre-fix, escape returned ESCAPE_UNHANDLED for step_up_only, kicking the
+// agent into a 20-call mc inspect spam. Fix: try each step_up direction
+// with a tight pathfinder jump.
+// ─────────────────────────────────────────────────────────────────────────
+
+function makeStepUpOnlyBot({ moveOnGoto = true }) {
+  // Bot at (0, 64, 0) in a 3-walled box with a 1-block step-up to the west.
+  //   (0, 63, 0)     = floor      (solid)
+  //   (0, 64, 0)     = bot foot   (air)
+  //   (0, 65, 0)     = bot head   (air)
+  //   (-1, 64, 0)    = west wall  (solid, step-up target)
+  //   (-1, 65, 0)    = air        (foot clearance after step-up)
+  //   (-1, 66, 0)    = air        (head clearance after step-up)
+  //   East, N, S walls are solid at BOTH y=64 AND y=65 → no step-up there.
+  const position = new Vec3(0.5, 64, 0.5);
+  const wallAt = (x, y, z) => {
+    if (x === 0 && z === 0 && y === 63) return true;             // floor
+    // West side: only y=64 solid (foot for step-up); y=65/66 air
+    if (x === -1 && z === 0 && y === 64) return true;
+    // East side: full wall up to y=65 to block step-up there
+    if (x === 1 && z === 0 && (y === 64 || y === 65)) return true;
+    // North / South: full wall up to y=65
+    if (x === 0 && z === -1 && (y === 64 || y === 65)) return true;
+    if (x === 0 && z === 1 && (y === 64 || y === 65)) return true;
+    return false;
+  };
+  const bot = {
+    entity: { position, isInWater: false, onGround: true, yaw: 0, pitch: 0 },
+    inventory: { items: () => [] },
+    blockAt: (p) => {
+      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+      if (wallAt(x, y, z)) return { name: 'cobblestone', boundingBox: 'block' };
+      return { name: 'air', boundingBox: 'empty' };
+    },
+    findBlocks: () => [],
+    entities: {},
+    pathfinder: {
+      goto: async (g) => {
+        if (moveOnGoto) {
+          // Simulate the jump-up: bot ends standing on top of the west wall.
+          bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5);
+        }
+      },
+      setGoal: () => {},
+      stop: () => {},
+      goal: null,
+    },
+  };
+  return bot;
+}
+
+test('queries.escape: step_up_only delegates pathfinder-jump and reports success', async () => {
+  const bot = makeStepUpOnlyBot({ moveOnGoto: true });
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: makeMcData() } },
+    ensureBot: () => bot,
+  });
+  const actions = createQueriesActions(services);
+  const r = await actions.escape();
+
+  assert.equal(r.ok, true, `expected ok=true, got ${JSON.stringify(r.error || r.data)}`);
+  assert.equal(r.data.action_taken, 'step_up_W');
+  assert.equal(r.data.classification_before, 'step_up_only');
+  assert.match(r.result, /Stepped up W/);
+  assert.equal(r.data.success, true);
+});
+
+test('queries.escape: step_up_only failure returns ESCAPE_STEP_UP_FAILED, not UNHANDLED', async () => {
+  // Bot stays in place (pathfinder no-op simulates a failed jump).
+  const bot = makeStepUpOnlyBot({ moveOnGoto: false });
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: makeMcData() } },
+    ensureBot: () => bot,
+  });
+  const actions = createQueriesActions(services);
+  const r = await actions.escape();
+
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'ESCAPE_STEP_UP_FAILED');
+  assert.notEqual(r.error.code, 'ESCAPE_UNHANDLED', 'must NOT fall through to the unhandled branch');
+  assert.ok(Array.isArray(r.error.observed_state.attempts));
+  assert.ok(r.error.observed_state.attempts.length >= 1);
+});

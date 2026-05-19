@@ -823,6 +823,80 @@ export function createQueriesActions(services) {
       }
     }
 
+    // step_up_only: 4 cardinal foot-neighbours solid, BUT at least one
+    // direction has a 1-block step-up. Canonical case: bot at the bottom
+    // of a stair_down staircase. Pathfinder's jump-move handles it — we
+    // just need to give it a target on the higher step.
+    //
+    // Round-N3 in-game QA (sustained farm): Steve fell into the hydration
+    // water source, escape recovered with a partial step, ended up at the
+    // edge of natural terrain in `step_up_only` — and pre-fix the handler
+    // returned ESCAPE_UNHANDLED, kicking the agent into a 20-cmd manual
+    // mc inspect spam. With this branch the same scenario auto-escapes.
+    if (cls === 'step_up_only') {
+      const DIR_VEC = {
+        N: { dx: 0, dz: -1 }, E: { dx: 1, dz: 0 }, S: { dx: 0, dz: 1 }, W: { dx: -1, dz: 0 },
+      };
+      const candidates = (before.step_up_dirs || []).filter((d) => DIR_VEC[d]);
+      if (candidates.length === 0) {
+        return {
+          ok: false,
+          error: {
+            code: 'ESCAPE_STEP_UP_NO_DIR',
+            message: `Classified step_up_only but no step_up_dirs to follow. Try mc dig to break out.`,
+            observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, step_up_dirs: before.step_up_dirs },
+            retry_safe: false,
+          },
+        };
+      }
+      const attempts = [];
+      for (const pickDir of candidates) {
+        const v = DIR_VEC[pickDir];
+        const targetCell = { x: cell.x + v.dx, y: cell.y + 1, z: cell.z + v.dz };
+        try {
+          const goal = new goals.GoalBlock(targetCell.x, targetCell.y, targetCell.z);
+          await Promise.race([
+            b.pathfinder.goto(goal),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('step_up_to')), 1500)),
+          ]);
+        } catch {
+          try { b.pathfinder.setGoal(null); } catch {}
+        }
+        const after = standingState(b);
+        attempts.push({ dir: pickDir, target: targetCell, after: after.classification });
+        // Success if we're no longer in step_up_only — moving onto the
+        // higher step typically lands us in open/alley/edge, but legitimate
+        // outcomes also include on_pillar (we climbed onto a 1×1 wall top —
+        // a follow-up mc pillar_down resolves that) or step_up_only-pointing-
+        // a-new-direction. Anything ≠ original classification means the
+        // jump landed somewhere different.
+        if (after.classification !== 'step_up_only') {
+          return recordEscapeSuccess({
+            ok: true,
+            data: {
+              action_taken: `step_up_${pickDir}`,
+              from: fromPos,
+              to: after.position,
+              classification_before: cls,
+              classification_after: after.classification,
+              attempts,
+              success: true,
+            },
+            result: `Stepped up ${pickDir} from step_up_only. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+          });
+        }
+      }
+      return {
+        ok: false,
+        error: {
+          code: 'ESCAPE_STEP_UP_FAILED',
+          message: `Tried step-up in ${candidates.join(', ')} but pathfinder couldn't complete the jump. Try mc dig or mc move directly.`,
+          observed_state: { classification: cls, attempts, step_up_dirs: before.step_up_dirs },
+          retry_safe: true,
+        },
+      };
+    }
+
     // enclosure_inside: defer — brain should use mc dig to break out, or
     // navigate to the door slot if there is one.
     if (cls === 'enclosure_inside') {
