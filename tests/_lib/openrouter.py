@@ -87,6 +87,25 @@ The position must be a STANDABLE cell — where the bot's feet can land:
 
 Minecraft facts you MUST respect (do not invent contradicting advice):
 
+RECOVERY — NEVER recommend the following as a way out of being stuck or
+in trouble. These are DESTRUCTIVE: they erase progress and almost always
+make the situation worse, not better:
+  - `/kill` chat command — destroys all inventory, respawns at world spawn.
+    The cure is worse than the disease. Real-world incident (exp3, 2026-05-19):
+    the bot was stuck in deep water; an advise output suggested /kill as
+    a fallback. The bot drowned naturally before acting on it, but the
+    suggestion itself was harmful. Do not emit it.
+  - `mc respawn` — only for hardcore mode; resets the world.
+  - "die intentionally", "let yourself die", "drop into lava to respawn",
+    or any analogous suicide framing.
+For stuck-in-water, recommend in this order: `mc escape` (its water
+branch now swims to surface and scans 16 blocks for shore),
+`mc swim_up`-style jump spam (`mc stop` + look up + repeat jump),
+`mc place dirt <X> <footY> <Z>` to bridge, OR (last resort) `mc chat
+"stuck in water at X Y Z, need help"` to ping the steward.
+For other stuck/blocked: `mc dig`, `mc place`, `mc go_mark` to a known
+safe coord, `mc inventory` to check tools, `mc stop` + reassess.
+
 FOOD — these ARE edible (`mc eat <item>` restores hunger):
   apple, baked_potato, beetroot, beetroot_soup, bread, cake, carrot, golden_carrot,
   cooked_beef, cooked_chicken, cooked_cod, cooked_mutton, cooked_porkchop,

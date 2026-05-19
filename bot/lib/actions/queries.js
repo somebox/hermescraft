@@ -476,13 +476,63 @@ export function createQueriesActions(services) {
       const DIR_VEC = {
         N: { dx: 0, dz: -1 }, E: { dx: 1, dz: 0 }, S: { dx: 0, dz: 1 }, W: { dx: -1, dz: 0 },
       };
-      // 1. Scan 4 cardinals for a dry standable within 4 blocks.
+      const attempts = [];
+
+      // Step 0: if fully submerged (head_in_water), spam jump to ride
+      // buoyancy to the surface BEFORE searching for land. Open-ocean
+      // recovery in exp3 failed because the bot was at y=51-54 in a
+      // ~12-deep water column; the 4-block cardinal scan and pillar_up
+      // both fail underwater. Drowning starts at ~30s submerged
+      // (oxygen ≤14) and burns 2 HP/s thereafter, so a fast surface is
+      // critical. Each jump tick rises ~0.4 blocks at 150ms cadence;
+      // 25 ticks ≈ 3.75s ≈ up to 10 blocks of rise. We bail as soon as
+      // head clears water.
+      let curState = before;
+      let curCell = { x: cell.x, y: cell.y, z: cell.z };
+      let surfacedBy = null;
+      if (before.head_in_water) {
+        try {
+          for (let i = 0; i < 25; i++) {
+            b.setControlState('jump', true);
+            await new Promise(r => setTimeout(r, 150));
+            const s = standingState(b);
+            if (s && s.cell) {
+              curState = s;
+              curCell = { x: s.cell.x, y: s.cell.y, z: s.cell.z };
+            }
+            if (s && !s.head_in_water) { surfacedBy = i + 1; break; }
+          }
+        } finally {
+          try { b.setControlState('jump', false); } catch {}
+        }
+        attempts.push({ method: 'swim_up', surfaced: surfacedBy !== null, ticks: surfacedBy });
+        // Brief settle for buoyancy oscillation.
+        await new Promise(r => setTimeout(r, 200));
+      }
+      // After potentially surfacing, the bot might already be open/alley.
+      const postSwim = standingState(b);
+      if (postSwim && !postSwim.foot_in_water) {
+        return recordEscapeSuccess({
+          ok: true,
+          data: { action_taken: 'swim_up', from: fromPos, to: postSwim.position, classification_before: cls, classification_after: postSwim.classification, attempts, success: true },
+          result: `Surfaced from submerged water. Now ${postSwim.classification} at ${postSwim.cell.x},${postSwim.cell.y},${postSwim.cell.z}.`,
+        });
+      }
+      if (postSwim && postSwim.cell) {
+        curCell = { x: postSwim.cell.x, y: postSwim.cell.y, z: postSwim.cell.z };
+      }
+
+      // 1. Scan cardinals for a dry standable. Wider radius (16) once
+      // we've surfaced so the open-ocean case has a chance — narrow 4
+      // remained for cases where we're still submerged after step 0
+      // (defence: don't pathfind too far while drowning).
+      const scanRadius = surfacedBy !== null || !before.head_in_water ? 16 : 4;
       let bestDry = null;
       for (const [dirName, v] of Object.entries(DIR_VEC)) {
-        for (let r = 1; r <= 4; r++) {
-          const tx = cell.x + v.dx * r;
-          const ty = cell.y;
-          const tz = cell.z + v.dz * r;
+        for (let r = 1; r <= scanRadius; r++) {
+          const tx = curCell.x + v.dx * r;
+          const ty = curCell.y;
+          const tz = curCell.z + v.dz * r;
           const floor = b.blockAt(new Vec3(tx, ty - 1, tz));
           const footAt = b.blockAt(new Vec3(tx, ty, tz));
           const headAt = b.blockAt(new Vec3(tx, ty + 1, tz));
@@ -496,7 +546,12 @@ export function createQueriesActions(services) {
           }
         }
       }
-      const attempts = [];
+      // Keep using `cell` for the rest of the existing pillar/place
+      // logic — re-bind it to current location so the place-floor and
+      // pillar-up branches probe the right cells.
+      cell.x = curCell.x;
+      cell.y = curCell.y;
+      cell.z = curCell.z;
       // 2. Try pathfinder + sprint toward nearest dry cell.
       if (bestDry) {
         try {
