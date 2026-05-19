@@ -8,9 +8,77 @@ import { buildHttpRequest } from './dispatch.mjs';
 import { executeHttp, logDebug } from './execute.mjs';
 import { requestHttp } from './http.mjs';
 import { RAW_COMMAND_DEFS, buildAliasMap, CATEGORY_ORDER } from './registry.mjs';
+import { runAdviseCli } from './advise.mjs';
 import { renderHuman } from './output.mjs';
 
 const MAX_BATCH = 10;
+
+/**
+ * Commands that get reason-wrapped when MC_FORCE_REASON=1.
+ * NOTE: `status` is deliberately NOT in this set. We want a thin, fast
+ * status (location/HP/food/holding/time) so the agent can use it as a
+ * cheap "where am I, what am I holding" check without paying for a
+ * digest LLM call. For richer world-state, the agent must use
+ * scene/find/map/nearby (which DO wrap).
+ */
+const FORCED_REASON_COMMANDS = new Set(['scene', 'map', 'find', 'nearby']);
+
+/** Derive a coarse phase label from MC tick (0..23999). */
+function timePhase(t) {
+  if (t == null || isNaN(Number(t))) return null;
+  const tick = Number(t) % 24000;
+  if (tick < 12000) return 'day';
+  if (tick < 13000) return 'dusk';
+  if (tick < 23000) return 'night';
+  return 'dawn';
+}
+
+/**
+ * Project /status into a thin envelope. Drops scene/nearby/inventory etc —
+ * agents must call `mc inventory`, `mc scene --reason=...`, `mc look` for
+ * those. Keeps: position, HP/food, holding, time/phase, weather.
+ */
+function slimStatusEnvelope(raw) {
+  const d = raw?.data || {};
+  const pos = d.position || null;
+  return {
+    ok: true,
+    command: 'status',
+    data: {
+      position: pos
+        ? { x: Math.round((pos.x ?? 0) * 10) / 10, y: Math.round(pos.y ?? 0), z: Math.round((pos.z ?? 0) * 10) / 10 }
+        : null,
+      health: d.health ?? null,
+      food: d.food ?? null,
+      saturation: d.saturation ?? null,
+      holding: d.holding ?? null,
+      time: d.time ?? null,
+      phase: timePhase(d.time),
+      raining: d.isRaining ?? null,
+      hint:
+        'thin status: only location/HP/food/holding/time. ' +
+        'For richer info use mc scene/find/map/nearby with --reason. ' +
+        'For polling a goto/collect task use mc task.',
+    },
+  };
+}
+
+/**
+ * Extract --reason from positional args (used by FORCED_REASON_COMMANDS).
+ * Supports `--reason "..."`, `--reason=...`, and `-r "..."`. Leaves other
+ * tokens untouched so callers can still pass cmd-specific flags if they
+ * want to (we ignore them in wrapped mode).
+ * @param {string[]} positional
+ * @returns {string}
+ */
+function extractReason(positional) {
+  for (let i = 0; i < positional.length; i++) {
+    const t = String(positional[i]);
+    if (t === '--reason' || t === '-r') return String(positional[i + 1] ?? '').trim();
+    if (t.startsWith('--reason=')) return t.slice('--reason='.length).trim();
+  }
+  return '';
+}
 
 function apiUrl() {
   if (process.env._MC_API_URL_LOCKED) return String(process.env._MC_API_URL_LOCKED);
@@ -272,6 +340,49 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
 
   if (canonicalName === 'anchors') {
     const env = await anchorsEnvelope(ctx.api, globals);
+    return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
+  }
+
+  if (canonicalName === 'advise') {
+    const built = buildHttpRequest(def, canonicalName, positional);
+    const reason = String(built.params?.reason ?? '');
+    if (globals.dryRun) {
+      const env = await runAdviseCli({ reason, apiBase: ctx.api, dryRun: true, kind: 'advise' });
+      return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
+    }
+    const env = await runAdviseCli({ reason, apiBase: ctx.api, kind: 'advise' });
+    return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
+  }
+
+  // Slim `mc status` to a fixed essentials projection. Rich world-state
+  // lives under scene/find/map/nearby. This keeps status cheap and fast.
+  if (canonicalName === 'status') {
+    const r = await requestHttp(ctx.api, `/status?lean=true`);
+    const env = slimStatusEnvelope(r.json);
+    return { ok: true, env, render: globals.json ? 'json' : 'human' };
+  }
+
+  // MC_FORCE_REASON=1: wrap observation commands through the digest pipeline.
+  // Forces the agent to articulate its sub-goal before observing.
+  if (process.env.MC_FORCE_REASON === '1' && FORCED_REASON_COMMANDS.has(canonicalName)) {
+    const reason = extractReason(positional);
+    if (!reason) {
+      const env = {
+        ok: false,
+        command: canonicalName,
+        error:
+          `MC_FORCE_REASON is on — \`mc ${canonicalName}\` requires --reason="<sub-goal>". ` +
+          `Example: mc ${canonicalName} --reason="find oak wood near base". ` +
+          `Announce what you're doing in chat first (mc chat ...) so the digest has context.`,
+        error_type: 'missing_argument',
+      };
+      return { ok: false, env, render: globals.json ? 'json' : 'human' };
+    }
+    if (globals.dryRun) {
+      const env = await runAdviseCli({ reason, apiBase: ctx.api, dryRun: true, kind: canonicalName });
+      return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
+    }
+    const env = await runAdviseCli({ reason, apiBase: ctx.api, kind: canonicalName });
     return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
   }
 

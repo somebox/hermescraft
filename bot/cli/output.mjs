@@ -105,6 +105,25 @@ export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
     }
     if (d.summary && typeof d.summary === 'string') {
       console.log(d.summary);
+      if (Array.isArray(d.recommendations) && d.recommendations.length) {
+        for (const rec of d.recommendations.slice(0, 8)) {
+          const pos = rec.position ? ` @${rec.position.join(',')}` : '';
+          const kind = rec.kind || 'action';
+          const target = rec.block_or_entity || rec.entity || '';
+          console.log(
+            `  → ${kind}${target ? ` ${target}` : ''}${pos} (${rec.confidence || '?'}) — ${rec.rationale || ''}`,
+          );
+        }
+      }
+      if (Array.isArray(d.caveats) && d.caveats.length) {
+        for (const c of d.caveats.slice(0, 4)) console.log(`  caveat: ${c}`);
+      }
+      if (d.nothing_actionable) console.log('  (nothing actionable)');
+      if (d.timing?.total_ms != null) {
+        console.log(
+          `  timing: http ${d.timing.http_ms}ms + digest ${d.timing.digest_ms}ms (${d.timing.model || 'model?'})`,
+        );
+      }
       return '';
     }
     if (d.categories && typeof d.categories === 'object') {

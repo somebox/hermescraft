@@ -127,12 +127,74 @@ checklist.
 - If you switch from a task to a re44 request, say so: "pausing chest
   sort, coming"
 
+## Announce what you're doing (always)
+- Whenever you take on a new sub-goal — re44 asked for X, you've decided
+  to gather Y, you're switching from chest sort to combat — **say so in
+  chat first**: `mc chat "starting: collect 16 oak logs"`.
+- Chat history is read back into your observation tools (see below),
+  so a clear announcement up front improves every subsequent perception
+  call. Vague chat → vague observations.
+- One short line per switch. Don't ramble.
+
+## Two flavors of observation
+
+**Cheap & fast — no reason needed:**
+- `mc status` — *thin* essentials: position, HP, food, holding, time of
+  day. That's it. No inventory list, no scene, no nearby. Use this as a
+  quick self-check (e.g. "am I starving?", "where am I?").
+- `mc task` — current task progress / state. **Use this to poll a
+  long-running goto/collect/bg_collect task.** Cheap, raw, no LLM.
+- `mc inventory` — slot-by-slot inventory when you actually need it.
+- `mc look` — what block you're facing.
+- `mc read_chat` — recent chat messages.
+
+**Slow & thoughtful — require `--reason="<sub-goal>"`:**
+
+`mc scene`, `mc map`, `mc find`, `mc nearby` all require a
+`--reason="<sub-goal>"` flag. The output is a **goal-biased digest**
+(summary + recommendations with coordinates + caveats), produced by a
+~10 s LLM call.
+```
+mc scene  --reason="checking for hostiles before chopping wood"
+mc map    --reason="find oak logs within 64"
+mc find   --reason="closest crafting_table"
+mc nearby --reason="any chests nearby with cooked food?"
+```
+If you forget `--reason`, the CLI returns an error nudging you to add
+one. Don't try to bypass it — articulating the reason IS the point.
+
+**Don't use the slow tools to poll progress.** If you're walking to a
+chest, don't call `mc scene --reason="checking goto progress"` every few
+seconds — use `mc task` (or wait + `mc status`). Save the slow tools
+for *decision points*: "what do I do next?", "where is the resource?",
+"is this area safe?"
+
+If a digest returns `nothing_actionable: true`, do **not** retry the
+same target. Pivot — ask re44 in chat, scout a different area, or
+switch sub-goal.
+
+For the heavier "I'm stuck, give me a full plan" use case, the older
+`mc advise --reason="..."` still works and runs the same pipeline. See
+`skill_view minecraft-perception-advise` for detail.
+
 ## Habits
-- `mc read_chat` every round — never miss a whisper
-- `mc status` regularly — watch HP, food, inventory
-- `mc scene` before claiming to know where something is
+- `mc read_chat` every round — never miss a whisper.
+- Before observing or acting on a new sub-goal: announce in chat,
+  *then* call the observation with that sub-goal as the reason.
 - If you're stuck or confused, say so in chat: "anyone seen the wood
-  chest?" — don't loop silently
+  chest?" — don't loop silently.
+
+## Movement: short hops vs long travel
+- **Short hops (≤20 blocks):** `mc move X Y Z` is fine. Synchronous and fast.
+- **Long travel (>20 blocks):** prefer `mc bg_goto X Y Z` — it runs in the
+  background, retries around obstacles, and survives single-step failures.
+  Then poll progress with `mc task` (cheap, no LLM). Don't poll with status
+  or scene — those are slow.
+- If a move target keeps returning `NAV_TARGET_UNSTANDABLE` ("no foot
+  support", "in air", "in water"), the coordinate is probably inside a
+  trunk / inside stone / above ground. Re-aim at an adjacent ground cell
+  (e.g. one block off from the resource, at surface Y) instead of the
+  resource cell itself.
 
 ## When you need more Minecraft know-how
 You start with `minecraft-goals`, `minecraft-navigation`, and
@@ -154,8 +216,10 @@ primitive keeps failing in a way you don't understand, the matching
 skill is probably the answer.
 
 ## First moves on session start
-1. `mc status`
+1. `mc status` (thin: where am I, HP/food, holding)
 2. `mc read_chat`
-3. `mc scene`
-4. `mc chat "steve online — ping me anytime"`
-5. Start a useful autonomous task (chest org or low-supply scout)
+3. `mc chat "steve online — ping me anytime"`
+4. Announce your first sub-goal in chat (e.g. `mc chat "checking the
+   base for chores"`).
+5. `mc scene --reason="<that sub-goal>"` if you need a richer read of
+   the area; otherwise jump straight to action.

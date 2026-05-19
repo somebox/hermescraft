@@ -155,7 +155,7 @@ ensure_minecraft_skills() {
   # syncs the latest from the repo.
   local profile="$1"
   local dir="$PROFILES_DIR/$profile/skills/gaming"
-  for sk in minecraft-goals minecraft-survival minecraft-navigation minecraft-building minecraft-combat minecraft-farming minecraft-planning; do
+  for sk in minecraft-goals minecraft-survival minecraft-navigation minecraft-building minecraft-combat minecraft-farming minecraft-planning minecraft-perception-advise; do
     local src="$SKILLS_SRC/${sk}.md"
     local dst="$dir/${sk}/SKILL.md"
     if [ ! -f "$src" ]; then

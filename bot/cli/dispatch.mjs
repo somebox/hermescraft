@@ -72,6 +72,9 @@ export function buildHttpRequest(def, canonicalName, positional) {
  */
 function finalize(def, canonicalName, params) {
   normalizeMark(params);
+  if (canonicalName === 'advise') {
+    return { method: 'GET', path: '/__advise__', body: null, params };
+  }
   const method = def.method || 'GET';
   const path = def.pathFn ? def.pathFn(params) : def.path;
   if (!path) throw new Error(`no_path:${canonicalName}`);
@@ -92,6 +95,30 @@ function finalize(def, canonicalName, params) {
  */
 function customParse(canonicalName, positional) {
   switch (canonicalName) {
+    case 'advise': {
+      const q = positional.slice();
+      let reason = '';
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--reason' || t === '-r') {
+          q.shift();
+          reason = String(q.shift() ?? '');
+        } else if (t.startsWith('--reason=')) {
+          reason = t.slice('--reason='.length);
+          q.shift();
+        } else if (!t.startsWith('--') && !reason) {
+          reason = t;
+          q.shift();
+        } else if (t.startsWith('--')) {
+          throw new Error(`unknown_flag:${t}`);
+        } else {
+          q.shift();
+        }
+      }
+      if (q.length) throw new Error(`extra_arguments:advise`);
+      if (!reason.trim()) throw new Error('missing:reason');
+      return { reason: reason.trim() };
+    }
     case 'status':
     case 'observe': {
       // mc status [--full] | mc observe [--full] — no positionals expected.

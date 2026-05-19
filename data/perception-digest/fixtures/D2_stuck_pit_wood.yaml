@@ -1,0 +1,43 @@
+# D2 — bot in a 2-block-deep dirt pit; oak wood ~5m east and farther east.
+# Tester faces +X toward the nearer log. Intent: blocked collecting wood.
+
+world: landfolk-test
+
+prep:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -12 65 -12 12 80 12 minecraft:air"
+  - "execute in landfolk-test run fill -12 64 -12 12 64 12 minecraft:grass_block"
+  # 1x1 pit: floor y=62 dirt, bot at y=63, headroom y=64 air
+  - "execute in landfolk-test run setblock 0 62 0 minecraft:dirt"
+  - "execute in landfolk-test run setblock 0 63 0 minecraft:air"
+  - "execute in landfolk-test run setblock 0 64 0 minecraft:air"
+  # Dirt walls (2 tall above floor)
+  - "execute in landfolk-test run setblock 1 62 0 minecraft:dirt"
+  - "execute in landfolk-test run setblock 1 63 0 minecraft:dirt"
+  - "execute in landfolk-test run setblock 1 64 0 minecraft:dirt"
+  - "execute in landfolk-test run setblock -1 62 0 minecraft:dirt"
+  - "execute in landfolk-test run setblock -1 63 0 minecraft:dirt"
+  - "execute in landfolk-test run setblock -1 64 0 minecraft:dirt"
+  - "execute in landfolk-test run setblock 0 62 1 minecraft:dirt"
+  - "execute in landfolk-test run setblock 0 63 1 minecraft:dirt"
+  - "execute in landfolk-test run setblock 0 64 1 minecraft:dirt"
+  - "execute in landfolk-test run setblock 0 62 -1 minecraft:dirt"
+  - "execute in landfolk-test run setblock 0 63 -1 minecraft:dirt"
+  - "execute in landfolk-test run setblock 0 64 -1 minecraft:dirt"
+  # Nearer oak ~5m east (x=5); farther oak at x=14
+  - "execute in landfolk-test run setblock 5 64 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 5 65 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 14 64 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 14 65 0 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 14 66 0 minecraft:oak_log"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 0 63 0 -90 0"
+  - "effect clear Tester"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "clear Tester"
+  - "give Tester minecraft:wooden_axe 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -12 64 -12 12 80 12 minecraft:air"
+  - "execute in landfolk-test run fill -12 64 -12 12 64 12 minecraft:grass_block"

@@ -1,0 +1,57 @@
+/**
+ * mc advise — client-side perception bundle + OpenRouter digest (Python).
+ */
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const CLI_SCRIPT = path.join(REPO_ROOT, 'scripts', 'mc-advise-cli.py');
+
+/**
+ * @param {{ reason: string, apiBase: string, dryRun?: boolean, model?: string, kind?: string }} opts
+ * @returns {Promise<Record<string, unknown>>}
+ */
+export function runAdviseCli(opts) {
+  const { reason, apiBase, dryRun, model, kind } = opts;
+  const args = [CLI_SCRIPT, '--reason', reason, '--api-url', apiBase];
+  if (dryRun) args.push('--dry-run');
+  if (model) args.push('--model', model);
+  if (kind) args.push('--kind', kind);
+
+  return new Promise((resolve, reject) => {
+    const py = process.env.MC_ADVISE_PYTHON || 'python3';
+    const child = spawn(py, args, {
+      cwd: REPO_ROOT,
+      env: { ...process.env, PYTHONPATH: REPO_ROOT },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => {
+      stdout += c;
+    });
+    child.stderr.on('data', (c) => {
+      stderr += c;
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      const trimmed = stdout.trim();
+      if (trimmed) {
+        try {
+          resolve(JSON.parse(trimmed));
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+      resolve({
+        ok: false,
+        command: kind || 'advise',
+        error: stderr.trim() || `advise backend exited ${code}`,
+        error_type: 'backend_error',
+        details: { exit_code: code, stdout: trimmed.slice(0, 400) },
+      });
+    });
+  });
+}

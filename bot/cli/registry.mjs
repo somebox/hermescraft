@@ -102,6 +102,17 @@ export const RAW_COMMAND_DEFS = [
     ],
     examples: ['mc scene 16', 'mc scene --full'],
   }),
+  g('advise', 'observe', [], {
+    customParse: true,
+    description:
+      'Slow (~10–35s) intent-biased perception digest. Use when stuck, starting a new gather sub-goal, or locating something — not every tick. Requires --reason.',
+    usage: 'mc advise --reason="find oak wood"',
+    examples: [
+      'mc advise --reason="find oak wood"',
+      'mc advise --reason="blocked collecting wood"',
+      'mc advise --dry-run --reason="test"',
+    ],
+  }),
   g('screenshot_meta', 'observe', ['ss_meta'], {
     method: 'GET',
     path: '/health',
