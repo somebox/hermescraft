@@ -20,6 +20,65 @@ export const STUCK_MOVEMENT_ACTIONS = [
 /** Min ms with almost no position change before declaring stuck (pathfinder can crawl in tight caves). */
 const STUCK_IDLE_MS = 20000;
 
+/**
+ * Default pathfinder Movements tuning. Exported so tests can lock the
+ * specific knobs we tune, and so users can override via env var.
+ *
+ * - liquidCost: 50 — round-A sustained-farm bug: bot pathfinder routed
+ *   through the 1-block hydration water source adjacent to the farm,
+ *   dropped the bot to y=62, then needed `mc escape` to recover. The
+ *   original liquidCost=5 (from issue #85) was enough to bias against
+ *   crossing lakes but not enough to detour ONE water cell when the
+ *   bot was already adjacent. At 50 the bot will detour up to ~50
+ *   blocks rather than enter water — effectively avoids the trap in
+ *   any small-farm geometry.
+ * - infiniteLiquidDropdownDistance: false — also #85-family. With the
+ *   default `true`, pathfinder considers a drop into water of any depth
+ *   "safe", so it cheerfully routes the bot over a cliff into a pond.
+ *   Setting false makes water drops cap at maxDropDown (=4) like solid
+ *   ground, so the bot doesn't fall into a deep pool as a shortcut.
+ */
+export const MOVEMENTS_TUNING = Object.freeze({
+  allowSprinting: true,
+  canDig: false,
+  canOpenDoors: true,
+  scafoldingBlocks: [],
+  liquidCost: 50,
+  infiniteLiquidDropdownDistance: false,
+});
+
+/**
+ * Apply hermescraft's Movements knobs to a mineflayer-pathfinder Movements
+ * instance. Separated from createBotManager so tests can lock the tuning
+ * without booting a full bot.
+ *
+ * @param {object} moves   a mineflayer-pathfinder Movements instance
+ * @param {object} mcData  mcData with blocksByName
+ * @param {object} [opts]
+ * @param {boolean} [opts.allowParkour=false]
+ * @param {string[]} [opts.protectedBlocks]  block names to mark uncuttable
+ */
+export function applyMovementsTuning(moves, mcData, opts = {}) {
+  moves.allowSprinting = MOVEMENTS_TUNING.allowSprinting;
+  moves.allowParkour = opts.allowParkour ?? false;
+  moves.canDig = MOVEMENTS_TUNING.canDig;
+  moves.canOpenDoors = MOVEMENTS_TUNING.canOpenDoors;
+  moves.scafoldingBlocks = MOVEMENTS_TUNING.scafoldingBlocks;
+  if (typeof moves.liquidCost !== 'undefined') {
+    moves.liquidCost = MOVEMENTS_TUNING.liquidCost;
+  }
+  if (typeof moves.infiniteLiquidDropdownDistance !== 'undefined') {
+    moves.infiniteLiquidDropdownDistance = MOVEMENTS_TUNING.infiniteLiquidDropdownDistance;
+  }
+  for (const name of opts.protectedBlocks ?? []) {
+    const block = mcData?.blocksByName?.[name];
+    if (block && moves.blocksCantBreak?.add) {
+      moves.blocksCantBreak.add(block.id);
+    }
+  }
+  return moves;
+}
+
 /** Delay before reconnect; `attempts` matches ctx.death.reconnectAttempts before increment. */
 export function reconnectBackoffMs(attempts) {
   return Math.min(5000 * Math.pow(2, attempts), 60000);
@@ -172,7 +231,6 @@ export function createBotManager(deps) {
         // canDig=false makes navigation strictly read-only; mc through is
         // the explicit door verb, mc tunnel/dig_area handle terrain.
         const moves = new Movements(ctx.world.bot);
-        moves.allowSprinting = true;
         // F49: parkour expansion explodes the pathfinder search space
         // when a multi-block wall is between the bot and its target.
         // Mineflayer-pathfinder evaluates many parkour-over-the-top
@@ -186,26 +244,10 @@ export function createBotManager(deps) {
         // crossing a small ravine), but for typical G21 / build / mine
         // workflows the no-parkour search is faster AND more reliable.
         // Opt-in with BOT_ALLOW_PARKOUR=true if a specific test needs it.
-        moves.allowParkour = deps.config?.behaviors?.allowParkour ?? false;
-        moves.canDig = false;
-        // F66: open doors during pathfind. mineflayer-pathfinder defaults to
-        // `canOpenDoors=false` ("causes issues. Probably due to non-paper
-        // servers.") — we're on PaperMC, so enable it. Doors otherwise block
-        // pathfinding entirely; bot wanders/timeouts trying to find a route
-        // around a closed door it could simply open.
-        moves.canOpenDoors = true;
-        moves.scafoldingBlocks = [];
-        // #85: bias the pathfinder AWAY from water. Default liquidCost=1
-        // treats water as equivalent to land — pathfinder happily routes
-        // bots through lakes, where mineflayer's swim handling is fragile
-        // and bots routinely get stuck (see #85 repro: Steve stair_up'd
-        // into a lake at y=63, mc move then looped on un-reachable
-        // shorelines). Setting liquidCost=5 still allows water as a
-        // last resort but heavily prefers dry routes when they exist.
-        if (typeof moves.liquidCost !== 'undefined') {
-          moves.liquidCost = 5;
-        }
-
+        //
+        // F66 (canOpenDoors=true), #85 (liquidCost), and the round-A
+        // sustained-farm hydration-trap fix (liquidCost bump + no infinite
+        // liquid drop) all live in applyMovementsTuning — see MOVEMENTS_TUNING.
         const protectedBlocks = [
           'oak_planks',
           'birch_planks',
@@ -266,10 +308,10 @@ export function createBotManager(deps) {
           'white_bed',
           'red_bed',
         ];
-        for (const name of protectedBlocks) {
-          const block = ctx.world.mcData.blocksByName[name];
-          if (block) moves.blocksCantBreak.add(block.id);
-        }
+        applyMovementsTuning(moves, ctx.world.mcData, {
+          allowParkour: deps.config?.behaviors?.allowParkour ?? false,
+          protectedBlocks,
+        });
 
         ctx.world.bot.pathfinder.setMovements(moves);
 
