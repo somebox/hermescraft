@@ -41,13 +41,32 @@ export function stripGlobalFlags(argv) {
         .map((x) => x.trim())
         .filter(Boolean);
       i++;
-    } else if (typeof a === 'string' && /^reason=/i.test(a)) {
-      // Consume tokens until we either reach a `--flag`, a `key=value`
-      // pair for a different key, or the end of argv. Strip the leading
-      // `reason=` and surrounding quotes from the joined string.
-      const chunks = [a.slice('reason='.length)];
-      const openQuote = chunks[0].startsWith('"') || chunks[0].startsWith("'");
-      let j = i + 1;
+    } else if (
+      typeof a === 'string' &&
+      (/^reason=/i.test(a) || /^--reason=/i.test(a) || a === '--reason' || a === '-r')
+    ) {
+      // F56 + agent-form: `reason=...`, `--reason=...`, `--reason "..."`,
+      // `-r "..."`. Telemetry only — the value lands in globals.reason and
+      // is NOT forwarded to the HTTP body. Bots use this to articulate
+      // intent (and under MC_FORCE_REASON=1 it routes scene/map/find/nearby
+      // through the perception-digest pipeline).
+      //
+      // Shell tokenization may split a quoted reason across tokens; we glue
+      // them back together until we hit another flag or `key=value` pair.
+      let firstRaw;
+      let valueStarts = i;
+      if (a === '--reason' || a === '-r') {
+        valueStarts = i + 1;
+        if (valueStarts >= argv.length) continue;
+        firstRaw = String(argv[valueStarts]);
+      } else if (/^--reason=/i.test(a)) {
+        firstRaw = a.slice('--reason='.length);
+      } else {
+        firstRaw = a.slice('reason='.length);
+      }
+      const chunks = [firstRaw];
+      const openQuote = firstRaw.startsWith('"') || firstRaw.startsWith("'");
+      let j = valueStarts + 1;
       while (j < argv.length) {
         const t = argv[j];
         if (typeof t !== 'string') break;
@@ -164,14 +183,31 @@ export function positionalToParams(commandName, argSchema = [], positional) {
 
   const tokens = positional.slice();
 
-  // Pre-pass: extract `key=value` tokens (common CLI convention, agents
-  // assume it works). Anything matching a spec key gets routed to that
-  // spec; remaining tokens fall through to positional consumption below.
+  // Pre-pass: extract `key=value` / `--key=value` / bare `--flag` tokens
+  // (common CLI conventions agents assume work). Anything matching a spec
+  // key gets routed to that spec; remaining tokens fall through to
+  // positional consumption below. Bare `--flag` is only consumed when the
+  // matching spec is boolean — otherwise it stays positional and will
+  // surface a clear error.
   const kwOverrides = /** @type {Record<string, string>} */ ({});
   const specByKey = Object.fromEntries(argSchema.map((s) => [s.key, s]));
   const remaining = [];
   for (const t of tokens) {
-    const m = typeof t === 'string' ? t.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/) : null;
+    if (typeof t !== 'string') {
+      remaining.push(t);
+      continue;
+    }
+    let m = t.match(/^--([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (m && specByKey[m[1]]) {
+      kwOverrides[m[1]] = m[2];
+      continue;
+    }
+    m = t.match(/^--([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (m && specByKey[m[1]]?.type === 'boolean') {
+      kwOverrides[m[1]] = 'true';
+      continue;
+    }
+    m = t.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
     if (m && specByKey[m[1]]) {
       kwOverrides[m[1]] = m[2];
     } else {

@@ -365,7 +365,9 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
   // MC_FORCE_REASON=1: wrap observation commands through the digest pipeline.
   // Forces the agent to articulate its sub-goal before observing.
   if (process.env.MC_FORCE_REASON === '1' && FORCED_REASON_COMMANDS.has(canonicalName)) {
-    const reason = extractReason(positional);
+    // stripGlobalFlags peels --reason/reason= into globals.reason; fall
+    // back to scanning positional for builds that still pass it through.
+    const reason = String(globals.reason ?? '').trim() || extractReason(positional);
     if (!reason) {
       const env = {
         ok: false,
