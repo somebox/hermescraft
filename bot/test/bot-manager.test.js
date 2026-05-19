@@ -60,14 +60,20 @@ test('MOVEMENTS_TUNING: maxCumulativeDropDown = 3 (hyd2 Y-drift cap)', () => {
   assert.equal(MOVEMENTS_TUNING.maxCumulativeDropDown, 3);
 });
 
-test('MOVEMENTS_TUNING: avoidWater defaults true unless BOT_AVOID_WATER=false', () => {
-  // The actual value reads process.env at module load. We just assert
-  // the field exists and the live default is true (env var unset).
+test('MOVEMENTS_TUNING: avoidWater defaults to "shallow" mode (depth-aware)', () => {
+  // The actual value reads process.env at module load. Three modes:
+  //   'hard'    — original strict (all water in blocksToAvoid)
+  //   'shallow' — depth-aware (wrap safeOrBreak; only refuse water
+  //                cells without solid floor below). DEFAULT.
+  //   'off'     — no avoidance, liquidCost only.
   assert.ok('avoidWater' in MOVEMENTS_TUNING);
-  if (process.env.BOT_AVOID_WATER === 'false') {
-    assert.equal(MOVEMENTS_TUNING.avoidWater, false);
+  const env = (process.env.BOT_AVOID_WATER || '').toLowerCase();
+  if (env === 'hard' || env === 'strict') {
+    assert.equal(MOVEMENTS_TUNING.avoidWater, 'hard');
+  } else if (env === 'off' || env === 'false') {
+    assert.equal(MOVEMENTS_TUNING.avoidWater, 'off');
   } else {
-    assert.equal(MOVEMENTS_TUNING.avoidWater, true);
+    assert.equal(MOVEMENTS_TUNING.avoidWater, 'shallow');
   }
 });
 
@@ -136,26 +142,88 @@ test('applyMovementsTuning: registers protectedBlocks into blocksCantBreak', () 
   assert.equal(moves.blocksCantBreak.size, 2);
 });
 
-test('applyMovementsTuning: avoidWater=true adds water block id to blocksToAvoid', () => {
+test('applyMovementsTuning: avoidWater="hard" adds water block id to blocksToAvoid', () => {
+  // Hard mode = original strict behaviour. Every water cell refused
+  // regardless of cost.
   const moves = makeMockMovements();
   const mcData = { blocksByName: { water: { id: 32 } } };
-  applyMovementsTuning(moves, mcData, { avoidWater: true });
-  assert.ok(moves.blocksToAvoid.has(32), 'water id 32 must be in blocksToAvoid');
+  applyMovementsTuning(moves, mcData, { avoidWater: 'hard' });
+  assert.ok(moves.blocksToAvoid.has(32), 'water id 32 must be in blocksToAvoid in hard mode');
+  assert.equal(moves.avoidWaterMode, 'hard');
 });
 
-test('applyMovementsTuning: avoidWater=false leaves blocksToAvoid clean', () => {
-  // Opt-out for bots that need to cross water (BOT_AVOID_WATER=false).
+test('applyMovementsTuning: avoidWater=false / "off" leaves blocksToAvoid clean and skips wrapper', () => {
+  // Opt-out for bots that need to cross water (BOT_AVOID_WATER=off).
   const moves = makeMockMovements();
   const mcData = { blocksByName: { water: { id: 32 } } };
   applyMovementsTuning(moves, mcData, { avoidWater: false });
   assert.equal(moves.blocksToAvoid.has(32), false);
+  assert.equal(moves.avoidWaterMode, 'off');
 });
 
-test('applyMovementsTuning: avoidWater silently skips if mcData has no water entry', () => {
+test('applyMovementsTuning: avoidWater="shallow" does NOT add to blocksToAvoid (uses safeOrBreak wrapper instead)', () => {
+  // Shallow mode is the new default: pathfinder still considers water
+  // cells as candidates; the safeOrBreak wrapper refuses ones without
+  // solid floor below. So blocksToAvoid stays empty.
+  const moves = makeMockMovements();
+  moves.safeOrBreak = function (_b, _t) { return 0; }; // stub
+  const mcData = { blocksByName: { water: { id: 32 } } };
+  applyMovementsTuning(moves, mcData, { avoidWater: 'shallow' });
+  assert.equal(moves.blocksToAvoid.has(32), false);
+  assert.equal(moves.avoidWaterMode, 'shallow');
+});
+
+test('applyMovementsTuning: avoidWater="hard" silently skips if mcData has no water entry', () => {
   // Defensive — a stripped-down mcData (mostly in tests) shouldn't crash.
   const moves = makeMockMovements();
-  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: true });
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: 'hard' });
   assert.equal(moves.blocksToAvoid.size, 0);
+});
+
+test('applyMovementsTuning: shallow mode safeOrBreak wrapper refuses water with no solid floor', () => {
+  // Mock bot.blockAt: returns water at all y (deep ocean).
+  const water = { name: 'water', boundingBox: 'empty', position: { x: 10, y: 64, z: 10 } };
+  const moves = makeMockMovements();
+  moves.bot = { blockAt: () => ({ name: 'water', boundingBox: 'empty' }) };
+  moves.safeOrBreak = function (_b, _t) { return 0; }; // baseline cost for non-water
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: 'shallow' });
+  // Pathfinder treats cost>=100 as refusal. Water cell with water below → refuse.
+  assert.equal(moves.safeOrBreak(water, []), 100);
+});
+
+test('applyMovementsTuning: shallow mode allows water cell with solid floor (wading)', () => {
+  // Mock bot.blockAt: returns dirt one block below — wadeable.
+  const water = { name: 'water', boundingBox: 'empty', position: { x: 10, y: 64, z: 10 } };
+  const moves = makeMockMovements();
+  moves.bot = {
+    blockAt: (p) => p.y === 63
+      ? { name: 'dirt', boundingBox: 'block' }
+      : { name: 'water', boundingBox: 'empty' },
+  };
+  moves.safeOrBreak = function (_b, _t) { return 0; }; // baseline cost
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: 'shallow' });
+  // Shallow ford: fall through to original safeOrBreak → cost 0 (cheap base).
+  // Pathfinder will then ADD liquidCost (50) externally for the liquid cell.
+  assert.equal(moves.safeOrBreak(water, []), 0);
+});
+
+test('applyMovementsTuning: shallow mode safeOrBreak passes non-water blocks through', () => {
+  // Ensure the wrapper doesn't accidentally penalise dirt, stone, etc.
+  const dirt = { name: 'dirt', boundingBox: 'block', position: { x: 10, y: 64, z: 10 } };
+  const moves = makeMockMovements();
+  moves.bot = { blockAt: () => ({ name: 'water', boundingBox: 'empty' }) };
+  moves.safeOrBreak = function (_b, _t) { return 7; }; // baseline cost
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: 'shallow' });
+  assert.equal(moves.safeOrBreak(dirt, []), 7); // unchanged
+});
+
+test('applyMovementsTuning: shallow mode wrapper is idempotent', () => {
+  const moves = makeMockMovements();
+  moves.safeOrBreak = function (_b, _t) { return 0; };
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: 'shallow' });
+  const first = moves.safeOrBreak;
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: 'shallow' });
+  assert.equal(moves.safeOrBreak, first, 'safeOrBreak patch must not stack');
 });
 
 test('applyMovementsTuning: writes maxCumulativeDropDown onto the Movements instance', () => {

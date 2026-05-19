@@ -1,6 +1,8 @@
 // @size-exempt: createBot lifecycle + stuck watchdog kept together for shared closure
 /** Mineflayer connect/events/reconnect/hardcore + stuck watchdog. */
 
+import { Vec3 } from 'vec3';
+
 /** Actions used by stuck watchdog when task.status === 'running'. */
 /** Note: `collect` is excluded — mining often keeps feet within <2m for 10–20s while digging. */
 export const STUCK_MOVEMENT_ACTIONS = [
@@ -31,23 +33,34 @@ const STUCK_IDLE_MS = 20000;
  *   lets the bot treat a drop into water of any depth as "safe", so it
  *   cheerfully routes over a cliff into a pond. False caps water drops
  *   at maxDropDown=4 like solid ground.
- * - avoidWater: true — the real hard fix. Adds water (block id 32) to
- *   `Movements.blocksToAvoid`, making every water cell unsafe-to-step-
- *   into in the path graph. Pathfinder will refuse any path that
- *   requires entering a water cell — `mc move` returns NAV_BLOCKED
- *   instead of dropping the bot in. liquidCost=50 alone isn't enough
- *   when the dry detour is long or absent (round-A: bot fell into
- *   natural water east of the farm because the only path to (391,64,-567)
- *   crossed natural water with no dry alternative). With avoidWater
- *   the bot just won't go there.
- *   Recovery from being IN water is unaffected: `mc escape`'s water
- *   branch uses direct b.setControlState/b.placeBlock plus a single-
- *   step pathfind to an adjacent dry cell, which still works (the
- *   GOAL cell is dry-safe; only intermediate steps need to be safe).
- *   Set env `BOT_AVOID_WATER=false` to disable (e.g., for bots that
- *   need to wade across rivers).
+ * - avoidWater: depth-aware (default 'shallow'). Three modes:
+ *     'hard'    — original strict behaviour: every water cell added to
+ *                  blocksToAvoid. Refuses all water, including 1-block
+ *                  river fords. Use for sensitive bots that should
+ *                  never get wet.
+ *     'shallow' — NEW DEFAULT (post-exp5). Wraps safeOrBreak to refuse
+ *                  ONLY water cells where the block directly below
+ *                  isn't solid (= deep water, drowning risk). Water
+ *                  with solid floor below is wading: foot in water,
+ *                  head in air, no drowning. liquidCost=50 still
+ *                  applies, so long water paths get expensive vs.
+ *                  short fords.
+ *     'off'     — no avoidance, rely on liquidCost penalty only.
+ *
+ *   Why shallow is default: exp5 trace showed Steve couldn't cross a
+ *   1-block river to reach W1 because pathfinder refused every water
+ *   cell. The exp3 drowning incident was a DEEP-water case (open
+ *   ocean swim, y=51 with water-on-water-on-water) — handled
+ *   correctly by the new shallow mode because no solid floor existed.
+ *
+ *   Set env `BOT_AVOID_WATER=hard|shallow|off` to override.
  */
-const AVOID_WATER_DEFAULT = process.env.BOT_AVOID_WATER !== 'false';
+const AVOID_WATER_DEFAULT = (() => {
+  const v = (process.env.BOT_AVOID_WATER || '').toLowerCase();
+  if (v === 'hard' || v === 'strict') return 'hard';
+  if (v === 'off' || v === 'false') return 'off';
+  return 'shallow'; // default
+})();
 
 /**
  * Cumulative cap on how many blocks below the bot's CURRENT foot Y a
@@ -103,17 +116,69 @@ export function applyMovementsTuning(moves, mcData, opts = {}) {
   if (typeof moves.infiniteLiquidDropdownDistance !== 'undefined') {
     moves.infiniteLiquidDropdownDistance = MOVEMENTS_TUNING.infiniteLiquidDropdownDistance;
   }
-  // Hard water avoidance: register water in blocksToAvoid so the path
-  // graph treats it as unsafe-to-step-into. opts.avoidWater overrides
-  // the env-derived MOVEMENTS_TUNING.avoidWater for tests; falsy = leave
-  // water alone (and rely on liquidCost penalty instead).
-  const avoidWater = opts.avoidWater ?? MOVEMENTS_TUNING.avoidWater;
-  if (avoidWater) {
+  // Water avoidance — depth-aware (not strict).
+  //
+  // Round-A exp3: avoidWater=true added water to blocksToAvoid, which
+  // is a HARD reject of every water cell regardless of cost. That
+  // prevented drowning but ALSO refused legitimate shallow fords (a
+  // 1-block river crossing). The bot got stuck on cliff edges and
+  // exp5 couldn't cross any water at all.
+  //
+  // New default (avoidWater === 'shallow' or true): wrap safeOrBreak
+  // so a water cell is REFUSED iff the block directly below it isn't
+  // solid (= deep water, bot's foot has no support = drowning risk).
+  // Water cells WITH solid floor below (shallow wading) are accepted
+  // at the liquidCost penalty (=50) — long detours over many water
+  // cells get expensive; short fords get crossed.
+  //
+  // In Minecraft a 1-block-deep water cell with solid floor lets the
+  // bot stand at Y+0.5 with foot in water but head in air — wading,
+  // not swimming. No drowning. The depth check is the right proxy.
+  //
+  // BOT_AVOID_WATER values:
+  //   'hard' or 'strict'  — original behaviour: all water in
+  //                          blocksToAvoid, no fords allowed
+  //   'shallow' or 'true' — new default: shallow fords allowed,
+  //                          deep water refused
+  //   'false' or 'off'    — no water avoidance, rely on liquidCost
+  //                          penalty only (cheapest path through any
+  //                          depth of water if dry costs more)
+  const avoidWaterMode = (() => {
+    const o = opts.avoidWater;
+    if (o === 'hard' || o === 'strict') return 'hard';
+    if (o === false || o === 'false' || o === 'off') return 'off';
+    if (o === 'shallow' || o === true || o === 'true') return 'shallow';
+    // default from MOVEMENTS_TUNING (env-derived, see top of file).
+    // MOVEMENTS_TUNING.avoidWater is now a string: 'hard' | 'shallow' | 'off'.
+    return MOVEMENTS_TUNING.avoidWater;
+  })();
+  if (avoidWaterMode === 'hard') {
     const waterBlock = mcData?.blocksByName?.water;
     if (waterBlock && moves.blocksToAvoid?.add) {
       moves.blocksToAvoid.add(waterBlock.id);
     }
   }
+  if (avoidWaterMode === 'shallow' && typeof moves.safeOrBreak === 'function' && !moves._waterDepthPatched) {
+    const origSafeOrBreak = moves.safeOrBreak.bind(moves);
+    moves.safeOrBreak = function (block, toBreak) {
+      if (block && block.position && (block.name === 'water' || block.name === 'flowing_water')) {
+        // Check the cell directly below: must be a solid physical block
+        // (dirt, sand, gravel, stone, etc) for the bot to "wade" safely.
+        let below;
+        try {
+          below = this.bot?.blockAt && this.bot.blockAt(new Vec3(block.position.x, block.position.y - 1, block.position.z));
+        } catch { below = null; }
+        const belowIsSolid = below && below.boundingBox === 'block' && below.name !== 'water' && below.name !== 'flowing_water' && below.name !== 'lava';
+        if (!belowIsSolid) {
+          return 100; // refuse: deep water (no solid floor)
+        }
+        // Shallow ford: fall through to original, which adds liquidCost.
+      }
+      return origSafeOrBreak(block, toBreak);
+    };
+    moves._waterDepthPatched = true;
+  }
+  moves.avoidWaterMode = avoidWaterMode;
   for (const name of opts.protectedBlocks ?? []) {
     const block = mcData?.blocksByName?.[name];
     if (block && moves.blocksCantBreak?.add) {

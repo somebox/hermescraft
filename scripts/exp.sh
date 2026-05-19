@@ -125,43 +125,8 @@ cmd_watch() {
     echo "[exp] no active run — start one with: exp.sh start <slug>" >&2
     return 1
   fi
-  local run_dir
-  run_dir="$(readlink "$CURRENT")"
-  echo "[exp] watching $(basename "$run_dir") — Ctrl-C to exit"
-  echo "[exp] events: $run_dir/events.jsonl"
-  echo "[exp] positions: $run_dir/positions.jsonl"
-  echo "──────────────────────────────────────────────────────────────"
-  # Tail both files with file-name prefix.
-  tail -F -n 0 \
-    "$run_dir/events.jsonl" \
-    "$run_dir/positions.jsonl" 2>/dev/null | python3 -c "
-import sys, json
-prev_pos = None
-for line in sys.stdin:
-  line = line.strip()
-  if not line or line.startswith('==>'):
-    if line.startswith('==>'):
-      # tail's file-marker
-      kind = 'events' if 'events' in line else 'positions'
-    continue
-  try:
-    d = json.loads(line)
-  except: continue
-  if 'kind' in d:
-    # event
-    ts = d.get('ts','?')[11:19]
-    print(f'\033[33m{ts} EVENT [{d[\"kind\"]}]\033[0m {dict((k,v) for k,v in d.items() if k not in (\"ts\",\"kind\"))}', flush=True)
-  elif 'x' in d:
-    # position
-    ts = d.get('ts','?')[11:19]
-    dx = (d['x'] - prev_pos['x']) if prev_pos else 0
-    dz = (d['z'] - prev_pos['z']) if prev_pos else 0
-    delta = (dx*dx + dz*dz) ** 0.5 if prev_pos else 0
-    task = d.get('task_action') or '-'
-    s = d.get('task_status') or '-'
-    print(f'\033[2m{ts} POS  ({d[\"x\"]:.0f},{d[\"y\"]},{d[\"z\"]:.0f}) hp={d[\"hp\"]} food={d[\"food\"]} task={task}/{s} Δ={delta:.0f}b\033[0m', flush=True)
-    prev_pos = d
-"
+  # Delegate to the combined Python watcher: thinking + tool calls + positions + events.
+  exec python3 "$SCRIPT_DIR/scripts/exp_watch.py"
 }
 
 cmd_stop() {
