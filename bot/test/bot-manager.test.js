@@ -52,6 +52,17 @@ test('MOVEMENTS_TUNING: canDig=false, canOpenDoors=true preserved', () => {
   assert.equal(MOVEMENTS_TUNING.canOpenDoors, true);
 });
 
+test('MOVEMENTS_TUNING: avoidWater defaults true unless BOT_AVOID_WATER=false', () => {
+  // The actual value reads process.env at module load. We just assert
+  // the field exists and the live default is true (env var unset).
+  assert.ok('avoidWater' in MOVEMENTS_TUNING);
+  if (process.env.BOT_AVOID_WATER === 'false') {
+    assert.equal(MOVEMENTS_TUNING.avoidWater, false);
+  } else {
+    assert.equal(MOVEMENTS_TUNING.avoidWater, true);
+  }
+});
+
 function makeMockMovements() {
   // Mirrors the subset of mineflayer-pathfinder Movements that
   // applyMovementsTuning touches.
@@ -64,6 +75,7 @@ function makeMockMovements() {
     liquidCost: 1,
     infiniteLiquidDropdownDistance: true,
     blocksCantBreak: new Set(),
+    blocksToAvoid: new Set(),
   };
 }
 
@@ -101,6 +113,28 @@ test('applyMovementsTuning: registers protectedBlocks into blocksCantBreak', () 
   // Missing blocks silently skipped — important so a new mc-data version
   // dropping a block name doesn't crash startup.
   assert.equal(moves.blocksCantBreak.size, 2);
+});
+
+test('applyMovementsTuning: avoidWater=true adds water block id to blocksToAvoid', () => {
+  const moves = makeMockMovements();
+  const mcData = { blocksByName: { water: { id: 32 } } };
+  applyMovementsTuning(moves, mcData, { avoidWater: true });
+  assert.ok(moves.blocksToAvoid.has(32), 'water id 32 must be in blocksToAvoid');
+});
+
+test('applyMovementsTuning: avoidWater=false leaves blocksToAvoid clean', () => {
+  // Opt-out for bots that need to cross water (BOT_AVOID_WATER=false).
+  const moves = makeMockMovements();
+  const mcData = { blocksByName: { water: { id: 32 } } };
+  applyMovementsTuning(moves, mcData, { avoidWater: false });
+  assert.equal(moves.blocksToAvoid.has(32), false);
+});
+
+test('applyMovementsTuning: avoidWater silently skips if mcData has no water entry', () => {
+  // Defensive — a stripped-down mcData (mostly in tests) shouldn't crash.
+  const moves = makeMockMovements();
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: true });
+  assert.equal(moves.blocksToAvoid.size, 0);
 });
 
 test('applyMovementsTuning: gracefully skips liquidCost on Movements lacking the field', () => {

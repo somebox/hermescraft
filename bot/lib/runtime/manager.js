@@ -24,20 +24,31 @@ const STUCK_IDLE_MS = 20000;
  * Default pathfinder Movements tuning. Exported so tests can lock the
  * specific knobs we tune, and so users can override via env var.
  *
- * - liquidCost: 50 — round-A sustained-farm bug: bot pathfinder routed
- *   through the 1-block hydration water source adjacent to the farm,
- *   dropped the bot to y=62, then needed `mc escape` to recover. The
- *   original liquidCost=5 (from issue #85) was enough to bias against
- *   crossing lakes but not enough to detour ONE water cell when the
- *   bot was already adjacent. At 50 the bot will detour up to ~50
- *   blocks rather than enter water — effectively avoids the trap in
- *   any small-farm geometry.
- * - infiniteLiquidDropdownDistance: false — also #85-family. With the
- *   default `true`, pathfinder considers a drop into water of any depth
- *   "safe", so it cheerfully routes the bot over a cliff into a pond.
- *   Setting false makes water drops cap at maxDropDown (=4) like solid
- *   ground, so the bot doesn't fall into a deep pool as a shortcut.
+ * - liquidCost: 50 — round-A sustained-farm bug. Defence in depth: if
+ *   water IS in the path graph for some reason (e.g., avoidWater is
+ *   disabled), heavily penalise it so a dry route still wins.
+ * - infiniteLiquidDropdownDistance: false — pathfinder default `true`
+ *   lets the bot treat a drop into water of any depth as "safe", so it
+ *   cheerfully routes over a cliff into a pond. False caps water drops
+ *   at maxDropDown=4 like solid ground.
+ * - avoidWater: true — the real hard fix. Adds water (block id 32) to
+ *   `Movements.blocksToAvoid`, making every water cell unsafe-to-step-
+ *   into in the path graph. Pathfinder will refuse any path that
+ *   requires entering a water cell — `mc move` returns NAV_BLOCKED
+ *   instead of dropping the bot in. liquidCost=50 alone isn't enough
+ *   when the dry detour is long or absent (round-A: bot fell into
+ *   natural water east of the farm because the only path to (391,64,-567)
+ *   crossed natural water with no dry alternative). With avoidWater
+ *   the bot just won't go there.
+ *   Recovery from being IN water is unaffected: `mc escape`'s water
+ *   branch uses direct b.setControlState/b.placeBlock plus a single-
+ *   step pathfind to an adjacent dry cell, which still works (the
+ *   GOAL cell is dry-safe; only intermediate steps need to be safe).
+ *   Set env `BOT_AVOID_WATER=false` to disable (e.g., for bots that
+ *   need to wade across rivers).
  */
+const AVOID_WATER_DEFAULT = process.env.BOT_AVOID_WATER !== 'false';
+
 export const MOVEMENTS_TUNING = Object.freeze({
   allowSprinting: true,
   canDig: false,
@@ -45,6 +56,7 @@ export const MOVEMENTS_TUNING = Object.freeze({
   scafoldingBlocks: [],
   liquidCost: 50,
   infiniteLiquidDropdownDistance: false,
+  avoidWater: AVOID_WATER_DEFAULT,
 });
 
 /**
@@ -69,6 +81,17 @@ export function applyMovementsTuning(moves, mcData, opts = {}) {
   }
   if (typeof moves.infiniteLiquidDropdownDistance !== 'undefined') {
     moves.infiniteLiquidDropdownDistance = MOVEMENTS_TUNING.infiniteLiquidDropdownDistance;
+  }
+  // Hard water avoidance: register water in blocksToAvoid so the path
+  // graph treats it as unsafe-to-step-into. opts.avoidWater overrides
+  // the env-derived MOVEMENTS_TUNING.avoidWater for tests; falsy = leave
+  // water alone (and rely on liquidCost penalty instead).
+  const avoidWater = opts.avoidWater ?? MOVEMENTS_TUNING.avoidWater;
+  if (avoidWater) {
+    const waterBlock = mcData?.blocksByName?.water;
+    if (waterBlock && moves.blocksToAvoid?.add) {
+      moves.blocksToAvoid.add(waterBlock.id);
+    }
   }
   for (const name of opts.protectedBlocks ?? []) {
     const block = mcData?.blocksByName?.[name];
