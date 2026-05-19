@@ -331,10 +331,11 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
   }
 
   if (canonicalName === 'dashboard') {
-    const url = `${ctx.api}/dashboard`;
+    const port = process.env.DASHBOARD_PORT || '3000';
+    const url = (process.env.DASHBOARD_URL || `http://127.0.0.1:${port}`).replace(/\/$/, '');
     if (globals.json)
       return { ok: true, env: { ok: true, command: 'dashboard', data: { url } }, render: 'json' };
-    console.log(`Web dashboard: ${url}`);
+    console.log(`Command center: ${url}  (run ./start-dashboard.sh from repo root)`);
     return { ok: true, render: 'none' };
   }
 
@@ -344,8 +345,20 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
   }
 
   if (canonicalName === 'advise') {
+    // stripGlobalFlags peels --reason/-r/reason= into globals.reason (same
+    // pipeline as scene/map/find/nearby under MC_FORCE_REASON). Build
+    // params for back-compat with bots that pass reason as a bare
+    // positional, then prefer globals.reason as the canonical source.
     const built = buildHttpRequest(def, canonicalName, positional);
-    const reason = String(built.params?.reason ?? '');
+    const reason = String(globals.reason ?? '').trim() || String(built.params?.reason ?? '').trim() || extractReason(positional);
+    if (!reason) {
+      const env = {
+        ok: false,
+        command: canonicalName,
+        error: 'mc advise requires --reason="<sub-goal>". Example: mc advise --reason="find oak wood near base".',
+      };
+      return { ok: false, env, render: globals.json ? 'json' : 'human' };
+    }
     if (globals.dryRun) {
       const env = await runAdviseCli({ reason, apiBase: ctx.api, dryRun: true, kind: 'advise' });
       return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };

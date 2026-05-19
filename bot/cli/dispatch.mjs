@@ -96,6 +96,14 @@ function finalize(def, canonicalName, params) {
 function customParse(canonicalName, positional) {
   switch (canonicalName) {
     case 'advise': {
+      // stripGlobalFlags already peels --reason / -r / reason= into
+      // globals.reason BEFORE we get here, so the positional list will
+      // typically be empty for the agent-form `mc advise --reason="..."`.
+      // We accept whatever remains as a bare reason for back-compat with
+      // older callers (`mc advise "find wood"`); index.mjs's advise
+      // handler is the authoritative reason-required check (using
+      // globals.reason as the canonical source) and produces a clearer
+      // error if reason is truly missing.
       const q = positional.slice();
       let reason = '';
       while (q.length) {
@@ -116,7 +124,6 @@ function customParse(canonicalName, positional) {
         }
       }
       if (q.length) throw new Error(`extra_arguments:advise`);
-      if (!reason.trim()) throw new Error('missing:reason');
       return { reason: reason.trim() };
     }
     case 'status':
