@@ -104,11 +104,13 @@ function makeStubMcData() {
     stone:       { id: 1,  drops: [4],  boundingBox: 'block' },  // drops cobblestone
     cobblestone: { id: 4,  drops: [4],  boundingBox: 'block' },
     coal_ore:    { id: 16, drops: [263], boundingBox: 'block' }, // drops coal
+    oak_log:     { id: 17, drops: [17], boundingBox: 'block' },
   };
   const items = {
     dirt: { id: 3 },
     cobblestone: { id: 4 },
     coal: { id: 263 },
+    oak_log: { id: 17 },
   };
   return {
     blocksByName: blocks,
@@ -116,6 +118,7 @@ function makeStubMcData() {
     items: {
       3: { name: 'dirt' },
       4: { name: 'cobblestone' },
+      17: { name: 'oak_log' },
       263: { name: 'coal' },
     },
   };
@@ -439,4 +442,102 @@ test('mining.collect: pre-dig tool refusal bails the call with TOOL_INADEQUATE (
     r.error.observed_state.attempted <= 1,
     `expected attempted <= 1, got ${r.error.observed_state.attempted}`,
   );
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// T3: behind_wall reposition hint — when every collect attempt fails LOS
+// (canSeeMinableFace=false), the error must carry a concrete cell the
+// agent can `mc move` to and retry. Pre-fix this looped silently:
+// Steve called `mc collect oak_log 4` SEVEN times in round-2/3 (one per
+// adjacent trunk), each erroring with `behind_wall (4/4)`, with nothing
+// in the response telling him where to step.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: behind_wall MIXED_FAILURE includes next_action_hint and first_candidate', async () => {
+  // Bot east of a 3-trunk grove. Candidates at (3,64,0), (5,64,0), (5,64,2).
+  // hasLineOfSight always returns false → every dig attempt counts as
+  // behind_wall. (We're not testing the LOS check itself, just the error
+  // shape when behind_wall dominates.)
+  const trunks = [
+    new Vec3(3, 64, 0),
+    new Vec3(5, 64, 0),
+    new Vec3(5, 64, 2),
+  ];
+  const bot = makeStubBot({
+    position: new Vec3(7, 64, 0), // bot is east of the grove
+    inventoryItems: [],
+    findBlocksByName: () => trunks.slice(),
+    dig: async () => { /* not reached — LOS check fails first */ },
+  });
+  bot.blockAt = (pos) => ({
+    name: 'oak_log',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    type: 17,
+  });
+  const deps = makeDeps({
+    bot,
+    findVisible: async () => trunks.map((p) => ({ position: p })),
+    hasLineOfSight: () => false,
+    eyePosition: () => ({ x: 7, y: 65.6, z: 0 }),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'oak_log', count: 4 });
+  const v = validate(r);
+  assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'MIXED_FAILURE');
+  assert.ok(r.error.observed_state.causes.behind_wall > 0, 'expected behind_wall in causes');
+
+  // The fix: an actionable hint + the candidate coord, so the agent
+  // can `mc move` to a different cardinal and retry collect.
+  assert.ok(r.error.next_action_hint, 'expected next_action_hint on behind_wall failure');
+  assert.match(r.error.next_action_hint, /mc move/);
+  assert.match(r.error.next_action_hint, /Suggested cells/);
+  assert.deepEqual(r.error.observed_state.first_candidate, { x: 3, y: 64, z: 0 });
+
+  // The bot was east of the trunk (dxToCand=-4), so the hint must NOT
+  // suggest the "west" cardinal (that's the side it tried from). Other
+  // cardinals — north/south/east — must appear.
+  assert.doesNotMatch(r.error.next_action_hint, /\bwest\b/);
+  assert.match(r.error.next_action_hint, /north|south|east/);
+});
+
+test('mining.collect: dig_failed dominant — no behind_wall hint emitted', async () => {
+  // Negative case: when behind_wall is NOT the dominant cause, we should
+  // NOT add the reposition hint (it would mislead the agent toward a
+  // useless repositioning). Drive a dig_failed cascade: every dig call
+  // throws a non-instant non-aborted error so causes.dig_failed += 1 per
+  // attempt and behind_wall stays at 0.
+  const positions = [];
+  for (let dx = -3; dx <= 3; dx++) {
+    if (dx === 0) continue;
+    positions.push(new Vec3(dx, 63, 0));
+  }
+  const bot = makeStubBot({
+    position: new Vec3(0, 64, 0),
+    inventoryItems: [],
+    findBlocksByName: () => positions,
+    dig: async () => {
+      // Sleep enough that the elapsed time exceeds INSTANT_FAIL_THRESHOLD_MS,
+      // so this counts as a real dig_failed (not an instant-abort cascade).
+      await new Promise((res) => setTimeout(res, 60));
+      throw new Error('server_refused_dig');
+    },
+  });
+  bot.blockAt = (pos) => ({
+    name: 'dirt', position: pos, getProperties: () => ({}), boundingBox: 'block', type: 3,
+  });
+  const deps = makeDeps({
+    bot,
+    findVisible: async () => positions.map((p) => ({ position: p })),
+    hasLineOfSight: () => true,  // every attempt has clear LOS → behind_wall = 0
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'dirt', count: 4 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.observed_state.causes.behind_wall ?? 0, 0, 'precondition: no behind_wall in causes');
+  assert.equal(r.error.next_action_hint, undefined, 'no behind_wall hint when behind_wall is not the dominant cause');
 });

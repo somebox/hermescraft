@@ -956,13 +956,21 @@ export function createQueriesActions(services) {
     } catch { /* ignore */ }
 
     // Rank: inventory (distance 0) first, then chests by distance, then
-    // blocks by distance. We already added them in that order — just sort
-    // by distance within source class.
+    // blocks by reachability (reachable-first), then by distance. The
+    // reachability tiebreak matters: prior to the fix, an unreachable
+    // closer candidate would sort ahead of a reachable farther one, so
+    // agents reading sources[0] got pointed at a coord their pathfinder
+    // would always refuse (round-2 in-game QA, the "blocks at 368,69,-622
+    // reachable: false bfs_exhausted" loop).
     const order = { inventory: 0, chest: 1, block: 2 };
+    const reachRank = (s) => (s.source === 'block' ? (s.reachable === true ? 0 : 1) : 0);
     sources.sort((a, c) => {
       const oa = order[a.source] ?? 9;
       const oc = order[c.source] ?? 9;
       if (oa !== oc) return oa - oc;
+      const ra = reachRank(a);
+      const rc = reachRank(c);
+      if (ra !== rc) return ra - rc;
       return (a.distance ?? Infinity) - (c.distance ?? Infinity);
     });
     const top = sources.slice(0, maxN);
@@ -979,8 +987,28 @@ export function createQueriesActions(services) {
       if (chests.length > 0) parts.push(`chests:${chests.map(c => `${c.count}@${c.mark}(${c.distance}m)`).join(',')}`);
       const blocks = top.filter(e => e.source === 'block');
       if (blocks.length > 0) {
-        const nearest = blocks[0];
-        parts.push(`blocks:${blocks.length} (nearest @ ${nearest.pos.x},${nearest.pos.y},${nearest.pos.z} ${nearest.distance}m)`);
+        // The block list is already reachable-first via annotateReachability,
+        // so blocks[0] is the right candidate. But "nearest by distance" can
+        // still be unreachable; surface BOTH the block's coord AND the
+        // approach_cell the bot would actually walk to. Round-3 in-game QA
+        // showed agents bg_goto'ing to the raw block coord (which is solid)
+        // and failing NAV_TARGET_UNSTANDABLE every time.
+        const firstReachable = blocks.find(b => b.reachable === true) || blocks[0];
+        const nearestUnreachable = firstReachable.reachable === true
+          ? blocks.find(b => b.reachable === false)
+          : null;
+        const ac = firstReachable.approach_cell;
+        const acText = ac && firstReachable.reachable === true
+          ? `, walk to ${ac.x},${ac.y},${ac.z}`
+          : '';
+        const reachText = firstReachable.reachable === false
+          ? ` — unreachable (${firstReachable.unreachable_reason || 'unknown'})`
+          : '';
+        const np = firstReachable.pos;
+        parts.push(`blocks:${blocks.length} (nearest @ ${np.x},${np.y},${np.z}${acText} ${firstReachable.distance}m${reachText})`);
+        if (nearestUnreachable) {
+          parts.push(`(${blocks.filter(b => b.reachable === false).length} unreachable: ${nearestUnreachable.unreachable_reason || 'unknown'})`);
+        }
       }
       resultMsg = `Found ${target} — total available ${totalAvailable}. ${parts.join('; ')}.`;
     }

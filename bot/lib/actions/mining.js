@@ -1088,6 +1088,45 @@ export function createMiningActions(deps) {
                : 'MIXED_FAILURE';
           message = `Could not mine any ${blockName} (${attempted} attempts). Dominant cause: ${top[0]} (${top[1]}/${attempted}).`;
         }
+
+        // T3 reposition hint: when `behind_wall` dominates the failure
+        // distribution, the bot can probably see SOMETHING but not the
+        // face it needs — another block (typically a sibling trunk in a
+        // dense forest) sits between the bot and the candidate's bot-
+        // facing face. Suggest moving to a different cardinal of the
+        // first candidate, then re-calling collect.
+        //
+        // Round-2/3 in-game QA: Steve called `mc collect oak_log` from
+        // 1.5m off a trunk and got `behind_wall (4/4)` every time because
+        // the candidates' faces were occluded by neighbouring logs. The
+        // error gave him nothing to act on and he walked off in the
+        // wrong direction asking re44 for help. With this hint he gets
+        // a concrete cell to walk to before the retry.
+        let nextActionHint = null;
+        let firstCandidate = null;
+        const topCause = Object.entries(causes).sort((a, c) => c[1] - a[1])[0]?.[0];
+        if (topCause === 'behind_wall' && found.length > 0 && b?.entity?.position) {
+          const cand = found[0];
+          firstCandidate = { x: cand.x, y: cand.y, z: cand.z };
+          const bx = Math.floor(b.entity.position.x);
+          const bz = Math.floor(b.entity.position.z);
+          const dxToCand = cand.x - bx;
+          const dzToCand = cand.z - bz;
+          const skipDir = Math.abs(dxToCand) >= Math.abs(dzToCand)
+            ? (dxToCand > 0 ? 'east' : 'west')
+            : (dzToCand > 0 ? 'south' : 'north');
+          const cardinals = [
+            { name: 'north', cell: { x: cand.x, y: cand.y, z: cand.z - 1 } },
+            { name: 'south', cell: { x: cand.x, y: cand.y, z: cand.z + 1 } },
+            { name: 'east',  cell: { x: cand.x + 1, y: cand.y, z: cand.z } },
+            { name: 'west',  cell: { x: cand.x - 1, y: cand.y, z: cand.z } },
+          ].filter((c) => c.name !== skipDir);
+          nextActionHint =
+            `Another block is blocking the line-of-sight to ${cand.x},${cand.y},${cand.z}. ` +
+            `mc move to a different cardinal then re-call mc collect. Suggested cells: ` +
+            cardinals.map((c) => `${c.name} (${c.cell.x},${c.cell.y},${c.cell.z})`).join(', ') + '.';
+        }
+
         return {
           ok: false,
           error: {
@@ -1101,8 +1140,10 @@ export function createMiningActions(deps) {
               causes,
               candidates_found: found.length,
               last_inner_error: lastCollectErr || null,
+              ...(firstCandidate ? { first_candidate: firstCandidate } : {}),
             },
             retry_safe: code !== 'ALL_PATHFIND_FAILED', // pathfinding rarely improves on retry without the bot moving
+            ...(nextActionHint ? { next_action_hint: nextActionHint } : {}),
           },
           // Preserve hints for callers that surface tips.
           ...(tips.length ? { hints: tips } : {}),
