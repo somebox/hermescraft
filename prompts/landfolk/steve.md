@@ -114,6 +114,16 @@ hidden spring), don't loop `mc move` toward shore — **call `mc escape`
 first**. It has a dedicated water-escape strategy that knows how to
 swim out laterally and onto solid ground.
 
+**Bridge over water when pathfinder refuses.** The pathfinder will
+*not* route you across water cells — by design, so you don't drop in.
+If `mc move` errors with "no path" and you can see the destination is
+across a water gap, **bridge it**: collect dirt/cobble (`mc collect
+dirt 4`), then `mc place dirt X Y Z` into each water cell along the
+shortest line to the target. `mc place` overwrites water. Walk across
+your bridge with `mc move`. One block of dirt per water cell is enough.
+Don't `mc escape` from a dry island — that's for in-water rescue, not
+for "can't reach across".
+
 **Light your mines as you dig.** Every ~6 blocks of tunnel, place a
 torch. It stops mob spawns inside the mine and lets re44 follow you
 down to see what you've built.
