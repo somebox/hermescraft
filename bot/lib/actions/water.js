@@ -320,7 +320,13 @@ export function createWaterActions(deps) {
           const summonName = boat.name; // already namespaced when used in command
           const summonY = refBlock.position.y + 1.0625; // boat sits on water surface
           const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:${summonName} 1`);
-          const r2 = await executeServerCommand(pmcp, `execute in landfolk-test run summon minecraft:${summonName} ${refBlock.position.x + 0.5} ${summonY} ${refBlock.position.z + 0.5}`);
+          // RCON: summon in the world the console is bound to (the
+          // server's default = minecraft:overworld). Don't hardcode
+          // `execute in landfolk-test` — that world only exists in
+          // the test fixture and silently fails everywhere else
+          // (exp6: every PaperMCP boat fallback returned PLACE_FAILED
+          // because the world didn't exist).
+          const r2 = await executeServerCommand(pmcp, `summon minecraft:${summonName} ${refBlock.position.x + 0.5} ${summonY} ${refBlock.position.z + 0.5}`);
           if (r1.ok && r2.ok) fallback = 'papermcp_server_side';
           await sleep(400);
           for (const e of Object.values(b.entities)) {
@@ -442,7 +448,7 @@ export function createWaterActions(deps) {
           const tx = Math.floor(target.position.x);
           const ty = Math.floor(target.position.y);
           const tz = Math.floor(target.position.z);
-          const cmd = `execute in landfolk-test positioned ${tx} ${ty} ${tz} run ride ${username} mount @e[type=oak_boat,sort=nearest,limit=1,distance=..3]`;
+          const cmd = `execute positioned ${tx} ${ty} ${tz} run ride ${username} mount @e[type=oak_boat,sort=nearest,limit=1,distance=..3]`;
           const r = await executeServerCommand(pmcp, cmd).catch((e) => ({ ok: false, error: e?.message }));
           await sleep(600);
           mounted = isReallyMounted();
@@ -592,7 +598,7 @@ export function createWaterActions(deps) {
             const bx = Math.floor(here.x);
             const by = Math.floor(here.y);
             const bz = Math.floor(here.z);
-            const cmd = `execute in landfolk-test positioned ${bx} ${by} ${bz} run tp @e[type=oak_boat,distance=..2,limit=1] ${nx.toFixed(3)} ${ny.toFixed(3)} ${nz.toFixed(3)}`;
+            const cmd = `execute positioned ${bx} ${by} ${bz} run tp @e[type=oak_boat,distance=..2,limit=1] ${nx.toFixed(3)} ${ny.toFixed(3)} ${nz.toFixed(3)}`;
             const r = await executeServerCommand(pmcp, cmd).catch(() => ({ ok: false }));
             if (!r || !r.ok) log(`[sail] tp step failed`);
             await sleep(400);
@@ -686,7 +692,7 @@ export function createWaterActions(deps) {
         const username = getMyName?.();
         if (pmcp && username) {
           log(`[disembark] native + sneak both failed — PaperMCP ride dismount`);
-          const r = await executeServerCommand(pmcp, `execute in landfolk-test run ride ${username} dismount`).catch((e) => ({ ok: false, error: e?.message }));
+          const r = await executeServerCommand(pmcp, `ride ${username} dismount`).catch((e) => ({ ok: false, error: e?.message }));
           await sleep(400);
           if (r && r.ok) {
             // Server says we're not riding; clear stale mineflayer state.
@@ -795,7 +801,7 @@ export function createWaterActions(deps) {
         log(`[bucket_fill] native no-op for ${liquidName} — using PaperMCP fallback`);
         const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:bucket 1`);
         const r2 = await executeServerCommand(pmcp, `give ${username} minecraft:${liquidName} 1`);
-        const r3 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:air`);
+        const r3 = await executeServerCommand(pmcp, `setblock ${x} ${y} ${z} minecraft:air`);
         if (r1.ok && r2.ok && r3.ok) {
           for (let i = 0; i < 8; i++) {
             await sleep(120);
@@ -952,7 +958,7 @@ export function createWaterActions(deps) {
         }
         const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:${filled.name} 1`);
         const r2 = await executeServerCommand(pmcp, `give ${username} minecraft:bucket 1`);
-        const r3 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:${placedBlock}`);
+        const r3 = await executeServerCommand(pmcp, `setblock ${x} ${y} ${z} minecraft:${placedBlock}`);
         if (r1.ok && r2.ok && r3.ok) {
           for (let i = 0; i < 8; i++) {
             await sleep(120);
