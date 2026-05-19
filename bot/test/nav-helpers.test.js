@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { findStandableSameXZ } from '../lib/actions/_nav-helpers.js';
+import { findStandableSameXZ, targetChunkLoaded } from '../lib/actions/_nav-helpers.js';
 
 // Minimal mock bot exposing blockAt(Vec3). Block model: a 1×W×Z slab of
 // stone at y=63 with air everywhere else. The cell (0, 64, 0) is
@@ -66,4 +66,58 @@ test('findStandableSameXZ respects maxDy bound (does not search beyond)', () => 
   // maxDy=5 should refuse the rescue.
   const r = findStandableSameXZ(b, 0, 70, 0, 5);
   assert.equal(r, null);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// targetChunkLoaded — used by preflightNav to decide whether to bypass
+// the NAV_TARGET_UNSTANDABLE error for long-distance targets in unloaded
+// chunks. Round-A expedition test: brain issued mc bg_goto 1552 64 352
+// from base at (350, -595). The target is ~1500 blocks away — outside
+// the bot's ~160-block loaded-chunk radius. Without bypass, preflight
+// always refused. Now: if every block-probe in the target column returns
+// null, we know the chunk's unloaded and pathfinder should run anyway.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('targetChunkLoaded returns true when target column has a non-null block', () => {
+  const b = makeMockBot({ groundY: 63 });
+  assert.equal(targetChunkLoaded(b, 10, 64, 5, 5), true);
+});
+
+test('targetChunkLoaded returns false when all probes return null (unloaded chunk)', () => {
+  // Simulate an unloaded chunk: blockAt returns null for any Vec3.
+  const b = { blockAt: () => null };
+  assert.equal(targetChunkLoaded(b, 1552, 64, 352, 5), false);
+});
+
+test('targetChunkLoaded returns true if even ONE probe in the column is non-null', () => {
+  // Realistic edge: bot has rendered the surface y=64 block at the
+  // chunk-load boundary but Y=-3 below is still null. One hit is enough.
+  let calls = 0;
+  const b = {
+    blockAt: (pos) => {
+      calls++;
+      return pos.y === 64 ? { name: 'grass_block', boundingBox: 'block' } : null;
+    },
+  };
+  assert.equal(targetChunkLoaded(b, 0, 64, 0, 5), true);
+  // Should short-circuit: doesn't probe all 11 cells once it finds one.
+  assert.ok(calls < 11, `expected short-circuit, got ${calls} probes`);
+});
+
+test('targetChunkLoaded is defensive against blockAt throwing', () => {
+  const b = {
+    blockAt: () => { throw new Error('mineflayer internal: chunk pending'); },
+  };
+  // Throwing for every probe means we never saw a block — same as null.
+  assert.equal(targetChunkLoaded(b, 0, 64, 0, 5), false);
+});
+
+test('targetChunkLoaded respects maxDy bound', () => {
+  // Only Y=70 has a block. With maxDy=2 (probes Y=62-66), nothing found.
+  // With maxDy=10 (probes Y=54-74), the y=70 block IS in range.
+  const b = {
+    blockAt: (pos) => (pos.y === 70 ? { name: 'stone', boundingBox: 'block' } : null),
+  };
+  assert.equal(targetChunkLoaded(b, 0, 64, 0, 2), false);
+  assert.equal(targetChunkLoaded(b, 0, 64, 0, 10), true);
 });

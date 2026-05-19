@@ -4,7 +4,7 @@
  */
 import { Vec3 } from 'vec3';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
-import { findClosestStandable, findStandableSameXZ, standabilityReason, standingState, isStandableCell, computeReachability } from './_nav-helpers.js';
+import { findClosestStandable, findStandableSameXZ, standabilityReason, standingState, isStandableCell, computeReachability, targetChunkLoaded } from './_nav-helpers.js';
 
 // Y-grace: when an agent calls mc move / goto / goto_near with the right
 // XZ but a wrong Y (target inside a hill, floating in air), we rescue by
@@ -232,6 +232,16 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
             z: tz,
           },
         };
+      }
+      // Long-distance nav: when the target chunk is not loaded, blockAt
+      // returns null for everything we probed and the standability check
+      // is meaningless. Trust the brain; let pathfinder walk toward the
+      // target and chunks will stream in as the bot approaches. The
+      // pathfinder's own internal validation will catch a truly bad
+      // target once the chunks load. See targetChunkLoaded() in _nav-
+      // helpers.js for the exact probe.
+      if (!targetChunkLoaded(b, tx, ty, tz, Y_GRACE_MAX_DY)) {
+        return null;
       }
       return {
         ok: false,

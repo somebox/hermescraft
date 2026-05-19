@@ -31,6 +31,42 @@ const TRAVERSABLE_FOOT = new Set([
 ]);
 
 /**
+ * Probe whether the target column appears to be in a loaded chunk.
+ *
+ * Returns true if at least one block in the column (tx, ty±maxDy, tz)
+ * is non-null. False if every probe returns null — i.e. the chunk
+ * isn't loaded and the bot has zero information about that XZ.
+ *
+ * Used by preflightNav to decide: when no standable cell is found AND
+ * the chunk is unloaded, BYPASS the NAV_TARGET_UNSTANDABLE error and
+ * let pathfinder walk toward the target. Chunks will stream in as the
+ * bot approaches; pathfinder's internal validation catches a truly
+ * bad target then.
+ *
+ * Repro context (Round-A expedition test): brain issued `mc bg_goto
+ * 1552 64 352` from base at (350, -595). Target ~1500 blocks away,
+ * way outside the ~160-block loaded-chunk radius. Preflight refused
+ * because no chunks meant `findClosestStandable` and `findStandableSameXZ`
+ * both returned null. Without this bypass the brain had no way to start
+ * a long-distance walk.
+ *
+ * @param {object} b   mineflayer bot
+ * @param {number} tx  target X (floored)
+ * @param {number} ty  target Y (floored)
+ * @param {number} tz  target Z (floored)
+ * @param {number} maxDy  half-height of the Y probe column
+ * @returns {boolean} true iff at least one probe returned a non-null block
+ */
+export function targetChunkLoaded(b, tx, ty, tz, maxDy = 5) {
+  for (let dy = -maxDy; dy <= maxDy; dy++) {
+    try {
+      if (b.blockAt(new Vec3(tx, ty + dy, tz))) return true;
+    } catch { /* ignore */ }
+  }
+  return false;
+}
+
+/**
  * Is cell (x, y, z) a valid place for the bot to stand?
  *   - foot cell (x, y, z): air-like or traversable plant
  *   - head cell (x, y+1, z): air-like (1.8-tall bot needs head room)
