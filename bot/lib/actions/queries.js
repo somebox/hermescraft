@@ -735,6 +735,14 @@ export function createQueriesActions(services) {
     }
 
     // Trapped: pillar up if no ceiling, else fail (brain should mc dig).
+    // Round-4 in-game QA: Steve mined cobblestone straight down to Y=57,
+    // then needed 8 pillars to return to surface. The pre-fix handler did
+    // ONE jump-place per escape call, so the 3rd call tripped the
+    // escape-loop guard (recent.length >= 2) and refused. Now we delegate
+    // to mc pillar_step internally — same primitive the agent could call
+    // explicitly — which handles the multi-step loop, auto-stops when a
+    // lateral step becomes walkable, and uses the cascade of placeable
+    // blocks (preferring re-mineable dirt/sand over cobblestone/stone).
     if (cls === 'trapped') {
       if (before.ceiling_within !== null && before.ceiling_within <= 2) {
         return {
@@ -747,62 +755,61 @@ export function createQueriesActions(services) {
           },
         };
       }
-      // Look for a placeable pillar block in inventory (cobblestone, dirt,
-      // stone, cobbled_deepslate, anything generic & cheap).
-      const PILLAR_BLOCKS = ['cobblestone', 'dirt', 'stone', 'cobbled_deepslate', 'granite', 'andesite', 'diorite', 'netherrack'];
-      const item = b.inventory.items().find(it => PILLAR_BLOCKS.includes(it.name));
+      // pillar_step's cascade is broader than the inline PILLAR_BLOCKS
+      // list this used to use — kept just for the empty-inventory error
+      // path. (sand/gravel/planks/netherrack also pillar fine.)
+      const PILLAR_BLOCKS = [
+        'dirt', 'sand', 'gravel', 'netherrack',
+        'cobblestone', 'stone', 'cobbled_deepslate',
+        'granite', 'andesite', 'diorite',
+        'oak_planks', 'spruce_planks', 'birch_planks',
+      ];
+      const item = b.inventory.items().find((it) => PILLAR_BLOCKS.includes(it.name));
       if (!item) {
         return {
           ok: false,
           error: {
             code: 'ESCAPE_NO_PILLAR_BLOCK',
-            message: `Trapped and no pillar block (cobblestone/dirt/stone) in inventory. Get one of: ${PILLAR_BLOCKS.join(', ')}. Or mc dig a wall.`,
+            message: `Trapped and no pillar block (${PILLAR_BLOCKS.join(', ')}) in inventory. mc dig a wall to break out.`,
             observed_state: { classification: cls, blocked_dirs: before.blocked_dirs },
             retry_safe: false,
           },
         };
       }
       try {
-        await b.equip(item, 'hand');
-        // Look down and jump-place: stand at current cell, look at the block
-        // directly below, jump, place. Mineflayer doesn't have a built-in
-        // pillar, so we do it manually.
-        const groundPos = new Vec3(cell.x, cell.y - 1, cell.z);
-        const groundBlock = b.blockAt(groundPos);
-        if (!groundBlock || groundBlock.boundingBox !== 'block') {
-          return {
-            ok: false,
-            error: {
-              code: 'ESCAPE_NO_GROUND',
-              message: `No solid block below to pillar from. mc dig or jump to a solid spot first.`,
-              observed_state: { classification: cls },
-              retry_safe: true,
-            },
-          };
-        }
-        await b.lookAt(groundPos.offset(0.5, 0.5, 0.5));
-        b.setControlState('jump', true);
-        await new Promise(r => setTimeout(r, 250));
-        try {
-          await b.placeBlock(groundBlock, new Vec3(0, 1, 0));
-        } catch (e) {
-          // ignore place errors here; physics may have caught up
-        }
-        b.setControlState('jump', false);
-        await new Promise(r => setTimeout(r, 500));
+        const pillarRes = await getActions().pillar_step({ count: 16, jump: true });
         const after = standingState(b);
-        return recordEscapeSuccess({
-          ok: true,
-          data: {
-            action_taken: `pillar_up_${item.name}`,
-            from: fromPos,
-            to: after.position,
-            classification_before: cls,
-            classification_after: after.classification,
-            success: after.cell.y > cell.y,
+        const placed = pillarRes?.data?.placed ?? 0;
+        if (placed > 0) {
+          return recordEscapeSuccess({
+            ok: true,
+            data: {
+              action_taken: `pillar_up_x${placed}`,
+              from: fromPos,
+              to: after.position,
+              classification_before: cls,
+              classification_after: after.classification,
+              placed_blocks: placed,
+              pillar_block: item.name,
+              success: after.cell.y > cell.y,
+            },
+            result: `Pillared up ${placed} block${placed === 1 ? '' : 's'} (Y ${cell.y} → ${after.cell.y}). Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+          });
+        }
+        // pillar_step couldn't place even one block — surface the underlying
+        // reason so the brain knows whether to dig, get blocks, etc.
+        const pillarErr = pillarRes?.error?.message
+          || pillarRes?.result
+          || 'pillar_step placed 0 blocks';
+        return {
+          ok: false,
+          error: {
+            code: 'ESCAPE_PILLAR_FAILED',
+            message: `Pillar-up placed 0 blocks. ${pillarErr}. Try mc dig instead.`,
+            observed_state: { classification: cls, pillar_response: pillarRes?.result || null },
+            retry_safe: true,
           },
-          result: `Pillared up with ${item.name}. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
-        });
+        };
       } catch (e) {
         return {
           ok: false,

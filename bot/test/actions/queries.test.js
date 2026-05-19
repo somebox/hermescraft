@@ -369,3 +369,147 @@ test('queries.find: reachable block ranks ahead of closer-unreachable; result po
   assert.match(r.result, /4,64,0/);
   assert.match(r.result, /1 unreachable/);
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// `mc escape` — trapped classification now delegates to mc pillar_step
+// for multi-step ascent. Round-4 in-game QA: Steve mined down 8 blocks to
+// find cobblestone, then needed 8 separate escape calls to pillar back to
+// the surface — but the 3rd call tripped the escape-loop guard. With the
+// fix, ONE escape call pillars the whole way up.
+// ─────────────────────────────────────────────────────────────────────────
+
+import { ok } from '../../lib/shared/action-contract.js';
+
+function makeTrappedBot({ inventoryItems }) {
+  // Bot in a 1×1 mining shaft at (0, 64, 0):
+  //   floor at (0, 63, 0): cobblestone (solid below).
+  //   foot+head at (0, 64..65, 0): air.
+  //   shaft up: air for many blocks (no ceiling).
+  //   walls: cobblestone at all 4 cardinals at y=64 and y=65 (no step-up).
+  const pos = new Vec3(0.5, 64, 0.5);
+  const inWall = (x, y, z) => {
+    const isFloorOrUp = (y >= 63);
+    if (!isFloorOrUp) return false;
+    // Floor block
+    if (x === 0 && z === 0 && y === 63) return true;
+    // Walls: at the bot's cell perimeter, cardinal-adjacent at y=64,65 only.
+    const onCard = (Math.abs(x) === 1 && z === 0) || (x === 0 && Math.abs(z) === 1);
+    if (onCard && (y === 64 || y === 65)) return true;
+    return false;
+  };
+  return {
+    entity: { position: pos, isInWater: false, onGround: true, yaw: 0, pitch: 0 },
+    inventory: { items: () => inventoryItems.slice() },
+    blockAt: (p) => {
+      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+      if (inWall(x, y, z)) return { name: 'cobblestone', boundingBox: 'block' };
+      return { name: 'air', boundingBox: 'empty' };
+    },
+    findBlocks: () => [],
+    entities: {},
+  };
+}
+
+test('queries.escape: trapped delegates to pillar_step and reports placed blocks', async () => {
+  const bot = makeTrappedBot({
+    inventoryItems: [{ name: 'cobblestone', count: 4, type: 4 }],
+  });
+  let pillarStepCalls = 0;
+  let pillarStepArgs = null;
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: makeMcData() } },
+    ensureBot: () => bot,
+    getActions: () => ({
+      pillar_step: async (args) => {
+        pillarStepCalls += 1;
+        pillarStepArgs = args;
+        return ok({ data: { placed: 5, climbed_from: 64, climbed_to: 69 } });
+      },
+    }),
+  });
+  const actions = createQueriesActions(services);
+  const r = await actions.escape();
+
+  assert.equal(pillarStepCalls, 1, 'escape should delegate to pillar_step exactly once');
+  // Use the same multi-step count cap as pillar_step (16 from building.js).
+  assert.equal(pillarStepArgs?.count, 16);
+  assert.equal(pillarStepArgs?.jump, true);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.action_taken, 'pillar_up_x5');
+  assert.equal(r.data.placed_blocks, 5);
+  assert.match(r.result, /Pillared up 5 blocks/);
+});
+
+test('queries.escape: trapped surfaces a clean error when pillar_step places 0', async () => {
+  const bot = makeTrappedBot({
+    inventoryItems: [{ name: 'cobblestone', count: 4, type: 4 }],
+  });
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: makeMcData() } },
+    ensureBot: () => bot,
+    getActions: () => ({
+      pillar_step: async () => ({
+        ok: false,
+        error: { code: 'PILLAR_NO_HEADROOM', message: 'overhead blocked' },
+      }),
+    }),
+  });
+  const actions = createQueriesActions(services);
+  const r = await actions.escape();
+
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'ESCAPE_PILLAR_FAILED');
+  assert.match(r.error.message, /pillar_step placed 0 blocks|overhead blocked/);
+});
+
+test('queries.escape: trapped + ceiling within 2 refuses without calling pillar_step', async () => {
+  // Same trapped geometry but with a ceiling cap directly above. The pre-
+  // check must reject before delegating, since pillar_step can't help
+  // without first digging the ceiling.
+  const pos = new Vec3(0.5, 64, 0.5);
+  const inWall = (x, y, z) => {
+    if (x === 0 && z === 0 && y === 63) return true;             // floor
+    if (x === 0 && z === 0 && y === 66) return true;             // ceiling 2 above feet
+    const onCard = (Math.abs(x) === 1 && z === 0) || (x === 0 && Math.abs(z) === 1);
+    if (onCard && (y === 64 || y === 65)) return true;
+    return false;
+  };
+  const bot = {
+    entity: { position: pos, isInWater: false, onGround: true, yaw: 0, pitch: 0 },
+    inventory: { items: () => [{ name: 'cobblestone', count: 4, type: 4 }] },
+    blockAt: (p) => {
+      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+      if (inWall(x, y, z)) return { name: 'cobblestone', boundingBox: 'block' };
+      return { name: 'air', boundingBox: 'empty' };
+    },
+    findBlocks: () => [],
+    entities: {},
+  };
+  let pillarStepCalls = 0;
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: makeMcData() } },
+    ensureBot: () => bot,
+    getActions: () => ({ pillar_step: async () => { pillarStepCalls++; return ok({ data: { placed: 0 } }); } }),
+  });
+  const actions = createQueriesActions(services);
+  const r = await actions.escape();
+
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'ESCAPE_CEILING_BLOCKED');
+  assert.equal(pillarStepCalls, 0, 'must not delegate when ceiling pre-check fails');
+});
+
+test('queries.escape: trapped + no placeable refuses with ESCAPE_NO_PILLAR_BLOCK', async () => {
+  const bot = makeTrappedBot({ inventoryItems: [{ name: 'oak_log', count: 1, type: 17 }] });
+  let pillarStepCalls = 0;
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: makeMcData() } },
+    ensureBot: () => bot,
+    getActions: () => ({ pillar_step: async () => { pillarStepCalls++; return ok({ data: { placed: 0 } }); } }),
+  });
+  const actions = createQueriesActions(services);
+  const r = await actions.escape();
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'ESCAPE_NO_PILLAR_BLOCK');
+  assert.equal(pillarStepCalls, 0, 'must not delegate when inventory has no pillar block');
+});
