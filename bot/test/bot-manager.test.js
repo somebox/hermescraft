@@ -52,6 +52,14 @@ test('MOVEMENTS_TUNING: canDig=false, canOpenDoors=true preserved', () => {
   assert.equal(MOVEMENTS_TUNING.canOpenDoors, true);
 });
 
+test('MOVEMENTS_TUNING: maxCumulativeDropDown = 3 (hyd2 Y-drift cap)', () => {
+  // hyd2 trace: avoidWater=true blocked the level route, pathfinder
+  // descended a slope from y=64 → y=60 to reach a `collect dirt`
+  // target, then bot needed ~50 cmds to climb back. Refuse any path
+  // step whose landing is >3 below current foot Y.
+  assert.equal(MOVEMENTS_TUNING.maxCumulativeDropDown, 3);
+});
+
 test('MOVEMENTS_TUNING: avoidWater defaults true unless BOT_AVOID_WATER=false', () => {
   // The actual value reads process.env at module load. We just assert
   // the field exists and the live default is true (env var unset).
@@ -63,10 +71,10 @@ test('MOVEMENTS_TUNING: avoidWater defaults true unless BOT_AVOID_WATER=false', 
   }
 });
 
-function makeMockMovements() {
+function makeMockMovements(opts = {}) {
   // Mirrors the subset of mineflayer-pathfinder Movements that
   // applyMovementsTuning touches.
-  return {
+  const moves = {
     allowSprinting: false,
     allowParkour: true,
     canDig: true,
@@ -77,6 +85,19 @@ function makeMockMovements() {
     blocksCantBreak: new Set(),
     blocksToAvoid: new Set(),
   };
+  if (opts.withBot) {
+    moves.bot = { entity: { position: { y: opts.footY ?? 64 } } };
+  }
+  if (opts.withGetLandingBlock) {
+    // Stand-in for mineflayer-pathfinder Movements.getLandingBlock.
+    // Returns a fake "landing block" at the candidate Y supplied via
+    // dir.candidateY (so each test can probe a specific drop depth).
+    moves.getLandingBlock = function (_node, dir) {
+      if (dir?.candidateY === null) return null;
+      return { position: { y: dir?.candidateY ?? 64, x: 0, z: 0 } };
+    };
+  }
+  return moves;
 }
 
 test('applyMovementsTuning: writes liquidCost and disables infinite liquid dropdown', () => {
@@ -135,6 +156,73 @@ test('applyMovementsTuning: avoidWater silently skips if mcData has no water ent
   const moves = makeMockMovements();
   applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: true });
   assert.equal(moves.blocksToAvoid.size, 0);
+});
+
+test('applyMovementsTuning: writes maxCumulativeDropDown onto the Movements instance', () => {
+  const moves = makeMockMovements();
+  applyMovementsTuning(moves, { blocksByName: {} });
+  assert.equal(moves.maxCumulativeDropDown, 3);
+  // Override via opts:
+  const moves2 = makeMockMovements();
+  applyMovementsTuning(moves2, { blocksByName: {} }, { maxCumulativeDropDown: 10 });
+  assert.equal(moves2.maxCumulativeDropDown, 10);
+});
+
+test('applyMovementsTuning: getLandingBlock override refuses drops deeper than cap', () => {
+  // Bot stands at y=64. Cap=3 means any landing.y < 61 is refused.
+  const moves = makeMockMovements({ withBot: true, footY: 64, withGetLandingBlock: true });
+  applyMovementsTuning(moves, { blocksByName: {} });
+  // 1-block drop to y=63 — allowed.
+  assert.ok(moves.getLandingBlock({}, { candidateY: 63 }) !== null);
+  // 3-block drop to y=61 — exactly at the cap, allowed.
+  assert.ok(moves.getLandingBlock({}, { candidateY: 61 }) !== null);
+  // 4-block drop to y=60 — refused. This is the exact hyd2 failure cell.
+  assert.equal(moves.getLandingBlock({}, { candidateY: 60 }), null);
+  // 10-block plunge — refused.
+  assert.equal(moves.getLandingBlock({}, { candidateY: 54 }), null);
+});
+
+test('applyMovementsTuning: getLandingBlock override uses CURRENT foot Y, not construction Y', () => {
+  // If the bot moves down legitimately (mc stair_down), the next
+  // pathfind should anchor to the new foot Y. We simulate by mutating
+  // moves.bot.entity.position.y between calls.
+  const moves = makeMockMovements({ withBot: true, footY: 64, withGetLandingBlock: true });
+  applyMovementsTuning(moves, { blocksByName: {} });
+  // From y=64, dropping to y=60 is refused.
+  assert.equal(moves.getLandingBlock({}, { candidateY: 60 }), null);
+  // Bot stair_downs to y=58. Now dropping to y=55 (3 below new Y) is ok.
+  moves.bot.entity.position.y = 58;
+  assert.ok(moves.getLandingBlock({}, { candidateY: 55 }) !== null);
+  // But y=54 (4 below new Y) is still refused.
+  assert.equal(moves.getLandingBlock({}, { candidateY: 54 }), null);
+});
+
+test('applyMovementsTuning: getLandingBlock override preserves null returns from underlying impl', () => {
+  // If the underlying Movements.getLandingBlock says "no landing"
+  // (e.g. void below), the override must still return null — not
+  // mistakenly approve.
+  const moves = makeMockMovements({ withBot: true, footY: 64, withGetLandingBlock: true });
+  applyMovementsTuning(moves, { blocksByName: {} });
+  assert.equal(moves.getLandingBlock({}, { candidateY: null }), null);
+});
+
+test('applyMovementsTuning: getLandingBlock override is defensive when bot is missing', () => {
+  // Test mocks without a bot field must not crash — the override
+  // should pass through.
+  const moves = makeMockMovements({ withGetLandingBlock: true });
+  applyMovementsTuning(moves, { blocksByName: {} });
+  // No bot.entity.position.y → cap is skipped, original return passes through.
+  assert.ok(moves.getLandingBlock({}, { candidateY: 10 }) !== null);
+});
+
+test('applyMovementsTuning: getLandingBlock patch is idempotent', () => {
+  // Wrapping the override twice would cumulatively shrink the cap.
+  // Guard via _cumulativeDropPatched flag.
+  const moves = makeMockMovements({ withBot: true, footY: 64, withGetLandingBlock: true });
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const firstWrap = moves.getLandingBlock;
+  applyMovementsTuning(moves, { blocksByName: {} });
+  assert.equal(moves.getLandingBlock, firstWrap, 'patch must not stack');
 });
 
 test('applyMovementsTuning: gracefully skips liquidCost on Movements lacking the field', () => {

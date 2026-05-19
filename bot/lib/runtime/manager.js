@@ -49,6 +49,26 @@ const STUCK_IDLE_MS = 20000;
  */
 const AVOID_WATER_DEFAULT = process.env.BOT_AVOID_WATER !== 'false';
 
+/**
+ * Cumulative cap on how many blocks below the bot's CURRENT foot Y a
+ * pathfind is allowed to terminate. Default 3.
+ *
+ * Round-A hyd2 trace: with avoidWater=true blocking water-routes, the
+ * bot's `mc collect dirt` pathfind descended a natural slope from
+ * y=64 down to y=60 to reach a dirt block at lower elevation.
+ * Re-ascending took ~50 commands of trial-and-error. Capping the
+ * search at 3 blocks of total descent (below the current foot Y)
+ * forces the planner to either find a level alternative or return
+ * NAV_BLOCKED with the bot still at start Y — so the brain can
+ * decide whether to bridge, stair_down, or pivot.
+ *
+ * Override via env `BOT_MAX_CUMULATIVE_DROP_DOWN=<int>`. Set very
+ * high (e.g. 256) to effectively disable.
+ */
+const MAX_CUMULATIVE_DROP_DOWN_DEFAULT = Number.isFinite(parseInt(process.env.BOT_MAX_CUMULATIVE_DROP_DOWN, 10))
+  ? parseInt(process.env.BOT_MAX_CUMULATIVE_DROP_DOWN, 10)
+  : 3;
+
 export const MOVEMENTS_TUNING = Object.freeze({
   allowSprinting: true,
   canDig: false,
@@ -57,6 +77,7 @@ export const MOVEMENTS_TUNING = Object.freeze({
   liquidCost: 50,
   infiniteLiquidDropdownDistance: false,
   avoidWater: AVOID_WATER_DEFAULT,
+  maxCumulativeDropDown: MAX_CUMULATIVE_DROP_DOWN_DEFAULT,
 });
 
 /**
@@ -98,6 +119,31 @@ export function applyMovementsTuning(moves, mcData, opts = {}) {
     if (block && moves.blocksCantBreak?.add) {
       moves.blocksCantBreak.add(block.id);
     }
+  }
+
+  // Cumulative-drop cap. See MOVEMENTS_TUNING.maxCumulativeDropDown
+  // comment. We wrap `getLandingBlock` because it's the single
+  // chokepoint for both `getMoveDown` (1-block step) and
+  // `getMoveDropDown` (multi-block fall) — returning null aborts the
+  // candidate neighbour. The cap is anchored to the bot's foot Y at
+  // call time, NOT at Movements-construction time, so each new
+  // pathfinder.goto() uses the current foot Y as its baseline.
+  const maxCumulativeDropDown = opts.maxCumulativeDropDown ?? MOVEMENTS_TUNING.maxCumulativeDropDown;
+  moves.maxCumulativeDropDown = maxCumulativeDropDown;
+  if (typeof moves.getLandingBlock === 'function' && !moves._cumulativeDropPatched) {
+    const originalGetLandingBlock = moves.getLandingBlock.bind(moves);
+    moves.getLandingBlock = function (node, dir) {
+      const landing = originalGetLandingBlock(node, dir);
+      if (!landing || !landing.position) return landing;
+      const footY = this.bot?.entity?.position?.y;
+      if (typeof footY !== 'number') return landing; // defensive: no bot in test mocks
+      const floorY = Math.floor(footY);
+      if (landing.position.y < floorY - this.maxCumulativeDropDown) {
+        return null;
+      }
+      return landing;
+    };
+    moves._cumulativeDropPatched = true;
   }
   return moves;
 }
