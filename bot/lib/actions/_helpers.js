@@ -259,12 +259,25 @@ export function pathfindWithProgressWatchdog(cfg) {
 // mineflayer-pathfinder issue #273 (partial-path stuck). Lower caps
 // catch those hangs ~3× sooner. `go_mark` stays at 15s because it
 // allows long-haul travel by design.
+//
+// Round-A expedition: the 5s goto cap was killing legitimate
+// long-distance bg_goto. At 4.3 blocks/s walking speed, a 1km leg
+// takes ~232s — capping it at 5s meant every long bg_goto returned
+// OPERATION_TIMEOUT after ~20 blocks of progress, forcing the brain
+// into tiny iterative legs (~9 blocks/min effective rate). The
+// pathfindWithProgressWatchdog already catches real hangs at 4s of
+// no-motion, so the outer wallclock cap is redundant for stall
+// detection — it only needed to be a defense-in-depth backstop.
+// goto bumped from 5000 → 300000 (5 min) to permit ~1.3km legs;
+// move from 12000 → 30000 to permit longer door-chained legs. The
+// 4s progress watchdog (windowMs in pathfindWithProgressWatchdog,
+// _helpers.js:166) remains the primary stall signal.
 export const ACTION_CAPS_MS = Object.freeze({
   place: 8000,
-  goto: 5000,
+  goto: 300000,
   goto_near: 8000,
   go_mark: 15000,
-  move: 12000,
+  move: 30000,
   collect: 40000,
   dig: 10000,
   craft: 30000,
