@@ -48,6 +48,51 @@ const MATURE_AGE = {
   beetroots: 3,
 };
 
+/**
+ * Resolve the harvest Y level when the caller omitted Y.
+ *
+ * Round-A hyd2: bot at `entity.position.y = 63.999...` (just settled
+ * on farmland), `Math.floor` returns 63 — but the wheat blocks are
+ * at y=64. The 4-arg form `mc harvest X1 Z1 X2 Z2` then searched the
+ * farmland row, found 0 crops, returned NOTHING_TO_HARVEST. Bot
+ * burned ~2 minutes guessing argument forms before stumbling onto
+ * the 5-arg form with explicit Y=64.
+ *
+ * Strategy: probe footY-1, footY, footY+1 with `getBlock` and pick
+ * the Y level containing the most crop blocks in the rect. This
+ * handles:
+ *   - Float-noise just-below-the-block-boundary (footY-1 catches it
+ *     when bot is slightly above the wheat row).
+ *   - Standing-on-farmland-with-crops (footY catches it).
+ *   - Bot one block above the patch (footY+1 catches it — e.g. brain
+ *     pillared up and forgot to come down).
+ *
+ * Pure function for testing — caller supplies a `blockAt(pos)` probe.
+ *
+ * @param {{minX:number, maxX:number, minZ:number, maxZ:number, footY:number, blockAt:(p:{x:number,y:number,z:number})=>{name:string}|null}} args
+ * @returns {{y:number, count:number}}
+ */
+export function resolveHarvestY({ minX, maxX, minZ, maxZ, footY, blockAt }) {
+  const candidates = [footY - 1, footY, footY + 1];
+  let bestY = footY;
+  // Init to 0 so a "no crops anywhere" search returns footY (the
+  // handler then reports NOTHING_TO_HARVEST), and ties between
+  // candidates resolve to whichever Y was scanned FIRST that hit a
+  // non-zero count — i.e. footY-1 wins ties with footY.
+  let bestCount = 0;
+  for (const y of candidates) {
+    let cnt = 0;
+    for (let xi = minX; xi <= maxX; xi++) {
+      for (let zi = minZ; zi <= maxZ; zi++) {
+        const blk = blockAt({ x: xi, y, z: zi });
+        if (blk && MATURE_AGE[blk.name] !== undefined) cnt++;
+      }
+    }
+    if (cnt > bestCount) { bestCount = cnt; bestY = y; }
+  }
+  return { y: bestY, count: bestCount };
+}
+
 export function createFarmingActions(deps) {
   const { ctx, ensureBot, goals, sleep, posObj, log, getMyName, ACTIONS } = deps;
 
@@ -373,7 +418,18 @@ export function createFarmingActions(deps) {
       const maxX = Math.max(Number(x1), Number(x2));
       const minZ = Math.min(Number(z1), Number(z2));
       const maxZ = Math.max(Number(z1), Number(z2));
-      const harvestY = y !== undefined ? Number(y) : Math.floor(b.entity.position.y);
+      const yWasProvided = y !== undefined;
+      let harvestY;
+      if (yWasProvided) {
+        harvestY = Number(y);
+      } else {
+        const footY = Math.floor(b.entity.position.y);
+        const resolved = resolveHarvestY({
+          minX, maxX, minZ, maxZ, footY,
+          blockAt: (p) => b.blockAt(new Vec3(p.x, p.y, p.z)),
+        });
+        harvestY = resolved.y;
+      }
 
       const before = inventoryAt(b);
       let mature = 0;
@@ -411,10 +467,21 @@ export function createFarmingActions(deps) {
 
       const after = inventoryAt(b);
       if (mature === 0 && immatureCount === 0) {
+        const yHint = !yWasProvided
+          ? ` Y was auto-detected as ${harvestY} from your foot position; if crops sit at a different Y (raised platform, you pillared up), pass Y explicitly: mc harvest ${minX} ${minZ} ${maxX} ${maxZ} <Y>. Y is the LAST argument, not interleaved with coords.`
+          : '';
         return { ok: false, error: {
           code: 'NOTHING_TO_HARVEST',
-          message: `No crops found in rectangle (${minX},${harvestY},${minZ})-(${maxX},${harvestY},${maxZ}).`,
-          observed_state: { searched_blocks: (maxX - minX + 1) * (maxZ - minZ + 1) },
+          message: `No crops found in rectangle (${minX},${harvestY},${minZ})-(${maxX},${harvestY},${maxZ}).${yHint}`,
+          observed_state: {
+            searched_blocks: (maxX - minX + 1) * (maxZ - minZ + 1),
+            searched_y: harvestY,
+            y_was_provided: yWasProvided,
+            bot_foot_y: Math.floor(b.entity.position.y),
+          },
+          next_action_hint: !yWasProvided
+            ? `mc harvest ${minX} ${minZ} ${maxX} ${maxZ} ${Math.floor(b.entity.position.y) + 1}`
+            : null,
           retry_safe: false,
         }};
       }

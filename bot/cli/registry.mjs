@@ -1035,7 +1035,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('harvest', 'world', [], {
-    description: 'Harvest mature crops in axis-aligned rectangle (X1,Z1)-(X2,Z2) at Y (defaults to bot foot Y). Skips immature crops and reports them. Picks up drops.',
+    description: 'Harvest mature crops in axis-aligned rectangle (X1,Z1)-(X2,Z2) at Y. ARG ORDER: all 4 horizontal coords first, then optional Y at the END (never interleaved with X/Z). Y defaults to auto-detected from bot foot Y (probes foot-1/foot/foot+1, picks the row with most crops). Skips immature crops and reports them. Picks up drops.',
     method: 'POST',
     path: '/action/harvest',
     argSchema: [

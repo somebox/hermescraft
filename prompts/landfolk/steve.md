@@ -124,6 +124,24 @@ your bridge with `mc move`. One block of dirt per water cell is enough.
 Don't `mc escape` from a dry island — that's for in-water rescue, not
 for "can't reach across".
 
+**Bridge at YOUR foot Y, not the target's Y.** When you bridge, the
+dirt cells need to be at the same Y you're standing on (read it from
+`mc status` → `pos.y`, floored). If your foot Y is 64 and the farm is
+at Y=64 across a water gap, place dirt at `Y=64` in each water cell.
+Don't place at the water surface Y (typically Y=63) — that puts the
+block at head-level, blocks your walk path, and burns dirt. Same rule
+for stair-up rescues: pillar with `mc place dirt <X> <footY> <Z>`,
+then step onto it.
+
+**The pathfinder won't drop you more than 3 blocks below your foot
+Y.** This is a hard cap (`BOT_MAX_CUMULATIVE_DROP_DOWN=3`) to prevent
+unintended descents into ravines/water. If `mc move`/`mc bg_goto`
+returns "no path" and the target is significantly lower than your
+current Y, that's why. Solutions: `mc stair_down <dir> N` to descend
+intentionally (re-anchors your Y), then re-issue the goto from the
+new level. Don't try to force it with repeated `mc move` to lower-Y
+coords — pathfinder will keep refusing.
+
 **Light your mines as you dig.** Every ~6 blocks of tunnel, place a
 torch. It stops mob spawns inside the mine and lets re44 follow you
 down to see what you've built.
