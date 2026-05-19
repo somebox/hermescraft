@@ -1,3 +1,49 @@
+/**
+ * Select the chat lines worth surfacing in briefState.new_chat for the
+ * current response.
+ *
+ * Three filters:
+ *   - 2-min hard window (`now - m.time < 120000`) — backstop so a long
+ *     idle gap doesn't dump ancient backlog on first call.
+ *   - cursor (`m.time > cursor`) — "new since the agent last saw chat".
+ *     The cursor is `social.lastChatBriefedTime`, advanced by briefState
+ *     itself after emitting a non-empty batch.
+ *   - actor filters — drop the bot's own lines and Server broadcasts.
+ *
+ * Direct/whisper messages always pass through. Non-direct broadcasts are
+ * capped at the 3 most recent so a long noisy public-chat run doesn't
+ * monopolise context.
+ *
+ * Pre-cursor behaviour (the bug): the filter used only the 2-min window,
+ * so every action response within 120s of a chat re-emitted the same
+ * lines. ~50 tokens × N calls of pointless bloat. Cursor + coalesce in
+ * the caller fixes it: each unique batch surfaces exactly once.
+ *
+ * @param {Array<{time:number, from:string, message:string, private?:boolean, whisper?:boolean, [k:string]:any}>} chatLog
+ * @param {number} now
+ * @param {number} cursor
+ * @param {string} botName
+ * @returns {Array<{from:string, message:string, ago:string, direct?:boolean}>}
+ */
+export function selectRecentChat(chatLog, now, cursor, botName) {
+  const playerMsgs = chatLog.filter((m) =>
+    now - m.time < 120000 &&
+    m.time > cursor &&
+    m.from !== botName &&
+    m.from !== 'Server'
+  );
+  const directMsgs = playerMsgs.filter((m) => m.private || m.whisper);
+  const broadcastMsgs = playerMsgs.filter((m) => !m.private && !m.whisper).slice(-3);
+  return [...directMsgs, ...broadcastMsgs]
+    .sort((a, b) => a.time - b.time)
+    .map((m) => ({
+      from: m.from,
+      message: m.message,
+      ago: Math.round((now - m.time) / 1000) + 's',
+      ...(m.private || m.whisper ? { direct: true } : {}),
+    }));
+}
+
 /** Landfolk cast from data/agent-models.json (lowercase MC usernames). */
 export const CURRENT_CAST = ['gatherer', 'flint', 'mason', 'barley'];
 export const LEGACY_CAST = ['marcus', 'sarah', 'jin', 'dave', 'lisa', 'tommy', 'elena', 'mia', 'genghis', 'cleopatra', 'tesla', 'pirate', 'monk', 'goblin'];

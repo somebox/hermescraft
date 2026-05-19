@@ -153,7 +153,7 @@ checklist.
 `mc scene`, `mc map`, `mc find`, `mc nearby` all require a
 `--reason="<sub-goal>"` flag. The output is a **goal-biased digest**
 (summary + recommendations with coordinates + caveats), produced by a
-~10 s LLM call.
+~10–30 s LLM call.
 ```
 mc scene  --reason="checking for hostiles before chopping wood"
 mc map    --reason="find oak logs within 64"
@@ -162,6 +162,13 @@ mc nearby --reason="any chests nearby with cooked food?"
 ```
 If you forget `--reason`, the CLI returns an error nudging you to add
 one. Don't try to bypass it — articulating the reason IS the point.
+
+**Set `timeout=60` on the terminal call.** The digest is slow (an LLM
+call inside an LLM call). Your terminal tool defaults to 15s, which
+will cut the digest short before it can answer. Always run these as:
+`terminal({"command": "mc scene --reason=...", "timeout": 60})` — or
+the equivalent in your wrapper. Same rule for `mc advise`. Without
+this, `mc-advise.jsonl` stays empty and you get nothing back.
 
 **Don't use the slow tools to poll progress.** If you're walking to a
 chest, don't call `mc scene --reason="checking goto progress"` every few

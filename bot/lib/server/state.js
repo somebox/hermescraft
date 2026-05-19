@@ -45,6 +45,13 @@ export function createSocialState() {
     socialEvents: /** @type {Array<{time:number, [k:string]:any}>} */ ([]),
     /** F59: timestamp of last public-chat emit; used by the chat rate limiter. */
     lastChatTs: 0,
+    /**
+     * "Chat seen by the agent" high-water mark — only chat messages with
+     * time > lastChatBriefedTime are surfaced in briefState().new_chat.
+     * Without this cursor, every action response re-emits the same 120s
+     * window of chat over and over (~50 tokens × N calls of bloat).
+     */
+    lastChatBriefedTime: 0,
     MAX_LOG: 100,
     MAX_QUEUE: 20,
   };

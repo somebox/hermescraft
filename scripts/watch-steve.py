@@ -89,7 +89,7 @@ class Colors:
             self.assistant = "\033[36m"   # cyan
             self.user = "\033[33m"        # yellow
             self.tool_call = "\033[35m"   # magenta
-            self.tool_out = "\033[90m"    # bright black
+            self.tool_out = "\033[37m"    # light grey — readable on dark themes
             self.reasoning = "\033[2;37m" # dim grey
             self.system = "\033[31m"      # red
         else:

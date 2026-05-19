@@ -2,7 +2,7 @@
 import { Vec3 } from 'vec3';
 import { scoreGoals } from '../goals/engine.js';
 import { refreshLeaseCheckpoint, taskToApi } from '../goals/tasks.js';
-import { summarizeSocialGraph } from '../shared/chat.js';
+import { summarizeSocialGraph, selectRecentChat } from '../shared/chat.js';
 import { buildActionStats, classifyIdleReason } from '../server/diagnostics.js';
 
 export function createObservation(deps) {
@@ -131,25 +131,48 @@ export function createObservation(deps) {
       });
   }
 
+  // Per-request coalesce for briefState's chat fetch. A single HTTP
+  // response typically calls briefState() twice (chat-banner middleware +
+  // final response state), and we want both to see the SAME batch of
+  // new chat. Outside the coalesce window, the cursor advances so the
+  // next HTTP response only surfaces messages that arrived since the
+  // previous one — instead of re-emitting the same 120s window over
+  // and over.
+  let _briefChatBatchAt = 0;
+  let _briefChatBatch = /** @type {any[] | null} */ (null);
+  const _BRIEF_CHAT_COALESCE_MS = 200;
+
   function briefState() {
     if (!ctx.world.bot || !ctx.world.botReady) return null;
 
     // Grab recent chat so AI sees messages that arrived during action.
-    // Player messages use a longer window (2 min) so they survive long-running actions.
-    // Nearby broadcasts are capped at 2 most recent to reduce cascade noise.
+    // The cursor (ctx.social.lastChatBriefedTime) gates against the
+    // chat that's already been shown to the agent on a prior response.
+    // Within a 200ms window we reuse the same batch so chat-banner and
+    // final-state see identical content.
     const now = Date.now();
-    const playerMsgs = ctx.social.chatLog
-      .filter(m => now - m.time < 120000 && m.from !== ctx.world.bot.username && m.from !== 'Server');
-    const directMsgs = playerMsgs.filter(m => m.private || m.whisper);
-    const broadcastMsgs = playerMsgs.filter(m => !m.private && !m.whisper).slice(-3);
-    const recentChat = [...directMsgs, ...broadcastMsgs]
-      .sort((a, b) => a.time - b.time)
-      .map(m => ({
-        from: m.from,
-        message: m.message,
-        ago: Math.round((now - m.time) / 1000) + 's',
-        ...(m.private || m.whisper ? { direct: true } : {}),
-      }));
+    let recentChat;
+    const reuse = _briefChatBatch !== null && (now - _briefChatBatchAt) < _BRIEF_CHAT_COALESCE_MS;
+    if (reuse) {
+      recentChat = _briefChatBatch;
+    } else {
+      const cursor = ctx.social.lastChatBriefedTime || 0;
+      recentChat = selectRecentChat(
+        ctx.social.chatLog,
+        now,
+        cursor,
+        ctx.world.bot.username,
+      );
+      // Cache the batch for the coalesce window AND advance the cursor.
+      // The cursor advance is "now-anchored" rather than "latest-message-
+      // anchored" — any chat that arrives mid-flight will still surface
+      // on the next response.
+      _briefChatBatch = recentChat;
+      _briefChatBatchAt = now;
+      if (recentChat.length > 0) {
+        ctx.social.lastChatBriefedTime = now;
+      }
+    }
 
     // Grab active commands (pending or acknowledged)
     const pending = ctx.social.commandQueue.filter(c => c.status === 'pending');
