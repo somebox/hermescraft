@@ -231,6 +231,32 @@ export function createReactive(deps) {
                  : 'adjacent_lava';
       return { action: 'escape_lava', hazards: state.lava_neighbors, why };
     }
+    // Water-watchdog (task #17). BEFORE the 800ms swim_up reflex,
+    // check if we've been continuously submerged long enough to
+    // justify the full mc escape strategy. Sustained foot_in_water
+    // with no resolution means the lightweight reflex isn't enough —
+    // bot is trapped in open water, needs to scan for shore / place
+    // a boat / pillar up. ACTIONS.escape handles all three.
+    if (state.in_water) {
+      waterTickCount += 1;
+    } else {
+      waterTickCount = 0;
+    }
+    const sinceLastEscape = Date.now() - lastAutoEscapeTs;
+    if (
+      waterTickCount >= WATER_TICKS_TO_FIRE
+      && !autoEscapeInFlight
+      && sinceLastEscape >= AUTO_ESCAPE_COOLDOWN_MS
+    ) {
+      return {
+        action: 'auto_escape_water',
+        ticks_submerged: waterTickCount,
+        oxygen: state.oxygen,
+        hp: state.hp,
+        why: 'sustained_water',
+      };
+    }
+
     // Drowning protection. Oxygen ranges 0-20 (one tick = 1 second IRL).
     // Damage starts when oxygen hits -1. At threshold 14 we have ~7s of
     // air left — plenty of time for pathfinder cancel + surface, even
@@ -747,6 +773,23 @@ export function createReactive(deps) {
   let creeperFleeHold = 0;       // ticks remaining before re-evaluating creeperFleeDir
   let creeperFleeLastDist = 0;   // distance to creeper at last flee tick — used to detect lack of progress
 
+  // Water-watchdog (task #17, circuit-v2 postmortem). The lightweight
+  // swim_up reflex (800ms jump) handles head_in_water but doesn't
+  // search for shore, place boats, or pillar up. Sustained submersion
+  // requires the full `mc escape` strategy. Track foot_in_water across
+  // ticks and, if the bot's been wet for ≥5 ticks (~2s) without
+  // progress, fire ACTIONS.escape({}) as a one-shot.
+  //
+  // Rate-limited to once per 30s to avoid loops if escape can't help
+  // (e.g. bot truly trapped — surfaces structured error instead).
+  // The fire-and-forget call is non-blocking so the reactive tick
+  // loop keeps running while escape works.
+  let waterTickCount = 0;        // consecutive ticks of foot_in_water=true
+  let lastAutoEscapeTs = 0;      // wall-clock of last auto-fired escape
+  let autoEscapeInFlight = false; // gate against re-entry while async escape runs
+  const WATER_TICKS_TO_FIRE = 5; // ~2.0s of continuous submersion before auto-fire
+  const AUTO_ESCAPE_COOLDOWN_MS = 30000; // 30s gate between auto-fires
+
   async function tick() {
     if (!ctx.world.bot || !ctx.world.botReady || inFlight) return;
     const state = readState();
@@ -807,6 +850,43 @@ export function createReactive(deps) {
         await escapeLava(state, decision.hazards);
       } else if (decision.action === 'swim_up') {
         await swimUp(state);
+      } else if (decision.action === 'auto_escape_water') {
+        // Watchdog auto-fire. Calls the full ACTIONS.escape primitive
+        // (queries.js) which does swim_up + 8-way 32b land scan +
+        // pillar-up + boat fallback. Fire-and-forget so the reactive
+        // loop keeps ticking; gate flag prevents re-entry.
+        autoEscapeInFlight = true;
+        lastAutoEscapeTs = Date.now();
+        waterTickCount = 0; // reset so we don't immediately re-trigger
+        pushAutoEvent({
+          kind: 'auto_escape_water_started',
+          ticks: decision.ticks_submerged,
+          oxygen: decision.oxygen,
+          hp: decision.hp,
+        });
+        // Run async — don't await inside the reactive tick (escape
+        // can take 10-15s for swim_up + scan + boat-place).
+        (async () => {
+          try {
+            const result = await ACTIONS.escape({});
+            pushAutoEvent({
+              kind: 'auto_escape_water_done',
+              ok: result?.ok !== false,
+              action_taken: result?.data?.action_taken || result?.error?.code,
+              diag: result?.data?.diag || result?.error?.observed_state?.diag,
+            });
+            log(`[reactive] auto_escape_water → ${result?.ok ? `${result.data.action_taken} ok` : (result.error?.code || 'failed')}`);
+          } catch (e) {
+            pushAutoEvent({
+              kind: 'auto_escape_water_done',
+              ok: false,
+              error: e?.message || String(e),
+            });
+            log(`[reactive] auto_escape_water error: ${e?.message || e}`);
+          } finally {
+            autoEscapeInFlight = false;
+          }
+        })();
       }
     } catch (e) {
       log(`[reactive] ${decision.action} error: ${/** @type {Error} */ (e).message || e}`);
@@ -929,6 +1009,10 @@ export function createReactive(deps) {
     creeperFleeDir = null;
     creeperFleeHold = 0;
     creeperFleeLastDist = 0;
+    // Water-watchdog reset: respawn means dry land + clean slate.
+    waterTickCount = 0;
+    autoEscapeInFlight = false;
+    lastAutoEscapeTs = 0;
     ctx.reactive.reactiveAnchor = null;
     const n = ctx.death.deathLog?.length ?? '?';
     log(`[reactive] death #${n} — reset stuckTicks/anchor, mode=${ctx.reactive.mode}`);
