@@ -29,13 +29,13 @@ test('STUCK_MOVEMENT_ACTIONS includes pathing but not collect (in-place mining)'
 // the agent regression is downstream and hard to find — pin them here.
 // ─────────────────────────────────────────────────────────────────────────
 
-test('MOVEMENTS_TUNING: liquidCost = 50 (round-A hydration-fall fix)', () => {
-  // The pre-fix value of 5 was enough to bias against crossing lakes but
-  // NOT enough to detour ONE 1-block water source adjacent to a farm —
-  // pathfinder kept routing the bot through the hydration cell and
-  // dropping it 1-2 blocks into water. 50 makes any 1-block water
-  // detour preferable to up to ~50 extra blocks of dry travel.
-  assert.equal(MOVEMENTS_TUNING.liquidCost, 50);
+test('MOVEMENTS_TUNING: liquidCost = 250 (circuit-v1 deep-route penalty)', () => {
+  // Bumped from 50 → 250 after circuit-v1: short water routes attracted
+  // the bot's path; physics carried it into deeper water. With 250,
+  // pathfinder accepts up to 250×N blocks of dry detour to avoid an
+  // N-block ford — short fords (1-2 blocks) still possible if there's
+  // no alternative, long swims always refused.
+  assert.equal(MOVEMENTS_TUNING.liquidCost, 250);
 });
 
 test('MOVEMENTS_TUNING: infiniteLiquidDropdownDistance = false (no water cushioning)', () => {
@@ -109,7 +109,7 @@ function makeMockMovements(opts = {}) {
 test('applyMovementsTuning: writes liquidCost and disables infinite liquid dropdown', () => {
   const moves = makeMockMovements();
   applyMovementsTuning(moves, { blocksByName: {} });
-  assert.equal(moves.liquidCost, 50);
+  assert.equal(moves.liquidCost, 250);
   assert.equal(moves.infiniteLiquidDropdownDistance, false);
 });
 

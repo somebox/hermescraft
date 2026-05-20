@@ -26,9 +26,13 @@ const STUCK_IDLE_MS = 20000;
  * Default pathfinder Movements tuning. Exported so tests can lock the
  * specific knobs we tune, and so users can override via env var.
  *
- * - liquidCost: 50 — round-A sustained-farm bug. Defence in depth: if
- *   water IS in the path graph for some reason (e.g., avoidWater is
- *   disabled), heavily penalise it so a dry route still wins.
+ * - liquidCost: 250 — heavy penalty so long water routes lose to any
+ *   dry detour up to 250×N blocks longer (N = water cells crossed).
+ *   Lets 1-2 block fords through (a 250-block detour for a 1-block
+ *   ford is silly) but refuses 5+ block crossings (1250 detour budget
+ *   is more than enough to find a long way around). Bumped from 50
+ *   after circuit-v1 showed Steve preferring short water routes that
+ *   physics then carried him into deep water.
  * - infiniteLiquidDropdownDistance: false — pathfinder default `true`
  *   lets the bot treat a drop into water of any depth as "safe", so it
  *   cheerfully routes over a cliff into a pond. False caps water drops
@@ -87,7 +91,7 @@ export const MOVEMENTS_TUNING = Object.freeze({
   canDig: false,
   canOpenDoors: true,
   scafoldingBlocks: [],
-  liquidCost: 50,
+  liquidCost: 250,
   infiniteLiquidDropdownDistance: false,
   avoidWater: AVOID_WATER_DEFAULT,
   maxCumulativeDropDown: MAX_CUMULATIVE_DROP_DOWN_DEFAULT,

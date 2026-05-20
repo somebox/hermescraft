@@ -244,30 +244,50 @@ export function createWaterActions(deps) {
         }};
       }
 
-      // Stand on solid ground ADJACENT to the water (not in it). Search
-      // the 4 cardinal neighbors at refBlock+1y for a solid stance block.
+      // Stance selection has TWO modes:
+      //   - Bot is in water (foot_in_water=true): place boat AT the bot's
+      //     current cell. In MC you can right-click a boat item while
+      //     submerged and it spawns on the water surface around you. No
+      //     dry stance needed. This is the "rescue from open ocean" path
+      //     surfaced in circuit-v1 — Steve was deep in water with no
+      //     shore in 4 blocks, place_boat returned NO_STANCE 11 times.
+      //   - Bot is on land: original behaviour, find dry stance adjacent
+      //     to the target water cell, pathfind to it.
+      const botFootPos = b.entity.position.floored();
+      const botFootBlock = b.blockAt(botFootPos);
+      const inWater = botFootBlock && (botFootBlock.name === 'water' || botFootBlock.name === 'flowing_water');
       let stancePos = null;
-      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const candidate = refBlock.position.offset(dx, 1, dz);
-        const blk = b.blockAt(candidate);
-        const under = b.blockAt(candidate.offset(0, -1, 0));
-        if (blk && (blk.name === 'air' || blk.boundingBox === 'empty') && under && under.boundingBox === 'block') {
-          stancePos = candidate;
-          break;
+      let placedFromWater = false;
+      if (inWater) {
+        // Place AT the bot's current foot cell. The boat spawns on the
+        // surface adjacent to the bot. No move needed.
+        stancePos = botFootPos;
+        placedFromWater = true;
+        log(`[place_boat] bot in water at ${botFootPos.x},${botFootPos.y},${botFootPos.z} — placing from-water without dry stance`);
+      } else {
+        // Land mode: search 4 cardinals at refBlock+1y for dry stance.
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const candidate = refBlock.position.offset(dx, 1, dz);
+          const blk = b.blockAt(candidate);
+          const under = b.blockAt(candidate.offset(0, -1, 0));
+          if (blk && (blk.name === 'air' || blk.boundingBox === 'empty') && under && under.boundingBox === 'block') {
+            stancePos = candidate;
+            break;
+          }
         }
-      }
-      if (!stancePos) {
-        return { ok: false, error: {
-          code: 'NO_STANCE',
-          message: `No solid block adjacent to water at (${x},${y},${z}). Stand at the pond edge.`,
-          retry_safe: false,
-        }};
-      }
-      if (b.entity.position.distanceTo(stancePos) > 1.5) {
-        try {
-          await b.pathfinder.goto(new goals.GoalNear(stancePos.x, stancePos.y, stancePos.z, 1));
-        } catch {
-          return { ok: false, error: { code: 'OUT_OF_RANGE', message: 'pathfind to stance failed', retry_safe: false }};
+        if (!stancePos) {
+          return { ok: false, error: {
+            code: 'NO_STANCE',
+            message: `No solid block adjacent to water at (${x},${y},${z}) and bot is not in water. Stand at the pond edge, or get into the water to place from there.`,
+            retry_safe: false,
+          }};
+        }
+        if (b.entity.position.distanceTo(stancePos) > 1.5) {
+          try {
+            await b.pathfinder.goto(new goals.GoalNear(stancePos.x, stancePos.y, stancePos.z, 1));
+          } catch {
+            return { ok: false, error: { code: 'OUT_OF_RANGE', message: 'pathfind to stance failed', retry_safe: false }};
+          }
         }
       }
 
@@ -359,6 +379,7 @@ export function createWaterActions(deps) {
           boat_position: entity?.position
             ? [Math.floor(entity.position.x), Math.floor(entity.position.y), Math.floor(entity.position.z)]
             : null,
+          placed_from_water: placedFromWater,
           ...(fallback ? { fallback } : {}),
         },
       };

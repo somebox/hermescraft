@@ -129,16 +129,17 @@ def task_snapshot() -> dict[str, Any]:
 
 
 def deaths_snapshot() -> dict[str, Any]:
-    """Return {total, last_pos, seconds_ago, items_lost}."""
+    """Return {total, deathNumber, last_pos, seconds_ago, items_lost}."""
     env = mc_run(["deaths"])
     if not env.get("ok"):
-        return {"total": 0, "last_pos": None, "seconds_ago": None, "items_lost": None}
+        return {"total": 0, "deathNumber": 0, "last_pos": None, "seconds_ago": None, "items_lost": None}
     d = env.get("data", {}) or {}
     last = d.get("last_death")
     if not last:
-        return {"total": d.get("total", 0), "last_pos": None, "seconds_ago": None, "items_lost": None}
+        return {"total": d.get("total", 0), "deathNumber": 0, "last_pos": None, "seconds_ago": None, "items_lost": None}
     return {
         "total": d.get("total", 0),
+        "deathNumber": last.get("deathNumber", 0),
         "last_pos": last.get("position"),
         "seconds_ago": last.get("seconds_ago"),
         "items_lost": last.get("items_lost"),
@@ -209,12 +210,25 @@ def cmd_poll_once(args: list[str]) -> int:
         events.append({"ts": s["ts"], "kind": "low_food", "food": s["food"]})
     if t.get("error_code") and t["error_code"] != "OPERATION_TIMEOUT":
         events.append({"ts": s["ts"], "kind": "nav_error", "code": t["error_code"], "target": t.get("target")})
-    if d.get("seconds_ago") is not None and d["seconds_ago"] < 35:
-        # 35s == one poll-interval — only flag once after each death.
+    # New-death detection: gate on deathNumber changing since last poll,
+    # NOT on seconds_ago < 35. circuit-v1 fired a false positive at T+0
+    # because Steve had a stale deathNumber=2 record from a prior
+    # session and seconds_ago happened to read fresh on first poll.
+    # State persisted in run_dir/.last_death_number to survive poller
+    # restarts.
+    last_death_file = run_dir / ".last_death_number"
+    last_num = 0
+    if last_death_file.exists():
+        try: last_num = int(last_death_file.read_text().strip())
+        except: last_num = 0
+    cur_num = int(d.get("deathNumber") or 0)
+    if cur_num > last_num:
         events.append({
             "ts": s["ts"], "kind": "death",
+            "deathNumber": cur_num,
             "at": d["last_pos"], "items_lost": d["items_lost"],
         })
+        last_death_file.write_text(str(cur_num))
     for e in events:
         append_jsonl(run_dir, "events.jsonl", e)
     return 0

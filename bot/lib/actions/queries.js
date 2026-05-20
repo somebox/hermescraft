@@ -473,26 +473,32 @@ export function createQueriesActions(services) {
     // drowning but is stuck.
     if (cls === 'in_water' || cls === 'in_flowing_water') {
       const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
+      // 8-way scan (cardinals + diagonals) for spiral land search.
       const DIR_VEC = {
-        N: { dx: 0, dz: -1 }, E: { dx: 1, dz: 0 }, S: { dx: 0, dz: 1 }, W: { dx: -1, dz: 0 },
+        N:  { dx: 0,  dz: -1 }, NE: { dx: 1,  dz: -1 },
+        E:  { dx: 1,  dz: 0  }, SE: { dx: 1,  dz: 1  },
+        S:  { dx: 0,  dz: 1  }, SW: { dx: -1, dz: 1  },
+        W:  { dx: -1, dz: 0  }, NW: { dx: -1, dz: -1 },
+      };
+      const CARDINAL_DIRS = {
+        N: DIR_VEC.N, E: DIR_VEC.E, S: DIR_VEC.S, W: DIR_VEC.W,
       };
       const attempts = [];
+      const diag = {}; // structured per-phase diagnostics for the brain
 
-      // Step 0: if fully submerged (head_in_water), spam jump to ride
-      // buoyancy to the surface BEFORE searching for land. Open-ocean
-      // recovery in exp3 failed because the bot was at y=51-54 in a
-      // ~12-deep water column; the 4-block cardinal scan and pillar_up
-      // both fail underwater. Drowning starts at ~30s submerged
-      // (oxygen ≤14) and burns 2 HP/s thereafter, so a fast surface is
-      // critical. Each jump tick rises ~0.4 blocks at 150ms cadence;
-      // 25 ticks ≈ 3.75s ≈ up to 10 blocks of rise. We bail as soon as
-      // head clears water.
+      // Step 0: if submerged (head_in_water), swim to surface BEFORE
+      // anything else. Buoyancy from `jump` lifts ~0.4b per 150ms tick.
+      // Extended from the old 25-tick cap to 80 ticks (~12s) — circuit-v1
+      // showed bot at y=51 with ~12 blocks of water above; old loop
+      // didn't reach surface. New loop bails the moment head clears
+      // water OR HP falls below 8 (drowning burning HP — abort and
+      // try the next strategy instead of drowning silently).
       let curState = before;
       let curCell = { x: cell.x, y: cell.y, z: cell.z };
       let surfacedBy = null;
       if (before.head_in_water) {
         try {
-          for (let i = 0; i < 25; i++) {
+          for (let i = 0; i < 80; i++) {
             b.setControlState('jump', true);
             await new Promise(r => setTimeout(r, 150));
             const s = standingState(b);
@@ -501,11 +507,20 @@ export function createQueriesActions(services) {
               curCell = { x: s.cell.x, y: s.cell.y, z: s.cell.z };
             }
             if (s && !s.head_in_water) { surfacedBy = i + 1; break; }
+            // Drowning-abort guard: if HP drops below 8 we're losing
+            // fast; cut losses and try a different strategy.
+            if (b.health !== undefined && b.health < 8) {
+              attempts.push({ method: 'swim_up', surfaced: false, aborted_low_hp: true, ticks: i + 1, hp: b.health });
+              break;
+            }
           }
         } finally {
           try { b.setControlState('jump', false); } catch {}
         }
-        attempts.push({ method: 'swim_up', surfaced: surfacedBy !== null, ticks: surfacedBy });
+        if (surfacedBy !== null) {
+          attempts.push({ method: 'swim_up', surfaced: true, ticks: surfacedBy });
+        }
+        diag.swim_up = { surfaced: surfacedBy !== null, ticks: surfacedBy ?? 80, hp_at_end: b.health };
         // Brief settle for buoyancy oscillation.
         await new Promise(r => setTimeout(r, 200));
       }
@@ -514,7 +529,7 @@ export function createQueriesActions(services) {
       if (postSwim && !postSwim.foot_in_water) {
         return recordEscapeSuccess({
           ok: true,
-          data: { action_taken: 'swim_up', from: fromPos, to: postSwim.position, classification_before: cls, classification_after: postSwim.classification, attempts, success: true },
+          data: { action_taken: 'swim_up', from: fromPos, to: postSwim.position, classification_before: cls, classification_after: postSwim.classification, attempts, diag, success: true },
           result: `Surfaced from submerged water. Now ${postSwim.classification} at ${postSwim.cell.x},${postSwim.cell.y},${postSwim.cell.z}.`,
         });
       }
@@ -522,30 +537,36 @@ export function createQueriesActions(services) {
         curCell = { x: postSwim.cell.x, y: postSwim.cell.y, z: postSwim.cell.z };
       }
 
-      // 1. Scan cardinals for a dry standable. Wider radius (16) once
-      // we've surfaced so the open-ocean case has a chance — narrow 4
-      // remained for cases where we're still submerged after step 0
-      // (defence: don't pathfind too far while drowning).
-      const scanRadius = surfacedBy !== null || !before.head_in_water ? 16 : 4;
+      // 1. Scan 8 directions for a dry standable cell. Spiral by radius
+      // (1, 2, 3, ...) so we try near cells first. Radius 32 if
+      // surfaced (we have time once head is clear); 6 if still
+      // submerged (don't pathfind far while drowning). Cardinal-only
+      // 4-block scan in the old code missed diagonal shores entirely —
+      // circuit-v1 was in deep ocean where the nearest shore was NE,
+      // not N/E/S/W.
+      const scanRadius = (surfacedBy !== null || !before.head_in_water) ? 32 : 6;
+      const dirSearch = (surfacedBy !== null || !before.head_in_water) ? DIR_VEC : CARDINAL_DIRS;
       let bestDry = null;
-      for (const [dirName, v] of Object.entries(DIR_VEC)) {
-        for (let r = 1; r <= scanRadius; r++) {
+      // BFS-by-radius across all 8 directions so we find the closest hit.
+      outer: for (let r = 1; r <= scanRadius; r++) {
+        for (const [dirName, v] of Object.entries(dirSearch)) {
           const tx = curCell.x + v.dx * r;
           const ty = curCell.y;
           const tz = curCell.z + v.dz * r;
           const floor = b.blockAt(new Vec3(tx, ty - 1, tz));
           const footAt = b.blockAt(new Vec3(tx, ty, tz));
           const headAt = b.blockAt(new Vec3(tx, ty + 1, tz));
-          if (!floor || !footAt || !headAt) break;
+          if (!floor || !footAt || !headAt) continue;
           const solidFloor = floor.boundingBox === 'block' && floor.name !== 'water' && floor.name !== 'flowing_water';
           const openFoot = AIR_NAMES.has(footAt.name);
           const openHead = AIR_NAMES.has(headAt.name);
           if (solidFloor && openFoot && openHead) {
-            if (!bestDry || r < bestDry.r) bestDry = { dir: dirName, r, target: { x: tx, y: ty, z: tz } };
-            break;
+            bestDry = { dir: dirName, r, target: { x: tx, y: ty, z: tz } };
+            break outer;
           }
         }
       }
+      diag.land_scan = { radius: scanRadius, dirs: Object.keys(dirSearch).length, found: !!bestDry, ...(bestDry && { nearest_dry: bestDry }) };
       // Keep using `cell` for the rest of the existing pillar/place
       // logic — re-bind it to current location so the place-floor and
       // pillar-up branches probe the right cells.
@@ -657,23 +678,92 @@ export function createQueriesActions(services) {
           });
         }
       }
-      // Nothing worked.
+      // 4. Boat fallback. If bot has any *_boat AND no land was reached,
+      // place a boat at current position. Boats float on water — a placed
+      // boat at our foot cell means the bot can mount and effectively
+      // "stand" on the boat at the water surface. From there it can
+      // sail to shore. This is the FINAL water-escape strategy before
+      // giving up, added after circuit-v1 showed deep ocean stuck for
+      // 22 minutes with no working primitive.
+      const BOAT_NAMES = new Set([
+        'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
+        'acacia_boat', 'dark_oak_boat', 'cherry_boat', 'mangrove_boat',
+        'bamboo_raft', 'pale_oak_boat',
+      ]);
+      const boatItem = b.inventory.items().find(i => BOAT_NAMES.has(i.name));
+      if (boatItem) {
+        diag.boat_fallback = { has_boat: boatItem.name };
+        try {
+          await b.equip(boatItem, 'hand');
+          // Right-click while in water spawns the boat at the bot's
+          // position. Same use_item packet path as place_boat from
+          // water (see water.js:place_boat, in-water mode).
+          await b.lookAt(new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5));
+          await sleep(150);
+          try { b.activateItem(); } catch {}
+          await sleep(800);
+          // Find the new boat entity near us.
+          const knownBoatIds = new Set();
+          let newBoat = null;
+          for (const e of Object.values(b.entities)) {
+            if (e && (e.name?.endsWith('_boat') || e.name === 'boat' || e.name === 'bamboo_raft')) {
+              if (e.position && e.position.distanceTo(b.entity.position) < 4) {
+                newBoat = e;
+                break;
+              }
+            }
+          }
+          if (newBoat) {
+            // Try to mount it.
+            try { await b.mount(newBoat); } catch {}
+            await sleep(300);
+            const after = standingState(b);
+            attempts.push({ method: 'boat_fallback', after: after.classification, boat_id: newBoat.id, mounted: !!b.vehicle });
+            diag.boat_fallback.placed = true;
+            diag.boat_fallback.mounted = !!b.vehicle;
+            if (!after.foot_in_water || b.vehicle) {
+              return recordEscapeSuccess({
+                ok: true,
+                data: { action_taken: 'boat_fallback', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, boat: boatItem.name, mounted: !!b.vehicle, attempts, diag, success: true },
+                result: `Placed a ${boatItem.name} and ${b.vehicle ? 'boarded' : 'spawned next to'} it. Use mc sail X Y Z to travel to shore, then mc disembark.`,
+              });
+            }
+          } else {
+            diag.boat_fallback.placed = false;
+            diag.boat_fallback.reason = 'no boat entity appeared (Paper 1.21+ silent no-op? — call mc place_boat directly which uses the PaperMCP fallback)';
+            attempts.push({ method: 'boat_fallback', placed: false });
+          }
+        } catch (e) {
+          diag.boat_fallback.error = e?.message || String(e);
+          attempts.push({ method: 'boat_fallback', error: e?.message || String(e) });
+        }
+      } else {
+        diag.boat_fallback = { has_boat: null };
+      }
+
+      // Nothing worked. Surface ALL diagnostic data so the brain can see
+      // exactly which phases ran and which failed.
+      const hpNow = b.health;
       return {
         ok: false,
         error: {
           code: 'STUCK_IN_WATER',
-          message: `Stuck in ${cls === 'in_flowing_water' ? 'flowing ' : ''}water at (${cell.x},${cell.y},${cell.z}). ${bestDry ? `Nearest dry ground is ${bestDry.r} blocks ${bestDry.dir} but couldn't reach it.` : 'No dry ground within 4 blocks in any cardinal direction.'}${placeable ? ` Tried placing ${placeable.name} but still in water.` : ' No placeable blocks (dirt/cobble/sand/planks) in inventory to make a foothold.'}`,
+          message: `Stuck in ${cls === 'in_flowing_water' ? 'flowing ' : ''}water at (${cell.x},${cell.y},${cell.z}). swim_up: ${diag.swim_up ? (diag.swim_up.surfaced ? 'surfaced' : 'did not surface') : 'not needed'}. land_scan: searched ${diag.land_scan?.radius || 0} blocks in ${diag.land_scan?.dirs || 0} dirs, ${diag.land_scan?.found ? 'found shore' : 'no shore'}. ${placeable ? 'pillar_up: tried, still in water.' : 'pillar_up: no placeable blocks.'} ${diag.boat_fallback?.has_boat ? `boat_fallback: ${diag.boat_fallback.placed ? 'placed but did not lift bot' : (diag.boat_fallback.reason || 'failed')}.` : 'boat_fallback: no boat in inventory.'} HP=${hpNow}.`,
           observed_state: {
             classification: cls,
             foot_in_water: before.foot_in_water,
             head_in_water: before.head_in_water,
             nearest_dry: bestDry,
             has_placeable: !!placeable,
+            has_boat: diag.boat_fallback?.has_boat || null,
+            diag,
             attempts,
           },
-          next_action_hint: placeable
-            ? 'Position has flowing water on all sides — try mc dig the water source above (if any), or call from a different cell.'
-            : 'mc collect 8 dirt or cobblestone from a dry spot, then call mc escape again.',
+          next_action_hint: diag.boat_fallback?.has_boat
+            ? 'Try mc place_boat directly at your current foot cell (recently patched to work from-water) — then mc board, mc sail to shore.'
+            : placeable
+              ? 'Pillar up further with mc place. Or chat for help.'
+              : 'No tools or boats to escape. mc chat for steward help — DO NOT /kill.',
           retry_safe: false,
         },
       };
