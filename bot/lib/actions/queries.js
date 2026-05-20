@@ -573,6 +573,51 @@ export function createQueriesActions(services) {
       cell.x = curCell.x;
       cell.y = curCell.y;
       cell.z = curCell.z;
+
+      // Step-up rescue. Common circuit-v3 trap: 1×1 water well surrounded
+      // by solid blocks at FOOT LEVEL (cardinal neighbors are foot_solid).
+      // Land scan rejects these because the foot cell isn't air — but the
+      // bot can JUMP UP onto the block at neighbor.y+1 (which is air).
+      // This is exactly what `standingState` reports in step_up_dirs.
+      //
+      // Mirror the existing step_up_only branch (line ~980): for each
+      // step_up direction, pathfind to (cell + dir, cell.y + 1).
+      const stepUpDirs = (() => {
+        // Re-read standing state since the bot may have moved during
+        // swim_up. Use the current cardinal map (4 dirs) for step-up
+        // candidates.
+        const cur = standingState(b);
+        return (cur?.step_up_dirs || before.step_up_dirs || []).filter((d) => CARDINAL_DIRS[d]);
+      })();
+      if (stepUpDirs.length > 0) {
+        diag.step_up = { candidates: stepUpDirs };
+        for (const pickDir of stepUpDirs) {
+          const v = CARDINAL_DIRS[pickDir];
+          const targetCell = { x: cell.x + v.dx, y: cell.y + 1, z: cell.z + v.dz };
+          try {
+            const goal = new goals.GoalBlock(targetCell.x, targetCell.y, targetCell.z);
+            await Promise.race([
+              b.pathfinder.goto(goal),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('step_up_to')), 1500)),
+            ]);
+          } catch {
+            try { b.pathfinder.setGoal(null); } catch {}
+          }
+          const after = standingState(b);
+          attempts.push({ method: 'step_up', dir: pickDir, target: targetCell, after: after.classification });
+          if (!after.foot_in_water) {
+            diag.step_up.succeeded_dir = pickDir;
+            return recordEscapeSuccess({
+              ok: true,
+              data: { action_taken: `step_up_${pickDir}`, from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, target: targetCell, attempts, diag, success: true },
+              result: `Stepped up ${pickDir} from water onto adjacent solid. Now ${after.classification} at ${after.cell.x},${after.cell.y},${after.cell.z}.`,
+            });
+          }
+        }
+        diag.step_up.succeeded_dir = null;
+      } else {
+        diag.step_up = { candidates: [] };
+      }
       // 2. Try pathfinder + sprint toward nearest dry cell.
       if (bestDry) {
         try {
