@@ -336,6 +336,67 @@ test('mc sail: TIMEOUT envelope carries next_action_hint to retry', async () => 
   }
 });
 
+test('mc sail: shore reached within 8 blocks → returns ok with data.shore_reached', async () => {
+  // Boat at (0, 63, 0). Target at (12, 63, 0) — within the 16-block
+  // approach window, so the shore check is active. Dry shore exists
+  // at (5, 63, 0): air foot+head, stone below. Sail should detect
+  // shore and return ok with shore_reached early rather than timing out.
+  const boat = {
+    id: 7,
+    name: 'oak_boat',
+    type: 'oak_boat',
+    position: new Vec3(0, 63, 0),
+  };
+  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
+  const blocks = {
+    // Shore at (5, 63, 0): air at y=63 (foot), air at y=64 (head), stone at y=62.
+    '5,62,0': { name: 'stone', boundingBox: 'block' },
+    '5,63,0': { name: 'air', boundingBox: 'empty' },
+    '5,64,0': { name: 'air', boundingBox: 'empty' },
+  };
+  // The boat's own position should be water for realism, though sail
+  // doesn't check that explicitly. Fill the lake.
+  for (let lx = 0; lx <= 4; lx++) {
+    blocks[`${lx},62,0`] = { name: 'water', boundingBox: 'empty' };
+    blocks[`${lx},63,0`] = { name: 'water', boundingBox: 'empty' };
+  }
+  const bot = {
+    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
+    inventory: { items: () => [] },
+    entities: { 7: boat },
+    vehicle: boat,
+    blockAt(p) {
+      const k = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+      const b = blocks[k];
+      if (!b) return null;
+      return { ...b, position: new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)), getProperties: () => ({ level: 0 }) };
+    },
+    setControlState: () => {},
+    look: async () => {},
+    lookAt: async () => {},
+  };
+  const services = createMockServices();
+  const water = createWaterActions({
+    ctx: services.state,
+    ensureBot: () => bot,
+    sleep: () => Promise.resolve(),
+    log: () => {},
+    getMyName: () => 'TestSteve',
+    ACTIONS: {},
+    goals: { GoalNear: function () {}, GoalBlock: function () {} },
+  });
+  const r = await water.sail({ x: 12, y: 63, z: 0, timeout_seconds: 2 });
+  // Should succeed (shore_reached) rather than timing out, since shore
+  // is well within the 8-block scan radius and target is within the
+  // 16-block approach window.
+  assert.equal(r.ok, true, `expected sail to succeed via shore_reached; got ${JSON.stringify(r.error)}`);
+  assert.equal(r.command, 'sail');
+  assert.ok(r.data.shore_reached, 'data.shore_reached must be populated');
+  assert.equal(r.data.shore_reached.x, 5);
+  assert.match(r.result, /Reached shore|mc disembark/);
+});
+
 test('mc sail: NOT_MOUNTED when bot has no vehicle', async () => {
   const bot = makeMockBot({ inventory: [] });
   bot.vehicle = null;

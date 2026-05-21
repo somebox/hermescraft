@@ -853,6 +853,57 @@ export function createWaterActions(deps) {
             };
           }
 
+          // circuit-v5h/v5i: Steve sailed to ~50 blocks of W1 but the
+          // target was a land coord; the boat couldn't get within 2 of
+          // it. Sail kept retrying until Steve drowned. Now: if the boat
+          // is within 8 blocks of a dry standable shore, return success
+          // early as SHORE_REACHED so the agent disembarks instead of
+          // looping. This only fires when sail has been making forward
+          // progress (no stall ticks); a wedged boat goes through the
+          // detour path below.
+          if (horiz < 16 && stallTicks === 0 && detourTicksLeft === 0) {
+            let shoreCell = null;
+            scanShore: for (let dx2 = -8; dx2 <= 8; dx2++) {
+              for (let dz2 = -8; dz2 <= 8; dz2++) {
+                if (Math.hypot(dx2, dz2) > 8) continue;
+                const sx = Math.floor(here.x + dx2);
+                const sz = Math.floor(here.z + dz2);
+                const sy = Math.floor(here.y);
+                // Standable: foot air, head air, below solid non-water.
+                const foot = b.blockAt(new Vec3(sx, sy, sz));
+                const head = b.blockAt(new Vec3(sx, sy + 1, sz));
+                const under = b.blockAt(new Vec3(sx, sy - 1, sz));
+                if (!foot || !head || !under) continue;
+                const isAir = (n) => n === 'air' || n === 'cave_air' || n === 'void_air';
+                const isWater = (n) => n === 'water' || n === 'flowing_water';
+                if (!isAir(foot.name)) continue;
+                if (!isAir(head.name)) continue;
+                if (under.boundingBox !== 'block') continue;
+                if (isWater(under.name)) continue;
+                shoreCell = { x: sx, y: sy, z: sz, distance: Number(Math.hypot(dx2, dz2).toFixed(2)) };
+                break scanShore;
+              }
+            }
+            if (shoreCell && shoreCell.distance >= 2) {
+              try { b.setControlState('forward', false); } catch {}
+              await sleep(200);
+              return {
+                ok: true,
+                command: 'sail',
+                data: {
+                  from: [Math.floor(startPos.x), Math.floor(startPos.y), Math.floor(startPos.z)],
+                  to: [Math.floor(here.x), Math.floor(here.y), Math.floor(here.z)],
+                  target: [Number(x), Number(y), Number(z)],
+                  horizontal_distance_remaining: Number(horiz.toFixed(2)),
+                  shore_reached: shoreCell,
+                  ...(nativeWorks ? {} : { fallback: 'papermcp_tp_step' }),
+                  ...(detoursTaken.length ? { detours: detoursTaken } : {}),
+                },
+                result: `Reached shore — dry land at (${shoreCell.x},${shoreCell.y},${shoreCell.z}), ${shoreCell.distance}b from boat. Target ${Math.floor(horiz)}b further but you're at the shore — call mc disembark.`,
+              };
+            }
+          }
+
           // If we're mid-detour, steer along detourVec instead of toward target.
           const steerDx = detourTicksLeft > 0 ? detourVec.dx : dx;
           const steerDz = detourTicksLeft > 0 ? detourVec.dz : dz;
