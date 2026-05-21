@@ -149,7 +149,8 @@ export async function dispatchAction(services, actionName, body, opts) {
     });
     const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 120) : null;
 
-    actionFn(taskBody)
+    const actionPromise = actionFn(taskBody);
+    actionPromise
       .then((result) => {
         if (ctx.tasks.currentTask && ctx.tasks.currentTask.id === taskId && ctx.tasks.currentTask.status === 'running') {
           ctx.tasks.currentTask.status = 'done';
@@ -170,6 +171,31 @@ export async function dispatchAction(services, actionName, body, opts) {
         pushAction(ctx, actionName, 'error', startedAt, null, err.message, reason);
         recordActionOutcome(ctx, actionName, 'error', err.message);
       });
+
+    // task #21 — surface immediate-refusal preflight errors (BOAT_REQUIRED,
+    // BOT_TRAPPED, NAV_RECURRING_STUCK, etc.) in the HTTP response, so the
+    // agent doesn't get "started" and walk off when the task actually failed
+    // synchronously. Race actionFn against a 250ms timeout — handlers that
+    // refuse via preflight resolve in <10ms (pure JS, no network); real
+    // navigation work blocks far longer.
+    const earlyResult = await Promise.race([
+      actionPromise.then((r) => ({ kind: 'resolved', result: r })).catch((e) => ({ kind: 'rejected', error: e })),
+      new Promise((resolve) => setTimeout(() => resolve({ kind: 'timeout' }), 250)),
+    ]);
+    if (earlyResult.kind === 'resolved' && earlyResult.result && earlyResult.result.ok === false) {
+      // Synchronous refusal — return it as the HTTP response so the agent
+      // sees the error code + next_action_hint without needing to poll.
+      return {
+        ok: true,
+        status: 200,
+        response: {
+          ...earlyResult.result,
+          task_id: taskId,
+          status: 'refused',
+          state: briefState(),
+        },
+      };
+    }
 
     return {
       ok: true,

@@ -224,3 +224,58 @@ test('recordLastApiError skips reserved /task/ segments when inferring action', 
   // actionHint wins because /task/start is a control-plane path, not an action verb.
   assert.equal(state.tasks.lastApiError.action, 'mining');
 });
+
+// ── Task-mode synchronous refusal (task #21) ─────────────────────────────
+// bg_goto/bg_collect/etc. now surface preflight refusals (BOAT_REQUIRED,
+// BOT_TRAPPED, ...) directly in the HTTP response instead of returning
+// "started" and forcing the agent to poll mc task. Race the handler
+// against a 250ms window; if it resolves with ok:false, the response is
+// the error envelope with status='refused'.
+
+test("task mode: ok:false within 250ms surfaces 'refused' in response", async () => {
+  const { services } = fixture();
+  const handler = async () => fail('BOAT_REQUIRED', 'route crosses water', {
+    observed_state: { distance: 800 },
+    retry_safe: false,
+  });
+  const reg = buildRegistry({ goto: handler });
+
+  const r = await dispatchAction(services, 'goto', { x: -300, y: 63, z: -100 },
+    { mode: 'task', ...baseOpts(reg) });
+  assert.equal(r.ok, true);
+  assert.equal(r.status, 200);
+  assert.equal(r.response.ok, false);
+  assert.equal(r.response.status, 'refused');
+  assert.equal(r.response.error.code, 'BOAT_REQUIRED');
+  assert.match(r.response.task_id, /^goto_\d+$/);
+});
+
+test("task mode: ok:true within 250ms still returns the result (early-success)", async () => {
+  // A handler that resolves quickly with ok:true should also surface
+  // synchronously — the agent shouldn't have to poll for trivial actions.
+  // Just verify the early-resolve path doesn't choke on success envelopes.
+  const { services } = fixture();
+  const handler = async () => ok({ data: { instant: true }, result: 'done' });
+  const reg = buildRegistry({ quick: handler });
+
+  const r = await dispatchAction(services, 'quick', {}, { mode: 'task', ...baseOpts(reg) });
+  assert.equal(r.ok, true);
+  // ok:true within the window keeps the legacy "started" semantics (it's
+  // a backgrounded task — we don't second-guess the success contract,
+  // only the refusal contract).
+  assert.equal(r.response.status, 'started');
+});
+
+test("task mode: slow handler returns 'started' immediately", async () => {
+  const { services } = fixture();
+  const handler = () => new Promise((resolve) => {
+    setTimeout(() => resolve(ok({ data: {} })), 600);
+  });
+  const reg = buildRegistry({ slow: handler });
+
+  const t0 = Date.now();
+  const r = await dispatchAction(services, 'slow', {}, { mode: 'task', ...baseOpts(reg) });
+  const elapsed = Date.now() - t0;
+  assert.ok(elapsed >= 240 && elapsed < 400, `expected ~250ms timeout, got ${elapsed}ms`);
+  assert.equal(r.response.status, 'started');
+});
