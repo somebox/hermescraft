@@ -19,6 +19,7 @@ import {
   shouldResetEscapeCounter,
   isAgentIdle,
   shouldEmergencyDisembark,
+  isHostileNearBoat,
 } from '../lib/runtime/reactive-helpers.js';
 
 // ─── computeBackoffMs ────────────────────────────────────────────────────
@@ -196,4 +197,43 @@ test('shouldEmergencyDisembark: custom hp threshold respected', () => {
     mounted: true, hp: 5, recentlyDamaged: true,
     lastAutoDisembarkTs: null, now, hpThreshold: 5,
   }), true);
+});
+
+// ─── isHostileNearBoat (task #24 — telemetry predicate) ──────────────────
+
+test('isHostileNearBoat: mounted + hostile within range → true', () => {
+  assert.equal(isHostileNearBoat({
+    mounted: true,
+    closestHostile: { name: 'drowned', distance: 3.5 },
+  }), true);
+});
+
+test('isHostileNearBoat: not mounted → false (even with hostile in range)', () => {
+  // When on foot, the existing combat-tier flee handles it; we don't
+  // want to spam the boat-specific telemetry.
+  assert.equal(isHostileNearBoat({
+    mounted: false,
+    closestHostile: { name: 'zombie', distance: 2 },
+  }), false);
+});
+
+test('isHostileNearBoat: hostile too far → false', () => {
+  assert.equal(isHostileNearBoat({
+    mounted: true,
+    closestHostile: { name: 'drowned', distance: 10 },
+  }), false);
+});
+
+test('isHostileNearBoat: no hostile → false', () => {
+  assert.equal(isHostileNearBoat({ mounted: true, closestHostile: null }), false);
+  assert.equal(isHostileNearBoat({ mounted: true, closestHostile: undefined }), false);
+});
+
+test('isHostileNearBoat: custom range respected', () => {
+  // Tightening to 3 blocks: a hostile at distance 4 no longer triggers.
+  assert.equal(isHostileNearBoat({
+    mounted: true,
+    closestHostile: { name: 'drowned', distance: 4 },
+    range: 3,
+  }), false);
 });

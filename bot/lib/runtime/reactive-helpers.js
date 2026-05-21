@@ -103,6 +103,26 @@ export function isAgentIdle(lastAgentCallTs, lastTaskActiveTs, now, idleMs = 300
  * @param {number}  [args.cooldownMs=30000]
  * @returns {boolean} true if reactive should trigger auto-disembark this tick
  */
+/**
+ * True if the bot is mounted AND a hostile mob is within range. Used
+ * for the hostile_near_boat telemetry event — informs the agent that
+ * the boat is under threat without forcing a reaction (the HP-based
+ * shouldEmergencyDisembark handles the actual emergency).
+ *
+ * @param {object} args
+ * @param {boolean} args.mounted
+ * @param {{ name?: string, distance?: number } | null} args.closestHostile
+ * @param {number} [args.range=5]
+ * @returns {boolean}
+ */
+export function isHostileNearBoat({ mounted, closestHostile, range = 5 }) {
+  if (!mounted) return false;
+  if (!closestHostile) return false;
+  const d = Number(closestHostile.distance);
+  if (!Number.isFinite(d)) return false;
+  return d <= range;
+}
+
 export function shouldEmergencyDisembark({
   mounted,
   hp,

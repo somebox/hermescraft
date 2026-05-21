@@ -37,7 +37,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark } from './reactive-helpers.js';
+import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark, isHostileNearBoat } from './reactive-helpers.js';
 
 const HOSTILE_NAMES = new Set([
   'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'enderman',
@@ -842,6 +842,8 @@ export function createReactive(deps) {
   let lastTaskActiveTs = 0;       // wall-clock of last tick observing currentTask.status === 'running'
   let lastAutoDisembarkTs = 0;    // wall-clock of last auto-disembark (task #23 cooldown)
   let autoDisembarkInFlight = false;
+  let wasHostileNearBoat = false; // task #24: edge-detect for hostile_near_boat telemetry
+  const HOSTILE_BOAT_RANGE = 5;   // blocks — mobs at this range can attack a stationary boat
   const WATER_TICKS_TO_FIRE = 5; // ~2.0s of continuous submersion before auto-fire
   // AUTO_ESCAPE_COOLDOWN_MS replaced by computeBackoffMs(consecutiveEscapeFires):
   // 30s → 60s → 120s → 300s. Resets after ≥2 min of foot_in_water=false. See
@@ -852,6 +854,35 @@ export function createReactive(deps) {
     if (!ctx.world.bot || !ctx.world.botReady || inFlight) return;
     const state = readState();
     if (!state) return;
+
+    // Task #24 — surface hostile_near_boat telemetry. The agent reads
+    // autoActionLog via mc status; this event tells it "you're in a
+    // boat and a mob is in attack range" without auto-acting (the HP
+    // trigger in decide() handles the actual emergency). Edge-detect
+    // so we emit once per transition false→true and once for true→false.
+    {
+      const nearBoatNow = isHostileNearBoat({
+        mounted: !!state.bot?.vehicle,
+        closestHostile: state.closest_hostile,
+        range: HOSTILE_BOAT_RANGE,
+      });
+      if (nearBoatNow !== wasHostileNearBoat) {
+        if (nearBoatNow) {
+          const h = state.closest_hostile;
+          pushAutoEvent({
+            kind: 'hostile_near_boat',
+            mob: h.name || 'unknown',
+            distance: Number(h.distance?.toFixed?.(2) ?? h.distance),
+            vehicle: state.bot.vehicle?.name || 'unknown',
+            hp: state.hp,
+          });
+        } else {
+          pushAutoEvent({ kind: 'hostile_near_boat_cleared' });
+        }
+        wasHostileNearBoat = nearBoatNow;
+      }
+    }
+
     const decision = decide(state);
 
     // Update anchor to "current position" only when we go idle. Doing this
