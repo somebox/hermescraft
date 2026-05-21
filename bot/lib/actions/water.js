@@ -746,6 +746,66 @@ export function createWaterActions(deps) {
 
       let lastDistance = (b.entities[b.vehicle?.id]?.position || boat.position).distanceTo(target);
       let stallTicks = 0;
+      let detourAttempts = 0;
+      let detourTicksLeft = 0;
+      let detourVec = null; // {dx, dz} unit vector during a detour
+      const detoursTaken = []; // for the success/error envelope
+      const MAX_DETOURS = 3;
+      const DETOUR_TICKS = 6; // ~2.4s of perpendicular travel before resuming target heading
+
+      // Pick a detour heading: scan 8 directions from the boat's current
+      // XZ at boat Y for the first one that's water and the boat could
+      // physically enter. Bias toward bearings near the target direction
+      // (small angle wins), but only if there's water there.
+      const pickDetourHeading = (here, towardDx, towardDz) => {
+        const dirs = [
+          { dx: 1, dz: 0 }, { dx: -1, dz: 0 },
+          { dx: 0, dz: 1 }, { dx: 0, dz: -1 },
+          { dx: 1, dz: 1 }, { dx: 1, dz: -1 },
+          { dx: -1, dz: 1 }, { dx: -1, dz: -1 },
+        ];
+        const tNorm = Math.hypot(towardDx, towardDz) || 1;
+        const towardUx = towardDx / tNorm;
+        const towardUz = towardDz / tNorm;
+        const candidates = [];
+        for (const d of dirs) {
+          const dNorm = Math.hypot(d.dx, d.dz);
+          const ux = d.dx / dNorm;
+          const uz = d.dz / dNorm;
+          // Probe 3 cells out along this heading at boat Y. Require water
+          // at boat Y AND air at boat Y+1 (boat needs vertical clearance).
+          let waterCount = 0;
+          for (let step = 1; step <= 3; step++) {
+            const px = Math.floor(here.x + ux * step);
+            const py = Math.floor(here.y);
+            const pz = Math.floor(here.z + uz * step);
+            const foot = b.blockAt(new Vec3(px, py, pz));
+            const head = b.blockAt(new Vec3(px, py + 1, pz));
+            if (!foot || !head) break;
+            const isWater = foot.name === 'water' || foot.name === 'flowing_water';
+            const headClear = head.name === 'air' || head.name === 'cave_air' || head.boundingBox === 'empty';
+            if (isWater && headClear) waterCount++;
+            else break;
+          }
+          if (waterCount >= 2) {
+            // Score: prefer directions closer to target heading. dot
+            // product of unit vectors → 1 (forward) ... -1 (backward).
+            const dot = ux * towardUx + uz * towardUz;
+            candidates.push({ dx: ux, dz: uz, dot });
+          }
+        }
+        if (candidates.length === 0) return null;
+        // Sort: prefer perpendicular-to-forward over backward (avoid
+        // undoing progress). We want |dot| close to 0 (perpendicular)
+        // OR positive dot (toward target). Tie-break by larger dot.
+        candidates.sort((a, c) => {
+          const aFwd = a.dot >= 0 ? 1 : 0;
+          const bFwd = c.dot >= 0 ? 1 : 0;
+          if (aFwd !== bFwd) return bFwd - aFwd;
+          return c.dot - a.dot;
+        });
+        return candidates[0];
+      };
 
       try {
         while (Date.now() < deadline) {
@@ -776,24 +836,26 @@ export function createWaterActions(deps) {
                 target: [Number(x), Number(y), Number(z)],
                 horizontal_distance_remaining: Number(horiz.toFixed(2)),
                 ...(nativeWorks ? {} : { fallback: 'papermcp_tp_step' }),
+                ...(detoursTaken.length ? { detours: detoursTaken } : {}),
               },
             };
           }
 
+          // If we're mid-detour, steer along detourVec instead of toward target.
+          const steerDx = detourTicksLeft > 0 ? detourVec.dx : dx;
+          const steerDz = detourTicksLeft > 0 ? detourVec.dz : dz;
+          const steerNorm = Math.hypot(steerDx, steerDz) || 1;
+
           if (nativeWorks) {
-            const yaw = Math.atan2(-dx, dz);
+            const yaw = Math.atan2(-steerDx, steerDz);
             try { await b.look(yaw, 0, true); } catch {}
             b.setControlState('forward', true);
             await sleep(300);
           } else if (useTpFallback) {
-            // Step the boat 1.5 blocks toward the target each tick.
-            // Boats travel at ~0.4 blocks per tick under player input;
-            // 1.5 per 400ms loop = ~3.75 b/s, similar to normal sailing
-            // speed. Select the boat by a tight bbox centered on its
-            // current position so we hit OUR boat, not some other one.
-            const step = Math.min(1.5, horiz);
-            const nx = here.x + (dx / horiz) * step;
-            const nz = here.z + (dz / horiz) * step;
+            // Step the boat 1.5 blocks toward steerVec each tick.
+            const step = Math.min(1.5, detourTicksLeft > 0 ? 1.5 : horiz);
+            const nx = here.x + (steerDx / steerNorm) * step;
+            const nz = here.z + (steerDz / steerNorm) * step;
             const ny = here.y;
             const bx = Math.floor(here.x);
             const by = Math.floor(here.y);
@@ -811,17 +873,54 @@ export function createWaterActions(deps) {
             }};
           }
 
+          if (detourTicksLeft > 0) {
+            detourTicksLeft--;
+            if (detourTicksLeft === 0) {
+              // Detour done; reset stall counter so we get a fresh
+              // chance to make forward progress before re-detouring.
+              stallTicks = 0;
+              detourVec = null;
+              lastDistance = horiz; // re-baseline so we don't re-flag stall instantly
+              continue;
+            }
+            lastDistance = horiz;
+            continue;
+          }
+
           if (Math.abs(lastDistance - horiz) < 0.05) {
             stallTicks++;
             if (stallTicks >= 8) {
               try { b.setControlState('forward', false); } catch {}
+              // Attempt a detour before giving up. circuit-v5f showed the
+              // boat wedging against shore/shallows ~50s into a sail —
+              // a 2.4s sidestep around the obstacle often recovers.
+              if (detourAttempts < MAX_DETOURS) {
+                const heading = pickDetourHeading(here, dx, dz);
+                if (heading) {
+                  detourAttempts++;
+                  detourVec = heading;
+                  detourTicksLeft = DETOUR_TICKS;
+                  detoursTaken.push({
+                    attempt: detourAttempts,
+                    from: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
+                    heading: [Number(heading.dx.toFixed(2)), Number(heading.dz.toFixed(2))],
+                  });
+                  log(`[sail] stall detected, detouring attempt ${detourAttempts}/${MAX_DETOURS} heading (${heading.dx.toFixed(2)},${heading.dz.toFixed(2)})`);
+                  continue;
+                }
+              }
+              // No detour available or budget exhausted — surface STUCK
+              // with a recovery hint.
               return { ok: false, error: {
-                code: 'OUT_OF_RANGE',
-                message: `Boat stuck — no progress in ~3s. Likely wedged against terrain at (${here.x.toFixed(1)}, ${here.y.toFixed(1)}, ${here.z.toFixed(1)}).`,
+                code: 'BOAT_STUCK',
+                message: `Boat stuck after ${detourAttempts} detour attempt(s) — wedged against terrain at (${here.x.toFixed(1)}, ${here.y.toFixed(1)}, ${here.z.toFixed(1)}). Call \`mc disembark\` — it will dismount you and the auto-escape will swim you to shore.`,
                 observed_state: {
                   boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
                   horizontal_distance_remaining: Number(horiz.toFixed(2)),
+                  detour_attempts: detourAttempts,
+                  detours: detoursTaken,
                 },
+                next_action_hint: 'mc disembark',
                 retry_safe: false,
               }};
             }
@@ -956,6 +1055,29 @@ export function createWaterActions(deps) {
           retry_safe: true,
         }};
       }
+
+      // After dismount: if the bot is now in water (sail-to-shore failed
+      // or wasn't attempted), chain mc escape so the agent doesn't have
+      // to deal with "stranded in lake" as a separate step. circuit-v5f
+      // showed Steve drowning after a stuck boat because disembark left
+      // him in deep water with no recovery hint.
+      let autoEscape = null;
+      await sleep(300); // let physics settle so foot block is accurate
+      const footBlk = b.blockAt(b.entity.position.floored());
+      const stillInWater = !!footBlk && (footBlk.name === 'water' || footBlk.name === 'flowing_water');
+      if (stillInWater) {
+        try {
+          const escRes = await ACTIONS.escape({});
+          autoEscape = {
+            ok: !!escRes?.ok,
+            ...(escRes?.data ? { details: escRes.data } : {}),
+            ...(escRes?.error ? { error: escRes.error } : {}),
+          };
+        } catch (e) {
+          autoEscape = { ok: false, error: e?.message || String(e) };
+        }
+      }
+
       return {
         ok: true,
         command: 'disembark',
@@ -964,6 +1086,7 @@ export function createWaterActions(deps) {
           bot_position: [Math.floor(b.entity.position.x), Math.floor(b.entity.position.y), Math.floor(b.entity.position.z)],
           ...(fallback ? { fallback } : {}),
           ...(autoSailed ? { auto_sailed: autoSailed } : {}),
+          ...(autoEscape ? { auto_escape: autoEscape } : {}),
         },
       };
     },
