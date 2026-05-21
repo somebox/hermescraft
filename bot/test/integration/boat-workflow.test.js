@@ -33,6 +33,7 @@ import { Vec3 } from 'vec3';
 
 import { createWaterActions } from '../../lib/actions/water.js';
 import { createMockServices } from '../../lib/server/mock-services.js';
+import { ok } from '../../lib/shared/action-contract.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Mock bot harness
@@ -254,6 +255,72 @@ test('mc board: boat in inventory + no water within 12 → NO_BOAT (water missin
   assert.equal(r.error.code, 'NO_BOAT');
   assert.match(r.error.message, /no water within 12/i);
   assert.equal(r.error.observed_state.boat_in_inventory, 'oak_boat');
+});
+
+test('mc board: boat in inventory + water nearby → ACTIONS.place_boat is called', async () => {
+  // Bot has a boat item and water exists within findBlocks range. The
+  // no-args board mode should call ACTIONS.place_boat with the water
+  // coord and then attempt to mount the resulting boat.
+  let placeBoatCalls = [];
+  const blocks = {
+    // Water cluster at (5, 62, 0).
+    '5,62,0': { name: 'water', boundingBox: 'empty', level: 0 },
+  };
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+    entities: {},
+  });
+  const ACTIONS = {
+    place_boat: async ({ x, y, z }) => {
+      placeBoatCalls.push({ x, y, z });
+      // Simulate a successful placement: add a boat entity at the coord.
+      const boat = {
+        id: 50,
+        name: null,                  // Paper 1.21+ quirk: name=null
+        type: 'oak_boat',
+        position: new Vec3(x + 0.5, y + 1, z + 0.5),
+      };
+      boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+      bot.entities[50] = boat;
+      return ok({
+        data: {
+          boat_kind: 'oak_boat',
+          boat_entity_id: 50,
+          boat_position: [x, y + 1, z],
+          placed_from_water: false,
+          fallback: 'papermcp_server_side',
+        },
+      });
+    },
+  };
+  const services = createMockServices();
+  const water = createWaterActions({
+    ctx: services.state,
+    ensureBot: () => bot,
+    sleep: () => Promise.resolve(),
+    log: () => {},
+    getMyName: () => 'TestSteve',
+    ACTIONS,
+    goals: { GoalNear: function () {}, GoalBlock: function () {} },
+  });
+  const r = await water.board();
+  // The mount may not "stick" in the mock (no passenger update), but
+  // ACTIONS.place_boat MUST have been called for the auto-place flow
+  // to count as working. data.auto_placed is the agent-facing signal.
+  assert.equal(placeBoatCalls.length, 1, 'ACTIONS.place_boat must be called once');
+  assert.equal(placeBoatCalls[0].x, 5);
+  assert.equal(placeBoatCalls[0].y, 62);
+  assert.equal(placeBoatCalls[0].z, 0);
+  // Whether the final r.ok is true or false depends on the mount
+  // succeeding via the mock. Either way the auto_placed data should
+  // be present (success path) or the error should reference the
+  // already-placed boat (mount-rejected path).
+  if (r.ok) {
+    assert.ok(r.data.auto_placed, 'success envelope must carry auto_placed');
+    assert.equal(r.data.auto_placed.water.x, 5);
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────
