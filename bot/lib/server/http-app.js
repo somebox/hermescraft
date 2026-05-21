@@ -178,9 +178,15 @@ export function createBotHttpListener(deps) {
         if (!ctx.world.bot || !ctx.world.bot.entity) {
           return respond(res, 200, { ok: false, error: 'bot_not_ready' });
         }
-        const toX = Number(url.searchParams.get('to_x'));
-        const toY = Number(url.searchParams.get('to_y'));
-        const toZ = Number(url.searchParams.get('to_z'));
+        const rawTx = url.searchParams.get('to_x');
+        const rawTy = url.searchParams.get('to_y');
+        const rawTz = url.searchParams.get('to_z');
+        if (rawTx === null || rawTy === null || rawTz === null) {
+          return respond(res, 400, { ok: false, error: 'route_probe requires numeric to_x, to_y, to_z' });
+        }
+        const toX = Number(rawTx);
+        const toY = Number(rawTy);
+        const toZ = Number(rawTz);
         if (![toX, toY, toZ].every(Number.isFinite)) {
           return respond(res, 400, { ok: false, error: 'route_probe requires numeric to_x, to_y, to_z' });
         }
