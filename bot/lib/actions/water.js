@@ -9,6 +9,7 @@
 
 import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
+import { findAdjustedTarget } from './_nav-helpers.js';
 
 const BOAT_NAMES = new Set([
   'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
@@ -231,17 +232,38 @@ export function createWaterActions(deps) {
         }};
       }
 
-      const refBlock = b.blockAt(targetPos);
+      let refBlock = b.blockAt(targetPos);
       if (!refBlock) {
         return { ok: false, error: { code: 'NO_BLOCK', message: `No block at (${x},${y},${z})`, retry_safe: false }};
       }
-      if (refBlock.name !== 'water') {
-        return { ok: false, error: {
-          code: 'NO_WATER_AT_TARGET',
-          message: `Block at (${x},${y},${z}) is "${refBlock.name}" — boats need water under them.`,
-          observed_state: { target_block: refBlock.name },
-          retry_safe: false,
-        }};
+      // Task #7 self-adjust: if exact target isn't water, find nearest
+      // water within 3 blocks. circuit-v3 had Steve calling place_boat
+      // 11 times with slightly wrong coords — each failed NO_WATER_AT_TARGET.
+      // The adjust converts those into 1 successful call + data.adjusted_target.
+      let adjustedTarget = null;
+      if (refBlock.name !== 'water' && refBlock.name !== 'flowing_water') {
+        const adj = findAdjustedTarget(
+          b,
+          (bot, px, py, pz) => {
+            const blk = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
+            return !!blk && (blk.name === 'water' || blk.name === 'flowing_water');
+          },
+          Number(x), Number(y), Number(z),
+          3,
+        );
+        if (!adj) {
+          return { ok: false, error: {
+            code: 'NO_WATER_AT_TARGET',
+            message: `Block at (${x},${y},${z}) is "${refBlock.name}" and no water within 3 blocks — boats need water.`,
+            observed_state: { target_block: refBlock.name, searched_radius: 3 },
+            retry_safe: false,
+          }};
+        }
+        // Use the adjusted cell.
+        adjustedTarget = adj;
+        refBlock = b.blockAt(new Vec3(adj.x, adj.y, adj.z));
+        targetPos.x = adj.x; targetPos.y = adj.y; targetPos.z = adj.z;
+        log(`[place_boat] adjusted target from (${x},${y},${z}) to (${adj.x},${adj.y},${adj.z}) — distance ${adj.distance}`);
       }
 
       // Stance selection has TWO modes:
@@ -380,6 +402,7 @@ export function createWaterActions(deps) {
             ? [Math.floor(entity.position.x), Math.floor(entity.position.y), Math.floor(entity.position.z)]
             : null,
           placed_from_water: placedFromWater,
+          ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
           ...(fallback ? { fallback } : {}),
         },
       };
@@ -755,8 +778,29 @@ export function createWaterActions(deps) {
       }};
     }
 
+    const isLiquidSource = (bot, px, py, pz) => {
+      const blk = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
+      if (!blk) return false;
+      if (blk.name !== 'water' && blk.name !== 'lava') return false;
+      const lvl = Number(blk.getProperties?.()?.level ?? 0);
+      return lvl === 0;
+    };
+
     const targetPos = new Vec3(x, y, z);
-    const target = b.blockAt(targetPos);
+    let target = b.blockAt(targetPos);
+    let adjustedTarget = null;
+
+    // Self-adjust: if the requested cell isn't a liquid source, search within
+    // 3 blocks for the nearest source and use that instead.
+    if (!target || !isLiquidSource(b, x, y, z)) {
+      const adj = findAdjustedTarget(b, isLiquidSource, x, y, z, 3);
+      if (adj && adj.adjusted) {
+        targetPos.x = adj.x; targetPos.y = adj.y; targetPos.z = adj.z;
+        target = b.blockAt(targetPos);
+        adjustedTarget = { x: adj.x, y: adj.y, z: adj.z, distance: adj.distance, original: adj.original };
+      }
+    }
+
     if (!target || (target.name !== 'water' && target.name !== 'lava')) {
       return { ok: false, error: {
         code: 'NOT_A_LIQUID',
@@ -779,11 +823,11 @@ export function createWaterActions(deps) {
 
     if (b.entity.position.distanceTo(targetPos) > 4.5) {
       try {
-        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+        await b.pathfinder.goto(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 3));
       } catch {
         return { ok: false, error: {
           code: 'OUT_OF_RANGE',
-          message: `Target at (${x}, ${y}, ${z}) is ${Math.round(b.entity.position.distanceTo(targetPos) * 10) / 10} blocks away and pathfind failed.`,
+          message: `Target at (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) is ${Math.round(b.entity.position.distanceTo(targetPos) * 10) / 10} blocks away and pathfind failed.`,
           observed_state: { distance: b.entity.position.distanceTo(targetPos), bot_position: posObj(b.entity.position) },
           retry_safe: false,
         }};
@@ -822,7 +866,7 @@ export function createWaterActions(deps) {
         log(`[bucket_fill] native no-op for ${liquidName} — using PaperMCP fallback`);
         const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:bucket 1`);
         const r2 = await executeServerCommand(pmcp, `give ${username} minecraft:${liquidName} 1`);
-        const r3 = await executeServerCommand(pmcp, `setblock ${x} ${y} ${z} minecraft:air`);
+        const r3 = await executeServerCommand(pmcp, `setblock ${targetPos.x} ${targetPos.y} ${targetPos.z} minecraft:air`);
         if (r1.ok && r2.ok && r3.ok) {
           for (let i = 0; i < 8; i++) {
             await sleep(120);
@@ -848,14 +892,15 @@ export function createWaterActions(deps) {
       ok: true,
       data: {
         filled: liquidName,
-        source_coord: { x, y, z },
+        source_coord: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
         started_inventory: before,
         ended_inventory: after,
         ...(fallback ? { fallback } : {}),
+        ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
       },
       result: fallback
-        ? `Filled ${liquidName} from ${target.name} at ${x},${y},${z} (server-side fallback).`
-        : `Filled ${liquidName} from ${target.name} at ${x},${y},${z}.`,
+        ? `Filled ${liquidName} from ${target.name} at ${targetPos.x},${targetPos.y},${targetPos.z} (server-side fallback).`
+        : `Filled ${liquidName} from ${target.name} at ${targetPos.x},${targetPos.y},${targetPos.z}.`,
     };
   },
 
@@ -886,7 +931,6 @@ export function createWaterActions(deps) {
     const liquid = filled.name === 'water_bucket' ? 'water' : 'lava';
 
     const targetPos = new Vec3(x, y, z);
-    const existing = b.blockAt(targetPos);
     const REPLACEABLE = new Set([
       'air', 'cave_air', 'void_air',
       'tall_grass', 'short_grass', 'grass', 'fern', 'large_fern',
@@ -894,48 +938,70 @@ export function createWaterActions(deps) {
       'kelp', 'kelp_plant', 'seagrass', 'tall_seagrass', 'dead_bush',
     ]);
     const oppositeLiquid = liquid === 'water' ? 'lava' : 'water';
-    // Pouring opposite liquid IS the test case for the seal/cobble/obsidian
-    // reaction — treat as a valid target. Otherwise enforce replaceable.
+
+    const ANCHOR_OFFSETS = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+    const findAnchor = (px, py, pz) => {
+      for (const [dx, dy, dz] of ANCHOR_OFFSETS) {
+        const nb = b.blockAt(new Vec3(px + dx, py + dy, pz + dz));
+        if (nb && (nb.boundingBox === 'block' || nb.name === 'water' || nb.name === 'lava')) {
+          return { refBlock: nb, refOffset: [dx, dy, dz] };
+        }
+      }
+      return null;
+    };
+
+    const isPourable = (bot, px, py, pz) => {
+      const blk = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
+      const acceptable = !blk || REPLACEABLE.has(blk.name) || blk.name === oppositeLiquid;
+      if (!acceptable) return false;
+      return !!findAnchor(px, py, pz);
+    };
+
+    let existing = b.blockAt(targetPos);
+    let adjustedTarget = null;
+
+    const targetPourable = (() => {
+      if (existing && !REPLACEABLE.has(existing.name) && existing.name !== oppositeLiquid) return false;
+      return !!findAnchor(targetPos.x, targetPos.y, targetPos.z);
+    })();
+
+    if (!targetPourable) {
+      const adj = findAdjustedTarget(b, isPourable, x, y, z, 3);
+      if (adj && adj.adjusted) {
+        targetPos.x = adj.x; targetPos.y = adj.y; targetPos.z = adj.z;
+        existing = b.blockAt(targetPos);
+        adjustedTarget = { x: adj.x, y: adj.y, z: adj.z, distance: adj.distance, original: adj.original };
+      }
+    }
+
     if (existing && !REPLACEABLE.has(existing.name) && existing.name !== oppositeLiquid) {
       return { ok: false, error: {
         code: 'BLOCKED',
-        message: `Target (${x}, ${y}, ${z}) is ${existing.name}, not replaceable. Dig it first.`,
+        message: `Target (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) is ${existing.name}, not replaceable. Dig it first.`,
         observed_state: { target_block: existing.name, requested_coord: { x, y, z } },
-        next_action_hint: `mc dig ${x} ${y} ${z}`,
+        next_action_hint: `mc dig ${targetPos.x} ${targetPos.y} ${targetPos.z}`,
         retry_safe: false,
       }};
     }
 
-    // Find a solid OR fluid neighbor to anchor the activateBlock call.
-    // Fluid neighbors are acceptable because in MC you can right-click on
-    // a lava/water face to place a bucket's liquid in the adjacent cell.
-    const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
-    let refBlock = null;
-    let refOffset = null;
-    for (const [dx, dy, dz] of offsets) {
-      const nb = b.blockAt(targetPos.offset(dx, dy, dz));
-      if (nb && (nb.boundingBox === 'block' || nb.name === 'water' || nb.name === 'lava')) {
-        refBlock = nb;
-        refOffset = [dx, dy, dz];
-        break;
-      }
-    }
-    if (!refBlock) {
+    const anchor = findAnchor(targetPos.x, targetPos.y, targetPos.z);
+    if (!anchor) {
       return { ok: false, error: {
         code: 'BLOCKED',
-        message: `Target (${x}, ${y}, ${z}) has no solid or fluid neighbor — bucket placement needs a face to click on.`,
+        message: `Target (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) has no solid or fluid neighbor — bucket placement needs a face to click on.`,
         observed_state: { requested_coord: { x, y, z } },
         retry_safe: false,
       }};
     }
+    const { refBlock, refOffset } = anchor;
 
     if (b.entity.position.distanceTo(targetPos) > 4.5) {
       try {
-        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+        await b.pathfinder.goto(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 3));
       } catch {
         return { ok: false, error: {
           code: 'OUT_OF_RANGE',
-          message: `Target at (${x}, ${y}, ${z}) is ${Math.round(b.entity.position.distanceTo(targetPos) * 10) / 10} blocks away and pathfind failed.`,
+          message: `Target at (${targetPos.x}, ${targetPos.y}, ${targetPos.z}) is ${Math.round(b.entity.position.distanceTo(targetPos) * 10) / 10} blocks away and pathfind failed.`,
           observed_state: { distance: b.entity.position.distanceTo(targetPos), bot_position: posObj(b.entity.position) },
           retry_safe: false,
         }};
@@ -979,7 +1045,7 @@ export function createWaterActions(deps) {
         }
         const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:${filled.name} 1`);
         const r2 = await executeServerCommand(pmcp, `give ${username} minecraft:bucket 1`);
-        const r3 = await executeServerCommand(pmcp, `setblock ${x} ${y} ${z} minecraft:${placedBlock}`);
+        const r3 = await executeServerCommand(pmcp, `setblock ${targetPos.x} ${targetPos.y} ${targetPos.z} minecraft:${placedBlock}`);
         if (r1.ok && r2.ok && r3.ok) {
           for (let i = 0; i < 8; i++) {
             await sleep(120);
@@ -999,7 +1065,7 @@ export function createWaterActions(deps) {
     if (!ok) {
       return { ok: false, error: {
         code: 'UNCHANGED',
-        message: `bucket_empty did not place ${liquid} at (${x}, ${y}, ${z}); block is ${placed?.name ?? 'unloaded'}.`,
+        message: `bucket_empty did not place ${liquid} at (${targetPos.x}, ${targetPos.y}, ${targetPos.z}); block is ${placed?.name ?? 'unloaded'}.`,
         observed_state: { target_block_after: placed?.name ?? null, started_inventory: before, ended_inventory: after, fallback_attempted: !!paperMcpConfig() },
         retry_safe: true,
       }};
@@ -1009,15 +1075,16 @@ export function createWaterActions(deps) {
       data: {
         emptied: filled.name,
         placed_block: placed.name,
-        target_coord: { x, y, z },
+        target_coord: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
         reacted: liquidReacted ? placed.name : null,
         started_inventory: before,
         ended_inventory: after,
         ...(fallback ? { fallback } : {}),
+        ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
       },
       result: liquidReacted
-        ? `Emptied ${filled.name} — water/lava reaction produced ${placed.name} at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`
-        : `Emptied ${filled.name} — ${liquid} placed at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`,
+        ? `Emptied ${filled.name} — water/lava reaction produced ${placed.name} at ${targetPos.x},${targetPos.y},${targetPos.z}${fallback ? ' (server-side fallback)' : ''}.`
+        : `Emptied ${filled.name} — ${liquid} placed at ${targetPos.x},${targetPos.y},${targetPos.z}${fallback ? ' (server-side fallback)' : ''}.`,
     };
   },
 

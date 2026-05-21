@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { findStandableSameXZ, targetChunkLoaded } from '../lib/actions/_nav-helpers.js';
+import { findStandableSameXZ, targetChunkLoaded, findAdjustedTarget } from '../lib/actions/_nav-helpers.js';
 
 // Minimal mock bot exposing blockAt(Vec3). Block model: a 1×W×Z slab of
 // stone at y=63 with air everywhere else. The cell (0, 64, 0) is
@@ -120,4 +120,79 @@ test('targetChunkLoaded respects maxDy bound', () => {
   };
   assert.equal(targetChunkLoaded(b, 0, 64, 0, 2), false);
   assert.equal(targetChunkLoaded(b, 0, 64, 0, 10), true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// findAdjustedTarget — generic "find nearest cell matching predicate"
+// helper that primitives (place_boat, place, till, plant, bucket_*) use
+// to accept "approximately right" coords. See task #7.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('findAdjustedTarget: returns original (distance=0, adjusted=false) when predicate matches', () => {
+  // Predicate matches immediately at the target — happy path.
+  const isWater = (_b, x, y, z) => x === 10 && y === 64 && z === 5;
+  const r = findAdjustedTarget(null, isWater, 10, 64, 5);
+  assert.equal(r.adjusted, false);
+  assert.equal(r.distance, 0);
+  assert.deepEqual({ x: r.x, y: r.y, z: r.z }, { x: 10, y: 64, z: 5 });
+  assert.deepEqual(r.original, { x: 10, y: 64, z: 5 });
+});
+
+test('findAdjustedTarget: returns nearest match within radius (adjusted=true)', () => {
+  // Predicate matches at (1, 0, 0) — distance 1 from (0, 0, 0).
+  const matches = (_b, x, y, z) => x === 1 && y === 0 && z === 0;
+  const r = findAdjustedTarget(null, matches, 0, 0, 0);
+  assert.equal(r.adjusted, true);
+  assert.equal(r.distance, 1);
+  assert.deepEqual({ x: r.x, y: r.y, z: r.z }, { x: 1, y: 0, z: 0 });
+  assert.deepEqual(r.original, { x: 0, y: 0, z: 0 });
+});
+
+test('findAdjustedTarget: spiral order — picks closest match', () => {
+  // Two matches: (3, 0, 0) (distance 3) and (1, 0, 0) (distance 1).
+  // Helper must return the closer one.
+  const matches = (_b, x, y, z) => (x === 1 && y === 0 && z === 0)
+                                || (x === 3 && y === 0 && z === 0);
+  const r = findAdjustedTarget(null, matches, 0, 0, 0);
+  assert.deepEqual({ x: r.x, y: r.y, z: r.z }, { x: 1, y: 0, z: 0 });
+  assert.equal(r.distance, 1);
+});
+
+test('findAdjustedTarget: returns null past radius', () => {
+  // Match exists at (5, 0, 0) but maxRadius=3 means we can't reach it.
+  const matches = (_b, x, _y, _z) => x === 5;
+  const r = findAdjustedTarget(null, matches, 0, 0, 0, 3);
+  assert.equal(r, null);
+});
+
+test('findAdjustedTarget: defensive — predicate throws → treats as miss', () => {
+  // Predicate throws on every call — should not crash, just return null
+  // (no match anywhere).
+  const throwy = () => { throw new Error('mocked blockAt failure'); };
+  const r = findAdjustedTarget(null, throwy, 0, 0, 0);
+  assert.equal(r, null);
+});
+
+test('findAdjustedTarget: respects custom maxRadius', () => {
+  // Match at distance 2: in range with maxRadius=2, out with maxRadius=1.
+  const matches = (_b, x, _y, _z) => x === 2;
+  assert.ok(findAdjustedTarget(null, matches, 0, 0, 0, 2) !== null);
+  assert.equal(findAdjustedTarget(null, matches, 0, 0, 0, 1), null);
+});
+
+test('findAdjustedTarget: tie-break is deterministic across nearby same-distance cells', () => {
+  // Multiple matches at distance 1 ({+X}, {-X}, {+Y}, {-Y}, {+Z}, {-Z}).
+  // Result must be deterministic — same call twice gives same answer.
+  const matches = (_b, x, y, z) => Math.abs(x) + Math.abs(y) + Math.abs(z) === 1;
+  const r1 = findAdjustedTarget(null, matches, 0, 0, 0);
+  const r2 = findAdjustedTarget(null, matches, 0, 0, 0);
+  assert.deepEqual({ x: r1.x, y: r1.y, z: r1.z }, { x: r2.x, y: r2.y, z: r2.z });
+});
+
+test('findAdjustedTarget: coerces non-int radius safely', () => {
+  // Defensive: maxRadius=1.7 → floors to 1; negative → 0 (returns null
+  // unless predicate matches at the target).
+  const matches = () => false;
+  assert.equal(findAdjustedTarget(null, matches, 0, 0, 0, -5), null);
+  assert.equal(findAdjustedTarget(null, matches, 0, 0, 0, 0), null);
 });

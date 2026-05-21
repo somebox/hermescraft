@@ -10,9 +10,22 @@
 
 import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
+import { findAdjustedTarget } from './_nav-helpers.js';
 
 const HOE_NAMES = ['netherite_hoe', 'diamond_hoe', 'iron_hoe', 'stone_hoe', 'golden_hoe', 'wooden_hoe'];
 const TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'dirt_path']);
+
+/** Pure predicate: is the block at (x,y,z) tillable by a hoe? */
+export function isTillableAt(b, x, y, z) {
+  const blk = b?.blockAt && b.blockAt(new Vec3(x, y, z));
+  return !!blk && TILLABLE.has(blk.name);
+}
+
+/** Pure predicate: is the block at (x,y,z) plantable (farmland surface)? */
+export function isFarmlandAt(b, x, y, z) {
+  const blk = b?.blockAt && b.blockAt(new Vec3(x, y, z));
+  return !!blk && blk.name === 'farmland';
+}
 
 // Items that go on farmland (top of farmland block).
 // Map: item-in-inventory → block-name-placed.
@@ -129,14 +142,25 @@ export function createFarmingActions(deps) {
         }};
       }
 
-      const target = b.blockAt(targetPos);
+      let target = b.blockAt(targetPos);
+      let adjustedTarget = null;
       if (!target || !TILLABLE.has(target.name)) {
-        return { ok: false, error: {
-          code: 'NOT_TILLABLE',
-          message: `Block at (${x},${y},${z}) is ${target?.name ?? 'unloaded'} — only dirt/grass/coarse_dirt can be tilled.`,
-          observed_state: { target_block: target?.name ?? null, requested_coord: { x, y, z }, tillable: [...TILLABLE] },
-          retry_safe: false,
-        }};
+        // Task #7 self-adjust: try a nearby tillable cell within 1 block.
+        // circuit-v3+v4 hits: agent off by 1 on the Y-axis (farmland row vs
+        // wheat row) — instead of erroring, snap to the dirt 1 below.
+        const adj = findAdjustedTarget(b, isTillableAt, Number(x), Number(y), Number(z), 1);
+        if (!adj) {
+          return { ok: false, error: {
+            code: 'NOT_TILLABLE',
+            message: `Block at (${x},${y},${z}) is ${target?.name ?? 'unloaded'} and no tillable cell within 1 block — only dirt/grass/coarse_dirt can be tilled.`,
+            observed_state: { target_block: target?.name ?? null, requested_coord: { x, y, z }, tillable: [...TILLABLE], searched_radius: 1 },
+            retry_safe: false,
+          }};
+        }
+        adjustedTarget = adj;
+        targetPos.x = adj.x; targetPos.y = adj.y; targetPos.z = adj.z;
+        target = b.blockAt(targetPos);
+        log(`[till] adjusted target from (${x},${y},${z}) to (${adj.x},${adj.y},${adj.z}) — distance ${adj.distance}`);
       }
 
       if (b.entity.position.distanceTo(targetPos) > 4.5) {
@@ -169,7 +193,12 @@ export function createFarmingActions(deps) {
         const pmcp = paperMcpConfig();
         if (pmcp) {
           log(`[till] native no-op (block still ${after?.name}) — using PaperMCP fallback`);
-          const r = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:farmland`);
+          // Bug fix: was hardcoded to `execute in landfolk-test` (the test
+          // fixture world), silently failing on production. Same class as
+          // commit 631dbb5's water-primitive fix. Console RCON runs in the
+          // server default world (overworld) without the wrapper.
+          // Also use targetPos coords (post-adjust) not original (x,y,z).
+          const r = await executeServerCommand(pmcp, `setblock ${targetPos.x} ${targetPos.y} ${targetPos.z} minecraft:farmland`);
           if (r.ok) {
             for (let i = 0; i < 6; i++) {
               await sleep(150);
@@ -183,15 +212,20 @@ export function createFarmingActions(deps) {
       if (after?.name !== 'farmland') {
         return { ok: false, error: {
           code: 'UNCHANGED',
-          message: `Tilled (${x},${y},${z}) but block is still ${after?.name ?? 'unloaded'}, expected farmland.`,
+          message: `Tilled (${targetPos.x},${targetPos.y},${targetPos.z}) but block is still ${after?.name ?? 'unloaded'}, expected farmland.`,
           observed_state: { target_block_after: after?.name, fallback_attempted: !!paperMcpConfig() },
           retry_safe: true,
         }};
       }
       return {
         ok: true,
-        data: { tilled_coord: { x, y, z }, hoe: hoe.name, ...(fallback ? { fallback } : {}) },
-        result: `Tilled ${target.name} → farmland at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`,
+        data: {
+          tilled_coord: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
+          hoe: hoe.name,
+          ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
+          ...(fallback ? { fallback } : {}),
+        },
+        result: `Tilled ${target.name} → farmland at ${targetPos.x},${targetPos.y},${targetPos.z}${adjustedTarget ? ` (adjusted from ${x},${y},${z})` : ''}${fallback ? ' (server-side fallback)' : ''}.`,
       };
     },
 
@@ -229,31 +263,63 @@ export function createFarmingActions(deps) {
         }};
       }
 
-      const soil = b.blockAt(soilPos);
+      // Task #7 self-adjust: if exact target isn't plantable, scan within
+      // 1 block for a cell where (a) the cell ITSELF is air-like and
+      // (b) the cell BELOW it is the correct soil type. circuit-v[3-4]
+      // hits: agent off by 1 Y (plant row vs soil row) — the adjust
+      // converts a NOT_FARMLAND/BLOCKED error into a successful plant
+      // at the right Y.
+      let adjustedTarget = null;
+      const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
+      const SOIL_NAMES = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'podzol']);
+      const isPlantableHere = (bot, px, py, pz) => {
+        const here = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
+        const below = bot?.blockAt && bot.blockAt(new Vec3(px, py - 1, pz));
+        if (!here || !below) return false;
+        if (!AIR_NAMES.has(here.name)) return false;
+        if (wantsFarmland) return below.name === 'farmland';
+        if (wantsSoil) return SOIL_NAMES.has(below.name);
+        return false;
+      };
+
+      let soil = b.blockAt(soilPos);
+      let existing = b.blockAt(targetPos);
+      const needsAdjust = !isPlantableHere(b, Number(x), Number(y), Number(z));
+      if (needsAdjust) {
+        const adj = findAdjustedTarget(b, isPlantableHere, Number(x), Number(y), Number(z), 1);
+        if (adj) {
+          adjustedTarget = adj;
+          targetPos.x = adj.x; targetPos.y = adj.y; targetPos.z = adj.z;
+          soilPos.x = adj.x; soilPos.y = adj.y - 1; soilPos.z = adj.z;
+          soil = b.blockAt(soilPos);
+          existing = b.blockAt(targetPos);
+          log(`[plant] adjusted target from (${x},${y},${z}) to (${adj.x},${adj.y},${adj.z}) — distance ${adj.distance}`);
+        }
+      }
+
       if (wantsFarmland && soil?.name !== 'farmland') {
         return { ok: false, error: {
           code: 'NOT_FARMLAND',
-          message: `Soil at (${x},${y - 1},${z}) is ${soil?.name ?? 'unloaded'}, expected farmland. Till it first.`,
-          observed_state: { target_soil: soil?.name, requested: itemName },
+          message: `Soil at (${targetPos.x},${targetPos.y - 1},${targetPos.z}) is ${soil?.name ?? 'unloaded'} and no farmland within 1 block, expected farmland. Till it first.`,
+          observed_state: { target_soil: soil?.name, requested: itemName, requested_coord: { x, y, z }, searched_radius: 1 },
           next_action_hint: `mc till ${x} ${y - 1} ${z}`,
           retry_safe: false,
         }};
       }
-      if (wantsSoil && !['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'podzol'].includes(soil?.name)) {
+      if (wantsSoil && !SOIL_NAMES.has(soil?.name)) {
         return { ok: false, error: {
           code: 'WRONG_SOIL',
-          message: `Soil at (${x},${y - 1},${z}) is ${soil?.name}, this plantable needs dirt/grass.`,
-          observed_state: { target_soil: soil?.name, requested: itemName },
+          message: `Soil at (${targetPos.x},${targetPos.y - 1},${targetPos.z}) is ${soil?.name} and no dirt/grass within 1 block, this plantable needs dirt/grass.`,
+          observed_state: { target_soil: soil?.name, requested: itemName, requested_coord: { x, y, z }, searched_radius: 1 },
           retry_safe: false,
         }};
       }
 
-      const existing = b.blockAt(targetPos);
       if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
         return { ok: false, error: {
           code: 'BLOCKED',
-          message: `Target (${x},${y},${z}) is ${existing.name}, not air.`,
-          observed_state: { target_block: existing.name },
+          message: `Target (${targetPos.x},${targetPos.y},${targetPos.z}) is ${existing.name}, not air.`,
+          observed_state: { target_block: existing.name, requested_coord: { x, y, z } },
           retry_safe: false,
         }};
       }
@@ -286,7 +352,10 @@ export function createFarmingActions(deps) {
         if (pmcp && username) {
           log(`[plant] native no-op (block ${placed?.name}) — using PaperMCP fallback for ${itemName}`);
           const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:${itemName} 1`);
-          const r2 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:${cropBlockName}`);
+          // Bug fix: drop `execute in landfolk-test` hardcoded test-world
+          // wrapper (same class as commit 631dbb5). Use targetPos coords
+          // (post-adjust), not original x,y,z.
+          const r2 = await executeServerCommand(pmcp, `setblock ${targetPos.x} ${targetPos.y} ${targetPos.z} minecraft:${cropBlockName}`);
           if (r1.ok && r2.ok) {
             for (let i = 0; i < 6; i++) {
               await sleep(150);
@@ -301,15 +370,21 @@ export function createFarmingActions(deps) {
       if (placed?.name !== cropBlockName) {
         return { ok: false, error: {
           code: 'UNCHANGED',
-          message: `Planted ${itemName} at (${x},${y},${z}) but block is ${placed?.name ?? 'unloaded'}, expected ${cropBlockName}.`,
+          message: `Planted ${itemName} at (${targetPos.x},${targetPos.y},${targetPos.z}) but block is ${placed?.name ?? 'unloaded'}, expected ${cropBlockName}.`,
           observed_state: { target_block_after: placed?.name, started_inventory: before, ended_inventory: after },
           retry_safe: true,
         }};
       }
       return {
         ok: true,
-        data: { planted: itemName, crop_block: cropBlockName, target_coord: { x, y, z }, ...(fallback ? { fallback } : {}) },
-        result: `Planted ${itemName} at ${x},${y},${z}${fallback ? ' (server-side fallback)' : ''}.`,
+        data: {
+          planted: itemName,
+          crop_block: cropBlockName,
+          target_coord: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
+          ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
+          ...(fallback ? { fallback } : {}),
+        },
+        result: `Planted ${itemName} at ${targetPos.x},${targetPos.y},${targetPos.z}${adjustedTarget ? ` (adjusted from ${x},${y},${z})` : ''}${fallback ? ' (server-side fallback)' : ''}.`,
       };
     },
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveHarvestY } from '../../lib/actions/farming.js';
+import { resolveHarvestY, isTillableAt, isFarmlandAt } from '../../lib/actions/farming.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // resolveHarvestY — pure function, probes 3 Y levels around the bot's
@@ -108,4 +108,57 @@ test('resolveHarvestY: ties prefer the first-seen Y (deterministic)', () => {
   const r = resolveHarvestY({ minX: 0, maxX: 0, minZ: 0, maxZ: 0, footY: 64, blockAt });
   // footY-1 = 63 evaluated first, count=1; footY=64 count=1 (not >). 63 wins.
   assert.equal(r.y, 63);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// isTillableAt / isFarmlandAt — pure predicate helpers used by
+// `mc till` and `mc plant`'s task-#7 self-adjust step. Each just wraps
+// a Set/string check + blockAt; defensive tests cover the basics.
+// ─────────────────────────────────────────────────────────────────────────
+
+function botFor(blocks) {
+  // blocks: { 'x,y,z': { name: 'dirt' } }
+  return {
+    blockAt(pos) {
+      return blocks[`${pos.x},${pos.y},${pos.z}`] || null;
+    },
+  };
+}
+
+test('isTillableAt: dirt / grass_block / coarse_dirt / rooted_dirt / dirt_path return true', () => {
+  for (const name of ['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'dirt_path']) {
+    const b = botFor({ '0,64,0': { name } });
+    assert.equal(isTillableAt(b, 0, 64, 0), true, `${name} should be tillable`);
+  }
+});
+
+test('isTillableAt: stone / farmland / water / null return false', () => {
+  const b = botFor({
+    '0,64,0': { name: 'stone' },
+    '1,64,0': { name: 'farmland' }, // already tilled → not tillable
+    '2,64,0': { name: 'water' },
+    // 3,64,0 missing → null
+  });
+  assert.equal(isTillableAt(b, 0, 64, 0), false);
+  assert.equal(isTillableAt(b, 1, 64, 0), false);
+  assert.equal(isTillableAt(b, 2, 64, 0), false);
+  assert.equal(isTillableAt(b, 3, 64, 0), false);
+});
+
+test('isTillableAt: defensive on null/undefined bot', () => {
+  assert.equal(isTillableAt(null, 0, 64, 0), false);
+  assert.equal(isTillableAt(undefined, 0, 64, 0), false);
+  assert.equal(isTillableAt({}, 0, 64, 0), false); // missing blockAt
+});
+
+test('isFarmlandAt: only farmland returns true', () => {
+  const b = botFor({
+    '0,64,0': { name: 'farmland' },
+    '1,64,0': { name: 'dirt' },
+    '2,64,0': { name: 'grass_block' },
+  });
+  assert.equal(isFarmlandAt(b, 0, 64, 0), true);
+  assert.equal(isFarmlandAt(b, 1, 64, 0), false);
+  assert.equal(isFarmlandAt(b, 2, 64, 0), false);
+  assert.equal(isFarmlandAt(b, 99, 99, 99), false); // null block
 });

@@ -155,6 +155,83 @@ export function findStandableSameXZ(b, tx, ty, tz, maxDy = 5) {
   return null;
 }
 
+/**
+ * Generic "adjust to nearest matching cell" helper (task #7).
+ *
+ * Many primitives (place_boat, place, till, plant, bucket_*) require an
+ * EXACT coord — if the agent guesses wrong by 1-2 blocks, the action
+ * errors and the agent thrashes. The fix: actions self-adjust within a
+ * small radius and REPORT the adjustment so the agent learns.
+ *
+ * Returns the original cell when the predicate matches, OR the nearest
+ * matching cell within `maxRadius` (Euclidean, spiral-by-distance),
+ * OR null if nothing matches in range.
+ *
+ * Caller decides whether the adjustment is acceptable. The action
+ * envelope then includes `data.adjusted_target` so the agent sees what
+ * actually happened. Predicate signature:
+ *
+ *   predicate(b, x, y, z) → boolean
+ *
+ * Examples of useful predicates (defined inline by each verb):
+ *   isWaterCell:   block.name === 'water' || 'flowing_water'
+ *   isReplaceable: block is air / water / replaceable plant
+ *   isFarmable:    block.name in {dirt, grass_block, farmland}
+ *
+ * Mirrors findClosestStandable's pattern (spiral by Euclidean distance,
+ * sort+break) so the cost characteristics match what callers expect.
+ *
+ * @param {object} b  mineflayer bot (passed to predicate)
+ * @param {(b: object, x: number, y: number, z: number) => boolean} predicate
+ * @param {number} tx target X
+ * @param {number} ty target Y
+ * @param {number} tz target Z
+ * @param {number} [maxRadius=3] Euclidean radius cap
+ * @returns {{x: number, y: number, z: number, distance: number,
+ *           adjusted: boolean, original: {x:number,y:number,z:number}} | null}
+ */
+export function findAdjustedTarget(b, predicate, tx, ty, tz, maxRadius = 3) {
+  // Original first — happiest path.
+  try {
+    if (predicate(b, tx, ty, tz)) {
+      return {
+        x: tx, y: ty, z: tz, distance: 0,
+        adjusted: false,
+        original: { x: tx, y: ty, z: tz },
+      };
+    }
+  } catch { /* predicate may throw on unloaded; treat as miss */ }
+  // Spiral search by Euclidean distance. Same neighbour enumeration as
+  // findClosestStandable so cost characteristics match.
+  const candidates = [];
+  const r = Math.max(0, maxRadius | 0);
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (dx === 0 && dy === 0 && dz === 0) continue;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > maxRadius) continue;
+        candidates.push({ dx, dy, dz, dist });
+      }
+    }
+  }
+  candidates.sort((a, c) => a.dist - c.dist);
+  for (const c of candidates) {
+    const cx = tx + c.dx, cy = ty + c.dy, cz = tz + c.dz;
+    let ok = false;
+    try { ok = !!predicate(b, cx, cy, cz); } catch { ok = false; }
+    if (ok) {
+      return {
+        x: cx, y: cy, z: cz,
+        distance: Math.round(c.dist * 100) / 100,
+        adjusted: true,
+        original: { x: tx, y: ty, z: tz },
+      };
+    }
+  }
+  return null;
+}
+
 export function findClosestStandable(b, tx, ty, tz, maxScan = 3) {
   const target_reason = standabilityReason(b, tx, ty, tz);
   if (target_reason === 'ok') {
