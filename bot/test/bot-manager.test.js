@@ -305,3 +305,92 @@ test('applyMovementsTuning: gracefully skips liquidCost on Movements lacking the
   assert.equal(moves.canDig, false);
   assert.equal(moves.canOpenDoors, true);
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Soft-block allowlist (task #4). Pathfinder should auto-break leaves /
+// grass / ferns / flowers during navigation even with canDig=false so
+// dense forest floors don't become impassable. The wrapper short-circuits
+// safeOrBreak: matching block names return SOFT_BLOCK_COST=3 and are
+// pushed to toBreak; non-matching blocks fall through to the original
+// safeOrBreak (which still respects canDig=false for everything else).
+// ─────────────────────────────────────────────────────────────────────────
+
+test('MOVEMENTS_TUNING: softBlocks list includes the expected terrain noise', () => {
+  assert.ok(Array.isArray(MOVEMENTS_TUNING.softBlocks) || MOVEMENTS_TUNING.softBlocks instanceof Object);
+  const list = [...MOVEMENTS_TUNING.softBlocks];
+  // Core leaves
+  assert.ok(list.includes('oak_leaves'), 'oak_leaves in allowlist');
+  assert.ok(list.includes('birch_leaves'), 'birch_leaves in allowlist');
+  // Grass + ferns
+  assert.ok(list.includes('tall_grass'), 'tall_grass in allowlist');
+  assert.ok(list.includes('short_grass'), 'short_grass in allowlist');
+  assert.ok(list.includes('fern'), 'fern in allowlist');
+  // NOT in allowlist (these must NOT bypass canDig=false)
+  assert.ok(!list.includes('stone'), 'stone must NOT be in allowlist');
+  assert.ok(!list.includes('dirt'), 'dirt must NOT be in allowlist');
+  assert.ok(!list.includes('cobblestone'), 'cobblestone must NOT be in allowlist');
+});
+
+test('applyMovementsTuning: soft-block safeOrBreak returns low cost + pushes to toBreak', () => {
+  const moves = makeMockMovements();
+  moves.safeOrBreak = function (_b, _t) { return 0; }; // baseline
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const toBreak = [];
+  const leaf = { name: 'oak_leaves', position: { x: 5, y: 70, z: 5 }, boundingBox: 'empty' };
+  const cost = moves.safeOrBreak(leaf, toBreak);
+  assert.equal(cost, 3, 'soft-block cost = 3');
+  assert.deepEqual(toBreak, [{ x: 5, y: 70, z: 5 }], 'soft-block pushed to toBreak');
+});
+
+test('applyMovementsTuning: non-soft block falls through to original safeOrBreak', () => {
+  const moves = makeMockMovements();
+  // Original returns 100 = "can't break" (mineflayer's canDig=false guard)
+  moves.safeOrBreak = function (_b, _t) { return 100; };
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const toBreak = [];
+  const dirt = { name: 'dirt', position: { x: 0, y: 64, z: 0 }, boundingBox: 'block' };
+  const cost = moves.safeOrBreak(dirt, toBreak);
+  assert.equal(cost, 100, 'non-soft block still gets canDig=false treatment');
+  assert.deepEqual(toBreak, [], 'non-soft block NOT auto-added to toBreak');
+});
+
+test('applyMovementsTuning: soft-block wrapper preserves water depth check', () => {
+  // Both gates share one wrapper. Verify water-depth still works:
+  // water with no solid floor → 100 (refused), grass → 3 (broken).
+  const moves = makeMockMovements();
+  moves.bot = { blockAt: () => ({ name: 'water', boundingBox: 'empty' }) }; // water below
+  moves.safeOrBreak = function (_b, _t) { return 0; };
+  applyMovementsTuning(moves, { blocksByName: {} }, { avoidWater: 'shallow' });
+  const tb = [];
+  // Water with water below = deep water = refuse
+  assert.equal(moves.safeOrBreak({ name: 'water', position: { x: 10, y: 64, z: 10 } }, tb), 100);
+  // Grass = soft-block = break at cost 3
+  assert.equal(moves.safeOrBreak({ name: 'tall_grass', position: { x: 0, y: 64, z: 0 }, boundingBox: 'empty' }, tb), 3);
+});
+
+test('applyMovementsTuning: soft-block patch is idempotent', () => {
+  // Double-apply must not double-wrap (would inflate cost on each call).
+  const moves = makeMockMovements();
+  moves.safeOrBreak = function (_b, _t) { return 0; };
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const firstWrap = moves.safeOrBreak;
+  applyMovementsTuning(moves, { blocksByName: {} });
+  assert.equal(moves.safeOrBreak, firstWrap, 'safeOrBreak must not stack');
+  // Sanity: still works
+  const tb = [];
+  assert.equal(moves.safeOrBreak({ name: 'fern', position: { x: 0, y: 64, z: 0 } }, tb), 3);
+});
+
+test('applyMovementsTuning: opts.softBlocks override replaces the default list', () => {
+  // Bots that want a custom allowlist (e.g. mushroom-fields biome) can
+  // pass their own. Test: override to ONLY {brown_mushroom} → leaves no
+  // longer get auto-broken; brown_mushroom does.
+  const moves = makeMockMovements();
+  moves.safeOrBreak = function (_b, _t) { return 100; }; // baseline = refuse
+  applyMovementsTuning(moves, { blocksByName: {} }, { softBlocks: ['brown_mushroom'] });
+  const tb = [];
+  // Leaves no longer in allowlist → falls through → 100
+  assert.equal(moves.safeOrBreak({ name: 'oak_leaves', position: { x: 0, y: 64, z: 0 } }, tb), 100);
+  // brown_mushroom IS in custom allowlist → 3
+  assert.equal(moves.safeOrBreak({ name: 'brown_mushroom', position: { x: 1, y: 64, z: 1 } }, tb), 3);
+});

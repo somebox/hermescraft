@@ -86,6 +86,40 @@ const MAX_CUMULATIVE_DROP_DOWN_DEFAULT = Number.isFinite(parseInt(process.env.BO
   ? parseInt(process.env.BOT_MAX_CUMULATIVE_DROP_DOWN, 10)
   : 3;
 
+/**
+ * Soft-block allowlist (task #4). Pathfinder respects these as
+ * obstacles by default; with `canDig=false` (hermescraft default,
+ * read-only navigation) the bot can't break them, so dense forest
+ * floors and grass meadows become impassable mazes. Real-world
+ * footprint in exp6: Steve repeatedly stalled "under a tree" — the
+ * leaves/grass at his head level blocked the move; canDig=false
+ * meant pathfinder refused to even consider breaking them.
+ *
+ * These blocks have ~0 hardness, no useful drops (occasional
+ * sapling/seed from leaves/grass), and don't represent player-built
+ * structures — they're terrain noise. Allow pathfinder to auto-break
+ * them at low cost (~3) even with canDig=false. The cost is non-zero
+ * so a path that avoids leaves is still preferred — but a path that
+ * goes through is no longer rejected outright.
+ *
+ * Override via opts.softBlocks if a specific bot needs a different
+ * list (e.g. mushroom-fields biome wants to break mushrooms too).
+ */
+const SOFT_BLOCK_NAMES = Object.freeze([
+  'oak_leaves', 'birch_leaves', 'spruce_leaves', 'jungle_leaves',
+  'acacia_leaves', 'dark_oak_leaves', 'cherry_leaves', 'mangrove_leaves',
+  'azalea_leaves', 'flowering_azalea_leaves', 'pale_oak_leaves',
+  'tall_grass', 'short_grass', 'grass', 'fern', 'large_fern',
+  'dead_bush', 'vine', 'snow', 'snow_layer',
+  'azalea', 'flowering_azalea',
+  // Flowers + small mushrooms (replaceable; safe to break)
+  'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet',
+  'red_tulip', 'orange_tulip', 'white_tulip', 'pink_tulip',
+  'oxeye_daisy', 'cornflower', 'lily_of_the_valley',
+  'red_mushroom', 'brown_mushroom',
+]);
+const SOFT_BLOCK_COST = 3; // low but non-zero — prefer dry-clear routes if available
+
 export const MOVEMENTS_TUNING = Object.freeze({
   allowSprinting: true,
   canDig: false,
@@ -95,6 +129,8 @@ export const MOVEMENTS_TUNING = Object.freeze({
   infiniteLiquidDropdownDistance: false,
   avoidWater: AVOID_WATER_DEFAULT,
   maxCumulativeDropDown: MAX_CUMULATIVE_DROP_DOWN_DEFAULT,
+  softBlocks: SOFT_BLOCK_NAMES,
+  softBlockCost: SOFT_BLOCK_COST,
 });
 
 /**
@@ -162,12 +198,30 @@ export function applyMovementsTuning(moves, mcData, opts = {}) {
       moves.blocksToAvoid.add(waterBlock.id);
     }
   }
-  if (avoidWaterMode === 'shallow' && typeof moves.safeOrBreak === 'function' && !moves._waterDepthPatched) {
+  // Combined safeOrBreak wrapper: soft-block allowlist (task #4) + water
+  // depth check (commit 7b0539b). Both gates need to inspect a block at
+  // the cost-evaluation point, so wrap once.
+  const softBlocks = new Set(opts.softBlocks ?? MOVEMENTS_TUNING.softBlocks);
+  const softBlockCost = opts.softBlockCost ?? MOVEMENTS_TUNING.softBlockCost;
+  const needsWaterWrap = avoidWaterMode === 'shallow';
+  const needsSoftBlockWrap = softBlocks.size > 0;
+  if ((needsWaterWrap || needsSoftBlockWrap) && typeof moves.safeOrBreak === 'function' && !moves._safeOrBreakPatched) {
     const origSafeOrBreak = moves.safeOrBreak.bind(moves);
     moves.safeOrBreak = function (block, toBreak) {
-      if (block && block.position && (block.name === 'water' || block.name === 'flowing_water')) {
-        // Check the cell directly below: must be a solid physical block
-        // (dirt, sand, gravel, stone, etc) for the bot to "wade" safely.
+      // Soft-block allowlist FIRST: short-circuit with auto-break.
+      // Bypasses the canDig=false guard inside origSafeOrBreak (which
+      // would otherwise return 100 for any breakable block when
+      // canDig=false). Leaves/grass/ferns/flowers have ~0 hardness,
+      // no valuable drops, and aren't player-built — safe to break
+      // during navigation. See SOFT_BLOCK_NAMES at top of file.
+      if (needsSoftBlockWrap && block && block.name && softBlocks.has(block.name)) {
+        if (block.position && Array.isArray(toBreak)) {
+          toBreak.push(block.position);
+        }
+        return softBlockCost;
+      }
+      // Water depth check (shallow mode).
+      if (needsWaterWrap && block && block.position && (block.name === 'water' || block.name === 'flowing_water')) {
         let below;
         try {
           below = this.bot?.blockAt && this.bot.blockAt(new Vec3(block.position.x, block.position.y - 1, block.position.z));
@@ -180,9 +234,13 @@ export function applyMovementsTuning(moves, mcData, opts = {}) {
       }
       return origSafeOrBreak(block, toBreak);
     };
+    moves._safeOrBreakPatched = true;
+    // Back-compat: keep the old flag so existing tests / external code
+    // checking `_waterDepthPatched` doesn't break.
     moves._waterDepthPatched = true;
   }
   moves.avoidWaterMode = avoidWaterMode;
+  moves.softBlocks = softBlocks;
   for (const name of opts.protectedBlocks ?? []) {
     const block = mcData?.blocksByName?.[name];
     if (block && moves.blocksCantBreak?.add) {
