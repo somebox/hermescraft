@@ -73,3 +73,48 @@ export function isAgentIdle(lastAgentCallTs, lastTaskActiveTs, now, idleMs = 300
   const taskIdle = !lastTaskActiveTs || (now - lastTaskActiveTs) >= idleMs;
   return agentIdle && taskIdle;
 }
+
+/**
+ * Decide whether to auto-disembark a mounted bot that's taking damage
+ * with low HP. Pure function — caller observes mount state, HP, damage
+ * recency, and cooldown.
+ *
+ * Higher HP threshold (10, vs. 6 for general LOW_HP_FLEE) because a
+ * mounted bot can't attack or eat — every hit is "free damage" and the
+ * disembark + escape chain itself takes a couple of seconds. We want to
+ * trigger BEFORE Steve is down to one heart.
+ *
+ * Cooldown prevents ping-pong: if the agent re-mounts immediately after
+ * an auto-disembark, we don't trigger again for 30s. The agent gets a
+ * `auto_disembark_low_hp` reactive event so it can change strategy.
+ *
+ * Hit live in circuit-v5h/v5i/v5j: Steve sailed 600+ blocks toward W1,
+ * boat wedged at shore approach, drowned mob attacked the stationary
+ * boat, Steve died with full inventory + the agent never had time to
+ * react to the BOAT_STUCK envelope.
+ *
+ * @param {object} args
+ * @param {boolean} args.mounted        b.vehicle is set
+ * @param {number}  args.hp             current health (0-20)
+ * @param {boolean} args.recentlyDamaged any damage in last ~5s
+ * @param {number|null} args.lastAutoDisembarkTs  wall-clock ms, null if never
+ * @param {number}  args.now            wall-clock ms (Date.now())
+ * @param {number}  [args.hpThreshold=10]
+ * @param {number}  [args.cooldownMs=30000]
+ * @returns {boolean} true if reactive should trigger auto-disembark this tick
+ */
+export function shouldEmergencyDisembark({
+  mounted,
+  hp,
+  recentlyDamaged,
+  lastAutoDisembarkTs,
+  now,
+  hpThreshold = 10,
+  cooldownMs = 30_000,
+}) {
+  if (!mounted) return false;
+  if (!recentlyDamaged) return false;
+  if (typeof hp !== 'number' || hp > hpThreshold) return false;
+  if (lastAutoDisembarkTs && (now - lastAutoDisembarkTs) < cooldownMs) return false;
+  return true;
+}

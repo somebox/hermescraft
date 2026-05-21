@@ -37,7 +37,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle } from './reactive-helpers.js';
+import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark } from './reactive-helpers.js';
 
 const HOSTILE_NAMES = new Set([
   'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'enderman',
@@ -220,6 +220,28 @@ export function createReactive(deps) {
     if (mode === 'hold') return null;
 
     const anchorRange = mode === 'guard' ? ANCHOR_RANGE_GUARD : ANCHOR_RANGE_NORMAL;
+
+    // Task #23 — mounted-bot survival defense. circuit-v5h/v5i/v5j all
+    // ended the same way: Steve sailed 600+ blocks, boat wedged at shore
+    // approach, drowned mob attacked the stationary boat, HP ticked to 0
+    // before the agent's BOAT_STUCK reaction could land. The body now
+    // auto-disembarks when mounted + low HP + actively taking damage.
+    // mc disembark already chains auto-escape (eaf0c5c), so a single
+    // action puts Steve back on land + alive.
+    if (!autoDisembarkInFlight && shouldEmergencyDisembark({
+      mounted: !!state.bot?.vehicle,
+      hp: state.hp,
+      recentlyDamaged: state.recently_damaged,
+      lastAutoDisembarkTs,
+      now: Date.now(),
+    })) {
+      return {
+        action: 'auto_disembark_low_hp',
+        hp: state.hp,
+        vehicle: state.bot.vehicle?.name || 'unknown',
+        why: 'mounted_low_hp_under_fire',
+      };
+    }
 
     // ── Always-on environmental safety (overrides combat, fires in hold mode
     //    too — we never let the bot stand in lava or drown to follow orders).
@@ -818,6 +840,8 @@ export function createReactive(deps) {
   let lastFootDryTs = 0;          // wall-clock of last tick with foot_in_water=false
   let lastAgentCallTs = 0;        // wall-clock of last mc <verb> HTTP request (touched externally)
   let lastTaskActiveTs = 0;       // wall-clock of last tick observing currentTask.status === 'running'
+  let lastAutoDisembarkTs = 0;    // wall-clock of last auto-disembark (task #23 cooldown)
+  let autoDisembarkInFlight = false;
   const WATER_TICKS_TO_FIRE = 5; // ~2.0s of continuous submersion before auto-fire
   // AUTO_ESCAPE_COOLDOWN_MS replaced by computeBackoffMs(consecutiveEscapeFires):
   // 30s → 60s → 120s → 300s. Resets after ≥2 min of foot_in_water=false. See
@@ -884,6 +908,40 @@ export function createReactive(deps) {
         await escapeLava(state, decision.hazards);
       } else if (decision.action === 'swim_up') {
         await swimUp(state);
+      } else if (decision.action === 'auto_disembark_low_hp') {
+        // Task #23 — emergency dismount when mounted bot is dying.
+        // Fire-and-forget like auto_escape_water; the disembark action
+        // itself chains auto-escape if the dismount lands in water
+        // (eaf0c5c).
+        autoDisembarkInFlight = true;
+        lastAutoDisembarkTs = Date.now();
+        pushAutoEvent({
+          kind: 'auto_disembark_low_hp_started',
+          hp: decision.hp,
+          vehicle: decision.vehicle,
+        });
+        (async () => {
+          try {
+            const result = await ACTIONS.disembark({});
+            pushAutoEvent({
+              kind: 'auto_disembark_low_hp_done',
+              ok: result?.ok !== false,
+              dismounted_from: result?.data?.dismounted_from,
+              auto_escape: result?.data?.auto_escape || null,
+              error: result?.error || null,
+            });
+            log(`[reactive] auto_disembark_low_hp → ${result?.ok ? 'dismounted + auto-escaped' : (result.error?.code || 'failed')}`);
+          } catch (e) {
+            pushAutoEvent({
+              kind: 'auto_disembark_low_hp_done',
+              ok: false,
+              error: e?.message || String(e),
+            });
+            log(`[reactive] auto_disembark_low_hp error: ${e?.message || e}`);
+          } finally {
+            autoDisembarkInFlight = false;
+          }
+        })();
       } else if (decision.action === 'auto_escape_water') {
         // Watchdog auto-fire. Calls the full ACTIONS.escape primitive
         // (queries.js) which does swim_up + 8-way 32b land scan +

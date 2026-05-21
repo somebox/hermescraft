@@ -18,6 +18,7 @@ import {
   computeBackoffMs,
   shouldResetEscapeCounter,
   isAgentIdle,
+  shouldEmergencyDisembark,
 } from '../lib/runtime/reactive-helpers.js';
 
 // ─── computeBackoffMs ────────────────────────────────────────────────────
@@ -124,4 +125,75 @@ test('isAgentIdle: custom idle threshold respected', () => {
   assert.equal(isAgentIdle(now - 120_000, now - 120_000, now, 90_000), true);
   // 90s threshold: 30s ago is not
   assert.equal(isAgentIdle(now - 30_000, now - 30_000, now, 90_000), false);
+});
+
+// ─── shouldEmergencyDisembark (task #23 — circuit-v5 survival defense) ───
+// Auto-disembark a mounted bot taking damage with low HP. The agent
+// log in v5h/v5i/v5j showed Steve getting hit by drowned mobs in the
+// lake; HP ticked from 15→0 while the agent processed BOAT_STUCK and
+// before any recovery action landed.
+
+test('shouldEmergencyDisembark: mounted + hp<=10 + recently damaged → true', () => {
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 9, recentlyDamaged: true,
+    lastAutoDisembarkTs: null, now: 1_000_000_000,
+  }), true);
+  // Right at the threshold (hp=10) — still triggers (the predicate is ≤).
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 10, recentlyDamaged: true,
+    lastAutoDisembarkTs: null, now: 1_000_000_000,
+  }), true);
+});
+
+test('shouldEmergencyDisembark: not mounted → always false', () => {
+  // Dry land + low HP + damage = the existing flee_step handles it.
+  assert.equal(shouldEmergencyDisembark({
+    mounted: false, hp: 4, recentlyDamaged: true,
+    lastAutoDisembarkTs: null, now: 1_000_000_000,
+  }), false);
+});
+
+test('shouldEmergencyDisembark: HP above threshold → false', () => {
+  // Mounted, took a hit, but plenty of HP. Don't bail prematurely.
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 15, recentlyDamaged: true,
+    lastAutoDisembarkTs: null, now: 1_000_000_000,
+  }), false);
+});
+
+test('shouldEmergencyDisembark: no recent damage → false', () => {
+  // Steve might just be hungry or low from earlier; don't disembark
+  // unless he's ACTIVELY taking hits.
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 5, recentlyDamaged: false,
+    lastAutoDisembarkTs: null, now: 1_000_000_000,
+  }), false);
+});
+
+test('shouldEmergencyDisembark: within 30s cooldown → false (ping-pong guard)', () => {
+  const now = 1_000_000_000;
+  // Last disembark was 15s ago — well within the 30s cooldown.
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 4, recentlyDamaged: true,
+    lastAutoDisembarkTs: now - 15_000, now,
+  }), false);
+  // Outside cooldown: triggers again.
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 4, recentlyDamaged: true,
+    lastAutoDisembarkTs: now - 35_000, now,
+  }), true);
+});
+
+test('shouldEmergencyDisembark: custom hp threshold respected', () => {
+  const now = 1_000_000_000;
+  // Tighten the threshold to 5; hp=8 should no longer trigger.
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 8, recentlyDamaged: true,
+    lastAutoDisembarkTs: null, now, hpThreshold: 5,
+  }), false);
+  // hp=5 with the same threshold does trigger.
+  assert.equal(shouldEmergencyDisembark({
+    mounted: true, hp: 5, recentlyDamaged: true,
+    lastAutoDisembarkTs: null, now, hpThreshold: 5,
+  }), true);
 });
