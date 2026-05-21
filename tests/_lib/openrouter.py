@@ -189,6 +189,14 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     text = (text or "").strip()
     if not text:
         return None
+    # Strip ```json ... ``` (or ``` ... ```) markdown fences if the model
+    # wrapped its JSON output despite response_format=json_object. DeepSeek
+    # does this occasionally; the bare extraction fallback below would also
+    # catch most cases but loses content if the closing brace is on the
+    # same line as the closing fence.
+    fenced = re.match(r"^```(?:json)?\s*\n(.*?)\n```\s*$", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:

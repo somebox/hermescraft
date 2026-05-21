@@ -214,24 +214,31 @@ def run_advise(
 
     parsed = result.get("parsed")
     parsed_d = parsed or {}
-    append_advise_log(
-        {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "kind": cmd,
-            "reason": reason,
-            "api_url": base,
-            "http_ms": http_ms,
-            "digest_ms": digest_ms,
-            "total_ms": total_ms,
-            "model": result.get("model"),
-            "usage": result.get("usage"),
-            "ok": parsed is not None,
-            "summary": parsed_d.get("summary") if parsed else None,
-            "recommendations": parsed_d.get("recommendations") if parsed else None,
-            "caveats": parsed_d.get("caveats") if parsed else None,
-            "nothing_actionable": bool(parsed_d.get("nothing_actionable")) if parsed else None,
-        }
-    )
+    log_entry: dict[str, Any] = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "kind": cmd,
+        "reason": reason,
+        "api_url": base,
+        "http_ms": http_ms,
+        "digest_ms": digest_ms,
+        "total_ms": total_ms,
+        "model": result.get("model"),
+        "usage": result.get("usage"),
+        "ok": parsed is not None,
+        "summary": parsed_d.get("summary") if parsed else None,
+        "recommendations": parsed_d.get("recommendations") if parsed else None,
+        "caveats": parsed_d.get("caveats") if parsed else None,
+        "nothing_actionable": bool(parsed_d.get("nothing_actionable")) if parsed else None,
+    }
+    # On parse failure, preserve enough context to investigate later. The
+    # raw_preview is the first 1000 chars of whatever the LLM actually sent
+    # back; error is whatever digest() flagged. Without these the failure
+    # is opaque in mc-advise.jsonl (we hit this exact gap debugging
+    # circuit-v5's "route plan to W1" parse fail on 2026-05-21).
+    if parsed is None:
+        log_entry["error"] = result.get("error") or "parsed_none"
+        log_entry["raw_preview"] = (result.get("raw") or "")[:1000]
+    append_advise_log(log_entry)
 
     if parsed is None:
         return {
