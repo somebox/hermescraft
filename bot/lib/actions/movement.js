@@ -53,41 +53,43 @@ export function refuseWaterRouteWithoutBoat(b, x, y, z, {
     const boat = (b.inventory?.items?.() || []).find((i) => BOAT_INV_NAMES.has(i.name));
     const samplesArr = probe?.samples || [];
     const firstWater = samplesArr.find((s) => s.classification === 'water');
-    // Prefer a SHORE water cell — water sample whose previous sample was
-    // land/wall — so place_boat finds a dry stance adjacent. Without this,
-    // the hint points at open-water deep in the lake → place_boat returns
-    // NO_STANCE (hit live in circuit-v5d: every place_boat tried failed
-    // because the hint coord had no adjacent shore).
-    let shoreWater = null;
+    // Find the LAST land/wall sample before the first water — that's the
+    // shore-stance coord. Pointing the agent at an actual dry shore cell
+    // and letting `mc board` (no-args) handle the boat placement is far
+    // more reliable than guessing a place_boat coord deep in the lake.
+    // circuit-v5d showed the route_probe's ~25-block sample spacing put
+    // every "water" sample well past any adjacent shore, so place_boat
+    // hits returned NO_STANCE every time.
+    let shoreStance = null;
     for (let i = 1; i < samplesArr.length; i++) {
       const s = samplesArr[i];
       const prev = samplesArr[i - 1];
       if (s.classification === 'water' && (prev.classification === 'land' || prev.classification === 'wall')) {
-        shoreWater = s;
+        shoreStance = prev;
         break;
       }
     }
-    const placeTarget = shoreWater || firstWater;
     if (boat) {
+      const hint = shoreStance
+        ? `mc move ${shoreStance.x} ${shoreStance.y + 1} ${shoreStance.z} then mc board (no args — auto-finds water + places + mounts)`
+        : `mc board`;
       return {
         ok: false,
         error: {
           code: 'BOAT_REQUIRED',
-          message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples — refusing to walk. You're holding ${boat.name}. Use \`mc place_boat ${placeTarget?.x ?? '<water_x>'} ${placeTarget?.y ?? '<water_y>'} ${placeTarget?.z ?? '<water_z>'}\` then \`mc board\` then \`mc sail ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}\`.`,
+          message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples — refusing to walk. You're holding ${boat.name}. ${shoreStance ? `Walk to the shore at (${shoreStance.x}, ${shoreStance.y + 1}, ${shoreStance.z}) then call \`mc board\` (no-args mode auto-places the boat in nearby water and mounts you).` : 'Call `mc board` to auto-place a boat in nearby water and mount.'} Then \`mc sail ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}\`.`,
           observed_state: {
             route_preview: {
               counts,
               sample_count: probe.sample_count,
               first_water: firstWater ? { x: firstWater.x, y: firstWater.y, z: firstWater.z } : null,
-              shore_water: shoreWater ? { x: shoreWater.x, y: shoreWater.y, z: shoreWater.z } : null,
+              shore_stance: shoreStance ? { x: shoreStance.x, y: shoreStance.y + 1, z: shoreStance.z } : null,
             },
             distance: Math.round(dist),
             boat_in_inventory: boat.name,
             target: { x: Math.floor(tx), y: Math.floor(ty), z: Math.floor(tz) },
           },
-          next_action_hint: placeTarget
-            ? `mc place_boat ${placeTarget.x} ${placeTarget.y} ${placeTarget.z}`
-            : `mc advise --reason="route to ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}" --target ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)}`,
+          next_action_hint: hint,
           retry_safe: false,
         },
       };

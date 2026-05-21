@@ -3,7 +3,7 @@
  *
  * The decision is: when an agent calls mc move / bg_goto >100 blocks away,
  * sample the route. If ≥6/30 samples are water:
- *   - has a boat → BOAT_REQUIRED with place_boat next_action_hint
+ *   - has a boat → BOAT_REQUIRED with mc board next_action_hint
  *   - no boat   → WATER_ROUTE_NEEDS_BOAT with craft oak_boat hint
  * Short routes and dry routes pass through (returns null).
  */
@@ -52,11 +52,11 @@ test('refuseWaterRouteWithoutBoat: water-heavy route + boat → BOAT_REQUIRED', 
   const r = refuseWaterRouteWithoutBoat(bot, 200, 64, 0);
   assert.ok(r && !r.ok);
   assert.equal(r.error.code, 'BOAT_REQUIRED');
-  assert.match(r.error.message, /place_boat/);
+  assert.match(r.error.message, /mc board/);
   assert.match(r.error.message, /oak_boat/);
   assert.ok(r.error.observed_state.route_preview.counts.water >= 6);
   assert.equal(r.error.observed_state.boat_in_inventory, 'oak_boat');
-  assert.ok(r.error.next_action_hint.startsWith('mc place_boat'));
+  assert.match(r.error.next_action_hint, /mc board/);
 });
 
 test('refuseWaterRouteWithoutBoat: water-heavy route, no boat → WATER_ROUTE_NEEDS_BOAT', () => {
@@ -98,14 +98,16 @@ test('refuseWaterRouteWithoutBoat: any boat type satisfies the check', () => {
   }
 });
 
-test('refuseWaterRouteWithoutBoat: surfaces first_water sample coord for place_boat hint', () => {
+test('refuseWaterRouteWithoutBoat: surfaces first_water sample coord in observed_state', () => {
   const water = [];
   for (let i = 0; i <= 200; i++) water.push({ x: i, y: 63, z: 0 });
   const bot = makeBot({ pos: [0, 64, 0], water, inventory: ['oak_boat'] });
   const r = refuseWaterRouteWithoutBoat(bot, 200, 64, 0);
   const fw = r.error.observed_state.route_preview.first_water;
   assert.ok(fw, 'first_water should be populated');
-  assert.match(r.error.next_action_hint, new RegExp(`mc place_boat ${fw.x} ${fw.y} ${fw.z}`));
+  // Hint always recommends `mc board` (no-args) for placement; first_water
+  // is just diagnostic context in observed_state.
+  assert.match(r.error.next_action_hint, /mc board/);
 });
 
 test('refuseWaterRouteWithoutBoat: malformed inputs return null (defensive)', () => {
@@ -120,21 +122,17 @@ test('refuseWaterRouteWithoutBoat: malformed inputs return null (defensive)', ()
   assert.equal(refuseWaterRouteWithoutBoat(null, 200, 64, 0), null);
 });
 
-test('refuseWaterRouteWithoutBoat: prefers SHORE water (land→water transition) over first_water', () => {
-  // Build a route where samples 0-3 are dry land (stone foot/floor), then
-  // 4+ are water. The shore-water cell is sample 4 (water adjacent to
-  // land in the sample order). Hint should point at that, not just the
-  // first water cell in some other deep location.
-  // Bot at (0,64,0), target at (200,64,0). 30 samples → 1 every ~6.9 blocks.
-  // Place dry land at sample positions for first 4, water for the rest.
+test('refuseWaterRouteWithoutBoat: hints at SHORE STANCE (last dry sample before water)', () => {
+  // Build a route where the first ~3 samples are dry land, then the rest
+  // are water. The hint should tell the agent to mc move to the shore
+  // stance (the LAST dry cell) and then mc board to handle placement.
+  // Bot at (0,64,0), target at (200,64,0). 30 samples ~6.9 blocks apart.
   const bot = {
     entity: { position: { x: 0, y: 64, z: 0 } },
     inventory: { items: () => [{ name: 'oak_boat', count: 1 }] },
     blockAt(p) {
-      // Bot's foot Y is 64. probeRouteAlongLine looks at p.y (foot), p.y+1 (head), p.y-1 (floor).
-      // Sample positions go from x=0 to x=200, 30 samples (~step 6.9).
-      // First 4 samples (x: 0..21) → dry land (stone floor at 63, air at 64+65).
-      // Remaining samples (x: 28..200) → water (water at 63 and 64; air at 65).
+      // Sample x in [0, 200], step ~6.9. First 4 samples (x<25) dry land;
+      // rest water. probeRouteAlongLine reads foot (y=64), head (65), floor (63).
       if (p.x < 25) {
         if (p.y === 63) return { name: 'stone', boundingBox: 'block' };
         return { name: 'air', boundingBox: 'empty' };
@@ -146,19 +144,19 @@ test('refuseWaterRouteWithoutBoat: prefers SHORE water (land→water transition)
   const r = refuseWaterRouteWithoutBoat(bot, 200, 64, 0);
   assert.ok(r && !r.ok);
   assert.equal(r.error.code, 'BOAT_REQUIRED');
-  const sw = r.error.observed_state.route_preview.shore_water;
-  assert.ok(sw, 'shore_water should be populated when the route has a land→water transition');
-  // shore_water x should be the FIRST water sample after the land, which
-  // is around x=27-35 (first sample past the x<25 boundary).
-  assert.ok(sw.x >= 25 && sw.x <= 50,
-    `expected shore_water near land/water boundary (x=25-50), got x=${sw.x}`);
-  // The next_action_hint must use shore_water, not the deep-water firstWater.
-  assert.match(r.error.next_action_hint, new RegExp(`mc place_boat ${sw.x} ${sw.y} ${sw.z}`));
+  const ss = r.error.observed_state.route_preview.shore_stance;
+  assert.ok(ss, 'shore_stance should be populated when route has a land→water transition');
+  // shore_stance.y is the stance Y (last-land foot Y + 1).
+  // The land samples are at x<25. The shore_stance is the LAST land
+  // before water, so x should be in [0, 25).
+  assert.ok(ss.x < 25, `expected shore_stance x<25 (last dry before water), got ${ss.x}`);
+  // The hint should suggest mc move to shore + mc board.
+  assert.match(r.error.next_action_hint, /mc move/);
+  assert.match(r.error.next_action_hint, /mc board/);
 });
 
-test('refuseWaterRouteWithoutBoat: falls back to first_water when no land→water transition exists', () => {
-  // Route is entirely water from the start (bot already in/at water).
-  // shore_water would be null; hint falls back to first_water.
+test('refuseWaterRouteWithoutBoat: no land→water transition → hint is bare mc board', () => {
+  // Route is entirely water from the start. No shore_stance.
   const water = [];
   for (let i = 0; i <= 200; i++) water.push({ x: i, y: 63, z: 0 });
   const waterKeys = new Set(water.map((c) => `${c.x},${c.y},${c.z}`));
@@ -173,12 +171,9 @@ test('refuseWaterRouteWithoutBoat: falls back to first_water when no land→wate
   };
   const r = refuseWaterRouteWithoutBoat(bot, 200, 64, 0);
   assert.ok(r && !r.ok);
-  // No land samples → no land→water transition → shore_water null.
-  assert.equal(r.error.observed_state.route_preview.shore_water, null);
-  // Hint still works via firstWater fallback.
-  const fw = r.error.observed_state.route_preview.first_water;
-  assert.ok(fw, 'first_water still populated');
-  assert.match(r.error.next_action_hint, new RegExp(`mc place_boat ${fw.x} ${fw.y} ${fw.z}`));
+  assert.equal(r.error.observed_state.route_preview.shore_stance, null);
+  // Falls back to plain `mc board` — no shore to walk to first.
+  assert.equal(r.error.next_action_hint, 'mc board');
 });
 
 test('refuseWaterRouteWithoutBoat: respects custom thresholds', () => {
