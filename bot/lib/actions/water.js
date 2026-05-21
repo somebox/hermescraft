@@ -314,13 +314,52 @@ export function createWaterActions(deps) {
           }
         }
         if (!stancePos) {
-          return { ok: false, error: {
-            code: 'NO_STANCE',
-            message: `No solid block adjacent to water at (${x},${y},${z}) and bot is not in water. Stand at the pond edge, or get into the water to place from there.`,
-            retry_safe: false,
-          }};
-        }
-        if (b.entity.position.distanceTo(stancePos) > 1.5) {
+          // Open-water target with no dry shore adjacent. Try walking
+          // into a water cell adjacent to the target — that puts the bot
+          // in the in-water mode (placedFromWater=true) which doesn't
+          // need a dry stance. Hit live in circuit-v5d: agent followed
+          // the BOAT_REQUIRED hint to a coord deep in the lake; every
+          // place_boat returned NO_STANCE because all 4 cardinals were
+          // also water.
+          let waterAdj = null;
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const candidate = refBlock.position.offset(dx, 0, dz);
+            const blk = b.blockAt(candidate);
+            if (blk && (blk.name === 'water' || blk.name === 'flowing_water')) {
+              waterAdj = candidate;
+              break;
+            }
+          }
+          if (waterAdj) {
+            try {
+              await b.pathfinder.goto(new goals.GoalNear(waterAdj.x, waterAdj.y, waterAdj.z, 0));
+            } catch {
+              return { ok: false, error: {
+                code: 'OUT_OF_RANGE',
+                message: `No dry stance at (${x},${y},${z}) and pathfinder couldn't reach the water cell next door. The boat target is open water far from any shore.`,
+                observed_state: { target: [Number(x), Number(y), Number(z)], adjacent_water: [waterAdj.x, waterAdj.y, waterAdj.z] },
+                retry_safe: true,
+              }};
+            }
+            // Re-check whether we landed in water — if so, switch to
+            // from-water mode.
+            const newFoot = b.entity.position.floored();
+            const newFootBlk = b.blockAt(newFoot);
+            if (newFootBlk && (newFootBlk.name === 'water' || newFootBlk.name === 'flowing_water')) {
+              stancePos = newFoot;
+              placedFromWater = true;
+              log(`[place_boat] no dry stance — walked into water at ${newFoot.x},${newFoot.y},${newFoot.z}, switching to from-water mode`);
+            }
+          }
+          if (!stancePos) {
+            return { ok: false, error: {
+              code: 'NO_STANCE',
+              message: `No solid block adjacent to water at (${x},${y},${z}) and bot is not in water. Stand at the pond edge, or get into the water to place from there.`,
+              observed_state: { target: [Number(x), Number(y), Number(z)], adjacent_water: waterAdj ? [waterAdj.x, waterAdj.y, waterAdj.z] : null },
+              retry_safe: false,
+            }};
+          }
+        } else if (b.entity.position.distanceTo(stancePos) > 1.5) {
           try {
             await b.pathfinder.goto(new goals.GoalNear(stancePos.x, stancePos.y, stancePos.z, 1));
           } catch {
