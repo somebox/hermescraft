@@ -2,6 +2,7 @@
 /** Mineflayer connect/events/reconnect/hardcore + stuck watchdog. */
 
 import { Vec3 } from 'vec3';
+import { isDigProtected } from './dig-tools.js';
 
 /** Actions used by stuck watchdog when task.status === 'running'. */
 /** Note: `collect` is excluded — mining often keeps feet within <2m for 10–20s while digging. */
@@ -120,6 +121,25 @@ const SOFT_BLOCK_NAMES = Object.freeze([
 ]);
 const SOFT_BLOCK_COST = 3; // low but non-zero — prefer dry-clear routes if available
 
+/**
+ * Task #22 — "disposable terrain" tier. One step up in commitment from
+ * the soft-block foliage list: real landform that's cheap to break, has
+ * no valuable drops, and isn't player-built. ONLY active when the bot
+ * is currently in water — so navigation across dry land doesn't shave
+ * off random beaches.
+ *
+ * Triggered live in circuit-v5: Steve in a small lake blocked by a
+ * sand wall, eventually figured out to mc dig manually. The body
+ * should handle the one-block escape automatically.
+ */
+const DISPOSABLE_TERRAIN_NAMES = Object.freeze([
+  'dirt', 'coarse_dirt', 'rooted_dirt', 'podzol', 'dirt_path', 'grass_block',
+  'sand', 'red_sand',
+  'gravel',
+]);
+const DISPOSABLE_TERRAIN_COST = 25; // foliage=3, disposable=25, stone=100/inf
+const DISPOSABLE_TERRAIN_MAX_PER_LEG = 3;
+
 export const MOVEMENTS_TUNING = Object.freeze({
   allowSprinting: true,
   canDig: false,
@@ -131,6 +151,9 @@ export const MOVEMENTS_TUNING = Object.freeze({
   maxCumulativeDropDown: MAX_CUMULATIVE_DROP_DOWN_DEFAULT,
   softBlocks: SOFT_BLOCK_NAMES,
   softBlockCost: SOFT_BLOCK_COST,
+  disposableBlocks: DISPOSABLE_TERRAIN_NAMES,
+  disposableBlockCost: DISPOSABLE_TERRAIN_COST,
+  disposableBlockMaxPerLeg: DISPOSABLE_TERRAIN_MAX_PER_LEG,
 });
 
 /**
@@ -203,9 +226,21 @@ export function applyMovementsTuning(moves, mcData, opts = {}) {
   // the cost-evaluation point, so wrap once.
   const softBlocks = new Set(opts.softBlocks ?? MOVEMENTS_TUNING.softBlocks);
   const softBlockCost = opts.softBlockCost ?? MOVEMENTS_TUNING.softBlockCost;
+  const disposableBlocks = new Set(opts.disposableBlocks ?? MOVEMENTS_TUNING.disposableBlocks);
+  const disposableBlockCost = opts.disposableBlockCost ?? MOVEMENTS_TUNING.disposableBlockCost;
+  const disposableMax = opts.disposableBlockMaxPerLeg ?? MOVEMENTS_TUNING.disposableBlockMaxPerLeg;
   const needsWaterWrap = avoidWaterMode === 'shallow';
   const needsSoftBlockWrap = softBlocks.size > 0;
-  if ((needsWaterWrap || needsSoftBlockWrap) && typeof moves.safeOrBreak === 'function' && !moves._safeOrBreakPatched) {
+  const needsDisposableWrap = disposableBlocks.size > 0;
+  // Per-leg break counter for disposable terrain. Pathfinder evaluates
+  // many candidate moves before committing, so the toBreak list can grow
+  // beyond the cap during search — what we actually want to bound is
+  // how many disposable blocks end up scheduled on the COMMITTED path.
+  // mineflayer-pathfinder doesn't expose a "leg start" hook, so we use
+  // a coarse window: reset the count whenever toBreak shrinks (a new
+  // search) or is empty.
+  const disposableState = { count: 0, lastToBreakLen: 0 };
+  if ((needsWaterWrap || needsSoftBlockWrap || needsDisposableWrap) && typeof moves.safeOrBreak === 'function' && !moves._safeOrBreakPatched) {
     const origSafeOrBreak = moves.safeOrBreak.bind(moves);
     moves.safeOrBreak = function (block, toBreak) {
       // Soft-block allowlist FIRST: short-circuit with auto-break.
@@ -219,6 +254,34 @@ export function applyMovementsTuning(moves, mcData, opts = {}) {
           toBreak.push(block.position);
         }
         return softBlockCost;
+      }
+      // Disposable terrain tier (task #22). Only active when the bot
+      // is in water — limits blast radius so normal land travel doesn't
+      // erode beaches. Respects isDigProtected so marks/structures
+      // still hard-block. Caps at disposableMax blocks per leg so the
+      // bot doesn't try to demolish a large hill.
+      if (needsDisposableWrap && block && block.name && disposableBlocks.has(block.name)) {
+        const inWater = !!this.bot?.entity?.isInWater;
+        if (inWater) {
+          // Reset counter when toBreak shrinks (new search round) or empties.
+          if (Array.isArray(toBreak)) {
+            if (toBreak.length < disposableState.lastToBreakLen || toBreak.length === 0) {
+              disposableState.count = 0;
+            }
+            disposableState.lastToBreakLen = toBreak.length;
+          }
+          const protectedHere = block.position
+            ? isDigProtected(block.name, { x: block.position.x, y: block.position.y, z: block.position.z })
+            : isDigProtected(block.name);
+          if (!protectedHere && disposableState.count < disposableMax) {
+            if (block.position && Array.isArray(toBreak)) {
+              toBreak.push(block.position);
+              disposableState.count++;
+            }
+            return disposableBlockCost;
+          }
+        }
+        // Fall through to default cost (typically infinity with canDig=false)
       }
       // Water depth check (shallow mode).
       if (needsWaterWrap && block && block.position && (block.name === 'water' || block.name === 'flowing_water')) {

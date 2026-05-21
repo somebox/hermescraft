@@ -394,3 +394,75 @@ test('applyMovementsTuning: opts.softBlocks override replaces the default list',
   // brown_mushroom IS in custom allowlist → 3
   assert.equal(moves.safeOrBreak({ name: 'brown_mushroom', position: { x: 1, y: 64, z: 1 } }, tb), 3);
 });
+
+// ─── Task #22 — disposable terrain auto-break (water-only) ───────────────
+
+test('MOVEMENTS_TUNING: disposableBlocks list covers dirt/sand/gravel family', () => {
+  const list = [...MOVEMENTS_TUNING.disposableBlocks];
+  assert.ok(list.includes('dirt'), 'dirt');
+  assert.ok(list.includes('grass_block'), 'grass_block');
+  assert.ok(list.includes('sand'), 'sand');
+  assert.ok(list.includes('gravel'), 'gravel');
+  assert.ok(list.includes('podzol'), 'podzol');
+  // NOT disposable (would be destructive to auto-break)
+  assert.ok(!list.includes('stone'));
+  assert.ok(!list.includes('oak_log'));
+  assert.ok(!list.includes('iron_ore'));
+});
+
+test('applyMovementsTuning: disposable terrain in water → cost 25, pushed to toBreak', () => {
+  const moves = makeMockMovements();
+  moves.bot = { entity: { isInWater: true, position: { y: 64 } }, blockAt: () => null };
+  // Baseline: original safeOrBreak refuses dirt (canDig=false → 100).
+  moves.safeOrBreak = function (_b, _t) { return 100; };
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const tb = [];
+  const sand = { name: 'sand', position: { x: 5, y: 63, z: 5 }, boundingBox: 'block' };
+  const cost = moves.safeOrBreak(sand, tb);
+  assert.equal(cost, 25, 'disposable cost is 25 when bot is in water');
+  assert.deepEqual(tb, [{ x: 5, y: 63, z: 5 }], 'sand pushed to toBreak');
+});
+
+test('applyMovementsTuning: disposable terrain on DRY land → falls through (cost 100)', () => {
+  // The whole point of the gate: avoid eroding random beaches during
+  // normal travel. Only active when bot is in water.
+  const moves = makeMockMovements();
+  moves.bot = { entity: { isInWater: false, position: { y: 64 } }, blockAt: () => null };
+  moves.safeOrBreak = function (_b, _t) { return 100; };
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const tb = [];
+  const cost = moves.safeOrBreak({ name: 'dirt', position: { x: 0, y: 64, z: 0 }, boundingBox: 'block' }, tb);
+  assert.equal(cost, 100, 'dry-land dirt still refused');
+  assert.deepEqual(tb, [], 'dry-land dirt NOT auto-added');
+});
+
+test('applyMovementsTuning: disposable terrain caps at 3 blocks per leg', () => {
+  const moves = makeMockMovements();
+  moves.bot = { entity: { isInWater: true, position: { y: 64 } }, blockAt: () => null };
+  moves.safeOrBreak = function (_b, _t) { return 100; };
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const tb = [];
+  // First 3 sand blocks: each pushes to toBreak at cost 25.
+  for (let i = 0; i < 3; i++) {
+    const c = moves.safeOrBreak({ name: 'sand', position: { x: i, y: 63, z: 0 }, boundingBox: 'block' }, tb);
+    assert.equal(c, 25, `block ${i} should still be in cap`);
+  }
+  assert.equal(tb.length, 3, '3 blocks scheduled');
+  // 4th sand block: hit the cap → falls through to default (100).
+  const c4 = moves.safeOrBreak({ name: 'sand', position: { x: 4, y: 63, z: 0 }, boundingBox: 'block' }, tb);
+  assert.equal(c4, 100, '4th sand exceeds cap, refused');
+  assert.equal(tb.length, 3, 'cap held; no 4th block added');
+});
+
+test('applyMovementsTuning: disposable tier patch is idempotent under double-apply', () => {
+  const moves = makeMockMovements();
+  moves.bot = { entity: { isInWater: true, position: { y: 64 } }, blockAt: () => null };
+  moves.safeOrBreak = function (_b, _t) { return 100; };
+  applyMovementsTuning(moves, { blocksByName: {} });
+  const firstWrap = moves.safeOrBreak;
+  applyMovementsTuning(moves, { blocksByName: {} });
+  assert.equal(moves.safeOrBreak, firstWrap, 'safeOrBreak must not double-wrap');
+  // Sanity: still works.
+  const tb = [];
+  assert.equal(moves.safeOrBreak({ name: 'dirt', position: { x: 0, y: 63, z: 0 }, boundingBox: 'block' }, tb), 25);
+});
