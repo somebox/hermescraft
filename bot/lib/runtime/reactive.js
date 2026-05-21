@@ -37,6 +37,7 @@
  */
 
 import { Vec3 } from 'vec3';
+import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle } from './reactive-helpers.js';
 
 const HOSTILE_NAMES = new Set([
   'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'enderman',
@@ -231,28 +232,54 @@ export function createReactive(deps) {
                  : 'adjacent_lava';
       return { action: 'escape_lava', hazards: state.lava_neighbors, why };
     }
-    // Water-watchdog (task #17). BEFORE the 800ms swim_up reflex,
-    // check if we've been continuously submerged long enough to
-    // justify the full mc escape strategy. Sustained foot_in_water
-    // with no resolution means the lightweight reflex isn't enough —
-    // bot is trapped in open water, needs to scan for shore / place
-    // a boat / pillar up. ACTIONS.escape handles all three.
+    // Water-watchdog (task #17 + task #20 backoff/idle).
+    //
+    // Track consecutive submerged ticks AND the timestamp of last dry
+    // foot so the backoff counter can reset after a sustained dry
+    // window (problem solved).
+    const now = Date.now();
     if (state.in_water) {
       waterTickCount += 1;
     } else {
       waterTickCount = 0;
+      lastFootDryTs = now;
     }
-    const sinceLastEscape = Date.now() - lastAutoEscapeTs;
+
+    // Task #20: reset the consecutive-fire counter after ≥2 min dry.
+    // Means "bot got out and stayed out — next time hit water, react
+    // fast again from cooldown step 0".
+    if (consecutiveEscapeFires > 0 && shouldResetEscapeCounter(lastFootDryTs, now)) {
+      consecutiveEscapeFires = 0;
+    }
+
+    // Track currentTask activity for the idle predicate.
+    if (ctx?.tasks?.currentTask?.status === 'running') {
+      lastTaskActiveTs = now;
+    }
+
+    // Task #20: idle gate. If no agent has driven the bot AND no task
+    // is active for ≥5 min, skip the watchdog auto-fire. Critical
+    // safety triggers (lava, low-oxygen, head_in_water) STILL fire
+    // below — only the heavier "sustained foot_in_water → full
+    // escape" loop is gated. Last night's runaway 6.5h CPU loop was
+    // exactly this case.
+    const idle = isAgentIdle(lastAgentCallTs, lastTaskActiveTs, now);
+
+    const backoffMs = computeBackoffMs(consecutiveEscapeFires);
+    const sinceLastEscape = now - lastAutoEscapeTs;
     if (
-      waterTickCount >= WATER_TICKS_TO_FIRE
+      !idle
+      && waterTickCount >= WATER_TICKS_TO_FIRE
       && !autoEscapeInFlight
-      && sinceLastEscape >= AUTO_ESCAPE_COOLDOWN_MS
+      && sinceLastEscape >= backoffMs
     ) {
       return {
         action: 'auto_escape_water',
         ticks_submerged: waterTickCount,
         oxygen: state.oxygen,
         hp: state.hp,
+        consecutive_fires: consecutiveEscapeFires,
+        backoff_ms: backoffMs,
         why: 'sustained_water',
       };
     }
@@ -787,8 +814,15 @@ export function createReactive(deps) {
   let waterTickCount = 0;        // consecutive ticks of foot_in_water=true
   let lastAutoEscapeTs = 0;      // wall-clock of last auto-fired escape
   let autoEscapeInFlight = false; // gate against re-entry while async escape runs
+  let consecutiveEscapeFires = 0; // counter for exponential backoff (task #20)
+  let lastFootDryTs = 0;          // wall-clock of last tick with foot_in_water=false
+  let lastAgentCallTs = 0;        // wall-clock of last mc <verb> HTTP request (touched externally)
+  let lastTaskActiveTs = 0;       // wall-clock of last tick observing currentTask.status === 'running'
   const WATER_TICKS_TO_FIRE = 5; // ~2.0s of continuous submersion before auto-fire
-  const AUTO_ESCAPE_COOLDOWN_MS = 30000; // 30s gate between auto-fires
+  // AUTO_ESCAPE_COOLDOWN_MS replaced by computeBackoffMs(consecutiveEscapeFires):
+  // 30s → 60s → 120s → 300s. Resets after ≥2 min of foot_in_water=false. See
+  // reactive-helpers.js + bot/test/reactive-watchdog.test.js. Bumped in
+  // response to circuit-v4 leaving the bot at 100% CPU for 6.5h in a loop.
 
   async function tick() {
     if (!ctx.world.bot || !ctx.world.botReady || inFlight) return;
@@ -857,6 +891,7 @@ export function createReactive(deps) {
         // loop keeps ticking; gate flag prevents re-entry.
         autoEscapeInFlight = true;
         lastAutoEscapeTs = Date.now();
+        consecutiveEscapeFires += 1; // task #20: drives backoff progression
         waterTickCount = 0; // reset so we don't immediately re-trigger
         pushAutoEvent({
           kind: 'auto_escape_water_started',
@@ -1013,6 +1048,8 @@ export function createReactive(deps) {
     waterTickCount = 0;
     autoEscapeInFlight = false;
     lastAutoEscapeTs = 0;
+    consecutiveEscapeFires = 0; // task #20
+    lastFootDryTs = 0;          // task #20
     ctx.reactive.reactiveAnchor = null;
     const n = ctx.death.deathLog?.length ?? '?';
     log(`[reactive] death #${n} — reset stuckTicks/anchor, mode=${ctx.reactive.mode}`);
@@ -1042,6 +1079,17 @@ export function createReactive(deps) {
         clearInterval(ctx.reactive._reactiveInterval);
         ctx.reactive._reactiveInterval = null;
       }
+    },
+    /**
+     * Mark "agent is driving" by stamping the wall-clock. Called by the
+     * HTTP layer on every `mc <verb>` request. Reactive's idle-gate
+     * uses this to decide whether to fire heavy decisions (combat,
+     * auto-escape-water) — when no calls arrive for ≥5 min AND no
+     * task is running, the bot stays quiet to avoid runaway CPU.
+     * See task #20 + reactive-helpers.js:isAgentIdle.
+     */
+    touchAgent() {
+      lastAgentCallTs = Date.now();
     },
   };
 }

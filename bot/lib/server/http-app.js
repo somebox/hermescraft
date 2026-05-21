@@ -2,7 +2,6 @@
 /**
  * Mineflayer bot HTTP listener factory — extracted from server.js for readability and testing.
  */
-import fs from 'fs';
 import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError } from './middleware/task-lifecycle.js';
 
 export function parseBody(req) {
@@ -55,7 +54,6 @@ export function createBotHttpListener(deps) {
     pushTaskHistoryRecord,
     renewLease,
     createBot,
-    dashboardHtmlPath,
   } = deps;
 
   // Services proxy: dispatchAction expects a services-shaped container
@@ -346,16 +344,6 @@ export function createBotHttpListener(deps) {
         return respond(res, 200, buildLogisticsPayload());
       }
 
-      if (path === '/dashboard') {
-        try {
-          const html = fs.readFileSync(dashboardHtmlPath, 'utf8');
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          return res.end(html);
-        } catch (e) {
-          return respond(res, 404, { ok: false, error: 'dashboard.html not found' });
-        }
-      }
-
       if (path === '/task/history') {
         return respond(res, 200, { ok: true, data: { history: ctx.tasks.taskHistory } });
       }
@@ -513,6 +501,9 @@ export function createBotHttpListener(deps) {
       const taskMatch = path.match(/^\/task\/(\w+)$/);
       if (taskMatch) {
         const actionName = taskMatch[1];
+        // task #20: stamp "agent is driving" so the reactive layer
+        // doesn't fall into the idle-CPU loop observed in circuit-v4.
+        try { ctx.reactive._touchAgent?.(); } catch { /* defensive */ }
         const r = await dispatchAction(servicesProxy, actionName, body, {
           mode: 'task',
           actionRegistry, briefState, createTaskRecord, pushTaskHistoryRecord,
@@ -566,6 +557,8 @@ export function createBotHttpListener(deps) {
         ctx.runtime.recentStuckCells = [];
       }
 
+      // task #20: stamp "agent is driving" for the reactive idle gate.
+      try { ctx.reactive._touchAgent?.(); } catch { /* defensive */ }
       const r = await dispatchAction(servicesProxy, actionName, body, {
         mode: 'sync',
         actionRegistry, briefState, createTaskRecord, pushTaskHistoryRecord,

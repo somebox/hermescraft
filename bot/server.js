@@ -22,7 +22,7 @@
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
-import { URL, fileURLToPath } from 'url';
+import { URL } from 'url';
 import mineflayer from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 const { pathfinder, Movements, goals } = pathfinderPkg;
@@ -581,14 +581,15 @@ if (reactiveOn) {
   }
   const reactive = createReactive({ ctx, log, ACTIONS, sleep, hasLineOfSight, eyePosition });
   reactive.start();
+  // Expose touchAgent on ctx so the HTTP layer can mark "agent is
+  // driving" on every mc <verb> request (task #20 idle gate).
+  ctx.reactive._touchAgent = reactive.touchAgent;
 }
 
 
 // ═══════════════════════════════════════════════════════════════════
 // HTTP Server
 // ═══════════════════════════════════════════════════════════════════
-
-const dashboardHtmlPath = fileURLToPath(new URL('./dashboard.html', import.meta.url));
 
 const httpServer = http.createServer(
   createBotHttpListener({
@@ -618,7 +619,6 @@ const httpServer = http.createServer(
     pushTaskHistoryRecord,
     renewLease,
     createBot,
-    dashboardHtmlPath,
   }),
 );
 
@@ -641,7 +641,7 @@ httpServer.listen(config.api.port, () => {
   const profile = config.agent.profile;
   const agentModel = config.agent.model;
   const agentProvider = config.agent.provider;
-  log(`LLM routing (AGENT_* → /health, /dashboard): profile=${profile}`);
+  log(`LLM routing (AGENT_* → /health): profile=${profile}`);
   if (agentModel) {
     log(`LLM model:   ${agentModel}`);
     log(`LLM provider: ${agentProvider || '(unset)'}`);
