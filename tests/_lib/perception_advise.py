@@ -114,6 +114,7 @@ def run_advise(
     include_bundle_in_response: bool = False,
     kind: str = "advise",
     include_chat: bool = True,
+    target: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Run advise pipeline. Returns mc-style CLI envelope:
@@ -151,6 +152,18 @@ def run_advise(
     http_t0 = time.perf_counter()
     try:
         bundle = capture_perception_bundle(bot, include_chat=include_chat, kind=cmd)
+        # Task #6: when caller passed a --target, fetch route_preview from
+        # the bot's /route_probe endpoint and attach it to the bundle so the
+        # digest LLM has concrete terrain data along the bot→target line.
+        # Failures here are non-fatal — advise still works without route_preview.
+        if target and all(target.get(k) is not None for k in ("x", "y", "z")):
+            try:
+                tx, ty, tz = target["x"], target["y"], target["z"]
+                probe = bot.get(f"/route_probe?to_x={tx}&to_y={ty}&to_z={tz}&samples=20")
+                if probe and probe.get("ok"):
+                    bundle["route_preview"] = probe.get("data")
+            except Exception:
+                pass
     except Exception as e:
         return {
             "ok": False,

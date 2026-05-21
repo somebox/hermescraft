@@ -21,6 +21,11 @@ export function stripGlobalFlags(argv) {
   // CLI from erroring on it).
   /** @type {string|undefined} */
   let reason;
+  // mc advise --target X,Y,Z (task #6) — the advise LLM gets a terrain
+  // probe along the bot→target line. Stored on globals.target as
+  // {x,y,z}; CLI dispatch decides what to do with it.
+  /** @type {{x:number,y:number,z:number}|undefined} */
+  let target;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--json') json = true;
@@ -41,6 +46,29 @@ export function stripGlobalFlags(argv) {
         .map((x) => x.trim())
         .filter(Boolean);
       i++;
+    } else if (a === '--target' || a.startsWith('--target=')) {
+      // Two accepted forms:
+      //   --target X,Y,Z         (comma-separated, single token)
+      //   --target=X,Y,Z         (=, single token)
+      //   --target X Y Z         (three positional numbers — easier to type)
+      let raw;
+      if (a.startsWith('--target=')) {
+        raw = a.slice('--target='.length);
+      } else if (i + 3 < argv.length
+        && Number.isFinite(Number(argv[i + 1]))
+        && Number.isFinite(Number(argv[i + 2]))
+        && Number.isFinite(Number(argv[i + 3]))
+        && !String(argv[i + 1]).includes(',')) {
+        raw = `${argv[i + 1]},${argv[i + 2]},${argv[i + 3]}`;
+        i += 3;
+      } else {
+        raw = String(argv[i + 1] ?? '');
+        i++;
+      }
+      const parts = raw.split(',').map((s) => Number(String(s).trim()));
+      if (parts.length === 3 && parts.every(Number.isFinite)) {
+        target = { x: parts[0], y: parts[1], z: parts[2] };
+      }
     } else if (
       typeof a === 'string' &&
       (/^reason=/i.test(a) || /^--reason=/i.test(a) || a === '--reason' || a === '-r')
@@ -97,6 +125,7 @@ export function stripGlobalFlags(argv) {
       ...(limit !== undefined && !Number.isNaN(limit) ? { limit } : {}),
       ...(fields?.length ? { fields } : {}),
       ...(reason ? { reason } : {}),
+      ...(target ? { target } : {}),
     },
     rest,
   };

@@ -22,7 +22,17 @@ def main() -> int:
     ap.add_argument("--include-bundle", action="store_true", help="Include raw perception_input in JSON")
     ap.add_argument("--model", default="", help="Override DIGEST_MODEL / default")
     ap.add_argument("--kind", default="advise", help="Caller tag for logging (advise|scene|status|map|find|nearby)")
+    ap.add_argument("--target", default="", help="Target coord X,Y,Z — enables route_preview probe along bot→target line")
     args = ap.parse_args()
+
+    target = None
+    if args.target:
+        parts = [p.strip() for p in args.target.split(",")]
+        if len(parts) == 3:
+            try:
+                target = {"x": float(parts[0]), "y": float(parts[1]), "z": float(parts[2])}
+            except ValueError:
+                target = None
 
     env = run_advise(
         args.reason,
@@ -31,6 +41,7 @@ def main() -> int:
         model=args.model or None,
         include_bundle_in_response=args.include_bundle,
         kind=args.kind or "advise",
+        target=target,
     )
     print(json.dumps(env, ensure_ascii=False))
     return 0 if env.get("ok") else 1

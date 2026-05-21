@@ -211,4 +211,42 @@ describe('cli args', () => {
       assert.throws(() => positionalToParams('nearby', NEARBY_SCHEMA, rest.slice(1)), /nearby:radius:not_number/);
     });
   });
+
+  // mc advise --target X,Y,Z (task #6) — attaches a route_preview probe
+  // to the perception bundle along the bot→target line. The flag is a
+  // global, not a per-command arg, because mc advise has customParse=true.
+  describe('--target global flag (advise route probe)', () => {
+    it('accepts --target=X,Y,Z (= form, single token)', () => {
+      const { globals } = stripGlobalFlags(['advise', '--reason=test', '--target=100,64,-200']);
+      assert.deepEqual(globals.target, { x: 100, y: 64, z: -200 });
+    });
+
+    it('accepts --target X,Y,Z (space form, single comma token)', () => {
+      const { globals } = stripGlobalFlags(['advise', '--reason=test', '--target', '1552,64,352']);
+      assert.deepEqual(globals.target, { x: 1552, y: 64, z: 352 });
+    });
+
+    it('accepts --target X Y Z (three numeric tokens)', () => {
+      const { globals, rest } = stripGlobalFlags(['advise', '--target', '10', '20', '30', '--reason=test']);
+      assert.deepEqual(globals.target, { x: 10, y: 20, z: 30 });
+      // Make sure the 3 numbers got consumed and don't leak into rest.
+      assert.ok(!rest.includes('10'), 'X should be consumed');
+      assert.ok(!rest.includes('30'), 'Z should be consumed');
+    });
+
+    it('handles negative coords in three-token form', () => {
+      const { globals } = stripGlobalFlags(['advise', '--target', '-100', '64', '-200', '--reason=x']);
+      assert.deepEqual(globals.target, { x: -100, y: 64, z: -200 });
+    });
+
+    it('drops malformed targets silently (target stays undefined)', () => {
+      const { globals } = stripGlobalFlags(['advise', '--target', 'not-coords', '--reason=test']);
+      assert.equal(globals.target, undefined);
+    });
+
+    it('handles fractional / decimal coords', () => {
+      const { globals } = stripGlobalFlags(['advise', '--target=1.5,64.0,-2.25']);
+      assert.deepEqual(globals.target, { x: 1.5, y: 64, z: -2.25 });
+    });
+  });
 });

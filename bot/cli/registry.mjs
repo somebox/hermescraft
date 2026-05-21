@@ -105,11 +105,12 @@ export const RAW_COMMAND_DEFS = [
   g('advise', 'observe', [], {
     customParse: true,
     description:
-      'Slow (~10–35s) intent-biased perception digest. Use when stuck, starting a new gather sub-goal, or locating something — not every tick. Requires --reason.',
+      'Slow (~10–35s) intent-biased perception digest. Use when stuck, starting a new gather sub-goal, or locating something — not every tick. Requires --reason. Optional --target X,Y,Z attaches a route_preview (terrain probe along bot→target).',
     usage: 'mc advise --reason="find oak wood"',
     examples: [
       'mc advise --reason="find oak wood"',
       'mc advise --reason="blocked collecting wood"',
+      'mc advise --reason="boat across the lake?" --target 1552,64,352',
       'mc advise --dry-run --reason="test"',
     ],
   }),

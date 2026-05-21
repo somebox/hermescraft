@@ -360,10 +360,10 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
       return { ok: false, env, render: globals.json ? 'json' : 'human' };
     }
     if (globals.dryRun) {
-      const env = await runAdviseCli({ reason, apiBase: ctx.api, dryRun: true, kind: 'advise' });
+      const env = await runAdviseCli({ reason, apiBase: ctx.api, dryRun: true, kind: 'advise', target: globals.target });
       return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
     }
-    const env = await runAdviseCli({ reason, apiBase: ctx.api, kind: 'advise' });
+    const env = await runAdviseCli({ reason, apiBase: ctx.api, kind: 'advise', target: globals.target });
     return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
   }
 

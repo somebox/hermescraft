@@ -3,6 +3,7 @@
  * Mineflayer bot HTTP listener factory — extracted from server.js for readability and testing.
  */
 import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError } from './middleware/task-lifecycle.js';
+import { probeRouteAlongLine } from './route-probe.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -167,6 +168,28 @@ export function createBotHttpListener(deps) {
       // Narrative description of what you see (human-readable)
       if (path === '/look') {
         return respond(res, 200, { ok: true, data: spatial.generateLookAround() });
+      }
+
+      // Target-bearing terrain probe (task #6). Sample `samples` evenly-spaced
+      // blocks along the bot→(to_x, to_y, to_z) line and classify each as
+      // water / land / hazard / etc. Lets the advise LLM decide boat vs walk
+      // from concrete data instead of inferring from the 32-block ASCII map.
+      if (path === '/route_probe') {
+        if (!ctx.world.bot || !ctx.world.bot.entity) {
+          return respond(res, 200, { ok: false, error: 'bot_not_ready' });
+        }
+        const toX = Number(url.searchParams.get('to_x'));
+        const toY = Number(url.searchParams.get('to_y'));
+        const toZ = Number(url.searchParams.get('to_z'));
+        if (![toX, toY, toZ].every(Number.isFinite)) {
+          return respond(res, 400, { ok: false, error: 'route_probe requires numeric to_x, to_y, to_z' });
+        }
+        const samples = Number(url.searchParams.get('samples') || '20');
+        const me = ctx.world.bot.entity.position;
+        const start = { x: Math.floor(me.x), y: Math.floor(me.y), z: Math.floor(me.z) };
+        const end = { x: Math.floor(toX), y: Math.floor(toY), z: Math.floor(toZ) };
+        const result = probeRouteAlongLine(ctx.world.bot, start, end, samples);
+        return respond(res, 200, { ok: true, data: { start, end, ...result } });
       }
 
       if (path === '/scene') {

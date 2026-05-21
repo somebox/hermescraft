@@ -9,15 +9,18 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const CLI_SCRIPT = path.join(REPO_ROOT, 'scripts', 'mc-advise-cli.py');
 
 /**
- * @param {{ reason: string, apiBase: string, dryRun?: boolean, model?: string, kind?: string }} opts
+ * @param {{ reason: string, apiBase: string, dryRun?: boolean, model?: string, kind?: string, target?: {x:number,y:number,z:number} }} opts
  * @returns {Promise<Record<string, unknown>>}
  */
 export function runAdviseCli(opts) {
-  const { reason, apiBase, dryRun, model, kind } = opts;
+  const { reason, apiBase, dryRun, model, kind, target } = opts;
   const args = [CLI_SCRIPT, '--reason', reason, '--api-url', apiBase];
   if (dryRun) args.push('--dry-run');
   if (model) args.push('--model', model);
   if (kind) args.push('--kind', kind);
+  if (target && Number.isFinite(target.x) && Number.isFinite(target.y) && Number.isFinite(target.z)) {
+    args.push('--target', `${target.x},${target.y},${target.z}`);
+  }
 
   return new Promise((resolve, reject) => {
     const py = process.env.MC_ADVISE_PYTHON || 'python3';

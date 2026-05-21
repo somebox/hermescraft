@@ -57,6 +57,12 @@ Rules:
 - Only cite blocks/entities that appear in the input JSON (observe, status, scene, nearby, map, etc.).
 - Prefer the closest match to the intent; deprioritize distractors.
 - Be actionable: the next mc command should be obvious from recommendations.
+- ROUTE_PREVIEW — when the input includes a `route_preview` block, that's
+  a per-block terrain probe along the bot→target line. Use the `counts`
+  summary (water/land/hazard/wall/gap/unloaded/air) to decide between
+  walking and boating: more than ~6 water samples on a 20-sample probe
+  means "boat is faster", contiguous wall/land means "tunnel or detour",
+  any hazard means "route around lava". Mention the counts in rationale.
 - If the intent mentions blocked, stuck, or failing to collect: say so explicitly when
   position, scene summary, dirt/pit walls, or recent failed goto/collect actions support it.
   Distinguish "target visible but unreachable" from "no wood in sight".
