@@ -17,6 +17,22 @@ const BOAT_NAMES = new Set([
   'bamboo_raft', 'pale_oak_boat',
 ]);
 
+// Boat entity detector. Paper 1.21+ sometimes delivers boat entities with
+// e.name=null but e.type='oak_boat' (vs. the mob-style entities where
+// e.name is populated). Checking both fields covers both flavours;
+// circuit-v5 (2026-05-21) hit this exact case — server confirmed a boat
+// summon but our entity-name-only filter dropped it, so place_boat
+// reported PLACE_FAILED even though the boat was visible 1.7 blocks away.
+function isBoatEntity(e) {
+  if (!e) return false;
+  const n = e.name || '';
+  const t = e.type || '';
+  if (n.endsWith('_boat') || n === 'boat' || n === 'bamboo_raft') return true;
+  if (t.endsWith('_boat') || t === 'boat' || t === 'bamboo_raft') return true;
+  if (BOAT_NAMES.has(n) || BOAT_NAMES.has(t)) return true;
+  return false;
+}
+
 const FISH_ROD_NAMES = ['fishing_rod'];
 
 // Items that can come out of vanilla fishing (fish, junk, treasure).
@@ -325,7 +341,7 @@ export function createWaterActions(deps) {
 
       const knownBoatIds = new Set(
         Object.values(b.entities)
-          .filter((e) => e && (e.name?.endsWith('_boat') || e.name === 'boat' || e.name === 'bamboo_raft'))
+          .filter(isBoatEntity)
           .map((e) => e.id),
       );
 
@@ -341,7 +357,7 @@ export function createWaterActions(deps) {
         await sleep(150);
         for (const e of Object.values(b.entities)) {
           if (!e || knownBoatIds.has(e.id)) continue;
-          if (e.name?.endsWith('_boat') || e.name === 'boat' || e.name === 'bamboo_raft') {
+          if (isBoatEntity(e)) {
             if (e.position && e.position.distanceTo(refBlock.position) < 4) {
               entity = e;
               break;
@@ -370,13 +386,21 @@ export function createWaterActions(deps) {
           // because the world didn't exist).
           const r2 = await executeServerCommand(pmcp, `summon minecraft:${summonName} ${refBlock.position.x + 0.5} ${summonY} ${refBlock.position.z + 0.5}`);
           if (r1.ok && r2.ok) fallback = 'papermcp_server_side';
-          await sleep(400);
-          for (const e of Object.values(b.entities)) {
-            if (!e || knownBoatIds.has(e.id)) continue;
-            if (e.name?.endsWith('_boat') || e.name === 'boat' || e.name === 'bamboo_raft') {
-              if (e.position && e.position.distanceTo(refBlock.position) < 4) {
-                entity = e;
-                break;
+          // Paper 1.21 sometimes takes >400ms to push the entity-spawn
+          // packet to the client, especially when the bot is in a newly-
+          // loaded chunk. Poll for up to 2.5s before giving up; that's
+          // generous enough to cover the slow path and still fail fast
+          // when the summon genuinely missed.
+          const fbDeadline = Date.now() + 2500;
+          while (Date.now() < fbDeadline && !entity) {
+            await sleep(200);
+            for (const e of Object.values(b.entities)) {
+              if (!e || knownBoatIds.has(e.id)) continue;
+              if (isBoatEntity(e)) {
+                if (e.position && e.position.distanceTo(refBlock.position) < 4) {
+                  entity = e;
+                  break;
+                }
               }
             }
           }
@@ -384,10 +408,23 @@ export function createWaterActions(deps) {
       }
 
       if (!entity) {
+        // Surface what was actually tried so the agent can decide whether
+        // to retry vs. give up. circuit-v5 hit 5 PLACE_FAILEDs in a row
+        // without ever knowing whether the issue was self-adjust, the
+        // native cast, or PaperMCP — error said only "may be too shallow".
         return { ok: false, error: {
           code: 'PLACE_FAILED',
-          message: 'No boat entity appeared near the target — water may be too shallow or the cast missed.',
-          observed_state: { target: [Number(x), Number(y), Number(z)] },
+          message: 'No boat entity appeared near the target after native cast'
+            + (fallback ? ' AND PaperMCP server-side summon' : '')
+            + (adjustedTarget ? ` (adjusted to ${adjustedTarget.x},${adjustedTarget.y},${adjustedTarget.z} from ${adjustedTarget.original.x},${adjustedTarget.original.y},${adjustedTarget.original.z})` : '')
+            + '. Likely water is too shallow, target is not a water source, or entity-spawn packet did not arrive.',
+          observed_state: {
+            target: [Number(x), Number(y), Number(z)],
+            target_used: [refBlock.position.x, refBlock.position.y, refBlock.position.z],
+            ref_block: refBlock.name,
+            fallback_attempted: fallback || null,
+            ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
+          },
           retry_safe: true,
         }};
       }
@@ -434,7 +471,7 @@ export function createWaterActions(deps) {
 
       const me = b.entity.position;
       const findNearbyBoats = () => Object.values(b.entities)
-        .filter((e) => e && e.position && (e.name === 'boat' || e.name === 'oak_boat' || /boat/i.test(e.name || '')))
+        .filter((e) => e && e.position && isBoatEntity(e))
         .map((e) => ({ ent: e, dist: e.position.distanceTo(b.entity.position) }))
         .filter((x) => x.dist <= 6)
         .sort((a, c) => a.dist - c.dist);
