@@ -743,17 +743,32 @@ export function createWaterActions(deps) {
 
       // First, try native steering for 1.5s. If the boat moves at all,
       // keep going with native; otherwise switch to tp-step mode.
+      //
+      // CRITICAL: vehicle steering uses bot.moveVehicle(left, forward),
+      // NOT bot.setControlState('forward', true). setControlState sends
+      // a walking-input packet that the server silently ignores while
+      // the bot is mounted. moveVehicle sends the right packet shape
+      // (player_input on 1.21.3+, steer_vehicle on older). Each call
+      // writes one packet; we have to pump every ~250ms to keep the
+      // boat propelled (vanilla client re-sends every tick = 50ms).
+      const safeMoveVehicle = (l, f) => {
+        try { if (typeof b.moveVehicle === 'function') b.moveVehicle(l, f); } catch {}
+      };
       let nativeWorks = false;
       try {
         const yaw0 = Math.atan2(target.x - startPos.x === 0 ? 0 : -(target.x - startPos.x), target.z - startPos.z);
         try { await b.look(yaw0, 0, true); } catch {}
-        b.setControlState('forward', true);
-        await sleep(1500);
+        // Pump moveVehicle every 250ms for 1.5s; check if boat moved.
+        const probeEnd = Date.now() + 1500;
+        while (Date.now() < probeEnd) {
+          safeMoveVehicle(0, 1);
+          await sleep(250);
+        }
         const liveAfter = b.entities[b.vehicle?.id];
         if (liveAfter && startPos.distanceTo(liveAfter.position) > 0.4) {
           nativeWorks = true;
         }
-        if (!nativeWorks) b.setControlState('forward', false);
+        if (!nativeWorks) safeMoveVehicle(0, 0);
       } catch {}
 
       let lastDistance = (b.entities[b.vehicle?.id]?.position || boat.position).distanceTo(target);
@@ -823,7 +838,7 @@ export function createWaterActions(deps) {
         while (Date.now() < deadline) {
           const live = b.entities[b.vehicle?.id];
           if (!live || !b.vehicle) {
-            try { b.setControlState('forward', false); } catch {}
+            safeMoveVehicle(0, 0);
             return { ok: false, error: {
               code: 'OUT_OF_RANGE',
               message: 'Lost the boat mid-sail (dismounted by physics or boat broke).',
@@ -837,7 +852,7 @@ export function createWaterActions(deps) {
           const horiz = Math.hypot(dx, dz);
 
           if (horiz < 2) {
-            try { b.setControlState('forward', false); } catch {}
+            safeMoveVehicle(0, 0);
             await sleep(400);
             return {
               ok: true,
@@ -885,7 +900,7 @@ export function createWaterActions(deps) {
               }
             }
             if (shoreCell && shoreCell.distance >= 2) {
-              try { b.setControlState('forward', false); } catch {}
+              safeMoveVehicle(0, 0);
               await sleep(200);
               return {
                 ok: true,
@@ -912,8 +927,8 @@ export function createWaterActions(deps) {
           if (nativeWorks) {
             const yaw = Math.atan2(-steerDx, steerDz);
             try { await b.look(yaw, 0, true); } catch {}
-            b.setControlState('forward', true);
-            await sleep(300);
+            safeMoveVehicle(0, 1);   // pump packet every loop iteration
+            await sleep(250);        // keep below mineflayer's vanilla input cadence
           } else if (useTpFallback) {
             // Step the boat 1.5 blocks toward steerVec each tick.
             const step = Math.min(1.5, detourTicksLeft > 0 ? 1.5 : horiz);
@@ -953,7 +968,7 @@ export function createWaterActions(deps) {
           if (Math.abs(lastDistance - horiz) < 0.05) {
             stallTicks++;
             if (stallTicks >= 8) {
-              try { b.setControlState('forward', false); } catch {}
+              safeMoveVehicle(0, 0);
               // Attempt a detour before giving up. circuit-v5f showed the
               // boat wedging against shore/shallows ~50s into a sail —
               // a 2.4s sidestep around the obstacle often recovers.
@@ -1011,7 +1026,7 @@ export function createWaterActions(deps) {
           lastDistance = horiz;
         }
       } finally {
-        try { b.setControlState('forward', false); } catch {}
+        safeMoveVehicle(0, 0);
       }
 
       const here = b.entities[b.vehicle?.id]?.position || boat.position;

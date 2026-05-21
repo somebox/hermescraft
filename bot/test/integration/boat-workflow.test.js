@@ -464,6 +464,113 @@ test('mc sail: shore reached within 8 blocks → returns ok with data.shore_reac
   assert.match(r.result, /Reached shore|mc disembark/);
 });
 
+test('mc sail: uses bot.moveVehicle (NOT setControlState) for forward propulsion', async () => {
+  // Regression guard: in mineflayer 4.x, setControlState('forward', true)
+  // sends WALKING input that the server silently ignores while the bot
+  // is mounted. The correct API is bot.moveVehicle(left, forward) which
+  // sends the player_input packet (1.21.3+) or steer_vehicle (older).
+  //
+  // Live-observed in v6/v6b: native probe always failed because we were
+  // calling the wrong API, falling through to the TP-step fallback that
+  // teleports the boat into land + breaks it + kills Steve.
+  const setControlCalls = [];
+  const moveVehicleCalls = [];
+  const boat = {
+    id: 1,
+    name: 'oak_boat',
+    type: 'oak_boat',
+    position: new Vec3(0, 63, 0),
+  };
+  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
+  const bot = {
+    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
+    inventory: { items: () => [] },
+    entities: { 1: boat },
+    vehicle: boat,
+    blockAt: () => ({ name: 'water', boundingBox: 'empty', getProperties: () => ({ level: 0 }) }),
+    setControlState(k, v) { setControlCalls.push({ k, v }); },
+    moveVehicle(left, forward) { moveVehicleCalls.push({ left, forward }); },
+    look: async () => {},
+    lookAt: async () => {},
+  };
+  const water = createWaterActions({
+    ctx: createMockServices().state,
+    ensureBot: () => bot,
+    sleep: () => Promise.resolve(),
+    log: () => {},
+    getMyName: () => 'TestSteve',
+    ACTIONS: {},
+    goals: { GoalNear: function () {}, GoalBlock: function () {} },
+  });
+  // Short timeout so the loop terminates; what matters is that during
+  // the run, sail called moveVehicle and NEVER called setControlState
+  // with 'forward'.
+  await water.sail({ x: 20, y: 63, z: 0, timeout_seconds: 2 });
+  assert.ok(moveVehicleCalls.length >= 1, 'sail must call bot.moveVehicle at least once');
+  const anyForward = moveVehicleCalls.some((c) => Number(c.forward) > 0);
+  assert.ok(anyForward, 'at least one moveVehicle call must have forward > 0');
+  const forwardSetControl = setControlCalls.filter((c) => c.k === 'forward');
+  assert.equal(forwardSetControl.length, 0,
+    `sail must NOT use setControlState('forward', ...); got ${forwardSetControl.length} calls. setControlState walking input is ignored while mounted.`);
+});
+
+test('mc sail: pumps moveVehicle every ~250ms while native steering is active', async () => {
+  // Each moveVehicle call writes ONE packet. Vanilla MC re-sends every
+  // tick (50ms); we run at ~250ms to keep the server from idling the
+  // boat. Lock down the cadence so a future refactor that removes the
+  // pump (and silently breaks long sails) gets caught.
+  const moveVehicleCalls = [];
+  let boatPos = { x: 0, y: 63, z: 0 };
+  const boat = {
+    id: 7,
+    name: 'oak_boat',
+    type: 'oak_boat',
+    get position() {
+      const p = new Vec3(boatPos.x, boatPos.y, boatPos.z);
+      p.distanceTo = (o) => Math.hypot(p.x - o.x, p.y - o.y, p.z - o.z);
+      p.clone = function () { const c = new Vec3(this.x, this.y, this.z); c.distanceTo = p.distanceTo; c.clone = p.clone; return c; };
+      return p;
+    },
+  };
+  const bot = {
+    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
+    inventory: { items: () => [] },
+    entities: { 7: boat },
+    vehicle: boat,
+    blockAt: () => ({ name: 'water', boundingBox: 'empty', getProperties: () => ({ level: 0 }) }),
+    setControlState() {},
+    moveVehicle(left, forward) {
+      moveVehicleCalls.push({ left, forward, ts: Date.now() });
+      // Advance the boat 0.3 blocks per moveVehicle call when forward>0
+      // — enough to trigger the native-works > 0.4b threshold across the
+      // 1.5s probe (6 calls × 0.3 = 1.8 blocks).
+      if (forward > 0) boatPos.x += 0.3;
+    },
+    look: async () => {},
+    lookAt: async () => {},
+  };
+  const water = createWaterActions({
+    ctx: createMockServices().state,
+    ensureBot: () => bot,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    log: () => {},
+    getMyName: () => 'TestSteve',
+    ACTIONS: {},
+    goals: { GoalNear: function () {}, GoalBlock: function () {} },
+  });
+  const r = await water.sail({ x: 50, y: 63, z: 0, timeout_seconds: 4 });
+  // We expect: ~6 calls during the 1.5s probe + N calls during the loop.
+  // Total should be well above the probe count alone.
+  assert.ok(moveVehicleCalls.length >= 5,
+    `expected >=5 moveVehicle calls; got ${moveVehicleCalls.length}`);
+  // Most calls during the loop should be forward=1 (we're heading toward
+  // target). Zero-forward calls happen only at cleanup.
+  const forwardCalls = moveVehicleCalls.filter((c) => c.forward > 0);
+  assert.ok(forwardCalls.length >= 4,
+    `expected >=4 forward propulsion calls; got ${forwardCalls.length}`);
+});
+
 test('mc sail: NOT_MOUNTED when bot has no vehicle', async () => {
   const bot = makeMockBot({ inventory: [] });
   bot.vehicle = null;
