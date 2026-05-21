@@ -127,9 +127,46 @@ export function createCombatActions(deps) {
       const foods = b.inventory.items().filter(i => ctx.world.mcData.foodsByName?.[i.name]);
       if (foods.length === 0) throw new Error('No food in inventory.');
       foods.sort((a, c) => (ctx.world.mcData.foodsByName[c.name]?.foodPoints || 0) - (ctx.world.mcData.foodsByName[a.name]?.foodPoints || 0));
-      await b.equip(foods[0], 'hand');
-      await b.consume();
-      return { result: `Ate ${foods[0].name}. Health: ${fmt(b.health)}, Food: ${b.food}` };
+      const food = foods[0];
+      const mounted = !!b.vehicle;
+      const heldIsFood = b.heldItem && b.heldItem.name === food.name;
+
+      // Task #25 — mounted eat. Vanilla MC allows eating in boats, but
+      // mineflayer's b.equip can fail while mounted because the rider's
+      // hand slot interacts with the vehicle. Skip equip when already
+      // holding the food; on equip failure, fall through to consume
+      // anyway (consume targets whatever is currently in the hand slot).
+      let equipNote = null;
+      if (!heldIsFood) {
+        try {
+          await b.equip(food, 'hand');
+        } catch (err) {
+          // Don't fail the whole verb here — try a hotbar-slot select
+          // as a softer path, then fall through to consume regardless.
+          equipNote = err?.message || String(err);
+          try {
+            const hotbar = b.inventory.items().find((i) => i.name === food.name && i.slot >= 36 && i.slot <= 44);
+            if (hotbar) b.setQuickBarSlot(hotbar.slot - 36);
+          } catch { /* best-effort */ }
+        }
+      }
+      const beforeFood = b.food;
+      const beforeHp = b.health;
+      try {
+        await b.consume();
+      } catch (err) {
+        // consume failed — surface the actual error so the agent can
+        // decide what to do. If mounted, suggest dismounting.
+        const msg = err?.message || String(err);
+        const hint = mounted
+          ? 'mc disembark first — current mineflayer build can refuse to eat while in a boat.'
+          : 'Check inventory + held item.';
+        const e = new Error(`Failed to eat ${food.name}: ${msg}. ${hint}${equipNote ? ` (equip also errored: ${equipNote})` : ''}`);
+        e.code = mounted ? 'EAT_FAILED_MOUNTED' : 'EAT_FAILED';
+        throw e;
+      }
+      const result = `Ate ${food.name}. Health: ${fmt(b.health)} (was ${fmt(beforeHp)}), Food: ${b.food} (was ${beforeFood})${mounted ? ' (mounted)' : ''}${equipNote ? ` [equip warn: ${equipNote.slice(0, 80)}]` : ''}`;
+      return { result };
     },
 
     /**
