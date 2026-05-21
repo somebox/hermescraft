@@ -201,7 +201,49 @@ export function createCraftingActions(services) {
       // a clean shortfall list rather than parsing mineflayer's error string.
       // Pass `invocations`, not `count` — the plan multiplies ingredients by
       // its wantCount param, and our wantCount is "recipe runs", not "items".
-      const plan = buildCraftPlan ? buildCraftPlan(b, itemName, invocations) : null;
+      let plan = buildCraftPlan ? buildCraftPlan(b, itemName, invocations) : null;
+
+      // High-level contract (task #19): if ingredients are missing but the
+      // bot has previously catalogued chests via chest_search snapshots,
+      // auto-walk to each chest, withdraw what's needed, then re-plan.
+      // Re-plan only — never block on chest discovery; if the answer is
+      // still MISSING_INGREDIENTS, fall through to the existing error.
+      let autoFetched = null;
+      if (plan && plan.ok && plan.missing && plan.missing.length > 0) {
+        const allActions = getActions ? getActions() : null;
+        if (allActions && typeof allActions.chest_search === 'function' && typeof allActions.withdraw === 'function') {
+          const fetchedSteps = [];
+          for (const need of plan.missing) {
+            try {
+              const res = await allActions.chest_search({ item: need.name, max_results: 3, exact: true });
+              const matches = res?.data?.matches || res?.matches || [];
+              if (!Array.isArray(matches) || matches.length === 0) continue;
+              const best = matches[0];
+              if (!best || !Number.isFinite(best.x)) continue;
+              const wantCount = Math.max(1, Number(need.short) || 1);
+              try {
+                await b.pathfinder.goto(new goals.GoalNear(best.x, best.y, best.z, 2));
+              } catch { /* couldn't reach this chest — skip to next ingredient */ continue; }
+              const wd = await allActions.withdraw({ x: best.x, y: best.y, z: best.z, items: [{ item: need.name, count: wantCount }] });
+              fetchedSteps.push({
+                item: need.name,
+                requested: wantCount,
+                from: { x: best.x, y: best.y, z: best.z },
+                ok: !!wd?.ok,
+                delta: wd?.data?.inventory_delta || null,
+              });
+            } catch (e) {
+              fetchedSteps.push({ item: need.name, ok: false, error: e?.message || String(e) });
+            }
+          }
+          if (fetchedSteps.length > 0) {
+            autoFetched = { attempts: fetchedSteps };
+            // Re-plan now that inventory has changed.
+            plan = buildCraftPlan ? buildCraftPlan(b, itemName, invocations) : plan;
+          }
+        }
+      }
+
       if (plan && plan.ok && plan.missing && plan.missing.length > 0) {
         return fail(
           'MISSING_INGREDIENTS',
@@ -212,6 +254,7 @@ export function createCraftingActions(services) {
               requested_count: count,
               missing: plan.missing.map(m => ({ name: m.name, short: m.short })),
               started_inventory: startedInventory,
+              ...(autoFetched ? { auto_fetched: autoFetched } : {}),
             },
             retry_safe: false,
           },
@@ -396,6 +439,7 @@ export function createCraftingActions(services) {
           ingredients_consumed: ingredientsConsumed,
           started_inventory: startedInventory,
           ended_inventory: endedInventory,
+          ...(autoFetched ? { auto_fetched: autoFetched } : {}),
           _reason: reason,
         },
         result: `Crafted ${itemName} x${craftedDelta}`,

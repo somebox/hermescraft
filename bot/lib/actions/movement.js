@@ -882,18 +882,42 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         const dist = Math.hypot(pos.x - target.x, pos.y - target.y, pos.z - target.z);
         if (dist <= 2) {
           clearMoveFailure();
+          // High-level contract (task #19): if the bot completed the move but
+          // is standing in water, auto-escape before returning so the agent
+          // doesn't have to chain `mc escape` after every water-adjacent
+          // bg_goto. Report the actual end position via adjusted_target.
+          let autoEscape = null;
+          if (b.entity?.isInWater) {
+            try {
+              const esc = await ACTIONS.escape({});
+              const endPos = posObj();
+              autoEscape = {
+                ok: !!esc?.ok,
+                from: pos,
+                to: endPos,
+                ...(esc?.data ? { details: esc.data } : {}),
+              };
+            } catch (e) {
+              autoEscape = { ok: false, from: pos, to: posObj(), error: e?.message || String(e) };
+            }
+          }
+          const finalPos = autoEscape ? autoEscape.to : pos;
           const yAdjNote = yAdjusted
             ? ` (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`
+            : '';
+          const escapeNote = autoEscape
+            ? ` (auto-escaped from water to ${finalPos.x.toFixed(1)},${finalPos.y.toFixed(1)},${finalPos.z.toFixed(1)})`
             : '';
           return {
             ok: true,
             data: {
               doors_used,
               legs: leg,
-              end_position: pos,
+              end_position: finalPos,
               ...(yAdjusted ? { y_adjusted: yAdjusted } : {}),
+              ...(autoEscape ? { auto_escape: autoEscape, adjusted_target: { x: Math.floor(finalPos.x), y: Math.floor(finalPos.y), z: Math.floor(finalPos.z), original: { x: target.x, y: target.y, z: target.z } } } : {}),
             },
-            result: `Arrived at ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)}${doors_used.length ? ` via ${doors_used.length} door${doors_used.length > 1 ? 's' : ''}` : ''}${yAdjNote}`,
+            result: `Arrived at ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)}${doors_used.length ? ` via ${doors_used.length} door${doors_used.length > 1 ? 's' : ''}` : ''}${yAdjNote}${escapeNote}`,
           };
         }
 

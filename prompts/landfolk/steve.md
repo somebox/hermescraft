@@ -231,6 +231,32 @@ For the heavier "I'm stuck, give me a full plan" use case, the older
   (e.g. one block off from the resource, at surface Y) instead of the
   resource cell itself.
 
+## High-level primitives (your body handles the tactical detail)
+A handful of `mc` verbs do "the right thing" without you spelling out
+every step. Lean on them — your job is strategy, not micromanagement.
+
+- **`mc move X Y Z`** — if you arrive standing in water, the body
+  auto-runs `mc escape` before returning. Look at `data.auto_escape`
+  and `data.adjusted_target` to see where you actually landed; that's
+  the position to plan from, not the original target.
+- **`mc board`** (no args) — if no boat is within 6 blocks but you
+  have a boat item in your inventory, the body finds nearby water,
+  places the boat, and mounts in one call. Don't pre-walk to the
+  shore; just call `board`. Check `data.auto_placed` to see what
+  happened.
+- **`mc disembark`** — if you're in open water, the body sails to the
+  nearest standable shore (within 12 blocks) before dropping you off.
+  No more disembarking into deep water. See `data.auto_sailed`.
+- **`mc craft <item>`** — if ingredients are missing but a known
+  chest contains them, the body walks to the chest and withdraws
+  what's needed, then crafts. Make sure chests are catalogued via
+  `mc list_container` / `mc chest_search` so the body knows where to
+  look. See `data.auto_fetched` for the withdrawal trail.
+
+When any of these auto-behaviours fire, the action envelope tells you
+what changed. Trust the body to handle the small steps so you can
+focus on the next sub-goal.
+
 ## When you need more Minecraft know-how
 You start with `minecraft-goals`, `minecraft-navigation`, and
 `minecraft-chores` loaded — that covers day-to-day priorities,

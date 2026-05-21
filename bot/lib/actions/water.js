@@ -433,17 +433,64 @@ export function createWaterActions(deps) {
       }
 
       const me = b.entity.position;
-      const boats = Object.values(b.entities)
+      const findNearbyBoats = () => Object.values(b.entities)
         .filter((e) => e && e.position && (e.name === 'boat' || e.name === 'oak_boat' || /boat/i.test(e.name || '')))
-        .map((e) => ({ ent: e, dist: e.position.distanceTo(me) }))
+        .map((e) => ({ ent: e, dist: e.position.distanceTo(b.entity.position) }))
         .filter((x) => x.dist <= 6)
         .sort((a, c) => a.dist - c.dist);
+
+      let boats = findNearbyBoats();
+      let autoPlaced = null;
+
       if (boats.length === 0) {
-        return { ok: false, error: {
-          code: 'NO_BOAT',
-          message: 'No boat within 6 blocks.',
-          retry_safe: false,
-        }};
+        // High-level contract (task #19): if no boat is nearby but the bot
+        // has a boat item in inventory, auto-find water within 12 blocks,
+        // pathfind to it, place the boat, and continue to the mount step.
+        const boatItem = b.inventory.items().find((it) => BOAT_NAMES.has(it.name));
+        if (!boatItem) {
+          return { ok: false, error: {
+            code: 'NO_BOAT',
+            message: 'No boat within 6 blocks and no boat item in inventory.',
+            retry_safe: false,
+          }};
+        }
+        // Find nearest water source within 12 blocks of the bot.
+        const waterPositions = b.findBlocks({
+          matching: (blk) => blk && blk.name === 'water' && Number(blk.getProperties?.()?.level ?? 0) === 0,
+          maxDistance: 12,
+          count: 8,
+        });
+        if (!waterPositions || waterPositions.length === 0) {
+          return { ok: false, error: {
+            code: 'NO_BOAT',
+            message: 'No boat within 6 blocks and no water within 12 blocks to place one.',
+            observed_state: { boat_in_inventory: boatItem.name },
+            retry_safe: false,
+          }};
+        }
+        const water = waterPositions[0];
+        log(`[board] auto-place: no boat nearby — placing ${boatItem.name} on water at ${water.x},${water.y},${water.z}`);
+        const placeRes = await ACTIONS.place_boat({ x: water.x, y: water.y, z: water.z });
+        if (!placeRes?.ok) {
+          return { ok: false, error: {
+            code: 'AUTO_PLACE_FAILED',
+            message: `Tried to auto-place boat at water (${water.x},${water.y},${water.z}) but place_boat failed: ${placeRes?.error?.code || 'unknown'}.`,
+            observed_state: { place_boat_error: placeRes?.error, boat_in_inventory: boatItem.name },
+            retry_safe: true,
+          }};
+        }
+        autoPlaced = { water: { x: water.x, y: water.y, z: water.z }, boat_item: boatItem.name, place_data: placeRes.data };
+        // Re-scan: the newly-placed boat should now be in entity list.
+        await sleep(300);
+        boats = findNearbyBoats();
+        if (boats.length === 0) {
+          return { ok: false, error: {
+            code: 'AUTO_PLACE_FAILED',
+            message: 'place_boat succeeded but no boat entity appeared within 6 blocks of the bot.',
+            observed_state: { place_data: placeRes.data },
+            retry_safe: true,
+          }};
+        }
       }
       const target = boats[0].ent;
 
@@ -521,6 +568,7 @@ export function createWaterActions(deps) {
           vehicle: b.vehicle?.name || target.name,
           vehicle_id: b.vehicle?.id ?? target.id,
           ...(fallback ? { fallback } : {}),
+          ...(autoPlaced ? { auto_placed: autoPlaced } : {}),
           boat_position: [Math.floor(target.position.x), Math.floor(target.position.y), Math.floor(target.position.z)],
         },
       };
@@ -716,6 +764,54 @@ export function createWaterActions(deps) {
       }
       const wasVehicle = b.vehicle.name;
       let fallback = null;
+
+      // High-level contract (task #19): if the boat is currently in open
+      // water, scan for the nearest standable shore within 16 blocks and
+      // sail there first so the agent doesn't disembark into deep water.
+      let autoSailed = null;
+      {
+        const boatPos = b.vehicle.position;
+        const below = b.blockAt(boatPos.offset(0, -1, 0));
+        const inOpenWater = !!below && (below.name === 'water' || below.name === 'flowing_water');
+        if (inOpenWater) {
+          const isStandableLand = (bot, px, py, pz) => {
+            const foot = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
+            const head = bot?.blockAt && bot.blockAt(new Vec3(px, py + 1, pz));
+            const belowSolid = bot?.blockAt && bot.blockAt(new Vec3(px, py - 1, pz));
+            if (!foot || !head || !belowSolid) return false;
+            const isAirish = (n) => n === 'air' || n === 'cave_air' || n === 'void_air';
+            const isWater = (n) => n === 'water' || n === 'flowing_water';
+            if (!isAirish(foot.name)) return false;
+            if (!isAirish(head.name)) return false;
+            if (belowSolid.boundingBox !== 'block') return false;
+            if (isWater(belowSolid.name)) return false;
+            return true;
+          };
+          const shore = findAdjustedTarget(
+            b,
+            isStandableLand,
+            Math.floor(boatPos.x),
+            Math.floor(boatPos.y),
+            Math.floor(boatPos.z),
+            12,
+          );
+          if (shore && shore.adjusted && shore.distance >= 2) {
+            log(`[disembark] in open water — auto-sailing to shore at ${shore.x},${shore.y},${shore.z} (distance ${shore.distance})`);
+            try {
+              const sailRes = await ACTIONS.sail({ x: shore.x, y: shore.y, z: shore.z, timeout_seconds: 30 });
+              autoSailed = {
+                ok: !!sailRes?.ok,
+                shore: { x: shore.x, y: shore.y, z: shore.z, distance: shore.distance },
+                ...(sailRes?.data ? { sail_data: sailRes.data } : {}),
+                ...(sailRes?.error ? { sail_error: sailRes.error } : {}),
+              };
+            } catch (e) {
+              autoSailed = { ok: false, shore: { x: shore.x, y: shore.y, z: shore.z }, error: e?.message || String(e) };
+            }
+            await sleep(200);
+          }
+        }
+      }
       try { b.dismount(); } catch {}
       await sleep(700);
       if (b.vehicle) {
@@ -759,6 +855,7 @@ export function createWaterActions(deps) {
           dismounted_from: wasVehicle,
           bot_position: [Math.floor(b.entity.position.x), Math.floor(b.entity.position.y), Math.floor(b.entity.position.z)],
           ...(fallback ? { fallback } : {}),
+          ...(autoSailed ? { auto_sailed: autoSailed } : {}),
         },
       };
     },
