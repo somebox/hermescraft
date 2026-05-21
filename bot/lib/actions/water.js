@@ -758,11 +758,18 @@ export function createWaterActions(deps) {
       try {
         const yaw0 = Math.atan2(target.x - startPos.x === 0 ? 0 : -(target.x - startPos.x), target.z - startPos.z);
         try { await b.look(yaw0, 0, true); } catch {}
-        // Pump moveVehicle every 250ms for 1.5s; check if boat moved.
+        // Pump moveVehicle at ~50ms (vanilla MC tick rate). Vehicle
+        // physics on the server expects continuous input: a single
+        // player_input packet is treated as "input pressed THIS tick"
+        // and the boat decays the next tick if no follow-up arrives.
+        // Pumping every 250ms only gave 1 frame of input per 5 frames
+        // of physics, so the boat never accelerated. Live-confirmed in
+        // the v6b probe + 4.37.1 re-probe: native probe always reported
+        // <0.4b motion at the slower rate.
         const probeEnd = Date.now() + 1500;
         while (Date.now() < probeEnd) {
           safeMoveVehicle(0, 1);
-          await sleep(250);
+          await sleep(50);
         }
         const liveAfter = b.entities[b.vehicle?.id];
         if (liveAfter && startPos.distanceTo(liveAfter.position) > 0.4) {
@@ -927,8 +934,14 @@ export function createWaterActions(deps) {
           if (nativeWorks) {
             const yaw = Math.atan2(-steerDx, steerDz);
             try { await b.look(yaw, 0, true); } catch {}
-            safeMoveVehicle(0, 1);   // pump packet every loop iteration
-            await sleep(250);        // keep below mineflayer's vanilla input cadence
+            // Burst-pump moveVehicle to match the server's vehicle physics
+            // tick rate (~50ms). One packet per 250ms loop barely moves the
+            // boat; 5 packets per loop saturates the input window so the
+            // server treats it as a held "forward" key.
+            for (let pump = 0; pump < 5; pump++) {
+              safeMoveVehicle(0, 1);
+              await sleep(50);
+            }
           } else if (useTpFallback) {
             // Step the boat 1.5 blocks toward steerVec each tick.
             const step = Math.min(1.5, detourTicksLeft > 0 ? 1.5 : horiz);
