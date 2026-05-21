@@ -689,7 +689,7 @@ export function createWaterActions(deps) {
      * boat is within 2 blocks of the target on the horizontal plane.
      * Action contract: NOT_MOUNTED, NOT_A_BOAT, TIMEOUT, OUT_OF_RANGE.
      */
-    async sail({ x, y, z, timeout_seconds = 60 }) {
+    async sail({ x, y, z, timeout_seconds }) {
       const b = ensureBot();
       const target = new Vec3(Number(x), Number(y), Number(z));
 
@@ -711,7 +711,19 @@ export function createWaterActions(deps) {
       }
 
       const startPos = boat.position.clone();
-      const deadline = Date.now() + (Number(timeout_seconds) || 60) * 1000;
+      // Auto-scale timeout with horizontal distance: boats travel ~3.75 b/s
+      // under both native steering and the tp-step fallback. circuit-v5h
+      // showed Steve sailing 480 blocks of a 720-block crossing in two
+      // 60s sail calls — each one timed out partway, and the agent had to
+      // re-issue. Default to (distance / 3) seconds + 30s overhead,
+      // capped at 300s (5 min, same as ACTION_CAPS_MS.goto). Explicit
+      // timeout_seconds param still wins for callers that want to override.
+      const horizFromStart = Math.hypot(target.x - startPos.x, target.z - startPos.z);
+      const autoTimeoutS = Math.min(300, Math.max(60, Math.ceil(horizFromStart / 3) + 30));
+      const effectiveTimeoutS = Number.isFinite(Number(timeout_seconds)) && Number(timeout_seconds) > 0
+        ? Number(timeout_seconds)
+        : autoTimeoutS;
+      const deadline = Date.now() + effectiveTimeoutS * 1000;
 
       // Steering preference: in vanilla, the rider's "forward" key drives
       // the boat. mineflayer's setControlState SHOULD relay this, but on
@@ -934,13 +946,17 @@ export function createWaterActions(deps) {
       }
 
       const here = b.entities[b.vehicle?.id]?.position || boat.position;
+      const remaining = Number(here.distanceTo(target).toFixed(2));
       return { ok: false, error: {
         code: 'TIMEOUT',
-        message: `Did not reach (${x},${y},${z}) within ${timeout_seconds}s.`,
+        message: `Did not reach (${x},${y},${z}) within ${effectiveTimeoutS}s. Boat is at (${here.x.toFixed(1)},${here.y.toFixed(1)},${here.z.toFixed(1)}) — ${remaining}b remaining. Call \`mc sail ${Math.floor(target.x)} ${Math.floor(target.y)} ${Math.floor(target.z)}\` again to continue.`,
         observed_state: {
           boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
-          horizontal_distance_remaining: Number(here.distanceTo(target).toFixed(2)),
+          horizontal_distance_remaining: remaining,
+          effective_timeout_s: effectiveTimeoutS,
+          ...(detoursTaken.length ? { detours: detoursTaken } : {}),
         },
+        next_action_hint: `mc sail ${Math.floor(target.x)} ${Math.floor(target.y)} ${Math.floor(target.z)}`,
         retry_safe: true,
       }};
     },
