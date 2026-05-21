@@ -972,18 +972,36 @@ export function createWaterActions(deps) {
                   continue;
                 }
               }
-              // No detour available or budget exhausted — surface STUCK
-              // with a recovery hint.
+              // No detour available or budget exhausted. Don't just return
+              // an error — circuit-v5j showed Steve dying to drowned mobs
+              // while the agent processed the BOAT_STUCK envelope and
+              // figured out to call mc disembark. Auto-chain disembark
+              // (which auto-escapes to shore) so the bot is safe by the
+              // time the response lands.
+              let autoDisembark = null;
+              if (ACTIONS && typeof ACTIONS.disembark === 'function') {
+                try {
+                  const dis = await ACTIONS.disembark({});
+                  autoDisembark = {
+                    ok: !!dis?.ok,
+                    ...(dis?.data ? { data: dis.data } : {}),
+                    ...(dis?.error ? { error: dis.error } : {}),
+                  };
+                } catch (e) {
+                  autoDisembark = { ok: false, error: e?.message || String(e) };
+                }
+              }
               return { ok: false, error: {
                 code: 'BOAT_STUCK',
-                message: `Boat stuck after ${detourAttempts} detour attempt(s) — wedged against terrain at (${here.x.toFixed(1)}, ${here.y.toFixed(1)}, ${here.z.toFixed(1)}). Call \`mc disembark\` — it will dismount you and the auto-escape will swim you to shore.`,
+                message: `Boat stuck after ${detourAttempts} detour attempt(s) — wedged against terrain at (${here.x.toFixed(1)}, ${here.y.toFixed(1)}, ${here.z.toFixed(1)}).${autoDisembark?.ok ? ' Auto-disembarked you — you should now be on dry shore.' : ' Call mc disembark — it will dismount you and the auto-escape will swim you to shore.'}`,
                 observed_state: {
                   boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
                   horizontal_distance_remaining: Number(horiz.toFixed(2)),
                   detour_attempts: detourAttempts,
                   detours: detoursTaken,
+                  ...(autoDisembark ? { auto_disembark: autoDisembark } : {}),
                 },
-                next_action_hint: 'mc disembark',
+                next_action_hint: autoDisembark?.ok ? 'mc status' : 'mc disembark',
                 retry_safe: false,
               }};
             }
