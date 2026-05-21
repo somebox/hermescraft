@@ -935,6 +935,47 @@ export function createWaterActions(deps) {
             const nx = here.x + (steerDx / steerNorm) * step;
             const nz = here.z + (steerDz / steerNorm) * step;
             const ny = here.y;
+            // Collision safety (Phase 2): before TPing the boat, probe the
+            // target cell. If it's solid (non-air, non-water), the TP would
+            // shove the boat into a block and break it — killing Steve from
+            // the boat-shatter impact. Abort with BOAT_STUCK; the existing
+            // auto-disembark chain below handles recovery.
+            try {
+              const probe = b.blockAt(new Vec3(Math.floor(nx), Math.floor(ny), Math.floor(nz)));
+              const collides = probe
+                && probe.name !== 'air' && probe.name !== 'cave_air' && probe.name !== 'void_air'
+                && probe.name !== 'water' && probe.name !== 'flowing_water'
+                && probe.boundingBox === 'block';
+              if (collides) {
+                safeMoveVehicle(0, 0);
+                // Try auto-disembark to get Steve out of the doomed boat.
+                let autoDisembark = null;
+                if (ACTIONS && typeof ACTIONS.disembark === 'function') {
+                  try {
+                    const dis = await ACTIONS.disembark({});
+                    autoDisembark = {
+                      ok: !!dis?.ok,
+                      ...(dis?.data ? { data: dis.data } : {}),
+                      ...(dis?.error ? { error: dis.error } : {}),
+                    };
+                  } catch (e) {
+                    autoDisembark = { ok: false, error: e?.message || String(e) };
+                  }
+                }
+                return { ok: false, error: {
+                  code: 'BOAT_STUCK',
+                  message: `Sail TP-step would have teleported the boat into a ${probe.name} block at (${Math.floor(nx)},${Math.floor(ny)},${Math.floor(nz)}). Refused — that would shatter the boat. ${autoDisembark?.ok ? 'Auto-disembarked you — you should be on dry shore now.' : 'Call mc disembark.'}`,
+                  observed_state: {
+                    boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
+                    collision_at: { x: Math.floor(nx), y: Math.floor(ny), z: Math.floor(nz), block: probe.name },
+                    horizontal_distance_remaining: Number(horiz.toFixed(2)),
+                    ...(autoDisembark ? { auto_disembark: autoDisembark } : {}),
+                  },
+                  next_action_hint: autoDisembark?.ok ? 'mc status' : 'mc disembark',
+                  retry_safe: false,
+                }};
+              }
+            } catch { /* probe failed (unloaded chunk?) — fall through and let the TP try */ }
             const bx = Math.floor(here.x);
             const by = Math.floor(here.y);
             const bz = Math.floor(here.z);
