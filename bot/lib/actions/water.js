@@ -252,34 +252,66 @@ export function createWaterActions(deps) {
       if (!refBlock) {
         return { ok: false, error: { code: 'NO_BLOCK', message: `No block at (${x},${y},${z})`, retry_safe: false }};
       }
-      // Task #7 self-adjust: if exact target isn't water, find nearest
-      // water within 3 blocks. circuit-v3 had Steve calling place_boat
-      // 11 times with slightly wrong coords — each failed NO_WATER_AT_TARGET.
-      // The adjust converts those into 1 successful call + data.adjusted_target.
-      let adjustedTarget = null;
-      if (refBlock.name !== 'water' && refBlock.name !== 'flowing_water') {
-        const adj = findAdjustedTarget(
-          b,
-          (bot, px, py, pz) => {
-            const blk = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
-            return !!blk && (blk.name === 'water' || blk.name === 'flowing_water');
-          },
-          Number(x), Number(y), Number(z),
-          3,
-        );
-        if (!adj) {
-          return { ok: false, error: {
-            code: 'NO_WATER_AT_TARGET',
-            message: `Block at (${x},${y},${z}) is "${refBlock.name}" and no water within 3 blocks — boats need water.`,
-            observed_state: { target_block: refBlock.name, searched_radius: 3 },
-            retry_safe: false,
-          }};
+      // Task #7 self-adjust upgraded for circuit-v5d: find a SHORE-water
+      // cell — water that has at least one dry cardinal stance at +1y.
+      // The original predicate just checked "is water"; that often picked
+      // open-water deep in a lake, and the dry-stance check downstream
+      // returned NO_STANCE. Now we prefer cells where place_boat will
+      // actually succeed.
+      const isWater = (blk) => !!blk && (blk.name === 'water' || blk.name === 'flowing_water');
+      const hasDryStance = (px, py, pz) => {
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const stance = b.blockAt(new Vec3(px + dx, py + 1, pz + dz));
+          const under = b.blockAt(new Vec3(px + dx, py, pz + dz));
+          if (stance && (stance.name === 'air' || stance.boundingBox === 'empty')
+              && under && under.boundingBox === 'block' && !isWater(under)) {
+            return true;
+          }
         }
-        // Use the adjusted cell.
-        adjustedTarget = adj;
-        refBlock = b.blockAt(new Vec3(adj.x, adj.y, adj.z));
-        targetPos.x = adj.x; targetPos.y = adj.y; targetPos.z = adj.z;
-        log(`[place_boat] adjusted target from (${x},${y},${z}) to (${adj.x},${adj.y},${adj.z}) — distance ${adj.distance}`);
+        return false;
+      };
+      const isShoreWater = (bot, px, py, pz) => {
+        if (!bot?.blockAt) return false;
+        const blk = bot.blockAt(new Vec3(px, py, pz));
+        if (!isWater(blk)) return false;
+        return hasDryStance(px, py, pz);
+      };
+      let adjustedTarget = null;
+      // First-try: the exact requested cell. If it's already shore-water,
+      // no adjustment needed.
+      if (!isShoreWater(b, Number(x), Number(y), Number(z))) {
+        // Search ~6 blocks for the nearest shore-water. Larger radius than
+        // task #7's 3 because the agent's hint (from route_probe) is often
+        // off by several cells when the route's sample spacing is wide.
+        const adj = findAdjustedTarget(b, isShoreWater, Number(x), Number(y), Number(z), 6);
+        if (adj) {
+          adjustedTarget = adj;
+          refBlock = b.blockAt(new Vec3(adj.x, adj.y, adj.z));
+          targetPos.x = adj.x; targetPos.y = adj.y; targetPos.z = adj.z;
+          log(`[place_boat] adjusted to shore-water (${adj.x},${adj.y},${adj.z}) from (${x},${y},${z}) — distance ${adj.distance}`);
+        } else {
+          // No shore-water within 6. Fall back to plain water-cell search
+          // — the bot might already be IN the water (from-water mode below
+          // handles that without needing a shore).
+          const fallback = findAdjustedTarget(
+            b,
+            (bot, px, py, pz) => isWater(bot?.blockAt && bot.blockAt(new Vec3(px, py, pz))),
+            Number(x), Number(y), Number(z),
+            3,
+          );
+          if (!fallback) {
+            return { ok: false, error: {
+              code: 'NO_WATER_AT_TARGET',
+              message: `Block at (${x},${y},${z}) is "${refBlock.name}" and no water within 3 blocks — boats need water.`,
+              observed_state: { target_block: refBlock.name, searched_radius: 6 },
+              retry_safe: false,
+            }};
+          }
+          adjustedTarget = fallback;
+          refBlock = b.blockAt(new Vec3(fallback.x, fallback.y, fallback.z));
+          targetPos.x = fallback.x; targetPos.y = fallback.y; targetPos.z = fallback.z;
+          log(`[place_boat] no shore-water in radius — falling back to nearest water (${fallback.x},${fallback.y},${fallback.z})`);
+        }
       }
 
       // Stance selection has TWO modes:
