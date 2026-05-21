@@ -5,6 +5,90 @@
 import { Vec3 } from 'vec3';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 import { findClosestStandable, findStandableSameXZ, standabilityReason, standingState, isStandableCell, computeReachability, targetChunkLoaded } from './_nav-helpers.js';
+import { probeRouteAlongLine } from '../server/route-probe.js';
+
+// Task #21 — force the strategic decision. When the agent calls mc move /
+// bg_goto over a long distance, sample the route. If it crosses meaningful
+// water and the bot has a boat in inventory, REFUSE and tell the agent to
+// place_boat + board + sail. circuit-v5 saw Steve walk into a lake 5x in
+// a row instead of using either of his two oak_boats.
+const LONG_DISTANCE_THRESHOLD = 100;
+const WATER_REFUSAL_THRESHOLD = 6; // of 30 samples
+const BOAT_INV_NAMES = new Set([
+  'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
+  'acacia_boat', 'dark_oak_boat', 'cherry_boat', 'mangrove_boat',
+  'bamboo_raft', 'pale_oak_boat',
+]);
+
+/**
+ * Decide whether to refuse a long-distance navigation that crosses too
+ * much water. Pure function — takes a bot-like object and a target.
+ * Returns either an envelope (ok:false) to be returned by preflightNav,
+ * or null to let the rest of preflight run.
+ *
+ * Exported so unit tests can exercise the decision logic without booting
+ * the rest of createMovementActions.
+ */
+export function refuseWaterRouteWithoutBoat(b, x, y, z, {
+  longDistanceThreshold = LONG_DISTANCE_THRESHOLD,
+  waterRefusalThreshold = WATER_REFUSAL_THRESHOLD,
+  samples = 30,
+} = {}) {
+  try {
+    const me = b?.entity?.position;
+    if (!me) return null;
+    const tx = Number(x), ty = Number(y), tz = Number(z);
+    if (![tx, ty, tz].every(Number.isFinite)) return null;
+    const dist = Math.hypot(me.x - tx, me.y - ty, me.z - tz);
+    if (dist < longDistanceThreshold) return null;
+    const probe = probeRouteAlongLine(
+      b,
+      { x: Math.floor(me.x), y: Math.floor(me.y), z: Math.floor(me.z) },
+      { x: Math.floor(tx), y: Math.floor(ty), z: Math.floor(tz) },
+      samples,
+    );
+    const counts = probe?.counts || {};
+    const waterCount = Number(counts.water || 0);
+    if (waterCount < waterRefusalThreshold) return null;
+    const boat = (b.inventory?.items?.() || []).find((i) => BOAT_INV_NAMES.has(i.name));
+    const firstWater = (probe?.samples || []).find((s) => s.classification === 'water');
+    if (boat) {
+      return {
+        ok: false,
+        error: {
+          code: 'BOAT_REQUIRED',
+          message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples — refusing to walk. You're holding ${boat.name}. Use \`mc place_boat ${firstWater?.x ?? '<water_x>'} ${firstWater?.y ?? '<water_y>'} ${firstWater?.z ?? '<water_z>'}\` then \`mc board\` then \`mc sail ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}\`.`,
+          observed_state: {
+            route_preview: { counts, sample_count: probe.sample_count, first_water: firstWater ? { x: firstWater.x, y: firstWater.y, z: firstWater.z } : null },
+            distance: Math.round(dist),
+            boat_in_inventory: boat.name,
+            target: { x: Math.floor(tx), y: Math.floor(ty), z: Math.floor(tz) },
+          },
+          next_action_hint: firstWater
+            ? `mc place_boat ${firstWater.x} ${firstWater.y} ${firstWater.z}`
+            : `mc advise --reason="route to ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}" --target ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)}`,
+          retry_safe: false,
+        },
+      };
+    }
+    return {
+      ok: false,
+      error: {
+        code: 'WATER_ROUTE_NEEDS_BOAT',
+        message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples and you have no boat. Craft one (5 planks + 1 wooden_shovel) or take a long detour. Don't try to swim — you'll drown.`,
+        observed_state: {
+          route_preview: { counts, sample_count: probe.sample_count },
+          distance: Math.round(dist),
+          target: { x: Math.floor(tx), y: Math.floor(ty), z: Math.floor(tz) },
+        },
+        next_action_hint: `mc craft oak_boat`,
+        retry_safe: false,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
 
 // Y-grace: when an agent calls mc move / goto / goto_near with the right
 // XZ but a wrong Y (target inside a hill, floating in air), we rescue by
@@ -139,6 +223,12 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
   //      where the bot stalled twice or more in the last 90s. Refuse the
   //      attempt and direct the brain to mc dig or alternative route.
   const preflightNav = (b, x, y, z, range) => {
+    // Task #21 — refuse long-distance walks across water when a boat is
+    // available. Cheap short-circuit for the most common Steve-walks-into-
+    // a-lake failure mode.
+    const boatRefusal = refuseWaterRouteWithoutBoat(b, x, y, z);
+    if (boatRefusal) return boatRefusal;
+
     let ss;
     try { ss = standingState(b); } catch { return null; }
     if (ss && ss.classification === 'trapped') {
