@@ -1188,11 +1188,13 @@ function makeChannelBlocks(x0, x1, y = 62) {
   for (let x = x0; x <= x1; x++) {
     blocks[`${x},${y},0`] = { name: 'water', boundingBox: 'empty', level: 0 };
     blocks[`${x},${y + 1},0`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${x},${y + 2},0`] = { name: 'air', boundingBox: 'empty' };
     blocks[`${x},${y - 1},0`] = { name: 'water', boundingBox: 'empty', level: 0 };
     for (const sz of [-1, 1]) {
       blocks[`${x},${y - 1},${sz}`] = { name: 'stone', boundingBox: 'block' };
       blocks[`${x},${y},${sz}`] = { name: 'air', boundingBox: 'empty' };
       blocks[`${x},${y + 1},${sz}`] = { name: 'air', boundingBox: 'empty' };
+      blocks[`${x},${y + 2},${sz}`] = { name: 'air', boundingBox: 'empty' };
     }
   }
   return blocks;
@@ -1235,6 +1237,7 @@ test('mc sail_to: tiny pond → NO_NAVIGABLE_ROUTE with POND_DISCONNECTED', asyn
     for (let z = 0; z < 5; z++) {
       blocks[`${x},62,${z}`] = { name: 'water', boundingBox: 'empty', level: 0 };
       blocks[`${x},63,${z}`] = { name: 'air', boundingBox: 'empty' };
+      blocks[`${x},64,${z}`] = { name: 'air', boundingBox: 'empty' };
       blocks[`${x},61,${z}`] = { name: 'water', boundingBox: 'empty', level: 0 };
     }
   }
@@ -1242,6 +1245,7 @@ test('mc sail_to: tiny pond → NO_NAVIGABLE_ROUTE with POND_DISCONNECTED', asyn
   blocks['-1,61,0'] = { name: 'stone', boundingBox: 'block' };
   blocks['-1,62,0'] = { name: 'air', boundingBox: 'empty' };
   blocks['-1,63,0'] = { name: 'air', boundingBox: 'empty' };
+  blocks['-1,64,0'] = { name: 'air', boundingBox: 'empty' };
   const bot = makeMockBot({
     position: { x: -1, y: 63, z: 0 },
     inventory: [{ name: 'oak_boat', count: 1 }],
