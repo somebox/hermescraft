@@ -576,7 +576,7 @@ export function createWaterActions(deps) {
               vehicle_id: live.id,
               passenger_confirmed: passengerHasBot,
             },
-            next_action_hint: 'mc sail X Y Z  # already on a boat',
+            next_action_hint: 'mc sail_to X Y Z  # already on a boat — sail_to resumes from current mount',
             retry_safe: false,
           }};
         }
@@ -638,7 +638,7 @@ export function createWaterActions(deps) {
               probed_cells: 27,
               non_null_cells: 0,
             },
-            next_action_hint: `mc move ${fx + 1} ${fy} ${fz}; mc board`,
+            next_action_hint: `mc bg_goto ${fx + 1} ${fy} ${fz}; mc sail_to <target>`,
             retry_safe: true,
           }};
         }
@@ -714,7 +714,7 @@ export function createWaterActions(deps) {
             code: 'AUTO_PLACE_FAILED',
             message: 'place_boat succeeded but no boat entity appeared within 6 blocks of the bot after 5s (even after 2 chunk-refresh nudges).',
             observed_state: { place_data: placeRes.data, placed_boat_id: placedBoatId },
-            next_action_hint: 'mc nearby # check what boats exist; mc move 1 block; mc board # retry',
+            next_action_hint: 'mc nearby # check what boats exist; mc sail_to <target> again to retry',
             retry_safe: true,
           }};
         }

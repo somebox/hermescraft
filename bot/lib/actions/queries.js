@@ -779,7 +779,7 @@ export function createQueriesActions(services) {
               return recordEscapeSuccess({
                 ok: true,
                 data: { action_taken: 'boat_fallback', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, boat: boatItem.name, mounted: !!b.vehicle, attempts, diag, success: true },
-                result: `Placed a ${boatItem.name} and ${b.vehicle ? 'boarded' : 'spawned next to'} it. Use mc sail X Y Z to travel to shore, then mc disembark.`,
+                result: `Placed a ${boatItem.name} and ${b.vehicle ? 'boarded' : 'spawned next to'} it. Use mc sail_to X Y Z to travel to shore.`,
               });
             }
           } else {
@@ -809,7 +809,7 @@ export function createQueriesActions(services) {
                 return recordEscapeSuccess({
                   ok: true,
                   data: { action_taken: 'boat_fallback', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, boat: boatItem.name, mounted: !!b.vehicle, attempts, diag, success: true },
-                  result: `Placed a ${boatItem.name} and ${b.vehicle ? 'boarded' : 'spawned next to'} it. Use mc sail X Y Z to travel to shore, then mc disembark.`,
+                  result: `Placed a ${boatItem.name} and ${b.vehicle ? 'boarded' : 'spawned next to'} it. Use mc sail_to X Y Z to travel to shore.`,
                 });
               }
             } else {
@@ -845,7 +845,7 @@ export function createQueriesActions(services) {
             attempts,
           },
           next_action_hint: diag.boat_fallback?.has_boat
-            ? 'Try mc place_boat directly at your current foot cell (recently patched to work from-water) — then mc board, mc sail to shore.'
+            ? 'Call mc sail_to <shore_x> <shore_y> <shore_z> — the ferry primitive places + boards + sails to shore.'
             : placeable
               ? 'Pillar up further with mc place. Or chat for help.'
               : 'No tools or boats to escape. mc chat for steward help — DO NOT /kill.',

@@ -429,7 +429,7 @@ test('mc board: CHUNK_NOT_LOADED when local chunk cache is dark', async () => {
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'CHUNK_NOT_LOADED');
   assert.match(r.error.message, /chunk cache is empty|chunk data/i);
-  assert.match(r.error.next_action_hint || '', /mc move|retry/);
+  assert.match(r.error.next_action_hint || '', /mc bg_goto|mc sail_to|retry/);
   assert.equal(r.error.observed_state.non_null_cells, 0);
   assert.equal(r.error.observed_state.boat_in_inventory, 'oak_boat');
 });
@@ -536,15 +536,15 @@ test('observation: mounted field included when bot.vehicle is set', async () => 
     ? {
         vehicle: services.state.world.bot.vehicle.name || services.state.world.bot.vehicle.type || 'unknown',
         vehicle_id: services.state.world.bot.vehicle.id,
-        hint: 'You are mounted. Use mc sail X Y Z to travel; mc disembark to dismount. Do NOT call mc board or mc move while mounted.',
+        hint: "You are mounted. Use mc sail_to X Y Z to travel — it resumes from the current mounted position. mc disembark to dismount. Do not call mc move while mounted.",
       }
     : null;
   assert.ok(vehicleField, 'observation must include mounted block when bot.vehicle is set');
   assert.equal(vehicleField.vehicle, 'oak_boat');
   assert.equal(vehicleField.vehicle_id, 99);
   assert.match(vehicleField.hint, /mounted/i);
-  assert.match(vehicleField.hint, /mc sail/);
-  assert.match(vehicleField.hint, /Do NOT/);
+  assert.match(vehicleField.hint, /mc sail_to/);
+  assert.match(vehicleField.hint, /Do not call mc move/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────

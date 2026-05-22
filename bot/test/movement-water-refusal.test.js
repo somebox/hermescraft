@@ -52,11 +52,11 @@ test('refuseWaterRouteWithoutBoat: water-heavy route + boat → BOAT_REQUIRED', 
   const r = refuseWaterRouteWithoutBoat(bot, 200, 64, 0);
   assert.ok(r && !r.ok);
   assert.equal(r.error.code, 'BOAT_REQUIRED');
-  assert.match(r.error.message, /mc board/);
+  assert.match(r.error.message, /mc sail_to/);
   assert.match(r.error.message, /oak_boat/);
   assert.ok(r.error.observed_state.route_preview.counts.water >= 6);
   assert.equal(r.error.observed_state.boat_in_inventory, 'oak_boat');
-  assert.match(r.error.next_action_hint, /mc board/);
+  assert.match(r.error.next_action_hint, /mc sail_to/);
 });
 
 test('refuseWaterRouteWithoutBoat: water-heavy route, no boat → WATER_ROUTE_NEEDS_BOAT', () => {
@@ -107,7 +107,7 @@ test('refuseWaterRouteWithoutBoat: surfaces first_water sample coord in observed
   assert.ok(fw, 'first_water should be populated');
   // Hint always recommends `mc board` (no-args) for placement; first_water
   // is just diagnostic context in observed_state.
-  assert.match(r.error.next_action_hint, /mc board/);
+  assert.match(r.error.next_action_hint, /mc sail_to/);
 });
 
 test('refuseWaterRouteWithoutBoat: malformed inputs return null (defensive)', () => {
@@ -150,9 +150,8 @@ test('refuseWaterRouteWithoutBoat: hints at SHORE STANCE (last dry sample before
   // The land samples are at x<25. The shore_stance is the LAST land
   // before water, so x should be in [0, 25).
   assert.ok(ss.x < 25, `expected shore_stance x<25 (last dry before water), got ${ss.x}`);
-  // The hint should suggest mc move to shore + mc board.
-  assert.match(r.error.next_action_hint, /mc move/);
-  assert.match(r.error.next_action_hint, /mc board/);
+  // The hint always points at mc sail_to — sail_to handles walk-to-shore internally.
+  assert.match(r.error.next_action_hint, /mc sail_to/);
 });
 
 test('refuseWaterRouteWithoutBoat: no land→water transition → hint is bare mc board', () => {
@@ -172,8 +171,8 @@ test('refuseWaterRouteWithoutBoat: no land→water transition → hint is bare m
   const r = refuseWaterRouteWithoutBoat(bot, 200, 64, 0);
   assert.ok(r && !r.ok);
   assert.equal(r.error.observed_state.route_preview.shore_stance, null);
-  // Falls back to plain `mc board` — no shore to walk to first.
-  assert.equal(r.error.next_action_hint, 'mc board');
+  // Always points at mc sail_to (ferry primitive) — the old chain is gated.
+  assert.match(r.error.next_action_hint, /mc sail_to/);
 });
 
 test('refuseWaterRouteWithoutBoat: respects custom thresholds', () => {

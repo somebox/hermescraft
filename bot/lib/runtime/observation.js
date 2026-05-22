@@ -191,7 +191,7 @@ export function createObservation(deps) {
         mounted: {
           vehicle: ctx.world.bot.vehicle.name || ctx.world.bot.vehicle.type || 'unknown',
           vehicle_id: ctx.world.bot.vehicle.id,
-          hint: 'You are mounted. Use mc sail X Y Z to travel; mc disembark to dismount. Do NOT call mc board or mc move while mounted.',
+          hint: "You are mounted. Use mc sail_to X Y Z to travel — it resumes from the current mounted position. mc disembark to dismount. Do not call mc move while mounted.",
         },
       } : {}),
       time: ctx.world.bot.time.timeOfDay,
@@ -489,7 +489,7 @@ export function createObservation(deps) {
         mounted: {
           vehicle: ctx.world.bot.vehicle.name || ctx.world.bot.vehicle.type || 'unknown',
           vehicle_id: ctx.world.bot.vehicle.id,
-          hint: 'You are mounted. Use mc sail X Y Z to travel; mc disembark to dismount. Do NOT call mc board or mc move while mounted.',
+          hint: "You are mounted. Use mc sail_to X Y Z to travel — it resumes from the current mounted position. mc disembark to dismount. Do not call mc move while mounted.",
         },
       } : {}),
       ...(lean ? {} : { experience: { level: b.experience?.level || 0 } }),

@@ -70,14 +70,16 @@ export function refuseWaterRouteWithoutBoat(b, x, y, z, {
       }
     }
     if (boat) {
-      const hint = shoreStance
-        ? `mc move ${shoreStance.x} ${shoreStance.y + 1} ${shoreStance.z} then mc board (no args — auto-finds water + places + mounts)`
-        : `mc board`;
+      // v27: route the agent at the gated ferry primitive — mc board /
+      // mc sail are deprecated and refuse direct calls. mc sail_to runs
+      // the BFS plan + walk_to_entry + mount + sail + disembark + walk_to_target
+      // end-to-end and is the only supported boat verb.
+      const hint = `mc sail_to ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}`;
       return {
         ok: false,
         error: {
           code: 'BOAT_REQUIRED',
-          message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples — refusing to walk. You're holding ${boat.name}. ${shoreStance ? `Walk to the shore at (${shoreStance.x}, ${shoreStance.y + 1}, ${shoreStance.z}) then call \`mc board\` (no-args mode auto-places the boat in nearby water and mounts you).` : 'Call `mc board` to auto-place a boat in nearby water and mount.'} Then \`mc sail ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}\`.`,
+          message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples — refusing to walk. You're holding ${boat.name}. Call \`mc sail_to ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}\` — the ferry primitive plans the route, places the boat, sails, and disembarks at the destination shore. Don't try mc board / mc sail directly; they're gated.`,
           observed_state: {
             route_preview: {
               counts,
@@ -98,7 +100,7 @@ export function refuseWaterRouteWithoutBoat(b, x, y, z, {
       ok: false,
       error: {
         code: 'WATER_ROUTE_NEEDS_BOAT',
-        message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples and you have no boat. Craft one (5 planks + 1 wooden_shovel) or take a long detour. Don't try to swim — you'll drown.`,
+        message: `Route to ${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)} crosses ${waterCount}/${probe.sample_count} water samples and you have no boat. Craft one with \`mc craft oak_boat\` (needs 5 oak_planks), then call \`mc sail_to ${Math.floor(tx)} ${Math.floor(ty)} ${Math.floor(tz)}\`. Don't try to swim — you'll drown.`,
         observed_state: {
           route_preview: { counts, sample_count: probe.sample_count },
           distance: Math.round(dist),
