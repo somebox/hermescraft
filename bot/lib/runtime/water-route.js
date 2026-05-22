@@ -67,12 +67,20 @@ function isAir(b, x, y, z) {
 }
 
 /**
- * A cell is navigable if it's water, with air above and water below.
+ * A cell is navigable if it's water, with TWO blocks of air above (the
+ * boat plus the rider's head — rider sits ~1 block above the water
+ * surface), and water below.
+ *
  * Returns:
  *   'navigable' — usable for boat travel
  *   'shallow'   — water at y but solid below; boat would ground
- *   'blocked'   — non-water at y, or no clearance above
- *   'unloaded'  — at least one of the three probes returned null
+ *   'blocked'   — non-water at y, or no 2-block clearance above
+ *   'unloaded'  — at least one of the four probes returned null
+ *
+ * circuit-v25: the y+1-only clearance check missed piers/bridges with
+ * the deck at y+2 — water was free at the surface, head cell was air,
+ * BFS treated the cell as navigable, then the boat physically rammed
+ * the deck above. Need to check y+1 AND y+2 are both air.
  */
 function classifyCell(b, x, y, z) {
   const foot = b.blockAt(new Vec3(x, y, z));
@@ -81,6 +89,11 @@ function classifyCell(b, x, y, z) {
   const head = b.blockAt(new Vec3(x, y + 1, z));
   if (!head) return 'unloaded';
   if (!AIR_NAMES.has(head.name)) return 'blocked';
+  // Rider's head occupies y+2 — pier decks at y+2 above open water at y
+  // are a collision the boat can't survive.
+  const above = b.blockAt(new Vec3(x, y + 2, z));
+  if (!above) return 'unloaded';
+  if (!AIR_NAMES.has(above.name)) return 'blocked';
   const below = b.blockAt(new Vec3(x, y - 1, z));
   if (!below) return 'unloaded';
   if (!WATER_NAMES.has(below.name)) return 'shallow';

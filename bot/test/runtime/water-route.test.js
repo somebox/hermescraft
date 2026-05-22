@@ -54,12 +54,14 @@ function makeChannel(x0, x1, y = 62) {
   for (let x = x0; x <= x1; x++) {
     blocks[`${x},${y},0`] = 'water';
     blocks[`${x},${y + 1},0`] = 'air';
+    blocks[`${x},${y + 2},0`] = 'air';  // 2-block rider clearance
     blocks[`${x},${y - 1},0`] = 'water';
-    // Shore cells at z=-1 and z=1: stone block at y-1, air at y and y+1.
+    // Shore cells at z=-1 and z=1: stone block at y-1, air above.
     for (const sz of [-1, 1]) {
       blocks[`${x},${y - 1},${sz}`] = 'stone';
       blocks[`${x},${y},${sz}`] = 'air';
       blocks[`${x},${y + 1},${sz}`] = 'air';
+      blocks[`${x},${y + 2},${sz}`] = 'air';
     }
   }
   return blocks;
@@ -101,12 +103,13 @@ test('planWaterRoute: bot already in water uses current cell as entry', () => {
 
 test('planWaterRoute: tiny 5×5 pond → POND_DISCONNECTED', () => {
   const blocks = {};
-  // 5×5 pond at y=62, with y=63 air and y=61 water (depth ok).
+  // 5×5 pond at y=62, with y=63+y=64 air and y=61 water (depth ok).
   // Target is 100 blocks away — clearly unreachable from the pond.
   for (let x = 0; x < 5; x++) {
     for (let z = 0; z < 5; z++) {
       blocks[`${x},62,${z}`] = 'water';
       blocks[`${x},63,${z}`] = 'air';
+      blocks[`${x},64,${z}`] = 'air';
       blocks[`${x},61,${z}`] = 'water';
     }
   }
@@ -136,6 +139,7 @@ test('planWaterRoute: shallow water (no y-1 water) → WATER_TOO_SHALLOW', () =>
     for (let z = -1; z <= 1; z++) {
       blocks[`${x},62,${z}`] = 'water';
       blocks[`${x},63,${z}`] = 'air';
+      blocks[`${x},64,${z}`] = 'air';
       blocks[`${x},61,${z}`] = 'sand';
     }
   }
@@ -187,14 +191,17 @@ test('planWaterRoute: 1-block bridge across channel — BFS routes around it', (
     for (const z of [0, 1]) {
       blocks[`${x},62,${z}`] = 'water';
       blocks[`${x},63,${z}`] = 'air';
+      blocks[`${x},64,${z}`] = 'air';
       blocks[`${x},61,${z}`] = 'water';
     }
     blocks[`${x},61,-1`] = 'stone';
     blocks[`${x},62,-1`] = 'air';
     blocks[`${x},63,-1`] = 'air';
+    blocks[`${x},64,-1`] = 'air';
     blocks[`${x},61,2`] = 'stone';
     blocks[`${x},62,2`] = 'air';
     blocks[`${x},63,2`] = 'air';
+    blocks[`${x},64,2`] = 'air';
   }
   // Bridge: solid block at (25, 62, 0). The cell becomes unnavigable.
   blocks['25,62,0'] = 'oak_planks';
@@ -205,6 +212,47 @@ test('planWaterRoute: 1-block bridge across channel — BFS routes around it', (
   const passesBridgeCell = r.data.waypoints.some(w => w.x === 25 && w.z === 0);
   assert.equal(passesBridgeCell, false,
     `route should bypass the bridge cell, but waypoints include it: ${JSON.stringify(r.data.waypoints)}`);
+});
+
+// ─── Elevated pier at y+2 ────────────────────────────────────────────────
+
+test('planWaterRoute: elevated pier at y+2 across channel — BFS routes around it', () => {
+  // Regression: circuit-v25 saw Steve sail head-first into a long pier
+  // whose deck was at y+2 above open water at y. The y+1-only clearance
+  // check let those cells pass; rider's head collided with the deck.
+  //
+  // 2-wide channel from x=0..50 at z=0 and z=1. A pier deck spans the
+  // z=0 lane at y=64 (i.e. y+2 above the water surface): solid oak_planks
+  // at (25, 64, 0). Cells under the pier still have water at y=62 and
+  // air at y=63, so the old check thought they were navigable. New check
+  // also requires air at y=64. BFS must route through z=1.
+  const blocks = {};
+  for (let x = 0; x <= 50; x++) {
+    for (const z of [0, 1]) {
+      blocks[`${x},62,${z}`] = 'water';
+      blocks[`${x},63,${z}`] = 'air';
+      blocks[`${x},64,${z}`] = 'air';
+      blocks[`${x},61,${z}`] = 'water';
+    }
+    blocks[`${x},61,-1`] = 'stone';
+    blocks[`${x},62,-1`] = 'air';
+    blocks[`${x},63,-1`] = 'air';
+    blocks[`${x},64,-1`] = 'air';
+    blocks[`${x},61,2`] = 'stone';
+    blocks[`${x},62,2`] = 'air';
+    blocks[`${x},63,2`] = 'air';
+    blocks[`${x},64,2`] = 'air';
+  }
+  // Pier deck at y=64 (head height for the rider) at (25, 64, 0).
+  blocks['25,64,0'] = 'oak_planks';
+  const bot = makeStubBot(blocks);
+  const r = planWaterRoute(bot, { x: -1, y: 63, z: 0 }, { x: 50, y: 63, z: 0 });
+  assert.equal(r.ok, true, `expected ok with detour: ${JSON.stringify(r)}`);
+  // The route should bypass the cell beneath the pier deck — even though
+  // the water at y=62 is open, the rider's head would clip the deck.
+  const passesUnderPier = r.data.waypoints.some(w => w.x === 25 && w.z === 0);
+  assert.equal(passesUnderPier, false,
+    `route should detour around the elevated pier, but waypoints include it: ${JSON.stringify(r.data.waypoints)}`);
 });
 
 // ─── Waypoint spacing ────────────────────────────────────────────────────
