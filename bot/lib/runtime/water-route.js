@@ -30,6 +30,8 @@
  * contract, and is fully unit-testable via the makeMockBot pattern.
  */
 
+import { Vec3 } from 'vec3';
+
 const WATER_NAMES = new Set(['water', 'flowing_water']);
 const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
 
@@ -55,12 +57,12 @@ function key(x, y, z) {
 }
 
 function isWater(b, x, y, z) {
-  const blk = b.blockAt({ x, y, z });
+  const blk = b.blockAt(new Vec3(x, y, z));
   return !!blk && WATER_NAMES.has(blk.name);
 }
 
 function isAir(b, x, y, z) {
-  const blk = b.blockAt({ x, y, z });
+  const blk = b.blockAt(new Vec3(x, y, z));
   return !!blk && AIR_NAMES.has(blk.name);
 }
 
@@ -73,13 +75,13 @@ function isAir(b, x, y, z) {
  *   'unloaded'  — at least one of the three probes returned null
  */
 function classifyCell(b, x, y, z) {
-  const foot = b.blockAt({ x, y, z });
+  const foot = b.blockAt(new Vec3(x, y, z));
   if (!foot) return 'unloaded';
   if (!WATER_NAMES.has(foot.name)) return 'blocked';
-  const head = b.blockAt({ x, y: y + 1, z });
+  const head = b.blockAt(new Vec3(x, y + 1, z));
   if (!head) return 'unloaded';
   if (!AIR_NAMES.has(head.name)) return 'blocked';
-  const below = b.blockAt({ x, y: y - 1, z });
+  const below = b.blockAt(new Vec3(x, y - 1, z));
   if (!below) return 'unloaded';
   if (!WATER_NAMES.has(below.name)) return 'shallow';
   return 'navigable';
@@ -91,16 +93,16 @@ function classifyCell(b, x, y, z) {
  * (foot=air OR solid-stand, foot-1=solid block, head=air.)
  */
 function isShoreCell(b, x, y, z) {
-  const foot = b.blockAt({ x, y, z });
+  const foot = b.blockAt(new Vec3(x, y, z));
   if (!foot) return false;
   // foot can be air (the bot stands ON the block below) — checked below
   if (!AIR_NAMES.has(foot.name) && foot.name !== 'water') {
     // foot block must be enterable (air-ish) — actual stand block is y-1
     return false;
   }
-  const head = b.blockAt({ x, y: y + 1, z });
+  const head = b.blockAt(new Vec3(x, y + 1, z));
   if (!head || !AIR_NAMES.has(head.name)) return false;
-  const below = b.blockAt({ x, y: y - 1, z });
+  const below = b.blockAt(new Vec3(x, y - 1, z));
   if (!below) return false;
   // Standing block must be solid and not water.
   if (WATER_NAMES.has(below.name)) return false;
