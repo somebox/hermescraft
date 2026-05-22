@@ -59,9 +59,16 @@ def tool_switch_arena(rcon, arena, tester_bot, config):
 
 
 def _holding(bot) -> str:
-    """Return the bot's currently-held item name via status_lean."""
+    """Return the bot's currently-held item name via status_lean.
+
+    The lean status surfaces `holding` as an object {name, count} (built
+    via itemStr in bot/lib/runtime/observation.js). The /healthz endpoint
+    uses just the string. Normalize to the bare name for assertions."""
     st = bot.status_lean()
-    return st.get("holding") or "empty"
+    held = st.get("holding")
+    if isinstance(held, dict):
+        return held.get("name") or "empty"
+    return held or "empty"
 
 
 @pytest.mark.functional
