@@ -20,6 +20,8 @@ import {
   isAgentIdle,
   shouldEmergencyDisembark,
   isHostileNearBoat,
+  pickBestWeapon,
+  WEAPON_PRIORITY,
 } from '../lib/runtime/reactive-helpers.js';
 
 // ─── computeBackoffMs ────────────────────────────────────────────────────
@@ -236,4 +238,51 @@ test('isHostileNearBoat: custom range respected', () => {
     closestHostile: { name: 'drowned', distance: 4 },
     range: 3,
   }), false);
+});
+
+// ─── pickBestWeapon (circuit-v11 bug 3) ──────────────────────────────────
+
+test('pickBestWeapon: iron_sword wins over wooden_axe regardless of slot order', () => {
+  // The bug Steve hit: inventory.items() returned [wooden_axe, iron_sword]
+  // in slot order, and the old code's `find(WEAPON_PATTERN)` grabbed
+  // wooden_axe. Verify the priority-based picker handles this.
+  const items = [
+    { name: 'wooden_axe' },
+    { name: 'iron_sword' },
+    { name: 'cooked_beef' },
+  ];
+  assert.equal(pickBestWeapon(items)?.name, 'iron_sword');
+});
+
+test('pickBestWeapon: swords beat axes at every tier', () => {
+  // wooden_sword wins over iron_axe (sword tier beats axe tier).
+  assert.equal(pickBestWeapon([
+    { name: 'iron_axe' }, { name: 'wooden_sword' },
+  ])?.name, 'wooden_sword');
+});
+
+test('pickBestWeapon: higher material wins within tier', () => {
+  assert.equal(pickBestWeapon([
+    { name: 'wooden_sword' }, { name: 'diamond_sword' }, { name: 'iron_sword' },
+  ])?.name, 'diamond_sword');
+});
+
+test('pickBestWeapon: returns null on no weapons', () => {
+  assert.equal(pickBestWeapon([{ name: 'cooked_beef' }, { name: 'cobblestone' }]), null);
+  assert.equal(pickBestWeapon([]), null);
+  assert.equal(pickBestWeapon(null), null);
+});
+
+test('pickBestWeapon: falls back to pattern for unrecognized weapons', () => {
+  // Future weapons not in the priority list should still match via the
+  // regex fallback — don't strand the bot weaponless if it picks up a
+  // modded "obsidian_sword".
+  assert.equal(pickBestWeapon([{ name: 'obsidian_sword' }])?.name, 'obsidian_sword');
+});
+
+test('WEAPON_PRIORITY: swords come before axes; iron_sword is in the top half', () => {
+  const ironSwordIdx = WEAPON_PRIORITY.indexOf('iron_sword');
+  const woodenAxeIdx = WEAPON_PRIORITY.indexOf('wooden_axe');
+  assert.ok(ironSwordIdx >= 0 && woodenAxeIdx >= 0);
+  assert.ok(ironSwordIdx < woodenAxeIdx, 'iron_sword must rank above wooden_axe');
 });

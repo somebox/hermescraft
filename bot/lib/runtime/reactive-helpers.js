@@ -138,3 +138,41 @@ export function shouldEmergencyDisembark({
   if (lastAutoDisembarkTs && (now - lastAutoDisembarkTs) < cooldownMs) return false;
   return true;
 }
+
+/**
+ * Combat weapon priority — swords beat axes (faster swing → higher DPS),
+ * and within each tier higher material wins. Used by reactive's
+ * attackStep + decide() to pick the best weapon in inventory rather
+ * than the first one slot order happens to surface.
+ *
+ * circuit-v11 (2026-05-22): reactive was using
+ * `inventory.items().find(/sword|axe$/)` and grabbing whichever
+ * weapon was in the lowest slot index — Steve had wooden_axe in
+ * his inventory before iron_sword, so the reactive picked
+ * wooden_axe for combat. With armor=0 vs a drowned that gave Steve
+ * ~6 damage per hit; he dropped from hp=20 to hp=3 in seconds.
+ */
+export const WEAPON_PRIORITY = [
+  'netherite_sword', 'diamond_sword', 'iron_sword',
+  'stone_sword', 'golden_sword', 'wooden_sword',
+  'netherite_axe', 'diamond_axe', 'iron_axe',
+  'stone_axe', 'golden_axe', 'wooden_axe',
+];
+
+const WEAPON_PATTERN = /(_sword|_axe)$/;
+
+/**
+ * Return the best weapon in `items` per WEAPON_PRIORITY.
+ * @param {Array<{ name: string }>} items
+ * @returns {object|null}
+ */
+export function pickBestWeapon(items) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  for (const name of WEAPON_PRIORITY) {
+    const it = items.find((i) => i?.name === name);
+    if (it) return it;
+  }
+  // Fallback: any item matching the WEAPON_PATTERN (covers modded
+  // weapons or future variants the priority list misses).
+  return items.find((i) => i?.name && WEAPON_PATTERN.test(i.name)) || null;
+}

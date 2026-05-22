@@ -37,7 +37,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark, isHostileNearBoat } from './reactive-helpers.js';
+import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark, isHostileNearBoat, pickBestWeapon } from './reactive-helpers.js';
 
 const HOSTILE_NAMES = new Set([
   'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'enderman',
@@ -52,7 +52,6 @@ const RANGED_HOSTILE_NAMES = new Set([
   'skeleton', 'stray', 'pillager', 'witch', 'blaze', 'ghast', 'drowned',
 ]);
 
-const WEAPON_PATTERN = /(_sword|_axe)$/;
 const RECENT_DAMAGE_MS = 2000;
 const MELEE_RANGE = 4;
 const GUARD_RANGE = 12;
@@ -139,7 +138,7 @@ export function createReactive(deps) {
 
     const damageEvent = ctx.death.lastDamageEvent;
     const recentlyDamaged = damageEvent && (Date.now() - damageEvent.ts) < RECENT_DAMAGE_MS;
-    const weapon = b.inventory.items().find((i) => WEAPON_PATTERN.test(i.name));
+    const weapon = pickBestWeapon(b.inventory.items());
     const armorCount = [5, 6, 7, 8].filter((s) => b.inventory.slots[s]).length;
 
     // Anchor: where the bot was at the most recent moment Layer 2 was idle.
