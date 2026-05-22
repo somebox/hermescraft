@@ -1293,6 +1293,37 @@ test('mc sail_to: invalid coords → INVALID_COORD', async () => {
   assert.equal(r.error.code, 'INVALID_COORD');
 });
 
+test('mc sail_to: works as a detached function (action registry safety)', async () => {
+  // Regression for the v30 first-launch crash (`0ad538b`). The action
+  // registry extracts methods like this:
+  //
+  //   const actionFn = actionRegistry.get(actionName);  // detached
+  //   await actionFn(body);                              // `this` = undefined
+  //
+  // Pre-fix, F6's wrapper called `this._sailToImpl(args)`, which crashed
+  // immediately when invoked detached. The wrapper now dispatches via a
+  // closure-scoped reference (sailToImplRef) set after the actions
+  // object is constructed.
+  //
+  // This test simulates the registry pattern: extract sail_to, then
+  // call it with `this` removed. If the wrapper regresses to `this`-
+  // based dispatch, the call will throw "Cannot read properties of
+  // undefined (reading '_sailToImpl')" instead of returning a refusal.
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: 0 },
+    inventory: [],  // no boat — sail_to will refuse NO_BOAT
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const detached = water.sail_to;  // pluck the method, no `this` binding
+  // Call with explicit undefined `this` to mirror Function.prototype.call
+  // (the registry's actionFn(args) does this implicitly).
+  const r = await detached.call(undefined, { x: 100, y: 63, z: 0 });
+  assert.ok(r, 'sail_to must return a value, not throw');
+  // Either an envelope refusal or a success — both prove no crash.
+  assert.equal(typeof r, 'object');
+  assert.equal('ok' in r, true);
+});
+
 test('mc sail_to: full happy path — plan + mount + sail + disembark + walk', async () => {
   // 100-block channel. Bot at (0,63,-1) on shore, target at (100,63,-1).
   // Mock the inner primitives via ACTIONS so we don't run the real sail.
