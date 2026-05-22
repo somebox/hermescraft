@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { refuseWaterRouteWithoutBoat } from '../lib/actions/movement.js';
+import { refuseWaterRouteWithoutBoat, createMovementActions } from '../lib/actions/movement.js';
 
 function makeBot({ pos, water = [], inventory = [] }) {
   // water: list of {x,y,z} cells that classify as water source.
@@ -183,4 +183,76 @@ test('refuseWaterRouteWithoutBoat: respects custom thresholds', () => {
   const r = refuseWaterRouteWithoutBoat(bot, 20, 64, 0, { longDistanceThreshold: 10 });
   assert.ok(r && !r.ok);
   assert.equal(r.error.code, 'BOAT_REQUIRED');
+});
+
+// ─── F7 — goto retry-loop detector (task #44) ──────────────────────────
+// After GOTO_RETRY_LIMIT consecutive bg_goto / goto calls to the same
+// floored target fail, the body refuses with NAV_RETRY_LOOP. v31 forensics
+// showed the agent burning 12+ bg_goto retries to an unreachable peninsula
+// tip with no escalation; this gives a definitive "stop" signal.
+
+// Build a movement-actions instance whose preflightNav always returns
+// BOAT_REQUIRED (long route across water, bot has boat). This lets us
+// drive goto's failure recording without instantiating a pathfinder.
+function makeMovementForRetryTest() {
+  // Water across the whole route 0→200 at y=63.
+  const water = [];
+  for (let i = 0; i <= 200; i++) water.push({ x: i, y: 63, z: 0 });
+  const bot = makeBot({ pos: [0, 64, 0], water, inventory: ['oak_boat'] });
+  const ctx = { runtime: { lastMoveFailed: null, recentStuckCells: [] }, world: { bot } };
+  return createMovementActions({
+    ctx,
+    ensureBot: () => bot,
+    goals: { GoalBlock: function () {}, GoalNear: function () {} },
+    fmt: (n) => String(Math.round(Number(n))),
+    posObj: () => ({ ...bot.entity.position }),
+    ACTIONS: {},
+    hasLineOfSight: () => false,
+    eyePosition: () => bot.entity.position,
+  });
+}
+
+test('goto: 4 consecutive failures to same target → NAV_RETRY_LOOP', async () => {
+  const movement = makeMovementForRetryTest();
+  // First 4 calls all refuse with BOAT_REQUIRED (long route + water).
+  for (let i = 1; i <= 4; i++) {
+    const r = await movement.goto({ x: 200, y: 64, z: 0 });
+    assert.equal(r.ok, false, `call ${i}: expected refusal, got ${JSON.stringify(r).slice(0, 80)}`);
+    assert.equal(r.error.code, 'BOAT_REQUIRED', `call ${i}: expected BOAT_REQUIRED, got ${r.error.code}`);
+  }
+  // 5th call hits the retry-loop check at the top — refuses BEFORE
+  // running preflightNav.
+  const r5 = await movement.goto({ x: 200, y: 64, z: 0 });
+  assert.equal(r5.ok, false);
+  assert.equal(r5.error.code, 'NAV_RETRY_LOOP');
+  assert.equal(r5.error.observed_state.retry_count, 4);
+  assert.equal(r5.error.observed_state.last_reason, 'BOAT_REQUIRED');
+  assert.match(r5.error.next_action_hint, /mc advise/);
+});
+
+test('goto: retry counter is per-target', async () => {
+  // Failing at coord A should not gate a fresh call to coord B.
+  const movement = makeMovementForRetryTest();
+  // Burn target A's budget.
+  for (let i = 0; i < 5; i++) {
+    await movement.goto({ x: 200, y: 64, z: 0 });
+  }
+  // Target B (different floored coords) — must still go through preflight,
+  // not the loop refusal.
+  const r = await movement.goto({ x: 150, y: 64, z: 0 });
+  assert.notEqual(r.error?.code, 'NAV_RETRY_LOOP',
+    `target B should not inherit target A's retry count; got ${r.error?.code}`);
+});
+
+test('goto: detached-function regression (action registry dispatch)', async () => {
+  // Lesson from 970d33b: action registry invokes methods as detached
+  // functions (this === undefined). The wrapper / retry logic must not
+  // depend on `this`. Pluck the method and call it with `this` removed.
+  const movement = makeMovementForRetryTest();
+  const detached = movement.goto;
+  // Should not throw — even if the result is a refusal, we must get an
+  // envelope back, not a TypeError about reading properties of undefined.
+  const r = await detached.call(undefined, { x: 200, y: 64, z: 0 });
+  assert.ok(r && typeof r === 'object', 'goto must return an envelope, not throw');
+  assert.equal('ok' in r || 'error' in r, true);
 });

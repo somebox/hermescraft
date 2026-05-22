@@ -124,6 +124,21 @@ export function refuseWaterRouteWithoutBoat(b, x, y, z, {
 const Y_GRACE_MAX_DY = 5;
 
 export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTIONS, hasLineOfSight, eyePosition }) {
+  // task #44 (F7, v31): per-target retry tracking for goto. Closure-scoped
+  // Map<"verb@x,y,z", { count, lastReason }> that mirrors F6's
+  // sailToRetryCounts. After GOTO_RETRY_LIMIT failures to the same floored
+  // target, goto refuses with NAV_RETRY_LOOP. v31 forensics: the agent
+  // alternated mc bg_goto ↔ mc sail_to on an unreachable peninsula tip
+  // and burned ~12 calls (BOAT_REQUIRED → mc sail_to refusal →
+  // BOAT_REQUIRED → ...) with no escalation signal. This break the loop
+  // by giving the agent a definitive "this target isn't working" signal
+  // after 4 attempts.
+  /** @type {Map<string, { count: number, lastReason: string|null }>} */
+  const gotoRetryCounts = new Map();
+  const GOTO_RETRY_LIMIT = 4;
+  const gotoRetryKey = (verb, x, y, z) =>
+    `${verb}@${Math.floor(Number(x))},${Math.floor(Number(y))},${Math.floor(Number(z))}`;
+
   // F51.2: mark a movement failure so the position-dependent verb guard
   // can short-circuit dependent commands until the bot acknowledges.
   const recordMoveFailure = (verb, x, y, z, actualPos, reason) => {
@@ -135,6 +150,20 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       reason,
       verb,
     };
+    // task #44 (F7): also increment per-target retry count. NAV_RETRY_LOOP
+    // is the loop-detector return code itself — don't count it (would
+    // re-trigger immediately on the next call).
+    if (reason && reason !== 'NAV_RETRY_LOOP') {
+      const k = gotoRetryKey(verb, x, y, z);
+      const prior = gotoRetryCounts.get(k) || { count: 0, lastReason: null };
+      gotoRetryCounts.set(k, { count: prior.count + 1, lastReason: reason });
+    }
+  };
+  // task #44 (F7): clear the per-target retry count for a specific
+  // target. Called from goto's success paths so a one-off failure
+  // followed by a success doesn't poison the next attempt.
+  const clearGotoRetry = (verb, x, y, z) => {
+    gotoRetryCounts.delete(gotoRetryKey(verb, x, y, z));
   };
   // Clear the failure flag — called on successful moves.
   // F57.2: on success, also expire any stuck-cell entries near the bot's
@@ -502,6 +531,29 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
   return {
     async goto({ x, y, z }) {
       const b = ensureBot();
+      // task #44 (F7): retry-loop guard. If the same target has failed
+      // GOTO_RETRY_LIMIT times in a row, return NAV_RETRY_LOOP with
+      // mc advise hint instead of attempting another call that will
+      // almost certainly fail the same way. Resets on success or when
+      // the agent picks a different target.
+      const retryKey = gotoRetryKey('goto', x, y, z);
+      const priorRetry = gotoRetryCounts.get(retryKey);
+      if (priorRetry && priorRetry.count >= GOTO_RETRY_LIMIT) {
+        return {
+          ok: false,
+          error: {
+            code: 'NAV_RETRY_LOOP',
+            message: `${priorRetry.count} consecutive mc bg_goto / mc goto calls to (${Math.floor(Number(x))}, ${Math.floor(Number(y))}, ${Math.floor(Number(z))}) have failed (last reason: ${priorRetry.lastReason}). Pick a different target — try an adjacent waypoint, mc advise, or look around with mc scene to reassess. Retrying the same coord will not work.`,
+            observed_state: {
+              retry_count: priorRetry.count,
+              last_reason: priorRetry.lastReason,
+              target: { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) },
+            },
+            next_action_hint: 'mc advise --reason="bg_goto stuck retrying"',
+            retry_safe: false,
+          },
+        };
+      }
       // F50.2: bot-trapped + target-unstandable pre-flight.
       const pre = preflightNav(b, x, y, z, 1);
       if (pre && (pre.error || pre.ok === false)) {
@@ -569,6 +621,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
           return navBlockedError(b, pos, x, y, z, dist);
         }
         clearMoveFailure();
+        clearGotoRetry('goto', x, y, z); // F7: success — reset retry count
         if (yAdjusted) {
           return {
             result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`,
