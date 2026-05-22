@@ -802,7 +802,7 @@ export function createWaterActions(deps) {
      * boat is within 2 blocks of the target on the horizontal plane.
      * Action contract: NOT_MOUNTED, NOT_A_BOAT, TIMEOUT, OUT_OF_RANGE.
      */
-    async sail({ x, y, z, timeout_seconds }) {
+    async sail({ x, y, z, timeout_seconds, allow_shore_early_exit }) {
       const b = ensureBot();
       const target = new Vec3(Number(x), Number(y), Number(z));
 
@@ -1077,7 +1077,16 @@ export function createWaterActions(deps) {
           // looping. This only fires when sail has been making forward
           // progress (no stall ticks); a wedged boat goes through the
           // detour path below.
-          if (horiz < 16 && stallTicks === 0 && detourTicksLeft === 0) {
+          //
+          // circuit-v25: sail_to threads BFS waypoints through sail() —
+          // for middle legs (8b apart), SHORE_REACHED would misfire on
+          // the very first tick because horiz starts in (2, 16) and the
+          // route runs near a coast. Callers in waypoint mode pass
+          // allow_shore_early_exit=false to gate this short-circuit;
+          // the final leg uses the default (true) so the existing
+          // "boat reached the destination shore" behavior still works.
+          const allowShoreExit = allow_shore_early_exit !== false;
+          if (allowShoreExit && horiz < 16 && stallTicks === 0 && detourTicksLeft === 0) {
             let shoreCell = null;
             scanShore: for (let dx2 = -8; dx2 <= 8; dx2++) {
               for (let dz2 = -8; dz2 <= 8; dz2++) {
@@ -1476,24 +1485,63 @@ export function createWaterActions(deps) {
 
       const route = routeRes.data;
 
+      // Sail one leg per BFS waypoint. waypoints[0] is the entry_water
+      // (already there post-mount, or current position when resuming);
+      // skip it and step through waypoints[1..N]. Each call to sail()
+      // has only ~8 blocks to cover, so it can't drift wide and ram
+      // obstacles BFS deliberately routed around. Middle legs pass
+      // allow_shore_early_exit=false so SHORE_REACHED doesn't trip on
+      // a coast-adjacent waypoint mid-route; only the last leg uses
+      // the default behavior (so reaching the destination shore still
+      // surfaces shore_reached for the disembark phase).
+      const sailLegs = async (legs) => {
+        const detoursTaken = [];
+        for (let i = 0; i < legs.length; i++) {
+          const wp = legs[i];
+          const isLast = (i === legs.length - 1);
+          const legRes = await ACTIONS.sail({
+            x: wp.x, y: wp.y, z: wp.z,
+            allow_shore_early_exit: isLast,
+          });
+          if (!legRes.ok) {
+            return {
+              ok: false,
+              leg_index: i,
+              waypoint: wp,
+              inner_error: legRes.error,
+            };
+          }
+          if (legRes.data?.detours) detoursTaken.push(...legRes.data.detours);
+          // Last leg might surface shore_reached — that's expected;
+          // the orchestrator's disembark phase handles it.
+          if (legRes.data?.shore_reached && isLast) {
+            return { ok: true, shore_reached: legRes.data.shore_reached, detoursTaken };
+          }
+        }
+        return { ok: true, detoursTaken };
+      };
+
+      // Drop entry_water (already there) — waypoints array starts with
+      // it. Tolerate single-waypoint routes (short journeys) by always
+      // including at least exit_water.
+      const legs = route.waypoints.length > 1
+        ? route.waypoints.slice(1)
+        : [route.exit_water];
+
       // ── Phase: mounted_in_water → skip to sail ──────────────────────
       // If already mounted, skip walk_to_entry + mount and go straight
-      // to sail from current position toward exit_water.
+      // to sail from current position along the waypoint chain.
       if (currentlyMounted) {
         phases.push('sail');
         try {
-          const sailRes = await ACTIONS.sail({
-            x: route.exit_water.x,
-            y: route.exit_water.y,
-            z: route.exit_water.z,
-          });
-          if (!sailRes.ok) {
+          const legsRes = await sailLegs(legs);
+          if (!legsRes.ok) {
             return {
               ok: false,
               error: {
                 code: 'SAIL_FAILED',
-                message: `Resume-sail to (${route.exit_water.x}, ${route.exit_water.y}, ${route.exit_water.z}) failed: ${sailRes.error?.message || 'unknown'}. Call mc sail_to ${target.x} ${target.y} ${target.z} again to re-plan from here.`,
-                observed_state: { sail_error: sailRes.error, route },
+                message: `Resume-sail failed on leg ${legsRes.leg_index + 1}/${legs.length} (waypoint ${legsRes.waypoint.x},${legsRes.waypoint.y},${legsRes.waypoint.z}): ${legsRes.inner_error?.message || 'unknown'}. Call mc sail_to ${target.x} ${target.y} ${target.z} again to re-plan from here.`,
+                observed_state: { sail_error: legsRes.inner_error, leg_index: legsRes.leg_index, waypoint: legsRes.waypoint, route },
                 next_action_hint: `mc sail_to ${target.x} ${target.y} ${target.z}`,
                 retry_safe: true,
               },
@@ -1574,18 +1622,14 @@ export function createWaterActions(deps) {
         // ── Phase: sail ──────────────────────────────────────────────
         phases.push('sail');
         try {
-          const sailRes = await ACTIONS.sail({
-            x: route.exit_water.x,
-            y: route.exit_water.y,
-            z: route.exit_water.z,
-          });
-          if (!sailRes.ok) {
+          const legsRes = await sailLegs(legs);
+          if (!legsRes.ok) {
             return {
               ok: false,
               error: {
                 code: 'SAIL_FAILED',
-                message: `Sail to (${route.exit_water.x}, ${route.exit_water.y}, ${route.exit_water.z}) failed: ${sailRes.error?.message || 'unknown'}. Call mc sail_to ${target.x} ${target.y} ${target.z} again to re-plan from here.`,
-                observed_state: { sail_error: sailRes.error, route },
+                message: `Sail failed on leg ${legsRes.leg_index + 1}/${legs.length} (waypoint ${legsRes.waypoint.x},${legsRes.waypoint.y},${legsRes.waypoint.z}): ${legsRes.inner_error?.message || 'unknown'}. Call mc sail_to ${target.x} ${target.y} ${target.z} again to re-plan from here.`,
+                observed_state: { sail_error: legsRes.inner_error, leg_index: legsRes.leg_index, waypoint: legsRes.waypoint, route },
                 next_action_hint: `mc sail_to ${target.x} ${target.y} ${target.z}`,
                 retry_safe: true,
               },

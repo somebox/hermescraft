@@ -1317,8 +1317,14 @@ test('mc sail_to: full happy path — plan + mount + sail + disembark + walk', a
   assert.ok(r.data.phases_executed.includes('mount'), 'mount ran');
   assert.ok(r.data.phases_executed.includes('sail'), 'sail ran');
   assert.ok(r.data.phases_executed.includes('disembark'), 'disembark ran');
-  // ACTIONS were invoked in the right order.
-  assert.deepEqual(invoked, ['place_boat', 'board', 'sail', 'disembark']);
+  // ACTIONS were invoked in the right order. sail is called once per
+  // BFS waypoint (every 8 blocks), so collapse repeats for the order
+  // assertion.
+  const distinctOrder = invoked.filter((v, i) => v !== invoked[i - 1]);
+  assert.deepEqual(distinctOrder, ['place_boat', 'board', 'sail', 'disembark']);
+  // Multi-leg sail: 100b channel / 8b waypoints ≈ 13 sail calls.
+  const sailCalls = invoked.filter((v) => v === 'sail').length;
+  assert.ok(sailCalls >= 6, `expected sail called multiple times for a 100b channel, got ${sailCalls}`);
   // Route metadata present.
   assert.ok(r.data.route.horizontal_distance > 80);
 });
