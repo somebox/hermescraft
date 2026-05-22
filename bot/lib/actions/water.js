@@ -651,7 +651,11 @@ export function createWaterActions(deps) {
         // place_boat-reported entity id if available.
         const placedBoatId = placeRes.data?.boat_entity_id;
         let foundBoat = null;
-        for (let attempt = 0; attempt < 10; attempt++) {
+        // circuit-v18: extend to 5s (25 × 200ms) — 2s wasn't enough when
+        // mineflayer's chunk data lagged the boat's spawn packet. At
+        // iteration 10 (1s mark), nudge a chunk refresh via a 0.1-block
+        // RCON TP of the bot, which often forces mineflayer to resync.
+        for (let attempt = 0; attempt < 25; attempt++) {
           await sleep(200);
           // First preference: the entity ID place_boat told us about.
           if (placedBoatId && b.entities[placedBoatId] && isBoatEntity(b.entities[placedBoatId])) {
@@ -665,13 +669,25 @@ export function createWaterActions(deps) {
             foundBoat = scan[0].ent;
             break;
           }
+          // Mid-retry chunk-refresh kick: at 1s and 2.5s marks, RCON-tp
+          // the bot 0.1y to force a position+chunk packet stream. Often
+          // the missing spawn packet rides along with the resync.
+          if ((attempt === 4 || attempt === 11) && paperMcpConfig()) {
+            const pmcp = paperMcpConfig();
+            const px = b.entity.position.x;
+            const py = b.entity.position.y;
+            const pz = b.entity.position.z;
+            try {
+              await executeServerCommand(pmcp, `tp ${getMyName?.() || 'Steve'} ${px} ${py + 0.05} ${pz}`).catch(() => null);
+            } catch {}
+          }
         }
         if (!foundBoat) {
           return { ok: false, error: {
             code: 'AUTO_PLACE_FAILED',
-            message: 'place_boat succeeded but no boat entity appeared within 6 blocks of the bot after 2s.',
+            message: 'place_boat succeeded but no boat entity appeared within 6 blocks of the bot after 5s (even after 2 chunk-refresh nudges).',
             observed_state: { place_data: placeRes.data, placed_boat_id: placedBoatId },
-            next_action_hint: 'mc nearby # check what boats exist; mc board # retry',
+            next_action_hint: 'mc nearby # check what boats exist; mc move 1 block; mc board # retry',
             retry_safe: true,
           }};
         }
