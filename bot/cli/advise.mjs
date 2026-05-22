@@ -9,18 +9,36 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const CLI_SCRIPT = path.join(REPO_ROOT, 'scripts', 'mc-advise-cli.py');
 
 /**
+ * Pure helper: build the Python subprocess argv. Exported for unit
+ * testing — the I/O-bound spawn path is too fiddly to test directly.
+ *
  * @param {{ reason: string, apiBase: string, dryRun?: boolean, model?: string, kind?: string, target?: {x:number,y:number,z:number} }} opts
- * @returns {Promise<Record<string, unknown>>}
+ * @returns {string[]} argv (first element is the script path)
  */
-export function runAdviseCli(opts) {
+export function buildAdviseArgs(opts) {
   const { reason, apiBase, dryRun, model, kind, target } = opts;
   const args = [CLI_SCRIPT, '--reason', reason, '--api-url', apiBase];
   if (dryRun) args.push('--dry-run');
   if (model) args.push('--model', model);
   if (kind) args.push('--kind', kind);
   if (target && Number.isFinite(target.x) && Number.isFinite(target.y) && Number.isFinite(target.z)) {
-    args.push('--target', `${target.x},${target.y},${target.z}`);
+    // F17 (task #55): use `--target=...` (single arg) instead of
+    // `--target` + separate value. When the value starts with `-`
+    // (negative coords like -300,63,-100), Python's argparse can
+    // misread the value as another flag and bail with "expected
+    // one argument." The `=` form is unambiguous in argparse.
+    args.push(`--target=${target.x},${target.y},${target.z}`);
   }
+  return args;
+}
+
+/**
+ * @param {{ reason: string, apiBase: string, dryRun?: boolean, model?: string, kind?: string, target?: {x:number,y:number,z:number} }} opts
+ * @returns {Promise<Record<string, unknown>>}
+ */
+export function runAdviseCli(opts) {
+  const { kind } = opts;
+  const args = buildAdviseArgs(opts);
 
   return new Promise((resolve, reject) => {
     const py = process.env.MC_ADVISE_PYTHON || 'python3';
