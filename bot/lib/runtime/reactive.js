@@ -330,8 +330,14 @@ export function createReactive(deps) {
       return { action: 'flee_step', threat: state.closest_creeper, why: 'creeper_close' };
     }
 
-    // Always-on safety: very low HP + active damage → bounded flee.
-    if (state.hp <= LOW_HP_FLEE && state.recently_damaged && state.closest_hostile) {
+    // Always-on safety: very low HP + a hostile in range → bounded flee.
+    // circuit-v11 (2026-05-22): the recently_damaged gate dropped this
+    // arm when the most recent damage was environmental (drowning, fall,
+    // etc.) — the bot then fell through to advance_step at hp=3 against
+    // an approaching drowned. With hp <= LOW_HP_FLEE, fleeing is always
+    // the safer call regardless of damage source. Keep the closest_hostile
+    // guard so we don't flee from nothing.
+    if (state.hp <= LOW_HP_FLEE && state.closest_hostile) {
       return { action: 'flee_step', threat: state.closest_hostile, why: 'critical_hp' };
     }
 
