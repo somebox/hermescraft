@@ -11,7 +11,7 @@ const { goals } = pathfinderPkg;
 /**
  * Crafting actions — first module migrated to the action contract + services
  * container. Every handler returns ok()/fail() per
- * docs/phase-2/action-contracts.md. Optional `reason` parameter is surfaced
+ * docs/design/phase-2/action-contracts.md. Optional `reason` parameter is surfaced
  * in `data._reason` for the audit trail wired in Phase 7.
  */
 export function createCraftingActions(services) {
@@ -66,7 +66,7 @@ export function createCraftingActions(services) {
 
   const handlers = {
     async craft({ item, count = 1, reason }) {
-      // ─ Phase-2 action contract (docs/phase-2/action-contracts.md mc craft) ─
+      // ─ Phase-2 action contract (docs/design/phase-2/action-contracts.md mc craft) ─
       // ok=true requires crafted_count >= 1; verified via inventory delta.
 
       const b = ensureBot();
@@ -100,11 +100,15 @@ export function createCraftingActions(services) {
       }
 
       // Search for crafting table: nearby, then wider scan, then marks.
+      // Task #27: bumped wider scan 32→64 so a table just past the old cap
+      // gets found instead of triggering a fresh craft_table placement. The
+      // base accumulated 4+ redundant tables in v6/v7 because the agent's
+      // perception said "no table" when one was 35 blocks away.
       const tableId = ctx.world.mcData.blocksByName.crafting_table?.id;
       let table = b.findBlock({ matching: tableId, maxDistance: 4 });
       let nearestTableSeen = null;
       if (!table) {
-        const wide = b.findBlock({ matching: tableId, maxDistance: 32 });
+        const wide = b.findBlock({ matching: tableId, maxDistance: 64 });
         if (wide) {
           nearestTableSeen = { x: wide.position.x, y: wide.position.y, z: wide.position.z };
           try {
