@@ -1253,6 +1253,50 @@ test('mc sail_to: no boat in inventory → NO_BOAT', async () => {
   assert.match(r.error.next_action_hint, /craft/);
 });
 
+test('mc sail_to: POND_DISCONNECTED surfaces nearest non-pond water as candidate', async () => {
+  // F13 (task #50, v36): pre-fix the pond refusal said
+  // "mc bg_goto <coast coords>" with no actual coord. Now the body
+  // does a wider findBlocks scan (excluding the pond's own cells) and
+  // suggests a concrete bg_goto target.
+  const blocks = {};
+  // Tiny 3×3 pond at (0..2, 62, 0..2) — only 9 navigable cells.
+  for (let x = 0; x < 3; x++) for (let z = 0; z < 3; z++) {
+    blocks[`${x},62,${z}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${x},63,${z}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${x},64,${z}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${x},61,${z}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+  }
+  // Shore at (-1, 63, 0) — bot stands here.
+  blocks['-1,61,0'] = { name: 'stone', boundingBox: 'block' };
+  blocks['-1,62,0'] = { name: 'air', boundingBox: 'empty' };
+  blocks['-1,63,0'] = { name: 'air', boundingBox: 'empty' };
+  blocks['-1,64,0'] = { name: 'air', boundingBox: 'empty' };
+  // Real surface water 50b away (separate body, not connected to pond).
+  for (let dx = 48; dx <= 55; dx++) for (let dz = -2; dz <= 2; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: -1, y: 63, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 200, y: 63, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_NAVIGABLE_ROUTE');
+  assert.equal(r.error.observed_state.water_route_error, 'POND_DISCONNECTED');
+  // The new behaviour: nearest_water_candidate must be the external
+  // water body, NOT a cell inside the pond.
+  const cand = r.error.observed_state.nearest_water_candidate;
+  assert.ok(cand, `expected nearest_water_candidate; got ${JSON.stringify(r.error.observed_state)}`);
+  assert.ok(cand.x >= 48 && cand.x <= 55,
+    `expected candidate in external water body (x∈48..55), got x=${cand.x}`);
+  // The hint must now include a concrete coord, not the vague placeholder.
+  assert.match(r.error.next_action_hint, /mc bg_goto \d+ \d+ -?\d+/);
+  assert.doesNotMatch(r.error.next_action_hint, /<coast coords>/);
+});
+
 test('mc sail_to: tiny pond → NO_NAVIGABLE_ROUTE with POND_DISCONNECTED', async () => {
   const blocks = {};
   // 5×5 pond at y=62.

@@ -359,16 +359,58 @@ export function planWaterRoute(b, start, target, opts = {}) {
 
   // If the BFS terminated with very few cells, it's a tiny pond.
   if (explored.length < POND_CELL_THRESHOLD && nearestToTarget.dist > exitRadius) {
+    // F13 (task #50, v36): find the nearest surface water cell that
+    // is NOT part of this pond, so the agent has a concrete bg_goto
+    // coord. Pre-fix the hint was "mc bg_goto <coast coords>" with no
+    // actual coord, leaving the agent stuck. Reuse the same surface-
+    // water filter as F10/F12 plus the visited-set exclusion.
+    const visitedKeys = visited;  // bound from earlier in this function
+    let nearestExternalWater = null;
+    try {
+      if (typeof b.findBlocks === 'function') {
+        const hits = b.findBlocks({
+          matching: (blk) => blk && (blk.name === 'water' || blk.name === 'flowing_water'),
+          maxDistance: 96,
+          count: 64,
+        });
+        if (hits && hits.length > 0) {
+          const candidates = hits.map((w) => {
+            const wx = typeof w.x === 'number' ? w.x : Math.floor(w.x);
+            const wy = typeof w.y === 'number' ? w.y : Math.floor(w.y);
+            const wz = typeof w.z === 'number' ? w.z : Math.floor(w.z);
+            const above = b.blockAt(new Vec3(wx, wy + 1, wz));
+            const isSurface = !!(above && AIR_NAMES.has(above.name));
+            const inThisPond = visitedKeys.has(key(wx, wy, wz));
+            const dxz = Math.hypot(wx - startFx, wz - startFz);
+            const dy = Math.abs(wy - startFy);
+            return { x: wx, y: wy, z: wz, dxz, dy, isSurface, inThisPond };
+          }).filter((c) => c.isSurface && !c.inThisPond);
+          if (candidates.length > 0) {
+            candidates.sort((a, b2) => (a.dxz - b2.dxz) || (a.dy - b2.dy));
+            const best = candidates[0];
+            nearestExternalWater = {
+              x: best.x,
+              y: best.y,
+              z: best.z,
+              distance: Math.round(best.dxz),
+            };
+          }
+        }
+      }
+    } catch {
+      // findBlocks unavailable or threw — keep null
+    }
     return {
       ok: false,
       error: {
         code: 'POND_DISCONNECTED',
-        message: `Water near start is a tiny pond (${explored.length} cells reachable). Walk to a real shore first with mc bg_goto.`,
+        message: `Water near start is a tiny pond (${explored.length} cells reachable). Walk to a real shore first with mc bg_goto.${nearestExternalWater ? ` Nearest surface water outside this pond is ~${nearestExternalWater.distance}b away at (${nearestExternalWater.x}, ${nearestExternalWater.y}, ${nearestExternalWater.z}).` : ''}`,
         observed_state: {
           entry_water: entryWater,
           cells_in_pond: explored.length,
           nearest_water_to_target: nearestToTarget.cell,
           distance_short_by: Math.round(nearestToTarget.dist),
+          ...(nearestExternalWater ? { nearest_water_candidate: nearestExternalWater } : {}),
         },
       },
     };
