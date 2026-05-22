@@ -638,6 +638,72 @@ test('mc sail TP-fallback: aborts with BOAT_STUCK when next step is a solid bloc
   }
 });
 
+test('mc sail: falls through to packet_vehicle_move when moveVehicle alone doesn\'t propel', async () => {
+  // circuit-v10 observation: on Paper 1.21+, bot.moveVehicle (player_input
+  // only) does not propel the boat — mineflayer never sends vehicle_move
+  // (the client-authoritative boat position packet). Sail's new fallback
+  // chain: (1) native moveVehicle, (2) vehicle_move + moveVehicle combo,
+  // (3) RCON tp-step. This locks in path (2): when the boat starts moving
+  // ONLY after vehicle_move packets are sent, the success envelope must
+  // surface fallback: 'packet_vehicle_move'.
+  const writeCalls = [];
+  // Boat position starts at (0,63,0). It only moves once the test detects
+  // vehicle_move packets being written — simulating Paper accepting the
+  // client-authoritative position.
+  let boatMoved = false;
+  const boat = {
+    id: 21,
+    name: 'oak_boat',
+    type: 'oak_boat',
+    position: new Vec3(0, 63, 0),
+  };
+  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
+  const bot = {
+    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
+    inventory: { items: () => [] },
+    entities: { 21: boat },
+    vehicle: boat,
+    blockAt: () => ({ name: 'water', boundingBox: 'empty', getProperties: () => ({ level: 0 }) }),
+    setControlState() {},
+    moveVehicle() {},        // no-op: native player_input alone does NOT propel
+    _client: {
+      write(name, data) {
+        writeCalls.push({ name, data });
+        if (name === 'vehicle_move') {
+          // Simulate Paper accepting client-authoritative position — move
+          // the boat to wherever the client says.
+          boat.position.x = data.x;
+          boat.position.z = data.z;
+          boatMoved = true;
+        }
+      },
+    },
+    look: async () => {},
+    lookAt: async () => {},
+  };
+  const water = createWaterActions({
+    ctx: createMockServices().state,
+    ensureBot: () => bot,
+    sleep: () => Promise.resolve(),
+    log: () => {},
+    getMyName: () => 'TestSteve',
+    ACTIONS: {},
+    goals: { GoalNear: function () {}, GoalBlock: function () {} },
+  });
+  const r = await water.sail({ x: 10, y: 63, z: 0, timeout_seconds: 4 });
+  // The vehicle_move probe must have fired — we see at least one
+  // vehicle_move packet in writeCalls.
+  const vmCalls = writeCalls.filter((c) => c.name === 'vehicle_move');
+  assert.ok(vmCalls.length >= 1,
+    `expected at least 1 vehicle_move packet write; got ${vmCalls.length}. writeCalls=${JSON.stringify(writeCalls.slice(0, 3))}`);
+  // The first vehicle_move should carry a position toward the target.
+  assert.ok(vmCalls[0].data.x > 0, `first vehicle_move x should be > 0 (toward x=10); got ${vmCalls[0].data.x}`);
+  // And the boat should have moved (the mock advances boat.x in response
+  // to vehicle_move).
+  assert.ok(boatMoved, 'boat should have moved once vehicle_move packets started flowing');
+});
+
 test('mc sail: pumps moveVehicle every ~250ms while native steering is active', async () => {
   // Each moveVehicle call writes ONE packet. Vanilla MC re-sends every
   // tick (50ms); we run at ~250ms to keep the server from idling the

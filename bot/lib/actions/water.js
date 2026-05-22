@@ -760,41 +760,86 @@ export function createWaterActions(deps) {
       const username = getMyName?.();
       const useTpFallback = !!(pmcp && username);
 
-      // First, try native steering for 1.5s. If the boat moves at all,
-      // keep going with native; otherwise switch to tp-step mode.
+      // Steering preference order (decided per-sail by probe):
+      //   1. native moveVehicle (player_input only) — works if Paper
+      //      drives the boat from server-side input. circuit-v7+
+      //      confirmed it does NOT on Paper 1.21+.
+      //   2. packet steering: moveVehicle + vehicle_move combo. This
+      //      mirrors what the vanilla client does — player_input for
+      //      the "W key held" signal AND vehicle_move for the
+      //      client-authoritative boat position. The server accepts
+      //      the position from the rider since the rider owns the
+      //      vehicle for the duration of the mount.
+      //   3. RCON tp-step: PaperMCP fallback for when neither packet
+      //      path propels (e.g. unmounted-state desync). Slower
+      //      (~3.75 b/s vs 8 b/s native) and visibly jumpy.
       //
       // CRITICAL: vehicle steering uses bot.moveVehicle(left, forward),
       // NOT bot.setControlState('forward', true). setControlState sends
       // a walking-input packet that the server silently ignores while
-      // the bot is mounted. moveVehicle sends the right packet shape
-      // (player_input on 1.21.3+, steer_vehicle on older). Each call
-      // writes one packet; we have to pump every ~250ms to keep the
-      // boat propelled (vanilla client re-sends every tick = 50ms).
+      // the bot is mounted.
       const safeMoveVehicle = (l, f) => {
         try { if (typeof b.moveVehicle === 'function') b.moveVehicle(l, f); } catch {}
       };
+      // Packet-steering helper: send a vehicle_move packet with the
+      // boat's new (x,y,z,yaw) per the 1.21.4 protocol
+      // (packet_vehicle_move: x:f64, y:f64, z:f64, yaw:f32, pitch:f32 in degrees).
+      // Wraps in a try so any protocol/serializer hiccup is non-fatal —
+      // the stall detector + RCON fallback catch genuine failures.
+      const safeVehicleMove = (nx, ny, nz, yawRad) => {
+        try {
+          if (b._client && typeof b._client.write === 'function') {
+            b._client.write('vehicle_move', {
+              x: nx, y: ny, z: nz,
+              yaw: yawRad * 180 / Math.PI,
+              pitch: 0,
+            });
+          }
+        } catch {}
+      };
+      // Vanilla boat top speed ~8 b/s. 50ms tick → 0.4b per packet.
+      const TICK_MS = 50;
+      const STEP_PER_TICK = 0.4;
+
       let nativeWorks = false;
+      let packetWorks = false;
       try {
         const yaw0 = Math.atan2(target.x - startPos.x === 0 ? 0 : -(target.x - startPos.x), target.z - startPos.z);
         try { await b.look(yaw0, 0, true); } catch {}
-        // Pump moveVehicle at ~50ms (vanilla MC tick rate). Vehicle
-        // physics on the server expects continuous input: a single
-        // player_input packet is treated as "input pressed THIS tick"
-        // and the boat decays the next tick if no follow-up arrives.
-        // Pumping every 250ms only gave 1 frame of input per 5 frames
-        // of physics, so the boat never accelerated. Live-confirmed in
-        // the v6b probe + 4.37.1 re-probe: native probe always reported
-        // <0.4b motion at the slower rate.
-        const probeEnd = Date.now() + 1500;
-        while (Date.now() < probeEnd) {
+        // Phase 1 probe (700ms): native moveVehicle (player_input only).
+        const probe1End = Date.now() + 700;
+        while (Date.now() < probe1End) {
           safeMoveVehicle(0, 1);
-          await sleep(50);
+          await sleep(TICK_MS);
         }
-        const liveAfter = b.entities[b.vehicle?.id];
-        if (liveAfter && startPos.distanceTo(liveAfter.position) > 0.4) {
+        const liveAfter1 = b.entities[b.vehicle?.id];
+        if (liveAfter1 && startPos.distanceTo(liveAfter1.position) > 0.4) {
           nativeWorks = true;
         }
-        if (!nativeWorks) safeMoveVehicle(0, 0);
+        // Phase 2 probe (700ms): vehicle_move + player_input combo.
+        // Only runs if phase 1 didn't propel — circuit-v7+ confirmed
+        // Paper 1.21+ needs the client-authoritative position packet.
+        if (!nativeWorks) {
+          const probe2Start = (b.entities[b.vehicle?.id]?.position || boat.position).clone();
+          const probe2End = Date.now() + 700;
+          while (Date.now() < probe2End) {
+            const live = b.entities[b.vehicle?.id]?.position || probe2Start;
+            const dx = target.x - live.x;
+            const dz = target.z - live.z;
+            const dnorm = Math.hypot(dx, dz) || 1;
+            const nx = live.x + (dx / dnorm) * STEP_PER_TICK;
+            const nz = live.z + (dz / dnorm) * STEP_PER_TICK;
+            safeVehicleMove(nx, live.y, nz, yaw0);
+            safeMoveVehicle(0, 1);
+            await sleep(TICK_MS);
+          }
+          const liveAfter2 = b.entities[b.vehicle?.id];
+          if (liveAfter2 && probe2Start.distanceTo(liveAfter2.position) > 0.4) {
+            packetWorks = true;
+            log(`[sail] packet steering (vehicle_move) propels — using packet path`);
+          }
+        }
+        if (!nativeWorks && !packetWorks) safeMoveVehicle(0, 0);
       } catch {}
 
       let lastDistance = (b.entities[b.vehicle?.id]?.position || boat.position).distanceTo(target);
@@ -888,7 +933,7 @@ export function createWaterActions(deps) {
                 to: [Math.floor(here.x), Math.floor(here.y), Math.floor(here.z)],
                 target: [Number(x), Number(y), Number(z)],
                 horizontal_distance_remaining: Number(horiz.toFixed(2)),
-                ...(nativeWorks ? {} : { fallback: 'papermcp_tp_step' }),
+                ...(nativeWorks ? {} : { fallback: packetWorks ? 'packet_vehicle_move' : 'papermcp_tp_step' }),
                 ...(detoursTaken.length ? { detours: detoursTaken } : {}),
               },
             };
@@ -937,7 +982,7 @@ export function createWaterActions(deps) {
                   target: [Number(x), Number(y), Number(z)],
                   horizontal_distance_remaining: Number(horiz.toFixed(2)),
                   shore_reached: shoreCell,
-                  ...(nativeWorks ? {} : { fallback: 'papermcp_tp_step' }),
+                  ...(nativeWorks ? {} : { fallback: packetWorks ? 'packet_vehicle_move' : 'papermcp_tp_step' }),
                   ...(detoursTaken.length ? { detours: detoursTaken } : {}),
                 },
                 result: `Reached shore — dry land at (${shoreCell.x},${shoreCell.y},${shoreCell.z}), ${shoreCell.distance}b from boat. Target ${Math.floor(horiz)}b further but you're at the shore — call mc disembark.`,
@@ -960,6 +1005,35 @@ export function createWaterActions(deps) {
             for (let pump = 0; pump < 5; pump++) {
               safeMoveVehicle(0, 1);
               await sleep(50);
+            }
+          } else if (packetWorks) {
+            // Packet steering: vehicle_move + player_input combo. Each
+            // tick we send the boat's intended next position and the
+            // "W held" flag. Mirrors vanilla client behavior; the server
+            // validates and broadcasts.
+            const yaw = Math.atan2(-steerDx, steerDz);
+            try { await b.look(yaw, 0, true); } catch {}
+            for (let pump = 0; pump < 5; pump++) {
+              const live = b.entities[b.vehicle?.id]?.position || here;
+              const nx = live.x + (steerDx / steerNorm) * STEP_PER_TICK;
+              const nz = live.z + (steerDz / steerNorm) * STEP_PER_TICK;
+              // Collision-check the next cell. Same logic as the RCON
+              // tp-step: refuse to shove the boat into a solid block.
+              try {
+                const probe = b.blockAt(new Vec3(Math.floor(nx), Math.floor(live.y), Math.floor(nz)));
+                const collides = probe
+                  && probe.name !== 'air' && probe.name !== 'cave_air' && probe.name !== 'void_air'
+                  && probe.name !== 'water' && probe.name !== 'flowing_water'
+                  && probe.boundingBox === 'block';
+                if (collides) {
+                  // Halt this burst; outer stall loop will detour or bail.
+                  safeMoveVehicle(0, 0);
+                  break;
+                }
+              } catch { /* probe failed (unloaded chunk?) — fall through and send the packet */ }
+              safeVehicleMove(nx, live.y, nz, yaw);
+              safeMoveVehicle(0, 1);
+              await sleep(TICK_MS);
             }
           } else if (useTpFallback) {
             // Step the boat 1.5 blocks toward steerVec each tick.
