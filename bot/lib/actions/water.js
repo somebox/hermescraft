@@ -1603,6 +1603,27 @@ export function createWaterActions(deps) {
           TARGET_NOT_REACHABLE_FROM_WATER: 'the destination has no water shore; consider mc bg_goto for the land approach',
           NO_WATER_ROUTE: 'no navigable water near you — walk to a shore first',
         })[routeRes.error.code] || 'check the observed_state for details';
+        // F10 (task #48): if planWaterRoute attached a nearest_water_candidate
+        // (via its widened findBlocks scan), promote it into the
+        // sail_to-level next_action_hint so the agent gets a concrete
+        // coord to bg_goto toward — no exploration loop needed.
+        const nearestCandidate = routeRes.error.observed_state?.nearest_water_candidate;
+        let nextHint;
+        if (nearestCandidate) {
+          nextHint = `mc bg_goto ${nearestCandidate.x} ${nearestCandidate.y} ${nearestCandidate.z}  # nearest water — then mc sail_to ${target.x} ${target.y} ${target.z}`;
+        } else if (routeRes.error.code === 'NO_WATER_ROUTE') {
+          // F10: no water found in the 12b entry scan AND no candidate
+          // returned by the wider 64b findBlocks scan. Recommend mc advise
+          // — its perception bundle + LLM analysis can recommend a route
+          // the body's spatial scans don't see (e.g. across a desert).
+          nextHint = `mc advise --reason="find shore to sail to ${target.x},${target.y},${target.z}" --target ${target.x},${target.y},${target.z}`;
+        } else if (routeRes.error.code === 'POND_DISCONNECTED') {
+          // Pond case — Steve is in/at a small isolated water body.
+          // bg_goto out to a real coast (agent has to pick the coord).
+          nextHint = 'mc bg_goto <coast coords>  # then mc sail_to again';
+        } else {
+          nextHint = 'mc bg_goto <target>';
+        }
         return {
           ok: false,
           error: {
@@ -1613,10 +1634,9 @@ export function createWaterActions(deps) {
               water_route_state: routeRes.error.observed_state,
               start: planStart,
               target,
+              ...(nearestCandidate ? { nearest_water_candidate: nearestCandidate } : {}),
             },
-            next_action_hint: routeRes.error.code === 'POND_DISCONNECTED' || routeRes.error.code === 'NO_WATER_ROUTE'
-              ? 'mc bg_goto <coast coords>  # then mc sail_to again'
-              : 'mc bg_goto <target>',
+            next_action_hint: nextHint,
             retry_safe: false,
           },
         };

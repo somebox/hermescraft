@@ -249,14 +249,49 @@ export function planWaterRoute(b, start, target, opts = {}) {
       }
       return false;
     })();
+    // F10 (task #48 — option A): when no navigable water is in the 12b
+    // entry-search radius, do a wider mineflayer-native b.findBlocks scan
+    // (default 64b) for the NEAREST water source. The agent can then
+    // bg_goto directly to that coord without burning an exploration loop.
+    // Pre-fix, the agent had no body-supplied "head this way" hint and
+    // had to mc map / mc scene / guess intermediate coords.
+    let nearestWater = null;
+    try {
+      if (typeof b.findBlocks === 'function') {
+        const hits = b.findBlocks({
+          matching: (blk) => blk && (blk.name === 'water' || blk.name === 'flowing_water'),
+          maxDistance: 64,
+          count: 1,
+        });
+        if (hits && hits.length > 0) {
+          const w = hits[0];
+          nearestWater = {
+            x: typeof w.x === 'number' ? w.x : Math.floor(w.x),
+            y: typeof w.y === 'number' ? w.y : Math.floor(w.y),
+            z: typeof w.z === 'number' ? w.z : Math.floor(w.z),
+            distance: Math.round(Math.hypot(
+              (w.x ?? 0) - startFx,
+              (w.z ?? 0) - startFz,
+            )),
+          };
+        }
+      }
+    } catch {
+      // findBlocks unavailable or threw — fall through with nearestWater=null
+    }
     return {
       ok: false,
       error: {
         code: anyShallow ? 'WATER_TOO_SHALLOW' : 'NO_WATER_ROUTE',
         message: anyShallow
-          ? `Found water within ${entryRadius}b but it's only 1 deep — the boat would ground out. Walk to a deeper shore first.`
-          : `No navigable water cell (water with air above and water below) within ${entryRadius}b of start.`,
-        observed_state: { start, entry_search_radius: entryRadius, start_cell_classification: startCellClass },
+          ? `Found water within ${entryRadius}b but it's only 1 deep — the boat would ground out. Walk to a deeper shore first.${nearestWater ? ` Nearest navigable water is ~${nearestWater.distance}b away at (${nearestWater.x}, ${nearestWater.y}, ${nearestWater.z}).` : ''}`
+          : `No navigable water cell (water with air above and water below) within ${entryRadius}b of start.${nearestWater ? ` Nearest water source is ~${nearestWater.distance}b away at (${nearestWater.x}, ${nearestWater.y}, ${nearestWater.z}) — walk there with mc bg_goto, then call mc sail_to again.` : ''}`,
+        observed_state: {
+          start,
+          entry_search_radius: entryRadius,
+          start_cell_classification: startCellClass,
+          ...(nearestWater ? { nearest_water_candidate: nearestWater } : {}),
+        },
       },
     };
   }

@@ -1282,6 +1282,71 @@ test('mc sail_to: tiny pond → NO_NAVIGABLE_ROUTE with POND_DISCONNECTED', asyn
   assert.match(r.error.next_action_hint, /bg_goto/);
 });
 
+test('mc sail_to: no water in entry radius but water within 64b → next_action_hint includes nearest_water_candidate', async () => {
+  // F10 (task #48): when planWaterRoute's 12b entry-search fails but the
+  // wider 64b findBlocks scan finds water, sail_to surfaces the nearest
+  // water coord in observed_state and points the agent at it directly.
+  // No more "agent guesses intermediate waypoints" exploration loop.
+  const blocks = {};
+  // Bot on grass at (0, 64, 0) — no water within 12 blocks.
+  for (let dx = -10; dx <= 10; dx++) for (let dz = -10; dz <= 10; dz++) {
+    blocks[`${dx},63,${dz}`] = { name: 'grass_block', boundingBox: 'block' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  // Water cluster 30 blocks east at (30, 62, 0) — within findBlocks 64b
+  // but outside the 12b classifyCell entry scan.
+  for (let dx = 28; dx <= 35; dx++) for (let dz = -2; dz <= 2; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 100, y: 63, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_NAVIGABLE_ROUTE');
+  assert.equal(r.error.observed_state.water_route_error, 'NO_WATER_ROUTE');
+  // The killer feature: observed_state must include nearest_water_candidate
+  // with a concrete coord, AND the next_action_hint must reference it.
+  const cand = r.error.observed_state.nearest_water_candidate;
+  assert.ok(cand, `expected nearest_water_candidate in observed_state; got ${JSON.stringify(r.error.observed_state)}`);
+  assert.ok(typeof cand.x === 'number' && typeof cand.z === 'number');
+  assert.ok(cand.distance > 12 && cand.distance < 64,
+    `expected candidate beyond 12b but within 64b, got distance=${cand.distance}`);
+  // The hint must point the agent at bg_goto'ing to that coord.
+  assert.match(r.error.next_action_hint, /mc bg_goto/);
+  assert.match(r.error.next_action_hint, new RegExp(String(cand.x)));
+});
+
+test('mc sail_to: no water anywhere in 64b → next_action_hint suggests mc advise', async () => {
+  // F10 fallback: if even the 64b findBlocks scan finds no water (e.g. a
+  // desert biome far from oceans), the hint pivots to mc advise so the
+  // agent gets a perception-bundle analysis of where to head.
+  const blocks = {};
+  for (let dx = -10; dx <= 10; dx++) for (let dz = -10; dz <= 10; dz++) {
+    blocks[`${dx},63,${dz}`] = { name: 'sand', boundingBox: 'block' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 1000, y: 63, z: 1000 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_NAVIGABLE_ROUTE');
+  // No nearest_water_candidate when nothing was found.
+  assert.ok(!r.error.observed_state.nearest_water_candidate,
+    `expected no nearest_water_candidate when scan finds nothing; got ${JSON.stringify(r.error.observed_state.nearest_water_candidate)}`);
+  // Hint should pivot to advise.
+  assert.match(r.error.next_action_hint, /mc advise/);
+  assert.match(r.error.next_action_hint, /find shore/i);
+});
+
 test('mc sail_to: invalid coords → INVALID_COORD', async () => {
   const bot = makeMockBot({
     position: { x: 0, y: 64, z: 0 },
