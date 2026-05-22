@@ -241,11 +241,20 @@ def run_advise(
     append_advise_log(log_entry)
 
     if parsed is None:
+        # F14 (task #51): distinguish timeouts from parse failures so
+        # the agent can react appropriately. Timeouts often resolve on
+        # retry; parse failures don't.
+        is_timeout = result.get("error_kind") == "timeout"
         return {
             "ok": False,
             "command": cmd,
             "error": result.get("error") or "digest did not return valid JSON",
-            "error_type": "digest_failed",
+            "error_type": "advise_timeout" if is_timeout else "digest_failed",
+            "next_action_hint": (
+                "mc advise --reason=\"<same>\" --target X,Y,Z  # retry; OpenRouter was slow"
+                if is_timeout
+                else "Skip mc advise for now — check mc map / mc scene directly."
+            ),
             "data": {
                 "reason": reason,
                 "kind": cmd,

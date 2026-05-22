@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -216,7 +217,7 @@ def digest(
     *,
     model: str | None = None,
     api_key: str | None = None,
-    timeout_s: float = 60.0,
+    timeout_s: float = 90.0,
 ) -> dict[str, Any]:
     """Run a single chat completion; return raw text, parsed JSON, usage, timing."""
     key = api_key or resolve_openrouter_api_key()
@@ -264,6 +265,26 @@ def digest(
             "elapsed_s": time.time() - t0,
             "model": model_id,
             "error": f"HTTP {e.code}",
+        }
+    except (socket.timeout, urllib.error.URLError, TimeoutError) as e:
+        # F14 (task #51, v37): pre-fix, OpenRouter timeouts (slow
+        # deepseek-v4-flash response under load) propagated as
+        # uncaught exceptions that killed the Python subprocess.
+        # The agent saw `mc advise ... 60.1s [error]` with no detail
+        # and burned tokens guessing what went wrong. Return a
+        # structured timeout envelope so the caller (mc-advise-cli.py
+        # → bot/cli/advise.mjs) can surface a useful error.
+        elapsed = time.time() - t0
+        msg = str(getattr(e, "reason", None) or e)
+        is_timeout = isinstance(e, (socket.timeout, TimeoutError)) or "timed out" in msg.lower()
+        return {
+            "raw": "",
+            "parsed": None,
+            "usage": {},
+            "elapsed_s": round(elapsed, 3),
+            "model": model_id,
+            "error": f"ADVISE_TIMEOUT after {elapsed:.1f}s" if is_timeout else f"OpenRouter unreachable: {msg}",
+            "error_kind": "timeout" if is_timeout else "url_error",
         }
 
     elapsed = time.time() - t0
