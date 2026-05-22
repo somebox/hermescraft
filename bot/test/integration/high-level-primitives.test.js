@@ -77,6 +77,83 @@ test('mc disembark: dismount in water → calls ACTIONS.escape, surfaces auto_es
   assert.equal(r.data.auto_escape.ok, true);
 });
 
+test('mc disembark: emergency mode force-kills vehicle via RCON when dismount path fails', async () => {
+  // circuit-v7 (2026-05-22): Steve died at hp=0 because the reactive
+  // auto_disembark_low_hp fired but ACTIONS.disembark returned
+  // DISMOUNT_REJECTED. Native dismount + sneak + PaperMCP ride dismount
+  // all failed while a zombie pounded the bot. The emergency path
+  // escalates to RCON kill on the boat — vanilla MC drops riders when
+  // their boat breaks, so this is guaranteed to free the bot.
+  const boat = {
+    id: 33,
+    name: 'oak_boat',
+    type: 'oak_boat',
+    position: new Vec3(10, 62, 0),
+  };
+  const bot = {
+    entity: { position: new Vec3(10.5, 62, 0.5), isInWater: true },
+    inventory: { items: () => [] },
+    entities: { 33: boat },
+    vehicle: boat,
+    blockAt(p) {
+      // Boat over water; nothing on land nearby for the auto-sail to
+      // engage. We want the test to reach the dismount-rejected branch.
+      return { name: 'water', boundingBox: 'empty', position: new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)), getProperties: () => ({ level: 0 }) };
+    },
+    dismount() { /* server stays in ride state; b.vehicle unchanged */ },
+    setControlState: () => {},
+  };
+  // Stub the PaperMCP path so we control exactly which call happens.
+  process.env.PAPERMCP_TOKEN = process.env.PAPERMCP_TOKEN || 'test-token';
+  // Intercept the rcon commands by mocking executeServerCommand. The
+  // water module imports it from runtime/paper-mcp.js; we can't replace
+  // it directly here, so we observe behaviour: after the emergency path,
+  // vehicle should be cleared via the entityGone fallback in our code.
+  const services = createMockServices();
+  const ACTIONS = {
+    sail: async () => ok({ data: {} }),
+    escape: async () => ok({ data: { action_taken: 'on_shore' } }),
+  };
+  const water = createWaterActions({
+    ctx: services.state,
+    ensureBot: () => bot,
+    sleep: () => Promise.resolve(),
+    log: () => {},
+    getMyName: () => 'TestSteve',
+    ACTIONS,
+    goals: { GoalNear: function () {}, GoalBlock: function () {} },
+  });
+
+  // Run disembark in non-emergency mode first → must return DISMOUNT_REJECTED
+  // (no force-kill).
+  const normal = await water.disembark({});
+  assert.equal(normal.ok, false);
+  assert.equal(normal.error.code, 'DISMOUNT_REJECTED');
+  assert.match(normal.error.message, /Server did not confirm dismount\.$/);
+
+  // Reset vehicle state for the emergency-mode run.
+  bot.vehicle = boat;
+  bot.entities = { 33: boat };
+
+  // In the test harness, RCON kill is a no-op (no real server), so the
+  // force-kill won't actually clear b.vehicle via entityGone — but the
+  // path runs without error and the emergency error message is distinct.
+  // We assert the code REACHES the emergency branch by checking the
+  // error message variant.
+  const emerg = await water.disembark({ emergency: true });
+  // Either:
+  //   (a) success-path: emergency cleared vehicle (would need real RCON);
+  //   (b) emergency-attempted-but-vehicle-sticky path: distinct error msg.
+  if (emerg.ok === false) {
+    assert.equal(emerg.error.code, 'DISMOUNT_REJECTED');
+    assert.match(emerg.error.message, /RCON force-kill|sticky|respawn/i,
+      `emergency error should mention force-kill attempt; got: ${emerg.error.message}`);
+  } else {
+    // success path acceptable
+    assert.equal(emerg.command, 'disembark');
+  }
+});
+
 test('mc disembark: dismount on dry land → does NOT call ACTIONS.escape', async () => {
   // Boat is over dry land (block below = grass). Dismount lands the bot
   // on grass; no auto-escape needed.

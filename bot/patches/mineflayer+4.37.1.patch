@@ -1,0 +1,34 @@
+diff --git a/node_modules/mineflayer/lib/plugins/entities.js b/node_modules/mineflayer/lib/plugins/entities.js
+index 507a618..f43586d 100644
+--- a/node_modules/mineflayer/lib/plugins/entities.js
++++ b/node_modules/mineflayer/lib/plugins/entities.js
+@@ -898,8 +898,13 @@ function inject (bot) {
+     }
+   }
+ 
+-  function useEntity (target, leftClick, x, y, z) {
++  function useEntity (target, leftClick, x, y, z, hand = 0) {
+     const sneaking = bot.getControlState('sneak')
++    // hermescraft patch: include `hand` field. Per packet_use_entity in
++    // 1.21.4 protocol, hand is required when mouse=0 (interact) or
++    // mouse=2 (interact_at). Without it, Paper silently rejects the
++    // packet — that was the root cause of [board] native mount didn't
++    // stick that drove every mount through the PaperMCP ride fallback.
+     if (x && y && z) {
+       bot._client.write('use_entity', {
+         target: target.id,
+@@ -907,12 +912,14 @@ function inject (bot) {
+         x,
+         y,
+         z,
++        hand,
+         sneaking
+       })
+     } else {
+       bot._client.write('use_entity', {
+         target: target.id,
+         mouse: leftClick,
++        hand,
+         sneaking
+       })
+     }

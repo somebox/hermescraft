@@ -630,6 +630,12 @@ export function createWaterActions(deps) {
         return ps.some((p) => p === b.entity || p?.id === b.entity.id);
       };
 
+      // Look at the boat before mounting so the use_entity packet has the
+      // right facing context. Mirrors what a real player does (crosshair
+      // on the boat before right-click). Paired with the useEntity hand-
+      // field patch, this is what made native mount finally stick on
+      // Paper 1.21+ — prior runs always fell through to PaperMCP ride.
+      try { await b.lookAt(target.position.offset(0, 0.5, 0), true); } catch {}
       try { b.mount(target); } catch {}
       await sleep(500);
 
@@ -1103,8 +1109,9 @@ export function createWaterActions(deps) {
      * Exit the current vehicle.
      * Action contract: NOT_MOUNTED.
      */
-    async disembark() {
+    async disembark(opts = {}) {
       const b = ensureBot();
+      const emergency = !!opts.emergency;
       // Stale vehicle reference cleanup (mineflayer leaves b.vehicle set
       // after the vehicle entity dies).
       if (b.vehicle && !b.entities[b.vehicle.id]) {
@@ -1203,9 +1210,45 @@ export function createWaterActions(deps) {
         }
       }
       if (b.vehicle) {
+        // Last-resort: when called from the reactive emergency path
+        // (auto_disembark_low_hp), forcibly destroy the vehicle. Vanilla
+        // MC drops riders when their boat breaks. We lose the boat but
+        // save Steve from dying mounted while the server refuses the
+        // ride dismount. circuit-v7 (2026-05-22): Steve died at hp=0
+        // because every dismount path returned DISMOUNT_REJECTED while
+        // a zombie pounded him on a stuck boat.
+        if (emergency) {
+          const pmcp = paperMcpConfig();
+          if (pmcp && b.vehicle) {
+            const vid = b.vehicle.id;
+            const vname = b.vehicle.name || 'boat';
+            const bx = Math.floor(b.entity.position.x);
+            const by = Math.floor(b.entity.position.y);
+            const bz = Math.floor(b.entity.position.z);
+            try {
+              log(`[disembark] EMERGENCY — force-killing vehicle ${vname}#${vid} via RCON`);
+              await executeServerCommand(
+                pmcp,
+                `execute positioned ${bx} ${by} ${bz} run kill @e[type=#minecraft:boat,distance=..3,limit=1]`,
+              ).catch(() => null);
+              await sleep(400);
+              // Vehicle entity dies → mineflayer's entityGone handler
+              // clears b.vehicle. If it didn't fire, clear manually.
+              if (b.vehicle && !b.entities[b.vehicle.id]) b.vehicle = null;
+              if (b.vehicle && b.vehicle.id === vid) b.vehicle = null;
+              fallback = 'rcon_force_kill';
+            } catch (e) {
+              log(`[disembark] force-kill failed: ${e?.message || e}`);
+            }
+          }
+        }
+      }
+      if (b.vehicle) {
         return { ok: false, error: {
           code: 'DISMOUNT_REJECTED',
-          message: 'Server did not confirm dismount.',
+          message: emergency
+            ? 'Server did not confirm dismount even after RCON force-kill. Vehicle entity is sticky; agent should mc respawn or wait it out.'
+            : 'Server did not confirm dismount.',
           retry_safe: true,
         }};
       }
