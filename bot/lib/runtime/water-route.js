@@ -277,16 +277,22 @@ export function planWaterRoute(b, start, target, opts = {}) {
           // Score each candidate. Surface water (air above + within
           // ±4 Y of bot) wins decisively. Otherwise prefer cells close
           // to bot's Y to avoid suggesting cave pools.
+          // F15 (task #52, v37): also require classifyCell === 'navigable'.
+          // Pre-fix, a candidate with air above but only 1 deep (no
+          // water at y-1) was suggested — the agent bg_goto'd there,
+          // sail_to refused as WATER_TOO_SHALLOW, infinite loop.
+          // Now we run the full navigability check (water foot, air
+          // y+1 + y+2 for rider clearance, water y-1 for boat depth)
+          // before accepting any candidate.
           const candidates = hits.map((w) => {
             const wx = typeof w.x === 'number' ? w.x : Math.floor(w.x);
             const wy = typeof w.y === 'number' ? w.y : Math.floor(w.y);
             const wz = typeof w.z === 'number' ? w.z : Math.floor(w.z);
-            const above = b.blockAt(new Vec3(wx, wy + 1, wz));
-            const isSurface = !!(above && AIR_NAMES.has(above.name));
             const dxz = Math.hypot(wx - startFx, wz - startFz);
             const dy = Math.abs(wy - startFy);
-            return { x: wx, y: wy, z: wz, dxz, dy, isSurface };
-          }).filter((c) => c.isSurface); // drop cave pools entirely
+            const navClass = classifyCell(b, wx, wy, wz);
+            return { x: wx, y: wy, z: wz, dxz, dy, navClass };
+          }).filter((c) => c.navClass === 'navigable');
           if (candidates.length > 0) {
             // Sort: closest in XZ first, tiebreaker = smaller |dy|.
             candidates.sort((a, b2) => (a.dxz - b2.dxz) || (a.dy - b2.dy));
@@ -374,17 +380,19 @@ export function planWaterRoute(b, start, target, opts = {}) {
           count: 64,
         });
         if (hits && hits.length > 0) {
+          // F15 (task #52): also require classifyCell === 'navigable'
+          // (water foot + air x2 above + water below). A shallow pond
+          // wouldn't help Steve sail out of THIS pond either.
           const candidates = hits.map((w) => {
             const wx = typeof w.x === 'number' ? w.x : Math.floor(w.x);
             const wy = typeof w.y === 'number' ? w.y : Math.floor(w.y);
             const wz = typeof w.z === 'number' ? w.z : Math.floor(w.z);
-            const above = b.blockAt(new Vec3(wx, wy + 1, wz));
-            const isSurface = !!(above && AIR_NAMES.has(above.name));
             const inThisPond = visitedKeys.has(key(wx, wy, wz));
             const dxz = Math.hypot(wx - startFx, wz - startFz);
             const dy = Math.abs(wy - startFy);
-            return { x: wx, y: wy, z: wz, dxz, dy, isSurface, inThisPond };
-          }).filter((c) => c.isSurface && !c.inThisPond);
+            const navClass = classifyCell(b, wx, wy, wz);
+            return { x: wx, y: wy, z: wz, dxz, dy, navClass, inThisPond };
+          }).filter((c) => c.navClass === 'navigable' && !c.inThisPond);
           if (candidates.length > 0) {
             candidates.sort((a, b2) => (a.dxz - b2.dxz) || (a.dy - b2.dy));
             const best = candidates[0];

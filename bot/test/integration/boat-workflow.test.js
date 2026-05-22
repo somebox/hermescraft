@@ -1272,9 +1272,12 @@ test('mc sail_to: POND_DISCONNECTED surfaces nearest non-pond water as candidate
   blocks['-1,63,0'] = { name: 'air', boundingBox: 'empty' };
   blocks['-1,64,0'] = { name: 'air', boundingBox: 'empty' };
   // Real surface water 50b away (separate body, not connected to pond).
+  // Two-deep (y=61 + y=62) so it's navigable per F15.
   for (let dx = 48; dx <= 55; dx++) for (let dz = -2; dz <= 2; dz++) {
     blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
     blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
   }
   const bot = makeMockBot({
     position: { x: -1, y: 63, z: 0 },
@@ -1338,10 +1341,13 @@ test('mc sail_to: no water in entry radius but water within 64b → next_action_
     blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
   }
   // Water cluster 30 blocks east at (30, 62, 0) — within findBlocks 64b
-  // but outside the 12b classifyCell entry scan.
+  // but outside the 12b classifyCell entry scan. Two-deep (y=61 + y=62)
+  // so it's navigable per F15.
   for (let dx = 28; dx <= 35; dx++) for (let dz = -2; dz <= 2; dz++) {
     blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
     blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
   }
   const bot = makeMockBot({
     position: { x: 0, y: 64, z: 0 },
@@ -1381,10 +1387,13 @@ test('mc sail_to: nearest_water_candidate filters out cave pools (no air above)'
   // should be filtered out.
   blocks['5,40,0'] = { name: 'water', boundingBox: 'empty', level: 0 };
   blocks['5,41,0'] = { name: 'stone', boundingBox: 'block' };  // <-- cave roof
-  // Surface water 40 blocks east at (40, 62, 0) — water with air above.
+  // Surface water 40 blocks east at (40, 62, 0) — water with air above
+  // and water below (navigable per F15).
   for (let dx = 40; dx <= 45; dx++) for (let dz = -2; dz <= 2; dz++) {
     blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
     blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
   }
   const bot = makeMockBot({
     position: { x: 0, y: 64, z: 0 },
@@ -1402,6 +1411,49 @@ test('mc sail_to: nearest_water_candidate filters out cave pools (no air above)'
   assert.equal(cand.y, 62,
     `expected surface water at y=62, got y=${cand.y} (likely cave pool)`);
   assert.ok(cand.x >= 40, `expected x≥40 (surface water cluster), got ${cand.x}`);
+});
+
+test('mc sail_to: nearest_water_candidate filters out shallow water (1-deep)', async () => {
+  // F15 (task #52, v37): pre-fix the body suggested ANY surface water
+  // (air above), including 1-deep ponds. Agent bg_goto'd there, then
+  // sail_to refused with WATER_TOO_SHALLOW → infinite loop. Verify
+  // the candidate respects the full navigability check (water foot,
+  // air x2 above, water below).
+  const blocks = {};
+  // Bot on grass at (0, 64, 0).
+  for (let dx = -10; dx <= 10; dx++) for (let dz = -10; dz <= 10; dz++) {
+    blocks[`${dx},63,${dz}`] = { name: 'grass_block', boundingBox: 'block' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  // SHALLOW pond 15 east — water at y=62 + sand at y=61. Closer to bot
+  // than the deep water; pre-F15 this would have been suggested.
+  for (let dx = 14; dx <= 16; dx++) for (let dz = -1; dz <= 1; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'sand', boundingBox: 'block' };  // <-- not water; shallow
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  // DEEP navigable water 40 east — water at y=61 + y=62, air above.
+  for (let dx = 38; dx <= 45; dx++) for (let dz = -2; dz <= 2; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 200, y: 63, z: 0 });
+  assert.equal(r.ok, false);
+  const cand = r.error.observed_state.nearest_water_candidate;
+  assert.ok(cand, 'expected nearest_water_candidate');
+  // Critical: candidate must be in the DEEP water cluster (x≥38), NOT
+  // the shallow pond at x=14..16 even though it's much closer.
+  assert.ok(cand.x >= 38,
+    `expected candidate in DEEP water (x≥38); got x=${cand.x} (likely shallow pond)`);
 });
 
 test('mc sail_to: no water anywhere in 64b → next_action_hint suggests mc advise', async () => {
