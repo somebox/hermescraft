@@ -1669,6 +1669,13 @@ export function createWaterActions(deps) {
       }
 
       const endPos = b.entity.position;
+      // circuit-v24: partial-journey result strings. When the route plan
+      // returned partial=true, the water leg got the bot closer but not
+      // to target — the agent needs to walk the rest. Surface this in
+      // the data envelope AND the human result string so the agent
+      // sees the next step plainly.
+      const partial = !!route.partial;
+      const walkRemaining = route.walk_remaining_after_water || 0;
       return {
         ok: true,
         command: 'sail_to',
@@ -1680,12 +1687,19 @@ export function createWaterActions(deps) {
             horizontal_distance: route.horizontal_distance,
             waypoints_count: route.waypoints.length,
             water_cells_explored: route.water_cells_explored,
+            partial,
+            walk_remaining_after_water: walkRemaining,
           },
           start_position: startPos,
           end_position: { x: endPos.x, y: endPos.y, z: endPos.z },
           elapsed_seconds: Math.round((Date.now() - startedAt) / 1000),
+          ...(partial ? {
+            next_action_hint: `mc bg_goto ${target.x} ${target.y} ${target.z}  # the water leg dropped you ${walkRemaining}b from target; walk the rest`,
+          } : {}),
         },
-        result: `Sailed from (${Math.floor(startPos.x)},${Math.floor(startPos.y)},${Math.floor(startPos.z)}) to (${target.x},${target.y},${target.z}) — ${route.horizontal_distance}b across water, ${phases.length} phases.`,
+        result: partial
+          ? `Sailed PARTIAL: from (${Math.floor(startPos.x)},${Math.floor(startPos.y)},${Math.floor(startPos.z)}) to shore at (${route.exit_shore.x},${route.exit_shore.y},${route.exit_shore.z}) — ${route.horizontal_distance}b across water, but target is still ${walkRemaining}b away. Now call: mc bg_goto ${target.x} ${target.y} ${target.z}`
+          : `Sailed from (${Math.floor(startPos.x)},${Math.floor(startPos.y)},${Math.floor(startPos.z)}) to (${target.x},${target.y},${target.z}) — ${route.horizontal_distance}b across water, ${phases.length} phases.`,
       };
     },
 

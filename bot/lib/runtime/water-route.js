@@ -135,7 +135,14 @@ function findNearbyNavigableWater(b, sx, sy, sz, radius) {
 
 /**
  * Find a land shore cell adjacent to ANY of the water cells in `cells`.
- * Returns the shore cell closest to `target` for walking-leg minimization.
+ * Returns the shore cell closest to `target`, optionally enforcing a
+ * radius cap.
+ *
+ * @param {object} b — mineflayer bot (for blockAt)
+ * @param {Array<{x,y,z}>} cells — explored water cells from BFS
+ * @param {{x,y,z}} target — final destination
+ * @param {number} radius — only return shores within this horiz distance
+ *                          from target. Pass Infinity for "any shore".
  */
 function findExitShore(b, cells, target, radius) {
   let best = null;
@@ -144,7 +151,8 @@ function findExitShore(b, cells, target, radius) {
     // Probe 4 cardinal land cells adjacent to c.
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const sx = c.x + dx, sy = c.y, sz = c.z + dz;
-      if (Math.hypot(sx - target.x, sz - target.z) > radius) continue;
+      const horizToTarget = Math.hypot(sx - target.x, sz - target.z);
+      if (horizToTarget > radius) continue;
       if (!isShoreCell(b, sx, sy, sz)) continue;
       const d = Math.hypot(sx - target.x, sy - target.y, sz - target.z);
       if (d < bestDist) {
@@ -296,16 +304,48 @@ export function planWaterRoute(b, start, target, opts = {}) {
 
   // Find the exit shore — a land cell adjacent to the BFS-explored
   // water cells, as close to target as possible.
-  const exit = findExitShore(b, explored, target, exitRadius);
+  // circuit-v24 follow-up: if no shore within the strict radius, fall
+  // back to the BEST shore anywhere in the explored water graph.
+  // Return success with `partial: true` so the agent gets a usable
+  // step: sail to this nearest reachable shore, then mc bg_goto the
+  // remaining land segment. Pre-fix Steve hit dead-end refusals and
+  // wandered back to base instead of making partial progress.
+  let exit = findExitShore(b, explored, target, exitRadius);
+  let partial = false;
   if (!exit) {
+    exit = findExitShore(b, explored, target, Infinity);
+    if (!exit) {
+      // Truly no shore anywhere in the BFS-explored cells — open ocean.
+      return {
+        ok: false,
+        error: {
+          code: 'TARGET_NOT_REACHABLE_FROM_WATER',
+          message: `Water reaches near target (closest cell: ${Math.round(nearestToTarget.dist)}b away) but no walkable shore exists anywhere in the navigable water near you.`,
+          observed_state: {
+            nearest_water_to_target: nearestToTarget.cell,
+            water_cells_explored: explored.length,
+            target,
+          },
+        },
+      };
+    }
+    partial = true;
+  }
+  // Sanity: if the partial exit shore is barely closer to target than
+  // the bot's current position (saves <25% of horizontal distance), it's
+  // not worth the boat trip. Refuse so the agent walks instead.
+  const startToTargetHoriz = Math.hypot(start.x - target.x, start.z - target.z);
+  const exitToTargetHoriz = Math.hypot(exit.shore.x - target.x, exit.shore.z - target.z);
+  if (partial && exitToTargetHoriz > startToTargetHoriz * 0.75) {
     return {
       ok: false,
       error: {
         code: 'TARGET_NOT_REACHABLE_FROM_WATER',
-        message: `Water route reaches near target (closest cell: ${Math.round(nearestToTarget.dist)}b away) but no walkable shore within ${exitRadius}b of target.`,
+        message: `Water doesn't get you meaningfully closer to target — best reachable shore is at (${exit.shore.x},${exit.shore.y},${exit.shore.z}), still ${Math.round(exitToTargetHoriz)}b from target (you're ${Math.round(startToTargetHoriz)}b away now). Walk via mc bg_goto instead.`,
         observed_state: {
-          nearest_water_to_target: nearestToTarget.cell,
-          exit_shore_radius: exitRadius,
+          start_to_target_horiz: Math.round(startToTargetHoriz),
+          best_exit_shore: exit.shore,
+          exit_to_target_horiz: Math.round(exitToTargetHoriz),
           target,
         },
       },
@@ -354,6 +394,15 @@ export function planWaterRoute(b, start, target, opts = {}) {
       horizontal_distance: Math.round(horizDist),
       water_cells_explored: explored.length,
       estimated_seconds: estimatedSeconds,
+      // circuit-v24: partial-journey flag. When true, exit_shore is
+      // NOT within the strict 8-block radius of the target — the water
+      // route gets the bot closer but a land segment remains. The
+      // sail_to orchestrator surfaces this in its result so the agent
+      // knows to call mc bg_goto for the remaining distance.
+      partial: partial,
+      walk_remaining_after_water: partial
+        ? Math.round(Math.hypot(exit.shore.x - target.x, exit.shore.z - target.z))
+        : 0,
     },
   };
 }
