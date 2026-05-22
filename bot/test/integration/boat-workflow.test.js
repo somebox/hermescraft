@@ -693,6 +693,59 @@ test('mc disembark: stale vehicle reference cleaned up + reported', async () => 
   assert.match(r.data.note || '', /despawned|stale/i);
 });
 
+// circuit-v8 postmortem: bot.entity 30+ blocks from b.vehicle means the
+// bot is clearly not riding — mineflayer's b.vehicle is stale (PaperMCP
+// ride race / packet corruption). Disembark must clear the ref without
+// trying to "sail to shore" first (which would recurse forever via sail's
+// BOAT_STUCK fallback).
+test('mc disembark: positional stale reaper (bot far from vehicle clears ref)', async () => {
+  const bot = makeMockBot({ position: { x: 364, y: 61, z: -607 } });
+  // Vehicle is registered as live (id in bot.entities) but at a distant
+  // location — exactly the circuit-v8 scenario.
+  const stale = { id: 7, name: 'oak_boat', position: { x: 341, y: 62, z: -544 } };
+  bot.vehicle = stale;
+  bot.entities[7] = stale;
+  const water = createWaterActions(waterDeps(bot));
+  const r = await water.disembark();
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.data.dismounted_from, 'oak_boat');
+  assert.match(r.data.note || '', /stale|cleared/i);
+  // The horiz distance (~67b) should be reported.
+  assert.deepEqual(r.data.bot_pos, [364, 61, -607]);
+  assert.deepEqual(r.data.vehicle_pos, [341, 62, -544]);
+});
+
+// Recursion guard: when sail's BOAT_STUCK fallback calls disembark with
+// fromSailFallback=true, disembark must NOT recurse into sail. Pre-fix
+// behaviour was the 900-log loop in circuit-v8.
+test('mc disembark: fromSailFallback skips the auto-sail-to-shore step', async () => {
+  const bot = makeMockBot({ position: { x: 341, y: 63, z: -544 } });
+  const vehicle = { id: 9, name: 'oak_boat', position: new Vec3(341, 62, -544) };
+  bot.vehicle = vehicle;
+  bot.entities[9] = vehicle;
+  // Put water directly below the boat so the in-open-water branch would
+  // fire if not for the recursion guard.
+  bot.blockAt = (p) => {
+    const px = Math.floor(p?.x ?? 0), py = Math.floor(p?.y ?? 0), pz = Math.floor(p?.z ?? 0);
+    if (py === 61) return { name: 'water', boundingBox: 'empty' };
+    if (py === 60) return { name: 'sand', boundingBox: 'block' };
+    return { name: 'air', boundingBox: 'empty' };
+  };
+  let sailCalls = 0;
+  const deps = waterDeps(bot);
+  // Patch ACTIONS.sail to count recursions — should stay 0.
+  const water = createWaterActions(deps);
+  const origSail = water.sail.bind(water);
+  water.sail = async (...args) => { sailCalls++; return origSail(...args); };
+  // Wire ACTIONS shape the action expects.
+  const r = await water.disembark({ fromSailFallback: true });
+  // Either dismount happens or the bot dismounts via fallback — but
+  // sail must NOT be called. That's the regression guard.
+  assert.equal(sailCalls, 0, 'sail must not be called when fromSailFallback=true (recursion guard)');
+  // The result envelope itself can be ok/fail depending on mock; what
+  // matters is that the auto-sail branch was skipped.
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP-level: /task/goto surfaces synchronous refusals (d0ce446)
 // ─────────────────────────────────────────────────────────────────────────

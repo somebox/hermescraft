@@ -971,7 +971,7 @@ export function createWaterActions(deps) {
                 let autoDisembark = null;
                 if (ACTIONS && typeof ACTIONS.disembark === 'function') {
                   try {
-                    const dis = await ACTIONS.disembark({});
+                    const dis = await ACTIONS.disembark({ fromSailFallback: true });
                     autoDisembark = {
                       ok: !!dis?.ok,
                       ...(dis?.data ? { data: dis.data } : {}),
@@ -1056,7 +1056,7 @@ export function createWaterActions(deps) {
               let autoDisembark = null;
               if (ACTIONS && typeof ACTIONS.disembark === 'function') {
                 try {
-                  const dis = await ACTIONS.disembark({});
+                  const dis = await ACTIONS.disembark({ fromSailFallback: true });
                   autoDisembark = {
                     ok: !!dis?.ok,
                     ...(dis?.data ? { data: dis.data } : {}),
@@ -1112,6 +1112,12 @@ export function createWaterActions(deps) {
     async disembark(opts = {}) {
       const b = ensureBot();
       const emergency = !!opts.emergency;
+      // Phase 6 follow-up (circuit-v8 postmortem): sail()'s BOAT_STUCK
+      // fallback calls disembark, and if the boat is in water disembark
+      // calls sail-to-shore — which can stall and recurse back into
+      // disembark. The `fromSailFallback` opt breaks the loop by
+      // skipping the auto-sail-to-shore step when sail is the caller.
+      const fromSailFallback = !!opts.fromSailFallback;
       // Stale vehicle reference cleanup (mineflayer leaves b.vehicle set
       // after the vehicle entity dies).
       if (b.vehicle && !b.entities[b.vehicle.id]) {
@@ -1122,6 +1128,32 @@ export function createWaterActions(deps) {
           command: 'disembark',
           data: { dismounted_from: stale, note: 'vehicle had despawned; cleared stale reference' },
         };
+      }
+      // Phase 6 follow-up: positional stale-vehicle reaper. mineflayer
+      // sometimes keeps b.vehicle pointing at a boat the bot is no
+      // longer riding (PaperMCP ride dismount races, server-side
+      // teleports, packet corruption). If the bot's own position is
+      // > 16 blocks horizontally from the vehicle, it's clearly not
+      // riding — clear the stale ref instead of trying to dismount.
+      if (b.vehicle && b.entity?.position && b.vehicle.position) {
+        const dx = b.entity.position.x - b.vehicle.position.x;
+        const dz = b.entity.position.z - b.vehicle.position.z;
+        const horiz = Math.hypot(dx, dz);
+        if (horiz > 16) {
+          const stale = b.vehicle.name;
+          const vpos = b.vehicle.position;
+          b.vehicle = null;
+          return {
+            ok: true,
+            command: 'disembark',
+            data: {
+              dismounted_from: stale,
+              note: `bot was ${horiz.toFixed(1)}b from vehicle — cleared stale b.vehicle ref`,
+              bot_pos: [Number(b.entity.position.x.toFixed(1)), Number(b.entity.position.y.toFixed(1)), Number(b.entity.position.z.toFixed(1))],
+              vehicle_pos: [Number(vpos.x.toFixed(1)), Number(vpos.y.toFixed(1)), Number(vpos.z.toFixed(1))],
+            },
+          };
+        }
       }
       if (!b.vehicle) {
         return { ok: false, error: {
@@ -1136,12 +1168,14 @@ export function createWaterActions(deps) {
       // High-level contract (task #19): if the boat is currently in open
       // water, scan for the nearest standable shore within 16 blocks and
       // sail there first so the agent doesn't disembark into deep water.
+      // Skipped when called from sail's stall/collision fallback —
+      // otherwise disembark → sail → disembark recurses forever.
       let autoSailed = null;
       {
         const boatPos = b.vehicle.position;
         const below = b.blockAt(boatPos.offset(0, -1, 0));
         const inOpenWater = !!below && (below.name === 'water' || below.name === 'flowing_water');
-        if (inOpenWater) {
+        if (inOpenWater && !fromSailFallback) {
           const isStandableLand = (bot, px, py, pz) => {
             const foot = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
             const head = bot?.blockAt && bot.blockAt(new Vec3(px, py + 1, pz));
