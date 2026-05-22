@@ -466,21 +466,55 @@ export function planWaterRoute(b, start, target, opts = {}) {
     }
     partial = true;
   }
-  // Sanity: if the partial exit shore is barely closer to target than
-  // the bot's current position (saves <25% of horizontal distance), it's
-  // not worth the boat trip. Refuse so the agent walks instead.
+  // F19 (task #57, v39): sanity check loosened. Previously refused
+  // partial routes that saved <25% of distance — over-strict in
+  // practice. Example from v39: bot at (310, -599), target (0, -100),
+  // best partial exit at (280, -480) — saves 96b of a 568b trip
+  // (17%). That's REAL progress: 96b of sailing means 96b of land the
+  // agent doesn't have to traverse, and the agent then has a fresh
+  // sail_to from the disembark point.
+  //
+  // New criterion: refuse only if (a) the partial doesn't make forward
+  // progress at all (exit_shore is no closer to target than start), OR
+  // (b) the sail itself is too short to be worth the boat-place/mount
+  // overhead (< MIN_USEFUL_SAIL blocks).
   const startToTargetHoriz = Math.hypot(start.x - target.x, start.z - target.z);
   const exitToTargetHoriz = Math.hypot(exit.shore.x - target.x, exit.shore.z - target.z);
-  if (partial && exitToTargetHoriz > startToTargetHoriz * 0.75) {
+  const sailDistance = Math.hypot(
+    exit.water.x - entryWater.x,
+    exit.water.z - entryWater.z,
+  );
+  const MIN_USEFUL_SAIL = 20;
+  if (partial && exitToTargetHoriz >= startToTargetHoriz) {
+    // Going backward / sideways — boat doesn't help.
     return {
       ok: false,
       error: {
         code: 'TARGET_NOT_REACHABLE_FROM_WATER',
-        message: `Water doesn't get you meaningfully closer to target — best reachable shore is at (${exit.shore.x},${exit.shore.y},${exit.shore.z}), still ${Math.round(exitToTargetHoriz)}b from target (you're ${Math.round(startToTargetHoriz)}b away now). Walk via mc bg_goto instead.`,
+        message: `Water doesn't get you closer to target — best reachable shore is at (${exit.shore.x},${exit.shore.y},${exit.shore.z}), ${Math.round(exitToTargetHoriz)}b from target (you're ${Math.round(startToTargetHoriz)}b away now — the boat trip would NOT advance you). Walk via mc bg_goto instead.`,
         observed_state: {
           start_to_target_horiz: Math.round(startToTargetHoriz),
           best_exit_shore: exit.shore,
           exit_to_target_horiz: Math.round(exitToTargetHoriz),
+          sail_distance: Math.round(sailDistance),
+          target,
+        },
+      },
+    };
+  }
+  if (partial && sailDistance < MIN_USEFUL_SAIL) {
+    // Sail is so short that the place_boat + board + sail + disembark
+    // dance isn't worth it — agent should just walk the whole thing.
+    return {
+      ok: false,
+      error: {
+        code: 'TARGET_NOT_REACHABLE_FROM_WATER',
+        message: `Water route is only ${Math.round(sailDistance)}b — shorter than the boat-launch overhead. Walk to target via mc bg_goto instead.`,
+        observed_state: {
+          start_to_target_horiz: Math.round(startToTargetHoriz),
+          best_exit_shore: exit.shore,
+          exit_to_target_horiz: Math.round(exitToTargetHoriz),
+          sail_distance: Math.round(sailDistance),
           target,
         },
       },

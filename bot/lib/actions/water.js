@@ -84,9 +84,15 @@ export function createWaterActions(deps) {
   // with SAIL_TO_RETRY_LOOP and hints at mc advise — prevents the v29
   // pattern where the agent burns ~1500 tokens retrying the same broken
   // sail with no new information.
-  /** @type {Map<string, { count: number, lastErrorCode: string|null, lastNearestWater: {x:number,y:number,z:number}|null }>} */
+  /** @type {Map<string, { count: number, lastErrorCode: string|null, lastNearestWater: {x:number,y:number,z:number}|null, lastFailurePos: {x:number,y:number,z:number}|null }>} */
   const sailToRetryCounts = new Map();
   const SAIL_TO_RETRY_LIMIT = 4;
+  // F19 (task #57, v39): if the bot has moved >MOVE_RESET_DISTANCE
+  // blocks since the last recorded failure, reset the retry counter.
+  // The previous-failure state is irrelevant from a different position
+  // (BFS plan + nearest_water_candidate are position-dependent), so the
+  // 4-fail gate was holding stale evidence against fresh attempts.
+  const RETRY_RESET_DISTANCE = 32;
 
   // Forward reference for sail_to's impl. Filled in after the object
   // literal is constructed (see the assignment at the bottom of
@@ -1497,10 +1503,19 @@ export function createWaterActions(deps) {
                 : (obs.water_route_state?.nearest_water_candidate && Number.isFinite(obs.water_route_state.nearest_water_candidate.x))
                   ? obs.water_route_state.nearest_water_candidate
                   : prior.lastNearestWater;
+            // F19 (task #57): also record the bot's position at the time of
+            // failure. If the bot moves significantly before its next
+            // attempt, the retry-loop check resets (different position →
+            // different BFS plan → previous failures shouldn't gate).
+            const b = ensureBot();
+            const failurePos = b?.entity?.position
+              ? { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z }
+              : null;
             sailToRetryCounts.set(targetKey, {
               count: prior.count + 1,
               lastErrorCode: code,
               lastNearestWater: nearestCandidate,
+              lastFailurePos: failurePos,
             });
           }
         }
@@ -1535,7 +1550,24 @@ export function createWaterActions(deps) {
       // SAIL_TO_RETRY_LOOP and hint mc advise. v29 showed the agent
       // can burn unbounded tokens retrying the same broken sail_to
       // with no new information; this gives it a definitive stop.
-      const priorRetry = sailToRetryCounts.get(targetKey);
+      //
+      // F19 (task #57, v39): if the bot has moved >RETRY_RESET_DISTANCE
+      // blocks since the last failure was recorded, reset the counter.
+      // The BFS plan and nearest_water_candidate are position-dependent;
+      // a fresh position deserves a fresh budget. Pre-F19, Steve standing
+      // 7b from water still got the retry-loop refusal from prior
+      // failures at base (50+b away).
+      let priorRetry = sailToRetryCounts.get(targetKey);
+      if (priorRetry?.lastFailurePos) {
+        const dxz = Math.hypot(
+          startPos.x - priorRetry.lastFailurePos.x,
+          startPos.z - priorRetry.lastFailurePos.z,
+        );
+        if (dxz > RETRY_RESET_DISTANCE) {
+          sailToRetryCounts.delete(targetKey);
+          priorRetry = undefined;
+        }
+      }
       if (priorRetry && priorRetry.count >= SAIL_TO_RETRY_LIMIT) {
         // F18 (task #56, v38): if a nearest_water_candidate was found
         // on a prior attempt, surface that coord directly so the agent
