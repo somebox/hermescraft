@@ -161,16 +161,29 @@ function findExitShore(b, cells, target, radius) {
   let best = null;
   let bestDist = Infinity;
   for (const c of cells) {
-    // Probe 4 cardinal land cells adjacent to c.
+    // Probe 4 cardinal land cells adjacent to c. Also check one cell
+    // up (sy + 1) — natural beaches have sand AT the water's y level
+    // (contains the water) with walkable air ABOVE at sy+1. The cell
+    // at the same y as water is rejected by isShoreCell (foot is the
+    // solid sand block, not enterable), but the bot's actual standing
+    // position is the air block on top.
+    //
+    // F16 (task #54): mirrors findEntryShore's dual check at line
+    // ~191. Pre-fix, findExitShore rejected every natural beach as
+    // "not a shore," producing TARGET_NOT_REACHABLE_FROM_WATER even
+    // when a perfectly walkable beach existed adjacent to the water.
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const sx = c.x + dx, sy = c.y, sz = c.z + dz;
+      const sx = c.x + dx, sz = c.z + dz;
       const horizToTarget = Math.hypot(sx - target.x, sz - target.z);
       if (horizToTarget > radius) continue;
-      if (!isShoreCell(b, sx, sy, sz)) continue;
-      const d = Math.hypot(sx - target.x, sy - target.y, sz - target.z);
-      if (d < bestDist) {
-        bestDist = d;
-        best = { shore: { x: sx, y: sy, z: sz }, water: { x: c.x, y: c.y, z: c.z } };
+      for (const dy of [0, 1]) {
+        const sy = c.y + dy;
+        if (!isShoreCell(b, sx, sy, sz)) continue;
+        const d = Math.hypot(sx - target.x, sy - target.y, sz - target.z);
+        if (d < bestDist) {
+          bestDist = d;
+          best = { shore: { x: sx, y: sy, z: sz }, water: { x: c.x, y: c.y, z: c.z } };
+        }
       }
     }
   }

@@ -271,3 +271,50 @@ test('planWaterRoute: waypoints spaced ~8 blocks apart along the path', () => {
       `waypoint gap too large at index ${i}: ${d}b (expected ≤10). Waypoints: ${JSON.stringify(wp)}`);
   }
 });
+
+// ─── F16: findExitShore checks sloped beach (y+1) ───────────────────────
+
+test('planWaterRoute: natural beach pattern (sand at water-y) → finds shore at y+1', () => {
+  // F16 (task #54): pre-fix, findExitShore rejected this scenario as
+  // TARGET_NOT_REACHABLE_FROM_WATER because the only cell adjacent to
+  // the water (sand at the water's y level) failed isShoreCell (foot
+  // is the solid sand block, not air/water). Real shores have the
+  // walkable space ONE ABOVE the sand — findEntryShore already does
+  // this dual check; findExitShore now mirrors it.
+  const blocks = {};
+  // Short water channel from x=0..4 at y=61..62 along z=0.
+  for (let x = 0; x <= 4; x++) {
+    blocks[`${x},62,0`] = 'water';
+    blocks[`${x},61,0`] = 'water';
+    blocks[`${x},63,0`] = 'air';
+    blocks[`${x},64,0`] = 'air';
+  }
+  // Entry shore at (0, 62, -1) — standard pattern.
+  blocks['0,61,-1'] = 'stone';
+  blocks['0,62,-1'] = 'air';
+  blocks['0,63,-1'] = 'air';
+  blocks['0,64,-1'] = 'air';
+  // East end of channel (x=5, z=0): NATURAL BEACH PATTERN — sand at
+  // the water's y (contains the channel water), walkable air ABOVE.
+  // Pre-F16, findExitShore only checked the water's y (foot=sand →
+  // reject) and refused this beach as unreachable.
+  blocks['5,61,0'] = 'stone';     // sub-floor under sand
+  blocks['5,62,0'] = 'sand';      // beach surface at water-y (contains water at x≤4)
+  blocks['5,63,0'] = 'air';       // walkable space ABOVE the sand
+  blocks['5,64,0'] = 'air';
+  const bot = makeStubBot(blocks);
+  // Target sits beyond the beach (x=12) so BFS doesn't early-exit
+  // before exploring the channel's east end. The body's findExitShore
+  // then finds the beach at (5, 63, 0) as the best within-radius shore.
+  // Without F16, the same fixture would fail: (5, 62, 0) is sand
+  // (foot=solid → rejected by isShoreCell at sy=c.y) and no other
+  // shore exists near target.
+  const r = planWaterRoute(bot, { x: 0, y: 63, z: -1 }, { x: 12, y: 63, z: 0 });
+  assert.equal(r.ok, true, `expected ok with sloped exit_shore: ${JSON.stringify(r)}`);
+  // The exit shore must be at y=63 (one above the sand) — the bot's
+  // walkable position. Pre-F16 the BFS rejected the beach entirely.
+  assert.equal(r.data.exit_shore.y, 63,
+    `expected exit_shore.y=63 (above sand); got ${r.data.exit_shore.y}`);
+  assert.equal(r.data.exit_shore.x, 5);
+  assert.equal(r.data.exit_shore.z, 0);
+});
