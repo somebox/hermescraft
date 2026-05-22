@@ -88,6 +88,14 @@ export function createWaterActions(deps) {
   const sailToRetryCounts = new Map();
   const SAIL_TO_RETRY_LIMIT = 4;
 
+  // Forward reference for sail_to's impl. Filled in after the object
+  // literal is constructed (see the assignment at the bottom of
+  // createWaterActions). Lets the public sail_to method dispatch to
+  // _sailToImpl without relying on `this` — the action registry
+  // detaches methods from their parent object when invoking them.
+  /** @type {(args: {x: number, y: number, z: number}) => Promise<any>} */
+  let sailToImplRef;
+
   const inventoryAt = (b) =>
     b.inventory.items().reduce((acc, it) => {
       acc[it.name] = (acc[it.name] || 0) + it.count;
@@ -134,7 +142,7 @@ export function createWaterActions(deps) {
     return best;
   }
 
-  return {
+  const actions = {
     /**
      * Cast a fishing rod into nearby water, wait for a bite, reel in,
      * and pick up the drops. Returns the inventory delta as the catch.
@@ -1448,9 +1456,12 @@ export function createWaterActions(deps) {
     async sail_to(args) {
       // task #43 (v30): thin wrapper around _sailToImpl that records
       // per-target retry counts. After SAIL_TO_RETRY_LIMIT failures to
-      // the same target, the impl itself surfaces SAIL_TO_RETRY_LOOP
-      // (handled in _sailToImpl). On success, clear the record.
-      const result = await this._sailToImpl(args);
+      // the same target, the impl itself surfaces SAIL_TO_RETRY_LOOP.
+      // NOTE: uses sailToImplRef (closure-captured reference set
+      // post-object-construction) instead of `this._sailToImpl` because
+      // the action dispatcher invokes methods as detached functions —
+      // `this` is undefined at call time. The closure ref dodges that.
+      const result = await sailToImplRef(args);
       const tx = Number(args?.x), ty = Number(args?.y), tz = Number(args?.z);
       if (Number.isFinite(tx) && Number.isFinite(ty) && Number.isFinite(tz)) {
         const targetKey = `${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)}`;
@@ -2451,4 +2462,12 @@ export function createWaterActions(deps) {
   },
 
   };
+
+  // Wire sail_to's wrapper to its impl. The wrapper (.sail_to above)
+  // dispatches to sailToImplRef rather than `this._sailToImpl` because
+  // the action registry detaches methods from the parent object before
+  // invoking them — `this` is undefined at call time.
+  sailToImplRef = actions._sailToImpl;
+
+  return actions;
 }
