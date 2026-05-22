@@ -127,23 +127,39 @@ or peninsula with the target across open water:
 
   When you see this, BOATS are the right answer. Boats give ~8 b/s on
   water vs 2.2 swimming, and don't drown. Recommend (in order):
-    1. If `mc inventory` shows `oak_boat` (or any *_boat): place at the
-       nearest water cell on the shore (`mc place_boat X Y Z`), then
-       `mc board` to mount, then `mc sail X Y Z` to drive to the
-       destination, then `mc disembark` on arrival at shore.
-    2. If NO boat in inventory: craft one. Need 5 planks of any wood +
-       1 wooden_shovel. If no logs in inventory, recommend chopping a
-       nearby tree FIRST (look for trees in `mc nearby` / `mc map`),
-       then crafting at the nearest crafting_table.
-    3. If no logs nearby AND the target is reachable by detour around
-       water, recommend the detour — but flag in caveats that the
-       detour may be much longer than a direct boat trip.
+    1. If `mc inventory` shows `oak_boat` (or any *_boat): call
+       `mc sail_to <target_x> <target_y> <target_z>` — ONE verb that
+       BFS-plans the route, places the boat from inventory, mounts,
+       sails along waypoints, disembarks at the destination shore,
+       and walks the final land leg. The body handles every step
+       internally. Idempotent — re-issuing resumes from current state.
+    2. If `mc sail_to` returns `NO_NAVIGABLE_ROUTE` with
+       `observed_state.nearest_water_candidate`, recommend
+       `mc bg_goto <candidate_x> <candidate_y> <candidate_z>` to get
+       closer to navigable water, then `mc sail_to <target>` again.
+    3. If `mc sail_to` returns `SAIL_TO_RETRY_LOOP`, the body has
+       given up on this target — recommend moving 32+ blocks away
+       (`mc bg_goto` to a different intermediate point) and trying
+       a different routing strategy.
+    4. If NO boat in inventory: craft one. Need 5 planks of any wood
+       (NOT a wooden shovel — boats just need planks). If no logs
+       in inventory, recommend chopping a nearby tree FIRST (look
+       for trees in `mc nearby` / `mc map`), then crafting at the
+       nearest crafting_table.
+    5. If no logs nearby AND the target is reachable by detour
+       around water, recommend the detour — but flag in caveats that
+       the detour may be much longer than a direct boat trip.
 
-  The exact verbs:
-    mc place_boat <X> <Y> <Z>  — Y must be a water cell
-    mc board                    — mount nearest boat ≤6 blocks
-    mc sail <X> <Y> <Z>         — drive boat to coord; auto-stop ≤2b
-    mc disembark                — exit boat
+  ⚠ GATED VERBS — DO NOT recommend these directly:
+    mc place_boat, mc board, mc sail (the 3-arg form), mc disembark
+    are now LOW-LEVEL INTERNALS of mc sail_to. Direct calls refuse
+    with code USE_SAIL_TO_INSTEAD. The agent will see a refusal and
+    have to pivot. Save it a round-trip — always recommend
+    `mc sail_to` for boat journeys.
+
+  The right verb is `mc sail_to X Y Z`. That's it. The body knows
+  how to place the boat, mount, sail, disembark, and walk the final
+  leg in one transactional call.
 
   Do NOT recommend bridging across water with cobblestone or dirt for
   long crossings (>20 blocks). Bridging is for short fords. The bot
