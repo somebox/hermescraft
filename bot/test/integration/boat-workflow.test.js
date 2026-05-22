@@ -1321,6 +1321,45 @@ test('mc sail_to: no water in entry radius but water within 64b → next_action_
   assert.match(r.error.next_action_hint, new RegExp(String(cand.x)));
 });
 
+test('mc sail_to: nearest_water_candidate filters out cave pools (no air above)', async () => {
+  // F12 (task #49): pre-fix, findBlocks would suggest any water cell
+  // including underground cave pools at y=40 with stone above. Agent
+  // would bg_goto there → NAV_TARGET_UNSTANDABLE. Fix requires the
+  // suggested cell to have air directly above (surface water).
+  const blocks = {};
+  // Bot at (0, 64, 0) on grass.
+  for (let dx = -10; dx <= 10; dx++) for (let dz = -10; dz <= 10; dz++) {
+    blocks[`${dx},63,${dz}`] = { name: 'grass_block', boundingBox: 'block' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  // Underground cave pool at (5, 40, 0) — water with STONE above (NOT
+  // surface). Pre-F12, findBlocks would suggest this. Post-F12, it
+  // should be filtered out.
+  blocks['5,40,0'] = { name: 'water', boundingBox: 'empty', level: 0 };
+  blocks['5,41,0'] = { name: 'stone', boundingBox: 'block' };  // <-- cave roof
+  // Surface water 40 blocks east at (40, 62, 0) — water with air above.
+  for (let dx = 40; dx <= 45; dx++) for (let dz = -2; dz <= 2; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 100, y: 63, z: 0 });
+  assert.equal(r.ok, false);
+  const cand = r.error.observed_state.nearest_water_candidate;
+  assert.ok(cand, 'expected nearest_water_candidate');
+  // Critical: candidate must be the SURFACE water (y=62), not the cave
+  // pool (y=40). Pre-fix this test failed because the cave pool at
+  // distance 5b (3D) beat the surface water at 40b XZ.
+  assert.equal(cand.y, 62,
+    `expected surface water at y=62, got y=${cand.y} (likely cave pool)`);
+  assert.ok(cand.x >= 40, `expected x≥40 (surface water cluster), got ${cand.x}`);
+});
+
 test('mc sail_to: no water anywhere in 64b → next_action_hint suggests mc advise', async () => {
   // F10 fallback: if even the 64b findBlocks scan finds no water (e.g. a
   // desert biome far from oceans), the hint pivots to mc advise so the

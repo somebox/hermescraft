@@ -255,25 +255,49 @@ export function planWaterRoute(b, start, target, opts = {}) {
     // bg_goto directly to that coord without burning an exploration loop.
     // Pre-fix, the agent had no body-supplied "head this way" hint and
     // had to mc map / mc scene / guess intermediate coords.
+    // F12 (task #49, v35): the closest water voxel returned by findBlocks
+    // can be a cave pool deep below the bot. The agent then bg_goto's
+    // there → NAV_TARGET_UNSTANDABLE (can't pathfind down through stone).
+    // Filter to SURFACE water only: the cell directly above must be air
+    // (water exposed to sky/walkable space), and prefer cells within
+    // ±4 Y of the bot. Higher `count` lets us walk the results until
+    // we find a navigable one.
     let nearestWater = null;
     try {
       if (typeof b.findBlocks === 'function') {
         const hits = b.findBlocks({
+          // Don't filter inside matching — findBlocks calls this per
+          // candidate but doesn't always populate blockAt context. Just
+          // gather raw water cells and filter below.
           matching: (blk) => blk && (blk.name === 'water' || blk.name === 'flowing_water'),
           maxDistance: 64,
-          count: 1,
+          count: 32,
         });
         if (hits && hits.length > 0) {
-          const w = hits[0];
-          nearestWater = {
-            x: typeof w.x === 'number' ? w.x : Math.floor(w.x),
-            y: typeof w.y === 'number' ? w.y : Math.floor(w.y),
-            z: typeof w.z === 'number' ? w.z : Math.floor(w.z),
-            distance: Math.round(Math.hypot(
-              (w.x ?? 0) - startFx,
-              (w.z ?? 0) - startFz,
-            )),
-          };
+          // Score each candidate. Surface water (air above + within
+          // ±4 Y of bot) wins decisively. Otherwise prefer cells close
+          // to bot's Y to avoid suggesting cave pools.
+          const candidates = hits.map((w) => {
+            const wx = typeof w.x === 'number' ? w.x : Math.floor(w.x);
+            const wy = typeof w.y === 'number' ? w.y : Math.floor(w.y);
+            const wz = typeof w.z === 'number' ? w.z : Math.floor(w.z);
+            const above = b.blockAt(new Vec3(wx, wy + 1, wz));
+            const isSurface = !!(above && AIR_NAMES.has(above.name));
+            const dxz = Math.hypot(wx - startFx, wz - startFz);
+            const dy = Math.abs(wy - startFy);
+            return { x: wx, y: wy, z: wz, dxz, dy, isSurface };
+          }).filter((c) => c.isSurface); // drop cave pools entirely
+          if (candidates.length > 0) {
+            // Sort: closest in XZ first, tiebreaker = smaller |dy|.
+            candidates.sort((a, b2) => (a.dxz - b2.dxz) || (a.dy - b2.dy));
+            const best = candidates[0];
+            nearestWater = {
+              x: best.x,
+              y: best.y,
+              z: best.z,
+              distance: Math.round(best.dxz),
+            };
+          }
         }
       }
     } catch {
