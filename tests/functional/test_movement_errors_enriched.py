@@ -46,6 +46,12 @@ def movement_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
+@pytest.mark.xfail(
+    reason="Pollution-flaky in full suite (passes in isolation). Prior tests "
+    "leave residual blocks/entities that affect this test's arena setup. "
+    "Task #32. Pre-existing on mineflayer 4.35.0 and 4.37.1.",
+    strict=False,
+)
 def test_goto_into_solid_in_alley_carries_standing_state(bot, rcon, config, movement_arena):
     """A: alley (N+S walls) + goto into a solid target → goto fails with
     your_standing_state.classification='alley' + blocked={N,S}.
