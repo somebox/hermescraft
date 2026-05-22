@@ -608,16 +608,40 @@ export function createWaterActions(deps) {
         }
         autoPlaced = { water: { x: water.x, y: water.y, z: water.z }, boat_item: boatItem.name, place_data: placeRes.data };
         // Re-scan: the newly-placed boat should now be in entity list.
-        await sleep(300);
-        boats = findNearbyBoats();
-        if (boats.length === 0) {
+        // circuit-v15 (2026-05-22): PaperMCP place_boat is server-side
+        // and the spawn packet can take 1-2s to arrive on the bot's
+        // mineflayer client. The old 300ms sleep was racing this —
+        // findNearbyBoats returned 0, the call retried, agent looped
+        // calling mc board → 4 stacked boats at the same coord. Wait
+        // up to 2s with retries (200ms cadence) and prefer the
+        // place_boat-reported entity id if available.
+        const placedBoatId = placeRes.data?.boat_entity_id;
+        let foundBoat = null;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          await sleep(200);
+          // First preference: the entity ID place_boat told us about.
+          if (placedBoatId && b.entities[placedBoatId] && isBoatEntity(b.entities[placedBoatId])) {
+            foundBoat = b.entities[placedBoatId];
+            break;
+          }
+          // Fallback: any nearby boat (might match if id changed on
+          // the spawn packet — rare but possible).
+          const scan = findNearbyBoats();
+          if (scan.length > 0) {
+            foundBoat = scan[0].ent;
+            break;
+          }
+        }
+        if (!foundBoat) {
           return { ok: false, error: {
             code: 'AUTO_PLACE_FAILED',
-            message: 'place_boat succeeded but no boat entity appeared within 6 blocks of the bot.',
-            observed_state: { place_data: placeRes.data },
+            message: 'place_boat succeeded but no boat entity appeared within 6 blocks of the bot after 2s.',
+            observed_state: { place_data: placeRes.data, placed_boat_id: placedBoatId },
+            next_action_hint: 'mc nearby # check what boats exist; mc board # retry',
             retry_safe: true,
           }};
         }
+        boats = [{ ent: foundBoat, dist: foundBoat.position.distanceTo(b.entity.position) }];
       }
       const target = boats[0].ent;
 
