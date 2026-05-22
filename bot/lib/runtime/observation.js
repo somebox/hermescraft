@@ -183,6 +183,17 @@ export function createObservation(deps) {
       food: ctx.world.bot.food,
       position: posObj(),
       holding: ctx.world.bot.heldItem?.name || 'empty',
+      // circuit-v16: explicit mount state for the brief view. Agent
+      // would lose track of "I'm on a boat" between actions and try
+      // mc move / mc board redundantly. Surface mounted at the top
+      // level so every observe / status response shows it.
+      ...(ctx.world.bot.vehicle ? {
+        mounted: {
+          vehicle: ctx.world.bot.vehicle.name || ctx.world.bot.vehicle.type || 'unknown',
+          vehicle_id: ctx.world.bot.vehicle.id,
+          hint: 'You are mounted. Use mc sail X Y Z to travel; mc disembark to dismount. Do NOT call mc board or mc move while mounted.',
+        },
+      } : {}),
       time: ctx.world.bot.time.timeOfDay,
       isDay: ctx.world.bot.time.timeOfDay < 12000,
     };
@@ -472,6 +483,15 @@ export function createObservation(deps) {
       ...(lean ? {} : { isDay: time < 12000 }),
       ...(lean ? {} : { timePhase: time < 6000 ? 'morning' : time < 12000 ? 'afternoon' : time < 18000 ? 'evening' : 'night' }),
       holding: ctx.world.bot.heldItem ? itemStr(ctx.world.bot.heldItem) : 'empty',
+      // circuit-v16: explicit mounted-state on /status so the agent
+      // doesn't lose track of "I'm on a boat" between actions.
+      ...(ctx.world.bot.vehicle ? {
+        mounted: {
+          vehicle: ctx.world.bot.vehicle.name || ctx.world.bot.vehicle.type || 'unknown',
+          vehicle_id: ctx.world.bot.vehicle.id,
+          hint: 'You are mounted. Use mc sail X Y Z to travel; mc disembark to dismount. Do NOT call mc board or mc move while mounted.',
+        },
+      } : {}),
       ...(lean ? {} : { experience: { level: b.experience?.level || 0 } }),
       inventory: inv.map(i => ({ name: i.name, count: i.count })),
       ...(lean ? {} : { inventoryCount: inv.length }),

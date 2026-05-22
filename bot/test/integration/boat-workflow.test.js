@@ -265,6 +265,10 @@ test('mc board: boat in inventory + water nearby → ACTIONS.place_boat is calle
   const blocks = {
     // Water cluster at (5, 62, 0).
     '5,62,0': { name: 'water', boundingBox: 'empty', level: 0 },
+    // circuit-v16: provide something under the bot too so the new
+    // chunk-dark detector doesn't false-fire. Real chunks always have
+    // a block at foot-1; this matches the deployed world.
+    '0,63,0': { name: 'grass_block', boundingBox: 'block' },
   };
   const bot = makeMockBot({
     position: { x: 0, y: 64, z: 0 },

@@ -581,6 +581,40 @@ export function createWaterActions(deps) {
             retry_safe: false,
           }};
         }
+        // circuit-v16 (2026-05-22): chunk-dark detection. mineflayer's
+        // local chunk cache can silently empty after corrupt packets or
+        // server-side teleports — every blockAt/findBlocks then returns
+        // null/[]. Pre-fix, mc board reported "no water within 12 blocks"
+        // when there were 2529 water cells loaded server-side. Probe a
+        // 3×3 footprint under the bot for ANY non-null block; if none,
+        // the chunk is dark — surface a CHUNK_NOT_LOADED envelope with
+        // a recovery hint instead of misleading the agent.
+        const fx = Math.floor(b.entity.position.x);
+        const fy = Math.floor(b.entity.position.y);
+        const fz = Math.floor(b.entity.position.z);
+        let probedBlocks = 0;
+        for (let dx = -1; dx <= 1 && probedBlocks === 0; dx++) {
+          for (let dz = -1; dz <= 1 && probedBlocks === 0; dz++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              const blk = b.blockAt(new Vec3(fx + dx, fy + dy, fz + dz));
+              if (blk) { probedBlocks++; break; }
+            }
+          }
+        }
+        if (probedBlocks === 0) {
+          return { ok: false, error: {
+            code: 'CHUNK_NOT_LOADED',
+            message: `Bot's local chunk cache is empty at (${fx},${fy},${fz}) — mineflayer hasn't received chunk data for this area. This is a known mineflayer / Paper 1.21+ packet-corruption case. Move 1 block (mc move ${fx + 1} ${fy} ${fz}) or wait 2-3s and retry — that usually triggers a chunk resync.`,
+            observed_state: {
+              bot_position: { x: fx, y: fy, z: fz },
+              boat_in_inventory: boatItem.name,
+              probed_cells: 27,
+              non_null_cells: 0,
+            },
+            next_action_hint: `mc move ${fx + 1} ${fy} ${fz}; mc board`,
+            retry_safe: true,
+          }};
+        }
         // Find nearest water source within 12 blocks of the bot.
         const waterPositions = b.findBlocks({
           matching: (blk) => blk && blk.name === 'water' && Number(blk.getProperties?.()?.level ?? 0) === 0,
