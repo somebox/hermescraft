@@ -28,4 +28,8 @@ done
 PROMPT="$(cat "$PROMPT_FILE")"
 
 echo "[$NAME] starting Hermes on port ${API_PORT} using ${MODEL}/${PROVIDER}"
-HERMES_HOME="$AGENT_HOME" MC_API_URL="http://localhost:${API_PORT}" MC_USERNAME="$NAME" hermes chat --yolo -q "$PROMPT" -m "$MODEL" --provider "$PROVIDER"
+# exec so the bash wrapper IS replaced by hermes — meta.json's agent_pid
+# then points at the real python process. Without exec, the bash wrapper
+# forks hermes as a child, and killing the wrapper orphans the python
+# process (the bug behind exp.sh stop leaving 4+ stale hermes chats running).
+exec env HERMES_HOME="$AGENT_HOME" MC_API_URL="http://localhost:${API_PORT}" MC_USERNAME="$NAME" hermes chat --yolo -q "$PROMPT" -m "$MODEL" --provider "$PROVIDER"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # /tmp/hermescraft/runs/<RUN_ID>/ — reliable test-run logging convention.
-# See docs/experiments/run-logging.md.
+# See docs/guides/run-logging.md.
 #
 # Subcommands:
 #   exp.sh start <slug> [prompt_file]   — start a new run
@@ -143,9 +143,30 @@ cmd_stop() {
   poller_pid="$(python3 -c "import json; print(json.load(open('$run_dir/meta.json')).get('poller_pid',''))")"
   if [[ -n "$agent_pid" ]]; then kill "$agent_pid" 2>/dev/null || true; fi
   if [[ -n "$poller_pid" ]]; then kill "$poller_pid" 2>/dev/null || true; fi
-  pkill -f 'hermes chat.*hermes-landfolk-steve' 2>/dev/null || true
-  pkill -f 'run-landfolk-agent.sh Steve' 2>/dev/null || true
+  # Belt-and-suspenders pkill. The old patterns referenced HERMES_HOME
+  # path components that never appear in argv, so they never matched —
+  # leaving stale hermes-chat python children running across exp.sh
+  # start/stop cycles. Match the canonical hermes invocation instead.
+  pkill -f '/hermes chat --yolo' 2>/dev/null || true
+  pkill -f 'run-landfolk-agent.sh' 2>/dev/null || true
   sleep 1
+  # Verify the agent_pid is actually dead — if not, escalate to SIGKILL.
+  if [[ -n "$agent_pid" ]] && kill -0 "$agent_pid" 2>/dev/null; then
+    echo "[exp] WARNING agent_pid $agent_pid survived SIGTERM, escalating to SIGKILL"
+    kill -9 "$agent_pid" 2>/dev/null || true
+    sleep 1
+  fi
+  # Count any survivors so the operator knows.
+  local survivors
+  survivors=$(pgrep -f '/hermes chat --yolo' 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$survivors" != "0" ]]; then
+    echo "[exp] WARNING ${survivors} hermes chat process(es) still running:"
+    pgrep -lf '/hermes chat --yolo' 2>/dev/null | awk '{print "  pid=" $1}' || true
+    echo "[exp] force-kill with: pkill -9 -f '/hermes chat --yolo'"
+  fi
+  # Note: this does NOT stop the bot itself (mineflayer client). The bot
+  # is owned by run-steve.sh / run-tester-bot.sh — it stays connected
+  # to MC across exp.sh stop. Use scripts/stop-bots.sh for a full halt.
   # Write a summary.
   "$EXP_LIB" analyze "$(basename "$run_dir")" > "$run_dir/summary.md" 2>&1 || true
   echo "[exp] summary at $run_dir/summary.md"
