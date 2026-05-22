@@ -24,6 +24,17 @@ export const HARVEST_PICK_PRIORITY = [
   'wooden_pickaxe',
 ];
 
+// Shovel speeds up sand/dirt/gravel/etc by ~5×. Required for mixed-terrain
+// mining to feel like real-player behavior (task #34.1).
+export const HARVEST_SHOVEL_PRIORITY = [
+  'netherite_shovel',
+  'diamond_shovel',
+  'iron_shovel',
+  'stone_shovel',
+  'golden_shovel',
+  'wooden_shovel',
+];
+
 export const PROTECTED_DIG_BLOCKS = new Set([
   'oak_planks', 'birch_planks', 'spruce_planks', 'dark_oak_planks', 'jungle_planks', 'acacia_planks',
   'glass', 'glass_pane', 'white_stained_glass', 'white_stained_glass_pane',
@@ -265,6 +276,14 @@ export function blockNeedsPickaxeHarvest(blockName) {
   return false;
 }
 
+// Shovel-preferred blocks. Bare hand drops these correctly, but shovel
+// is ~5× faster. Task #34.1: real-player mining behavior needs the
+// right tool for each layer of mixed terrain.
+export function blockNeedsShovelHarvest(blockName) {
+  if (!blockName) return false;
+  return /^(sand|red_sand|gravel|dirt|grass_block|grass_path|dirt_path|podzol|coarse_dirt|rooted_dirt|mud|snow|snow_block|snow_layer|clay|mycelium|farmland|soul_sand|soul_soil)$/i.test(blockName);
+}
+
 export function isLeavesBlockName(nm) {
   return nm ? /(_leaves$|^azalea_leaves$|^flowering_azalea_leaves$)/.test(nm) : false;
 }
@@ -411,6 +430,25 @@ export async function preferHarvestToolForBlock(b, block) {
       return;
     }
     try { await b.unequip('hand'); } catch {}
+    return;
+  }
+
+  // Task #34.1: shovel for dirt/sand/gravel/etc. Bare hand works, but
+  // shovel is ~5× faster. circuit-v7 W1 mining used iron_pickaxe on
+  // dirt — ~5 min for what a real player does in ~30s.
+  if (blockNeedsShovelHarvest(nm)) {
+    if (/shovel$/.test(hn)) return;
+    const shovel = firstInvItemByPriority(b, HARVEST_SHOVEL_PRIORITY);
+    if (shovel) {
+      try { await b.equip(shovel, 'hand'); } catch {}
+      return;
+    }
+    // No shovel — bare hand is the right fallback (faster than pickaxe
+    // on dirt). Unequip whatever the bot's holding to avoid mining
+    // dirt with a pickaxe's slower hand-down.
+    if (hn && hn !== 'air' && !/sword$/.test(hn) && !/shovel$/.test(hn)) {
+      try { await b.unequip('hand'); } catch {}
+    }
   }
 }
 
