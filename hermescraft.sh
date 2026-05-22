@@ -242,16 +242,10 @@ else
     cp "$SCRIPT_DIR/SOUL-minecraft.md" "$SOUL_FILE"
 fi
 
-# Sync mc skills for on-demand loading via skill_view()
-# Include minecraft-goals first — matches goal-directed stack (observe / goals / dashboard); see start-gatherer.sh.
+# Sync mc skills for on-demand loading via skill_view().
+# Canonical list lives in skills/MANIFEST.
 HERMES_SKILLS_DIR="$HOME/.hermes/skills/gaming"
-for sk in minecraft-goals minecraft-survival minecraft-farming minecraft-building minecraft-combat minecraft-navigation minecraft-planning minecraft-chores; do
-    local_src="$SCRIPT_DIR/skills/${sk}.md"
-    if [ -f "$local_src" ]; then
-        mkdir -p "$HERMES_SKILLS_DIR/$sk"
-        cp "$local_src" "$HERMES_SKILLS_DIR/$sk/SKILL.md"
-    fi
-done
+QUIET=1 "$SCRIPT_DIR/scripts/sync-skills.sh" "$HERMES_SKILLS_DIR"
 
 AUTO_RESUME="${AUTO_RESUME:-true}"
 RESTART_SLEEP_S="${RESTART_SLEEP_S:-5}"

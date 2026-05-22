@@ -107,20 +107,10 @@ trap cleanup EXIT INT TERM
 
 export PATH="$BIN_DIR:$PATH"
 
-# Hermes resolves local skills from $HERMES_HOME/skills/<category>/<name>/SKILL.md.
-# We sync into the per-agent home and (optionally) a secondary global root.
+# Hermes resolves local skills from $HERMES_HOME/skills/gaming/<name>/SKILL.md.
+# Canonical list lives in skills/MANIFEST; deployed via scripts/sync-skills.sh
+# into the per-agent home and (optionally) a secondary global root.
 HERMES_SKILLS_ROOT="${HERMES_SKILLS_ROOT:-}"
-sync_gaming_skill_md() {
-  local base="$1"
-  local target_root="$2"
-  local src="$SCRIPT_DIR/skills/${base}.md"
-  local dest_dir="$target_root/gaming/${base}"
-  if [ ! -f "$src" ]; then
-    echo "  ✗ Missing skill source: $src"; return 1
-  fi
-  mkdir -p "$dest_dir"
-  cp "$src" "$dest_dir/SKILL.md"
-}
 
 # ── Hermes CLI (needed for full run or agents-only) ──
 HERMES=""
@@ -173,7 +163,7 @@ if [ "$AGENTS_ONLY" = false ]; then
 
   if [ "$BOTS_ONLY" = true ]; then
     echo ""
-    echo "  Dashboard: ${API_URL}/dashboard"
+    echo "  Command center: http://127.0.0.1:${DASHBOARD_PORT:-3000}  (./start-dashboard.sh)"
     echo "  Other shell: MC_API_URL=$API_URL mc observe"
     echo "  Press Ctrl+C to stop the bot."
     wait "$BOT_PID"
@@ -268,7 +258,7 @@ RULES="
 ## ABSOLUTE RULES
 - ONLY use \`mc\` to interact with the game. Do not use curl or manual HTTP.
 - NEVER run \`mc connect\`.
-- Use \`mc tips TOPIC\` when stuck (chest, collect, craft, place, stuck, navigate).
+- Use \`mc help\` to list verbs; load \`skill_view minecraft-<topic>\` (survival, navigation, building, combat, chores) for patterns.
 - **Wood / logs:** use any **axe** or **bare hand** (\`mc unequip\`). **Never** mine logs while holding a **pickaxe** or **building blocks** (cobblestone, planks, dirt, stone). Pickaxes are only for stone/ore.
 - Before each 1-3 command burst, print one short intent line explaining what you are trying next.
 - After any command error, print one short diagnosis line and one next-step line.
@@ -281,19 +271,15 @@ ${RULES}
 The player in this world is re44 (adjust if the player introduces themselves). Start with: mc goal_load gatherer, then mc observe, then mc goals."
 
 if [ "$BOTS_ONLY" = false ]; then
-  for sk in minecraft-goals minecraft-survival minecraft-farming minecraft-building minecraft-combat minecraft-navigation minecraft-planning; do
-    if [ -f "$SCRIPT_DIR/skills/${sk}.md" ]; then
-      sync_gaming_skill_md "$sk" "$AGENT_HOME/skills"
-      [ -n "$HERMES_SKILLS_ROOT" ] && sync_gaming_skill_md "$sk" "$HERMES_SKILLS_ROOT"
-    fi
-  done
-  echo "  ✓ Skills synced to $AGENT_HOME/skills/gaming/"
+  targets=("$AGENT_HOME/skills/gaming")
+  [ -n "$HERMES_SKILLS_ROOT" ] && targets+=("$HERMES_SKILLS_ROOT/gaming")
+  QUIET=1 "$SCRIPT_DIR/scripts/sync-skills.sh" "${targets[@]}"
 fi
 
 echo ""
 echo "  Hermes:  $MODEL ($PROVIDER)"
 echo "  Skills:  minecraft-goals (preloaded) + all mc skills available on-demand"
-echo "  Dashboard: ${API_URL}/dashboard"
+echo "  Command center: http://127.0.0.1:${DASHBOARD_PORT:-3000}  (./start-dashboard.sh)"
 echo "  Log dir: $LOG_DIR  (tail -f $LOG_DIR/*.log)"
 echo "  Agent log: $LOG_DIR/agent-${MC_USERNAME_LC}.log"
 echo "  Progress log: $LOG_DIR/progress-${MC_USERNAME_LC}.log (every ${MONITOR_INTERVAL_S}s)"

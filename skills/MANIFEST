@@ -1,0 +1,20 @@
+# HermesCraft skill manifest — canonical load order.
+#
+# One skill name per line (without .md extension). Comments start with #.
+# Lines are processed in order — list foundational skills first; the agent
+# loads any of them on demand via skill_view(<name>).
+#
+# Every launcher (start-gatherer.sh, start-landfolk.sh, hermescraft.sh,
+# scripts/landfolk-control.sh, scripts/setup-landfolk-profiles.sh) syncs
+# this set via scripts/sync-skills.sh — keep this file the single source
+# of truth.
+
+minecraft-goals
+minecraft-survival
+minecraft-farming
+minecraft-navigation
+minecraft-building
+minecraft-combat
+minecraft-chores
+minecraft-planning
+minecraft-perception-advise

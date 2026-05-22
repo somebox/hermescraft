@@ -96,7 +96,7 @@ INITIAL_PROMPT="You're playing Minecraft with a friend. You control a bot via th
 - NEVER take crafting tables, furnaces, or chests from buildings. If you need one, CRAFT YOUR OWN.
 - NEVER run mc connect — it will crash the bot.
 - NEVER retry a failed command more than once — try something different instead.
-- If stuck on any task, run mc tips TOPIC for help (topics: chest, collect, craft, place, stuck, navigate)
+- If stuck on a verb, run mc help to list available commands; for higher-level patterns load a skill (skill_view minecraft-survival, minecraft-navigation, etc.)
 - Read coordinates from mc status and mc nearby output — do not guess coordinates
 - Before placing blocks: mc equip BLOCK first, then mc place BLOCK X Y Z
 - Check mc inventory after crafting to confirm results
@@ -133,7 +133,7 @@ SESSION_ID=""
 
 CONTINUE_PROMPT="You're still playing Minecraft with your friend. Your session was interrupted but you're back now.
 Run mc status to see where you are, check mc read_chat for any messages, then keep playing.
-Remember: mc tips TOPIC if you need help with anything."
+Remember: mc help lists verbs; skill_view minecraft-<topic> for patterns."
 
 while true; do
     ROUND=$((ROUND + 1))

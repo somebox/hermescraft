@@ -141,7 +141,7 @@ COMMUNITY_RULES="
 - NEVER break blocks that are part of a building — no walls, windows, glass, floors, roofs, fences. Use DOORS to enter: mc interact X Y Z
 - NEVER take crafting tables, furnaces, or chests from buildings. If you need one, CRAFT YOUR OWN.
 - NEVER run mc connect — it will crash your bot.
-- Use mc tips TOPIC when stuck (chest, collect, craft, place, stuck, navigate).
+- Use mc help to list verbs; load skill_view minecraft-<topic> (survival, navigation, building, combat, chores) for patterns.
 
 ## Community duties
 - There is a shared home base. Find the player and other characters. Mark home: mc mark home
@@ -155,7 +155,7 @@ COMMUNITY_RULES="
 - Check mc inventory after crafting. Check mc status after moving.
 
 ## Getting help
-Run mc tips TOPIC for step-by-step help: chest, collect, craft, place, stuck, navigate"
+Run mc help to list verbs by category. For higher-level patterns load a skill: skill_view minecraft-survival (recipes, farming, animals), minecraft-navigation, minecraft-building, minecraft-combat, minecraft-chores, minecraft-planning."
 
 # ── Launch agents ──
 echo ""
@@ -188,12 +188,12 @@ for i in "${!AGENTS[@]}"; do
 
   # Seed memory with essential knowledge on first run
   MEMORY_FILE="$AGENT_HOME/memories/MEMORY.md"
-  if ! grep -q "mc tips" "$MEMORY_FILE" 2>/dev/null; then
+  if ! grep -q "mc help" "$MEMORY_FILE" 2>/dev/null; then
     cat >> "$MEMORY_FILE" << 'SEED'
 §
-ESSENTIAL: Use mc tips TOPIC for help (chest, collect, craft, place, stuck, navigate). Use exact block names: oak_log not oak, coal_ore not coal. Equip blocks before placing. Crafting table needed for tools. Never break building blocks — use doors.
+ESSENTIAL: Use mc help to list verbs; skill_view minecraft-<topic> (survival, navigation, building, combat, chores) for patterns. Use exact block names: oak_log not oak, coal_ore not coal. Equip blocks before placing. Crafting table needed for tools. Never break building blocks — use doors.
 §
-COMMANDS: mc status (observe), mc nearby 32 (find blocks+coords), mc goto_near X Y Z (move), mc collect BLOCK N (gather), mc craft ITEM (craft near table), mc deposit ITEM X Y Z (chest), mc chat "msg" (talk), mc tips TOPIC (help).
+COMMANDS: mc status (observe), mc nearby 32 (find blocks+coords), mc goto_near X Y Z (move), mc collect BLOCK N (gather), mc craft ITEM (craft near table), mc deposit ITEM COUNT @MARK (chest), mc chat "msg" (talk), mc help (list verbs).
 SEED
     echo "  Seeded memory for $name"
   fi
@@ -209,15 +209,8 @@ The player in this world is re44. Start by running mc status."
   # Use per-agent model if specified, otherwise fall back to global MODEL
   AGENT_MODEL="${agent_model:-$MODEL}"
 
-  # Sync all mc skills for on-demand loading
-  for sk in minecraft-survival minecraft-farming minecraft-building minecraft-combat minecraft-navigation minecraft-planning; do
-    local_src="$SCRIPT_DIR/skills/${sk}.md"
-    if [ -f "$local_src" ]; then
-      sk_dest="$AGENT_HOME/skills/gaming/${sk}"
-      mkdir -p "$sk_dest"
-      cp "$local_src" "$sk_dest/SKILL.md"
-    fi
-  done
+  # Sync all mc skills for on-demand loading (canonical list: skills/MANIFEST).
+  QUIET=1 "$SCRIPT_DIR/scripts/sync-skills.sh" "$AGENT_HOME/skills/gaming"
 
   # Builder roles preload minecraft-building; others load skills on-demand
   HERMES_COMMON=(chat --yolo --max-turns 500 -m "$AGENT_MODEL" --provider "$PROVIDER" -t terminal,memory)

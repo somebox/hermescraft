@@ -121,7 +121,7 @@ Environment:
 Model routing matches single-profile launches: scripts/resolve-agent-model.py
 ( MODEL_<PROFILE> → agents.<Profile> in AGENT_MODELS_JSON → defaults → HERMES_MODEL/MODEL ).
 Each agent Hermes loop re-resolves so JSON edits apply on the next round (bots still serve
-/dashboard model from startup until node process restarts).
+/health model from bot startup until node process restarts; command center polls live observe).
 
 Hermes child processes clear inherited MODEL, HERMES_MODEL, PROVIDER, HERMES_PROVIDER so routing
 cannot be overridden silently by shell exports; Hermes sees only resolver output via -m / --provider.
@@ -771,17 +771,11 @@ start_agent() {
     [ -f "$HOME/.hermes/$f" ] && ln -sf "$HOME/.hermes/$f" "$agent_home/$f" 2>/dev/null || true
   done
 
-  for sk in minecraft-goals minecraft-survival minecraft-farming minecraft-building minecraft-combat minecraft-navigation minecraft-planning; do
-    local_src="$SCRIPT_DIR/skills/${sk}.md"
-    if [ -f "$local_src" ]; then
-      mkdir -p "$agent_home/skills/gaming/${sk}"
-      cp "$local_src" "$agent_home/skills/gaming/${sk}/SKILL.md"
-    fi
-  done
+  QUIET=1 "$SCRIPT_DIR/scripts/sync-skills.sh" "$agent_home/skills/gaming"
 
   shared_rules="## Hard rules
 Only use mc commands. Never run curl, lsof, ps, netstat, kill, grep, ls, cd, or shell diagnostics.
-Never run mc connect. Use mc tips TOPIC when stuck.
+Never run mc connect. Use mc help to list verbs when stuck.
 Never break building blocks or take shared crafting tables/furnaces/chests.
 Preserve infrastructure: stairs, hallways, torch lines, paths, chest/furnace areas.
 Before each burst: mc status and mc read_chat.
@@ -816,7 +810,7 @@ $shared_rules
 Execute the top-urgency goal: one focused subtask (3-8 mc commands), then report one short progress line."
   continue_prompt_minimal="Continue. Run: mc status, mc read_chat, mc goals.
 Pick the top-urgency goal, execute one focused subtask (3-8 mc commands), report one progress line.
-Only use mc commands. If blocked twice, mc tips TOPIC and switch goals."
+Only use mc commands. If blocked twice, mc help (or skill_view minecraft-<topic>) and switch goals."
   continue_prompt="$continue_prompt_full"
 
   agent_model="$(model_for_name "$name")"
@@ -1163,10 +1157,9 @@ case "$COMMAND" in
       sleep 2
     done
     echo "Started. Logs: $LOG_DIR/bot-*.log and $LOG_DIR/agent-*.log"
+    echo "Command center: http://127.0.0.1:${DASHBOARD_PORT:-3000}  (./start-dashboard.sh)"
     for name in "${connected_agents[@]}"; do
-      port="$(port_for_name "$name")"
       name_lower="${name,,}"
-      echo "[$name] dashboard: http://localhost:${port}/dashboard"
       echo "[$name] agent log:   tail -f \"$LOG_DIR/agent-${name_lower}.log\""
       echo "[$name] hermes log:  tail -f \"$LOG_DIR/hermes-${name_lower}.log\""
       echo "[$name] progress:    tail -f \"$LOG_DIR/progress-${name_lower}.log\""

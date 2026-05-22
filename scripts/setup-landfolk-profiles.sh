@@ -151,23 +151,15 @@ EOF
 
 ensure_minecraft_skills() {
   # Phase-2 skills: install hermescraft/skills/minecraft-*.md as
-  # gaming/<name>/SKILL.md. Cloned profiles already have most; this
-  # syncs the latest from the repo.
+  # gaming/<name>/SKILL.md. Canonical list lives in skills/MANIFEST;
+  # deployed via scripts/sync-skills.sh.
   local profile="$1"
   local dir="$PROFILES_DIR/$profile/skills/gaming"
-  for sk in minecraft-goals minecraft-survival minecraft-navigation minecraft-building minecraft-combat minecraft-farming minecraft-planning minecraft-perception-advise; do
-    local src="$SKILLS_SRC/${sk}.md"
-    local dst="$dir/${sk}/SKILL.md"
-    if [ ! -f "$src" ]; then
-      continue
-    fi
-    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
-      continue
-    fi
-    run mkdir -p "$dir/${sk}"
-    run cp "$src" "$dst"
-    echo "  skill: $sk synced"
-  done
+  if [ "$DRY_RUN" = true ]; then
+    DRY_RUN=1 QUIET=1 "$ROOT/scripts/sync-skills.sh" "$dir"
+  else
+    QUIET=1 "$ROOT/scripts/sync-skills.sh" "$dir"
+  fi
 }
 
 setup_one() {
