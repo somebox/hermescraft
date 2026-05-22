@@ -675,6 +675,19 @@ export function createWaterActions(deps) {
         }};
       }
 
+      // circuit-v9: the server-side passenger list confirms the mount, but
+      // mineflayer's `b.vehicle` is sometimes null at this point —
+      // set_passengers packet hasn't been processed yet, or fell through
+      // a mineflayer code path that didn't update b.vehicle. Without a
+      // valid b.vehicle, downstream actions (mc sail, mc disembark, the
+      // reactive auto_disembark_low_hp trigger) all see "not mounted"
+      // even though the server thinks Steve is riding. Force-sync.
+      if (!b.vehicle) {
+        const live = b.entities[target.id] || target;
+        b.vehicle = live;
+        log(`[board] forced b.vehicle sync — server says mounted but mineflayer state lagged`);
+      }
+
       return {
         ok: true,
         command: 'board',

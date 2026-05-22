@@ -361,6 +361,42 @@ test('mc board: detects boat entity with name=null type=oak_boat (Paper 1.21+ sh
   }
 });
 
+// circuit-v9 followup: server confirms mount via passenger list but
+// mineflayer's set_passengers handler doesn't update b.vehicle on
+// Paper 1.21+. mc board must force-sync so downstream actions
+// (mc sail, mc disembark, reactive auto_disembark_low_hp) see the
+// mount state consistently with the server.
+test('mc board: force-sync b.vehicle when passengers confirm but b.vehicle is null', async () => {
+  const boat = {
+    id: 42,
+    name: null,
+    type: 'oak_boat',
+    position: new Vec3(0.5, 63, 0.5),
+    passengers: [],
+  };
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [],
+    entities: { 42: boat },
+  });
+  // Simulate the Paper 1.21+ scenario: the mount packet succeeds on the
+  // server (passenger list updates to include the bot) but mineflayer's
+  // local b.vehicle property is NOT set. Our patch should detect this
+  // and force b.vehicle = target.
+  bot.mount = () => {
+    // Server-side mount went through — passenger list includes the bot,
+    // but mineflayer's set_passengers handler didn't fire (or didn't
+    // match), so b.vehicle stays null.
+    boat.passengers = [bot.entity];
+    // Critically: do NOT set bot.vehicle here.
+  };
+  const water = createWaterActions(waterDeps(bot));
+  const r = await water.board();
+  assert.equal(r.ok, true, `expected ok board: ${JSON.stringify(r)}`);
+  assert.equal(bot.vehicle, boat, 'b.vehicle should be force-synced to the boat after passenger-list confirmation');
+  assert.equal(r.data.vehicle_id, 42);
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // mc sail — TIMEOUT envelope shape (846d49d)
 // ─────────────────────────────────────────────────────────────────────────
