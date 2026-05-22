@@ -84,7 +84,7 @@ export function createWaterActions(deps) {
   // with SAIL_TO_RETRY_LOOP and hints at mc advise — prevents the v29
   // pattern where the agent burns ~1500 tokens retrying the same broken
   // sail with no new information.
-  /** @type {Map<string, { count: number, lastErrorCode: string|null }>} */
+  /** @type {Map<string, { count: number, lastErrorCode: string|null, lastNearestWater: {x:number,y:number,z:number}|null }>} */
   const sailToRetryCounts = new Map();
   const SAIL_TO_RETRY_LIMIT = 4;
 
@@ -1481,10 +1481,26 @@ export function createWaterActions(deps) {
           const code = result?.error?.code;
           const noCountCodes = new Set(['INVALID_COORD', 'NO_BOAT', 'SAIL_TO_RETRY_LOOP']);
           if (code && !noCountCodes.has(code)) {
-            const prior = sailToRetryCounts.get(targetKey) || { count: 0, lastErrorCode: null };
+            const prior = sailToRetryCounts.get(targetKey) || { count: 0, lastErrorCode: null, lastNearestWater: null };
+            // F18 (task #56, v38): remember the last nearest_water_candidate
+            // so the SAIL_TO_RETRY_LOOP refusal can surface a concrete
+            // bg_goto coord instead of just "mc advise." Pre-fix, the
+            // agent followed the mc-advise hint, got circular advice
+            // ("retry sail_to"), and burned LLM cycles ping-ponging.
+            // The candidate lives on result.error.observed_state OR
+            // observed_state.water_route_state — both shapes exist
+            // depending on which inner code returned.
+            const obs = result?.error?.observed_state || {};
+            const nearestCandidate =
+              (obs.nearest_water_candidate && Number.isFinite(obs.nearest_water_candidate.x))
+                ? obs.nearest_water_candidate
+                : (obs.water_route_state?.nearest_water_candidate && Number.isFinite(obs.water_route_state.nearest_water_candidate.x))
+                  ? obs.water_route_state.nearest_water_candidate
+                  : prior.lastNearestWater;
             sailToRetryCounts.set(targetKey, {
               count: prior.count + 1,
               lastErrorCode: code,
+              lastNearestWater: nearestCandidate,
             });
           }
         }
@@ -1521,17 +1537,28 @@ export function createWaterActions(deps) {
       // with no new information; this gives it a definitive stop.
       const priorRetry = sailToRetryCounts.get(targetKey);
       if (priorRetry && priorRetry.count >= SAIL_TO_RETRY_LIMIT) {
+        // F18 (task #56, v38): if a nearest_water_candidate was found
+        // on a prior attempt, surface that coord directly so the agent
+        // can mc bg_goto to it without going through advise. v37/v38
+        // saw the sail_to ↔ mc advise ping-pong loop where advise
+        // (no retry-counter awareness) recommended retrying sail_to.
+        // A concrete coord short-circuits the loop.
+        const nw = priorRetry.lastNearestWater;
+        const nextHint = nw
+          ? `mc bg_goto ${nw.x} ${nw.y} ${nw.z}  # nearest water — then mc sail_to ${target.x} ${target.y} ${target.z} again from there`
+          : 'mc advise --reason="sail_to stuck retrying"';
         return {
           ok: false,
           error: {
             code: 'SAIL_TO_RETRY_LOOP',
-            message: `${priorRetry.count} consecutive sail_to calls to (${target.x}, ${target.y}, ${target.z}) have failed (last error: ${priorRetry.lastErrorCode || 'unknown'}). The body cannot make progress to this target on its own. Pick a different waypoint, escape any stuck state first, or call mc advise.`,
+            message: `${priorRetry.count} consecutive sail_to calls to (${target.x}, ${target.y}, ${target.z}) have failed (last error: ${priorRetry.lastErrorCode || 'unknown'}). The body cannot make progress to this target on its own.${nw ? ` Walk to the nearest water at (${nw.x}, ${nw.y}, ${nw.z}) first — sail_to from there will see a fresh entry.` : ' Pick a different waypoint or call mc advise.'}`,
             observed_state: {
               retry_count: priorRetry.count,
               last_error_code: priorRetry.lastErrorCode,
               target,
+              ...(nw ? { nearest_water_candidate: nw } : {}),
             },
-            next_action_hint: 'mc advise --reason="sail_to stuck retrying"',
+            next_action_hint: nextHint,
             retry_safe: false,
           },
         };

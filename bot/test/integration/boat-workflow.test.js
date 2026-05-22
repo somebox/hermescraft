@@ -1633,6 +1633,65 @@ test('mc sail_to: 4 consecutive failures to same target → SAIL_TO_RETRY_LOOP',
   assert.match(r5.error.next_action_hint, /mc advise/);
 });
 
+test('mc sail_to: SAIL_TO_RETRY_LOOP surfaces nearest_water_candidate in hint (F18)', async () => {
+  // v38 forensics: when retry-loop fires, the prior body hint was just
+  // "mc advise --reason=..." — the agent then went through mc advise,
+  // which (lacking retry-counter awareness) recommended retrying
+  // sail_to → ping-pong. F18 makes the loop refusal carry a concrete
+  // bg_goto coord whenever a prior attempt produced a candidate.
+  //
+  // Setup: bot on grass, no water in 12b. Each sail_to call will hit
+  // planWaterRoute's NO_WATER_ROUTE branch with nearest_water_candidate
+  // populated (F10). After 4 failures the 5th call (retry-loop) should
+  // include that candidate in the hint.
+  const blocks = {};
+  // Bot on grass at (0, 64, 0).
+  for (let dx = -10; dx <= 10; dx++) for (let dz = -10; dz <= 10; dz++) {
+    blocks[`${dx},63,${dz}`] = { name: 'grass_block', boundingBox: 'block' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  // Navigable deep water at (40..45, 62, -2..2) — F10 will surface
+  // this as nearest_water_candidate. Far enough that BFS won't find
+  // a route to target, but findBlocks(64) will see it.
+  for (let dx = 40; dx <= 45; dx++) for (let dz = -2; dz <= 2; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${dx},64,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  // 4 sail_to calls that each fail with NO_NAVIGABLE_ROUTE +
+  // nearest_water_candidate. The 5th hits the retry-loop check.
+  for (let i = 1; i <= 4; i++) {
+    const r = await water.sail_to({ x: 200, y: 63, z: 0 });
+    assert.equal(r.ok, false, `call ${i}: expected refusal`);
+    // Sanity: confirm the inner refusal IS carrying a candidate so
+    // F18 can remember it for the loop refusal.
+    if (i === 4) {
+      const obs = r.error?.observed_state || {};
+      const cand = obs.nearest_water_candidate || obs.water_route_state?.nearest_water_candidate;
+      assert.ok(cand, `call 4: prior failure must carry nearest_water_candidate for F18; got ${JSON.stringify(obs)}`);
+    }
+  }
+  // 5th call → SAIL_TO_RETRY_LOOP. The hint must reference the
+  // candidate's coords, not just "mc advise."
+  const r5 = await water.sail_to({ x: 200, y: 63, z: 0 });
+  assert.equal(r5.ok, false);
+  assert.equal(r5.error.code, 'SAIL_TO_RETRY_LOOP');
+  const candOnLoop = r5.error.observed_state.nearest_water_candidate;
+  assert.ok(candOnLoop, `F18: SAIL_TO_RETRY_LOOP must carry nearest_water_candidate; got ${JSON.stringify(r5.error.observed_state)}`);
+  // Coord matches the deep water cluster (x=40..45).
+  assert.ok(candOnLoop.x >= 40 && candOnLoop.x <= 45, `expected candidate.x in 40..45, got ${candOnLoop.x}`);
+  assert.match(r5.error.next_action_hint, /mc bg_goto/);
+  assert.match(r5.error.next_action_hint, new RegExp(String(candOnLoop.x)));
+  assert.doesNotMatch(r5.error.next_action_hint, /mc advise/);
+});
+
 test('mc sail_to: retry counter resets on different target', async () => {
   // v30 F6: per-target tracking — failing at coord A shouldn't gate
   // a fresh call to coord B.
