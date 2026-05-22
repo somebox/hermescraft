@@ -143,28 +143,37 @@ def follow():
                     sess_mtime = m
                     sess_msgs = load_session(sess_path)
                     # Print new messages since last consumed.
+                    # Helper: prefix every line with the message ts so the
+                    # think/asst/tool stream lines up with positions/events.
+                    # Before this every reasoning line was prefixed with
+                    # plain spaces — postmortems couldn't tell WHEN the
+                    # agent thought "go to W1" vs WHEN it actually moved.
+                    def msg_ts(m):
+                        raw = m.get("created_at") or m.get("ts") or ""
+                        return short_ts(raw) if raw else "        "
                     for i in range(sess_consumed, len(sess_msgs)):
                         msg = sess_msgs[i]
                         role = msg.get("role")
+                        mts = msg_ts(msg)
                         if role == "assistant":
                             reasoning = (msg.get("reasoning_content") or msg.get("reasoning") or "").strip()
                             content = (msg.get("content") or "").strip()
                             if reasoning and reasoning != content:
-                                print(f"{C_GRAY}     think: {truncate(reasoning, 300)}{C_RESET}")
+                                print(f"{C_GRAY}{mts} think: {truncate(reasoning, 300)}{C_RESET}")
                             if content:
-                                print(f"{C_CYAN}{C_BOLD}     asst:{C_RESET} {C_CYAN}{truncate(content, 300)}{C_RESET}")
+                                print(f"{C_CYAN}{C_BOLD}{mts} asst:{C_RESET} {C_CYAN}{truncate(content, 300)}{C_RESET}")
                             for tc in msg.get("tool_calls", []) or []:
                                 fn = tc.get("function", {}) if isinstance(tc, dict) else {}
                                 name = fn.get("name", "?")
                                 args = fn.get("arguments", "") or ""
                                 rendered = render_tool_call(args)
-                                print(f"{C_GREEN}     {name}:{C_RESET} {rendered}")
+                                print(f"{C_GREEN}{mts} {name}:{C_RESET} {rendered}")
                         elif role == "tool":
                             content = msg.get("content", "")
                             rendered, is_err = render_tool_result(content)
                             color = C_RED if is_err else C_DIM
                             tag = "ERR " if is_err else "out "
-                            print(f"{color}     {tag} → {rendered}{C_RESET}")
+                            print(f"{color}{mts} {tag} → {rendered}{C_RESET}")
                     sess_consumed = len(sess_msgs)
 
             # Tail positions.jsonl

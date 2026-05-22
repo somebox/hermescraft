@@ -6,7 +6,7 @@ have ONE place that knows how to parse `mc status` output (it sometimes
 returns a string for `holding` instead of an object, etc — too easy to
 shred a quick shell pipeline on that).
 
-Convention (see docs/experiments/run-logging.md):
+Convention (see docs/guides/run-logging.md):
   /tmp/hermescraft/runs/<RUN_ID>/    — one dir per test run
     meta.json
     agent.log, bot.log
@@ -96,6 +96,11 @@ def status_snapshot() -> dict[str, Any]:
         holding_name = holding if holding != "empty" else None
     else:
         holding_name = None
+    # circuit-v20: surface top_goal + mounted state so the poll can
+    # detect changes and emit them as events (postmortems can see when
+    # Steve's stated priority shifts, e.g. survive → mine).
+    top_goal = d.get("top_goal") or {}
+    mounted = d.get("mounted") or {}
     return {
         "ts": now_iso(),
         "ok": True,
@@ -108,6 +113,9 @@ def status_snapshot() -> dict[str, Any]:
         "holding": holding_name,
         "time": d.get("time"),
         "phase": d.get("phase"),
+        "goal_id": top_goal.get("id") if isinstance(top_goal, dict) else None,
+        "goal_urgency": top_goal.get("urgency") if isinstance(top_goal, dict) else None,
+        "mounted_vehicle": mounted.get("vehicle") if isinstance(mounted, dict) else None,
     }
 
 
@@ -210,6 +218,30 @@ def cmd_poll_once(args: list[str]) -> int:
         events.append({"ts": s["ts"], "kind": "low_food", "food": s["food"]})
     if t.get("error_code") and t["error_code"] != "OPERATION_TIMEOUT":
         events.append({"ts": s["ts"], "kind": "nav_error", "code": t["error_code"], "target": t.get("target")})
+    # circuit-v20: goal_change + mount_change events for postmortem
+    # observability. Persisted across polls via .last_goal / .last_mount
+    # files in the run_dir so a restart of the poller doesn't lose
+    # state.
+    if s.get("ok"):
+        last_goal_file = run_dir / ".last_goal"
+        last_goal = last_goal_file.read_text().strip() if last_goal_file.exists() else ""
+        cur_goal = s.get("goal_id") or ""
+        if cur_goal != last_goal:
+            events.append({
+                "ts": s["ts"], "kind": "goal_change",
+                "from": last_goal or None, "to": cur_goal or None,
+                "urgency": s.get("goal_urgency"),
+            })
+            last_goal_file.write_text(cur_goal)
+        last_mount_file = run_dir / ".last_mount"
+        last_mount = last_mount_file.read_text().strip() if last_mount_file.exists() else ""
+        cur_mount = s.get("mounted_vehicle") or ""
+        if cur_mount != last_mount:
+            events.append({
+                "ts": s["ts"], "kind": "mount_change",
+                "from": last_mount or None, "to": cur_mount or None,
+            })
+            last_mount_file.write_text(cur_mount)
     # New-death detection: gate on deathNumber changing since last poll,
     # NOT on seconds_ago < 35. circuit-v1 fired a false positive at T+0
     # because Steve had a stale deathNumber=2 record from a prior
