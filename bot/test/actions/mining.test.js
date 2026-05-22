@@ -629,3 +629,112 @@ test('mining.dig: success at the same cell clears the failure record', async () 
     e.cell.x === 5 && e.cell.y === 64 && e.cell.z === 0);
   assert.equal(remaining, undefined, 'success should clear the failure record at the cell');
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// DIG_UNDER_FEET safety (circuit-v8/v11 — Steve digs his own pit)
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.dig: DIG_UNDER_FEET refuses to dig the block directly below feet', async () => {
+  // Bot at (10, 64, 5). The block at (10, 63, 5) is what the bot is
+  // standing on — digging it drops the bot into a 1-cell pit. Refuse.
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    type: 1,
+  });
+  const bot = makeStubBot({
+    position: new Vec3(10.3, 64, 5.7),     // foot block = (10, 64, 5); pillar floor at y=63
+    blockAtByPos: stoneAt,
+  });
+  bot.blockAt = stoneAt;
+  // Empty inventory — no placeable to climb back out. Should still
+  // refuse but the error message should mention the missing placeable.
+  bot.inventory = { items: () => [] };
+  const deps = makeDeps({ bot });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 10, y: 63, z: 5 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'DIG_UNDER_FEET');
+  assert.match(r.error.message, /under your feet/);
+  assert.match(r.error.message, /no placeable blocks/);
+  assert.equal(r.error.observed_state.has_placeable, false);
+});
+
+test('mining.dig: DIG_UNDER_FEET allows the dig when --force is set', async () => {
+  // Power-user override (mc stair_down primitive uses this internally).
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    type: 1,
+  });
+  const bot = makeStubBot({
+    position: new Vec3(10.3, 64, 5.7),
+    blockAtByPos: stoneAt,
+  });
+  bot.blockAt = stoneAt;
+  bot.tool = { itemInHand: () => ({ name: 'iron_pickaxe' }) };
+  const deps = makeDeps({ bot, hasLineOfSight: () => true, eyePosition: () => new Vec3(10.3, 65.6, 5.7) });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 10, y: 63, z: 5, force: true });
+  // Pass force=true: must NOT return DIG_UNDER_FEET. Other failures
+  // (NO_LINE_OF_SIGHT, INTERRUPTED) are acceptable depending on the
+  // mock; what we lock in is that DIG_UNDER_FEET specifically is bypassed.
+  if (!r.ok) {
+    assert.notEqual(r.error.code, 'DIG_UNDER_FEET',
+      `--force must bypass DIG_UNDER_FEET; got ${r.error.code}`);
+  }
+});
+
+test('mining.dig: DIG_UNDER_FEET hint mentions has_placeable=true when bot has dirt', async () => {
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    type: 1,
+  });
+  const bot = makeStubBot({
+    position: new Vec3(10.3, 64, 5.7),
+    blockAtByPos: stoneAt,
+    inventoryItems: [{ name: 'dirt', count: 8 }, { name: 'iron_pickaxe', count: 1 }],
+  });
+  bot.blockAt = stoneAt;
+  const deps = makeDeps({ bot });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 10, y: 63, z: 5 });
+  assert.equal(r.error.code, 'DIG_UNDER_FEET');
+  assert.equal(r.error.observed_state.has_placeable, true);
+  // Different message when placeable IS available.
+  assert.doesNotMatch(r.error.message, /no placeable blocks/);
+  assert.match(r.error.message, /pillar-down/);
+});
+
+test('mining.dig: blocks adjacent to bot but not under-feet are fine', async () => {
+  // Foot at (10, 64, 5). Digging (11, 64, 5) — adjacent at foot level,
+  // not under feet — must NOT trip DIG_UNDER_FEET.
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    type: 1,
+  });
+  const bot = makeStubBot({
+    position: new Vec3(10.3, 64, 5.7),
+    blockAtByPos: stoneAt,
+    inventoryItems: [],
+  });
+  bot.blockAt = stoneAt;
+  bot.tool = { itemInHand: () => ({ name: 'iron_pickaxe' }) };
+  const deps = makeDeps({ bot, hasLineOfSight: () => true, eyePosition: () => new Vec3(10.3, 65.6, 5.7) });
+  const actions = createMiningActions(deps);
+  const r = await actions.dig({ x: 11, y: 64, z: 5 });
+  if (!r.ok) {
+    assert.notEqual(r.error.code, 'DIG_UNDER_FEET',
+      `lateral dig must not trip DIG_UNDER_FEET; got ${r.error.code}`);
+  }
+});

@@ -1308,6 +1308,42 @@ export function createMiningActions(deps) {
         };
       }
 
+      // circuit-v8 + v11 self-dig safety: refuse to dig the block
+      // directly under the bot's feet — that drops the bot into a
+      // hole it can't always climb out of (especially with no
+      // pillar-up materials). The block one Y below the bot's foot
+      // position is what the bot is currently standing on. Force
+      // flag overrides for callers who know what they're doing
+      // (mc stair_down already requests cells away from the bot).
+      if (!force && b.entity?.position) {
+        const fx = Math.floor(b.entity.position.x);
+        const fy = Math.floor(b.entity.position.y);
+        const fz = Math.floor(b.entity.position.z);
+        if (cell.x === fx && cell.z === fz && cell.y === fy - 1) {
+          recordDigFailure('DIG_UNDER_FEET');
+          // Does the bot have a placeable block to pillar back up?
+          const PLACEABLE_RE = /^(dirt|coarse_dirt|cobblestone|stone|sand|gravel|.*_planks|netherrack)$/;
+          const hasPlaceable = b.inventory?.items?.().some((i) => PLACEABLE_RE.test(i.name));
+          return {
+            ok: false,
+            error: {
+              code: 'DIG_UNDER_FEET',
+              message: hasPlaceable
+                ? `Refusing to dig (${cell.x},${cell.y},${cell.z}) — that's the block under your feet. You'd drop into a 1-cell pit. Move 1 block away first (mc move) and dig from beside. If you actually want to pillar-down, use mc dig --force.`
+                : `Refusing to dig (${cell.x},${cell.y},${cell.z}) — that's the block under your feet AND you have no placeable blocks (dirt/cobble/sand/planks/etc.) to climb back out. Move beside the block first, or get a pillar-up resource. Force with mc dig --force if you really mean it.`,
+              observed_state: {
+                block_at_target: target.name,
+                requested_coord: { x, y, z },
+                bot_foot: { x: fx, y: fy, z: fz },
+                has_placeable: hasPlaceable,
+              },
+              next_action_hint: `mc move ${fx + 1} ${fy} ${fz}  # step beside, then dig from the side`,
+              retry_safe: false,
+            },
+          };
+        }
+      }
+
       // F54.4: refuse to dig while the bot is submerged. mineflayer's
       // b.dig with the bot's head/feet in water either silently times
       // out (G21 v5 Mason in pond) or drowns the bot mid-swing. Force
