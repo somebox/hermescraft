@@ -755,35 +755,27 @@ export function createQueriesActions(services) {
       const boatItem = b.inventory.items().find(i => BOAT_NAMES.has(i.name));
       if (boatItem) {
         diag.boat_fallback = { has_boat: boatItem.name };
+        // circuit-v13 (2026-05-22): native b.activateItem() is a silent
+        // no-op on Paper 1.21+ for boat placement (same Paper-1.21+
+        // packet routing as place_boat / mount). Delegate to
+        // ACTIONS.board() which already has the full PaperMCP place +
+        // mount fallback chain — and the b.vehicle force-sync that
+        // landed in 6b1e5b3. Steve's agent recovered from this exact
+        // STUCK_IN_WATER scenario by calling mc board manually; we just
+        // need the escape primitive to do it inline.
         try {
-          await b.equip(boatItem, 'hand');
-          // Right-click while in water spawns the boat at the bot's
-          // position. Same use_item packet path as place_boat from
-          // water (see water.js:place_boat, in-water mode).
-          await b.lookAt(new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5));
-          await sleep(150);
-          try { b.activateItem(); } catch {}
-          await sleep(800);
-          // Find the new boat entity near us.
-          const knownBoatIds = new Set();
-          let newBoat = null;
-          for (const e of Object.values(b.entities)) {
-            if (e && (e.name?.endsWith('_boat') || e.name === 'boat' || e.name === 'bamboo_raft')) {
-              if (e.position && e.position.distanceTo(b.entity.position) < 4) {
-                newBoat = e;
-                break;
-              }
-            }
-          }
-          if (newBoat) {
-            // Try to mount it.
-            try { await b.mount(newBoat); } catch {}
+          const actions = typeof getActions === 'function' ? getActions() : null;
+          if (actions && typeof actions.board === 'function') {
+            const boardRes = await actions.board({});
+            diag.boat_fallback.board_ok = !!boardRes?.ok;
+            diag.boat_fallback.board_data = boardRes?.data || null;
+            if (boardRes?.error) diag.boat_fallback.board_error = boardRes.error;
             await sleep(300);
             const after = standingState(b);
-            attempts.push({ method: 'boat_fallback', after: after.classification, boat_id: newBoat.id, mounted: !!b.vehicle });
-            diag.boat_fallback.placed = true;
+            attempts.push({ method: 'boat_fallback', via: 'ACTIONS.board', after: after.classification, mounted: !!b.vehicle, board_ok: !!boardRes?.ok });
+            diag.boat_fallback.placed = !!boardRes?.ok;
             diag.boat_fallback.mounted = !!b.vehicle;
-            if (!after.foot_in_water || b.vehicle) {
+            if (boardRes?.ok || !after.foot_in_water || b.vehicle) {
               return recordEscapeSuccess({
                 ok: true,
                 data: { action_taken: 'boat_fallback', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, boat: boatItem.name, mounted: !!b.vehicle, attempts, diag, success: true },
@@ -791,9 +783,40 @@ export function createQueriesActions(services) {
               });
             }
           } else {
-            diag.boat_fallback.placed = false;
-            diag.boat_fallback.reason = 'no boat entity appeared (Paper 1.21+ silent no-op? — call mc place_boat directly which uses the PaperMCP fallback)';
-            attempts.push({ method: 'boat_fallback', placed: false });
+            // Fall back to the legacy native path (covered by tests).
+            await b.equip(boatItem, 'hand');
+            await b.lookAt(new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5));
+            await sleep(150);
+            try { b.activateItem(); } catch {}
+            await sleep(800);
+            let newBoat = null;
+            for (const e of Object.values(b.entities)) {
+              if (e && (e.name?.endsWith('_boat') || e.name === 'boat' || e.name === 'bamboo_raft')) {
+                if (e.position && e.position.distanceTo(b.entity.position) < 4) {
+                  newBoat = e;
+                  break;
+                }
+              }
+            }
+            if (newBoat) {
+              try { await b.mount(newBoat); } catch {}
+              await sleep(300);
+              const after = standingState(b);
+              attempts.push({ method: 'boat_fallback', after: after.classification, boat_id: newBoat.id, mounted: !!b.vehicle });
+              diag.boat_fallback.placed = true;
+              diag.boat_fallback.mounted = !!b.vehicle;
+              if (!after.foot_in_water || b.vehicle) {
+                return recordEscapeSuccess({
+                  ok: true,
+                  data: { action_taken: 'boat_fallback', from: fromPos, to: after.position, classification_before: cls, classification_after: after.classification, boat: boatItem.name, mounted: !!b.vehicle, attempts, diag, success: true },
+                  result: `Placed a ${boatItem.name} and ${b.vehicle ? 'boarded' : 'spawned next to'} it. Use mc sail X Y Z to travel to shore, then mc disembark.`,
+                });
+              }
+            } else {
+              diag.boat_fallback.placed = false;
+              diag.boat_fallback.reason = 'no boat entity appeared (no ACTIONS.board available + native activateItem silent on Paper 1.21+)';
+              attempts.push({ method: 'boat_fallback', placed: false });
+            }
           }
         } catch (e) {
           diag.boat_fallback.error = e?.message || String(e);
