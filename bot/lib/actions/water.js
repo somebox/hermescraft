@@ -278,7 +278,7 @@ export function createWaterActions(deps) {
      * spawn the boat on the water surface.
      * Action contract: NO_BOAT, NO_WATER_AT_TARGET, OUT_OF_RANGE.
      */
-    async place_boat({ x, y, z, _from_sail_to } = {}) {
+    async place_boat({ x, y, z, _from_sail_to, _rescue_from_water } = {}) {
       if (!_from_sail_to) return useSailToInsteadRefusal('place_boat');
       const b = ensureBot();
       const targetPos = new Vec3(Number(x), Number(y), Number(z));
@@ -389,7 +389,15 @@ export function createWaterActions(deps) {
         // from-water rescue behaviour: that path is intentional for
         // "Steve deep in water with no shore nearby" scenarios from
         // circuit-v1.
-        if (_from_sail_to) {
+        //
+        // F9 (task #47): sail_to's new in-water rescue branch passes
+        // _rescue_from_water:true to opt INTO the from-water placement
+        // path explicitly. v33 forensics: Steve stranded mid-ocean with
+        // no shore his pathfinder could reach; sail_to had no recovery.
+        // The rescue branch detects that case at sail_to start and
+        // bypasses this gate via the explicit flag (NOT by silently
+        // ignoring walk_to_entry's failure — that's still F2's job).
+        if (_from_sail_to && !_rescue_from_water) {
           return { ok: false, error: {
             code: 'BOT_IN_WATER',
             message: `Cannot place a boat — bot is submerged at (${botFootPos.x}, ${botFootPos.y}, ${botFootPos.z}). A boat needs a dry stance to mount cleanly; placing from-water leaves the boat unreachable. Escape water first, then sail_to can pick a fresh entry shore from your new position.`,
@@ -1660,6 +1668,21 @@ export function createWaterActions(deps) {
         ? route.waypoints.slice(1)
         : [route.exit_water];
 
+      // F9 (task #47): detect "bot already submerged" — sail_to's normal
+      // walk_to_entry path can't help here (pathfinder can't reach the
+      // entry shore from mid-water). Run a rescue branch that places a
+      // boat at the bot's current foot cell, mounts, and continues to
+      // sail. This restores the pre-F2 "rescue from open ocean" path
+      // (originally circuit-v1) but only via an explicit rescue flag —
+      // F2's BOT_IN_WATER refusal still catches walk_to_entry cascade
+      // failures.
+      const botFootPos = b.entity.position.floored();
+      const botFootBlock = b.blockAt(botFootPos);
+      const botInWater = !!(
+        botFootBlock
+        && (botFootBlock.name === 'water' || botFootBlock.name === 'flowing_water')
+      );
+
       // ── Phase: mounted_in_water → skip to sail ──────────────────────
       // If already mounted, skip walk_to_entry + mount and go straight
       // to sail from current position along the waypoint chain.
@@ -1687,6 +1710,84 @@ export function createWaterActions(deps) {
               message: `Resume-sail threw: ${e?.message || e}`,
               retry_safe: true,
             },
+          };
+        }
+      } else if (botInWater) {
+        // ── Phase: in_water_rescue ────────────────────────────────────
+        // Bot is currently submerged — skip walk_to_entry (impossible
+        // from mid-ocean) and place the boat AT the bot's current foot
+        // cell via place_boat's from-water rescue mode. _from_sail_to
+        // + _rescue_from_water together bypass the F2 BOT_IN_WATER gate
+        // for this specific path. Then mount and continue along the
+        // BFS-planned waypoint legs.
+        phases.push('in_water_rescue', 'mount');
+        try {
+          const placeRes = await ACTIONS.place_boat({
+            x: botFootPos.x,
+            y: botFootPos.y,
+            z: botFootPos.z,
+            _from_sail_to: true,
+            _rescue_from_water: true,
+          });
+          if (!placeRes?.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'RESCUE_PLACE_FAILED',
+                message: `In-water rescue: place_boat at current foot (${botFootPos.x}, ${botFootPos.y}, ${botFootPos.z}) failed: ${placeRes?.error?.message || 'place_boat refused'}. Bot is stranded in water; try mc escape or chat for help.`,
+                observed_state: { place_boat_error: placeRes?.error, bot_foot: botFootPos, route },
+                next_action_hint: 'mc escape   # try non-boat water escape first',
+                retry_safe: true,
+              },
+            };
+          }
+          const boardRes = await ACTIONS.board({ _from_sail_to: true });
+          if (!boardRes?.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'RESCUE_MOUNT_FAILED',
+                message: `In-water rescue: boat placed at (${botFootPos.x}, ${botFootPos.y}, ${botFootPos.z}) but board failed: ${boardRes?.error?.message || 'board refused'}. Re-call mc sail_to ${target.x} ${target.y} ${target.z} to retry from here.`,
+                observed_state: { board_error: boardRes?.error, bot_foot: botFootPos, route },
+                next_action_hint: `mc sail_to ${target.x} ${target.y} ${target.z}`,
+                retry_safe: true,
+              },
+            };
+          }
+        } catch (e) {
+          return {
+            ok: false,
+            error: {
+              code: 'RESCUE_MOUNT_FAILED',
+              message: `In-water rescue threw: ${e?.message || e}`,
+              retry_safe: true,
+            },
+          };
+        }
+
+        // Now mounted — sail toward the BFS-planned exit_water along
+        // the waypoint chain. (The BFS plan's entry_water may not
+        // match botFootPos exactly, but sail()'s leg-following
+        // navigates per-waypoint regardless of where we boarded.)
+        phases.push('sail');
+        try {
+          const legsRes = await sailLegs(legs);
+          if (!legsRes.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'SAIL_FAILED',
+                message: `Rescue-sail failed on leg ${legsRes.leg_index + 1}/${legs.length} (waypoint ${legsRes.waypoint.x},${legsRes.waypoint.y},${legsRes.waypoint.z}): ${legsRes.inner_error?.message || 'unknown'}. Re-call mc sail_to ${target.x} ${target.y} ${target.z}.`,
+                observed_state: { sail_error: legsRes.inner_error, leg_index: legsRes.leg_index, waypoint: legsRes.waypoint, route },
+                next_action_hint: `mc sail_to ${target.x} ${target.y} ${target.z}`,
+                retry_safe: true,
+              },
+            };
+          }
+        } catch (e) {
+          return {
+            ok: false,
+            error: { code: 'SAIL_FAILED', message: `Rescue-sail threw: ${e?.message || e}`, retry_safe: true },
           };
         }
       } else {

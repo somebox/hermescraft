@@ -1387,29 +1387,40 @@ test('mc sail_to: 4 consecutive failures to same target → SAIL_TO_RETRY_LOOP',
   // v30 F6: closure-scoped per-target retry counter. Same target failing
   // repeatedly should surface a definitive SAIL_TO_RETRY_LOOP envelope so
   // the agent stops burning tokens retrying with no new information.
+  //
+  // Failure mode: make place_boat refuse — this path runs in both the
+  // standard walk_to_entry → mount sequence AND F9's in-water rescue
+  // sequence, so every sail_to call returns MOUNT_FAILED /
+  // RESCUE_PLACE_FAILED regardless of which branch the bot's current
+  // position triggers.
   const bot = makeMockBot({
     position: { x: 0, y: 63, z: -1 },
     inventory: [{ name: 'oak_boat', count: 1 }],
     blocks: makeChannelBlocks(0, 100),
     entities: {},
-    // Drop bot into water on walk_to_entry — guarantees the inner impl
-    // returns WALK_TO_ENTRY_DROPPED_IN_WATER (not a no-count refusal).
-    pathfindMovesTo: { x: 1, y: 62, z: 0 },
   });
   const ACTIONS = {
-    place_boat: async () => ok({ data: {} }),
+    place_boat: async () => ({
+      ok: false,
+      error: { code: 'PLACE_FAILED', message: 'mocked failure', retry_safe: true },
+    }),
     board: async () => ok({ data: {} }),
     sail: async () => ok({ data: {} }),
     disembark: async () => ok({ data: {} }),
   };
   const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
-  // 4 calls that all fail with WALK_TO_ENTRY_DROPPED_IN_WATER.
+  // 4 calls that all fail (MOUNT_FAILED via place_boat refusal).
+  let lastFailCode = null;
   for (let i = 1; i <= 4; i++) {
     const r = await water.sail_to({ x: 100, y: 63, z: -1 });
     assert.equal(r.ok, false, `call ${i} should fail`);
     if (i < 4) {
-      assert.equal(r.error.code, 'WALK_TO_ENTRY_DROPPED_IN_WATER',
-        `call ${i} expected WALK_TO_ENTRY_DROPPED_IN_WATER, got ${r.error.code}`);
+      // Either MOUNT_FAILED (land path) or RESCUE_PLACE_FAILED (rescue
+      // path) — both are non-NAV_RETRY_LOOP failures that count toward
+      // the retry budget.
+      assert.notEqual(r.error.code, 'SAIL_TO_RETRY_LOOP',
+        `call ${i}: expected impl failure, got loop refusal`);
+      lastFailCode = r.error.code;
     }
   }
   // 5th call (count is now 4, meets SAIL_TO_RETRY_LIMIT) should surface
@@ -1418,7 +1429,7 @@ test('mc sail_to: 4 consecutive failures to same target → SAIL_TO_RETRY_LOOP',
   assert.equal(r5.ok, false);
   assert.equal(r5.error.code, 'SAIL_TO_RETRY_LOOP');
   assert.equal(r5.error.observed_state.retry_count, 4);
-  assert.equal(r5.error.observed_state.last_error_code, 'WALK_TO_ENTRY_DROPPED_IN_WATER');
+  assert.equal(r5.error.observed_state.last_error_code, lastFailCode);
   assert.match(r5.error.next_action_hint, /mc advise/);
 });
 
@@ -1447,6 +1458,138 @@ test('mc sail_to: retry counter resets on different target', async () => {
   const r = await water.sail_to({ x: 50, y: 63, z: -1 });
   assert.equal(r.error?.code !== 'SAIL_TO_RETRY_LOOP', true,
     `target B should not inherit target A's retry count; got ${r.error?.code}`);
+});
+
+// ─── F9 (task #47): bot-in-water rescue branch ─────────────────────────
+// Pre-fix, sail_to assumed the bot could pathfind to a dry entry shore.
+// v33 found Steve stranded mid-ocean with no shore his pathfinder could
+// reach — every sail_to call returned MOUNT_FAILED. F9 detects the
+// in-water start and places the boat at the bot's current foot cell
+// (via place_boat's _rescue_from_water bypass) instead of walking.
+
+test('mc sail_to: bot in water at start → in_water_rescue → place boat at current foot', async () => {
+  // Bot stranded at (50, 62, 0) — foot cell is water (a navigable channel
+  // cell). sail_to should detect this, skip walk_to_entry, and call
+  // ACTIONS.place_boat with _rescue_from_water:true at the bot's current
+  // foot cell instead of the BFS's entry_water.
+  const bot = makeMockBot({
+    position: { x: 50, y: 62.5, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+    entities: {},
+  });
+  /** @type {Array<{ verb: string, args: any }>} */
+  const calls = [];
+  const ACTIONS = {
+    place_boat: async (args) => {
+      calls.push({ verb: 'place_boat', args });
+      // Spawn a boat entity for board() to find.
+      const boat = {
+        id: 99, name: 'oak_boat', type: 'oak_boat',
+        position: new Vec3(args.x, args.y, args.z),
+      };
+      boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+      bot.entities[99] = boat;
+      return ok({ data: { boat_entity_id: 99 } });
+    },
+    board: async (args) => {
+      calls.push({ verb: 'board', args });
+      bot.vehicle = bot.entities[99];
+      return ok({ data: { vehicle_id: 99 } });
+    },
+    sail: async (args) => { calls.push({ verb: 'sail', args }); return ok({ data: {} }); },
+    disembark: async (args) => {
+      calls.push({ verb: 'disembark', args });
+      bot.vehicle = null;
+      return ok({ data: {} });
+    },
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  const r = await water.sail_to({ x: 100, y: 63, z: -1 });
+  assert.equal(r.ok, true, `expected ok: ${JSON.stringify(r).slice(0, 200)}`);
+  // The rescue phase must run BEFORE mount + sail.
+  assert.ok(r.data.phases_executed.includes('in_water_rescue'),
+    `expected in_water_rescue phase, got ${JSON.stringify(r.data.phases_executed)}`);
+  // walk_to_entry must NOT run — that's the whole point.
+  assert.ok(!r.data.phases_executed.includes('walk_to_entry'),
+    `walk_to_entry should be skipped on rescue path; got phases=${JSON.stringify(r.data.phases_executed)}`);
+  // place_boat must have been called with _rescue_from_water flag.
+  const placeCall = calls.find((c) => c.verb === 'place_boat');
+  assert.ok(placeCall, 'place_boat must be called');
+  assert.equal(placeCall.args._rescue_from_water, true,
+    'place_boat must receive _rescue_from_water:true to bypass the F2 BOT_IN_WATER gate');
+  assert.equal(placeCall.args._from_sail_to, true,
+    'place_boat must still receive _from_sail_to:true to pass the gating gate');
+});
+
+test('mc sail_to: bot on land (foot dry) takes standard walk_to_entry path, NOT rescue', async () => {
+  // Confirms F9 doesn't over-fire — when the bot is on dry land at
+  // sail_to start, the rescue branch must NOT activate.
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: -1 },  // on shore, foot block = air
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+    entities: {},
+    pathfindMovesTo: { x: 0, y: 63, z: -1 },  // pathfinder leaves on shore
+  });
+  /** @type {Array<{ verb: string, args: any }>} */
+  const calls = [];
+  const ACTIONS = {
+    place_boat: async (args) => {
+      calls.push({ verb: 'place_boat', args });
+      const boat = { id: 99, name: 'oak_boat', position: new Vec3(args.x, args.y, args.z) };
+      boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+      bot.entities[99] = boat;
+      return ok({ data: { boat_entity_id: 99 } });
+    },
+    board: async () => { bot.vehicle = bot.entities[99]; return ok({ data: {} }); },
+    sail: async () => ok({ data: {} }),
+    disembark: async () => { bot.vehicle = null; return ok({ data: {} }); },
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  const r = await water.sail_to({ x: 100, y: 63, z: -1 });
+  assert.equal(r.ok, true);
+  // Standard path uses walk_to_entry, NOT in_water_rescue.
+  assert.ok(r.data.phases_executed.includes('walk_to_entry'),
+    `expected walk_to_entry on dry-start; got ${JSON.stringify(r.data.phases_executed)}`);
+  assert.ok(!r.data.phases_executed.includes('in_water_rescue'),
+    `in_water_rescue should NOT fire when bot starts on dry land; got ${JSON.stringify(r.data.phases_executed)}`);
+  // place_boat must NOT receive the rescue flag for the standard path.
+  const placeCall = calls.find((c) => c.verb === 'place_boat');
+  assert.ok(placeCall, 'place_boat must be called');
+  assert.notEqual(placeCall.args._rescue_from_water, true,
+    'standard path must NOT set _rescue_from_water');
+});
+
+test('mc place_boat: _rescue_from_water bypasses F2 BOT_IN_WATER gate', async () => {
+  // F9 add-on: place_boat accepts _rescue_from_water:true to explicitly
+  // opt into the from-water placement path. Without this flag (just
+  // _from_sail_to:true), F2 still refuses for safety.
+  const blocks = {};
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 0, y: 62.5, z: 0 },  // submerged
+    blocks,
+    inventory: [{ name: 'oak_boat', count: 1 }],
+  });
+  const water = createWaterActions(waterDeps(bot));
+  // With rescue flag: must proceed past the F2 gate (will likely fail
+  // for other reasons in the mock — entity-spawn, etc. — but the
+  // refusal code must NOT be BOT_IN_WATER).
+  const r = await water.place_boat({
+    x: 0, y: 62, z: 0,
+    _from_sail_to: true,
+    _rescue_from_water: true,
+  });
+  // Either ok or a non-BOT_IN_WATER failure (place_boat may stumble on
+  // mock-specific entity spawn). The contract here: the rescue flag
+  // PREVENTS the BOT_IN_WATER refusal.
+  assert.notEqual(r.error?.code, 'BOT_IN_WATER',
+    `_rescue_from_water must bypass F2's BOT_IN_WATER refusal; got ${r.error?.code}`);
 });
 
 test('mc sail_to: walk_to_entry drops bot in water → WALK_TO_ENTRY_DROPPED_IN_WATER', async () => {
