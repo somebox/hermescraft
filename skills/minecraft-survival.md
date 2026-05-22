@@ -13,7 +13,7 @@ triggers:
   - item names
   - home base
   - crafting table
-version: 3.2.0
+version: 3.3.0
 ---
 
 # Minecraft Survival — Master Skill
@@ -30,8 +30,11 @@ mc collect BLOCK N     # find and mine N blocks (e.g. mc collect oak_log 5)
 mc craft ITEM [N]      # craft item (need crafting table nearby for 3x3)
 mc recipes ITEM        # look up crafting recipe ingredients
 mc smelt INPUT         # smelt in nearby furnace
-mc goto X Y Z          # pathfind to position
+mc move X Y Z          # smart non-destructive nav (handles doors) — preferred
+mc goto X Y Z          # raw pathfinder (open spaces only)
 mc goto_near X Y Z     # pathfind near position
+mc stair_down DIR LEN  # safely descend by digging stairs (see minecraft-navigation)
+mc stair_up DIR LEN    # safely ascend; places floor over voids
 mc follow PLAYER       # follow a player
 mc attack [target]     # attack nearest hostile (or specific mob)
 mc eat                 # eat best food in inventory
@@ -112,13 +115,13 @@ Goal: iron tools + shield + bucket
 ### Phase 3: Diamonds
 Goal: diamond gear + enchanting table
 
-1. Mine at Y=-59: `mc move X -59 Z` (use `mc tunnel` to dig down)
-2. **Scout first**: `mc scout` before any dig at depth. Lava is common at Y < 16; sand pockets can suffocate; one bad swing kills the run. `mc scout` lists lava + falling-block columns + bedrock in a radius.
-3. **Use `mc safe_dig`** instead of `mc dig` at depth. It refuses if breaking a block would expose lava, drop the bot, or release a falling-block column onto its head. Returns `ok:false` with a `HAZARD_*` code so you can re-plan.
+1. Descend to Y≈−59: `mc stair_down north 60` (never `mc move` through solid stone; `mc goto` can't path through it either). See [minecraft-navigation](minecraft-navigation) for the full vertical-movement playbook.
+2. **Scout first**: `mc scout --block diamond_ore` before any dig at depth. Lava is common at Y < 16; sand pockets can suffocate; one bad swing kills the run. `mc scout` lists lava + falling-block columns + bedrock + candidate ore counts in a radius.
+3. **Use `mc safe_dig`** instead of `mc dig` at depth — refuses if breaking a block would expose lava, drop the bot, or release a falling-block column. Returns `ok:false` with a `HAZARD_*` code so you can re-plan.
 4. `mc tunnel` and `mc dig_area` also auto-abort on hazards and tell you exactly where. Resume with adjusted bounds.
-5. Need iron pickaxe minimum (diamond pickaxe preferred)
-6. `mc craft diamond_pickaxe` — 3 diamonds + 2 sticks
-7. `mc craft diamond_sword` — 2 diamonds + 1 stick
+5. Need iron pickaxe minimum (diamond pickaxe preferred).
+6. `mc craft diamond_pickaxe` — 3 diamonds + 2 sticks.
+7. `mc craft diamond_sword` — 2 diamonds + 1 stick.
 
 ### Phase 4: Nether
 Goal: nether access + blaze rods + ender pearls
@@ -130,27 +133,13 @@ Goal: nether access + blaze rods + ender pearls
 5. Kill blazes for blaze rods, endermen for pearls
 6. Craft eyes of ender → find stronghold → beat the dragon
 
-## Key Recipes (quick reference)
-
-- Planks: 1 log → 4 planks
-- Sticks: 2 planks → 4 sticks
-- Crafting table: 4 planks
-- Wooden pickaxe: 3 planks + 2 sticks (needs table)
-- Wooden axe: 3 planks + 2 sticks (needs table) — use for `*_log` / stems
-- Stone pickaxe: 3 cobblestone + 2 sticks (needs table)
-- Furnace: 8 cobblestone (needs table)
-- Torch: 1 coal + 1 stick → 4 torches
-- Chest: 8 planks (needs table)
-
-Use `mc recipes ITEM` to look up any recipe you're unsure about.
-
 ## Crafting & smelting rules
 
 **Before crafting, always:**
 1. `mc inventory` — do you have the materials?
-2. `mc recipes ITEM` — check requirements (don't guess!)
-3. `mc nearby 8` — crafting_table within reach? If not, craft + place one first.
-4. `mc craft ITEM` then `mc inventory` to verify.
+2. `mc recipes ITEM` — check requirements (don't guess!). Use `mc craft_plan ITEM` for a dependency tree against current inventory.
+3. `mc find crafting_table` — table within reach? If not, craft + place one first (or `mc find` will surface a saved mark).
+4. `mc craft ITEM [N]` then `mc inventory` to verify.
 
 **Crafting table needed for**: all tools, weapons, armor, furnace, doors, chest, shield, bucket, bow — everything except planks, sticks, and the table itself.
 
@@ -158,7 +147,7 @@ Use `mc recipes ITEM` to look up any recipe you're unsure about.
 
 **Before placing blocks**: `mc equip BLOCK` first, then `mc place BLOCK X Y Z`. Read coordinates from `mc status` output — don't guess.
 
-Common recipes:
+### Common recipes
 - 1 log → 4 planks (no table)
 - 2 planks → 4 sticks (no table)
 - 4 planks → crafting_table (no table)
@@ -172,6 +161,8 @@ Common recipes:
 - 4 planks + 2 sticks → 3× oak_fence (table)
 - 2 planks + 4 sticks → oak_fence_gate (table)
 - 3 wool + 3 planks → bed (table)
+
+Use `mc recipes ITEM` to look up any recipe not listed here.
 
 ## Home base setup
 
@@ -213,6 +204,48 @@ food. Crop cycle: till → plant → bonemeal → harvest.
 **Watering**: use `mc bucket_fill X Y Z` from a water source, walk to the
 field, then `mc bucket_empty X Y Z` to place water within 4 blocks of the
 farmland. One water source can hydrate a 9x9 farmland patch around it.
+
+### Worked example: 9×9 wheat farm
+
+A 9×9 wheat farm is the standard efficient layout — every farmland block
+is within 4 blocks of one central water source.
+
+Materials (use `mc craft_plan stone_hoe`, `mc craft_plan oak_fence` to
+verify what you're missing):
+- `stone_hoe` ×1 — 2 cobblestone + 2 sticks (needs table)
+- `bucket` ×1 — 3 iron_ingot (needs table); fill at any water source
+- `wheat_seeds` ×18+ — break tall_grass with hand
+- `oak_fence` ×24+ — 4 planks + 2 sticks → 3 fences (needs table)
+- `oak_fence_gate` ×1 — 2 planks + 4 sticks (needs table)
+- `torch` ×4+ — for night-time growth
+
+Build sequence (use the building primitives, not per-block loops):
+1. `mc mark wheat_farm "planned 9x9 farm"` at the site corner.
+2. `mc level X1 Z1 X2 Z2 Y` over the 11×11 footprint (fences perimeter +
+   9×9 interior).
+3. `mc dig X Y Z` one block in the center for the water source.
+4. `mc bucket_fill WX WY WZ` from any water; `mc bucket_empty CX CY CZ`
+   into the center hole.
+5. `mc till X Y Z` on each of the 80 dirt cells of the 9×9 (skip the
+   water block). Auto-equips any hoe.
+6. `mc plant wheat_seeds X Y+1 Z` on each farmland tile.
+7. `mc fence oak_fence X1 Z1 X2 Z2 --gate south` for the perimeter +
+   gate in one call.
+8. `mc place torch ...` on 4 fence posts for night growth.
+9. Update memory: "wheat_farm at @wheat_farm, harvest mature with
+   `mc harvest X1 Z1 X2 Z2 Y`, replant with `mc plant wheat_seeds ...`."
+
+### Food rankings (food points + saturation)
+
+```
+Golden carrot:     6 food, 14.4 sat  (best overall — golden food)
+Cooked steak:      8 food, 12.8 sat  (best farmable)
+Cooked porkchop:   8 food, 12.8 sat  (tied with steak)
+Cooked chicken:    6 food,  7.2 sat
+Baked potato:      5 food,  6.0 sat  (mass-produces easily)
+Bread:             5 food,  6.0 sat  (easy early-game)
+Apple:             4 food,  2.4 sat  (oak tree drops)
+```
 
 **Trampling**: standing on bare farmland reverts it to dirt. Walking on
 farmland with crops on it is fine. When laying out a 3x3 patch, till + plant
@@ -271,15 +304,19 @@ spawns → 20 min to maturity → 5 min breed cooldown afterward.
 
 ### Containment
 
-Animals need to stay in a pen for breeding to be reliable. Build a
-1-block-high fence with `mc place oak_fence` (or any fence variant); animals
-cannot path-jump fences. A pen of about 5x5 holds a small flock comfortably.
+Animals need to stay in a pen for breeding to be reliable. Use the `mc fence`
+primitive (see [minecraft-building](minecraft-building)) — it builds the
+perimeter at one Y, optionally with a gate, in a single call:
 
-**Add a gate.** Pens should have a fence_gate (`mc place oak_fence_gate X Y Z`)
-on one side so the bot can enter and exit without breaching the fence. The
-`mc through GX GY GZ` verb does the full sequence — opens the gate, walks to
-the far side, closes the gate behind — in one call. Use it whenever you need
-to enter the pen to shear, milk, or breed from inside.
+```
+mc fence oak_fence -3 -3 3 3 --gate south   # 7×7 pen with a south-facing gate
+```
+
+A 5×5–7×7 pen holds a small flock comfortably. Animals cannot path-jump
+fences. The gate lets the bot enter/exit without breaching the perimeter —
+`mc through GX GY GZ` opens the gate, walks across, and closes it behind in
+one call. Use it whenever you need to enter the pen to shear, milk, or
+breed from inside.
 
 **`mc through` aborts if an animal is at the gate.** Before opening, it
 checks for passive mobs (chicken/cow/sheep/pig/etc.) within 1.5 blocks of
@@ -361,6 +398,25 @@ The sustainable maintenance pattern:
 - **Trampling crops with animals**: animals walking on bare farmland trample
   it back to dirt, just like the bot. Keep the pen on grass, not farmland.
 
+### Chicken coop scaling notes
+
+Adults lay eggs ~every 5–10 min (~8/hour); thrown eggs hatch 1/8 of the
+time, so stock many before expecting a flock. Babies mature in ~20 min
+of loaded-chunk time (sleeping skips don't count).
+
+- **Entry lock**: small fenced antechamber with two gates; keep one closed
+  so pathfinding doesn't show a straight escape.
+- **Containment**: water-floor variants stop chickens clipping through
+  fences and funnel eggs toward a collection tile.
+- **Lighting**: lit floors/roofs reduce hostile spawns inside the farm
+  and let timers tick at night.
+- **`maxEntityCramming`**: Java caps mobs in one block at 24 (causes
+  damage past that); rely on flow/spacing, not stuffing.
+- **What's out-of-scope for `mc`**: throwing eggs, redstone egg clocks,
+  comparator displays, lava-blade cookers. The bot can do fences, gates,
+  water placement, luring with seeds, `mc breed`/`mc hunt`/`mc pickup`,
+  and smelting — anything redstone-driven is manual.
+
 ## Fishing and boats
 
 ### Fishing
@@ -385,31 +441,41 @@ Rain in the test world speeds up bites significantly. Day vs night does
 not matter mechanically. Each successful catch consumes 1 durability from
 the rod (max 64).
 
-### Boats
+### Boats — ferry service (`mc sail_to`)
 
-Boats let you cross water without swimming risk and carry mobs as
-passengers. Crafted from 5 planks (any overworld wood).
+Boats let you cross water. The body treats them as a **portable
+ferry service**: having a boat in your inventory is your ticket;
+**`mc sail_to X Y Z` is the only verb you normally call.**
 
 | Verb | Effect |
 |---|---|
-| `mc place_boat X Y Z` | Spawn a boat on the water at (X,Y,Z). Requires `*_boat` item in inventory. PaperMCP fallback handles 1.21+ silent-no-op. |
-| `mc board` | Mount the nearest boat within 6 blocks. Returns NO_BOAT if none found. Verifies via the boat's passenger list and uses a PaperMCP `ride mount` fallback if native doesn't stick. |
-| `mc sail X Y Z` | Propel a mounted boat to (X,Y,Z). Tries native rider input first; if the boat doesn't move within 1.5s (Paper 1.21+ doesn't always give the rider control), falls back to server-side tp-stepping the boat 1.5 blocks per tick toward the target. Auto-stops within 2 blocks. Returns OUT_OF_RANGE if stuck. |
-| `mc disembark` | Exit the current vehicle. PaperMCP fallback uses server-side `ride dismount`. |
+| `mc sail_to X Y Z` | **The primary boat verb.** Plans a water route from your current position to (X,Y,Z), walks you to the entry shore, places a boat from your inventory, sails it across the validated route, disembarks you on the destination shore, and walks the final land leg. **Resumable**: calling it again while you're still on the boat picks up from your current water position. Returns NO_BOAT if no boat ticket, NO_NAVIGABLE_ROUTE if the water doesn't connect (tiny pond, target unreachable), or specific phase errors (MOUNT_FAILED / SAIL_FAILED / etc.) with `next_action_hint`. |
 
-Typical crossing pattern:
-1. `mc place_boat <waterX> <waterY> <waterZ>` next to your shore.
-2. `mc board` to enter the boat.
-3. `mc sail <farX> <farY> <farZ>` to drive the boat across. The verb
-   handles steering AND the propulsion fallback when the rider isn't
-   recognized as the boat's controller.
-4. `mc disembark` to step out.
-5. `mc goto <shoreX> <shoreY> <shoreZ>` if the boat stopped short of
-   solid ground (e.g., last 1-2 blocks of swimming or walking).
+**Typical pattern:**
 
-Don't substitute `mc goto` for `mc sail` while mounted — `mc goto`
-runs the pathfinder which doesn't understand boats, so the bot just
-swims while the boat sits unused.
+1. `mc bg_goto <target>` returns `BOAT_REQUIRED` because water is in the way.
+2. `mc sail_to <target_x> <target_y> <target_z>` — that's it. One call.
+3. If interrupted (knocked off, drowning escape, server hiccup): just call `mc sail_to <same target>` again. The body detects your current state and resumes the journey.
+
+**Boat ticket = boat in inventory.** Craft with `mc craft oak_boat`
+(needs 5 planks). The body will use it automatically. No need to
+think about placement coords, shore selection, mount mechanics, or
+disembark timing — that's all internal to `mc sail_to`.
+
+**Low-level escape hatches** (for recovery only — don't reach for
+these as a first move):
+
+| Verb | When to use |
+|---|---|
+| `mc place_boat X Y Z` | Manually placing at a specific water cell |
+| `mc board` | Manually mounting an already-placed boat nearby |
+| `mc sail X Y Z` | Manually steering a mounted boat (raw, no route planning) |
+| `mc disembark` | Manually exiting the vehicle |
+
+These are still the building blocks `mc sail_to` calls internally.
+Use them only when `mc sail_to` returned a structured error and
+the `next_action_hint` directs you here, or for diagnostic /
+unusual situations.
 
 Boats float on water and survive land contact (modern MC). They take
 damage from explosions, fire, lava, cactus, and mob attacks. A destroyed
@@ -430,11 +496,11 @@ boat drops as an item to be picked up.
 
 ## Situational awareness
 
-- **Y coordinate**: Y=62-70 is surface, Y<58 means underground, Y>100 is mountain
-- **If underground**: `mc goto X 80 Z` to pathfind to surface
-- **Can't see blocks**: stuck in terrain — `mc look`, then `mc goto` upward or dig out
-- **Use mc map 16** when disoriented
-- After EVERY movement, `mc status` to check position
+- **Y coordinate**: Y=62–70 is surface, Y<58 means underground, Y>100 is mountain.
+- **If underground**: `mc stair_up north 40` (pathfinder can't traverse solid stone).
+- **Can't see blocks**: stuck in terrain — `mc look`, then `mc escape` (auto-classifies stuck state) or dig out with `mc safe_dig`.
+- **Disoriented**: `mc map 16`.
+- After EVERY movement, `mc status` to check position.
 
 ### Pick the smallest verb for the question
 
@@ -461,9 +527,9 @@ always sufficient.
 
 ## When stuck
 
-- Same action fails 3× → try something different
-- `collect` fails → `mc nearby 32` for coords, then `mc goto_near`
-- Navigation fails → `mc stop`, try `mc goto_near` with higher Y
-- Falling in hole → `mc goto X Y+10 Z` or pillar up with dirt
-- Craft fails → `mc recipes ITEM`
-- Screen stuck → `mc close`
+- Same action fails 3× → try something different.
+- `collect` fails → `mc find BLOCK` for nearest source (inventory + chests + visible), then `mc goto_near`.
+- Navigation fails → `mc stop`, then `mc escape` (handles wedges/pillars/water).
+- Fell in a hole → `mc pillar_step dirt 4` or `mc stair_up north 6`.
+- Craft fails → `mc recipes ITEM` or `mc craft_plan ITEM` for a dependency tree.
+- Container screen stuck open → `mc close`.
