@@ -1170,3 +1170,194 @@ test('GET /route_probe: returns 400 on missing target coords', async () => {
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// mc sail_to — ferry-service orchestrator (Phase 2 of the sail_to plan)
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build a navigable channel of water + shore blocks for sail_to tests.
+ * Returns the block map keyed "x,y,z" → name.
+ *   - Water at y=62 from x=x0..x1, z=0
+ *   - Water at y=61 (depth so boat doesn't ground)
+ *   - Air at y=63
+ *   - Shore (stone+air) at z=-1 and z=1 along the channel
+ */
+function makeChannelBlocks(x0, x1, y = 62) {
+  const blocks = {};
+  for (let x = x0; x <= x1; x++) {
+    blocks[`${x},${y},0`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${x},${y + 1},0`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`${x},${y - 1},0`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    for (const sz of [-1, 1]) {
+      blocks[`${x},${y - 1},${sz}`] = { name: 'stone', boundingBox: 'block' };
+      blocks[`${x},${y},${sz}`] = { name: 'air', boundingBox: 'empty' };
+      blocks[`${x},${y + 1},${sz}`] = { name: 'air', boundingBox: 'empty' };
+    }
+  }
+  return blocks;
+}
+
+test('mc sail_to: already at target (within 4b) → phases_executed = [at_target]', async () => {
+  const bot = makeMockBot({
+    position: { x: 98, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+  });
+  const water = createWaterActions({
+    ...waterDeps(bot),
+    ACTIONS: {},  // sail_to short-circuits before needing ACTIONS
+  });
+  const r = await water.sail_to({ x: 100, y: 64, z: 0 });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.data.phases_executed, ['at_target']);
+  assert.match(r.result, /Already within 4b/i);
+});
+
+test('mc sail_to: no boat in inventory → NO_BOAT', async () => {
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [],  // ← no boat
+    blocks: makeChannelBlocks(0, 100),
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 100, y: 64, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_BOAT');
+  assert.match(r.error.message, /mc craft oak_boat/);
+  assert.match(r.error.next_action_hint, /craft/);
+});
+
+test('mc sail_to: tiny pond → NO_NAVIGABLE_ROUTE with POND_DISCONNECTED', async () => {
+  const blocks = {};
+  // 5×5 pond at y=62.
+  for (let x = 0; x < 5; x++) {
+    for (let z = 0; z < 5; z++) {
+      blocks[`${x},62,${z}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+      blocks[`${x},63,${z}`] = { name: 'air', boundingBox: 'empty' };
+      blocks[`${x},61,${z}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    }
+  }
+  // Shore at (-1, 63, 0).
+  blocks['-1,61,0'] = { name: 'stone', boundingBox: 'block' };
+  blocks['-1,62,0'] = { name: 'air', boundingBox: 'empty' };
+  blocks['-1,63,0'] = { name: 'air', boundingBox: 'empty' };
+  const bot = makeMockBot({
+    position: { x: -1, y: 63, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks,
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 100, y: 63, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_NAVIGABLE_ROUTE');
+  assert.equal(r.error.observed_state.water_route_error, 'POND_DISCONNECTED');
+  assert.match(r.error.next_action_hint, /bg_goto/);
+});
+
+test('mc sail_to: invalid coords → INVALID_COORD', async () => {
+  const bot = makeMockBot({
+    position: { x: 0, y: 64, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+  });
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS: {} });
+  const r = await water.sail_to({ x: 'invalid', y: 64, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'INVALID_COORD');
+});
+
+test('mc sail_to: full happy path — plan + mount + sail + disembark + walk', async () => {
+  // 100-block channel. Bot at (0,63,-1) on shore, target at (100,63,-1).
+  // Mock the inner primitives via ACTIONS so we don't run the real sail.
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: -1 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+    entities: {},
+    pathfindMovesTo: { x: 100, y: 63, z: -1 },
+  });
+  // Track which ACTIONS were invoked.
+  const invoked = [];
+  const ACTIONS = {
+    place_boat: async () => {
+      invoked.push('place_boat');
+      // Create a boat entity so board's find can succeed.
+      const boat = {
+        id: 99, name: 'oak_boat', type: 'oak_boat',
+        position: new Vec3(1, 62, 0),
+      };
+      boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+      bot.entities[99] = boat;
+      return ok({ data: { boat_entity_id: 99 } });
+    },
+    board: async () => {
+      invoked.push('board');
+      bot.vehicle = bot.entities[99];
+      return ok({ data: { vehicle_id: 99, vehicle: 'oak_boat' } });
+    },
+    sail: async () => {
+      invoked.push('sail');
+      return ok({ data: { distance_traveled: 100 } });
+    },
+    disembark: async () => {
+      invoked.push('disembark');
+      bot.vehicle = null;
+      return ok({ data: { dismounted_from: 'oak_boat' } });
+    },
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  const r = await water.sail_to({ x: 100, y: 63, z: -1 });
+  assert.equal(r.ok, true, `expected ok: ${JSON.stringify(r)}`);
+  assert.ok(r.data.phases_executed.includes('plan_route'), 'plan_route ran');
+  assert.ok(r.data.phases_executed.includes('walk_to_entry'), 'walk_to_entry ran');
+  assert.ok(r.data.phases_executed.includes('mount'), 'mount ran');
+  assert.ok(r.data.phases_executed.includes('sail'), 'sail ran');
+  assert.ok(r.data.phases_executed.includes('disembark'), 'disembark ran');
+  // ACTIONS were invoked in the right order.
+  assert.deepEqual(invoked, ['place_boat', 'board', 'sail', 'disembark']);
+  // Route metadata present.
+  assert.ok(r.data.route.horizontal_distance > 80);
+});
+
+test('mc sail_to: resume from mid-water — skip walk_to_entry + mount', async () => {
+  // Bot already mounted on a boat at (50, 62, 0) — middle of channel.
+  const bot = makeMockBot({
+    position: { x: 50, y: 62.5, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+    entities: {},
+  });
+  const boat = {
+    id: 7, name: 'oak_boat', type: 'oak_boat',
+    position: new Vec3(50, 62, 0),
+  };
+  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+  bot.entities[7] = boat;
+  bot.vehicle = boat;
+  const invoked = [];
+  const ACTIONS = {
+    place_boat: async () => { invoked.push('place_boat'); return ok({ data: {} }); },
+    board: async () => { invoked.push('board'); return ok({ data: {} }); },
+    sail: async () => { invoked.push('sail'); return ok({ data: {} }); },
+    disembark: async () => {
+      invoked.push('disembark');
+      bot.vehicle = null;
+      return ok({ data: {} });
+    },
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  const r = await water.sail_to({ x: 100, y: 63, z: -1 });
+  assert.equal(r.ok, true, `expected ok: ${JSON.stringify(r)}`);
+  // Resume path: plan_route ran, but walk_to_entry + mount were skipped.
+  assert.ok(r.data.phases_executed.includes('plan_route'));
+  assert.ok(!r.data.phases_executed.includes('walk_to_entry'),
+    `walk_to_entry should be skipped on resume; got phases=${JSON.stringify(r.data.phases_executed)}`);
+  assert.ok(!r.data.phases_executed.includes('mount'),
+    `mount should be skipped on resume; got phases=${JSON.stringify(r.data.phases_executed)}`);
+  // sail + disembark still ran.
+  assert.ok(invoked.includes('sail'));
+  assert.ok(invoked.includes('disembark'));
+  // place_boat + board were NOT called (mounted_in_water path).
+  assert.ok(!invoked.includes('place_boat'), 'place_boat should not be called when already mounted');
+  assert.ok(!invoked.includes('board'), 'board should not be called when already mounted');
+});

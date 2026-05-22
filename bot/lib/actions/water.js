@@ -10,6 +10,7 @@
 import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { findAdjustedTarget } from './_nav-helpers.js';
+import { planWaterRoute } from '../runtime/water-route.js';
 
 const BOAT_NAMES = new Set([
   'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
@@ -1335,6 +1336,357 @@ export function createWaterActions(deps) {
         next_action_hint: `mc sail ${Math.floor(target.x)} ${Math.floor(target.y)} ${Math.floor(target.z)}`,
         retry_safe: true,
       }};
+    },
+
+    /**
+     * Ferry-service primitive: plan and execute a full water journey
+     * from current position to (x, y, z) in one transactional call.
+     *
+     * Why this exists: circuit-v15 through v20 surfaced that exposing
+     * the 4 boat verbs (board → sail → disembark, plus implicit
+     * craft) to the agent compounded failure modes. Each call was
+     * blind to the others. Steve burned boats, placed them in
+     * disconnected ponds, hit 1-block bridges with no recovery, and
+     * had no way to resume mid-journey. The user's framing — "treat
+     * it like a portable ferry service" — is the right abstraction.
+     *
+     * Phases (each can be skipped on re-entry if current state shows
+     * it already completed):
+     *
+     *   1. plan_route        — planWaterRoute BFS over water cells
+     *   2. walk_to_entry     — pathfinder to entry_shore
+     *   3. mount             — place_boat at entry_water + board
+     *   4. sail              — sail to exit_water (waypoint hints)
+     *   5. disembark         — dismount at exit_shore
+     *   6. walk_to_target    — pathfinder to target
+     *
+     * Resumability is by state-detection, not persistent storage:
+     *   - already within 4b → at_target, return success
+     *   - b.vehicle set → skip walk_to_entry + mount; re-plan from
+     *     current water position; jump to sail
+     *   - bot near exit_shore on land → skip to walk_to_target
+     *   - otherwise → full sequence
+     *
+     * Action contract: NO_BOAT, NO_NAVIGABLE_ROUTE, WALK_TO_ENTRY_FAILED,
+     * MOUNT_FAILED, SAIL_FAILED, DISEMBARK_FAILED, WALK_TO_TARGET_FAILED.
+     */
+    async sail_to({ x, y, z }) {
+      const b = ensureBot();
+      if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_COORD',
+            message: 'mc sail_to requires numeric x, y, z',
+            retry_safe: false,
+          },
+        };
+      }
+      const target = { x: Number(x), y: Number(y), z: Number(z) };
+      const startedAt = Date.now();
+      const phases = []; // names of phases that actually ran
+      const startPos = {
+        x: b.entity.position.x,
+        y: b.entity.position.y,
+        z: b.entity.position.z,
+      };
+
+      // ── Phase: at_target ────────────────────────────────────────────
+      const horizToTarget = Math.hypot(startPos.x - target.x, startPos.z - target.z);
+      if (horizToTarget < 4) {
+        phases.push('at_target');
+        return {
+          ok: true,
+          command: 'sail_to',
+          data: {
+            phases_executed: phases,
+            start_position: startPos,
+            end_position: startPos,
+            elapsed_seconds: 0,
+          },
+          result: `Already within 4b of target (${horizToTarget.toFixed(1)}b) — no journey needed. Use mc bg_goto for the final approach.`,
+        };
+      }
+
+      // ── Boat ticket check (early) ───────────────────────────────────
+      // Allow currently-mounted bots through even if inventory is empty —
+      // the boat they're on is the ticket. Only refuse if neither held
+      // nor mounted.
+      const hasBoatItem = b.inventory?.items?.().some((it) => BOAT_NAMES.has(it.name));
+      const currentlyMounted = !!b.vehicle && !!b.entities[b.vehicle.id];
+      if (!hasBoatItem && !currentlyMounted) {
+        return {
+          ok: false,
+          error: {
+            code: 'NO_BOAT',
+            message: 'No boat in inventory and not currently mounted. mc sail_to needs a boat (your ticket). Craft one with: mc craft oak_boat (needs 5 oak_planks).',
+            observed_state: { inventory_has_boat: false, mounted: false },
+            next_action_hint: 'mc craft oak_boat',
+            retry_safe: false,
+          },
+        };
+      }
+
+      // ── Phase: plan_route ───────────────────────────────────────────
+      // If already mounted, re-plan from the current boat position so
+      // the rest of the journey continues from where we are.
+      const planStart = currentlyMounted && b.vehicle?.position
+        ? { x: b.vehicle.position.x, y: b.vehicle.position.y, z: b.vehicle.position.z }
+        : startPos;
+      const routeRes = planWaterRoute(b, planStart, target);
+      phases.push('plan_route');
+      if (!routeRes.ok) {
+        // Inner code is one of: ALREADY_AT_TARGET, WATER_TOO_SHALLOW,
+        // POND_DISCONNECTED, TARGET_NOT_REACHABLE_FROM_WATER, NO_WATER_ROUTE.
+        // ALREADY_AT_TARGET shouldn't happen here (we caught it above)
+        // but if it does, treat as success.
+        if (routeRes.error.code === 'ALREADY_AT_TARGET') {
+          phases.push('at_target');
+          return {
+            ok: true,
+            command: 'sail_to',
+            data: { phases_executed: phases, start_position: startPos, end_position: startPos, elapsed_seconds: 0 },
+            result: 'Already at target.',
+          };
+        }
+        const suggestion = ({
+          POND_DISCONNECTED: 'walk to a real shore first (mc bg_goto to a coast cell)',
+          WATER_TOO_SHALLOW: 'find deeper water — the bot would ground out here',
+          TARGET_NOT_REACHABLE_FROM_WATER: 'the destination has no water shore; consider mc bg_goto for the land approach',
+          NO_WATER_ROUTE: 'no navigable water near you — walk to a shore first',
+        })[routeRes.error.code] || 'check the observed_state for details';
+        return {
+          ok: false,
+          error: {
+            code: 'NO_NAVIGABLE_ROUTE',
+            message: `Can't plan a water route: ${routeRes.error.message} Suggestion: ${suggestion}.`,
+            observed_state: {
+              water_route_error: routeRes.error.code,
+              water_route_state: routeRes.error.observed_state,
+              start: planStart,
+              target,
+            },
+            next_action_hint: routeRes.error.code === 'POND_DISCONNECTED' || routeRes.error.code === 'NO_WATER_ROUTE'
+              ? 'mc bg_goto <coast coords>  # then mc sail_to again'
+              : 'mc bg_goto <target>',
+            retry_safe: false,
+          },
+        };
+      }
+
+      const route = routeRes.data;
+
+      // ── Phase: mounted_in_water → skip to sail ──────────────────────
+      // If already mounted, skip walk_to_entry + mount and go straight
+      // to sail from current position toward exit_water.
+      if (currentlyMounted) {
+        phases.push('sail');
+        try {
+          const sailRes = await ACTIONS.sail({
+            x: route.exit_water.x,
+            y: route.exit_water.y,
+            z: route.exit_water.z,
+          });
+          if (!sailRes.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'SAIL_FAILED',
+                message: `Resume-sail to (${route.exit_water.x}, ${route.exit_water.y}, ${route.exit_water.z}) failed: ${sailRes.error?.message || 'unknown'}. Call mc sail_to ${target.x} ${target.y} ${target.z} again to re-plan from here.`,
+                observed_state: { sail_error: sailRes.error, route },
+                next_action_hint: `mc sail_to ${target.x} ${target.y} ${target.z}`,
+                retry_safe: true,
+              },
+            };
+          }
+        } catch (e) {
+          return {
+            ok: false,
+            error: {
+              code: 'SAIL_FAILED',
+              message: `Resume-sail threw: ${e?.message || e}`,
+              retry_safe: true,
+            },
+          };
+        }
+      } else {
+        // ── Phase: walk_to_entry ─────────────────────────────────────
+        phases.push('walk_to_entry');
+        try {
+          const entry = route.entry_shore;
+          const goal = new goals.GoalNear(entry.x, entry.y, entry.z, 1);
+          await b.pathfinder.goto(goal);
+        } catch (e) {
+          return {
+            ok: false,
+            error: {
+              code: 'WALK_TO_ENTRY_FAILED',
+              message: `Could not walk to entry shore at (${route.entry_shore.x}, ${route.entry_shore.y}, ${route.entry_shore.z}): ${e?.message || e}`,
+              observed_state: { entry_shore: route.entry_shore, route },
+              next_action_hint: `mc bg_goto ${route.entry_shore.x} ${route.entry_shore.y} ${route.entry_shore.z}`,
+              retry_safe: true,
+            },
+          };
+        }
+
+        // ── Phase: mount ─────────────────────────────────────────────
+        phases.push('mount');
+        try {
+          const placeRes = await ACTIONS.place_boat({
+            x: route.entry_water.x,
+            y: route.entry_water.y,
+            z: route.entry_water.z,
+          });
+          if (!placeRes?.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'MOUNT_FAILED',
+                message: `Could not place boat at entry_water (${route.entry_water.x}, ${route.entry_water.y}, ${route.entry_water.z}): ${placeRes?.error?.message || 'place_boat failed'}`,
+                observed_state: { place_boat_error: placeRes?.error, route },
+                retry_safe: true,
+              },
+            };
+          }
+          const boardRes = await ACTIONS.board();
+          if (!boardRes?.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'MOUNT_FAILED',
+                message: `Boat placed at (${route.entry_water.x}, ${route.entry_water.y}, ${route.entry_water.z}) but mount failed: ${boardRes?.error?.message || 'board failed'}`,
+                observed_state: { board_error: boardRes?.error, place_data: placeRes.data, route },
+                retry_safe: true,
+              },
+            };
+          }
+        } catch (e) {
+          return {
+            ok: false,
+            error: {
+              code: 'MOUNT_FAILED',
+              message: `Mount sequence threw: ${e?.message || e}`,
+              retry_safe: true,
+            },
+          };
+        }
+
+        // ── Phase: sail ──────────────────────────────────────────────
+        phases.push('sail');
+        try {
+          const sailRes = await ACTIONS.sail({
+            x: route.exit_water.x,
+            y: route.exit_water.y,
+            z: route.exit_water.z,
+          });
+          if (!sailRes.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'SAIL_FAILED',
+                message: `Sail to (${route.exit_water.x}, ${route.exit_water.y}, ${route.exit_water.z}) failed: ${sailRes.error?.message || 'unknown'}. Call mc sail_to ${target.x} ${target.y} ${target.z} again to re-plan from here.`,
+                observed_state: { sail_error: sailRes.error, route },
+                next_action_hint: `mc sail_to ${target.x} ${target.y} ${target.z}`,
+                retry_safe: true,
+              },
+            };
+          }
+        } catch (e) {
+          return {
+            ok: false,
+            error: {
+              code: 'SAIL_FAILED',
+              message: `Sail threw: ${e?.message || e}`,
+              retry_safe: true,
+            },
+          };
+        }
+      }
+
+      // ── Phase: disembark ────────────────────────────────────────────
+      // Only run disembark if the bot is still on a vehicle. Sail's
+      // BOAT_STUCK auto-disembark may have already freed Steve.
+      if (b.vehicle && b.entities[b.vehicle.id]) {
+        phases.push('disembark');
+        try {
+          const disRes = await ACTIONS.disembark({});
+          if (!disRes.ok && disRes.error?.code !== 'NOT_MOUNTED') {
+            return {
+              ok: false,
+              error: {
+                code: 'DISEMBARK_FAILED',
+                message: `Disembark failed at (${route.exit_shore.x}, ${route.exit_shore.y}, ${route.exit_shore.z}): ${disRes.error?.message || 'unknown'}`,
+                observed_state: { disembark_error: disRes.error, exit_shore: route.exit_shore },
+                retry_safe: true,
+              },
+            };
+          }
+        } catch (e) {
+          return {
+            ok: false,
+            error: {
+              code: 'DISEMBARK_FAILED',
+              message: `Disembark threw: ${e?.message || e}`,
+              retry_safe: true,
+            },
+          };
+        }
+      }
+
+      // ── Phase: walk_to_target ───────────────────────────────────────
+      // Only if we're not already there.
+      const here = b.entity.position;
+      const stillFar = Math.hypot(here.x - target.x, here.z - target.z) > 4;
+      if (stillFar) {
+        phases.push('walk_to_target');
+        try {
+          const goal = new goals.GoalNear(target.x, target.y, target.z, 2);
+          await b.pathfinder.goto(goal);
+        } catch (e) {
+          // Don't fail the whole sail_to for the final-land-leg —
+          // Steve is on dry land near the target. Return success
+          // with a note in the data.
+          const endPos = b.entity.position;
+          return {
+            ok: true,
+            command: 'sail_to',
+            data: {
+              phases_executed: phases,
+              walk_to_target_partial: { error: e?.message || String(e) },
+              route: {
+                entry_shore: route.entry_shore,
+                exit_shore: route.exit_shore,
+                horizontal_distance: route.horizontal_distance,
+                waypoints_count: route.waypoints.length,
+              },
+              start_position: startPos,
+              end_position: { x: endPos.x, y: endPos.y, z: endPos.z },
+              elapsed_seconds: Math.round((Date.now() - startedAt) / 1000),
+            },
+            result: `Sailed to (${route.exit_shore.x},${route.exit_shore.y},${route.exit_shore.z}) — final ${Math.round(Math.hypot(endPos.x - target.x, endPos.z - target.z))}b on land failed; call mc bg_goto ${target.x} ${target.y} ${target.z} to finish.`,
+          };
+        }
+      }
+
+      const endPos = b.entity.position;
+      return {
+        ok: true,
+        command: 'sail_to',
+        data: {
+          phases_executed: phases,
+          route: {
+            entry_shore: route.entry_shore,
+            exit_shore: route.exit_shore,
+            horizontal_distance: route.horizontal_distance,
+            waypoints_count: route.waypoints.length,
+            water_cells_explored: route.water_cells_explored,
+          },
+          start_position: startPos,
+          end_position: { x: endPos.x, y: endPos.y, z: endPos.z },
+          elapsed_seconds: Math.round((Date.now() - startedAt) / 1000),
+        },
+        result: `Sailed from (${Math.floor(startPos.x)},${Math.floor(startPos.y)},${Math.floor(startPos.z)}) to (${target.x},${target.y},${target.z}) — ${route.horizontal_distance}b across water, ${phases.length} phases.`,
+      };
     },
 
     /**

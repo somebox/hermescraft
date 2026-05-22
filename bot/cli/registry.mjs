@@ -1170,6 +1170,22 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc sail 0 64 20', 'mc sail -50 64 0 120'],
   }),
 
+  g('sail_to', 'world', [], {
+    description: 'Ferry service: plan + execute a full water journey to X Y Z in one call. Validates the water route (BFS), walks to entry shore, places a boat, sails, disembarks, walks the final land leg. Re-callable to resume from current position if interrupted. Returns NO_BOAT if no boat in inventory, NO_NAVIGABLE_ROUTE if the water doesn\'t reach the target, SAIL_FAILED / MOUNT_FAILED / etc. for phase-level failures.',
+    method: 'POST',
+    path: '/action/sail_to',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x: Number(p.x), y: Number(p.y), z: Number(p.z),
+    }),
+    usage: 'mc sail_to X Y Z',
+    examples: ['mc sail_to -300 63 -100', 'mc sail_to 1000 63 -800'],
+  }),
+
   g('toss', 'world', ['drop'], {
     description: 'Drop ITEM [COUNT] from inventory',
     method: 'POST',
@@ -1851,7 +1867,7 @@ export const RAW_COMMAND_DEFS = [
 
   /** URL echo only — same as bash */
   g('dashboard', 'platform', ['dash'], {
-    description: 'Open the bot dashboard URL',
+    description: 'Print fleet command center URL (./start-dashboard.sh, default port 3000)',
     kind: 'http',
     customParse: true,
     method: 'GET',
