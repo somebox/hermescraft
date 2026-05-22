@@ -124,26 +124,26 @@ test('mc disembark: emergency mode force-kills vehicle via RCON when dismount pa
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
 
-  // Run disembark in non-emergency mode first → must return DISMOUNT_REJECTED
-  // (no force-kill).
+  // circuit-v11 (2026-05-22): force-kill is now run for ANY caller
+  // (not just emergency:true). Without this, the agent's plain
+  // `mc disembark` was leaving Steve mounted on a stuck boat after
+  // every other dismount path failed. Both modes attempt the
+  // force-kill; the only difference is the log label (EMERGENCY vs
+  // last-resort).
   const normal = await water.disembark({});
+  // Mock RCON is a no-op so vehicle stays sticky → DISMOUNT_REJECTED
+  // with the post-force-kill message.
   assert.equal(normal.ok, false);
   assert.equal(normal.error.code, 'DISMOUNT_REJECTED');
-  assert.match(normal.error.message, /Server did not confirm dismount\.$/);
+  assert.match(normal.error.message, /RCON force-kill|sticky|respawn/i,
+    `disembark must reach the force-kill branch even without emergency=true; got: ${normal.error.message}`);
 
   // Reset vehicle state for the emergency-mode run.
   bot.vehicle = boat;
   bot.entities = { 33: boat };
 
-  // In the test harness, RCON kill is a no-op (no real server), so the
-  // force-kill won't actually clear b.vehicle via entityGone — but the
-  // path runs without error and the emergency error message is distinct.
-  // We assert the code REACHES the emergency branch by checking the
-  // error message variant.
+  // Emergency mode: same code path, different log label.
   const emerg = await water.disembark({ emergency: true });
-  // Either:
-  //   (a) success-path: emergency cleared vehicle (would need real RCON);
-  //   (b) emergency-attempted-but-vehicle-sticky path: distinct error msg.
   if (emerg.ok === false) {
     assert.equal(emerg.error.code, 'DISMOUNT_REJECTED');
     assert.match(emerg.error.message, /RCON force-kill|sticky|respawn/i,

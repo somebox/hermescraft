@@ -1331,45 +1331,50 @@ export function createWaterActions(deps) {
         }
       }
       if (b.vehicle) {
-        // Last-resort: when called from the reactive emergency path
-        // (auto_disembark_low_hp), forcibly destroy the vehicle. Vanilla
-        // MC drops riders when their boat breaks. We lose the boat but
-        // save Steve from dying mounted while the server refuses the
-        // ride dismount. circuit-v7 (2026-05-22): Steve died at hp=0
-        // because every dismount path returned DISMOUNT_REJECTED while
-        // a zombie pounded him on a stuck boat.
-        if (emergency) {
-          const pmcp = paperMcpConfig();
-          if (pmcp && b.vehicle) {
-            const vid = b.vehicle.id;
-            const vname = b.vehicle.name || 'boat';
-            const bx = Math.floor(b.entity.position.x);
-            const by = Math.floor(b.entity.position.y);
-            const bz = Math.floor(b.entity.position.z);
-            try {
-              log(`[disembark] EMERGENCY — force-killing vehicle ${vname}#${vid} via RCON`);
-              await executeServerCommand(
-                pmcp,
-                `execute positioned ${bx} ${by} ${bz} run kill @e[type=#minecraft:boat,distance=..3,limit=1]`,
-              ).catch(() => null);
-              await sleep(400);
-              // Vehicle entity dies → mineflayer's entityGone handler
-              // clears b.vehicle. If it didn't fire, clear manually.
-              if (b.vehicle && !b.entities[b.vehicle.id]) b.vehicle = null;
-              if (b.vehicle && b.vehicle.id === vid) b.vehicle = null;
+        // Last-resort: forcibly destroy the vehicle entity via RCON.
+        // Vanilla MC drops riders when their boat breaks. We lose the
+        // boat but free Steve. Originally gated on emergency=true (only
+        // the reactive auto_disembark_low_hp path used it); circuit-v11
+        // showed the agent's plain `mc disembark` getting stuck in a
+        // DISMOUNT_REJECTED loop because every prior path silently
+        // failed and the force-kill was skipped. Now any caller gets
+        // the escalation — a free rider with no boat is always better
+        // than a stranded mounted bot.
+        const pmcp = paperMcpConfig();
+        if (pmcp && b.vehicle) {
+          const vid = b.vehicle.id;
+          const vname = b.vehicle.name || 'boat';
+          const bx = Math.floor(b.entity.position.x);
+          const by = Math.floor(b.entity.position.y);
+          const bz = Math.floor(b.entity.position.z);
+          try {
+            log(`[disembark] ${emergency ? 'EMERGENCY' : 'last-resort'} — force-killing vehicle ${vname}#${vid} via RCON`);
+            const r = await executeServerCommand(
+              pmcp,
+              `execute positioned ${bx} ${by} ${bz} run kill @e[type=#minecraft:boat,distance=..3,limit=1]`,
+            ).catch(() => ({ ok: false }));
+            await sleep(400);
+            // Vehicle entity dies → mineflayer's entityGone handler
+            // clears b.vehicle. Trust the entity-list check first.
+            // Only fall back to clearing manually if the RCON command
+            // returned ok — otherwise we'd risk desyncing (server still
+            // has Steve riding, mineflayer thinks not).
+            if (b.vehicle && !b.entities[b.vehicle.id]) {
+              b.vehicle = null;
               fallback = 'rcon_force_kill';
-            } catch (e) {
-              log(`[disembark] force-kill failed: ${e?.message || e}`);
+            } else if (b.vehicle && b.vehicle.id === vid && r && r.ok) {
+              b.vehicle = null;
+              fallback = 'rcon_force_kill';
             }
+          } catch (e) {
+            log(`[disembark] force-kill failed: ${e?.message || e}`);
           }
         }
       }
       if (b.vehicle) {
         return { ok: false, error: {
           code: 'DISMOUNT_REJECTED',
-          message: emergency
-            ? 'Server did not confirm dismount even after RCON force-kill. Vehicle entity is sticky; agent should mc respawn or wait it out.'
-            : 'Server did not confirm dismount.',
+          message: 'Server did not confirm dismount even after RCON force-kill. Vehicle entity is sticky; agent should mc respawn or wait it out.',
           retry_safe: true,
         }};
       }
