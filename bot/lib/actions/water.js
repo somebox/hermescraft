@@ -524,16 +524,35 @@ export function createWaterActions(deps) {
       const b = ensureBot();
 
       // b.vehicle can be stale if the vehicle entity died — mineflayer
-      // doesn't always null it out. Treat it as null if it isn't in the
-      // current entity list.
-      const currentVehicle = b.vehicle && b.entities[b.vehicle.id] === b.vehicle ? b.vehicle : null;
-      if (currentVehicle) {
-        return { ok: false, error: {
-          code: 'ALREADY_MOUNTED',
-          message: `Already mounted on ${currentVehicle.name || 'an entity'}.`,
-          observed_state: { vehicle: currentVehicle.name, vehicle_id: currentVehicle.id },
-          retry_safe: false,
-        }};
+      // doesn't always null it out. Treat it as null only if it isn't
+      // in the current entity list at all. circuit-v14 (2026-05-22):
+      // the previous strict-equality check (b.entities[id] === b.vehicle)
+      // could fail when mineflayer rebuilt the entity object after a
+      // server-side teleport, causing board to fall through into the
+      // "place + mount" path while Steve was still physically mounted —
+      // ending in MOUNT_REJECTED / timeout. ID presence is the right
+      // signal: server thinks bot is on entity id X, that entity is in
+      // b.entities → bot is mounted.
+      if (b.vehicle && b.entities[b.vehicle.id]) {
+        const live = b.entities[b.vehicle.id];
+        // Also check the passenger list as an extra source of truth —
+        // matches the isReallyMounted check used later in the mount
+        // confirmation path.
+        const passengers = Array.isArray(live.passengers) ? live.passengers : [];
+        const passengerHasBot = passengers.some((p) => p === b.entity || p?.id === b.entity.id);
+        if (passengerHasBot || live === b.vehicle) {
+          return { ok: false, error: {
+            code: 'ALREADY_MOUNTED',
+            message: `Already mounted on ${live.name || 'an entity'}. Call mc disembark before re-boarding.`,
+            observed_state: {
+              vehicle: live.name,
+              vehicle_id: live.id,
+              passenger_confirmed: passengerHasBot,
+            },
+            next_action_hint: 'mc sail X Y Z  # already on a boat',
+            retry_safe: false,
+          }};
+        }
       }
       // Clear the stale reference so mineflayer can mount again.
       if (b.vehicle && !b.entities[b.vehicle.id]) {
@@ -848,8 +867,8 @@ export function createWaterActions(deps) {
       let detourTicksLeft = 0;
       let detourVec = null; // {dx, dz} unit vector during a detour
       const detoursTaken = []; // for the success/error envelope
-      const MAX_DETOURS = 3;
-      const DETOUR_TICKS = 6; // ~2.4s of perpendicular travel before resuming target heading
+      const MAX_DETOURS = 5;
+      const DETOUR_TICKS = 8; // ~3.2s of perpendicular travel before resuming target heading
 
       // Pick a detour heading: scan 8 directions from the boat's current
       // XZ at boat Y for the first one that's water and the boat could
@@ -866,14 +885,22 @@ export function createWaterActions(deps) {
         const towardUx = towardDx / tNorm;
         const towardUz = towardDz / tNorm;
         const candidates = [];
+        // circuit-v14: probe 8 cells out (was 3). A wooden pier 4 cells
+        // wide blocked the original probe in every direction; with an
+        // 8-cell horizon we see the open water beyond the pier and
+        // pick the side that has the longest open run. Score now
+        // tracks waterCount so we prefer the clearest path.
+        const PROBE_STEPS = 8;
         for (const d of dirs) {
           const dNorm = Math.hypot(d.dx, d.dz);
           const ux = d.dx / dNorm;
           const uz = d.dz / dNorm;
-          // Probe 3 cells out along this heading at boat Y. Require water
-          // at boat Y AND air at boat Y+1 (boat needs vertical clearance).
+          // Probe up to PROBE_STEPS cells along this heading at boat Y.
+          // Tolerate up to 3 blocked cells in a row (small pier/island)
+          // before bailing — we want to see PAST short obstacles.
           let waterCount = 0;
-          for (let step = 1; step <= 3; step++) {
+          let consecutiveBlocked = 0;
+          for (let step = 1; step <= PROBE_STEPS; step++) {
             const px = Math.floor(here.x + ux * step);
             const py = Math.floor(here.y);
             const pz = Math.floor(here.z + uz * step);
@@ -882,14 +909,19 @@ export function createWaterActions(deps) {
             if (!foot || !head) break;
             const isWater = foot.name === 'water' || foot.name === 'flowing_water';
             const headClear = head.name === 'air' || head.name === 'cave_air' || head.boundingBox === 'empty';
-            if (isWater && headClear) waterCount++;
-            else break;
+            if (isWater && headClear) {
+              waterCount++;
+              consecutiveBlocked = 0;
+            } else {
+              consecutiveBlocked++;
+              if (consecutiveBlocked >= 3) break; // pier too wide to bypass via this heading
+            }
           }
-          if (waterCount >= 2) {
+          if (waterCount >= 3) {
             // Score: prefer directions closer to target heading. dot
             // product of unit vectors → 1 (forward) ... -1 (backward).
             const dot = ux * towardUx + uz * towardUz;
-            candidates.push({ dx: ux, dz: uz, dot });
+            candidates.push({ dx: ux, dz: uz, dot, waterCount });
           }
         }
         if (candidates.length === 0) return null;
@@ -897,9 +929,13 @@ export function createWaterActions(deps) {
         // undoing progress). We want |dot| close to 0 (perpendicular)
         // OR positive dot (toward target). Tie-break by larger dot.
         candidates.sort((a, c) => {
+          // Prefer forward-of-target heading over backward.
           const aFwd = a.dot >= 0 ? 1 : 0;
           const bFwd = c.dot >= 0 ? 1 : 0;
           if (aFwd !== bFwd) return bFwd - aFwd;
+          // Then prefer headings with more open water in the probe range.
+          if (c.waterCount !== a.waterCount) return c.waterCount - a.waterCount;
+          // Last tie-break: closer to target direction.
           return c.dot - a.dot;
         });
         return candidates[0];

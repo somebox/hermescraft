@@ -258,8 +258,18 @@ export function createReactive(deps) {
     // Track consecutive submerged ticks AND the timestamp of last dry
     // foot so the backoff counter can reset after a sustained dry
     // window (problem solved).
+    //
+    // circuit-v14 (2026-05-22): while the bot is MOUNTED on a boat,
+    // suppress water-tick accumulation entirely. The boat is the
+    // escape — Steve's head/torso are at the water surface inside the
+    // boat seat, which trips bot.entity.isInWater. Pre-fix the
+    // reactive fired auto_escape_water → swim_up every 30s for 4+
+    // minutes while Steve was sailing peacefully. Wasted compute and
+    // interrupted the agent's sail action. Mounted = let the boat do
+    // its job.
     const now = Date.now();
-    if (state.in_water) {
+    const mounted = !!state.bot?.vehicle;
+    if (state.in_water && !mounted) {
       waterTickCount += 1;
     } else {
       waterTickCount = 0;
@@ -320,7 +330,7 @@ export function createReactive(deps) {
     // water"), surface via swim_up so head clears and oxygen tops back up.
     // This is the "standing in a 1-block flowing current" case from the
     // experiment session — bot was being pushed around and couldn't act.
-    if (state.in_water && state.head_in_water) {
+    if (state.in_water && state.head_in_water && !mounted) {
       return { action: 'swim_up', oxygen: state.oxygen, why: 'head_in_water' };
     }
 
