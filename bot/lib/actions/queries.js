@@ -378,7 +378,24 @@ export function createQueriesActions(services) {
     if (before.error === 'no_bot') {
       return { ok: false, error: { code: 'NO_BOT', message: 'bot not ready', retry_safe: true } };
     }
-    const cls = before.classification;
+    // circuit-v12 (2026-05-22): the standingState classifier checks
+    // foot_in_water at the foot cell only. At a beach edge the foot
+    // cell may be solid sand while the bot's body/head are submerged
+    // in the adjacent water column — classification comes back as
+    // step_up_only, and escape's step_up branch then fails to climb
+    // (pathfinder can't reliably do "swim up + step onto land" via
+    // a GoalBlock alone). Steve hit ESCAPE_STEP_UP_FAILED 15× over
+    // 5 minutes in v12. Mineflayer's bot.entity.isInWater reports
+    // "any part of the player is touching water", which is the true
+    // signal for "needs water-escape strategy." When that's true,
+    // route through the water-escape branch regardless of foot-cell
+    // classification — that branch has swim-up + 8-way land scan +
+    // sprint+jump + place-block-and-pillar fallbacks.
+    let cls = before.classification;
+    const reallyInWater = !!(b.entity?.isInWater) || before.head_in_water || before.foot_in_water;
+    if (reallyInWater && cls !== 'in_water' && cls !== 'in_flowing_water') {
+      cls = 'in_water';
+    }
     const cell = before.cell;
     const fromPos = { ...before.position };
 
