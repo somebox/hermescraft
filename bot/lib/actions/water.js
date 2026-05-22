@@ -871,6 +871,25 @@ export function createWaterActions(deps) {
               yaw: yawRad * 180 / Math.PI,
               pitch: 0,
             });
+            // circuit-v17 (2026-05-22): keep mineflayer's local entity
+            // positions in sync with what we just told the server. When
+            // mounted, the server doesn't push position updates to the
+            // bot's own entity — mineflayer keeps bot.entity.position
+            // stuck at the mount-start coords. Live in v17: server had
+            // Steve at (283,62,-511) after sailing, bot thought Steve was
+            // still at (319,62,-567) — 67 blocks stale. Every subsequent
+            // mc scene / board / look / find operated on the wrong
+            // location. Only sync when we actually sent the packet.
+            if (b.entity && b.entity.position) {
+              b.entity.position.x = nx;
+              b.entity.position.y = ny;
+              b.entity.position.z = nz;
+            }
+            if (b.vehicle && b.vehicle.position) {
+              b.vehicle.position.x = nx;
+              b.vehicle.position.y = ny;
+              b.vehicle.position.z = nz;
+            }
           }
         } catch {}
       };
@@ -1182,6 +1201,22 @@ export function createWaterActions(deps) {
             const cmd = `execute positioned ${bx} ${by} ${bz} run tp @e[type=oak_boat,distance=..2,limit=1] ${nx.toFixed(3)} ${ny.toFixed(3)} ${nz.toFixed(3)}`;
             const r = await executeServerCommand(pmcp, cmd).catch(() => ({ ok: false }));
             if (!r || !r.ok) log(`[sail] tp step failed`);
+            // circuit-v17: keep local entity positions in sync with the
+            // server-side teleport we just issued. Without this, the bot's
+            // bot.entity.position stays at the pre-sail coords; every
+            // subsequent action operates on the wrong location.
+            if (r && r.ok) {
+              if (b.entity && b.entity.position) {
+                b.entity.position.x = nx;
+                b.entity.position.y = ny;
+                b.entity.position.z = nz;
+              }
+              if (b.vehicle && b.vehicle.position) {
+                b.vehicle.position.x = nx;
+                b.vehicle.position.y = ny;
+                b.vehicle.position.z = nz;
+              }
+            }
             await sleep(400);
           } else {
             // No fallback available; native isn't working. Bail.
