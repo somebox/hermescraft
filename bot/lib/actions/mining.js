@@ -1226,7 +1226,64 @@ export function createMiningActions(deps) {
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
       // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
 
+      // circuit-v8 followup: repeat-fail detector. If the agent keeps
+      // hammering the same cell with mc dig and the body keeps refusing,
+      // surface a DIG_BLOCKED_REPEAT envelope so the postmortem (and the
+      // agent itself) sees the "stuck pattern" clearly. Tracked in
+      // ctx.runtime.recentDigFailures (60s window, 12-entry cap).
+      const DIG_FAIL_WINDOW_MS = 60_000;
+      const DIG_FAIL_REPEAT_THRESHOLD = 3;
+      const cell = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) };
+      const recordDigFailure = (code) => {
+        if (!ctx?.runtime) return;
+        if (!Array.isArray(ctx.runtime.recentDigFailures)) ctx.runtime.recentDigFailures = [];
+        const cutoff = Date.now() - DIG_FAIL_WINDOW_MS;
+        ctx.runtime.recentDigFailures = ctx.runtime.recentDigFailures.filter(e => e.ts > cutoff);
+        const existing = ctx.runtime.recentDigFailures.find(e =>
+          e.cell.x === cell.x && e.cell.y === cell.y && e.cell.z === cell.z);
+        if (existing) {
+          existing.hit_count = (existing.hit_count || 1) + 1;
+          existing.ts = Date.now();
+          existing.code = code;
+        } else {
+          ctx.runtime.recentDigFailures.push({
+            ts: Date.now(),
+            cell: { ...cell },
+            block: target?.name || null,
+            code,
+            hit_count: 1,
+          });
+          if (ctx.runtime.recentDigFailures.length > 12) ctx.runtime.recentDigFailures.shift();
+        }
+      };
+      // Pre-check: have we already hit the repeat threshold for this cell?
+      if (ctx?.runtime && Array.isArray(ctx.runtime.recentDigFailures)) {
+        const cutoff = Date.now() - DIG_FAIL_WINDOW_MS;
+        ctx.runtime.recentDigFailures = ctx.runtime.recentDigFailures.filter(e => e.ts > cutoff);
+        const prior = ctx.runtime.recentDigFailures.find(e =>
+          e.cell.x === cell.x && e.cell.y === cell.y && e.cell.z === cell.z);
+        if (prior && prior.hit_count >= DIG_FAIL_REPEAT_THRESHOLD) {
+          return {
+            ok: false,
+            error: {
+              code: 'DIG_BLOCKED_REPEAT',
+              message: `Failed to dig (${cell.x},${cell.y},${cell.z}) ${prior.hit_count}× in the last 60s (last code: ${prior.code}). The block is genuinely unreachable from your current angle. Stop retrying — pillar away, approach from a different side, or call mc advise.`,
+              observed_state: {
+                failed_count: prior.hit_count,
+                last_error_code: prior.code,
+                block_at_target: prior.block,
+                requested_coord: cell,
+                bot_position: posObj(b.entity.position),
+              },
+              next_action_hint: `mc advise --reason="dig blocked at ${cell.x},${cell.y},${cell.z}"`,
+              retry_safe: false,
+            },
+          };
+        }
+      }
+
       if (!target || target.name === 'air' || target.name === 'cave_air' || target.name === 'void_air') {
+        recordDigFailure('NO_BLOCK_AT_COORD');
         return {
           ok: false,
           error: {
@@ -1239,6 +1296,7 @@ export function createMiningActions(deps) {
       }
 
       if (isDigProtected(target.name, { x, y, z }, ctx)) {
+        recordDigFailure('PROTECTED_BLOCK');
         return {
           ok: false,
           error: {
@@ -1255,6 +1313,7 @@ export function createMiningActions(deps) {
       // out (G21 v5 Mason in pond) or drowns the bot mid-swing. Force
       // flag overrides for power-users who know they have breathing room.
       if (!force && b.entity?.isInWater === true) {
+        recordDigFailure('SUBMERGED');
         return {
           ok: false,
           error: {
@@ -1277,6 +1336,7 @@ export function createMiningActions(deps) {
       if (!force) {
         const supported = getSupportedDoorAbove(b, x, y, z);
         if (supported) {
+          recordDigFailure('SUPPORT_BLOCK');
           return {
             ok: false,
             error: {
@@ -1301,6 +1361,7 @@ export function createMiningActions(deps) {
         const ed = await equipForDig(b, target);
         hints = ed.hints || [];
       } catch (err) {
+        recordDigFailure('TOOL_INADEQUATE');
         return {
           ok: false,
           error: {
@@ -1322,6 +1383,7 @@ export function createMiningActions(deps) {
           await gotoWithTimeout(b, new goals.GoalNear(x, y, z, 3), ACTION_CAPS_MS.dig);
         } catch (err) {
           if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+            recordDigFailure('OPERATION_TIMEOUT');
             return timeoutError('dig', ACTION_CAPS_MS.dig, {
               block_at_target: target.name,
               requested_coord: { x, y, z },
@@ -1329,6 +1391,7 @@ export function createMiningActions(deps) {
               bot_position: posObj(b.entity.position),
             }, 'Pathfind to dig target was canceled. Move closer manually or try a different cell.');
           }
+          recordDigFailure('OUT_OF_RANGE');
           return {
             ok: false,
             error: {
@@ -1364,6 +1427,7 @@ export function createMiningActions(deps) {
             { x: cx, y: cy, z: cz },
           ];
           if (!faces.some((p) => hasLineOfSight(eye, p))) {
+            recordDigFailure('NO_LINE_OF_SIGHT');
             return {
               ok: false,
               error: {
@@ -1392,6 +1456,7 @@ export function createMiningActions(deps) {
       try {
         await b.dig(target, true);
       } catch (err) {
+        recordDigFailure('INTERRUPTED');
         return {
           ok: false,
           error: {
@@ -1450,6 +1515,15 @@ export function createMiningActions(deps) {
       }
 
       const tips = [...new Set(hints)];
+
+      // Success: clear any stale dig-failure record for this cell so the
+      // repeat-blocked detector doesn't fire on later attempts at the
+      // same spot (e.g. agent unblocked itself and is mining a new
+      // block in the same coord).
+      if (ctx?.runtime?.recentDigFailures?.length) {
+        ctx.runtime.recentDigFailures = ctx.runtime.recentDigFailures.filter(e =>
+          !(e.cell.x === cell.x && e.cell.y === cell.y && e.cell.z === cell.z));
+      }
 
       return {
         ok: true,

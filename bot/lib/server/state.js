@@ -1,7 +1,7 @@
 /**
  * Mutable runtime state for one bot server process, organized into 9 bounded
  * slices. Each slice has a small named constructor; `createBotState(config)`
- * assembles them. Phase 3 of the refactor (docs/refactor-plan.md).
+ * assembles them. Phase 3 of the refactor (docs/archive/refactor-plan-2026.md).
  *
  * Slice ownership:
  *
@@ -101,6 +101,13 @@ export function createRuntimeState() {
     ),
     /** F57.2: Cells where movement stalled or escape was needed; capped at 12 entries. */
     recentStuckCells: /** @type {Array<{ts:number, cell:{x:number,y:number,z:number}, source:'no_progress'|'escape', hit_count:number}>} */ (
+      []
+    ),
+    /** circuit-v8 followup: cells where mc dig failed recently. After
+     *  ≥ 3 failures at the same cell within 60s, dig surfaces a stronger
+     *  DIG_BLOCKED_REPEAT envelope so the agent stops retrying. Capped
+     *  at 12 entries; decays lazily on read. */
+    recentDigFailures: /** @type {Array<{ts:number, cell:{x:number,y:number,z:number}, block:string|null, code:string, hit_count:number}>} */ (
       []
     ),
     /** F72: Items auto-picked-up from recent mc dig calls; 30s decay window. */
@@ -224,7 +231,7 @@ export const FIELD_SLICE_MAP = Object.freeze({
   world:     ['bot', 'mcData', 'botReady', 'connectPromise', 'positionHistory', 'bootTime', 'mcSessionStartedAt'],
   social:    ['chatLog', 'overheardLog', 'commandQueue', 'socialGraph', 'socialEvents', 'lastChatTs', 'lastChatBriefedTime', 'MAX_LOG', 'MAX_QUEUE'],
   tasks:     ['currentTask', 'taskHistory', 'syncActionInFlight', 'syncActionName', 'syncActionStartedAt', 'cancelRequested', 'actionHistory', 'actionCounters', 'lastApiError', 'MAX_ACTION_HISTORY', 'MAX_TASK_HISTORY'],
-  runtime:   ['lastMoveFailed', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentPickups', 'recentPlaces', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
+  runtime:   ['lastMoveFailed', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentDigFailures', 'recentPickups', 'recentPlaces', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
   goals:     ['goalsStore', 'chestSnapshots'],
   team:      ['teamConfig', 'combatStats', 'recentDamagers', 'activeFurnaces', 'isSneaking'],
   reminders: ['reminders', 'remindersNextId'],

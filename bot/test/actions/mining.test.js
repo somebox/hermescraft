@@ -541,3 +541,91 @@ test('mining.collect: dig_failed dominant — no behind_wall hint emitted', asyn
   assert.equal(r.error.observed_state.causes.behind_wall ?? 0, 0, 'precondition: no behind_wall in causes');
   assert.equal(r.error.next_action_hint, undefined, 'no behind_wall hint when behind_wall is not the dominant cause');
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Repeat-fail detector (circuit-v8 postmortem item #3)
+// dig surfaces DIG_BLOCKED_REPEAT after ≥3 failures at the same cell
+// within 60s. Resets on a successful dig at that cell.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.dig: DIG_BLOCKED_REPEAT after 3 NO_LINE_OF_SIGHT failures at the same cell', async () => {
+  // Bot at (0,64,0) trying to dig stone at (5,64,0) with no LOS (raycast
+  // returns false). 3 calls should all return NO_LINE_OF_SIGHT; 4th
+  // returns DIG_BLOCKED_REPEAT pre-empting the LOS check.
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    type: 1,
+  });
+  const bot = makeStubBot({
+    position: new Vec3(0, 64, 0),
+    blockAtByPos: stoneAt,
+  });
+  bot.blockAt = stoneAt;
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => false,                  // ← every attempt fails LOS
+    eyePosition: () => new Vec3(0, 65.6, 0),
+  });
+  const actions = createMiningActions(deps);
+
+  for (let i = 1; i <= 3; i++) {
+    const r = await actions.dig({ x: 5, y: 64, z: 0 });
+    assert.equal(r.ok, false, `attempt ${i} should fail`);
+    assert.equal(r.error.code, 'NO_LINE_OF_SIGHT', `attempt ${i} code`);
+  }
+  const blocked = await actions.dig({ x: 5, y: 64, z: 0 });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.error.code, 'DIG_BLOCKED_REPEAT', 'after 3 fails, 4th returns DIG_BLOCKED_REPEAT');
+  assert.equal(blocked.error.observed_state.failed_count, 3);
+  assert.equal(blocked.error.observed_state.last_error_code, 'NO_LINE_OF_SIGHT');
+  assert.deepEqual(blocked.error.observed_state.requested_coord, { x: 5, y: 64, z: 0 });
+  assert.match(blocked.error.next_action_hint || '', /mc advise/);
+});
+
+test('mining.dig: success at the same cell clears the failure record', async () => {
+  // Accumulate 2 failures (under the 3-threshold), then succeed →
+  // the failure record at that cell should be cleared so future attempts
+  // don't trip the repeat detector.
+  let losReturn = false;
+  const stoneAt = (pos) => ({
+    name: 'stone',
+    position: pos,
+    getProperties: () => ({}),
+    boundingBox: 'block',
+    type: 1,
+  });
+  const bot = makeStubBot({
+    position: new Vec3(5, 64, 0),                 // close enough for dig
+    blockAtByPos: stoneAt,
+    dig: async () => {},                          // success
+  });
+  bot.blockAt = stoneAt;
+  bot.tool = { itemInHand: () => ({ name: 'iron_pickaxe' }) };
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => losReturn,
+    eyePosition: () => new Vec3(5, 65.6, 0),
+  });
+  const actions = createMiningActions(deps);
+
+  // 2 NO_LINE_OF_SIGHT failures — under the 3-threshold so the next dig
+  // can still try.
+  losReturn = false;
+  for (let i = 0; i < 2; i++) await actions.dig({ x: 5, y: 64, z: 0 });
+  // Precondition: 1 entry in the failure cache at this cell.
+  const before = (deps.ctx.runtime.recentDigFailures || []).find(e =>
+    e.cell.x === 5 && e.cell.y === 64 && e.cell.z === 0);
+  assert.ok(before && before.hit_count === 2, `precondition: 2 failures recorded, got ${JSON.stringify(before)}`);
+
+  // Flip LOS on → next dig should succeed and clear the record.
+  losReturn = true;
+  const ok = await actions.dig({ x: 5, y: 64, z: 0 });
+  assert.equal(ok.ok, true, `expected ok success: ${JSON.stringify(ok)}`);
+  // Failure record at this cell must be gone.
+  const remaining = (deps.ctx.runtime.recentDigFailures || []).find(e =>
+    e.cell.x === 5 && e.cell.y === 64 && e.cell.z === 0);
+  assert.equal(remaining, undefined, 'success should clear the failure record at the cell');
+});
