@@ -92,7 +92,7 @@ export function createMiningActions(deps) {
   }
   const handlers = {
     async collect({ block, count = 1 }) {
-      // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc collect) ─
+      // ─ Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc collect) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
       // ok=true requires mined_count > 0; mined_count==0 is a contract violation.
       // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
@@ -1054,6 +1054,31 @@ export function createMiningActions(deps) {
       }
       const totalGain = Object.values(inventoryGains).reduce((s, n) => s + n, 0);
 
+      // Task #33 — derive the expected drop item name for this block, so
+      // the success message can report the ACTUAL inventory item the
+      // agent got (e.g. iron_ore mined with iron_pickaxe drops raw_iron,
+      // not iron_ore). Without this, `mc collect iron_ore 4` reports
+      // "Have 0 iron_ore in inventory" even when 4 raw_iron landed —
+      // the agent reads that as a failure and re-tries.
+      //
+      // mcData.blocksByName[blockName].drops is the canonical source.
+      // First drop entry wins (most blocks have one canonical drop).
+      const blockMeta = ctx.world.mcData.blocksByName?.[blockName];
+      let dropItemName = blockName;
+      if (blockMeta && Array.isArray(blockMeta.drops) && blockMeta.drops.length > 0) {
+        const first = blockMeta.drops[0];
+        const dropId = (typeof first === 'object') ? (first.drop?.id ?? first.id ?? first) : first;
+        const dropItem = ctx.world.mcData.items?.[dropId];
+        if (dropItem?.name) dropItemName = dropItem.name;
+      }
+      const droppedItemDelta = dropItemName === blockName
+        ? endedBlockCount - startedBlockCount
+        : (endedInventory[dropItemName] || 0) - (startedInventory[dropItemName] || 0);
+      const dropNote = dropItemName !== blockName
+        ? ` (drops as ${dropItemName})`
+        : '';
+      const inventoryHave = Math.max(0, droppedItemDelta);
+
       const tips = [...tipSet];
       const tipsSuffix = tips.length ? ` Tips: ${tips.join(' | ')}` : '';
 
@@ -1158,8 +1183,8 @@ export function createMiningActions(deps) {
         : '';
       const cancelNote = wasCancelled ? ' [cancelled mid-task]' : '';
       const msg = remaining > 0
-        ? `Mined ${collected} ${blockName} (${remaining} more needed). Have ${endedBlockCount} ${blockName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`
-        : `Mined ${collected}/${count} ${blockName}. Have ${endedBlockCount} ${blockName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`;
+        ? `Mined ${collected} ${blockName}${dropNote} (${remaining} more needed). Have ${inventoryHave} ${dropItemName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`
+        : `Mined ${collected}/${count} ${blockName}${dropNote}. Have ${inventoryHave} ${dropItemName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`;
 
       return {
         ok: true,
@@ -1179,6 +1204,11 @@ export function createMiningActions(deps) {
           // is the scalar sum for quick "did anything land?" checks.
           inventory_gain: inventoryGains,
           total_inventory_gain: totalGain,
+          // Task #33: surface the actual drop item name. iron_ore → raw_iron,
+          // coal_ore → coal, etc. Agents can check inventory[expected_drop_item]
+          // not inventory[block_name] to verify the loot.
+          expected_drop_item: dropItemName,
+          drop_item_gained: inventoryHave,
           ...(resolvedFromSource ? { mined_source_block: resolvedFromSource } : {}),
           ...(wasCancelled ? { cancelled: true } : {}),
         },
@@ -1192,7 +1222,7 @@ export function createMiningActions(deps) {
       const b = ensureBot();
       const target = b.blockAt(new Vec3(x, y, z));
 
-      // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc dig) ─
+      // ─ Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc dig) ─
       // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
       // The HTTP wrapper spreads result over { ok: true, ... }, so ok=false propagates.
 
