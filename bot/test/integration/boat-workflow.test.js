@@ -166,7 +166,7 @@ test('place_boat: requested cell is shore-water → uses it directly, no adjustm
   // PaperMCP config. We just want to verify the self-adjust path; the
   // boat-spawn detection is tested separately below.
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.place_boat({ x: 10, y: 63, z: 0 });
+  const r = await water.place_boat({ x: 10, y: 63, z: 0, _from_sail_to: true });
   // Without a boat entity appearing, PLACE_FAILED is expected. The
   // important thing is that we got PAST the self-adjust step (no
   // NO_WATER_AT_TARGET, no NO_STANCE) — meaning the shore-water predicate
@@ -193,7 +193,7 @@ test('place_boat: requested cell is dirt → self-adjusts to nearby shore-water'
     inventory: [{ name: 'oak_boat', count: 1 }],
   });
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.place_boat({ x: 10, y: 63, z: 0 });
+  const r = await water.place_boat({ x: 10, y: 63, z: 0, _from_sail_to: true });
   // Still PLACE_FAILED downstream (no entity simulation), but the
   // adjusted_target field MUST be present and point at the shore-water.
   assert.equal(r.ok, false);
@@ -217,7 +217,7 @@ test('place_boat: nothing nearby is water → NO_WATER_AT_TARGET', async () => {
     inventory: [{ name: 'oak_boat', count: 1 }],
   });
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.place_boat({ x: 0, y: 63, z: 0 });
+  const r = await water.place_boat({ x: 0, y: 63, z: 0, _from_sail_to: true });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'NO_WATER_AT_TARGET');
 });
@@ -233,7 +233,7 @@ test('mc board: no boat in inventory and none nearby → NO_BOAT', async () => {
     entities: {},
   });
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.board();
+  const r = await water.board({ _from_sail_to: true });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'NO_BOAT');
   assert.match(r.error.message, /no boat item in inventory/i);
@@ -250,7 +250,7 @@ test('mc board: boat in inventory + no water within 12 → NO_BOAT (water missin
     },
   });
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.board();
+  const r = await water.board({ _from_sail_to: true });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'NO_BOAT');
   assert.match(r.error.message, /no water within 12/i);
@@ -309,7 +309,7 @@ test('mc board: boat in inventory + water nearby → ACTIONS.place_boat is calle
     ACTIONS,
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
-  const r = await water.board();
+  const r = await water.board({ _from_sail_to: true });
   // The mount may not "stick" in the mock (no passenger update), but
   // ACTIONS.place_boat MUST have been called for the auto-place flow
   // to count as working. data.auto_placed is the agent-facing signal.
@@ -349,7 +349,7 @@ test('mc board: detects boat entity with name=null type=oak_boat (Paper 1.21+ sh
   // Mount immediately resolves synchronously in the mock.
   bot.mount = (target) => { bot.vehicle = target; };
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.board();
+  const r = await water.board({ _from_sail_to: true });
   // The is-really-mounted check looks at boat.passengers; without a real
   // passenger update, the mount won't "stick" and the mock will fall
   // through to PaperMCP. Without PaperMCP wired, the final result is
@@ -395,7 +395,7 @@ test('mc board: force-sync b.vehicle when passengers confirm but b.vehicle is nu
     // Critically: do NOT set bot.vehicle here.
   };
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.board();
+  const r = await water.board({ _from_sail_to: true });
   assert.equal(r.ok, true, `expected ok board: ${JSON.stringify(r)}`);
   assert.equal(bot.vehicle, boat, 'b.vehicle should be force-synced to the boat after passenger-list confirmation');
   assert.equal(r.data.vehicle_id, 42);
@@ -425,7 +425,7 @@ test('mc board: CHUNK_NOT_LOADED when local chunk cache is dark', async () => {
     ACTIONS: {},
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
-  const r = await water.board();
+  const r = await water.board({ _from_sail_to: true });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'CHUNK_NOT_LOADED');
   assert.match(r.error.message, /chunk cache is empty|chunk data/i);
@@ -481,7 +481,7 @@ test('mc sail: packet_vehicle_move path syncs bot.entity.position locally', asyn
     ACTIONS: {},
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
-  await water.sail({ x: 5, y: 63, z: 0, timeout_seconds: 2 });
+  await water.sail({ x: 5, y: 63, z: 0, timeout_seconds: 2, _from_sail_to: true });
   // Required: at least one vehicle_move packet was sent AND the bot's
   // local entity.position was advanced past the start coord.
   const vmCalls = writeCalls.filter((c) => c.name === 'vehicle_move');
@@ -576,7 +576,7 @@ test('mc sail: TIMEOUT envelope carries next_action_hint to retry', async () => 
   // Tiny timeout so the test resolves fast. Boat is at (0,63,0); target
   // is 50 blocks away. Native steering "doesn't work" (no movement
   // simulation), no PaperMCP — so sail will exit at the deadline.
-  const r = await water.sail({ x: 50, y: 64, z: 0, timeout_seconds: 2 });
+  const r = await water.sail({ x: 50, y: 64, z: 0, timeout_seconds: 2, _from_sail_to: true });
   assert.equal(r.ok, false);
   // Could be TIMEOUT or OUT_OF_RANGE depending on which branch fires first.
   assert.ok(['TIMEOUT', 'OUT_OF_RANGE'].includes(r.error.code),
@@ -639,7 +639,7 @@ test('mc sail: shore reached within 8 blocks → returns ok with data.shore_reac
     ACTIONS: {},
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
-  const r = await water.sail({ x: 12, y: 63, z: 0, timeout_seconds: 2 });
+  const r = await water.sail({ x: 12, y: 63, z: 0, timeout_seconds: 2, _from_sail_to: true });
   // Should succeed (shore_reached) rather than timing out, since shore
   // is well within the 8-block scan radius and target is within the
   // 16-block approach window.
@@ -692,7 +692,7 @@ test('mc sail: uses bot.moveVehicle (NOT setControlState) for forward propulsion
   // Short timeout so the loop terminates; what matters is that during
   // the run, sail called moveVehicle and NEVER called setControlState
   // with 'forward'.
-  await water.sail({ x: 20, y: 63, z: 0, timeout_seconds: 2 });
+  await water.sail({ x: 20, y: 63, z: 0, timeout_seconds: 2, _from_sail_to: true });
   assert.ok(moveVehicleCalls.length >= 1, 'sail must call bot.moveVehicle at least once');
   const anyForward = moveVehicleCalls.some((c) => Number(c.forward) > 0);
   assert.ok(anyForward, 'at least one moveVehicle call must have forward > 0');
@@ -766,7 +766,7 @@ test('mc sail TP-fallback: aborts with BOAT_STUCK when next step is a solid bloc
     ACTIONS,
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
-  const r = await water.sail({ x: 10, y: 63, z: 0, timeout_seconds: 4 });
+  const r = await water.sail({ x: 10, y: 63, z: 0, timeout_seconds: 4, _from_sail_to: true });
   // Two acceptable outcomes:
   //   (a) collision-check fired → r.ok=false, code=BOAT_STUCK,
   //       collision_at populated, disembark called.
@@ -841,7 +841,7 @@ test('mc sail: falls through to packet_vehicle_move when moveVehicle alone doesn
     ACTIONS: {},
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
-  const r = await water.sail({ x: 10, y: 63, z: 0, timeout_seconds: 4 });
+  const r = await water.sail({ x: 10, y: 63, z: 0, timeout_seconds: 4, _from_sail_to: true });
   // The vehicle_move probe must have fired — we see at least one
   // vehicle_move packet in writeCalls.
   const vmCalls = writeCalls.filter((c) => c.name === 'vehicle_move');
@@ -898,7 +898,7 @@ test('mc sail: pumps moveVehicle every ~250ms while native steering is active', 
     ACTIONS: {},
     goals: { GoalNear: function () {}, GoalBlock: function () {} },
   });
-  const r = await water.sail({ x: 50, y: 63, z: 0, timeout_seconds: 4 });
+  const r = await water.sail({ x: 50, y: 63, z: 0, timeout_seconds: 4, _from_sail_to: true });
   // We expect: ~6 calls during the 1.5s probe + N calls during the loop.
   // Total should be well above the probe count alone.
   assert.ok(moveVehicleCalls.length >= 5,
@@ -914,7 +914,7 @@ test('mc sail: NOT_MOUNTED when bot has no vehicle', async () => {
   const bot = makeMockBot({ inventory: [] });
   bot.vehicle = null;
   const water = createWaterActions(waterDeps(bot));
-  const r = await water.sail({ x: 50, y: 64, z: 0 });
+  const r = await water.sail({ x: 50, y: 64, z: 0, _from_sail_to: true });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'NOT_MOUNTED');
 });

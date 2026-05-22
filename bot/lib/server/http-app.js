@@ -4,6 +4,7 @@
  */
 import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError } from './middleware/task-lifecycle.js';
 import { probeRouteAlongLine } from './route-probe.js';
+import { planWaterRoute } from '../runtime/water-route.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -196,6 +197,37 @@ export function createBotHttpListener(deps) {
         const end = { x: Math.floor(toX), y: Math.floor(toY), z: Math.floor(toZ) };
         const result = probeRouteAlongLine(ctx.world.bot, start, end, samples);
         return respond(res, 200, { ok: true, data: { start, end, ...result } });
+      }
+
+      if (path === '/plan_water_route') {
+        // Dry-run BFS water-route planner. Read-only; does NOT move the bot.
+        // Useful for testing: hit it with from_x/y/z (default = bot's current
+        // position) and to_x/y/z to inspect the route + waypoints + refusal.
+        if (!ctx.world.bot || !ctx.world.bot.entity) {
+          return respond(res, 200, { ok: false, error: 'bot_not_ready' });
+        }
+        const me = ctx.world.bot.entity.position;
+        const num = (k, def) => {
+          const v = url.searchParams.get(k);
+          if (v === null) return def;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : def;
+        };
+        const start = {
+          x: num('from_x', Math.floor(me.x)),
+          y: num('from_y', Math.floor(me.y)),
+          z: num('from_z', Math.floor(me.z)),
+        };
+        const target = {
+          x: num('to_x', NaN),
+          y: num('to_y', NaN),
+          z: num('to_z', NaN),
+        };
+        if (![target.x, target.y, target.z].every(Number.isFinite)) {
+          return respond(res, 400, { ok: false, error: 'plan_water_route requires numeric to_x, to_y, to_z' });
+        }
+        const result = planWaterRoute(ctx.world.bot, start, target);
+        return respond(res, 200, { start, target, plan: result });
       }
 
       if (path === '/scene') {

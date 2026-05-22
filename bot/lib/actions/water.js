@@ -34,6 +34,30 @@ function isBoatEntity(e) {
   return false;
 }
 
+/**
+ * v26 deprecation gate. Direct external calls to mc sail / mc board /
+ * mc place_boat are footguns: agents fall back to them when sail_to
+ * returns a partial route, then crash through obstacles BFS deliberately
+ * routed around. Refuse external calls with a USE_SAIL_TO_INSTEAD
+ * redirect. sail_to calls these methods in-process with _from_sail_to:true
+ * to bypass — the bodyFn in cli/registry.mjs never includes that key, so
+ * HTTP /action/sail etc. can't spoof it from the agent's CLI surface.
+ *
+ * mc disembark stays open — it's a legitimate recovery verb (force-free
+ * the bot from any vehicle without needing a destination).
+ */
+function useSailToInsteadRefusal(verb) {
+  return {
+    ok: false,
+    error: {
+      code: 'USE_SAIL_TO_INSTEAD',
+      message: `Direct mc ${verb} is deprecated. For water journeys call mc sail_to X Y Z — the body handles place_boat / board / sail / disembark internally with BFS routing, partial-journey support, and resumability. Don't compose this primitive manually.`,
+      next_action_hint: 'mc sail_to <target_x> <target_y> <target_z>',
+      retry_safe: false,
+    },
+  };
+}
+
 const FISH_ROD_NAMES = ['fishing_rod'];
 
 // Items that can come out of vanilla fishing (fish, junk, treasure).
@@ -235,7 +259,8 @@ export function createWaterActions(deps) {
      * spawn the boat on the water surface.
      * Action contract: NO_BOAT, NO_WATER_AT_TARGET, OUT_OF_RANGE.
      */
-    async place_boat({ x, y, z }) {
+    async place_boat({ x, y, z, _from_sail_to } = {}) {
+      if (!_from_sail_to) return useSailToInsteadRefusal('place_boat');
       const b = ensureBot();
       const targetPos = new Vec3(Number(x), Number(y), Number(z));
 
@@ -521,7 +546,8 @@ export function createWaterActions(deps) {
      * Mount the nearest boat within 5 blocks.
      * Action contract: NO_BOAT, OUT_OF_RANGE, ALREADY_MOUNTED.
      */
-    async board() {
+    async board({ _from_sail_to } = {}) {
+      if (!_from_sail_to) return useSailToInsteadRefusal('board');
       const b = ensureBot();
 
       // b.vehicle can be stale if the vehicle entity died — mineflayer
@@ -632,7 +658,7 @@ export function createWaterActions(deps) {
         }
         const water = waterPositions[0];
         log(`[board] auto-place: no boat nearby — placing ${boatItem.name} on water at ${water.x},${water.y},${water.z}`);
-        const placeRes = await ACTIONS.place_boat({ x: water.x, y: water.y, z: water.z });
+        const placeRes = await ACTIONS.place_boat({ x: water.x, y: water.y, z: water.z, _from_sail_to: true });
         if (!placeRes?.ok) {
           return { ok: false, error: {
             code: 'AUTO_PLACE_FAILED',
@@ -802,7 +828,8 @@ export function createWaterActions(deps) {
      * boat is within 2 blocks of the target on the horizontal plane.
      * Action contract: NOT_MOUNTED, NOT_A_BOAT, TIMEOUT, OUT_OF_RANGE.
      */
-    async sail({ x, y, z, timeout_seconds, allow_shore_early_exit }) {
+    async sail({ x, y, z, timeout_seconds, allow_shore_early_exit, _from_sail_to } = {}) {
+      if (!_from_sail_to) return useSailToInsteadRefusal('sail');
       const b = ensureBot();
       const target = new Vec3(Number(x), Number(y), Number(z));
 
@@ -1502,6 +1529,7 @@ export function createWaterActions(deps) {
           const legRes = await ACTIONS.sail({
             x: wp.x, y: wp.y, z: wp.z,
             allow_shore_early_exit: isLast,
+            _from_sail_to: true,
           });
           if (!legRes.ok) {
             return {
@@ -1584,6 +1612,7 @@ export function createWaterActions(deps) {
             x: route.entry_water.x,
             y: route.entry_water.y,
             z: route.entry_water.z,
+            _from_sail_to: true,
           });
           if (!placeRes?.ok) {
             return {
@@ -1596,7 +1625,7 @@ export function createWaterActions(deps) {
               },
             };
           }
-          const boardRes = await ACTIONS.board();
+          const boardRes = await ACTIONS.board({ _from_sail_to: true });
           if (!boardRes?.ok) {
             return {
               ok: false,
@@ -1842,7 +1871,7 @@ export function createWaterActions(deps) {
           if (shore && shore.adjusted && shore.distance >= 2) {
             log(`[disembark] in open water — auto-sailing to shore at ${shore.x},${shore.y},${shore.z} (distance ${shore.distance})`);
             try {
-              const sailRes = await ACTIONS.sail({ x: shore.x, y: shore.y, z: shore.z, timeout_seconds: 30 });
+              const sailRes = await ACTIONS.sail({ x: shore.x, y: shore.y, z: shore.z, timeout_seconds: 30, _from_sail_to: true });
               autoSailed = {
                 ok: !!sailRes?.ok,
                 shore: { x: shore.x, y: shore.y, z: shore.z, distance: shore.distance },

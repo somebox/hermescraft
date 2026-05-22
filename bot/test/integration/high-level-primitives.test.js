@@ -353,7 +353,7 @@ test('mc sail BOAT_STUCK: auto-chains ACTIONS.disembark to get bot off the stuck
   });
   // Long target so SHORE_REACHED can't fire (boat is far from target),
   // and surroundings have no water so detours can't fire.
-  const r = await water.sail({ x: 200, y: 63, z: 0, timeout_seconds: 4 });
+  const r = await water.sail({ x: 200, y: 63, z: 0, timeout_seconds: 4, _from_sail_to: true });
   // Sail should ultimately return ok:false BOAT_STUCK, but ACTIONS.disembark
   // must have been called as part of the auto-recovery.
   assert.equal(r.ok, false);
