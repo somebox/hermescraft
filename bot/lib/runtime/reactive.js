@@ -37,7 +37,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark, isHostileNearBoat, pickBestWeapon } from './reactive-helpers.js';
+import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark, isHostileNearBoat, pickBestWeapon, shouldGiveUpEscape } from './reactive-helpers.js';
 
 const HOSTILE_NAMES = new Set([
   'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'enderman',
@@ -281,6 +281,7 @@ export function createReactive(deps) {
     // fast again from cooldown step 0".
     if (consecutiveEscapeFires > 0 && shouldResetEscapeCounter(lastFootDryTs, now)) {
       consecutiveEscapeFires = 0;
+      escapeGaveUpEmitted = false; // task #41: re-arm the one-shot
     }
 
     // Track currentTask activity for the idle predicate.
@@ -298,7 +299,33 @@ export function createReactive(deps) {
 
     const backoffMs = computeBackoffMs(consecutiveEscapeFires);
     const sinceLastEscape = now - lastAutoEscapeTs;
-    if (
+    // Task #41 (v30): give-up gate. After N=ESCAPE_GIVE_UP_THRESHOLD
+    // consecutive failed escape attempts (~8.5 min of trying with
+    // exponential backoff), stop firing. The bot is genuinely stuck in
+    // a way the reactive layer can't fix — keep filling autoActionLog
+    // with `auto_escape_water_started/done` events just makes the
+    // agent's status calls expensive without helping. Emit one final
+    // `gave_up` event so the agent sees a definitive signal, then go
+    // silent until consecutiveEscapeFires resets (which only happens
+    // after lastFootDryTs is ≥2 min ago — i.e. agent extracted the
+    // bot from water).
+    if (shouldGiveUpEscape(consecutiveEscapeFires, ESCAPE_GIVE_UP_THRESHOLD)) {
+      if (!escapeGaveUpEmitted && waterTickCount >= WATER_TICKS_TO_FIRE) {
+        escapeGaveUpEmitted = true;
+        pushAutoEvent({
+          kind: 'auto_escape_water_gave_up',
+          consecutive_fires: consecutiveEscapeFires,
+          ticks_submerged: waterTickCount,
+          oxygen: state.oxygen,
+          hp: state.hp,
+          why: 'sustained_water_exceeded_retry_budget',
+          hint: 'Reactive layer cannot escape this water. Agent must intervene: try mc disembark (if mounted), mc escape, or mc bg_goto to a dry coord.',
+        });
+        log(`[reactive] auto_escape_water → GAVE_UP after ${consecutiveEscapeFires} consecutive failures (~${Math.round((30 + 60 + 120 + 300) / 60)}min of retries). Silent until bot dries off.`);
+      }
+      // fall through to the rest of decide() so non-escape reactions
+      // (lava, low-oxygen, head_in_water) still fire.
+    } else if (
       !idle
       && waterTickCount >= WATER_TICKS_TO_FIRE
       && !autoEscapeInFlight
@@ -852,6 +879,21 @@ export function createReactive(deps) {
   let lastAutoEscapeTs = 0;      // wall-clock of last auto-fired escape
   let autoEscapeInFlight = false; // gate against re-entry while async escape runs
   let consecutiveEscapeFires = 0; // counter for exponential backoff (task #20)
+  let escapeGaveUpEmitted = false; // task #41 (v30): edge-detect for the one-shot
+                                   //   auto_escape_water_gave_up event. Set on
+                                   //   transition into give-up mode; cleared when
+                                   //   the bot leaves water (consecutiveEscapeFires
+                                   //   resets).
+  const ESCAPE_GIVE_UP_THRESHOLD = 4; // After N consecutive escape attempts have
+                                      //   all failed (with exponential backoff: 30s
+                                      //   + 60s + 120s + 300s = ~8.5 min of trying),
+                                      //   stop firing. Emit ONE event so the agent
+                                      //   gets a clear "I gave up, you intervene"
+                                      //   signal instead of 50 noisy retries clogging
+                                      //   autoActionLog and burning tokens on every
+                                      //   `mc status` call. v29 forensics: this
+                                      //   pattern accounted for ~3000 tokens per
+                                      //   failed run.
   let lastFootDryTs = 0;          // wall-clock of last tick with foot_in_water=false
   let lastAgentCallTs = 0;        // wall-clock of last mc <verb> HTTP request (touched externally)
   let lastTaskActiveTs = 0;       // wall-clock of last tick observing currentTask.status === 'running'

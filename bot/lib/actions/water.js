@@ -77,6 +77,17 @@ const REACH = 4.5;
 export function createWaterActions(deps) {
   const { ctx, ensureBot, goals, sleep, log, getMyName, ACTIONS } = deps;
 
+  // task #43 (v30): per-target retry tracking for sail_to. Closure-scoped
+  // so it persists across calls within a bot session but resets on
+  // process restart. Keyed by "x,y,z" of the target coord. When the same
+  // target fails SAIL_TO_RETRY_LIMIT times in a row, sail_to refuses
+  // with SAIL_TO_RETRY_LOOP and hints at mc advise — prevents the v29
+  // pattern where the agent burns ~1500 tokens retrying the same broken
+  // sail with no new information.
+  /** @type {Map<string, { count: number, lastErrorCode: string|null }>} */
+  const sailToRetryCounts = new Map();
+  const SAIL_TO_RETRY_LIMIT = 4;
+
   const inventoryAt = (b) =>
     b.inventory.items().reduce((acc, it) => {
       acc[it.name] = (acc[it.name] || 0) + it.count;
@@ -355,6 +366,34 @@ export function createWaterActions(deps) {
       let stancePos = null;
       let placedFromWater = false;
       if (inWater) {
+        // v30 defense-in-depth: when called from sail_to, the bot
+        // should already be on a dry entry shore. If we got here with
+        // the bot in water, walk_to_entry's pathfinder dropped Steve
+        // mid-walk — placing a boat from-water in that situation just
+        // makes things worse (Steve was submerged, now there's an
+        // unmountable boat at his foot). Refuse with a clear envelope
+        // so sail_to surfaces the error instead of cascading.
+        //
+        // sail_to itself does an explicit walk_to_entry post-check
+        // (F3) — this refusal is the safety net if that check is
+        // bypassed or its precondition changes. The escape/recovery
+        // path (no _from_sail_to flag) still gets the original
+        // from-water rescue behaviour: that path is intentional for
+        // "Steve deep in water with no shore nearby" scenarios from
+        // circuit-v1.
+        if (_from_sail_to) {
+          return { ok: false, error: {
+            code: 'BOT_IN_WATER',
+            message: `Cannot place a boat — bot is submerged at (${botFootPos.x}, ${botFootPos.y}, ${botFootPos.z}). A boat needs a dry stance to mount cleanly; placing from-water leaves the boat unreachable. Escape water first, then sail_to can pick a fresh entry shore from your new position.`,
+            observed_state: {
+              bot_position: { x: botFootPos.x, y: botFootPos.y, z: botFootPos.z },
+              foot_block: botFootBlock.name,
+              target_water: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
+            },
+            next_action_hint: 'mc escape   # then mc sail_to <target> again',
+            retry_safe: true,
+          }};
+        }
         // Place AT the bot's current foot cell. The boat spawns on the
         // surface adjacent to the bot. No move needed.
         stancePos = botFootPos;
@@ -1406,7 +1445,35 @@ export function createWaterActions(deps) {
      * Action contract: NO_BOAT, NO_NAVIGABLE_ROUTE, WALK_TO_ENTRY_FAILED,
      * MOUNT_FAILED, SAIL_FAILED, DISEMBARK_FAILED, WALK_TO_TARGET_FAILED.
      */
-    async sail_to({ x, y, z }) {
+    async sail_to(args) {
+      // task #43 (v30): thin wrapper around _sailToImpl that records
+      // per-target retry counts. After SAIL_TO_RETRY_LIMIT failures to
+      // the same target, the impl itself surfaces SAIL_TO_RETRY_LOOP
+      // (handled in _sailToImpl). On success, clear the record.
+      const result = await this._sailToImpl(args);
+      const tx = Number(args?.x), ty = Number(args?.y), tz = Number(args?.z);
+      if (Number.isFinite(tx) && Number.isFinite(ty) && Number.isFinite(tz)) {
+        const targetKey = `${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)}`;
+        if (result?.ok) {
+          sailToRetryCounts.delete(targetKey);
+        } else {
+          // Don't count refusals that signal "nothing to retry" or
+          // that are the loop-detector itself (avoid double-counting).
+          const code = result?.error?.code;
+          const noCountCodes = new Set(['INVALID_COORD', 'NO_BOAT', 'SAIL_TO_RETRY_LOOP']);
+          if (code && !noCountCodes.has(code)) {
+            const prior = sailToRetryCounts.get(targetKey) || { count: 0, lastErrorCode: null };
+            sailToRetryCounts.set(targetKey, {
+              count: prior.count + 1,
+              lastErrorCode: code,
+            });
+          }
+        }
+      }
+      return result;
+    },
+
+    async _sailToImpl({ x, y, z }) {
       const b = ensureBot();
       if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
         return {
@@ -1419,6 +1486,7 @@ export function createWaterActions(deps) {
         };
       }
       const target = { x: Number(x), y: Number(y), z: Number(z) };
+      const targetKey = `${Math.floor(target.x)},${Math.floor(target.y)},${Math.floor(target.z)}`;
       const startedAt = Date.now();
       const phases = []; // names of phases that actually ran
       const startPos = {
@@ -1427,10 +1495,35 @@ export function createWaterActions(deps) {
         z: b.entity.position.z,
       };
 
+      // task #43 (v30): retry-loop guard. After SAIL_TO_RETRY_LIMIT
+      // consecutive failures to the same target, refuse with
+      // SAIL_TO_RETRY_LOOP and hint mc advise. v29 showed the agent
+      // can burn unbounded tokens retrying the same broken sail_to
+      // with no new information; this gives it a definitive stop.
+      const priorRetry = sailToRetryCounts.get(targetKey);
+      if (priorRetry && priorRetry.count >= SAIL_TO_RETRY_LIMIT) {
+        return {
+          ok: false,
+          error: {
+            code: 'SAIL_TO_RETRY_LOOP',
+            message: `${priorRetry.count} consecutive sail_to calls to (${target.x}, ${target.y}, ${target.z}) have failed (last error: ${priorRetry.lastErrorCode || 'unknown'}). The body cannot make progress to this target on its own. Pick a different waypoint, escape any stuck state first, or call mc advise.`,
+            observed_state: {
+              retry_count: priorRetry.count,
+              last_error_code: priorRetry.lastErrorCode,
+              target,
+            },
+            next_action_hint: 'mc advise --reason="sail_to stuck retrying"',
+            retry_safe: false,
+          },
+        };
+      }
+
       // ── Phase: at_target ────────────────────────────────────────────
       const horizToTarget = Math.hypot(startPos.x - target.x, startPos.z - target.z);
       if (horizToTarget < 4) {
         phases.push('at_target');
+        // Success — clear any retry record for this target.
+        sailToRetryCounts.delete(targetKey);
         return {
           ok: true,
           command: 'sail_to',
@@ -1603,6 +1696,40 @@ export function createWaterActions(deps) {
               retry_safe: true,
             },
           };
+        }
+
+        // v30 F3: post-walk water-drop guard. GoalNear(entry_shore, 1)
+        // doesn't forbid water cells along the path. On beaches with
+        // shallow water adjacent to land, the pathfinder cheerfully
+        // walks Steve through 1-deep water and sometimes leaves him
+        // standing IN the water rather than on the entry shore. Then
+        // place_boat sees Steve submerged and (pre-F2) silently
+        // placed a boat at his foot — useless. F2 now refuses that;
+        // F3 catches the condition one phase earlier with a more
+        // informative envelope so the agent doesn't see a misleading
+        // MOUNT_FAILED wrapping a BOT_IN_WATER inner error.
+        try {
+          const footPos = b.entity.position.floored();
+          const footBlock = b.blockAt(footPos);
+          if (footBlock && (footBlock.name === 'water' || footBlock.name === 'flowing_water')) {
+            return {
+              ok: false,
+              error: {
+                code: 'WALK_TO_ENTRY_DROPPED_IN_WATER',
+                message: `walk_to_entry's pathfinder routed bot through water and left it submerged at (${footPos.x}, ${footPos.y}, ${footPos.z}) instead of on the entry shore at (${route.entry_shore.x}, ${route.entry_shore.y}, ${route.entry_shore.z}). Cannot place a boat from-water cleanly. Escape water first; re-call sail_to and the BFS will pick a different entry shore from your new position.`,
+                observed_state: {
+                  bot_foot: { x: footPos.x, y: footPos.y, z: footPos.z },
+                  foot_block: footBlock.name,
+                  intended_entry_shore: route.entry_shore,
+                },
+                next_action_hint: 'mc escape',
+                retry_safe: true,
+              },
+            };
+          }
+        } catch {
+          // blockAt threw — chunk unloaded or transient. Proceed; the
+          // mount phase will surface the real error if there is one.
         }
 
         // ── Phase: mount ─────────────────────────────────────────────

@@ -19,6 +19,7 @@ import {
   shouldResetEscapeCounter,
   isAgentIdle,
   shouldEmergencyDisembark,
+  shouldGiveUpEscape,
   isHostileNearBoat,
   pickBestWeapon,
   WEAPON_PRIORITY,
@@ -128,6 +129,53 @@ test('isAgentIdle: custom idle threshold respected', () => {
   assert.equal(isAgentIdle(now - 120_000, now - 120_000, now, 90_000), true);
   // 90s threshold: 30s ago is not
   assert.equal(isAgentIdle(now - 30_000, now - 30_000, now, 90_000), false);
+});
+
+// ─── shouldGiveUpEscape (task #41 — circuit-v29 token-burn defense) ─────
+// After N consecutive failed escape attempts (with exponential backoff
+// at 30s+60s+120s+300s = ~8.5min), the reactive layer stops firing and
+// emits ONE `auto_escape_water_gave_up` event. v29 forensics: a stuck
+// Steve generated ~50 reactive log lines + autoActionLog events over a
+// 5min run, burning ~3000 tokens per failed run. This helper gates the
+// give-up decision.
+
+test('shouldGiveUpEscape: false below threshold', () => {
+  assert.equal(shouldGiveUpEscape(0), false);
+  assert.equal(shouldGiveUpEscape(1), false);
+  assert.equal(shouldGiveUpEscape(2), false);
+  assert.equal(shouldGiveUpEscape(3), false);
+});
+
+test('shouldGiveUpEscape: true at and above default threshold of 4', () => {
+  assert.equal(shouldGiveUpEscape(4), true);
+  assert.equal(shouldGiveUpEscape(5), true);
+  assert.equal(shouldGiveUpEscape(100), true);
+});
+
+test('shouldGiveUpEscape: custom threshold respected', () => {
+  assert.equal(shouldGiveUpEscape(2, 3), false);
+  assert.equal(shouldGiveUpEscape(3, 3), true);
+  assert.equal(shouldGiveUpEscape(2, 2), true);
+  // threshold=1 means "give up after first failure" — useful for tests
+  assert.equal(shouldGiveUpEscape(1, 1), true);
+});
+
+test('shouldGiveUpEscape: invalid inputs are safe defaults (no give-up)', () => {
+  // Defensive: NaN / undefined / null inputs should NOT silently
+  // suppress escape — better to over-fire than abandon a stuck bot.
+  assert.equal(shouldGiveUpEscape(undefined), false);
+  assert.equal(shouldGiveUpEscape(NaN), false);
+  assert.equal(shouldGiveUpEscape(null), false);
+  assert.equal(shouldGiveUpEscape(10, undefined), true);  // threshold defaults to 4
+  assert.equal(shouldGiveUpEscape(10, 0), false);         // threshold<1 disables
+  assert.equal(shouldGiveUpEscape(10, -1), false);        // negative threshold disables
+  assert.equal(shouldGiveUpEscape(10, NaN), false);       // NaN threshold disables
+});
+
+test('shouldGiveUpEscape: fractional fire count floors', () => {
+  // Defensive — caller might pass anything.
+  assert.equal(shouldGiveUpEscape(3.9, 4), false);  // 3.9 → 3, not ≥4
+  assert.equal(shouldGiveUpEscape(4.1, 4), true);   // 4.1 → 4, ≥4
 });
 
 // ─── shouldEmergencyDisembark (task #23 — circuit-v5 survival defense) ───

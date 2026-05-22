@@ -222,6 +222,29 @@ test('place_boat: nothing nearby is water → NO_WATER_AT_TARGET', async () => {
   assert.equal(r.error.code, 'NO_WATER_AT_TARGET');
 });
 
+test('place_boat: bot submerged + _from_sail_to → BOT_IN_WATER refusal', async () => {
+  // v30 F2: when called from sail_to with the bot already in water,
+  // refuse instead of placing a boat the bot can't reach. The escape
+  // path (no _from_sail_to flag) still uses the rescue from-water mode.
+  const blocks = {};
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+    blocks[`${dx},62,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},61,${dz}`] = { name: 'water', boundingBox: 'empty', level: 0 };
+    blocks[`${dx},63,${dz}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 0, y: 62.5, z: 0 },  // submerged
+    blocks,
+    inventory: [{ name: 'oak_boat', count: 1 }],
+  });
+  const water = createWaterActions(waterDeps(bot));
+  const r = await water.place_boat({ x: 0, y: 62, z: 0, _from_sail_to: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'BOT_IN_WATER');
+  assert.match(r.error.next_action_hint, /mc escape/);
+  assert.match(r.error.next_action_hint, /sail_to/);
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // mc board — no-args mode
 // ─────────────────────────────────────────────────────────────────────────
@@ -1327,6 +1350,100 @@ test('mc sail_to: full happy path — plan + mount + sail + disembark + walk', a
   assert.ok(sailCalls >= 6, `expected sail called multiple times for a 100b channel, got ${sailCalls}`);
   // Route metadata present.
   assert.ok(r.data.route.horizontal_distance > 80);
+});
+
+test('mc sail_to: 4 consecutive failures to same target → SAIL_TO_RETRY_LOOP', async () => {
+  // v30 F6: closure-scoped per-target retry counter. Same target failing
+  // repeatedly should surface a definitive SAIL_TO_RETRY_LOOP envelope so
+  // the agent stops burning tokens retrying with no new information.
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: -1 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+    entities: {},
+    // Drop bot into water on walk_to_entry — guarantees the inner impl
+    // returns WALK_TO_ENTRY_DROPPED_IN_WATER (not a no-count refusal).
+    pathfindMovesTo: { x: 1, y: 62, z: 0 },
+  });
+  const ACTIONS = {
+    place_boat: async () => ok({ data: {} }),
+    board: async () => ok({ data: {} }),
+    sail: async () => ok({ data: {} }),
+    disembark: async () => ok({ data: {} }),
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  // 4 calls that all fail with WALK_TO_ENTRY_DROPPED_IN_WATER.
+  for (let i = 1; i <= 4; i++) {
+    const r = await water.sail_to({ x: 100, y: 63, z: -1 });
+    assert.equal(r.ok, false, `call ${i} should fail`);
+    if (i < 4) {
+      assert.equal(r.error.code, 'WALK_TO_ENTRY_DROPPED_IN_WATER',
+        `call ${i} expected WALK_TO_ENTRY_DROPPED_IN_WATER, got ${r.error.code}`);
+    }
+  }
+  // 5th call (count is now 4, meets SAIL_TO_RETRY_LIMIT) should surface
+  // the retry-loop envelope INSTEAD of running the impl again.
+  const r5 = await water.sail_to({ x: 100, y: 63, z: -1 });
+  assert.equal(r5.ok, false);
+  assert.equal(r5.error.code, 'SAIL_TO_RETRY_LOOP');
+  assert.equal(r5.error.observed_state.retry_count, 4);
+  assert.equal(r5.error.observed_state.last_error_code, 'WALK_TO_ENTRY_DROPPED_IN_WATER');
+  assert.match(r5.error.next_action_hint, /mc advise/);
+});
+
+test('mc sail_to: retry counter resets on different target', async () => {
+  // v30 F6: per-target tracking — failing at coord A shouldn't gate
+  // a fresh call to coord B.
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: -1 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+    entities: {},
+    pathfindMovesTo: { x: 1, y: 62, z: 0 },
+  });
+  const ACTIONS = {
+    place_boat: async () => ok({ data: {} }),
+    board: async () => ok({ data: {} }),
+    sail: async () => ok({ data: {} }),
+    disembark: async () => ok({ data: {} }),
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  // Burn the retry budget on target A.
+  for (let i = 0; i < 5; i++) {
+    await water.sail_to({ x: 100, y: 63, z: -1 });
+  }
+  // Fresh call to target B — must NOT be gated by A's counter.
+  const r = await water.sail_to({ x: 50, y: 63, z: -1 });
+  assert.equal(r.error?.code !== 'SAIL_TO_RETRY_LOOP', true,
+    `target B should not inherit target A's retry count; got ${r.error?.code}`);
+});
+
+test('mc sail_to: walk_to_entry drops bot in water → WALK_TO_ENTRY_DROPPED_IN_WATER', async () => {
+  // v30 F3: GoalNear(entry_shore, 1) can leave the bot in water on
+  // beach terrain. Verify sail_to detects this and refuses cleanly
+  // with mc escape hint before any place_boat / mount cascade.
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: -1 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+    blocks: makeChannelBlocks(0, 100),
+    entities: {},
+    // Pathfinder "succeeds" but leaves Steve standing IN water at
+    // (1, 62, 0) instead of on the entry shore at (0, 63, -1).
+    pathfindMovesTo: { x: 1, y: 62, z: 0 },
+  });
+  let placeBoatCalled = false;
+  const ACTIONS = {
+    place_boat: async () => { placeBoatCalled = true; return ok({ data: {} }); },
+    board: async () => ok({ data: {} }),
+    sail: async () => ok({ data: {} }),
+    disembark: async () => ok({ data: {} }),
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  const r = await water.sail_to({ x: 100, y: 63, z: -1 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'WALK_TO_ENTRY_DROPPED_IN_WATER');
+  assert.equal(r.error.next_action_hint, 'mc escape');
+  assert.equal(placeBoatCalled, false, 'sail_to must abort BEFORE calling place_boat');
 });
 
 test('mc sail_to: resume from mid-water — skip walk_to_entry + mount', async () => {

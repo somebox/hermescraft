@@ -162,6 +162,25 @@ export const WEAPON_PRIORITY = [
 const WEAPON_PATTERN = /(_sword|_axe)$/;
 
 /**
+ * task #41 (v30): after N consecutive failed escape attempts with the
+ * bot still in water, decide whether the reactive layer should give up
+ * firing. With backoff at 30s→60s→120s→300s, threshold=4 means ~8.5
+ * minutes of trying before silencing. The agent gets ONE
+ * `auto_escape_water_gave_up` event instead of repeated `_started/_done`
+ * pairs cluttering autoActionLog and the per-status token cost.
+ *
+ * @param {number} consecutiveEscapeFires — how many fires in a row failed
+ * @param {number} [threshold=4] — give-up threshold
+ * @returns {boolean} — true when the reactive layer should stop firing
+ */
+export function shouldGiveUpEscape(consecutiveEscapeFires, threshold = 4) {
+  const fires = Number(consecutiveEscapeFires);
+  const thr = Number(threshold);
+  if (!Number.isFinite(fires) || !Number.isFinite(thr) || thr < 1) return false;
+  return Math.floor(fires) >= Math.floor(thr);
+}
+
+/**
  * Return the best weapon in `items` per WEAPON_PRIORITY.
  * @param {Array<{ name: string }>} items
  * @returns {object|null}
