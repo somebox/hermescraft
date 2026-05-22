@@ -65,12 +65,23 @@ export function classifyError(httpRes, command) {
   const st = httpRes?.httpStatus ?? 0;
   const js = /** @type {Record<string,unknown>} */ (httpRes?.json ?? {});
 
+  // F8 (task #46): Phase-2 action contract puts the human message at
+  // js.error.message (nested) when js.error is an object envelope. Pre-fix
+  // this fell through to 'Request failed', wiping every F2-F7 refusal's
+  // actual message. The pattern semantic matchers below (Unknown mark,
+  // can't see, etc.) also depend on `msg` containing the real string.
+  const errObjMessage =
+    js.error && typeof js.error === 'object' && typeof /** @type {any} */ (js.error).message === 'string'
+      ? /** @type {any} */ (js.error).message
+      : null;
   const msg =
-    typeof js.error === 'string'
-      ? js.error
-      : typeof js.message === 'string'
-        ? js.message
-        : 'Request failed';
+    errObjMessage
+      ? errObjMessage
+      : typeof js.error === 'string'
+        ? js.error
+        : typeof js.message === 'string'
+          ? js.message
+          : 'Request failed';
 
   if (st === 409) return { error_type: 'task_conflict', hint: 'POST /task/cancel first, then retry.' };
   if (st === 404) return { error_type: 'not_found', hint: msg };
@@ -104,8 +115,20 @@ export function buildEnvelope({ command, httpRes, parsedParams, globals }) {
 
   if (!ok) {
     const classified = classifyError(httpRes, command);
+    // F8 (task #46): Phase-2 action contract puts the actionable next-step
+    // at js.error.next_action_hint (nested) when js.error is an object.
+    // Pre-fix we only read js.hint (top-level), which is empty for
+    // contract-shaped refusals — so every F2-F7 hint was suppressed and
+    // the agent saw 'Hint: Request failed' instead of 'mc sail_to ...',
+    // 'mc escape', 'mc advise', etc. Prefer the nested form; fall back
+    // to top-level js.hint for legacy responses, then to classified.hint.
+    const nestedHint =
+      js.error && typeof js.error === 'object' && typeof /** @type {any} */ (js.error).next_action_hint === 'string'
+        ? /** @type {any} */ (js.error).next_action_hint.trim()
+        : '';
     const serverHint =
-      typeof js.hint === 'string' && js.hint.trim() ? js.hint.trim() : '';
+      nestedHint
+      || (typeof js.hint === 'string' && js.hint.trim() ? js.hint.trim() : '');
     const hint = serverHint || classified.hint;
     const error_type =
       typeof js.error_type === 'string' && js.error_type.trim()
