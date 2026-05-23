@@ -15,6 +15,8 @@ version: 1.1.0
 
 # Minecraft — Routine chores
 
+Canonical `mc` syntax and chore-related recovery hints: [`docs/mc-commands.md`](../docs/mc-commands.md) (Section D–E).
+
 When no one is directing you and you're at the base, run through this
 list in priority order. Each chore has a simple "is it needed?" check
 so you don't waste turns on chores that are already done.

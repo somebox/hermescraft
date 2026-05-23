@@ -72,7 +72,7 @@ test('excavation.stair_up: dig_area hazard abort propagates', async () => {
   assert.equal(r.error.code, 'HAZARD_LAVA');
 });
 
-test('excavation.stair_down: invalid direction throws', async () => {
+test('excavation.stair_down: invalid direction returns INVALID_VALUE', async () => {
   const bot = {
     entity: { position: new Vec3(0.5, 64, 0.5) },
     inventory: { items: () => [] },
@@ -81,8 +81,8 @@ test('excavation.stair_down: invalid direction throws', async () => {
   };
   const services = makeExcavationServices({ bot, digAreaImpl: async () => ({ dug: 0 }) });
   const actions = createExcavationActions(services);
-  await assert.rejects(
-    () => actions.stair_down({ direction: 'invalid', depth: 1 }),
-    /Invalid direction/,
-  );
+  const r = await actions.stair_down({ direction: 'invalid', depth: 1 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'INVALID_VALUE');
+  assert.match(r.error.message, /Invalid direction/);
 });

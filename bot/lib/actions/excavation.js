@@ -1,7 +1,10 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { equipForDig, DIG_PASSABLE_NAMES, nudgeOffStandPillar, detectDigHazards, isDigProtected } from '../runtime/dig-tools.js';
-import { ok } from '../shared/action-contract.js';
+import { ok, fail } from '../shared/action-contract.js';
+import { cardinalDelta } from './_directions.js';
+import { box6 } from './_args.js';
+import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 
 const { goals } = pathfinderPkg;
 
@@ -15,28 +18,21 @@ export function createExcavationActions(services) {
   const { rememberSocialEvent, getMyName } = social;
   const { hasLineOfSight, eyePosition } = fairPlay;
 
-  const cardinalDelta = (direction) => {
-    const d = String(direction || '').toLowerCase();
-    switch (d) {
-      case 'north':
-      case 'n':
-        return { dx: 0, dz: -1, key: 'north' };
-      case 'south':
-      case 's':
-        return { dx: 0, dz: 1, key: 'south' };
-      case 'east':
-      case 'e':
-        return { dx: 1, dz: 0, key: 'east' };
-      case 'west':
-      case 'w':
-        return { dx: -1, dz: 0, key: 'west' };
-      default:
-        throw new Error(`Invalid direction "${direction}". Use north|south|east|west.`);
+  const cardinalDeltaOrFail = (direction) => {
+    const r = cardinalDelta(direction);
+    if (!r) {
+      return {
+        ok: false,
+        response: fail('INVALID_VALUE', `Invalid direction "${direction}". Use north|south|east|west.`, { retry_safe: false }),
+      };
     }
+    return { ok: true, ...r, key: r.key.toLowerCase() };
   };
 
   const tunnelSliceBounds = ({ x, y, z, direction, width, height }) => {
-    const { dx, dz } = cardinalDelta(direction);
+    const parsed = cardinalDeltaOrFail(direction);
+    if (!parsed.ok) return parsed;
+    const { dx, dz } = parsed;
     const half = Math.floor(width / 2);
     let x1 = x;
     let x2 = x;
@@ -59,19 +55,27 @@ export function createExcavationActions(services) {
     };
   };
   return {
-  async dig_area({
-    x1, y1, z1, x2, y2, z2,
-    pickup: doPickup = true,
-    abort_on_fail: abortOnFail = false,
-    clear_stand: clearStand = true,
-    safe = true,
-  }) {
+  async dig_area(args) {
+    const boxParsed = box6(args);
+    if (!boxParsed.ok) return boxParsed.response;
+    const { x1, y1, z1, x2, y2, z2 } = boxParsed;
+    const pickupRaw = args.pickup;
+    const abort_on_fail = args.abort_on_fail;
+    const clear_stand = args.clear_stand;
+    const safe = args.safe;
+    const doPickup = pickupRaw !== undefined ? pickupRaw : true;
+    const abortOnFail = abort_on_fail === true || abort_on_fail === 'true';
+    const clearStand = clear_stand !== false && clear_stand !== 'false';
+    const safeDig = safe !== false && safe !== 'false';
+
     const b = ensureBot();
     const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
     const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
     const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
     const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-    if (total > 500) throw new Error(`Area too large (${total} blocks, max 500). Split into smaller digs.`);
+    if (total > 500) {
+      return fail('AREA_TOO_LARGE', `Area too large (${total} blocks, max 500). Split into smaller digs.`, { retry_safe: false });
+    }
 
     let dug = 0;
     let skipped = 0;
@@ -134,7 +138,7 @@ export function createExcavationActions(services) {
 
         // Hazard pre-check — abort the whole op if a hazard cell is encountered.
         // Caller opts out with safe: false.
-        if (safe) {
+        if (safeDig) {
           const hazard = detectDigHazards(b, pos.x, pos.y, pos.z);
           if (hazard) {
             const code =
@@ -158,7 +162,7 @@ export function createExcavationActions(services) {
           for (const h of hints) digHintSet.add(h);
           if (b.entity.position.distanceTo(target.position) > 4.5) {
             try {
-              await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3));
+              await pathfindGotoNear(b, goals, pos.x, pos.y, pos.z, 3, { opName: 'dig_area', capMs: ACTION_CAPS_MS.reach });
             } catch {}
           }
           await b.dig(target, true);
@@ -215,7 +219,9 @@ export function createExcavationActions(services) {
     const L = Math.min(Math.max(parseInt(String(length), 10) || 12, 1), 64);
     const W = Math.min(Math.max(parseInt(String(width), 10) || 2, 1), 5);
     const H = Math.min(Math.max(parseInt(String(height), 10) || 3, 2), 5);
-    const { dx, dz, key } = cardinalDelta(direction);
+    const dirParsed = cardinalDeltaOrFail(direction);
+    if (!dirParsed.ok) return dirParsed.response;
+    const { dx, dz, key } = dirParsed;
 
     let totalDug = 0;
     let totalSkipped = 0;
@@ -306,7 +312,9 @@ export function createExcavationActions(services) {
     // `width` is no longer meaningful in the controlled-sequence
     // implementation — we always dig a 1-wide column directly in front.
     void width;
-    const { dx, dz, key } = cardinalDelta(direction);
+    const dirParsed = cardinalDeltaOrFail(direction);
+    if (!dirParsed.ok) return dirParsed.response;
+    const { dx, dz, key } = dirParsed;
 
     // Yaw values so the bot actually faces the dig direction. b.dig with
     // forceLook will then aim correctly at the column in front.
@@ -421,10 +429,13 @@ export function createExcavationActions(services) {
       const standCell = { x: fx, y: fy - 1, z: fz };
       const stepGoal = new goals.GoalBlock(standCell.x, standCell.y, standCell.z);
       try {
-        await Promise.race([
-          b.pathfinder.goto(stepGoal),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('step timeout')), 5000)),
-        ]);
+        await pathfindWithProgressWatchdog({
+          bot: b,
+          pathfinderGoto: () => b.pathfinder.goto(stepGoal),
+          opName: 'dig_tunnel_step',
+          capMs: 5000,
+          onStall: () => { try { b.pathfinder.setGoal?.(null); } catch {} },
+        });
       } catch {}
       // CRITICAL: stop pathfinder unconditionally before next iteration.
       // Otherwise the next step's b.dig fires while the bot is still
@@ -507,7 +518,9 @@ export function createExcavationActions(services) {
     const L = Math.min(Math.max(parseInt(String(length), 10) || 12, 1), 64);
     const W = Math.min(Math.max(parseInt(String(width), 10) || 1, 1), 3);
     const H = Math.min(Math.max(parseInt(String(height), 10) || 3, 2), 5);
-    const { dx, dz, key } = cardinalDelta(direction);
+    const dirParsed = cardinalDeltaOrFail(direction);
+    if (!dirParsed.ok) return dirParsed.response;
+    const { dx, dz, key } = dirParsed;
 
     let totalDug = 0;
     let totalSkipped = 0;
@@ -586,7 +599,7 @@ export function createExcavationActions(services) {
 
       // Walk to the step position so pathfinder stays anchored
       try {
-        await b.pathfinder.goto(new goals.GoalNear(cx, cy, cz, 1));
+        await pathfindGotoNear(b, goals, cx, cy, cz, 1, { opName: 'dig_stair', capMs: ACTION_CAPS_MS.reach });
       } catch {
         // If pathfinder fails on a single step, try direct movement
         try {

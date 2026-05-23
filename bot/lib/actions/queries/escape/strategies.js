@@ -3,6 +3,11 @@
  * ADR: docs/design/action-contract.md
  */
 
+import { AIR_NAMES } from '../../_block-sets.js';
+import { DIR_VEC_4, DIR_VEC_8 } from '../../_directions.js';
+import { pathfindGoalCapped } from '../../_helpers.js';
+import { fail } from '../../../shared/action-contract.js';
+
 export async function escapeStrategyInAir({ b, standingState, fail, recordEscapeSuccess, fromPos, cls }) {
   await new Promise((r) => setTimeout(r, 600));
   const after = standingState(b);
@@ -38,32 +43,20 @@ export async function escapeStrategyInAir({ b, standingState, fail, recordEscape
 }
 
 export function escapeStrategyEnclosureInside({ cls, before }) {
-      return {
-        ok: false,
-        error: {
-          code: 'ESCAPE_ENCLOSURE',
-          message: `You're inside a built structure (walls in all 4 dirs within 4 cells, ceiling within 4 cells). Use mc dig to break a wall, or mc move to a door slot if one exists. mc escape can't solve this case (yet).`,
+              return fail('ESCAPE_ENCLOSURE', `You're inside a built structure (walls in all 4 dirs within 4 cells, ceiling within 4 cells). Use mc dig to break a wall, or mc move to a door slot if one exists. mc escape can't solve this case (yet).`, {
           observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, ceiling_within: before.ceiling_within },
           retry_safe: false,
-        },
-      };
+        });
 }
 
 export async function escapeStrategyStepUpOnly({ b, before, cell, fromPos, cls, standingState, recordEscapeSuccess, goals }) {
-      const DIR_VEC = {
-        N: { dx: 0, dz: -1 }, E: { dx: 1, dz: 0 }, S: { dx: 0, dz: 1 }, W: { dx: -1, dz: 0 },
-      };
+      const DIR_VEC = DIR_VEC_4;
       const candidates = (before.step_up_dirs || []).filter((d) => DIR_VEC[d]);
       if (candidates.length === 0) {
-        return {
-          ok: false,
-          error: {
-            code: 'ESCAPE_STEP_UP_NO_DIR',
-            message: `Classified step_up_only but no step_up_dirs to follow. Try mc dig to break out.`,
-            observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, step_up_dirs: before.step_up_dirs },
-            retry_safe: false,
-          },
-        };
+                return fail('ESCAPE_STEP_UP_NO_DIR', `Classified step_up_only but no step_up_dirs to follow. Try mc dig to break out.`, {
+          observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, step_up_dirs: before.step_up_dirs },
+          retry_safe: false,
+        });
       }
       const attempts = [];
       for (const pickDir of candidates) {
@@ -71,12 +64,9 @@ export async function escapeStrategyStepUpOnly({ b, before, cell, fromPos, cls, 
         const targetCell = { x: cell.x + v.dx, y: cell.y + 1, z: cell.z + v.dz };
         try {
           const goal = new goals.GoalBlock(targetCell.x, targetCell.y, targetCell.z);
-          await Promise.race([
-            b.pathfinder.goto(goal),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('step_up_to')), 1500)),
-          ]);
+          await pathfindGoalCapped(b, () => b.pathfinder.goto(goal), 1500, 'step_up_to');
         } catch {
-          try { b.pathfinder.setGoal(null); } catch {}
+          /* goal cleared in pathfindGoalCapped */
         }
         const after = standingState(b);
         attempts.push({ dir: pickDir, target: targetCell, after: after.classification });
@@ -102,29 +92,15 @@ export async function escapeStrategyStepUpOnly({ b, before, cell, fromPos, cls, 
           });
         }
       }
-      return {
-        ok: false,
-        error: {
-          code: 'ESCAPE_STEP_UP_FAILED',
-          message: `Tried step-up in ${candidates.join(', ')} but pathfinder couldn't complete the jump. Try mc dig or mc move directly.`,
+              return fail('ESCAPE_STEP_UP_FAILED', `Tried step-up in ${candidates.join(', ')} but pathfinder couldn't complete the jump. Try mc dig or mc move directly.`, {
           observed_state: { classification: cls, attempts, step_up_dirs: before.step_up_dirs },
           retry_safe: true,
-        },
-      };
+        });
 }
 
 export async function escapeStrategyInWater({ b, before, cell, fromPos, cls, standingState, recordEscapeSuccess, getActions, goals, Vec3, sleep }) {
-      const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
-      // 8-way scan (cardinals + diagonals) for spiral land search.
-      const DIR_VEC = {
-        N:  { dx: 0,  dz: -1 }, NE: { dx: 1,  dz: -1 },
-        E:  { dx: 1,  dz: 0  }, SE: { dx: 1,  dz: 1  },
-        S:  { dx: 0,  dz: 1  }, SW: { dx: -1, dz: 1  },
-        W:  { dx: -1, dz: 0  }, NW: { dx: -1, dz: -1 },
-      };
-      const CARDINAL_DIRS = {
-        N: DIR_VEC.N, E: DIR_VEC.E, S: DIR_VEC.S, W: DIR_VEC.W,
-      };
+      const DIR_VEC = DIR_VEC_8;
+      const CARDINAL_DIRS = DIR_VEC_4;
       const attempts = [];
       const diag = {}; // structured per-phase diagnostics for the brain
 
@@ -223,7 +199,7 @@ export async function escapeStrategyInWater({ b, before, cell, fromPos, cls, sta
       // This is exactly what `standingState` reports in step_up_dirs.
       //
       // Mirror the existing step_up_only branch (line ~980): for each
-      // step_up direction, pathfind to (cell + dir, cell.y + 1).
+      // step-up direction, pathfind to (cell + dir, cell.y + 1).
       const stepUpDirs = (() => {
         // Re-read standing state since the bot may have moved during
         // swim_up. Use the current cardinal map (4 dirs) for step-up
@@ -238,12 +214,9 @@ export async function escapeStrategyInWater({ b, before, cell, fromPos, cls, sta
           const targetCell = { x: cell.x + v.dx, y: cell.y + 1, z: cell.z + v.dz };
           try {
             const goal = new goals.GoalBlock(targetCell.x, targetCell.y, targetCell.z);
-            await Promise.race([
-              b.pathfinder.goto(goal),
-              new Promise((_, rej) => setTimeout(() => rej(new Error('step_up_to')), 1500)),
-            ]);
+            await pathfindGoalCapped(b, () => b.pathfinder.goto(goal), 1500, 'step_up_to');
           } catch {
-            try { b.pathfinder.setGoal(null); } catch {}
+            /* goal cleared in pathfindGoalCapped */
           }
           const after = standingState(b);
           attempts.push({ method: 'step_up', dir: pickDir, target: targetCell, after: after.classification });
@@ -264,12 +237,9 @@ export async function escapeStrategyInWater({ b, before, cell, fromPos, cls, sta
       if (bestDry) {
         try {
           const goal = new goals.GoalBlock(bestDry.target.x, bestDry.target.y, bestDry.target.z);
-          await Promise.race([
-            b.pathfinder.goto(goal),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('water_to')), 2500)),
-          ]);
+          await pathfindGoalCapped(b, () => b.pathfinder.goto(goal), 2500, 'water_to');
         } catch {
-          try { b.pathfinder.setGoal(null); } catch {}
+          /* goal cleared in pathfindGoalCapped */
         }
         let after = standingState(b);
         attempts.push({ method: 'pathfinder', dir: bestDry.dir, after: after.classification });
@@ -454,11 +424,10 @@ export async function escapeStrategyInWater({ b, before, cell, fromPos, cls, sta
       // Nothing worked. Surface ALL diagnostic data so the brain can see
       // exactly which phases ran and which failed.
       const hpNow = b.health;
-      return {
-        ok: false,
-        error: {
-          code: 'STUCK_IN_WATER',
-          message: `Stuck in ${cls === 'in_flowing_water' ? 'flowing ' : ''}water at (${cell.x},${cell.y},${cell.z}). swim_up: ${diag.swim_up ? (diag.swim_up.surfaced ? 'surfaced' : 'did not surface') : 'not needed'}. land_scan: searched ${diag.land_scan?.radius || 0} blocks in ${diag.land_scan?.dirs || 0} dirs, ${diag.land_scan?.found ? 'found shore' : 'no shore'}. ${placeable ? 'pillar_up: tried, still in water.' : 'pillar_up: no placeable blocks.'} ${diag.boat_fallback?.has_boat ? `boat_fallback: ${diag.boat_fallback.placed ? 'placed but did not lift bot' : (diag.boat_fallback.reason || 'failed')}.` : 'boat_fallback: no boat in inventory.'} HP=${hpNow}.`,
+      return fail(
+        'STUCK_IN_WATER',
+        `Stuck in ${cls === 'in_flowing_water' ? 'flowing ' : ''}water at (${cell.x},${cell.y},${cell.z}). swim_up: ${diag.swim_up ? (diag.swim_up.surfaced ? 'surfaced' : 'did not surface') : 'not needed'}. land_scan: searched ${diag.land_scan?.radius || 0} blocks in ${diag.land_scan?.dirs || 0} dirs, ${diag.land_scan?.found ? 'found shore' : 'no shore'}. ${placeable ? 'pillar_up: tried, still in water.' : 'pillar_up: no placeable blocks.'} ${diag.boat_fallback?.has_boat ? `boat_fallback: ${diag.boat_fallback.placed ? 'placed but did not lift bot' : (diag.boat_fallback.reason || 'failed')}.` : 'boat_fallback: no boat in inventory.'} HP=${hpNow}.`,
+        {
           observed_state: {
             classification: cls,
             foot_in_water: before.foot_in_water,
@@ -476,5 +445,5 @@ export async function escapeStrategyInWater({ b, before, cell, fromPos, cls, sta
               : 'No tools or boats to escape. mc chat for steward help — DO NOT /kill.',
           retry_safe: false,
         },
-      };
+      );
 }

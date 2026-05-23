@@ -17,6 +17,8 @@ version: 4.0.0
 
 # Minecraft Navigation
 
+Canonical command syntax, argument keys, and refusal → next-command matrix: [`docs/mc-commands.md`](../docs/mc-commands.md) (especially Section D–E for water and `BOAT_REQUIRED`).
+
 ## Commands
 
 ```

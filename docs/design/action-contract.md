@@ -45,7 +45,24 @@ Use for code review and test assertions (`assertContract` / `assertFailure` in `
 - [ ] `next_action_hint` is a concrete `mc` command when one exists
 - [ ] `retry_safe` reflects whether repeat is side-effect safe
 - [ ] No empty `catch {}` without `fail()` or documented justification
-- [ ] Production `pathfinder.goto` uses `pathfindWithProgressWatchdog` / `withWallclockCap` from `bot/lib/actions/_helpers.js`
+- [ ] Production navigation uses helpers from `bot/lib/actions/_helpers.js`: **`pathfindGotoNear`** (watchdog + cap), **`pathfindGoalCapped`** (escape micro-moves), or **`ensureWithinReach`**
+- [ ] Block-target verbs use **`canSeeBlockFaces`** (`bot/lib/actions/_los.js`) when fair-play LOS is enabled
+
+## Argument normalization (handler entry)
+
+Pure parsers live in `bot/lib/actions/_args.js`. Canonical shapes are documented in [`docs/mc-commands.md`](../mc-commands.md) Section B.
+
+| Helper | Purpose | Failure code |
+|--------|---------|--------------|
+| `coord3(args)` | `{x,y,z}` finite numbers | `INVALID_ARGS` |
+| `box6(args)` | `{x1…z2}` AABB | `INVALID_ARGS` |
+| `boxXZ(args)` | building box or `dig_pit` `{x,z,w,l}` | `INVALID_ARGS` |
+| `itemName(args, { keys })` | block/item name string | `INVALID_ARGS` |
+| `count(args)` | positive integer | `INVALID_ARGS` |
+
+**Two layers:** `_args` returns `INVALID_ARGS` for shape/parse errors only. Semantic validation after parsing keeps existing codes (`INVALID_COORD`, `UNKNOWN_BLOCK`, `AREA_TOO_LARGE`, etc.).
+
+Adoption is incremental: handlers call `_args` at the top and `return parsed.response` on failure.
 
 ## Test tagging
 

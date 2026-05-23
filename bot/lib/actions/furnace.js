@@ -23,10 +23,14 @@ export function createFurnaceActions(deps) {
           furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 4 });
         }
       }
-      if (!furnaceBlock) throw new Error('No furnace within 32 blocks. Place one first (craft furnace from 8 cobblestone).');
+      if (!furnaceBlock) {
+        return fail('NO_FURNACE', 'No furnace within 32 blocks. Place one first (craft furnace from 8 cobblestone).', { retry_safe: false });
+      }
 
       const inputItem = b.inventory.items().find(i => i.name === input);
-      if (!inputItem) throw new Error(`No ${input} in inventory. Withdraw it from a chest first.`);
+      if (!inputItem) {
+        return fail('NO_INPUT', `No ${input} in inventory. Withdraw it from a chest first.`, { retry_safe: false });
+      }
 
       const furnace = await b.openFurnace(furnaceBlock);
 
@@ -44,7 +48,7 @@ export function createFurnaceActions(deps) {
         const fuelItem = fuel
           ? b.inventory.items().find(i => i.name === fuel)
           : b.inventory.items().find(i => fuelNames.includes(i.name));
-        if (!fuelItem) { furnace.close(); throw new Error('No fuel available.'); }
+        if (!fuelItem) { furnace.close(); return fail('NO_FUEL', 'No fuel available.', { retry_safe: false }); }
         const fuelPer = fuelItem.name === 'coal_block' ? 80 : fuelItem.name.includes('coal') || fuelItem.name === 'charcoal' ? 8 : fuelItem.name === 'blaze_rod' ? 12 : fuelItem.name === 'lava_bucket' ? 100 : 1.5;
         const fuelNeeded = Math.ceil(qty / fuelPer);
         await furnace.putFuel(fuelItem.type, null, Math.min(fuelNeeded, fuelItem.count));
@@ -61,14 +65,15 @@ export function createFurnaceActions(deps) {
 
       const minutes = Math.ceil(qty * 10 / 60);
       const collected = existingOutput ? ` Collected ${existingOutput.count}x ${existingOutput.name} from furnace.` : '';
-      return { result: `Loaded ${qty} ${input} into furnace at ${fp.x},${fp.y},${fp.z}. ETA: ~${minutes} min.${collected} Go do something else!` };
+      return ok({ result: `Loaded ${qty} ${input} into furnace at ${fp.x},${fp.y},${fp.z}. ETA: ~${minutes} min.${collected} Go do something else!` });
     },
 
     async furnace_check({ x, y, z }) {
       const b = ensureBot();
       const furnaceBlock = b.blockAt(new Vec3(x, y, z));
-      if (!furnaceBlock || (!furnaceBlock.name.includes('furnace') && furnaceBlock.name !== 'smoker' && furnaceBlock.name !== 'blast_furnace'))
-        throw new Error(`No furnace at ${x},${y},${z}`);
+      if (!furnaceBlock || (!furnaceBlock.name.includes('furnace') && furnaceBlock.name !== 'smoker' && furnaceBlock.name !== 'blast_furnace')) {
+        return fail('NO_FURNACE', `No furnace at ${x},${y},${z}`, { retry_safe: false });
+      }
 
       if (b.entity.position.distanceTo(furnaceBlock.position) > 4.5) {
         await pathfindGotoNear(b, goals, x, y, z, 3, { opName: 'furnace_check', capMs: ACTION_CAPS_MS.reach });
@@ -79,7 +84,7 @@ export function createFurnaceActions(deps) {
       const outputItem = furnace.outputItem();
       furnace.close();
 
-      return {
+      return ok({
         result: `Furnace at ${x},${y},${z}: ` +
           `Input: ${inputItem ? `${inputItem.name} x${inputItem.count}` : 'empty'} | ` +
           `Fuel: ${fuelItem ? `${fuelItem.name} x${fuelItem.count}` : 'empty'} | ` +
@@ -87,20 +92,20 @@ export function createFurnaceActions(deps) {
           `Status: ${outputItem ? 'output ready!' : inputItem ? 'smelting...' : 'idle'}`,
         ready: !!outputItem,
         output: outputItem ? { name: outputItem.name, count: outputItem.count } : null,
-      };
+      });
     },
 
     async furnace_take({ x, y, z }) {
       const b = ensureBot();
       const furnaceBlock = b.blockAt(new Vec3(x, y, z));
-      if (!furnaceBlock) throw new Error(`No block at ${x},${y},${z}`);
+      if (!furnaceBlock) return fail('NO_FURNACE', `No block at ${x},${y},${z}`, { retry_safe: false });
 
       if (b.entity.position.distanceTo(furnaceBlock.position) > 4.5) {
         await pathfindGotoNear(b, goals, x, y, z, 3, { opName: 'furnace_check', capMs: ACTION_CAPS_MS.reach });
       }
       const furnace = await b.openFurnace(furnaceBlock);
       const output = furnace.outputItem();
-      if (!output) { furnace.close(); return { result: 'Furnace has no output ready yet.' }; }
+      if (!output) { furnace.close(); return ok({ result: 'Furnace has no output ready yet.' }); }
       await furnace.takeOutput();
 
       const remaining = furnace.inputItem();
@@ -108,7 +113,7 @@ export function createFurnaceActions(deps) {
 
       ctx.team.activeFurnaces = ctx.team.activeFurnaces.filter(f => !(f.x === x && f.y === y && f.z === z));
 
-      return { result: `Collected ${output.name} x${output.count} from furnace.${remaining ? ` (${remaining.count} ${remaining.name} still being smelted)` : ''}` };
+      return ok({ result: `Collected ${output.name} x${output.count} from furnace.${remaining ? ` (${remaining.count} ${remaining.name} still being smelted)` : ''}` });
     },
 
     // ── Team System ──────────────────────────────────

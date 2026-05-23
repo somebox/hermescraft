@@ -103,34 +103,35 @@ test('smelt: NO_INPUT when input item missing from inventory', async () => {
   assert.equal(r.error.code, 'NO_INPUT');
 });
 
-test('smelt_start: no furnace nearby throws with guidance', async () => {
+test('smelt_start: no furnace nearby returns structured NO_FURNACE', async () => {
   const { actions } = buildFurnace({ bot: { findBlock: () => null } });
-  await assert.rejects(
-    () => actions.smelt_start({ input: 'iron_ore', count: 1 }),
-    /No furnace within 32 blocks/,
-  );
+  const r = await actions.smelt_start({ input: 'iron_ore', count: 1 });
+  assertContract(r);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_FURNACE');
+  assert.match(r.error.message, /No furnace within 32 blocks/);
 });
 
-test('furnace_check: no furnace at coords throws', async () => {
-  const { actions, mockBot } = buildFurnace({
+test('furnace_check: no furnace at coords fails', async () => {
+  const { actions } = buildFurnace({
     bot: {
       blockAt: () => ({ name: 'air' }),
     },
   });
-  await assert.rejects(
-    () => actions.furnace_check({ x: 0, y: 64, z: 0 }),
-    /No furnace at/,
-  );
+  const r = await actions.furnace_check({ x: 0, y: 64, z: 0 });
+  assertContract(r);
+  assert.equal(r.ok, false);
+  assert.match(r.error.message, /No furnace at/);
 });
 
-test('furnace_take: no block at coords throws', async () => {
+test('furnace_take: no block at coords fails', async () => {
   const { actions } = buildFurnace({
     bot: {
       blockAt: () => null,
     },
   });
-  await assert.rejects(
-    () => actions.furnace_take({ x: 0, y: 64, z: 0 }),
-    /No block at/,
-  );
+  const r = await actions.furnace_take({ x: 0, y: 64, z: 0 });
+  assertContract(r);
+  assert.equal(r.ok, false);
+  assert.match(r.error.message, /No block at/);
 });

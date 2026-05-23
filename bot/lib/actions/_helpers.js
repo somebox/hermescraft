@@ -377,6 +377,7 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
 
 /**
  * Pathfind to GoalNear under progress watchdog + wallclock cap.
+ * Shared action helpers also include `_block-sets`, `_directions`, `_los`, `_args` (see docs/design/actions-layout.md).
  */
 export async function pathfindGotoNear(bot, goals, x, y, z, range, {
   opName = 'goto',
@@ -391,4 +392,24 @@ export async function pathfindGotoNear(bot, goals, x, y, z, range, {
       try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
     },
   });
+}
+
+/**
+ * Single pathfinder goal under a hard wall-clock cap (no progress watchdog).
+ * Used by mc escape sidesteps / step-up attempts (~1–1.5s). Always clears the
+ * goal afterward so the next attempt or control-state burst starts clean.
+ *
+ * @param {import('mineflayer').Bot} bot
+ * @param {() => Promise<unknown>} pathfinderGoto
+ * @param {number} capMs
+ * @param {string} [opName]
+ */
+export async function pathfindGoalCapped(bot, pathfinderGoto, capMs, opName = 'pathfind_capped') {
+  try {
+    await raceWithTimeout(pathfinderGoto(), capMs, opName);
+  } catch {
+    // timeout or pathfinder error — escape callers inspect standing state next
+  } finally {
+    try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
+  }
 }

@@ -18,6 +18,8 @@ version: 3.3.0
 
 # Minecraft Survival — Master Skill
 
+Command surface reference (schemas, ferry playbooks, error recovery): [`docs/mc-commands.md`](../docs/mc-commands.md).
+
 ## Tools
 
 You control your Minecraft bot via the `mc` CLI in the terminal:

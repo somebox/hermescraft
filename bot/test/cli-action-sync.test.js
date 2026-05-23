@@ -14,13 +14,41 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function serverActionNames() {
   const actionsDir = path.join(__dirname, '..', 'lib', 'actions');
   const names = new Set();
-  for (const file of fs.readdirSync(actionsDir)) {
-    if (!file.endsWith('.js') || file === 'index.js') continue;
-    const src = fs.readFileSync(path.join(actionsDir, file), 'utf8');
+
+  function harvest(src) {
     for (const m of src.matchAll(/^\s+async (\w+)\(/gm)) {
       names.add(m[1]);
     }
+    /** `return async function move(` (movement shards) */
+    for (const m of src.matchAll(/\basync function (\w+)\s*\(/g)) {
+      names.add(m[1]);
+    }
+    /** `handlers.collect = async function collectWrapped(...` (mining wrappers) */
+    for (const m of src.matchAll(/\bhandlers\.(\w+)\s*=\s*async\s+function\b/g)) {
+      names.add(m[1]);
+    }
   }
+
+  function visit(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const base = entry.name;
+      if (base.startsWith('_')) continue;
+
+      const full = path.join(dir, base);
+
+      if (entry.isDirectory()) {
+        visit(full);
+        continue;
+      }
+
+      if (!base.endsWith('.js')) continue;
+      if (full === path.join(actionsDir, 'index.js')) continue;
+
+      harvest(fs.readFileSync(full, 'utf8'));
+    }
+  }
+
+  visit(actionsDir);
   return names;
 }
 

@@ -11,6 +11,8 @@
 import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { findAdjustedTarget } from './_nav-helpers.js';
+import { AIR_NAMES } from './_block-sets.js';
+import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
 
 const HOE_NAMES = ['netherite_hoe', 'diamond_hoe', 'iron_hoe', 'stone_hoe', 'golden_hoe', 'wooden_hoe'];
 const TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'dirt_path']);
@@ -165,7 +167,7 @@ export function createFarmingActions(deps) {
 
       if (b.entity.position.distanceTo(targetPos) > 4.5) {
         try {
-          await b.pathfinder.goto(new goals.GoalNear(Number(x), Number(y), Number(z), 3));
+          await pathfindGotoNear(b, goals, Number(x), Number(y), Number(z), 3, { opName: 'farm_reach', capMs: ACTION_CAPS_MS.reach });
         } catch {
           return { ok: false, error: {
             code: 'OUT_OF_RANGE',
@@ -270,7 +272,6 @@ export function createFarmingActions(deps) {
       // converts a NOT_FARMLAND/BLOCKED error into a successful plant
       // at the right Y.
       let adjustedTarget = null;
-      const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
       const SOIL_NAMES = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'podzol']);
       const isPlantableHere = (bot, px, py, pz) => {
         const here = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
@@ -325,7 +326,7 @@ export function createFarmingActions(deps) {
       }
 
       if (b.entity.position.distanceTo(targetPos) > 4.5) {
-        try { await b.pathfinder.goto(new goals.GoalNear(Number(x), Number(y), Number(z), 3)); }
+        try { await pathfindGotoNear(b, goals, Number(x), Number(y), Number(z), 3, { opName: 'farm_reach', capMs: ACTION_CAPS_MS.reach }); }
         catch {
           return { ok: false, error: { code: 'OUT_OF_RANGE', message: `pathfind failed to (${x},${y},${z})`, retry_safe: false }};
         }
@@ -415,7 +416,7 @@ export function createFarmingActions(deps) {
       const isCrop = matureAge !== undefined;
 
       if (b.entity.position.distanceTo(targetPos) > 4.5) {
-        try { await b.pathfinder.goto(new goals.GoalNear(Number(x), Number(y), Number(z), 3)); }
+        try { await pathfindGotoNear(b, goals, Number(x), Number(y), Number(z), 3, { opName: 'farm_reach', capMs: ACTION_CAPS_MS.reach }); }
         catch {
           return { ok: false, error: { code: 'OUT_OF_RANGE', message: `pathfind failed to (${x},${y},${z})`, retry_safe: false }};
         }
@@ -525,7 +526,7 @@ export function createFarmingActions(deps) {
             continue;
           }
           if (b.entity.position.distanceTo(pos) > 4.5) {
-            try { await b.pathfinder.goto(new goals.GoalNear(xi, harvestY, zi, 3)); }
+            try { await pathfindGotoNear(b, goals, xi, harvestY, zi, 3, { opName: 'farm_harvest', capMs: ACTION_CAPS_MS.reach }); }
             catch { continue; }
           }
           try {

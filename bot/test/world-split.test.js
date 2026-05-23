@@ -76,7 +76,7 @@ test('water.js absorbed bucket_fill and bucket_empty from former world.js', asyn
 
 // ── Representative failure paths per module ──────────────────────────────
 
-test('inventory.toss: throws when item not in inventory', async () => {
+test('inventory.toss: fails when item not in inventory', async () => {
   const services = createMockServices({
     state: { world: { botReady: true } },
     ensureBot: () => ({
@@ -84,11 +84,9 @@ test('inventory.toss: throws when item not in inventory', async () => {
     }),
   });
   const actions = createInventoryActions(services);
-  // toss throws directly (no contract migration yet in this handler) — verify it surfaces.
-  await assert.rejects(
-    () => actions.toss({ item: 'oak_log' }),
-    /No oak_log in inventory/,
-  );
+  const r = await actions.toss({ item: 'oak_log' });
+  assert.equal(r.ok, false);
+  assert.match(r.error?.message ?? '', /No oak_log in inventory/);
 });
 
 test('building.place_fill: oversize returns ok:false AREA_TOO_LARGE (dispatch contract)', async () => {

@@ -1,7 +1,8 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { ensureWithinReach } from './_helpers.js';
-import { ok } from '../shared/action-contract.js';
+import { ok, fail } from '../shared/action-contract.js';
+import { canSeeBlockFaces } from './_los.js';
 
 const { goals } = pathfinderPkg;
 
@@ -39,39 +40,23 @@ export function createInteractionActions(services) {
     // F65: line-of-sight guard. Mirrors F45.3 (mc place) and F64 (chest
     // open). Bot must be able to see the target block to interact with
     // it — no opening doors through walls.
-    if (typeof hasLineOfSight === 'function' && typeof eyePosition === 'function') {
-      const eye = eyePosition();
-      if (eye) {
-        const cx = x + 0.5, cy = y + 0.5, cz = z + 0.5;
-        const faces = [
-          { x: cx, y: cy, z: cz - 0.48 },
-          { x: cx, y: cy, z: cz + 0.48 },
-          { x: cx - 0.48, y: cy, z: cz },
-          { x: cx + 0.48, y: cy, z: cz },
-          { x: cx, y: cy - 0.48, z: cz },
-          { x: cx, y: cy + 0.48, z: cz },
-          { x: cx, y: cy, z: cz },
-        ];
-        if (!faces.some((p) => hasLineOfSight(eye, p))) {
-          return {
-            ok: false,
-            error: {
-              code: 'NO_LINE_OF_SIGHT',
-              message: `Cannot see ${block.name} at ${x},${y},${z} — a block is between you and the target.`,
-              observed_state: {
-                target: { x, y, z },
-                block_at_target: block.name,
-                bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
-              },
-              next_action_hint: `Navigate around the obstruction; try mc goto_near ${x} ${y} ${z} range=2`,
-              retry_safe: false,
-            },
-          };
-        }
-      }
+    if (!canSeeBlockFaces(b, x, y, z, { hasLineOfSight, eyePosition })) {
+      return fail(
+        'NO_LINE_OF_SIGHT',
+        `Cannot see ${block.name} at ${x},${y},${z} — a block is between you and the target.`,
+        {
+          observed_state: {
+            target: { x, y, z },
+            block_at_target: block.name,
+            bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+          },
+          next_action_hint: `Navigate around the obstruction; try mc goto_near ${x} ${y} ${z} range=2`,
+          retry_safe: false,
+        },
+      );
     }
     await b.activateBlock(block);
-    return { result: `Interacted with ${block.name} at ${x}, ${y}, ${z}` };
+    return ok({ result: `Interacted with ${block.name} at ${x}, ${y}, ${z}` });
   },
 
   /**
@@ -196,38 +181,20 @@ export function createInteractionActions(services) {
     // bot can be 4.5 blocks away with a solid wall between it and the
     // gate and still pass reach. Require LOS to at least one face of the
     // gate before activating — no opening doors/gates through walls.
-    if (typeof hasLineOfSight === 'function' && typeof eyePosition === 'function') {
-      const eye = eyePosition();
-      if (eye) {
-        const cx = gate.position.x + 0.5;
-        const cy = gate.position.y + 0.5;
-        const cz = gate.position.z + 0.5;
-        const faces = [
-          { x: cx, y: cy, z: cz - 0.48 },
-          { x: cx, y: cy, z: cz + 0.48 },
-          { x: cx - 0.48, y: cy, z: cz },
-          { x: cx + 0.48, y: cy, z: cz },
-          { x: cx, y: cy - 0.48, z: cz },
-          { x: cx, y: cy + 0.48, z: cz },
-          { x: cx, y: cy, z: cz },
-        ];
-        if (!faces.some((p) => hasLineOfSight(eye, p))) {
-          return {
-            ok: false,
-            error: {
-              code: 'NO_LINE_OF_SIGHT',
-              message: `Cannot see ${gate.name} at ${gx},${gy},${gz} — a block is between you and the gate.`,
-              observed_state: {
-                gate: { x: gate.position.x, y: gate.position.y, z: gate.position.z },
-                gate_block: gate.name,
-                bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
-              },
-              next_action_hint: `Navigate to a cell with direct sight to the gate first; mc goto_near ${gx} ${gy} ${gz} range=2`,
-              retry_safe: false,
-            },
-          };
-        }
-      }
+    if (!canSeeBlockFaces(b, gate.position.x, gate.position.y, gate.position.z, { hasLineOfSight, eyePosition })) {
+      return fail(
+        'NO_LINE_OF_SIGHT',
+        `Cannot see ${gate.name} at ${gx},${gy},${gz} — a block is between you and the gate.`,
+        {
+          observed_state: {
+            gate: { x: gate.position.x, y: gate.position.y, z: gate.position.z },
+            gate_block: gate.name,
+            bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+          },
+          next_action_hint: `Navigate to a cell with direct sight to the gate first; mc goto_near ${gx} ${gy} ${gz} range=2`,
+          retry_safe: false,
+        },
+      );
     }
 
     // Safety: before opening the gate, check for passive animals adjacent
@@ -390,14 +357,14 @@ export function createInteractionActions(services) {
   async close_screen() {
     const b = ensureBot();
     if (b.currentWindow) b.closeWindow(b.currentWindow);
-    return { result: 'Closed screen.' };
+    return ok({ result: 'Closed screen.' });
   },
 
   // ── Utility ──────────────────────────────────────
   async use() {
     const b = ensureBot();
     await b.activateItem();
-    return { result: `Used ${b.heldItem?.name || 'hand'}` };
+    return ok({ result: `Used ${b.heldItem?.name || 'hand'}` });
   },
 
   /**

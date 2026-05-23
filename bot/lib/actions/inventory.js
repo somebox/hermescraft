@@ -1,5 +1,5 @@
 import pathfinderPkg from 'mineflayer-pathfinder';
-import { ok } from '../shared/action-contract.js';
+import { ok, fail } from '../shared/action-contract.js';
 
 const { goals } = pathfinderPkg;
 
@@ -23,14 +23,16 @@ export function createInventoryActions(services) {
       query: String(item),
       policy: 'best_available',
     });
-    if (!er.ok) throw new Error(er.message || `No ${item} in inventory.`);
+    if (!er.ok) {
+      return fail('NOT_IN_INVENTORY', er.message || `No ${item} in inventory.`, { retry_safe: false });
+    }
     const invItem = b.inventory.items().find((i) => i.name === er.selected.name);
     if (!invItem) {
       const available = b.inventory.items().map((i) => i.name);
-      throw new Error(`No ${er.selected.name} in inventory. Have: ${[...new Set(available)].join(', ')}`);
+      return fail('NOT_IN_INVENTORY', `No ${er.selected.name} in inventory. Have: ${[...new Set(available)].join(', ')}`, { retry_safe: false });
     }
     await b.equip(invItem, slot);
-    return { result: `Equipped ${er.selected.name} to ${slot}` };
+    return ok({ result: `Equipped ${er.selected.name} to ${slot}` });
   },
 
   async unequip({ slot = 'hand' }) {
@@ -52,19 +54,21 @@ export function createInventoryActions(services) {
       await b.unequip(slot);
     }
     const nowHeld = b.heldItem;
-    return { result: nowHeld?.name ? `Hand now holds ${nowHeld.name}` : 'Hand is now empty.' };
+    return ok({ result: nowHeld?.name ? `Hand now holds ${nowHeld.name}` : 'Hand is now empty.' });
   },
 
   async toss({ item, count }) {
     const b = ensureBot();
     const invItem = b.inventory.items().find(i => i.name === item);
-    if (!invItem) throw new Error(`No ${item} in inventory.`);
+    if (!invItem) {
+      return fail('NOT_IN_INVENTORY', `No ${item} in inventory.`, { retry_safe: false });
+    }
     if (count && count > 0 && count < invItem.count) {
       await b.toss(invItem.type, null, count);
     } else {
       await b.tossStack(invItem);
     }
-    return { result: `Tossed ${count || invItem.count} ${item}` };
+    return ok({ result: `Tossed ${count || invItem.count} ${item}` });
   },
   };
 }

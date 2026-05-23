@@ -31,7 +31,17 @@ function extractFactoryNames(filePath) {
   const src = fs.readFileSync(filePath, 'utf8');
   // Match `export function createXxxActions(` — case-sensitive, factory-naming convention.
   const matches = [...src.matchAll(/export\s+function\s+(create[A-Z][a-zA-Z0-9]*Actions)\s*\(/g)];
-  return matches.map((m) => m[1]);
+  const factories = [...matches.map((m) => m[1])];
+
+  /** Barrel shim: export { createXxxActions } from '...'; */
+  for (const m of src.matchAll(/export\s*\{([^}]+)\}\s*from\s+/g)) {
+    for (const part of String(m[1]).split(',')) {
+      let name = part.replace(/\bas\s+[a-zA-Z0-9_]+\b/gi, '').trim().split(/\s+/)[0];
+      if (/^create[A-Z][a-zA-Z0-9]*Actions$/.test(name)) factories.push(name);
+    }
+  }
+
+  return [...new Set(factories)];
 }
 
 test('every action module exporting create*Actions is imported in index.js', () => {

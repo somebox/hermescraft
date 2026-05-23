@@ -1,6 +1,8 @@
 // @size-exempt: container ops + shared openContainerStructured helper
 import { Vec3 } from 'vec3';
 import { ensureWithinReach } from './_helpers.js';
+import { canSeeBlockFaces } from './_los.js';
+import { fail } from '../shared/action-contract.js';
 
 // ─ Phase-2 chest contract helpers (see docs/design/phase-2/action-contracts.md mc chest) ─
 
@@ -85,36 +87,20 @@ async function openContainerStructured(deps, body) {
   // bots routinely opened chests they couldn't actually see. Raycast
   // from bot eye to each face of the chest cell; refuse if every face
   // is occluded. Mirrors the F45.3 guard already in mc place.
-  if (typeof hasLineOfSight === 'function' && typeof eyePosition === 'function') {
-    const eye = eyePosition();
-    if (eye) {
-      const cx = x + 0.5, cy = y + 0.5, cz = z + 0.5;
-      const faces = [
-        { x: cx, y: cy, z: cz - 0.48 },
-        { x: cx, y: cy, z: cz + 0.48 },
-        { x: cx - 0.48, y: cy, z: cz },
-        { x: cx + 0.48, y: cy, z: cz },
-        { x: cx, y: cy - 0.48, z: cz },
-        { x: cx, y: cy + 0.48, z: cz },
-        { x: cx, y: cy, z: cz },
-      ];
-      if (!faces.some((p) => hasLineOfSight(eye, p))) {
-        return {
-          ok: false,
-          error: {
-            code: 'NO_LINE_OF_SIGHT',
-            message: `Cannot see chest at ${x},${y},${z} — a block is between you and the container.`,
-            observed_state: {
-              container_position: { x, y, z },
-              bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
-              distance: Math.round(reach.distance * 10) / 10,
-            },
-            next_action_hint: `Open a door or navigate around the wall to gain line-of-sight. Try mc goto_near ${x} ${y} ${z} range=2.`,
-            retry_safe: false,
-          },
-        };
-      }
-    }
+  if (!canSeeBlockFaces(b, x, y, z, { hasLineOfSight, eyePosition })) {
+    return fail(
+      'NO_LINE_OF_SIGHT',
+      `Cannot see chest at ${x},${y},${z} — a block is between you and the container.`,
+      {
+        observed_state: {
+          container_position: { x, y, z },
+          bot_position: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+          distance: Math.round(reach.distance * 10) / 10,
+        },
+        next_action_hint: `Open a door or navigate around the wall to gain line-of-sight. Try mc goto_near ${x} ${y} ${z} range=2.`,
+        retry_safe: false,
+      },
+    );
   }
 
   let chest;

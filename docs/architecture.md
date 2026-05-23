@@ -39,6 +39,8 @@ extend it.
 │    ├── spatial.js           map + look-around            │
 │    ├── locations.js         marks store                  │
 │    ├── dig-tools.js         tool classification          │
+│    ├── water-route.js       BFS navigable water routes (mc sail_to) │
+│    ├── boat-path.js         dense boat steering / executeBoatPath   │
 │    └── paper-mcp.js         PaperMCP RPC client          │
 ├─────────────────────────────────────────────────────────┤
 │  lib/actions/       Layer 1 — `mc <verb>` handlers       │
@@ -73,8 +75,8 @@ the P16 budget (≤500 LOC) or carry `// @size-exempt: <reason>`.
 | `actions/interaction.js` | `interact` `through` `close_screen` `use` | door / button / lever / GUI |
 | `actions/queries.js` | `scout` `terrain_top` `find` `inspect` `reachable` `standing` `escape` `is_empty` `is_filled` `is_sheltered` | read-only world queries |
 | `actions/lifecycle.js` | `chat` `wait` `surface` `sleep_bed` `set_home` `chat_to` `whisper` `respawn` `deathpoint` | bot lifecycle + chat verbs |
-| `actions/mining.js` | `collect` `dig` `pickup` `find_blocks` `find_entities` `safe_dig` `complete_command` `acknowledge_command` `cancel_command` | collect/dig dominate; Phase 9 (deferred) extracts helpers |
-| `actions/movement.js` | `goto` `goto_near` `move` `follow` `look` `stop` | pathfinder + stall recovery |
+| `actions/mining/` | `collect` `dig` `pickup` `find_blocks` `find_entities` `safe_dig` `complete_command` `acknowledge_command` `cancel_command` | collect/dig dominate; Phase 9 (deferred) extracts helpers |
+| `actions/movement.js` | `goto` `goto_near` `move` `follow` `look` `jump` `stop` | pathfinder + stall recovery; `refuseWaterRouteWithoutBoat` → `mc sail_to` hints |
 | `actions/crafting.js` | `craft` `recipes` `craft_plan` `discover` | recipe-only post Phase 5 |
 | `actions/furnace.js` | `smelt` `smelt_start` `furnace_check` `furnace_take` | smelt moved here from crafting in Phase 5 |
 | `actions/containers.js` | `list_container` `deposit` `withdraw` `chest_search` | chest ops + shared openContainerStructured |
@@ -84,7 +86,7 @@ the P16 budget (≤500 LOC) or carry `// @size-exempt: <reason>`.
 | `actions/combat.js` | `mode` `combat_skill` `attack` `eat` `feed_mob` `fight` `flee` `sneak` `shield_block` `shoot` `sprint_attack` `critical_hit` `strafe` `combo` | combat verbs share threat-filter helpers |
 | `actions/farming.js` | `till` `plant` `bonemeal` `harvest` | crops (wheat / beets / carrots / potatoes / saplings / sugar_cane); PaperMCP fallback for Paper 1.21+ `activateBlock` no-op |
 | `actions/animals.js` | `breed` `shear` `milk_cow` `hunt` `lure` | shared fair-play + chase/`useOn` retry helpers |
-| `actions/water.js` | `fish` `place_boat` `board` `sail` `disembark` `bucket_fill` `bucket_empty` | absorbed bucket_* from former world.js in Phase 4 |
+| `actions/water.js` | **`sail_to`** `fish` `place_boat` `board` `sail` `disembark` `bucket_fill` `bucket_empty` | Ferry orchestration in actions; **`planWaterRoute`** (`lib/runtime/water-route.js`) + **`planBoatPath` / `executeBoatPath`** (`lib/runtime/boat-path.js`). Agent-facing ferry: **`mc sail_to`** only. Canonical command docs: [`docs/mc-commands.md`](mc-commands.md). |
 
 ## State slices
 
@@ -160,9 +162,29 @@ Currently enforces (`scripts/check-conventions.mjs`):
 
 Layer-boundary enforcement (P8 — no upward calls) is **not** automated yet.
 
+## Actions layout — current vs target (2026 refactor)
+
+**Current:** one factory file per domain at `bot/lib/actions/<domain>.js` (flat), plus `_`-prefixed helpers (`_helpers.js`, `_nav-helpers.js`). Query actions may use a subdirectory (e.g. `actions/queries/` with `escape/strategies.js`).
+
+**Target (in progress):** largest domains become subdirectories with a thin shim at the legacy path:
+
+```
+bot/lib/actions/water.js     → export { createWaterActions } from './water/index.js'
+bot/lib/actions/water/       sail-to/, place-boat.js, board.js, …
+bot/lib/actions/mining/      collect/, dig.js, pickup.js, scout.js, …
+bot/lib/actions/building/    place-single.js, place-bulk.js, pillar.js, terrain.js
+bot/lib/actions/movement/    goto.js, move.js, _preflight.js, water-refusal.js, …
+bot/lib/actions/queries/     escape/, scout.js, find.js, …
+```
+
+Shared constants/LOS/args: `_block-sets.js`, `_directions.js`, `_los.js`, `_args.js`. Runtime planners for boats stay in `lib/runtime/` (not under `actions/`).
+
+Command semantics and agent chains: [`docs/mc-commands.md`](mc-commands.md).
+
 ## Cross-references
 
 - `docs/patterns.md` — canonical pattern list (P1-P20)
 - `docs/archive/refactor-plan-2026.md` — history of the 2026 refactor (Phases 1-10) that produced this structure
 - `docs/design/phase-2/action-contracts.md` — error-code taxonomy per primitive (referenced by P9)
+- [`docs/mc-commands.md`](mc-commands.md) — canonical command taxonomy, argument schemas, chain playbooks (Section E)
 - `docs/agent-boundaries.md` — Hermes ↔ bot interface contract

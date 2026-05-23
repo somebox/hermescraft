@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 
 import { createCombatActions } from '../../lib/actions/combat.js';
 import { createMockServices } from '../../lib/server/mock-services.js';
+import { assertFailure } from '../_helpers/action-harness.js';
 
 function makeBot({
   foods = [{ name: 'cooked_beef', count: 32, slot: 36 }],
@@ -134,32 +135,22 @@ test('mc eat: mounted + consume fails → EAT_FAILED_MOUNTED with disembark hint
   const food = { name: 'cooked_beef', count: 32, slot: 36 };
   const bot = makeBot({ foods: [food], held: food, mounted: true, consumeWorks: false });
   const combat = createCombatActions(eatDeps(bot, mcData));
-  await assert.rejects(
-    () => combat.eat(),
-    (err) => {
-      assert.equal(err.code, 'EAT_FAILED_MOUNTED');
-      assert.match(err.message, /disembark first/);
-      return true;
-    },
-  );
+  const r = await combat.eat();
+  assertFailure(r, { code: 'EAT_FAILED_MOUNTED', messageIncludes: 'disembark', retrySafe: true });
 });
 
 test('mc eat: on land + consume fails → EAT_FAILED (no mounted hint)', async () => {
   const food = { name: 'cooked_beef', count: 32, slot: 36 };
   const bot = makeBot({ foods: [food], held: food, mounted: false, consumeWorks: false });
   const combat = createCombatActions(eatDeps(bot, mcData));
-  await assert.rejects(
-    () => combat.eat(),
-    (err) => {
-      assert.equal(err.code, 'EAT_FAILED');
-      assert.doesNotMatch(err.message, /disembark/);
-      return true;
-    },
-  );
+  const r = await combat.eat();
+  assertFailure(r, { code: 'EAT_FAILED', retrySafe: true });
+  assert.doesNotMatch(r.error.message, /disembark/);
 });
 
 test('mc eat: no food in inventory → "No food in inventory" error', async () => {
   const bot = makeBot({ foods: [] });
   const combat = createCombatActions(eatDeps(bot, mcData));
-  await assert.rejects(() => combat.eat(), /No food in inventory/);
+  const r = await combat.eat();
+  assertFailure(r, { code: 'NO_FOOD', messageIncludes: 'No food', retrySafe: false });
 });

@@ -1,6 +1,7 @@
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
-import { ok } from '../shared/action-contract.js';
+import { ok, fail } from '../shared/action-contract.js';
+import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
 
 const { goals } = pathfinderPkg;
 
@@ -52,7 +53,7 @@ export function createLifecycleActions(services) {
       if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
     }
     rememberSocialEvent({ actor: getMyName(), kind: 'sent', channel: 'public', message });
-    return { result: `Sent: ${message}` };
+    return ok({ result: `Sent: ${message}` });
   },
 
   async wait({ seconds = 5, until_mention, until_direct, interrupt }) {
@@ -68,7 +69,7 @@ export function createLifecycleActions(services) {
     const myName = String(b.username || '').toLowerCase();
     if (!wantMention && !wantDirect) {
       await sleep(cap);
-      return { result: `Waited ${Math.round(cap / 100) / 10}s`, data: { interrupted: false, elapsed_s: Math.round(cap / 100) / 10 } };
+      return ok({ result: `Waited ${Math.round(cap / 100) / 10}s`, data: { interrupted: false, elapsed_s: Math.round(cap / 100) / 10 } });
     }
     // Time-based cursor: chatLog is capped at MAX_LOG=100 with shift()
     // on overflow. An index-based cursor (`chatLog.length` at start)
@@ -89,7 +90,7 @@ export function createLifecycleActions(services) {
         const isDirect = wantDirect && (m.private === true || m.whisper === true);
         if (isMention || isDirect) {
           const elapsed_s = Math.round((Date.now() - start) / 100) / 10;
-          return {
+          return ok({
             result: `Wait interrupted by chat after ${elapsed_s}s — ${m.from}: ${m.message}`,
             data: {
               interrupted: true,
@@ -98,18 +99,18 @@ export function createLifecycleActions(services) {
               elapsed_s,
               reason: isMention ? 'mention' : 'direct',
             },
-          };
+          });
         }
       }
     }
     const elapsed_s = Math.round((Date.now() - start) / 100) / 10;
-    return { result: `Waited ${elapsed_s}s`, data: { interrupted: false, elapsed_s } };
+    return ok({ result: `Waited ${elapsed_s}s`, data: { interrupted: false, elapsed_s } });
   },
 
   async surface() {
     const b = ensureBot();
     if (!b.entity.isInWater) {
-      return { result: `Not in water — already at surface.`, data: { in_water: false } };
+      return ok({ result: `Not in water — already at surface.`, data: { in_water: false } });
     }
     const start = Date.now();
     const startY = b.entity.position.y;
@@ -131,10 +132,10 @@ export function createLifecycleActions(services) {
       b.setControlState('jump', false);
     }
     const endY = b.entity.position.y;
-    return {
+    return ok({
       result: `Surfaced from y=${startY.toFixed(1)} to y=${endY.toFixed(1)} in ${ticks * 0.2}s.`,
       data: { start_y: startY, end_y: endY, ticks, in_water: !!b.entity.isInWater },
-    };
+    });
   },
 
   /**
@@ -151,12 +152,16 @@ export function createLifecycleActions(services) {
     let bed = b.findBlock({ matching: block => block.name?.includes('bed'), maxDistance: 6 });
     if (!bed) {
       bed = b.findBlock({ matching: block => block.name?.includes('bed'), maxDistance: 32 });
-      if (!bed) throw new Error('No bed within 32 blocks. Craft one (3 wool + 3 planks) or move closer.');
-      try { await b.pathfinder.goto(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2)); }
-      catch { throw new Error(`Found bed at ${bed.position.x},${bed.position.y},${bed.position.z} but cannot reach it.`); }
+      if (!bed) {
+        return fail('NO_BED', 'No bed within 32 blocks. Craft one (3 wool + 3 planks) or move closer.', { retry_safe: false });
+      }
+      try { await pathfindGotoNear(b, goals, bed.position.x, bed.position.y, bed.position.z, 2, { opName: 'sleep', capMs: ACTION_CAPS_MS.reach }); }
+      catch {
+        return fail('OUT_OF_RANGE', `Found bed at ${bed.position.x},${bed.position.y},${bed.position.z} but cannot reach it.`, { retry_safe: true });
+      }
     }
     await b.sleep(bed);
-    return { result: `Sleeping in ${bed.name} at ${bed.position.x},${bed.position.y},${bed.position.z}. Spawn point set here.` };
+    return ok({ result: `Sleeping in ${bed.name} at ${bed.position.x},${bed.position.y},${bed.position.z}. Spawn point set here.` });
   },
 
   async set_home({ x, y, z } = {}) {
@@ -169,7 +174,7 @@ export function createLifecycleActions(services) {
     const pmcpCfg = paperMcpConfig();
     if (pmcpCfg) {
       const res = await executeServerCommand(pmcpCfg, `spawnpoint ${username} ${px} ${py} ${pz}`);
-      if (res.ok) return { result: `Spawn point set to ${px},${py},${pz} via server command.`, x: px, y: py, z: pz };
+      if (res.ok) return ok({ result: `Spawn point set to ${px},${py},${pz} via server command.`, x: px, y: py, z: pz });
       log(`PaperMCP set_home failed: ${res.error}, trying bed fallback`);
     }
 
@@ -177,14 +182,14 @@ export function createLifecycleActions(services) {
     const bed = b.findBlock({ matching: block => block.name?.includes('bed'), maxDistance: 32 });
     if (bed) {
       try {
-        await b.pathfinder.goto(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2));
+        await pathfindGotoNear(b, goals, bed.position.x, bed.position.y, bed.position.z, 2, { opName: 'sleep', capMs: ACTION_CAPS_MS.reach });
         await b.sleep(bed);
-        return { result: `Spawn point set by sleeping in bed at ${bed.position.x},${bed.position.y},${bed.position.z}.` };
+        return ok({ result: `Spawn point set by sleeping in bed at ${bed.position.x},${bed.position.y},${bed.position.z}.` });
       } catch (err) {
-        throw new Error(`Cannot set home: PaperMCP unavailable and bed at ${bed.position.x},${bed.position.y},${bed.position.z} unreachable: ${/** @type {Error} */ (err).message}`);
+        return fail('CANNOT_SET_HOME', `Cannot set home: PaperMCP unavailable and bed at ${bed.position.x},${bed.position.y},${bed.position.z} unreachable: ${/** @type {Error} */ (err).message}`, { retry_safe: false });
       }
     }
-    throw new Error('Cannot set home: PaperMCP unavailable and no bed within 32 blocks. Craft a bed (3 wool + 3 planks) and place it, then run mc sleep.');
+    return fail('CANNOT_SET_HOME', 'Cannot set home: PaperMCP unavailable and no bed within 32 blocks. Craft a bed (3 wool + 3 planks) and place it, then run mc sleep.', { retry_safe: false });
   },
 
   // ── Chat / Whisper ──────────────────────────────
@@ -214,7 +219,7 @@ export function createLifecycleActions(services) {
       if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
     }
     rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'public_mention', message: text });
-    return { result: `[@${player}]: ${message}` };
+    return ok({ result: `[@${player}]: ${message}` });
   },
 
   async whisper({ player, message }) {
@@ -235,13 +240,13 @@ export function createLifecycleActions(services) {
       if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
     }
     rememberSocialEvent({ actor: getMyName(), target: player, kind: 'sent', channel: 'public_mention', message: text });
-    return { result: `[@${player}]: ${message}` };
+    return ok({ result: `[@${player}]: ${message}` });
   },
 
   // ── Death / Respawn ─────────────────────────────────
   async respawn({ confirm, force } = {}) {
     if (String(confirm) !== 'yes') {
-      return { error: 'Respawn uses /kill — you die and DROP ALL ITEMS. Pass confirm=yes to proceed. If you just want to go home, use mc go_mark home or mc goto.' };
+      return fail('CONFIRM_REQUIRED', 'Respawn uses /kill — you die and DROP ALL ITEMS. Pass confirm=yes to proceed. If you just want to go home, use mc go_mark home or mc goto.', { retry_safe: false });
     }
     const b = ensureBot();
     const pos = posObj();
@@ -299,21 +304,32 @@ export function createLifecycleActions(services) {
     ctx.world.positionHistory = [];
 
     const newPos = posObj();
-    return {
+    return ok({
       result: `Respawned via /kill. Old pos: ${pos.x},${pos.y},${pos.z}. New pos: ${newPos.x},${newPos.y},${newPos.z}. Dropped items: ${items.join(', ') || 'none'}.`,
       old_position: pos,
       new_position: newPos,
       dropped_items: items,
-    };
+    });
   },
 
   async deathpoint() {
-    if (!ctx.death.lastDeath) return { result: 'No deaths recorded.' };
+    if (!ctx.death.lastDeath) return ok({ result: 'No deaths recorded.' });
     const pos = ctx.death.lastDeath.position;
     const age = Math.round((Date.now() - ctx.death.lastDeath.time) / 1000);
     const b = ensureBot();
-    await b.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 3));
-    return { result: `At death #${ctx.death.lastDeath.deathNumber} (${age}s ago). Lost: ${ctx.death.lastDeath.inventory.map(i=>`${i.name}x${i.count}`).join(', ')}` };
+    try {
+      await pathfindGotoNear(b, goals, pos.x, pos.y, pos.z, 3, { opName: 'respawn_reach', capMs: ACTION_CAPS_MS.reach });
+    } catch (err) {
+      try { b.pathfinder.setGoal(null); } catch { /* ignore */ }
+      return fail('OUT_OF_RANGE', `Could not reach deathpoint at ${pos.x},${pos.y},${pos.z}: ${/** @type {Error} */ (err).message}`, {
+        observed_state: {
+          deathpoint: pos,
+          current: { x: b.entity.position.x, y: b.entity.position.y, z: b.entity.position.z },
+        },
+        retry_safe: true,
+      });
+    }
+    return ok({ result: `At death #${ctx.death.lastDeath.deathNumber} (${age}s ago). Lost: ${ctx.death.lastDeath.inventory.map(i=>`${i.name}x${i.count}`).join(', ')}` });
   },
 
   /**

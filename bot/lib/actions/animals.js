@@ -10,6 +10,7 @@
 
 import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
+import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
 
 // Species → array of items in inventory that can breed them.
 // First entry is the canonical choice when bot has multiple options.
@@ -107,8 +108,14 @@ export function createAnimalsActions(deps) {
         // Radius=1 makes the bot crowd the animal, which pushes it into
         // walls — vanilla collision physics can clip animals through
         // fences when this happens repeatedly.
-        await b.pathfinder.goto(
-          new goals.GoalNear(live.position.x, live.position.y, live.position.z, 2),
+        await pathfindGotoNear(
+          b,
+          goals,
+          live.position.x,
+          live.position.y,
+          live.position.z,
+          2,
+          { opName: 'animal_approach', capMs: ACTION_CAPS_MS.reach },
         );
       } catch {
         // Pathfinder may bail if the goal moves; brief pause then retry.
@@ -497,7 +504,7 @@ export function createAnimalsActions(deps) {
       try {
         for (const [kx, ky, kz] of killedPositions.slice(0, 4)) {
           try {
-            await b.pathfinder.goto(new goals.GoalNear(kx, ky, kz, 1));
+            await pathfindGotoNear(b, goals, kx, ky, kz, 1, { opName: 'hunt', capMs: ACTION_CAPS_MS.reach });
           } catch {}
           await sleep(150);
           try { await ACTIONS.pickup?.({ radius: 5 }); } catch {}
@@ -584,7 +591,7 @@ export function createAnimalsActions(deps) {
 
       const dest = new Vec3(Number(x), Number(y), Number(z));
       try {
-        await b.pathfinder.goto(new goals.GoalNear(dest.x, dest.y, dest.z, 1));
+        await pathfindGotoNear(b, goals, dest.x, dest.y, dest.z, 1, { opName: 'lure', capMs: ACTION_CAPS_MS.reach });
       } catch {
         return { ok: false, error: {
           code: 'OUT_OF_RANGE',
