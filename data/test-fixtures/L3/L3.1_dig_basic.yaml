@@ -1,7 +1,7 @@
 # L3.1 — dig_basic: mc dig succeeds on a dirt block adjacent to bot
 #
 # Purpose: verify the dig action contract holds for the simplest case.
-# Reference: docs/phase-2-architecture.md §8 (mc dig contract) and §15 Sprint 3.
+# Reference: docs/design/phase-2/action-contracts.md (mc dig contract) and docs/design/phase-2/sprints.md Sprint 3.
 #
 # Region: (0, 65, 0) — spawn platform. Dirt is placed at (1, 65, 0).
 #

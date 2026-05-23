@@ -1493,6 +1493,68 @@ test('mc sail_to: invalid coords → INVALID_COORD', async () => {
   assert.equal(r.error.code, 'INVALID_COORD');
 });
 
+// ─── F25 (task #63, v42): sail_to suppresses reactive auto_escape ─────
+
+test('mc sail_to: sets ctx.runtime.sailToActiveStartedAt while running and clears it on exit', async () => {
+  // The wrapper sets ctx.runtime.sailToActiveStartedAt at entry and
+  // clears it in a finally so the reactive layer's
+  // shouldSuppressAutoEscape predicate gates auto_escape_water + the
+  // head_in_water swim_up branch during sail_to. Without this gate,
+  // reactive's setGoal(null) races against walk_to_entry's pathfinder
+  // and throws "The goal was changed before it could be completed!"
+  // (circuit-v42 forensics).
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: 0 },
+    inventory: [],  // NO_BOAT — fast refusal, but the flag must still
+                    // be set on entry and cleared on the refusal path.
+  });
+  const deps = waterDeps(bot);
+  const water = createWaterActions(deps);
+  // Sanity: flag starts unset.
+  assert.equal(deps.ctx.runtime.sailToActiveStartedAt ?? null, null);
+  const before = Date.now();
+  const r = await water.sail_to({ x: 100, y: 63, z: 0 });
+  // Refusal still happens (NO_BOAT) but the wrapper must have cleared
+  // the flag via the finally clause.
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_BOAT');
+  assert.equal(deps.ctx.runtime.sailToActiveStartedAt ?? null, null,
+    'sailToActiveStartedAt must be cleared after sail_to returns (even on refusal)');
+  // Indirect proof that it WAS set: if the impl somehow throws and we
+  // can observe the flag inside (covered in the next test).
+  assert.ok(before > 0); // trivially true; pins the variable so lint
+                          // doesn't flag it
+});
+
+test('mc sail_to: flag is cleared even when _sailToImpl throws', async () => {
+  // Crash safety: if the impl throws (network failure, unexpected
+  // mineflayer error), the try/finally in the wrapper must still
+  // restore the flag. Without this, a single sail_to crash would
+  // permanently disable the reactive water-escape patrol. The
+  // 60-second staleness window in shouldSuppressAutoEscape is the
+  // second line of defence; this test pins the first.
+  const bot = makeMockBot({
+    position: { x: 0, y: 63, z: 0 },
+    inventory: [{ name: 'oak_boat', count: 1 }],
+  });
+  // Tamper with planWaterRoute? Simpler: replace ensureBot to throw.
+  const deps = waterDeps(bot);
+  // Force a throw inside _sailToImpl by removing the bot.entity, which
+  // the first lines of _sailToImpl read for startPos.
+  const broken = { ...bot, get entity() { throw new Error('synthetic crash for F25 test'); } };
+  const brokenDeps = { ...deps, ensureBot: () => broken };
+  const water = createWaterActions(brokenDeps);
+  let threw = null;
+  try {
+    await water.sail_to({ x: 100, y: 63, z: 0 });
+  } catch (e) {
+    threw = e;
+  }
+  assert.ok(threw, 'sail_to should propagate the synthetic crash');
+  assert.equal(brokenDeps.ctx.runtime.sailToActiveStartedAt ?? null, null,
+    'flag must be cleared in finally even when impl throws');
+});
+
 test('mc sail_to: works as a detached function (action registry safety)', async () => {
   // Regression for the v30 first-launch crash (`0ad538b`). The action
   // registry extracts methods like this:

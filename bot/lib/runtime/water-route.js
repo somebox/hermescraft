@@ -101,18 +101,31 @@ function classifyCell(b, x, y, z) {
 }
 
 /**
- * A shore cell is land directly adjacent to a water cell — the bot
- * can stand there with feet on solid ground and step into the water.
- * (foot=air OR solid-stand, foot-1=solid block, head=air.)
+ * A shore cell is DRY land directly adjacent to a water cell — the bot
+ * can stand there with feet in AIR (head clearance above, solid block
+ * beneath) and step into the water. Foot=air, foot-1=solid non-water,
+ * head=air.
+ *
+ * F27 (task #66, v43): foot must be air. The previous version also
+ * accepted foot=water as a "shore" with the comment "foot can be air
+ * (the bot stands ON the block below)" — but a water-foot cell IS the
+ * bot standing IN the water. circuit-v43 forensics: findEntryShore
+ * returned (345, 62, -541) — a 1-deep water cell with dirt below — as
+ * the entry shore. The pathfinder dutifully walked the bot to that
+ * coord, the bot ended up submerged, F3 caught the cascade, and the
+ * agent could never start a journey because the same wet "shore" was
+ * picked on every retry. The natural-beach case (sand at water-y level
+ * with walkable air ABOVE) is handled by the dy=+1 retry in
+ * findEntryShore / findExitShore (F16), not by foot=water — that case
+ * fails the first try (foot=sand → not air) and passes the second
+ * (foot=air at sy+1).
  */
 function isShoreCell(b, x, y, z) {
   const foot = b.blockAt(new Vec3(x, y, z));
   if (!foot) return false;
-  // foot can be air (the bot stands ON the block below) — checked below
-  if (!AIR_NAMES.has(foot.name) && foot.name !== 'water') {
-    // foot block must be enterable (air-ish) — actual stand block is y-1
-    return false;
-  }
+  // Foot must be air. Water-foot cells are not dry shore — the bot
+  // would arrive submerged. See F27 above.
+  if (!AIR_NAMES.has(foot.name)) return false;
   const head = b.blockAt(new Vec3(x, y + 1, z));
   if (!head || !AIR_NAMES.has(head.name)) return false;
   const below = b.blockAt(new Vec3(x, y - 1, z));
@@ -194,15 +207,47 @@ function findExitShore(b, cells, target, radius) {
  * Find a land shore cell adjacent to `water` (used as the entry shore —
  * where the bot stands before boarding).
  */
-function findEntryShore(b, water) {
-  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const sx = water.x + dx, sy = water.y, sz = water.z + dz;
-    if (isShoreCell(b, sx, sy, sz)) {
-      return { x: sx, y: sy, z: sz };
+function findEntryShore(b, water, opts = {}) {
+  // F30 (task #66, v45): spiral out from the water cell. Pre-F30 we
+  // checked only the 4 immediate cardinal neighbors (with a dy=+1
+  // fallback for sloped beaches). circuit-v45 forensics: the BFS's
+  // nearestExternalWater pointer landed in a stretch of lake where
+  // EVERY cardinal cell was also water (1-deep on sand → no shore by
+  // either dy=0 or dy=+1). findEntryShore returned null, sail_to
+  // surfaced the raw water coord in the hint, and mc bg_goto refused
+  // it as NAV_TARGET_UNSTANDABLE. The actual dry shore was 2-3
+  // blocks away — and that's exactly where the bot was already
+  // standing. Searching outward by Chebyshev (square-ring) distance
+  // up to `maxRadius` finds those near-shores.
+  //
+  // Order: ring 1 (4 immediate cardinals) checked first to preserve
+  // the previous behavior on standard pier/dock geometries. Within
+  // each ring, dy=0 cells are tried before dy=+1 (sloped-beach
+  // fallback, F16) so dry foot beats sand-foot-walkable-air-above
+  // when both exist.
+  const maxRadius = Math.max(1, Math.min(8, opts.maxRadius ?? 4));
+  for (let r = 1; r <= maxRadius; r++) {
+    // Collect cells on the Chebyshev ring at distance r. Cardinal cells
+    // first (dx=0 or dz=0 with |dx|+|dz|==r) so they sort to the front.
+    const ring = [];
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const isCardinalish = (dx === 0) || (dz === 0);
+        ring.push({ dx, dz, prio: isCardinalish ? 0 : 1 });
+      }
     }
-    // Also try one block up — beaches often slope.
-    if (isShoreCell(b, sx, sy + 1, sz)) {
-      return { x: sx, y: sy + 1, z: sz };
+    ring.sort((a, b2) => a.prio - b2.prio);
+    for (const { dx, dz } of ring) {
+      const sx = water.x + dx, sz = water.z + dz;
+      // Try the water's y first (standard waterfront), then sy+1
+      // (sloped beach: sand at water-y with walkable air above).
+      for (const dy of [0, 1]) {
+        const sy = water.y + dy;
+        if (isShoreCell(b, sx, sy, sz)) {
+          return { x: sx, y: sy, z: sz };
+        }
+      }
     }
   }
   return null;
@@ -222,6 +267,12 @@ export function planWaterRoute(b, start, target, opts = {}) {
   const maxExplored = opts.max_explored ?? DEFAULT_MAX_EXPLORED;
   const entryRadius = opts.entry_search_radius ?? DEFAULT_ENTRY_SEARCH_RADIUS;
   const exitRadius = opts.exit_shore_radius ?? DEFAULT_EXIT_SHORE_RADIUS;
+  // F43 (task #66, v55): callers can override MIN_USEFUL_SAIL when the bot
+  // is already in water — any sail that ends on a dry shore is useful
+  // because the alternative is "stranded swimming." Default 20 keeps the
+  // F19 behaviour for dry-land callers (avoid pointless place_boat
+  // overhead for 5b crossings).
+  const minUsefulSail = opts.min_useful_sail ?? 20;
 
   // Trivial: caller is already near the target. No journey needed.
   const horizToTarget = Math.hypot(start.x - target.x, start.z - target.z);
@@ -297,6 +348,15 @@ export function planWaterRoute(b, start, target, opts = {}) {
           // Now we run the full navigability check (water foot, air
           // y+1 + y+2 for rider clearance, water y-1 for boat depth)
           // before accepting any candidate.
+          // F48 (task #66, v58): reject candidates whose Y is far from
+          // the bot's current Y. circuit-v58 forensics: agent on grass
+          // at y=65 was directed to a "Walkable shore at (353, 54, -562)"
+          // — an UNDERGROUND CAVE 11 blocks below. The cave's shore
+          // technically passes isShoreCell (air-foot above stone), but
+          // the bot can't reach it without digging. A 5-block Y delta
+          // catches caves and floating mountain lakes; surface fords
+          // (boat on a river, river-bank ~2b below bot) still pass.
+          const MAX_Y_DELTA = 5;
           const candidates = hits.map((w) => {
             const wx = typeof w.x === 'number' ? w.x : Math.floor(w.x);
             const wy = typeof w.y === 'number' ? w.y : Math.floor(w.y);
@@ -305,7 +365,7 @@ export function planWaterRoute(b, start, target, opts = {}) {
             const dy = Math.abs(wy - startFy);
             const navClass = classifyCell(b, wx, wy, wz);
             return { x: wx, y: wy, z: wz, dxz, dy, navClass };
-          }).filter((c) => c.navClass === 'navigable');
+          }).filter((c) => c.navClass === 'navigable' && c.dy <= MAX_Y_DELTA);
           if (candidates.length > 0) {
             // Sort: closest in XZ first, tiebreaker = smaller |dy|.
             candidates.sort((a, b2) => (a.dxz - b2.dxz) || (a.dy - b2.dy));
@@ -322,18 +382,25 @@ export function planWaterRoute(b, start, target, opts = {}) {
     } catch {
       // findBlocks unavailable or threw — fall through with nearestWater=null
     }
+    // F21 (task #59, v41): for every candidate water cell, also compute
+    // the walkable SHORE STANCE — the dry cell adjacent to the water
+    // where the bot will actually stand. Pre-F21 we surfaced the water
+    // coord; mc bg_goto refused it as NAV_TARGET_UNSTANDABLE; agent
+    // fell back to mc move and overshot into the ocean.
+    const nearestShoreStance = nearestWater ? findEntryShore(b, nearestWater) : null;
     return {
       ok: false,
       error: {
         code: anyShallow ? 'WATER_TOO_SHALLOW' : 'NO_WATER_ROUTE',
         message: anyShallow
-          ? `Found water within ${entryRadius}b but it's only 1 deep — the boat would ground out. Walk to a deeper shore first.${nearestWater ? ` Nearest navigable water is ~${nearestWater.distance}b away at (${nearestWater.x}, ${nearestWater.y}, ${nearestWater.z}).` : ''}`
-          : `No navigable water cell (water with air above and water below) within ${entryRadius}b of start.${nearestWater ? ` Nearest water source is ~${nearestWater.distance}b away at (${nearestWater.x}, ${nearestWater.y}, ${nearestWater.z}) — walk there with mc bg_goto, then call mc sail_to again.` : ''}`,
+          ? `Found water within ${entryRadius}b but it's only 1 deep — the boat would ground out. Walk to a deeper shore first.${nearestShoreStance ? ` Walkable shore is at (${nearestShoreStance.x}, ${nearestShoreStance.y}, ${nearestShoreStance.z}).` : nearestWater ? ` Nearest navigable water is ~${nearestWater.distance}b away at (${nearestWater.x}, ${nearestWater.y}, ${nearestWater.z}).` : ''}`
+          : `No navigable water cell (water with air above and water below) within ${entryRadius}b of start.${nearestShoreStance ? ` Walkable shore is at (${nearestShoreStance.x}, ${nearestShoreStance.y}, ${nearestShoreStance.z}) (next to water at (${nearestWater.x}, ${nearestWater.y}, ${nearestWater.z})) — mc bg_goto there, then mc sail_to again.` : nearestWater ? ` Nearest water source is ~${nearestWater.distance}b away at (${nearestWater.x}, ${nearestWater.y}, ${nearestWater.z}).` : ''}`,
         observed_state: {
           start,
           entry_search_radius: entryRadius,
           start_cell_classification: startCellClass,
           ...(nearestWater ? { nearest_water_candidate: nearestWater } : {}),
+          ...(nearestShoreStance ? { nearest_shore_stance: nearestShoreStance } : {}),
         },
       },
     };
@@ -396,6 +463,9 @@ export function planWaterRoute(b, start, target, opts = {}) {
           // F15 (task #52): also require classifyCell === 'navigable'
           // (water foot + air x2 above + water below). A shallow pond
           // wouldn't help Steve sail out of THIS pond either.
+          // F48 (task #66, v58): also filter by Y proximity here —
+          // same rationale as the NO_WATER_ROUTE branch above.
+          const POND_MAX_Y_DELTA = 5;
           const candidates = hits.map((w) => {
             const wx = typeof w.x === 'number' ? w.x : Math.floor(w.x);
             const wy = typeof w.y === 'number' ? w.y : Math.floor(w.y);
@@ -405,7 +475,7 @@ export function planWaterRoute(b, start, target, opts = {}) {
             const dy = Math.abs(wy - startFy);
             const navClass = classifyCell(b, wx, wy, wz);
             return { x: wx, y: wy, z: wz, dxz, dy, navClass, inThisPond };
-          }).filter((c) => c.navClass === 'navigable' && !c.inThisPond);
+          }).filter((c) => c.navClass === 'navigable' && !c.inThisPond && c.dy <= POND_MAX_Y_DELTA);
           if (candidates.length > 0) {
             candidates.sort((a, b2) => (a.dxz - b2.dxz) || (a.dy - b2.dy));
             const best = candidates[0];
@@ -421,17 +491,20 @@ export function planWaterRoute(b, start, target, opts = {}) {
     } catch {
       // findBlocks unavailable or threw — keep null
     }
+    // F21 (task #59): same shore-stance treatment for the pond branch.
+    const pondNearestShoreStance = nearestExternalWater ? findEntryShore(b, nearestExternalWater) : null;
     return {
       ok: false,
       error: {
         code: 'POND_DISCONNECTED',
-        message: `Water near start is a tiny pond (${explored.length} cells reachable). Walk to a real shore first with mc bg_goto.${nearestExternalWater ? ` Nearest surface water outside this pond is ~${nearestExternalWater.distance}b away at (${nearestExternalWater.x}, ${nearestExternalWater.y}, ${nearestExternalWater.z}).` : ''}`,
+        message: `Water near start is a tiny pond (${explored.length} cells reachable). Walk to a real shore first with mc bg_goto.${pondNearestShoreStance ? ` Walkable shore outside this pond is at (${pondNearestShoreStance.x}, ${pondNearestShoreStance.y}, ${pondNearestShoreStance.z}).` : nearestExternalWater ? ` Nearest surface water outside this pond is ~${nearestExternalWater.distance}b away at (${nearestExternalWater.x}, ${nearestExternalWater.y}, ${nearestExternalWater.z}).` : ''}`,
         observed_state: {
           entry_water: entryWater,
           cells_in_pond: explored.length,
           nearest_water_to_target: nearestToTarget.cell,
           distance_short_by: Math.round(nearestToTarget.dist),
           ...(nearestExternalWater ? { nearest_water_candidate: nearestExternalWater } : {}),
+          ...(pondNearestShoreStance ? { nearest_shore_stance: pondNearestShoreStance } : {}),
         },
       },
     };
@@ -484,7 +557,7 @@ export function planWaterRoute(b, start, target, opts = {}) {
     exit.water.x - entryWater.x,
     exit.water.z - entryWater.z,
   );
-  const MIN_USEFUL_SAIL = 20;
+  const MIN_USEFUL_SAIL = minUsefulSail;
   if (partial && exitToTargetHoriz >= startToTargetHoriz) {
     // Going backward / sideways — boat doesn't help.
     return {
@@ -521,8 +594,23 @@ export function planWaterRoute(b, start, target, opts = {}) {
     };
   }
 
-  // Find an entry shore — land cell adjacent to entry_water.
-  const entryShore = findEntryShore(b, entryWater) || { x: startFx, y: startFy, z: startFz };
+  // Find an entry shore — a land cell ADJACENT to entry_water. The
+  // bot walks here then place_boat reaches across one block to drop
+  // the boat at entry_water. If findEntryShore can't find an adjacent
+  // shore, the fallback uses the bot's start position so walk_to_entry
+  // becomes a no-op and the mount phase surfaces a clean OUT_OF_RANGE
+  // (the agent should have walked closer before calling sail_to).
+  //
+  // F38 (task #66, v50): maxRadius=1 (cardinals + diagonals only).
+  // F30 defaulted findEntryShore to maxRadius=4 for the F21 nearest-
+  // shore-stance HINT — there a far-away shore is still useful info.
+  // But here, in sail_to's BFS, a far shore means walk_to_entry walks
+  // the bot AWAY from entry_water and place_boat then fails
+  // OUT_OF_RANGE. circuit-v50 forensics: entry_water=(316,62,-565),
+  // entry_shore returned at (312,63,-565) — 4 blocks west. Bot
+  // walked there, was 4b from entry_water, place_boat refused.
+  const entryShore = findEntryShore(b, entryWater, { maxRadius: 1 })
+    || { x: startFx, y: startFy, z: startFz };
 
   // Build the water-cell path from entry_water → exit_water by
   // walking the parent map backwards.

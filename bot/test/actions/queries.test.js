@@ -379,6 +379,35 @@ test('queries.find: reachable block ranks ahead of closer-unreachable; result po
 // ─────────────────────────────────────────────────────────────────────────
 
 import { ok } from '../../lib/shared/action-contract.js';
+import { assertFailure } from '../_helpers/action-harness.js';
+
+function makeInAirBot() {
+  const pos = new Vec3(0.5, 64, 0.5);
+  return {
+    entity: { position: pos, isInWater: false, onGround: false, yaw: 0, pitch: 0 },
+    inventory: { items: () => [] },
+    blockAt: () => ({ name: 'air', boundingBox: 'empty' }),
+    findBlocks: () => [],
+    entities: {},
+  };
+}
+
+test('queries.escape: in_air still airborne after wait → ESCAPE_FAILED_AIRBORNE # spec', async () => {
+  const bot = makeInAirBot();
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: makeMcData() }, runtime: {} },
+    ensureBot: () => bot,
+    getActions: () => ({}),
+  });
+  const actions = createQueriesActions(services);
+  const r = await actions.escape();
+  assertFailure(r, {
+    code: 'ESCAPE_FAILED_AIRBORNE',
+    messageIncludes: 'in_air',
+    observedKeys: ['classification_after'],
+    retrySafe: true,
+  });
+});
 
 function makeTrappedBot({ inventoryItems }) {
   // Bot in a 1×1 mining shaft at (0, 64, 0):

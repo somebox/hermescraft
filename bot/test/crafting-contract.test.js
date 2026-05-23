@@ -4,7 +4,7 @@
  * Drives each crafting handler through representative failure paths using
  * createMockServices() (no real Mineflayer bot required). Every result must
  * pass validate() and use one of the documented error codes from
- * docs/phase-2/action-contracts.md (plus a few crafting-specific codes
+ * docs/design/phase-2/action-contracts.md (plus a few crafting-specific codes
  * declared below).
  *
  * Existing bot/test/crafting.test.js covers the recipe-ingredients pure

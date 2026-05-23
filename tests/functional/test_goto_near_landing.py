@@ -23,8 +23,7 @@ import pytest
 def landing_arena(rcon, arena, tester_bot, config):
     """Stone-floored area + sub-floor; Tester bot."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air",
@@ -36,9 +35,9 @@ def landing_arena(rcon, arena, tester_bot, config):
         tester_bot.get("/status?lean=true", timeout=5)
     except Exception:
         pass
-    arena.settle(seconds=1.0)
+    arena.settle_default()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air")
 
 
@@ -62,6 +61,11 @@ def test_landing_in_three_walled_pocket_reports_classification(bot, rcon, arena,
     obs = r.get("observed_state") or {}
     landed_in = obs.get("landed_in")
     assert landed_in in {"corner", "wedge", "edge", "three_walled"}, obs
+    correction = obs.get("suggested_correction")
+    if correction is not None:
+        assert isinstance(correction, dict), f"suggested_correction must be a dict when set: {obs}"
+        for key in ("x", "y", "z"):
+            assert key in correction, f"suggested_correction missing {key}: {correction}"
 
 
 @pytest.mark.functional

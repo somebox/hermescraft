@@ -30,8 +30,7 @@ def escape_arena(rcon, arena, tester_bot, config):
     geometry is exercised.
     """
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -10 60 -10 10 80 10 minecraft:air",
@@ -44,9 +43,9 @@ def escape_arena(rcon, arena, tester_bot, config):
         tester_bot.get("/status?lean=true", timeout=5)
     except Exception:
         pass
-    arena.settle(seconds=1.0)
+    arena.settle_default()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -10 60 -10 10 80 10 minecraft:air")
 
 
@@ -64,8 +63,15 @@ def test_escape_from_three_walled_cell(bot, rcon, config, escape_arena):
         f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     time.sleep(2.0)
+    before = bot.position()
     r = bot.post("/action/escape", {}, timeout=20)
     assert r.get("ok"), r
+    after = bot.position()
+    moved = (
+        abs(after.get("x", 0) - before.get("x", 0))
+        + abs(after.get("z", 0) - before.get("z", 0))
+    )
+    assert moved >= 0.8, f"escape did not displace bot: before={before} after={after}"
     cls_after = (r.get("data") or {}).get("classification_after")
     assert cls_after in ("open", "alley"), r
 
@@ -82,8 +88,15 @@ def test_escape_from_corner(bot, rcon, config, escape_arena):
         f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     time.sleep(2.0)
+    before = bot.position()
     r = bot.post("/action/escape", {}, timeout=20)
     assert r.get("ok"), r
+    after = bot.position()
+    moved = (
+        abs(after.get("x", 0) - before.get("x", 0))
+        + abs(after.get("z", 0) - before.get("z", 0))
+    )
+    assert moved >= 0.8, f"escape did not displace bot: before={before} after={after}"
     cls_after = (r.get("data") or {}).get("classification_after")
     assert cls_after in ("open", "alley"), r
 

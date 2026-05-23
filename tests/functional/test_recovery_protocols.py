@@ -19,7 +19,7 @@ signals: the test doubles as executable documentation of the brain
 protocol.
 
 Two scenarios (R1, R2) carry an xfail mark for the *full end-to-end*
-recovery path — see docstrings + docs/test-inventory.md. The xfail
+recovery path — see docstrings + docs/archive/test-inventory.md. The xfail
 flips to XPASS when the framework limitation is fixed.
 
 Scenarios:
@@ -49,11 +49,9 @@ def recovery_arena(rcon, arena, tester_bot, config):
     mode, bot prepared with saturation. Sub-floor matters: without it,
     gaps left by prior tests can drop the bot into the void mid-pathfind."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     rcon.run(f"mvtp Tester {world}")
     time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     # Forceload the test-region chunks so chest-open events can fire.
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
@@ -68,7 +66,7 @@ def recovery_arena(rcon, arena, tester_bot, config):
     ])
     arena.settle()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -10 60 -10 15 70 18 minecraft:air")
     arena.forceload_remove_all()
 

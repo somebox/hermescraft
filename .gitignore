@@ -13,7 +13,7 @@ secrets.*.yaml
 *.tmp
 .DS_Store
 
-# Minecraft / Paper runtime artifacts
+# Minecraft / Paper runtime artifacts (no game state or logs in git)
 server/logs/
 server/crash-reports/
 server/cache/
@@ -25,6 +25,9 @@ server/versions/
 server/hermescraft-world/
 server/hermescraft-world_nether/
 server/hermescraft-world_the_end/
+server/world/
+server/world_nether/
+server/world_the_end/
 server/*.jar
 server/*.json
 server/*.yml
@@ -35,9 +38,13 @@ server/usercache.json
 server/*.dat_old
 server/*/session.lock
 
+# Benchmark output (regenerate locally)
+scripts/benchmark/runs/
+
 # Local agent runtime state
 data/locations-*.json
 !data/locations.json
+server/*/placemarks.json
 
 # Cursor IDE (local plans / machine-only)
 .cursor/
@@ -46,63 +53,8 @@ data/locations-*.json
 *.swp
 *.swo
 /tmp/mc_screenshot_*.png
-server/world/level.dat
-server/world/level.dat_old
-server/world/paper-world.yml
-server/world/uid.dat
-server/world/data/chunks.dat
-server/world/data/raids.dat
-server/world/data/random_sequences.dat
-server/world/data/scoreboard.dat
-server/world/data/stopwatches.dat
-server/world/data/world_border.dat
-server/world/datapacks/bukkit/pack.mcmeta
-server/world/entities/r.-1.-1.mca
-server/world/entities/r.-1.0.mca
-server/world/entities/r.-2.-1.mca
-server/world/entities/r.-2.0.mca
-server/world/playerdata/
-server/world/poi/r.-1.0.mca
-server/world/poi/r.-2.0.mca
-server/world/region/r.-1.-1.mca
-server/world/region/r.-1.0.mca
-server/world/region/r.-1.1.mca
-server/world/region/r.-2.-1.mca
-server/world/region/r.-2.0.mca
-server/world/region/r.-2.1.mca
-server/world/stats/
-server/world/advancements/
-server/world_nether/level.dat
-server/world_nether/level.dat_old
-server/world_nether/paper-world.yml
-server/world_nether/uid.dat
-server/world_nether/DIM-1/data/chunks.dat
-server/world_nether/DIM-1/data/raids.dat
-server/world_nether/DIM-1/data/world_border.dat
-server/world_nether/DIM-1/region/r.-1.-1.mca
-server/world_nether/DIM-1/region/r.-1.0.mca
-server/world_nether/DIM-1/region/r.0.-1.mca
-server/world_nether/DIM-1/region/r.0.0.mca
-server/world_the_end/level.dat
-server/world_the_end/level.dat_old
-server/world_the_end/paper-world.yml
-server/world_the_end/uid.dat
-server/world_the_end/DIM1/data/chunks.dat
-server/world_the_end/DIM1/data/raids_end.dat
-server/world_the_end/DIM1/data/world_border.dat
-server/world_the_end/DIM1/region/r.-1.-1.mca
-server/world_the_end/DIM1/region/r.-1.0.mca
-server/world_the_end/DIM1/region/r.0.-1.mca
-server/world_the_end/DIM1/region/r.0.0.mca
 
 .venv/
-server/world/entities/r.0.-1.mca
-server/world/entities/r.0.0.mca
-server/world/poi/r.0.-1.mca
-server/world/poi/r.0.0.mca
-server/world/region/r.0.-1.mca
-server/world/region/r.0.0.mca
-server/world/region/r.0.1.mca
 .claude/scheduled_tasks.lock
 # Per-machine Claude Code allowlist (auto-grown from session activity;
 # settings.json holds the shared curated list).

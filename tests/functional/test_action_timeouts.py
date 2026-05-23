@@ -29,9 +29,6 @@ def sealed_island_arena(rcon, arena, tester_bot, config):
     that can't be entered or built into. Bot starts at (0,65,0) with 64
     cobblestone."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-20, 64, -20, 20, 80, 20), floor="stone")
     rcon.batch([
         # Sealed island shell at 14..16, y=64..67
         f"execute in {world} run fill 14 64 14 16 64 16 minecraft:bedrock",
@@ -41,6 +38,9 @@ def sealed_island_arena(rcon, arena, tester_bot, config):
         f"execute in {world} run fill 14 65 14 16 67 14 minecraft:bedrock",
         f"execute in {world} run fill 14 65 16 16 67 16 minecraft:bedrock",
         f"execute in {world} run fill 14 67 14 16 67 16 minecraft:bedrock",
+        # Glass facing the bot so place attempts reach/timeout path, not instant LOS refuse.
+        f"execute in {world} run setblock 14 65 15 minecraft:glass",
+        f"execute in {world} run setblock 14 66 15 minecraft:glass",
         f"execute in {world} run tp Tester 0 65 0 90 0",
         "clear Tester",
         "give Tester minecraft:cobblestone 64",
@@ -53,29 +53,43 @@ def sealed_island_arena(rcon, arena, tester_bot, config):
         f"execute in {world} run fill 14 64 14 16 67 16 minecraft:air",
         f"execute in {world} run fill 14 64 14 16 64 16 minecraft:stone",
     ])
-    arena.flat_arena((-20, 60, -20, 20, 80, 20), floor="stone")
 
 
 @pytest.mark.functional
-def test_place_unreachable_returns_structured_error_in_time(bot, sealed_island_arena):
-    """A: place at (15,66,15) — bot can't path there. Returns within 12s
-    with OPERATION_TIMEOUT or a faster-detected variant."""
+def test_place_unreachable_returns_structured_error_in_time(bot, rcon, arena, config, sealed_island_arena):
+    """A: bot in a bedrock cage, place target 25m away — returns a structured
+    error (pathfind cap, OUT_OF_RANGE, or post-pathfind LOS refuse) within
+    12s, not a hang."""
+    world = config["mc"]["world"]
+    rcon.batch([
+        f"execute in {world} run tp Tester 0 65 0 90 0",
+        "clear Tester",
+        "give Tester minecraft:cobblestone 64",
+        f"execute in {world} run setblock 1 65 0 minecraft:bedrock",
+        f"execute in {world} run setblock 1 66 0 minecraft:bedrock",
+        f"execute in {world} run setblock -1 65 0 minecraft:bedrock",
+        f"execute in {world} run setblock -1 66 0 minecraft:bedrock",
+        f"execute in {world} run setblock 0 65 1 minecraft:bedrock",
+        f"execute in {world} run setblock 0 66 1 minecraft:bedrock",
+        f"execute in {world} run setblock 0 65 -1 minecraft:bedrock",
+        f"execute in {world} run setblock 0 66 -1 minecraft:bedrock",
+        f"execute in {world} run setblock 0 67 0 minecraft:bedrock",
+    ])
+    arena.settle()
     t0 = time.time()
     r = bot.post(
         "/action/place",
-        {"block": "cobblestone", "x": 15, "y": 66, "z": 15},
-        timeout=15,
+        {"block": "cobblestone", "x": 25, "y": 65, "z": 0},
+        timeout=20,
     )
     elapsed = time.time() - t0
     assert not r.get("ok"), r
     code, _, _ = extract_error(r)
-    # PLACEMENT_REPEATED_FAILURE is a faster-than-timeout signal (after
-    # 2 consecutive attempts the framework escalates with a distance hint)
-    # — accept it alongside the OPERATION_TIMEOUT family. The contract
-    # requirement is structured error in time, not a specific code.
     assert code in {
-        "OPERATION_TIMEOUT", "OUT_OF_RANGE", "NO_LINE_OF_SIGHT",
+        "OPERATION_TIMEOUT",
+        "OUT_OF_RANGE",
         "PLACEMENT_REPEATED_FAILURE",
+        "NO_LINE_OF_SIGHT",
     }, r
     assert elapsed < 12.0, f"place took {elapsed:.2f}s — hang, not structured timeout"
 

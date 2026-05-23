@@ -8,10 +8,11 @@ This document defines a target architecture for the `mc` command and bot server 
 |------|--------|
 | Goal engine (`bot/lib/goals/engine.js`), persistence, presets | Implemented |
 | Task runtime + leases (`bot/lib/goals/tasks.js`), `/task/start`, checkpoint respond | Implemented |
-| HTTP: `/observe`, `/checkpoint`, `/alerts`, `/logistics`, `/goals`, `/dashboard` | Implemented |
+| HTTP: `/observe`, `/checkpoint`, `/alerts`, `/logistics`, `/goals` | Implemented |
+| Fleet command center (`dashboard/` on port 3000, not per-bot HTTP) | Implemented |
 | CLI: `mc observe`, `alerts`, `discover`, `craft_plan`, `logistics`, goals/task/dashboard | Implemented |
 | First preset `data/goal-presets/gatherer.json`, prompt `prompts/landfolk/gatherer-test.md`, skill `skills/minecraft-goals.md` | Implemented |
-| Profile design for archer/builder/miner (no evaluators yet) | `docs/GOAL_PROFILES.md` |
+| Profile design for archer/builder/miner (no evaluators yet) | `docs/design/goal-profiles.md` |
 | Shared domains + envelopes (`bot/lib/shared/domains.js`, `bot/lib/shared/schemas.js`) | Implemented |
 | Item/block resolution (`bot/lib/shared/resolver.js`), wired into collect/find/craft/recipes/equip | Implemented |
 | Fair-play constants (`bot/lib/bot/fair-play-constants.js`) + perception suite (`bot/lib/bot/fair-play.js`) | Implemented |

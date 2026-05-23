@@ -3,8 +3,10 @@ testpaths = ["tests"]
 markers = [
   "unit: pure logic, no MC server, no LLM, no network",
   "functional: live MC server required; no LLM",
-  "integration: live MC server + LLM API key required",
+  "integration: live MC server + LLM API key required; uses _functional_harness reset/park/trace; not collected by functional-only runners",
   "slow: takes >30s, skip in fast feedback loops",
+  "trace(interval): per-test BotTrace poll interval in seconds (default 1.0)",
+  "no_trace: disable BotTrace poller for this test",
 ]
 addopts = "-ra --strict-markers"
 python_files = ["test_*.py"]

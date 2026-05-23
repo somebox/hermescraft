@@ -75,6 +75,34 @@ export function isAgentIdle(lastAgentCallTs, lastTaskActiveTs, now, idleMs = 300
 }
 
 /**
+ * F25 (task #63, v42): true if the body's sail_to is currently driving
+ * pathfinder navigation through water-adjacent terrain, so the reactive
+ * layer's `auto_escape_water` patrol should stand down. sail_to owns the
+ * full water interaction during its lifetime; the reactive's
+ * `setGoal(null)` would otherwise race against walk_to_entry and produce
+ * "The goal was changed before it could be completed!" errors observed
+ * in circuit-v42.
+ *
+ * Stale-flag safety: if `sailToActiveStartedAt` is older than `staleMs`,
+ * the gate releases. A sail_to that throws without clearing the flag
+ * (or one that takes pathologically long) shouldn't permanently disable
+ * the water-escape watchdog.
+ *
+ * Scope: this ONLY gates `auto_escape_water` (sustained-water patrol).
+ * Drowning-protection `swim_up` for `low_oxygen` MUST remain ungated —
+ * it's the last line of defence if sail_to does strand the bot.
+ *
+ * @param {number|null} sailToActiveStartedAt  wall-clock ms when sail_to set the flag, or null/0 if not active
+ * @param {number} now  wall-clock ms
+ * @param {number} [staleMs=60_000]  flag expiry — bare minimum of "sail_to should've finished by now"
+ * @returns {boolean}
+ */
+export function shouldSuppressAutoEscape(sailToActiveStartedAt, now, staleMs = 60_000) {
+  if (!sailToActiveStartedAt) return false;
+  return (now - sailToActiveStartedAt) < staleMs;
+}
+
+/**
  * Decide whether to auto-disembark a mounted bot that's taking damage
  * with low HP. Pure function — caller observes mount state, HP, damage
  * recency, and cooldown.

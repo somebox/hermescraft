@@ -29,6 +29,7 @@ rcon:
   cli: rcon-cli                # rcon CLI binary name inside the container
   command_timeout_s: 20        # default per-command timeout
   batch_timeout_s: 60          # batched-command timeout (multiple cmds via stdin)
+  ssh_multiplex: true           # reuse one ssh session via ControlMaster
 
 bot:
   default_api_url: http://localhost:3001   # tests use this when --bot-url not given

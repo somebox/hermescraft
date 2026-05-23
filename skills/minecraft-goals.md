@@ -94,4 +94,4 @@ When the player asks for more of something (e.g. “we need more iron”):
 
 ## Web UI
 
-If the operator uses the browser, the bot serves `GET /dashboard` (polls observe/history). CLI: `mc dashboard` prints the URL.
+If the operator uses the browser, run `./start-dashboard.sh` (fleet command center on port 3000). CLI: `mc dashboard` prints that URL.

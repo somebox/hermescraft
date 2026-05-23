@@ -4,6 +4,35 @@ Every existing scripts/test-*.py has a near-identical preamble: kill all
 non-player entities, set difficulty peaceful, set time to noon, freeze the
 daylight cycle, clear the test bot's inventory, give it saturation. Some
 tests also fill a bounding box with air. This class makes that one call.
+
+Harness post-condition (autouse _functional_harness in tests/conftest.py):
+
+After the autouse _functional_harness fixture has run (which happens
+before any per-test fixture), the Tester bot is guaranteed to be:
+  - In world config.mc.world (mvtp'd via Multiverse-Core)
+  - Survival gamemode, full HP, saturation 600s
+  - Standing on the canonical grass cap at (0, 65, 0)
+  - Below the grass: dirt y=60..63, stone y=50..59 (session substrate)
+  - Stationary (wait_until_stationary returned)
+  - With lastMoveFailed / recentEscapes / recentStuckCells cleared
+  - Inventory cleared (no leftover items from prior tests)
+  - No non-player entities in the world (mobs and dropped items killed)
+
+Per-test fixtures MUST NOT:
+  - call arena.rescue_tester() (harness did it)
+  - call arena.clean() (harness step 1b does kill @e + clear Tester)
+  - call tester_bot.wait_until_ready (session fixture does it once)
+  - call mvtp Tester / tp Tester 0 65 0 (harness already parked)
+
+Per-test fixtures MAY:
+  - call arena.reset_workspace(bbox=..., floor=...) to lay a fresh
+    arena floor (geometry only, does not touch bot state)
+  - call arena.place_player(bot, x, y, z, expected_floor_y=...)
+    to position the bot on that floor
+  - issue give/effect commands for test-specific inventory/effects
+
+TP Y coordinate is the bot's feet position and must equal floor_top_y + 1
+when using expected_floor_y. There is no "drop margin."
 """
 
 from __future__ import annotations
@@ -12,6 +41,11 @@ import time
 from typing import Iterable
 
 from .rcon import RconClient
+
+PREFAB_VAULT_ORIGIN = (200, 48, 200)
+PREFAB_SLOT_STRIDE = 64
+_PREFAB_REGISTRY: dict[str, tuple[int, int, int, int, int, int]] = {}
+_PREFAB_SLOTS: dict[str, int] = {}
 
 
 class Arena:
@@ -39,6 +73,8 @@ class Arena:
         # arena.clean() handles only per-test world reset: entity kill,
         # inventory clear, fresh saturation effect.
         cmds = [
+            f"execute in {self.world} run difficulty peaceful",
+            f"execute in {self.world} run time set noon",
             f"execute in {self.world} run kill @e[type=!player]",
             f"clear {self.bot_name}",
             f"effect clear {self.bot_name}",
@@ -62,6 +98,22 @@ class Arena:
         """Sleep `seconds` (default config.test.settle_seconds). Lets the bot's
         perception catch up with world state before assertions."""
         time.sleep(seconds if seconds is not None else self._settle_seconds)
+
+    def settle_fast(self) -> None:
+        """0.3s: after a small (<8) setblock batch on already-loaded chunks."""
+        time.sleep(0.3)
+
+    def settle_default(self) -> None:
+        """1.0s: after fills or moderate batches."""
+        time.sleep(1.0)
+
+    def settle_water(self) -> None:
+        """2.0s: after water/lava placement."""
+        time.sleep(2.0)
+
+    def settle_heavy(self) -> None:
+        """2.5s: after multi-region rebuilds + forceload changes."""
+        time.sleep(2.5)
 
     def wait_until_stationary(
         self,
@@ -110,7 +162,7 @@ class Arena:
     def rescue_tester(
         self,
         *,
-        safe_xyz: tuple[float, float, float] = (0.0, 100.0, 0.0),
+        safe_xyz: tuple[float, float, float] = (0.0, 65.0, 0.0),
         bot: "BotClient | None" = None,
         wait: bool = True,
     ) -> None:
@@ -144,39 +196,41 @@ class Arena:
         sx, sy, sz = safe_xyz
         floor_y = int(sy) - 1
         ix, iz = int(sx), int(sz)
-        self.rcon.batch([
-            # FIRST: Multiverse-Core cross-world placement. `execute in
-            # <world> run tp` changes the rcon executor's dimension but
-            # does NOT reliably move a player across Multiverse worlds
-            # — if Tester respawned in production `world` after a death
-            # (mineflayer's respawn() defers to whatever world-spawn the
-            # server has set), all subsequent `execute in landfolk-test`
-            # commands no-op against the wrong-world bot. `mvtp` is the
-            # Multiverse primitive that guarantees the cross-world jump.
-            # See devlog 2026-05-18 (Phase 3.1) for the cascade trace.
+        needs_heavy = False
+        if bot is not None:
+            try:
+                s = bot.status_lean()
+                hp = s.get("health") or 0
+                pos = s.get("position") or {}
+                dx = abs((pos.get("x") or 0) - sx)
+                dz = abs((pos.get("z") or 0) - sz)
+                if hp < 19 or dx > 5 or dz > 5:
+                    needs_heavy = True
+            except Exception:
+                needs_heavy = True
+        else:
+            needs_heavy = True
+
+        cmds = [
             f"mvtp {self.bot_name} {self.world}",
             f"execute in {self.world} run difficulty peaceful",
-            # Creative for the safe TP — invulnerable, full HP, no fall dmg.
-            # We flip back to survival below so the test body sees the
-            # normal-bot behavior tests assert on (dig drops, fall damage,
-            # gamemode == 0 in verify_tester_ready).
-            f"gamemode creative {self.bot_name}",
-            # Small safe platform under the landing spot — 3x3 stone at
-            # floor_y. Cheap, idempotent, and immune to the void-below
-            # problem in landfolk-test where (sx, sy-1, sz) is often air.
-            f"execute in {self.world} run fill {ix - 1} {floor_y} {iz - 1} {ix + 1} {floor_y} {iz + 1} minecraft:stone",
-            f"execute in {self.world} run fill {ix - 1} {int(sy)} {iz - 1} {ix + 1} {int(sy) + 2} {iz + 1} minecraft:air",
-            f"execute in {self.world} run tp {self.bot_name} {sx} {sy} {sz} 0 0",
-            # Flip back to survival so dig-drop tests, inventory_advisory
-            # tests, and verify_tester_ready (which asserts gameType==0)
-            # see the bot in its normal mode. Saturation effect keeps
-            # hunger from interfering with multi-step arenas.
-            f"gamemode survival {self.bot_name}",
-            f"effect give {self.bot_name} minecraft:saturation 600 1",
-            # Top off HP — leaving creative drops you to whatever HP you
-            # had pre-creative, which is 0 if you died last test.
-            f"effect give {self.bot_name} minecraft:instant_health 1 10",
-        ])
+        ]
+        if needs_heavy:
+            cmds.extend([
+                f"gamemode creative {self.bot_name}",
+                f"execute in {self.world} run fill {ix - 1} {floor_y} {iz - 1} {ix + 1} {floor_y} {iz + 1} minecraft:stone",
+                f"execute in {self.world} run fill {ix - 1} {int(sy)} {iz - 1} {ix + 1} {int(sy) + 2} {iz + 1} minecraft:air",
+                f"execute in {self.world} run tp {self.bot_name} {sx} {sy} {sz} 0 0",
+                f"gamemode survival {self.bot_name}",
+                f"effect give {self.bot_name} minecraft:saturation 600 1",
+                f"effect give {self.bot_name} minecraft:instant_health 1 10",
+            ])
+        else:
+            cmds.extend([
+                f"execute in {self.world} run tp {self.bot_name} {sx} {sy} {sz} 0 0",
+                f"effect give {self.bot_name} minecraft:saturation 600 1",
+            ])
+        self.rcon.batch(cmds)
         if bot is not None and wait:
             self.wait_until_stationary(bot, timeout_s=6.0, stable_for_s=0.5)
         # F51.2/F58 reset between tests. wait_until_stationary above
@@ -218,6 +272,18 @@ class Arena:
         # using endswith.
         import re
         m = re.search(r"data:\s*([0-3])", gm)
+        if not m and ("No entity" in gm or "entity was found" in gm.lower()):
+            self.rcon.run(f"mvtp {self.bot_name} {self.world}")
+            gm = self.rcon.run(
+                f"execute in {self.world} run data get entity {self.bot_name} playerGameType"
+            )
+            m = re.search(r"data:\s*([0-3])", gm)
+        if not m:
+            self.rcon.run(f"gamemode survival {self.bot_name}")
+            gm = self.rcon.run(
+                f"execute in {self.world} run data get entity {self.bot_name} playerGameType"
+            )
+            m = re.search(r"data:\s*([0-3])", gm)
         assert m and m.group(1) == "0", (
             f"setup: {self.bot_name} not in survival gamemode (rcon said: {gm!r}). "
             f"Check that the fixture flipped back from creative."
@@ -259,23 +325,38 @@ class Arena:
         yaw: float = 0.0,
         pitch: float = 0.0,
         wait: bool = True,
+        expected_floor_y: int | None = None,
+        expected_floor_block: str | None = None,
     ) -> dict | None:
-        """Step 2 of the canonical test sequence (per user contract,
-        2026-05-18): "place player at correct world coordinates".
+        """Place the bot at (x,y,z) and wait until stationary.
 
-        Tps the bot then WAITS until it reports an unchanged position —
-        without this, fixtures that tp + immediately fire the test body
-        race against gravity (Tester arrives airborne, falls into a void
-        in landfolk-test, the test body runs against a falling/dying bot).
-
-        Returns the post-settle /health snapshot (or None when wait=False).
+        If expected_floor_y is given, assert floor alignment before tp.
+        TP Y must equal floor_top_y + 1 (feet on floor, no free-fall drop).
         """
+        if expected_floor_y is not None:
+            import math
+
+            fx, fz = math.floor(x), math.floor(z)
+            if expected_floor_block is not None:
+                if not self.rcon.block_is(
+                    fx, expected_floor_y, fz, expected_floor_block, world=self.world
+                ):
+                    raise AssertionError(
+                        f"place_player: expected floor {expected_floor_block} at "
+                        f"({fx},{expected_floor_y},{fz}), but block differs. "
+                        f"Fix arena setup before TP."
+                    )
+            if int(y) != expected_floor_y + 1:
+                raise AssertionError(
+                    f"place_player: TP Y={y} is not floor_top_y+1 ({expected_floor_y + 1}). "
+                    f"Free-fall placement is forbidden; place props first, then TP."
+                )
         self.teleport_bot(x, y, z, yaw, pitch)
         if wait:
-            return self.wait_until_stationary(bot, timeout_s=4.0, stable_for_s=0.4)
+            return self.wait_until_stationary(bot, timeout_s=3.0, stable_for_s=0.2)
         return None
 
-    def move_to_safe(self, bot=None, *, safe_xyz: tuple[float, float, float] = (0.0, 100.0, 0.0)) -> None:
+    def move_to_safe(self, bot=None, *, safe_xyz: tuple[float, float, float] = (0.0, 65.0, 0.0)) -> None:
         """Step 4 of the canonical test sequence: park the bot at a known
         safe coord OUTSIDE the test arena. Run from a post-test cleanup
         hook so test #N's geometry (open pits, lava blocks, etc.) doesn't
@@ -326,6 +407,42 @@ class Arena:
             f"execute in {self.world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
             f"execute in {self.world} run fill {x1} {fy} {z1} {x2} {fy} {z2} {floor_full}",
         ])
+
+    def reset_workspace(
+        self,
+        bbox: tuple[int, int, int, int, int, int],
+        *,
+        floor: str = "grass_block",
+        subfloor: str | None = None,
+        floor_y: int | None = None,
+        forceload: bool = False,
+    ) -> str:
+        """Lay a clean test arena. Assumes harness already rescued the bot.
+
+        Geometry only — does not touch bot state or entities.
+        """
+        x1, y1, z1, x2, y2, z2 = bbox
+        fy = y1 if floor_y is None else floor_y
+        floor_full = floor if ":" in floor else f"minecraft:{floor}"
+        cmds = []
+        if forceload:
+            cx1, cz1 = x1 >> 4, z1 >> 4
+            cx2, cz2 = x2 >> 4, z2 >> 4
+            cmds.append(
+                f"execute in {self.world} run forceload add {cx1} {cz1} {cx2} {cz2}"
+            )
+        cmds.append(
+            f"execute in {self.world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air"
+        )
+        if subfloor is not None:
+            sub_full = subfloor if ":" in subfloor else f"minecraft:{subfloor}"
+            cmds.append(
+                f"execute in {self.world} run fill {x1} {y1} {z1} {x2} {fy - 1} {z2} {sub_full}"
+            )
+        cmds.append(
+            f"execute in {self.world} run fill {x1} {fy} {z1} {x2} {fy} {z2} {floor_full}"
+        )
+        return self.rcon.batch(cmds)
 
     def grid_3x3(
         self,
@@ -384,3 +501,36 @@ class Arena:
     def forceload_remove_all(self) -> str:
         """Mirror of `forceload`. Removes all forceloaded chunks in the world."""
         return self.rcon.run(f"execute in {self.world} run forceload remove all")
+
+    def save_prefab(self, name: str, bbox: tuple[int, int, int, int, int, int]) -> None:
+        vx, vy, vz = PREFAB_VAULT_ORIGIN
+        if name not in _PREFAB_SLOTS:
+            _PREFAB_SLOTS[name] = len(_PREFAB_SLOTS)
+        slot = _PREFAB_SLOTS[name]
+        if slot >= 20:
+            raise RuntimeError(
+                "prefab vault full (20 slots); grow PREFAB_SLOT_STRIDE or the vault slab"
+            )
+        dest = (vx + slot * PREFAB_SLOT_STRIDE, vy, vz)
+        self.rcon.clone(bbox, dest, mask="replace", mode="normal")
+        _PREFAB_REGISTRY[name] = (
+            dest[0],
+            dest[1],
+            dest[2],
+            dest[0] + (bbox[3] - bbox[0]),
+            dest[1] + (bbox[4] - bbox[1]),
+            dest[2] + (bbox[5] - bbox[2]),
+        )
+
+    def load_prefab(
+        self,
+        name: str,
+        dest_origin: tuple[int, int, int],
+        *,
+        mask: str = "masked",
+    ) -> str:
+        if name not in _PREFAB_REGISTRY:
+            raise KeyError(
+                f"prefab {name!r} not saved; call save_prefab() at session setup"
+            )
+        return self.rcon.clone(_PREFAB_REGISTRY[name], dest_origin, mask=mask)

@@ -21,28 +21,19 @@ import pytest
 
 @pytest.fixture
 def pool_arena(rcon, arena, tester_bot, config):
-    """Stone bowl at y=60..63 with a 3×3 water column carved from y=61..63
-    and a grass cap around the pool at y=64. Bot starts NOT in the water
-    — each test TPs it underwater explicitly after the fixture builds."""
+    """3×3 water column on canonical surface; grass cap around the pool.
+    Bot starts NOT in the water — each test TPs it underwater explicitly."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    # Clean 12×12 area
-    arena.flat_arena((-6, 60, -6, 6, 70, 6), floor="stone", floor_y=60)
     rcon.batch([
-        # Stone bowl
-        f"execute in {world} run fill -6 60 -6 6 63 6 minecraft:stone",
-        # Water column
+        f"execute in {world} run fill -2 64 -2 2 64 2 minecraft:stone",
         f"execute in {world} run fill -1 61 -1 1 64 1 minecraft:water",
-        # Grass cap (4 segments around the pool)
         f"execute in {world} run fill -6 64 -6 -2 64 6 minecraft:grass_block",
         f"execute in {world} run fill 2 64 -6 6 64 6 minecraft:grass_block",
         f"execute in {world} run fill -1 64 -6 1 64 -2 minecraft:grass_block",
         f"execute in {world} run fill -1 64 2 1 64 6 minecraft:grass_block",
     ])
-    arena.settle(seconds=2.5)
+    arena.settle_water()
     yield
-    arena.flat_arena((-6, 60, -6, 6, 70, 6), floor="grass_block")
 
 
 def _tp_underwater(arena, bot, world: str) -> None:

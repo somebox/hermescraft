@@ -23,11 +23,9 @@ def maze_target(rcon, arena, tester_bot, config):
     wall at (-2,65,1)/(-2,66,1) blocking south-side LOS. Bot starts at
     (-2,65,-2) facing north."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
     ])
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
     rcon.batch([
         f"execute in {world} run setblock -2 65 2 minecraft:andesite",
         f"execute in {world} run setblock -2 65 1 minecraft:cobblestone",
@@ -37,9 +35,8 @@ def maze_target(rcon, arena, tester_bot, config):
         f"execute in {world} run effect give Tester minecraft:instant_health 1 5",
         f"execute in {world} run tp Tester -2 65 -2 0 0",
     ])
-    arena.settle(seconds=2.5)
+    arena.settle_water()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="grass_block")
     arena.forceload_remove_all()
 
 

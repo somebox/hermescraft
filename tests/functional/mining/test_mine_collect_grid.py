@@ -34,46 +34,22 @@ GRID_PILLAR_CELLS = {(x, z) for x in (2, 4, 6) for z in (2, 4, 6)}
 
 
 @pytest.fixture
-def grid_arena(rcon, arena, tester_bot, config):
-    """Reset the test world to a known-clean baseline + ensure a SOLID
-    sub-floor at y=60..63. Without the packed sub-floor, gaps left by
-    prior tests can let the bot fall through y=64 during mc collect."""
-    world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Tester {world}")
-    time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
-    # Solid stone packed from y=60..63 prevents fall-through; grass on top at y=64.
-    rcon.batch([
-        f"execute in {world} run fill -1 60 0 7 70 8 minecraft:air",
-        f"execute in {world} run fill -1 60 0 7 63 8 minecraft:stone",
-        f"execute in {world} run fill -1 64 0 7 64 8 minecraft:grass_block",
-    ])
-    arena.settle(seconds=1.0)
+def grid_arena(rcon, arena, config):
+    """Harness lays canonical arena; prefab optional for grid tests."""
+    arena.settle_default()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(f"execute in {world} run fill -1 60 0 7 70 8 minecraft:air")
 
 
-def _build_grid(rcon, world: str, height: int) -> None:
-    """Place pillars at x∈{2,4,6} z∈{2,4,6} `height` blocks tall."""
-    cmds = []
-    for x in (2, 4, 6):
-        for z in (2, 4, 6):
-            for dy in range(height):
-                cmds.append(
-                    f"execute in {world} run setblock {x} {65 + dy} {z} minecraft:cobblestone"
-                )
-    cmds.extend([
-        f"execute in {world} run tp Tester 0 65 4 270 0",  # facing east
-        "clear Tester",
-        f"execute in {world} run give Tester minecraft:stone_pickaxe",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
+def _build_grid(arena, rcon, world: str, height: int) -> None:
+    if height == 1:
+        arena.load_prefab("mining_grid_3x3", (2, 65, 2))
+    else:
+        arena.grid_3x3(center=(4, 65, 4), height=height)
+    rcon.batch([
+        f"execute in {world} run tp Tester 0 65 4 270 0",
+        "give Tester minecraft:stone_pickaxe",
     ])
-    rcon.batch(cmds)
-    time.sleep(2.0)
+    arena.settle_water()
 
 
 def _assert_safe_post_tp(bot) -> None:
@@ -90,7 +66,7 @@ def _assert_safe_post_tp(bot) -> None:
 
 
 def _run_collect_scenario(
-    bot, rcon, world: str, height: int, want_count: int, walk_away: bool
+    bot, arena, rcon, world: str, height: int, want_count: int, walk_away: bool
 ) -> None:
     """Drive mc collect against the staged 3×3 pillar grid.
 
@@ -110,7 +86,7 @@ def _run_collect_scenario(
 
     Strict 1/1 is enforced for the count=1 case (no tolerance possible).
     """
-    _build_grid(rcon, world, height)
+    _build_grid(arena, rcon, world, height)
     _assert_safe_post_tp(bot)
     pre = bot.inventory().get("cobblestone", 0)
     t0 = time.time()
@@ -162,30 +138,35 @@ def _run_collect_scenario(
         f"strip-mine loop is leaving too much behind. inventory_gained={gained} "
         f"causes={causes} elapsed={elapsed:.1f}s"
     )
+    inv_threshold = math.ceil(want_count * 0.75)
+    assert gained >= inv_threshold, (
+        f"inventory gained {gained}/{want_count} (threshold {inv_threshold}) — "
+        f"mined_count={mined_count} without matching inventory delta"
+    )
 
 
 @pytest.mark.functional
-def test_collect_one_pillar_from_outside(bot, rcon, config, grid_arena):
+def test_collect_one_pillar_from_outside(bot, arena, rcon, config, grid_arena):
     """A: count=1 — single-block case (threshold = 1, strict by math)."""
-    _run_collect_scenario(bot, rcon, config["mc"]["world"], height=1, want_count=1, walk_away=False)
+    _run_collect_scenario(bot, arena, rcon, config["mc"]["world"], height=1, want_count=1, walk_away=False)
 
 
 @pytest.mark.functional
 @pytest.mark.slow
-def test_collect_all_nine_pillars_height1(bot, rcon, config, grid_arena):
+def test_collect_all_nine_pillars_height1(bot, arena, rcon, config, grid_arena):
     """B: 9 pillars height=1 — verb returns within budget, ≥85% land, partials carry causes."""
-    _run_collect_scenario(bot, rcon, config["mc"]["world"], height=1, want_count=9, walk_away=False)
+    _run_collect_scenario(bot, arena, rcon, config["mc"]["world"], height=1, want_count=9, walk_away=False)
 
 
 @pytest.mark.functional
 @pytest.mark.slow
-def test_collect_eighteen_blocks_height2(bot, rcon, config, grid_arena):
+def test_collect_eighteen_blocks_height2(bot, arena, rcon, config, grid_arena):
     """C: 18 blocks (9 pillars × 2) — verb returns within budget, ≥85% land, partials carry causes."""
-    _run_collect_scenario(bot, rcon, config["mc"]["world"], height=2, want_count=18, walk_away=False)
+    _run_collect_scenario(bot, arena, rcon, config["mc"]["world"], height=2, want_count=18, walk_away=False)
 
 
 @pytest.mark.functional
 @pytest.mark.slow
-def test_collect_then_walk_away_and_pickup(bot, rcon, config, grid_arena):
+def test_collect_then_walk_away_and_pickup(bot, arena, rcon, config, grid_arena):
     """D: collect 9 height=1, tp away, pickup — tests pathfind-back, ≥85% threshold."""
-    _run_collect_scenario(bot, rcon, config["mc"]["world"], height=1, want_count=9, walk_away=True)
+    _run_collect_scenario(bot, arena, rcon, config["mc"]["world"], height=1, want_count=9, walk_away=True)

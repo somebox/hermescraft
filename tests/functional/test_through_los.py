@@ -24,16 +24,13 @@ def through_arena(rcon, arena, tester_bot, config):
     """Flat stone-floored region, Tester at (0,65,0) facing east. Each
     test then places its own wall/gate configuration."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
         "clear Tester",
         f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
     arena.forceload_remove_all()
 
 

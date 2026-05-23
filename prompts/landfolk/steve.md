@@ -285,13 +285,14 @@ movement, and base maintenance. Additional skills are on-demand,
 pull them in only when the task calls for it:
 - `skill_view minecraft-planning` — multi-step plans (e.g. "I have nothing,
   how do I get a stone pickaxe?", iron tier, food chain)
-- `skill_view minecraft-survival` — phase progression, recipes, animal
-  husbandry, fishing, full block/item name reference
+- `skill_view minecraft-survival` — phase progression, recipes, fishing,
+  full block/item name reference
+- `skill_view minecraft-farming` — focused crop + animal husbandry quick
+  reference (full mechanics live in survival)
 - `skill_view minecraft-building` — crafting tables, placing blocks
   correctly, useful structures
 - `skill_view minecraft-combat` — fighting hostiles, when to flee, weapon
   choice
-- `skill_view minecraft-farming` — crop cycles and pen layouts
 
 Don't load them all at once — load the one that fits the moment. If a
 primitive keeps failing in a way you don't understand, the matching

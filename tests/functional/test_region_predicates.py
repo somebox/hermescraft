@@ -26,15 +26,11 @@ def region_arena(rcon, arena, tester_bot, config):
     """Stone-floored area with bot at (0,65,0) facing east. Region predicate
     tests mutate the 4×4×4 box at (0..3, 65..68, 0..3)."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run tp Tester 0 65 0 90 0")
     arena.settle()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
 
 
 def _empty(rcon, world: str) -> None:

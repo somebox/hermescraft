@@ -25,27 +25,44 @@
     <section class="pane pane-left" aria-label="Agents">
       <h2 class="pane-title">Agents</h2>
       <div id="agentList" class="agent-list"></div>
+      <h2 class="pane-title pane-subtitle">Players</h2>
+      <div id="humanList" class="human-list" aria-label="Live human players"></div>
     </section>
 
     <section class="pane pane-center" aria-label="Center tabs">
+      <div class="center-stack">
       <nav class="tabs" role="tablist">
         <button type="button" class="tab active" data-tab="map" role="tab" aria-selected="true">Map</button>
         <button type="button" class="tab" data-tab="kanban" role="tab" aria-selected="false">Kanban</button>
         <button type="button" class="tab" data-tab="fpv" role="tab" aria-selected="false">FPV</button>
       </nav>
+      <div class="center-body">
       <div class="tab-panels">
         <div id="panel-map" class="tab-panel active" role="tabpanel">
-          <div class="map-wrap">
-            <canvas id="mapCanvas" width="640" height="400" aria-label="2D world map"></canvas>
-            <div class="map-footer">
-              <p id="mapMeta" class="muted map-meta"></p>
-              <p class="muted map-hint">X/Z plane · +X east · +Z south · click to select</p>
-              <ul class="map-legend" aria-label="Map legend">
-                <li><span class="swatch swatch-poi"></span> POI</li>
-                <li><span class="swatch swatch-human"></span> Human</li>
-                <li><span class="swatch swatch-bot"></span> Bot</li>
-              </ul>
+          <nav id="mapSubtabs" class="map-subtabs" role="tablist" aria-label="Map mode" hidden>
+            <button type="button" class="map-subtab active" data-map-sub="tactical" role="tab" aria-selected="true">Tactical</button>
+            <button type="button" class="map-subtab" data-map-sub="terrain" role="tab" aria-selected="false">Terrain</button>
+          </nav>
+          <div id="mapPanelTactical" class="map-panel-tactical">
+            <div class="map-wrap">
+              <canvas id="mapCanvas" width="640" height="400" aria-label="2D tactical map"></canvas>
+              <div class="map-footer">
+                <p id="mapMeta" class="muted map-meta"></p>
+                <p class="muted map-hint">X/Z plane · +X east · +Z south · click to select</p>
+                <ul class="map-legend" aria-label="Map legend">
+                  <li><span class="swatch swatch-poi"></span> POI</li>
+                  <li><span class="swatch swatch-human"></span> Human</li>
+                  <li><span class="swatch swatch-bot"></span> Bot</li>
+                </ul>
+              </div>
             </div>
+          </div>
+          <div id="mapPanelTerrain" class="map-panel-terrain" hidden>
+            <iframe id="terrainFrame" class="terrain-frame" title="World terrain map"></iframe>
+            <p class="muted terrain-map-hint">
+              <a id="terrainOpenLink" href="#" target="_blank" rel="noopener">Open terrain map in new tab</a>
+              · follows world selector
+            </p>
           </div>
         </div>
         <div id="panel-kanban" class="tab-panel" role="tabpanel" hidden>
@@ -59,14 +76,24 @@
           </div>
         </div>
       </div>
+      <div id="agentLiveStrip" class="agent-live-strip muted" aria-live="polite">
+        Select an agent to see live status.
+      </div>
+      </div>
+      </div>
     </section>
 
     <section class="pane pane-right" aria-label="Details">
       <h2 class="pane-title">Details</h2>
       <div id="detailPanel" class="detail-panel muted">Select an agent or map item.</div>
       <div class="chat-strip">
+        <nav id="chatSubtabs" class="chat-subtabs" role="tablist" aria-label="Chat source">
+          <button type="button" class="chat-subtab active" data-chat-sub="ingame" role="tab" aria-selected="true">In-game</button>
+          <button type="button" class="chat-subtab" data-chat-sub="mind" role="tab" aria-selected="false">Mind</button>
+        </nav>
         <button type="button" id="chatToggle" class="chat-toggle" aria-expanded="true">Chat</button>
         <div id="chatBody" class="chat-body"></div>
+        <div id="mindBody" class="mind-body" hidden></div>
       </div>
     </section>
   </main>

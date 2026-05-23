@@ -1,7 +1,7 @@
 /**
  * Action contract — uniform success/failure shape for every `mc <verb>` handler.
  *
- * Per docs/patterns.md P9 and docs/phase-2/action-contracts.md. Every action
+ * Per docs/patterns.md P9 and docs/design/phase-2/action-contracts.md. Every action
  * handler returns an ActionResult:
  *
  *   success: { ok: true, data?, result?, ...extras }

@@ -5,7 +5,7 @@
 import { Vec3 } from 'vec3';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 import { findClosestStandable, findStandableSameXZ, standabilityReason, standingState, isStandableCell, computeReachability, targetChunkLoaded } from './_nav-helpers.js';
-import { probeRouteAlongLine } from '../server/route-probe.js';
+import { probeRouteAlongLine, probeRouteCorridor } from '../server/route-probe.js';
 
 // Task #21 — force the strategic decision. When the agent calls mc move /
 // bg_goto over a long distance, sample the route. If it crosses meaningful
@@ -13,7 +13,15 @@ import { probeRouteAlongLine } from '../server/route-probe.js';
 // place_boat + board + sail. circuit-v5 saw Steve walk into a lake 5x in
 // a row instead of using either of his two oak_boats.
 const LONG_DISTANCE_THRESHOLD = 100;
-const WATER_REFUSAL_THRESHOLD = 6; // of 30 samples
+const WATER_REFUSAL_THRESHOLD = 6; // of 30 samples (corridor)
+// F40 (task #66, v55): probe a 20b-wide corridor (centre + ±10b perpendicular
+// offsets, 10 samples each = 30 total) instead of a single straight line.
+// circuit-v54 forensics: the straight-line probe from base→W1 had 0/30 water
+// samples (line runs SW through dry forest), but the pathfinder detoured NW
+// into marshland and stranded Steve in 1-deep water. The corridor probe
+// catches water on either side of the straight line — typical detour radius.
+const CORRIDOR_OFFSET = 10;
+const CORRIDOR_SAMPLES_PER_LANE = 10;
 const BOAT_INV_NAMES = new Set([
   'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
   'acacia_boat', 'dark_oak_boat', 'cherry_boat', 'mangrove_boat',
@@ -41,11 +49,17 @@ export function refuseWaterRouteWithoutBoat(b, x, y, z, {
     if (![tx, ty, tz].every(Number.isFinite)) return null;
     const dist = Math.hypot(me.x - tx, me.y - ty, me.z - tz);
     if (dist < longDistanceThreshold) return null;
-    const probe = probeRouteAlongLine(
+    // F40: corridor probe. 3 parallel lines × 10 samples = 30 total samples
+    // covering a 20b-wide corridor. The pathfinder typically detours within
+    // this width when avoiding obstacles, so water it would encounter on a
+    // detour gets sampled too. Keep the original 30-sample threshold so
+    // legitimate dry-corridor trips still pass.
+    const probe = probeRouteCorridor(
       b,
       { x: Math.floor(me.x), y: Math.floor(me.y), z: Math.floor(me.z) },
       { x: Math.floor(tx), y: Math.floor(ty), z: Math.floor(tz) },
-      samples,
+      CORRIDOR_SAMPLES_PER_LANE,
+      CORRIDOR_OFFSET,
     );
     const counts = probe?.counts || {};
     const waterCount = Number(counts.water || 0);
@@ -110,8 +124,20 @@ export function refuseWaterRouteWithoutBoat(b, x, y, z, {
         retry_safe: false,
       },
     };
-  } catch {
-    return null;
+  } catch (err) {
+    return {
+      ok: false,
+      error: {
+        code: 'ROUTE_PROBE_FAILED',
+        message: `Route probe to ${Math.floor(Number(x))},${Math.floor(Number(y))},${Math.floor(Number(z))} failed (${err?.message || err}) — retry mc goto or use mc sail_to if crossing water.`,
+        observed_state: {
+          target: { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) },
+          probe_error: String(err?.message || err),
+        },
+        next_action_hint: `mc goto ${Math.floor(Number(x))} ${Math.floor(Number(y))} ${Math.floor(Number(z))}`,
+        retry_safe: true,
+      },
+    };
   }
 }
 
@@ -354,9 +380,37 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         },
       };
     }
-    const scan = Math.max(1, Math.min(4, Number.isFinite(range) ? range : 1));
+    // F47 (task #66, v57): lenient target adjustment. When the exact
+    // target coord is unstandable (e.g. agent passes a water cell or
+    // a foliage cell), look for the closest STANDABLE cell within
+    // ~4 blocks and transparently retarget there. The agent's natural
+    // workflow is "tell the bot to go to roughly (X,Y,Z)" — refusing
+    // because the exact cell isn't standable wastes a turn (the v57
+    // log showed mc move 363 64 -542 → NAV_TARGET_UNSTANDABLE when the
+    // shore was 3 blocks away). When a retarget is applied, success
+    // response surfaces it in data.target_adjusted so the agent
+    // learns what we did.
+    //
+    // The caller passes `range` (default 1 for goto, sometimes
+    // larger). We widen ONLY when retargeting is the goal: if no
+    // standable cell exists at the original (range=1) AND no Y-grace
+    // helps, expand to scan=4 before refusing.
+    const requestedScan = Math.max(1, Math.min(4, Number.isFinite(range) ? range : 1));
     let best;
-    try { best = findClosestStandable(b, tx, ty, tz, scan); } catch { return null; }
+    try { best = findClosestStandable(b, tx, ty, tz, requestedScan); } catch { return null; }
+    if (!best && requestedScan < 4) {
+      // Widen to radius 4 specifically to find a retarget candidate.
+      try { best = findClosestStandable(b, tx, ty, tz, 4); } catch { /* ignore */ }
+      if (best) {
+        // Use the widened cell as a retarget. Stash dist for the
+        // success annotation so the agent sees how far we adjusted.
+        const dxz = Math.hypot(best.x - tx, best.z - tz);
+        return {
+          retarget: { x: best.x, y: best.y, z: best.z, from: { x: tx, y: ty, z: tz }, distance: Math.round(dxz * 10) / 10 },
+        };
+      }
+    }
+    const scan = requestedScan;
     if (!best) {
       // Y-grace: before refusing, try a same-XZ vertical rescue. If the
       // agent picked the right column but the wrong Y (target inside a
@@ -568,6 +622,15 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         yAdjusted = pre.y_adjusted;
         y = pre.y_adjusted.to;
       }
+      // F47 (task #66, v57): lenient retarget when the original cell
+      // is unstandable but a nearby cell is. Same pattern as y_adjusted.
+      let targetAdjusted = null;
+      if (pre && pre.retarget) {
+        targetAdjusted = pre.retarget;
+        x = pre.retarget.x;
+        y = pre.retarget.y;
+        z = pre.retarget.z;
+      }
       // F51.1: silent pre-nudge from sticky start position.
       await preNudgeIfSticky(b, Math.floor(x), Math.floor(y), Math.floor(z));
       // Pre-check: GoalBlock requires the bot to stand AT (x,y,z). If the
@@ -622,6 +685,12 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         }
         clearMoveFailure();
         clearGotoRetry('goto', x, y, z); // F7: success — reset retry count
+        if (targetAdjusted) {
+          return {
+            result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (target adjusted ${targetAdjusted.distance}b from requested ${targetAdjusted.from.x},${targetAdjusted.from.y},${targetAdjusted.from.z} — original was unstandable)`,
+            observed_state: { target_adjusted: targetAdjusted },
+          };
+        }
         if (yAdjusted) {
           return {
             result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`,
@@ -920,6 +989,39 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
     },
 
     /**
+     * F32 (task #66, v45): `mc jump` — brief jump primitive. Useful for
+     * surfacing the head when standing in 1-block water, stepping onto a
+     * single-block ledge, or knocking a falling sand block. circuit-v45
+     * showed the agent inventing `mc jump` and getting "unknown command"
+     * — it's a natural primitive and the agent shouldn't have to chain
+     * mc escape just to surface.
+     *
+     * Holds jump for `hold_ms` (default 400ms — long enough for one
+     * jump-arc, short enough that the agent can chain other commands
+     * right after). Returns the bot's position before and after so the
+     * agent can detect whether the jump achieved anything.
+     */
+    async jump({ hold_ms } = {}) {
+      const b = ensureBot();
+      const holdMs = Math.max(100, Math.min(2000, parseInt(String(hold_ms ?? 400), 10) || 400));
+      const before = posObj();
+      try {
+        b.setControlState('jump', true);
+        await new Promise((r) => setTimeout(r, holdMs));
+      } finally {
+        try { b.setControlState('jump', false); } catch {}
+      }
+      const after = posObj();
+      const dy = Math.round((after.y - before.y) * 10) / 10;
+      return {
+        ok: true,
+        command: 'jump',
+        data: { before, after, dy },
+        result: `Jumped${dy > 0 ? ` (Δy=+${dy})` : dy < 0 ? ` (Δy=${dy}, ended lower — probably fell)` : ' (no vertical change)'}.`,
+      };
+    },
+
+    /**
      * Smart non-destructive navigation. Like mc goto, but on NAV_BLOCKED
      * automatically detects a door/gate between the bot and the target,
      * opens it via mc through (which closes it behind), and recurses from
@@ -935,6 +1037,33 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
         return { ok: false, error: { code: 'INVALID_COORD', message: 'mc move requires numeric x, y, z', retry_safe: false } };
       }
+      // F24 (task #62, v42): retry-loop guard for mc move. Mirrors F7's
+      // guard on `goto`. v25-v41 postmortem: when the agent's bg_goto
+      // got refused, it fell back to chaining `mc move 348 64 -570,
+      // -590, -610, ...` — pathfinding independently each time, walking
+      // past the shore into open water. `recordMoveFailure('move',...)`
+      // was already incrementing the per-target counter, but the guard
+      // only ran on the `goto` entry point. Adding the same check here
+      // gives a definitive stop after 4 failed mc move calls to the
+      // same coord.
+      const moveRetryKey = gotoRetryKey('move', x, y, z);
+      const movePriorRetry = gotoRetryCounts.get(moveRetryKey);
+      if (movePriorRetry && movePriorRetry.count >= GOTO_RETRY_LIMIT) {
+        return {
+          ok: false,
+          error: {
+            code: 'NAV_RETRY_LOOP',
+            message: `${movePriorRetry.count} consecutive mc move calls to (${Math.floor(Number(x))}, ${Math.floor(Number(y))}, ${Math.floor(Number(z))}) have failed (last reason: ${movePriorRetry.lastReason}). Pick a different target — try an adjacent waypoint, mc advise, or mc scene to reassess. Retrying the same coord will not work.`,
+            observed_state: {
+              retry_count: movePriorRetry.count,
+              last_reason: movePriorRetry.lastReason,
+              target: { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) },
+            },
+            next_action_hint: 'mc advise --reason="mc move stuck retrying"',
+            retry_safe: false,
+          },
+        };
+      }
       // F50.2: pre-flight (bot-trapped, target-unstandable). mc move uses
       // pathfinder for each leg, so the same protections apply.
       const pre = preflightNav(b, x, y, z, 1);
@@ -947,6 +1076,16 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
       if (pre && pre.y_adjusted) {
         yAdjusted = pre.y_adjusted;
         y = pre.y_adjusted.to;
+      }
+      // F47 (task #66, v57): lenient retarget. mirrors goto's path —
+      // see preflightNav. mc move 363 64 -542 to a water cell with
+      // shore 3b away now lands at the shore instead of refusing.
+      let targetAdjusted = null;
+      if (pre && pre.retarget) {
+        targetAdjusted = pre.retarget;
+        x = pre.retarget.x;
+        y = pre.retarget.y;
+        z = pre.retarget.z;
       }
       // F51.1: silent pre-nudge from sticky start position.
       await preNudgeIfSticky(b, Math.floor(Number(x)), Math.floor(Number(y)), Math.floor(Number(z)));
@@ -1050,6 +1189,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
         const dist = Math.hypot(pos.x - target.x, pos.y - target.y, pos.z - target.z);
         if (dist <= 2) {
           clearMoveFailure();
+          clearGotoRetry('move', target.x, target.y, target.z); // F24: success — reset retry count
           // High-level contract (task #19): if the bot completed the move but
           // is standing in water, auto-escape before returning so the agent
           // doesn't have to chain `mc escape` after every water-adjacent
@@ -1083,6 +1223,7 @@ export function createMovementActions({ ctx, ensureBot, goals, fmt, posObj, ACTI
               legs: leg,
               end_position: finalPos,
               ...(yAdjusted ? { y_adjusted: yAdjusted } : {}),
+              ...(targetAdjusted ? { target_adjusted: targetAdjusted } : {}),
               ...(autoEscape ? { auto_escape: autoEscape, adjusted_target: { x: Math.floor(finalPos.x), y: Math.floor(finalPos.y), z: Math.floor(finalPos.z), original: { x: target.x, y: target.y, z: target.z } } } : {}),
             },
             result: `Arrived at ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)}${doors_used.length ? ` via ${doors_used.length} door${doors_used.length > 1 ? 's' : ''}` : ''}${yAdjNote}${escapeNote}`,

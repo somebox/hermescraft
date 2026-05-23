@@ -64,71 +64,36 @@ def _start_pos_for(direction: str) -> tuple[float, float, float]:
 
 
 @pytest.fixture
-def surface_arena(rcon, arena, tester_bot, config):
-    """Build a flat stone slab with a grass cap. No artificial cubes."""
-    world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Tester {world}")
-    time.sleep(0.5)
-    arena.rescue_tester(safe_xyz=(ARENA_CENTER_X, GROUND_Y + 2, ARENA_CENTER_Z), bot=tester_bot)
-    arena.clean()
-    pad = ARENA_RADIUS + 3
-    x1 = ARENA_CENTER_X - pad
-    x2 = ARENA_CENTER_X + pad
-    z1 = ARENA_CENTER_Z - pad
-    z2 = ARENA_CENTER_Z + pad
+def surface_arena(rcon, arena, config, functional_world):
+    """Harness lays canonical arena; give pickaxe for stair tests."""
     rcon.batch([
-        # Force-load the chunks so fills land.
-        f"execute in {world} run forceload add {x1} {z1} {x2} {z2}",
-        # Clear the working volume from STONE_FLOOR_Y to plenty of air above.
-        f"execute in {world} run fill {x1} {STONE_FLOOR_Y} {z1} {x2} 80 {z2} minecraft:air",
-        # Stone column under the arena.
-        f"execute in {world} run fill {x1} {STONE_FLOOR_Y} {z1} {x2} {GROUND_Y - 1} {z2} minecraft:stone",
-        # Grass cap at GROUND_Y.
-        f"execute in {world} run fill {ARENA_CENTER_X - ARENA_RADIUS} {GROUND_Y} {ARENA_CENTER_Z - ARENA_RADIUS} "
-        f"{ARENA_CENTER_X + ARENA_RADIUS} {GROUND_Y} {ARENA_CENTER_Z + ARENA_RADIUS} minecraft:grass_block",
-        "clear Tester",
         "give Tester minecraft:stone_pickaxe",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
         "effect give Tester minecraft:instant_health 1 5",
     ])
-    arena.settle(seconds=1.5)
+    arena.settle_default()
     yield
-    # Creative on teardown so the bot can't take damage in the gap
-    # between fixtures (parametrized re-setup, next file's fixture, etc.).
-    rcon.batch([
-        "gamemode creative Tester",
-        f"execute in {world} run tp Tester 0 100 0 0 0",
-        f"execute in {world} run fill {x1} {STONE_FLOOR_Y} {z1} {x2} 80 {z2} minecraft:air",
-        f"execute in {world} run forceload remove {x1} {z1} {x2} {z2}",
-    ])
 
 
-# Task #32: stair-traversal pre-existing failure. Bit-identical on
-# mineflayer 4.35.0 and 4.37.1 — bot can't reliably walk back up the
-# dug staircase. All 8 variants (4 cardinals × 2 lengths) hit the
-# same pathfinder issue. Tracked for a future mining-domain debug pass.
-_STAIR_XFAIL = pytest.mark.xfail(
-    reason="Stair-traversal regression on mineflayer 4.35.0/4.37.1 — "
-           "bot fails to walk back up the dug staircase. Task #32. "
-           "Pre-existing, not an upgrade regression.",
-    strict=False,
+# Task #32: stair walk-back is known-broken; descent assertions still gate regressions.
+_STAIR_TRAVERSAL_XFAIL_REASON = (
+    "Stair walk-back fails on mineflayer 4.35.0/4.37.1 (Task #32). "
+    "Descent checks above still run and fail normally."
 )
 
 
+@pytest.mark.slow
 @pytest.mark.functional
 @pytest.mark.parametrize(
     "direction,length",
     [
-        pytest.param("north", 4, marks=_STAIR_XFAIL),
-        pytest.param("south", 4, marks=_STAIR_XFAIL),
-        pytest.param("east",  4, marks=_STAIR_XFAIL),
-        pytest.param("west",  4, marks=_STAIR_XFAIL),
-        pytest.param("north", 8, marks=_STAIR_XFAIL),
-        pytest.param("south", 8, marks=_STAIR_XFAIL),
-        pytest.param("east",  8, marks=_STAIR_XFAIL),
-        pytest.param("west",  8, marks=_STAIR_XFAIL),
+        ("north", 4),
+        ("south", 4),
+        ("east", 4),
+        ("west", 4),
+        ("north", 8),
+        ("south", 8),
+        ("east", 8),
+        ("west", 8),
     ],
     ids=lambda v: f"{v}",
 )
@@ -194,38 +159,39 @@ def test_stair_down_then_walk_back_up(bot, rcon, arena, surface_arena, config, d
         f"after stair_down {direction} {length}"
     )
 
-    # 3. **Traversability** — the real test. Bot must walk back UP
-    # the staircase to within reach of the start position.
+    # 3–5. Traversability round-trip (xfail only this segment — Task #32).
     bottom_pos = dict(post_pos)
-    r_up = bot.post(
-        "/action/goto",
-        {"x": sx, "y": PLAYER_FEET_Y, "z": sz},
-        timeout=60.0,
-    )
-    final = bot.status_lean().get("position") or {}
-    horiz_dist = abs(final.get("x", 0) - sx) + abs(final.get("z", 0) - sz)
-    assert horiz_dist < 4.0 and final.get("y", 0) >= PLAYER_FEET_Y - 1, (
-        f"bot could not walk back up the staircase: final={final}, "
-        f"target=({sx},{PLAYER_FEET_Y},{sz}); goto-resp={r_up}"
-    )
+    try:
+        r_up = bot.post(
+            "/action/goto",
+            {"x": sx, "y": PLAYER_FEET_Y, "z": sz},
+            timeout=60.0,
+        )
+        final = bot.status_lean().get("position") or {}
+        horiz_dist = abs(final.get("x", 0) - sx) + abs(final.get("z", 0) - sz)
+        assert r_up.get("ok"), f"goto back up failed: {r_up}"
+        assert horiz_dist < 4.0 and final.get("y", 0) >= PLAYER_FEET_Y - 1, (
+            f"bot could not walk back up the staircase: final={final}, "
+            f"target=({sx},{PLAYER_FEET_Y},{sz}); goto-resp={r_up}"
+        )
 
-    # 4. And back down — round trip works (also confirms the
-    # staircase is bidirectional, not just one-way down).
-    r_down = bot.post(
-        "/action/goto",
-        {"x": bottom_pos.get("x"), "y": bottom_pos.get("y"), "z": bottom_pos.get("z")},
-        timeout=60.0,
-    )
-    final2 = bot.status_lean().get("position") or {}
-    bottom_dist = (
-        abs(final2.get("x", 0) - bottom_pos.get("x", 0))
-        + abs(final2.get("z", 0) - bottom_pos.get("z", 0))
-    )
-    assert bottom_dist < 4.0, (
-        f"bot could not return to bottom: final={final2}, "
-        f"target={bottom_pos}; goto-resp={r_down}"
-    )
+        r_down = bot.post(
+            "/action/goto",
+            {"x": bottom_pos.get("x"), "y": bottom_pos.get("y"), "z": bottom_pos.get("z")},
+            timeout=60.0,
+        )
+        final2 = bot.status_lean().get("position") or {}
+        bottom_dist = (
+            abs(final2.get("x", 0) - bottom_pos.get("x", 0))
+            + abs(final2.get("z", 0) - bottom_pos.get("z", 0))
+        )
+        assert r_down.get("ok"), f"goto back down failed: {r_down}"
+        assert bottom_dist < 4.0, (
+            f"bot could not return to bottom: final={final2}, "
+            f"target={bottom_pos}; goto-resp={r_down}"
+        )
 
-    # 5. No damage taken across the round trip.
-    end_hp = bot.status_lean().get("health") or 0
-    assert end_hp >= 18, f"bot took damage on stair round trip: HP={end_hp}"
+        end_hp = bot.status_lean().get("health") or 0
+        assert end_hp >= 18, f"bot took damage on stair round trip: HP={end_hp}"
+    except AssertionError as exc:
+        pytest.xfail(f"{_STAIR_TRAVERSAL_XFAIL_REASON} Detail: {exc}")

@@ -15,7 +15,7 @@
  *   - `mc status` call (explicit acknowledgement — handled in http-app.js)
  *   - 30s decay (handled by this middleware)
  *
- * Middleware contract (per docs/refactor-plan.md § Assembly rules):
+ * Middleware contract (per docs/archive/refactor-plan-2026.md § Assembly rules):
  *   check(services, body, actionName) → { intercept: true, response } | { intercept: false }
  *
  * The function may mutate `services.state.runtime.lastMoveFailed` as a

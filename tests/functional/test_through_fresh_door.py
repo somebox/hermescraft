@@ -26,19 +26,15 @@ def fresh_door_arena(rcon, arena, tester_bot, config):
     """Larger flat region; bot at (0,65,0) facing east. Each test places
     its own door + obstacles."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     # Lift bot to safe high-Y before rebuilding floor.
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
-    arena.flat_arena((-30, 64, -30, 30, 80, 30), floor="stone")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         "clear Tester",
         f"execute in {world} run tp Tester 0 65 0 90 0",
     ])
     arena.settle()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.flat_arena((-30, 60, -30, 30, 80, 30), floor="stone")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
 
 
 @pytest.mark.functional

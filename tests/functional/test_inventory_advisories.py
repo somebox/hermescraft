@@ -21,7 +21,6 @@ def _advisories(bot) -> list[str]:
 
 @pytest.fixture
 def _ready(rcon, tester_bot, config):
-    tester_bot.wait_until_ready(timeout=10)
     return tester_bot
 
 

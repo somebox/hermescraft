@@ -10,6 +10,7 @@
     "Gatherer": {
       "model": "deepseek/deepseek-v4-flash",
       "provider": "openrouter",
+      "role": "gatherer",
       "api_port": 3001
     },
     "Flint": {

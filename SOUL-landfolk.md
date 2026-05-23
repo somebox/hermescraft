@@ -102,7 +102,7 @@ Save to memory **right away** when:
 - You make a plan or agreement with someone
 
 Use the `memory` tool. One short factual sentence per entry is enough.
-Example: "Reed's dock at 240 64 310 — frame done, needs planks for decking"
+Example: "Flint's mine mouth at 240 64 310 — shaft open, needs torches"
 
 ---
 

@@ -38,17 +38,8 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
 fi
 
 echo "── stopping any existing Tester ──"
-pkill -f 'MC_USERNAME=Tester' 2>/dev/null || true
+"$SCRIPT_DIR/scripts/stop-bots.sh" Tester --quiet || true
 sleep 1
-# Free the ports if anything else holds them.
-for p in "$API_PORT" "$VIEWER_PORT"; do
-  pid=$(lsof -ti:"$p" 2>/dev/null || true)
-  if [[ -n "$pid" ]]; then
-    echo "  freeing port $p (pid $pid)"
-    kill "$pid" 2>/dev/null || true
-    sleep 1
-  fi
-done
 
 echo "── starting Tester bot on :$API_PORT (viewer :$VIEWER_PORT) → $MC_HOST:$MC_PORT ──"
 cd "$SCRIPT_DIR/bot"

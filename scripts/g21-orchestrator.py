@@ -16,7 +16,7 @@ agnostic" steward — chat is the entire coordination surface.
 Usage:
   scripts/g21-orchestrator.py data/agent-tests/G21_two_bot_house.yaml \
     --model z-ai/glm-5.1 \
-    --findings docs/experiments/g21-findings-glm.md
+    --findings docs/archive/experiments/g21-findings-glm.md
 
 Bot lifecycle (handled by this script):
   1. Stop any existing bots on the spec's ports.
@@ -1136,7 +1136,7 @@ def main() -> int:
     p.add_argument("spec", type=Path, help="path to G21 spec YAML")
     p.add_argument("--model", help="model to use for BOTH bots (sets MODEL_FLINT and MODEL_MASON)")
     p.add_argument("--provider", default="openrouter", help="provider (default: openrouter)")
-    p.add_argument("--findings", type=Path, default=Path("docs/experiments/g21-findings.md"), help="findings doc output path")
+    p.add_argument("--findings", type=Path, default=Path("docs/archive/experiments/g21-findings.md"), help="findings doc output path")
     p.add_argument("--no-launch-brains", action="store_true", help="don't start Hermes brains (smoke-test mode — bodies only)")
     p.add_argument("--keep-running", action="store_true", help="don't stop bots after the test (debug)")
     p.add_argument("--dry-run", action="store_true", help="print steps but don't run brains or world_setup")

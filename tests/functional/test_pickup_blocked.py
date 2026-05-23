@@ -34,9 +34,6 @@ def pickup_arena(rcon, arena, tester_bot, config):
     """Grass floor, peaceful, no mob spawning. Bot at (3,65,1) facing west.
     Each test spawns its own drops + obstacles."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-8, 64, -8, 8, 70, 8), floor="grass_block")
     rcon.batch([
         f"execute in {world} run tp Tester 3 65 1 270 0",  # face west (-x)
         "clear Tester",
@@ -49,9 +46,8 @@ def pickup_arena(rcon, arena, tester_bot, config):
         tester_bot.post("/action/mode", {"name": "hold"}, timeout=5)
     except Exception:
         pass
-    arena.settle(seconds=3.5)
+    arena.settle_heavy()
     yield
-    arena.flat_arena((-8, 60, -8, 8, 70, 8), floor="grass_block")
     rcon.run(f"execute in {world} run kill @e[type=item,distance=..40]")
 
 

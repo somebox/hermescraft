@@ -29,6 +29,31 @@ function makeBot({ pos, water = [], inventory = [] }) {
   };
 }
 
+test('refuseWaterRouteWithoutBoat: probe path inventory error → ROUTE_PROBE_FAILED # spec', () => {
+  const water = [];
+  for (let i = 0; i <= 200; i++) water.push({ x: i, y: 63, z: 0 });
+  const waterKeys = new Set(water.map((c) => `${c.x},${c.y},${c.z}`));
+  const bot = {
+    entity: { position: { x: 0, y: 64, z: 0 } },
+    inventory: {
+      items: () => {
+        throw new Error('inventory sync failed');
+      },
+    },
+    blockAt(p) {
+      const k = `${p.x},${p.y},${p.z}`;
+      if (waterKeys.has(k)) return { name: 'water', boundingBox: 'empty' };
+      if (p.y === 63) return { name: 'stone', boundingBox: 'block' };
+      return { name: 'air', boundingBox: 'empty' };
+    },
+  };
+  const r = refuseWaterRouteWithoutBoat(bot, 200, 64, 0);
+  assert.ok(r && !r.ok);
+  assert.equal(r.error.code, 'ROUTE_PROBE_FAILED');
+  assert.equal(r.error.retry_safe, true);
+  assert.match(r.error.next_action_hint, /mc goto/);
+});
+
 test('refuseWaterRouteWithoutBoat: short trip (under threshold) → null', () => {
   // Bot at (0,64,0), target at (50,64,0) — distance 50, under 100.
   const bot = makeBot({ pos: [0, 64, 0], inventory: ['oak_boat'] });
@@ -254,5 +279,69 @@ test('goto: detached-function regression (action registry dispatch)', async () =
   // envelope back, not a TypeError about reading properties of undefined.
   const r = await detached.call(undefined, { x: 200, y: 64, z: 0 });
   assert.ok(r && typeof r === 'object', 'goto must return an envelope, not throw');
+  assert.equal('ok' in r || 'error' in r, true);
+});
+
+// ─── F24 — mc move retry-loop detector (task #62) ──────────────────────
+// Mirrors F7 for the synchronous `mc move` verb. v25-v41 postmortem:
+// when bg_goto was refused, the agent chained mc move calls (each one
+// pathfinds independently with no shore-proximity awareness), walking
+// past the shore into open water. After 4 failed mc move calls to the
+// same coord, refuse with NAV_RETRY_LOOP so the agent escalates.
+
+test('move: 4 consecutive failures to same target → NAV_RETRY_LOOP', async () => {
+  const movement = makeMovementForRetryTest();
+  // First 4 calls all refuse with BOAT_REQUIRED (long route + water).
+  // recordMoveFailure('move',...) feeds the per-target counter.
+  for (let i = 1; i <= 4; i++) {
+    const r = await movement.move({ x: 200, y: 64, z: 0 });
+    assert.equal(r.ok, false, `call ${i}: expected refusal, got ${JSON.stringify(r).slice(0, 80)}`);
+    assert.equal(r.error.code, 'BOAT_REQUIRED', `call ${i}: expected BOAT_REQUIRED, got ${r.error.code}`);
+  }
+  // 5th call hits the F24 retry-loop guard at the top — refuses BEFORE
+  // pathfinding or preflight.
+  const r5 = await movement.move({ x: 200, y: 64, z: 0 });
+  assert.equal(r5.ok, false);
+  assert.equal(r5.error.code, 'NAV_RETRY_LOOP');
+  assert.equal(r5.error.observed_state.retry_count, 4);
+  assert.equal(r5.error.observed_state.last_reason, 'BOAT_REQUIRED');
+  assert.match(r5.error.next_action_hint, /mc advise/);
+  assert.match(r5.error.message, /mc move/, 'message should mention mc move (not bg_goto)');
+});
+
+test('move: retry counter is per-target', async () => {
+  const movement = makeMovementForRetryTest();
+  // Burn target A's budget (5 calls — 4 fails then NAV_RETRY_LOOP).
+  for (let i = 0; i < 5; i++) {
+    await movement.move({ x: 200, y: 64, z: 0 });
+  }
+  // Target B (different floored coords) — must still refuse with
+  // BOAT_REQUIRED (preflight), not inherit target A's loop refusal.
+  const r = await movement.move({ x: 150, y: 64, z: 0 });
+  assert.notEqual(r.error?.code, 'NAV_RETRY_LOOP',
+    `target B should not inherit target A's retry count; got ${r.error?.code}`);
+});
+
+test('move: retry counter is per-verb (move vs goto tracked separately)', async () => {
+  // F7 and F24 share the gotoRetryCounts Map but key by verb. Burning
+  // mc move's budget for a target should NOT poison the same target's
+  // budget for mc bg_goto (and vice versa).
+  const movement = makeMovementForRetryTest();
+  for (let i = 0; i < 5; i++) {
+    await movement.move({ x: 200, y: 64, z: 0 });
+  }
+  // Now call goto with the same coord — must NOT see NAV_RETRY_LOOP.
+  const r = await movement.goto({ x: 200, y: 64, z: 0 });
+  assert.notEqual(r.error?.code, 'NAV_RETRY_LOOP',
+    `goto must have its own budget; got ${r.error?.code}`);
+});
+
+test('move: detached-function regression (action registry dispatch)', async () => {
+  // Same protection as F7: action registry calls methods as
+  // detached functions. Must not throw `this`-undefined errors.
+  const movement = makeMovementForRetryTest();
+  const detached = movement.move;
+  const r = await detached.call(undefined, { x: 200, y: 64, z: 0 });
+  assert.ok(r && typeof r === 'object', 'move must return an envelope, not throw');
   assert.equal('ok' in r || 'error' in r, true);
 });

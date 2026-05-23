@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
 
 import pytest
@@ -41,19 +40,15 @@ def _assert_digest_smoke(result: dict) -> None:
 
 
 @pytest.fixture
-def scene_arena(rcon, arena, tester_bot, config):
-    """Build D1_mixed_scene; park Tester at origin facing south."""
+def scene_arena(rcon, arena, config, functional_world):
+    """Build D1_mixed_scene on canonical grass (harness reset already ran)."""
     world = config["mc"]["world"]
     fixture = load_fixture(D1_FIXTURE)
-    arena.clean()
-    arena.flat_arena((-20, 60, -20, 20, 72, 20), floor="grass_block")
     arena.prep(fixture.prep)
-    arena.rescue_tester(safe_xyz=(0, 65, 0), bot=tester_bot)
     rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     arena.settle(seconds=3.0)
     yield
     arena.cleanup(fixture.cleanup)
-    arena.flat_arena((-20, 64, -20, 20, 72, 20), floor="grass_block")
 
 
 @pytest.mark.integration
@@ -68,11 +63,10 @@ def test_perception_digest_mvp(bot, scene_arena, log_dir, slug, intent):
     if not resolve_openrouter_api_key():
         pytest.skip("OpenRouter API key not set (OPENROUTER_API_KEY or secrets.yaml)")
 
-    tester_bot = bot
-    tester_bot.wait_until_ready(timeout=15)
+    bot.ensure_connected(reconnect_timeout=15.0)
 
     perception_input = capture_perception_bundle(
-        tester_bot,
+        bot,
         preserve_status=False,
         include_nearby=False,
         include_map=False,
@@ -88,23 +82,17 @@ def test_perception_digest_mvp(bot, scene_arena, log_dir, slug, intent):
 
 
 @pytest.fixture
-def stuck_pit_arena(rcon, arena, tester_bot, config):
-    """D2: dirt pit, wood 5m east; face nearest oak."""
-    world = config["mc"]["world"]
+def stuck_pit_arena(rcon, arena, config, functional_world):
+    """D2: dirt pit at origin; oak east — props on canonical grass."""
     fixture = load_fixture(D2_FIXTURE)
-    arena.clean()
-    arena.flat_arena((-16, 60, -16, 16, 72, 16), floor="grass_block")
     arena.prep(fixture.prep)
-    arena.rescue_tester(safe_xyz=(0, 63, 0), bot=tester_bot)
-    rcon.run(f"execute in {world} run tp Tester 0 63 0 -90 0")
     arena.settle(seconds=2.0)
     yield
     arena.cleanup(fixture.cleanup)
-    arena.flat_arena((-16, 64, -16, 16, 72, 16), floor="grass_block")
 
 
 @pytest.mark.integration
-def test_perception_digest_stuck_collecting_wood(bot, stuck_pit_arena, log_dir):
+def test_perception_digest_stuck_collecting_wood(bot, stuck_pit_arena, log_dir, arena):
     """Failed goto to nearby oak from a pit — can digest infer blocked/stuck?"""
     if not resolve_openrouter_api_key():
         pytest.skip("OpenRouter API key not set (OPENROUTER_API_KEY or secrets.yaml)")
@@ -112,20 +100,17 @@ def test_perception_digest_stuck_collecting_wood(bot, stuck_pit_arena, log_dir):
     slug = "blocked_collecting_wood"
     intent = "blocked collecting wood"
 
-    tester_bot = bot
-    tester_bot.wait_until_ready(timeout=15)
+    bot.ensure_connected(reconnect_timeout=15.0)
 
-    # Attempt path to nearer oak; expect NAV failure or no progress from pit.
-    goto_resp = tester_bot.post(
+    goto_resp = bot.post(
         "/action/goto",
         {"x": 5, "y": 64, "z": 0},
         timeout=25,
     )
-    time.sleep(1.0)
+    arena.settle_fast()
 
-    # preserve=true: do not clear lastMoveFailed / stuck cells (unlike agent `mc status`).
     perception_input = capture_perception_bundle(
-        tester_bot,
+        bot,
         preserve_status=True,
         include_nearby=True,
         nearby_radius=8,

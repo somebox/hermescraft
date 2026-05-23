@@ -26,13 +26,9 @@ import pytest
 @pytest.fixture
 def flat_floor(rcon, arena, tester_bot, config):
     """Flat stone floor; each test places its own obstacles + bot start pose."""
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.run("clear Tester")
     arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
 
 
 @pytest.mark.functional

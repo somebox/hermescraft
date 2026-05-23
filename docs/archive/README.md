@@ -1,12 +1,22 @@
-# Archived Project Notes
+# Archive
 
-These files are older planning, audit, or experimental documents kept for reference.
+Completed plans, superseded designs, experiment write-ups, and pre-fork notes. Not authoritative for current architecture or launch workflow.
 
-They are not the authoritative source for the current HermesCraft architecture or launch workflow.
+**Current project surface:**
 
-For the current project surface, use:
-- `README.md`
-- `docs/COMPANION_MODE.md`
-- `docs/CIVILIZATION_MODE.md`
-- `docs/LAN_PLAY.md`
-- the active launcher/scripts in the project root and `scripts/`
+- [README.md](../../README.md) — install, modes, scripts
+- [docs/architecture.md](../architecture.md) — bot codebase map
+- [docs/patterns.md](../patterns.md) — conventions
+- [docs/agent-boundaries.md](../agent-boundaries.md) — Hermes vs bot server
+- [docs/guides/](../guides/) — runbooks (Steve, dashboard, testing, …)
+
+## What lives here
+
+| Area | Examples |
+|------|----------|
+| Refactor history | [refactor-plan-2026.md](refactor-plan-2026.md) |
+| Dashboard design (shipped) | [dashboard-redesign-v1.md](dashboard-redesign-v1.md), [dashboard-redesign-v2.md](dashboard-redesign-v2.md) |
+| Testing history | [test-inventory.md](test-inventory.md), [testing-migration.md](testing-migration.md) |
+| Perception digest (split docs) | [perception-digest-experiment.md](perception-digest-experiment.md), [perception-digest-findings.md](perception-digest-findings.md) — merged in [guides/perception-digest.md](../guides/perception-digest.md) |
+| Phase 1–2 experiments | [experiments/](experiments/) — phase-1 summaries, g21/m2/m3 findings, [phase-2-sprint-log.md](experiments/phase-2-sprint-log.md) |
+| Hackathon / early vision | HACKATHON-PLAN, AUDIT-REPORT, ARENA, COMPANION_MODE, CIVILIZATION_MODE, LAN_PLAY, homelab-experiment, MC_TARGET_ARCHITECTURE |

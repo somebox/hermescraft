@@ -18,37 +18,25 @@ from __future__ import annotations
 import pytest
 
 
-# Module-scoped fixture: build the Mason trap once for all four tests in
-# this file. Scenarios B, C, and D depend on the geometry set up by A in
-# the original test — preserving that semantic by sharing the arena.
-#
-# Consumes `tester_bot` (session-scoped) rather than `bot` (function-scoped)
-# because the fixture itself runs at module scope. The function-scoped
-# `bot` parameter on each test below resolves to the same tester_bot.
-@pytest.fixture(scope="module")
-def mason_trap(rcon, config, tester_bot):
-    """Build cobble wall at y=66 z=12 (x: -2..1), grass floor at y=64,
-    place Tester at (2.5, 65, 12.7). Cleanup on teardown."""
-    tester_bot.wait_until_ready(timeout=10)
+@pytest.fixture
+def mason_trap(rcon, config, functional_world):
+    """Lay the Mason trap on top of the canonical harness reset.
+
+    Runs after autouse `_functional_harness`. TP near the trap so the bot
+    client loads the chunk before reachable scans."""
     world = config["mc"]["world"]
     rcon.batch([
-        f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -5 65 5 5 70 18 minecraft:air",
-        f"execute in {world} run fill -5 64 5 5 64 18 minecraft:grass_block",
         # North wall at z=12, x=-2..1, y=66..68 (3 high) — the trap.
         f"execute in {world} run fill -2 66 12 1 68 12 minecraft:cobblestone",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
     ])
-    # Canonical step 2: place_player tps + waits stationary. Avoids the
-    # mid-air race a raw tp + fixed sleep had (gravity vs. assert).
     from tests._lib import Arena
-    Arena(rcon, config).place_player(tester_bot, 2.5, 65, 12.7)
+    arena = Arena(rcon, config)
+    arena.teleport_bot(2.5, 65, 12.7, yaw=180.0)
+    arena.settle_fast()
     yield
-    # Teardown: fill the test box with air and park Tester at home.
     rcon.batch([
         f"execute in {world} run fill -5 65 5 5 70 18 minecraft:air",
-        f"execute in {world} run tp Tester 52 65 52",
     ])
 
 
@@ -92,7 +80,16 @@ def test_goto_near_enriches_error_with_closest_standable(bot, mason_trap):
     """
     r = bot.post("/action/goto_near", {"x": 0, "y": 65, "z": 12, "range": 1}, timeout=25)
     if r.get("ok"):
-        pytest.skip("goto_near succeeded — borderline-distance case; enrichment check skipped")
+        # Transparent substitution (F48+F49): bot must land at a standable cell
+        # adjacent to the trap, not skip enrichment checks entirely.
+        pos = bot.position()
+        px, pz = pos.get("x", 0), pos.get("z", 0)
+        at_north = abs(px - 0.5) < 0.8 and abs(pz - 13.5) < 0.8
+        at_south = abs(px - 0.5) < 0.8 and abs(pz - 11.5) < 0.8
+        assert at_north or at_south, (
+            f"goto_near ok but bot at unexpected ({px:.2f},{pz:.2f})"
+        )
+        return
     _code, _msg, obs = _err(r)
     assert obs.get("closest_standable") is not None, obs
     assert obs.get("target_reason") in ("head_blocked", "foot_blocked"), obs

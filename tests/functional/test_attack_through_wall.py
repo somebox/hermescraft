@@ -22,16 +22,16 @@ import time
 
 import pytest
 
+from tests._lib.combat_fixtures import hold_reactive
+
 
 @pytest.fixture
-def combat_arena(rcon, arena, tester_bot, config):
+def combat_arena(rcon, arena, config, functional_world):
     """Open stone-floored region + iron armor + iron sword + saturation +
     midnight (avoid sunburn drain). Each scenario then places the
     zombie + optional cobble shelter."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute in {world} run difficulty easy",
@@ -44,12 +44,13 @@ def combat_arena(rcon, arena, tester_bot, config):
         f"execute in {world} run fill -6 60 -6 6 63 6 minecraft:stone",
         f"execute in {world} run fill -6 64 -6 6 64 6 minecraft:stone",
     ])
-    arena.settle(seconds=0.5)
+    arena.settle_fast()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
     rcon.batch([
         f"execute in {world} run kill @e[type=zombie]",
         f"execute in {world} run fill -6 60 -6 6 70 6 minecraft:air",
+        f"execute in {world} run difficulty peaceful",
+        f"execute in {world} run time set noon",
     ])
     arena.forceload_remove_all()
 
@@ -101,20 +102,12 @@ def _zombie_hp(rcon, world: str) -> float | None:
     hps = [float(m.group(1)) for m in re.finditer(r"data:\s*([0-9]+(?:\.[0-9]+)?)\s*f", out)]
     return min(hps) if hps else None
 
-
-def _hold_mode(bot) -> None:
-    try:
-        bot.post("/action/mode", {"name": "hold"}, timeout=5)
-    except Exception:
-        pass
-
-
 @pytest.mark.functional
 def test_attack_with_clear_view_damages_zombie(bot, rcon, config, combat_arena):
     """A: zombie in open at (3,65,0) — attack succeeds, HP drops."""
     world = config["mc"]["world"]
     _stage_combat(rcon, world, sealed=False)
-    _hold_mode(bot)
+    hold_reactive(bot)
     hp0 = _zombie_hp(rcon, world)
     assert hp0 is not None, "no zombie spawned"
     r = bot.post("/action/attack", {"target": "zombie"}, timeout=30)
@@ -132,18 +125,22 @@ def test_attack_through_shelter_wall_is_refused(bot, rcon, config, combat_arena)
     """B: bot sealed, zombie at (2,65,0) — attack refused, HP intact."""
     world = config["mc"]["world"]
     _stage_combat(rcon, world, sealed=True)
-    _hold_mode(bot)
+    hold_reactive(bot)
     hp0 = _zombie_hp(rcon, world)
     assert hp0 is not None
     r = bot.post("/action/attack", {"target": "zombie"}, timeout=30)
     assert not r.get("ok"), r
     err = r.get("error") or {}
-    code = err.get("code") if isinstance(err, dict) else ""
-    msg = (err.get("message") if isinstance(err, dict) else err) or ""
+    if isinstance(err, dict):
+        code = err.get("code") or ""
+        msg = err.get("message") or ""
+    else:
+        code = ""
+        msg = str(err)
     refused = (
         code == "ATTACK_BLOCKED"
-        or "line of sight" in str(msg).lower()
-        or "blocked" in str(msg).lower()
+        or "line of sight" in msg.lower()
+        or "blocked" in msg.lower()
     )
     assert refused, r
     time.sleep(0.5)
@@ -156,10 +153,17 @@ def test_fight_loop_lands_no_hits_through_wall(bot, rcon, config, combat_arena):
     """C: same sealed setup, mc fight (looping verb) — HP intact after duration."""
     world = config["mc"]["world"]
     _stage_combat(rcon, world, sealed=True)
-    _hold_mode(bot)
+    hold_reactive(bot)
     hp0 = _zombie_hp(rcon, world)
     assert hp0 is not None
-    bot.post("/action/fight", {"target": "zombie", "duration": 4, "retreat_health": 4}, timeout=15)
+    r = bot.post(
+        "/action/fight",
+        {"target": "zombie", "duration": 4, "retreat_health": 4},
+        timeout=15,
+    )
+    result_text = str((r.get("data") or {}).get("result") or "")
+    if "hits" in result_text.lower():
+        assert "0 hits" in result_text.lower(), f"fight reported damage through wall: {result_text!r}"
     time.sleep(0.5)
     hp1 = _zombie_hp(rcon, world)
     assert hp1 is not None and abs(hp1 - hp0) < 0.01, f"HP changed during fight: {hp0} → {hp1}"
@@ -177,8 +181,15 @@ def test_reactive_self_defense_does_not_attack_through_wall(bot, rcon, config, c
         pass
     hp0 = _zombie_hp(rcon, world)
     assert hp0 is not None
+    # Zombie must be in range so reactive self_defense can consider engaging.
+    pos = bot.position()
+    assert pos is not None
+    zx = 2.0
+    dist = ((pos.get("x", 0) - zx) ** 2 + (pos.get("z", 0) ** 2)) ** 0.5
+    assert dist < 4.0, f"zombie not in reactive range from {pos}"
     time.sleep(4.0)
     hp1 = _zombie_hp(rcon, world)
     assert hp1 is not None and abs(hp1 - hp0) < 0.01, (
         f"reactive layer attacked through wall: HP {hp0} → {hp1}"
     )
+    hold_reactive(bot)

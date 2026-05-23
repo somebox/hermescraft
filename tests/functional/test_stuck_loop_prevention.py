@@ -26,8 +26,7 @@ def stuck_arena(rcon, arena, tester_bot, config):
     """Stone-floored area; Tester. F58 /status reset to clear lingering
     state from prior tests (but the tests themselves may rebuild state)."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air",
@@ -39,9 +38,9 @@ def stuck_arena(rcon, arena, tester_bot, config):
         tester_bot.get("/status?lean=true", timeout=5)
     except Exception:
         pass
-    arena.settle(seconds=1.0)
+    arena.settle_default()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air")
 
 
@@ -120,30 +119,53 @@ def test_F57_2_repeated_goto_to_unreachable_target_fails_clearly(bot, rcon, aren
     assert all(c in acceptable for c in seen), f"unexpected codes: {seen}"
 
 
+def _retrap_corner_rcon_only(arena, world: str) -> None:
+    """Re-seat Tester in the NW corner without place_player's status reset
+    (which would clear lastMoveFailed before F57.3 escape)."""
+    arena.rcon.batch([
+        f"execute in {world} run setblock 0 65 -1 minecraft:cobblestone",
+        f"execute in {world} run setblock 0 66 -1 minecraft:cobblestone",
+        f"execute in {world} run setblock -1 65 0 minecraft:cobblestone",
+        f"execute in {world} run setblock -1 66 0 minecraft:cobblestone",
+        f"execute in {world} run tp Tester 0 65 0 0 0",
+    ])
+    arena.settle_fast()
+
+
 @pytest.mark.functional
 def test_F57_3_successful_escape_carries_do_not_retry_goto(bot, rcon, arena, config, stuck_arena):
-    """C: failed goto records ctx.lastMoveFailed; subsequent successful
-    escape returns observed_state.do_not_retry_goto = that intended
-    target (x=5 here).
-
-    The failed-move must be a real pathfinder_error (not a pre-flight
-    rejection), so we seal the target with a 3-tall box that pathfinder
-    actually attempts to route around but fails."""
+    """C: failed goto from a corner trap records lastMoveFailed; successful
+    escape surfaces do_not_retry_goto for that target."""
     world = config["mc"]["world"]
-    # Sealed target at (5,65,5): 3-tall walls + roof so pathfinder
-    # reports NAV_BLOCKED, recording lastMoveFailed.
-    walls = []
-    for y in (65, 66, 67):
-        for (x, z) in [(5, 4), (5, 6), (4, 5), (6, 5)]:
-            walls.append(f"execute in {world} run setblock {x} {y} {z} minecraft:cobblestone")
-    walls.append(f"execute in {world} run setblock 5 68 5 minecraft:cobblestone")
-    rcon.batch(walls)
-    arena.place_player(bot, 0, 65, 0)
-    bot.post("/action/goto", {"x": 5, "y": 65, "z": 5}, timeout=15)
+    # Sealed bedrock cell — routable lip at (8,65,8) is too easy; pathfinder
+    # can arrive within 2 blocks and clear lastMoveFailed before escape.
+    rcon.batch([
+        f"execute in {world} run fill 14 64 14 16 64 16 minecraft:bedrock",
+        f"execute in {world} run fill 14 65 14 16 67 16 minecraft:air",
+        f"execute in {world} run fill 14 65 14 14 67 16 minecraft:bedrock",
+        f"execute in {world} run fill 16 65 14 16 67 16 minecraft:bedrock",
+        f"execute in {world} run fill 14 65 14 16 67 14 minecraft:bedrock",
+        f"execute in {world} run fill 14 65 16 16 67 16 minecraft:bedrock",
+        f"execute in {world} run fill 14 67 14 16 67 16 minecraft:bedrock",
+    ])
     _rebuild_corner(arena, bot, world)
+    target = {"x": 15, "y": 66, "z": 15}
+    g = bot.post("/action/goto", target, timeout=25)
+    assert not g.get("ok"), f"goto to sealed cell should fail before escape test: {g}"
+    code, _, _ = extract_error(g)
+    assert code in {
+        "NAV_BLOCKED",
+        "NAV_NO_PROGRESS",
+        "BOT_TRAPPED",
+        "NAV_TARGET_OCCUPIED",
+        "NAV_FAILED",
+        "OPERATION_TIMEOUT",
+        "NAV_TIMEOUT",
+    }, g
+    _retrap_corner_rcon_only(arena, world)
     r = bot.post("/action/escape", {}, timeout=15)
     assert r.get("ok"), r
     data = r.get("data") or {}
     do_not_retry = data.get("do_not_retry_goto")
     assert isinstance(do_not_retry, dict), data
-    assert do_not_retry.get("x") == 5, do_not_retry
+    assert do_not_retry.get("x") == target["x"], do_not_retry

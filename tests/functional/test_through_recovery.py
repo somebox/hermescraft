@@ -23,12 +23,8 @@ from tests._lib import extract_error
 @pytest.fixture
 def through_arena_v2(rcon, arena, tester_bot, config):
     """Larger arena (31×31) so the bot at z=1 reaching z=3+ stays in-bounds."""
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 20, 80, 20), floor="stone")
     arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 20, 80, 20), floor="stone")
 
 
 def _next_action_hint(response: dict) -> str:
@@ -95,7 +91,7 @@ def test_through_real_door_traverses(bot, rcon, arena, config, through_arena_v2)
         "clear Tester",
         f"execute in {world} run tp Tester 4 65 1 180 0",
     ])
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     r = bot.post("/action/through", {"gx": 4, "gy": 65, "gz": 3}, timeout=30)
     assert r.get("ok"), r
     pos = bot.position()

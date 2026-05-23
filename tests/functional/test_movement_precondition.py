@@ -51,8 +51,7 @@ def precondition_arena(rcon, arena, tester_bot, config):
     """Stone-floored area; Tester. F58 reset clears any lingering
     lastMoveFailed / recentEscapes from prior tests."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air",
@@ -64,9 +63,9 @@ def precondition_arena(rcon, arena, tester_bot, config):
         tester_bot.get("/status?lean=true", timeout=5)
     except Exception:
         pass
-    arena.settle(seconds=1.0)
+    arena.settle_default()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air")
 
 

@@ -224,6 +224,20 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ x: p.x, y: p.y, z: p.z }),
   }),
   g('stop', 'movement', [], { description: 'Cancel current movement task', method: 'POST', path: '/action/stop', bodyFn: () => empty }),
+  // F32 (task #66, v45): mc jump — brief jump primitive. Useful when
+  // standing in 1-block water (surface to get head out), stepping onto
+  // a 1-block ledge, or knocking a falling sand block. Default hold
+  // 400ms; agent can override with --hold_ms for shorter/longer jumps.
+  g('jump', 'movement', [], {
+    description: 'Brief jump (default 400ms). Use to surface from shallow water or step up a 1-block ledge.',
+    method: 'POST',
+    path: '/action/jump',
+    argSchema: [
+      { key: 'hold_ms', type: 'number', required: false, default: 400 },
+    ],
+    bodyFn: (p) => JSON.stringify({ hold_ms: p.hold_ms }),
+    examples: ['mc jump', 'mc jump 800'],
+  }),
 
   /* Mining / gather */
   g('collect', 'world', ['mine', 'c'], {

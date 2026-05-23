@@ -31,16 +31,10 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def reach_arena(rcon, arena, tester_bot, config):
-    """Larger flat region (61×61) so the 25-block test distances stay
-    inside the cleared area. Each test places its own props."""
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-30, 64, -30, 30, 80, 30), floor="stone")
-    rcon.run("clear Tester")
-    arena.settle()
+def reach_arena(arena, config):
+    """Larger flat region for 25-block reach-pathfind scenarios (harness lays canonical arena)."""
+    arena.settle_default()
     yield
-    arena.flat_arena((-30, 60, -30, 30, 80, 30), floor="stone")
 
 
 def _distance(p: dict, x: float, y: float, z: float) -> float:

@@ -11,6 +11,7 @@ import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { findAdjustedTarget } from './_nav-helpers.js';
 import { planWaterRoute } from '../runtime/water-route.js';
+import { pathfindWithProgressWatchdog, ACTION_CAPS_MS, pathfindGotoNear } from './_helpers.js';
 
 const BOAT_NAMES = new Set([
   'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
@@ -92,7 +93,13 @@ export function createWaterActions(deps) {
   // The previous-failure state is irrelevant from a different position
   // (BFS plan + nearest_water_candidate are position-dependent), so the
   // 4-fail gate was holding stale evidence against fresh attempts.
-  const RETRY_RESET_DISTANCE = 32;
+  //
+  // F23 (task #61, v42): tightened 32 → 12. v25-v41 forensics showed
+  // the agent shuffles inside a 10-15b cluster between attempts;
+  // 32b never tripped, so the counter held stuck across mostly-stationary
+  // retries. 12b matches the typical bg_goto step and keeps the counter
+  // honest while still excluding micro-jitter.
+  const RETRY_RESET_DISTANCE = 12;
 
   // Forward reference for sail_to's impl. Filled in after the object
   // literal is constructed (see the assignment at the bottom of
@@ -195,7 +202,7 @@ export function createWaterActions(deps) {
       const stanceZ = Math.round(wz + (toBotZ / toBotLen) * CAST_DISTANCE);
       const stanceY = wy + 1; // stand on the block adjacent to the pond, water_y+1
       try {
-        await b.pathfinder.goto(new goals.GoalNear(stanceX, stanceY, stanceZ, 1));
+        await pathfindGotoNear(b, goals, stanceX, stanceY, stanceZ, 1, { opName: 'fish_stance', capMs: ACTION_CAPS_MS.reach });
       } catch {
         return { ok: false, error: { code: 'OUT_OF_RANGE', message: 'pathfind to fishing stance failed', retry_safe: false }};
       }
@@ -328,9 +335,30 @@ export function createWaterActions(deps) {
         return hasDryStance(px, py, pz);
       };
       let adjustedTarget = null;
-      // First-try: the exact requested cell. If it's already shore-water,
-      // no adjustment needed.
-      if (!isShoreWater(b, Number(x), Number(y), Number(z))) {
+      // F37 (task #66, v49): only run the shore-water adjustment when
+      // the requested target ISN'T already water. circuit-v49 forensics:
+      // BFS picked entry_water=(362,62,-543) (a water cell with a
+      // diagonal dry shore at (361,63,-544)). place_boat's hasDryStance
+      // check only inspects 4 CARDINAL neighbors (diagonal misses),
+      // so isShoreWater returned false and the adjustment slid the
+      // boat 1 cell west to (361,62,-543) — directly under Steve at
+      // (361.5,63,-543.4). Boat and bot occupied the same cell;
+      // mount could not interact with a boat inside its own hitbox;
+      // board() returned MOUNT_REJECTED.
+      //
+      // The original purpose of the shore-water adjustment was the
+      // v1 "agent gave a dirt coord" recovery — when the target
+      // ISN'T water, find the nearest real water. When the target
+      // IS already water, the adjustment can only move the boat
+      // toward unpredictable cells (including the bot's hitbox).
+      // Skip it.
+      const targetIsAlreadyWater = (() => {
+        try {
+          const blk = b.blockAt(new Vec3(Number(x), Number(y), Number(z)));
+          return isWater(blk);
+        } catch { return false; }
+      })();
+      if (!targetIsAlreadyWater && !isShoreWater(b, Number(x), Number(y), Number(z))) {
         // Search ~6 blocks for the nearest shore-water. Larger radius than
         // task #7's 3 because the agent's hint (from route_probe) is often
         // off by several cells when the route's sample spacing is wide.
@@ -450,24 +478,33 @@ export function createWaterActions(deps) {
             }
           }
           if (waterAdj) {
+            // F49 (task #66, v59): GoalNear with range=1 (not 0) — exact
+            // cell was over-strict; pathfinder often gets within 1b but
+            // not on the exact tile, throws, and the OLD catch returned
+            // OUT_OF_RANGE even though the bot was now in water and
+            // ready to place from-water. Use range=1 so the goto
+            // succeeds when the bot is adjacent; AND when it does throw,
+            // CHECK the bot's foot block before returning — if in
+            // water, switch to from-water mode regardless.
+            let gotoThrew = false;
             try {
-              await b.pathfinder.goto(new goals.GoalNear(waterAdj.x, waterAdj.y, waterAdj.z, 0));
+              await pathfindGotoNear(b, goals, waterAdj.x, waterAdj.y, waterAdj.z, 1, { opName: 'place_boat', capMs: ACTION_CAPS_MS.reach });
             } catch {
-              return { ok: false, error: {
-                code: 'OUT_OF_RANGE',
-                message: `No dry stance at (${x},${y},${z}) and pathfinder couldn't reach the water cell next door. The boat target is open water far from any shore.`,
-                observed_state: { target: [Number(x), Number(y), Number(z)], adjacent_water: [waterAdj.x, waterAdj.y, waterAdj.z] },
-                retry_safe: true,
-              }};
+              gotoThrew = true;
             }
-            // Re-check whether we landed in water — if so, switch to
-            // from-water mode.
             const newFoot = b.entity.position.floored();
             const newFootBlk = b.blockAt(newFoot);
             if (newFootBlk && (newFootBlk.name === 'water' || newFootBlk.name === 'flowing_water')) {
               stancePos = newFoot;
               placedFromWater = true;
               log(`[place_boat] no dry stance — walked into water at ${newFoot.x},${newFoot.y},${newFoot.z}, switching to from-water mode`);
+            } else if (gotoThrew) {
+              return { ok: false, error: {
+                code: 'OUT_OF_RANGE',
+                message: `No dry stance at (${x},${y},${z}) and pathfinder couldn't reach the water cell next door (bot still at ${newFoot.x},${newFoot.y},${newFoot.z} on ${newFootBlk?.name || 'unknown'}). The boat target may be open water far from any shore.`,
+                observed_state: { target: [Number(x), Number(y), Number(z)], adjacent_water: [waterAdj.x, waterAdj.y, waterAdj.z], bot_foot: { x: newFoot.x, y: newFoot.y, z: newFoot.z, block: newFootBlk?.name } },
+                retry_safe: true,
+              }};
             }
           }
           if (!stancePos) {
@@ -480,7 +517,7 @@ export function createWaterActions(deps) {
           }
         } else if (b.entity.position.distanceTo(stancePos) > 1.5) {
           try {
-            await b.pathfinder.goto(new goals.GoalNear(stancePos.x, stancePos.y, stancePos.z, 1));
+            await pathfindGotoNear(b, goals, stancePos.x, stancePos.y, stancePos.z, 1, { opName: 'place_boat_stance', capMs: ACTION_CAPS_MS.reach });
           } catch {
             return { ok: false, error: { code: 'OUT_OF_RANGE', message: 'pathfind to stance failed', retry_safe: false }};
           }
@@ -785,7 +822,7 @@ export function createWaterActions(deps) {
 
       if (target.position.distanceTo(me) > 2.5) {
         try {
-          await b.pathfinder.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 1));
+          await pathfindGotoNear(b, goals, target.position.x, target.position.y, target.position.z, 1, { opName: 'board', capMs: ACTION_CAPS_MS.reach });
         } catch {
           return { ok: false, error: { code: 'OUT_OF_RANGE', message: 'pathfind to boat failed', retry_safe: false }};
         }
@@ -1475,7 +1512,54 @@ export function createWaterActions(deps) {
       // post-object-construction) instead of `this._sailToImpl` because
       // the action dispatcher invokes methods as detached functions —
       // `this` is undefined at call time. The closure ref dodges that.
-      const result = await sailToImplRef(args);
+      //
+      // F25 (task #63, v42): set the sailToActive flag for the
+      // reactive layer so its auto_escape_water + head_in_water
+      // swim_up branches stand down while sail_to drives pathfinder
+      // through water-adjacent terrain. Pre-fix, the reactive's
+      // `setGoal(null)` raced against walk_to_entry and surfaced
+      // "The goal was changed before it could be completed!" errors
+      // (circuit-v42 forensics). try/finally guarantees the flag is
+      // cleared on success, refusal envelope, AND throw — the
+      // staleness check in shouldSuppressAutoEscape is the
+      // belt-and-suspenders if even the finally somehow misses.
+      //
+      // F28 (task #66, v44): the original implementation set the
+      // flag ONCE at entry, but sail_to phases can collectively
+      // exceed the 60s staleness window — circuit-v44 forensics
+      // showed a real journey running 2m30s end-to-end (HTTP client
+      // aborted at 25s but the body kept sailing). Once staleness
+      // expired, reactive's swim_up resumed firing mid-sail and
+      // cancelled pathfinder goals all over again. A heartbeat
+      // timer refreshes the flag every 15s while sail_to runs, so
+      // the gate stays armed for the full journey but still expires
+      // ≤60s after a true crash. The heartbeat is cleared in the
+      // finally; flag itself also cleared (same equality guard as
+      // before so overlapping calls don't trample each other).
+      let result;
+      let sailToStartedAt = Date.now();
+      let heartbeat = null;
+      if (ctx?.runtime) {
+        ctx.runtime.sailToActiveStartedAt = sailToStartedAt;
+        heartbeat = setInterval(() => {
+          // Only refresh if WE still own the flag — an overlapping
+          // sail_to wrapper would have replaced sailToStartedAt with
+          // its own value; in that case stop touching it.
+          if (ctx.runtime.sailToActiveStartedAt === sailToStartedAt) {
+            sailToStartedAt = Date.now();
+            ctx.runtime.sailToActiveStartedAt = sailToStartedAt;
+          }
+        }, 15_000);
+        if (typeof heartbeat?.unref === 'function') heartbeat.unref();
+      }
+      try {
+        result = await sailToImplRef(args);
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
+        if (ctx?.runtime && ctx.runtime.sailToActiveStartedAt === sailToStartedAt) {
+          ctx.runtime.sailToActiveStartedAt = null;
+        }
+      }
       const tx = Number(args?.x), ty = Number(args?.y), tz = Number(args?.z);
       if (Number.isFinite(tx) && Number.isFinite(ty) && Number.isFinite(tz)) {
         const targetKey = `${Math.floor(tx)},${Math.floor(ty)},${Math.floor(tz)}`;
@@ -1487,7 +1571,7 @@ export function createWaterActions(deps) {
           const code = result?.error?.code;
           const noCountCodes = new Set(['INVALID_COORD', 'NO_BOAT', 'SAIL_TO_RETRY_LOOP']);
           if (code && !noCountCodes.has(code)) {
-            const prior = sailToRetryCounts.get(targetKey) || { count: 0, lastErrorCode: null, lastNearestWater: null };
+            const prior = sailToRetryCounts.get(targetKey) || { count: 0, lastErrorCode: null, lastNearestWater: null, lastShoreStance: null };
             // F18 (task #56, v38): remember the last nearest_water_candidate
             // so the SAIL_TO_RETRY_LOOP refusal can surface a concrete
             // bg_goto coord instead of just "mc advise." Pre-fix, the
@@ -1503,6 +1587,15 @@ export function createWaterActions(deps) {
                 : (obs.water_route_state?.nearest_water_candidate && Number.isFinite(obs.water_route_state.nearest_water_candidate.x))
                   ? obs.water_route_state.nearest_water_candidate
                   : prior.lastNearestWater;
+            // F21 (task #59, v42): water candidates are unwalkable. Also
+            // remember the SHORE STANCE (dry cell adjacent) so the retry-loop
+            // refusal hands the agent a coord mc bg_goto will accept.
+            const nearestShoreStance =
+              (obs.nearest_shore_stance && Number.isFinite(obs.nearest_shore_stance.x))
+                ? obs.nearest_shore_stance
+                : (obs.water_route_state?.nearest_shore_stance && Number.isFinite(obs.water_route_state.nearest_shore_stance.x))
+                  ? obs.water_route_state.nearest_shore_stance
+                  : prior.lastShoreStance;
             // F19 (task #57): also record the bot's position at the time of
             // failure. If the bot moves significantly before its next
             // attempt, the retry-loop check resets (different position →
@@ -1515,6 +1608,7 @@ export function createWaterActions(deps) {
               count: prior.count + 1,
               lastErrorCode: code,
               lastNearestWater: nearestCandidate,
+              lastShoreStance: nearestShoreStance,
               lastFailurePos: failurePos,
             });
           }
@@ -1536,6 +1630,33 @@ export function createWaterActions(deps) {
         };
       }
       const target = { x: Number(x), y: Number(y), z: Number(z) };
+      // F34 (task #66, v48): structured diagnostics at every phase
+      // boundary. circuit-v48 forensics took ~10 minutes to reconstruct
+      // because the bot log only logged "[disembark] last-resort" — no
+      // record of WHERE the boat wedged, what the surrounding blocks
+      // were, or whether the bot was suffocating. With this trace the
+      // postmortem becomes: grep '[sail_to]' /tmp/bot-steve.log.
+      //
+      // Format: `[sail_to <phase>] <key=value …>` so it's grep-friendly
+      // and uniform. Block-context lines (foot/head names) are the
+      // load-bearing ones for "bot stuck in solid" investigations.
+      const sailLog = (phase, ...kvs) => {
+        const head = `[sail_to ${phase}]`;
+        const body = kvs.join(' ');
+        try { log(`${head} ${body}`); } catch { /* logger always available, defensive */ }
+      };
+      const fmtPos = (p) => p && Number.isFinite(p.x)
+        ? `(${p.x.toFixed ? p.x.toFixed(1) : p.x},${p.y.toFixed ? p.y.toFixed(1) : p.y},${p.z.toFixed ? p.z.toFixed(1) : p.z})`
+        : String(p);
+      const blockName = (px, py, pz) => {
+        try {
+          const blk = b.blockAt(new Vec3(Math.floor(px), Math.floor(py), Math.floor(pz)));
+          return blk?.name || 'unknown';
+        } catch { return 'unknown'; }
+      };
+      const fmtFootHead = (p) => p
+        ? `foot=${blockName(p.x, p.y, p.z)} head=${blockName(p.x, p.y + 1, p.z)} below=${blockName(p.x, p.y - 1, p.z)}`
+        : 'foot=? head=? below=?';
       const targetKey = `${Math.floor(target.x)},${Math.floor(target.y)},${Math.floor(target.z)}`;
       const startedAt = Date.now();
       const phases = []; // names of phases that actually ran
@@ -1544,6 +1665,11 @@ export function createWaterActions(deps) {
         y: b.entity.position.y,
         z: b.entity.position.z,
       };
+      sailLog('start', `target=${fmtPos(target)}`, `bot=${fmtPos(startPos)}`,
+        fmtFootHead(b.entity.position.floored()),
+        `mounted=${!!b.vehicle}`,
+        `boats_inv=${b.inventory?.items?.().filter((it) => BOAT_NAMES.has(it.name)).reduce((s, it) => s + it.count, 0) ?? 0}`,
+      );
 
       // task #43 (v30): retry-loop guard. After SAIL_TO_RETRY_LIMIT
       // consecutive failures to the same target, refuse with
@@ -1575,20 +1701,29 @@ export function createWaterActions(deps) {
         // saw the sail_to ↔ mc advise ping-pong loop where advise
         // (no retry-counter awareness) recommended retrying sail_to.
         // A concrete coord short-circuits the loop.
+        // F21 (task #59, v42): prefer the SHORE STANCE coord (walkable)
+        // over the water candidate (which mc bg_goto refuses as
+        // NAV_TARGET_UNSTANDABLE). Both are retained in observed_state
+        // for debugging, but the hint points to the cell the agent can
+        // actually walk to.
+        const stance = priorRetry.lastShoreStance;
         const nw = priorRetry.lastNearestWater;
-        const nextHint = nw
-          ? `mc bg_goto ${nw.x} ${nw.y} ${nw.z}  # nearest water — then mc sail_to ${target.x} ${target.y} ${target.z} again from there`
+        const hintCoord = stance || nw;
+        const hintLabel = stance ? 'walkable shore' : 'nearest water';
+        const nextHint = hintCoord
+          ? `mc bg_goto ${hintCoord.x} ${hintCoord.y} ${hintCoord.z}  # ${hintLabel} — then mc sail_to ${target.x} ${target.y} ${target.z} again from there`
           : 'mc advise --reason="sail_to stuck retrying"';
         return {
           ok: false,
           error: {
             code: 'SAIL_TO_RETRY_LOOP',
-            message: `${priorRetry.count} consecutive sail_to calls to (${target.x}, ${target.y}, ${target.z}) have failed (last error: ${priorRetry.lastErrorCode || 'unknown'}). The body cannot make progress to this target on its own.${nw ? ` Walk to the nearest water at (${nw.x}, ${nw.y}, ${nw.z}) first — sail_to from there will see a fresh entry.` : ' Pick a different waypoint or call mc advise.'}`,
+            message: `${priorRetry.count} consecutive sail_to calls to (${target.x}, ${target.y}, ${target.z}) have failed (last error: ${priorRetry.lastErrorCode || 'unknown'}). The body cannot make progress to this target on its own.${stance ? ` Walk to the shore stance at (${stance.x}, ${stance.y}, ${stance.z}) first — sail_to from there will see a fresh entry.` : nw ? ` Walk near the water at (${nw.x}, ${nw.y}, ${nw.z}) first — sail_to from there will see a fresh entry.` : ' Pick a different waypoint or call mc advise.'}`,
             observed_state: {
               retry_count: priorRetry.count,
               last_error_code: priorRetry.lastErrorCode,
               target,
               ...(nw ? { nearest_water_candidate: nw } : {}),
+              ...(stance ? { nearest_shore_stance: stance } : {}),
             },
             next_action_hint: nextHint,
             retry_safe: false,
@@ -1640,7 +1775,18 @@ export function createWaterActions(deps) {
       const planStart = currentlyMounted && b.vehicle?.position
         ? { x: b.vehicle.position.x, y: b.vehicle.position.y, z: b.vehicle.position.z }
         : startPos;
-      const routeRes = planWaterRoute(b, planStart, target);
+      // F43 (task #66, v55): if the bot is already submerged, lower the
+      // BFS's MIN_USEFUL_SAIL threshold to 1. Pre-fix the F19 20b minimum
+      // refused a 16b sail to dry shore — even though that 16b would
+      // have RESCUED the swimming bot. For dry-land callers, the 20b
+      // default still applies: a 5b crossing isn't worth the place_boat
+      // overhead when walking is an option.
+      const botFootPos0 = b.entity.position.floored();
+      const botFootBlk0 = b.blockAt(botFootPos0);
+      const botInWaterAtPlanTime = !!botFootBlk0 && (botFootBlk0.name === 'water' || botFootBlk0.name === 'flowing_water');
+      const routeRes = planWaterRoute(b, planStart, target, {
+        min_useful_sail: botInWaterAtPlanTime ? 1 : undefined,
+      });
       phases.push('plan_route');
       if (!routeRes.ok) {
         // Inner code is one of: ALREADY_AT_TARGET, WATER_TOO_SHALLOW,
@@ -1666,9 +1812,19 @@ export function createWaterActions(deps) {
         // (via its widened findBlocks scan), promote it into the
         // sail_to-level next_action_hint so the agent gets a concrete
         // coord to bg_goto toward — no exploration loop needed.
+        //
+        // F21 (task #59, v42): prefer nearest_shore_stance (a walkable
+        // dry cell adjacent to the water) over nearest_water_candidate
+        // (a water cell, which mc bg_goto refuses with
+        // NAV_TARGET_UNSTANDABLE). v41 postmortem: every sail_to refusal
+        // shipped a water coord; agent walked toward the area with
+        // chained mc move calls and ended up swimming.
+        const nearestStance = routeRes.error.observed_state?.nearest_shore_stance;
         const nearestCandidate = routeRes.error.observed_state?.nearest_water_candidate;
         let nextHint;
-        if (nearestCandidate) {
+        if (nearestStance) {
+          nextHint = `mc bg_goto ${nearestStance.x} ${nearestStance.y} ${nearestStance.z}  # walkable shore — then mc sail_to ${target.x} ${target.y} ${target.z}`;
+        } else if (nearestCandidate) {
           nextHint = `mc bg_goto ${nearestCandidate.x} ${nearestCandidate.y} ${nearestCandidate.z}  # nearest water — then mc sail_to ${target.x} ${target.y} ${target.z}`;
         } else if (routeRes.error.code === 'NO_WATER_ROUTE') {
           // F10: no water found in the 12b entry scan AND no candidate
@@ -1694,6 +1850,7 @@ export function createWaterActions(deps) {
               start: planStart,
               target,
               ...(nearestCandidate ? { nearest_water_candidate: nearestCandidate } : {}),
+              ...(nearestStance ? { nearest_shore_stance: nearestStance } : {}),
             },
             next_action_hint: nextHint,
             retry_safe: false,
@@ -1702,6 +1859,15 @@ export function createWaterActions(deps) {
       }
 
       const route = routeRes.data;
+      sailLog('plan_route',
+        `entry_water=${fmtPos(route.entry_water)}`,
+        `entry_shore=${fmtPos(route.entry_shore)}`,
+        `exit_water=${fmtPos(route.exit_water)}`,
+        `exit_shore=${fmtPos(route.exit_shore)}`,
+        `waypoints=${route.waypoints?.length ?? 0}`,
+        `partial=${!!route.partial}`,
+        `sail_distance=${route.sail_distance ?? '?'}`,
+      );
 
       // Sail one leg per BFS waypoint. waypoints[0] is the entry_water
       // (already there post-mount, or current position when resuming);
@@ -1872,11 +2038,39 @@ export function createWaterActions(deps) {
       } else {
         // ── Phase: walk_to_entry ─────────────────────────────────────
         phases.push('walk_to_entry');
+        sailLog('walk_to_entry start',
+          `entry_shore=${fmtPos(route.entry_shore)}`,
+          `bot=${fmtPos(b.entity.position)}`,
+        );
         try {
           const entry = route.entry_shore;
-          const goal = new goals.GoalNear(entry.x, entry.y, entry.z, 1);
-          await b.pathfinder.goto(goal);
+          // F26 (task #64, v42): wallclock cap + progress watchdog,
+          // matching mc bg_goto / mc move. Pre-F26 the bare
+          // `b.pathfinder.goto` had no cap, no stall detection, and no
+          // onStall to clear a wedged goal. circuit-v42 forensics saw
+          // walk_to_entry hit the HTTP 25s timeout (AbortError) AND
+          // throw "The goal was changed before it could be completed!"
+          // when the reactive layer (F25 root cause) cancelled the goal
+          // mid-walk. F25 stops the reactive race; F26 stops the bot
+          // from waiting forever when the pathfinder genuinely stalls.
+          // Uses ACTION_CAPS_MS.goto_near (8s) — entry_shore is by
+          // construction within ~14b of bot (entry_search_radius=12).
+          await pathfindWithProgressWatchdog({
+            bot: b,
+            pathfinderGoto: () => b.pathfinder.goto(new goals.GoalNear(entry.x, entry.y, entry.z, 1)),
+            onStall: () => { try { b.pathfinder.setGoal(null); } catch {} },
+            opName: 'walk_to_entry',
+            capMs: ACTION_CAPS_MS.goto_near,
+          });
+          sailLog('walk_to_entry done',
+            `bot=${fmtPos(b.entity.position)}`,
+            fmtFootHead(b.entity.position.floored()),
+          );
         } catch (e) {
+          sailLog('walk_to_entry FAILED',
+            `bot=${fmtPos(b.entity.position)}`,
+            `reason=${e?.message || e}`,
+          );
           return {
             ok: false,
             error: {
@@ -1925,6 +2119,11 @@ export function createWaterActions(deps) {
 
         // ── Phase: mount ─────────────────────────────────────────────
         phases.push('mount');
+        sailLog('mount start',
+          `entry_water=${fmtPos(route.entry_water)}`,
+          `entry_water_ctx=${fmtFootHead(route.entry_water)}`,
+          `bot=${fmtPos(b.entity.position)}`,
+        );
         try {
           const placeRes = await ACTIONS.place_boat({
             x: route.entry_water.x,
@@ -1933,6 +2132,7 @@ export function createWaterActions(deps) {
             _from_sail_to: true,
           });
           if (!placeRes?.ok) {
+            sailLog('mount FAILED', `phase=place_boat`, `error=${placeRes?.error?.code || 'unknown'}`);
             return {
               ok: false,
               error: {
@@ -1943,8 +2143,58 @@ export function createWaterActions(deps) {
               },
             };
           }
+          // F35 (task #66, v48 gap 1): boat placement safety check.
+          // place_boat may adjust the placement to a different cell
+          // than entry_water (shore-water fallback, etc.). Before
+          // committing to the mount, verify the boat is in a cell
+          // where the RIDER won't suffocate. The rider sits at
+          // boat.y + 1 (just above water surface) with head at +2.
+          // circuit-v48 forensics: boat was placed under a cobble
+          // wall at y=63; Steve mounted, got snapped to rider-Y=63
+          // which was inside the cobble; suffocation. With this
+          // check the boat is despawned BEFORE board() is called
+          // and the agent gets a clean BOAT_PLACEMENT_UNSAFE refusal.
+          const placedAt = Array.isArray(placeRes?.data?.boat_position)
+            ? { x: placeRes.data.boat_position[0], y: placeRes.data.boat_position[1], z: placeRes.data.boat_position[2] }
+            : null;
+          if (placedAt) {
+            const riderFootName = blockName(placedAt.x, placedAt.y + 1, placedAt.z);
+            const riderHeadName = blockName(placedAt.x, placedAt.y + 2, placedAt.z);
+            const isAirish = (n) => n === 'air' || n === 'cave_air' || n === 'void_air';
+            // Water counts as occupiable for the rider — boats sit at the
+            // water surface so foot/head being water is normal mid-lake.
+            const isAirOrWater = (n) => isAirish(n) || n === 'water' || n === 'flowing_water';
+            if (!isAirOrWater(riderFootName) || !isAirish(riderHeadName)) {
+              sailLog('mount FAILED', `phase=placement_unsafe`,
+                `boat=${fmtPos(placedAt)}`,
+                `rider_foot_block=${riderFootName}`,
+                `rider_head_block=${riderHeadName}`,
+              );
+              // Despawn the boat before returning so the agent's next
+              // attempt isn't blocked by the wedged boat entity.
+              try {
+                await ACTIONS.disembark({ emergency: true });
+              } catch { /* best-effort cleanup */ }
+              return {
+                ok: false,
+                error: {
+                  code: 'BOAT_PLACEMENT_UNSAFE',
+                  message: `Boat landed at (${placedAt.x}, ${placedAt.y}, ${placedAt.z}) but the rider position is obstructed: foot=${riderFootName}, head=${riderHeadName}. Mounting here would suffocate the bot. Move to a different shore stance and re-call sail_to from there.`,
+                  observed_state: {
+                    boat_position: placedAt,
+                    rider_foot_block: riderFootName,
+                    rider_head_block: riderHeadName,
+                    route,
+                  },
+                  next_action_hint: `mc bg_goto ${route.entry_shore.x} ${route.entry_shore.y} ${route.entry_shore.z}  # try a different shore stance`,
+                  retry_safe: true,
+                },
+              };
+            }
+          }
           const boardRes = await ACTIONS.board({ _from_sail_to: true });
           if (!boardRes?.ok) {
+            sailLog('mount FAILED', `phase=board`, `error=${boardRes?.error?.code || 'unknown'}`);
             return {
               ok: false,
               error: {
@@ -1955,7 +2205,58 @@ export function createWaterActions(deps) {
               },
             };
           }
+          // F36 (task #66, v48 gap 3): post-mount rider safety check.
+          // Even with gap-1's placement check, server-side physics can
+          // snap the rider to a slightly different cell than the boat
+          // (boat hitbox vs rider hitbox). After board() returns ok,
+          // re-check the rider's actual head block. If solid, the
+          // mount is unsafe — disembark immediately and surface a
+          // clean refusal instead of letting Steve take suffocation
+          // damage during the sail leg.
+          await sleep(150); // let physics settle so rider position is accurate
+          const boatPos = b.vehicle?.position;
+          const riderPos = b.entity?.position;
+          const headSolidName = riderPos
+            ? blockName(riderPos.x, Math.floor(riderPos.y + 1), riderPos.z)
+            : '?';
+          const footSolidName = riderPos
+            ? blockName(riderPos.x, Math.floor(riderPos.y), riderPos.z)
+            : '?';
+          sailLog('mount done',
+            `boat=${fmtPos(boatPos)}`,
+            `rider=${fmtPos(riderPos)}`,
+            `rider_foot=${footSolidName}`,
+            `rider_head=${headSolidName}`,
+            riderPos ? fmtFootHead(riderPos.floored()) : '',
+          );
+          const isAirish = (n) => n === 'air' || n === 'cave_air' || n === 'void_air';
+          const isAirOrWater = (n) => isAirish(n) || n === 'water' || n === 'flowing_water';
+          if (!isAirOrWater(footSolidName) || !isAirish(headSolidName)) {
+            sailLog('mount UNSAFE — disembarking',
+              `rider_foot=${footSolidName}`,
+              `rider_head=${headSolidName}`,
+            );
+            try {
+              await ACTIONS.disembark({ emergency: true });
+            } catch { /* best-effort */ }
+            return {
+              ok: false,
+              error: {
+                code: 'MOUNT_UNSAFE',
+                message: `Mount succeeded but rider hitbox is obstructed at (${Math.floor(riderPos.x)}, ${Math.floor(riderPos.y)}, ${Math.floor(riderPos.z)}): foot=${footSolidName}, head=${headSolidName}. Auto-disembarked before suffocation damage. Move to a different shore stance and re-call sail_to.`,
+                observed_state: {
+                  rider_position: riderPos ? { x: riderPos.x, y: riderPos.y, z: riderPos.z } : null,
+                  rider_foot_block: footSolidName,
+                  rider_head_block: headSolidName,
+                  route,
+                },
+                next_action_hint: `mc bg_goto ${route.entry_shore.x} ${route.entry_shore.y} ${route.entry_shore.z}  # try a different shore stance`,
+                retry_safe: true,
+              },
+            };
+          }
         } catch (e) {
+          sailLog('mount FAILED', `phase=throw`, `error=${e?.message || e}`);
           return {
             ok: false,
             error: {
@@ -1968,9 +2269,21 @@ export function createWaterActions(deps) {
 
         // ── Phase: sail ──────────────────────────────────────────────
         phases.push('sail');
+        sailLog('sail start',
+          `legs=${legs.length}`,
+          `bot=${fmtPos(b.entity.position)}`,
+          `boat=${fmtPos(b.vehicle?.position)}`,
+        );
         try {
           const legsRes = await sailLegs(legs);
           if (!legsRes.ok) {
+            sailLog('sail FAILED',
+              `leg=${legsRes.leg_index + 1}/${legs.length}`,
+              `waypoint=${fmtPos(legsRes.waypoint)}`,
+              `bot=${fmtPos(b.entity.position)}`,
+              fmtFootHead(b.entity.position.floored()),
+              `inner=${legsRes.inner_error?.code || '?'}`,
+            );
             return {
               ok: false,
               error: {
@@ -1982,7 +2295,12 @@ export function createWaterActions(deps) {
               },
             };
           }
+          sailLog('sail done',
+            `bot=${fmtPos(b.entity.position)}`,
+            `boat=${fmtPos(b.vehicle?.position)}`,
+          );
         } catch (e) {
+          sailLog('sail FAILED', `phase=throw`, `error=${e?.message || e}`);
           return {
             ok: false,
             error: {
@@ -1999,6 +2317,11 @@ export function createWaterActions(deps) {
       // BOAT_STUCK auto-disembark may have already freed Steve.
       if (b.vehicle && b.entities[b.vehicle.id]) {
         phases.push('disembark');
+        sailLog('disembark start',
+          `exit_shore=${fmtPos(route.exit_shore)}`,
+          `bot=${fmtPos(b.entity.position)}`,
+          `boat=${fmtPos(b.vehicle?.position)}`,
+        );
         try {
           const disRes = await ACTIONS.disembark({});
           if (!disRes.ok && disRes.error?.code !== 'NOT_MOUNTED') {
@@ -2030,10 +2353,16 @@ export function createWaterActions(deps) {
       const stillFar = Math.hypot(here.x - target.x, here.z - target.z) > 4;
       if (stillFar) {
         phases.push('walk_to_target');
+        sailLog('walk_to_target start',
+          `target=${fmtPos(target)}`,
+          `bot=${fmtPos(here)}`,
+        );
         try {
           const goal = new goals.GoalNear(target.x, target.y, target.z, 2);
           await b.pathfinder.goto(goal);
+          sailLog('walk_to_target done', `bot=${fmtPos(b.entity.position)}`);
         } catch (e) {
+          sailLog('walk_to_target FAILED', `bot=${fmtPos(b.entity.position)}`, `reason=${e?.message || e}`);
           // Don't fail the whole sail_to for the final-land-leg —
           // Steve is on dry land near the target. Return success
           // with a note in the data.
@@ -2281,15 +2610,68 @@ export function createWaterActions(deps) {
         }};
       }
 
-      // After dismount: if the bot is now in water (sail-to-shore failed
-      // or wasn't attempted), chain mc escape so the agent doesn't have
-      // to deal with "stranded in lake" as a separate step. circuit-v5f
-      // showed Steve drowning after a stuck boat because disembark left
-      // him in deep water with no recovery hint.
+      // After dismount: detect any UNSAFE foot cell and recover before
+      // handing back to the agent.
+      //
+      //   - foot=water  →  chain mc escape (drown-protection;
+      //                    circuit-v5f original case).
+      //   - foot=solid  →  bot is SUFFOCATING inside a block (F33,
+      //                    task #66, v48 — boat wedged at (360.9, 63,
+      //                    -541.7) under a pre-existing cobblestone
+      //                    wall; force-disembark dropped Steve inside
+      //                    the cobble; he took 1 dmg/0.5s with no
+      //                    auto-recovery). TP up the same column to
+      //                    the first air cell with air-above
+      //                    (2-block standing clearance).
       let autoEscape = null;
+      let autoRescue = null;
       await sleep(300); // let physics settle so foot block is accurate
-      const footBlk = b.blockAt(b.entity.position.floored());
+      const footPos = b.entity.position.floored();
+      const footBlk = b.blockAt(footPos);
       const stillInWater = !!footBlk && (footBlk.name === 'water' || footBlk.name === 'flowing_water');
+      const suffocating = !!footBlk
+        && footBlk.name !== 'air' && footBlk.name !== 'cave_air' && footBlk.name !== 'void_air'
+        && footBlk.name !== 'water' && footBlk.name !== 'flowing_water'
+        && footBlk.boundingBox === 'block';
+      if (suffocating) {
+        // Scan up the bot's column for the first air-foot + air-head
+        // pair sitting on something solid. Cap at 8 blocks — any
+        // deeper would be a different problem (mineshaft / chasm).
+        let rescueY = null;
+        for (let dy = 1; dy <= 8; dy++) {
+          const ty = footPos.y + dy;
+          const foot = b.blockAt(new Vec3(footPos.x, ty, footPos.z));
+          const head = b.blockAt(new Vec3(footPos.x, ty + 1, footPos.z));
+          const below = b.blockAt(new Vec3(footPos.x, ty - 1, footPos.z));
+          const isAirish = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
+          const isSolidStand = below && below.boundingBox === 'block'
+            && below.name !== 'water' && below.name !== 'flowing_water' && below.name !== 'lava';
+          if (isAirish(foot) && isAirish(head) && isSolidStand) {
+            rescueY = ty;
+            break;
+          }
+        }
+        try {
+          const pmcp = paperMcpConfig();
+          const safeY = rescueY ?? (footPos.y + 4);
+          if (pmcp) {
+            await executeServerCommand(pmcp, `tp ${getMyName()} ${footPos.x + 0.5} ${safeY} ${footPos.z + 0.5}`);
+          } else {
+            await b.chat(`/tp ${getMyName()} ${footPos.x + 0.5} ${safeY} ${footPos.z + 0.5}`);
+          }
+          await sleep(300);
+          autoRescue = {
+            ok: true,
+            from: { x: footPos.x, y: footPos.y, z: footPos.z, foot_block: footBlk.name },
+            to: { x: footPos.x, y: safeY, z: footPos.z },
+            rescue_strategy: rescueY != null ? 'air_column_scan' : 'tp_up_4',
+          };
+          log(`[disembark] suffocation rescue — TP from ${footPos.x},${footPos.y},${footPos.z} (${footBlk.name}) → ${footPos.x},${safeY},${footPos.z}`);
+        } catch (e) {
+          autoRescue = { ok: false, error: e?.message || String(e), from: { x: footPos.x, y: footPos.y, z: footPos.z, foot_block: footBlk.name } };
+          log(`[disembark] suffocation rescue failed: ${e?.message || e}`);
+        }
+      }
       if (stillInWater) {
         try {
           const escRes = await ACTIONS.escape({});
@@ -2312,6 +2694,7 @@ export function createWaterActions(deps) {
           ...(fallback ? { fallback } : {}),
           ...(autoSailed ? { auto_sailed: autoSailed } : {}),
           ...(autoEscape ? { auto_escape: autoEscape } : {}),
+          ...(autoRescue ? { auto_rescue: autoRescue } : {}),
         },
       };
     },
@@ -2376,7 +2759,7 @@ export function createWaterActions(deps) {
 
     if (b.entity.position.distanceTo(targetPos) > 4.5) {
       try {
-        await b.pathfinder.goto(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 3));
+        await pathfindGotoNear(b, goals, targetPos.x, targetPos.y, targetPos.z, 3, { opName: 'bucket_fill', capMs: ACTION_CAPS_MS.reach });
       } catch {
         return { ok: false, error: {
           code: 'OUT_OF_RANGE',
@@ -2550,7 +2933,7 @@ export function createWaterActions(deps) {
 
     if (b.entity.position.distanceTo(targetPos) > 4.5) {
       try {
-        await b.pathfinder.goto(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 3));
+        await pathfindGotoNear(b, goals, targetPos.x, targetPos.y, targetPos.z, 3, { opName: 'bucket_fill', capMs: ACTION_CAPS_MS.reach });
       } catch {
         return { ok: false, error: {
           code: 'OUT_OF_RANGE',

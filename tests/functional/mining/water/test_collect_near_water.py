@@ -43,7 +43,7 @@ import time
 import pytest
 
 
-VOLUME = (0, 58, 0, 16, 70, 16)
+
 SAND_X_MIN, SAND_X_MAX = 4, 12
 SAND_Z_MIN, SAND_Z_MAX = 4, 12
 SAND_Y_MIN, SAND_Y_MAX = 62, 65   # 4-layer sand pile
@@ -66,43 +66,32 @@ BOT_TP = (5.5, 66.0, 7.5, -90, 0)
 
 
 @pytest.fixture
-def water_arena(rcon, arena, tester_bot, config):
+def water_arena(rcon, arena, bot, config):
     """Build the 9×9×4 sand pile with the central water trap."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Tester {world}")
-    time.sleep(0.5)
-    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]), bot=tester_bot)
-    arena.clean()
-    x1, y1, z1, x2, y2, z2 = VOLUME
     cmds = [
-        f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
-        f"execute in {world} run fill {x1} {y1} {z1} {x2} 61 {z2} minecraft:stone",
-        # 9×9 sand pile, 4 layers deep — bot at y=66 lands on top y=65.
         f"execute in {world} run fill {SAND_X_MIN} {SAND_Y_MIN} {SAND_Z_MIN} "
         f"{SAND_X_MAX} {SAND_Y_MAX} {SAND_Z_MAX} minecraft:sand",
-        "clear Tester",
         "give Tester minecraft:stone_shovel",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
     ]
-    # Water cluster overwrites top-layer sand at the trap.
     for (wx, wy, wz) in WATER_CELLS:
         cmds.append(f"execute in {world} run setblock {wx} {wy} {wz} minecraft:water")
-    # Back to survival, re-TP onto the sand top, then heal — so the
-    # bot lands cleanly and instant_health propagates while stationary.
-    cmds.extend([
-        "gamemode survival Tester",
-        f"execute in {world} run tp Tester {BOT_TP[0]} {BOT_TP[1]} {BOT_TP[2]} {BOT_TP[3]} {BOT_TP[4]}",
-        "effect give Tester minecraft:instant_health 1 5",
-    ])
     rcon.batch(cmds)
-    arena.settle(seconds=3.0)
+    arena.place_player(
+        bot,
+        BOT_TP[0],
+        BOT_TP[1],
+        BOT_TP[2],
+        yaw=BOT_TP[3],
+        pitch=BOT_TP[4],
+        expected_floor_y=SAND_Y_MAX,
+        expected_floor_block="sand",
+    )
+    arena.settle_water()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air")
 
 
+@pytest.mark.slow
 @pytest.mark.functional
 def test_water_guard_holds_when_bot_is_in_flood_path(bot, rcon, arena, water_arena):
     """Bot is asked for 30 sand while standing 3 blocks west of a water
@@ -133,8 +122,10 @@ def test_water_guard_holds_when_bot_is_in_flood_path(bot, rcon, arena, water_are
     # Drive the mine. 30 is more than the pile's surface alone — bot
     # will need to dig deeper layers AND will look toward the trap.
     r = bot.post("/action/collect", {"block": "sand", "count": 30}, timeout=120.0)
-    assert r is not None
     data = (r.get("data") or {}) if isinstance(r, dict) else {}
+    assert r.get("ok") or data.get("partial_failure"), (
+        f"collect returned unexpected envelope: {r}"
+    )
 
     # 1. NO water breached. Every original water cell still water.
     for (wx, wy, wz) in WATER_CELLS:

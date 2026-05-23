@@ -65,7 +65,7 @@ test('prepends banner when a message mentions the bot by name', () => {
 test('prepends banner when there are direct messages', () => {
   const { services } = fixture();
   const meta = metaWithChat([
-    { from: 'Reed', message: 'private msg', direct: true },
+    { from: 'Flint', message: 'private msg', direct: true },
   ]);
   const r = chatBanner.apply(services, {}, 'inventory', ok({ result: 'have x' }), meta);
   assert.ok(r);

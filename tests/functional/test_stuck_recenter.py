@@ -27,9 +27,6 @@ def wedge_arena(rcon, arena, tester_bot, config):
     direct west step is blocked by the wall's east face.
     """
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-16, 64, -16, 16, 70, 16), floor="grass_block")
     rcon.batch([
         # 2-block-tall wall, 3 cells long along z, so the bot can't trivially go around.
         f"execute in {world} run setblock 3 65 -1 minecraft:cobblestone",
@@ -40,9 +37,8 @@ def wedge_arena(rcon, arena, tester_bot, config):
         f"execute in {world} run setblock 3 66 1 minecraft:cobblestone",
         f"execute in {world} run tp Tester 3.9 65 0.5 90 0",  # yaw 90 = facing west
     ])
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     yield
-    arena.flat_arena((-16, 65, -16, 16, 70, 16), floor="grass_block")
 
 
 @pytest.mark.functional

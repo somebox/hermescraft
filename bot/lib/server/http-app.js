@@ -3,8 +3,8 @@
  * Mineflayer bot HTTP listener factory — extracted from server.js for readability and testing.
  */
 import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError } from './middleware/task-lifecycle.js';
-import { probeRouteAlongLine } from './route-probe.js';
-import { planWaterRoute } from '../runtime/water-route.js';
+import { probeRouteAlongLine, probeRouteCorridor } from './route-probe.js';
+import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/water-route.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -195,8 +195,126 @@ export function createBotHttpListener(deps) {
         const me = ctx.world.bot.entity.position;
         const start = { x: Math.floor(me.x), y: Math.floor(me.y), z: Math.floor(me.z) };
         const end = { x: Math.floor(toX), y: Math.floor(toY), z: Math.floor(toZ) };
-        const result = probeRouteAlongLine(ctx.world.bot, start, end, samples);
-        return respond(res, 200, { ok: true, data: { start, end, ...result } });
+        // F42 (task #66, v55): /route_probe now ALSO runs the wider
+        // corridor probe (centre + ±10b perpendicular lanes) so route
+        // previews fed to mc advise catch water in the realistic detour
+        // band, not just the straight line. The single-line result
+        // stays in `samples` for back-compat; the corridor counts are
+        // surfaced as `corridor` so the advise digester can see both.
+        const lineResult = probeRouteAlongLine(ctx.world.bot, start, end, samples);
+        const corridorResult = probeRouteCorridor(ctx.world.bot, start, end, Math.max(8, Math.floor(samples / 3)), 10);
+
+        // F42 — recommend a walkable shore + nearest navigable water
+        // when the route crosses water. The agent's natural next step
+        // is "walk to the shore that gets you onto a boat" — but
+        // computing it requires findBlocks + findEntryShore knowledge
+        // that the LLM doesn't have. Provide it directly.
+        //
+        // F44 (task #66, v55): use the FIRST water sample on the
+        // probe as the seed. findBlocks only sees loaded chunks
+        // (typically 16-32b around the bot at startup), so it
+        // returns mostly cave water at base and misses surface
+        // water further along the route. The probe itself samples
+        // the route line out to the target — those samples touch
+        // chunks that load lazily and produce real surface-water
+        // hits. For each water sample, surface its coord + the
+        // closest dry cell at (sample.x±1, sample.y+1, sample.z±1)
+        // as recommended_shore_stance (the agent's bg_goto target).
+        let nearestNavigableWater = null;
+        let recommendedShoreStance = null;
+        const allSamples = [
+          ...(lineResult?.samples || []),
+          ...(corridorResult?.samples || []),
+        ];
+        const waterSamples = allSamples.filter((s) => s.classification === 'water');
+        if (waterSamples.length > 0) {
+          try {
+            const b = ctx.world.bot;
+            const startFx = Math.floor(me.x), startFz = Math.floor(me.z);
+            // For each water sample, find its true Y (the sample may have
+            // reported the route's interpolated y plus a "water_below_y"
+            // indicating water lies below). Prefer the actual water cell.
+            // F48 (task #66, v58): reject candidates whose Y is far
+            // from the bot's current Y (5-block delta default). Caves
+            // and underground pools — technically navigable but
+            // unreachable from the surface — get filtered out.
+            const startFy = Math.floor(me.y);
+            const PROBE_MAX_Y_DELTA = 5;
+            const waterCandidates = waterSamples.map((s) => {
+              const wy = Number.isFinite(s.water_below_y) ? s.water_below_y : s.y;
+              const dxz = Math.hypot(s.x - startFx, s.z - startFz);
+              const dy = Math.abs(wy - startFy);
+              const navClass = _waterRouteInternals.classifyCell(b, s.x, wy, s.z);
+              return { x: s.x, y: wy, z: s.z, dxz, dy, navClass };
+            }).filter((c) => c.dy <= PROBE_MAX_Y_DELTA);
+            // Prefer cells that classify navigable; fall back to closest
+            // water-sample if no nav cell in the probe (chunk timing).
+            const navigable = waterCandidates.filter((c) => c.navClass === 'navigable');
+            const pool = navigable.length > 0 ? navigable : waterCandidates;
+            pool.sort((a, b2) => a.dxz - b2.dxz);
+            const best = pool[0];
+            if (best) {
+              nearestNavigableWater = {
+                x: best.x, y: best.y, z: best.z,
+                distance: Math.round(best.dxz),
+                ...(best.navClass !== 'navigable' ? { classify_note: best.navClass } : {}),
+              };
+              // Dry shore stance adjacent. maxRadius=1 ensures the
+              // bot can place_boat from it without walking around.
+              const stance = _waterRouteInternals.findEntryShore(
+                b, { x: best.x, y: best.y, z: best.z }, { maxRadius: 1 },
+              );
+              if (stance) recommendedShoreStance = stance;
+            }
+          } catch {
+            // blockAt may throw for unloaded chunks — degrade silently.
+          }
+        }
+
+        // F46 (task #66, v56): always provide a walkable next-coord
+        // when there's water on the route. The agent's natural next
+        // action is `mc bg_goto <coord>` — handing it a water cell
+        // (NAV_TARGET_UNSTANDABLE refusal) wastes a turn. Resolution:
+        //   1. Prefer recommended_shore_stance (dry cell adjacent to
+        //      water) when available.
+        //   2. Else if nearest_navigable_water is set but no stance
+        //      (chunks beyond bot's view distance), offer a coord
+        //      30b toward the water from the bot — a partial-step
+        //      that loads chunks and lets the next sail_to plan a
+        //      real route.
+        //   3. Else null — agent uses its own judgement.
+        let nextWalkCoord = null;
+        let nextWalkReason = null;
+        if (recommendedShoreStance) {
+          nextWalkCoord = recommendedShoreStance;
+          nextWalkReason = 'walkable shore stance adjacent to navigable water';
+        } else if (nearestNavigableWater) {
+          // Step 30b from bot toward water. Y stays at bot's y so the
+          // pathfinder can find ground.
+          const wx = nearestNavigableWater.x, wz = nearestNavigableWater.z;
+          const dx = wx - Math.floor(me.x);
+          const dz = wz - Math.floor(me.z);
+          const len = Math.hypot(dx, dz) || 1;
+          const stepLen = Math.min(30, len - 4); // stop short by 4b
+          nextWalkCoord = {
+            x: Math.floor(me.x) + Math.round(dx / len * stepLen),
+            y: Math.floor(me.y),
+            z: Math.floor(me.z) + Math.round(dz / len * stepLen),
+          };
+          nextWalkReason = `partial step toward water at (${wx},${nearestNavigableWater.y},${wz}); load chunks, then re-call sail_to`;
+        }
+        return respond(res, 200, {
+          ok: true,
+          data: {
+            start,
+            end,
+            ...lineResult,
+            corridor: corridorResult,
+            ...(nearestNavigableWater ? { nearest_navigable_water: nearestNavigableWater } : {}),
+            ...(recommendedShoreStance ? { recommended_shore_stance: recommendedShoreStance } : {}),
+            ...(nextWalkCoord ? { next_walk_coord: nextWalkCoord, next_walk_reason: nextWalkReason } : {}),
+          },
+        });
       }
 
       if (path === '/plan_water_route') {

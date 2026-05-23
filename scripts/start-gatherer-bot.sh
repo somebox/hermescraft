@@ -100,7 +100,7 @@ if [[ "$DAEMON" == true ]]; then
   done
   echo "  ✓ API up — try: MC_API_URL=$API_URL mc health --json"
   echo "  Mine a tree: MC_API_URL=$API_URL $ROOT/scripts/mc-mine-tree.sh"
-  echo "  Dashboard: $API_URL/dashboard"
+  echo "  Command center: http://127.0.0.1:${DASHBOARD_PORT:-3000}  (./start-dashboard.sh)"
   exit 0
 fi
 

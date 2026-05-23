@@ -91,6 +91,27 @@ test('inventory.toss: throws when item not in inventory', async () => {
   );
 });
 
+test('building.place_fill: oversize returns ok:false AREA_TOO_LARGE (dispatch contract)', async () => {
+  const bot = {
+    entity: { position: { x: 0, y: 64, z: 0 } },
+    inventory: { items: () => [] },
+  };
+  const services = createMockServices({
+    state: { world: { botReady: true, bot } },
+    ensureBot: () => bot,
+  });
+  const actions = createBuildingActions(services);
+  const r = await actions.place_fill({
+    block: 'cobblestone',
+    x1: 0, y1: 0, z1: 0,
+    x2: 30, y2: 30, z2: 30,
+  });
+  const v = validate(r);
+  assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'AREA_TOO_LARGE');
+});
+
 test('building.fence: MISSING_FENCE_BLOCK conforms to contract', async () => {
   const services = createMockServices({
     state: { world: { botReady: true } },

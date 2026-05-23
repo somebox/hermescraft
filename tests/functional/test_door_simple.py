@@ -21,9 +21,7 @@ def open_door_arena(rcon, arena, tester_bot, config):
     unloaded them between runs.
     """
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
-    arena.flat_arena((-15, 64, -15, 15, 80, 15), floor="stone")
     rcon.batch([
         f"execute in {world} run setblock 0 65 0 minecraft:oak_door[half=lower,facing=east,open=true,hinge=left]",
         f"execute in {world} run setblock 0 66 0 minecraft:oak_door[half=upper,facing=east,open=true,hinge=left]",
@@ -31,7 +29,6 @@ def open_door_arena(rcon, arena, tester_bot, config):
     ])
     arena.settle()
     yield
-    arena.flat_arena((-15, 60, -15, 15, 80, 15), floor="stone")
     arena.forceload_remove_all()
 
 

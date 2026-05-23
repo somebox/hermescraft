@@ -109,7 +109,7 @@ We discovered this after 30 minutes of trying NBT paths.
 
 **Pattern:** when something surprises you (a bug, an unexpected limitation,
 a non-obvious root cause), log it with an F-number in
-`docs/experiments/phase-2-sprint-log.md`. Each entry: **symptom** → **root
+`docs/archive/experiments/phase-2-sprint-log.md`. Each entry: **symptom** → **root
 cause** → **fix** → **verification**.
 
 **Why:** F40 alone documents three pitfalls (Paper + bow auto-equip, rcon
@@ -124,7 +124,7 @@ finding, ask "is this in the F-log?" before closing the work.
 
 ## P8. Layered architecture, no upward calls
 
-**Pattern:** the bot is three layers (per `docs/phase-2-architecture.md` §16):
+**Pattern:** the bot is three layers (per `docs/design/phase-2/reactive-layer.md`):
 - **Layer 1** — macros (`mc *` actions, run on demand, may be long-running).
 - **Layer 2** — reactive autopilot (per-tick micro-actions, ≤500ms each).
 - **Layer 3** — strategic agent (LLM-driven, observe-decide-act over seconds).
@@ -147,7 +147,7 @@ violation.
 - `{ ok: false, error: { code, message, observed_state, retry_safe } }` — failure.
 
 `code` is a SCREAMING_SNAKE constant; `retry_safe` is a boolean indicating
-whether the agent can retry the same call as-is. See `docs/phase-2-architecture.md` §8.
+whether the agent can retry the same call as-is. See `docs/design/phase-2/action-contracts.md`.
 
 **Why:** agents key off `error.code` and `retry_safe` to decide whether to
 retry, replan, or surface to the human. Inconsistent shapes break that

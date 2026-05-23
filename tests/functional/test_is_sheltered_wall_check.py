@@ -42,12 +42,8 @@ def _build_enclosure(rcon, world: str, missing_cell: tuple[int, int, int] | None
 @pytest.fixture
 def shelter_arena(rcon, arena, tester_bot, config):
     """Stone floor; each test builds its own enclosure with or without a gap."""
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
 
 
 @pytest.mark.functional

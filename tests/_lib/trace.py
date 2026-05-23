@@ -31,7 +31,7 @@ class BotTrace:
     append one line per sample to `output_path`. Thread is a daemon so a
     test crash doesn't leave it dangling."""
 
-    def __init__(self, base_url: str, output_path: Path, interval: float = 0.4):
+    def __init__(self, base_url: str, output_path: Path, interval: float = 1.0):
         self.base_url = base_url.rstrip("/")
         self.output_path = output_path
         self.interval = interval

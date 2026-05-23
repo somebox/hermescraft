@@ -74,23 +74,13 @@ def _corner_touch_pos(pillar_x: int, pillar_z: int, side: str) -> tuple[float, f
     raise ValueError(f"bad side: {side}")
 
 
-def _setup_grid(rcon, world: str, height: int) -> None:
+def _setup_grid(arena, rcon, world: str, height: int) -> None:
     """Build the 3×3 cobble grid (pillars at x∈{2,4,6}, z∈{2,4,6})."""
-    cmds = [
-        f"execute in {world} run kill @e[type=!player]",
-    ]
-    for x in (2, 4, 6):
-        for z in (2, 4, 6):
-            for dy in range(height):
-                cmds.append(f"execute in {world} run setblock {x} {65 + dy} {z} minecraft:cobblestone")
-    cmds.extend([
-        "clear Tester",
-        f"execute in {world} run give Tester minecraft:stone_pickaxe",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
+    arena.grid_3x3(center=(4, 65, 4), height=height)
+    rcon.batch([
+        "give Tester minecraft:stone_pickaxe",
     ])
-    rcon.batch(cmds)
-    time.sleep(2.0)
+    arena.settle_water()
 
 
 def _tp_bot(arena, bot, x: float, y: float, z: float, yaw: float = 0.0) -> None:
@@ -129,24 +119,10 @@ def _assert_safe_pose(bot, label: str) -> None:
 
 
 @pytest.fixture
-def pillar_arena(rcon, arena, tester_bot, config):
-    """Stone sub-floor (y=60..63) + grass floor at y=64 + forceload.
-    Each scenario builds its own pillars on top."""
-    world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
-    arena.forceload((-1, -1, 1, 1))
-    rcon.batch([
-        f"execute in {world} run fill -1 60 -1 9 70 9 minecraft:air",
-        f"execute in {world} run fill -1 60 -1 9 63 9 minecraft:stone",
-        f"execute in {world} run fill -1 64 -1 9 64 9 minecraft:grass_block",
-    ])
-    arena.settle(seconds=1.0)
+def pillar_arena(rcon, arena, config):
+    """Canonical arena; grid built per test."""
+    arena.settle_default()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.run(f"execute in {world} run fill -1 60 -1 9 70 9 minecraft:air")
-    arena.forceload_remove_all()
 
 
 # ── Helpers used across A/B ──────────────────────────────────────────
@@ -208,7 +184,7 @@ def _dig_walk_pickup(bot, rcon, arena, world: str, target_x: int, target_y: int,
 def test_height1_three_pillars_routed(bot, rcon, arena, config, pillar_arena):
     """A: height=1, 3 pillar dig+walk-around+pickup iterations."""
     world = config["mc"]["world"]
-    _setup_grid(rcon, world, height=1)
+    _setup_grid(arena, rcon, world, height=1)
     _tp_bot(arena, bot, -1, 65, 4, 0)
     for p in TEST_PILLARS:
         tx, tz = p["target"]
@@ -227,7 +203,7 @@ def test_height2_six_blocks_top_down(bot, rcon, arena, config, pillar_arena):
     when the y=66 drop hasn't landed by pickup time, the auto-magnet
     sweeps it during the y=65 iteration (which then sees +2). Track total."""
     world = config["mc"]["world"]
-    _setup_grid(rcon, world, height=2)
+    _setup_grid(arena, rcon, world, height=2)
     _tp_bot(arena, bot, -1, 65, 4, 0)
     pre_total = bot.inventory().get("cobblestone", 0)
     nav_failures = []
@@ -293,7 +269,7 @@ def _wedge_iter(bot, rcon, arena, world: str, op: dict, verb: str) -> None:
 def test_corner_touch_wedge_goto_near(bot, rcon, arena, config, pillar_arena, op):
     """C: corner-touch wedge at height=2 pillars, verb=goto_near."""
     world = config["mc"]["world"]
-    _setup_grid(rcon, world, height=2)
+    _setup_grid(arena, rcon, world, height=2)
     _tp_bot(arena, bot, -1, 65, 4, 0)
     _wedge_iter(bot, rcon, arena, world, op, verb="goto_near")
 
@@ -304,7 +280,7 @@ def test_corner_touch_wedge_goto_near(bot, rcon, arena, config, pillar_arena, op
 def test_corner_touch_wedge_move(bot, rcon, arena, config, pillar_arena, op):
     """D: corner-touch wedge at height=2 pillars, verb=move."""
     world = config["mc"]["world"]
-    _setup_grid(rcon, world, height=2)
+    _setup_grid(arena, rcon, world, height=2)
     _tp_bot(arena, bot, -1, 65, 4, 0)
     _wedge_iter(bot, rcon, arena, world, op, verb="move")
 

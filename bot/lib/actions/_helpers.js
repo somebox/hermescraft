@@ -374,3 +374,21 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
   }
   return { ok: true, distance: Math.round(postDist * 10) / 10 };
 }
+
+/**
+ * Pathfind to GoalNear under progress watchdog + wallclock cap.
+ */
+export async function pathfindGotoNear(bot, goals, x, y, z, range, {
+  opName = 'goto',
+  capMs = ACTION_CAPS_MS.reach,
+} = {}) {
+  await pathfindWithProgressWatchdog({
+    bot,
+    opName,
+    capMs,
+    pathfinderGoto: () => bot.pathfinder.goto(new goals.GoalNear(x, y, z, range)),
+    onStall: () => {
+      try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
+    },
+  });
+}

@@ -1,6 +1,6 @@
 ---
 name: minecraft-farming
-description: "Food production in Minecraft — wheat/crop farming, animal breeding with mc feed_mob, chicken coops, cooking, food rankings. Load when building farms, breeding animals, growing crops, low on food, or planning food infrastructure."
+description: "Food production in Minecraft — quick reference for crop cycles, animal breeding, cooking, and food selection. Focused decision guide; full mechanics (worked example, gotchas, lure/gate procedures) live in minecraft-survival."
 triggers:
   - minecraft farm
   - grow food minecraft
@@ -11,129 +11,125 @@ triggers:
   - plant seeds
   - harvest crops
   - food supply
-version: 3.1.0
+version: 4.0.0
 ---
 
-# Minecraft Farming
+# Minecraft Farming — focused quick reference
 
-## Commands
+This skill is the **decision guide** for food work. For full mechanics
+(9×9 worked example, animal containment + lure procedures, chicken-coop
+scaling notes, fishing + boats), load
+[minecraft-survival](minecraft-survival).
 
-```
-mc collect CROP N        # harvest crops
-mc place SEEDS X Y Z     # plant seeds
-mc craft ITEM             # craft farming tools
-mc smelt RAW_FOOD         # cook food in furnace
-mc attack ANIMAL          # kill for meat
-mc find_blocks BLOCK      # find farmland, water, crops
-mc interact X Y Z         # use hoe on dirt
-mc use                    # use held item (bone meal, etc)
-mc feed_mob MOB           # right-click mob with held food (breeding); optional --item ITEM
-```
-
-## Quick Food (Early Game)
-
-Fastest way to not starve:
-
-1. Kill animals: `mc attack cow`, `mc attack pig`, `mc attack chicken`
-2. `mc pickup` — collect raw meat
-3. `mc smelt raw_beef` (or raw_porkchop, raw_chicken)
-4. Cooked steak = 8 food points (best common food)
-
-## Crop Farming
-
-### Setup
-1. Craft hoe: `mc craft stone_hoe`
-2. Find water or `mc place water_bucket X Y Z`
-3. Till dirt near water: equip hoe, `mc interact X Y Z` on dirt blocks
-4. Get seeds: break grass with hand → wheat seeds
-5. Plant: `mc place wheat_seeds X Y Z` on farmland
-
-### Harvest
-- Wheat grows in ~20 minutes. Fully grown = golden color.
-- `mc collect wheat N` — harvest mature wheat
-- `mc craft bread` — 3 wheat → 1 bread (6 food points)
-
-### Best Crops
-- **Wheat**: bread (6 food) — easy, found everywhere
-- **Carrots**: eat raw (3 food) or golden carrot (6 food + saturation)
-- **Potatoes**: bake in furnace (5 food) — excellent
-- **Beetroot**: beetroot soup (6 food) — decent
-
-## Animal Farming
-
-### Breeding
-1. Build fenced enclosure: `mc craft oak_fence` — **Java recipe:** 4 matching planks + 2 sticks = **3 fences** (not 2+4). Gate: 2 planks + 4 sticks = 1 gate. Use `mc recipes oak_fence` to confirm. **`mc place`** fence blocks along the edge in order; in Java they auto-connect to adjacent fence blocks (and to solid blocks).
-2. Lure or contain two adults of the same species.
-3. **`mc feed_mob cow --item wheat`**, then the same on a second cow (or `mc equip wheat_seeds` then **`mc feed_mob chicken`** twice). Chickens: wheat_seeds; cows/sheep: wheat; pigs: carrot/potato/beetroot; rabbits: carrot/golden carrot/dandelion.
-
-### Animal Products
-- **Cow**: raw beef (cook it), leather
-- **Pig**: raw porkchop (cook it)
-- **Chicken**: raw chicken (cook it), feathers, eggs
-- **Sheep**: wool (shear or kill), raw mutton
-
-## Chicken eggs & coops (efficiency)
-
-Sourced from the [Minecraft Wiki egg-farming tutorial](https://minecraft.fandom.com/wiki/Tutorials/Egg_farming) — patterns the bot can help *build block-by-block*; redstone clocks, comparator “full chest” displays, and lava cookers stay manual unless you add dedicated `mc` actions.
-
-### Why chickens scale differently
-- Adults **lay eggs on a timer** (~wiki: about one egg every 5–10 minutes per chicken; **~8 eggs/hour average** cited on the page). Throwing an egg has only a **1/8** chance to hatch a chick — stock **many eggs** before expecting a flock.
-- **No food is required** for growth or for eggs to appear; **seeds are only for breeding** and luring. Use `mc feed_mob` with two adults when you want more breeders.
-- **Baby chickens take ~20 minutes** to mature. Farm chunks should stay **loaded** (near a player or spawn chunks) or timers won’t advance. **Skipped nights do not count** toward grow-up time on the wiki’s explanation.
-- **Dropped eggs despawn after 5 minutes** — collection matters.
-
-### Pen design (wiki highlights)
-- **Entry lock**: a small fenced antechamber with **two gates** (pen vs outside). Keep **one gate closed** so pathfinding does not show a straight escape path.
-- **Luring**: hold **any seeds** — `mc equip wheat_seeds` then walk; or use **`mc feed_mob`** / leads if you add lead handling manually.
-- **Java `maxEntityCramming`**: cramming many mobs in one block can cap at **24** and cause damage; the wiki notes a **vines** trick in the cramming cell in some designs — confirm server rules before relying on it.
-- **Water containment**: many schematics use **water** so chickens don’t clip through fences; eggs wash toward **hoppers**. Signs or ladders can hold water above a collection gap.
-- **Lighting**: lit floors/roofs reduce drowned chicks at edges and block hostile spawns inside the farm.
-- **Scaling up**: compact **hopper + chest** pits, **11×11** fenced layouts with buried “egg rooms,” and **flowing water** variants funnel eggs to one tile — pick one tier that matches your iron/redstone budget.
-
-### What stays manual vs API
-- **Hermes can**: fence/gate placement, water bucket placement, luring with seeds, `mc feed_mob` breeding, killing selected chickens (`mc attack chicken`), pickup, smelting.
-- **Hermes cannot (today)**: throw eggs, flick levers on egg clocks, refill droppers, or run lava blade cookers without you (or future automation commands).
-
-## Project: Wheat Farm (9x9)
-
-A 9x9 wheat farm is the standard efficient layout — every farmland block is within 4 blocks of water.
-
-### Materials
-- stone_hoe ×1 (`mc craft stone_hoe` — 2 cobblestone + 2 sticks, needs table)
-- water_bucket ×1 (craft bucket: 3 iron_ingot; fill at water source)
-- wheat_seeds ×18+ (break short_grass/tall_grass with hand until you have enough)
-- oak_fence ×24 or more (4 planks + 2 sticks → 3 fences, needs table)
-- oak_fence_gate ×1 (2 planks + 4 sticks, needs table)
-- torch ×4+ for lighting
-
-Use `mc craft_plan stone_hoe` and `mc craft_plan oak_fence` to check what you're missing.
-
-### Build sequence
-1. **Find flat 11×11 area** near base (fences go around the 9×9 interior). `mc nearby 32` for flat ground. Mark site: `mc mark wheat_farm "planned 9x9 farm"`
-2. **Clear the area** — `mc dig` any obstructions, level ground
-3. **Dig center hole** — one block deep at the center of the 9×9 for water
-4. **Place water** — `mc equip water_bucket` → `mc place water_bucket X Y Z` in the hole. Water hydrates farmland within 4 blocks.
-5. **Till farmland** — equip stone_hoe, `mc interact X Y Z` on each dirt/grass_block in the 9×9 area (skip the water block). Farmland must be within 4 blocks of water.
-6. **Plant seeds** — `mc place wheat_seeds X Y Z` on each farmland block
-7. **Fence perimeter** — place oak_fence around the edge, oak_fence_gate for entry
-8. **Light it** — place torches on fence posts or nearby to prevent mob spawns and allow night growth
-9. **Mark done** — update memory with location and completion status
-
-### Harvest & maintain
-- Wheat grows in ~20 real-time minutes (chunk must be loaded).
-- Fully grown wheat is golden/brown. `mc collect wheat N` to harvest.
-- Replant immediately: `mc place wheat_seeds X Y Z` on each cleared farmland.
-- `mc craft bread` — 3 wheat → 1 bread (5 food, 6 sat).
-- Save memory note: "periodically check wheat_farm: harvest mature wheat, replant, check fences."
-
-## Food Rankings (food points + saturation)
+## Verbs
 
 ```
-Golden carrot:     6 food, 14.4 sat  (best overall)
-Cooked steak:      8 food, 12.8 sat  (best farmable)
-Cooked porkchop:   8 food, 12.8 sat  (tied with steak)
-Baked potato:      5 food, 6.0 sat   (easy to mass produce)
-Bread:             5 food, 6.0 sat   (easy early game)
-Cooked chicken:    6 food, 7.2 sat   (decent)
-Apple:             4 food, 2.4 sat   (oak tree drops)
+# Crops (full cycle: till → plant → bonemeal → harvest)
+mc till X Y Z                    # auto-equips any hoe; dirt/grass → farmland
+mc plant SEED X Y Z              # wheat_seeds, beetroot_seeds, carrot, potato,
+                                 # melon_seeds, pumpkin_seeds on farmland (Y above);
+                                 # *_sapling, sugar_cane on dirt/grass
+mc bonemeal X Y Z                # advance 2-5 growth stages (data.is_mature flag)
+mc harvest X1 Z1 X2 Z2 [Y]       # mature crops in rectangle; skips immature; pickup
+
+# Water
+mc bucket_fill X Y Z             # from a water source
+mc bucket_empty X Y Z            # place water (hydrates 9×9 farmland around it)
+
+# Animals
+mc breed SPECIES                 # auto-picks feed from inventory (rules below)
+mc lure SPECIES X Y Z            # walk holding feed; animals follow ~10 blocks
+mc hunt SPECIES [COUNT]          # auto-equip best weapon, kill, pickup
+mc shear                         # nearest unsheared sheep within 8 blocks
+mc milk_cow                      # fill empty bucket from nearest cow
+mc feed_mob TARGET [--item ITEM] # generic right-click-with-item (rarely needed)
+
+# Misc
+mc fish [TIMEOUT_S]              # 5-30s vanilla per cast; needs fishing_rod + water
+mc smelt RAW_FOOD [FUEL] [N]     # cook in nearest reachable furnace
+mc find_blocks BLOCK [R]         # locate farmland, water, crops, mature crops
+mc find_entities SPECIES [R]     # count adults before breed/hunt decisions
+mc inspect X Y Z                 # crop maturity (data.is_mature)
 ```
+
+## Food source decision
+
+Combined cooked + bread stockpile low? Scan once, pick the cheapest source:
+
+```
+mc nearby 16                     # what's already in sight?
+mc find_entities cow 32          # adults of a species?
+mc find_blocks wheat 32          # mature crops?
+```
+
+| If you see… | Do this | Why |
+|---|---|---|
+| 3+ adult cows/pigs nearby | `mc hunt cow 2` (leave ≥2 adults) | Fastest; raw_beef + leather in one pass |
+| Mature crops | `mc harvest X1 Z1 X2 Z2` then `mc plant` seeds back | Sustainable; net-positive seeds for wheat/beetroot |
+| 2+ adults + matching feed | `mc breed SPECIES` | Replenishes flock; baby in 20 min |
+| Just water + rod, nothing else | `mc fish` | Last resort; slow but works anywhere |
+| Nothing nearby | Skip food chore | Player will restock feed/seeds |
+
+## Breeding feed (auto-picked by `mc breed`)
+
+| Species | Feed | Notes |
+|---|---|---|
+| Cow / Sheep | `wheat` | Wheat ×2 = one breed cycle |
+| Chicken | `wheat_seeds` (also pumpkin/melon/beetroot seeds) | Cheap |
+| Pig | `carrot` / `potato` / `beetroot` | Use whichever you have surplus of |
+| Rabbit | `carrot` / `golden_carrot` / `dandelion` | |
+
+5-minute breed cooldown per animal (`ANIMAL_ON_COOLDOWN` if too soon). Babies mature in ~20 min of loaded-chunk time.
+
+## Crop cycle
+
+```
+mc till X Y Z                    # Y = the dirt block (not the air above)
+mc bucket_empty X Y Z            # water within 4 blocks of farmland (one source = 9×9 patch)
+mc plant wheat_seeds X Y+1 Z     # seed goes one cell ABOVE the farmland
+mc bonemeal X Y+1 Z              # optional; advances 2-5 stages
+mc harvest X1 Z1 X2 Z2           # picks up drops; skips immature
+```
+
+**Growth requires** (else crops stall):
+- Light level ≥ 9 (place torches every ~6 blocks if indoors/night)
+- Hydrated farmland (water within 4 blocks horizontally)
+- Loaded chunk (bot stays nearby for growth to tick)
+
+**Crop drop economics**:
+- Wheat / beetroot mature: 1 crop + 1–4 seeds (net-positive seeds)
+- Carrot / potato mature: 1–4 crop drops, **no seed** — replant from the crop itself, save 1 each harvest
+- Immature wheat/beetroot: 1 seed only (no food, no crop)
+
+**Trampling**: standing on bare farmland reverts it to dirt. Walk on planted farmland only.
+
+## Cooking (raw → food)
+
+```
+mc smelt raw_beef coal 8         # foreground; ~16s/item, returns when done
+mc smelt_start raw_beef 8        # background; returns task_id (see minecraft-chores)
+```
+
+Smeltable: `raw_beef`, `raw_porkchop`, `raw_chicken`, `raw_mutton`, `raw_rabbit`, `raw_cod`, `raw_salmon`, `potato` (→ baked_potato).
+
+## Food rankings (food points + saturation)
+
+```
+Golden carrot:   6 food, 14.4 sat   (best overall)
+Cooked steak:    8 food, 12.8 sat   (best farmable)
+Cooked porkchop: 8 food, 12.8 sat   (tied with steak)
+Cooked chicken:  6 food,  7.2 sat
+Baked potato:    5 food,  6.0 sat   (mass-produces easily)
+Bread:           5 food,  6.0 sat   (easy early game)
+Apple:           4 food,  2.4 sat   (oak tree drops)
+```
+
+## When to load minecraft-survival instead
+
+- Building a new farm from scratch → 9×9 worked example with the full
+  `mc level` / `mc till` / `mc plant` / `mc fence` sequence.
+- Animal escaped the pen → lure-into-pen 8-step procedure +
+  `ANIMAL_AT_GATE` handling.
+- Chicken coop planning → scaling notes (egg timings, hatch rate,
+  `maxEntityCramming` cap, what's out-of-scope for `mc`).
+- Fishing/boats deep dive, block/item name reference.

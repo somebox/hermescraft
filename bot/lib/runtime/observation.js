@@ -485,13 +485,17 @@ export function createObservation(deps) {
       holding: ctx.world.bot.heldItem ? itemStr(ctx.world.bot.heldItem) : 'empty',
       // circuit-v16: explicit mounted-state on /status so the agent
       // doesn't lose track of "I'm on a boat" between actions.
-      ...(ctx.world.bot.vehicle ? {
-        mounted: {
-          vehicle: ctx.world.bot.vehicle.name || ctx.world.bot.vehicle.type || 'unknown',
-          vehicle_id: ctx.world.bot.vehicle.id,
-          hint: "You are mounted. Use mc sail_to X Y Z to travel — it resumes from the current mounted position. mc disembark to dismount. Do not call mc move while mounted.",
-        },
-      } : {}),
+      //
+      // F45 (task #66, v56): ALWAYS include `mounted` — either the
+      // vehicle object or the literal `false`. Pre-fix the key only
+      // existed when mounted; the absence got read as "ambiguous" by
+      // mc advise's LLM digester, which confabulated "already mounted"
+      // from boat inventory. An explicit `false` removes the ambiguity.
+      mounted: ctx.world.bot.vehicle ? {
+        vehicle: ctx.world.bot.vehicle.name || ctx.world.bot.vehicle.type || 'unknown',
+        vehicle_id: ctx.world.bot.vehicle.id,
+        hint: "You are mounted. Use mc sail_to X Y Z to travel — it resumes from the current mounted position. mc disembark to dismount. Do not call mc move while mounted.",
+      } : false,
       ...(lean ? {} : { experience: { level: b.experience?.level || 0 } }),
       inventory: inv.map(i => ({ name: i.name, count: i.count })),
       ...(lean ? {} : { inventoryCount: inv.length }),

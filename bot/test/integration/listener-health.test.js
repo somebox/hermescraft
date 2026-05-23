@@ -98,7 +98,6 @@ function stubDeps() {
     pushTaskHistoryRecord: noop,
     renewLease: noop,
     createBot: async () => {},
-    dashboardHtmlPath: '/nonexistent-dashboard-path-for-test',
   };
 }
 

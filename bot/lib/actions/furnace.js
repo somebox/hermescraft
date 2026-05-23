@@ -1,5 +1,6 @@
 import { Vec3 } from 'vec3';
 import { ok, fail } from '../shared/action-contract.js';
+import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
 
 /**
  * createFurnaceActions — extracted from former lib/actions/containers.js (Phase 5 split).
@@ -18,7 +19,7 @@ export function createFurnaceActions(deps) {
         furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 32 });
         if (furnaceBlock) {
           const fp = furnaceBlock.position;
-          await b.pathfinder.goto(new goals.GoalNear(fp.x, fp.y, fp.z, 3));
+          await pathfindGotoNear(b, goals, fp.x, fp.y, fp.z, 3, { opName: 'smelt_start', capMs: ACTION_CAPS_MS.reach });
           furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 4 });
         }
       }
@@ -70,7 +71,7 @@ export function createFurnaceActions(deps) {
         throw new Error(`No furnace at ${x},${y},${z}`);
 
       if (b.entity.position.distanceTo(furnaceBlock.position) > 4.5) {
-        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+        await pathfindGotoNear(b, goals, x, y, z, 3, { opName: 'furnace_check', capMs: ACTION_CAPS_MS.reach });
       }
       const furnace = await b.openFurnace(furnaceBlock);
       const inputItem = furnace.inputItem();
@@ -95,7 +96,7 @@ export function createFurnaceActions(deps) {
       if (!furnaceBlock) throw new Error(`No block at ${x},${y},${z}`);
 
       if (b.entity.position.distanceTo(furnaceBlock.position) > 4.5) {
-        await b.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
+        await pathfindGotoNear(b, goals, x, y, z, 3, { opName: 'furnace_check', capMs: ACTION_CAPS_MS.reach });
       }
       const furnace = await b.openFurnace(furnaceBlock);
       const output = furnace.outputItem();
@@ -113,7 +114,7 @@ export function createFurnaceActions(deps) {
     // ── Team System ──────────────────────────────────
 
     async smelt({ input, fuel, count = 1, reason }) {
-      // ─ Phase-2 action contract (docs/phase-2/action-contracts.md mc smelt) ─
+      // ─ Phase-2 action contract (docs/design/phase-2/action-contracts.md mc smelt) ─
       // ok=true requires smelted_count >= 1; verified via inventory delta on output item.
 
       const b = ensureBot();
@@ -136,7 +137,7 @@ export function createFurnaceActions(deps) {
         if (wide) {
           nearestFurnaceSeen = { x: wide.position.x, y: wide.position.y, z: wide.position.z, kind: wide.name };
           try {
-            await b.pathfinder.goto(new goals.GoalNear(wide.position.x, wide.position.y, wide.position.z, 3));
+            await pathfindGotoNear(b, goals, wide.position.x, wide.position.y, wide.position.z, 3, { opName: 'smelt_furnace', capMs: ACTION_CAPS_MS.reach });
             furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 4 });
           } catch { /* leave null */ }
         }
@@ -152,7 +153,7 @@ export function createFurnaceActions(deps) {
           if (furnaceMarks.length > 0 && furnaceMarks[0].dist < 100) {
             const m = furnaceMarks[0];
             nearestFurnaceSeen = nearestFurnaceSeen || { x: m.x, y: m.y, z: m.z, kind: 'furnace_mark' };
-            await b.pathfinder.goto(new goals.GoalNear(m.x, m.y, m.z, 3));
+            await pathfindGotoNear(b, goals, m.x, m.y, m.z, 3, { opName: 'smelt_furnace_mark', capMs: ACTION_CAPS_MS.reach });
             furnaceBlock = b.findBlock({ matching: isFurnace, maxDistance: 4 });
           }
         } catch { /* ignore */ }

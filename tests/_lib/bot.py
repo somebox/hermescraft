@@ -58,6 +58,16 @@ class BotClient:
             time.sleep(self.health_poll_interval)
         raise TimeoutError(f"bot not connected within {timeout or self.health_poll_timeout}s; last: {last}")
 
+    def ensure_connected(self, reconnect_timeout: float = 12.0) -> dict[str, Any]:
+        """Fast path when the bot is healthy; short poll only after disconnect."""
+        try:
+            health = self.get("/health", timeout=2.0)
+            if health.get("connected"):
+                return health
+        except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError):
+            pass
+        return self.wait_until_ready(timeout=reconnect_timeout)
+
     def observe(self) -> dict[str, Any]:
         """Fetch the /observe snapshot. Used by predicates for end-of-test state."""
         try:

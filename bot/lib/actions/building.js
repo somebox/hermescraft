@@ -3,7 +3,7 @@ import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { equipForDig, RELOCATABLE_INFRASTRUCTURE, suggestedToolForBlock, isDigProtected, recordRecentPlace } from '../runtime/dig-tools.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
-import { ok } from '../shared/action-contract.js';
+import { ok, fail } from '../shared/action-contract.js';
 
 const { goals } = pathfinderPkg;
 
@@ -296,7 +296,7 @@ export function createBuildingActions(services) {
 
   // ── Building ─────────────────────────────────────
   async place({ block: blockName, x, y, z }) {
-    // ─ Phase-2 action contract (see docs/phase-2/action-contracts.md mc place) ─
+    // ─ Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc place) ─
     // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
     // ok=true requires block to be at target coord AFTER placement (verified via blockAt).
 
@@ -701,7 +701,17 @@ export function createBuildingActions(services) {
     const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
     const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
     const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-    if (total > 500) throw new Error(`Area too large (${total} blocks, max 500). Split into smaller fills.`);
+    if (total > 500) {
+      return fail(
+        'AREA_TOO_LARGE',
+        `mc place_fill area is ${total} blocks (max 500) — split into smaller boxes.`,
+        {
+          observed_state: { requested_volume: total, max_volume: 500, x1, y1, z1, x2, y2, z2 },
+          next_action_hint: 'mc place_fill with a smaller coordinate box (≤500 cells)',
+          retry_safe: false,
+        },
+      );
+    }
 
     const positions = [];
     for (let y = minY; y <= maxY; y++) {
@@ -931,8 +941,8 @@ export function createBuildingActions(services) {
    * Build a wall: vertical line/rectangle of blocks. Sugar over place_fill
    * with action-contract shape and a "must have height" guard so a flat
    * single-Y rectangle (= floor) gets a clear error instead of silently
-   * placing a slab. See docs/phase-2/sprints.md (Sprint 5 — Building primitives).
-   * — Phase-2 action contract (see docs/phase-2/action-contracts.md mc wall) —
+   * placing a slab. See docs/design/phase-2/sprints.md (Sprint 5 — Building primitives).
+   * — Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc wall) —
    */
   async wall({ block: blockName, x1, y1, z1, x2, y2, z2 }) {
     const b = ensureBot();
@@ -1073,7 +1083,7 @@ export function createBuildingActions(services) {
    * --gate DIR places a matching fence_gate at the midpoint of the named
    * side (north|south|east|west), inferring gate type from fence type
    * (e.g. oak_fence → oak_fence_gate).
-   * — Phase-2 action contract (see docs/phase-2/action-contracts.md mc fence) —
+   * — Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc fence) —
    */
   async fence({ block: blockName, x1, z1, x2, z2, gate, y }) {
     const b = ensureBot();

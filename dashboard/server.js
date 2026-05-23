@@ -6,7 +6,17 @@ import { fileURLToPath } from 'url';
 import { loadRegistry, boardIdForWorld } from './lib/registry.js';
 import { fetchWithTimeout } from './lib/poll.js';
 import { getCachedOpenRouterCredits } from './lib/openrouter.js';
+import { updateAgentMotion } from './lib/motion.js';
 import { fetchBoard } from './lib/kanban.js';
+import {
+  getWorldMapConfig,
+  tileWorldForHermes,
+  settingsJsonUrl,
+  playerNamesFromMarkersJson,
+  playersMarkersUrl,
+} from './lib/world-map.js';
+import { resolveHermesHome } from './lib/agent-paths.js';
+import { loadCognitionFromHome } from './lib/cognition.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '..');
@@ -20,6 +30,8 @@ if (!registry) {
   console.error('Missing data/agent-registry.json');
   process.exit(1);
 }
+
+const worldMapConfig = getWorldMapConfig(registry);
 
 let tick = 0;
 /** @type {any} */
@@ -35,8 +47,27 @@ function parseHealth(n) {
   return Number.isFinite(x) ? x : 0;
 }
 
+/** briefState `task: { action, elapsed }` when full taskToApi is absent. */
+function briefTaskFromState(state) {
+  const t = state?.task;
+  if (!t || typeof t !== 'object') return null;
+  const action = typeof t.action === 'string' ? t.action : null;
+  if (!action) return null;
+  return {
+    action,
+    status: 'running',
+    elapsed: typeof t.elapsed === 'string' ? t.elapsed : null,
+  };
+}
+
 function normalizeAgentRow(agent, healthBody, obsBody, err) {
   const connected = healthBody?.connected === true;
+  const mcUsername =
+    healthBody?.username != null ? String(healthBody.username).trim() : null;
+  const identityOk =
+    !connected ||
+    !mcUsername ||
+    mcUsername.toLowerCase() === String(agent.name || '').toLowerCase();
   const obsOk = obsBody?.ok === true;
   /** briefState() is null when off-world or not ready — do not coerce to {} */
   const rawState = obsBody?.state;
@@ -45,20 +76,42 @@ function normalizeAgentRow(agent, healthBody, obsBody, err) {
     typeof rawState === 'object' &&
     rawState.position &&
     typeof rawState.position.x === 'number';
-  const online = connected && obsOk && hasLiveBody;
+  const online = connected && obsOk && hasLiveBody && identityOk;
   const state = hasLiveBody ? rawState : {};
   const pos = state.position;
+  const motion = updateAgentMotion(agent.name, pos && typeof pos.x === 'number' ? pos : null);
   const goals = obsBody?.goals || [];
   const top = goals.find((g) => g && g.satisfied === false) || goals[0] || null;
   const recent = Array.isArray(obsBody?.recent_actions) ? obsBody.recent_actions[0] : null;
-  let recentStr = '';
-  if (recent) recentStr = `${recent.action || ''} ${recent.status || ''}`.trim();
+  const timeTicks =
+    obsBody?.time != null
+      ? Number(obsBody.time)
+      : state.time != null
+        ? Number(state.time)
+        : null;
 
   return {
     name: agent.name,
     online,
-    is_day: obsBody?.is_day ?? null,
-    poll_error: err || null,
+    is_day: obsBody?.is_day ?? state.isDay ?? null,
+    time_ticks: Number.isFinite(timeTicks) ? timeTicks : null,
+    last_death_age_s:
+      typeof state.last_death_age_s === 'number' ? state.last_death_age_s : null,
+    death_count: typeof state.deaths === 'number' ? state.deaths : null,
+    kills: typeof state.kills === 'number' ? state.kills : null,
+    idle_reason: obsBody?.idle_reason ?? null,
+    hazard: typeof state.hazard === 'string' ? state.hazard : null,
+    damage_telemetry: state.damage_telemetry ?? null,
+    respawn_pending: Boolean(state.respawn_pending),
+    alerts_count: Array.isArray(obsBody?.alerts) ? obsBody.alerts.length : 0,
+    motion_speed_bps: motion.speed_bps,
+    motion_idle_sec: motion.idle_sec,
+    poll_error:
+      err ||
+      (connected && !identityOk
+        ? `MC user is ${mcUsername}, not ${agent.name}`
+        : null),
+    mc_username: mcUsername,
     model: agent.model || null,
     api_port: agent.api_port,
     viewer_port: agent.viewer_port ?? null,
@@ -69,9 +122,24 @@ function normalizeAgentRow(agent, healthBody, obsBody, err) {
     food: typeof state.food === 'number' ? state.food : Number(state.food) || 0,
     position: pos && typeof pos.x === 'number' ? { x: pos.x, y: pos.y, z: pos.z } : null,
     holding: state.holding || null,
-    task: obsBody?.task || null,
-    top_goal: top ? { id: top.id, satisfied: Boolean(top.satisfied) } : null,
-    recent_action: recentStr || null,
+    task: obsBody?.task || briefTaskFromState(state),
+    top_goal: top
+      ? {
+          id: top.id,
+          satisfied: Boolean(top.satisfied),
+          urgency: top.urgency ?? null,
+          gap: top.gap ?? null,
+        }
+      : null,
+    recent_action: recent || null,
+    recent_actions: Array.isArray(obsBody?.recent_actions)
+      ? obsBody.recent_actions.slice(0, 5)
+      : [],
+    player_requests: Array.isArray(state.player_requests) ? state.player_requests.slice(0, 5) : [],
+    active_tasks: Array.isArray(state.active_tasks) ? state.active_tasks.slice(0, 5) : [],
+    auto_action_log: Array.isArray(obsBody?.auto_action_log)
+      ? obsBody.auto_action_log.slice(-4)
+      : [],
     inventory_summary: obsBody?.inventory_summary || {},
     new_chat: Array.isArray(state.new_chat) ? state.new_chat : [],
     spend_rate_usd_per_hr: null,
@@ -121,6 +189,31 @@ async function fetchInventory(agent) {
   return j?.data ?? null;
 }
 
+async function fetchAgentGoals(agent) {
+  const url = botUrl(agent.api_port, '/goals?full=true');
+  const r = await fetchWithTimeout(url, { timeout: 8000 }).catch(() => null);
+  if (!r || !r.ok) return { ok: false, status: r?.status };
+  const j = await r.json().catch(() => null);
+  if (!j?.ok) return { ok: false };
+  return { ok: true, goals: j.data?.goals ?? [], context: j.data?.context ?? null };
+}
+
+async function fetchMapPlayerNames(hermesWorld) {
+  if (!worldMapConfig) return [];
+  const tileWorld = tileWorldForHermes(worldMapConfig, hermesWorld);
+  if (!tileWorld) return [];
+  try {
+    const r = await fetchWithTimeout(playersMarkersUrl(worldMapConfig.baseUrl, tileWorld), {
+      timeout: 5000,
+    });
+    const body = await r.json().catch(() => null);
+    if (!r.ok || !body) return [];
+    return playerNamesFromMarkersJson(body);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchNearbyPlayers(agent) {
   const url = botUrl(agent.api_port, '/nearby?radius=48');
   const r = await fetchWithTimeout(url, { timeout: 8000 }).catch(() => null);
@@ -149,24 +242,49 @@ async function buildFleetSnapshot() {
 
   /** @type {{ name: string, online: boolean, world: string, position: any, human: boolean }[]} */
   const humansMap = new Map();
-  const firstOnline = agents.find((a) => a.online);
-  const firstOnlineAgent = firstOnline
-    ? registry.agents.find((x) => x.name === firstOnline.name)
-    : null;
-  if (firstOnlineAgent) {
-    const world = firstOnlineAgent.world || registry.defaultWorld;
-    const nearby = await fetchNearbyPlayers(firstOnlineAgent);
-    const selfName = firstOnlineAgent.name;
-    for (const e of nearby) {
-      const name = e.type || 'player';
-      if (!name || name === selfName) continue;
-      humansMap.set(name, {
-        name,
-        online: true,
-        world,
-        position: e.position || null,
-        human: true,
-      });
+  const onlinePairs = agents
+    .filter((a) => a.online)
+    .map((a) => ({ row: a, reg: registry.agents.find((x) => x.name === a.name) }))
+    .filter((p) => p.reg);
+  await Promise.all(
+    onlinePairs.map(async ({ row, reg }) => {
+      const world = row.world || reg.world || registry.defaultWorld;
+      const nearby = await fetchNearbyPlayers(reg);
+      for (const e of nearby) {
+        const name = e.type || 'player';
+        if (!name || name === reg.name) continue;
+        const prev = humansMap.get(name);
+        if (!prev || (e.position && !prev.position)) {
+          humansMap.set(name, {
+            name,
+            online: true,
+            world,
+            position: e.position || null,
+            human: true,
+          });
+        }
+      }
+    }),
+  );
+
+  const botNames = new Set(registry.agents.map((a) => String(a.name).toLowerCase()));
+  const worldsForPlayers = new Set([registry.defaultWorld]);
+  for (const a of agents) {
+    if (a.world) worldsForPlayers.add(a.world);
+  }
+  for (const w of worldsForPlayers) {
+    const mapNames = await fetchMapPlayerNames(w);
+    for (const name of mapNames) {
+      if (!name || botNames.has(name.toLowerCase())) continue;
+      if (!humansMap.has(name)) {
+        humansMap.set(name, {
+          name,
+          online: true,
+          world: w,
+          position: null,
+          human: true,
+        });
+      }
     }
   }
 
@@ -189,13 +307,21 @@ async function buildFleetSnapshot() {
   }
 
   const dayRow = agents.find((a) => a.online && a.is_day != null);
+  const timeRow = agents.find((a) => a.online && a.time_ticks != null);
 
   return {
     tick,
-    time: { ticks: null, is_day: dayRow ? dayRow.is_day : null },
+    time: {
+      ticks: timeRow?.time_ticks ?? null,
+      is_day: dayRow ? dayRow.is_day : null,
+    },
     openrouter: {
       balance_usd: openrouter.balance_usd,
       usage_usd: openrouter.usage_usd,
+      usage_daily_usd: openrouter.usage_daily_usd ?? null,
+      usage_monthly_usd: openrouter.usage_monthly_usd ?? null,
+      limit_usd: openrouter.limit_usd ?? null,
+      label: openrouter.label ?? null,
     },
     agents,
     humans,
@@ -280,6 +406,57 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { worlds: registry.worlds || [] });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/map/config') {
+    if (!worldMapConfig) {
+      return sendJson(res, 200, { ok: false, enabled: false });
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      enabled: true,
+      baseUrl: worldMapConfig.baseUrl,
+      hermesToTileWorld: worldMapConfig.hermesToTileWorld,
+      iframeDefaults: worldMapConfig.iframeDefaults,
+      tile: worldMapConfig.tile,
+    });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/map/settings') {
+    if (!worldMapConfig) return sendJson(res, 503, { ok: false, error: 'world_map_disabled' });
+    try {
+      const r = await fetchWithTimeout(settingsJsonUrl(worldMapConfig.baseUrl), { timeout: 8000 });
+      const body = await r.json().catch(() => null);
+      if (!r.ok) return sendJson(res, r.status, { ok: false, error: 'upstream', status: r.status });
+      return sendJson(res, 200, { ok: true, data: body });
+    } catch (e) {
+      return sendJson(res, 502, {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/map/players') {
+    if (!worldMapConfig) return sendJson(res, 503, { ok: false, error: 'world_map_disabled' });
+    const hermesWorld = url.searchParams.get('world') || registry.defaultWorld;
+    const tileWorld = tileWorldForHermes(worldMapConfig, hermesWorld);
+    if (!tileWorld) {
+      return sendJson(res, 400, { ok: false, error: 'unknown_world', hermesWorld });
+    }
+    try {
+      const r = await fetchWithTimeout(playersMarkersUrl(worldMapConfig.baseUrl, tileWorld), {
+        timeout: 8000,
+      });
+      const body = await r.json().catch(() => null);
+      if (!r.ok) return sendJson(res, r.status, { ok: false, error: 'upstream', status: r.status });
+      return sendJson(res, 200, { ok: true, hermesWorld, tileWorld, data: body });
+    } catch (e) {
+      return sendJson(res, 502, {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/poi') {
     const world = url.searchParams.get('world') || registry.defaultWorld;
     const pois = await buildPoiForWorld(world);
@@ -293,13 +470,36 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { world, boardId, ...data });
   }
 
-  if (req.method === 'GET' && url.pathname.startsWith('/api/agent/') && url.pathname.endsWith('/inventory')) {
-    const parts = url.pathname.split('/');
-    const name = decodeURIComponent(parts[3] || '');
+  const agentRoute = url.pathname.match(/^\/api\/agent\/([^/]+)\/(inventory|goals|cognition)$/);
+  if (req.method === 'GET' && agentRoute) {
+    const name = decodeURIComponent(agentRoute[1]);
+    const sub = agentRoute[2];
     const agent = registry.agents.find((a) => a.name === name);
     if (!agent) return sendJson(res, 404, { ok: false, error: 'unknown_agent' });
-    const data = await fetchInventory(agent);
-    return sendJson(res, 200, { ok: true, data });
+
+    if (sub === 'inventory') {
+      const data = await fetchInventory(agent);
+      return sendJson(res, 200, { ok: true, data });
+    }
+    if (sub === 'goals') {
+      const g = await fetchAgentGoals(agent);
+      if (!g.ok) {
+        return sendJson(res, g.status === 404 ? 404 : 502, {
+          ok: false,
+          error: 'goals_unavailable',
+          status: g.status,
+        });
+      }
+      return sendJson(res, 200, { ok: true, goals: g.goals, context: g.context });
+    }
+    if (sub === 'cognition') {
+      const home = resolveHermesHome(agent);
+      const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit')) || 15));
+      const cursor = Math.max(0, Number(url.searchParams.get('cursor')) || 0);
+      const tail = url.searchParams.get('tail') === '1' || url.searchParams.get('tail') === 'true';
+      const cog = loadCognitionFromHome(home, { limit, cursor, tail });
+      return sendJson(res, 200, { agent: name, hermes_home: home, ...cog });
+    }
   }
 
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
@@ -325,4 +525,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`HermesCraft dashboard http://127.0.0.1:${PORT}`);
   console.log(`BOT_HOST=${BOT_HOST}  HERMES_KANBAN_BASE=${HERMES_KANBAN_BASE}`);
+  if (worldMapConfig) {
+    console.log(`WORLD_MAP=${worldMapConfig.baseUrl}`);
+  }
 });

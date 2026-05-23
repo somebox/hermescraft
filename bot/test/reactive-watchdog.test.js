@@ -20,6 +20,7 @@ import {
   isAgentIdle,
   shouldEmergencyDisembark,
   shouldGiveUpEscape,
+  shouldSuppressAutoEscape,
   isHostileNearBoat,
   pickBestWeapon,
   WEAPON_PRIORITY,
@@ -333,4 +334,42 @@ test('WEAPON_PRIORITY: swords come before axes; iron_sword is in the top half', 
   const woodenAxeIdx = WEAPON_PRIORITY.indexOf('wooden_axe');
   assert.ok(ironSwordIdx >= 0 && woodenAxeIdx >= 0);
   assert.ok(ironSwordIdx < woodenAxeIdx, 'iron_sword must rank above wooden_axe');
+});
+
+// ─── shouldSuppressAutoEscape (F25, task #63, v42) ──────────────────────
+
+test('shouldSuppressAutoEscape: false when sail_to has never set the flag', () => {
+  // Reactive's auto_escape_water + head_in_water swim_up branches
+  // should fire normally when nothing has armed the gate.
+  assert.equal(shouldSuppressAutoEscape(null, 1_000_000), false);
+  assert.equal(shouldSuppressAutoEscape(undefined, 1_000_000), false);
+  assert.equal(shouldSuppressAutoEscape(0, 1_000_000), false);
+});
+
+test('shouldSuppressAutoEscape: true while sail_to is active within the staleness window', () => {
+  // Default 60s staleness — sail_to's wrapper sets the flag at start
+  // and clears it in a finally. Any time within that window suppresses.
+  const now = 1_000_000_000;
+  assert.equal(shouldSuppressAutoEscape(now, now), true);           // just set
+  assert.equal(shouldSuppressAutoEscape(now - 1_000, now), true);    // 1s ago
+  assert.equal(shouldSuppressAutoEscape(now - 30_000, now), true);   // 30s ago
+  assert.equal(shouldSuppressAutoEscape(now - 59_999, now), true);   // just inside window
+});
+
+test('shouldSuppressAutoEscape: false after the staleness window expires', () => {
+  // Safety net: if sail_to crashed without clearing the flag, the
+  // reactive should resume its patrol after 60s rather than be
+  // permanently disabled.
+  const now = 1_000_000_000;
+  assert.equal(shouldSuppressAutoEscape(now - 60_000, now), false);     // exact boundary excluded
+  assert.equal(shouldSuppressAutoEscape(now - 120_000, now), false);    // 2 min ago
+  assert.equal(shouldSuppressAutoEscape(now - 3_600_000, now), false);  // 1 hour ago
+});
+
+test('shouldSuppressAutoEscape: custom staleness window respected', () => {
+  const now = 1_000_000_000;
+  // 10s window: 5s ago suppresses
+  assert.equal(shouldSuppressAutoEscape(now - 5_000, now, 10_000), true);
+  // 10s window: 15s ago does not
+  assert.equal(shouldSuppressAutoEscape(now - 15_000, now, 10_000), false);
 });

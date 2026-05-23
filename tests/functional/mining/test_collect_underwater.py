@@ -32,18 +32,16 @@ def underwater_arena(rcon, arena, tester_bot, config):
     the bot in solid blocks and mineflayer's internal position would
     desync from the server's even after a subsequent TP.
     """
-    tester_bot.wait_until_ready(timeout=10)
     world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         f"execute in {world} run fill -10 60 -10 20 80 20 minecraft:air",
         f"execute in {world} run fill -10 60 -10 20 63 20 minecraft:stone",
         f"execute in {world} run fill -10 64 -10 20 64 20 minecraft:grass_block",
     ])
-    arena.clean()  # peaceful, kill mobs, clear inv (no fill)
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -10 60 -10 20 80 20 minecraft:air")
 
 
@@ -61,7 +59,7 @@ def test_collect_pond_only_sand_returns_target_in_water(bot, rcon, arena, config
         f"execute in {world} run tp Tester 5 65 1 0 0",
         "clear Tester",
     ])
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     pre_sand = bot.inventory().get("sand", 0)
     r = bot.post("/action/collect", {"block": "sand", "count": 4}, timeout=60)
     assert not r.get("ok"), r
@@ -90,7 +88,7 @@ def test_collect_prefers_dry_sand_over_flooded(bot, rcon, arena, config, underwa
         "clear Tester",
         "give Tester minecraft:wooden_pickaxe 1",
     ])
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     r = bot.post("/action/collect", {"block": "sand", "count": 1}, timeout=60)
     assert r.get("ok"), r
     # The contract being tested: when dry candidates exist, collect must
@@ -118,7 +116,7 @@ def test_dig_while_submerged_returns_submerged(bot, rcon, arena, config, underwa
         f"execute in {world} run setblock 4 64 0 minecraft:stone",
         f"execute in {world} run tp Tester 5.5 64 0.5 0 0",
     ])
-    arena.settle(seconds=2.5)
+    arena.settle_water()
     r = bot.post("/action/dig", {"x": 4, "y": 64, "z": 0}, timeout=15)
     assert not r.get("ok"), r
     code, _, obs = extract_error(r)

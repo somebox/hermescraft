@@ -85,38 +85,17 @@ Good use cases:
 - "gather wood while I mine stone"
 - "come explore this cave with me"
 
-### Civilization Mode
-
-Run multiple Hermes agents in the same world.
-
-What makes it interesting:
-- separate memory and identity per character
-- public chat, private DMs, overhearing, and commands
-- fair-play perception and local world understanding
-- emergent routines, alliances, tension, and division of labor
-- the world starts to feel inhabited instead of empty
-
-The current featured civilization cast is the crash-survivor group:
-- Marcus
-- Sarah
-- Jin
-- Dave
-- Lisa
-- Tommy
-- Elena
-
 ### Landfolk Mode
 
-A smaller 5-character cast for a player's personal LAN world.
+Four worker characters plus optional Steve companion, for a player's LAN world.
 
-Current cast:
-- Steve — your normal Minecraft buddy
-- Reed — wants to build a fishing shack on the water
-- Moss — makes paths, gardens, and cozy green spaces
-- Flint — gravitates toward caves, stone, and mining routes
-- Ember — builds hearth and forge energy around camp
+Landfolk cast (`data/agent-models.json`):
+- **Gatherer** — resource loops and chores
+- **Flint** — stone, mining, caves
+- **Mason** — building and structures
+- **Barley** — food, animals, cooking
 
-This mode is meant to make a normal personal world feel more alive without going all the way to a full civilization sim.
+**Steve** is the companion (`prompts/landfolk/steve.md`, `./start-steve.sh` or `./hermescraft.sh`). Use `scripts/landfolk-control.sh` to supervise the four Landfolk bots with watchdogs and a single roster file.
 
 ## Core features
 
@@ -153,15 +132,11 @@ This mode is meant to make a normal personal world feel more alive without going
 ## Stable vs experimental
 
 Most stable path today:
-- one companion via `hermescraft.sh`
+- **Steve companion:** `./start-steve.sh` or `./hermescraft.sh`
+- **Landfolk fleet:** `scripts/landfolk-control.sh` + `data/agent-models.json`
 - direct Hermes-per-agent launches when you want total control
-- `civilization.sh` for the crash-survivor cast
 
-More experimental / still being hardened:
-- convenience wrappers that spawn lots of terminals automatically
-- older experimental arena / battle variants
-
-If you want the most reliable behavior, use the direct or primary launcher flows shown below.
+If you want the most reliable behavior, use the launcher flows shown below.
 
 ## Prerequisites
 
@@ -206,27 +181,22 @@ Examples in chat:
 - `hermes gather oak logs`
 - `hermes what do you see?`
 
-### Civilization Mode
-
-```bash
-cd ~/hermescraft
-./civilization.sh --port <PORT>
-```
-
 ### Landfolk Mode
 
-Most reliable path:
-1. start the bot bodies
-2. launch each Hermes brain directly in its own terminal
-
-Start the Landfolk bot bodies:
+Start bot bodies (Gatherer, Flint, Mason, Barley on API ports 3001–3004):
 
 ```bash
 cd ~/hermescraft
 ./scripts/run-landfolk-bots.sh <LAN_PORT>
 ```
 
-Then launch one agent per terminal.
+Or use the supervised fleet:
+
+```bash
+./scripts/landfolk-control.sh start --profiles gatherer,flint,mason,barley
+```
+
+Then launch Hermes brains per agent (example: Steve companion on port 3001 — do not run Steve and Gatherer on the same API port at once):
 
 Example for Steve:
 
@@ -246,7 +216,7 @@ cd ~/hermescraft
 ./scripts/run-landfolk-agent.sh Steve 3001 prompts/landfolk/steve.md "$HOME/.hermes-landfolk-steve"
 ```
 
-Repeat the pattern for Reed, Moss, Flint, and Ember on ports 3002–3005.
+For Landfolk workers, use ports 3001–3004 and `prompts/landfolk/{gatherer-test,flint,mason,barley}.md` (Gatherer uses `gatherer-test.md`).
 
 ## Useful `mc` commands
 
@@ -257,11 +227,12 @@ mc status
 mc inventory
 mc nearby 24
 mc look
-mc map 24
+mc map 12          # radius clamped at 16
 mc scene 16
 mc social
 mc read_chat
 mc commands
+mc advise --reason="find oak wood"   # slow digest; use when stuck (see docs/guides/perception-digest.md)
 ```
 
 Action:
@@ -274,7 +245,8 @@ mc craft stone_pickaxe
 mc fight zombie
 mc flee 16
 mc chat "hello"
-mc whisper Reed "meet me by the shore"
+mc chat_to Flint "meet me by the cave"
+# `mc whisper` is an alias for chat_to (public @-style line, not private DM)
 ```
 
 Vision:
@@ -299,14 +271,13 @@ This matters for both believability and demo integrity.
 ## Repository guide
 
 Primary files:
-- `start-dashboard.sh` — fleet dashboard aggregator (see `docs/dashboard.md`)
+- `start-dashboard.sh` — fleet dashboard aggregator (see `docs/guides/dashboard.md`)
 - `dashboard/` — standalone command-center UI (polls bot HTTP APIs + optional Kanban bridge)
-- `civilization.sh` — multi-agent civilization launcher
-- `landfolk.sh` — small-cast LAN launcher
-- `scripts/run-landfolk-bots.sh` — start the 5 Landfolk bot bodies
+- `scripts/landfolk-control.sh` — supervised Landfolk fleet
+- `scripts/run-landfolk-bots.sh` — start Landfolk bot bodies (Gatherer–Barley)
 - `scripts/run-landfolk-agent.sh` — launch one Landfolk Hermes brain cleanly
 - `bot/server.js` — wiring entrypoint (~600 LOC): config, dependency injection, HTTP startup
-- `bot/lib/actions/` — domain action modules (movement, mining, crafting, combat, world, containers)
+- `bot/lib/actions/` — domain action modules (movement, mining, crafting, combat, building, containers, …)
 - `bot/lib/runtime/` — Mineflayer-dependent gameplay (manager, fair-play, spatial, locations, dig-tools, observation)
 - `bot/lib/server/` — HTTP infrastructure (config, state, http-app, action-registry)
 - `bot/lib/shared/` — pure utilities (perception, resolver, chat, domains, schemas)
@@ -314,15 +285,12 @@ Primary files:
 - `bot/test/` — unit tests
 - `bin/mc` — Node ESM CLI (`bot/cli/`) over the bot HTTP API (`--json`, `mc commands`, `mc batch`, etc.)
 - `SOUL-minecraft.md` — companion behavior
-- `SOUL-civilization.md` — civilization behavior
-- `SOUL-landfolk.md` — landfolk behavior
+- `SOUL-landfolk.md` — landfolk worker behavior (Gatherer, Flint, Mason, Barley)
 - `prompts/` — character prompts
-- `docs/` — mode notes and hackathon/demo docs (`docs/MC_AGENT_BOUNDARIES.md`: Hermes vs server when using `mc`; `docs/dashboard.md`: command center)
+- `docs/` — architecture, patterns, guides (`docs/agent-boundaries.md`: Hermes vs server when using `mc`; `docs/guides/dashboard.md`: command center)
 - `data/` — persistent per-bot data (goals, presets, locations, reminders)
 
-Archived reference / experimental material:
-- `docs/archive/` — old plans, audits, arena notes
-- `archive/experimental/` — older battle / arena / side-mode experiments
+Archived reference material: `docs/archive/` (old plans, audits, experiment notes).
 
 ## Testing
 
@@ -335,10 +303,9 @@ Sanity checks:
 
 ```bash
 node --check bot/server.js
-bash -n civilization.sh
 bash -n hermescraft.sh
-bash -n landfolk.sh
 bash -n setup.sh
+bash -n scripts/landfolk-control.sh
 bash -n server/start.sh
 bash -n scripts/run-landfolk-agent.sh
 bash -n start-dashboard.sh

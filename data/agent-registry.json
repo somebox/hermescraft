@@ -7,12 +7,17 @@
     { "name": "world_nether", "type": "NETHER" },
     { "name": "world_the_end", "type": "THE_END" }
   ],
-  "kanbanBoardIdsByWorld": {
-    "world": "Kanban/world.md",
-    "landfolk-test": "Kanban/landfolk-test.md",
-    "testflat": "Kanban/testflat.md",
-    "world_nether": "Kanban/world_nether.md",
-    "world_the_end": "Kanban/world_the_end.md"
+  "worldMap": {
+    "baseUrl": "http://192.168.1.202:8123",
+    "hermesToTileWorld": {
+      "world": "minecraft_overworld",
+      "landfolk-test": "minecraft_landfolk-test",
+      "testflat": "minecraft_testflat",
+      "world_nether": "minecraft_the_nether",
+      "world_the_end": "minecraft_the_end"
+    },
+    "iframeDefaults": { "zoom": 4 },
+    "tile": { "minZoom": 0, "maxZoom": 3, "tileSize": 512 }
   },
   "agents": [
     {
@@ -25,39 +30,39 @@
       "radar_port": null
     },
     {
-      "name": "Reed",
+      "name": "Gatherer",
+      "api_port": 3001,
+      "role": "gatherer",
+      "world": "world",
+      "model": "deepseek/deepseek-v4-flash",
+      "viewer_port": 4001,
+      "radar_port": null
+    },
+    {
+      "name": "Flint",
       "api_port": 3002,
-      "role": "water",
+      "role": "stone",
       "world": "world",
       "model": "deepseek/deepseek-v4-flash",
       "viewer_port": 4002,
       "radar_port": null
     },
     {
-      "name": "Moss",
+      "name": "Mason",
       "api_port": 3003,
-      "role": "garden",
+      "role": "builder",
       "world": "world",
       "model": "deepseek/deepseek-v4-flash",
       "viewer_port": 4003,
       "radar_port": null
     },
     {
-      "name": "Flint",
+      "name": "Barley",
       "api_port": 3004,
-      "role": "stone",
+      "role": "food",
       "world": "world",
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
       "viewer_port": 4004,
-      "radar_port": null
-    },
-    {
-      "name": "Ember",
-      "api_port": 3005,
-      "role": "fire",
-      "world": "world",
-      "model": "deepseek/deepseek-v4-flash",
-      "viewer_port": 4005,
       "radar_port": null
     }
   ]

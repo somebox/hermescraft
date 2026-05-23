@@ -1,7 +1,7 @@
 /**
  * Diagnostics helpers — `buildActionStats` and `classifyIdleReason`.
  *
- * Extracted from `lib/server/http-app.js` (Phase 6 of docs/refactor-plan.md)
+ * Extracted from `lib/server/http-app.js` (Phase 6 of docs/archive/refactor-plan-2026.md)
  * so the runtime layer can read these stats without importing up into the
  * HTTP layer (fixes the prior P8 violation in `lib/runtime/observation.js`).
  *

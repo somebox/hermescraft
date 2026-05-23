@@ -26,8 +26,7 @@ def elev_arena(rcon, arena, tester_bot, config):
     """Grass-floored area (no sub-floor stone needed — platform built
     explicitly per test). Tester bot."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
         f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air",
@@ -39,9 +38,9 @@ def elev_arena(rcon, arena, tester_bot, config):
         tester_bot.get("/status?lean=true", timeout=5)
     except Exception:
         pass
-    arena.settle(seconds=1.0)
+    arena.settle_default()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -15 60 -15 15 80 15 minecraft:air")
 
 
@@ -65,15 +64,9 @@ def test_through_steps_up_onto_elevated_door(bot, rcon, config, elev_arena):
     ])
     time.sleep(2.5)
     r = bot.post("/action/through", {"gx": 0, "gy": 66, "gz": 12}, timeout=20)
-    # PASS if through succeeded OR the bot ended past the door (z<12).
-    # The "crossed but didn't formally complete" outcome is still a
-    # success for the F56 step-up contract — what we're verifying is
-    # that the bot actually got over the lip.
-    if r.get("ok"):
-        return
     pos = bot.position()
     assert pos.get("z", 99) < 12.0, (
-        f"through failed AND bot didn't cross: {r}, pos={pos}"
+        f"F56: bot must end past the door (z<12); ok={r.get('ok')}, pos={pos}, r={r}"
     )
 
 
@@ -93,7 +86,7 @@ def test_through_flat_door_still_works(bot, rcon, config, elev_arena):
     ])
     time.sleep(2.0)
     r = bot.post("/action/through", {"gx": 0, "gy": 65, "gz": 5}, timeout=15)
-    if r.get("ok"):
-        return
     pos = bot.position()
-    assert pos.get("z", 99) < 5.0, f"through failed AND bot didn't cross: {r}, pos={pos}"
+    assert pos.get("z", 99) < 5.0, (
+        f"flat door: bot must end past door (z<5); ok={r.get('ok')}, pos={pos}, r={r}"
+    )

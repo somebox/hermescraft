@@ -17,24 +17,16 @@ Scenarios:
 
 from __future__ import annotations
 
+import math
 import pytest
 
 
 @pytest.fixture
-def reachability_arena(rcon, arena, tester_bot, config):
-    """Flat 21×21 grass-floored area, forceload chunks, peaceful mode.
-    Each test sets its own walls + starts Tester at its own coord."""
+def reachability_arena(rcon, arena, config, functional_world):
+    """Per-test props only; harness already reset grass and park at origin."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
-    rcon.batch([
-        # Cross-dim safe — if bot is elsewhere, bring it home first.
-        f"execute as Tester at @s in {world} run tp @s 0 65 0",
-    ])
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
-    arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="grass_block")
     arena.forceload_remove_all()
 
 
@@ -53,8 +45,16 @@ def test_unreachable_target_surfaces_walkable_false_and_next_hop(bot, rcon, aren
         "clear Tester",
         f"execute in {world} run tp Tester 0 65 -1 0 0",
     ])
-    arena.settle()
-    r = bot.post("/action/goto_near", {"x": 0, "y": 65, "z": 2, "range": 2}, timeout=30)
+    arena.settle_fast()
+    try:
+        bot.post("/action/stop", {}, timeout=3.0)
+    except Exception:
+        pass
+    r = bot.post("/action/goto_near", {"x": 0, "y": 65, "z": 2, "range": 2}, timeout=25)
+    assert r.get("ok"), f"expected GoalNear success within range=2: {r}"
+    pos = bot.position()
+    dist = math.hypot(pos.get("x", 0) - 0, pos.get("z", 0) - 2)
+    assert dist <= 2.5, f"bot not within range of target: pos={pos}, dist={dist}"
     obs = _observed_state(r)
     assert obs.get("walkable_to_target") is False, r
     assert obs.get("next_hop_suggestion") is not None, obs
@@ -69,8 +69,16 @@ def test_reachable_target_reports_walkable_true(bot, rcon, arena, config, reacha
         "clear Tester",
         f"execute in {world} run tp Tester 0 65 0 0 0",
     ])
-    arena.settle()
-    r = bot.post("/action/goto_near", {"x": 5, "y": 65, "z": 5, "range": 1}, timeout=30)
+    arena.settle_fast()
+    try:
+        bot.post("/action/stop", {}, timeout=3.0)
+    except Exception:
+        pass
+    r = bot.post("/action/goto_near", {"x": 5, "y": 65, "z": 5, "range": 1}, timeout=25)
+    assert r.get("ok"), r
+    pos = bot.position()
+    dist = math.hypot(pos.get("x", 0) - 5, pos.get("z", 0) - 5)
+    assert dist <= 1.5, f"bot not within range=1 of target: pos={pos}"
     obs = _observed_state(r)
     assert obs.get("walkable_to_target") is True, r
     assert obs.get("next_hop_suggestion") is None, obs

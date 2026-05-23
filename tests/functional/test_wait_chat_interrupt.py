@@ -16,10 +16,11 @@ import time
 
 import pytest
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture
 def chat_bot(tester_bot):
-    tester_bot.wait_until_ready(timeout=10)
     return tester_bot
 
 

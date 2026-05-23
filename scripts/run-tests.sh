@@ -105,6 +105,7 @@ fi
 if [[ $tester_up -eq 0 || $KEEP_TESTER -eq 0 ]]; then
   if [[ $tester_up -eq 1 ]]; then
     echo "  Restarting Tester (fresh state) — use --keep-bot to skip"
+    "$SCRIPT_DIR/scripts/stop-bots.sh" Tester --quiet || true
   else
     echo "  Starting Tester (not running)"
   fi

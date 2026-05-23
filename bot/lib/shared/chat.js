@@ -44,14 +44,12 @@ export function selectRecentChat(chatLog, now, cursor, botName) {
     }));
 }
 
-/** Landfolk cast from data/agent-models.json (lowercase MC usernames). */
-export const CURRENT_CAST = ['gatherer', 'flint', 'mason', 'barley'];
-export const LEGACY_CAST = ['marcus', 'sarah', 'jin', 'dave', 'lisa', 'tommy', 'elena', 'mia', 'genghis', 'cleopatra', 'tesla', 'pirate', 'monk', 'goblin'];
+/** Landfolk + Steve companion (lowercase MC usernames). */
+export const CURRENT_CAST = ['steve', 'gatherer', 'flint', 'mason', 'barley'];
 
 export function buildKnownNames(myName = '', nearbyNames = []) {
   return [...new Set([
     ...CURRENT_CAST,
-    ...LEGACY_CAST,
     'hermesbot',
     'hermes',
     'bot',

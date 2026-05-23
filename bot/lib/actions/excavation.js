@@ -551,6 +551,9 @@ export function createExcavationActions(services) {
         abort_on_fail: false,
         clear_stand: true,
       });
+      if (res && res.ok === false) {
+        return res;
+      }
       totalDug += Number(res?.dug || 0);
       totalSkipped += Number(res?.skipped || 0);
       totalErrors += Array.isArray(res?.errors) ? res.errors.length : 0;

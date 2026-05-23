@@ -21,7 +21,6 @@ import pytest
 @pytest.fixture
 def chat_bot(rcon, tester_bot):
     """No arena setup — these tests don't touch the world, only chat I/O."""
-    tester_bot.wait_until_ready(timeout=10)
     return tester_bot
 
 

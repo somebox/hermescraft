@@ -444,7 +444,7 @@ export function createFarmingActions(deps) {
           if (pmcp && username) {
             log(`[bonemeal] native didn't advance age (${curAge}) — PaperMCP fallback to mature`);
             const r1 = await executeServerCommand(pmcp, `clear ${username} minecraft:bone_meal 1`);
-            const r2 = await executeServerCommand(pmcp, `execute in landfolk-test run setblock ${x} ${y} ${z} minecraft:${target.name}[age=${matureAge}]`);
+            const r2 = await executeServerCommand(pmcp, `setblock ${x} ${y} ${z} minecraft:${target.name}[age=${matureAge}]`);
             if (r1.ok && r2.ok) {
               for (let i = 0; i < 6; i++) {
                 await sleep(150);
@@ -556,7 +556,7 @@ export function createFarmingActions(deps) {
           },
           next_action_hint: !yWasProvided
             ? `mc harvest ${minX} ${minZ} ${maxX} ${maxZ} ${Math.floor(b.entity.position.y) + 1}`
-            : null,
+            : undefined,
           retry_safe: false,
         }};
       }

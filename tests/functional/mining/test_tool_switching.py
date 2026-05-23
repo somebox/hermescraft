@@ -30,13 +30,11 @@ def tool_switch_arena(rcon, arena, tester_bot, config):
     iron_pickaxe and iron_shovel; default-held item depends on the order
     they're given (Minecraft gives to slot 0 first)."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute as Tester at @s in {world} run tp @s 0 65 0",
     ])
-    arena.settle(seconds=2.5)
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
+    arena.settle_water()
     rcon.batch([
         f"execute in {world} run setblock -2 65 2 minecraft:dirt",
         f"execute in {world} run setblock 2 65 2 minecraft:stone",
@@ -52,9 +50,8 @@ def tool_switch_arena(rcon, arena, tester_bot, config):
         f"execute in {world} run effect give Tester minecraft:instant_health 1 5",
         f"execute in {world} run tp Tester 0 65 1 0 0",
     ])
-    arena.settle(seconds=2.5)
+    arena.settle_water()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="grass_block")
     arena.forceload_remove_all()
 
 
@@ -72,7 +69,7 @@ def _holding(bot) -> str:
 
 
 @pytest.mark.functional
-def test_collect_dirt_equips_shovel(bot, tool_switch_arena):
+def test_collect_dirt_equips_shovel(bot, rcon, config, tool_switch_arena):
     """A: starting with pickaxe held, asked to collect dirt — should
     auto-switch to shovel before digging."""
     # Force a known starting state: pickaxe held.
@@ -88,10 +85,12 @@ def test_collect_dirt_equips_shovel(bot, tool_switch_arena):
         f"dirt collect should leave bot holding a shovel; got {held!r}. "
         "Tool-switch logic missing or skipped the shovel branch."
     )
+    world = config["mc"]["world"]
+    assert rcon.block_is(-2, 65, 2, "air"), "dirt block still present after collect ok"
 
 
 @pytest.mark.functional
-def test_collect_stone_equips_pickaxe(bot, tool_switch_arena):
+def test_collect_stone_equips_pickaxe(bot, rcon, config, tool_switch_arena):
     """B: starting with shovel held, asked to collect stone — should
     auto-switch to pickaxe before digging."""
     bot.post("/action/equip", {"item": "iron_shovel"}, timeout=8)
@@ -106,3 +105,5 @@ def test_collect_stone_equips_pickaxe(bot, tool_switch_arena):
         f"stone collect should leave bot holding a pickaxe; got {held!r}. "
         "Tool-switch logic missing or skipped the pickaxe branch."
     )
+    world = config["mc"]["world"]
+    assert rcon.block_is(2, 65, 2, "air"), "stone block still present after collect ok"

@@ -22,9 +22,9 @@ Use this workflow for any task with 4+ steps, unfamiliar mechanics, or infrastru
 ## Phase 1: Research
 
 Before building anything you haven't done before:
-- **Load the relevant skill** — `skill_view("minecraft-farming")`, `skill_view("minecraft-building")`, etc.
+- **Load the relevant skill** — `skill_view("minecraft-survival")` (mechanics, recipes, farming, animals), `skill_view("minecraft-building")`, etc.
 - **Web search** (if available) — look up the Minecraft wiki for specific mechanics, layouts, or recipes you're unsure about.
-- **`mc tips TOPIC`** — built-in help for common tasks.
+- **`mc help`** / **`mc commands`** — list available verbs and their signatures.
 - **`mc recipes ITEM`** and **`mc craft_plan ITEM`** — check crafting dependencies.
 
 Do not guess at mechanics. A 30-second lookup prevents 10 minutes of wrong work.

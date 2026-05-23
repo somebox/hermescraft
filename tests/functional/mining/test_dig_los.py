@@ -22,9 +22,7 @@ def los_arena(rcon, arena, tester_bot, config):
     a stone_pickaxe, park at (0,65,0) facing east. Each test then places
     its own diorite/obsidian arrangement before exercising dig."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
         f"clear Tester",
         f"execute in {world} run give Tester minecraft:stone_pickaxe 1",
@@ -32,7 +30,6 @@ def los_arena(rcon, arena, tester_bot, config):
     ])
     arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
     arena.forceload_remove_all()
 
 

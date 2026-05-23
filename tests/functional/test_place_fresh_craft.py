@@ -25,16 +25,12 @@ from tests._lib import extract_error
 def craft_place_arena(rcon, arena, tester_bot, config):
     """Stone floor at y=64, bot at (0,65,0) facing east, inventory cleared."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
         f"execute in {world} run tp Tester 0 65 0 90 0",
         "clear Tester",
     ])
     arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
 
 
 @pytest.mark.functional

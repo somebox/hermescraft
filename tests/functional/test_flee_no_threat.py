@@ -25,29 +25,14 @@ from tests._lib import extract_error
 
 
 @pytest.fixture
-def empty_world(rcon, arena, tester_bot, config):
-    """Empty grass arena, peaceful, no mob spawning. Bot at (0,65,0)."""
+def empty_world(rcon, arena, config, functional_world):
+    """Harness-clean arena; tests may spawn mobs. Teardown kills stragglers."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Tester {world}")
-    time.sleep(0.5)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    rcon.batch([
-        f"execute in {world} run kill @e[type=!player]",
-    ])
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
-    rcon.batch([
-        f"execute in {world} run tp Tester 0 65 0 0 0",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
-    ])
-    arena.settle()
     yield
     rcon.batch([
         f"execute in {world} run kill @e[type=!player]",
-        f"execute in {world} run tp Tester 0 100 0 0 0",
+        f"execute in {world} run difficulty peaceful",
     ])
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="grass_block")
 
 
 def _spawn_mob(rcon, world: str, kind: str, x: float, y: float, z: float, no_ai: bool = True) -> None:
@@ -84,13 +69,23 @@ def test_flee_zombie_triggers_hostile_mob_flee(bot, rcon, config, empty_world):
     # generates packets mineflayer perception picks up.
     rcon.run(f"execute in {world} run difficulty easy")
     _spawn_mob(rcon, world, "zombie", 3, 65, 0, no_ai=False)
-    time.sleep(1.5)
-    r = bot.post("/action/flee", {"distance": 16}, timeout=30)
-    assert r.get("ok"), r
-    data = r.get("data") or {}
-    threat = data.get("threat") or {}
-    assert threat.get("name") == "zombie", data
-    assert (data.get("flee_reason") or "").startswith("hostile_mob:"), data
+    time.sleep(1.0)
+    try:
+        r = bot.post("/action/flee", {"distance": 16}, timeout=25)
+        assert r.get("ok"), r
+        data = r.get("data") or {}
+        threat = data.get("threat") or {}
+        assert threat.get("name") == "zombie", data
+        assert (data.get("flee_reason") or "").startswith("hostile_mob:"), data
+    finally:
+        rcon.batch([
+            f"execute in {world} run kill @e[type=zombie]",
+            f"execute in {world} run difficulty peaceful",
+        ])
+        try:
+            bot.post("/action/stop", {}, timeout=3.0)
+        except Exception:
+            pass
 
 
 @pytest.mark.functional

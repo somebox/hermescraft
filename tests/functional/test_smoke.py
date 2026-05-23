@@ -11,4 +11,4 @@ import pytest
 @pytest.mark.skip(reason="placeholder — real functional tests land in Round 3")
 def test_functional_marker_works(bot):
     """Sanity check that the `bot` fixture is reachable. Skipped by default."""
-    bot.wait_until_ready(timeout=5)
+    bot.ensure_connected(reconnect_timeout=5)

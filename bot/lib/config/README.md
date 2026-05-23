@@ -82,4 +82,4 @@ a `config` in scope.
 - `_MC_API_URL_LOCKED`, `MC_API_URL` — Hermes process env, set by launch
   scripts. Not bot-server config.
 - `BASE_API_PORT` — launch-time only (multi-bot port allocation in
-  `landfolk.sh` / `civilization.sh`).
+  `scripts/landfolk-control.sh` / `start-landfolk.sh`).

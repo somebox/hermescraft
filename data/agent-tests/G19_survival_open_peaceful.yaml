@@ -45,7 +45,7 @@ prompt: |
     - Fish at the pond (needs fishing_rod — craft from 3 sticks + 2 string;
       no string here so fish is harder than hunt)
 
-  Use `mc tips TOPIC` (e.g., `mc tips craft`) if a verb confuses you.
+  Use `mc help` to list verbs by category if a name confuses you.
   Use `mc status` to check what you have and where you are.
 
   Don't batch commands. Run each through the terminal one at a time.

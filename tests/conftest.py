@@ -15,6 +15,7 @@ Markers are declared in pyproject.toml; --strict-markers forbids typos.
 from __future__ import annotations
 
 import os
+import sys
 import time
 import warnings
 from datetime import datetime, timezone
@@ -23,6 +24,11 @@ from pathlib import Path
 import pytest
 
 from tests._lib import Arena, BotClient, BotTrace, Predicates, RconClient, load_config
+from tests._lib.functional_fixtures import (
+    bake_prefabs_session,
+    lay_ground_substrate_session,
+    reset_ground_arena,
+)
 
 
 @pytest.fixture(scope="session")
@@ -140,11 +146,33 @@ def _functional_session_setup(config, rcon):
             f"execute in {world} run gamerule doImmediateRespawn true",
             f"execute in {world} run time set noon",
             f"execute in {world} run weather clear",
+            f"execute in {world} run gamerule commandModificationBlockLimit 524288",
         ])
+        lay_ground_substrate_session(rcon, world)
+        baked = bake_prefabs_session(Arena(rcon, config))
+        print(f"[session] baked prefabs: {', '.join(baked)}")
     except Exception:
         # Unit-only invocations may have no rcon target; the
         # functional harness will re-attempt rcon at test time and
         # fail with a clear error there.
+        pass
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _tester_bot_ready_once(tester_bot, _functional_session_setup):
+    """Block once per session until Tester answers /health.connected=true."""
+    try:
+        tester_bot.wait_until_ready(timeout=60)
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _final_park(rcon, config, tester_bot):
+    yield
+    try:
+        Arena(rcon, config).move_to_safe(bot=tester_bot)
+    except Exception:
         pass
 
 
@@ -200,9 +228,9 @@ _test_counter = {"n": 0}
 
 def _safe_nodeid(nodeid: str) -> str:
     """Filesystem-safe slug of a pytest nodeid for use as a filename."""
+    slug = nodeid.split("tests/", 1)[-1] if "tests/" in nodeid else nodeid
     return (
-        nodeid
-        .replace("tests/functional/", "")
+        slug
         .replace("/", "_")
         .replace("::", "__")
         .replace("[", "_")
@@ -226,6 +254,8 @@ def pytest_collection_modifyitems(config, items):
     (announce/rescue/trace/park). Warn at collection time so the
     mistake is caught early instead of at first cumulative-state
     cascade failure."""
+    import inspect
+
     for item in items:
         if "tests/functional/" in item.nodeid and not item.get_closest_marker("functional"):
             warnings.warn(
@@ -234,23 +264,77 @@ def pytest_collection_modifyitems(config, items):
                 f"run for this test. Add the marker.",
                 stacklevel=0,
             )
+        if not item.get_closest_marker("functional"):
+            continue
+        try:
+            src = inspect.getsource(item.function)
+            if "time.sleep" in src:
+                warnings.warn(
+                    f"{item.nodeid}: uses time.sleep directly; prefer "
+                    f"arena.settle_*() or bot.wait_for_condition()",
+                    stacklevel=0,
+                )
+        except (OSError, TypeError):
+            pass
+
+    if any(
+        item.get_closest_marker("functional") or item.get_closest_marker("integration")
+        for item in items
+    ):
+        try:
+            import subprocess
+
+            repo = Path(__file__).resolve().parents[1]
+            script = repo / "scripts" / "check-arena-coords.py"
+            if script.is_file():
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(script),
+                        "tests/functional",
+                        "tests/integration",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    cwd=str(repo),
+                )
+                if proc.stdout.strip():
+                    warnings.warn(
+                        f"check-arena-coords:\n{proc.stdout.strip()[:4000]}",
+                        stacklevel=0,
+                    )
+        except Exception:
+            pass
+
+
+@pytest.fixture
+def functional_world(_functional_harness):
+    """Depend on this in geometry fixtures so setup runs after harness reset."""
+    yield
 
 
 @pytest.fixture(autouse=True)
 def _functional_harness(request, config, rcon, tester_bot, log_dir):
     """Canonical setup/teardown wrapper for functional-tier tests.
 
-    Marker-gated: a no-op for unit/integration tests. See the section
-    header above for the full sequence and rationale.
+    Marker-gated: a no-op for unit tests. Runs for @functional and
+    @integration. See the section header above for the full sequence.
     """
-    if not request.node.get_closest_marker("functional"):
+    if not (
+        request.node.get_closest_marker("functional")
+        or request.node.get_closest_marker("integration")
+    ):
         yield
         return
 
     world = config["mc"]["world"]
     _test_counter["n"] += 1
     n = _test_counter["n"]
-    short = request.node.nodeid.split("tests/functional/", 1)[-1]
+    short = (
+        request.node.nodeid.split("tests/", 1)[-1]
+        if "tests/" in request.node.nodeid
+        else request.node.nodeid
+    )
     safe = _safe_nodeid(request.node.nodeid)
     trace_path = log_dir / "traces" / f"{safe}.trace.log"
     trace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -258,8 +342,16 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
     arena = Arena(rcon, config)
     harness_errors: list[str] = []
 
-    # 1. Rescue.
+    # 0. Reconnect HTTP client if a prior test left the bot mid-disconnect.
     try:
+        tester_bot.ensure_connected(reconnect_timeout=12.0)
+    except TimeoutError as e:
+        harness_errors.append(f"ensure_connected: {e}")
+
+    # 1. Geometry reset, state clean, rescue (canonical ground arena).
+    try:
+        reset_ground_arena(rcon, world)
+        arena.clean()
         arena.rescue_tester(bot=tester_bot, wait=True)
     except Exception as e:  # noqa: BLE001 — record + continue
         harness_errors.append(f"rescue_tester: {type(e).__name__}: {e}")
@@ -278,21 +370,15 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
         if p:
             bot_pos = f"{p.get('x')},{p.get('y')},{p.get('z')}"
             # Sentinel: post-rescue, the bot should be parked near
-            # (0, 100, 0). If it's anywhere else, rescue_tester ran but
-            # didn't successfully place the bot (cross-world failure,
-            # rcon hiccup, mineflayer cache lag). Don't fail the test —
-            # rcon-based test bodies may still cope — but emit a
-            # UserWarning so pytest's warning summary makes the bad
-            # rescue visible in-run (a trace-only `# HARNESS_WARN` is
-            # too silent to attribute downstream test failures to).
+            # (0, 65, 0).
             try:
                 bx = float(p.get("x") or 0)
                 by = float(p.get("y") or 0)
                 bz = float(p.get("z") or 0)
-                if abs(bx) > 2 or abs(by - 100) > 5 or abs(bz) > 2:
+                if abs(bx) > 2 or abs(by - 65) > 5 or abs(bz) > 2:
                     msg = (
                         f"bot_not_at_safe_park: pos={bx:.1f},{by:.1f},{bz:.1f} "
-                        f"(expected near 0,100,0) — rescue_tester ran but did "
+                        f"(expected near 0,65,0) — rescue_tester ran but did "
                         f"not place the bot; downstream test failures in this "
                         f"and adjacent tests may be cascade-attributable."
                     )
@@ -316,11 +402,22 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
         harness_errors.append(f"write_start: {type(e).__name__}: {e}")
 
     # 4. Start trace poller (appends after the header).
-    trace = BotTrace(tester_bot.base, trace_path)
-    try:
-        trace.start()
-    except Exception as e:  # noqa: BLE001
-        harness_errors.append(f"trace_start: {type(e).__name__}: {e}")
+    no_trace = request.node.get_closest_marker("no_trace") is not None
+    trace_marker = request.node.get_closest_marker("trace")
+    interval = 1.0
+    if trace_marker:
+        if trace_marker.kwargs.get("interval") is not None:
+            interval = float(trace_marker.kwargs["interval"])
+        elif trace_marker.args:
+            interval = float(trace_marker.args[0])
+
+    trace = None
+    if not no_trace:
+        trace = BotTrace(tester_bot.base, trace_path, interval=interval)
+        try:
+            trace.start()
+        except Exception as e:  # noqa: BLE001
+            harness_errors.append(f"trace_start: {type(e).__name__}: {e}")
 
     t0 = time.time()
 
@@ -330,10 +427,11 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
         elapsed = time.time() - t0
 
         # 6. Stop poller.
-        try:
-            trace.stop()
-        except Exception as e:  # noqa: BLE001
-            harness_errors.append(f"trace_stop: {type(e).__name__}: {e}")
+        if trace is not None:
+            try:
+                trace.stop()
+            except Exception as e:  # noqa: BLE001
+                harness_errors.append(f"trace_stop: {type(e).__name__}: {e}")
 
         # Resolve test outcome from the makereport-stashed report.
         rep_call = getattr(request.node, "rep_call", None)
@@ -368,8 +466,5 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
         except Exception:  # noqa: BLE001
             pass
 
-        # 9. Park.
-        try:
-            arena.move_to_safe(bot=tester_bot)
-        except Exception:  # noqa: BLE001
-            pass
+        # 9. Park: next test's harness rescue_tester parks at 0,65,0.
+        # Session end: _final_park runs once.

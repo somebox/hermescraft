@@ -110,7 +110,7 @@ def _in_box(pos: dict) -> bool:
 _KNOWN_NS_CLOSED_FLAKY_REASON = (
     "mineflayer-pathfinder N/S closed-door race: door opens but path "
     "re-eval lags; bot stalls outside. Investigation deferred. See "
-    "docs/test-inventory.md."
+    "docs/archive/test-inventory.md."
 )
 
 
@@ -121,9 +121,7 @@ def door_arena(rcon, arena, tester_bot, config):
     sub-floor is the load-bearing fix: without it, prior tests' lava /
     voids at y<64 chunk through and kill the bot mid-pathfind."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute in {world} run fill -16 60 -16 16 80 16 minecraft:air",
@@ -132,9 +130,9 @@ def door_arena(rcon, arena, tester_bot, config):
         "effect give Tester minecraft:resistance 600 4",
         "effect give Tester minecraft:saturation 600 1",
     ])
-    arena.settle(seconds=0.5)
+    arena.settle_fast()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.run(f"execute in {world} run fill -16 60 -16 16 80 16 minecraft:air")
     arena.forceload_remove_all()
 

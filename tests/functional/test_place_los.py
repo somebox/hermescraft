@@ -21,9 +21,6 @@ def place_arena(rcon, arena, tester_bot, config):
     """Stone floor at y=64, Tester at (0,65,0) facing east (+x). Inventory
     holds 64 cobblestone — placement is the side effect under test."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
         f"execute in {world} run tp Tester 0 65 0 90 0",
         "clear Tester",
@@ -31,7 +28,6 @@ def place_arena(rcon, arena, tester_bot, config):
     ])
     arena.settle()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
 
 
 @pytest.mark.functional

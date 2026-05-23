@@ -12,7 +12,7 @@ triggers:
   - build fence
   - build farm
   - build pen
-version: 4.2.0
+version: 4.3.0
 ---
 
 # Minecraft Building — With Taste
@@ -20,17 +20,19 @@ version: 4.2.0
 ## Commands
 
 ```
-# Building primitives (use these for bulk work — they auto-equip materials)
-mc wall BLOCK X1 Y1 Z1 X2 Y2 Z2   # vertical wall between two corners
-mc fence BLOCK X1 Z1 X2 Z2 [--gate DIR]  # fence enclosure with optional gate
-mc level X1 Z1 X2 Z2 Y [BLOCK]    # flatten an area to target Y
-mc path X1 Z1 X2 Z2 [Y]           # convert dirt/grass to dirt_path (needs shovel)
-mc dig_pit X Z W L D              # dig a W×L×D pit
-mc build_stairs BLOCK DIR LEN     # ascending triangular ramp the bot can climb
+# Bulk-placement primitives (auto-equip materials; transactional)
+mc wall BLOCK X1 Y1 Z1 X2 Y2 Z2          # vertical wall between two corners
+mc fill BLOCK X1 Y1 Z1 X2 Y2 Z2 [--hollow]  # fill an axis-aligned box
+mc fence BLOCK X1 Z1 X2 Z2 [--gate DIR]  # fence rectangle + optional gate
+mc level X1 Z1 X2 Z2 Y [BLOCK]           # flatten an area to target Y
+mc path X1 Z1 X2 Z2 [Y]                  # convert dirt/grass to dirt_path (needs shovel)
+mc dig_pit X Z W L D [TOP_Y]             # dig a W×L×D pit
+mc build_stairs BLOCK DIR LEN [X Y Z]    # ascending triangular ramp
 
-# Single-block primitives (for finishing work)
-mc place BLOCK X Y Z              # place block at position
+# Single-block primitives (finishing work)
+mc place BLOCK X Y Z              # place block at position (torches, decoration)
 mc dig X Y Z                      # remove block at position
+mc safe_dig X Y Z                 # dig with lava/fall/suffocation pre-check
 mc collect BLOCK N                # gather materials
 mc craft ITEM [N]                 # craft building blocks
 
@@ -38,19 +40,23 @@ mc craft ITEM [N]                 # craft building blocks
 mc through GX GY GZ [DX DY DZ]    # open door/gate, walk through, close behind
 mc interact X Y Z                 # toggle a door/gate (without traversal)
 
+# Site prep + survey
+mc status                         # position + inventory
+mc nearby [R]                     # blocks + entities nearby
+mc map [R]                        # compact ASCII map of the area
+mc terrain_top X Z [R]            # highest non-air Y at a column (find flat ground)
+mc reachable X Y Z                # standability pre-flight; returns best_stand alternative
+mc find_blocks BLOCK [R]          # locate material sources
+mc mark NAME [NOTE]               # save the build site (e.g. mc mark cabin_site)
+
 # Navigation around the build site
 mc move X Y Z                     # smart non-destructive nav (handles doors)
-mc goto_near X Y Z                # raw pathfinder near a position
-
-# Survey
-mc status                         # check position + inventory
-mc nearby                         # see what's around you
-mc find_blocks BLOCK              # find material sources
+mc goto_near X Y Z [r]            # pathfind near a position
 ```
 
-## Prefer the building-primitive verbs
+## Prefer the bulk-placement verbs
 
-For bulk placement, use the high-level verbs — they're transactional
+For multi-block work, use the high-level verbs — they're transactional
 (action-contract responses with placed/skipped/failed counts), auto-equip
 the right item, and won't half-complete on a small inventory shortfall.
 A loop of `mc place` calls is slower, error-prone, and harder to debug.
@@ -59,29 +65,34 @@ A loop of `mc place` calls is slower, error-prone, and harder to debug.
 |---|---|
 | 5×5 fenced animal pen with gate | `mc fence oak_fence 0 0 4 4 --gate south` |
 | 3-block-tall cobble wall | `mc wall cobblestone X1 Y1 Z1 X2 Y2 Z2` |
+| Solid floor / roof slab | `mc fill oak_planks X1 Y Z1 X2 Y Z2` |
+| Hollow stone box (room shell) | `mc fill stone X1 Y1 Z1 X2 Y2 Z2 --hollow` |
 | Flatten a building site | `mc level X1 Z1 X2 Z2 Y` |
 | Path through a garden | `mc path X1 Z1 X2 Z2` (need shovel) |
 | Stairs out of a foundation pit | `mc build_stairs cobblestone east 4` |
-| Single decorative block | `mc place ...` |
+| Torches / decoration / single blocks | `mc place BLOCK X Y Z` |
 
-## Before You Build ANYTHING
+## Before you build ANYTHING
 
-1. **CHECK MEMORY** for building lessons the player taught you
-2. **ASK the player** where they want it if they didn't specify
-3. **Survey the terrain** — `mc status` + `mc nearby` to find flat ground
-4. **Plan it out** — tell the player your plan in chat before placing blocks
-5. **Clear the area** — `mc dig` to remove trees, tall grass, uneven ground
-6. **Level the ground** — fill holes, remove bumps to make a flat foundation
+1. **Check memory** for building lessons the player taught you.
+2. **Ask the player** where they want it if they didn't specify.
+3. **Find flat ground** — `mc map 16` for an overview; `mc terrain_top X Z 8` to compare column heights over a small radius.
+4. **Verify standability** at the corners — `mc reachable X Y Z` returns `best_stand` if a corner is buried/blocked.
+5. **Plan it out** — tell the player your plan in chat before placing blocks.
+6. **Mark the site** — `mc mark cabin_site` so you can `mc go_mark cabin_site` after gathering.
+7. **Clear + level** — `mc dig` trees / tall grass, then `mc level X1 Z1 X2 Z2 Y` over the footprint.
 
-## Golden Rules
+## Golden rules
 
-- **BUILD ON THE GROUND.** Not in trees. Not floating. On solid flat ground.
-- **Place crafting tables and furnaces INSIDE buildings**, not randomly in the wilderness
-- **Use multiple materials** — variety is what makes builds look good
-- **Don't just make boxes** — add depth, overhangs, different heights
-- **Foundations first** — lay cobblestone/stone base before walls
-- **Roof isn't flat** — use stairs for sloped roofs, slabs for overhangs
-- **Light it up** — torches/lanterns inside AND outside to prevent mob spawns
+- **Build on the ground.** Not in trees. Not floating. On solid flat ground.
+- **Crafting tables, furnaces, chests go INSIDE buildings**, not scattered in the wilderness.
+- **Use multiple materials** — variety is what makes builds look good. All-planks = ugly.
+- **Add depth** — overhangs, different heights; avoid plain boxes.
+- **Foundations first** — lay a cobblestone/stone base perimeter before walls.
+- **Sloped roof** — use stairs for the pitch, slabs for overhangs. Flat roof with no overhang reads as unfinished.
+- **Light it up** — `mc place torch X Y Z` inside AND outside (every ~6 blocks) to prevent mob spawns at night.
+- **Clear obstacles first** — trees, tall grass, uneven ground.
+- **Right-size it** — a 5×5 box looks empty; a 20×20 mansion you can't furnish looks abandoned. Aim ~8–12 blocks per side for a starter house.
 
 ## Log Cabin Style
 
@@ -127,43 +138,27 @@ Hip roof:    stairs on all 4 sides converging
 Overhang:    extend roof 1 block past walls using stairs/slabs
 ```
 
-## Common Mistakes to Avoid
+## Worked example: 7×5 plank floor at Y=64 starting at (100, 200)
 
-- ❌ Placing crafting tables outside or in trees
-- ❌ Single-material builds (all planks = ugly)
-- ❌ No foundation (walls directly on grass)
-- ❌ Flat roofs with no overhang
-- ❌ No windows or lighting
-- ❌ Ignoring terrain (building on steep hills without terracing)
-- ❌ Forgetting interior furnishing
-- ❌ Building too small (5x5 boxes) or way too big to fill
-- ❌ Not clearing trees/obstacles first
+Don't loop `mc place` — break the build into regions and pick the right verb:
 
-## Systematic Placement
-
-For walls, fences, paths, floors, ramps — use the bulk-placement verbs
-(`mc wall`, `mc fence`, `mc path`, `mc level`, `mc build_stairs`). They
-take corner coordinates and handle equip, place, skip-existing, and
-partial-success reporting in one call.
-
-For one-off decoration: `mc place BLOCK X Y Z` per block. Always note
-your starting corner coords from `mc status` first so the layout is
-intentional, not improvised.
-
-For a 7×5 floor at Y=64 starting at (100, 200), don't loop `mc place`:
 ```
-mc level 100 200 106 204 64        # first flatten terrain
-mc fill oak_planks 100 64 200 106 64 204   # then lay the wooden floor
+mc level 100 200 106 204 64                       # flatten the footprint
+mc fill oak_planks 100 64 200 106 64 204          # lay the floor in one call
 ```
-For multi-layer construction, break the build into regions and use the
-right verb for each: `mc fill` for solid layers, `mc wall` for vertical
-walls, `mc fence` for fence enclosures.
 
-## Emergency Shelter (first night)
+For a four-wall room shell:
+```
+mc fill stone 100 65 200 106 68 204 --hollow      # hollow stone box, 4 tall
+mc place oak_door 103 65 200                      # door on the south face
+mc place torch 103 67 202                         # interior light
+```
+
+## Emergency shelter (first night)
 
 If night is coming and there's no time for a proper build:
-1. `mc collect cobblestone 24` 
-2. Dig into a hillside or place 3x3x3 box
-3. Seal yourself in, place torch
-4. Wait for dawn
-5. **But tell the player** "quick shelter for the night, we'll build properly tomorrow"
+1. `mc collect cobblestone 24` (or any solid block on hand).
+2. Pick a spot against a hillside or wall: `mc fill cobblestone X1 Y Z1 X2 Y+2 Z2 --hollow` gives you a sealed 1-block-thick box in one call.
+3. `mc place torch X Y Z` inside for light + spawn-proofing.
+4. `mc sleep` if you have a bed (sets respawn) — otherwise `mc wait 600` (~dawn).
+5. **Tell the player** "quick shelter for the night, we'll build properly tomorrow."

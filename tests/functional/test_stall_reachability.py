@@ -24,11 +24,9 @@ def boxed_in_bot(rcon, arena, tester_bot, config):
     from a previous test, the first tp lands in the target dim and the
     floor must exist or the bot drops into the void."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
     ])
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
     rcon.batch([
         # 5×5 obsidian shell at y=65..68 (4 tall — no jumping out).
         f"execute in {world} run fill -2 65 -2 2 68 2 minecraft:obsidian",
@@ -39,9 +37,8 @@ def boxed_in_bot(rcon, arena, tester_bot, config):
         # selectors in Tester's current dim then teleports him into <world>.
         f"execute as Tester at @s in {world} run tp @s 0.5 65 0.5 0 0",
     ])
-    arena.settle(seconds=3.0)  # extra settle — the pen build is substantial
+    arena.settle_heavy()  # extra settle — the pen build is substantial
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="grass_block")
     arena.forceload_remove_all()
 
 

@@ -102,3 +102,35 @@ test('smelt: NO_INPUT when input item missing from inventory', async () => {
   assertContract(r);
   assert.equal(r.error.code, 'NO_INPUT');
 });
+
+test('smelt_start: no furnace nearby throws with guidance', async () => {
+  const { actions } = buildFurnace({ bot: { findBlock: () => null } });
+  await assert.rejects(
+    () => actions.smelt_start({ input: 'iron_ore', count: 1 }),
+    /No furnace within 32 blocks/,
+  );
+});
+
+test('furnace_check: no furnace at coords throws', async () => {
+  const { actions, mockBot } = buildFurnace({
+    bot: {
+      blockAt: () => ({ name: 'air' }),
+    },
+  });
+  await assert.rejects(
+    () => actions.furnace_check({ x: 0, y: 64, z: 0 }),
+    /No furnace at/,
+  );
+});
+
+test('furnace_take: no block at coords throws', async () => {
+  const { actions } = buildFurnace({
+    bot: {
+      blockAt: () => null,
+    },
+  });
+  await assert.rejects(
+    () => actions.furnace_take({ x: 0, y: 64, z: 0 }),
+    /No block at/,
+  );
+});

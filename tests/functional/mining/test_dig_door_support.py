@@ -19,51 +19,35 @@ Scenarios:
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from tests._lib import extract_error
 
 
-@pytest.fixture(scope="module")
-def dig_support_arena(rcon, config, tester_bot):
-    """Build all 4 scenarios' geometry once. Each test calls `tp_adjacent`
-    via the helper below to position the bot for its own dig.
-
-    Rebuilding the SUPPORT_BLOCK scenarios mid-module isn't worthwhile —
-    they're failure paths so the cobble + door remain in place between
-    tests. The force-dig and plain-cobble scenarios (B, C) leave their
-    target as air after running; the module finishes with those two
-    consumed, which is fine since the module then teardown-cleans.
-    """
+@pytest.fixture
+def dig_support_arena(rcon, config, functional_world):
+    """Rebuild all four dig scenarios after each harness reset."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.batch([
-        f"execute in {world} run kill @e[type=!player]",
-        f"execute in {world} run fill -10 65 -10 10 80 10 minecraft:air",
-        f"execute in {world} run fill -10 64 -10 10 64 10 minecraft:stone",
-        # Door-on-support (A, B)
-        f"execute in {world} run setblock 5 65 0 minecraft:cobblestone",
-        f"execute in {world} run setblock 5 66 0 minecraft:oak_door[half=lower]",
-        f"execute in {world} run setblock 5 67 0 minecraft:oak_door[half=upper]",
-        # Plain cobble (C)
-        f"execute in {world} run setblock 7 65 0 minecraft:cobblestone",
-        # Fence-gate-on-support (D)
-        f"execute in {world} run setblock 3 65 0 minecraft:cobblestone",
-        f"execute in {world} run setblock 3 66 0 minecraft:oak_fence_gate",
-        "clear Tester",
-        "give Tester minecraft:wooden_pickaxe 1",
-    ])
-    # Canonical step 2: place_player tps + waits stationary instead of
-    # raw tp + fixed sleep — eliminates the gravity-race a test body
-    # would hit if the bot arrived airborne.
-    from tests._lib import Arena
-    Arena(rcon, config).place_player(tester_bot, 0, 65, 0, yaw=90.0)
+
+    def _lay() -> None:
+        rcon.batch([
+            f"execute in {world} run fill 2 65 -2 8 68 2 minecraft:air",
+            # Door-on-support (A, B)
+            f"execute in {world} run setblock 5 65 0 minecraft:cobblestone",
+            f"execute in {world} run setblock 5 66 0 minecraft:oak_door[half=lower]",
+            f"execute in {world} run setblock 5 67 0 minecraft:oak_door[half=upper]",
+            # Plain cobble (C)
+            f"execute in {world} run setblock 7 65 0 minecraft:cobblestone",
+            # Fence-gate-on-support (D)
+            f"execute in {world} run setblock 3 65 0 minecraft:cobblestone",
+            f"execute in {world} run setblock 3 66 0 minecraft:oak_fence_gate",
+            "give Tester minecraft:wooden_pickaxe 1",
+        ])
+
+    _lay()
     yield
     rcon.batch([
-        f"execute in {world} run fill -10 65 -10 10 80 10 minecraft:air",
-        f"execute in {world} run tp Tester 52 65 52",
+        f"execute in {world} run fill 2 65 -2 8 68 2 minecraft:air",
     ])
 
 

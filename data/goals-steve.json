@@ -3,22 +3,6 @@
     {
       "enabled": true,
       "strategies_available": [
-        "collect_logs",
-        "mc discover logs",
-        "mc collect"
-      ],
-      "constraints": {
-        "preempt_class": "normal"
-      },
-      "id": "maintain_wood",
-      "metric": "logs_total",
-      "target_min": 64,
-      "target_ok": 128,
-      "priority": 70
-    },
-    {
-      "enabled": true,
-      "strategies_available": [
         "hunt",
         "gather",
         "mc discover food"
@@ -31,21 +15,6 @@
       "target_min": 30,
       "target_ok": 60,
       "priority": 80
-    },
-    {
-      "enabled": true,
-      "strategies_available": [
-        "mine_stone",
-        "mc discover stone"
-      ],
-      "constraints": {
-        "preempt_class": "normal"
-      },
-      "id": "maintain_stone",
-      "metric": "stone_total",
-      "target_min": 64,
-      "target_ok": 128,
-      "priority": 55
     },
     {
       "enabled": true,
@@ -100,8 +69,6 @@
   ],
   "deficitSince": {
     "maintain_wood": 1779054534804,
-    "maintain_stone": 1779054960991,
-    "maintain_food": 1779056090029,
-    "survive": 1779060806980
+    "maintain_stone": 1779054960991
   }
 }

@@ -2,10 +2,29 @@
  * HermesCraft dashboard frontend (vanilla ESM).
  */
 import { boundsXZ, worldToCanvas } from './map2d.js';
+import {
+  actionLabel,
+  buildChipList,
+  buildHumanDetail,
+  buildInventoryFull,
+  buildKanbanDetail,
+  buildPoiDetail,
+  collapsibleRaw,
+  motionSummary,
+  mountPlayerDetailShell,
+  patchDetailHero,
+  patchGoalsBody,
+  patchRecentActionsHost,
+  patchReactiveHost,
+  prettyItemName,
+} from './detail-view.js';
+import { patchAgentLiveStrip } from './agent-live-strip.js';
 
 const LS_WORLD = 'hc_dashboard_world';
 const LS_SEL = 'hc_dashboard_selection';
 const LS_TAB = 'hc_dashboard_tab';
+const LS_MAP_SUB = 'hc_dashboard_map_sub';
+const LS_CHAT_SUB = 'hc_dashboard_chat_sub';
 
 const LANES = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archived'];
 
@@ -19,8 +38,28 @@ let mapHitTargets = [];
 /** Last FPV iframe URL we applied — avoids resetting `src` every fleet poll (full reload + viewer spam). */
 let fpvLoadedUrl = '';
 
+/** Last terrain map iframe URL (same stability as FPV). */
+let terrainLoadedUrl = '';
+
+/** From GET /api/map/config — null when disabled. */
+let worldMapConfig = null;
+
 /** Last detail panel selection key — same player: update inner block only so radar iframe is not recreated every poll. */
 let prevDetailKey = null;
+
+/** Throttle full inventory fetch while same agent selected. */
+let lastInvFetch = { agent: null, at: 0 };
+
+/** Throttle goals fetch while same agent selected. */
+let lastGoalsFetch = { agent: null, at: 0, goals: null };
+
+/** Cached goals for detail panel when fetch fails. */
+let cachedGoalsList = [];
+
+/** Mind panel: poll only while Mind tab + selected agent online. */
+let mindPollTimer = null;
+const MIND_POLL_MS = 5000;
+const MIND_TAIL_LIMIT = 8;
 
 function loadJson(key, fallback) {
   try {
@@ -39,6 +78,8 @@ let state = {
   world: loadJson(LS_WORLD, null) || 'world',
   selection: loadJson(LS_SEL, null),
   centerTab: loadJson(LS_TAB, 'map') || 'map',
+  mapSub: loadJson(LS_MAP_SUB, 'tactical') || 'tactical',
+  chatSub: loadJson(LS_CHAT_SUB, 'ingame') || 'ingame',
 };
 
 function $(id) {
@@ -52,14 +93,6 @@ function el(tag, cls, text) {
   if (cls) n.className = cls;
   if (text != null) n.textContent = text;
   return n;
-}
-
-function dlRow(dtText, ddNode) {
-  const dt = el('dt', null, dtText);
-  const dd = document.createElement('dd');
-  if (typeof ddNode === 'string') dd.textContent = ddNode;
-  else dd.appendChild(ddNode);
-  return [dt, dd];
 }
 
 function setTab(name) {
@@ -76,6 +109,82 @@ function setTab(name) {
     p.hidden = !on;
   });
   if (name === 'fpv') refreshFpv();
+  if (name === 'map' && state.mapSub === 'terrain') refreshTerrainMap();
+}
+
+function buildTerrainIframeUrl(cfg, hermesWorld) {
+  const tileWorld = cfg.hermesToTileWorld?.[hermesWorld];
+  if (!tileWorld) return null;
+  const zoom = cfg.iframeDefaults?.zoom ?? 4;
+  const u = new URL('/', cfg.baseUrl);
+  u.searchParams.set('world', tileWorld);
+  u.searchParams.set('zoom', String(zoom));
+  return u.toString();
+}
+
+function applyWorldMapUi() {
+  const nav = document.getElementById('mapSubtabs');
+  if (!nav) return;
+  const enabled = Boolean(worldMapConfig?.enabled);
+  nav.hidden = !enabled;
+  if (!enabled && state.mapSub === 'terrain') {
+    state.mapSub = 'tactical';
+    saveJson(LS_MAP_SUB, state.mapSub);
+  }
+  setMapSubTab(state.mapSub, { skipSave: true });
+}
+
+function setMapSubTab(name, opts = {}) {
+  if (!worldMapConfig?.enabled && name === 'terrain') name = 'tactical';
+  state.mapSub = name;
+  if (!opts.skipSave) saveJson(LS_MAP_SUB, name);
+  document.querySelectorAll('.map-subtab').forEach((b) => {
+    const on = b.dataset.mapSub === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const tactical = document.getElementById('mapPanelTactical');
+  const terrain = document.getElementById('mapPanelTerrain');
+  if (tactical) tactical.hidden = name !== 'tactical';
+  if (terrain) terrain.hidden = name !== 'terrain';
+  if (name === 'tactical' && state.centerTab === 'map') renderMap();
+  if (name === 'terrain') refreshTerrainMap();
+}
+
+function refreshTerrainMap() {
+  const frame = document.getElementById('terrainFrame');
+  const link = document.getElementById('terrainOpenLink');
+  if (!frame || !worldMapConfig?.enabled) return;
+  const next = buildTerrainIframeUrl(worldMapConfig, state.world);
+  if (link) {
+    if (next) {
+      link.href = next;
+      link.classList.remove('disabled');
+    } else {
+      link.href = '#';
+      link.classList.add('disabled');
+    }
+  }
+  if (!next) {
+    terrainLoadedUrl = '';
+    frame.removeAttribute('src');
+    return;
+  }
+  if (terrainLoadedUrl !== next) {
+    terrainLoadedUrl = next;
+    frame.src = next;
+  }
+}
+
+async function fetchMapConfig() {
+  try {
+    const r = await fetch('/api/map/config');
+    const j = await r.json();
+    worldMapConfig = j.enabled ? j : null;
+  } catch {
+    worldMapConfig = null;
+  }
+  applyWorldMapUi();
 }
 
 function agentsInWorld() {
@@ -111,11 +220,17 @@ async function fetchFleet() {
   fleet = await r.json();
   renderHeader();
   renderAgentList();
+  renderHumanList();
   renderDetail();
-  renderChat();
+  if (state.chatSub === 'mind') syncMindPanel();
+  else renderChat();
   if (state.centerTab === 'map') {
-    await fetchPoi();
-    renderMap();
+    if (state.mapSub === 'terrain' && worldMapConfig?.enabled) {
+      refreshTerrainMap();
+    } else {
+      await fetchPoi();
+      renderMap();
+    }
   }
   if (state.centerTab === 'fpv') refreshFpv();
 }
@@ -142,18 +257,37 @@ async function fetchKanban() {
 }
 
 function renderHeader() {
-  const bal = fleet?.openrouter?.balance_usd;
-  const use = fleet?.openrouter?.usage_usd;
-  $('openrouterBal').textContent = bal == null ? '$ —' : `$${Number(bal).toFixed(2)}`;
-  $('openrouterUse').textContent = use == null ? 'use —' : `use $${Number(use).toFixed(2)}`;
+  const or = fleet?.openrouter || {};
+  const bal = or.balance_usd;
+  const use = or.usage_usd;
+  const daily = or.usage_daily_usd;
+  const monthly = or.usage_monthly_usd;
+  const balEl = $('openrouterBal');
+  const useEl = $('openrouterUse');
+  balEl.textContent = bal == null ? '$ —' : `$${Number(bal).toFixed(2)} left`;
+  let useText = 'use —';
+  if (use != null) {
+    useText = daily != null ? `day $${Number(daily).toFixed(2)}` : `use $${Number(use).toFixed(2)}`;
+    if (monthly != null) useText += ` · mo $${Number(monthly).toFixed(2)}`;
+  }
+  useEl.textContent = useText;
+  balEl.title =
+    or.label != null
+      ? `OpenRouter key: ${or.label} · limit remaining (GET /api/v1/key)`
+      : 'OpenRouter limit remaining (GET /api/v1/key)';
+  useEl.title =
+    use != null
+      ? `Total usage $${Number(use).toFixed(2)} on this key`
+      : 'OpenRouter usage for this API key';
 
   const day = fleet?.time?.is_day;
+  const ticks = fleet?.time?.ticks;
   const dn = $('dayNight');
   if (day === true) {
-    dn.textContent = '☀ day';
+    dn.textContent = ticks != null ? `☀ ${formatMcClockHeader(ticks)}` : '☀ day';
     dn.className = 'badge ok';
   } else if (day === false) {
-    dn.textContent = '☽ night';
+    dn.textContent = ticks != null ? `☽ ${formatMcClockHeader(ticks)}` : '☽ night';
     dn.className = 'badge warn';
   } else {
     dn.textContent = '—';
@@ -179,10 +313,13 @@ function renderAgentList() {
     const hFrac = Math.min(1, (a.health || 0) / 20);
     const fFrac = Math.min(1, (a.food || 0) / 20);
     const task = a.task;
-    const taskLine = task ? `${task.action || 'task'} ${task.status || ''}`.trim() : 'idle';
+    const taskLine = task
+      ? `${actionLabel(task.action)} ${task.status || ''}`.trim()
+      : 'idle';
+    const moveLine = a.online ? motionSummary(a) : 'offline';
 
     btn.appendChild(el('div', 'name', a.name));
-    btn.appendChild(el('div', 'row2', `${a.holding || 'empty'} · ${taskLine}`));
+    btn.appendChild(el('div', 'row2', `${moveLine} · ${taskLine}`));
     const hb = el('div', 'stat-bar', null);
     const hi = document.createElement('i');
     hi.style.width = `${Math.round(hFrac * 100)}%`;
@@ -198,6 +335,7 @@ function renderAgentList() {
       state.selection = { kind: 'player', id: a.name };
       saveJson(LS_SEL, state.selection);
       renderAgentList();
+      renderHumanList();
       renderDetail();
       if (state.centerTab === 'fpv') refreshFpv();
       if (state.centerTab === 'map') renderMap();
@@ -209,7 +347,61 @@ function renderAgentList() {
   }
 }
 
+function botNameSet() {
+  return new Set((fleet?.agents || []).map((a) => String(a.name).toLowerCase()));
+}
+
+function renderHumanList() {
+  const host = document.getElementById('humanList');
+  if (!host) return;
+  host.replaceChildren();
+  const bots = botNameSet();
+  const list = humansInWorld()
+    .filter((h) => h.name && !bots.has(String(h.name).toLowerCase()))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  if (!list.length) {
+    host.appendChild(el('p', 'muted human-list-empty', 'No players in this world.'));
+    return;
+  }
+  for (const h of list) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'human-sidebar-card';
+    if (state.selection?.kind === 'human' && state.selection.id === h.name) {
+      btn.classList.add('selected');
+    }
+    btn.appendChild(el('span', 'human-sidebar-name', h.name));
+    btn.addEventListener('click', () => {
+      state.selection = { kind: 'human', id: h.name };
+      saveJson(LS_SEL, state.selection);
+      renderHumanList();
+      renderAgentList();
+      renderDetail();
+      if (state.centerTab === 'map') renderMap();
+    });
+    host.appendChild(btn);
+  }
+}
+
+function renderAgentLiveStrip() {
+  const host = document.getElementById('agentLiveStrip');
+  if (!host) return;
+  const sel = state.selection;
+  if (sel?.kind === 'player') {
+    const a = fleet?.agents?.find((x) => x.name === sel.id);
+    host.classList.remove('muted');
+    patchAgentLiveStrip(host, a || null);
+    return;
+  }
+  host.classList.add('muted');
+  host.dataset.liveKey = '';
+  host.replaceChildren(
+    el('p', 'muted live-empty', sel ? 'Live strip is for agents only.' : 'Select an agent to see live status.'),
+  );
+}
+
 async function renderDetail() {
+  renderAgentLiveStrip();
   const panel = $('detailPanel');
   const sel = state.selection;
   const key = sel ? `${sel.kind}:${sel.id}` : '';
@@ -217,6 +409,10 @@ async function renderDetail() {
   if (key !== prevDetailKey) {
     prevDetailKey = key;
     panel.replaceChildren();
+    lastInvFetch = { agent: null, at: 0 };
+    lastGoalsFetch = { agent: null, at: 0, goals: null };
+    cachedGoalsList = [];
+    if (state.chatSub === 'mind') syncMindPanel(true);
   }
 
   if (!sel) {
@@ -243,43 +439,64 @@ async function renderDetail() {
       main = document.createElement('div');
       main.id = 'detailPlayerMain';
       panel.appendChild(main);
+      mountPlayerDetailShell(main);
+      const metricsRoot = main.querySelector('#detailMetrics');
+      if (metricsRoot) metricsRoot.appendChild(buildPlayerMetrics(a));
     }
-    main.replaceChildren();
 
-    main.appendChild(buildPlayerMetrics(a));
+    const hero = main.querySelector('#detailHero');
+    if (hero) {
+      patchDetailHero(hero, a.name, {
+        online: a.online,
+        model: a.model || null,
+        world: a.world || null,
+      });
+    }
+    updatePlayerMetrics(main.querySelector('#detailMetrics'), a);
 
-    const dl = document.createElement('dl');
-    const tg = a.top_goal;
-    const frag = document.createDocumentFragment();
+    const recentActionsSlot = main.querySelector('#detailRecentActionsSlot');
+    if (recentActionsSlot) patchRecentActionsHost(recentActionsSlot, a.recent_actions);
+    const reactiveSlot = main.querySelector('#detailReactiveSlot');
+    if (reactiveSlot) patchReactiveHost(reactiveSlot, a.auto_action_log);
 
-    const nameDd = document.createElement('dd');
-    const strong = document.createElement('strong');
-    strong.textContent = a.name;
-    nameDd.appendChild(strong);
-    if (!a.online) nameDd.appendChild(document.createTextNode(' (offline)'));
-    dl.append(...dlRow('Agent', nameDd));
-    dl.append(...dlRow('Model', a.model || '—'));
-    dl.append(...dlRow('World', a.world || '—'));
-    const posStr = a.position
-      ? `${a.position.x.toFixed(1)}, ${a.position.y.toFixed(1)}, ${a.position.z.toFixed(1)}`
-      : '—';
-    dl.append(...dlRow('Position', posStr));
-    const taskPre = el('code', null, JSON.stringify(a.task || null));
-    dl.append(...dlRow('Task', taskPre));
-    dl.append(...dlRow('Top goal', tg ? tg.id : '—'));
-    dl.append(...dlRow('Recent', a.recent_action || '—'));
+    const goalsBody = main.querySelector('#detailGoalsBody');
+    if (goalsBody) {
+      if (cachedGoalsList.length) patchGoalsBody(goalsBody, cachedGoalsList);
+      else if (!goalsBody.dataset.goalsKey) {
+        goalsBody.replaceChildren(el('p', 'detail-muted', a.online ? 'Loading goals…' : '—'));
+      }
+      if (a.online) refreshAgentGoals(a.name);
+    }
 
-    const invOb = el('dd', 'inventory-summary', formatInv(a.inventory_summary));
-    dl.append(...dlRow('Inventory (observe)', invOb));
+    patchInvLive(main.querySelector('#detailInvLive'), a.inventory_summary);
 
-    const invFull = document.createElement('dd');
-    invFull.id = 'invFull';
-    if (a.online) invFull.textContent = 'Loading inventory…';
-    else invFull.textContent = '—';
-    dl.append(...dlRow('Inventory (full)', invFull));
+    const invFull = main.querySelector('#invFull');
+    if (invFull && !a.online && !invFull.dataset.cleared) {
+      invFull.dataset.cleared = '1';
+      invFull.replaceChildren(el('p', 'detail-muted', '—'));
+    } else if (invFull && a.online) {
+      invFull.dataset.cleared = '';
+    }
 
-    frag.appendChild(dl);
-    main.appendChild(frag);
+    const rawDet = main.querySelector('#detailRawObserve');
+    if (rawDet) {
+      const pre = rawDet.querySelector('pre');
+      if (pre) {
+        const rawPayload = {
+          task: a.task,
+          top_goal: a.top_goal,
+          telemetry: {
+            time_ticks: a.time_ticks,
+            last_death_age_s: a.last_death_age_s,
+            motion_speed_bps: a.motion_speed_bps,
+            motion_idle_sec: a.motion_idle_sec,
+            idle_reason: a.idle_reason,
+          },
+        };
+        const rawStr = JSON.stringify(rawPayload, null, 2);
+        if (pre.textContent !== rawStr) pre.textContent = rawStr;
+      }
+    }
 
     const host = fleet?._meta?.bot_host || '127.0.0.1';
     const radarUrl = a.radar_port ? `http://${host}:${a.radar_port}/` : null;
@@ -300,28 +517,29 @@ async function renderDetail() {
     }
 
     if (a.online) {
-      fetch(`/api/agent/${encodeURIComponent(a.name)}/inventory`)
-        .then((r) => r.json())
-        .then((j) => {
-          const elFull = document.getElementById('invFull');
-          if (!elFull) return;
-          const pre = document.createElement('pre');
-          pre.className = 'inventory-summary';
-          try {
-            if (j?.data?.items) {
-              pre.textContent = JSON.stringify(j.data.items).slice(0, 4000);
-            } else {
-              pre.textContent = JSON.stringify(j?.data ?? j).slice(0, 2000);
+      const invAgent = a.name;
+      const now = Date.now();
+      const needInv =
+        lastInvFetch.agent !== invAgent || now - lastInvFetch.at > 12_000;
+      if (needInv) {
+        lastInvFetch = { agent: invAgent, at: now };
+        fetch(`/api/agent/${encodeURIComponent(invAgent)}/inventory`)
+          .then((r) => r.json())
+          .then((j) => {
+            if (state.selection?.kind !== 'player' || state.selection.id !== invAgent) return;
+            const elFull = document.getElementById('invFull');
+            if (!elFull) return;
+            elFull.replaceChildren(buildInventoryFull(j?.data ?? j));
+          })
+          .catch(() => {
+            const elFull = document.getElementById('invFull');
+            if (elFull) {
+              elFull.replaceChildren(el('p', 'detail-task-error', 'Inventory fetch failed'));
             }
-          } catch {
-            elFull.textContent = 'inventory parse error';
-          }
-          elFull.replaceChildren(pre);
-        })
-        .catch(() => {
-          const elFull = document.getElementById('invFull');
-          if (elFull) elFull.textContent = 'inventory fetch failed';
-        });
+          });
+      }
+    } else {
+      lastInvFetch = { agent: null, at: 0 };
     }
     return;
   }
@@ -333,18 +551,7 @@ async function renderDetail() {
       panel.appendChild(document.createTextNode('Human not in fleet snapshot.'));
       return;
     }
-    const dl = document.createElement('dl');
-    const nameDd = document.createElement('dd');
-    const s = document.createElement('strong');
-    s.textContent = hu.name;
-    nameDd.appendChild(s);
-    dl.append(...dlRow('Player', nameDd));
-    dl.append(...dlRow('World', hu.world || '—'));
-    const posStr = hu.position
-      ? `${Number(hu.position.x).toFixed(1)}, ${Number(hu.position.y).toFixed(1)}, ${Number(hu.position.z).toFixed(1)}`
-      : '—';
-    dl.append(...dlRow('Position', posStr));
-    panel.appendChild(dl);
+    panel.appendChild(buildHumanDetail(hu));
     return;
   }
   if (sel.kind === 'poi') {
@@ -355,17 +562,7 @@ async function renderDetail() {
       panel.appendChild(document.createTextNode('POI not found.'));
       return;
     }
-    const dl = document.createElement('dl');
-    const nameDd = document.createElement('dd');
-    const s = document.createElement('strong');
-    s.textContent = p.name;
-    nameDd.appendChild(s);
-    dl.append(...dlRow('POI', nameDd));
-    dl.append(...dlRow('World', p.world));
-    dl.append(...dlRow('Position', `${p.x}, ${p.y}, ${p.z}`));
-    dl.append(...dlRow('Note', p.note || '—'));
-    dl.append(...dlRow('Last visited by', p.last_visited_by || '—'));
-    panel.appendChild(dl);
+    panel.appendChild(buildPoiDetail(p));
     return;
   }
   if (sel.kind === 'task') {
@@ -376,31 +573,7 @@ async function renderDetail() {
       panel.appendChild(document.createTextNode('Task not loaded; open Kanban tab.'));
       return;
     }
-    const dl = document.createElement('dl');
-    const titleDd = document.createElement('dd');
-    const st = document.createElement('strong');
-    st.textContent = t.title;
-    titleDd.appendChild(st);
-    dl.append(...dlRow('Task', titleDd));
-    dl.append(...dlRow('Lane', `${t.status} (${t.column || ''})`));
-    const idCode = el('code', null, t.id);
-    dl.append(...dlRow('Id', idCode));
-    panel.appendChild(dl);
-    panel.appendChild(
-      el(
-        'p',
-        'muted',
-        'Comments: read-only in v1. Use Hermes / Obsidian for full card body and timeline.'
-      )
-    );
-    const pre = document.createElement('pre');
-    pre.className = 'inventory-summary';
-    try {
-      pre.textContent = JSON.stringify(t.raw || t, null, 2).slice(0, 6000);
-    } catch {
-      pre.textContent = String(t);
-    }
-    panel.appendChild(pre);
+    panel.appendChild(buildKanbanDetail(t));
   }
 }
 
@@ -408,20 +581,11 @@ function poiKey(p) {
   return `${p.world}|${p.name}|${Math.round(p.x)}|${Math.round(p.y)}|${Math.round(p.z)}`;
 }
 
-function formatInv(summary) {
-  if (!summary || typeof summary !== 'object') return '—';
-  const parts = Object.entries(summary)
-    .slice(0, 24)
-    .map(([k, v]) => `${k}×${v}`);
-  return parts.join(', ') || '—';
-}
-
-function prettyItemName(holding) {
-  if (holding == null || holding === '' || holding === 'empty') return '—';
-  const s = String(holding);
-  const i = s.lastIndexOf(':');
-  const raw = i >= 0 ? s.slice(i + 1) : s;
-  return raw.replace(/_/g, ' ');
+function formatMcClockHeader(ticks) {
+  const t = Math.floor(Number(ticks)) % 24000;
+  const h = Math.floor((t / 1000 + 6) % 24);
+  const m = Math.floor(((t % 1000) * 60) / 1000);
+  return `${h}:${String(m).padStart(2, '0')}`;
 }
 
 function formatSessionDuration(sec) {
@@ -437,61 +601,134 @@ function formatSessionDuration(sec) {
 function buildPlayerMetrics(a) {
   const wrap = el('div', 'player-metrics');
 
-  const eq = el('div', 'metric metric-equip');
-  eq.appendChild(el('span', 'metric-label', 'Equipped'));
-  const equipVal = el('span', 'metric-value equip-name', prettyItemName(a.holding));
-  if (a.holding && a.holding !== 'empty') equipVal.title = String(a.holding);
-  eq.appendChild(equipVal);
-
-  const row = el('div', 'metric-row');
-
-  const hp = el('div', 'metric metric-hp');
-  hp.appendChild(el('span', 'metric-label', 'Health'));
-  const hFrac = Math.min(1, (a.health || 0) / 20);
-  const hb = el('div', 'metric-bar', null);
-  const hi = document.createElement('i');
-  hi.style.width = `${Math.round(hFrac * 100)}%`;
-  hb.appendChild(hi);
-  hp.appendChild(hb);
-  hp.appendChild(el('span', 'metric-num', `${Math.round(Number(a.health) || 0)}/20`));
-
-  const fd = el('div', 'metric metric-food');
-  fd.appendChild(el('span', 'metric-label', 'Food'));
-  const fFrac = Math.min(1, (a.food || 0) / 20);
-  const fbar = el('div', 'metric-bar food', null);
-  const fi = document.createElement('i');
-  fi.style.width = `${Math.round(fFrac * 100)}%`;
-  fbar.appendChild(fi);
-  fd.appendChild(fbar);
-  fd.appendChild(el('span', 'metric-num', `${Math.round(Number(a.food) || 0)}/20`));
-
-  row.appendChild(hp);
-  row.appendChild(fd);
-
   const ses = el('div', 'metric metric-session');
   ses.appendChild(el('span', 'metric-label', 'In-game session'));
-  let sessionText = '—';
-  if (a.online) {
-    const dur = formatSessionDuration(a.session_uptime_sec);
-    if (a.session_started_at_ms != null) {
-      const clock = new Date(a.session_started_at_ms).toLocaleTimeString(undefined, {
-        timeStyle: 'short',
-      });
-      sessionText = `${dur} · since ${clock}`;
-    } else {
-      sessionText = dur;
-    }
-  }
-  ses.appendChild(el('span', 'metric-value metric-session-value', sessionText));
+  const sesVal = el('span', 'metric-value metric-session-value', '');
+  sesVal.id = 'metricSessionVal';
+  ses.appendChild(sesVal);
 
-  wrap.appendChild(eq);
-  wrap.appendChild(row);
   wrap.appendChild(ses);
+  updatePlayerMetrics(wrap, a);
   return wrap;
+}
+
+function updatePlayerMetrics(root, a) {
+  if (!root) return;
+  const sesVal = root.querySelector('#metricSessionVal');
+  if (sesVal) {
+    let sessionText = '—';
+    if (a.online) {
+      const dur = formatSessionDuration(a.session_uptime_sec);
+      if (a.session_started_at_ms != null) {
+        const clock = new Date(a.session_started_at_ms).toLocaleTimeString(undefined, {
+          timeStyle: 'short',
+        });
+        sessionText = `${dur} · since ${clock}`;
+      } else {
+        sessionText = dur;
+      }
+    }
+    sesVal.textContent = sessionText;
+  }
+}
+
+function patchInvLive(host, summary) {
+  const key = JSON.stringify(summary || {});
+  if (host.dataset.invKey === key) return;
+  host.dataset.invKey = key;
+  host.replaceChildren(buildChipList(summary));
+}
+
+function refreshAgentGoals(agentName) {
+  const now = Date.now();
+  if (lastGoalsFetch.agent === agentName && now - lastGoalsFetch.at < 8000) {
+    const goalsBody = document.getElementById('detailGoalsBody');
+    if (goalsBody && lastGoalsFetch.goals) patchGoalsBody(goalsBody, lastGoalsFetch.goals);
+    return;
+  }
+  fetch(`/api/agent/${encodeURIComponent(agentName)}/goals`)
+    .then((r) => r.json())
+    .then((j) => {
+      if (state.selection?.kind !== 'player' || state.selection.id !== agentName) return;
+      if (j.ok && Array.isArray(j.goals)) {
+        cachedGoalsList = j.goals;
+        lastGoalsFetch = { agent: agentName, at: Date.now(), goals: j.goals };
+        const goalsBody = document.getElementById('detailGoalsBody');
+        if (goalsBody) patchGoalsBody(goalsBody, j.goals);
+      }
+    })
+    .catch(() => {});
+}
+
+function setChatSubTab(name) {
+  state.chatSub = name;
+  saveJson(LS_CHAT_SUB, name);
+  document.querySelectorAll('.chat-subtab').forEach((b) => {
+    const on = b.dataset.chatSub === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const ingame = $('chatBody');
+  const mind = document.getElementById('mindBody');
+  if (ingame) ingame.hidden = name !== 'ingame';
+  if (mind) mind.hidden = name !== 'mind';
+  if (name === 'ingame') renderChat();
+  if (name === 'mind') {
+    syncMindPanel(true);
+    startMindPoll();
+  } else {
+    stopMindPoll();
+  }
+}
+
+function clearMindPanel() {
+  const mind = document.getElementById('mindBody');
+  if (!mind) return;
+  mind.replaceChildren();
+  mind.dataset.mindKey = '';
+  mind.scrollTop = 0;
+}
+
+function stopMindPoll() {
+  if (mindPollTimer != null) {
+    clearInterval(mindPollTimer);
+    mindPollTimer = null;
+  }
+}
+
+function startMindPoll() {
+  stopMindPoll();
+  mindPollTimer = setInterval(() => {
+    if (state.chatSub !== 'mind') {
+      stopMindPoll();
+      return;
+    }
+    syncMindPanel(false);
+  }, MIND_POLL_MS);
+}
+
+/** @returns {boolean} whether Mind should show content for current selection */
+function mindSelectionActive() {
+  if (!fleet?.agents?.some((a) => a.online)) return false;
+  const sel = state.selection;
+  if (sel?.kind !== 'player') return false;
+  const a = fleet.agents.find((x) => x.name === sel.id);
+  return Boolean(a?.online);
+}
+
+function syncMindPanel(force) {
+  const mind = document.getElementById('mindBody');
+  if (!mind || state.chatSub !== 'mind') return;
+  if (!mindSelectionActive()) {
+    clearMindPanel();
+    return;
+  }
+  refreshMindFeed(Boolean(force));
 }
 
 function renderChat() {
   const body = $('chatBody');
+  if (!body || state.chatSub !== 'ingame') return;
   body.replaceChildren();
   const lines = fleet?.chat || [];
   const filtered = lines.filter((c) => c.world === state.world).slice(-30);
@@ -501,6 +738,69 @@ function renderChat() {
     div.textContent = `${wtag}${c.from}: ${c.message}`;
     body.appendChild(div);
   }
+}
+
+function appendMindTurn(container, turn) {
+  const line = el('div', `cog-line cog-${turn.kind}`, null);
+  if (turn.kind === 'think') {
+    line.textContent = `think: ${turn.text}`;
+  } else if (turn.kind === 'say') {
+    line.textContent = `asst: ${turn.text}`;
+  } else if (turn.kind === 'tool') {
+    line.textContent = `${turn.toolName || 'tool'}: ${turn.text}`;
+  } else if (turn.kind === 'tool_result') {
+    line.classList.add(turn.isError ? 'cog-err' : 'cog-out');
+    line.textContent = `${turn.isError ? 'ERR' : 'out'} → ${turn.text}`;
+  } else {
+    line.textContent = turn.text || '';
+  }
+  const key = turn.turnKey || `${turn.index}:${turn.kind}`;
+  line.dataset.turnKey = key;
+  container.appendChild(line);
+}
+
+function ensureMindSessionHeader(mind, agentName, sessionFile) {
+  let head = mind.querySelector('.mind-session-head');
+  if (!head) {
+    head = el('div', 'mind-session-head muted', '');
+    mind.prepend(head);
+  }
+  head.textContent = sessionFile
+    ? `${agentName} · ${sessionFile}`
+    : `${agentName} · (no session)`;
+}
+
+function refreshMindFeed(force) {
+  const mind = document.getElementById('mindBody');
+  if (!mind || state.chatSub !== 'mind' || !mindSelectionActive()) {
+    clearMindPanel();
+    return;
+  }
+  const agentName = state.selection.id;
+  const url = `/api/agent/${encodeURIComponent(agentName)}/cognition?tail=1&limit=${MIND_TAIL_LIMIT}`;
+  fetch(url)
+    .then((r) => r.json())
+    .then((j) => {
+      if (state.chatSub !== 'mind' || !mindSelectionActive()) {
+        clearMindPanel();
+        return;
+      }
+      if (state.selection?.id !== agentName) return;
+      if (!j.ok) {
+        clearMindPanel();
+        return;
+      }
+      const contentKey = `${agentName}|${j.session || ''}|${JSON.stringify(j.turns || [])}`;
+      if (!force && mind.dataset.mindKey === contentKey) return;
+      mind.dataset.mindKey = contentKey;
+      mind.replaceChildren();
+      if (!j.turns?.length) return;
+      ensureMindSessionHeader(mind, agentName, j.session);
+      for (const t of j.turns) appendMindTurn(mind, t);
+    })
+    .catch(() => {
+      if (force) clearMindPanel();
+    });
 }
 
 function renderKanban() {
@@ -743,6 +1043,7 @@ function canvasClick(ev) {
   state.selection = { kind: best.kind, id: best.id };
   saveJson(LS_SEL, state.selection);
   renderAgentList();
+  renderHumanList();
   renderDetail();
   if (state.centerTab === 'map') renderMap();
 }
@@ -787,8 +1088,12 @@ function bindUi() {
     state.selection = null;
     saveJson(LS_SEL, null);
     renderAgentList();
+    renderHumanList();
     renderDetail();
-    if (state.centerTab === 'map') fetchPoi().then(renderMap);
+    if (state.centerTab === 'map') {
+      if (state.mapSub === 'terrain') refreshTerrainMap();
+      else fetchPoi().then(renderMap);
+    }
     if (state.centerTab === 'kanban') fetchKanban();
   });
 
@@ -796,24 +1101,51 @@ function bindUi() {
     btn.addEventListener('click', () => {
       setTab(btn.dataset.tab);
       if (btn.dataset.tab === 'kanban') fetchKanban();
-      if (btn.dataset.tab === 'map') fetchPoi().then(renderMap);
+      if (btn.dataset.tab === 'map') {
+        if (state.mapSub === 'terrain') refreshTerrainMap();
+        else fetchPoi().then(renderMap);
+      }
+    });
+  });
+
+  document.querySelectorAll('.map-subtab').forEach((btn) => {
+    btn.addEventListener('click', () => setMapSubTab(btn.dataset.mapSub));
+  });
+
+  document.querySelectorAll('.chat-subtab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setChatSubTab(btn.dataset.chatSub);
+      if (btn.dataset.chatSub === 'mind') {
+        syncMindPanel(true);
+        startMindPoll();
+      } else stopMindPoll();
     });
   });
 
   $('mapCanvas').addEventListener('click', canvasClick);
 
   $('chatToggle').addEventListener('click', () => {
-    const body = $('chatBody');
-    const open = body.style.display !== 'none';
-    body.style.display = open ? 'none' : 'block';
+    const ingame = $('chatBody');
+    const mind = document.getElementById('mindBody');
+    const active = state.chatSub === 'mind' ? mind : ingame;
+    const open = active && active.style.display !== 'none' && !active.hidden;
+    const next = open ? 'none' : 'block';
+    if (ingame && state.chatSub === 'ingame') ingame.style.display = next;
+    if (mind && state.chatSub === 'mind') {
+      mind.style.display = next;
+      mind.hidden = false;
+    }
     $('chatToggle').setAttribute('aria-expanded', open ? 'false' : 'true');
   });
 
+  setChatSubTab(state.chatSub);
+  if (state.chatSub === 'mind') startMindPoll();
   setTab(state.centerTab);
 }
 
 async function main() {
   bindUi();
+  await fetchMapConfig();
   await fetchWorlds();
   await fetchFleet();
   setInterval(fetchFleet, 2000);
@@ -822,7 +1154,7 @@ async function main() {
     if (state.centerTab === 'kanban') fetchKanban();
   }, 5000);
   window.addEventListener('resize', () => {
-    if (state.centerTab === 'map') renderMap();
+    if (state.centerTab === 'map' && state.mapSub === 'tactical') renderMap();
   });
 }
 

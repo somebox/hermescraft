@@ -13,38 +13,38 @@ import {
 } from '../lib/shared/chat.js';
 
 test('known names include current cast and nearby names', () => {
-  const known = buildKnownNames('HermesBot', ['Alex', 'Elena']);
-  assert.ok(known.includes('elena'));
-  assert.ok(known.includes('marcus'));
+  const known = buildKnownNames('HermesBot', ['Alex', 'Flint']);
+  assert.ok(known.includes('flint'));
+  assert.ok(known.includes('steve'));
   assert.ok(known.includes('alex'));
   assert.ok(known.includes('hermesbot'));
 });
 
 test('parseMessageRouting handles direct and group messages', () => {
   const known = buildKnownNames('HermesBot', ['Alex']);
-  assert.deepEqual(parseMessageRouting('Elena: come here', { knownNames: known }), {
-    targets: ['elena'],
+  assert.deepEqual(parseMessageRouting('Flint: come here', { knownNames: known }), {
+    targets: ['flint'],
     body: 'come here',
     isBroadcast: false,
     channel: 'direct',
   });
 
-  assert.deepEqual(parseMessageRouting('@Elena: come here', { knownNames: known }), {
-    targets: ['elena'],
+  assert.deepEqual(parseMessageRouting('@Flint: come here', { knownNames: known }), {
+    targets: ['flint'],
     body: 'come here',
     isBroadcast: false,
     channel: 'direct',
   });
 
-  assert.deepEqual(parseMessageRouting('Marcus,Elena: regroup', { knownNames: known }), {
-    targets: ['marcus', 'elena'],
+  assert.deepEqual(parseMessageRouting('Steve,Flint: regroup', { knownNames: known }), {
+    targets: ['steve', 'flint'],
     body: 'regroup',
     isBroadcast: false,
     channel: 'group_dm',
   });
 
-  assert.deepEqual(parseMessageRouting('@Marcus, @Elena: regroup', { knownNames: known }), {
-    targets: ['marcus', 'elena'],
+  assert.deepEqual(parseMessageRouting('@Steve, @Flint: regroup', { knownNames: known }), {
+    targets: ['steve', 'flint'],
     body: 'regroup',
     isBroadcast: false,
     channel: 'group_dm',
@@ -58,10 +58,10 @@ test('parseMessageRouting falls back to public when prefix is not a valid name',
   assert.equal(routed.channel, 'public');
   assert.equal(routed.body, 'Hello: world');
 
-  const mixed = parseMessageRouting('Hello,Elena: regroup', { knownNames: known });
+  const mixed = parseMessageRouting('Hello,Flint: regroup', { knownNames: known });
   assert.equal(mixed.isBroadcast, true);
   assert.equal(mixed.channel, 'public');
-  assert.equal(mixed.body, 'Hello,Elena: regroup');
+  assert.equal(mixed.body, 'Hello,Flint: regroup');
 });
 
 test('mention parsing strips prefix cleanly', () => {
@@ -83,10 +83,10 @@ test('stripInlineNameMention catches mid-sentence Flint / @Flint', () => {
 });
 
 test('isMessageForMe respects direct targets and bot aliases', () => {
-  const direct = { targets: ['elena'], isBroadcast: false };
+  const direct = { targets: ['flint'], isBroadcast: false };
   const alias = { targets: ['hermes'], isBroadcast: false };
-  assert.equal(isMessageForMe(direct, 'Elena'), true);
-  assert.equal(isMessageForMe(alias, 'Elena'), true);
+  assert.equal(isMessageForMe(direct, 'Flint'), true);
+  assert.equal(isMessageForMe(alias, 'Flint'), true);
 });
 
 test('social graph tracks heard, sent, and completed command events', () => {

@@ -37,7 +37,7 @@
  */
 
 import { Vec3 } from 'vec3';
-import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark, isHostileNearBoat, pickBestWeapon, shouldGiveUpEscape } from './reactive-helpers.js';
+import { computeBackoffMs, shouldResetEscapeCounter, isAgentIdle, shouldEmergencyDisembark, isHostileNearBoat, pickBestWeapon, shouldGiveUpEscape, shouldSuppressAutoEscape } from './reactive-helpers.js';
 
 const HOSTILE_NAMES = new Set([
   'zombie', 'skeleton', 'creeper', 'spider', 'cave_spider', 'enderman',
@@ -330,6 +330,34 @@ export function createReactive(deps) {
       && waterTickCount >= WATER_TICKS_TO_FIRE
       && !autoEscapeInFlight
       && sinceLastEscape >= backoffMs
+      // F31 (task #66, v45): suppress whenever a sync action is in
+      // flight. circuit-v45 forensics: the agent called mc bg_goto on
+      // a long route that crossed shallow water; pathfinder dipped
+      // the bot's feet into water mid-walk; reactive fired
+      // auto_escape / swim_up, which calls setGoal(null); bg_goto
+      // threw "The goal was changed before it could be completed!"
+      //
+      // F39 (task #66, v52): EXTEND the gate to background tasks
+      // (mc bg_goto / mc bg_*). circuit-v52 forensics: F31's
+      // `syncActionInFlight` gate didn't catch mc bg_goto because
+      // it returns immediately and the actual pathfinding runs
+      // under `ctx.tasks.currentTask`. Reactive still fired during
+      // bg_goto's execution, cancelled the pathfinder, dropped Steve
+      // in water mid-route. The gate must cover BOTH sync actions
+      // AND running background tasks — anything where the agent
+      // has commanded the bot to do something deliberate.
+      //
+      // Drowning protection (low_oxygen swim_up below) is intentionally
+      // NOT gated — it remains the last line of defence if any
+      // command strands the bot underwater.
+      //
+      // F25's sailToActiveStartedAt gate is kept as a redundant guard
+      // (defense in depth — covers any future case where the task
+      // flags might be cleared between an HTTP return and an
+      // internal continuation).
+      && !ctx.tasks?.syncActionInFlight
+      && ctx.tasks?.currentTask?.status !== 'running'
+      && !shouldSuppressAutoEscape(ctx.runtime?.sailToActiveStartedAt, Date.now())
     ) {
       return {
         action: 'auto_escape_water',
@@ -357,7 +385,22 @@ export function createReactive(deps) {
     // water"), surface via swim_up so head clears and oxygen tops back up.
     // This is the "standing in a 1-block flowing current" case from the
     // experiment session — bot was being pushed around and couldn't act.
-    if (state.in_water && state.head_in_water && !mounted) {
+    //
+    // F25 (task #63, v42) + F31 (task #66, v45) + F39 (task #66, v52):
+    // gated whenever ANY agent-directed action is running — sync
+    // action, background task (mc bg_*), or sail_to specifically.
+    // swimUp() calls setGoal(null) and would race against ANY
+    // pathfinder-using verb the same way it raced with sail_to. The
+    // `low_oxygen` swim_up above is the drowning-protection branch
+    // and stays ungated.
+    if (
+      state.in_water
+      && state.head_in_water
+      && !mounted
+      && !ctx.tasks?.syncActionInFlight
+      && ctx.tasks?.currentTask?.status !== 'running'
+      && !shouldSuppressAutoEscape(ctx.runtime?.sailToActiveStartedAt, Date.now())
+    ) {
       return { action: 'swim_up', oxygen: state.oxygen, why: 'head_in_water' };
     }
 

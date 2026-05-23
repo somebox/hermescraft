@@ -29,13 +29,11 @@ def ore_arena(rcon, arena, tester_bot, config):
     """Arena: iron_ore at (-2, 65, 2), cobblestone at (2, 65, 2), bot with
     iron_pickaxe at (0, 65, 1)."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
     arena.forceload((-1, -1, 1, 1))
     rcon.batch([
         f"execute as Tester at @s in {world} run tp @s 0 65 0",
     ])
-    arena.settle(seconds=2.5)
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="grass_block")
+    arena.settle_water()
     rcon.batch([
         f"execute in {world} run setblock -2 65 2 minecraft:iron_ore",
         f"execute in {world} run setblock 2 65 2 minecraft:cobblestone",
@@ -44,9 +42,8 @@ def ore_arena(rcon, arena, tester_bot, config):
         f"execute in {world} run effect give Tester minecraft:instant_health 1 5",
         f"execute in {world} run tp Tester 0 65 1 0 0",
     ])
-    arena.settle(seconds=2.5)
+    arena.settle_water()
     yield
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="grass_block")
     arena.forceload_remove_all()
 
 

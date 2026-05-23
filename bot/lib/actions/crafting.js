@@ -3,7 +3,7 @@ import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { ingredientCountsFromSlots, recipeIngredientMap } from '../shared/recipe-ingredients.js';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
-import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS } from './_helpers.js';
+import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS, pathfindGotoNear } from './_helpers.js';
 import { ok, fail } from '../shared/action-contract.js';
 
 const { goals } = pathfinderPkg;
@@ -112,7 +112,7 @@ export function createCraftingActions(services) {
         if (wide) {
           nearestTableSeen = { x: wide.position.x, y: wide.position.y, z: wide.position.z };
           try {
-            await b.pathfinder.goto(new goals.GoalNear(wide.position.x, wide.position.y, wide.position.z, 3));
+            await pathfindGotoNear(b, goals, wide.position.x, wide.position.y, wide.position.z, 3, { opName: 'craft_table', capMs: ACTION_CAPS_MS.craft });
             table = b.findBlock({ matching: tableId, maxDistance: 4 });
           } catch { /* leave table null; nearestTableSeen captured */ }
         }
@@ -128,7 +128,7 @@ export function createCraftingActions(services) {
           if (tableMarks.length > 0 && tableMarks[0].dist < 100) {
             const m = tableMarks[0];
             nearestTableSeen = nearestTableSeen || { x: m.x, y: m.y, z: m.z };
-            await b.pathfinder.goto(new goals.GoalNear(m.x, m.y, m.z, 3));
+            await pathfindGotoNear(b, goals, m.x, m.y, m.z, 3, { opName: 'craft_mark', capMs: ACTION_CAPS_MS.craft });
             table = b.findBlock({ matching: tableId, maxDistance: 4 });
           }
         } catch { /* ignore */ }
@@ -226,7 +226,10 @@ export function createCraftingActions(services) {
               if (!best || !Number.isFinite(best.x)) continue;
               const wantCount = Math.max(1, Number(need.short) || 1);
               try {
-                await b.pathfinder.goto(new goals.GoalNear(best.x, best.y, best.z, 2));
+                await pathfindGotoNear(b, goals, best.x, best.y, best.z, 2, {
+                  opName: 'craft_chest_fetch',
+                  capMs: ACTION_CAPS_MS.craft,
+                });
               } catch { /* couldn't reach this chest — skip to next ingredient */ continue; }
               const wd = await allActions.withdraw({ x: best.x, y: best.y, z: best.z, items: [{ item: need.name, count: wantCount }] });
               fetchedSteps.push({

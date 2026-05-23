@@ -27,13 +27,14 @@ Environment: typically `.env` at repo root for keys and shared defaults; control
 
 Other files in `scripts/` (`run-landfolk-bots.sh`, etc.) support older split bot/agent workflows; prefer `landfolk-control.sh` when you want one supervised fleet.
 
-## Legacy launchers (repo root)
+## Other launchers (repo root)
 
-Still valid for one-off or historical flows, **not** the centralized Landfolk design:
+- `hermescraft.sh` / `start-steve.sh` — Steve companion (single bot)
+- `start-gatherer.sh` — goal-directed Gatherer only
+- `start-landfolk.sh` — multi-agent Landfolk from `agent-models.json` roster
+- `scripts/run-landfolk-bots.sh` — bot bodies only (Gatherer, Flint, Mason, Barley)
 
-- `hermescraft.sh`, `landfolk.sh`, `civilization.sh`, `start-companion.sh`, `start-gatherer.sh`, `start-landfolk.sh`, `start-steve.sh`, and similar — various rosters, SOULs, and port strategies without always routing through `agent-models.json` the same way `landfolk-control.sh` does.
-
-Use them when you need a minimal path or a different cast (e.g. civilization prompts); use `landfolk-control.sh` when you want one roster file and matching watchdog behavior.
+Prefer `landfolk-control.sh` for a supervised fleet with watchdogs.
 
 ## Minecraft server expectations
 

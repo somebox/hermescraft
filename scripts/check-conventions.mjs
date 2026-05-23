@@ -135,6 +135,57 @@ function checkCombatTargetTags() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Functional pytest: prefer canonical harness fixtures over legacy arena helpers.
+// ─────────────────────────────────────────────────────────────────────
+function checkFunctionalPytestLegacy() {
+  const violations = [];
+  const dir = join(ROOT, 'tests/functional');
+  if (!statSync(dir, { throwIfNoEntry: false })) return violations;
+  const files = walk(dir, (f) => f.endsWith('.py'));
+  const patterns = [
+    { re: /arena\.flat_arena\(/, msg: 'use props on canonical grass + functional_world' },
+    { re: /arena\.rescue_tester\(/, msg: 'harness rescue_tester already ran' },
+    { re: /wait_until_ready\(/, msg: 'prefer bot.ensure_connected()' },
+  ];
+  for (const path of files) {
+    const text = readFileSync(path, 'utf8');
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      for (const { re, msg } of patterns) {
+        if (re.test(lines[i])) {
+          violations.push({
+            file: relative(ROOT, path),
+            line: i + 1,
+            message: msg,
+            soft: true,
+          });
+        }
+      }
+    }
+  }
+  const combatDir = join(ROOT, 'tests/functional/combat');
+  if (statSync(combatDir, { throwIfNoEntry: false })) {
+    const combatFiles = walk(combatDir, (f) => f.endsWith('.py') && !f.endsWith('scenarios.py'));
+    for (const path of combatFiles) {
+      const text = readFileSync(path, 'utf8');
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (/setblock .* cobblestone/.test(line) || /summon .*Tags:.*target/.test(line)) {
+          violations.push({
+            file: relative(ROOT, path),
+            line: i + 1,
+            message: 'use tests/_lib/combat_fixtures helpers',
+            soft: true,
+          });
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // P16: module size budget ≤500 LOC.
 // Files in bot/lib/**/*.js over 500 LOC must carry a top-of-file
 // `// @size-exempt: <reason>` annotation.
@@ -213,6 +264,7 @@ const CHECKS = [
   { name: 'P4: fixture safe-home cleanup', fn: checkFixtureSafeHome },
   { name: 'P4: fixture world declaration', fn: checkFixtureWorld },
   { name: 'P4: combat fixture target tags', fn: checkCombatTargetTags },
+  { name: 'functional pytest legacy arena patterns', fn: checkFunctionalPytestLegacy },
   { name: 'P16: module size budget ≤500 LOC', fn: checkModuleSizeBudget },
   { name: 'P20: mock-services key parity', fn: checkMockServicesParity },
 ];

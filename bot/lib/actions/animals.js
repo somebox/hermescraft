@@ -324,7 +324,7 @@ export function createAnimalsActions(deps) {
         const username = getMyName?.();
         if (pmcp && username && target.id != null) {
           log(`[shear] native useOn produced no wool — PaperMCP fallback for sheep ${target.id}`);
-          const r1 = await executeServerCommand(pmcp, `execute in landfolk-test run data merge entity ${target.uuid || ''} {Sheared:1b}`).catch(() => ({ ok: false }));
+          const r1 = await executeServerCommand(pmcp, `data merge entity ${target.uuid || ''} {Sheared:1b}`).catch(() => ({ ok: false }));
           const r2 = await executeServerCommand(pmcp, `give ${username} minecraft:white_wool 1`).catch(() => ({ ok: false }));
           if (r1.ok || r2.ok) fallback = 'papermcp_server_side';
           await sleep(300);

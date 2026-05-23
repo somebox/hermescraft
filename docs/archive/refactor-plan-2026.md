@@ -356,3 +356,13 @@ Lower priority — the file is isolated to one concern. Do it when mining reliab
 - **No auto-discovery of action modules.** Explicit imports + `actions-manifest.test.js` (Phase 4).
 - **No per-handler files.** Domain modules with 3–10 handlers stay one file; ~500 LOC budget triggers splits.
 - **No classes replacing factories.** `createXxxActions(services) → { handler1, handler2 }` stays the convention.
+
+## Deferred phases (post-completion)
+
+These were left out of the March 2026 execution (Phases 1–7 + 10). Revisit if the triggers return:
+
+- **Phase 8** — `defineAction` self-describing handlers. Would collapse the six parallel action-name behavior lists (`LONG_VERBS`, `POSITION_DEPENDENT_VERBS`, `STUCK_MOVEMENT_ACTIONS`, `SYNC_STUCK_ACTIONS`, `noBanner`, the CLI registry) into handler-side metadata. Trigger: behavior-flag duplication becomes painful or actions are being added frequently enough to justify the wrapper.
+
+- **Phase 9** — `mining.js` collect/dig decomposition. `collect` (~750L) and `dig` (~250L) become coordinators over named helpers. Trigger: mining reliability needs investment, or the `@size-exempt` annotation on `mining.js` stops being defensible.
+
+Current layout reference: [`docs/architecture.md`](../architecture.md).

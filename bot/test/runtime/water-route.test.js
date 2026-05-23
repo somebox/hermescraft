@@ -18,7 +18,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planWaterRoute } from '../../lib/runtime/water-route.js';
+import { planWaterRoute, _internals } from '../../lib/runtime/water-route.js';
 
 /**
  * Build a stub bot whose blockAt() looks up cells from a {x,y,z → name}
@@ -270,6 +270,300 @@ test('planWaterRoute: waypoints spaced ~8 blocks apart along the path', () => {
     assert.ok(d <= 10,
       `waypoint gap too large at index ${i}: ${d}b (expected ≤10). Waypoints: ${JSON.stringify(wp)}`);
   }
+});
+
+// ─── F21: NO_WATER_ROUTE surfaces walkable shore stance ────────────────
+
+test('planWaterRoute: NO_WATER_ROUTE returns nearest_shore_stance (walkable) alongside nearest_water_candidate', () => {
+  // F21 (task #59, v42): pre-fix the body shipped a WATER coord in
+  // nearest_water_candidate. mc bg_goto refuses water cells as
+  // NAV_TARGET_UNSTANDABLE; the agent fell back to mc move and
+  // overshot into open water (v41 postmortem).
+  //
+  // Fixture: bot in a dry area (no water within the 12b entry radius);
+  // far water at (30, 62, 0) is navigable; shore stance at (31, 63, 0)
+  // is walkable (stone below, air foot+head). findBlocks returns the
+  // far water cell so the body's wide-scan promotes it as the
+  // nearest_water_candidate. We assert BOTH coords are present in
+  // observed_state, and that the stance is genuinely walkable
+  // (different from the water cell).
+  const blocks = {};
+  // Bot stands on grass at (0, 63, 0) — entire 12b entry radius is dry.
+  for (let dx = -3; dx <= 3; dx++) {
+    for (let dz = -3; dz <= 3; dz++) {
+      blocks[`${dx},62,${dz}`] = 'grass_block';
+      blocks[`${dx},63,${dz}`] = 'air';
+      blocks[`${dx},64,${dz}`] = 'air';
+    }
+  }
+  // Far water at (30, 62, 0): navigable cell (water foot, air x2 above,
+  // water below).
+  blocks['30,62,0'] = 'water';
+  blocks['30,63,0'] = 'air';
+  blocks['30,64,0'] = 'air';
+  blocks['30,61,0'] = 'water';
+  // Shore stance at (31, ?, 0) — findEntryShore checks dy=0 (sy=water.y)
+  // first: foot at (31, 62, 0) must be air|water, head at (31, 63, 0)
+  // must be air, below at (31, 61, 0) must be solid non-water.
+  blocks['31,61,0'] = 'stone';
+  blocks['31,62,0'] = 'air';
+  blocks['31,63,0'] = 'air';
+
+  const bot = {
+    blockAt({ x, y, z }) {
+      const k = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      const name = blocks[k];
+      if (!name) return null;
+      const boundingBox = (name === 'water' || name === 'flowing_water' || name === 'air' || name === 'cave_air' || name === 'void_air')
+        ? 'empty'
+        : 'block';
+      return { name, boundingBox };
+    },
+    // Return the far water cell so the F10 widened-scan promotes it.
+    findBlocks() {
+      return [{ x: 30, y: 62, z: 0 }];
+    },
+  };
+
+  const r = planWaterRoute(bot, { x: 0, y: 63, z: 0 }, { x: 100, y: 63, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_WATER_ROUTE');
+  // Both candidate (water) and stance (walkable) must be present.
+  assert.deepEqual(
+    { x: r.error.observed_state.nearest_water_candidate.x, y: r.error.observed_state.nearest_water_candidate.y, z: r.error.observed_state.nearest_water_candidate.z },
+    { x: 30, y: 62, z: 0 },
+    'nearest_water_candidate should be the far water cell',
+  );
+  assert.ok(r.error.observed_state.nearest_shore_stance,
+    `nearest_shore_stance must be present alongside nearest_water_candidate; got: ${JSON.stringify(r.error.observed_state)}`);
+  const stance = r.error.observed_state.nearest_shore_stance;
+  // Stance must be the walkable cell (31, 62, 0) — air foot above stone.
+  assert.deepEqual({ x: stance.x, y: stance.y, z: stance.z }, { x: 31, y: 62, z: 0 },
+    `expected shore stance at (31, 62, 0); got ${JSON.stringify(stance)}`);
+  // Critical: stance must NOT equal the water cell — that's the whole
+  // point of F21. Pre-fix this assertion would fail because the only
+  // coord exposed was the water cell.
+  const candidate = r.error.observed_state.nearest_water_candidate;
+  assert.notDeepEqual(
+    { x: stance.x, y: stance.y, z: stance.z },
+    { x: candidate.x, y: candidate.y, z: candidate.z },
+    'shore stance MUST differ from water candidate — agent needs a dry cell',
+  );
+  // Message should mention the walkable shore so the agent can read it
+  // straight off the error string.
+  assert.ok(r.error.message.includes('Walkable shore'),
+    `message should advertise walkable shore; got: ${r.error.message}`);
+});
+
+// ─── F27 (task #66, v43): isShoreCell rejects water-foot cells ──────────
+//
+// circuit-v43 forensics: bot drowned at (345, 62, -541) — a 1-deep water
+// tile with dirt below. Pre-F27 `isShoreCell` accepted foot=water (the
+// stale "foot can be water" exception), so findEntryShore returned this
+// wet cell as the entry shore. The pathfinder walked Steve there, F3
+// caught "you're in water," and the same wet shore was picked on every
+// retry. Bot could never start a journey.
+//
+// These tests pin isShoreCell's contract directly via the `_internals`
+// export so the regression is locked in regardless of how higher-level
+// planner code routes around it.
+
+function makeBlockBot(blocks) {
+  return {
+    blockAt({ x, y, z }) {
+      const k = `${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`;
+      const name = blocks[k];
+      if (!name) return null;
+      const boundingBox = (name === 'water' || name === 'flowing_water' || name === 'air' || name === 'cave_air' || name === 'void_air')
+        ? 'empty'
+        : 'block';
+      return { name, boundingBox };
+    },
+  };
+}
+
+test('isShoreCell: foot=water with solid below is NOT a shore (F27 — was the v43 bug)', () => {
+  // Exact geometry from the v43 failure at (345, 62, -541):
+  //   foot at y=62: water (1-deep, dirt fills y=61 below)
+  //   head at y=63: air
+  //   below at y=61: dirt (solid, not water)
+  // Pre-F27 this returned true (bot drowned). Post-F27 it must return
+  // false — the bot would be submerged here.
+  const bot = makeBlockBot({
+    '0,61,0': 'dirt',
+    '0,62,0': 'water',
+    '0,63,0': 'air',
+  });
+  assert.equal(_internals.isShoreCell(bot, 0, 62, 0), false,
+    'F27 regression: a 1-deep water tile on solid ground is NOT a dry shore');
+});
+
+test('isShoreCell: standard dry shore (foot=air, below=grass) IS a shore', () => {
+  // Sanity: the canonical shore shape — air foot, grass underneath,
+  // air above — must still pass.
+  const bot = makeBlockBot({
+    '0,61,0': 'grass_block',
+    '0,62,0': 'air',
+    '0,63,0': 'air',
+  });
+  assert.equal(_internals.isShoreCell(bot, 0, 62, 0), true);
+});
+
+test('isShoreCell: natural beach (sand at water-y, air above) — sy=y fails, sy=y+1 passes (F16 still works)', () => {
+  // The F16 case: sand block AT the water-y level (so cell at y=62 is
+  // sand, not water), with walkable air above at y=63. The bot stands
+  // on top of the sand. F27 must not break this — the foot=sand check
+  // at sy=62 still fails (sand is solid, not air), and the F16 dy=+1
+  // retry at sy=63 still passes.
+  const bot = makeBlockBot({
+    '0,62,0': 'sand',
+    '0,63,0': 'air',
+    '0,64,0': 'air',
+  });
+  // sy=62: foot=sand → fail (not air).
+  assert.equal(_internals.isShoreCell(bot, 0, 62, 0), false,
+    'foot=sand is not a shore at the same y as water');
+  // sy=63: foot=air, head=air at 64, below=sand at 62 (solid not-water) → pass.
+  assert.equal(_internals.isShoreCell(bot, 0, 63, 0), true,
+    'F16 sloped-beach: shore stance is one above the sand');
+});
+
+test('isShoreCell: foot=air but below=water is NOT a shore (would drown when boat unloads)', () => {
+  // Mid-lake "floating" cell — air at foot but water directly below
+  // means there's no solid ground. Already covered pre-F27 but pin it
+  // explicitly so the F27 rewrite doesn't accidentally regress.
+  const bot = makeBlockBot({
+    '0,61,0': 'water',
+    '0,62,0': 'air',
+    '0,63,0': 'air',
+  });
+  assert.equal(_internals.isShoreCell(bot, 0, 62, 0), false);
+});
+
+test('isShoreCell: head not clear → NOT a shore', () => {
+  // Foot=air, below=stone (good so far), but head=stone (overhead block).
+  // Bot can't stand here.
+  const bot = makeBlockBot({
+    '0,61,0': 'stone',
+    '0,62,0': 'air',
+    '0,63,0': 'stone',
+  });
+  assert.equal(_internals.isShoreCell(bot, 0, 62, 0), false);
+});
+
+test('findEntryShore: maxRadius=1 returns null when only far shores exist (F38 — v50 OUT_OF_RANGE prevention)', () => {
+  // circuit-v50 forensics: BFS picked entry_water=(316,62,-565) for
+  // sail_to. findEntryShore (F30 default radius 4) returned a shore
+  // 4 blocks away at (312,63,-565). walk_to_entry walked the bot
+  // there; place_boat then needed to reach 4 blocks east to the
+  // entry_water and refused OUT_OF_RANGE. The bot was BETWEEN
+  // entry_shore and entry_water with no path to fix it.
+  //
+  // F38: for sail_to's internal use, findEntryShore must return
+  // ONLY adjacent shores (cardinals + diagonals at ring 1). If no
+  // adjacent shore exists, return null so the caller's fallback
+  // (bot's start position) kicks in and walk_to_entry becomes a
+  // no-op. F30's wider spiral is preserved for the F21 hint callers
+  // via opts.maxRadius=4 default.
+  const blocks = {};
+  // Surround the water cell with water-on-water (no shore at all
+  // adjacent in ring 1).
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      blocks[`${dx},61,${dz}`] = 'water';
+      blocks[`${dx},62,${dz}`] = 'water';
+      blocks[`${dx},63,${dz}`] = 'air';
+    }
+  }
+  // True grass shore 4 blocks east (Chebyshev distance 4).
+  blocks['4,61,0'] = 'dirt';
+  blocks['4,62,0'] = 'grass_block';
+  blocks['4,63,0'] = 'air';
+  blocks['4,64,0'] = 'air';
+  const bot = makeBlockBot(blocks);
+  // Default behaviour (radius 4) still finds the far shore — F30 hint
+  // path stays functional.
+  const wide = _internals.findEntryShore(bot, { x: 0, y: 62, z: 0 });
+  assert.deepEqual(wide, { x: 4, y: 63, z: 0 },
+    `F30 hint path: default radius should still find far shore; got ${JSON.stringify(wide)}`);
+  // F38: maxRadius=1 returns null when no adjacent shore exists.
+  // sail_to's BFS use site passes this option.
+  const tight = _internals.findEntryShore(bot, { x: 0, y: 62, z: 0 }, { maxRadius: 1 });
+  assert.equal(tight, null,
+    `F38 regression: maxRadius=1 must return null when no shore within 1 block; got ${JSON.stringify(tight)}`);
+});
+
+test('findEntryShore: spirals outward when no cardinal neighbor is a shore (F30 — v45 lake-edge case)', () => {
+  // circuit-v45 forensics: BFS chose water (317, 62, -579) as the
+  // nearest external water cell. All 4 cardinal neighbors at y=62 were
+  // also water (1-deep on sand). dy=+1 retries failed because the
+  // cells two blocks above water still had water-below. Pre-F30
+  // findEntryShore returned null and sail_to handed the agent the
+  // bare water coord — which mc bg_goto rejected as NAV_TARGET_UNSTANDABLE.
+  // The actual dry shore was 2 blocks east at the bot's own position.
+  // Post-F30 the spiral finds it.
+  //
+  // Fixture: water at (0, 62, 0). All 4 cardinals are water-on-sand.
+  // The dry shore (grass at y=62, walkable air at y=63) sits at
+  // (2, 63, 0) — Chebyshev distance 2 from the water cell.
+  const blocks = {
+    // Water cell + 1-deep cardinal neighbors with sand below.
+    '0,61,0': 'sand', '0,62,0': 'water', '0,63,0': 'air',
+    '1,61,0': 'sand', '1,62,0': 'water', '1,63,0': 'air',
+    '-1,61,0': 'sand', '-1,62,0': 'water', '-1,63,0': 'air',
+    '0,61,1': 'sand', '0,62,1': 'water', '0,63,1': 'air',
+    '0,61,-1': 'sand', '0,62,-1': 'water', '0,63,-1': 'air',
+    // Dry shore 2 blocks east — grass at y=62, walkable air above.
+    '2,61,0': 'dirt',
+    '2,62,0': 'grass_block',
+    '2,63,0': 'air',
+    '2,64,0': 'air',
+  };
+  const bot = makeBlockBot(blocks);
+  const shore = _internals.findEntryShore(bot, { x: 0, y: 62, z: 0 });
+  assert.ok(shore, 'F30 regression: findEntryShore should find a shore via spiral');
+  // The found cell must be standable (air foot, solid below, air head).
+  // The shore at (2, 63, 0) sits on top of the grass block at (2, 62, 0).
+  assert.deepEqual(shore, { x: 2, y: 63, z: 0 },
+    `expected (2, 63, 0); got ${JSON.stringify(shore)}`);
+});
+
+test('findEntryShore: cardinal-neighbor early-return prefers air-foot over water-foot (F27 pre/post pin)', () => {
+  // Direct test of findEntryShore: when both a wet "shore" (water-foot
+  // with solid below) AND a dry shore exist as cardinal neighbors of
+  // an entry_water cell, post-F27 must return the dry one and pre-F27
+  // would have returned the wet one. We pin the contract here so the
+  // ordering of cardinal directions doesn't ever mask the bug again.
+  //
+  // Geometry: entry_water at (0, 62, 0). East (1, 62, 0) = 1-deep
+  // water with dirt below — the wet "shore" that bit v43. West
+  // (-1, 62, 0) = grass_block (foot=grass, walkable at sy+1=63).
+  const blocks = {
+    // Entry water cell + its required navigability below.
+    '0,61,0': 'water',
+    '0,62,0': 'water',
+    '0,63,0': 'air',
+    // East: wet "shore" (1-deep water on dirt).
+    '1,61,0': 'dirt',
+    '1,62,0': 'water',
+    '1,63,0': 'air',
+    // West: TRUE grass shore (sy+1 dry-foot pattern).
+    '-1,61,0': 'dirt',
+    '-1,62,0': 'grass_block',
+    '-1,63,0': 'air',
+    '-1,64,0': 'air',
+  };
+  const bot = makeBlockBot(blocks);
+  const shore = _internals.findEntryShore(bot, { x: 0, y: 62, z: 0 });
+  // Must be the WEST grass shore (-1, 63, 0). Pre-F27 the cardinal
+  // iteration order [+x, -x, +z, -z] would have returned the east
+  // wet "shore" (1, 62, 0) immediately and never reached west.
+  assert.ok(shore, 'findEntryShore should return a dry shore here');
+  const footName = blocks[`${shore.x},${shore.y},${shore.z}`];
+  assert.notEqual(footName, 'water',
+    `F27 regression: findEntryShore returned wet cell (${shore.x},${shore.y},${shore.z})`);
+  assert.deepEqual(shore, { x: -1, y: 63, z: 0 },
+    `expected the west grass shore at (-1, 63, 0); got ${JSON.stringify(shore)}`);
 });
 
 // ─── F16: findExitShore checks sloped beach (y+1) ───────────────────────

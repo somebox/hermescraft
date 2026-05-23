@@ -59,11 +59,8 @@ import time
 import pytest
 
 
-# Pit footprint — 16×16 at x ∈ [0, 15], z ∈ [0, 15]. Centred near
-# origin to match the existing mining-test arenas (test_mine_collect_grid,
-# test_dig_walk_pickup_chain, etc.) so observers can fly to ~spawn and
-# watch every test in the suite from one vantage point.
-PIT_X_MIN, PIT_X_MAX = 0, 15
+# Pit in mining zone (x ≥ 1). 16×16 footprint.
+PIT_X_MIN, PIT_X_MAX = 2, 17
 PIT_Z_MIN, PIT_Z_MAX = 0, 15
 PIT_TOP_Y = 66      # the strip-mine target level
 PIT_MIDDLE_Y = 65   # protect
@@ -73,19 +70,14 @@ SUBFLOOR_Y = 63     # stone
 # Scattered dirt blocks on top + a couple of clusters. Mix of singles
 # and 2-3 cell clusters so it looks like natural detritus.
 SURFACE_CLUTTER = [
-    # Single bumps
-    (2, 67, 5), (8, 67, 1), (13, 67, 4),
-    (4, 67, 11), (10, 67, 13), (14, 67, 9),
-    # 2-cell cluster
-    (6, 67, 7), (7, 67, 7),
-    # 3-cell cluster
-    (11, 67, 2), (12, 67, 2), (12, 67, 3),
-    # Another 2-cell cluster
-    (1, 67, 9), (1, 67, 10),
+    (4, 67, 5), (10, 67, 1), (15, 67, 4),
+    (6, 67, 11), (12, 67, 13), (16, 67, 9),
+    (8, 67, 7), (9, 67, 7),
+    (13, 67, 2), (14, 67, 2), (14, 67, 3),
+    (3, 67, 9), (3, 67, 10),
 ]
 
-BOT_TP = (2.5, 68.0, 2.5, -45, 0)   # on top of the pile corner, facing SE
-VOLUME = (-5, 58, -5, 20, 72, 20)
+BOT_TP = (4.5, 67.0, 2.5, -45, 0)
 
 REQUESTED_COUNT = 32
 # 16×16 = 256 cells per layer. Bot has count=32. With strip-sort it
@@ -94,55 +86,32 @@ REQUESTED_COUNT = 32
 
 
 @pytest.fixture
-def pit_arena(rcon, arena, tester_bot, config):
+def pit_arena(rcon, arena, bot, config):
     """Build the 16×16×3 dirt pit with the scattered surface clutter."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"mvtp Tester {world}")
-    time.sleep(0.5)
-    # Always rescue first: peaceful + creative + safe TP. Survives any
-    # prior-test crash, void-fall, or mid-respawn state.
-    arena.rescue_tester(safe_xyz=(BOT_TP[0], BOT_TP[1], BOT_TP[2]), bot=tester_bot)
-    arena.clean()
-
-    x1, y1, z1, x2, y2, z2 = VOLUME
     cmds = [
-        # Force-load the pit chunks. Without this the fills go into
-        # unloaded chunks and silently no-op, since the bot is at the
-        # default spawn area (x≈0, z≈0) when the fixture starts.
-        f"execute in {world} run forceload add {x1} {z1} {x2} {z2}",
-        # Clean volume + stone sub-floor.
-        f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
-        f"execute in {world} run fill {x1} {y1} {z1} {x2} {SUBFLOOR_Y} {z2} minecraft:stone",
-        # 16×16×3 dirt pit (bottom + middle + top, all dirt).
         f"execute in {world} run fill {PIT_X_MIN} {PIT_BOTTOM_Y} {PIT_Z_MIN} "
         f"{PIT_X_MAX} {PIT_TOP_Y} {PIT_Z_MAX} minecraft:dirt",
     ]
-    # Surface clutter on y=67.
     for (cx, cy, cz) in SURFACE_CLUTTER:
         cmds.append(f"execute in {world} run setblock {cx} {cy} {cz} minecraft:dirt")
-    cmds.extend([
-        "clear Tester",
-        "give Tester minecraft:stone_shovel",
-        "effect clear Tester",
-        "effect give Tester minecraft:saturation 600 1",
-        # Survival + re-TP onto the pile, then heal — order matters so
-        # instant_health propagates UpdateHealth with the bot stationary.
-        "gamemode survival Tester",
-        f"execute in {world} run tp Tester {BOT_TP[0]} {BOT_TP[1]} {BOT_TP[2]} {BOT_TP[3]} {BOT_TP[4]}",
-        "effect give Tester minecraft:instant_health 1 5",
-    ])
+    cmds.append("give Tester minecraft:stone_shovel")
     rcon.batch(cmds)
-    arena.settle(seconds=3.0)
+    arena.place_player(
+        bot,
+        BOT_TP[0],
+        BOT_TP[1],
+        BOT_TP[2],
+        yaw=BOT_TP[3],
+        pitch=BOT_TP[4],
+        expected_floor_y=PIT_TOP_Y,
+        expected_floor_block="dirt",
+    )
+    arena.settle_default()
     yield
-    rcon.batch([
-        "gamemode creative Tester",
-        f"execute in {world} run tp Tester 0 100 0 0 0",
-        f"execute in {world} run fill {x1} {y1} {z1} {x2} {y2} {z2} minecraft:air",
-        f"execute in {world} run forceload remove {x1} {z1} {x2} {z2}",
-    ])
 
 
+@pytest.mark.slow
 @pytest.mark.functional
 @pytest.mark.xfail(
     reason="Strip-mine algorithm produces scattered components instead of one "
@@ -178,12 +147,9 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
 
     # Diagnostic dump — gather every layer's state BEFORE asserting.
     def count_layer(y: int, kind: str) -> int:
-        n = 0
-        for x in range(PIT_X_MIN, PIT_X_MAX + 1):
-            for z in range(PIT_Z_MIN, PIT_Z_MAX + 1):
-                if rcon.block_is(x, y, z, kind):
-                    n += 1
-        return n
+        return rcon.count_blocks_in_box(
+            PIT_X_MIN, y, PIT_Z_MIN, PIT_X_MAX, y, PIT_Z_MAX, kind,
+        )
 
     def mined_top_cells() -> list[tuple[int, int]]:
         out = []
@@ -196,32 +162,31 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
     top_mined = mined_top_cells()
     top_mined_set = set(top_mined)
 
-    # Visual: ASCII grid of the y=66 layer post-mine.
-    # '#' = dirt remaining, '.' = mined (air), 'c' = dig-through under
-    # cleared clutter, 'C' = still-clutter column (y=67 dirt above).
     clutter_xz = {(cx, cz) for (cx, cy, cz) in SURFACE_CLUTTER}
-    grid_lines = []
-    grid_lines.append("  y=66 mined layout (x=0..15 left-right, z=0..15 top-down)")
-    grid_lines.append("     " + " ".join(f"{x:>2}" for x in range(PIT_X_MIN, PIT_X_MAX + 1)))
-    for z in range(PIT_Z_MIN, PIT_Z_MAX + 1):
-        row = [f"z={z:>2}"]
-        for x in range(PIT_X_MIN, PIT_X_MAX + 1):
-            if (x, z) in top_mined_set:
-                # Mined at y=66. Differentiate dig-through (clutter
-                # above also mined) from strip cells.
-                if (x, z) in clutter_xz and rcon.block_is(x, PIT_TOP_Y + 1, z, "air"):
-                    row.append(" c")
+
+    def _build_grid_visual() -> str:
+        grid_lines = []
+        grid_lines.append("  y=66 mined layout (x=0..15 left-right, z=0..15 top-down)")
+        grid_lines.append("     " + " ".join(f"{x:>2}" for x in range(PIT_X_MIN, PIT_X_MAX + 1)))
+        for z in range(PIT_Z_MIN, PIT_Z_MAX + 1):
+            row = [f"z={z:>2}"]
+            for x in range(PIT_X_MIN, PIT_X_MAX + 1):
+                if (x, z) in top_mined_set:
+                    if (x, z) in clutter_xz and rcon.block_is(x, PIT_TOP_Y + 1, z, "air"):
+                        row.append(" c")
+                    else:
+                        row.append(" .")
                 else:
-                    row.append(" .")
-            else:
-                # Dirt at y=66. Mark if clutter still above (violation
-                # candidate) vs clean dirt.
-                if (x, z) in clutter_xz and rcon.block_is(x, PIT_TOP_Y + 1, z, "dirt"):
-                    row.append(" C")
-                else:
-                    row.append(" #")
-        grid_lines.append(" ".join(row))
-    grid_visual = "\n".join(grid_lines)
+                    if (x, z) in clutter_xz and rcon.block_is(x, PIT_TOP_Y + 1, z, "dirt"):
+                        row.append(" C")
+                    else:
+                        row.append(" #")
+            grid_lines.append(" ".join(row))
+        return "\n".join(grid_lines)
+
+    class _LazyGrid:
+        def __str__(self) -> str:
+            return _build_grid_visual()
 
     diag = {
         "top_mined_count":          len(top_mined),
@@ -236,7 +201,7 @@ def test_strip_mine_32_keeps_lower_layers_intact(bot, rcon, arena, pit_arena):
         "response_result":          r.get("result") or r.get("error", {}).get("message"),
         "bot_pos_after":            bot.status_lean().get("position"),
     }
-    diag_str = f"{diag}\n{grid_visual}"
+    diag_str = f"{diag}\n{_LazyGrid()}"
 
     # 1. Bot mined a meaningful amount (close to the 32 budget).
     response_mined = (r.get("data") or {}).get("mined_count", 0)

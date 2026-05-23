@@ -2,5 +2,8 @@
   "name": "hermescraft-dashboard",
   "private": true,
   "type": "module",
-  "description": "Standalone fleet dashboard aggregator for HermesCraft bots"
+  "description": "Standalone fleet dashboard aggregator for HermesCraft bots",
+  "scripts": {
+    "test": "node --test test/**/*.test.js"
+  }
 }

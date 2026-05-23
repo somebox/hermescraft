@@ -24,18 +24,14 @@ import pytest
 def fill_arena(rcon, arena, tester_bot, config):
     """Stone floor at y=64, 64 cobble in inventory, peaceful mode."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     rcon.batch([
         "clear Tester",
         "give Tester minecraft:cobblestone 64",
     ])
     arena.settle()
     yield
-    rcon.run(f"execute in {world} run tp Tester 0 100 0 0 0")
-    arena.flat_arena((-10, 60, -10, 10, 80, 10), floor="stone")
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
 
 
 @pytest.mark.functional
@@ -46,7 +42,7 @@ def test_bot_inside_region_auto_displaces(bot, rcon, arena, config, fill_arena):
         f"execute in {world} run fill 0 65 0 2 65 2 minecraft:stone",
         f"execute in {world} run tp Tester 1 66 1 90 0",
     ])
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     r = bot.post("/action/place_fill", {
         "block": "cobblestone",
         "x1": 0, "y1": 66, "z1": 0,
@@ -68,7 +64,7 @@ def test_bot_outside_region_completes_clean(bot, rcon, arena, config, fill_arena
     of whether per-cell pathfind dragged the bot inside mid-loop."""
     world = config["mc"]["world"]
     rcon.run(f"execute in {world} run tp Tester 5 65 5 90 0")
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     r = bot.post("/action/place_fill", {
         "block": "cobblestone",
         "x1": 0, "y1": 65, "z1": 0,
@@ -86,7 +82,7 @@ def test_large_region_bot_inside_ends_in_safe_cell(bot, rcon, arena, config, fil
     cell is air (not stuck inside placed cobble — safety check)."""
     world = config["mc"]["world"]
     rcon.run(f"execute in {world} run tp Tester 2 65 1 90 0")
-    arena.settle(seconds=2.0)
+    arena.settle_water()
     r = bot.post("/action/place_fill", {
         "block": "cobblestone",
         "x1": 0, "y1": 65, "z1": 0,

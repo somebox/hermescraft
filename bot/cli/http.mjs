@@ -31,6 +31,13 @@ const LONG_ACTION_PATHS = new Set([
   '/action/pillar_step',
   '/action/fish',
   '/action/sail',
+  // F29 (task #66, v44): sail_to runs the full
+  // plan_route → walk_to_entry → mount → sail → disembark →
+  // walk_to_target chain. circuit-v44 forensics: a real journey
+  // took 2m30s end-to-end, far past the 25s default. Pre-fix the
+  // agent's HTTP client aborted at 25s while the body kept sailing,
+  // consuming boats from inventory the agent thought it still had.
+  '/action/sail_to',
   '/action/lure',
   '/action/breed',
   '/action/shear',

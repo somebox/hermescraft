@@ -17,9 +17,6 @@ def inspect_arena(rcon, arena, tester_bot, config):
     """Stone floor at y=64, crafting_table at (3,65,3), cobble at (5,65,5).
     Bot at (0,65,0) facing east."""
     world = config["mc"]["world"]
-    tester_bot.wait_until_ready(timeout=10)
-    arena.clean()
-    arena.flat_arena((-10, 64, -10, 10, 80, 10), floor="stone")
     rcon.batch([
         f"execute in {world} run setblock 3 65 3 minecraft:crafting_table",
         f"execute in {world} run setblock 5 65 5 minecraft:cobblestone",
@@ -27,7 +24,6 @@ def inspect_arena(rcon, arena, tester_bot, config):
     ])
     arena.settle()
     yield
-    arena.flat_arena((-10, 65, -10, 10, 80, 10), floor="stone")
 
 
 @pytest.mark.functional

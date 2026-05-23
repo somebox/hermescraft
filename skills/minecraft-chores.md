@@ -10,7 +10,7 @@ triggers:
   - organize chest
   - plant sapling
   - stock supplies
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Minecraft — Routine chores
@@ -57,7 +57,8 @@ within 4 blocks → within 32 blocks (pathfinds) → saved marks. **Before
 placing a new one, exhaust those options:**
 
 ```
-mc find crafting_table 64      # scans inventory + chests + visible blocks
+mc find crafting_table         # scans inventory + chests + visible blocks (default scan 32)
+mc find crafting_table scan_range=64
 mc marks                        # any saved table marks?
 ```
 
@@ -86,60 +87,31 @@ Future `mc find crafting_table` will surface them.
 ## 1. Source food
 
 **When:** combined cooked-meat + bread in inventory + food-chest < 8,
-AND no raw meat already waiting to be cooked (otherwise just go to
-chore 2).
+AND no raw meat already waiting to be cooked (otherwise jump to chore 2).
 
-**Pick the cheapest source first — don't go on a hunting safari when
-crops are ready to harvest:**
+**Pick the cheapest source first** — don't go on a hunting safari when
+crops are ready to harvest. Scan in order:
 
 ```
-mc nearby 16                          # animals/crops within sight?
-mc find_entities cow 32               # OR scan wider
-mc find_blocks wheat 32 16            # crops nearby?
-```
-
-**Hunting** (fastest if cows/pigs/chickens are at hand):
-```
-mc hunt cow 2                         # kills 2 cows, picks up raw_beef + leather
-# auto-equips best weapon, runs pickup pass after
-```
-Don't hunt your own breeding stock — leave at least 2 adults per
-species to repopulate. Check with `mc find_entities cow 16` before
-killing the last ones.
-
-**Crop harvest** (works when you've already farmed):
-```
-mc find_blocks wheat 32 32            # locate mature wheat
-mc harvest X1 Z1 X2 Z2                # harvest rectangle at bot Y
-# returns wheat + seeds; replant seeds afterward via mc plant
+mc nearby 16                  # animals/crops within sight?
+mc find_entities cow 32       # OR scan wider for a species
+mc find_blocks wheat 32       # mature crops nearby?
 ```
 
-**Breeding** (when you have 2+ adults of a species and the right
-feed in inventory):
-```
-mc find_entities cow 16               # confirm 2+ adults present
-mc breed cow                          # auto-picks wheat from inventory
-# wait ~5 min for baby to grow up, then breed again — or hunt the adults
-```
-Auto-picks: wheat for cow/sheep, wheat_seeds for chicken, carrots/
-potatoes for pig. If you don't have feed, skip and try another source.
+Then pick one source and act. Verb details (breeding feed rules,
+`mc lure`/`mc through` for pens, gate hazards) live in
+[minecraft-survival](minecraft-survival) — this is the priority logic:
 
-**Planting (sets up future harvests)** — only when you have seeds AND
-nearby farmland:
-```
-mc find_blocks farmland 16 32         # exposed farmland
-mc plant wheat_seeds X Y Z            # Y = farmland_y + 1 (one cell above)
-```
-Bone-meal accelerates growth: `mc bonemeal X Y Z`. Don't bonemeal
-without seeds planted — wastes the bonemeal.
+| Source | Verb | When |
+|---|---|---|
+| Hunt | `mc hunt cow 2` | Cows/pigs/chickens in sight; leave ≥2 adults per species to repopulate |
+| Crop harvest | `mc harvest X1 Z1 X2 Z2` | Mature crops already farmed (`mc find_blocks wheat`); replant seeds with `mc plant` after |
+| Breed | `mc breed cow` | 2+ adults AND right feed in inventory; auto-picks feed |
+| Plant | `mc plant wheat_seeds X Y Z` | Have seeds + nearby farmland (`mc find_blocks farmland`); `mc bonemeal X Y Z` to accelerate |
+| Fish | `mc fish` | Last resort — works anywhere with water + fishing_rod (5–30s per cast) |
 
-**Fishing** (slow but works anywhere with water + rod):
-```
-mc fish                               # 5-30s vanilla wait per cast
-```
-
-If NONE of those work (no animals, no crops, no rod), set the food
-chore aside this round — the player will notice and place feed/seeds.
+If none of those apply (no animals, no crops, no rod), skip food chore
+this round — the player will notice and restock feed/seeds.
 
 ## 2. Cook food
 
@@ -147,15 +119,18 @@ chore aside this round — the player will notice and place feed/seeds.
 raw_rabbit anywhere in inventory or food-chest. OR cooked_beef stash
 < 8.
 
-**How (the smelt verbs auto-pick the closest reachable furnace —
-you DON'T pass coords to `smelt` or `smelt_start`):**
+**How:** `mc smelt` / `mc smelt_start` auto-pick the closest reachable
+furnace (no coords needed). `mc furnace_check` / `mc furnace_take`
+target a specific furnace and DO need coords (use the X Y Z from
+`mc furnaces`).
+
 ```
 mc furnaces                            # GET — lists known furnaces with X Y Z
 mc smelt raw_beef coal 8               # FOREGROUND: blocks ~16s/item, returns when done
-# OR run async:
-mc smelt_start raw_beef 8              # BACKGROUND: returns a task_id, returns instantly
+# OR background:
+mc smelt_start raw_beef 8              # returns a task_id instantly
 # ... do other chores ...
-mc furnace_check FX FY FZ              # check status (coords FROM mc furnaces output)
+mc furnace_check FX FY FZ              # status of a specific furnace
 mc furnace_take FX FY FZ               # withdraw smelted output
 ```
 
@@ -203,18 +178,24 @@ take with `mc furnace_take`.
 - stick < 16
 - torch < 16
 
-**How:**
+**How (every `withdraw`/`deposit` needs a chest target — coords or @mark;
+there is no implicit "currently open" chest):**
 ```
-mc chest_search           # find the staples/wood/misc chest
-mc chest CX CY CZ         # open it
-mc withdraw oak_log 4     # pull logs if needed
-mc craft oak_planks 16    # 4 logs → 16 planks
-mc craft stick 32         # 4 planks → 16 sticks (so 8 planks = 32 sticks)
-mc craft torch 16         # 1 coal + 1 stick → 4 torches
-mc deposit oak_planks 16  # put surplus back
-mc deposit stick 16
-mc deposit torch 16
+mc find oak_log                       # locate logs across inventory + chests + nearby blocks
+mc chest_search oak_planks            # OR: search cached chest snapshots by item
+mc chest @materials_chest             # open the chest (peek inventory)
+mc withdraw oak_log 4 @materials_chest
+mc craft oak_planks 16                # 4 logs → 16 planks
+mc craft stick 32                     # 4 planks → 16 sticks (so 8 planks = 32 sticks)
+mc craft torch 16                     # 1 coal + 1 stick → 4 torches
+mc deposit oak_planks 16 @materials_chest   # put surplus back
+mc deposit stick 16 @materials_chest
+mc deposit torch 16 @materials_chest
 ```
+
+If you don't yet have a `@materials_chest` mark, walk to the chest and
+`mc mark materials_chest`. Coords (`X Y Z`) work in place of `@mark`
+everywhere here.
 
 Aim for a small surplus (1–2 stacks each), not warehouse quantities.
 
@@ -236,7 +217,7 @@ forested than you found it).
 mc find_blocks grass_block 16   # find open ground nearby
 mc go_mark home                 # don't plant too far from base
 # pick a coord with clear sky:
-mc place oak_sapling X Y Z      # Y = grass_block_y + 1
+mc plant oak_sapling X Y Z      # Y = grass_block_y + 1 (one cell above ground)
 ```
 
 Plant 3-6 saplings per chore round. Don't try to forest the whole area.
@@ -278,6 +259,6 @@ Don't reshuffle a chest the player has clearly organized themselves
 - A player is whispering you — STOP, respond to them first.
 - You're below half HP or food < 6 — eat / heal / retreat first.
 - Night with hostiles nearby — go inside the house and wait.
-- You have an active task from `mc commands` — finish that first.
+- You have an unresolved player command in `mc cmds` — finish that first.
 
 Chores are filler for genuine idle time, not a way to look busy.

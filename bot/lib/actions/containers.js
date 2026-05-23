@@ -2,7 +2,7 @@
 import { Vec3 } from 'vec3';
 import { ensureWithinReach } from './_helpers.js';
 
-// ─ Phase-2 chest contract helpers (see docs/phase-2/action-contracts.md mc chest) ─
+// ─ Phase-2 chest contract helpers (see docs/design/phase-2/action-contracts.md mc chest) ─
 
 /**
  * Open a container at the body's resolved coords. Returns either
