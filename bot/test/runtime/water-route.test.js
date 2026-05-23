@@ -612,3 +612,92 @@ test('planWaterRoute: natural beach pattern (sand at water-y) → finds shore at
   assert.equal(r.data.exit_shore.x, 5);
   assert.equal(r.data.exit_shore.z, 0);
 });
+
+// ─── task #66 (B3): collision-aware exit_shore scoring ───────────────────
+
+test('planWaterRoute (B3): prefers clean exit_water over one adjacent to a y=water_y obstacle', () => {
+  // Two viable exits at equal target-distance, EACH with its own
+  // exit_water cell:
+  //   - +z exit_water=(10, 62, 1): has dirt at (10, 62, 2) as a
+  //     direct neighbour → boat hitbox would clip → B3 penalty.
+  //   - -z exit_water=(10, 62, -1): clean neighbourhood.
+  // Both shores are equidistant from the target (20, 63, 0). With
+  // the obstacle penalty the clean -z exit wins.
+  const blocks = {};
+  // Large water body (>100 cells so we're past POND_DISCONNECTED):
+  // a 12×12 pool around the +z and -z branches at x=10. Water at
+  // y=62 and y=61, air above.
+  for (let x = 0; x <= 11; x++) {
+    for (let z = -6; z <= 6; z++) {
+      blocks[`${x},62,${z}`] = 'water';
+      blocks[`${x},61,${z}`] = 'water';
+      blocks[`${x},63,${z}`] = 'air';
+      blocks[`${x},64,${z}`] = 'air';
+    }
+  }
+  // +z exit candidate: dirt at (10, 62, 7) at y=water_y — adjacent
+  // to candidate exit_water (10, 62, 6). Shore above the dirt.
+  blocks['10,62,7'] = 'dirt';
+  blocks['10,63,7'] = 'air';
+  blocks['10,64,7'] = 'air';
+  blocks['10,61,7'] = 'stone';
+  // -z exit candidate: clean stone shore at (10, 62, -7) — solid foot,
+  // shore-cell predicate picks dy=+1. exit_water on this side is
+  // (10, 62, -6).
+  blocks['10,62,-7'] = 'stone';
+  blocks['10,63,-7'] = 'air';
+  blocks['10,64,-7'] = 'air';
+  blocks['10,61,-7'] = 'stone';
+  // Entry shore at (-1, 63, 0).
+  blocks['-1,62,0'] = 'stone';
+  blocks['-1,63,0'] = 'air';
+  blocks['-1,64,0'] = 'air';
+
+  const bot = makeStubBot(blocks);
+  // Target at (10, 63, 0) (centre of the pool) — both candidate exits
+  // are equidistant: +z shore at (10, 63, 7) is 7b away; -z shore
+  // at (10, 63, -7) is also 7b away. With B3's obstacle penalty
+  // (+z exit_water adjacent to dirt at y=62) the clean -z wins.
+  const r = planWaterRoute(bot, { x: -1, y: 63, z: 0 }, { x: 10, y: 63, z: 0 });
+  assert.equal(r.ok, true, `expected ok: ${JSON.stringify(r)}`);
+  assert.equal(r.data.exit_shore.z, -7,
+    `expected exit_shore.z=-7 (clean side); got ${r.data.exit_shore.z}`);
+});
+
+// ─── task #66 (B4): BFS allows 1-deep shallow water (boat-passable) ──────
+
+test('planWaterRoute (B4): reaches a target shore behind a 1-deep approach', () => {
+  // Channel: navigable (2-deep) until z=8, then a 2-cell stretch of
+  // 1-deep water (sand floor at y=61) approaching the shore at z=11.
+  // Pre-B4, BFS refused to expand into the 1-deep cells → exit_shore
+  // null → TARGET_NOT_REACHABLE_FROM_WATER. With B4, BFS expands
+  // through the shallow approach and finds the shore.
+  const blocks = {};
+  for (let z = 0; z <= 8; z++) {
+    blocks[`5,62,${z}`] = 'water';
+    blocks[`5,61,${z}`] = 'water';
+    blocks[`5,63,${z}`] = 'air';
+    blocks[`5,64,${z}`] = 'air';
+  }
+  // 1-deep shallow approach at z=9, 10 (sand floor).
+  for (const z of [9, 10]) {
+    blocks[`5,62,${z}`] = 'water';
+    blocks[`5,61,${z}`] = 'sand';
+    blocks[`5,63,${z}`] = 'air';
+    blocks[`5,64,${z}`] = 'air';
+  }
+  // Target shore at (5, 63, 11) above grass.
+  blocks['5,62,11'] = 'grass_block';
+  blocks['5,63,11'] = 'air';
+  blocks['5,64,11'] = 'air';
+  // Entry shore at (5, 63, -1).
+  blocks['5,62,-1'] = 'stone';
+  blocks['5,63,-1'] = 'air';
+  blocks['5,64,-1'] = 'air';
+
+  const bot = makeStubBot(blocks);
+  const r = planWaterRoute(bot, { x: 5, y: 63, z: -1 }, { x: 5, y: 63, z: 11 });
+  assert.equal(r.ok, true, `expected route via 1-deep approach; got ${JSON.stringify(r)}`);
+  assert.equal(r.data.exit_shore.z, 11);
+  assert.equal(r.data.exit_shore.y, 63);
+});

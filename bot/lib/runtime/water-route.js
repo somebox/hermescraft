@@ -101,6 +101,19 @@ function classifyCell(b, x, y, z) {
 }
 
 /**
+ * Predicate the BFS uses for graph expansion. Task #66 (B4): allows
+ * 'shallow' (1-deep water) in addition to 'navigable' — the boat
+ * hitbox doesn't care about water depth, only obstacles at y=water_y.
+ * The entry-water lookup and findNearbyNavigableWater still use the
+ * stricter 'navigable' check so the bot has safe water to swim in
+ * during launch/recovery.
+ */
+function isSailable(b, x, y, z) {
+  const cls = classifyCell(b, x, y, z);
+  return cls === 'navigable' || cls === 'shallow';
+}
+
+/**
  * A shore cell is DRY land directly adjacent to a water cell — the bot
  * can stand there with feet in AIR (head clearance above, solid block
  * beneath) and step into the water. Foot=air, foot-1=solid non-water,
@@ -171,9 +184,31 @@ function findNearbyNavigableWater(b, sx, sy, sz, radius) {
  *                          from target. Pass Infinity for "any shore".
  */
 function findExitShore(b, cells, target, radius) {
+  // Task #66 (B3): collision-aware scoring. The previous version
+  // picked the shore closest to target; that often selected exit
+  // cells whose exit_water is adjacent to a 1-block obstacle (e.g.
+  // (350,62,-535) sat 1 cell from a dirt spike at (350,62,-536) — the
+  // boat hitbox clipped the spike at speed and broke). Now we
+  // penalise candidates whose exit_water has solid neighbours at
+  // y=water_y, so a slightly-farther but clean exit beats a
+  // closer-but-obstacle-adjacent one.
   let best = null;
-  let bestDist = Infinity;
+  let bestScore = Infinity;
   for (const c of cells) {
+    // Score the exit_water's neighbourhood once per `c` (it doesn't
+    // depend on the chosen shore direction).
+    let solidNeighborCount = 0;
+    for (const [ndx, ndz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const nb = b.blockAt(new Vec3(c.x + ndx, c.y, c.z + ndz));
+      if (nb && nb.boundingBox === 'block' && !WATER_NAMES.has(nb.name) && !AIR_NAMES.has(nb.name)) {
+        solidNeighborCount++;
+      }
+    }
+    // Penalty: each solid neighbour adds 4b of "effective distance".
+    // 4b tradeoff means we prefer a clean exit up to 4b farther
+    // than a dirty one with a single obstacle adjacent.
+    const obstaclePenalty = solidNeighborCount * 4;
+
     // Probe 4 cardinal land cells adjacent to c. Also check one cell
     // up (sy + 1) — natural beaches have sand AT the water's y level
     // (contains the water) with walkable air ABOVE at sy+1. The cell
@@ -181,10 +216,10 @@ function findExitShore(b, cells, target, radius) {
     // solid sand block, not enterable), but the bot's actual standing
     // position is the air block on top.
     //
-    // F16 (task #54): mirrors findEntryShore's dual check at line
-    // ~191. Pre-fix, findExitShore rejected every natural beach as
-    // "not a shore," producing TARGET_NOT_REACHABLE_FROM_WATER even
-    // when a perfectly walkable beach existed adjacent to the water.
+    // F16 (task #54): mirrors findEntryShore's dual check. Pre-fix,
+    // findExitShore rejected every natural beach as "not a shore,"
+    // producing TARGET_NOT_REACHABLE_FROM_WATER even when a perfectly
+    // walkable beach existed adjacent to the water.
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const sx = c.x + dx, sz = c.z + dz;
       const horizToTarget = Math.hypot(sx - target.x, sz - target.z);
@@ -193,8 +228,9 @@ function findExitShore(b, cells, target, radius) {
         const sy = c.y + dy;
         if (!isShoreCell(b, sx, sy, sz)) continue;
         const d = Math.hypot(sx - target.x, sy - target.y, sz - target.z);
-        if (d < bestDist) {
-          bestDist = d;
+        const score = d + obstaclePenalty;
+        if (score < bestScore) {
+          bestScore = score;
           best = { shore: { x: sx, y: sy, z: sz }, water: { x: c.x, y: c.y, z: c.z } };
         }
       }
@@ -417,24 +453,29 @@ export function planWaterRoute(b, start, target, opts = {}) {
   // our best candidate for the exit_water.
   let nearestToTarget = { cell: entryWater, dist: Math.hypot(entryWater.x - target.x, entryWater.z - target.z) };
 
+  // Task #66 (B3/B4): explore the FULL connected water graph (up to
+  // maxExplored=50k). The old "break on first within-radius cell"
+  // optimisation stopped exploration ~7-10 cells short of the
+  // actual target shore — natural beach approaches often have a
+  // 1-deep gap that needs to be traversed before the shore appears.
+  // maxExplored already caps unbounded oceans.
+
   while (queue.length > 0 && explored.length < maxExplored) {
     const cur = queue.shift();
     const curDist = Math.hypot(cur.x - target.x, cur.z - target.z);
     if (curDist < nearestToTarget.dist) {
       nearestToTarget = { cell: cur, dist: curDist };
-      // Early exit if we're within exit-shore radius of target.
-      if (curDist <= exitRadius) {
-        // Still keep exploring a bit to find better exit options, but
-        // not the whole budget. Break here for simplicity — we'll
-        // do exit-shore search across all visited cells.
-        break;
-      }
     }
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = cur.x + dx, nz = cur.z + dz;
       const k = key(nx, cur.y, nz);
       if (visited.has(k)) continue;
-      if (classifyCell(b, nx, cur.y, nz) !== 'navigable') continue;
+      // Task #66 (B4): allow boat_passable (1-deep over solid floor)
+      // cells so the BFS can reach natural beach shores. The boat
+      // hitbox doesn't care about water depth — only solid blocks at
+      // y=water_y obstruct it (those are caught by isSailable's
+      // 'blocked' return).
+      if (!isSailable(b, nx, cur.y, nz)) continue;
       visited.add(k);
       parent.set(k, key(cur.x, cur.y, cur.z));
       const ncell = { x: nx, y: cur.y, z: nz };

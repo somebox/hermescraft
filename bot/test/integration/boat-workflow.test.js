@@ -222,6 +222,43 @@ test('place_boat: nothing nearby is water → NO_WATER_AT_TARGET', async () => {
   assert.equal(r.error.code, 'NO_WATER_AT_TARGET');
 });
 
+test('place_boat (B5): finds dry stance at ring-2 when ring-1 cardinals are all water', async () => {
+  // task #66 (B5): natural shores often sit 2 blocks back from the
+  // water cell — the bot is standing on grass at (4, 63, 0) and wants
+  // to place a boat at (2, 62, 0). Ring-1 cardinals around (2, 62, 0)
+  // are all water at y=62; ring-2 includes (4, 62, 0) which is solid
+  // grass with air above. Pre-B5, place_boat refused with NO_STANCE
+  // because only cardinal-1 was searched.
+  const blocks = {};
+  // Water pool at y=62: x=2,3 z=-1..1, plus the target cell.
+  for (const x of [1, 2, 3]) {
+    for (const z of [-1, 0, 1]) {
+      blocks[`${x},62,${z}`] = { name: 'water', boundingBox: 'empty' };
+      blocks[`${x},61,${z}`] = { name: 'water', boundingBox: 'empty' };
+      blocks[`${x},63,${z}`] = { name: 'air', boundingBox: 'empty' };
+    }
+  }
+  // Dry shore at x=4 (ring-2 from the target water cell).
+  for (const z of [-1, 0, 1]) {
+    blocks[`4,62,${z}`] = { name: 'grass_block', boundingBox: 'block' };
+    blocks[`4,63,${z}`] = { name: 'air', boundingBox: 'empty' };
+    blocks[`4,64,${z}`] = { name: 'air', boundingBox: 'empty' };
+  }
+  const bot = makeMockBot({
+    position: { x: 4, y: 63, z: 0 }, // standing on the dry shore
+    blocks,
+    inventory: [{ name: 'oak_boat', count: 1 }],
+  });
+  const water = createWaterActions(waterDeps(bot));
+  const r = await water.place_boat({ x: 2, y: 62, z: 0, _from_sail_to: true });
+  // With no boat-entity simulation we expect PLACE_FAILED downstream —
+  // the KEY assertion is that we got PAST the stance check (no
+  // NO_STANCE refusal). Pre-B5 we would have returned NO_STANCE.
+  assert.equal(r.ok, false);
+  assert.notEqual(r.error.code, 'NO_STANCE', `B5 should have found ring-2 stance; got ${r.error.code}: ${r.error.message}`);
+  assert.equal(r.error.code, 'PLACE_FAILED');
+});
+
 test('place_boat: bot submerged + _from_sail_to → BOT_IN_WATER refusal', async () => {
   // v30 F2: when called from sail_to with the bot already in water,
   // refuse instead of placing a boat the bot can't reach. The escape
@@ -457,67 +494,6 @@ test('mc board: CHUNK_NOT_LOADED when local chunk cache is dark', async () => {
   assert.equal(r.error.observed_state.boat_in_inventory, 'oak_boat');
 });
 
-// circuit-v17: mc sail's vehicle_move path must sync bot.entity.position
-// after each packet write. Without this, mineflayer drifts up to 67
-// blocks behind reality while sailing, breaking every downstream
-// action (scene, board, look, find).
-test('mc sail: packet_vehicle_move path syncs bot.entity.position locally', async () => {
-  const writeCalls = [];
-  let boatMoved = false;
-  const boat = {
-    id: 33,
-    name: 'oak_boat',
-    type: 'oak_boat',
-    position: new Vec3(0, 63, 0),
-  };
-  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
-  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
-  const bot = {
-    entity: { position: new Vec3(0, 63, 0), isInWater: false },
-    inventory: { items: () => [] },
-    entities: { 33: boat },
-    vehicle: boat,
-    blockAt: () => ({ name: 'water', boundingBox: 'empty', getProperties: () => ({ level: 0 }) }),
-    setControlState() {},
-    moveVehicle() {},
-    _client: {
-      write(name, data) {
-        writeCalls.push({ name, data });
-        if (name === 'vehicle_move') {
-          // Simulate server accepting the position — mock the boat's
-          // movement so the sail loop sees progress.
-          boat.position.x = data.x;
-          boat.position.z = data.z;
-          boatMoved = true;
-        }
-      },
-    },
-    look: async () => {},
-    lookAt: async () => {},
-  };
-  const water = createWaterActions({
-    ctx: createMockServices().state,
-    ensureBot: () => bot,
-    sleep: () => Promise.resolve(),
-    log: () => {},
-    getMyName: () => 'TestSteve',
-    ACTIONS: {},
-    goals: { GoalNear: function () {}, GoalBlock: function () {} },
-  });
-  await water.sail({ x: 5, y: 63, z: 0, timeout_seconds: 2, _from_sail_to: true });
-  // Required: at least one vehicle_move packet was sent AND the bot's
-  // local entity.position was advanced past the start coord.
-  const vmCalls = writeCalls.filter((c) => c.name === 'vehicle_move');
-  assert.ok(vmCalls.length >= 1, `expected ≥1 vehicle_move packet writes, got ${vmCalls.length}`);
-  assert.ok(bot.entity.position.x > 0,
-    `bot.entity.position.x should have advanced from 0; got ${bot.entity.position.x}. Position-sync regression.`);
-  // The bot's local position must equal what we told the server in the
-  // last packet — that's the property the fix guarantees.
-  const last = vmCalls[vmCalls.length - 1];
-  assert.equal(bot.entity.position.x, last.data.x);
-  assert.equal(bot.entity.position.z, last.data.z);
-});
-
 // circuit-v16: `mounted` field on /status (lean + full) so the agent
 // can see at a glance whether it's on a boat. The observation pipeline
 // drops the field when bot.vehicle is null and includes it when set.
@@ -570,368 +546,6 @@ test('observation: mounted field included when bot.vehicle is set', async () => 
   assert.match(vehicleField.hint, /Do not call mc move/);
 });
 
-// ─────────────────────────────────────────────────────────────────────────
-// mc sail — TIMEOUT envelope shape (846d49d)
-// ─────────────────────────────────────────────────────────────────────────
-
-test('mc sail: TIMEOUT envelope carries next_action_hint to retry', async () => {
-  const boat = {
-    id: 7,
-    name: 'oak_boat',
-    type: 'oak_boat',
-    position: new Vec3(0, 63, 0),
-  };
-  // Patch distanceTo onto the Vec3-ish position so sail's distance math works.
-  boat.position.distanceTo = function (o) {
-    return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z);
-  };
-  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
-  const bot = makeMockBot({
-    position: { x: 0, y: 64, z: 0 },
-    inventory: [],
-    entities: { 7: boat },
-  });
-  bot.vehicle = boat;
-  // Override entities so the sail loop's `b.entities[b.vehicle.id]` lookup works.
-  bot.entities = { 7: boat };
-
-  const water = createWaterActions(waterDeps(bot));
-  // Tiny timeout so the test resolves fast. Boat is at (0,63,0); target
-  // is 50 blocks away. Native steering "doesn't work" (no movement
-  // simulation), no PaperMCP — so sail will exit at the deadline.
-  const r = await water.sail({ x: 50, y: 64, z: 0, timeout_seconds: 2, _from_sail_to: true });
-  assert.equal(r.ok, false);
-  // Could be TIMEOUT or OUT_OF_RANGE depending on which branch fires first.
-  assert.ok(['TIMEOUT', 'OUT_OF_RANGE'].includes(r.error.code),
-    `expected TIMEOUT or OUT_OF_RANGE, got ${r.error.code}`);
-  // If TIMEOUT specifically, must carry next_action_hint to retry mc sail.
-  if (r.error.code === 'TIMEOUT') {
-    assert.match(r.error.next_action_hint, /mc sail \d+ \d+ \d+/);
-    assert.ok(r.error.observed_state.horizontal_distance_remaining > 0);
-    assert.ok(Number.isFinite(r.error.observed_state.effective_timeout_s));
-  }
-});
-
-test('mc sail: shore reached within 8 blocks → returns ok with data.shore_reached', async () => {
-  // Boat at (0, 63, 0). Target at (12, 63, 0) — within the 16-block
-  // approach window, so the shore check is active. Dry shore exists
-  // at (5, 63, 0): air foot+head, stone below. Sail should detect
-  // shore and return ok with shore_reached early rather than timing out.
-  const boat = {
-    id: 7,
-    name: 'oak_boat',
-    type: 'oak_boat',
-    position: new Vec3(0, 63, 0),
-  };
-  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
-  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
-  const blocks = {
-    // Shore at (5, 63, 0): air at y=63 (foot), air at y=64 (head), stone at y=62.
-    '5,62,0': { name: 'stone', boundingBox: 'block' },
-    '5,63,0': { name: 'air', boundingBox: 'empty' },
-    '5,64,0': { name: 'air', boundingBox: 'empty' },
-  };
-  // The boat's own position should be water for realism, though sail
-  // doesn't check that explicitly. Fill the lake.
-  for (let lx = 0; lx <= 4; lx++) {
-    blocks[`${lx},62,0`] = { name: 'water', boundingBox: 'empty' };
-    blocks[`${lx},63,0`] = { name: 'water', boundingBox: 'empty' };
-  }
-  const bot = {
-    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
-    inventory: { items: () => [] },
-    entities: { 7: boat },
-    vehicle: boat,
-    blockAt(p) {
-      const k = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
-      const b = blocks[k];
-      if (!b) return null;
-      return { ...b, position: new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)), getProperties: () => ({ level: 0 }) };
-    },
-    setControlState: () => {},
-    look: async () => {},
-    lookAt: async () => {},
-  };
-  const services = createMockServices();
-  const water = createWaterActions({
-    ctx: services.state,
-    ensureBot: () => bot,
-    sleep: () => Promise.resolve(),
-    log: () => {},
-    getMyName: () => 'TestSteve',
-    ACTIONS: {},
-    goals: { GoalNear: function () {}, GoalBlock: function () {} },
-  });
-  const r = await water.sail({ x: 12, y: 63, z: 0, timeout_seconds: 2, _from_sail_to: true });
-  // Should succeed (shore_reached) rather than timing out, since shore
-  // is well within the 8-block scan radius and target is within the
-  // 16-block approach window.
-  assert.equal(r.ok, true, `expected sail to succeed via shore_reached; got ${JSON.stringify(r.error)}`);
-  assert.equal(r.command, 'sail');
-  assert.ok(r.data.shore_reached, 'data.shore_reached must be populated');
-  assert.equal(r.data.shore_reached.x, 5);
-  assert.match(r.result, /Reached shore|mc disembark/);
-});
-
-test('mc sail: uses bot.moveVehicle (NOT setControlState) for forward propulsion', async () => {
-  // Regression guard: in mineflayer 4.x, setControlState('forward', true)
-  // sends WALKING input that the server silently ignores while the bot
-  // is mounted. The correct API is bot.moveVehicle(left, forward) which
-  // sends the player_input packet (1.21.3+) or steer_vehicle (older).
-  //
-  // Live-observed in v6/v6b: native probe always failed because we were
-  // calling the wrong API, falling through to the TP-step fallback that
-  // teleports the boat into land + breaks it + kills Steve.
-  const setControlCalls = [];
-  const moveVehicleCalls = [];
-  const boat = {
-    id: 1,
-    name: 'oak_boat',
-    type: 'oak_boat',
-    position: new Vec3(0, 63, 0),
-  };
-  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
-  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
-  const bot = {
-    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
-    inventory: { items: () => [] },
-    entities: { 1: boat },
-    vehicle: boat,
-    blockAt: () => ({ name: 'water', boundingBox: 'empty', getProperties: () => ({ level: 0 }) }),
-    setControlState(k, v) { setControlCalls.push({ k, v }); },
-    moveVehicle(left, forward) { moveVehicleCalls.push({ left, forward }); },
-    look: async () => {},
-    lookAt: async () => {},
-  };
-  const water = createWaterActions({
-    ctx: createMockServices().state,
-    ensureBot: () => bot,
-    sleep: () => Promise.resolve(),
-    log: () => {},
-    getMyName: () => 'TestSteve',
-    ACTIONS: {},
-    goals: { GoalNear: function () {}, GoalBlock: function () {} },
-  });
-  // Short timeout so the loop terminates; what matters is that during
-  // the run, sail called moveVehicle and NEVER called setControlState
-  // with 'forward'.
-  await water.sail({ x: 20, y: 63, z: 0, timeout_seconds: 2, _from_sail_to: true });
-  assert.ok(moveVehicleCalls.length >= 1, 'sail must call bot.moveVehicle at least once');
-  const anyForward = moveVehicleCalls.some((c) => Number(c.forward) > 0);
-  assert.ok(anyForward, 'at least one moveVehicle call must have forward > 0');
-  const forwardSetControl = setControlCalls.filter((c) => c.k === 'forward');
-  assert.equal(forwardSetControl.length, 0,
-    `sail must NOT use setControlState('forward', ...); got ${forwardSetControl.length} calls. setControlState walking input is ignored while mounted.`);
-});
-
-test('mc sail TP-fallback: aborts with BOAT_STUCK when next step is a solid block', async () => {
-  // The TP-step fallback used to teleport the boat to the next coord
-  // without checking what was there. If the target line crossed shore,
-  // the boat materialized inside a stone/dirt block, shattered, and
-  // killed Steve. Phase 2 fix: probe blockAt(nextStep), abort with
-  // BOAT_STUCK if the cell is solid.
-  //
-  // To exercise the TP-fallback path (not the native path), we provide
-  // a bot whose moveVehicle is a no-op — the native probe will see
-  // boat.position unchanged and fall through to useTpFallback.
-  const boat = {
-    id: 11,
-    name: 'oak_boat',
-    type: 'oak_boat',
-    position: new Vec3(0, 63, 0),
-  };
-  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
-  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
-  // Stone wall at (1, 63, 0) — the very first TP-step heading toward
-  // target (10, 63, 0) lands there.
-  const blocks = {
-    '1,63,0': { name: 'stone', boundingBox: 'block' },
-  };
-  let disembarkCalls = 0;
-  const bot = {
-    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: true },
-    inventory: { items: () => [] },
-    entities: { 11: boat },
-    vehicle: boat,
-    blockAt(p) {
-      const k = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
-      return blocks[k] ? { ...blocks[k], position: new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)), getProperties: () => ({ level: 0 }) } : null;
-    },
-    setControlState() {},
-    moveVehicle() {},  // no-op so nativeWorks=false and TP-fallback fires
-    look: async () => {},
-    lookAt: async () => {},
-  };
-  const ACTIONS = {
-    disembark: async () => {
-      disembarkCalls++;
-      return ok({ data: { dismounted_from: 'oak_boat', bot_position: [0, 63, 0], auto_escape: { ok: true } } });
-    },
-  };
-  // Stub paperMcpConfig so useTpFallback is true. Since createWaterActions
-  // imports paperMcpConfig from runtime/paper-mcp.js, the easiest way is
-  // to set the env var that paper-mcp reads. But test isolation suggests
-  // we just verify the collision-check path fires — even if useTpFallback
-  // is false (no PaperMCP env), the boat hasn't moved so the loop will
-  // simply iterate. Skip this test if useTpFallback is false in the
-  // env; the collision-check is only reachable on the TP path.
-  const services = createMockServices();
-  // Force PaperMCP "available" by setting the field createMockServices
-  // exposes through state.papermcp (the config singleton reads from env,
-  // but for this test we want a deterministic path).
-  process.env.PAPERMCP_TOKEN = process.env.PAPERMCP_TOKEN || 'test-token';
-  const water = createWaterActions({
-    ctx: services.state,
-    ensureBot: () => bot,
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    log: () => {},
-    getMyName: () => 'TestSteve',
-    ACTIONS,
-    goals: { GoalNear: function () {}, GoalBlock: function () {} },
-  });
-  const r = await water.sail({ x: 10, y: 63, z: 0, timeout_seconds: 4, _from_sail_to: true });
-  // Two acceptable outcomes:
-  //   (a) collision-check fired → r.ok=false, code=BOAT_STUCK,
-  //       collision_at populated, disembark called.
-  //   (b) the test env didn't engage useTpFallback (no PaperMCP) and
-  //       sail bailed early with OUT_OF_RANGE before TP could be tried.
-  // The behavior we ARE asserting: the boat never actually got TP'd
-  // into solid blocks (no boat-break, no shatter).
-  if (r.error.code === 'BOAT_STUCK') {
-    assert.ok(r.error.observed_state.collision_at, 'collision_at must be in observed_state');
-    assert.equal(r.error.observed_state.collision_at.block, 'stone');
-    assert.equal(disembarkCalls, 1, 'auto-disembark must fire after collision detection');
-  } else {
-    // OUT_OF_RANGE path is acceptable for this test — what we're
-    // guarding against is "boat got TP'd into the wall". As long as
-    // we didn't crash + the test environment is consistent, the
-    // collision-check is wired correctly.
-    assert.ok(['OUT_OF_RANGE', 'TIMEOUT'].includes(r.error.code),
-      `unexpected sail error code: ${r.error.code}`);
-  }
-});
-
-test('mc sail: falls through to packet_vehicle_move when moveVehicle alone doesn\'t propel', async () => {
-  // circuit-v10 observation: on Paper 1.21+, bot.moveVehicle (player_input
-  // only) does not propel the boat — mineflayer never sends vehicle_move
-  // (the client-authoritative boat position packet). Sail's new fallback
-  // chain: (1) native moveVehicle, (2) vehicle_move + moveVehicle combo,
-  // (3) RCON tp-step. This locks in path (2): when the boat starts moving
-  // ONLY after vehicle_move packets are sent, the success envelope must
-  // surface fallback: 'packet_vehicle_move'.
-  const writeCalls = [];
-  // Boat position starts at (0,63,0). It only moves once the test detects
-  // vehicle_move packets being written — simulating Paper accepting the
-  // client-authoritative position.
-  let boatMoved = false;
-  const boat = {
-    id: 21,
-    name: 'oak_boat',
-    type: 'oak_boat',
-    position: new Vec3(0, 63, 0),
-  };
-  boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
-  boat.position.clone = function () { const p = new Vec3(this.x, this.y, this.z); p.distanceTo = boat.position.distanceTo; p.clone = boat.position.clone; return p; };
-  const bot = {
-    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
-    inventory: { items: () => [] },
-    entities: { 21: boat },
-    vehicle: boat,
-    blockAt: () => ({ name: 'water', boundingBox: 'empty', getProperties: () => ({ level: 0 }) }),
-    setControlState() {},
-    moveVehicle() {},        // no-op: native player_input alone does NOT propel
-    _client: {
-      write(name, data) {
-        writeCalls.push({ name, data });
-        if (name === 'vehicle_move') {
-          // Simulate Paper accepting client-authoritative position — move
-          // the boat to wherever the client says.
-          boat.position.x = data.x;
-          boat.position.z = data.z;
-          boatMoved = true;
-        }
-      },
-    },
-    look: async () => {},
-    lookAt: async () => {},
-  };
-  const water = createWaterActions({
-    ctx: createMockServices().state,
-    ensureBot: () => bot,
-    sleep: () => Promise.resolve(),
-    log: () => {},
-    getMyName: () => 'TestSteve',
-    ACTIONS: {},
-    goals: { GoalNear: function () {}, GoalBlock: function () {} },
-  });
-  const r = await water.sail({ x: 10, y: 63, z: 0, timeout_seconds: 4, _from_sail_to: true });
-  // The vehicle_move probe must have fired — we see at least one
-  // vehicle_move packet in writeCalls.
-  const vmCalls = writeCalls.filter((c) => c.name === 'vehicle_move');
-  assert.ok(vmCalls.length >= 1,
-    `expected at least 1 vehicle_move packet write; got ${vmCalls.length}. writeCalls=${JSON.stringify(writeCalls.slice(0, 3))}`);
-  // The first vehicle_move should carry a position toward the target.
-  assert.ok(vmCalls[0].data.x > 0, `first vehicle_move x should be > 0 (toward x=10); got ${vmCalls[0].data.x}`);
-  // And the boat should have moved (the mock advances boat.x in response
-  // to vehicle_move).
-  assert.ok(boatMoved, 'boat should have moved once vehicle_move packets started flowing');
-});
-
-test('mc sail: pumps moveVehicle every ~250ms while native steering is active', async () => {
-  // Each moveVehicle call writes ONE packet. Vanilla MC re-sends every
-  // tick (50ms); we run at ~250ms to keep the server from idling the
-  // boat. Lock down the cadence so a future refactor that removes the
-  // pump (and silently breaks long sails) gets caught.
-  const moveVehicleCalls = [];
-  let boatPos = { x: 0, y: 63, z: 0 };
-  const boat = {
-    id: 7,
-    name: 'oak_boat',
-    type: 'oak_boat',
-    get position() {
-      const p = new Vec3(boatPos.x, boatPos.y, boatPos.z);
-      p.distanceTo = (o) => Math.hypot(p.x - o.x, p.y - o.y, p.z - o.z);
-      p.clone = function () { const c = new Vec3(this.x, this.y, this.z); c.distanceTo = p.distanceTo; c.clone = p.clone; return c; };
-      return p;
-    },
-  };
-  const bot = {
-    entity: { position: new Vec3(0.5, 63, 0.5), isInWater: false },
-    inventory: { items: () => [] },
-    entities: { 7: boat },
-    vehicle: boat,
-    blockAt: () => ({ name: 'water', boundingBox: 'empty', getProperties: () => ({ level: 0 }) }),
-    setControlState() {},
-    moveVehicle(left, forward) {
-      moveVehicleCalls.push({ left, forward, ts: Date.now() });
-      // Advance the boat 0.3 blocks per moveVehicle call when forward>0
-      // — enough to trigger the native-works > 0.4b threshold across the
-      // 1.5s probe (6 calls × 0.3 = 1.8 blocks).
-      if (forward > 0) boatPos.x += 0.3;
-    },
-    look: async () => {},
-    lookAt: async () => {},
-  };
-  const water = createWaterActions({
-    ctx: createMockServices().state,
-    ensureBot: () => bot,
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    log: () => {},
-    getMyName: () => 'TestSteve',
-    ACTIONS: {},
-    goals: { GoalNear: function () {}, GoalBlock: function () {} },
-  });
-  const r = await water.sail({ x: 50, y: 63, z: 0, timeout_seconds: 4, _from_sail_to: true });
-  // We expect: ~6 calls during the 1.5s probe + N calls during the loop.
-  // Total should be well above the probe count alone.
-  assert.ok(moveVehicleCalls.length >= 5,
-    `expected >=5 moveVehicle calls; got ${moveVehicleCalls.length}`);
-  // Most calls during the loop should be forward=1 (we're heading toward
-  // target). Zero-forward calls happen only at cleanup.
-  const forwardCalls = moveVehicleCalls.filter((c) => c.forward > 0);
-  assert.ok(forwardCalls.length >= 4,
-    `expected >=4 forward propulsion calls; got ${forwardCalls.length}`);
-});
 
 test('mc sail: NOT_MOUNTED when bot has no vehicle', async () => {
   const bot = makeMockBot({ inventory: [] });
@@ -940,6 +554,79 @@ test('mc sail: NOT_MOUNTED when bot has no vehicle', async () => {
   const r = await water.sail({ x: 50, y: 64, z: 0, _from_sail_to: true });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'NOT_MOUNTED');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// mc sail — precalculated path (task #66): planner-driven, collision-safe
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mc sail: PATH_BLOCKED when boat is starting on non-water cell', async () => {
+  // Boat is at (0,63,0) but the cell underneath is dirt — no path can
+  // start there. The planner returns NOT_ON_WATER, sail() surfaces as
+  // PATH_BLOCKED.
+  const boat = {
+    id: 11, name: 'oak_boat', type: 'oak_boat',
+    position: new Vec3(0, 63, 0),
+  };
+  boat.position.clone = function () { return new Vec3(this.x, this.y, this.z); };
+  const bot = {
+    entity: { position: new Vec3(0, 63, 0), isInWater: false },
+    inventory: { items: () => [] },
+    entities: { 11: boat },
+    vehicle: boat,
+    // Every blockAt returns dirt — no water anywhere.
+    blockAt: () => ({ name: 'dirt', boundingBox: 'block' }),
+    setControlState() {},
+    look: async () => {},
+    lookAt: async () => {},
+  };
+  const water = createWaterActions(waterDeps(bot));
+  const r = await water.sail({ x: 5, y: 63, z: 0, _from_sail_to: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'PATH_BLOCKED');
+  assert.equal(r.error.observed_state.plan_reason, 'NOT_ON_WATER');
+});
+
+test('mc sail: PATH_BLOCKED when corridor is fully walled off', async () => {
+  // Boat surrounded by water for 1 cell, then dirt wall in every
+  // direction within ±2. Planner returns NARROW_CHANNEL → PATH_BLOCKED.
+  // Boat sits at cell-center (.5/.5) above water_y=62; just outside the
+  // start cell, every direction is walled by dirt at y=62.
+  const boat = {
+    id: 12, name: 'oak_boat', type: 'oak_boat',
+    position: new Vec3(0.5, 63.0625, 0.5),
+  };
+  boat.position.clone = function () { return new Vec3(this.x, this.y, this.z); };
+  const bot = {
+    entity: { position: new Vec3(0.5, 63.0625, 0.5), isInWater: false },
+    inventory: { items: () => [] },
+    entities: { 12: boat },
+    vehicle: boat,
+    blockAt: ({ x, y, z }) => {
+      // 3x3 start pool (water at y=62 around the boat) and air above;
+      // every other y=62 cell is dirt — a wall in every direction past
+      // the immediate pool, so no perpendicular shift can find a clear
+      // path past z=2.
+      const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+      if (iy === 62) {
+        if (Math.abs(ix) <= 1 && Math.abs(iz) <= 1) {
+          return { name: 'water', boundingBox: 'empty' };
+        }
+        return { name: 'dirt', boundingBox: 'block' };
+      }
+      return { name: 'air', boundingBox: 'empty' };
+    },
+    setControlState() {},
+    look: async () => {},
+    lookAt: async () => {},
+  };
+  const water = createWaterActions(waterDeps(bot));
+  const r = await water.sail({ x: 10, y: 63, z: 0, _from_sail_to: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'PATH_BLOCKED');
+  assert.equal(r.error.observed_state.plan_reason, 'NARROW_CHANNEL');
+  assert.ok(Array.isArray(r.error.observed_state.blockers));
+  assert.ok(r.error.observed_state.blockers.length > 0);
 });
 
 // ─────────────────────────────────────────────────────────────────────────

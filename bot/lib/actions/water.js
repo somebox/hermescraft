@@ -12,6 +12,7 @@ import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { findAdjustedTarget } from './_nav-helpers.js';
 import { planWaterRoute } from '../runtime/water-route.js';
 import { pathfindWithProgressWatchdog, ACTION_CAPS_MS, pathfindGotoNear } from './_helpers.js';
+import { planBoatPath, executeBoatPath } from '../runtime/boat-path.js';
 
 const BOAT_NAMES = new Set([
   'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
@@ -450,14 +451,36 @@ export function createWaterActions(deps) {
         placedFromWater = true;
         log(`[place_boat] bot in water at ${botFootPos.x},${botFootPos.y},${botFootPos.z} — placing from-water without dry stance`);
       } else {
-        // Land mode: search 4 cardinals at refBlock+1y for dry stance.
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const candidate = refBlock.position.offset(dx, 1, dz);
-          const blk = b.blockAt(candidate);
-          const under = b.blockAt(candidate.offset(0, -1, 0));
-          if (blk && (blk.name === 'air' || blk.boundingBox === 'empty') && under && under.boundingBox === 'block') {
-            stancePos = candidate;
-            break;
+        // Land mode: search outward by Chebyshev ring for the closest
+        // dry stance. Ring 1 = 4 cardinals at refBlock+1y (original
+        // behavior). Ring 2 = 8 cells at distance 2 (so a bot standing
+        // on a grass shore 1 cell back from the channel can still
+        // launch — task #66 / B5).
+        //
+        // The bot ends up walking to `stancePos` via b.pathfinder.goto
+        // below, then places the boat by looking at refBlock. So a
+        // stance 2b from the water still works as long as the boat's
+        // look-target is in reach (4.5b).
+        const MAX_RING = 2;
+        outer: for (let r = 1; r <= MAX_RING; r++) {
+          const ring = [];
+          for (let dx = -r; dx <= r; dx++) {
+            for (let dz = -r; dz <= r; dz++) {
+              if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+              // Prefer cardinals before diagonals within the ring.
+              const prio = (dx === 0 || dz === 0) ? 0 : 1;
+              ring.push({ dx, dz, prio });
+            }
+          }
+          ring.sort((a, b2) => a.prio - b2.prio);
+          for (const { dx, dz } of ring) {
+            const candidate = refBlock.position.offset(dx, 1, dz);
+            const blk = b.blockAt(candidate);
+            const under = b.blockAt(candidate.offset(0, -1, 0));
+            if (blk && (blk.name === 'air' || blk.boundingBox === 'empty') && under && under.boundingBox === 'block') {
+              stancePos = candidate;
+              break outer;
+            }
           }
         }
         if (!stancePos) {
@@ -920,13 +943,17 @@ export function createWaterActions(deps) {
     },
 
     /**
-     * Sail a mounted boat to (x, y, z). Steers via setControlState
-     * while the bot is the rider of an unoccupied boat; vanilla maps
-     * the rider's "forward" key to boat propulsion. Stops when the
-     * boat is within 2 blocks of the target on the horizontal plane.
-     * Action contract: NOT_MOUNTED, NOT_A_BOAT, TIMEOUT, OUT_OF_RANGE.
+     * Sail a mounted boat to (x, y, z) via a precomputed, collision-safe
+     * tp-step path. Replaces the prior native/packet/probe steering
+     * (deleted task #66): the planner walks the corridor up front,
+     * shifts perpendicular around obstacles, and returns PATH_BLOCKED
+     * when no clear lane exists. The driver tp-steps the boat through
+     * each waypoint via PaperMCP — deterministic, no physics dependence.
+     *
+     * Action contract: NOT_MOUNTED, NOT_A_BOAT, PATH_BLOCKED, BOAT_LOST,
+     * NO_PAPERMCP.
      */
-    async sail({ x, y, z, timeout_seconds, allow_shore_early_exit, _from_sail_to } = {}) {
+    async sail({ x, y, z, timeout_seconds: _ts, allow_shore_early_exit: _ase, _from_sail_to } = {}) {
       if (!_from_sail_to) return useSailToInsteadRefusal('sail');
       const b = ensureBot();
       const target = new Vec3(Number(x), Number(y), Number(z));
@@ -949,527 +976,94 @@ export function createWaterActions(deps) {
       }
 
       const startPos = boat.position.clone();
-      // Auto-scale timeout with horizontal distance: boats travel ~3.75 b/s
-      // under both native steering and the tp-step fallback. circuit-v5h
-      // showed Steve sailing 480 blocks of a 720-block crossing in two
-      // 60s sail calls — each one timed out partway, and the agent had to
-      // re-issue. Default to (distance / 3) seconds + 30s overhead,
-      // capped at 300s (5 min, same as ACTION_CAPS_MS.goto). Explicit
-      // timeout_seconds param still wins for callers that want to override.
-      const horizFromStart = Math.hypot(target.x - startPos.x, target.z - startPos.z);
-      const autoTimeoutS = Math.min(300, Math.max(60, Math.ceil(horizFromStart / 3) + 30));
-      const effectiveTimeoutS = Number.isFinite(Number(timeout_seconds)) && Number(timeout_seconds) > 0
-        ? Number(timeout_seconds)
-        : autoTimeoutS;
-      const deadline = Date.now() + effectiveTimeoutS * 1000;
-
-      // Steering preference: in vanilla, the rider's "forward" key drives
-      // the boat. mineflayer's setControlState SHOULD relay this, but on
-      // Paper 1.21+ the controller relationship may not be set when the
-      // mount was forced via server-side `ride` command — input doesn't
-      // propel the boat.
-      //
-      // Fallback: PaperMCP server-side `tp` of the boat entity. Riders
-      // ride along with the vehicle's position, so tp'ing the boat moves
-      // the bot too. We step the boat in small increments toward the
-      // target so the visual is a "smooth sail," not an instant warp,
-      // and so we don't fly the boat through obstacles.
-
-      const pmcp = paperMcpConfig();
-      const username = getMyName?.();
-      const useTpFallback = !!(pmcp && username);
-
-      // Steering preference order (decided per-sail by probe):
-      //   1. native moveVehicle (player_input only) — works if Paper
-      //      drives the boat from server-side input. circuit-v7+
-      //      confirmed it does NOT on Paper 1.21+.
-      //   2. packet steering: moveVehicle + vehicle_move combo. This
-      //      mirrors what the vanilla client does — player_input for
-      //      the "W key held" signal AND vehicle_move for the
-      //      client-authoritative boat position. The server accepts
-      //      the position from the rider since the rider owns the
-      //      vehicle for the duration of the mount.
-      //   3. RCON tp-step: PaperMCP fallback for when neither packet
-      //      path propels (e.g. unmounted-state desync). Slower
-      //      (~3.75 b/s vs 8 b/s native) and visibly jumpy.
-      //
-      // CRITICAL: vehicle steering uses bot.moveVehicle(left, forward),
-      // NOT bot.setControlState('forward', true). setControlState sends
-      // a walking-input packet that the server silently ignores while
-      // the bot is mounted.
-      const safeMoveVehicle = (l, f) => {
-        try { if (typeof b.moveVehicle === 'function') b.moveVehicle(l, f); } catch {}
-      };
-      // Packet-steering helper: send a vehicle_move packet with the
-      // boat's new (x,y,z,yaw) per the 1.21.4 protocol
-      // (packet_vehicle_move: x:f64, y:f64, z:f64, yaw:f32, pitch:f32 in degrees).
-      // Wraps in a try so any protocol/serializer hiccup is non-fatal —
-      // the stall detector + RCON fallback catch genuine failures.
-      const safeVehicleMove = (nx, ny, nz, yawRad) => {
-        try {
-          if (b._client && typeof b._client.write === 'function') {
-            b._client.write('vehicle_move', {
-              x: nx, y: ny, z: nz,
-              yaw: yawRad * 180 / Math.PI,
-              pitch: 0,
-            });
-            // circuit-v17 (2026-05-22): keep mineflayer's local entity
-            // positions in sync with what we just told the server. When
-            // mounted, the server doesn't push position updates to the
-            // bot's own entity — mineflayer keeps bot.entity.position
-            // stuck at the mount-start coords. Live in v17: server had
-            // Steve at (283,62,-511) after sailing, bot thought Steve was
-            // still at (319,62,-567) — 67 blocks stale. Every subsequent
-            // mc scene / board / look / find operated on the wrong
-            // location. Only sync when we actually sent the packet.
-            if (b.entity && b.entity.position) {
-              b.entity.position.x = nx;
-              b.entity.position.y = ny;
-              b.entity.position.z = nz;
-            }
-            if (b.vehicle && b.vehicle.position) {
-              b.vehicle.position.x = nx;
-              b.vehicle.position.y = ny;
-              b.vehicle.position.z = nz;
-            }
-          }
-        } catch {}
-      };
-      // Vanilla boat top speed ~8 b/s. 50ms tick → 0.4b per packet.
-      const TICK_MS = 50;
-      const STEP_PER_TICK = 0.4;
-
-      let nativeWorks = false;
-      let packetWorks = false;
-      try {
-        const yaw0 = Math.atan2(target.x - startPos.x === 0 ? 0 : -(target.x - startPos.x), target.z - startPos.z);
-        try { await b.look(yaw0, 0, true); } catch {}
-        // Phase 1 probe (700ms): native moveVehicle (player_input only).
-        const probe1End = Date.now() + 700;
-        while (Date.now() < probe1End) {
-          safeMoveVehicle(0, 1);
-          await sleep(TICK_MS);
-        }
-        const liveAfter1 = b.entities[b.vehicle?.id];
-        if (liveAfter1 && startPos.distanceTo(liveAfter1.position) > 0.4) {
-          nativeWorks = true;
-        }
-        // Phase 2 probe (700ms): vehicle_move + player_input combo.
-        // Only runs if phase 1 didn't propel — circuit-v7+ confirmed
-        // Paper 1.21+ needs the client-authoritative position packet.
-        if (!nativeWorks) {
-          const probe2Start = (b.entities[b.vehicle?.id]?.position || boat.position).clone();
-          const probe2End = Date.now() + 700;
-          while (Date.now() < probe2End) {
-            const live = b.entities[b.vehicle?.id]?.position || probe2Start;
-            const dx = target.x - live.x;
-            const dz = target.z - live.z;
-            const dnorm = Math.hypot(dx, dz) || 1;
-            const nx = live.x + (dx / dnorm) * STEP_PER_TICK;
-            const nz = live.z + (dz / dnorm) * STEP_PER_TICK;
-            safeVehicleMove(nx, live.y, nz, yaw0);
-            safeMoveVehicle(0, 1);
-            await sleep(TICK_MS);
-          }
-          const liveAfter2 = b.entities[b.vehicle?.id];
-          if (liveAfter2 && probe2Start.distanceTo(liveAfter2.position) > 0.4) {
-            packetWorks = true;
-            log(`[sail] packet steering (vehicle_move) propels — using packet path`);
+      // Plan a collision-safe boat path from current boat position to
+      // target. The planner snaps to cell centers, checks each step's
+      // hitbox against blockAt, and shifts ±1/±2 perpendicular around
+      // y=water_y obstacles (e.g. the (350,62,-536) dirt spike that
+      // killed boats in pre-task-#66 forensics).
+      const plan = planBoatPath(b, startPos, target);
+      if (!plan.ok) {
+        // Path could not be precomputed — auto-disembark so Steve isn't
+        // stranded mid-ocean. The boat itself is fine; the agent gets a
+        // clear "no path" signal.
+        let autoDisembark = null;
+        if (ACTIONS && typeof ACTIONS.disembark === 'function') {
+          try {
+            const dis = await ACTIONS.disembark({ fromSailFallback: true });
+            autoDisembark = { ok: !!dis?.ok, ...(dis?.data ? { data: dis.data } : {}), ...(dis?.error ? { error: dis.error } : {}) };
+          } catch (e) {
+            autoDisembark = { ok: false, error: e?.message || String(e) };
           }
         }
-        if (!nativeWorks && !packetWorks) safeMoveVehicle(0, 0);
-      } catch {}
-
-      let lastDistance = (b.entities[b.vehicle?.id]?.position || boat.position).distanceTo(target);
-      let stallTicks = 0;
-      let detourAttempts = 0;
-      let detourTicksLeft = 0;
-      let detourVec = null; // {dx, dz} unit vector during a detour
-      const detoursTaken = []; // for the success/error envelope
-      const MAX_DETOURS = 5;
-      const DETOUR_TICKS = 8; // ~3.2s of perpendicular travel before resuming target heading
-
-      // Pick a detour heading: scan 8 directions from the boat's current
-      // XZ at boat Y for the first one that's water and the boat could
-      // physically enter. Bias toward bearings near the target direction
-      // (small angle wins), but only if there's water there.
-      const pickDetourHeading = (here, towardDx, towardDz) => {
-        const dirs = [
-          { dx: 1, dz: 0 }, { dx: -1, dz: 0 },
-          { dx: 0, dz: 1 }, { dx: 0, dz: -1 },
-          { dx: 1, dz: 1 }, { dx: 1, dz: -1 },
-          { dx: -1, dz: 1 }, { dx: -1, dz: -1 },
-        ];
-        const tNorm = Math.hypot(towardDx, towardDz) || 1;
-        const towardUx = towardDx / tNorm;
-        const towardUz = towardDz / tNorm;
-        const candidates = [];
-        // circuit-v14: probe 8 cells out (was 3). A wooden pier 4 cells
-        // wide blocked the original probe in every direction; with an
-        // 8-cell horizon we see the open water beyond the pier and
-        // pick the side that has the longest open run. Score now
-        // tracks waterCount so we prefer the clearest path.
-        const PROBE_STEPS = 8;
-        for (const d of dirs) {
-          const dNorm = Math.hypot(d.dx, d.dz);
-          const ux = d.dx / dNorm;
-          const uz = d.dz / dNorm;
-          // Probe up to PROBE_STEPS cells along this heading at boat Y.
-          // Tolerate up to 3 blocked cells in a row (small pier/island)
-          // before bailing — we want to see PAST short obstacles.
-          let waterCount = 0;
-          let consecutiveBlocked = 0;
-          for (let step = 1; step <= PROBE_STEPS; step++) {
-            const px = Math.floor(here.x + ux * step);
-            const py = Math.floor(here.y);
-            const pz = Math.floor(here.z + uz * step);
-            const foot = b.blockAt(new Vec3(px, py, pz));
-            const head = b.blockAt(new Vec3(px, py + 1, pz));
-            if (!foot || !head) break;
-            const isWater = foot.name === 'water' || foot.name === 'flowing_water';
-            const headClear = head.name === 'air' || head.name === 'cave_air' || head.boundingBox === 'empty';
-            if (isWater && headClear) {
-              waterCount++;
-              consecutiveBlocked = 0;
-            } else {
-              consecutiveBlocked++;
-              if (consecutiveBlocked >= 3) break; // pier too wide to bypass via this heading
-            }
-          }
-          if (waterCount >= 3) {
-            // Score: prefer directions closer to target heading. dot
-            // product of unit vectors → 1 (forward) ... -1 (backward).
-            const dot = ux * towardUx + uz * towardUz;
-            candidates.push({ dx: ux, dz: uz, dot, waterCount });
-          }
-        }
-        if (candidates.length === 0) return null;
-        // Sort: prefer perpendicular-to-forward over backward (avoid
-        // undoing progress). We want |dot| close to 0 (perpendicular)
-        // OR positive dot (toward target). Tie-break by larger dot.
-        candidates.sort((a, c) => {
-          // Prefer forward-of-target heading over backward.
-          const aFwd = a.dot >= 0 ? 1 : 0;
-          const bFwd = c.dot >= 0 ? 1 : 0;
-          if (aFwd !== bFwd) return bFwd - aFwd;
-          // Then prefer headings with more open water in the probe range.
-          if (c.waterCount !== a.waterCount) return c.waterCount - a.waterCount;
-          // Last tie-break: closer to target direction.
-          return c.dot - a.dot;
-        });
-        return candidates[0];
-      };
-
-      try {
-        while (Date.now() < deadline) {
-          const live = b.entities[b.vehicle?.id];
-          if (!live || !b.vehicle) {
-            safeMoveVehicle(0, 0);
-            return { ok: false, error: {
-              code: 'OUT_OF_RANGE',
-              message: 'Lost the boat mid-sail (dismounted by physics or boat broke).',
-              retry_safe: true,
-            }};
-          }
-
-          const here = live.position;
-          const dx = target.x - here.x;
-          const dz = target.z - here.z;
-          const horiz = Math.hypot(dx, dz);
-
-          if (horiz < 2) {
-            safeMoveVehicle(0, 0);
-            await sleep(400);
-            return {
-              ok: true,
-              command: 'sail',
-              data: {
-                from: [Math.floor(startPos.x), Math.floor(startPos.y), Math.floor(startPos.z)],
-                to: [Math.floor(here.x), Math.floor(here.y), Math.floor(here.z)],
-                target: [Number(x), Number(y), Number(z)],
-                horizontal_distance_remaining: Number(horiz.toFixed(2)),
-                ...(nativeWorks ? {} : { fallback: packetWorks ? 'packet_vehicle_move' : 'papermcp_tp_step' }),
-                ...(detoursTaken.length ? { detours: detoursTaken } : {}),
-              },
-            };
-          }
-
-          // circuit-v5h/v5i: Steve sailed to ~50 blocks of W1 but the
-          // target was a land coord; the boat couldn't get within 2 of
-          // it. Sail kept retrying until Steve drowned. Now: if the boat
-          // is within 8 blocks of a dry standable shore, return success
-          // early as SHORE_REACHED so the agent disembarks instead of
-          // looping. This only fires when sail has been making forward
-          // progress (no stall ticks); a wedged boat goes through the
-          // detour path below.
-          //
-          // circuit-v25: sail_to threads BFS waypoints through sail() —
-          // for middle legs (8b apart), SHORE_REACHED would misfire on
-          // the very first tick because horiz starts in (2, 16) and the
-          // route runs near a coast. Callers in waypoint mode pass
-          // allow_shore_early_exit=false to gate this short-circuit;
-          // the final leg uses the default (true) so the existing
-          // "boat reached the destination shore" behavior still works.
-          const allowShoreExit = allow_shore_early_exit !== false;
-          if (allowShoreExit && horiz < 16 && stallTicks === 0 && detourTicksLeft === 0) {
-            let shoreCell = null;
-            scanShore: for (let dx2 = -8; dx2 <= 8; dx2++) {
-              for (let dz2 = -8; dz2 <= 8; dz2++) {
-                if (Math.hypot(dx2, dz2) > 8) continue;
-                const sx = Math.floor(here.x + dx2);
-                const sz = Math.floor(here.z + dz2);
-                const sy = Math.floor(here.y);
-                // Standable: foot air, head air, below solid non-water.
-                const foot = b.blockAt(new Vec3(sx, sy, sz));
-                const head = b.blockAt(new Vec3(sx, sy + 1, sz));
-                const under = b.blockAt(new Vec3(sx, sy - 1, sz));
-                if (!foot || !head || !under) continue;
-                const isAir = (n) => n === 'air' || n === 'cave_air' || n === 'void_air';
-                const isWater = (n) => n === 'water' || n === 'flowing_water';
-                if (!isAir(foot.name)) continue;
-                if (!isAir(head.name)) continue;
-                if (under.boundingBox !== 'block') continue;
-                if (isWater(under.name)) continue;
-                shoreCell = { x: sx, y: sy, z: sz, distance: Number(Math.hypot(dx2, dz2).toFixed(2)) };
-                break scanShore;
-              }
-            }
-            if (shoreCell && shoreCell.distance >= 2) {
-              safeMoveVehicle(0, 0);
-              await sleep(200);
-              return {
-                ok: true,
-                command: 'sail',
-                data: {
-                  from: [Math.floor(startPos.x), Math.floor(startPos.y), Math.floor(startPos.z)],
-                  to: [Math.floor(here.x), Math.floor(here.y), Math.floor(here.z)],
-                  target: [Number(x), Number(y), Number(z)],
-                  horizontal_distance_remaining: Number(horiz.toFixed(2)),
-                  shore_reached: shoreCell,
-                  ...(nativeWorks ? {} : { fallback: packetWorks ? 'packet_vehicle_move' : 'papermcp_tp_step' }),
-                  ...(detoursTaken.length ? { detours: detoursTaken } : {}),
-                },
-                result: `Reached shore — dry land at (${shoreCell.x},${shoreCell.y},${shoreCell.z}), ${shoreCell.distance}b from boat. Target ${Math.floor(horiz)}b further but you're at the shore — call mc disembark.`,
-              };
-            }
-          }
-
-          // If we're mid-detour, steer along detourVec instead of toward target.
-          const steerDx = detourTicksLeft > 0 ? detourVec.dx : dx;
-          const steerDz = detourTicksLeft > 0 ? detourVec.dz : dz;
-          const steerNorm = Math.hypot(steerDx, steerDz) || 1;
-
-          if (nativeWorks) {
-            const yaw = Math.atan2(-steerDx, steerDz);
-            try { await b.look(yaw, 0, true); } catch {}
-            // Burst-pump moveVehicle to match the server's vehicle physics
-            // tick rate (~50ms). One packet per 250ms loop barely moves the
-            // boat; 5 packets per loop saturates the input window so the
-            // server treats it as a held "forward" key.
-            for (let pump = 0; pump < 5; pump++) {
-              safeMoveVehicle(0, 1);
-              await sleep(50);
-            }
-          } else if (packetWorks) {
-            // Packet steering: vehicle_move + player_input combo. Each
-            // tick we send the boat's intended next position and the
-            // "W held" flag. Mirrors vanilla client behavior; the server
-            // validates and broadcasts.
-            const yaw = Math.atan2(-steerDx, steerDz);
-            try { await b.look(yaw, 0, true); } catch {}
-            for (let pump = 0; pump < 5; pump++) {
-              const live = b.entities[b.vehicle?.id]?.position || here;
-              const nx = live.x + (steerDx / steerNorm) * STEP_PER_TICK;
-              const nz = live.z + (steerDz / steerNorm) * STEP_PER_TICK;
-              // Collision-check the next cell. Same logic as the RCON
-              // tp-step: refuse to shove the boat into a solid block.
-              try {
-                const probe = b.blockAt(new Vec3(Math.floor(nx), Math.floor(live.y), Math.floor(nz)));
-                const collides = probe
-                  && probe.name !== 'air' && probe.name !== 'cave_air' && probe.name !== 'void_air'
-                  && probe.name !== 'water' && probe.name !== 'flowing_water'
-                  && probe.boundingBox === 'block';
-                if (collides) {
-                  // Halt this burst; outer stall loop will detour or bail.
-                  safeMoveVehicle(0, 0);
-                  break;
-                }
-              } catch { /* probe failed (unloaded chunk?) — fall through and send the packet */ }
-              safeVehicleMove(nx, live.y, nz, yaw);
-              safeMoveVehicle(0, 1);
-              await sleep(TICK_MS);
-            }
-          } else if (useTpFallback) {
-            // Step the boat 1.5 blocks toward steerVec each tick.
-            const step = Math.min(1.5, detourTicksLeft > 0 ? 1.5 : horiz);
-            const nx = here.x + (steerDx / steerNorm) * step;
-            const nz = here.z + (steerDz / steerNorm) * step;
-            const ny = here.y;
-            // Collision safety (Phase 2): before TPing the boat, probe the
-            // target cell. If it's solid (non-air, non-water), the TP would
-            // shove the boat into a block and break it — killing Steve from
-            // the boat-shatter impact. Abort with BOAT_STUCK; the existing
-            // auto-disembark chain below handles recovery.
-            try {
-              const probe = b.blockAt(new Vec3(Math.floor(nx), Math.floor(ny), Math.floor(nz)));
-              const collides = probe
-                && probe.name !== 'air' && probe.name !== 'cave_air' && probe.name !== 'void_air'
-                && probe.name !== 'water' && probe.name !== 'flowing_water'
-                && probe.boundingBox === 'block';
-              if (collides) {
-                safeMoveVehicle(0, 0);
-                // Try auto-disembark to get Steve out of the doomed boat.
-                let autoDisembark = null;
-                if (ACTIONS && typeof ACTIONS.disembark === 'function') {
-                  try {
-                    const dis = await ACTIONS.disembark({ fromSailFallback: true });
-                    autoDisembark = {
-                      ok: !!dis?.ok,
-                      ...(dis?.data ? { data: dis.data } : {}),
-                      ...(dis?.error ? { error: dis.error } : {}),
-                    };
-                  } catch (e) {
-                    autoDisembark = { ok: false, error: e?.message || String(e) };
-                  }
-                }
-                return { ok: false, error: {
-                  code: 'BOAT_STUCK',
-                  message: `Sail TP-step would have teleported the boat into a ${probe.name} block at (${Math.floor(nx)},${Math.floor(ny)},${Math.floor(nz)}). Refused — that would shatter the boat. ${autoDisembark?.ok ? 'Auto-disembarked you — you should be on dry shore now.' : 'Call mc disembark.'}`,
-                  observed_state: {
-                    boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
-                    collision_at: { x: Math.floor(nx), y: Math.floor(ny), z: Math.floor(nz), block: probe.name },
-                    horizontal_distance_remaining: Number(horiz.toFixed(2)),
-                    ...(autoDisembark ? { auto_disembark: autoDisembark } : {}),
-                  },
-                  next_action_hint: autoDisembark?.ok ? 'mc status' : 'mc disembark',
-                  retry_safe: false,
-                }};
-              }
-            } catch { /* probe failed (unloaded chunk?) — fall through and let the TP try */ }
-            const bx = Math.floor(here.x);
-            const by = Math.floor(here.y);
-            const bz = Math.floor(here.z);
-            const cmd = `execute positioned ${bx} ${by} ${bz} run tp @e[type=oak_boat,distance=..2,limit=1] ${nx.toFixed(3)} ${ny.toFixed(3)} ${nz.toFixed(3)}`;
-            const r = await executeServerCommand(pmcp, cmd).catch(() => ({ ok: false }));
-            if (!r || !r.ok) log(`[sail] tp step failed`);
-            // circuit-v17: keep local entity positions in sync with the
-            // server-side teleport we just issued. Without this, the bot's
-            // bot.entity.position stays at the pre-sail coords; every
-            // subsequent action operates on the wrong location.
-            if (r && r.ok) {
-              if (b.entity && b.entity.position) {
-                b.entity.position.x = nx;
-                b.entity.position.y = ny;
-                b.entity.position.z = nz;
-              }
-              if (b.vehicle && b.vehicle.position) {
-                b.vehicle.position.x = nx;
-                b.vehicle.position.y = ny;
-                b.vehicle.position.z = nz;
-              }
-            }
-            await sleep(400);
-          } else {
-            // No fallback available; native isn't working. Bail.
-            return { ok: false, error: {
-              code: 'OUT_OF_RANGE',
-              message: 'Boat not responding to rider input and no PaperMCP fallback configured.',
-              retry_safe: false,
-            }};
-          }
-
-          if (detourTicksLeft > 0) {
-            detourTicksLeft--;
-            if (detourTicksLeft === 0) {
-              // Detour done; reset stall counter so we get a fresh
-              // chance to make forward progress before re-detouring.
-              stallTicks = 0;
-              detourVec = null;
-              lastDistance = horiz; // re-baseline so we don't re-flag stall instantly
-              continue;
-            }
-            lastDistance = horiz;
-            continue;
-          }
-
-          if (Math.abs(lastDistance - horiz) < 0.05) {
-            stallTicks++;
-            if (stallTicks >= 8) {
-              safeMoveVehicle(0, 0);
-              // Attempt a detour before giving up. circuit-v5f showed the
-              // boat wedging against shore/shallows ~50s into a sail —
-              // a 2.4s sidestep around the obstacle often recovers.
-              if (detourAttempts < MAX_DETOURS) {
-                const heading = pickDetourHeading(here, dx, dz);
-                if (heading) {
-                  detourAttempts++;
-                  detourVec = heading;
-                  detourTicksLeft = DETOUR_TICKS;
-                  detoursTaken.push({
-                    attempt: detourAttempts,
-                    from: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
-                    heading: [Number(heading.dx.toFixed(2)), Number(heading.dz.toFixed(2))],
-                  });
-                  log(`[sail] stall detected, detouring attempt ${detourAttempts}/${MAX_DETOURS} heading (${heading.dx.toFixed(2)},${heading.dz.toFixed(2)})`);
-                  continue;
-                }
-              }
-              // No detour available or budget exhausted. Don't just return
-              // an error — circuit-v5j showed Steve dying to drowned mobs
-              // while the agent processed the BOAT_STUCK envelope and
-              // figured out to call mc disembark. Auto-chain disembark
-              // (which auto-escapes to shore) so the bot is safe by the
-              // time the response lands.
-              let autoDisembark = null;
-              if (ACTIONS && typeof ACTIONS.disembark === 'function') {
-                try {
-                  const dis = await ACTIONS.disembark({ fromSailFallback: true });
-                  autoDisembark = {
-                    ok: !!dis?.ok,
-                    ...(dis?.data ? { data: dis.data } : {}),
-                    ...(dis?.error ? { error: dis.error } : {}),
-                  };
-                } catch (e) {
-                  autoDisembark = { ok: false, error: e?.message || String(e) };
-                }
-              }
-              return { ok: false, error: {
-                code: 'BOAT_STUCK',
-                message: `Boat stuck after ${detourAttempts} detour attempt(s) — wedged against terrain at (${here.x.toFixed(1)}, ${here.y.toFixed(1)}, ${here.z.toFixed(1)}).${autoDisembark?.ok ? ' Auto-disembarked you — you should now be on dry shore.' : ' Call mc disembark — it will dismount you and the auto-escape will swim you to shore.'}`,
-                observed_state: {
-                  boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
-                  horizontal_distance_remaining: Number(horiz.toFixed(2)),
-                  detour_attempts: detourAttempts,
-                  detours: detoursTaken,
-                  ...(autoDisembark ? { auto_disembark: autoDisembark } : {}),
-                },
-                next_action_hint: autoDisembark?.ok ? 'mc status' : 'mc disembark',
-                retry_safe: false,
-              }};
-            }
-          } else {
-            stallTicks = 0;
-          }
-          lastDistance = horiz;
-        }
-      } finally {
-        safeMoveVehicle(0, 0);
+        return { ok: false, error: {
+          code: 'PATH_BLOCKED',
+          message: `Could not find a collision-safe boat path to (${Math.floor(target.x)},${Math.floor(target.y)},${Math.floor(target.z)}): ${plan.message || plan.reason}.${autoDisembark?.ok ? ' Auto-disembarked.' : ''}`,
+          observed_state: {
+            boat_pos: [Number(startPos.x.toFixed(2)), Number(startPos.y.toFixed(2)), Number(startPos.z.toFixed(2))],
+            target: [Number(target.x), Number(target.y), Number(target.z)],
+            plan_reason: plan.reason,
+            blockers: plan.blockers || [],
+            water_y: plan.water_y ?? null,
+            ...(autoDisembark ? { auto_disembark: autoDisembark } : {}),
+          },
+          next_action_hint: autoDisembark?.ok ? 'mc status' : 'mc disembark',
+          retry_safe: false,
+        }};
       }
 
-      const here = b.entities[b.vehicle?.id]?.position || boat.position;
-      const remaining = Number(here.distanceTo(target).toFixed(2));
-      return { ok: false, error: {
-        code: 'TIMEOUT',
-        message: `Did not reach (${x},${y},${z}) within ${effectiveTimeoutS}s. Boat is at (${here.x.toFixed(1)},${here.y.toFixed(1)},${here.z.toFixed(1)}) — ${remaining}b remaining. Call \`mc sail ${Math.floor(target.x)} ${Math.floor(target.y)} ${Math.floor(target.z)}\` again to continue.`,
-        observed_state: {
-          boat_pos: [Number(here.x.toFixed(2)), Number(here.y.toFixed(2)), Number(here.z.toFixed(2))],
-          horizontal_distance_remaining: remaining,
-          effective_timeout_s: effectiveTimeoutS,
-          ...(detoursTaken.length ? { detours: detoursTaken } : {}),
+      // Drive the boat along the precomputed path.
+      const drive = await executeBoatPath(b, plan.path, {
+        executeServerCommand,
+        paperMcpConfig,
+        sleep,
+        log,
+      });
+
+      if (!drive.ok) {
+        // Boat died mid-sail (entity attacked, despawn, etc.) or tp
+        // failed. Either way Steve is in water — try to auto-disembark
+        // so the recovery path swims him to shore.
+        let autoDisembark = null;
+        if (ACTIONS && typeof ACTIONS.disembark === 'function') {
+          try {
+            const dis = await ACTIONS.disembark({ fromSailFallback: true });
+            autoDisembark = { ok: !!dis?.ok, ...(dis?.data ? { data: dis.data } : {}), ...(dis?.error ? { error: dis.error } : {}) };
+          } catch (e) {
+            autoDisembark = { ok: false, error: e?.message || String(e) };
+          }
+        }
+        const code = drive.error === 'NO_PAPERMCP' ? 'NO_PAPERMCP' : 'BOAT_LOST';
+        return { ok: false, error: {
+          code,
+          message: code === 'NO_PAPERMCP'
+            ? 'PaperMCP unavailable — cannot drive the boat. Sail requires the PaperMCP server-side tp fallback.'
+            : `Boat lost mid-sail (${drive.error || 'unknown'}) after ${drive.after_steps || 0} steps near (${drive.broke_at ? `${Math.floor(drive.broke_at.x)},${Math.floor(drive.broke_at.y)},${Math.floor(drive.broke_at.z)}` : 'unknown'}). Likely an entity attack or chunk-unload event.${autoDisembark?.ok ? ' Auto-disembarked.' : ''}`,
+          observed_state: {
+            boat_pos_start: [Number(startPos.x.toFixed(2)), Number(startPos.y.toFixed(2)), Number(startPos.z.toFixed(2))],
+            broke_at: drive.broke_at,
+            after_steps: drive.after_steps,
+            ...(autoDisembark ? { auto_disembark: autoDisembark } : {}),
+          },
+          next_action_hint: autoDisembark?.ok ? 'mc status' : 'mc disembark',
+          retry_safe: code !== 'NO_PAPERMCP',
+        }};
+      }
+
+      // Success — boat is at the final waypoint.
+      const finalPos = drive.final || { x: target.x, y: startPos.y, z: target.z };
+      const remaining = Math.hypot(target.x - finalPos.x, target.z - finalPos.z);
+      return {
+        ok: true,
+        command: 'sail',
+        data: {
+          from: [Math.floor(startPos.x), Math.floor(startPos.y), Math.floor(startPos.z)],
+          to: [Math.floor(finalPos.x), Math.floor(finalPos.y), Math.floor(finalPos.z)],
+          target: [Number(x), Number(y), Number(z)],
+          horizontal_distance_remaining: Number(remaining.toFixed(2)),
+          steps: drive.steps,
+          path_blockers_avoided: plan.path.length - drive.steps,
         },
-        next_action_hint: `mc sail ${Math.floor(target.x)} ${Math.floor(target.y)} ${Math.floor(target.z)}`,
-        retry_safe: true,
-      }};
+      };
     },
 
     /**
@@ -2323,7 +1917,7 @@ export function createWaterActions(deps) {
           `boat=${fmtPos(b.vehicle?.position)}`,
         );
         try {
-          const disRes = await ACTIONS.disembark({});
+          const disRes = await ACTIONS.disembark({ target_shore: route.exit_shore });
           if (!disRes.ok && disRes.error?.code !== 'NOT_MOUNTED') {
             return {
               ok: false,
@@ -2482,6 +2076,60 @@ export function createWaterActions(deps) {
       }
       const wasVehicle = b.vehicle.name;
       let fallback = null;
+
+      // Task #66: when sail_to passes the exit_shore explicitly, we know
+      // EXACTLY where Steve should end up. Skip the messy auto-sail +
+      // dismount + sneak + RCON-kill chain — just RCON-kill the boat and
+      // TP Steve directly onto the dry cell. This avoids the failure mode
+      // where Steve falls into water at the boat's last position.
+      const targetShore = opts.target_shore;
+      if (targetShore
+          && Number.isFinite(targetShore.x)
+          && Number.isFinite(targetShore.y)
+          && Number.isFinite(targetShore.z)) {
+        const pmcp = paperMcpConfig();
+        const username = getMyName?.();
+        if (pmcp && username) {
+          const sx = Math.floor(targetShore.x);
+          const sy = Math.floor(targetShore.y);
+          const sz = Math.floor(targetShore.z);
+          const vid = b.vehicle.id;
+          const vname = b.vehicle.name || 'boat';
+          // Kill the boat first — vanilla MC drops the rider when the
+          // boat breaks, but we don't want Steve falling at the boat's
+          // position. Sequence the kill + tp tightly so the rider's
+          // detached frame is brief.
+          const bx = Math.floor(b.entity.position.x);
+          const by = Math.floor(b.entity.position.y);
+          const bz = Math.floor(b.entity.position.z);
+          const killCmd = `execute positioned ${bx} ${by} ${bz} run kill @e[type=#minecraft:boat,distance=..3,limit=1]`;
+          const tpCmd = `tp ${username} ${sx + 0.5} ${sy} ${sz + 0.5}`;
+          await executeServerCommand(pmcp, killCmd).catch(() => null);
+          await sleep(150);
+          const tpRes = await executeServerCommand(pmcp, tpCmd).catch(() => ({ ok: false }));
+          await sleep(200);
+          if (tpRes && tpRes.ok) {
+            // Sync local mineflayer state with the server-side tp.
+            if (b.entity && b.entity.position) {
+              b.entity.position.x = sx + 0.5;
+              b.entity.position.y = sy;
+              b.entity.position.z = sz + 0.5;
+            }
+            b.vehicle = null;
+            return {
+              ok: true,
+              command: 'disembark',
+              data: {
+                dismounted_from: vname,
+                vehicle_id: vid,
+                landed_at: [sx, sy, sz],
+                fallback: 'rcon_shore_tp',
+              },
+            };
+          }
+          // tp didn't confirm — fall through to the legacy chain.
+        }
+      }
 
       // High-level contract (task #19): if the boat is currently in open
       // water, scan for the nearest standable shore within 16 blocks and
