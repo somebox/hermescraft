@@ -405,7 +405,18 @@ export function createWaterActions(deps) {
       //     to the target water cell, pathfind to it.
       const botFootPos = b.entity.position.floored();
       const botFootBlock = b.blockAt(botFootPos);
-      const inWater = botFootBlock && (botFootBlock.name === 'water' || botFootBlock.name === 'flowing_water');
+      const botBelowBlock = b.blockAt(new Vec3(botFootPos.x, botFootPos.y - 1, botFootPos.z));
+      const footIsWater = botFootBlock && (botFootBlock.name === 'water' || botFootBlock.name === 'flowing_water');
+      const belowIsWater = botBelowBlock && (botBelowBlock.name === 'water' || botBelowBlock.name === 'flowing_water');
+      // Task #66: treat "swimming on water surface" as in-water too —
+      // foot=air with water directly below means the bot is floating
+      // on the surface, can't walk to a dry stance, but CAN have a
+      // boat placed at the water cell below.
+      const swimmingOnSurface = !footIsWater && belowIsWater && !b.entity.onGround;
+      const inWater = footIsWater || swimmingOnSurface;
+      // Water cell to use for rescue placement. Submerged: bot's foot
+      // cell IS water. Floating: water is one below.
+      const rescuePos = footIsWater ? botFootPos : new Vec3(botFootPos.x, botFootPos.y - 1, botFootPos.z);
       let stancePos = null;
       let placedFromWater = false;
       if (inWater) {
@@ -445,11 +456,12 @@ export function createWaterActions(deps) {
             retry_safe: true,
           }};
         }
-        // Place AT the bot's current foot cell. The boat spawns on the
-        // surface adjacent to the bot. No move needed.
-        stancePos = botFootPos;
+        // Place AT the actual water cell (foot for submerged, below
+        // for swimming-on-surface). The boat spawns on the surface
+        // adjacent to the bot. No move needed.
+        stancePos = rescuePos;
         placedFromWater = true;
-        log(`[place_boat] bot in water at ${botFootPos.x},${botFootPos.y},${botFootPos.z} — placing from-water without dry stance`);
+        log(`[place_boat] bot in water at ${rescuePos.x},${rescuePos.y},${rescuePos.z} (${swimmingOnSurface ? 'surface' : 'submerged'}) — placing from-water without dry stance`);
       } else {
         // Land mode: search outward by Chebyshev ring for the closest
         // dry stance. Ring 1 = 4 cardinals at refBlock+1y (original
@@ -1060,10 +1072,49 @@ export function createWaterActions(deps) {
         // Boat died mid-sail (entity attacked, despawn, etc.) or tp
         // failed. Either way Steve is in water — try to auto-disembark
         // so the recovery path swims him to shore.
+        //
+        // Task #66: scan for the nearest standable dry shore around
+        // wherever the boat died and pass it as target_shore to
+        // disembark. This avoids the failure mode where vanilla MC
+        // drops the rider at the boat's last position (often over
+        // water) and Steve ends up swimming with no recovery path.
+        const broke = drive.broke_at;
+        let nearbyDryShore = null;
+        if (broke) {
+          const isStandableLand = (bot, px, py, pz) => {
+            const foot = bot?.blockAt && bot.blockAt(new Vec3(px, py, pz));
+            const head = bot?.blockAt && bot.blockAt(new Vec3(px, py + 1, pz));
+            const belowSolid = bot?.blockAt && bot.blockAt(new Vec3(px, py - 1, pz));
+            if (!foot || !head || !belowSolid) return false;
+            const isAirish = (n) => n === 'air' || n === 'cave_air' || n === 'void_air';
+            const isWater = (n) => n === 'water' || n === 'flowing_water';
+            if (!isAirish(foot.name)) return false;
+            if (!isAirish(head.name)) return false;
+            if (belowSolid.boundingBox !== 'block') return false;
+            if (isWater(belowSolid.name)) return false;
+            return true;
+          };
+          try {
+            const r = findAdjustedTarget(
+              b,
+              isStandableLand,
+              Math.floor(broke.x),
+              Math.floor(broke.y),
+              Math.floor(broke.z),
+              12,
+            );
+            if (r && r.adjusted) {
+              nearbyDryShore = { x: r.x, y: r.y, z: r.z };
+            }
+          } catch { /* no shore in range — fall back to legacy disembark */ }
+        }
         let autoDisembark = null;
         if (ACTIONS && typeof ACTIONS.disembark === 'function') {
           try {
-            const dis = await ACTIONS.disembark({ fromSailFallback: true });
+            const dis = await ACTIONS.disembark({
+              fromSailFallback: true,
+              ...(nearbyDryShore ? { target_shore: nearbyDryShore } : {}),
+            });
             autoDisembark = { ok: !!dis?.ok, ...(dis?.data ? { data: dis.data } : {}), ...(dis?.error ? { error: dis.error } : {}) };
           } catch (e) {
             autoDisembark = { ok: false, error: e?.message || String(e) };
@@ -1591,10 +1642,19 @@ export function createWaterActions(deps) {
       // failures.
       const botFootPos = b.entity.position.floored();
       const botFootBlock = b.blockAt(botFootPos);
-      const botInWater = !!(
-        botFootBlock
-        && (botFootBlock.name === 'water' || botFootBlock.name === 'flowing_water')
-      );
+      // Task #66: include "floating on water surface" as in-water case.
+      // After a boat breaks mid-sail, mineflayer reports bot.y = water_y+1
+      // — foot cell is AIR but the cell BELOW is water. Pre-fix, sail_to
+      // routed this through walk_to_entry which can't pathfind from a
+      // swimming position; pathfinder timed out at 8s and the agent
+      // looped indefinitely (SAIL_TO_RETRY_LOOP after 4 tries).
+      const botBelowBlock = b.blockAt(new Vec3(botFootPos.x, botFootPos.y - 1, botFootPos.z));
+      const footIsWater = botFootBlock && (botFootBlock.name === 'water' || botFootBlock.name === 'flowing_water');
+      const swimmingOnSurface = !footIsWater
+        && botFootBlock && (botFootBlock.name === 'air' || botFootBlock.name === 'cave_air' || botFootBlock.name === 'void_air')
+        && botBelowBlock && (botBelowBlock.name === 'water' || botBelowBlock.name === 'flowing_water')
+        && !b.entity.onGround;
+      const botInWater = !!(footIsWater || swimmingOnSurface);
 
       // ── Phase: mounted_in_water → skip to sail ──────────────────────
       // If already mounted, skip walk_to_entry + mount and go straight
@@ -1627,18 +1687,21 @@ export function createWaterActions(deps) {
         }
       } else if (botInWater) {
         // ── Phase: in_water_rescue ────────────────────────────────────
-        // Bot is currently submerged — skip walk_to_entry (impossible
-        // from mid-ocean) and place the boat AT the bot's current foot
-        // cell via place_boat's from-water rescue mode. _from_sail_to
-        // + _rescue_from_water together bypass the F2 BOT_IN_WATER gate
-        // for this specific path. Then mount and continue along the
-        // BFS-planned waypoint legs.
+        // Bot is currently submerged OR swimming on water surface —
+        // skip walk_to_entry (pathfinder fails from water) and place
+        // the boat AT the water cell via place_boat's from-water rescue
+        // mode. When the bot is floating ON the surface (foot=air,
+        // below=water), the actual water cell is one below the foot
+        // position; submerged bots have foot=water directly.
         phases.push('in_water_rescue', 'mount');
+        const rescueWaterPos = swimmingOnSurface
+          ? botFootPos.offset(0, -1, 0)
+          : botFootPos;
         try {
           const placeRes = await ACTIONS.place_boat({
-            x: botFootPos.x,
-            y: botFootPos.y,
-            z: botFootPos.z,
+            x: rescueWaterPos.x,
+            y: rescueWaterPos.y,
+            z: rescueWaterPos.z,
             _from_sail_to: true,
             _rescue_from_water: true,
           });
@@ -2141,21 +2204,14 @@ export function createWaterActions(deps) {
           };
         }
       }
-      if (!b.vehicle) {
-        return { ok: false, error: {
-          code: 'NOT_MOUNTED',
-          message: 'Bot is not in a vehicle.',
-          retry_safe: false,
-        }};
-      }
-      const wasVehicle = b.vehicle.name;
-      let fallback = null;
-
-      // Task #66: when sail_to passes the exit_shore explicitly, we know
-      // EXACTLY where Steve should end up. Skip the messy auto-sail +
-      // dismount + sneak + RCON-kill chain — just RCON-kill the boat and
-      // TP Steve directly onto the dry cell. This avoids the failure mode
-      // where Steve falls into water at the boat's last position.
+      // Task #66: when caller passes target_shore explicitly (sail_to's
+      // disembark phase OR sail()'s failure recovery), we know EXACTLY
+      // where Steve should end up. RCON-kill any nearby boat and TP
+      // Steve directly onto the dry cell. This works whether the bot
+      // is currently mounted, swimming on water surface, or actually
+      // submerged — anywhere except deeply on land we want a clean
+      // shore landing. Runs BEFORE the NOT_MOUNTED check so it also
+      // handles "boat already died, Steve is in water" recovery.
       const targetShore = opts.target_shore;
       if (targetShore
           && Number.isFinite(targetShore.x)
@@ -2167,15 +2223,12 @@ export function createWaterActions(deps) {
           const sx = Math.floor(targetShore.x);
           const sy = Math.floor(targetShore.y);
           const sz = Math.floor(targetShore.z);
-          const vid = b.vehicle.id;
-          const vname = b.vehicle.name || 'boat';
-          // Kill the boat first — vanilla MC drops the rider when the
-          // boat breaks, but we don't want Steve falling at the boat's
-          // position. Sequence the kill + tp tightly so the rider's
-          // detached frame is brief.
+          const vid = b.vehicle?.id;
+          const vname = b.vehicle?.name || 'oak_boat';
           const bx = Math.floor(b.entity.position.x);
           const by = Math.floor(b.entity.position.y);
           const bz = Math.floor(b.entity.position.z);
+          // Kill any boat at the bot's current position (no-op if none).
           const killCmd = `execute positioned ${bx} ${by} ${bz} run kill @e[type=#minecraft:boat,distance=..3,limit=1]`;
           const tpCmd = `tp ${username} ${sx + 0.5} ${sy} ${sz + 0.5}`;
           await executeServerCommand(pmcp, killCmd).catch(() => null);
@@ -2183,7 +2236,6 @@ export function createWaterActions(deps) {
           const tpRes = await executeServerCommand(pmcp, tpCmd).catch(() => ({ ok: false }));
           await sleep(200);
           if (tpRes && tpRes.ok) {
-            // Sync local mineflayer state with the server-side tp.
             if (b.entity && b.entity.position) {
               b.entity.position.x = sx + 0.5;
               b.entity.position.y = sy;
@@ -2195,15 +2247,24 @@ export function createWaterActions(deps) {
               command: 'disembark',
               data: {
                 dismounted_from: vname,
-                vehicle_id: vid,
+                vehicle_id: vid ?? null,
                 landed_at: [sx, sy, sz],
                 fallback: 'rcon_shore_tp',
               },
             };
           }
-          // tp didn't confirm — fall through to the legacy chain.
         }
       }
+
+      if (!b.vehicle) {
+        return { ok: false, error: {
+          code: 'NOT_MOUNTED',
+          message: 'Bot is not in a vehicle.',
+          retry_safe: false,
+        }};
+      }
+      const wasVehicle = b.vehicle.name;
+      let fallback = null;
 
       // High-level contract (task #19): if the boat is currently in open
       // water, scan for the nearest standable shore within 16 blocks and
