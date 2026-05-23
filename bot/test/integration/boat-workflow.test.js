@@ -1677,6 +1677,69 @@ test('mc sail_to: walk_to_entry drops bot in water → WALK_TO_ENTRY_DROPPED_IN_
   assert.equal(placeBoatCalled, false, 'sail_to must abort BEFORE calling place_boat');
 });
 
+test('mc sail_to: swimming-on-surface (foot=air, below=water) routes through in_water_rescue', async () => {
+  // Regression for live W1→W2 failure (commit d4bfbe5 forensics): when a
+  // boat breaks mid-sail, the rider falls to the water SURFACE — foot
+  // block is AIR with water directly below, and bot.entity.onGround is
+  // false. The old `botInWater` check required foot=water, so sail_to
+  // routed through walk_to_entry which can't pathfind from a swimming
+  // position. Pathfinder timed out at 8s; sail_to looped to
+  // SAIL_TO_RETRY_LOOP after 4 tries; Steve stranded mid-water.
+  //
+  // Now sail_to also treats "floating on surface" as the rescue case
+  // and passes the water cell BELOW the bot to place_boat.
+  const blocks = makeChannelBlocks(0, 200);
+  const bot = makeMockBot({
+    position: { x: 50, y: 63, z: 0 },  // y=63 = on water surface
+    inventory: [{ name: 'oak_boat', count: 4 }],
+    blocks,
+    entities: {},
+  });
+  // Force "swimming on surface": foot=air, below=water, !onGround.
+  bot.entity.onGround = false;
+  // The mock blockAt's makeChannelBlocks sets y=62 water, y=63 air —
+  // exactly what we need.
+  const invoked = [];
+  const placedBoatTargets = [];
+  const ACTIONS = {
+    place_boat: async (args) => {
+      invoked.push('place_boat');
+      placedBoatTargets.push({ x: args.x, y: args.y, z: args.z, _rescue_from_water: args._rescue_from_water });
+      // Stub: pretend a boat appeared.
+      const boat = { id: 1001, name: 'oak_boat', type: 'oak_boat', position: new Vec3(50, 62, 0) };
+      boat.position.distanceTo = function (o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z); };
+      bot.entities[1001] = boat;
+      return ok({ data: { boat_entity_id: 1001, boat_position: [50, 63, 0] } });
+    },
+    board: async () => {
+      invoked.push('board');
+      bot.vehicle = bot.entities[1001];
+      return ok({ data: { vehicle_id: 1001 } });
+    },
+    sail: async () => { invoked.push('sail'); return ok({ data: {} }); },
+    disembark: async () => {
+      invoked.push('disembark');
+      bot.vehicle = null;
+      return ok({ data: {} });
+    },
+  };
+  const water = createWaterActions({ ...waterDeps(bot), ACTIONS });
+  const r = await water.sail_to({ x: 150, y: 63, z: -1 });
+
+  // The rescue branch must have fired (NOT walk_to_entry).
+  assert.equal(r.ok, true, `expected ok: ${JSON.stringify(r)}`);
+  assert.ok(r.data.phases_executed.includes('in_water_rescue'),
+    `expected in_water_rescue phase; got ${JSON.stringify(r.data.phases_executed)}`);
+  assert.ok(!r.data.phases_executed.includes('walk_to_entry'),
+    `walk_to_entry should be skipped for swimming-on-surface; got ${JSON.stringify(r.data.phases_executed)}`);
+  // place_boat must have been called with the WATER cell (one below
+  // the bot's foot), not the air foot cell.
+  assert.ok(placedBoatTargets.length > 0, 'place_boat should have been called');
+  const placed = placedBoatTargets[0];
+  assert.equal(placed.y, 62, `rescue placed_boat y should be water cell (62), not foot cell (63); got ${placed.y}`);
+  assert.equal(placed._rescue_from_water, true, 'rescue path must pass _rescue_from_water:true');
+});
+
 test('mc sail_to: resume from mid-water — skip walk_to_entry + mount', async () => {
   // Bot already mounted on a boat at (50, 62, 0) — middle of channel.
   const bot = makeMockBot({

@@ -1695,7 +1695,7 @@ export function createWaterActions(deps) {
         // position; submerged bots have foot=water directly.
         phases.push('in_water_rescue', 'mount');
         const rescueWaterPos = swimmingOnSurface
-          ? botFootPos.offset(0, -1, 0)
+          ? new Vec3(botFootPos.x, botFootPos.y - 1, botFootPos.z)
           : botFootPos;
         try {
           const placeRes = await ACTIONS.place_boat({

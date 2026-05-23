@@ -196,3 +196,39 @@ test('planBoatPath — single-step trivial trip', () => {
   assert.equal(res.ok, true);
   assert.ok(res.path.length >= 1);
 });
+
+test('planBoatPath — water_y derivation survives mount-transient boat.y=63.0', () => {
+  // Regression for live failure (commit 037f5df forensics): PaperMCP
+  // summons the boat at water_y + 1.0625, but the server then quantises
+  // the entity position. Live forensics showed b.entities[boat].position.y
+  // returning EXACTLY 63.0 (water surface) instead of 63.0625. The
+  // original derivation `floor(boat.y - 1.0625)` returned 61 — wrong
+  // by one. The robust derivation walks the column and accepts the
+  // first water cell at baseY, baseY-1, or baseY+1.
+  const blocks = {};
+  fillSlab(blocks, 4, 7, 62, 4, 7, 'water');
+  const bot = makeStubBot(blocks);
+  // Boat at y=63.0 (server-quantised post-mount).
+  const res = planBoatPath(bot,
+    { x: 5.5, y: 63.0, z: 4.5 },
+    { x: 5.5, y: 63.0, z: 7.5 },
+  );
+  assert.equal(res.ok, true, `boat at y=63.0 must still resolve water_y=62; got ${JSON.stringify(res)}`);
+  assert.equal(res.water_y, 62, `derived water_y should be 62 (water cell under boat surface)`);
+});
+
+test('planBoatPath — water_y respects explicit opts.water_y override', () => {
+  // Caller can pin water_y when they have authoritative knowledge
+  // (e.g. sail_to passing the BFS-known water cell y). This bypasses
+  // the column scan entirely.
+  const blocks = {};
+  fillSlab(blocks, 4, 7, 58, 4, 7, 'water');  // water at y=58 instead
+  const bot = makeStubBot(blocks);
+  const res = planBoatPath(bot,
+    { x: 5.5, y: 59.0625, z: 4.5 },
+    { x: 5.5, y: 59.0625, z: 7.5 },
+    { water_y: 58 },
+  );
+  assert.equal(res.ok, true);
+  assert.equal(res.water_y, 58);
+});
