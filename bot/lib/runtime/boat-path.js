@@ -420,3 +420,140 @@ export async function executeBoatPath(b, path, opts = {}) {
 export function isDisposableBlocker(blocker) {
   return !!blocker && DISPOSABLE_BLOCK_NAMES.has(blocker.name);
 }
+
+/**
+ * Best-effort sail toward `target` when planBoatPath couldn't find a
+ * precomputable path. Sends packet vehicle_move + player_input forward
+ * each tick, but FIRST probes the next cell for a solid block — if
+ * the next step would clip an obstacle, halt rather than crash the
+ * boat. Continues until target is reached, stall, or boat dies.
+ *
+ * This is the safety net for complex terrain where the BFS waypoints
+ * thread through narrow corridors that planBoatPath rejects as
+ * NARROW_CHANNEL. The boat moves slower and may stall against a wall,
+ * but the precomputed-path's strict "must shift to a safe lane" rule
+ * doesn't apply — natural physics handles drift around obstacles.
+ *
+ * Returns the same shape as executeBoatPath.
+ */
+export async function bestEffortSail(b, target, opts = {}) {
+  const { sleep, log } = opts;
+  if (!b.vehicle || !b.entities[b.vehicle.id]) {
+    return { ok: false, error: 'BOAT_LOST', broke_at: null, after_steps: 0, mechanism: 'best_effort' };
+  }
+
+  const safeMoveVehicle = (left, forward) => {
+    try { if (typeof b.moveVehicle === 'function') b.moveVehicle(left, forward); } catch {}
+  };
+  const safeVehicleMove = (nx, ny, nz, yawRad) => {
+    try {
+      if (b._client && typeof b._client.write === 'function') {
+        b._client.write('vehicle_move', { x: nx, y: ny, z: nz, yaw: yawRad * 180 / Math.PI, pitch: 0 });
+        if (b.entity && b.entity.position) { b.entity.position.x = nx; b.entity.position.y = ny; b.entity.position.z = nz; }
+        if (b.vehicle && b.vehicle.position) { b.vehicle.position.x = nx; b.vehicle.position.y = ny; b.vehicle.position.z = nz; }
+        return true;
+      }
+    } catch {}
+    return false;
+  };
+
+  const ARRIVAL_THRESH = 1.5; // best-effort uses looser arrival
+  const STEP_SIZE = 0.4;
+  const TICK_MS = 50;
+  const MAX_TICKS = 1200;       // ~60s wallclock
+  const STALL_WINDOW = 20;      // ticks without progress
+  const STALL_GAIN = 0.4;        // need at least this much closer per STALL_WINDOW
+
+  let ticks = 0;
+  let lastDist = null;
+  let stallCounter = 0;
+  let startPos = b.entities[b.vehicle.id].position.clone();
+
+  while (ticks < MAX_TICKS) {
+    if (!b.vehicle || !b.entities[b.vehicle.id]) {
+      return { ok: false, error: 'BOAT_LOST', broke_at: startPos, after_steps: ticks, mechanism: 'best_effort' };
+    }
+    const live = b.entities[b.vehicle.id].position;
+    const dx = target.x - live.x;
+    const dz = target.z - live.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist <= ARRIVAL_THRESH) {
+      safeMoveVehicle(0, 0);
+      return { ok: true, final: { x: live.x, y: live.y, z: live.z }, steps: ticks, mechanism: 'best_effort' };
+    }
+    const norm = dist || 1;
+    const nx = live.x + (dx / norm) * STEP_SIZE;
+    const ny = live.y;
+    const nz = live.z + (dz / norm) * STEP_SIZE;
+
+    // Collision probe: if the next cell is solid at boat-y (or one
+    // below where the hitbox dips), don't push the boat into it.
+    const probeY = Math.floor(live.y); // boat-y cell
+    const probeYBelow = probeY - 1;    // hitbox-dip cell
+    let blocked = false;
+    let blocker = null;
+    try {
+      const ahead = b.blockAt(new Vec3(Math.floor(nx), probeY, Math.floor(nz)));
+      const aheadBelow = b.blockAt(new Vec3(Math.floor(nx), probeYBelow, Math.floor(nz)));
+      const solid = (blk) => blk && !AIR_NAMES.has(blk.name) && !WATER_NAMES.has(blk.name) && blk.boundingBox === 'block';
+      if (solid(ahead)) { blocked = true; blocker = { x: Math.floor(nx), y: probeY, z: Math.floor(nz), name: ahead.name }; }
+      else if (solid(aheadBelow)) { blocked = true; blocker = { x: Math.floor(nx), y: probeYBelow, z: Math.floor(nz), name: aheadBelow.name }; }
+    } catch { /* probe failed (unloaded chunk) — fall through and try */ }
+
+    if (blocked) {
+      // Refuse this step. Try a small perpendicular nudge (±1) before
+      // declaring stall — vanilla boats slip around small obstructions.
+      const perpX = -dz / norm;
+      const perpZ = dx / norm;
+      let nudged = false;
+      for (const side of [1, -1]) {
+        const tx = live.x + perpX * side * STEP_SIZE;
+        const tz = live.z + perpZ * side * STEP_SIZE;
+        try {
+          const blk = b.blockAt(new Vec3(Math.floor(tx), probeY, Math.floor(tz)));
+          const blkBelow = b.blockAt(new Vec3(Math.floor(tx), probeYBelow, Math.floor(tz)));
+          const isSolid = (x) => x && !AIR_NAMES.has(x.name) && !WATER_NAMES.has(x.name) && x.boundingBox === 'block';
+          if (!isSolid(blk) && !isSolid(blkBelow)) {
+            const yaw = Math.atan2(-(perpX * side), perpZ * side);
+            safeVehicleMove(tx, ny, tz, yaw);
+            safeMoveVehicle(0, 1);
+            nudged = true;
+            break;
+          }
+        } catch {}
+      }
+      if (!nudged) {
+        // Truly walled — declare stall.
+        safeMoveVehicle(0, 0);
+        if (log) log(`[boat-path best_effort] blocked by ${blocker?.name} at ${blocker?.x},${blocker?.y},${blocker?.z}; halting`);
+        return { ok: false, error: 'STALLED', broke_at: { x: live.x, y: live.y, z: live.z }, blocker, after_steps: ticks, mechanism: 'best_effort' };
+      }
+    } else {
+      const yaw = Math.atan2(-dx, dz);
+      const sent = safeVehicleMove(nx, ny, nz, yaw);
+      safeMoveVehicle(0, 1);
+      if (!sent) {
+        return { ok: false, error: 'NO_PACKET_WRITE', broke_at: { x: live.x, y: live.y, z: live.z }, after_steps: ticks, mechanism: 'best_effort' };
+      }
+    }
+
+    await sleep(TICK_MS);
+    ticks++;
+
+    // Stall detection.
+    if (lastDist === null) {
+      lastDist = dist;
+    } else if (ticks % STALL_WINDOW === 0) {
+      const gain = lastDist - dist;
+      if (gain < STALL_GAIN) {
+        safeMoveVehicle(0, 0);
+        if (log) log(`[boat-path best_effort] stalled (gained ${gain.toFixed(2)}b in ${STALL_WINDOW} ticks); halting`);
+        return { ok: false, error: 'STALLED', broke_at: { x: live.x, y: live.y, z: live.z }, after_steps: ticks, mechanism: 'best_effort' };
+      }
+      lastDist = dist;
+    }
+  }
+
+  safeMoveVehicle(0, 0);
+  return { ok: false, error: 'TIMEOUT', broke_at: { x: b.entities[b.vehicle?.id]?.position?.x ?? 0, y: 0, z: b.entities[b.vehicle?.id]?.position?.z ?? 0 }, after_steps: ticks, mechanism: 'best_effort' };
+}

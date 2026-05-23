@@ -12,7 +12,7 @@ import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { findAdjustedTarget } from './_nav-helpers.js';
 import { planWaterRoute } from '../runtime/water-route.js';
 import { pathfindWithProgressWatchdog, ACTION_CAPS_MS, pathfindGotoNear } from './_helpers.js';
-import { planBoatPath, executeBoatPath } from '../runtime/boat-path.js';
+import { planBoatPath, executeBoatPath, bestEffortSail } from '../runtime/boat-path.js';
 
 const BOAT_NAMES = new Set([
   'oak_boat', 'spruce_boat', 'birch_boat', 'jungle_boat',
@@ -982,10 +982,29 @@ export function createWaterActions(deps) {
       // y=water_y obstacles (e.g. the (350,62,-536) dirt spike that
       // killed boats in pre-task-#66 forensics).
       const plan = planBoatPath(b, startPos, target);
-      if (!plan.ok) {
-        // Path could not be precomputed — auto-disembark so Steve isn't
-        // stranded mid-ocean. The boat itself is fine; the agent gets a
-        // clear "no path" signal.
+      let drive;
+      let usedFallback = false;
+      if (plan.ok) {
+        // Easy case: drive the boat along the precomputed path.
+        drive = await executeBoatPath(b, plan.path, {
+          executeServerCommand,
+          paperMcpConfig,
+          sleep,
+          log,
+        });
+      } else if (plan.reason === 'NARROW_CHANNEL') {
+        // Precomputed path threads through a corridor too tight for
+        // the ±2 perpendicular shift to clear. Drop into best-effort
+        // packet-steering: same vehicle_move + player_input mechanism,
+        // but with per-tick collision probes that refuse to push the
+        // boat into a solid block. Vanilla physics handles drift around
+        // small obstacles; we just halt if walled in.
+        if (log) log(`[sail] planBoatPath returned NARROW_CHANNEL — falling back to bestEffortSail`);
+        usedFallback = true;
+        drive = await bestEffortSail(b, target, { sleep, log });
+      } else {
+        // NOT_ON_WATER or other unrecoverable plan failures — auto-
+        // disembark so Steve isn't stranded mid-ocean.
         let autoDisembark = null;
         if (ACTIONS && typeof ACTIONS.disembark === 'function') {
           try {
@@ -1011,14 +1030,6 @@ export function createWaterActions(deps) {
         }};
       }
 
-      // Drive the boat along the precomputed path.
-      const drive = await executeBoatPath(b, plan.path, {
-        executeServerCommand,
-        paperMcpConfig,
-        sleep,
-        log,
-      });
-
       if (!drive.ok) {
         // Boat died mid-sail (entity attacked, despawn, etc.) or tp
         // failed. Either way Steve is in water — try to auto-disembark
@@ -1032,16 +1043,29 @@ export function createWaterActions(deps) {
             autoDisembark = { ok: false, error: e?.message || String(e) };
           }
         }
-        const code = drive.error === 'NO_PAPERMCP' ? 'NO_PAPERMCP' : 'BOAT_LOST';
+        // Map driver-level error to action-level code:
+        //   STALLED  → PATH_BLOCKED (boat is fine; corridor doesn't progress)
+        //   TIMEOUT  → PATH_BLOCKED (gave up before reaching target)
+        //   NO_PAPERMCP → NO_PAPERMCP
+        //   anything else (BOAT_LOST / TP_FAILED) → BOAT_LOST
+        let code;
+        if (drive.error === 'NO_PAPERMCP') code = 'NO_PAPERMCP';
+        else if (drive.error === 'STALLED' || drive.error === 'TIMEOUT') code = 'PATH_BLOCKED';
+        else code = 'BOAT_LOST';
+        const message = code === 'NO_PAPERMCP'
+          ? 'PaperMCP unavailable — cannot drive the boat. Sail requires the PaperMCP server-side tp fallback.'
+          : code === 'PATH_BLOCKED'
+          ? `Sail could not reach (${Math.floor(target.x)},${Math.floor(target.y)},${Math.floor(target.z)}): boat ${drive.error.toLowerCase()} after ${drive.after_steps || 0} steps near (${drive.broke_at ? `${Math.floor(drive.broke_at.x)},${Math.floor(drive.broke_at.y)},${Math.floor(drive.broke_at.z)}` : 'unknown'}).${drive.blocker ? ` Blocker: ${drive.blocker.name} at (${drive.blocker.x},${drive.blocker.y},${drive.blocker.z}).` : ''}${autoDisembark?.ok ? ' Auto-disembarked.' : ''}`
+          : `Boat lost mid-sail (${drive.error || 'unknown'}) after ${drive.after_steps || 0} steps near (${drive.broke_at ? `${Math.floor(drive.broke_at.x)},${Math.floor(drive.broke_at.y)},${Math.floor(drive.broke_at.z)}` : 'unknown'}).${autoDisembark?.ok ? ' Auto-disembarked.' : ''}`;
         return { ok: false, error: {
           code,
-          message: code === 'NO_PAPERMCP'
-            ? 'PaperMCP unavailable — cannot drive the boat. Sail requires the PaperMCP server-side tp fallback.'
-            : `Boat lost mid-sail (${drive.error || 'unknown'}) after ${drive.after_steps || 0} steps near (${drive.broke_at ? `${Math.floor(drive.broke_at.x)},${Math.floor(drive.broke_at.y)},${Math.floor(drive.broke_at.z)}` : 'unknown'}). Likely an entity attack or chunk-unload event.${autoDisembark?.ok ? ' Auto-disembarked.' : ''}`,
+          message,
           observed_state: {
             boat_pos_start: [Number(startPos.x.toFixed(2)), Number(startPos.y.toFixed(2)), Number(startPos.z.toFixed(2))],
             broke_at: drive.broke_at,
             after_steps: drive.after_steps,
+            mechanism: drive.mechanism || (usedFallback ? 'best_effort' : 'precomputed'),
+            ...(drive.blocker ? { blocker: drive.blocker } : {}),
             ...(autoDisembark ? { auto_disembark: autoDisembark } : {}),
           },
           next_action_hint: autoDisembark?.ok ? 'mc status' : 'mc disembark',
@@ -1061,7 +1085,8 @@ export function createWaterActions(deps) {
           target: [Number(x), Number(y), Number(z)],
           horizontal_distance_remaining: Number(remaining.toFixed(2)),
           steps: drive.steps,
-          path_blockers_avoided: plan.path.length - drive.steps,
+          mechanism: drive.mechanism || (usedFallback ? 'best_effort' : 'precomputed'),
+          ...(plan.ok ? { path_blockers_avoided: plan.path.length - drive.steps } : {}),
         },
       };
     },

@@ -616,17 +616,22 @@ test('mc sail: PATH_BLOCKED when corridor is fully walled off', async () => {
       }
       return { name: 'air', boundingBox: 'empty' };
     },
+    // Stub vehicle_move handler so bestEffortSail's packet path can run.
+    _client: { write() {} },
     setControlState() {},
+    moveVehicle() {},
     look: async () => {},
     lookAt: async () => {},
   };
   const water = createWaterActions(waterDeps(bot));
   const r = await water.sail({ x: 10, y: 63, z: 0, _from_sail_to: true });
   assert.equal(r.ok, false);
+  // Planner returns NARROW_CHANNEL → sail() falls back to bestEffortSail
+  // which stalls against the same wall → PATH_BLOCKED with mechanism=
+  // 'best_effort'. The boat-killer scenarios (BOAT_LOST) reserved for
+  // entity-attack / chunk-unload / TP failures.
   assert.equal(r.error.code, 'PATH_BLOCKED');
-  assert.equal(r.error.observed_state.plan_reason, 'NARROW_CHANNEL');
-  assert.ok(Array.isArray(r.error.observed_state.blockers));
-  assert.ok(r.error.observed_state.blockers.length > 0);
+  assert.equal(r.error.observed_state.mechanism, 'best_effort');
 });
 
 // ─────────────────────────────────────────────────────────────────────────
