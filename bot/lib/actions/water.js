@@ -953,7 +953,7 @@ export function createWaterActions(deps) {
      * Action contract: NOT_MOUNTED, NOT_A_BOAT, PATH_BLOCKED, BOAT_LOST,
      * NO_PAPERMCP.
      */
-    async sail({ x, y, z, timeout_seconds: _ts, allow_shore_early_exit: _ase, _from_sail_to } = {}) {
+    async sail({ x, y, z, timeout_seconds: _ts, allow_shore_early_exit: _ase, _from_sail_to, precomputed_path } = {}) {
       if (!_from_sail_to) return useSailToInsteadRefusal('sail');
       const b = ensureBot();
       const target = new Vec3(Number(x), Number(y), Number(z));
@@ -976,15 +976,40 @@ export function createWaterActions(deps) {
       }
 
       const startPos = boat.position.clone();
-      // Plan a collision-safe boat path from current boat position to
-      // target. The planner snaps to cell centers, checks each step's
-      // hitbox against blockAt, and shifts ±1/±2 perpendicular around
-      // y=water_y obstacles (e.g. the (350,62,-536) dirt spike that
-      // killed boats in pre-task-#66 forensics).
-      const plan = planBoatPath(b, startPos, target);
+      // Two planning paths:
+      //   precomputed_path  → the caller (sail_to) already has the dense
+      //     BFS water-cell path; we convert each cell to a boat waypoint
+      //     and follow it directly. Guaranteed cell-by-cell navigable
+      //     because the BFS only expanded into sailable cells.
+      //   no precomputed_path  → fall back to planBoatPath's straight-line
+      //     planner with perpendicular shifts. Useful for ad-hoc legs.
+      let plan;
       let drive;
       let usedFallback = false;
-      if (plan.ok) {
+      if (Array.isArray(precomputed_path) && precomputed_path.length > 0) {
+        // Convert water-cell coords to boat waypoints (cell-center XZ +
+        // boat float offset). Then check the first cell matches the
+        // boat's current column (otherwise the caller has a stale path).
+        const dy = 1.0625; // boat float offset above water_cell.y
+        const boatPath = precomputed_path.map((c) => ({
+          x: Math.floor(c.x) + 0.5,
+          y: Math.floor(c.y) + dy,
+          z: Math.floor(c.z) + 0.5,
+        }));
+        plan = { ok: true, path: boatPath, water_y: Math.floor(precomputed_path[0].y), source: 'precomputed' };
+        drive = await executeBoatPath(b, boatPath, {
+          executeServerCommand,
+          paperMcpConfig,
+          sleep,
+          log,
+        });
+      } else {
+        // Plan a collision-safe boat path from current boat position to
+        // target. The planner snaps to cell centers, checks each step's
+        // hitbox against blockAt, and shifts ±1/±2 perpendicular around
+        // y=water_y obstacles.
+        plan = planBoatPath(b, startPos, target);
+        if (plan.ok) {
         // Easy case: drive the boat along the precomputed path.
         drive = await executeBoatPath(b, plan.path, {
           executeServerCommand,
@@ -1029,6 +1054,7 @@ export function createWaterActions(deps) {
           retry_safe: false,
         }};
       }
+      } // close outer else (precomputed_path)
 
       if (!drive.ok) {
         // Boat died mid-sail (entity attacked, despawn, etc.) or tp
@@ -1497,7 +1523,37 @@ export function createWaterActions(deps) {
       // a coast-adjacent waypoint mid-route; only the last leg uses
       // the default behavior (so reaching the destination shore still
       // surfaces shore_reached for the disembark phase).
+      // Task #66: drive the boat along the dense BFS cell path in ONE
+      // sail() call. Pre-fix, sailLegs called sail() once per sparse
+      // waypoint (~8b spacing) — each call ran planBoatPath in a
+      // straight line to the next waypoint, which would fail when the
+      // BFS path bent around obstacles that planBoatPath's ±2
+      // perpendicular shift can't replicate. With the dense path,
+      // every consecutive pair is guaranteed cardinal-adjacent
+      // sailable water (BFS expansion predicate), so no in-flight
+      // collision search is needed.
       const sailLegs = async (legs) => {
+        const lastWp = legs[legs.length - 1];
+        // Trust the BFS dense path if available; else fall back to
+        // sparse waypoints (one sail() call per waypoint).
+        if (route?.cells_path && route.cells_path.length > 1) {
+          const legRes = await ACTIONS.sail({
+            x: lastWp.x, y: lastWp.y, z: lastWp.z,
+            allow_shore_early_exit: true,
+            _from_sail_to: true,
+            precomputed_path: route.cells_path,
+          });
+          if (!legRes.ok) {
+            return {
+              ok: false,
+              leg_index: 0,
+              waypoint: lastWp,
+              inner_error: legRes.error,
+            };
+          }
+          return { ok: true, detoursTaken: [] };
+        }
+        // Fallback: sparse-waypoint chain (legacy path).
         const detoursTaken = [];
         for (let i = 0; i < legs.length; i++) {
           const wp = legs[i];
@@ -1508,16 +1564,9 @@ export function createWaterActions(deps) {
             _from_sail_to: true,
           });
           if (!legRes.ok) {
-            return {
-              ok: false,
-              leg_index: i,
-              waypoint: wp,
-              inner_error: legRes.error,
-            };
+            return { ok: false, leg_index: i, waypoint: wp, inner_error: legRes.error };
           }
           if (legRes.data?.detours) detoursTaken.push(...legRes.data.detours);
-          // Last leg might surface shore_reached — that's expected;
-          // the orchestrator's disembark phase handles it.
           if (legRes.data?.shore_reached && isLast) {
             return { ok: true, shore_reached: legRes.data.shore_reached, detoursTaken };
           }

@@ -587,6 +587,51 @@ test('mc sail: PATH_BLOCKED when boat is starting on non-water cell', async () =
   assert.equal(r.error.observed_state.plan_reason, 'NOT_ON_WATER');
 });
 
+test('mc sail: precomputed_path arg drives boat through cells without re-planning', async () => {
+  // Task #66: sail() accepts a precomputed_path (the BFS dense
+  // water-cell path from planWaterRoute). It should skip planBoatPath
+  // and pass the path straight to executeBoatPath, which steps the
+  // boat through each cell. Verifies the wiring + that no internal
+  // planning was attempted (which would fail on the mock).
+  const boat = {
+    id: 13, name: 'oak_boat', type: 'oak_boat',
+    position: new Vec3(0.5, 63.0625, 0.5),
+  };
+  boat.position.clone = function () { return new Vec3(this.x, this.y, this.z); };
+  // Track _client.write calls so we can confirm executeBoatPath ran.
+  const writes = [];
+  const bot = {
+    entity: { position: new Vec3(0.5, 63.0625, 0.5), isInWater: false },
+    inventory: { items: () => [] },
+    entities: { 13: boat },
+    vehicle: boat,
+    blockAt: () => ({ name: 'water', boundingBox: 'empty' }), // any cell is water
+    _client: { write(name, data) { writes.push({ name, data }); } },
+    setControlState() {},
+    moveVehicle() {},
+    look: async () => {},
+    lookAt: async () => {},
+  };
+  const water = createWaterActions(waterDeps(bot));
+  const denseCells = [
+    { x: 0, y: 62, z: 0 },
+    { x: 0, y: 62, z: 1 },
+    { x: 0, y: 62, z: 2 },
+    { x: 0, y: 62, z: 3 },
+  ];
+  const r = await water.sail({
+    x: 0, y: 63, z: 3,
+    _from_sail_to: true,
+    precomputed_path: denseCells,
+  });
+  // The mock bot lacks paperMcpConfig, so the tp fallback fails — but
+  // the packet path via _client.write should have run for each step.
+  // We assert at least one vehicle_move packet (confirming executeBoatPath
+  // exercised the precomputed_path branch).
+  const vmPackets = writes.filter((w) => w.name === 'vehicle_move');
+  assert.ok(vmPackets.length >= 1, `expected vehicle_move packets to be sent for precomputed_path; got ${vmPackets.length}`);
+});
+
 test('mc sail: PATH_BLOCKED when corridor is fully walled off', async () => {
   // Boat surrounded by water for 1 cell, then dirt wall in every
   // direction within ±2. Planner returns NARROW_CHANNEL → PATH_BLOCKED.
@@ -1325,14 +1370,13 @@ test('mc sail_to: full happy path — plan + mount + sail + disembark + walk', a
   assert.ok(r.data.phases_executed.includes('mount'), 'mount ran');
   assert.ok(r.data.phases_executed.includes('sail'), 'sail ran');
   assert.ok(r.data.phases_executed.includes('disembark'), 'disembark ran');
-  // ACTIONS were invoked in the right order. sail is called once per
-  // BFS waypoint (every 8 blocks), so collapse repeats for the order
-  // assertion.
+  // ACTIONS were invoked in the right order. With task #66, sail is
+  // called ONCE with the dense BFS path (precomputed_path arg) instead
+  // of once per sparse waypoint.
   const distinctOrder = invoked.filter((v, i) => v !== invoked[i - 1]);
   assert.deepEqual(distinctOrder, ['place_boat', 'board', 'sail', 'disembark']);
-  // Multi-leg sail: 100b channel / 8b waypoints ≈ 13 sail calls.
   const sailCalls = invoked.filter((v) => v === 'sail').length;
-  assert.ok(sailCalls >= 6, `expected sail called multiple times for a 100b channel, got ${sailCalls}`);
+  assert.equal(sailCalls, 1, `task #66: sail() now called once with dense BFS path; got ${sailCalls}`);
   // Route metadata present.
   assert.ok(r.data.route.horizontal_distance > 80);
 });

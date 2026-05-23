@@ -689,6 +689,13 @@ export function planWaterRoute(b, start, target, opts = {}) {
       exit_water: exit.water,
       exit_shore: exit.shore,
       waypoints,
+      // Task #66: dense path — every water cell from entry to exit in
+      // BFS order. Each consecutive pair is guaranteed cardinal-adjacent
+      // navigable water (BFS expansion predicate). Callers who need to
+      // physically follow the path (sail()'s tp-step driver) use this;
+      // callers who want a coarse view (mc map / agent waypoint display)
+      // use the sparse `waypoints` field.
+      cells_path: path,
       horizontal_distance: Math.round(horizDist),
       water_cells_explored: explored.length,
       estimated_seconds: estimatedSeconds,

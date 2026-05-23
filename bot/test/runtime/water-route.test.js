@@ -664,6 +664,48 @@ test('planWaterRoute (B3): prefers clean exit_water over one adjacent to a y=wat
     `expected exit_shore.z=-7 (clean side); got ${r.data.exit_shore.z}`);
 });
 
+// ─── task #66: dense cells_path field exposes the full BFS water-cell chain ───
+
+test('planWaterRoute: data.cells_path contains every BFS cell from entry to exit', () => {
+  // Straight channel of 12 water cells; cells_path should have all 12,
+  // each cardinal-adjacent to the next.
+  const blocks = {};
+  for (let z = 0; z <= 11; z++) {
+    blocks[`5,62,${z}`] = 'water';
+    blocks[`5,61,${z}`] = 'water';
+    blocks[`5,63,${z}`] = 'air';
+    blocks[`5,64,${z}`] = 'air';
+  }
+  // Entry shore at (5, 63, -1).
+  blocks['5,62,-1'] = 'stone';
+  blocks['5,63,-1'] = 'air';
+  blocks['5,64,-1'] = 'air';
+  // Exit shore at (5, 63, 12).
+  blocks['5,62,12'] = 'stone';
+  blocks['5,63,12'] = 'air';
+  blocks['5,64,12'] = 'air';
+
+  const bot = makeStubBot(blocks);
+  const r = planWaterRoute(bot, { x: 5, y: 63, z: -1 }, { x: 5, y: 63, z: 12 });
+  assert.equal(r.ok, true);
+  assert.ok(Array.isArray(r.data.cells_path), 'cells_path must be an array');
+  assert.ok(r.data.cells_path.length >= 12, `expected >=12 cells, got ${r.data.cells_path.length}`);
+  // First cell = entry_water, last cell = exit_water.
+  const first = r.data.cells_path[0];
+  const last = r.data.cells_path[r.data.cells_path.length - 1];
+  assert.deepEqual({ x: first.x, y: first.y, z: first.z }, r.data.entry_water);
+  assert.deepEqual({ x: last.x, y: last.y, z: last.z }, r.data.exit_water);
+  // Every consecutive pair is cardinal-adjacent at the same y.
+  for (let i = 1; i < r.data.cells_path.length; i++) {
+    const a = r.data.cells_path[i - 1];
+    const b = r.data.cells_path[i];
+    assert.equal(a.y, b.y, `cells_path[${i}]: y must match (boat doesn't climb)`);
+    const dx = Math.abs(a.x - b.x);
+    const dz = Math.abs(a.z - b.z);
+    assert.ok(dx + dz === 1, `cells_path[${i}]: must be cardinal-adjacent, got dx=${dx} dz=${dz}`);
+  }
+});
+
 // ─── task #66 (B4): BFS allows 1-deep shallow water (boat-passable) ──────
 
 test('planWaterRoute (B4): reaches a target shore behind a 1-deep approach', () => {
