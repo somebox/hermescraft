@@ -48,11 +48,15 @@ curl -s http://127.0.0.1:3002/health | python3 -m json.tool
 
 | Process | Purpose | Session / logs |
 |---------|---------|----------------|
-| **Bot** (node, `:3002`) | Mineflayer body connected to **192.168.1.202:25565** | `/tmp/hermescraft/bot-flint.log` (via `landfolk-control`) |
-| **Landfolk agent** (`landfolk-control.sh start --profiles flint`) | Continuous goals, `~/.hermes-landfolk-flint/` | `scripts/watch-agent.py --agent flint` |
+| **Bot** (node, `:3002`) | Mineflayer body connected to **192.168.1.202:25565** | `/tmp/hermescraft/bot-flint.log` (via `landfolk` / engine) |
+| **Landfolk agent** (`scripts/landfolk enable flint --mode continuous`) | Continuous goals, `~/.hermes-landfolk-flint/` | `scripts/watch-agent.py --agent flint` |
 | **Kanban worker** (`hermes -p flint`, dispatcher-spawned) | One task on `landfolk-ops`, `~/.hermes/profiles/flint/` | `hermes kanban --board landfolk-ops log <task_id>` or `scripts/watch-agent.py --profile flint` |
 
-For kanban testing: keep the **bot running**, stop the **Landfolk agent + watchdog** so only the kanban worker uses `mc` on that port.
+For kanban testing: keep the **bot running**, stop the **Landfolk agent + watchdog** so only the kanban worker uses `mc` on that port. With the unified CLI this is just the default mode:
+
+```bash
+scripts/landfolk enable flint --mode kanban   # bot + connect-only watchdog, no agent
+```
 
 Tail the active Flint worker:
 
@@ -64,46 +68,23 @@ scripts/watch-agent.py --agent flint --auto --tail 30   # pick landfolk vs kanba
 `--agent flint` alone follows **Landfolk** sessions in `~/.hermes-landfolk-flint/` — not the kanban worker during solo ops.
 
 ```bash
-# Example: stop agent/watchdog only (bot pid file under /tmp/hermescraft/landfolk-control/)
-for kind in watchdog agent; do
-  pf="/tmp/hermescraft/landfolk-control/${kind}-flint.pid"
-  [ -f "$pf" ] && kill "$(cat "$pf")" 2>/dev/null; rm -f "$pf"
-done
-./scripts/landfolk-control.sh status --profiles flint
-# expect [bot] RUNNING, [agent] STOPPED
+scripts/landfolk disable flint    # reclaim cards, stop bot+watchdog, prune roster
+scripts/landfolk status           # confirm flint shows DOWN
 ```
 
-Do **not** run `./scripts/landfolk-control.sh start --profiles flint` while kanban workers are active unless you intend to pause ops and return to continuous Landfolk mode.
+Do **not** mix modes for one player. The CLI is single-mode per player at any time; use `enable <p> --mode kanban` or `enable <p> --mode continuous` to switch deliberately.
 
-#### Bot-only restart (when you need to reload bot code mid-experiment)
+#### Bot restart (when you need to reload bot code mid-experiment)
 
-`landfolk-control.sh start --profiles flint` always launches **bot + agent + watchdog** — there is no `--bot-only` flag yet. Doing a full restart to pick up new bot code (e.g. after a patch to `bot/lib/actions/...`) will silently re-enable the continuous agent and let it fight the kanban worker on `:3002`. The lock state desyncs: gateway sees a running worker that's actually dead, the held claim stays valid until lease expiry, no new dispatch tick spawns a fresh worker.
-
-The recipe that worked 2026-05-24:
+The old recipe (stop, start, hand-kill the spawned agent, status-check, dispatch) collapses to one command now that the engine supports `--no-agent`:
 
 ```bash
-# 1. Reclaim any actively-locked tasks so they're free to re-dispatch.
 hermes kanban --board landfolk-ops reclaim <task_id> --reason "restart bot for fix"
-
-# 2. Full landfolk stop (kills bot + agent + watchdog).
-./scripts/landfolk-control.sh stop --profiles flint
-
-# 3. Full landfolk start — brings everything back.
-./scripts/landfolk-control.sh start --profiles flint
-
-# 4. IMMEDIATELY tear down the agent + watchdog the start re-spawned,
-#    leaving only the freshly-restarted bot.
-for kind in watchdog agent; do
-  pf="/tmp/hermescraft/landfolk-control/${kind}-flint.pid"
-  [ -f "$pf" ] && kill "$(cat "$pf")" 2>/dev/null; rm -f "$pf"
-done
-./scripts/landfolk-control.sh status --profiles flint   # expect [bot] RUNNING, [agent] STOPPED, [watchdog] STOPPED
-
-# 5. Force a dispatch tick so the gateway picks up the freed task on the patched bot.
+scripts/landfolk restart flint    # uses the roster's mode (kanban by default)
 hermes kanban --board landfolk-ops dispatch
 ```
 
-If you skip step 4 the worker WILL spawn but it'll race the continuous landfolk agent for the bot — both will try to drive `mc move`, lock contention shows up as "no apparent progress" on the kanban card with no error logs to explain it.
+`restart <player>` reclaims that player's running cards, stops the engine, and brings the bot back in whatever mode the roster recorded — no more start-then-kill race against the continuous agent.
 
 ### Gateway, triage, and dispatch
 
