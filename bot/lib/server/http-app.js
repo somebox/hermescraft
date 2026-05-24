@@ -5,6 +5,8 @@
 import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError } from './middleware/task-lifecycle.js';
 import { probeRouteAlongLine, probeRouteCorridor } from './route-probe.js';
 import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/water-route.js';
+import { normalizeId } from '../runtime/regions/index.js';
+import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -56,6 +58,7 @@ export function createBotHttpListener(deps) {
     pushTaskHistoryRecord,
     renewLease,
     createBot,
+    viewerPort = null,
   } = deps;
 
   // Services proxy: dispatchAction expects a services-shaped container
@@ -109,6 +112,7 @@ export function createBotHttpListener(deps) {
           model: config.agent.model || null,
           provider: config.agent.provider || null,
           server: `${config.mc.host}:${config.mc.port}`,
+          viewer_port: viewerPort ?? null,
           uptime_sec: uptimeSec,
           session_started_at: connected && typeof ctx.world.mcSessionStartedAt === 'number'
             ? ctx.world.mcSessionStartedAt
@@ -144,13 +148,100 @@ export function createBotHttpListener(deps) {
         return respond(res, 200, { ok: true, data: { marks: buildMarksListApi() } });
       }
 
+      if (path === '/task-context') {
+        const TASK_DEFAULT_MS = 30 * 60 * 1000;
+        const TASK_MAX_MS = 4 * 60 * 60 * 1000;
+        if (req.method === 'GET') {
+          return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
+        }
+        if (req.method === 'DELETE') {
+          ctx.runtime.taskContext = null;
+          return respond(res, 200, { ok: true, data: { cleared: true } });
+        }
+        if (req.method === 'POST') {
+          let body;
+          try {
+            body = await parseBody(req);
+          } catch (e) {
+            return respond(res, 400, { ok: false, error: { message: e.message } });
+          }
+          const cardId = String(body.card_id || body.card || '').trim();
+          if (!cardId) {
+            return respond(res, 400, {
+              ok: false,
+              error: { code: 'MISSING_CARD_ID', message: 'task-context requires card_id' },
+            });
+          }
+          const now = Date.now();
+          let expiresAt = now + TASK_DEFAULT_MS;
+          if (body.expires_at_ms != null && Number.isFinite(Number(body.expires_at_ms))) {
+            expiresAt = Number(body.expires_at_ms);
+          } else if (body.expires_min != null && Number.isFinite(Number(body.expires_min))) {
+            expiresAt = now + Number(body.expires_min) * 60 * 1000;
+          }
+          const maxExp = now + TASK_MAX_MS;
+          if (expiresAt > maxExp) expiresAt = maxExp;
+          if (expiresAt < now) expiresAt = now + TASK_DEFAULT_MS;
+          const worksiteRaw = body.worksite_region ?? body.worksite ?? null;
+          const worksite_region =
+            worksiteRaw != null && String(worksiteRaw).trim() !== ''
+              ? normalizeId(worksiteRaw)
+              : null;
+          ctx.runtime.taskContext = {
+            card_id: cardId,
+            worksite_region,
+            expires_at: expiresAt,
+            source: String(body.source || 'http'),
+          };
+          return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
+        }
+        return respond(res, 405, { ok: false, error: { message: 'Method not allowed' } });
+      }
+
+      if (path === '/regions') {
+        ensureBot();
+        const store = ctx.runtime.regions;
+        if (!store) {
+          return respond(res, 200, { ok: true, data: { world: null, regions: [] } });
+        }
+        const botPos = ctx.world.bot?.entity?.position ?? null;
+        let preview = null;
+        const atParam = url.searchParams.get('at');
+        if (atParam) {
+          const parts = atParam.split(/[,\s]+/).map(Number);
+          if (parts.length >= 3 && parts.every(Number.isFinite)) {
+            const [x, y, z] = parts;
+            preview = {
+              at: { x, y, z },
+              dig: store.resolve('dig', buildRegionResolveArgs(ctx, { ad_hoc: true }), { x, y, z }, 'cobblestone'),
+              place: store.resolve('place', buildRegionResolveArgs(ctx, { ad_hoc: true }), { x, y, z }, 'dirt'),
+            };
+          }
+        }
+        return respond(res, 200, {
+          ok: true,
+          data: {
+            world: store.world,
+            regions: store.listForApi({ botPos }),
+            regions_here: store.regionsHere(botPos),
+            task_context: ctx.runtime.taskContext,
+            preview,
+          },
+        });
+      }
+
       if (path === '/inventory') {
         return respond(res, 200, { ok: true, data: getInventory() });
       }
 
       if (path === '/nearby') {
-        const radius = parseInt(url.searchParams.get('radius') || '32');
-        return respond(res, 200, { ok: true, data: getNearby(radius) });
+        const radius = parseInt(url.searchParams.get('radius') || '32', 10);
+        const fairPlay = url.searchParams.get('fair_play') !== 'false';
+        const entityLimit = parseInt(url.searchParams.get('entity_limit') || '20', 10);
+        return respond(res, 200, {
+          ok: true,
+          data: getNearby(radius, { fairPlay, entityLimit }),
+        });
       }
 
       // ASCII top-down map of surroundings.

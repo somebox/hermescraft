@@ -6,6 +6,7 @@ import { gotoWithTimeout } from './goto-with-timeout.js';
 import { coord3 } from '../_args.js';
 import { canSeeBlockFaces } from '../_los.js';
 import { fail } from '../../shared/action-contract.js';
+import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
 
 export function createDigHandlers(deps) {
   const {
@@ -100,7 +101,13 @@ export function createDigHandlers(deps) {
           };
         }
     
-        if (isDigProtected(target.name, { x, y, z }, ctx)) {
+        const regionDig = evaluateRegionPolicy(ctx, config, 'dig', x, y, z, target.name);
+        if (regionDig.deny) {
+          recordDigFailure('REGION_PROTECTED');
+          return regionProtectedFailure('dig', target.name, x, y, z, regionDig.regionResult);
+        }
+    
+        if (!regionDig.skipGlobalDeny && isDigProtected(target.name, { x, y, z }, ctx)) {
           recordDigFailure('PROTECTED_BLOCK');
           return {
             ok: false,

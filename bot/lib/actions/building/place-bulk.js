@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { recordRecentPlace } from '../../runtime/dig-tools.js';
+import { shouldSkipPlaceAt, createRegionSkipTracker } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
@@ -11,7 +12,7 @@ const { goals } = pathfinderPkg;
  * @param {{ ctx: any, ensureBot: () => any, sleep: (ms: number) => Promise<void> }} deps
  */
 export function createBuildingPlaceBulkPart(deps) {
-  const { ctx, ensureBot, sleep } = deps;
+  const { ctx, ensureBot, sleep, config } = deps;
 
   return {
     async place_fill(args) {
@@ -145,6 +146,7 @@ export function createBuildingPlaceBulkPart(deps) {
       const skipped_occupied = [];  // [{x,y,z,by:blockname}]
       const place_failures = [];    // [{x,y,z,reason}]
       const occupied_by_counts = {}; // {block_name: count}
+      const regionSkips = createRegionSkipTracker();
       for (const cluster of clusters) {
         // Walk to the cluster's standpoint (skip if at one already).
         if (cluster.standpoint) {
@@ -167,6 +169,11 @@ export function createBuildingPlaceBulkPart(deps) {
           }
         }
         for (const pos of cluster.cells) {
+          const skipPl = shouldSkipPlaceAt(ctx, config, blockName, pos.x, pos.y, pos.z);
+          if (skipPl.skip) {
+            regionSkips.noteSkip(skipPl.regionId);
+            continue;
+          }
           const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
           if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
             if (existing.name === blockName) {
@@ -258,6 +265,7 @@ export function createBuildingPlaceBulkPart(deps) {
           : '';
         resultMsg = `FILL_PARTIAL: ${parts.join('; ')}.${selfNote} Check observed_state.skipped_occupied to see what's blocking.`;
       }
+      resultMsg += regionSkips.suffix();
       return {
         result: resultMsg,
         data: {
@@ -268,6 +276,7 @@ export function createBuildingPlaceBulkPart(deps) {
           occupied_by_counts,
           total: positions.length,
           partial: skipped_total > 0,
+          ...regionSkips.dataFields(),
           ...(autoDisplaced ? { auto_displaced: autoDisplaced } : {}),
           ...(botWasInsideRegion ? {
             bot_was_inside_region: true,
@@ -363,8 +372,14 @@ export function createBuildingPlaceBulkPart(deps) {
       let placed = 0;
       let skipped_existing = 0;
       let failed = 0;
+      const regionSkips = createRegionSkipTracker();
 
       for (const pos of positions) {
+        const skipPl = shouldSkipPlaceAt(ctx, config, blockName, pos.x, pos.y, pos.z);
+        if (skipPl.skip) {
+          regionSkips.noteSkip(skipPl.regionId);
+          continue;
+        }
         const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
         if (existing && existing.name !== 'air' && existing.name !== 'cave_air') {
           skipped_existing++;
@@ -414,8 +429,9 @@ export function createBuildingPlaceBulkPart(deps) {
           failed,
           bounds: { x1: minX, y1: minY, z1: minZ, x2: maxX, y2: maxY, z2: maxZ },
           block: blockName,
+          ...regionSkips.dataFields(),
         },
-        result: `Wall: ${placed}/${positions.length} ${blockName} placed${skipped_existing ? ` (${skipped_existing} skipped — existing block)` : ''}${failed ? ` (${failed} failed)` : ''}`,
+        result: `Wall: ${placed}/${positions.length} ${blockName} placed${skipped_existing ? ` (${skipped_existing} skipped — existing block)` : ''}${failed ? ` (${failed} failed)` : ''}${regionSkips.suffix()}`,
       };
     },
 
@@ -499,8 +515,14 @@ export function createBuildingPlaceBulkPart(deps) {
       let placed = 0;
       let skipped = 0;
       let failed = 0;
+      const regionSkips = createRegionSkipTracker();
 
       async function placeOne(pos, itemName) {
+        const skipPl = shouldSkipPlaceAt(ctx, config, itemName, pos.x, pos.y, pos.z);
+        if (skipPl.skip) {
+          regionSkips.noteSkip(skipPl.regionId);
+          return 'region_skipped';
+        }
         const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
         if (existing && existing.name !== 'air' && existing.name !== 'cave_air') return 'skipped';
         const item = b.inventory.items().find((i) => i.name === itemName);
@@ -526,7 +548,7 @@ export function createBuildingPlaceBulkPart(deps) {
       for (const pos of fencePositions) {
         const r = await placeOne(pos, blockName);
         if (r === 'placed') placed++;
-        else if (r === 'skipped') skipped++;
+        else if (r === 'skipped' || r === 'region_skipped') skipped++;
         else if (r === 'no_item') {
           return {
             ok: false,
@@ -576,8 +598,9 @@ export function createBuildingPlaceBulkPart(deps) {
           gate_type: gateType,
           bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: fenceY },
           block: blockName,
+          ...regionSkips.dataFields(),
         },
-        result: `Fence: ${placed}/${fencePositions.length} ${blockName} placed${gatePlaced ? `, gate placed (${gateType}) on ${gate} side` : ''}${skipped ? ` (${skipped} skipped)` : ''}${failed ? ` (${failed} failed)` : ''}`,
+        result: `Fence: ${placed}/${fencePositions.length} ${blockName} placed${gatePlaced ? `, gate placed (${gateType}) on ${gate} side` : ''}${skipped ? ` (${skipped} skipped)` : ''}${failed ? ` (${failed} failed)` : ''}${regionSkips.suffix()}`,
       };
     },
   };

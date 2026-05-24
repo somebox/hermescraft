@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { equipForDig, DIG_PASSABLE_NAMES, nudgeOffStandPillar, detectDigHazards, isDigProtected } from '../runtime/dig-tools.js';
+import { shouldSkipDigAt, createRegionSkipTracker } from '../runtime/regions/policy-guard.js';
 import { ok, fail } from '../shared/action-contract.js';
 import { cardinalDelta } from './_directions.js';
 import { box6 } from './_args.js';
@@ -83,6 +84,7 @@ export function createExcavationActions(services) {
     const errors = [];
     /** @type {Set<string>} */
     const digHintSet = new Set();
+    const regionSkips = createRegionSkipTracker();
 
     for (let y = maxY; y >= minY; y--) {
       const bx = Math.floor(b.entity.position.x);
@@ -131,7 +133,9 @@ export function createExcavationActions(services) {
           skipped++;
           continue;
         }
-        if (isDigProtected(target.name, pos, ctx)) {
+        const skipDig = shouldSkipDigAt(ctx, config, target.name, pos.x, pos.y, pos.z, isDigProtected);
+        if (skipDig.skip) {
+          if (skipDig.regionId) regionSkips.noteSkip(skipDig.regionId);
           skipped++;
           continue;
         }
@@ -190,9 +194,10 @@ export function createExcavationActions(services) {
     const digHints = [...digHintSet];
     const tipsSuffix = digHints.length ? ` Tips: ${digHints.join(' | ')}` : '';
     return {
-      result: `Dug ${dug} blocks (${skipped} skipped).${pickupResult}${tipsSuffix}${errors.length ? ` Errors: ${errors.slice(0, 3).join('; ')}` : ''}`,
+      result: `Dug ${dug} blocks (${skipped} skipped).${pickupResult}${regionSkips.suffix()}${tipsSuffix}${errors.length ? ` Errors: ${errors.slice(0, 3).join('; ')}` : ''}`,
       dug,
       skipped,
+      ...regionSkips.dataFields(),
       ...(digHints.length ? { hints: digHints } : {}),
       ...(errors.length ? { errors: errors.slice(0, 20) } : {}),
     };
@@ -326,6 +331,7 @@ export function createExcavationActions(services) {
     const errorMsgs = [];
     let stoppedAtStep = 0;
     const stoppedReason = { value: null };
+    const regionSkips = createRegionSkipTracker();
 
     const digOne = async (px, py, pz) => {
       const blk = b.blockAt(new Vec3(px, py, pz));
@@ -336,7 +342,13 @@ export function createExcavationActions(services) {
       if (DIG_PASSABLE_NAMES.has(blk.name)) {
         return false; // already air, no work needed
       }
-      if (blk.name === 'bedrock' || isDigProtected(blk.name, { x: px, y: py, z: pz }, ctx)) {
+      if (blk.name === 'bedrock') {
+        totalSkipped++;
+        return false;
+      }
+      const skipDig = shouldSkipDigAt(ctx, config, blk.name, px, py, pz, isDigProtected);
+      if (skipDig.skip) {
+        if (skipDig.regionId) regionSkips.noteSkip(skipDig.regionId);
         totalSkipped++;
         return false;
       }
@@ -482,11 +494,12 @@ export function createExcavationActions(services) {
     const endZ = startZ + dz * stepsCompleted;
     return {
       result: stoppedAtStep
-        ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}`.trim()
-        : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}`.trim(),
+        ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim()
+        : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim(),
       dug: totalDug,
       skipped: totalSkipped,
       errors: totalErrors,
+      ...regionSkips.dataFields(),
       ...(errorMsgs.length ? { error_messages: errorMsgs.slice(0, 5) } : {}),
       ...(stoppedAtStep ? { stopped_at_step: stoppedAtStep, stopped_reason: stoppedReason.value } : {}),
       start: { x: startX, y: startY, z: startZ },
@@ -549,12 +562,15 @@ export function createExcavationActions(services) {
       const bz = Math.floor(b.entity.position.z);
       const ceilingPos = new Vec3(bx, by + 2, bz);
       const ceilingBlk = b.blockAt(ceilingPos);
-      if (ceilingBlk && ceilingBlk.boundingBox === 'block' && !isDigProtected(ceilingBlk.name, { x: bx, y: by + 2, z: bz }, ctx)) {
-        try {
-          await equipForDig(b, ceilingBlk);
-          await b.dig(ceilingBlk, true);
-          totalDug++;
-        } catch { /* not catastrophic; dig_area may compensate */ }
+      if (ceilingBlk && ceilingBlk.boundingBox === 'block') {
+        const skipDig = shouldSkipDigAt(ctx, config, ceilingBlk.name, bx, by + 2, bz, isDigProtected);
+        if (!skipDig.skip) {
+          try {
+            await equipForDig(b, ceilingBlk);
+            await b.dig(ceilingBlk, true);
+            totalDug++;
+          } catch { /* not catastrophic; dig_area may compensate */ }
+        }
       }
 
       const box = tunnelSliceBounds({ x: cx, y: cy, z: cz, direction: key, width: W, height: H });
@@ -687,8 +703,13 @@ export function createExcavationActions(services) {
         stopReason = `hazard_below:${twoBelow?.name || 'unknown'}`;
         break;
       }
-      if (isDigProtected(underfoot.name, { x: fx, y: fy - 1, z: fz }, ctx) || underfoot.name === 'bedrock') {
+      if (underfoot.name === 'bedrock') {
         stopReason = `cant_break:${underfoot.name}`;
+        break;
+      }
+      const skipDig = shouldSkipDigAt(ctx, config, underfoot.name, fx, fy - 1, fz, isDigProtected);
+      if (skipDig.skip) {
+        stopReason = skipDig.regionId ? `region_protected:${skipDig.regionId}` : `cant_break:${underfoot.name}`;
         break;
       }
 

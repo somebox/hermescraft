@@ -417,6 +417,7 @@ export function createBotManager(deps) {
     addSoundEvent,
     loadLocations,
     saveLocations,
+    pruneDeathMarks,
     pushTaskHistoryRecord,
     viewerPort = null,
   } = deps;
@@ -637,7 +638,10 @@ export function createBotManager(deps) {
         });
 
         if (ctx.runtime.regions) {
-          setupRegionSignWatcher(ctx.world.bot, ctx.runtime.regions);
+          const prevDispose = ctx.runtime._regionSignWatcherDispose;
+          if (typeof prevDispose === 'function') prevDispose();
+          const watcher = setupRegionSignWatcher(ctx.world.bot, ctx.runtime.regions);
+          ctx.runtime._regionSignWatcherDispose = watcher.dispose;
         }
 
         ctx.world.bot.on('whisper', (username, message) => {
@@ -699,6 +703,7 @@ export function createBotManager(deps) {
           ctx.death.deathLog.push(entry);
           const locs = loadLocations();
           locs[`death_${ctx.death.deathLog.length}`] = { ...posObj(), saved: new Date().toISOString() };
+          pruneDeathMarks(locs, 3);
           saveLocations(locs);
 
           if (ctx.world.bot.game?.hardcore || ctx.death.hardcoreDead) {

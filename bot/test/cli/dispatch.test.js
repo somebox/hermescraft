@@ -161,4 +161,75 @@ describe('cli dispatch', () => {
     assert.equal(body.y, 64);
     assert.equal(body.z, -200);
   });
+
+  it('regions --at comma form', () => {
+    const def = defOf('regions');
+    const built = buildHttpRequest(def, 'regions', ['--at', '350,64,-540']);
+    assert.equal(built.method, 'GET');
+    assert.equal(built.path, '/regions?at=350%2C64%2C-540');
+  });
+
+  it('regions --at space-separated form', () => {
+    const def = defOf('regions');
+    const built = buildHttpRequest(def, 'regions', ['--at', '1', '2', '3']);
+    assert.equal(built.path, '/regions?at=1%2C2%2C3');
+  });
+
+  it('mc goto :base1:/tower routes to go_site', () => {
+    const def = defOf('goto');
+    const built = buildHttpRequest(def, 'goto', [':base1:/tower']);
+    assert.equal(built.method, 'POST');
+    assert.equal(built.path, '/action/go_site');
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.ref, ':base1:/tower');
+  });
+
+  it('task_context show → GET /task-context', () => {
+    const def = defOf('task_context');
+    const built = buildHttpRequest(def, 'task_context', ['show']);
+    assert.equal(built.method, 'GET');
+    assert.equal(built.path, '/task-context');
+    assert.equal(built.body, null);
+  });
+
+  it('task_context clear → DELETE /task-context', () => {
+    const def = defOf('task_context');
+    const built = buildHttpRequest(def, 'task_context', ['clear']);
+    assert.equal(built.method, 'DELETE');
+    assert.equal(built.path, '/task-context');
+  });
+
+  it('task_context set posts body with card and worksite', () => {
+    const prev = process.env.HERMES_KANBAN_TASK;
+    process.env.HERMES_KANBAN_TASK = 't_card1';
+    try {
+      const def = defOf('task_context');
+      const built = buildHttpRequest(def, 'task_context', ['set', 'hut3', '--expires-min', '10']);
+      assert.equal(built.method, 'POST');
+      assert.equal(built.path, '/task-context');
+      const body = JSON.parse(built.body || '{}');
+      assert.equal(body.card_id, 't_card1');
+      assert.equal(body.worksite_region, 'hut3');
+      assert.equal(body.source, 'cli');
+      assert.ok(Number.isFinite(body.expires_at_ms));
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_KANBAN_TASK;
+      else process.env.HERMES_KANBAN_TASK = prev;
+    }
+  });
+
+  it('task_context set fails without card id', () => {
+    const prev = process.env.HERMES_KANBAN_TASK;
+    delete process.env.HERMES_KANBAN_TASK;
+    try {
+      const def = defOf('task_context');
+      assert.throws(
+        () => buildHttpRequest(def, 'task_context', ['set', 'hut3']),
+        /missing_card_id/,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_KANBAN_TASK;
+      else process.env.HERMES_KANBAN_TASK = prev;
+    }
+  });
 });

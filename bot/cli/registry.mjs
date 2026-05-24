@@ -1586,6 +1586,25 @@ export const RAW_COMMAND_DEFS = [
     path: '/action/check',
     customParse: true,
   }),
+  g('task_context', 'task', ['task-context'], {
+    description: 'Bind kanban card worksite grant for protect-region construction (set/clear/show)',
+    usage: 'mc task_context set <worksite> [--card ID] [--expires-min N] | clear | show',
+    examples: [
+      'mc task_context set hut3                    # uses HERMES_KANBAN_TASK for card_id',
+      'mc task_context set hut3 --card t_abc123 --expires-min 45',
+      'mc task_context show',
+      'mc task_context clear',
+    ],
+    customParse: true,
+    path: '/task-context',
+    bodyFn: (p) =>
+      JSON.stringify({
+        card_id: p.card_id,
+        worksite_region: p.worksite_region,
+        expires_at_ms: p.expires_at_ms,
+        source: 'cli',
+      }),
+  }),
   g('mark_update', 'memory', ['mark-up', 'mu'], {
     description: 'Move existing MARK to current position',
     method: 'POST',

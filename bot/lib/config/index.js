@@ -64,6 +64,10 @@ export function loadConfig(argv = process.argv) {
       allowDigInfrastructure: boolEnv(env.BOT_ALLOW_DIG_INFRASTRUCTURE, false),
       /** MC_ALLOW_SLOW_DIG=true disables the slow-dig guard (force-through). */
       allowSlowDig: boolEnv(env.MC_ALLOW_SLOW_DIG, false),
+      /** MC_WORLD — world name for shared region registry file (default world). */
+      regionsWorld: (env.MC_WORLD || 'world').trim() || 'world',
+      /** BEHAVIORS_REGIONS_ENABLED=false disables region enforcement (store still readable). */
+      regionsEnabled: boolEnv(env.BEHAVIORS_REGIONS_ENABLED, true),
       /** MC_SLOW_DIG_TICKS_MAX — cap on ticks before slow-dig guard aborts (default 280). */
       slowDigTicksMax: (() => {
         const n = numEnv(env.MC_SLOW_DIG_TICKS_MAX, 280);

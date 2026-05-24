@@ -1,6 +1,7 @@
 // @size-exempt: pillar_step (from actions/building split)
 import { Vec3 } from 'vec3';
 import { equipForDig, isDigProtected } from '../../runtime/dig-tools.js';
+import { shouldSkipDigAt } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
 
 /**
@@ -103,7 +104,7 @@ export function createBuildingPillarPart(deps) {
         for (const y of [baseFy + 1, baseFy + 2]) {
           const blk = b.blockAt(new Vec3(ix, y, iz));
           if (!blk || isAirLike(blk) || blk.boundingBox !== 'block') continue;
-          if (isDigProtected(blk.name, { x: ix, y, z: iz }, ctx)) continue;
+          if (shouldSkipDigAt(ctx, null, blk.name, ix, y, iz, isDigProtected).skip) continue;
           try {
             await equipForDig(b, blk);
             await b.dig(blk, true);

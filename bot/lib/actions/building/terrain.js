@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { equipForDig, isDigProtected, recordRecentPlace } from '../../runtime/dig-tools.js';
+import { shouldSkipDigAt, shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
 import { cardinalDelta } from '../_directions.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from '../_helpers.js';
 
@@ -15,7 +16,7 @@ const { goals } = pathfinderPkg;
  * }} deps
  */
 export function createBuildingTerrainPart(deps) {
-  const { ctx, ensureBot, sleep, getActions } = deps;
+  const { ctx, ensureBot, sleep, getActions, config } = deps;
 
   return {
     async path({ x1, z1, x2, z2, y }) {
@@ -225,7 +226,7 @@ export function createBuildingTerrainPart(deps) {
             const py = targetY + dy;
             const blk = b.blockAt(new Vec3(x, py, z));
             if (!blk || isAirLike(blk)) continue;
-            if (isDigProtected(blk.name, { x, y: py, z }, ctx)) { skipped++; continue; }
+            if (shouldSkipDigAt(ctx, config, blk.name, x, py, z, isDigProtected).skip) { skipped++; continue; }
             if (b.entity.position.distanceTo(blk.position) > 4.5) {
               try { await pathfindGotoNear(b, goals, x, py, z, 3, { opName: 'build_wall', capMs: ACTION_CAPS_MS.reach }); } catch {}
             }
@@ -254,6 +255,10 @@ export function createBuildingTerrainPart(deps) {
             for (const [ox, oy, oz] of offsets) {
               const ref = b.blockAt(new Vec3(x + ox, targetY + oy, z + oz));
               if (ref && !isAirLike(ref) && ref.boundingBox === 'block') {
+                if (shouldSkipPlaceAt(ctx, config, blockName, x, targetY, z).skip) {
+                  failed++;
+                  break;
+                }
                 try {
                   await b.placeBlock(ref, new Vec3(-ox, -oy, -oz));
                   recordRecentPlace(ctx, { x, y: targetY, z }, blockName);
@@ -369,6 +374,10 @@ export function createBuildingTerrainPart(deps) {
           for (const [ox, oy, oz] of offsets) {
             const ref = b.blockAt(new Vec3(cx + ox, cy + oy, cz + oz));
             if (ref && !isAirLike(ref) && ref.boundingBox === 'block') {
+              if (shouldSkipPlaceAt(ctx, config, blockName, cx, cy, cz).skip) {
+                failed++;
+                break;
+              }
               try {
                 await b.placeBlock(ref, new Vec3(-ox, -oy, -oz));
                 recordRecentPlace(ctx, { x: cx, y: cy, z: cz }, blockName);

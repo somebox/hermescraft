@@ -72,6 +72,7 @@ import { createBotHttpListener } from './lib/server/http-app.js';
 import { createBotManager } from './lib/runtime/manager.js';
 import { createReactive } from './lib/runtime/reactive.js';
 import { createLocationsStore, isContainerBlock, findNearbyContainer } from './lib/runtime/locations.js';
+import { createRegionStore } from './lib/runtime/regions/index.js';
 import { createAllActions } from './lib/actions/index.js';
 import { createObservation } from './lib/runtime/observation.js';
 
@@ -102,6 +103,7 @@ function buildMarksListApi() {
 const config = loadConfig(process.argv);
 locations = createLocationsStore({ dataDir: DATA_DIR, username: config.mc.username });
 const ctx = createBotState(config);
+ctx.runtime.regions = createRegionStore({ dataDir: DATA_DIR, world: config.behaviors.regionsWorld });
 
 const viewerPortOpt = (() => {
   const raw = process.env.VIEWER_PORT;
@@ -463,6 +465,7 @@ const { createBot, startStuckWatchdog } = createBotManager({
   addSoundEvent,
   loadLocations,
   saveLocations,
+  pruneDeathMarks: locations.pruneDeathMarks,
   pushTaskHistoryRecord,
   viewerPort: viewerPortOpt,
 });
@@ -619,6 +622,7 @@ const httpServer = http.createServer(
     pushTaskHistoryRecord,
     renewLease,
     createBot,
+    viewerPort: viewerPortOpt,
   }),
 );
 

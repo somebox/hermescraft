@@ -1,0 +1,394 @@
+{
+  "scenarios": [
+    {
+      "name": "column infinite Y protect",
+      "regions": [
+        {
+          "id": "base1",
+          "intent": "protect",
+          "profile": "base",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "deep Y still protected",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 3, "y": -20, "z": 3 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "base1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        },
+        {
+          "name": "high Y still protected",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 3, "y": 200, "z": 3 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "base1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
+    },
+    {
+      "name": "column with Y bounds denies above ceiling",
+      "regions": [
+        {
+          "id": "base1",
+          "intent": "protect",
+          "profile": "base",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8, "y_min": 60, "y_max": 80 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "below floor: outside region",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 3, "y": 40, "z": 3 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "allow",
+            "reason": "OUTSIDE_ALL_REGIONS",
+            "winning_region": null
+          }
+        },
+        {
+          "name": "inside Y band: protected",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 3, "y": 70, "z": 3 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "base1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
+    },
+    {
+      "name": "overlap: nested resource inside protect",
+      "regions": [
+        {
+          "id": "base1",
+          "intent": "protect",
+          "profile": "base",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 16 }
+        },
+        {
+          "id": "mine1",
+          "intent": "resource",
+          "profile": "mine",
+          "status": "active",
+          "anchor": { "x": 0, "y": 30, "z": 0 },
+          "shape": { "kind": "column", "radius": 4 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "inside inner resource: allowed",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 1, "y": 30, "z": 1 },
+          "block": "stone",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_OVERRIDE",
+            "winning_region": "mine1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        },
+        {
+          "name": "inside outer protect ring: denied",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 10, "y": 64, "z": 10 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "base1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
+    },
+    {
+      "name": "orphaned region still enforces",
+      "regions": [
+        {
+          "id": "base1",
+          "intent": "protect",
+          "profile": "base",
+          "status": "orphaned",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "dig still denied in orphaned region",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "base1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
+    },
+    {
+      "name": "guided edit allowed in protect region",
+      "regions": [
+        {
+          "id": "base1",
+          "intent": "protect",
+          "profile": "base",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "ad-hoc place denied",
+          "verb": "place",
+          "args": { "ad_hoc": true },
+          "position": { "x": 1, "y": 64, "z": 1 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "base1",
+            "matched_capability": "allow_ad_hoc_place"
+          }
+        },
+        {
+          "name": "guided place allowed",
+          "verb": "place",
+          "args": { "guided": true, "source": "repair" },
+          "position": { "x": 1, "y": 64, "z": 1 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_GUIDED_EDIT",
+            "winning_region": "base1",
+            "matched_capability": "allow_guided_edit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "site resolution inherits parent capabilities",
+      "regions": [
+        {
+          "id": "base1",
+          "intent": "protect",
+          "profile": "base",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 16 },
+          "sites": [{ "name": "tower", "x": 0, "y": 80, "z": 0 }]
+        }
+      ],
+      "decisions": [
+        {
+          "name": "goto :base1:/tower resolves correctly",
+          "verb": "resolve_site",
+          "args": { "ref": ":base1:/tower" },
+          "expect": {
+            "decision": "allow",
+            "reason": "SITE_RESOLVED",
+            "winning_region": "base1",
+            "resolved": { "x": 0, "y": 80, "z": 0 }
+          }
+        }
+      ]
+    },
+    {
+      "name": "marker TTL expiry",
+      "regions": [
+        {
+          "id": "m1",
+          "intent": "marker",
+          "profile": "base",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 },
+          "expires_at": "2000-01-01T00:00:00.000Z"
+        }
+      ],
+      "decisions": [
+        {
+          "name": "expired marker excluded",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 1, "y": 64, "z": 1 },
+          "block": "dirt",
+          "expect": {
+            "decision": "allow",
+            "reason": "OUTSIDE_ALL_REGIONS",
+            "winning_region": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "farm profile tolerates wheat",
+      "regions": [
+        {
+          "id": "farm1",
+          "intent": "protect",
+          "profile": "farm",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 12 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "wheat harvest allowed",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "wheat",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_TOLERATED_BREAK",
+            "winning_region": "farm1",
+            "matched_capability": "allow_harvest"
+          }
+        },
+        {
+          "name": "oak_fence denied",
+          "verb": "dig",
+          "args": { "ad_hoc": true },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "oak_fence",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "farm1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
+    },
+    {
+      "name": "worksite grant on protect region",
+      "regions": [
+        {
+          "id": "hut3",
+          "intent": "protect",
+          "profile": "base",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "worksite matches protect winner",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": "hut3" },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "allow",
+            "reason": "WORKSITE_GRANT",
+            "winning_region": "hut3",
+            "matched_capability": "task_worksite"
+          }
+        },
+        {
+          "name": "worksite mismatched id",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": "other1" },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "hut3",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        },
+        {
+          "name": "no worksite denies protect",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": null },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_PROTECTED",
+            "winning_region": "hut3",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
+    },
+    {
+      "name": "worksite ignored when winner is resource",
+      "regions": [
+        {
+          "id": "mine1",
+          "intent": "resource",
+          "profile": "mine",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "resource allows dig without worksite",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": null },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "stone",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_OVERRIDE",
+            "winning_region": "mine1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        },
+        {
+          "name": "worksite does not change resource allow",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": "other1" },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "stone",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_OVERRIDE",
+            "winning_region": "mine1",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
+    }
+  ]
+}

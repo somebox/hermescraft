@@ -88,14 +88,15 @@ function finalize(def, canonicalName, params) {
   if (canonicalName === 'advise') {
     return { method: 'GET', path: '/__advise__', body: null, params };
   }
-  const method = def.method || 'GET';
+  const method = /** @type {'GET'|'POST'|'DELETE'} */ (params._httpMethod || def.method || 'GET');
+  if (params._httpMethod) delete params._httpMethod;
   const path = def.pathFn ? def.pathFn(params) : def.path;
   if (!path) throw new Error(`no_path:${canonicalName}`);
 
   let body = null;
-  if (method === 'POST' || method === 'DELETE') {
+  if (method === 'POST') {
     if (def.bodyFn) body = def.bodyFn(params);
-    else if (method === 'POST') body = empty;
+    else body = empty;
   }
 
   return { method, path, body, params };
@@ -499,6 +500,48 @@ function customParse(canonicalName, positional) {
     }
     case 'site_remove': {
       return { ref: positional[0] };
+    }
+    case 'task_context': {
+      const q = positional.slice();
+      const sub = String(q.shift() || '').toLowerCase();
+      if (sub === 'show') {
+        return { subcommand: 'show', _httpMethod: 'GET' };
+      }
+      if (sub === 'clear') {
+        return { subcommand: 'clear', _httpMethod: 'DELETE' };
+      }
+      if (sub === 'set') {
+        let card = process.env.HERMES_KANBAN_TASK || '';
+        let expiresMin = null;
+        while (q.length && String(q[0]).startsWith('--')) {
+          const f = String(q.shift());
+          if (f === '--card') card = String(q.shift() || '').trim();
+          else if (f === '--expires-min') expiresMin = Number(q.shift());
+          else throw new Error(`unknown_flag:${f}`);
+        }
+        const worksite = q.shift();
+        if (!worksite) {
+          throw new Error('missing_worksite: usage mc task_context set <worksite> [--card ID] [--expires-min N]');
+        }
+        if (!card) {
+          throw new Error('missing_card_id: set HERMES_KANBAN_TASK or pass --card');
+        }
+        const now = Date.now();
+        let expires_at_ms = now + 30 * 60 * 1000;
+        if (Number.isFinite(expiresMin) && expiresMin > 0) {
+          expires_at_ms = now + expiresMin * 60 * 1000;
+        }
+        const maxExp = now + 4 * 60 * 60 * 1000;
+        if (expires_at_ms > maxExp) expires_at_ms = maxExp;
+        return {
+          subcommand: 'set',
+          _httpMethod: 'POST',
+          card_id: card,
+          worksite_region: String(worksite),
+          expires_at_ms,
+        };
+      }
+      throw new Error('task_context_subcommand: use set|clear|show');
     }
     case 'check': {
       const verb = String(positional[0] || '').toLowerCase();

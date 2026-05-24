@@ -29,6 +29,17 @@ export function createLocationsStore({ dataDir, username }) {
     fs.writeFileSync(filePath, JSON.stringify(locs, null, 2));
   }
 
+  /** @param {Record<string, unknown>} locs @param {number} [maxKeep] */
+  function pruneDeathMarks(locs, maxKeep = 3) {
+    const deathKeys = Object.keys(locs)
+      .filter((k) => /^death_\d+$/i.test(k))
+      .sort((a, b) => Number(a.split('_')[1]) - Number(b.split('_')[1]));
+    if (deathKeys.length <= maxKeep) return locs;
+    const drop = deathKeys.slice(0, deathKeys.length - maxKeep);
+    for (const k of drop) delete locs[k];
+    return locs;
+  }
+
   function flagStale(markName, reason) {
     if (!markName) return;
     const locs = load();
@@ -183,6 +194,7 @@ export function createLocationsStore({ dataDir, username }) {
     resolveContainerCoords,
     normalizeDepositWithdrawItems,
     buildMarksList,
+    pruneDeathMarks,
   };
 }
 

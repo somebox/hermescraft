@@ -19,6 +19,7 @@ import { createFollow } from './follow.js';
 import { createLook } from './look.js';
 import { createJump } from './jump.js';
 import { createStop } from './stop.js';
+import { createGoSite } from './go_site.js';
 
 export { refuseWaterRouteWithoutBoat };
 
@@ -31,6 +32,7 @@ export function createMovementActions({
   ACTIONS,
   hasLineOfSight,
   eyePosition,
+  loadLocations,
 }) {
 
   /** @type {Map<string, { count: number, lastReason: string|null }>} */
@@ -88,6 +90,7 @@ export function createMovementActions({
     posObj,
     ACTIONS,
     hasLineOfSight,
+    loadLocations,
     gotoRetryCounts,
     GOTO_RETRY_LIMIT,
     gotoRetryKey,
@@ -102,9 +105,12 @@ export function createMovementActions({
     navFailureError,
   };
 
+  const gotoFn = createGoto(deps);
+
   return {
-    goto: createGoto(deps),
+    goto: gotoFn,
     goto_near: createGotoNear(deps),
+    go_site: createGoSite({ ...deps, goto: gotoFn }),
     follow: createFollow(deps),
     look: createLook(deps),
     stop: createStop(deps),

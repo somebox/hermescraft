@@ -18,8 +18,8 @@ export function createBuildingActions(services) {
   const placeSinglePart = createBuildingPlaceSinglePart({
     services, ctx, ensureBot, posObj, sleep, fairPlay,
   });
-  const placeBulkPart = createBuildingPlaceBulkPart({ ctx, ensureBot, sleep });
-  const terrainPart = createBuildingTerrainPart({ ctx, ensureBot, sleep, getActions });
+  const placeBulkPart = createBuildingPlaceBulkPart({ ctx, ensureBot, sleep, config });
+  const terrainPart = createBuildingTerrainPart({ ctx, ensureBot, sleep, getActions, config });
 
   return {
     ...pillarPart,

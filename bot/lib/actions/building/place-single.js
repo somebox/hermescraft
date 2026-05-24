@@ -6,6 +6,7 @@ import { REPLACEABLE } from '../_block-sets.js';
 import { coord3, itemName } from '../_args.js';
 import { canSeeBlockFaces, standardBlockFacePoints } from '../_los.js';
 import { fail, ok } from '../../shared/action-contract.js';
+import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
 
 const { goals } = pathfinderPkg;
 
@@ -36,6 +37,12 @@ export function createBuildingPlaceSinglePart(deps) {
       if (!c.ok) return c.response;
       const { x, y, z } = c;
       const b = ensureBot();
+
+      const regionPlace = evaluateRegionPolicy(ctx, services.config, 'place', x, y, z, blockName);
+      if (regionPlace.deny) {
+        return regionProtectedFailure('place', blockName, x, y, z, regionPlace.regionResult);
+      }
+
       const targetPos = new Vec3(x, y, z);
       const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
 

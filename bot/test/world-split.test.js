@@ -24,7 +24,7 @@ const EXPECTED = {
   inventory:   ['equip', 'unequip', 'toss'],
   building:    ['pillar_step', 'place', 'place_fill', 'wall', 'fence', 'path', 'dig_pit', 'level', 'build_stairs'],
   excavation:  ['dig_area', 'tunnel', 'stair_down', 'stair_up', 'pillar_down'],
-  interaction: ['interact', 'through', 'close_screen', 'use'],
+  interaction: ['close_screen', 'edit_sign', 'interact', 'through', 'use'],
   lifecycle:   ['chat', 'wait', 'surface', 'sleep_bed', 'set_home', 'chat_to', 'whisper', 'respawn', 'deathpoint'],
   queries:     ['scout', 'terrain_top', 'reachable', 'standing', 'escape', 'find', 'inspect', 'is_empty', 'is_filled', 'is_sheltered'],
 };
@@ -53,7 +53,7 @@ test('total split handler count matches the legacy world.js + water absorption',
   // Original world.js had 41 handlers; two (bucket_fill, bucket_empty) moved
   // to water.js, leaving 39 across the six new modules. #99 added
   // pillar_down to excavation, making the total 40.
-  assert.equal(total, 40);
+  assert.equal(total, 41);
 });
 
 test('water.js absorbed bucket_fill and bucket_empty from former world.js', async () => {

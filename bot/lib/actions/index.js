@@ -23,6 +23,9 @@ import { createRemindersActions } from './reminders.js';
 import { createFarmingActions } from './farming.js';
 import { createAnimalsActions } from './animals.js';
 import { createWaterActions } from './water.js';
+import { createRegionsObserveActions } from './regions/observe.js';
+import { createRegionsMutateActions } from './regions/create.js';
+import { createRegionsCheckActions } from './regions/check.js';
 
 export function createAllActions(deps) {
   // Modules already on services use deps.services; modules still on the
@@ -56,6 +59,9 @@ export function createAllActions(deps) {
     ...createContainerActions(deps),
     ...createMarksActions(deps),
     ...createFurnaceActions(deps),
+    ...createRegionsObserveActions(deps),
+    ...createRegionsMutateActions(deps),
+    ...createRegionsCheckActions(deps),
     ...createTeamActions(deps),
     ...createRemindersActions(deps),
   };
