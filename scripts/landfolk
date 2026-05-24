@@ -1,47 +1,47 @@
 #!/usr/bin/env bash
 # landfolk — single CLI for the Landfolk sub-project of HermesCraft.
 #
-# Consolidates the older `landfolk-session.sh` (operator UX) and
-# `landfolk-control.sh` (per-bot engine) behind one verb set, one roster
-# file, one state directory, and one mental model:
+# One verb set, one sticky roster, one state directory, one mental model:
 #
-#   PLAYERS  flint, mason, gatherer, steward, …   (from data/agent-models.json)
-#   MODES    kanban       — bot + connect-only watchdog, NO Hermes agent.
+#   PLAYERS  flint, mason, gatherer, barley, steward   (data/agent-models.json)
+#   MODES    auto         — pick per role (default for new players)
+#                          orchestrator → continuous, anything else → kanban.
+#            kanban       — bot + connect-only watchdog, NO Hermes agent.
 #                          Kanban gateway workers drive the bot per card.
 #            continuous   — bot + full watchdog + always-on Hermes agent loop.
 #   DAEMONS  listener, supervisor, pauser          (operator support)
 #   GATEWAY  hermes gateway                        (external; observed, not
 #                                                   touched without --with-gateway)
 #
+# Roster is the DESIRED STATE. `enable`/`disable` modify it (sticky across
+# stop/start). `stop` does NOT wipe the roster — use `--clear-roster` for
+# that. `start` brings up whatever's in the roster (or PLAYERS_DEFAULT if
+# the roster is empty, recording it as the new sticky default).
+#
 # Usage:
-#   scripts/landfolk start    [--players a,b,c] [--mode kanban|continuous]
-#                             [--without listener|supervisor|pauser|daemons]
-#                             [--no-wait]
-#   scripts/landfolk stop     [--players a,b,c] [--keep listener|supervisor|pauser|daemons]
-#                             [--with-gateway] [--no-reclaim]
-#   scripts/landfolk enable   <player> [--mode kanban|continuous]
+#   scripts/landfolk start    [--players a,b,c] [--mode auto|kanban|continuous]
+#                             [--continuous p,q] [--without daemons|listener|supervisor|pauser]
+#                             [--with-gateway] [--no-wait]
+#   scripts/landfolk stop     [--players a,b,c] [--keep daemons|listener|supervisor|pauser]
+#                             [--with-gateway] [--no-reclaim] [--clear-roster]
+#   scripts/landfolk enable   <player> [--mode auto|kanban|continuous]
 #   scripts/landfolk disable  <player>
-#   scripts/landfolk restart  <target>
-#       target ∈ <player> | players | daemons | listener | supervisor | pauser
-#                | gateway | all
+#   scripts/landfolk restart  <player|players|daemons|listener|supervisor|pauser|gateway|all>
 #   scripts/landfolk status   [--json]
 #   scripts/landfolk logs     [agents|<player>|listener|supervisor|pauser|gateway] [opts]
-#       (see `scripts/landfolk logs --help` for tail/follow/profile/quiet flags)
 #   scripts/landfolk chat     <player> "<message>"
-#   scripts/landfolk fix      <issue> [args]
-#       issue ∈ reconnect <player> | clean | tp <player> <x> <y> <z>
-#               | unstick <player>
-#   scripts/landfolk players  list           # roster from data/agent-models.json
-#   scripts/landfolk players  show <player>  # resolved port/model/provider
+#   scripts/landfolk fix      reconnect <p> | clean | tp <p> <x> <y> <z> | unstick <p>
+#   scripts/landfolk players  list | show <player>
+#   scripts/landfolk defaults                    # what `start` will do with no flags
 #
 # Defaults (override via env):
 #   MC_HOST=192.168.1.202
 #   BOT_MOVEMENT_PROFILE=slow
-#   WATCHDOG_CONNECT_ONLY=1             (kanban mode)
-#   PLAYERS_DEFAULT=flint,mason,steward
+#   PLAYERS_DEFAULT=flint,mason,steward          (used when roster is empty)
+#   LANDFOLK_DEFAULT_MODE=auto                   (auto resolves per-role)
 #   LOG_DIR=/tmp/hermescraft
-#   STATE_DIR=$LOG_DIR/state            (CLI pidfiles + roster)
-#   ROSTER_FILE=$LOG_DIR/active-players (one "name mode" per line)
+#   STATE_DIR=$LOG_DIR/state                     (CLI pidfiles + roster)
+#   ROSTER_FILE=$LOG_DIR/active-players          (one "name mode" per line)
 #
 # Migration note: prior pidfiles under $LOG_DIR/session-state/ are
 # auto-moved to $LOG_DIR/state/ on first invocation.
@@ -60,7 +60,7 @@ ROSTER_FILE="${ACTIVE_PROFILES_FILE:-$LOG_DIR/active-players}"
 AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
 RESOLVER="$SCRIPT_DIR/scripts/resolve-agent-model.py"
 ENGINE="$SCRIPT_DIR/scripts/landfolk-control.sh"
-DEFAULT_MODE="${LANDFOLK_DEFAULT_MODE:-kanban}"
+DEFAULT_MODE="${LANDFOLK_DEFAULT_MODE:-auto}"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR"
 
@@ -103,7 +103,7 @@ err()  { echo "  ${C_ERR}✗${C_RST} $*" >&2; }
 dim()  { echo "  ${C_DIM}$*${C_RST}"; }
 h1()   { echo; echo "── $* ──"; }
 
-usage() { sed -n '2,46p' "$0" | sed -E 's/^# ?//'; exit "${1:-0}"; }
+usage() { sed -n '2,47p' "$0" | sed -E 's/^# ?//'; exit "${1:-0}"; }
 
 _migrate_legacy_state
 
@@ -137,6 +137,38 @@ player_viewer_port() {
 player_model()    { python3 "$RESOLVER" "$1" model    "$AGENT_MODELS_JSON" 2>/dev/null; }
 player_provider() { python3 "$RESOLVER" "$1" provider "$AGENT_MODELS_JSON" 2>/dev/null; }
 
+# Player role from agent-models.json (lowercase). Drives auto-mode pick.
+player_role() {
+  AGENT_MODELS_JSON="$AGENT_MODELS_JSON" python3 - "$1" <<'PY' 2>/dev/null
+import json, os, sys
+name = sys.argv[1]
+with open(os.environ["AGENT_MODELS_JSON"]) as fh:
+    data = json.load(fh)
+agents = data.get("agents") or {}
+for k, v in agents.items():
+    if k.lower() == name.lower():
+        print((v.get("role") or "").lower())
+        break
+PY
+}
+
+# Resolve `auto` to a concrete mode based on role. `kanban`/`continuous`
+# pass through unchanged. Unknown modes default to kanban with a warning
+# so the caller never proceeds with a meaningless value.
+resolve_mode() {
+  local player="$1" requested="${2:-auto}"
+  case "$requested" in
+    kanban|continuous) echo "$requested"; return ;;
+    auto)
+      case "$(player_role "$player")" in
+        orchestrator) echo "continuous" ;;
+        *)            echo "kanban" ;;
+      esac
+      ;;
+    *) warn "unknown mode '$requested' for $player → using kanban" >&2; echo "kanban" ;;
+  esac
+}
+
 # Convert a CSV (or empty → default) of players into a deduped lowercase
 # list, validated against canonical names.
 parse_players_csv() {
@@ -155,7 +187,9 @@ parse_players_csv() {
   printf '%s\n' "${out[@]:-}"
 }
 
-# Roster file format: one line "name mode" (mode ∈ kanban|continuous).
+# Roster file format: one line "name mode" (mode ∈ auto|kanban|continuous).
+# `auto` is stored as intent and re-resolved on every start (so role edits
+# in agent-models.json take effect without rewriting the roster).
 roster_players() {
   [ -f "$ROSTER_FILE" ] || return 0
   awk 'NF && $1 !~ /^#/ {print tolower($1)}' "$ROSTER_FILE"
@@ -181,6 +215,17 @@ roster_remove() {
   tmp="$(mktemp "${ROSTER_FILE}.XXXX")"
   awk -v t="$name" 'tolower($1)!=t' "$ROSTER_FILE" > "$tmp"
   mv "$tmp" "$ROSTER_FILE"
+}
+# Seed the roster from PLAYERS_DEFAULT if the roster file doesn't exist
+# yet. Stickyness means we only do this once — subsequent runs honor the
+# user's enable/disable history.
+roster_seed_if_empty() {
+  [ -f "$ROSTER_FILE" ] && return 0
+  local p
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    roster_upsert "$p" "$DEFAULT_MODE"
+  done < <(parse_players_csv "$PLAYERS_DEFAULT")
 }
 
 # ─── Daemon helpers (operator-side, owned by this CLI) ────────────────────
@@ -318,13 +363,15 @@ reclaim_running() {
 # ─── Verbs ─────────────────────────────────────────────────────────────────
 
 cmd_start() {
-  local players_csv="" mode="$DEFAULT_MODE" no_wait=0
-  local with_listener=1 with_supervisor=1 with_pauser=1
+  local players_csv="" mode_override="" continuous_csv="" no_wait=0
+  local with_listener=1 with_supervisor=1 with_pauser=1 with_gateway=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --players)  players_csv="$2"; shift 2 ;;
-      --mode)     mode="$2"; shift 2 ;;
-      --no-wait)  no_wait=1; shift ;;
+      --players)    players_csv="$2"; shift 2 ;;
+      --mode)       mode_override="$2"; shift 2 ;;
+      --continuous) continuous_csv="$2"; shift 2 ;;
+      --no-wait)    no_wait=1; shift ;;
+      --with-gateway) with_gateway=1; shift ;;
       --without)
         IFS=',' read -r -a parts <<< "$2"
         for w in "${parts[@]}"; do
@@ -344,32 +391,110 @@ cmd_start() {
       *) err "unknown flag: $1"; return 1 ;;
     esac
   done
-  case "$mode" in kanban|continuous) ;; *) err "invalid mode: $mode"; return 1 ;; esac
+  case "${mode_override:-auto}" in auto|kanban|continuous) ;; *) err "invalid --mode: $mode_override (auto|kanban|continuous)"; return 1 ;; esac
 
   [ "$no_wait" = 1 ] && export LANDFOLK_NO_WAIT=1
 
-  local players_list
-  players_list="$(parse_players_csv "$players_csv")" || return 1
-  [ -z "$players_list" ] && { err "no players specified"; return 1; }
+  # Build the player list. Precedence:
+  #   --players → explicit, transient (does NOT mutate roster).
+  #   else: existing roster → sticky.
+  #   else: seed roster from PLAYERS_DEFAULT (one-time), then use it.
+  local players_list source_label
+  if [ -n "$players_csv" ]; then
+    players_list="$(parse_players_csv "$players_csv")" || return 1
+    source_label="--players flag (transient; roster unchanged)"
+  else
+    roster_seed_if_empty
+    players_list="$(roster_players)"
+    source_label="roster $ROSTER_FILE (sticky)"
+  fi
+  [ -z "$players_list" ] && { err "no players to start (set PLAYERS_DEFAULT or use --players / enable)"; return 1; }
 
-  h1 "starting players (mode=$mode)"
+  # Per-player mode resolution. Three precedence levels (low → high):
+  #   1. roster's stored mode (default `auto` for newly-seeded)
+  #   2. --mode <m>          (overrides for THIS run, all players)
+  #   3. --continuous a,b,c  (overrides those specific players to continuous)
+  declare -A PMODE
+  local continuous_set=""
+  if [ -n "$continuous_csv" ]; then
+    local pl
+    pl="$(parse_players_csv "$continuous_csv")" || return 1
+    continuous_set=" $(echo "$pl" | tr '\n' ' ')"
+  fi
+  local p stored eff
   while IFS= read -r p; do
     [ -z "$p" ] && continue
-    player_start_one "$p" "$mode" || warn "$p start had errors (see logs)"
-    roster_upsert "$p" "$mode"
+    if [ -n "$mode_override" ]; then
+      eff="$mode_override"
+    else
+      stored="$(roster_mode_for "$p")"
+      eff="$stored"
+    fi
+    case " $continuous_set " in *" $p "*) eff="continuous" ;; esac
+    PMODE["$p"]="$(resolve_mode "$p" "$eff")"
   done <<< "$players_list"
-  ok "roster → $ROSTER_FILE ($(wc -l <"$ROSTER_FILE" | tr -d ' ') player(s))"
+
+  # ─── plan (print BEFORE acting so the user sees what's about to happen)
+  h1 "plan"
+  echo "  source:    $source_label"
+  echo "  default:   mode=$DEFAULT_MODE (auto = orchestrator→continuous, else→kanban)"
+  local plan_parts=""
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    plan_parts="${plan_parts:+$plan_parts, }$p=${PMODE[$p]}"
+  done <<< "$players_list"
+  echo "  players:   $plan_parts"
+  local daemon_parts=""
+  [ "$with_listener"   = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }listener"
+  [ "$with_supervisor" = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }supervisor"
+  [ "$with_pauser"     = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }pauser"
+  echo "  daemons:   ${daemon_parts:-none}"
+  if [ "$with_gateway" = 1 ]; then
+    echo "  gateway:   ensure running (--with-gateway)"
+  else
+    echo "  gateway:   observe only (use --with-gateway to manage)"
+  fi
+
+  # ─── execute
+  h1 "starting players"
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    player_start_one "$p" "${PMODE[$p]}" || warn "$p start had errors (see logs)"
+    # Only persist roster entries when we're acting on the roster set.
+    # `--players` is transient, so don't mutate sticky state.
+    if [ -z "$players_csv" ]; then
+      # Preserve stored mode if it's `auto`; otherwise sync to effective.
+      local stored2; stored2="$(roster_mode_for "$p")"
+      [ "$stored2" = "auto" ] || roster_upsert "$p" "${PMODE[$p]}"
+    fi
+  done <<< "$players_list"
 
   if [ "$with_listener" = 1 ];   then h1 "starting daemon: listener";   daemon_start listener;   fi
   if [ "$with_supervisor" = 1 ]; then h1 "starting daemon: supervisor"; daemon_start supervisor; fi
   if [ "$with_pauser" = 1 ];     then h1 "starting daemon: pauser";     ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE"; fi
+
+  if [ "$with_gateway" = 1 ]; then
+    h1 "ensuring hermes gateway"
+    if pgrep -f "hermes_cli.*gateway" >/dev/null 2>&1; then
+      ok "hermes gateway already running"
+    elif command -v hermes >/dev/null 2>&1; then
+      nohup hermes gateway run --replace >>"$LOG_DIR/gateway.log" 2>&1 &
+      disown
+      sleep 1
+      pgrep -f "hermes_cli.*gateway" >/dev/null 2>&1 \
+        && ok "hermes gateway started (log $LOG_DIR/gateway.log)" \
+        || err "hermes gateway didn't come up; check $LOG_DIR/gateway.log"
+    else
+      err "hermes CLI not on PATH"
+    fi
+  fi
 
   h1 "ready"
   cmd_status
 }
 
 cmd_stop() {
-  local players_csv="" with_gateway=0 do_reclaim=1
+  local players_csv="" with_gateway=0 do_reclaim=1 clear_roster=0
   local keep_listener=0 keep_supervisor=0 keep_pauser=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -391,6 +516,7 @@ cmd_stop() {
       --keep-pauser)     keep_pauser=1; shift ;;
       --with-gateway)    with_gateway=1; shift ;;
       --no-reclaim)      do_reclaim=0; shift ;;
+      --clear-roster)    clear_roster=1; shift ;;
       -h|--help) usage 0 ;;
       *) err "unknown flag: $1"; return 1 ;;
     esac
@@ -403,20 +529,24 @@ cmd_stop() {
 
   if [ "$keep_supervisor" != 1 ]; then h1 "stopping supervisor"; daemon_stop supervisor; fi
   if [ "$keep_listener"   != 1 ]; then h1 "stopping listener";   daemon_stop listener;   fi
+  # Pauser stops only on full-down (no --players narrowing). Roster is
+  # NOT wiped unless --clear-roster: stop is supposed to be reversible by
+  # `start` without re-listing players. enable/disable manage stickyness.
   if [ -z "$players_csv" ]; then
     if [ "$keep_pauser" != 1 ]; then
       h1 "stopping pauser"; daemon_stop pauser
-      rm -f "$ROSTER_FILE" 2>/dev/null && dim "cleared $ROSTER_FILE"
     fi
-  elif [ -f "$ROSTER_FILE" ]; then
-    local pl
-    pl="$(parse_players_csv "$players_csv")" || return 1
-    while IFS= read -r p; do [ -n "$p" ] && roster_remove "$p"; done <<< "$pl"
-    dim "pruned [$players_csv] from $ROSTER_FILE"
+    if [ "$clear_roster" = 1 ]; then
+      rm -f "$ROSTER_FILE" 2>/dev/null && dim "cleared $ROSTER_FILE"
+    else
+      dim "roster preserved at $ROSTER_FILE (use --clear-roster to wipe)"
+    fi
   fi
 
   h1 "stopping players"
   if [ -z "$players_csv" ]; then
+    # Stop everyone we know about (roster ∪ canonical) so we leave nothing
+    # behind even if the engine pidfile has drifted from the roster.
     local all_csv
     all_csv="$(canonical_players | paste -sd, -)"
     "$ENGINE" stop --profiles "$all_csv" 2>&1 \
@@ -442,15 +572,19 @@ cmd_stop() {
 cmd_enable() {
   local player="${1:-}"; shift || true
   [ -z "$player" ] && { err "enable needs a player name"; return 1; }
-  local mode="$DEFAULT_MODE"
+  local stored="$DEFAULT_MODE"
   while [ $# -gt 0 ]; do
     case "$1" in
-      --mode) mode="$2"; shift 2 ;;
+      --mode) stored="$2"; shift 2 ;;
       *) err "unknown flag: $1"; return 1 ;;
     esac
   done
+  case "$stored" in auto|kanban|continuous) ;; *) err "invalid --mode: $stored"; return 1 ;; esac
   local pl; pl="$(parse_players_csv "$player")" || return 1
-  player_start_one "$pl" "$mode" && roster_upsert "$pl" "$mode"
+  local eff; eff="$(resolve_mode "$pl" "$stored")"
+  echo "  ${C_DIM}enable $pl: stored=$stored, effective=$eff${C_RST}"
+  roster_upsert "$pl" "$stored"
+  player_start_one "$pl" "$eff"
 }
 
 cmd_disable() {
@@ -460,6 +594,7 @@ cmd_disable() {
   reclaim_running "$pl"
   player_stop_one "$pl"
   roster_remove "$pl"
+  dim "disabled $pl (removed from roster — won't auto-start next time)"
 }
 
 cmd_restart() {
@@ -467,16 +602,17 @@ cmd_restart() {
   [ -z "$target" ] && { err "restart needs a target"; return 1; }
   case "$target" in
     players|all-bots)
-      local mode; mode="$DEFAULT_MODE"
       local roster
       roster="$(roster_players)"
       [ -z "$roster" ] && { err "roster empty — nothing to restart"; return 1; }
       while IFS= read -r p; do [ -n "$p" ] && { reclaim_running "$p"; player_stop_one "$p"; }; done <<< "$roster"
       sleep 1
+      local stored eff
       while IFS= read -r p; do
         [ -z "$p" ] && continue
-        mode="$(roster_mode_for "$p")"
-        player_start_one "$p" "$mode"
+        stored="$(roster_mode_for "$p")"
+        eff="$(resolve_mode "$p" "$stored")"
+        player_start_one "$p" "$eff"
       done <<< "$roster"
       ;;
     daemons)
@@ -508,11 +644,13 @@ cmd_restart() {
       # Treat as a player name
       if is_canonical_player "$(echo "$target" | tr '[:upper:]' '[:lower:]')"; then
         local p="$(echo "$target" | tr '[:upper:]' '[:lower:]')"
-        local mode; mode="$(roster_mode_for "$p")"
+        local stored eff
+        stored="$(roster_mode_for "$p")"
+        eff="$(resolve_mode "$p" "$stored")"
         reclaim_running "$p"
         player_stop_one "$p"
         sleep 1
-        player_start_one "$p" "$mode"
+        player_start_one "$p" "$eff"
       else
         err "unknown restart target: $target"
         return 1
@@ -702,28 +840,80 @@ cmd_players() {
   local sub="${1:-list}"; shift || true
   case "$sub" in
     list)
-      printf "  %-10s %-6s %-9s %s\n" "player" "port" "viewer" "model"
-      local p port vport model
+      printf "  %-10s %-12s %-6s %-9s %-10s %s\n" "player" "role" "port" "viewer" "in-roster" "model"
+      local p role port vport in_roster model
       while IFS= read -r p; do
         [ -z "$p" ] && continue
+        role="$(player_role "$p")"
         port="$(player_api_port "$p")"
         vport="$(player_viewer_port "$p")"
         model="$(player_model "$p")"
-        printf "  %-10s %-6s :%-8s %s\n" "$p" "${port:-?}" "${vport:-?}" "${model:-?}"
+        if roster_players | grep -qx "$p"; then
+          in_roster="$(roster_mode_for "$p")"
+        else
+          in_roster="-"
+        fi
+        printf "  %-10s %-12s %-6s :%-8s %-10s %s\n" "$p" "${role:-?}" "${port:-?}" "${vport:-?}" "$in_roster" "${model:-?}"
       done < <(canonical_players)
       ;;
     show)
       local p="${1:-}"; [ -z "$p" ] && { err "players show needs a name"; return 1; }
       local pl; pl="$(parse_players_csv "$p")" || return 1
-      printf "  %-10s %s\n" "player:"   "$pl"
-      printf "  %-10s %s\n" "port:"     "$(player_api_port "$pl")"
-      printf "  %-10s :%s\n" "viewer:"   "$(player_viewer_port "$pl")"
-      printf "  %-10s %s\n" "model:"    "$(player_model "$pl")"
-      printf "  %-10s %s\n" "provider:" "$(player_provider "$pl")"
-      printf "  %-10s %s\n" "mode:"     "$(roster_mode_for "$pl")"
+      local stored eff
+      stored="$(roster_mode_for "$pl")"
+      eff="$(resolve_mode "$pl" "$stored")"
+      printf "  %-12s %s\n" "player:"   "$pl"
+      printf "  %-12s %s\n" "role:"     "$(player_role "$pl")"
+      printf "  %-12s %s\n" "port:"     "$(player_api_port "$pl")"
+      printf "  %-12s :%s\n" "viewer:"   "$(player_viewer_port "$pl")"
+      printf "  %-12s %s\n" "model:"    "$(player_model "$pl")"
+      printf "  %-12s %s\n" "provider:" "$(player_provider "$pl")"
+      printf "  %-12s %s (effective: %s)\n" "mode:" "$stored" "$eff"
+      if roster_players | grep -qx "$pl"; then
+        printf "  %-12s %s\n" "in roster:" "yes ($ROSTER_FILE)"
+      else
+        printf "  %-12s %s\n" "in roster:" "no — `landfolk enable $pl` to add"
+      fi
       ;;
     *) err "unknown players subcommand: $sub (valid: list|show)"; return 1 ;;
   esac
+}
+
+cmd_defaults() {
+  h1 "landfolk defaults"
+  echo "  ${C_BOLD}players${C_RST}"
+  echo "    PLAYERS_DEFAULT       $PLAYERS_DEFAULT"
+  echo "    (used only when the roster is empty; otherwise roster wins)"
+  echo
+  echo "  ${C_BOLD}mode${C_RST}"
+  echo "    LANDFOLK_DEFAULT_MODE $DEFAULT_MODE"
+  echo "    auto rules:           role=orchestrator → continuous, else → kanban"
+  local p role eff
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    role="$(player_role "$p")"
+    eff="$(resolve_mode "$p" auto)"
+    printf "       %-10s role=%-12s auto→%s\n" "$p" "${role:-?}" "$eff"
+  done < <(canonical_players)
+  echo
+  echo "  ${C_BOLD}daemons${C_RST}"
+  echo "    on by default:        listener, supervisor, pauser"
+  echo "    disable individually: --without listener|supervisor|pauser|daemons"
+  echo
+  echo "  ${C_BOLD}gateway${C_RST}"
+  echo "    on by default:        no (observe only)"
+  echo "    manage explicitly:    start --with-gateway | stop --with-gateway"
+  echo
+  echo "  ${C_BOLD}state${C_RST}"
+  echo "    LOG_DIR               $LOG_DIR"
+  echo "    STATE_DIR             $STATE_DIR"
+  echo "    ROSTER_FILE           $ROSTER_FILE"
+  if [ -s "$ROSTER_FILE" ]; then
+    echo "    current roster:"
+    sed 's/^/      /' "$ROSTER_FILE"
+  else
+    echo "    current roster:       (empty — `landfolk start` will seed from PLAYERS_DEFAULT)"
+  fi
 }
 
 # ─── Dispatch ──────────────────────────────────────────────────────────────
@@ -743,6 +933,7 @@ case "$CMD" in
   chat)             cmd_chat "$@" ;;
   fix)              cmd_fix "$@" ;;
   players|player)   cmd_players "$@" ;;
+  defaults)         cmd_defaults "$@" ;;
   -h|--help|help|"") usage 0 ;;
   *) err "unknown command: $CMD"; usage 1 ;;
 esac

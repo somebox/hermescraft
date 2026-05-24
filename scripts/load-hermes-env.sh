@@ -8,7 +8,7 @@
 #
 # Idempotent. Silent when ~/.hermes/.env is absent. Does not touch the repo
 # .env — scripts that need PAPERMCP_TOKEN should still `set -a; . "$ROOT/.env"`
-# explicitly (see scripts/landfolk-bodies-only.sh for the pattern).
+# explicitly (see scripts/landfolk-control.sh for the pattern).
 
 if [ -f "$HOME/.hermes/.env" ]; then
   _AN=$(grep "^ANTHROPIC_API_KEY=" "$HOME/.hermes/.env" 2>/dev/null | head -1 | cut -d= -f2- || true)

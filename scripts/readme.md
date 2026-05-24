@@ -21,15 +21,26 @@ upgraded automatically from the old `active-profiles`), one state dir
 | `logs [agents\|<player>\|listener\|supervisor\|pauser\|gateway]` | Aggregated agent stream (default) or one-component tail |
 | `chat <player> "<msg>"` | Send in-game chat through the bot's HTTP API |
 | `fix <issue> [args]` | `reconnect <p>` \| `clean` \| `tp <p> x y z` \| `unstick <p>` |
-| `players list \| show <player>` | Roster + per-player port/model resolution |
+| `players list \| show <player>` | Roster + per-player port/role/model resolution |
+| `defaults` | Print the plan `start` would use with no flags |
 
 **Modes (per player):**
-- `kanban` (default) — bot + connect-only watchdog; **no agent**. Kanban
-  gateway workers drive the bot per card.
+- `auto` (**default**) — picks per role: `orchestrator` → `continuous`, anything else → `kanban`.
+- `kanban` — bot + connect-only watchdog; **no agent**. Kanban gateway workers drive the bot per card.
 - `continuous` — bot + full watchdog + always-on Hermes agent loop.
 
-**Defaults:** `PLAYERS_DEFAULT=flint,mason,steward`, `MC_HOST=192.168.1.202`,
-`LOG_DIR=/tmp/hermescraft`. Override via env.
+**Sticky roster.** `enable <p>` and `disable <p>` modify the roster
+durably; `stop` does NOT clear it (use `stop --clear-roster` to wipe).
+`start` brings up whatever's in the roster (or seeds from
+`PLAYERS_DEFAULT` if empty).
+
+**Defaults** (`scripts/landfolk defaults` prints these on demand):
+
+- `PLAYERS_DEFAULT=flint,mason,steward` (only used when roster is empty)
+- `LANDFOLK_DEFAULT_MODE=auto`
+- daemons on by default: `listener`, `supervisor`, `pauser`
+- gateway: not managed; opt in with `start --with-gateway`
+- `MC_HOST=192.168.1.202`, `LOG_DIR=/tmp/hermescraft`
 
 `scripts/landfolk-session.sh` is a deprecation shim that forwards old verbs.
 `scripts/landfolk-control.sh` is the **internal engine** (per-bot lifecycle:

@@ -132,7 +132,8 @@ fi
 
 # Ensure primary scripts are executable
 chmod +x "$SCRIPT_DIR/hermescraft.sh" "$SCRIPT_DIR/start-steve.sh" "$SCRIPT_DIR/start-gatherer.sh" "$BIN_DIR/mc" 2>/dev/null || true
-chmod +x "$SCRIPT_DIR/scripts/landfolk-control.sh" "$SCRIPT_DIR/scripts/run-landfolk-agent.sh" "$SCRIPT_DIR/scripts/run-landfolk-bots.sh" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/scripts/landfolk" "$SCRIPT_DIR/scripts/landfolk-control.sh" "$SCRIPT_DIR/scripts/run-landfolk-agent.sh" "$SCRIPT_DIR/scripts/run-landfolk-bots.sh" 2>/dev/null || true
+[ -f "$SCRIPT_DIR/scripts/landfolk-session.sh" ] && chmod +x "$SCRIPT_DIR/scripts/landfolk-session.sh" 2>/dev/null || true
 
 # Create data directory
 mkdir -p "$SCRIPT_DIR/data"
@@ -153,8 +154,10 @@ echo ""
 echo "  STEVE COMPANION:"
 echo "    ./start-steve.sh   # or MC_PORT=12345 ./hermescraft.sh"
 echo ""
-echo "  LANDFOLK (Gatherer, Flint, Mason, Barley):"
-echo "    ./scripts/landfolk-control.sh start --profiles gatherer,flint,mason,barley"
+echo "  LANDFOLK (single CLI for the whole session):"
+echo "    ./scripts/landfolk start --players gatherer,flint,mason,barley --mode continuous"
+echo "    ./scripts/landfolk status"
+echo "    ./scripts/landfolk stop"
 echo ""
 echo "  Start Minecraft first (server or singleplayer + Open to LAN)."
 echo "  Set online-mode=false in server.properties for offline servers."

@@ -69,14 +69,21 @@ WATCHED_STATUSES = ("todo", "ready", "running")
 
 
 def load_active_roster() -> set[str]:
-    """Set of currently-active profile names (lowercase)."""
+    """Set of currently-active profile names (lowercase).
+
+    Roster file format (one line per player):
+        <name> [mode]            # mode ∈ kanban|continuous, optional
+    Anything after the first whitespace-separated token is treated as
+    metadata. Legacy single-name lines remain valid.
+    """
     names: set[str] = set()
     if ROSTER_FILE.exists():
         for line in ROSTER_FILE.read_text().splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            names.add(line.lower())
+            first = line.split()[0]
+            names.add(first.lower())
         return names
     if ROSTER_ENV:
         for tok in ROSTER_ENV.split(","):
