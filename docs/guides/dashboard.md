@@ -25,6 +25,17 @@ Open `http://127.0.0.1:3000`.
 | `HERMES_KANBAN_BASE` | `http://127.0.0.1:27124` | [Hermes Kanban Bridge](https://github.com/GumbyEnder/hermes-kanban) REST API |
 | `OPENROUTER_API_KEY` | — | Optional; else read from `secrets.yaml` (`openrouter_api_key`). Header balance/usage use [GET /api/v1/key](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key) (`limit_remaining`, `usage`, `usage_daily`); falls back to `/api/v1/credits` if needed. |
 | `WORLD_MAP_BASE_URL` | — | Overrides `worldMap.baseUrl` in `data/agent-registry.json` (Dynmap / Squaremap web UI) |
+| `BOT_DISCOVERY_PORT_MIN` | `3000` | Low end of local port scan for Hermes bot `/health` (dashboard port excluded) |
+| `BOT_DISCOVERY_PORT_MAX` | `3024` | High end of port scan |
+| `BOT_DISCOVERY_PORTS` | — | Comma-separated extra API ports to probe (e.g. `3010,3011`) |
+
+### Agents and players (discovery)
+
+**Agents** in the left column come from `data/agent-registry.json` plus any **discovered** Hermes bots: each fleet poll probes `BOT_DISCOVERY_*` ports on `BOT_HOST` for `GET /health` with `{ ok, username }` (same shape as landfolk bots). A connected body on a port that is not already used by the registry (e.g. **Steward** on `:3005`) is polled like a registry agent — goals, FPV, Mind, and detail work without adding a registry row.
+
+**Players** are built from bot `/nearby` (Minecraft `username`) and Squaremap/Dynmap marker JSON for the selected world. Names that match any registry or discovered agent MC username stay in **Agents**, not **Players**.
+
+Registry rows remain the place for stable metadata (kanban board mapping, default world, viewer overrides). Discovery is for bodies that are online but not listed yet.
 
 ## FPV (prismarine-viewer)
 

@@ -70,39 +70,6 @@
     {
       "enabled": true,
       "strategies_available": [
-        "mine_iron",
-        "mc discover iron",
-        "mc collect iron_ore",
-        "mc smelt raw_iron"
-      ],
-      "constraints": {
-        "preempt_class": "normal"
-      },
-      "id": "supply_iron",
-      "metric": "iron_total",
-      "target_min": 16,
-      "target_ok": 32,
-      "priority": 80
-    },
-    {
-      "enabled": true,
-      "strategies_available": [
-        "mine_coal",
-        "mc discover coal",
-        "mc collect coal_ore"
-      ],
-      "constraints": {
-        "preempt_class": "normal"
-      },
-      "id": "supply_coal",
-      "metric": "coal_total",
-      "target_min": 32,
-      "target_ok": 64,
-      "priority": 75
-    },
-    {
-      "enabled": true,
-      "strategies_available": [
         "mine_stone",
         "mc collect stone",
         "mc tunnel"
@@ -119,6 +86,39 @@
     {
       "enabled": true,
       "strategies_available": [
+        "mine_iron",
+        "mc discover iron",
+        "mc collect iron_ore",
+        "mc smelt raw_iron"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "supply_iron",
+      "metric": "iron_total",
+      "target_min": 16,
+      "target_ok": 32,
+      "priority": -100
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "mine_coal",
+        "mc discover coal",
+        "mc collect coal_ore"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "supply_coal",
+      "metric": "coal_total",
+      "target_min": 32,
+      "target_ok": 64,
+      "priority": -100
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
         "deep_mine",
         "mc discover diamond",
         "mc collect diamond_ore"
@@ -130,7 +130,7 @@
       "metric": "diamond_total",
       "target_min": 4,
       "target_ok": 8,
-      "priority": 40
+      "priority": -100
     },
     {
       "enabled": true,
@@ -149,7 +149,7 @@
       },
       "target_min": 32,
       "target_ok": 64,
-      "priority": 55
+      "priority": 5
     },
     {
       "enabled": true,
@@ -168,26 +168,12 @@
       },
       "target_min": 64,
       "target_ok": 128,
-      "priority": 45
-    },
-    {
-      "id": "exp_collect_dirt",
-      "enabled": true,
-      "metric": "dirt_total",
-      "target_min": 2,
-      "target_ok": 3,
-      "priority": 250,
-      "strategies_available": [
-        "collect"
-      ]
+      "priority": 5
     }
   ],
   "deficitSince": {
-    "supply_iron": 1778291550869,
-    "supply_coal": 1778291550869,
-    "supply_cobblestone": 1778291550869,
-    "supply_diamond": 1778291550869,
-    "maintain_food": 1778775067176,
-    "maintain_pickaxe": 1778775067176
+    "supply_iron": 1779614565324,
+    "supply_coal": 1779614565324,
+    "supply_diamond": 1779614565324
   }
 }

@@ -431,7 +431,12 @@ function renderAgentList() {
 }
 
 function botNameSet() {
-  return new Set((fleet?.agents || []).map((a) => String(a.name).toLowerCase()));
+  const set = new Set();
+  for (const a of fleet?.agents || []) {
+    if (a.name) set.add(String(a.name).toLowerCase());
+    if (a.mc_username) set.add(String(a.mc_username).toLowerCase());
+  }
+  return set;
 }
 
 function isSidebarPlayerName(name) {

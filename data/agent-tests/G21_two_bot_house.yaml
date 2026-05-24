@@ -31,10 +31,12 @@ bots:
 # bot bodies connect (so /clear actually wipes their inventory).
 #
 # Layout (all coords are in `landfolk-test`):
-#   SUPPLY_CHEST  ( 0, 65,  0)   — origin spawn, shared tools
-#   KEEP_SITE     ( 0, 65, 10)   — central build site, 4x4 platform here in M2A
-#   MINING_HINT   (-12, 65,-12)  — large stone outcrop south-west (~100+ stone)
-#   BEACH         ( 12, 64, 12)  — sand strip on a lake's east shore, NE
+#   lt_supply  ( 0, 65,  0)   — origin spawn, shared tools
+#   lt_keep    ( 0, 65, 10)   — central build site, 4x4 platform here in M2A
+#   lt_mine    (-12, 65,-12)  — large stone outcrop south-west (~100+ stone)
+#   lt_beach   ( 12, 64, 12)  — sand strip on a lake's east shore, NE
+#   lt_stone   ( 5, 65, 10)   — on-site cobble for M3 (see world_setup)
+# Names match data/marks/canonical.yaml (lowercase, lt_* = landfolk-test).
 #   trees         ±6/±8 in X,Z + 4 extras at outer radius (~32 logs total)
 # Daylight cycle stays ON so world ticks advance — bots use ticks for
 # mission deadlines. Mob spawning stays off (no night threat).
@@ -177,13 +179,13 @@ post_connect_setup:
   - rcon: 'execute in landfolk-test run tp Flint -2 65 0 90 0'    # west of chest, facing east
   - rcon: 'execute in landfolk-test run tp Mason 2 65 0 270 0'    # east of chest, facing west
 
-# Marks pre-written to each bot via `mc mark` after world_setup.
+# Marks pre-written to each bot via `mc mark` after world_setup (see canonical.yaml).
 marks:
-  SUPPLY_CHEST: { x: 0,   y: 65, z: 0,   note: "Shared tools — share with your partner" }
-  KEEP_SITE:    { x: 0,   y: 65, z: 10,  note: "Central build site (platform + house here)" }
-  STONE_PILE:   { x: 5,   y: 65, z: 10,  note: "On-site cobblestone — 3 blocks east of the platform. Mine here for house materials, do NOT dig the test floor." }
-  MINING_HINT:  { x: -12, y: 65, z: -12, note: "Scattered stone outcrop SW (farther — STONE_PILE near the platform is closer)" }
-  BEACH:        { x: 12,  y: 64, z: 12,  note: "Sand + water pond NE — sand for glass" }
+  lt_supply: { x: 0,   y: 65, z: 0,   category: landfolk-test, note: "Shared tools — share with your partner" }
+  lt_keep:   { x: 0,   y: 65, z: 10,  category: landfolk-test, note: "Central build site (platform + house here)" }
+  lt_stone:  { x: 5,   y: 65, z: 10,  category: landfolk-test, note: "On-site cobblestone — 3 blocks east of the platform. Mine here for house materials, do NOT dig the test floor." }
+  lt_mine:   { x: -12, y: 65, z: -12, category: landfolk-test, note: "Scattered stone outcrop SW (farther — lt_stone near the platform is closer)" }
+  lt_beach:  { x: 12,  y: 64, z: 12,  category: landfolk-test, note: "Sand + water pond NE — sand for glass" }
 
 # Phase graph. Mission text is intentionally free of player names like
 # "flint" / "mason" — the bot's chat parser treats any `<knownName>:` token
@@ -229,7 +231,7 @@ phases:
         #   ────────────────────────────────────────
         #   total                          = 60 blocks
         # The stone outcrop in world_setup has ~90 stones available.
-        text: '@mason please mine 60 cobblestone — there is a stone outcrop near MINING_HINT (-12,65,-12). deadline tick 11000. emit "M1A DONE" when finished.'
+        text: '@mason please mine 60 cobblestone — there is a stone outcrop near lt_mine (-12,65,-12). deadline tick 11000. emit "M1A DONE" when finished.'
         deadline_tick: 11000
         done_keyword: "M1A DONE"
         keyword_from: Mason
@@ -238,7 +240,7 @@ phases:
         to: Flint
         # Wood budget: chest (=2 logs) + 20 planks deposit (=5 logs) = 7 logs
         # of his "get 16" ask. Leaves ~9 logs in inventory for M2B's door + planks.
-        text: '@flint please get 16 oak_log from the trees, craft planks, build a chest at (-3,65,10) just west of KEEP_SITE, and put 20 oak_planks in it. deadline tick 11000. emit "M1B DONE" when finished.'
+        text: '@flint please get 16 oak_log from the trees, craft planks, build a chest at (-3,65,10) just west of lt_keep, and put 20 oak_planks in it. deadline tick 11000. emit "M1B DONE" when finished.'
         deadline_tick: 11000
         done_keyword: "M1B DONE"
         keyword_from: Flint
@@ -288,9 +290,9 @@ phases:
         # truncation and gives the bots time to process each line.
         text:
           - '@flint @mason please build a small house ON the platform at (-2 to 1, 65, 9 to 12).'
-          - 'STONE_PILE at (5,65,10) has on-site cobblestone to mine — 3 blocks east of the platform. Use it for walls + roof. Do NOT dig the test floor for materials.'
+          - 'lt_stone at (5,65,10) has on-site cobblestone to mine — 3 blocks east of the platform. Use it for walls + roof. Do NOT dig the test floor for materials.'
           - 'specs: WALLS 3 high around the perimeter (cobble at y=66, 67, 68). Add a ROOF at y=69 (cobble OR oak_planks — your choice). The INTERIOR must be empty so a player can stand inside.'
-          - 'add 1 DOOR (Flint has oak_doors from M2B) and 1 WINDOW (glass — smelt from BEACH sand, or skip and use cobble).'
+          - 'add 1 DOOR (Flint has oak_doors from M2B) and 1 WINDOW (glass — smelt from lt_beach sand, or skip and use cobble).'
           - 'first DECIDE who does what — chat to claim sub-tasks (e.g. "I will build the south + west walls"). DO NOT duplicate work.'
           - 'ANNOUNCE before each major step: chat "name: doing <thing>" so your partner sees it. RE-ANNOUNCE when you change plans.'
           - 'BEFORE emitting "HOUSE COMPLETE", one of you MUST stand inside the house and run `mc is_sheltered walls=-2,66,9,1,68,12` to verify enclosure + wall completeness.'

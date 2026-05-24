@@ -62,6 +62,26 @@ Format:
 
 Anything that doesn't match `^:[a-z0-9]{2,8}:` on line 1 is just a normal sign and is ignored.
 
+### Region and site directives (forward link)
+
+A `:id:` placemark sign can carry additional directives that promote
+it to a **region** and declare **sites** inside that region. See
+[`designated-regions.md`](./designated-regions.md) for the full
+syntax. Summary:
+
+```text
+:base1: main base
+region=base
+r=24
+y=55..120
+site:tower=350,72,-540
+site:gate=346,64,-528
+```
+
+Placemarks without these directives behave exactly as described in
+this document. Regions are an additive layer; the registry and sign
+lifecycle described here are unchanged.
+
 ### Why `:id:` instead of `@`
 
 The bracketing colon makes the boundary between identifier and description unambiguous on a single sign line, and reads naturally in chat (`go to :nagra:`). It also avoids collision with username conventions where `@` is common.

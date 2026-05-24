@@ -1,0 +1,28 @@
+kind: epic
+board: landfolk-ops
+intent: |
+  Create protect region :base1: over the surface base (profile base, column r=18, y=58..120).
+  Add sites chest, home, gate, mine_entrance from known marks. Post sign text for player anchoring.
+acceptance:
+  - region_exists: base1
+  - region_sites_include: [chest, home, gate, mine_entrance]
+  - mc check dig at base_chest returns REGION_PROTECTED
+inputs:
+  anchor: [366, 65, -594]
+  marks:
+    base_chest: [365, 65, -593]
+    home: [367, 66, -606]
+    gate: [359, 65, -590]
+    mine_entrance: [368, 57, -590]
+decompose_hint:
+  - "[REGION] create :base1: → flint (goto anchor, region_create, site_add x4, mc regions --at anchor)"
+  - "[VERIFY] :base1: protect → flint (mc check dig at chest coords)"
+sign_text_for_player: |
+  :base1: main base
+  region=base
+  r=18
+  y=58..120
+  site:chest=365,65,-593
+  site:home=367,66,-606
+  site:gate=359,65,-590
+  site:mine_entrance=368,57,-590

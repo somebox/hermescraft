@@ -1,0 +1,57 @@
+kind: epic
+board: landfolk-ops
+strict: false
+
+blueprint_url: https://www.grabcraft.com/minecraft/dystopian-village-hut-3/other-193
+blueprint_name: "Dystopian Village Hut 3"
+plan_file: data/ops/plans/dystopian-hut-3-plan.json
+plan_options:
+  substitute_easy_materials: true
+  simplify_decorative: false
+
+footprint:
+  width: 4
+  height: 10
+  depth: 6
+  pad_margin: 2          # flat clear area around footprint (blocks)
+
+intent: |
+  Scout a build site near base for the GrabCraft hut (169 cells, skill 1).
+  Steward picks anchor + named site; Mason builds once site is approved and supplies are ready.
+  Plan already generated with easy substitutions (clay→dirt, extra stone→cobblestone).
+
+scout_criteria:
+  - within ~48 blocks of mark `base` or region :base1: gate
+  - relatively flat surface (≤2 block Y variation under pad)
+  - not inside :base1: protect column if that would block placement
+  - prefer open grass/dirt; note nearby water if any
+  - deliver candidate anchor [x,y,z] and suggested site name `hut3`
+
+assignee_routing:
+  scout: steward
+  supply: flint
+  region_marker: mason
+  construct: mason
+
+acceptance:
+  - kanban_comment documents candidate anchor + site name hut3
+  - optional follow-up [REGION] :hut3: intent=marker at scouted anchor
+  - materials_planned satisfied before construct
+  - Mason bot online on :3003 for construct tasks
+
+decompose_hint:
+  - "[SCOUT] dystopian hut3 build site → steward (read-only mc; kanban_comment with coords)"
+  - "[SUPPLY] hut3 materials from plan file → flint"
+  - "[REGION] create :hut3: marker at scouted site → mason (after scout done)"
+  - "[CONSTRUCT] build dystopian hut3 from plan → mason (after supply + region; use plan_file cells)"
+
+reference_materials_planned:
+  - { item: cobblestone, count: 79 }
+  - { item: dirt, count: 53 }
+  - { item: stone_slab, count: 13 }
+  - { item: glass_pane, count: 5 }
+
+mason_ops:
+  MC_API_URL: http://localhost:3003
+  MC_USERNAME: Mason
+  note: "Start bot: ./scripts/landfolk-control.sh start --profiles mason (or flint,mason). Do not run Landfolk agent + kanban mason on :3003 simultaneously."

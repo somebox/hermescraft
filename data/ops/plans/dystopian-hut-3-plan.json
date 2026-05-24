@@ -1,0 +1,1892 @@
+{
+  "kind": "construct",
+  "source": {
+    "type": "grabcraft",
+    "url": "https://www.grabcraft.com/minecraft/dystopian-village-hut-3/other-193",
+    "name": "Dystopian Village Hut 3",
+    "dimensions": {
+      "width": 4,
+      "height": 10,
+      "depth": 6
+    }
+  },
+  "options": {
+    "substitute_easy_materials": true,
+    "simplify_decorative": true
+  },
+  "anchor": {
+    "coords": null,
+    "site": null
+  },
+  "materials_original": [
+    {
+      "name": "Clay",
+      "count": 53
+    },
+    {
+      "name": "Stone",
+      "count": 40
+    },
+    {
+      "name": "Cobblestone",
+      "count": 39
+    },
+    {
+      "name": "Stone Slab",
+      "count": 13
+    },
+    {
+      "name": "Glass Pane",
+      "count": 5
+    },
+    {
+      "name": "Ladder",
+      "count": 5
+    },
+    {
+      "name": "Torch",
+      "count": 3
+    },
+    {
+      "name": "Oak Door",
+      "count": 2
+    },
+    {
+      "name": "Bed",
+      "count": 2
+    }
+  ],
+  "materials_planned": [
+    {
+      "item": "cobblestone",
+      "count": 79
+    },
+    {
+      "item": "dirt",
+      "count": 53
+    },
+    {
+      "item": "stone_slab",
+      "count": 13
+    },
+    {
+      "item": "ladder_facing_north",
+      "count": 5
+    },
+    {
+      "item": "glass_pane",
+      "count": 5
+    },
+    {
+      "item": "torch_facing_east",
+      "count": 2
+    },
+    {
+      "item": "cobblestone_stairs_south_normal",
+      "count": 1
+    },
+    {
+      "item": "wall_mounted_sign_block_west_northwest",
+      "count": 1
+    },
+    {
+      "item": "oak_door_facing_south_closed_lower",
+      "count": 1
+    },
+    {
+      "item": "oak_fence",
+      "count": 1
+    },
+    {
+      "item": "oak_wood_stairs_north_normal",
+      "count": 1
+    },
+    {
+      "item": "wooden_pressure_plate_unactive",
+      "count": 1
+    },
+    {
+      "item": "oak_door_hinge_right_unpowered_upper",
+      "count": 1
+    },
+    {
+      "item": "bed_north_empty_head_of_the_bed",
+      "count": 1
+    },
+    {
+      "item": "bed_north_empty_foot_of_the_bed",
+      "count": 1
+    },
+    {
+      "item": "furnace_facing_east",
+      "count": 1
+    },
+    {
+      "item": "chest_south",
+      "count": 1
+    },
+    {
+      "item": "torch_facing_west",
+      "count": 1
+    }
+  ],
+  "stats": {
+    "cells_planned": 169,
+    "cells_skipped_decorative": 0,
+    "substitution_events": 93
+  },
+  "substitutions_applied": {
+    "clay→dirt": 53,
+    "stone→cobblestone": 40
+  },
+  "skipped_decorative": {},
+  "phases": [
+    {
+      "layer_y": 1,
+      "block_count": 21,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 2,
+      "block_count": 18,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 3,
+      "block_count": 16,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 4,
+      "block_count": 16,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 5,
+      "block_count": 20,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 6,
+      "block_count": 19,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 7,
+      "block_count": 14,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 8,
+      "block_count": 16,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 9,
+      "block_count": 20,
+      "hint": "place this Y layer before higher layers"
+    },
+    {
+      "layer_y": 10,
+      "block_count": 9,
+      "hint": "place this Y layer before higher layers"
+    }
+  ],
+  "cells": [
+    {
+      "local": [
+        4,
+        1,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        1,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        1,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        1,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        1,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        1,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        1,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        1,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        1,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        1,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        1,
+        1
+      ],
+      "block": "cobblestone_stairs_south_normal",
+      "source_name": "Cobblestone Stairs (South, Normal)",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        1,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        1,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        1,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        1,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        1,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        1,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        1,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        1,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        1,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        1,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        2,
+        5
+      ],
+      "block": "ladder_facing_north",
+      "source_name": "Ladder (facing north)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        2,
+        4
+      ],
+      "block": "wall_mounted_sign_block_west_northwest",
+      "source_name": "Wall-mounted Sign Block west-northwest",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        2,
+        2
+      ],
+      "block": "oak_door_facing_south_closed_lower",
+      "source_name": "Oak Door (Facing South, Closed, Lower)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        2,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        2,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        2,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        2,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        2,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        2,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        2,
+        2,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        2,
+        5
+      ],
+      "block": "oak_fence",
+      "source_name": "Oak Fence",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        2,
+        4
+      ],
+      "block": "oak_wood_stairs_north_normal",
+      "source_name": "Oak Wood Stairs (North, Normal)",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        2,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        2,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        2,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        2,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        2,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        2,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        3,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        3,
+        5
+      ],
+      "block": "wooden_pressure_plate_unactive",
+      "source_name": "Wooden Pressure Plate (Unactive)",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        3,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        3,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        3,
+        2
+      ],
+      "block": "oak_door_hinge_right_unpowered_upper",
+      "source_name": "Oak Door (Hinge Right, Unpowered, Upper)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        3,
+        5
+      ],
+      "block": "ladder_facing_north",
+      "source_name": "Ladder (facing north)",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        3,
+        4
+      ],
+      "block": "glass_pane",
+      "source_name": "Glass Pane",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        3,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        3,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        3,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        3,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        3,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        3,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        3,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        3,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        3,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        4,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        4,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        4,
+        4
+      ],
+      "block": "torch_facing_east",
+      "source_name": "Torch (Facing East)",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        4,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        4,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        4,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        4,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        4,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        4,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        4,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        4,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        4,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        4,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        4,
+        5
+      ],
+      "block": "ladder_facing_north",
+      "source_name": "Ladder (facing north)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        4,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        4,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        5,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        5,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        5,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        5,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        5,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        5,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        5,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        5,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        5,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        5,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        5,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        5,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        5,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        5,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        5,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        5,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        5,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        5,
+        5
+      ],
+      "block": "ladder_facing_north",
+      "source_name": "Ladder (facing north)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        5,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        5,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Cobblestone",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        6,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        6,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        6,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        6,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        6,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        2,
+        6,
+        3
+      ],
+      "block": "bed_north_empty_head_of_the_bed",
+      "source_name": "Bed (North, Empty, Head of the bed)",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        6,
+        4
+      ],
+      "block": "bed_north_empty_foot_of_the_bed",
+      "source_name": "Bed (North, Empty, Foot of the bed)",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        6,
+        5
+      ],
+      "block": "furnace_facing_east",
+      "source_name": "Furnace (Facing East)",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        6,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        6,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        6,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        6,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        6,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        6,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        6,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        3,
+        6,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        6,
+        5
+      ],
+      "block": "ladder_facing_north",
+      "source_name": "Ladder (facing north)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        6,
+        3
+      ],
+      "block": "chest_south",
+      "source_name": "Chest (South)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        6,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        7,
+        2
+      ],
+      "block": "glass_pane",
+      "source_name": "Glass Pane",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        7,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        7,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        7,
+        4
+      ],
+      "block": "glass_pane",
+      "source_name": "Glass Pane",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        7,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        7,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        7,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        7,
+        2
+      ],
+      "block": "glass_pane",
+      "source_name": "Glass Pane",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        7,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        7,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        7,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        7,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        7,
+        4
+      ],
+      "block": "glass_pane",
+      "source_name": "Glass Pane",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        7,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        8,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        8,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        8,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        4,
+        8,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        8,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        8,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        8,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        8,
+        5
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        8,
+        4
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        8,
+        3
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        8,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        3,
+        8,
+        4
+      ],
+      "block": "torch_facing_west",
+      "source_name": "Torch (Facing West)",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        8,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        8,
+        2
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        2,
+        8,
+        4
+      ],
+      "block": "torch_facing_east",
+      "source_name": "Torch (Facing East)",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        8,
+        6
+      ],
+      "block": "dirt",
+      "source_name": "Clay",
+      "original_block": "clay"
+    },
+    {
+      "local": [
+        1,
+        9,
+        6
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        9,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        9,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        9,
+        2
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        9,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        9,
+        2
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        9,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        9,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        9,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        4,
+        9,
+        6
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        9,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        3,
+        9,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        3,
+        9,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        3,
+        9,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        3,
+        9,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        2,
+        9,
+        2
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        2,
+        9,
+        6
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        2,
+        9,
+        5
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        2,
+        9,
+        4
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        2,
+        9,
+        3
+      ],
+      "block": "cobblestone",
+      "source_name": "Stone",
+      "original_block": "stone"
+    },
+    {
+      "local": [
+        1,
+        10,
+        3
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        10,
+        4
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        1,
+        10,
+        5
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        10,
+        3
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        10,
+        4
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        4,
+        10,
+        5
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        10,
+        2
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        3,
+        10,
+        6
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    },
+    {
+      "local": [
+        2,
+        10,
+        2
+      ],
+      "block": "stone_slab",
+      "source_name": "Stone Slab",
+      "original_block": null
+    }
+  ],
+  "worker_hints": [
+    "Anchor in world coords: set anchor.coords or site (e.g. :base1:/tower) before mc construct.",
+    "Use materials_planned for [SUPPLY] cards; cells[] is the placement diff input for future mc construct.",
+    "Re-run with --no-substitute for faithful block types."
+  ]
+}

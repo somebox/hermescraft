@@ -155,10 +155,11 @@ You control your body via the \`mc\` command. \$MC_API_URL points at your bot's 
 ## Card lifecycle (the only loop you run)
 
 1. \`hermes kanban show \$HERMES_KANBAN_TASK\` to read the card body, action_sequence, and success_predicate.
-2. Run prep if it isn't already done by an upstream step (capability_test fixtures usually have prep/cleanup; the human-as-steward runs them via \`scripts/run-fixture.sh\` before claiming the card).
-3. Execute the action_sequence one command at a time. Watch each \`mc\` response: if \`ok=false\`, stop and capture the error code + observed_state.
-4. Evaluate the success_predicate against \`mc observe\` (or the response data, depending on \`kind\`).
-5. \`hermes kanban complete \$HERMES_KANBAN_TASK --result PASS|FAIL --summary "<one-line>"\` with metadata for any inventory_delta / chest_delta / observed errors.
+2. If the card body includes \`worksite: <id>\` (bare region id, e.g. \`hut3\`), run \`mc task_context set <id>\` once before any dig/place inside that protect region. \`mc observe\` shows the active worksite while the grant is valid.
+3. Run prep if it isn't already done by an upstream step (capability_test fixtures usually have prep/cleanup; the human-as-steward runs them via \`scripts/run-fixture.sh\` before claiming the card).
+4. Execute the action_sequence one command at a time. Watch each \`mc\` response: if \`ok=false\`, stop and capture the error code + observed_state.
+5. Evaluate the success_predicate against \`mc observe\` (or the response data, depending on \`kind\`).
+6. \`hermes kanban complete \$HERMES_KANBAN_TASK --result PASS|FAIL --summary "<one-line>"\` with metadata for any inventory_delta / chest_delta / observed errors. Run \`mc task_context clear\` on \`kanban_complete\` or \`kanban_block\` so the worksite grant does not leak to the next card.
 $(ops_worker_section)
 
 ## Hard rules
@@ -176,6 +177,32 @@ $(ops_worker_section)
 - \`mc dig X Y Z\` removes a block but does NOT auto-pickup. Use \`mc pickup\` (or \`mc collect\`) if the test needs the item in inventory.
 - \`mc collect <name> <count>\`: \`ok=true\` requires \`mined_count > 0\`. Treat \`ok=true && mined_count==0\` as a contract bug.
 - Always check \`mc inventory\` before \`mc place\` and after any sequence that should change inventory.
+
+## Announce key card transitions in chat (visibility)
+
+Three short \`mc chat\` lines per card make the experiment legible from in-game (re44 + Steward + other workers all see them):
+
+1. **On startup**, before any work:
+   \`mc chat "starting <kanban_id>: <short_title>"\`
+2. **On completion**, just before \`kanban_complete\`:
+   \`mc chat "done <kanban_id>: <one-line result>"\`
+3. **On block**, just before \`kanban_block\`:
+   \`mc chat "blocked <kanban_id>: <short_reason>"\`
+
+Use the structured block-reason prefixes (next section) in the chat line too — that lets the steward and re44 spot the failure mode at a glance.
+
+Don't chat per \`mc\` call — that's spammy. Chat only at card boundaries unless the card body explicitly asks for in-progress narration.
+
+## Requesting steward help (escalation channel)
+
+When a structured obstacle stops your card and you've recognized the cause, \`kanban_block\` with a structured reason prefix so the steward supervisor can route the right response. Use these prefixes:
+
+- \`region_blocked:<region_id>:<short_reason>\` — dig/place blocked inside a protect region and your card has no matching \`worksite:\` grant (or the worksite id is wrong). First confirm you ran \`mc task_context set <id>\` when the card body names a worksite. If the card never had a worksite, block so the steward can add \`worksite:\` to the body or fix decomposition. Example: \`kanban_block "region_blocked:hut3:cannot_dig_ceiling_to_exit"\`.
+- \`prerequisite_missing:<item>:<count>\` — supply shortfall the card body didn't account for. Steward can create a \`[SUPPLY]\` precursor and link it as a parent.
+- \`stuck_pocket_no_escape:<pos>\` — wedged with no tool path out. Steward can rcon-tp you out or give a missing tool.
+- \`decision_needed:<options>\` — you have a partial result and need a stewarding judgment call (e.g. "accept 5 raw_iron vs continue mining for 32"). Steward decides and unblocks with guidance.
+
+Don't grind iterations after recognizing one of these. The supervisor (a polling daemon that watches blocked cards) creates a \`[SUPERVISE]\` triage handoff for the steward; the steward unblocks you with a comment + corrective action.
 
 ## On failure
 

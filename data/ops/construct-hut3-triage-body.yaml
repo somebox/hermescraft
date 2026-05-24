@@ -1,0 +1,28 @@
+kind: construct
+board: landfolk-ops
+blueprint_url: https://www.grabcraft.com/minecraft/dystopian-village-hut-3/other-193
+plan_file: data/ops/plans/dystopian-hut-3-plan.json
+
+intent: |
+  Break this triage card into worker tasks using the repo blueprint planner.
+  Steward runs the script (do not assign a single "build everything" task to mason yet).
+
+planner_command: |
+  cd /Users/foz/hermescraft && python3 scripts/blueprint-plan.py \
+    "https://www.grabcraft.com/minecraft/dystopian-village-hut-3/other-193" \
+    --out /tmp/hut3-plan.json
+
+prerequisites:
+  - Scout task t_73af3076 done (anchor + site hut3 documented)
+  - Supply task t_ea3f34a3 done
+  - Region :hut3: marker t_34b5d5e2 done
+
+decompose_hint:
+  - Run planner_command; read materials_planned and phases from output JSON
+  - "[SUPPLY] gap fill for mason if any" → flint
+  - "[CONSTRUCT] hut3 layer Y=…" → mason (one card per phase or per 2-3 layers max)
+  - Each construct child body must include anchor/site from scout comment + subset of cells[]
+
+assignee_routing:
+  decompose: steward
+  construct_children: mason

@@ -20,7 +20,7 @@ so a restart doesn't re-trigger old messages.
 Stop with Ctrl-C.
 
 Env:
-    BOT_PORT          (default 3002 — Flint's bot)
+    BOT_PORT          (default 3005 — Steward's own bot; was 3002 Flint pre-2026-05-25)
     BOARD             (default landfolk-ops)
     POLL_INTERVAL_S   (default 5)
     AUTO_DECOMPOSE    (default 1 — set 0 to leave cards in triage)
@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path
 
-BOT_PORT = int(os.environ.get("BOT_PORT", "3002"))
+BOT_PORT = int(os.environ.get("BOT_PORT", "3005"))  # Steward's own bot
 BOARD = os.environ.get("BOARD", "landfolk-ops")
 POLL_INTERVAL_S = float(os.environ.get("POLL_INTERVAL_S", "5"))
 AUTO_DECOMPOSE = os.environ.get("AUTO_DECOMPOSE", "1") == "1"

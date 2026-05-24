@@ -43,6 +43,10 @@ import sys
 import time
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR / "lib"))
+from kanban_block_reason import parse as parse_block_reason
+
 BOARD = os.environ.get("BOARD", "landfolk-ops")
 POLL_INTERVAL_S = float(os.environ.get("POLL_INTERVAL_S", "30"))
 AUTO_DECOMPOSE = os.environ.get("AUTO_DECOMPOSE", "1") == "1"
@@ -105,20 +109,46 @@ def last_block_ms(card_detail):
     blocked = [e for e in events if e.get("kind") == "blocked"]
     if not blocked:
         return 0
-    # Events may have either 'time' or a parsed ISO 'created_at'.
+    # `created_at` is a Unix-epoch *seconds* int from hermes kanban (e.g.
+    # 1779585352). Older paths emitted `time` in ms or an ISO string under
+    # `created_at` — handle all three for forward/back-compat.
     times = []
     for e in blocked:
+        ca = e.get("created_at")
         if "time" in e:
-            times.append(int(e["time"]))
-        elif "created_at" in e:
             try:
-                times.append(int(time.mktime(time.strptime(e["created_at"][:19], "%Y-%m-%dT%H:%M:%S")) * 1000))
+                times.append(int(e["time"]))
+            except Exception:
+                pass
+        elif isinstance(ca, (int, float)):
+            # Heuristic: < 10^12 ⇒ seconds, else already ms
+            v = int(ca)
+            times.append(v * 1000 if v < 10**12 else v)
+        elif isinstance(ca, str):
+            try:
+                times.append(int(time.mktime(time.strptime(ca[:19], "%Y-%m-%dT%H:%M:%S")) * 1000))
             except Exception:
                 pass
     return max(times) if times else 0
 
 
-def create_supervision_card(target_id, target_title, target_assignee, blocked_at_ms, n_prior):
+def last_block_reason(card_detail):
+    """Most recent blocked-event reason string, if any."""
+    if not card_detail:
+        return None
+    events = card_detail.get("events") or []
+    blocked = [e for e in events if e.get("kind") == "blocked"]
+    if not blocked:
+        return None
+    last = blocked[-1]
+    for key in ("reason", "message", "detail", "text"):
+        val = last.get(key)
+        if val:
+            return str(val).strip()
+    return None
+
+
+def create_supervision_card(target_id, target_title, target_assignee, blocked_at_ms, n_prior, block_reason=None):
     title = f"[SUPERVISE] review blocked {target_id}"
     body = (
         f"Steward: review the blocked card and decide next action.\n\n"
@@ -128,6 +158,15 @@ def create_supervision_card(target_id, target_title, target_assignee, blocked_at
         f"- Original assignee: {target_assignee}\n"
         f"- Last block at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(blocked_at_ms / 1000)) if blocked_at_ms else 'unknown'}\n"
         f"- Supervisions to date: {n_prior}\n\n"
+    )
+    parsed = parse_block_reason(block_reason) if block_reason else None
+    if parsed:
+        body += "## Parsed block reason\n"
+        for key in ("block_kind", "region_id", "missing", "short_reason", "raw"):
+            if parsed.get(key) is not None:
+                body += f"- {key}: {parsed[key]}\n"
+        body += "\n"
+    body += (
         f"## Your task\n"
         f"1. `hermes kanban show {target_id}` — read body, events, comments, runs.\n"
         f"2. Decide ONE action:\n"
@@ -179,6 +218,29 @@ def decompose(supervise_id):
         print(f"  decomposed → {r.stdout.strip()[:120]}")
 
 
+# In-game chat broadcasts use Steward's own bot. The supervisor announces
+# its actions so re44 (and any watching humans) see what's happening in
+# Minecraft without checking the dashboard. Failure is non-fatal — the
+# supervise card still got created on the board.
+CHAT_BOT_PORT = int(os.environ.get("CHAT_BOT_PORT", "3005"))  # Steward's bot
+MC_CLI = str(SCRIPT_DIR.parent / "bin" / "mc")
+
+
+def chat_announce(message):
+    if DRY_RUN:
+        print(f"  DRY chat: {message}")
+        return
+    try:
+        env = {**os.environ, "MC_API_URL": f"http://localhost:{CHAT_BOT_PORT}"}
+        subprocess.run(
+            [MC_CLI, "chat", message],
+            capture_output=True, text=True, env=env, timeout=5,
+        )
+    except Exception as e:
+        # Chat is best-effort; don't break the supervisor loop on it
+        print(f"  chat-announce failed: {e}")
+
+
 def main():
     print(f"steward-supervisor: watching board {BOARD} for blocked cards")
     print(f"  poll every {POLL_INTERVAL_S}s, min-block-age {MIN_BLOCK_AGE_S}s, max {MAX_SUPERVISIONS}/card")
@@ -226,10 +288,16 @@ def main():
                     continue
 
                 print(f"[{time.strftime('%H:%M:%S')}] supervising {tid} ({assignee}): {title[:60]}")
-                sup_id = create_supervision_card(tid, title, assignee, block_ms, len(card_state["supervised"]))
+                block_reason = last_block_reason(detail)
+                sup_id = create_supervision_card(
+                    tid, title, assignee, block_ms, len(card_state["supervised"]), block_reason=block_reason,
+                )
                 if sup_id:
                     print(f"  created {sup_id}")
                     decompose(sup_id)
+                    # Announce in-game so re44 sees activity in the FPV/chat
+                    reason_hint = block_reason[:50] + "..." if block_reason and len(block_reason) > 50 else (block_reason or "no reason")
+                    chat_announce(f"supervising {tid} ({assignee}): {reason_hint}")
                     card_state["supervised"].append(block_ms)
                     state["cards"][tid] = card_state
                     save_state(state)

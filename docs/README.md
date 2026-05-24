@@ -12,6 +12,7 @@ High-level references for working on HermesCraft.
 | [patterns.md](patterns.md) | Maintainability patterns (P1–P20) and convention checks |
 | [agent-boundaries.md](agent-boundaries.md) | What lives in Hermes vs Mineflayer HTTP / `mc` CLI |
 | [mc-cheatsheet.md](mc-cheatsheet.md) | One-line per `mc` command |
+| [mc-commands.md](mc-commands.md) | Canonical verb names, args, and envelopes |
 
 ## Guides
 
@@ -31,12 +32,16 @@ High-level references for working on HermesCraft.
 |-----|---------|
 | [design/goal-profiles.md](design/goal-profiles.md) | Goal schema exercises (defender, builder, miner) |
 | [design/phase-2/](design/phase-2/) | Phase 2 architecture (board, contracts, reactive layer, sprints) |
+| [design/phase-3/](design/phase-3/) | Phase 3 steward / landfolk-ops kanban MVP |
 
 ## Features (in flight)
 
 | Doc | Purpose |
 |-----|---------|
+| [features/designated-regions.md](features/designated-regions.md) | Region profiles, enforcement, sites (Phase 1 runtime) |
+| [features/designated-regions-verification.md](features/designated-regions-verification.md) | Live-world verification checklist |
 | [features/sign-anchored-placemarks.md](features/sign-anchored-placemarks.md) | Sign-based placemark design |
+| [features/blueprints.md](features/blueprints.md) | GrabCraft JSON + future `mc construct` sketch |
 
 ## Planning (logs and scratch)
 

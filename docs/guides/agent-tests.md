@@ -29,7 +29,7 @@ The runner drives **one** Mineflayer HTTP API and launches Hermes with matching 
 | `MC_USERNAME` | `Flint` (set by runner) | not overridable today — specs use Flint in `prep`/`cleanup` rcon |
 | `MC_API_URL` | same as `--bot-url` | `--bot-url` |
 
-Start the **Flint** bot body on port 3001 before running (e.g. landfolk launch scripts). The pytest **functional** suite uses **Tester** on port 3004 via [`config/hermescraft.yaml`](../config/hermescraft.yaml) — that is a different harness (`tests/conftest.py`), not `agent-test.py`.
+Start the **Flint** bot body on port 3001 before running (e.g. landfolk launch scripts). The pytest **functional** suite uses **Tester** on port 3004 via [`config/hermescraft.yaml`](../../config/hermescraft.yaml) — that is a different harness (`tests/conftest.py`), not `agent-test.py`.
 
 If you point `--bot-url` at another port, the process on that port must still be the **Flint** account; prep commands teleport and reset `Flint` in `landfolk-test`. Using Tester on 3004 without changing the runner will mismatch rcon prep and `MC_USERNAME`.
 

@@ -1,0 +1,29 @@
+kind: epic
+board: landfolk-ops
+intent: |
+  Label the 9x9 wheat plot as :wheat1: with intent=marker (farm profile) until farm protect rules
+  support seed planting. Add corner sites + center + water_source. Run only after harvest card completes.
+acceptance:
+  - region_exists: wheat1
+  - region_intent: marker
+  - region_sites_include: [nw, ne, se, sw, center, water_source]
+inputs:
+  center: [359, 65, -571]
+  corners:
+    nw: [355, 65, -567]
+    ne: [363, 65, -567]
+    se: [363, 65, -575]
+    sw: [355, 65, -575]
+  water_source: [374, 61, -580]
+  shape: { kind: column, radius: 6, y_min: 64, y_max: 72 }
+prerequisites:
+  - parent_task: t_5062da0c must be done before region create child runs
+decompose_hint:
+  - "[REGION] create :wheat1: farm --intent marker → flint"
+  - "[VERIFY] :wheat1: sites → flint"
+sign_text_for_player: |
+  :wheat1: wheat plot
+  region=farm
+  intent=marker
+  r=6
+  y=64..72

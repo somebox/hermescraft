@@ -23,7 +23,7 @@ Bot lifecycle (handled by this script):
   2. Run world_setup RCON commands.
   3. `landfolk-control.sh start --profiles flint,mason` with model env.
   4. Poll /health until both bots are connected.
-  5. Write marks (SUPPLY_CHEST, KEEP_SITE, MINING_HINT) into each bot.
+  5. Write marks (lt_supply, lt_keep, … per data/marks/canonical.yaml) into each bot.
   6. Run phase state machine.
   7. landfolk-control.sh stop --profiles flint,mason (cleanup).
 """
@@ -49,6 +49,7 @@ SOUL_FILE = HERE / "SOUL-landfolk.md"
 PROMPTS_DIR = HERE / "prompts" / "landfolk"
 HOME_DIR = Path.home()
 BOT_DIR = HERE / "bot"
+DATA_DIR = HERE / "data"
 
 
 # Default G21 brain prompt — appended to the role-specific prompt at launch.
@@ -91,12 +92,12 @@ CORE LOOP:
 
 REPORTING — talk constantly. Silence is the failure mode of this test:
 - Before starting a phase of work, announce it: `mc chat "{name}: heading
-  to MINING_HINT to mine stone"`.
+  to lt_mine to mine stone"`.
 - During work, report every notable step: each block placed, each batch
   of items collected, each travel destination. Examples:
     `mc chat "{name}: 20/60 cobble"`
     `mc chat "{name}: chest at -3,65,10 placed, depositing planks now"`
-    `mc chat "{name}: heading to BEACH for sand"`
+    `mc chat "{name}: heading to lt_beach for sand"`
     `mc chat "{name}: tree at 6,65,-6 chopped, 4 logs collected"`
 - After finishing a sub-step, say so.
 - ALWAYS reply to {partner}'s messages — questions, status reports,
@@ -108,7 +109,7 @@ NO-MINE ZONE — the build area is a CONSTRUCTION SITE, not a resource:
 - DO NOT mine, dig, or destroy any block at the build site. That zone
   is roughly x: -4..3, y: 65..72, z: 6..14 — chest, platform, walls,
   door, window, and the air around them.
-- If you need more cobble, mine NEW stone from MINING_HINT (-12,65,-12)
+- If you need more cobble, mine NEW stone from lt_mine (-12,65,-12)
   or further out. NEVER take cobble back out of the chest, platform,
   or walls — you're destroying your own work.
 - The same rule applies to oak_log/planks: don't break the chest or
@@ -128,7 +129,7 @@ USE NEW FRAMEWORK TOOLS (saves cycles):
 - Before mining anything: `mc find cobblestone` (or whatever). Tells you
   inventory + chest + visible-block sources. If you already have enough,
   don't mine more. Example: `mc find cobblestone` → "inventory:30;
-  chests:48@SUPPLY_CHEST(3.2m); blocks:8 (nearest @ -12,65,-12 25m)".
+  chests:48@lt_supply(3.2m); blocks:8 (nearest @ -12,65,-12 25m)".
   With 78 already available, don't bother mining.
 - Pass `reason='...'` on long actions (collect/goto/fill/craft/smelt/
   dig/tunnel/place_fill/wall). The framework auto-broadcasts the reason
@@ -162,7 +163,7 @@ ACKNOWLEDGE ONLY WHEN ACTUALLY DONE — VERIFY via real commands:
 CLAIM SUB-TASKS via chat to avoid duplicate work:
 - Before starting a sub-step on a TEAM mission, announce ownership:
     `mc chat "{name}: I'll build the north and east walls"`
-    `mc chat "{name}: I'll handle the glass — going to BEACH for sand"`
+    `mc chat "{name}: I'll handle the glass — going to lt_beach for sand"`
 - If your partner has already claimed a sub-task, DON'T also do it.
   Pick something else they didn't claim.
 - If you finish your claimed work, ask for the next thing:
@@ -179,10 +180,10 @@ IF YOU CANNOT COMPLETE — emit BLOCKED instead of DONE:
 KEY RULES:
 - Mission text includes `deadline tick NNNN` (Minecraft world tick).
   Run `mc status` to see the current tick. Pace yourself.
-- SUPPLY_CHEST mark is at the start. It holds 2 wooden pickaxes, 2
+- lt_supply mark is at the start. It holds 2 wooden pickaxes, 2
   wooden axes, and 16 bread for BOTH of you. Take your share — leave
   enough for {partner}.
-- A window mission needs glass. Sand is at the BEACH mark — you both
+- A window mission needs glass. Sand is at the lt_beach mark — you both
   know sand → furnace → smelt → glass. Decide with {partner} whether
   to make glass or skip windows.
 - If stuck or short on materials, ASK {partner} via `mc chat` BEFORE
@@ -190,7 +191,7 @@ KEY RULES:
 
 START SEQUENCE (run these in order):
 1. `mc status`              — note the current tick and your position.
-2. `mc marks`               — confirm SUPPLY_CHEST, KEEP_SITE, MINING_HINT.
+2. `mc marks`               — confirm lt_supply, lt_keep, lt_mine (and lt_stone / lt_beach for M3).
 3. `mc inventory`           — see what you start with.
 4. `mc chat "READY: {name} standing by"` — handshake to the steward.
 5. `mc read_chat 30`        — check for orders that arrived early.
@@ -502,8 +503,18 @@ def bot_health(port: int) -> bool:
     return bool(payload.get("connected"))
 
 
-def write_mark(port: int, name: str, x: int, y: int, z: int, note: str = "") -> bool:
-    body = {"name": name, "note": note, "at": {"x": x, "y": y, "z": z}}
+def write_mark(
+    port: int,
+    name: str,
+    x: int,
+    y: int,
+    z: int,
+    note: str = "",
+    category: str | None = None,
+) -> bool:
+    body: dict = {"name": name, "note": note, "at": {"x": x, "y": y, "z": z}}
+    if category:
+        body["category"] = category
     out = http_post_json(f"http://localhost:{port}/action/mark", body, timeout=8.0)
     return bool(out.get("ok") or out.get("result"))
 
@@ -570,8 +581,8 @@ def launch_bot_body(name: str, port: int, env_extra: dict[str, str], log_path: P
         "API_PORT": str(port),
         "FAIR_PLAY": env.get("FAIR_PLAY", "true"),
         # BOT_HEAR_ALL bypasses the per-bot proximity filter on cross-bot
-        # broadcasts. Without it, Mason mining at MINING_HINT (~25 blocks
-        # from Flint near KEEP_SITE) silently drops the partner's chat
+        # broadcasts. Without it, Mason mining at lt_mine (~25 blocks
+        # from Flint near lt_keep) silently drops the partner's chat
         # into overhearLog, where `mc read_chat` can't see it — bots
         # think their partner is mute.
         "BOT_HEAR_ALL": "true",
@@ -890,14 +901,48 @@ def wait_for_chat_phrase(bots: list[dict], phrase: str, timeout_s: int, from_eac
 
 def wipe_bot_marks(name: str) -> None:
     """Reset the bot's locations file so stale marks from previous runs
-    (death_1, base, home, etc.) don't confuse the brain. The file is at
-    `bot/data/locations-<name>.json`."""
-    p = BOT_DIR / "data" / f"locations-{name.lower()}.json"
+    (death_1, legacy UPPER_CASE names, etc.) don't confuse the brain.
+    File: `data/locations-<name>.json` at repo root (same path the bot uses)."""
+    p = DATA_DIR / f"locations-{name.lower()}.json"
     if p.exists():
         try:
-            p.write_text("{}")
+            p.write_text("{}\n")
         except OSError:
             pass
+
+
+def backup_bot_marks(name: str, backup_dir: Path) -> Path | None:
+    """Snapshot `data/locations-<name>.json` so we can restore production
+    marks (`home`, `coal_seam`, perimeter, …) after the test wipes the
+    file. Returns the backup path, or None if there's nothing to back up.
+
+    The Landfolk locations file is per-bot, not per-world — so running G21
+    against the production Flint/Mason bodies destroys their real marks
+    unless we save and restore here."""
+    src = DATA_DIR / f"locations-{name.lower()}.json"
+    if not src.exists():
+        return None
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        dst = backup_dir / f"locations-{name.lower()}.json.bak"
+        dst.write_bytes(src.read_bytes())
+        return dst
+    except OSError:
+        return None
+
+
+def restore_bot_marks(name: str, backup_path: Path | None) -> bool:
+    """Restore a previous `backup_bot_marks` snapshot. Caller MUST have
+    already stopped the bot body — otherwise the live process will write
+    its in-memory mark table back over the restore."""
+    if not backup_path or not backup_path.exists():
+        return False
+    dst = DATA_DIR / f"locations-{name.lower()}.json"
+    try:
+        dst.write_bytes(backup_path.read_bytes())
+        return True
+    except OSError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1166,6 +1211,10 @@ def main() -> int:
     body_procs: dict[str, subprocess.Popen] = {}
     tee_stop = threading.Event()
     tee_thread: threading.Thread | None = None
+    # Pre-wipe snapshots of each bot's `data/locations-<name>.json`. Restored
+    # at the end of cleanup_bots so production marks (`home`, perimeter, …)
+    # survive the test wipe. Empty until we actually take backups below.
+    mark_backups: dict[str, Path] = {}
 
     def cleanup_bots():
         # Stop the brain-tee thread before killing brains (so it doesn't read
@@ -1200,6 +1249,12 @@ def main() -> int:
         # Final port-kill safety net.
         for b in bots:
             kill_port(b["port"])
+        # Restore production marks now that the bot bodies are no longer
+        # writing to the locations files. Skipped under --keep-running and
+        # --dry-run (handled by the early returns above).
+        for name, bak in mark_backups.items():
+            if restore_bot_marks(name, bak):
+                print(f"  restored marks for {name} from {bak}")
 
     # SIGINT handling for clean shutdown.
     def sigint_handler(signum, frame):
@@ -1240,8 +1295,14 @@ def main() -> int:
     # bleed into the run. This MUST happen after bodies are up — the body owns
     # the file. Best-effort: re-read won't happen until the brain restarts but
     # the bodies cache marks in memory, so we'll re-set via /action/mark below.
+    # Snapshot first so cleanup_bots() can restore production marks afterwards.
     if not args.dry_run:
+        backup_dir = log_dir / "marks-backup"
         for b in bots:
+            bak = backup_bot_marks(b["name"], backup_dir)
+            if bak:
+                mark_backups[b["name"]] = bak
+                print(f"  backed up marks for {b['name']} -> {bak}")
             wipe_bot_marks(b["name"])
 
     # Post-connect setup — /clear and /effect on players only work when
@@ -1263,7 +1324,15 @@ def main() -> int:
         print(f"  writing {len(marks)} marks to each bot")
         for bot in bots:
             for mname, mdata in marks.items():
-                ok = write_mark(bot["port"], mname, int(mdata["x"]), int(mdata["y"]), int(mdata["z"]), mdata.get("note", ""))
+                ok = write_mark(
+                    bot["port"],
+                    mname,
+                    int(mdata["x"]),
+                    int(mdata["y"]),
+                    int(mdata["z"]),
+                    mdata.get("note", ""),
+                    category=mdata.get("category", "landfolk-test"),
+                )
                 if not ok:
                     print(f"  WARN: mark {mname} → {bot['name']}:{bot['port']} failed")
 

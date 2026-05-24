@@ -1,0 +1,36 @@
+{
+  "world": "world",
+  "regions": [
+    {
+      "id": "hut3",
+      "profile": "base",
+      "intent": "marker",
+      "status": "unanchored",
+      "anchor": {
+        "x": 369,
+        "y": 67,
+        "z": -603
+      },
+      "shape": {
+        "kind": "column",
+        "radius": 16
+      },
+      "sites": {
+        "anchor": {
+          "x": 370,
+          "y": 65,
+          "z": -608
+        }
+      },
+      "capabilities": {
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": false,
+        "allow_harvest": true,
+        "overrides_global_denylist": false
+      },
+      "created": "2026-05-24T02:28:03.035Z",
+      "updated": "2026-05-24T09:28:52.215Z"
+    }
+  ]
+}

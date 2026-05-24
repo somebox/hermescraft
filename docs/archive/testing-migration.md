@@ -132,7 +132,7 @@ def test_reachable_reports_head_blocked_for_unreachable_target(bot, mason_trap):
     assert data.get("target_reason") == "head_blocked", data
 ```
 
-See [`tests/functional/test_nav_reachable.py`](../tests/functional/test_nav_reachable.py)
+See [`tests/functional/test_nav_reachable.py`](../../tests/functional/test_nav_reachable.py)
 for the full migrated version.
 
 ---

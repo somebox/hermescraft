@@ -118,7 +118,7 @@ Main agent sees **only this** in tool result, not the 15 KB raw bundle.
 ### Why start at the CLI
 
 1. **Unified surface** — Main-agent rule is one line: when stuck, starting a new gather sub-goal, or locating something, call `mc advise --reason=<sub-goal>` before acting. No “use this skill except when you’d use mc…”
-2. **Same code path** — Bundle 4–5 HTTP reads → digest (OpenRouter today; `ctx.llm.complete_structured` when inside Hermes plugin) → `perception_answer_v1` JSON. [tests/_lib/openrouter.py](../tests/_lib/openrouter.py) + capture logic from [tests/integration/test_perception_digest.py](../tests/integration/test_perception_digest.py) move into e.g. `bot/lib/advise/` or `scripts/_lib/perception_advise.py` imported by both `bin/mc` and the plugin.
+2. **Same code path** — Bundle 4–5 HTTP reads → digest (OpenRouter today; `ctx.llm.complete_structured` when inside Hermes plugin) → `perception_answer_v1` JSON. [tests/_lib/openrouter.py](../../tests/_lib/openrouter.py) + capture logic from [tests/integration/test_perception_digest.py](../../tests/integration/test_perception_digest.py) move into e.g. `bot/lib/advise/` or `scripts/_lib/perception_advise.py` imported by both `bin/mc` and the plugin.
 3. **`reason=` in one place** — mandatory on `mc advise` only (see above).
 
 ### Latency (10–35 s) — gating issue, not API shape
@@ -142,16 +142,16 @@ Start synchronous so in-game behavior is legible: logs show exactly when advise 
 
 ### Concrete MVP cut (~1 day)
 
-1. **`mc advise --reason="..."`** — register in [bot/cli/registry.mjs](../bot/cli/registry.mjs); implementation calls shared `perception_advise(reason)` → prints `perception_answer_v1` JSON (human-readable + `--json`).
+1. **`mc advise --reason="..."`** — register in [bot/cli/registry.mjs](../../bot/cli/registry.mjs); implementation calls shared `perception_advise(reason)` → prints `perception_answer_v1` JSON (human-readable + `--json`).
 2. **Hermes plugin tool** `perception_advise(reason)` — same function; when running in-process, prefer `ctx.llm.complete_structured` + `auxiliary.hermescraft_digest`; CLI may keep direct OpenRouter until plugin lands.
 3. **One prompt line** (Landfolk/Steve): “On stuck, on a new gather sub-goal, or to locate something, call `mc advise --reason=<your sub-goal>` before acting on the recommendations.”
-4. **One Landfolk session** vs no-advise baseline; log every reason string ([scripts/perception-digest-bench.py](../scripts/perception-digest-bench.py) for timing).
+4. **One Landfolk session** vs no-advise baseline; log every reason string ([scripts/perception-digest-bench.py](../../scripts/perception-digest-bench.py) for timing).
 
 **Success:** advise called **2–6 times** per session, each followed by a more targeted `mc goto` / `mc dig` / etc.
 
 **Failure:** never called, or called every tick (prompt or guardrails need tuning).
 
-Regression unchanged: [tests/integration/test_perception_digest.py](../tests/integration/test_perception_digest.py) for bundle + JSON shape.
+Regression unchanged: [tests/integration/test_perception_digest.py](../../tests/integration/test_perception_digest.py) for bundle + JSON shape.
 
 ---
 

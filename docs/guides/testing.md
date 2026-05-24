@@ -6,9 +6,9 @@ runtimes. Only Tier 1 runs in CI today; the rest are manual / local.
 **Related documents:**
 - [`docs/archive/test-inventory.md`](../archive/test-inventory.md) — per-test catalog (overlaps, gaps, validation notes)
 - [`docs/archive/testing-migration.md`](../archive/testing-migration.md) — pytest migration cookbook (Round 3 complete)
-- [`config/hermescraft.yaml`](../config/hermescraft.yaml) — central MC/rcon/bot/model/logging config
-- [`tests/README.md`](../tests/README.md) — pytest tree overview
-- [`bot/lib/config/README.md`](../bot/lib/config/README.md) — bot server's env-var schema
+- [`config/hermescraft.yaml`](../../config/hermescraft.yaml) — central MC/rcon/bot/model/logging config
+- [`tests/README.md`](../../tests/README.md) — pytest tree overview
+- [`bot/lib/config/README.md`](../../bot/lib/config/README.md) — bot server's env-var schema
 
 | Tier | What | Time | Prerequisites | CI? |
 |---|---|---|---|---|

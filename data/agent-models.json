@@ -30,6 +30,12 @@
       "provider": "openrouter",
       "role": "food",
       "api_port": 3004
+    },
+    "Steward": {
+      "model": "deepseek/deepseek-v4-flash",
+      "provider": "openrouter",
+      "role": "orchestrator",
+      "api_port": 3005
     }
   }
 }

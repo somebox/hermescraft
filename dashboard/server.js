@@ -17,6 +17,12 @@ import {
   playersMarkersUrl,
 } from './lib/world-map.js';
 import { nearbyPlayerName, isPlaceholderPlayerName } from './lib/nearby-players.js';
+import {
+  botMcNameSet,
+  discoveryPortList,
+  isHermesBotHealth,
+  mergePollTargets,
+} from './lib/bot-discovery.js';
 import { hermesHomeCandidates, hermesHomeLabel } from './lib/agent-paths.js';
 import { loadCognitionFromHomes } from './lib/cognition.js';
 import { runHermesCli } from './lib/hermes-cli.js';
@@ -72,13 +78,17 @@ function resolveViewerPort(agent, healthBody, connected) {
 }
 
 function normalizeAgentRow(agent, healthBody, obsBody, err) {
+  const discovered = agent.discovered === true;
   const connected = healthBody?.connected === true;
   const mcUsername =
     healthBody?.username != null ? String(healthBody.username).trim() : null;
   const identityOk =
+    discovered ||
     !connected ||
     !mcUsername ||
     mcUsername.toLowerCase() === String(agent.name || '').toLowerCase();
+  const displayName =
+    discovered && mcUsername ? mcUsername : String(agent.name || mcUsername || 'agent');
   const obsOk = obsBody?.ok === true;
   /** briefState() is null when off-world or not ready — do not coerce to {} */
   const rawState = obsBody?.state;
@@ -90,7 +100,7 @@ function normalizeAgentRow(agent, healthBody, obsBody, err) {
   const online = connected && obsOk && hasLiveBody && identityOk;
   const state = hasLiveBody ? rawState : {};
   const pos = state.position;
-  const motion = updateAgentMotion(agent.name, pos && typeof pos.x === 'number' ? pos : null);
+  const motion = updateAgentMotion(displayName, pos && typeof pos.x === 'number' ? pos : null);
   const goals = obsBody?.goals || [];
   const top = goals.find((g) => g && g.satisfied === false) || goals[0] || null;
   const recent = Array.isArray(obsBody?.recent_actions) ? obsBody.recent_actions[0] : null;
@@ -102,7 +112,8 @@ function normalizeAgentRow(agent, healthBody, obsBody, err) {
         : null;
 
   return {
-    name: agent.name,
+    name: displayName,
+    discovered,
     online,
     is_day: obsBody?.is_day ?? state.isDay ?? null,
     time_ticks: Number.isFinite(timeTicks) ? timeTicks : null,
@@ -123,7 +134,7 @@ function normalizeAgentRow(agent, healthBody, obsBody, err) {
         ? `MC user is ${mcUsername}, not ${agent.name}`
         : null),
     mc_username: mcUsername,
-    model: agent.model || null,
+    model: agent.model || healthBody?.model || null,
     api_port: agent.api_port,
     viewer_port: resolveViewerPort(agent, healthBody, connected && identityOk),
     viewer_active:
@@ -187,6 +198,68 @@ async function pollAgent(agent) {
     err = e instanceof Error ? e.message : String(e);
   }
   return normalizeAgentRow(agent, healthBody, obsBody, err);
+}
+
+async function probeHermesBotsOnPorts(ports) {
+  /** @type {{ port: number, username: string, model?: string | null, profile?: string | null }[]} */
+  const found = [];
+  await Promise.all(
+    ports.map(async (port) => {
+      try {
+        const r = await fetchWithTimeout(botUrl(port, '/health'), { timeout: 1500 });
+        const body = await r.json().catch(() => null);
+        if (!r.ok || !isHermesBotHealth(body)) return;
+        found.push({
+          port,
+          username: body.username.trim(),
+          model: body.model ?? null,
+          profile: body.profile ?? null,
+        });
+      } catch {
+        /* closed port or non-bot */
+      }
+    }),
+  );
+  return found;
+}
+
+async function pollAllAgents() {
+  const registryPorts = new Set(
+    registry.agents.map((a) => Number(a.api_port)).filter((p) => Number.isFinite(p) && p > 0),
+  );
+  const scanPorts = discoveryPortList(registry, { dashboardPort: PORT }).filter(
+    (p) => !registryPorts.has(p),
+  );
+  const discoveredHits = await probeHermesBotsOnPorts(scanPorts);
+  const targets = mergePollTargets(registry, discoveredHits);
+  return Promise.all(targets.map((a) => pollAgent(a)));
+}
+
+function resolveAgentRecord(name) {
+  const reg = registry.agents.find((a) => a.name === name);
+  if (reg) return reg;
+  const row = lastFleet?.agents?.find((a) => a.name === name && a.discovered && a.api_port);
+  if (!row) return null;
+  return {
+    name: row.name,
+    api_port: row.api_port,
+    world: row.world || registry.defaultWorld,
+    model: row.model || null,
+    discovered: true,
+    hermes_home: null,
+    viewer_port: row.viewer_port ?? null,
+    radar_port: null,
+  };
+}
+
+function pollRegForAgentRow(row) {
+  return (
+    registry.agents.find((x) => x.name === row.name) || {
+      name: row.name,
+      api_port: row.api_port,
+      world: row.world || registry.defaultWorld,
+    }
+  );
 }
 
 async function fetchRegions(agent) {
@@ -287,22 +360,28 @@ function dedupePoi(list) {
 
 async function buildFleetSnapshot() {
   tick += 1;
-  const agents = await Promise.all(registry.agents.map((a) => pollAgent(a)));
+  const agents = await pollAllAgents();
+  lastFleet = { agents };
   const openrouter = await getCachedOpenRouterCredits(REPO_ROOT);
 
   /** @type {{ name: string, online: boolean, world: string, position: any, human: boolean }[]} */
   const humansMap = new Map();
   const onlinePairs = agents
     .filter((a) => a.online)
-    .map((a) => ({ row: a, reg: registry.agents.find((x) => x.name === a.name) }))
-    .filter((p) => p.reg);
+    .map((row) => ({ row, reg: pollRegForAgentRow(row) }));
   await Promise.all(
     onlinePairs.map(async ({ row, reg }) => {
       const world = row.world || reg.world || registry.defaultWorld;
       const nearby = await fetchNearbyPlayers(reg);
       for (const e of nearby) {
         const name = nearbyPlayerName(e);
-        if (!name || isPlaceholderPlayerName(name) || name === reg.name) continue;
+        if (!name || isPlaceholderPlayerName(name)) continue;
+        if (
+          name.toLowerCase() === String(reg.name).toLowerCase() ||
+          name.toLowerCase() === String(row.mc_username || '').toLowerCase()
+        ) {
+          continue;
+        }
         const prev = humansMap.get(name);
         if (!prev || (e.position && !prev.position)) {
           humansMap.set(name, {
@@ -317,7 +396,7 @@ async function buildFleetSnapshot() {
     }),
   );
 
-  const botNames = new Set(registry.agents.map((a) => String(a.name).toLowerCase()));
+  const botNames = botMcNameSet(registry, agents);
   const worldsForPlayers = new Set([registry.defaultWorld]);
   for (const a of agents) {
     if (a.world) worldsForPlayers.add(a.world);
@@ -575,7 +654,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && agentRoute) {
     const name = decodeURIComponent(agentRoute[1]);
     const sub = agentRoute[2];
-    const agent = registry.agents.find((a) => a.name === name);
+    const agent = resolveAgentRecord(name);
     if (!agent) return sendJson(res, 404, { ok: false, error: 'unknown_agent' });
 
     if (sub === 'inventory') {
@@ -639,4 +718,8 @@ server.listen(PORT, () => {
   if (worldMapConfig) {
     console.log(`WORLD_MAP=${worldMapConfig.baseUrl}`);
   }
+  const scan = discoveryPortList(registry, { dashboardPort: PORT });
+  console.log(
+    `BOT_DISCOVERY ports ${scan[0] ?? '—'}–${scan[scan.length - 1] ?? '—'} (${scan.length} probes, excludes dashboard ${PORT})`,
+  );
 });

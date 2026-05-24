@@ -137,8 +137,5 @@
       "priority": 100
     }
   ],
-  "deficitSince": {
-    "maintain_food": 1778291679360,
-    "maintain_tools": 1778328580859
-  }
+  "deficitSince": {}
 }

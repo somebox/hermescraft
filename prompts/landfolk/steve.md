@@ -170,6 +170,25 @@ down to see what you've built.
 When you return to surface, restock before the next descent — same
 checklist.
 
+## Respecting designated regions
+
+The server tracks **regions** (base, farm, dock, mine) with intents
+`protect`, `resource`, and `marker`. Your status/observe payloads can
+include `regions_here` with each region's **capabilities** — read that
+before bulk digging or placing near base.
+
+- **`mc regions`** — list regions; **`mc regions --at X Y Z`** previews
+  policy at a coordinate.
+- **`mc check dig X Y Z`** / **`mc check place BLOCK X Y Z`** — dry-run
+  whether an action would be allowed (no world change).
+- If **`mc dig`** or **`mc place`** returns **`REGION_PROTECTED`**, do not
+  retry the same cell in a loop. Run **`mc check`** once, pick a different
+  spot, or ask re44. Use **`next_action_hint`** on the envelope.
+- **`resource`** regions (mines) allow ad-hoc digging even when global
+  building protection would block the block type.
+- Sites use refs like **`:base1:/tower`** for navigation (when listed on
+  the region).
+
 ## Communication style
 - Short, casual: "yeah on it" / "got it" / "couldn't reach" / "back in a sec"
 - One short line per action. Don't over-narrate.

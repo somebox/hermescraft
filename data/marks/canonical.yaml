@@ -10,12 +10,37 @@
 #     coords:  [x, y, z]
 #     note:    <one-line description>
 #
-# When you add a mark, list it once here and reference @name in card prose.
+# Naming: lowercase snake, world-scoped prefix for test arenas (lt_* =
+# landfolk-test). Production marks use short names (base, home). G21
+# orchestrator seeds lt_* marks via HTTP before each run.
 
 base:
   world: world
   coords: [358, 66, -602]
   note: "production-world landfolk base near Flint's spawn"
+
+# :base1: protect region — sites mirror data/ops/epic-base1-body.yaml.
+# Use :base1:/<site> in card bodies (mc go_site) when the region is set up;
+# fall back to these coords if you need a private mark.
+base_chest:
+  world: world
+  coords: [365, 65, -593]
+  note: "main deposit chest inside :base1: (site=chest)"
+
+home:
+  world: world
+  coords: [367, 66, -606]
+  note: "Landfolk surface home — auto-set on first spawn / mc set_home"
+
+gate:
+  world: world
+  coords: [359, 65, -590]
+  note: "north entry to :base1: (site=gate)"
+
+mine_entrance:
+  world: world
+  coords: [368, 57, -590]
+  note: "top of descent shaft into the mine (site=mine_entrance)"
 
 test_origin:
   world: landfolk-test
@@ -26,3 +51,29 @@ spawn_landfolk:
   world: world
   coords: [358, 66, -602]
   note: "where Flint and Gatherer materialize in production after mvtp <bot> world"
+
+# G21_two_bot_house.yaml arena (landfolk-test)
+lt_supply:
+  world: landfolk-test
+  coords: [0, 65, 0]
+  note: "Shared tools chest at origin — share with partner"
+
+lt_keep:
+  world: landfolk-test
+  coords: [0, 65, 10]
+  note: "Central build site (platform + house)"
+
+lt_stone:
+  world: landfolk-test
+  coords: [5, 65, 10]
+  note: "On-site cobble pile east of platform — prefer over lt_mine for M3"
+
+lt_mine:
+  world: landfolk-test
+  coords: [-12, 65, -12]
+  note: "Stone outcrop SW — bulk cobble for M1A"
+
+lt_beach:
+  world: landfolk-test
+  coords: [12, 64, 12]
+  note: "Sand + shallow pond NE — glass smelt for window"

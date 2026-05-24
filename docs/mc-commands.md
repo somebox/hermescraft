@@ -13,7 +13,7 @@ See also [`design/action-contract.md`](design/action-contract.md) for return env
 | **world** | `dig`, `safe_dig`, `collect`, `dig_area`, `tunnel`, `stair_*`, `pillar_*`, `place`, `place_fill`, `wall`, `fence`, `path`, `level`, `build_stairs`, `dig_pit`, `till`, `plant`, `harvest`, `bonemeal`, `fish`, `bucket_*`, low-level boat verbs | Placement/digging verbs use **`block`** in JSON bodies (see B) |
 | **craft** | `craft`, `craft_plan`, `recipes`, `smelt`, `smelt_start`, `furnace_check`, `furnace_take` | Inventory/crafting verbs use **`item`** in JSON bodies |
 | **combat** | `attack`, `fight`, `shoot`, `flee`, `mode`, `eat`, … | |
-| **memory** | `mark`, `marks`, `go_mark`, `remind`, `set_home`, `deathpoint` | |
+| **memory** | `mark`, `marks`, `go_mark`, `go_site`, `remind`, `set_home`, `deathpoint`, `regions`, `region_create`, `site_add` | Designated **regions** (protect/mine columns) — see [`features/designated-regions.md`](features/designated-regions.md); `mc goto :id:/site` routes to `go_site`; dry-run with `check dig` / `check place` |
 | **task** | `bg_goto`, `complete_command`, … | Async task verbs |
 | **social** | `chat`, `team_chat`, `whisper`, … | |
 | **platform** | `health`, `dashboard`, `advise`, `goals` | Meta / fleet |
