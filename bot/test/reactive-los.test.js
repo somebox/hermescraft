@@ -1,25 +1,25 @@
 /**
  * Reactive flee — line-of-sight / present-danger gating.
  *
- * Bug history (2026-05-24): Steward was stuck at Y=50 in a dark cave
- * with a zombie ~5.4 blocks away THROUGH the cave wall. The reactive
- * layer fired `flee_step (ranged_no_weapon)` every 30s for 4+ minutes
- * because `closest_ranged` was LOS-blind. The agent couldn't make
- * strategic progress and HP drained 20→10 from sporadic damage when
- * the zombie did find a path.
+ * Bug history (2026-05-24):
+ *   1. Steward stuck at Y=50 in a dark cave, zombie ~5.4 blocks THROUGH
+ *      the cave wall, `flee_step (ranged_no_weapon)` fired every 30s for
+ *      4+ minutes because `closest_ranged` was LOS-blind. → Fixed by
+ *      gating critical_hp + ranged_no_weapon via `isPresentDanger`.
+ *   2. Mason bamboo run: creeper ~5.5 blocks THROUGH a cave wall west
+ *      of the farm door, `flee_step (creeper_close)` fired every tick
+ *      and killed all goto/move/through with NAV_FAILED. → Fixed by
+ *      two-tier creeper gating: LOS-blind only at ≤3 blocks (blast
+ *      range), LOS-required at 3–6 blocks (`shouldFleeCreeper`).
  *
- * Fix: gate the `critical_hp` and `ranged_no_weapon` flee branches with
- * `isPresentDanger(state, threat)` — a non-creeper threat is only
- * "present" if visible (LOS) OR currently damaging us. A hostile through
- * a wall not currently landing hits = let the agent decide.
- *
- * Creeper proximity (CREEPER_FLEE_RANGE) is intentionally LOS-blind —
- * creepers detonate through cover faster than the agent loop reacts.
+ * Both fixes preserve the "active damage" override — a hidden mob that
+ * IS landing hits still counts as present, so the bot still flees from
+ * skeletons firing through gaps etc.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isPresentDanger } from '../lib/runtime/reactive.js';
+import { isPresentDanger, shouldFleeCreeper } from '../lib/runtime/reactive.js';
 
 // Minimal threat fixtures matching collectState()'s hostile shape:
 //   { entity, name, position, distance, visible }
@@ -73,4 +73,64 @@ test('isPresentDanger: explicit visible=undefined treated as not visible', () =>
   const ambiguous = { name: 'zombie', distance: 5, visible: undefined };
   assert.equal(isPresentDanger({ recently_damaged: false }, ambiguous), false);
   assert.equal(isPresentDanger({ recently_damaged: true }, ambiguous), true);
+});
+
+// ─── shouldFleeCreeper: two-tier creeper gating ──────────────────────────
+// Mason bamboo-blocker matrix. Creeper at various distances, visible or
+// hidden, with/without recent damage. Constants in reactive.js:
+//   CREEPER_BLAST_RANGE = 3
+//   CREEPER_FLEE_RANGE  = 6
+
+const noDamage = { recently_damaged: false };
+const withDamage = { recently_damaged: true };
+
+test('shouldFleeCreeper: point-blank (≤3) visible → flee', () => {
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 2.5, visible: true }), true);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 3.0, visible: true }), true);
+});
+
+test('shouldFleeCreeper: point-blank (≤3) hidden → still flee (LOS-blind safety)', () => {
+  // Even through a wall a 2-block creeper is too close to wait for LOS
+  // confirmation — fuse + explosion radius can damage us before the
+  // next 400ms reactive tick.
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 1.5, visible: false }), true);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 3.0, visible: false }), true);
+});
+
+test('shouldFleeCreeper: mid-range (3<d≤6) visible → flee', () => {
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 4.0, visible: true }), true);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 5.7, visible: true }), true);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 6.0, visible: true }), true);
+});
+
+test('shouldFleeCreeper: mid-range (3<d≤6) hidden, no damage → DO NOT flee (Mason bamboo case)', () => {
+  // This is the regression: creeper@5.7 in cave behind wall fired
+  // flee_step every tick and killed navigation. With the fix it must
+  // return false so the pathfinder can run.
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 3.1, visible: false }), false);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 5.3, visible: false }), false);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 5.7, visible: false }), false);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 6.0, visible: false }), false);
+});
+
+test('shouldFleeCreeper: mid-range hidden BUT recently damaged → flee', () => {
+  // Damage proves the creeper can reach us through whatever cover
+  // exists (rare for creepers, but trust the signal).
+  assert.equal(shouldFleeCreeper(withDamage, { name: 'creeper', distance: 4.0, visible: false }), true);
+  assert.equal(shouldFleeCreeper(withDamage, { name: 'creeper', distance: 6.0, visible: false }), true);
+});
+
+test('shouldFleeCreeper: outside flee range (>6) → never flee', () => {
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 6.1, visible: true }), false);
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', distance: 10, visible: true }), false);
+  assert.equal(shouldFleeCreeper(withDamage, { name: 'creeper', distance: 7, visible: true }), false);
+});
+
+test('shouldFleeCreeper: null/undefined creeper → no flee', () => {
+  assert.equal(shouldFleeCreeper(noDamage, null), false);
+  assert.equal(shouldFleeCreeper(noDamage, undefined), false);
+});
+
+test('shouldFleeCreeper: creeper without distance field → no flee (defensive)', () => {
+  assert.equal(shouldFleeCreeper(noDamage, { name: 'creeper', visible: true }), false);
 });

@@ -56,6 +56,11 @@ const RECENT_DAMAGE_MS = 2000;
 const MELEE_RANGE = 4;
 const GUARD_RANGE = 12;
 const CREEPER_FLEE_RANGE = 6;
+// Inside this distance a creeper's fuse + explosion radius (~3 blocks)
+// can damage the bot before the 400ms reactive tick reacts — flee LOS-blind.
+// Beyond it (3 < d ≤ CREEPER_FLEE_RANGE) require LOS or active damage,
+// otherwise a creeper through a cave wall blocks all navigation.
+const CREEPER_BLAST_RANGE = 3;
 const RANGED_AWARE_RANGE = 16;      // see ranged threats from this far
 const SAFE_DISTANCE = 6;            // don't flee past this distance from threat
 const LOW_HP_FLEE = 6;
@@ -79,9 +84,8 @@ const BACKSTEP_MS = 120;            // brief retreat after each swing (knockback
  *
  * A mob 5 blocks away in an adjacent unseen cave, not currently hitting
  * us, is NOT a present danger — the agent should be allowed to keep
- * thinking. Creeper proximity is excluded from this rule (still
- * LOS-blind) because creepers detonate through partial cover faster
- * than the agent loop can react.
+ * thinking. Creepers get their own two-tier rule (see shouldFleeCreeper)
+ * because point-blank creepers can detonate before the reactive tick.
  *
  * Exported for unit tests in test/reactive-los.test.js. Pure function:
  * given the state shape produced by collectState(), determines whether
@@ -93,6 +97,30 @@ export function isPresentDanger(state, threat) {
   if (threat.visible) return true;
   // Hidden threats only count when damage is actively reaching us.
   return !!state?.recently_damaged;
+}
+
+/**
+ * Creeper-specific flee gate. Two tiers (see CREEPER_BLAST_RANGE /
+ * CREEPER_FLEE_RANGE):
+ *
+ *   - **d ≤ CREEPER_BLAST_RANGE (3)**: flee LOS-blind. Creeper fuse +
+ *     ~3-block explosion radius means a point-blank creeper can damage
+ *     us before the next 400ms reactive tick, so we don't wait for
+ *     visibility confirmation.
+ *   - **3 < d ≤ CREEPER_FLEE_RANGE (6)**: require LOS OR recent damage
+ *     via `isPresentDanger`. A creeper through a wall at 4–6 blocks
+ *     can't reach us before pathfinder finishes the leg; gating here
+ *     prevents the navigation-deadlock seen in Mason's bamboo run
+ *     (2026-05-24).
+ *   - **d > CREEPER_FLEE_RANGE**: caller should already have skipped.
+ *
+ * Pure function. Exported for tests.
+ */
+export function shouldFleeCreeper(state, creeper) {
+  if (!creeper || typeof creeper.distance !== 'number') return false;
+  if (creeper.distance > CREEPER_FLEE_RANGE) return false;
+  if (creeper.distance <= CREEPER_BLAST_RANGE) return true;
+  return isPresentDanger(state, creeper);
 }
 
 export function createReactive(deps) {
@@ -138,9 +166,11 @@ export function createReactive(deps) {
   // #84: pure line-of-sight check (no reach/vertical caps). Used to gate
   // ENGAGE decisions on visibility — a skeleton in an adjacent cave that
   // the bot can't see should not pull it out of its task. Safety triggers
-  // (creeper flee, critical-HP flee, ranged-no-weapon flee) still use the
-  // LOS-blind hostiles list because those threats stay dangerous even when
-  // they round a corner.
+  // are now LOS-gated above their close-range floors:
+  //   - creeper flee:   LOS-blind ≤ CREEPER_BLAST_RANGE (3), else require LOS
+  //   - critical-HP flee / ranged-no-weapon: require LOS via isPresentDanger
+  // Hidden threats can still flag via `recently_damaged` (damage proves
+  // they're reaching us through whatever cover exists).
   function reactiveCanSee(entity) {
     if (!hasLineOfSight || !eyePosition) return true; // pre-wire safety
     const eye = eyePosition();
@@ -435,7 +465,18 @@ export function createReactive(deps) {
     }
 
     // Always-on safety: creeper proximity flees regardless of mode.
-    if (state.closest_creeper && state.closest_creeper.distance <= CREEPER_FLEE_RANGE) {
+    //
+    // Two-tier policy (Mason bamboo-blocker incident, 2026-05-24): the old
+    // unconditional flee at d ≤ 6 stranded the bot whenever a creeper sat
+    // in an adjacent unreachable cave — every mc goto died with
+    // NAV_FAILED / "goal was changed" as flee_step preempted pathfinding
+    // each tick. Now:
+    //   - d ≤ CREEPER_BLAST_RANGE (3): flee LOS-blind. Explosion damage
+    //     radius is ~3 blocks and fuse can finish before our 400ms tick.
+    //   - 3 < d ≤ CREEPER_FLEE_RANGE (6): require LOS OR recent damage.
+    //     A creeper through a wall at 4-6 blocks can't reach us before
+    //     pathfinder finishes the leg; let the agent work.
+    if (shouldFleeCreeper(state, state.closest_creeper)) {
       return { action: 'flee_step', threat: state.closest_creeper, why: 'creeper_close' };
     }
 
