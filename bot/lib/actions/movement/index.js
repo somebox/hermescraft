@@ -18,6 +18,7 @@ import { createMove } from './move.js';
 import { createFollow } from './follow.js';
 import { createLook } from './look.js';
 import { createJump } from './jump.js';
+import { createLadder } from './ladder.js';
 import { createStop } from './stop.js';
 import { createGoSite } from './go_site.js';
 
@@ -115,6 +116,7 @@ export function createMovementActions({
     look: createLook(deps),
     stop: createStop(deps),
     jump: createJump(deps),
+    ladder: createLadder(deps),
     move: createMove(deps),
   };
 }

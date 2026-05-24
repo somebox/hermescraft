@@ -371,6 +371,24 @@ export const RAW_COMMAND_DEFS = [
     }),
     examples: [`mc pillar_down`, `mc pillar_down 8`, `mc pillar_down 20 pickup=false`],
   }),
+  g('ladder', 'movement', [], {
+    method: 'POST',
+    path: '/action/ladder',
+    description: 'Climb a ladder column the bot is already standing in. Direction "up" (default) climbs to top + exits forward; "down" descends to ground. Use --to to stop at a specific Y. Bot must already be on the ladder — pathfind there first with mc move.',
+    argSchema: [
+      { key: 'dir', type: 'string', description: 'up | down (default: up)' },
+      { key: 'to', type: 'number', description: 'target Y (default: top/bottom of column)' },
+      { key: 'exit', type: 'string', description: 'auto | none — auto-step off at top (default: auto for up)' },
+      { key: 'timeout_ms', type: 'number', description: 'hard timeout (default 10000, max 60000)' },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      dir: p.dir ?? 'up',
+      ...(p.to !== undefined ? { to: Number(p.to) } : {}),
+      ...(p.exit !== undefined ? { exit: p.exit } : {}),
+      ...(p.timeout_ms !== undefined ? { timeout_ms: Number(p.timeout_ms) } : {}),
+    }),
+    examples: [`mc ladder up`, `mc ladder down`, `mc ladder up to=72`, `mc ladder up exit=none to=70`],
+  }),
   g('pickup', 'world', ['p'], { description: 'Walk to + collect a nearby item drop', method: 'POST', path: '/action/pickup', bodyFn: () => empty }),
   g('find_blocks', 'world', ['fb'], {
     description: 'Locate blocks of TYPE within radius (no mining)',
