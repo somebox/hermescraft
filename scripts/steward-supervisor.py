@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """Active steward supervisor — watches the landfolk-ops board for blocked
-cards and dispatches the steward profile to review each one. Without this,
-blocked cards sit indefinitely until a human notices. With it, every block
-is auto-routed to a steward worker that reads the card's events/comments
-and decides whether to:
+cards and dispatches **one** steward worker per block event. The steward
+reads the card's events/comments and chooses exactly one action:
 
-  1. Unblock with a corrective kanban_comment + new guidance
-  2. Decompose into smaller, more achievable cards
+  1. Unblock + comment (corrective hint or new prerequisite)
+  2. Decompose into smaller children with handoff data inline
   3. Reassign to a different worker profile
-  4. Confirm the block and escalate (kanban_comment + @user mention)
+  4. Archive (stale / obsolete / superseded)
+  5. Open a `[BUG]` / `[INCIDENT]` card for re44 when the block is caused
+     by a tool defect, failing `mc` verb, or other dev-track issue, then
+     confirm the original block and move on.
 
 Implementation: polls `hermes kanban list --status blocked --json` every
 POLL_INTERVAL_S. For each card NOT yet supervised since its last block
-event, creates a `[SUPERVISE]` triage card assigned to steward, then
-optionally `hermes kanban decompose` to spawn the steward worker
-immediately (the gateway would pick it up otherwise).
+event, creates a single supervise card directly in `todo` (no `--triage`,
+no auto-decompose). The dispatcher spawns one steward worker that performs
+the chosen action and completes the card. No inspect / decide / execute
+ceremony chain.
 
 State (last-supervised timestamps per card) lives at
 ~/.steward-supervisor-state.json so a restart doesn't re-trigger old blocks.
@@ -25,11 +27,13 @@ Usage:
 Env:
     BOARD             (default landfolk-ops)
     POLL_INTERVAL_S   (default 30 — supervision is not real-time)
-    AUTO_DECOMPOSE    (default 1 — spawn steward immediately, else wait for gateway tick)
+    AUTO_DECOMPOSE    (default 0 — keep supervise cards as a single action;
+                       set 1 only if you explicitly want fan-out)
     STATE_FILE        (default ~/.steward-supervisor-state.json)
     MIN_BLOCK_AGE_S   (default 60 — wait this long after the block event
                        before supervising, so transient blocks don't churn)
-    MAX_SUPERVISIONS_PER_CARD (default 2 — after this many supervises, leave alone)
+    MAX_SUPERVISIONS_PER_CARD (default 1 — one steward pass per block; if
+                       that doesn't fix it, escalate via a BUG card)
     DRY_RUN           (default 0)
 
 Stop with Ctrl-C.
@@ -49,9 +53,9 @@ from kanban_block_reason import parse as parse_block_reason
 
 BOARD = os.environ.get("BOARD", "landfolk-ops")
 POLL_INTERVAL_S = float(os.environ.get("POLL_INTERVAL_S", "30"))
-AUTO_DECOMPOSE = os.environ.get("AUTO_DECOMPOSE", "1") == "1"
+AUTO_DECOMPOSE = os.environ.get("AUTO_DECOMPOSE", "0") == "1"
 MIN_BLOCK_AGE_S = float(os.environ.get("MIN_BLOCK_AGE_S", "60"))
-MAX_SUPERVISIONS = int(os.environ.get("MAX_SUPERVISIONS_PER_CARD", "2"))
+MAX_SUPERVISIONS = int(os.environ.get("MAX_SUPERVISIONS_PER_CARD", "1"))
 DRY_RUN = os.environ.get("DRY_RUN", "0") == "1"
 STATE_FILE = Path(os.environ.get(
     "STATE_FILE",
@@ -148,49 +152,88 @@ def last_block_reason(card_detail):
     return None
 
 
+BUG_HINT_PATTERNS = (
+    "iteration budget exhausted",
+    "internal error",
+    "action_contract_violation",
+    "ok=true && mined_count",
+    "mc craft",
+    "enoent",
+    "econnrefused",
+    "traceback",
+    "unhandled exception",
+)
+
+
+def looks_like_bug(block_reason):
+    if not block_reason:
+        return False
+    low = block_reason.lower()
+    return any(p in low for p in BUG_HINT_PATTERNS)
+
+
 def create_supervision_card(target_id, target_title, target_assignee, blocked_at_ms, n_prior, block_reason=None):
-    title = f"[SUPERVISE] review blocked {target_id}"
+    title = f"[SUPERVISE] {target_id}"
+    when = (
+        time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(blocked_at_ms / 1000))
+        if blocked_at_ms else 'unknown'
+    )
+    parsed = parse_block_reason(block_reason) if block_reason else None
+    bug_hint = looks_like_bug(block_reason)
+
     body = (
-        f"Steward: review the blocked card and decide next action.\n\n"
-        f"## Blocked card\n"
+        "Steward: one session, one action. Do NOT decompose this card into "
+        "inspect/decide/execute children — perform the action inline and complete.\n\n"
+        "## Blocked card\n"
         f"- ID: {target_id}\n"
         f"- Title: {target_title}\n"
         f"- Original assignee: {target_assignee}\n"
-        f"- Last block at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(blocked_at_ms / 1000)) if blocked_at_ms else 'unknown'}\n"
-        f"- Supervisions to date: {n_prior}\n\n"
+        f"- Last block at: {when}\n"
+        f"- Supervisions to date: {n_prior} (max {MAX_SUPERVISIONS})\n\n"
     )
-    parsed = parse_block_reason(block_reason) if block_reason else None
+    if block_reason:
+        body += f"## Block reason (verbatim)\n```\n{block_reason}\n```\n\n"
     if parsed:
         body += "## Parsed block reason\n"
         for key in ("block_kind", "region_id", "missing", "short_reason", "raw"):
             if parsed.get(key) is not None:
                 body += f"- {key}: {parsed[key]}\n"
         body += "\n"
+    if bug_hint:
+        body += (
+            "## Heuristic\n"
+            "Block reason matches a known tool/code-defect pattern. **Strongly consider "
+            "option (e) Open BUG card** in addition to whatever action you take on the "
+            "original card.\n\n"
+        )
+
     body += (
-        f"## Your task\n"
-        f"1. `hermes kanban show {target_id}` — read body, events, comments, runs.\n"
-        f"2. Decide ONE action:\n"
-        f"   a. **Unblock + comment**: if the block reason can be addressed by a new hint "
-        f"      (corrected coords, alternate primitive, missing prerequisite spelled out), "
-        f"      post a `kanban_comment` and `kanban_unblock`.\n"
-        f"   b. **Decompose**: if the card is too big or has unmet prerequisites, "
-        f"      `kanban_create` smaller children with explicit handoff data IN THEIR BODIES "
-        f"      (per task #10 — do not point at sibling-comments), link them, then "
-        f"      leave the original card blocked or complete it as PARTIAL.\n"
-        f"   c. **Reassign**: if the wrong profile got it (e.g. gatherer cards routed today), "
-        f"      `kanban_reassign` to flint or mason.\n"
-        f"   d. **Confirm block**: if no recovery path is feasible, post a `kanban_comment` "
-        f"      with the analysis and leave blocked. Mention @re44 if human action is needed.\n"
-        f"3. Complete this supervise card with a one-line `--summary` of the action taken.\n\n"
-        f"## Constraints\n"
-        f"- Do NOT execute the work yourself — you are the orchestrator.\n"
-        f"- Do NOT loop: if this is the {n_prior + 1}th supervision and prior ones didn't help, "
-        f"  accept the block and escalate.\n"
-        f"- Read prior supervise-card outcomes (if any) before deciding."
+        "## Choose ONE action, execute it now, then `kanban_complete` this card\n"
+        f"a. **Unblock + comment** — new hint is enough: `kanban_comment {target_id}` + "
+        f"`kanban_unblock {target_id}`.\n"
+        f"b. **Decompose** — card too big or missing prerequisites: `kanban_create` smaller "
+        f"   children with handoff data inlined in their bodies, `kanban_link` them, leave "
+        f"   the parent blocked or complete it PARTIAL.\n"
+        f"c. **Reassign** — wrong profile: `kanban_reassign {target_id} --assignee <name>`.\n"
+        f"d. **Archive** — stale/obsolete/superseded: `kanban_archive {target_id}`.\n"
+        f"e. **Open BUG/INCIDENT card** — block is caused by a tool defect, failing `mc` "
+        f"   verb, API error, or other dev-track issue that bots cannot fix:\n"
+        f"   - `kanban_create \"[BUG] <short symptom>\" --assignee re44` with a body that "
+        f"     includes: symptom, exact command + args, expected vs actual, reproduce steps, "
+        f"     affected card ids, log/run pointers, suggested next step.\n"
+        f"   - Then on the original blocked card, `kanban_comment` referencing the BUG id "
+        f"     and either leave it blocked or archive it depending on recoverability.\n"
+        f"   - See minecraft-steward-survey skill § BUG / INCIDENT cards for the body schema.\n\n"
+        "## Constraints\n"
+        f"- One steward session. Do NOT create [SUPERVISE] / [INSPECT] / [DECIDE] / [EXECUTE] "
+        f"  child cards for this review — they cost more than they save.\n"
+        f"- BUG cards are for **re44** (human dev lane); do NOT assign them to bots.\n"
+        f"- If this is the {n_prior + 1}th supervision and prior passes didn't help, "
+        f"  prefer option (e) BUG + archive/confirm — don't try the same fix again."
     )
     cmd = [
         "hermes", "kanban", "--board", BOARD, "create", title,
-        "--assignee", "steward", "--triage",
+        "--assignee", "steward",
         "--body", body,
         "--idempotency-key", f"supervise-{target_id}-{blocked_at_ms}",
         "--created-by", "steward-supervisor",

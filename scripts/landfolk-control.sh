@@ -43,6 +43,10 @@ PROFILES_CSV=""
 STOP_OTHERS=true
 ALL_PROFILES=false
 FORCE=false
+# When true, `start` brings up bot + watchdog only (no continuous Hermes
+# agent). Used by `scripts/landfolk` kanban mode so gateway workers own
+# the bot port without fighting an always-on agent loop.
+NO_AGENT=false
 
 # LLM routing + roster: edit data/agent-models.json (``agents`` keys = controllable profiles).
 # API TCP port: per-agent ``api_port`` in AGENT_MODELS.json, else BASE_API_PORT + index (see resolve-agent-model.py api-port).
@@ -138,6 +142,7 @@ Examples:
   ./scripts/landfolk-control.sh enable --profiles flint
   ./scripts/landfolk-control.sh disable --profiles gatherer
   ./scripts/landfolk-control.sh stop --all-profiles --force
+  ./scripts/landfolk-control.sh start --profiles flint --no-agent   # bot + watchdog only (kanban mode)
 
 Profile names: lowercase keys from \"agents\" in AGENT_MODELS_JSON (e.g. barley, flint, mason, gatherer).
 EOF
@@ -191,6 +196,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --force)
       FORCE=true
+      shift
+      ;;
+    --no-agent)
+      NO_AGENT=true
       shift
       ;;
     --help|-h)
@@ -821,7 +830,12 @@ Never break building blocks or take shared crafting tables/furnaces/chests.
 Preserve infrastructure: stairs, hallways, torch lines, paths, chest/furnace areas.
 Before each burst: mc status and mc read_chat.
 One active task at a time: mc task before starting, mc cancel if stale.
-Combat: mc attack, mc fight, mc flee, mc eat. Never invent commands like defend/combat_mode."
+Combat: mc attack, mc fight, mc flee, mc eat. Never invent commands like defend/combat_mode.
+NEVER start bot bodies for yourself or other profiles. If your mc API at
+\$MC_API_URL doesn't respond, kanban_block with reason \"bot_offline:<your-name>\"
+and stop. Operators control which bots are online via landfolk-session.sh.
+Forbidden launchers: start-gatherer-bot.sh, start-flint-bot.sh,
+start-mason-bot.sh, landfolk-control.sh start, run-landfolk-agent.sh."
   runtime_rules=""
   build_policy=""
   case "$name" in
@@ -1197,7 +1211,11 @@ case "$COMMAND" in
       # continuous-agent launch. Previously, a `start_agent` failure (e.g.
       # missing prompt file under set -euo pipefail) would abort the loop
       # and leave the bot un-watched, so a single disconnect was terminal.
-      start_agent "$name" "$port" || echo "[start] $name agent failed (continuing — watchdog still arms)"
+      if [ "$NO_AGENT" = true ]; then
+        echo "[start] $name agent skipped (--no-agent)"
+      else
+        start_agent "$name" "$port" || echo "[start] $name agent failed (continuing — watchdog still arms)"
+      fi
       start_watchdog "$name" "$port" || echo "[start] $name watchdog FAILED to launch — bot will not auto-reconnect"
       sleep 2
     done

@@ -67,8 +67,19 @@ PALETTE = {
 }
 FALLBACK = ("\033[38;5;250m", "\033[1;38;5;250m", "\033[2;38;5;250m")
 RST = "\033[0m"
-USER_C = "\033[38;5;245m"   # neutral grey
+USER_C = "\033[38;5;245m"   # neutral grey — tool-call summaries
 META_C = "\033[2;38;5;244m"
+
+# Long absolute paths in shell snippets (replaced with basename or tail).
+_PATHLIKE_RE = re.compile(
+    r"(?:~(?:/[\w.-]+)+)|"
+    r"(?:/(?:Users|home|tmp|var)(?:/[\w.-]+)+)|"
+    r"(?:\b[\w.-]+/(?:[\w.-]+/)+[\w.-]+\.(?:py|json|yaml|yml|md|sh|js|ts|tsx)\b)"
+)
+_MC_CMD_RE = re.compile(
+    r"\bmc\s+(\S+(?:\s+(?:--?\w+|[-\d.,]+|\w+))*)",
+    re.IGNORECASE,
+)
 
 
 def palette_for(profile: str):
@@ -123,6 +134,121 @@ def fmt_tool_args(raw: str) -> str:
     return truncate(str(d), 200)
 
 
+def _strip_paths(text: str) -> str:
+    def _repl(m: re.Match) -> str:
+        frag = m.group(0)
+        if frag.startswith("~/"):
+            tail = frag[2:]
+            return tail if len(tail) <= 40 else "…/" + tail.split("/")[-1]
+        if frag.count("/") >= 2:
+            return "…/" + frag.rstrip("/").split("/")[-1]
+        return frag
+
+    return _PATHLIKE_RE.sub(_repl, text)
+
+
+def _short_path(path: str) -> str:
+    path = (path or "").strip().strip("\"'")
+    try:
+        repo = Path(__file__).resolve().parent.parent
+        rp = str(repo)
+        if path.startswith(rp):
+            return path[len(rp) :].lstrip("/")
+    except Exception:
+        pass
+    home = str(Path.home())
+    if path.startswith(home):
+        path = path[len(home) :].lstrip("/")
+    if len(path) > 48 and "/" in path:
+        parts = path.split("/")
+        path = "/".join(parts[-2:])
+    return path
+
+
+def _summarize_shell_part(part: str) -> str:
+    part = part.strip()
+    if not part:
+        return ""
+    part = re.sub(r"\s*\|\s*head(?:\s+-[^\s|;&]+)?\s*$", "", part)
+    part = re.sub(r"\s*2>/dev/null\s*", " ", part)
+    part = re.sub(r"\s*2>&1\s*", " ", part).strip()
+    part = re.sub(r"^(?:export\s+)?(?:[A-Z_][A-Z0-9_]*=\S+\s+&&?\s+)+", "", part).strip()
+    mc = _MC_CMD_RE.search(part)
+    if mc:
+        return truncate(f"mc {mc.group(1).strip()}", 56)
+    if part.startswith(("echo ", "sleep ", "export ", "cd ")):
+        return truncate(_strip_paths(part), 48)
+    return truncate(_strip_paths(part), 56)
+
+
+def summarize_terminal_command(command: str) -> str:
+    cmd = (command or "").strip()
+    if not cmd:
+        return ""
+    parts = re.split(r"\s*(?:&&|;|\|\|)\s*", cmd)
+    bits = [_summarize_shell_part(p) for p in parts if p.strip()]
+    bits = [b for b in bits if b]
+    if not bits:
+        return truncate(_strip_paths(cmd), 72)
+    # Drop consecutive duplicates (e.g. repeated mc status in one chain).
+    compact: list[str] = []
+    for b in bits:
+        if not compact or compact[-1] != b:
+            compact.append(b)
+    if len(compact) == 1:
+        return compact[0]
+    if len(compact) <= 3:
+        return truncate("; ".join(compact), 88)
+    return truncate("; ".join(compact[:2]) + f"; +{len(compact) - 2} more", 88)
+
+
+def summarize_tool(name: str, arguments: str) -> str:
+    """One-line hint for a tool call (paths stripped, mc verbs emphasized)."""
+    name_l = (name or "").lower()
+    try:
+        d = json.loads(arguments) if arguments else None
+    except Exception:
+        d = None
+
+    if name_l == "terminal":
+        if isinstance(d, dict) and d.get("command") is not None:
+            return summarize_terminal_command(str(d["command"]))
+        return truncate(_strip_paths(str(arguments)), 72)
+
+    if name_l in ("read_file", "readfile", "read"):
+        if isinstance(d, dict):
+            path = d.get("path") or d.get("file") or d.get("target")
+            if path:
+                return _short_path(str(path))
+        return truncate(_strip_paths(str(arguments)), 60)
+
+    if isinstance(d, dict):
+        if "pattern" in d:
+            return truncate(str(d["pattern"]), 72)
+        if "query" in d:
+            return truncate(str(d["query"]), 72)
+        if "command" in d:
+            return summarize_terminal_command(str(d["command"]))
+    return truncate(_strip_paths(fmt_tool_args(arguments)), 72)
+
+
+def collapse_tool_summaries(summaries: list[str], *, max_items: int = 4, max_len: int = 96) -> str:
+    """Merge summaries from a run of similar tool calls into one grey line."""
+    uniq: list[str] = []
+    for s in summaries:
+        s = (s or "").strip()
+        if not s:
+            continue
+        if s not in uniq:
+            uniq.append(s)
+    if not uniq:
+        return ""
+    if len(uniq) <= max_items:
+        return truncate(", ".join(uniq), max_len)
+    head = ", ".join(uniq[:max_items])
+    return truncate(f"{head}, +{len(uniq) - max_items} more", max_len)
+
+
 def fmt_tool_output(content) -> str:
     if not isinstance(content, str):
         return str(content)
@@ -153,8 +279,9 @@ class QuietPrinter:
     tool, or a periodic stale-flush from the main loop.
 
     Output for a 13-call run thus collapses to a single ``⚙ ×13 terminal``
-    line printed when the worker says anything else (or after a few
-    seconds of silence so it doesn't sit forever in the buffer).
+    line with a light-grey one-line summary of ``mc …`` / command hints,
+    printed when the worker says anything else (or after a few seconds of
+    silence so it doesn't sit forever in the buffer).
     """
 
     STALE_FLUSH_S = 3.0
@@ -162,20 +289,23 @@ class QuietPrinter:
     def __init__(self, pad: int, use_color: bool):
         self.pad = pad
         self.use_color = use_color
-        # profile → {"name": str, "n": int, "last": float}
+        # profile → {"name": str, "n": int, "last": float, "summaries": list[str]}
         self.pending: dict[str, dict] = {}
 
-    def _fmt_tool_summary(self, profile: str, name: str, n: int) -> str:
+    def _fmt_tool_summary(self, profile: str, name: str, n: int, summaries: list[str]) -> str:
         primary, bold, dim = palette_for(profile) if self.use_color else ("", "", "")
+        hint = USER_C if self.use_color else ""
         rst = RST if self.use_color else ""
         tag = f"{profile.lower():<{self.pad}}"
         count = f"×{n}" if n > 1 else ""
-        return f"{primary}{tag}{rst} {bold}⚙ {count} {name}{rst}"
+        hint_text = collapse_tool_summaries(summaries)
+        hint_suffix = f"  {hint}{hint_text}{rst}" if hint_text else ""
+        return f"{primary}{tag}{rst} {bold}⚙ {count} {name}{rst}{hint_suffix}"
 
     def flush(self, profile: str) -> None:
         p = self.pending.pop(profile, None)
         if p:
-            print(self._fmt_tool_summary(profile, p["name"], p["n"]))
+            print(self._fmt_tool_summary(profile, p["name"], p["n"], p.get("summaries") or []))
 
     def flush_all(self) -> None:
         for profile in list(self.pending):
@@ -187,16 +317,23 @@ class QuietPrinter:
             if now - p["last"] > self.STALE_FLUSH_S:
                 self.flush(profile)
 
-    def add_tool(self, profile: str, name: str) -> None:
+    def add_tool(self, profile: str, name: str, summary: str = "") -> None:
         p = self.pending.get(profile)
         if p and p["name"] == name:
             p["n"] += 1
             p["last"] = time.time()
+            if summary:
+                p.setdefault("summaries", []).append(summary)
         else:
             # Different tool (or no pending) — flush prior, start new run
             if p:
                 self.flush(profile)
-            self.pending[profile] = {"name": name, "n": 1, "last": time.time()}
+            self.pending[profile] = {
+                "name": name,
+                "n": 1,
+                "last": time.time(),
+                "summaries": [summary] if summary else [],
+            }
 
     def add_line(self, profile: str, line: str) -> None:
         """Print a non-tool line — flush any pending run for that profile first."""
@@ -210,7 +347,7 @@ def render_quiet_items(profile: str, msg: dict, use_color: bool, pad: int) -> li
 
     Returns list of (kind, payload):
       - ("line", str)  → print verbatim (already formatted)
-      - ("tool", name) → feed to QuietPrinter.add_tool for run-length collapse
+      - ("tool", (name, summary)) → feed to QuietPrinter.add_tool for run-length collapse
     """
     primary, bold, dim = palette_for(profile) if use_color else ("", "", "")
     user_c = USER_C if use_color else ""
@@ -232,8 +369,10 @@ def render_quiet_items(profile: str, msg: dict, use_color: bool, pad: int) -> li
             for ln in text.splitlines():
                 out.append(("line", f"{primary}{tag}{rst} {primary}{ln}{rst}"))
         for tc in msg.get("tool_calls") or []:
-            name = (tc.get("function") or {}).get("name", "?")
-            out.append(("tool", name))
+            fn = tc.get("function") or {}
+            name = fn.get("name", "?")
+            summary = summarize_tool(name, fn.get("arguments", ""))
+            out.append(("tool", (name, summary)))
         return out
 
     if role == "tool":
@@ -280,17 +419,27 @@ def render(profile: str, msg: dict, use_color: bool, pad: int, quiet: bool = Fal
         tool_calls = msg.get("tool_calls") or []
         if quiet:
             if tool_calls:
-                names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
-                summary = ", ".join(names) if len(names) <= 6 else (
-                    ", ".join(names[:6]) + f", +{len(names) - 6} more"
+                summaries = [
+                    summarize_tool(
+                        (tc.get("function") or {}).get("name", "?"),
+                        (tc.get("function") or {}).get("arguments", ""),
+                    )
+                    for tc in tool_calls
+                ]
+                hint = collapse_tool_summaries(summaries)
+                hint_c = USER_C if use_color else ""
+                lines.append(
+                    f"{primary}{tag}{rst} {bold}⚙ ×{len(tool_calls)}{rst}"
+                    + (f"  {hint_c}{hint}{rst}" if hint else "")
                 )
-                lines.append(f"{primary}{tag}{rst} {bold}⚙ ×{len(names)}{rst}  {dim}{summary}{rst}")
         else:
             for tc in tool_calls:
                 fn = tc.get("function") or {}
                 name = fn.get("name", "?")
-                args = fmt_tool_args(fn.get("arguments", ""))
-                lines.append(f"{primary}{tag}{rst} {bold}⚙  {name}{rst}  {dim}{args}{rst}")
+                summary = summarize_tool(name, fn.get("arguments", ""))
+                hint_c = USER_C if use_color else ""
+                hint_suffix = f"  {hint_c}{summary}{rst}" if summary else ""
+                lines.append(f"{primary}{tag}{rst} {bold}⚙  {name}{rst}{hint_suffix}")
         return lines
 
     if role == "tool":
@@ -323,13 +472,28 @@ def print_freshness_banner(profiles: list[str], pad: int, use_color: bool) -> No
     meta = META_C if use_color else ""
     rst = RST if use_color else ""
     now = time.time()
+    # Apply same realpath dedup as the main loop so the banner reflects what
+    # the loop will actually print. Profile order wins: if flint and mason
+    # both resolve to the same session dir (symlink case), flint claims it
+    # and mason is marked as "shares with flint".
+    claimed: dict[Path, str] = {}
     for p in profiles:
         primary, _, dim = palette_for(p) if use_color else ("", "", "")
         sess = newest_session(p)
+        share_owner: str | None = None
+        if sess is not None:
+            rp = sess.resolve()
+            if rp in claimed:
+                share_owner = claimed[rp]
+                sess = None  # don't display this session's age under p
+            else:
+                claimed[rp] = p
         bot_log = BOT_LOG_DIR / f"bot-{p}.log"
         if sess:
             age = fmt_age(int(now - sess.stat().st_mtime))
             sess_note = f"session {sess.name} (last activity {age} ago)"
+        elif share_owner:
+            sess_note = f"shares session dir with {share_owner} — see that stream"
         else:
             sess_note = "no kanban sessions yet"
         if bot_log.exists():
@@ -401,7 +565,8 @@ def main() -> int:
             return
         for kind, payload in render_quiet_items(p, m, use_color, pad):
             if kind == "tool":
-                qp.add_tool(p, payload)
+                name, summary = payload
+                qp.add_tool(p, name, summary)
             else:  # "line"
                 qp.add_line(p, payload)
 
@@ -439,9 +604,22 @@ def main() -> int:
 
         while True:
             any_new = False
+            # Per-tick dedup: if two profiles' newest sessions resolve to
+            # the same realpath (e.g. ~/.hermes-landfolk-flint/sessions and
+            # ~/.hermes-landfolk-mason/sessions both symlink to the same
+            # default home), attribute the session to the first profile in
+            # the list. Without this, identical lines get printed under
+            # both labels, falsely implying two agents doing the same work.
+            claimed_realpaths: dict[Path, str] = {}
             for p in profiles:
                 # 1) Kanban session JSON (agent thoughts / commands / info)
                 sess = newest_session(p)
+                if sess is not None:
+                    rp = sess.resolve()
+                    if rp in claimed_realpaths:
+                        sess = None  # already shown under another profile
+                    else:
+                        claimed_realpaths[rp] = p
                 cur_path, _ = state[p]
                 if sess is not None:
                     # Resume cursor for THIS file. A new file starts at 0;

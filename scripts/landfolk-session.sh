@@ -7,10 +7,18 @@
 # with single commands.
 #
 # Usage:
-#   ./scripts/landfolk-session.sh up [--profiles flint,mason] [--no-listener] [--no-supervisor]
+#   ./scripts/landfolk-session.sh up [--profiles flint,mason] [--no-listener] [--no-supervisor] [--no-pauser]
+#     Brings up the bot set + steward daemons, and writes an "active roster"
+#     file. Cards on the kanban board assigned to profiles NOT in this roster
+#     get auto-routed to re44 by the inactive-cards-pauser (prevents the
+#     gateway dispatcher from spawning unmanaged workers for offline bots).
 #   ./scripts/landfolk-session.sh down [--profiles ...] [--keep-listener] [--keep-supervisor]
+#     Full down (no --profiles): reclaims all running landfolk-ops cards, stops
+#     pauser + bots. Hermes gateway keeps running unless --stop-gateway.
+#     --stop-gateway   also run `hermes gateway stop` (dispatcher + dashboard)
+#     --no-reclaim     skip kanban reclaim (bots/daemons only)
 #   ./scripts/landfolk-session.sh restart <target>
-#     target ∈ flint|mason|gatherer|all-bots|listener|supervisor|all
+#     target ∈ flint|mason|gatherer|all-bots|listener|supervisor|pauser|all
 #   ./scripts/landfolk-session.sh status [--json]
 #   ./scripts/landfolk-session.sh fix <issue> [args]
 #     issue ∈ reconnect <bot> | clean | tp <bot> <x> <y> <z> | unstick <bot>
@@ -50,6 +58,11 @@ PROFILES_DEFAULT="${PROFILES_DEFAULT:-flint,mason,steward}"
 LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 STATE_DIR="${STATE_DIR:-$LOG_DIR/session-state}"
 mkdir -p "$STATE_DIR"
+
+# Active-profile roster: written by `up`, removed by `down`. The inactive-
+# cards-pauser daemon reads this to know which assignees are currently
+# meant to be in-game; cards assigned to anyone else get auto-routed to re44.
+ROSTER_FILE="${ACTIVE_PROFILES_FILE:-$LOG_DIR/active-profiles}"
 
 # Port assignments — match data/agent-models.json
 declare -A BOT_PORTS=( [flint]=3002 [mason]=3003 [gatherer]=3001 [steward]=3005 )
@@ -110,7 +123,8 @@ bot_send_chat() {
   MC_API_URL="http://localhost:$port" "$SCRIPT_DIR/bin/mc" chat "$msg" 2>&1 | head -3
 }
 
-daemon_pid() { cat "$STATE_DIR/$1.pid" 2>/dev/null; }
+# Missing pidfile must not fail under set -e (cat exits 1).
+daemon_pid() { cat "$STATE_DIR/$1.pid" 2>/dev/null || true; }
 daemon_alive() {
   local pid; pid="$(daemon_pid "$1")"
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
@@ -152,7 +166,11 @@ daemon_stop() {
   kill "$pid" 2>/dev/null || true
   sleep 1
   if kill -0 "$pid" 2>/dev/null; then
-    kill -9 "$pid" 2>/dev/null && warn "$name (pid $pid) force-killed (SIGKILL)"
+    if kill -9 "$pid" 2>/dev/null; then
+      warn "$name (pid $pid) force-killed (SIGKILL)"
+    else
+      err "$name (pid $pid) still running — could not SIGKILL"
+    fi
   else
     ok "$name (pid $pid) stopped"
   fi
@@ -226,12 +244,23 @@ reclaim_active_for_assignee() {
   local assignee="$1"
   local board="landfolk-ops"
   hermes kanban --board "$board" list --assignee "$assignee" 2>/dev/null \
-    | awk -v a="$assignee" '$2=="running"{print $1}' \
+    | awk '$3=="running"{print $2}' \
     | while read -r tid; do
         [ -z "$tid" ] && continue
         hermes kanban --board "$board" reclaim "$tid" --reason "landfolk-session restart $assignee" >/dev/null 2>&1 \
           && dim "reclaimed $tid"
       done
+}
+
+reclaim_all_running() {
+  local board="landfolk-ops"
+  hermes kanban --board "$board" list 2>/dev/null \
+    | awk '$3=="running"{print $2}' \
+    | while read -r tid; do
+        [ -z "$tid" ] && continue
+        hermes kanban --board "$board" reclaim "$tid" --reason "landfolk-session down" >/dev/null 2>&1 \
+          && dim "reclaimed $tid"
+      done || true
 }
 
 # ─── Subcommands ───────────────────────────────────────────────────────────
@@ -240,11 +269,13 @@ cmd_up() {
   local profiles_csv="$PROFILES_DEFAULT"
   local with_listener=1
   local with_supervisor=1
+  local with_pauser=1
   while [ $# -gt 0 ]; do
     case "$1" in
       --profiles) profiles_csv="$2"; shift 2 ;;
       --no-listener) with_listener=0; shift ;;
       --no-supervisor) with_supervisor=0; shift ;;
+      --no-pauser) with_pauser=0; shift ;;
       *) err "unknown flag: $1"; exit 1 ;;
     esac
   done
@@ -254,6 +285,13 @@ cmd_up() {
     bot_start_one "$p"
   done < <(profiles_list "$profiles_csv")
 
+  # Publish the active roster — read by inactive-cards-pauser so cards
+  # assigned to profiles we didn't start get auto-routed to re44 rather
+  # than letting the gateway spawn an unmanaged worker that may launch
+  # its own bot body.
+  profiles_list "$profiles_csv" >"$ROSTER_FILE"
+  ok "active roster → $ROSTER_FILE ($(wc -l <"$ROSTER_FILE" | tr -d ' ') profiles)"
+
   if [ "$with_listener" = 1 ]; then
     h1 "starting steward chat listener"
     daemon_start "steward-chat-listener" "$SCRIPT_DIR/scripts/steward-chat-listener.py"
@@ -261,6 +299,11 @@ cmd_up() {
   if [ "$with_supervisor" = 1 ]; then
     h1 "starting steward supervisor"
     daemon_start "steward-supervisor" "$SCRIPT_DIR/scripts/steward-supervisor.py"
+  fi
+  if [ "$with_pauser" = 1 ]; then
+    h1 "starting inactive-cards pauser"
+    ACTIVE_PROFILES_FILE="$ROSTER_FILE" \
+      daemon_start "inactive-cards-pauser" "$SCRIPT_DIR/scripts/inactive-cards-pauser.py"
   fi
 
   h1 "ready"
@@ -271,14 +314,23 @@ cmd_down() {
   local profiles_csv=""
   local keep_listener=0
   local keep_supervisor=0
+  local stop_gateway=0
+  local do_reclaim=1
   while [ $# -gt 0 ]; do
     case "$1" in
       --profiles) profiles_csv="$2"; shift 2 ;;
       --keep-listener) keep_listener=1; shift ;;
       --keep-supervisor) keep_supervisor=1; shift ;;
+      --stop-gateway) stop_gateway=1; shift ;;
+      --no-reclaim) do_reclaim=0; shift ;;
       *) err "unknown flag: $1"; exit 1 ;;
     esac
   done
+
+  if [ -z "$profiles_csv" ] && [ "$do_reclaim" = 1 ]; then
+    h1 "reclaiming running kanban workers"
+    reclaim_all_running
+  fi
 
   if [ "$keep_supervisor" != 1 ]; then
     h1 "stopping supervisor"
@@ -288,14 +340,43 @@ cmd_down() {
     h1 "stopping chat listener"
     daemon_stop "steward-chat-listener"
   fi
+  # Roster + pauser handling. If --profiles narrowed the down, prune ONLY
+  # those names from the roster (leave others intact). If down is wholesale
+  # (no --profiles), clear the file and stop the pauser daemon.
+  if [ -z "$profiles_csv" ]; then
+    h1 "stopping inactive-cards pauser"
+    daemon_stop "inactive-cards-pauser"
+    rm -f "$ROSTER_FILE" 2>/dev/null && dim "cleared $ROSTER_FILE"
+  elif [ -f "$ROSTER_FILE" ]; then
+    # Build a regex of profiles to drop, then prune
+    local drop_re
+    drop_re="$(profiles_list "$profiles_csv" | paste -sd'|' -)"
+    if [ -n "$drop_re" ]; then
+      local tmp="$ROSTER_FILE.tmp"
+      grep -vxE "$drop_re" "$ROSTER_FILE" > "$tmp" || true
+      mv "$tmp" "$ROSTER_FILE"
+      dim "pruned [$profiles_csv] from $ROSTER_FILE → now: $(paste -sd, "$ROSTER_FILE")"
+    fi
+  fi
 
   h1 "stopping bots"
   if [ -z "$profiles_csv" ]; then
-    # Stop ALL known profiles (flint, mason, gatherer)
-    cd "$SCRIPT_DIR" && ./scripts/landfolk-control.sh stop --profiles flint,mason,gatherer,steward 2>&1 | grep -E "stopped|not running|not tracked" | sed 's/^/  /'
+    # Stop ALL known profiles (flint, mason, gatherer, steward)
+    cd "$SCRIPT_DIR" && ./scripts/landfolk-control.sh stop --profiles flint,mason,gatherer,steward 2>&1 \
+      | grep -E "stopped|not running|not tracked" | sed 's/^/  /' || true
   else
     while read -r p; do bot_stop_one "$p"; done < <(profiles_list "$profiles_csv")
   fi
+
+  if [ "$stop_gateway" = 1 ]; then
+    h1 "stopping hermes gateway"
+    if command -v hermes >/dev/null 2>&1 && hermes gateway stop >/dev/null 2>&1; then
+      ok "hermes gateway stopped"
+    else
+      warn "hermes gateway stop failed or gateway was not running"
+    fi
+  fi
+
   ok "session down"
 }
 
@@ -326,6 +407,11 @@ cmd_restart() {
     supervisor)
       daemon_stop "steward-supervisor"
       daemon_start "steward-supervisor" "$SCRIPT_DIR/scripts/steward-supervisor.py"
+      ;;
+    pauser)
+      daemon_stop "inactive-cards-pauser"
+      ACTIVE_PROFILES_FILE="$ROSTER_FILE" \
+        daemon_start "inactive-cards-pauser" "$SCRIPT_DIR/scripts/inactive-cards-pauser.py"
       ;;
     all)
       cmd_down
@@ -380,7 +466,7 @@ PYEOF
   done
 
   h1 "daemons"
-  for d in steward-chat-listener steward-supervisor; do
+  for d in steward-chat-listener steward-supervisor inactive-cards-pauser; do
     if daemon_alive "$d"; then
       ok "$d running (pid $(daemon_pid "$d"))"
     else
@@ -495,6 +581,7 @@ cmd_logs() {
     flint|mason|gatherer|steward) tail $follow -n "$lines" "$LOG_DIR/bot-$comp.log" ;;
     listener) tail $follow -n "$lines" "$LOG_DIR/steward-chat-listener.log" ;;
     supervisor) tail $follow -n "$lines" "$LOG_DIR/steward-supervisor.log" ;;
+    pauser) tail $follow -n "$lines" "$LOG_DIR/inactive-cards-pauser.log" ;;
     gateway) tail $follow -n "$lines" "$LOG_DIR/gateway.log" 2>/dev/null || warn "no gateway log file" ;;
     *) err "unknown component: $comp"; exit 1 ;;
   esac

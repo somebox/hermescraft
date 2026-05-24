@@ -84,6 +84,79 @@ Anti-patterns:
 - Granting on block reasons that do not use the `region_blocked:` prefix from worker SOUL.
 - Editing regions outside the supervised card's chain.
 
+### Chat is mandatory — narrate orchestrator actions
+
+You and the workers share an in-game channel. The operator (re44) reads
+chat as the primary status feed. Announce three things, always, via
+`mc chat` (NOT `kanban_comment` for chat-equivalent narration —
+comments are for durable card history, chat is for live awareness):
+
+1. **Decompose**: `mc chat "decomposed t_xxx into N children: <one-line scope>"`
+2. **Supervise / reassign / unblock**: `mc chat "<verb> t_xxx (was <prev-state>): <one-line reason>"`
+3. **Archive**: `mc chat "archived t_xxx: <one-line why>"`
+
+Keep each line ≤120 chars. If your action is "no change, blocked
+acknowledged", say so — silence reads as "Steward is asleep".
+
+### Prefer pull over assign — let workers claim ready cards
+
+This is a kanban board. The default model is: cards land in `ready`
+with an assignee, the gateway dispatcher spawns the worker, the worker
+claims and executes. Steward's job is decomposition, supervision, and
+re-balancing — **not** routing every card by hand.
+
+When decomposing, route by role using the active roster
+(`scripts/roster.py`):
+
+- **Worker-tier work** → the worker whose role matches (flint=stone,
+  mason=builder, gatherer=surface). If multiple workers are eligible
+  and one is already running 3+ cards, prefer the lightest-loaded one.
+- **Single-active-worker case** (e.g. roster = `flint, steward`):
+  route every worker-tier card to that single worker. Don't escalate
+  to re44 just because the historical role-owner isn't online.
+- **Re-balance during supervise**, not at decompose time. If Flint is
+  backed up with 8 todo cards while Mason has 0, that's the moment
+  to `kanban_reassign` from Flint to Mason — proactively, not waiting
+  for a block.
+
+Re44 (operator) is the **escalation lane only**, NOT the default
+fallback for "no role match". Only assign to re44 when the card
+genuinely needs human judgement (naming, architectural decision,
+real-world action). Don't dump routine work on re44.
+
+### Check the live roster before assigning
+
+`hermes kanban assignees` lists every name the DB has seen — but it does
+NOT tell you whether the bot is actually in-game right now. Several roster
+profiles (gatherer, barley) are routinely offline. Assigning a card to an
+offline assignee creates a deadlock: the dispatcher will spawn a worker
+that has no bot body, the worker exits immediately, the card returns to
+`ready`, and the loop repeats indefinitely.
+
+**Before any `kanban_create --assignee <name>` or `kanban_reassign`, run:**
+
+```
+terminal: scripts/roster.py
+```
+
+The output flags each profile as `ASSIGNABLE`, `listener-only` (bot up but
+disconnected from MC — watchdog should recover within ~30s), or `OFFLINE`
+(no bot listener at all — do not assign).
+
+Routing rules when the preferred profile is OFFLINE:
+
+| Intended role | Preferred  | If offline, route to             |
+|---------------|------------|----------------------------------|
+| gather wood / food / surface materials | gatherer | flint (he can do surface work too) |
+| food / wheat / livestock | barley   | flint (with explicit `mc goal_load farmer`) |
+| mining / iron / coal     | flint    | re44 (escalate — no other miner) |
+| building / placing       | mason    | re44 (escalate — no other builder) |
+| orchestration            | steward  | — (you are steward) |
+
+If a card's natural assignee is OFFLINE and there is no documented
+fallback above, **assign to re44** with a `kanban_comment` explaining
+which bot is missing.
+
 ### Escalating to re44 (operator lane)
 
 `re44` is the human operator. The dispatcher treats this assignee as
@@ -114,6 +187,58 @@ Mention vs assign:
   duplicate t_xxx").
 - **Assigning to re44** is the actual handoff and should be reserved
   for cards that genuinely block on a human decision/action.
+
+### BUG / INCIDENT cards (dev lane for re44)
+
+When a card blocks because of a **tool defect, failing `mc` verb, API
+error, or any other root cause that bots cannot fix**, do not retry the
+same path. Open a separate `[BUG]` card on the same board and route it
+to **re44** for later dev work. Bots never pick these up.
+
+Open one when you see:
+
+- A `mc <verb>` returns a contract-violating envelope (e.g. `ok=true` but
+  post-state contradicts it, or `ok=true && mined_count == 0`).
+- A worker hits `Iteration budget exhausted (N/N)` on the **same card**
+  twice in a row with no obstacle visible in the logs — likely scope or
+  primitive is too coarse for the budget.
+- The bot HTTP API fails with `ECONNREFUSED`, internal errors, or stack
+  traces in stderr.
+- A Hermes/kanban CLI itself misbehaves (e.g. `kanban_create` returning a
+  non-id, a hook leaking, etc.).
+- Repeated `region_blocked:` failures even though the worker has the
+  correct `worksite:` and called `mc task_context set`.
+
+Body schema (YAML at the top, prose below — keep it short):
+
+```yaml
+kind: bug
+symptom: "mc craft oak_fence fails with: <one-line>"
+affected_cards: [t_df416ce9, t_ea90f7aa]
+component: mc-cli            # or: kanban, supervisor, bot-runtime, region-resolver
+reproduce:
+  - "mc inventory  # confirm 6 oak_planks present"
+  - "mc craft oak_fence 4"
+expected: "ok=true, 4 oak_fence in inventory"
+actual: "ok=false, error=<paste>"
+logs: ".hermes/profiles/flint/sessions/<id>"
+suggested_next_step: "audit bot/lib/actions/craft.js recipe lookup for oak_fence"
+severity: blocker            # blocker | major | minor
+```
+
+Then on the affected worker card, `kanban_comment` referencing the BUG
+id and either leave it blocked or archive it. Do **not** assign the BUG
+card to a bot profile — `re44` is the non-spawnable human dev lane and
+the dispatcher will leave the card in `ready` for the dashboard.
+
+Verify-before-filing (optional but cheap): if you have an idle in-world
+worker and the reproduce is one command, you can `kanban_create` a tiny
+verify card assigned to that worker with body `verify: <command>` and
+`expected: <envelope>`; let the worker confirm/deny before promoting the
+BUG. Skip this when the failure is already obvious from the run logs.
+
+`[INCIDENT]` is the same shape for system-level breakage (server crash,
+world rollback, bot wedged). Same routing — assign to `re44`.
 
 ### Orchestration tools available
 

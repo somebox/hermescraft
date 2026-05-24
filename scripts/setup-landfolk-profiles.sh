@@ -9,7 +9,11 @@
 # never touched. SOUL.md is rewritten (old version backed up).
 #
 # Usage:
-#   scripts/setup-landfolk-profiles.sh [--dry-run] [--solo-flint]
+#   scripts/setup-landfolk-profiles.sh [--dry-run] [--solo-flint] [--apply-config]
+#
+#   --apply-config  Sync SOUL.md, worker max_turns (150), steward skills, and env
+#                   passthrough only — skip board creation and profile descriptions.
+#                   Use after checkout when ~/.hermes/profiles already exist.
 #
 #   --solo-flint  Decomposer descriptions: all in-world landfolk-ops work → flint
 #                 (see docs/design/phase-3/steward-mvp.md § Solo Flint ops)
@@ -28,11 +32,13 @@ WORKER_PROFILES=(flint gatherer mason)
 ALL_PROFILES=(flint gatherer mason steward)
 DRY_RUN=false
 SOLO_FLINT=false
+APPLY_CONFIG=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=true; shift ;;
     --solo-flint) SOLO_FLINT=true; shift ;;
+    --apply-config) APPLY_CONFIG=true; shift ;;
     -h|--help)
       sed -n '1,32p' "$0" | tail -n +2
       exit 0
@@ -56,6 +62,37 @@ write_file() {
   else
     printf '%s' "$content" > "$path"
   fi
+}
+
+patch_max_turns() {
+  # Workers spawn one mc verb per turn and routinely need 60-120 steps for
+  # multi-stage cards (scout + gather + craft + deposit). The default
+  # max_turns=90 hits "Iteration budget exhausted" on cards that aren't
+  # actually stuck — they just need more steps. Bump worker profiles to 150.
+  local config="$1"
+  local turns="${2:-150}"
+  if [ "$DRY_RUN" = true ]; then
+    echo "  max_turns: would set to $turns"
+    return 0
+  fi
+  python3 - "$config" "$turns" <<'PYEOF'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+turns = sys.argv[2]
+text = path.read_text()
+new = re.sub(r'^(\s*max_turns:\s*)\d+', r'\g<1>' + turns, text, count=1, flags=re.M)
+if new == text:
+    # No agent.max_turns key — append under agent: block if present, else top-level.
+    if re.search(r'^agent:\s*$', text, re.M):
+        new = re.sub(r'^(agent:\s*\n)', r'\1  max_turns: ' + turns + '\n', text, count=1, flags=re.M)
+    else:
+        new = text.rstrip() + f"\nagent:\n  max_turns: {turns}\n"
+if new != text:
+    path.write_text(new)
+    print(f"  max_turns: set to {turns}")
+else:
+    print(f"  max_turns: already {turns}")
+PYEOF
 }
 
 ensure_profile_exists() {
@@ -202,7 +239,7 @@ When a structured obstacle stops your card and you've recognized the cause, \`ka
 - \`stuck_pocket_no_escape:<pos>\` — wedged with no tool path out. Steward can rcon-tp you out or give a missing tool.
 - \`decision_needed:<options>\` — you have a partial result and need a stewarding judgment call (e.g. "accept 5 raw_iron vs continue mining for 32"). Steward decides and unblocks with guidance.
 
-Don't grind iterations after recognizing one of these. The supervisor (a polling daemon that watches blocked cards) creates a \`[SUPERVISE]\` triage handoff for the steward; the steward unblocks you with a comment + corrective action.
+Don't grind iterations after recognizing one of these. The supervisor (a polling daemon that watches blocked cards) creates a single \`[SUPERVISE]\` card the steward acts on directly — one decision, one session, no sub-tasks. If the steward determines the root cause is a tool defect (e.g. a misbehaving \`mc\` verb), it will open a separate \`[BUG]\` card assigned to re44 instead of retrying.
 
 ## On failure
 
@@ -215,7 +252,7 @@ soul_for_steward() {
   cat <<'EOF'
 # You are steward (Landfolk ops orchestrator)
 
-You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY]`, and `[EPIC]` cards. You coordinate `flint`, `gatherer`, and `mason` via kanban — you do not mine, build, or place blocks yourself.
+You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY]`, `[EPIC]`, and `[SUPERVISE]` cards. You coordinate `flint`, `gatherer`, and `mason` via kanban — you do not mine, build, or place blocks yourself.
 
 ## Orchestrator rules
 
@@ -224,6 +261,17 @@ You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY
 - Decompose coarse intents into finite `[SUPPLY]` → `[STORE]` chains with explicit YAML bodies (see docs/design/phase-3/steward-mvp.md).
 - For surveys: use read-only `mc` observation per minecraft-steward-survey skill. If all floors are met, `kanban_complete(summary="no action needed")`.
 - For GrabCraft URLs on a card: run `python3 <repo>/scripts/blueprint-plan.py` per minecraft-steward-blueprint-plan skill; decompose into supply + construct worker cards.
+
+## [SUPERVISE] cards — single session, single action
+
+When you pick up a `[SUPERVISE]` card from `scripts/steward-supervisor.py`:
+
+1. Read the blocked card it references (`hermes kanban show <target_id>`).
+2. Choose **exactly one** action: unblock+comment, decompose, reassign, archive, or open a `[BUG]`/`[INCIDENT]` card (see minecraft-steward-survey skill § BUG / INCIDENT cards).
+3. Execute it inline, then `kanban_complete` THIS supervise card with a one-line summary.
+4. Do NOT create `[INSPECT]`, `[DECIDE]`, `[EXECUTE]`, or further `[SUPERVISE]` children — that's the anti-pattern this lane was rewritten to remove.
+
+If the same card has been supervised before and the prior action didn't help, prefer opening a `[BUG]` for re44 over re-trying the same fix.
 
 ## Read-only observation
 
@@ -234,6 +282,7 @@ You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY
 - Never run mutating `mc` verbs (dig, place, collect, deposit, craft, smelt, fill).
 - One card per session; terminate with `kanban_complete` or `kanban_block`.
 - Post chest counts in `kanban_comment` when completing a survey so `scripts/ledger-update.py` can fold state.
+- BUG/INCIDENT cards are for `re44` — never assign them to bot profiles.
 EOF
 }
 
@@ -373,6 +422,7 @@ setup_worker() {
   fi
 
   patch_env_passthrough "$dir/config.yaml" ""
+  patch_max_turns "$dir/config.yaml" 150
 
   if [ -f "$dir/SOUL.md" ] && ! diff -q <(soul_for_worker "$name") "$dir/SOUL.md" >/dev/null 2>&1; then
     if [ "$DRY_RUN" = false ]; then
@@ -518,14 +568,20 @@ echo "  profiles dir: $PROFILES_DIR"
 echo "  skills src:   $SKILLS_SRC"
 echo "  dry run:      $DRY_RUN"
 echo "  solo flint:   $SOLO_FLINT"
+echo "  apply config: $APPLY_CONFIG"
 
 for p in "${WORKER_PROFILES[@]}"; do
   setup_worker "$p"
 done
 setup_steward
-ensure_ops_board
-set_profile_descriptions
-patch_kanban_config
+if [ "$APPLY_CONFIG" = true ]; then
+  echo
+  echo "===== --apply-config: skipped board, descriptions, global kanban merge ====="
+else
+  ensure_ops_board
+  set_profile_descriptions
+  patch_kanban_config
+fi
 
 echo
 echo "verify:"

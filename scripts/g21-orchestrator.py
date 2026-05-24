@@ -682,18 +682,23 @@ def setup_hermes_home(name: str) -> Path:
             except OSError:
                 pass
 
-    # Symlink the per-bot sessions dir TO the shared ~/.hermes/sessions/ so
-    # the Hermes dashboard (port 9119, reads only the central HERMES_HOME)
-    # can display bot work. Without this, sessions are isolated in
-    # ~/.hermes-landfolk-<name>/sessions/ and the dashboard sees nothing.
+    # The per-bot sessions dir MUST be a real per-profile directory, NOT a
+    # symlink to ~/.hermes/sessions/. The old behavior here (symlink every
+    # landfolk-<name>/sessions to the shared default home) was a workaround
+    # for a dashboard that only read HERMES_HOME — that dashboard now reads
+    # from both ~/.hermes-landfolk-<name> AND ~/.hermes/profiles/<name>
+    # (see dashboard/lib/agent-paths.js → hermesHomeCandidates), so the
+    # symlink is obsolete. Worse, with all per-bot dirs pointing at the
+    # same target, two continuous agents (e.g. Flint and Mason) would
+    # interleave sessions in one file and every log viewer attributing by
+    # HERMES_HOME would double-count under both profiles.
     sessions_target = agent_home / "sessions"
-    sessions_src = HOME_DIR / ".hermes" / "sessions"
-    sessions_src.mkdir(parents=True, exist_ok=True)
-    if not sessions_target.exists():
+    if sessions_target.is_symlink():
         try:
-            sessions_target.symlink_to(sessions_src)
+            sessions_target.unlink()
         except OSError:
             pass
+    sessions_target.mkdir(parents=True, exist_ok=True)
     return agent_home
 
 
