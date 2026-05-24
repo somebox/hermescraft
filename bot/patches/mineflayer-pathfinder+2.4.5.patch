@@ -55,12 +55,19 @@ index b38bd30..c4ada3a 100644
      let dz = nextPoint.z - p.z
 -    if (Math.abs(dx) <= 0.35 && Math.abs(dz) <= 0.35 && Math.abs(dy) < 1) {
 -      // arrived at next point
-+    if (Math.abs(dx) <= 0.20 && Math.abs(dz) <= 0.20 && Math.abs(dy) < 1) {
-+      // arrived at next point — F58 patch: tightened XZ tolerance from 0.35
-+      // to 0.20 so the bot's hitbox doesn't scrape adjacent wall corners
-+      // when landing off-center. Stock 0.35 + bot 0.6-wide hitbox left a
-+      // ~0.7-block tolerance square that caused wedge/corner stucks in
-+      // G21–G23. Patched via patch-package on mineflayer-pathfinder 2.4.5.
++    if (Math.abs(dx) <= 0.25 && Math.abs(dz) <= 0.25 && Math.abs(dy) < 1) {
++      // arrived at next point — F58 patch: tightened XZ tolerance from
++      // upstream 0.35. Original wedge incidents (G21-G23) showed stock
++      // 0.35 + bot 0.6-wide hitbox = ~0.7-block tolerance square that
++      // caused corner-scrape stucks. First attempt at 0.20 was effective
++      // but produced sub-tick movements that correlated with Paper
++      // anti-cheat "moved-wrongly" kicks once Mineflayer 4.37 changed
++      // velocity packet handling. Bisected to 0.25 on 2026-05-25: still
++      // tight enough to prevent corner-scrape (0.6 hitbox + 0.25 tolerance
++      // = 0.5-block landing zone, well within a 1-block cell) while
++      // producing fewer micro-corrections per waypoint. Slow-mode profile
++      // in BOT_MOVEMENT_PROFILE provides additional safety against
++      // anti-cheat kicks.
        lastNodeTime = performance.now()
        if (stopPathing) {
          stop()
