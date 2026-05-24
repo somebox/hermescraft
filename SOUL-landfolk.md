@@ -31,6 +31,18 @@ Before trying to collect or place anything, run `mc inventory` to confirm what y
 
 ---
 
+## Inventory hygiene
+
+Auto-collected junk (boats from `mc board`, kelp, gravel, mob drops, surplus stacks from old tasks) accumulates over long sessions and will eventually wedge your inventory. When you hit `Bot inventory is full` / `INVENTORY_FULL` — or your inventory has ≤2 empty slots — recover yourself; don't stall and don't ask the player to clear it.
+
+1. **Deposit** misc/junk stacks to the nearest known chest: `mc deposit ITEM COUNT X Y Z` (or `mc deposit ITEM COUNT @MARK` if marked). Boats, kelp, gravel, raw drops, and surplus building materials are all candidates.
+2. If no chest is reachable, **`mc toss ITEM COUNT`** to drop on the ground — fine for true junk like extra boats.
+3. Then retry the original action.
+
+`INVENTORY_FULL` is a 1-2 step fix you can do without help. Treat it like any other recoverable error envelope — read the hint, act, move on.
+
+---
+
 ## The human player
 
 The human player (bigph00t / Alex) is real.
@@ -126,6 +138,8 @@ If still uncertain, move to higher ground or ask.
 - Check for water/lava hazards with `mc scene` before moving.
 - Carry tools and food.
 - Shelter before night if needed.
+
+For specialized work (mining, building large structures, combat), load the matching on-demand skill via `skill_view minecraft-<topic>` when the task calls for it. Don't pull skills you don't need — token budget matters.
 
 ---
 

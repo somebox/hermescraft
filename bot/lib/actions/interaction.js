@@ -368,9 +368,76 @@ export function createInteractionActions(services) {
   },
 
   /**
-   * Swim up to the water surface. Holds jump (swim-up while submerged) until
-   * the bot's head is in air or 30s elapse. Used to escape water columns the
-   * bot pours on itself (G9 scenario). No-op if the bot isn't in water.
+   * Write or edit text on a sign at X,Y,Z. Uses Mineflayer's bot.updateSign
+   * (the underlying `update_sign` packet that the server accepts for both new
+   * and existing signs). 4 lines × 45 chars max per the protocol. Vanilla
+   * MC 1.21 supports editing signs in-game, so this works on existing signs
+   * — workers can author placemark text for the region sign-watcher pipeline.
+   *
+   * Args:
+   *   x, y, z  — sign block coords
+   *   text     — full text; lines separated by \n (max 4 lines, 45 chars each)
+   *   back     — optional bool; write to back side of the sign (default false)
    */
+  async edit_sign({ x, y, z, text, back = false }) {
+    if (typeof text !== 'string' || text.length === 0) {
+      return fail('MISSING_ARGS', 'edit_sign requires non-empty `text` (newline-separated up to 4 lines)', {
+        observed_state: { received_text_type: typeof text },
+        retry_safe: false,
+      });
+    }
+    const lines = text.split('\n');
+    if (lines.length > 4) {
+      return fail('TOO_MANY_LINES', `Got ${lines.length} lines; signs have max 4 lines. Strip newlines or split into multiple signs.`, {
+        observed_state: { line_count: lines.length, max: 4 },
+        retry_safe: false,
+      });
+    }
+    const over = lines.findIndex((l) => l.length > 45);
+    if (over >= 0) {
+      return fail('LINE_TOO_LONG', `Line ${over + 1} has ${lines[over].length} chars; sign lines cap at 45.`, {
+        observed_state: { offending_line: over + 1, length: lines[over].length, max: 45, content_preview: lines[over].slice(0, 50) },
+        retry_safe: false,
+      });
+    }
+    const b = ensureBot();
+    const block = b.blockAt(new Vec3(x, y, z));
+    if (!block) {
+      return fail('NO_BLOCK_AT_COORD', `No block loaded at ${x},${y},${z}`, {
+        observed_state: { requested_coord: { x, y, z } },
+        retry_safe: false,
+      });
+    }
+    if (!String(block.name || '').includes('sign')) {
+      return fail('NOT_A_SIGN', `Block at ${x},${y},${z} is ${block.name}, not a sign. mc place <sign_item> ${x} ${y} ${z} first, then mc edit_sign.`, {
+        observed_state: { block_name: block.name, requested_coord: { x, y, z } },
+        retry_safe: false,
+      });
+    }
+    // F55.3: uniform reach precheck (same as mc interact).
+    const reach = await ensureWithinReach({ bot: b, goals }, { x, y, z }, {
+      range: 4.5,
+      observed: { block_at_target: block.name },
+    });
+    if (!reach.ok) return reach;
+    try {
+      await b.updateSign(block, text, !!back);
+    } catch (e) {
+      return fail('UPDATE_SIGN_FAILED', `bot.updateSign rejected: ${e?.message || String(e)}`, {
+        observed_state: { block_name: block.name, requested_coord: { x, y, z }, back: !!back },
+        retry_safe: false,
+      });
+    }
+    return ok({
+      result: `Wrote sign at ${x},${y},${z} (${back ? 'back' : 'front'}) — ${lines.length} line(s)`,
+      data: {
+        coord: { x, y, z },
+        side: back ? 'back' : 'front',
+        line_count: lines.length,
+        lines,
+      },
+    });
+  },
+
   };
 }

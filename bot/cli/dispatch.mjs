@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { normalizeMark, positionalToParams } from './args.mjs';
+import { resolveCommand, buildAliasMap } from './registry.mjs';
 
+const CLI_ALIAS_MAP = buildAliasMap();
+const REGION_NAV_REF = /^:([a-z0-9]{2,12}):(\/[a-z0-9]{2,12})?$/i;
 const empty = '{}';
 
 /** @typedef {import('./registry.mjs').CmdDef} CmdDef */
@@ -39,6 +42,16 @@ function parseMarkFlags(positional) {
  * @param {string[]} positional
  */
 export function buildHttpRequest(def, canonicalName, positional) {
+  if (
+    ['goto', 'goto_near', 'move'].includes(canonicalName) &&
+    positional.length >= 1 &&
+    REGION_NAV_REF.test(String(positional[0]))
+  ) {
+    const siteCmd = resolveCommand('go_site', CLI_ALIAS_MAP);
+    if (!siteCmd) throw new Error('missing:go_site');
+    return buildHttpRequest(siteCmd.def, siteCmd.canonicalName, positional);
+  }
+
   if (canonicalName === 'bg') {
     const action = positional[0];
     if (!action) throw new Error('missing_action');
@@ -388,6 +401,120 @@ function customParse(canonicalName, positional) {
       const note = q.join(' ') || '';
       if (!name) throw new Error('missing_name');
       return { name, note, ...flags };
+    }
+    case 'regions': {
+      const q = positional.slice();
+      /** @type {Record<string, unknown>} */
+      const out = {};
+      while (q.length && String(q[0]).startsWith('--')) {
+        const f = String(q.shift());
+        if (f === '--at') {
+          const first = q.length ? String(q[0]) : '';
+          if (first.includes(',')) {
+            out.at = String(q.shift());
+          } else {
+            const x = Number(q.shift());
+            const y = Number(q.shift());
+            const z = Number(q.shift());
+            out.at = `${x},${y},${z}`;
+          }
+        } else throw new Error(`unknown_flag:${f}`);
+      }
+      return out;
+    }
+    case 'region_create': {
+      const q = positional.slice();
+      /** @type {Record<string, unknown>} */
+      const flags = {};
+      while (q.length && String(q[0]).startsWith('--')) {
+        const f = String(q.shift());
+        if (f === '--r' || f === '--radius') flags.r = Number(q.shift());
+        else if (f === '--y') flags.y = q.shift();
+        else if (f === '--intent') flags.intent = q.shift();
+        else if (f === '--shape') flags.shape = q.shift();
+        else throw new Error(`unknown_flag:${f} — usage: mc region_create <ID> <PROFILE> [--r N] [--y MIN..MAX] [--intent protect|resource|marker] [--shape column|sphere]`);
+      }
+      const id = q.shift();
+      const profile = q.shift();
+      if (!id && !profile) {
+        throw new Error('missing_args: <ID> and <PROFILE> required. usage: mc region_create <ID> <PROFILE> [--r N] [--y MIN..MAX] [--intent protect|resource|marker] [--shape column|sphere]. example: mc region_create :base1: base --r 18 --y 58..120 --intent protect');
+      }
+      if (!profile) {
+        throw new Error(`missing_args: <PROFILE> required after <ID> (got id="${id}"). PROFILE is one of base|protect|mine|farm (the behaviour preset). example: mc region_create ${id} base --r 18 --y 58..120 --intent protect`);
+      }
+      return { id, profile, ...flags };
+    }
+    case 'region_remove': {
+      const q = positional.slice();
+      let confirm = false;
+      const rest = [];
+      for (const tok of q) {
+        if (tok === '--confirm') confirm = true;
+        else rest.push(tok);
+      }
+      if (!rest[0]) throw new Error('missing_id');
+      return { id: rest[0], confirm };
+    }
+    case 'region_update_intent': {
+      const q = positional.slice();
+      const id = q.shift();
+      const intent = q.shift();
+      if (!id || !intent) {
+        throw new Error('missing_args: usage mc region_update_intent <ID> <protect|resource|marker>. example: mc region_update_intent :hut3: marker');
+      }
+      const valid = ['protect', 'resource', 'marker'];
+      if (!valid.includes(String(intent).toLowerCase())) {
+        throw new Error(`bad_intent: "${intent}" — must be one of: ${valid.join(', ')}`);
+      }
+      return { id, intent: String(intent).toLowerCase() };
+    }
+    case 'edit_sign': {
+      const q = positional.slice();
+      let back = false;
+      const rest = [];
+      for (const tok of q) {
+        if (tok === '--back') back = true;
+        else rest.push(tok);
+      }
+      if (rest.length < 4) {
+        throw new Error('missing_args: usage mc edit_sign X Y Z "line1\\nline2\\nline3\\nline4" [--back]');
+      }
+      const x = Number(rest[0]);
+      const y = Number(rest[1]);
+      const z = Number(rest[2]);
+      if (![x, y, z].every(Number.isFinite)) {
+        throw new Error(`bad_coord: X Y Z must be numeric — got ${rest[0]} ${rest[1]} ${rest[2]}`);
+      }
+      // Text may come as 1 arg (quoted) or as multiple arg tokens joined by space.
+      // Prefer the joined form so 'mc edit_sign 1 2 3 "hello world"' works regardless of shell quoting.
+      const text = rest.slice(3).join(' ').replace(/\\n/g, '\n');
+      return { x, y, z, text, back };
+    }
+    case 'site_add': {
+      const ref = positional[0];
+      const x = Number(positional[1]);
+      const y = Number(positional[2]);
+      const z = Number(positional[3]);
+      return { ref, x, y, z };
+    }
+    case 'site_remove': {
+      return { ref: positional[0] };
+    }
+    case 'check': {
+      const verb = String(positional[0] || '').toLowerCase();
+      if (verb === 'dig') {
+        return { verb: 'dig', x: Number(positional[1]), y: Number(positional[2]), z: Number(positional[3]) };
+      }
+      if (verb === 'place') {
+        return {
+          verb: 'place',
+          block: positional[1],
+          x: Number(positional[2]),
+          y: Number(positional[3]),
+          z: Number(positional[4]),
+        };
+      }
+      throw new Error('check_verb');
     }
     case 'chest':
     case 'list_container':

@@ -3,6 +3,7 @@
 
 import { Vec3 } from 'vec3';
 import { isDigProtected } from './dig-tools.js';
+import { setupRegionSignWatcher } from './regions/sign-watcher.js';
 
 /** Actions used by stuck watchdog when task.status === 'running'. */
 /** Note: `collect` is excluded — mining often keeps feet within <2m for 10–20s while digging. */
@@ -140,8 +141,31 @@ const DISPOSABLE_TERRAIN_NAMES = Object.freeze([
 const DISPOSABLE_TERRAIN_COST = 25; // foliage=3, disposable=25, stone=100/inf
 const DISPOSABLE_TERRAIN_MAX_PER_LEG = 3;
 
+/**
+ * Movement profile: `default` matches historical behaviour (sprint allowed,
+ * parkour off by default, etc.). `slow` produces a conservative motion
+ * envelope for kanban-driven bots whose cave/underground pathing was
+ * tripping Paper's `invalid_player_movement` anti-cheat.
+ *
+ * Slow mode disables sprinting (the biggest single source of large
+ * position deltas), forbids parkour, and raises jumpCost so the planner
+ * prefers level paths over arc-of-jump apex positions. Combined with our
+ * existing F58 arrival-tolerance patch, the result is a smoother and
+ * more "human-walking" stream of position packets. See
+ * `reports/expedition/2026-05-24-flint-iron-mining-deep-shaft.md` and
+ * task #7 in the project task list for the root-cause investigation.
+ *
+ * Override via env: `BOT_MOVEMENT_PROFILE=slow|default`.
+ */
+const MOVEMENT_PROFILE = (() => {
+  const v = (process.env.BOT_MOVEMENT_PROFILE || '').toLowerCase();
+  if (v === 'slow') return 'slow';
+  return 'default';
+})();
+
 export const MOVEMENTS_TUNING = Object.freeze({
-  allowSprinting: true,
+  allowSprinting: MOVEMENT_PROFILE !== 'slow',
+  allowParkour: false, // historic default; opts.allowParkour can still re-enable for default profile
   canDig: false,
   canOpenDoors: true,
   scafoldingBlocks: [],
@@ -154,6 +178,11 @@ export const MOVEMENTS_TUNING = Object.freeze({
   disposableBlocks: DISPOSABLE_TERRAIN_NAMES,
   disposableBlockCost: DISPOSABLE_TERRAIN_COST,
   disposableBlockMaxPerLeg: DISPOSABLE_TERRAIN_MAX_PER_LEG,
+  // Slow-mode multiplies jumpCost so the planner prefers level routes
+  // over arc-apex paths; defaults to mineflayer-pathfinder's built-in.
+  // Active only when MOVEMENT_PROFILE === 'slow'.
+  jumpCostMultiplier: MOVEMENT_PROFILE === 'slow' ? 3 : 1,
+  movementProfile: MOVEMENT_PROFILE,
 });
 
 /**
@@ -168,8 +197,30 @@ export const MOVEMENTS_TUNING = Object.freeze({
  * @param {string[]} [opts.protectedBlocks]  block names to mark uncuttable
  */
 export function applyMovementsTuning(moves, mcData, opts = {}) {
-  moves.allowSprinting = MOVEMENTS_TUNING.allowSprinting;
-  moves.allowParkour = opts.allowParkour ?? false;
+  // Profile resolution: explicit opts.profile wins, else env-driven default.
+  // Slow-mode forces sprint+parkour off regardless of caller opts; default
+  // mode honors caller opts.allowParkour (defaults false to match history).
+  const profile = opts.profile ?? MOVEMENTS_TUNING.movementProfile;
+  const slow = profile === 'slow';
+  moves.allowSprinting = slow ? false : MOVEMENTS_TUNING.allowSprinting;
+  moves.allowParkour = slow ? false : (opts.allowParkour ?? false);
+  if (slow && typeof moves.allow1by1towers !== 'undefined') {
+    // 1x1 vertical pillars produce large Δy per tick — Paper anti-cheat
+    // flags them on 1.21.4 with strict thresholds. Disable for kanban
+    // workers; surface-walking + gentle stair_down handles ascent.
+    moves.allow1by1towers = false;
+  }
+  if (slow && typeof moves.jumpCost !== 'undefined') {
+    // Bump jumpCost so planner prefers level detours over arc-apex paths
+    // (apex positions are the worst anti-cheat tripwires).
+    const baseJump = typeof moves.jumpCost === 'number' && moves.jumpCost > 0
+      ? moves.jumpCost
+      : 0.5; // mineflayer-pathfinder default
+    // Multiplier is fixed (3x) for the slow profile; the module-level
+    // MOVEMENTS_TUNING.jumpCostMultiplier reflects the env-default but
+    // we honor the resolved per-call profile here.
+    moves.jumpCost = baseJump * 3;
+  }
   moves.canDig = MOVEMENTS_TUNING.canDig;
   moves.canOpenDoors = MOVEMENTS_TUNING.canOpenDoors;
   moves.scafoldingBlocks = MOVEMENTS_TUNING.scafoldingBlocks;
@@ -584,6 +635,10 @@ export function createBotManager(deps) {
           if (username === ctx.world.bot.username) return;
           handleChat(username, message).catch((e) => log(`Chat handler error: ${e.message}`));
         });
+
+        if (ctx.runtime.regions) {
+          setupRegionSignWatcher(ctx.world.bot, ctx.runtime.regions);
+        }
 
         ctx.world.bot.on('whisper', (username, message) => {
           if (username === ctx.world.bot.username) return;

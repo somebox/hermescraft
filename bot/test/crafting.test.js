@@ -267,3 +267,47 @@ test('buildCraftPlanFromRecipes: needs_table reflects recipe', () => {
   });
   assert.equal(plan2.needs_table, false);
 });
+
+// A stone-tool recipe canonically lists `cobbled_deepslate` (mineflayer's
+// flattened representation of `#minecraft:stone_crafting_materials`), but
+// cobblestone satisfies it. Missing entries should surface the friendlier
+// `cobblestone` to the agent, with `recipe_canonical` + `equivalents` for
+// callers that need the canonical form.
+test('buildCraftPlanFromRecipes: tagged ingredient surfaces preferred variant in missing', () => {
+  const mcDataStone = {
+    items: {
+      ...mcData.items,
+      7: { name: 'cobbled_deepslate' },
+      8: { name: 'stick' },
+    },
+  };
+  // Stone pickaxe shape: 3 stone in top row, sticks vertical
+  const stoneRecipe = shapedRecipe([
+    [slot(7), slot(7), slot(7)],
+    [null, slot(8), null],
+    [null, slot(8), null],
+  ]);
+  // Bot has 2 cobblestone (overworld variant), no sticks, no deepslate
+  const items = inv(['cobblestone', 2]);
+
+  const plan = buildCraftPlanFromRecipes({
+    recipes: [stoneRecipe], invItems: items, mcData: mcDataStone,
+    chestSnapshots: {}, itemName: 'stone_pickaxe', wantCount: 1,
+  });
+  assert.equal(plan.ok, true);
+
+  const stoneMissing = plan.missing.find(m => m.name === 'cobblestone');
+  assert.ok(stoneMissing, 'missing entry should use cobblestone, not cobbled_deepslate');
+  assert.equal(stoneMissing.need, 3);
+  assert.equal(stoneMissing.have, 2, 'cobblestone in inventory counts toward the tag');
+  assert.equal(stoneMissing.short, 1);
+  assert.equal(stoneMissing.recipe_canonical, 'cobbled_deepslate');
+  assert.deepEqual(stoneMissing.equivalents, ['cobblestone', 'cobbled_deepslate', 'blackstone']);
+
+  // No stale cobbled_deepslate entry — that would re-introduce the bug
+  assert.equal(
+    plan.missing.find(m => m.name === 'cobbled_deepslate'),
+    undefined,
+    'should not surface cobbled_deepslate as the missing name',
+  );
+});

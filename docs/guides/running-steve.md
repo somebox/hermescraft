@@ -99,6 +99,16 @@ Env overrides (rarely needed):
 - `API_PORT` (`3001`), `VIEWER_PORT` (`4001`)
 - `AGENT_HOME` (`~/.hermes-landfolk-steve`), `LOG_DIR` (`/tmp/hermescraft`)
 - `NO_AGENT=1` to launch just the bot body without a brain
+- `AGENT_ONLY=1` to restart just the Hermes brain and leave the bot
+  process running — the bot's in-process chat buffer survives, so the
+  new agent session sees recent whispers via `mc read_chat`. Use this
+  to "wake" Steve after he's said something like "standing by" and the
+  Hermes turn ended without picking up a queued whisper.
+- `SUPERVISE=1` to keep respawning the agent on exit. Pair with
+  `AGENT_ONLY=1` for a stable companion: the bot stays connected
+  across many short brain sessions and chat history persists. Stop
+  the supervisor with Ctrl-C in its terminal, or
+  `pkill -f 'run-landfolk-agent.sh Steve'`.
 
 Model + provider are resolved from `data/agent-models.json`
 (`entrypoint.run_landfolk_agent`, currently `deepseek/deepseek-v4-flash`

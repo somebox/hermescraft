@@ -37,7 +37,7 @@ export function createGoto(deps) {
   return async function goto(args) {
     const c = coord3(args);
     if (!c.ok) return c.response;
-    const { x, y, z } = c;
+    let { x, y, z } = c;
     const b = ensureBot();
     const retryKey = gotoRetryKey('goto', x, y, z);
     const priorRetry = gotoRetryCounts.get(retryKey);

@@ -123,6 +123,29 @@ test('applyMovementsTuning: preserves explicit allowParkour override', () => {
   assert.equal(m2.allowParkour, false);
 });
 
+test('applyMovementsTuning: opts.profile=slow forces sprint+parkour off and raises jumpCost', () => {
+  const moves = makeMockMovements();
+  moves.allow1by1towers = true;     // start "on" to verify the override flips it
+  moves.jumpCost = 0.5;             // mineflayer-pathfinder default
+  applyMovementsTuning(moves, { blocksByName: {} }, { profile: 'slow', allowParkour: true });
+  // Slow-mode overrides allowParkour caller opt — anti-cheat trumps the hint.
+  assert.equal(moves.allowSprinting, false, 'slow disables sprinting');
+  assert.equal(moves.allowParkour, false, 'slow forces parkour off even if caller wants it');
+  assert.equal(moves.allow1by1towers, false, 'slow disables 1x1 vertical pillaring');
+  assert.equal(moves.jumpCost, 1.5, 'slow raises jumpCost 3x to discourage arc-apex paths');
+});
+
+test('applyMovementsTuning: opts.profile=default preserves historical behaviour', () => {
+  const moves = makeMockMovements();
+  moves.allow1by1towers = true;
+  moves.jumpCost = 0.5;
+  applyMovementsTuning(moves, { blocksByName: {} }, { profile: 'default', allowParkour: true });
+  assert.equal(moves.allowSprinting, true, 'default keeps sprinting on');
+  assert.equal(moves.allowParkour, true, 'default honors caller allowParkour');
+  assert.equal(moves.allow1by1towers, true, 'default does not touch 1x1 towers');
+  assert.equal(moves.jumpCost, 0.5, 'default does not raise jumpCost');
+});
+
 test('applyMovementsTuning: registers protectedBlocks into blocksCantBreak', () => {
   const moves = makeMockMovements();
   const mcData = {

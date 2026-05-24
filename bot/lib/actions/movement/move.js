@@ -34,7 +34,7 @@ export function createMove(deps) {
   return async function move(args) {
     const c = coord3(args);
     if (!c.ok) return c.response;
-    const { x, y, z } = c;
+    let { x, y, z } = c;
     const b = ensureBot();
     const max_doors = args.max_doors;
     const door = args.door;

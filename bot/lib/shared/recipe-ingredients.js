@@ -90,6 +90,19 @@ function countSatisfying(name, invItems) {
 }
 
 /**
+ * For a tagged ingredient, return the variant the agent should prefer to obtain.
+ * Surfacing `cobbled_deepslate` to the agent when `cobblestone` would do is
+ * misleading — the agent goes mining deepslate when the recipe accepts the
+ * overworld block they already know how to get. Use the first entry of the
+ * tag-equivalence list as the preferred name (curated by overworld availability).
+ */
+function preferredVariantName(name) {
+  const equivalents = INGREDIENT_TAG_EQUIVALENTS[name];
+  if (!equivalents || !equivalents.length) return name;
+  return equivalents[0];
+}
+
+/**
  * Pick the recipe variant whose ingredients best match what's available.
  * When no variant has direct ingredients, applies a tiebreaker for plank
  * types based on logs in inventory (log → 4 planks).
@@ -172,9 +185,15 @@ export function buildCraftPlanFromRecipes({ recipes, invItems, mcData, chestSnap
     const h = countHave(n);
     have[n] = h;
     if (h < need) {
-      const chestInfo = chestTotals[n];
+      const preferred = preferredVariantName(n);
+      const equivalents = INGREDIENT_TAG_EQUIVALENTS[n];
+      const chestInfo = chestTotals[preferred] || chestTotals[n];
       const inChest = chestInfo ? chestInfo.count : 0;
-      const entry = { name: n, need, have: h, short: need - h };
+      const entry = { name: preferred, need, have: h, short: need - h };
+      if (equivalents && preferred !== n) {
+        entry.recipe_canonical = n;
+        entry.equivalents = equivalents;
+      }
       if (inChest > 0) {
         entry.in_chests = inChest;
         entry.chest_locations = [...new Set(chestInfo.locations)];

@@ -967,6 +967,18 @@ export const RAW_COMMAND_DEFS = [
   }),
   g('close', 'world', [], { description: 'Close currently-open container', method: 'POST', path: '/action/close_screen', bodyFn: () => empty }),
 
+  g('edit_sign', 'world', ['sign_edit', 'write_sign'], {
+    description: 'Write or edit sign text at X Y Z (front side by default). Uses Mineflayer bot.updateSign — works on newly-placed AND existing signs. 4 lines × 45 chars max. Pass multi-line text quoted with literal \\n separators.',
+    method: 'POST',
+    path: '/action/edit_sign',
+    customParse: true,
+    usage: 'mc edit_sign X Y Z "line1\\nline2\\nline3\\nline4" [--back]',
+    examples: [
+      'mc edit_sign 367 66 -593 ":base1:\\nintent=protect\\nsites=home,chest"',
+      'mc edit_sign 367 66 -593 "Welcome to base" --back',
+    ],
+  }),
+
   g('use', 'world', ['u'], { description: 'Activate the HELD ITEM (eat food, shoot bow, place door wherever facing). Right-click in air. Does NOT target a block coord — for that use mc interact X Y Z, or mc through X Y Z to walk through a door.', method: 'POST', path: '/action/use', bodyFn: () => empty }),
 
   g('surface', 'world', ['swim_up'], {
@@ -1509,6 +1521,71 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc mark NAME [NOTE]',
   }),
   g('marks', 'memory', [], { description: 'List all marks', method: 'POST', path: '/action/marks', bodyFn: () => empty }),
+  g('regions', 'memory', [], {
+    description: 'List designated regions (optional --at x y z preview)',
+    method: 'GET',
+    pathFn: (p) => (p.at ? `/regions?at=${encodeURIComponent(String(p.at))}` : '/regions'),
+    customParse: true,
+  }),
+  g('region_create', 'memory', ['region-create'], {
+    description: 'Create unanchored region at bot position. PROFILE preset implies a default intent: base/farm/dock=protect (no ad-hoc dig/place), mine=resource (allow harvest). Override the default with --intent. Use --intent marker for a build-anchor that allows workers to dig+place inside.',
+    usage: 'mc region_create <ID> <PROFILE> [--r N] [--y MIN..MAX] [--intent protect|resource|marker] [--shape column|sphere]',
+    examples: [
+      'mc region_create :base1: base --r 18 --y 58..120                          # implicit intent=protect (base default)',
+      'mc region_create :hut3: base --r 5 --y 64..72 --intent marker             # marker = anchor only, no protection',
+      'mc region_create :mine2: mine --r 8 --y 12..40 --intent resource --shape column',
+    ],
+    method: 'POST',
+    path: '/action/region_create',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify({ id: p.id, profile: p.profile, r: p.r, y: p.y, intent: p.intent, shape: p.shape }),
+  }),
+  g('region_update_intent', 'memory', ['region-update-intent'], {
+    description: 'Switch an existing region\'s intent in-place (protect↔resource↔marker). Preserves anchor, sites, shape, profile. Useful when you realized after region_create that the default intent blocks the work you need to do inside.',
+    usage: 'mc region_update_intent <ID> <protect|resource|marker>',
+    examples: [
+      'mc region_update_intent :hut3: marker         # let the builder dig+place inside their own anchor region',
+      'mc region_update_intent :hut3: protect        # re-protect once construction finishes',
+    ],
+    method: 'POST',
+    path: '/action/region_update_intent',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify({ id: p.id, intent: p.intent }),
+  }),
+  g('region_remove', 'memory', ['region-remove'], {
+    description: 'Remove region (requires --confirm). Usage: mc region_remove :base1: --confirm',
+    usage: 'mc region_remove <ID> [--confirm]',
+    examples: [
+      'mc region_remove :base1: --confirm',
+    ],
+    method: 'POST',
+    path: '/action/region_remove',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify({ id: p.id, confirm: p.confirm }),
+  }),
+  g('site_add', 'memory', ['site-add'], {
+    description: 'Add named site to region. Usage: mc site_add :region:/sitename X Y Z',
+    usage: 'mc site_add :region:/sitename X Y Z',
+    examples: [
+      'mc site_add :base1:/chest 365 65 -593',
+    ],
+    method: 'POST',
+    path: '/action/site_add',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify({ ref: p.ref, x: p.x, y: p.y, z: p.z }),
+  }),
+  g('site_remove', 'memory', ['site-remove'], {
+    description: 'Remove site from region',
+    method: 'POST',
+    path: '/action/site_remove',
+    customParse: true,
+  }),
+  g('check', 'observe', [], {
+    description: 'Dry-run region policy for dig/place',
+    method: 'POST',
+    path: '/action/check',
+    customParse: true,
+  }),
   g('mark_update', 'memory', ['mark-up', 'mu'], {
     description: 'Move existing MARK to current position',
     method: 'POST',
@@ -1531,6 +1608,15 @@ export const RAW_COMMAND_DEFS = [
     argSchema: [{ key: 'name', type: 'string', required: true }],
     bodyFn: (p) => JSON.stringify({ name: p.name }),
     usage: 'mc go_mark NAME',
+  }),
+  g('go_site', 'memory', [], {
+    description: 'Walk to a region anchor (:base1:) or named site (:base1:/tower). mc goto accepts the same ref syntax.',
+    method: 'POST',
+    path: '/action/go_site',
+    argSchema: [{ key: 'ref', type: 'string', required: true }],
+    bodyFn: (p) => JSON.stringify({ ref: p.ref }),
+    usage: 'mc go_site :base1:/tower',
+    examples: ['mc go_site :base1:', 'mc goto :base1:/gate'],
   }),
   g('unmark', 'memory', [], {
     description: 'Delete a mark by name',

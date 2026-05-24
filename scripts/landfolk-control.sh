@@ -490,6 +490,7 @@ start_bot() {
   local bot_agent_model
   local bot_agent_provider
   local pidf
+  local viewer_port=$((port + 1000))
   pidf="$(pid_file bot "$name")"
   local name_lower="${name,,}"
   bot_agent_model="$(model_for_name "$name")"
@@ -519,6 +520,8 @@ start_bot() {
         MC_CONNECT_TIMEOUT_MS="${MC_CONNECT_TIMEOUT_MS:-55000}" \
         PAPERMCP_HOST="$MC_HOST" PAPERMCP_PORT="$PAPERMCP_PORT" PAPERMCP_TOKEN="$PAPERMCP_TOKEN" \
         AGENT_PROFILE="$name" AGENT_MODEL="$bot_agent_model" AGENT_PROVIDER="$bot_agent_provider" \
+        VIEWER_PORT="$viewer_port" \
+        BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-}" \
         node server.js >> "$LOG_DIR/bot-${name_lower}.log" 2>&1
       if [ "$_bot_stop" = true ]; then break; fi
       echo "[$(date '+%H:%M:%S')] bot $name exited, restarting in 5s..." >> "$LOG_DIR/bot-${name_lower}.log"
@@ -571,10 +574,28 @@ start_watchdog() {
 
       if [ "$connected" != "true" ]; then
         if [ "$((now_wall - last_connect_wall))" -ge "${WATCHDOG_CONNECT_COOLDOWN_SEC:-45}" ]; then
-          curl -sf -X POST "http://localhost:${port}/connect" >/dev/null 2>&1 || true
+          # F-NEW: force-reconnect to break Mineflayer 4.37+ "session replacement
+          # already in flight" deadlocks. Plain POST /connect no-ops if Mineflayer
+          # thinks a reconnect is in progress; force=true breaks that latch.
+          # Cost: a forced reconnect drops/redials the socket, ~1s blip. Worth it
+          # — without force=true the bot can sit "disconnected" indefinitely.
+          curl -sf -X POST "http://localhost:${port}/connect" \
+            -H "Content-Type: application/json" \
+            -d '{"force":true}' >/dev/null 2>&1 || true
           last_connect_wall="$now_wall"
-          echo "[$ts] watchdog POST /connect (disconnected or health probe failed)" >> "$wd_log"
+          echo "[$ts] watchdog POST /connect (force=true; disconnected or health probe failed)" >> "$wd_log"
         fi
+        sleep "$WATCHDOG_INTERVAL_S"
+        continue
+      fi
+
+      # F-NEW: WATCHDOG_CONNECT_ONLY mode — run ONLY the connect-keepalive
+      # loop above; skip stuck-task recovery + danger reactor. Useful when
+      # the bot is driven by a kanban-worker (or any external orchestrator)
+      # that does its own task management; the watchdog would otherwise
+      # cancel the worker's in-flight tasks. Set in env when starting bots
+      # for kanban-mode: WATCHDOG_CONNECT_ONLY=1 ./scripts/landfolk-control.sh start --profiles flint
+      if [ "${WATCHDOG_CONNECT_ONLY:-}" = "1" ] || [ "${WATCHDOG_CONNECT_ONLY:-}" = "true" ]; then
         sleep "$WATCHDOG_INTERVAL_S"
         continue
       fi
@@ -1163,6 +1184,7 @@ case "$COMMAND" in
       echo "[$name] agent log:   tail -f \"$LOG_DIR/agent-${name_lower}.log\""
       echo "[$name] hermes log:  tail -f \"$LOG_DIR/hermes-${name_lower}.log\""
       echo "[$name] progress:    tail -f \"$LOG_DIR/progress-${name_lower}.log\""
+      echo "[$name] session:     scripts/watch-agent.py --agent ${name_lower} --tail 30"
     done
     ;;
   stop)
