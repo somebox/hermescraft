@@ -23,6 +23,35 @@ export function isTillableAt(b, x, y, z) {
   return !!blk && TILLABLE.has(blk.name);
 }
 
+/**
+ * Surface scan: from (x, y, z) walk DOWN up to `maxDrop` cells looking
+ * for the first tillable block (i.e. the actual topmost dirt/grass at
+ * this column). Returns the cell's coords + drop distance, or null if
+ * nothing tillable within range.
+ *
+ * Motivating bug t_10ec0479 (2026-05-24): Mason called `mc till` at
+ * (363,65,-573) but the plot terrain is uneven — true surface at that
+ * column is at y=63 (y=64 and y=65 are air). The previous self-adjust
+ * was an isotropic radius-1 spiral which can't reach a surface 2+
+ * cells below the requested cell. A directional downward scan handles
+ * this directly: tillable terrain only exists IN columns, not above
+ * them, so when the requested cell is air the right answer is "look
+ * down".
+ */
+export function findTillableSurfaceBelow(b, x, y, z, maxDrop = 4) {
+  if (!b?.blockAt) return null;
+  for (let dy = 0; dy <= maxDrop; dy++) {
+    const cy = y - dy;
+    const blk = b.blockAt(new Vec3(x, cy, z));
+    if (!blk) return null;
+    if (TILLABLE.has(blk.name)) return { x, y: cy, z, drop: dy };
+    // Stop as soon as we hit a non-air solid that's not tillable — there
+    // can't be tillable surface below stone/cobble/etc.
+    if (!AIR_NAMES.has(blk.name)) return null;
+  }
+  return null;
+}
+
 /** Pure predicate: is the block at (x,y,z) plantable (farmland surface)? */
 export function isFarmlandAt(b, x, y, z) {
   const blk = b?.blockAt && b.blockAt(new Vec3(x, y, z));
@@ -147,15 +176,36 @@ export function createFarmingActions(deps) {
       let target = b.blockAt(targetPos);
       let adjustedTarget = null;
       if (!target || !TILLABLE.has(target.name)) {
-        // Task #7 self-adjust: try a nearby tillable cell within 1 block.
-        // circuit-v3+v4 hits: agent off by 1 on the Y-axis (farmland row vs
-        // wheat row) — instead of erroring, snap to the dirt 1 below.
-        const adj = findAdjustedTarget(b, isTillableAt, Number(x), Number(y), Number(z), 1);
+        // Two-stage adjust (t_10ec0479, 2026-05-24):
+        //
+        // 1. If the requested cell is air (agent guessed too high for
+        //    uneven terrain), scan DOWN up to 4 cells for the true
+        //    surface. This is the dominant farm-plot failure mode:
+        //    Mason called `mc till` at (363,65,-573) but the actual
+        //    grass was 2 cells below at y=63.
+        //
+        // 2. Otherwise (or if the down-scan finds nothing) fall back
+        //    to a radius-3 isotropic spiral. Old radius was 1, which
+        //    couldn't catch off-by-2-or-more guesses in any axis;
+        //    bumped to 3 so the till action is forgiving of minor
+        //    coord drift in the agent's plot mental model.
+        const TILL_SCAN_DROP = 4;
+        const TILL_SPIRAL_RADIUS = 3;
+        let adj = null;
+        if (target && AIR_NAMES.has(target.name)) {
+          const surf = findTillableSurfaceBelow(b, Number(x), Number(y), Number(z), TILL_SCAN_DROP);
+          if (surf) {
+            adj = { x: surf.x, y: surf.y, z: surf.z, distance: surf.drop };
+          }
+        }
+        if (!adj) {
+          adj = findAdjustedTarget(b, isTillableAt, Number(x), Number(y), Number(z), TILL_SPIRAL_RADIUS);
+        }
         if (!adj) {
           return { ok: false, error: {
             code: 'NOT_TILLABLE',
-            message: `Block at (${x},${y},${z}) is ${target?.name ?? 'unloaded'} and no tillable cell within 1 block — only dirt/grass/coarse_dirt can be tilled.`,
-            observed_state: { target_block: target?.name ?? null, requested_coord: { x, y, z }, tillable: [...TILLABLE], searched_radius: 1 },
+            message: `Block at (${x},${y},${z}) is ${target?.name ?? 'unloaded'} and no tillable cell within ${TILL_SPIRAL_RADIUS} blocks or ${TILL_SCAN_DROP} below — only dirt/grass/coarse_dirt can be tilled.`,
+            observed_state: { target_block: target?.name ?? null, requested_coord: { x, y, z }, tillable: [...TILLABLE], searched_radius: TILL_SPIRAL_RADIUS, searched_drop: TILL_SCAN_DROP },
             retry_safe: false,
           }};
         }
