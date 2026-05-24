@@ -147,23 +147,80 @@ export function createCombatActions(deps) {
       const mounted = !!b.vehicle;
       const heldIsFood = b.heldItem && b.heldItem.name === food.name;
 
-      // Task #25 — mounted eat. Vanilla MC allows eating in boats, but
-      // mineflayer's b.equip can fail while mounted because the rider's
-      // hand slot interacts with the vehicle. Skip equip when already
-      // holding the food; on equip failure, fall through to consume
-      // anyway (consume targets whatever is currently in the hand slot).
+      // Bug t_d696313a (2026-05-24): `b.equip(food, 'hand')` was dropping
+      // the previously-held tool. The mineflayer swap is two clicks
+      // (pick-up, put-down × 2); under Paper's inventory-click rate caps
+      // the second click can silently drop, leaving the previous item
+      // nowhere — Flint crafted+lost three stone_pickaxes in a row before
+      // we noticed. Fix: pre-empty the hand by moving the current held
+      // item to a free inventory slot, so the subsequent equip is a
+      // one-click move (food → empty hand) instead of a two-click swap.
+      //
+      // Three preferred paths in priority order:
+      //   1. Food already in hotbar → setQuickBarSlot (no clicks).
+      //   2. Held item is non-food → move to free non-hotbar inventory
+      //      slot, then equip food.
+      //   3. Hand already empty → equip food normally (one-click).
+      const previouslyHeld = heldIsFood ? null : b.heldItem;
+      const HOTBAR_START = 36, HOTBAR_END = 44;
+      const isInHotbar = (slot) => slot >= HOTBAR_START && slot <= HOTBAR_END;
+      const findFreeInventorySlot = () => {
+        // Mineflayer inventory slot range: 9-35 (main inventory, non-hotbar).
+        const used = new Set(b.inventory.items().map((i) => i.slot));
+        for (let s = 9; s <= 35; s++) {
+          if (!used.has(s)) return s;
+        }
+        return -1;
+      };
+
       let equipNote = null;
+      let preStashed = false;
       if (!heldIsFood) {
-        try {
-          await b.equip(food, 'hand');
-        } catch (err) {
-          // Don't fail the whole verb here — try a hotbar-slot select
-          // as a softer path, then fall through to consume regardless.
-          equipNote = err?.message || String(err);
+        const foodInHotbar = b.inventory.items().find(
+          (i) => i.name === food.name && isInHotbar(i.slot),
+        );
+        if (foodInHotbar) {
+          // Path 1: zero-click select.
           try {
-            const hotbar = b.inventory.items().find((i) => i.name === food.name && i.slot >= 36 && i.slot <= 44);
-            if (hotbar) b.setQuickBarSlot(hotbar.slot - 36);
-          } catch { /* best-effort */ }
+            b.setQuickBarSlot(foodInHotbar.slot - HOTBAR_START);
+          } catch (err) {
+            equipNote = `quickbar select: ${err?.message || String(err)}`;
+          }
+        } else if (previouslyHeld) {
+          // Path 2: pre-empty the hand before equip-swap. Move the held
+          // item into a free non-hotbar slot via moveSlotItem (single
+          // click), then equip food (also single click).
+          const freeSlot = findFreeInventorySlot();
+          if (freeSlot >= 0) {
+            try {
+              const handSlot = b.getEquipmentDestSlot
+                ? b.getEquipmentDestSlot('hand')
+                : (HOTBAR_START + b.quickBarSlot);
+              await b.moveSlotItem(handSlot, freeSlot);
+              preStashed = true;
+            } catch (err) {
+              equipNote = `pre-stash: ${err?.message || String(err)}`;
+            }
+          }
+          try {
+            await b.equip(food, 'hand');
+          } catch (err) {
+            const m = err?.message || String(err);
+            equipNote = equipNote ? `${equipNote}; equip: ${m}` : m;
+          }
+        } else {
+          // Path 3: hand empty, normal one-click equip.
+          try {
+            await b.equip(food, 'hand');
+          } catch (err) {
+            equipNote = err?.message || String(err);
+            try {
+              const hotbar = b.inventory.items().find(
+                (i) => i.name === food.name && isInHotbar(i.slot),
+              );
+              if (hotbar) b.setQuickBarSlot(hotbar.slot - HOTBAR_START);
+            } catch { /* best-effort */ }
+          }
         }
       }
       const beforeFood = b.food;
@@ -181,7 +238,27 @@ export function createCombatActions(deps) {
           { retry_safe: true },
         );
       }
-      const result = `Ate ${food.name}. Health: ${fmt(b.health)} (was ${fmt(beforeHp)}), Food: ${b.food} (was ${beforeFood})${mounted ? ' (mounted)' : ''}${equipNote ? ` [equip warn: ${equipNote.slice(0, 80)}]` : ''}`;
+
+      // Re-equip the previously-held item so the bot is back where it
+      // started before eat() was called. Workers expect this: they crafted
+      // a stone_pickaxe, equipped it, then called eat — they assume the
+      // pickaxe is still in hand for the next mine. If we pre-stashed
+      // (Path 2) the item is sitting safely in inventory. If we used
+      // Path 1 (quickbar select) or Path 3 (empty-hand equip), the item
+      // may also still be there. Either way, find it and re-equip.
+      let recoveredNote = '';
+      if (previouslyHeld) {
+        try {
+          const stillHave = b.inventory.items().find((i) => i.name === previouslyHeld.name);
+          if (stillHave) {
+            await b.equip(stillHave, 'hand').catch(() => { /* best-effort */ });
+          } else {
+            recoveredNote = ` [WARN: ${previouslyHeld.name} lost during eat — pre-stashed=${preStashed}; file bug if reproducing]`;
+          }
+        } catch { /* best-effort */ }
+      }
+
+      const result = `Ate ${food.name}. Health: ${fmt(b.health)} (was ${fmt(beforeHp)}), Food: ${b.food} (was ${beforeFood})${mounted ? ' (mounted)' : ''}${equipNote ? ` [equip warn: ${equipNote.slice(0, 80)}]` : ''}${recoveredNote}`;
       return ok({ result });
     },
 

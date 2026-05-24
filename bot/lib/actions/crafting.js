@@ -212,12 +212,35 @@ export function createCraftingActions(services) {
       // auto-walk to each chest, withdraw what's needed, then re-plan.
       // Re-plan only — never block on chest discovery; if the answer is
       // still MISSING_INGREDIENTS, fall through to the existing error.
+      //
+      // Bug t_626cb49a (2026-05-24): without a time budget, this loop could
+      // eat the entire 30 s ACTION_CAPS_MS.craft cap pathfinding to one
+      // stale chest entry per missing ingredient, then return
+      // OPERATION_TIMEOUT instead of the useful MISSING_INGREDIENTS. Flint
+      // burned 3 × 90 iterations on this. We now cap the WHOLE auto-fetch
+      // loop at 12 s and each per-chest pathfind at 6 s — if we can't
+      // recover materials in 12 s, the bot should report the shortfall and
+      // a higher-level orchestrator can decide whether to dispatch a
+      // gather card.
+      const FETCH_LOOP_BUDGET_MS = 12_000;
+      const FETCH_PER_CHEST_CAP_MS = 6_000;
       let autoFetched = null;
       if (plan && plan.ok && plan.missing && plan.missing.length > 0) {
         const allActions = getActions ? getActions() : null;
         if (allActions && typeof allActions.chest_search === 'function' && typeof allActions.withdraw === 'function') {
           const fetchedSteps = [];
+          const fetchStartMs = Date.now();
+          let budgetExhausted = false;
           for (const need of plan.missing) {
+            if (Date.now() - fetchStartMs > FETCH_LOOP_BUDGET_MS) {
+              budgetExhausted = true;
+              fetchedSteps.push({
+                item: need.name,
+                ok: false,
+                error: `auto-fetch budget exhausted (>${FETCH_LOOP_BUDGET_MS}ms across prior needs); falling through to MISSING_INGREDIENTS`,
+              });
+              break;
+            }
             try {
               const res = await allActions.chest_search({ item: need.name, max_results: 3, exact: true });
               const matches = res?.data?.matches || res?.matches || [];
@@ -228,7 +251,7 @@ export function createCraftingActions(services) {
               try {
                 await pathfindGotoNear(b, goals, best.x, best.y, best.z, 2, {
                   opName: 'craft_chest_fetch',
-                  capMs: ACTION_CAPS_MS.craft,
+                  capMs: FETCH_PER_CHEST_CAP_MS,
                 });
               } catch { /* couldn't reach this chest — skip to next ingredient */ continue; }
               const wd = await allActions.withdraw({ x: best.x, y: best.y, z: best.z, items: [{ item: need.name, count: wantCount }] });
@@ -244,7 +267,7 @@ export function createCraftingActions(services) {
             }
           }
           if (fetchedSteps.length > 0) {
-            autoFetched = { attempts: fetchedSteps };
+            autoFetched = { attempts: fetchedSteps, budget_exhausted: budgetExhausted };
             // Re-plan now that inventory has changed.
             plan = buildCraftPlan ? buildCraftPlan(b, itemName, invocations) : plan;
           }

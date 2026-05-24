@@ -1,0 +1,22 @@
+kind: bug
+symptom: "mc craft oak_fence fails or returns unusable result during fence/torch supply cards"
+affected_cards:
+  - t_df416ce9
+  - t_ea90f7aa
+component: mc-cli
+reproduce:
+  - "Ensure oak_planks and sticks in inventory (e.g. mc inventory)"
+  - "mc craft oak_fence 4"
+expected: "ok=true; 4 oak_fence added to inventory"
+actual: "Worker runs hit iteration budget or craft error; steward analysis cited systemic mc craft oak_fence API/recipe lookup failure (2026-05-24 t_e1772723)."
+logs: "~/.hermes/profiles/flint/sessions/ (runs for t_df416ce9, t_ea90f7aa)"
+suggested_next_step: "Audit bot/lib/actions/craft.js (or equivalent) for oak_fence recipe id and result envelope; add contract test like region-create-contract for craft oak_fence."
+severity: blocker
+
+## Context
+
+Flint blocked on **Supply fence posts and torches for farm plot** after 90/90 iterations. Steward decomposed into t_ea90f7aa (Craft fence posts) with note that craft step requires @re44 if bug reproduces.
+
+## Verify (optional)
+
+Assign a one-step verify card to flint: run `mc craft oak_fence 4` with planks/sticks present; capture full JSON envelope on FAIL.
