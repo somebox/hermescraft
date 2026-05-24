@@ -2,6 +2,10 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-05-24 — kanban flow cleanup MVP (patch-free Steward loop)
+
+Landfolk kanban MVP: Steward continuous loop no longer loads worker goals (`minecraft-goals` / focus hint gated by role), 60s orchestrator sleep, manual triage (`auto_decompose: false`), chat listener ingress-only, explicit assignee prompts/skills, pauser/supervisor off by default on `landfolk start`. Reverted local Hermes kanban patches; snapshot in `reports/expedition/2026-05-24-hermes-framework-patches.patch`. Plan + acceptance: [features/kanban-flow-cleanup.md](../features/kanban-flow-cleanup.md).
+
 ## 2026-05-23 — canonical ground functional arena
 
 Functional harness resets a 65×65 grass plane at origin each test

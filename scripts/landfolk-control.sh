@@ -791,6 +791,18 @@ start_agent() {
   local session_name="landfolk-${name_lower}"
   local session_ref_file="$STATE_DIR/session-${name_lower}.txt"
   local agent_model
+  # Pin the agent's kanban context to the SHARED default home, not the
+  # per-profile $agent_home. Without this, `hermes kanban` invoked from
+  # the continuous loop resolves the DB via HERMES_HOME → finds an empty
+  # per-profile DB (`$agent_home/kanban/boards/...`) instead of the real
+  # one (`~/.hermes/kanban/boards/...`) the dispatcher and kanban workers
+  # use. Symptom: Steward's continuous loop reported "board is empty"
+  # while Flint/Mason were happily running cards. Matches the
+  # dispatcher's env injection in _default_spawn (kanban_db.py).
+  local kanban_board="${KANBAN_BOARD:-landfolk-ops}"
+  local kanban_db_root="${HERMES_KANBAN_ROOT:-$HOME/.hermes/kanban}"
+  local kanban_db="$kanban_db_root/boards/$kanban_board/kanban.db"
+  local kanban_workspaces="$kanban_db_root/boards/$kanban_board/workspaces"
   local agent_provider
   local agent_log="$LOG_DIR/agent-${name_lower}.log"
   local agent_err_log="$LOG_DIR/agent-${name_lower}-stderr.log"
@@ -842,6 +854,15 @@ Forbidden launchers: start-gatherer-bot.sh, start-flint-bot.sh,
 start-mason-bot.sh, landfolk-control.sh start, run-landfolk-agent.sh."
   runtime_rules=""
   build_policy=""
+  # Role classification — drives starter + continue prompt shape. Orchestrators
+  # (Steward) manage the kanban board and observe the fleet; workers chop wood
+  # and place blocks. The two need fundamentally different per-cycle prompts:
+  # the worker loop says "pick a goal, run mc commands", the orchestrator loop
+  # says "read the board, decompose, rebalance".
+  case "$name" in
+    Steward) role="orchestrator" ;;
+    *)       role="worker" ;;
+  esac
   case "$name" in
     Flint)
       starter_cmds="mc goal_load miner, mc observe, mc goals, mc read_chat."
@@ -855,6 +876,11 @@ start-mason-bot.sh, landfolk-control.sh start, run-landfolk-agent.sh."
     Barley)
       starter_cmds="mc observe, mc goals, mc read_chat."
       ;;
+    Steward)
+      # Orchestrator starter: kanban observation first, then in-world state
+      # (read-only for situational awareness only — Steward never mines).
+      starter_cmds="hermes kanban --board landfolk-ops stats, hermes kanban --board landfolk-ops list --status running, hermes kanban --board landfolk-ops list --status ready, hermes kanban --board landfolk-ops list --status blocked, scripts/roster.py, mc status, mc read_chat."
+      ;;
     *)
       starter_cmds="mc observe, mc goals, mc read_chat."
       ;;
@@ -864,13 +890,49 @@ start-mason-bot.sh, landfolk-control.sh start, run-landfolk-agent.sh."
 ${shared_rules}
 
 Start with: ${starter_cmds}"
-  continue_prompt_full="Continue in Minecraft. Run mc status, mc read_chat, mc goals.
+
+  if [ "$role" = "orchestrator" ]; then
+    # Steward's per-cycle prompt: kanban-first observation, then ONE
+    # orchestration action (decompose / supervise / reassign / unblock /
+    # archive / comment). Never \"pick a goal\" — Steward's goals are
+    # board flow + fleet balance, not wood/stone gaps. The bot body is
+    # read-only; if anything in-world needs changing, it becomes a card.
+    continue_prompt_full="Continue (orchestrator cycle). Steward checks the board, then acts.
+
+Each cycle:
+1. hermes kanban --board landfolk-ops stats
+2. hermes kanban --board landfolk-ops list --status running
+3. hermes kanban --board landfolk-ops list --status ready
+4. hermes kanban --board landfolk-ops list --status blocked
+5. mc status (verify you're safe at base; no mining/building)
+6. mc read_chat (look for @steward triggers from re44 + worker chatter)
+
+Then take ONE of these actions, narrate it in chat:
+  • Decompose triage / oversized cards with hermes kanban create — set explicit --assignee flint|mason|gatherer after scripts/roster.py --assignable
+  • Unblock / comment on a blocked card
+  • Reassign a card if the fleet is imbalanced (hermes kanban reassign <id> <profile> --reclaim)
+  • Archive a stale / superseded card
+  • Open a [BUG] card for re44 when blockage is a framework defect
+  • If the board is healthy and fleet busy: write a memory note and wait.
+
+NEVER touch mc dig / place / collect / craft / fill / smelt — orchestrator only. Bot body stays near base unless a planning task requires going somewhere to inspect (and then come back).
+$shared_rules"
+    continue_prompt_minimal="Continue (orchestrator). Read the board (hermes kanban stats + list running/ready/blocked), then take ONE action: decompose with explicit assignee, unblock, reassign, archive, or comment + narrate in chat. Stay at base; never mine/place. No unassigned ready cards."
+  else
+    continue_prompt_full="Continue in Minecraft. Run mc status, mc read_chat, mc goals.
 $shared_rules
 Execute the top-urgency goal: one focused subtask (3-8 mc commands), then report one short progress line."
-  continue_prompt_minimal="Continue. Run: mc status, mc read_chat, mc goals.
+    continue_prompt_minimal="Continue. Run: mc status, mc read_chat, mc goals.
 Pick the top-urgency goal, execute one focused subtask (3-8 mc commands), report one progress line.
 Only use mc commands. If blocked twice, mc help (or skill_view minecraft-<topic>) and switch goals."
+  fi
   continue_prompt="$continue_prompt_full"
+
+  if [ "$role" = "orchestrator" ]; then
+    hermes_chat_flags=(-t "terminal,memory,skills")
+  else
+    hermes_chat_flags=(-t "terminal,memory" -s "minecraft-goals")
+  fi
 
   agent_model="$(model_for_name "$name")"
   agent_provider="$(provider_for_name "$name")"
@@ -888,20 +950,21 @@ Only use mc commands. If blocked twice, mc help (or skill_view minecraft-<topic>
   if [ "${AGENT_ROUND_TIMEOUT_S:-0}" -gt 0 ]; then
     hermes_timeout_prefix=(perl -e 'alarm shift; exec @ARGV' "${AGENT_ROUND_TIMEOUT_S}")
   fi
-  # Block diagnostic/system commands that agents use to kill each other's processes.
-  # bash/sh/zsh/node are NOT blocked — mc CLI needs them.
-  # kill is also blocked here but note it's a bash builtin; BASH_ENV below disables it.
-  for blocked_cmd in curl lsof netstat ss kill pkill grep awk sed cat file which \
-    npm npx python python3 perl ruby \
-    ls find head tail pwd \
-    ps xargs pgrep top htop fuser nohup tee wc sort uniq dd; do
-    cat > "$restricted_bin/$blocked_cmd" <<'STUB'
+  # Block diagnostic/system commands for worker agents only. Orchestrator needs
+  # python3 (roster.py, blueprint-plan.py) and broader terminal for hermes kanban.
+  if [ "$role" = "worker" ]; then
+    for blocked_cmd in curl lsof netstat ss kill pkill grep awk sed cat file which \
+      npm npx python python3 perl ruby \
+      ls find head tail pwd \
+      ps xargs pgrep top htop fuser nohup tee wc sort uniq dd; do
+      cat > "$restricted_bin/$blocked_cmd" <<'STUB'
 #!/bin/sh
 echo "Blocked shell command. Use mc commands only." >&2
 exit 126
 STUB
-    chmod +x "$restricted_bin/$blocked_cmd"
-  done
+      chmod +x "$restricted_bin/$blocked_cmd"
+    done
+  fi
   hermes_runtime_path="$restricted_bin:$BIN_DIR:$PATH"
 
   # Disable 'kill' bash builtin so the restricted-bin stub takes effect in agent subshells
@@ -963,8 +1026,8 @@ print(json.dumps({k:v for k,v in out.items() if v is not None},separators=(',','
       printf '%s\n' "$progress_json" >> "$progress_log"
       echo "[$ts] Plan: focus=$top_goal_hint | task=$task_summary | recent=$recent_summary" >> "$hermes_log"
       if [ "$round" -eq 1 ]; then
-        if "${hermes_timeout_prefix[@]}" env MODEL= PROVIDER= HERMES_MODEL= HERMES_PROVIDER= PATH="$hermes_runtime_path" BASH_ENV="$bash_env_file" HERMES_HOME="$agent_home" MC_API_URL="http://localhost:${port}" _MC_API_URL_LOCKED="http://localhost:${port}" MC_USERNAME="$name" "${mc_debug_env[@]}" \
-          hermes chat --yolo --max-turns 500 -m "$agent_model" --provider "$agent_provider" -t terminal,memory -s minecraft-goals \
+        if "${hermes_timeout_prefix[@]}" env MODEL= PROVIDER= HERMES_MODEL= HERMES_PROVIDER= PATH="$hermes_runtime_path" BASH_ENV="$bash_env_file" HERMES_HOME="$agent_home" HERMES_KANBAN_DB="$kanban_db" HERMES_KANBAN_BOARD="$kanban_board" HERMES_KANBAN_WORKSPACES_ROOT="$kanban_workspaces" MC_API_URL="http://localhost:${port}" _MC_API_URL_LOCKED="http://localhost:${port}" MC_USERNAME="$name" "${mc_debug_env[@]}" \
+          hermes chat --yolo --max-turns 500 -m "$agent_model" --provider "$agent_provider" "${hermes_chat_flags[@]}" \
           -q "$prompt" 2>> "$agent_err_log" \
           | awk '$0 ~ /^[[:space:]]*$/ {next} index($0,"╭")==1 {next} index($0,"╰")==1 {next} index($0,"│")==1 {next} index($0,"  ┊")==1 {next} $0=="Initializing agent..." {next} $0 ~ /^─+$/ {next} $0=="Resume this session with:" {next} $0 ~ /^Session:[[:space:]]+/ {next} $0 ~ /^Duration:[[:space:]]+/ {next} $0 ~ /^Messages:[[:space:]]+/ {next} /Resumed session/ {next} /^Query:/ {next} /^hermes --resume/ {next} /commits behind/ {next} /^⚠/ {next} {print; fflush()}' >> "$agent_log"; then
           cmd_ec=0
@@ -977,8 +1040,11 @@ print(json.dumps({k:v for k,v in out.items() if v is not None},separators=(',','
         continue_prompt_round="$continue_prompt_full"
         if [ "$(printf '%s' "$CONTEXT_MINIMAL_CONTINUE" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
           if [ "$CONTEXT_REFRESH_EVERY_ROUNDS" -gt 0 ] && [ $((round % CONTEXT_REFRESH_EVERY_ROUNDS)) -ne 0 ]; then
-            continue_prompt_round="${continue_prompt_minimal}
+            continue_prompt_round="$continue_prompt_minimal"
+            if [ "$role" != "orchestrator" ]; then
+              continue_prompt_round="${continue_prompt_round}
 Current focus hint: ${top_goal_hint}"
+            fi
           fi
         fi
         cont_target=""
@@ -986,8 +1052,8 @@ Current focus hint: ${top_goal_hint}"
           cont_target="$(cat "$session_ref_file" 2>/dev/null || true)"
         fi
         if [ -n "${cont_target:-}" ]; then
-          if "${hermes_timeout_prefix[@]}" env MODEL= PROVIDER= HERMES_MODEL= HERMES_PROVIDER= PATH="$hermes_runtime_path" BASH_ENV="$bash_env_file" HERMES_HOME="$agent_home" MC_API_URL="http://localhost:${port}" _MC_API_URL_LOCKED="http://localhost:${port}" MC_USERNAME="$name" "${mc_debug_env[@]}" \
-            hermes chat --yolo --max-turns 500 -m "$agent_model" --provider "$agent_provider" -t terminal,memory -s minecraft-goals \
+          if "${hermes_timeout_prefix[@]}" env MODEL= PROVIDER= HERMES_MODEL= HERMES_PROVIDER= PATH="$hermes_runtime_path" BASH_ENV="$bash_env_file" HERMES_HOME="$agent_home" HERMES_KANBAN_DB="$kanban_db" HERMES_KANBAN_BOARD="$kanban_board" HERMES_KANBAN_WORKSPACES_ROOT="$kanban_workspaces" MC_API_URL="http://localhost:${port}" _MC_API_URL_LOCKED="http://localhost:${port}" MC_USERNAME="$name" "${mc_debug_env[@]}" \
+            hermes chat --yolo --max-turns 500 -m "$agent_model" --provider "$agent_provider" "${hermes_chat_flags[@]}" \
             --continue "$cont_target" \
             -q "$continue_prompt_round" 2>> "$agent_err_log" \
             | awk '$0 ~ /^[[:space:]]*$/ {next} index($0,"╭")==1 {next} index($0,"╰")==1 {next} index($0,"│")==1 {next} index($0,"  ┊")==1 {next} $0=="Initializing agent..." {next} $0 ~ /^─+$/ {next} $0=="Resume this session with:" {next} $0 ~ /^Session:[[:space:]]+/ {next} $0 ~ /^Duration:[[:space:]]+/ {next} $0 ~ /^Messages:[[:space:]]+/ {next} /Resumed session/ {next} /^Query:/ {next} /^hermes --resume/ {next} /commits behind/ {next} /^⚠/ {next} {print; fflush()}' >> "$agent_log"; then
@@ -996,8 +1062,8 @@ Current focus hint: ${top_goal_hint}"
             cmd_ec=$?
           fi
         else
-          if "${hermes_timeout_prefix[@]}" env MODEL= PROVIDER= HERMES_MODEL= HERMES_PROVIDER= PATH="$hermes_runtime_path" BASH_ENV="$bash_env_file" HERMES_HOME="$agent_home" MC_API_URL="http://localhost:${port}" _MC_API_URL_LOCKED="http://localhost:${port}" MC_USERNAME="$name" "${mc_debug_env[@]}" \
-            hermes chat --yolo --max-turns 500 -m "$agent_model" --provider "$agent_provider" -t terminal,memory -s minecraft-goals \
+          if "${hermes_timeout_prefix[@]}" env MODEL= PROVIDER= HERMES_MODEL= HERMES_PROVIDER= PATH="$hermes_runtime_path" BASH_ENV="$bash_env_file" HERMES_HOME="$agent_home" HERMES_KANBAN_DB="$kanban_db" HERMES_KANBAN_BOARD="$kanban_board" HERMES_KANBAN_WORKSPACES_ROOT="$kanban_workspaces" MC_API_URL="http://localhost:${port}" _MC_API_URL_LOCKED="http://localhost:${port}" MC_USERNAME="$name" "${mc_debug_env[@]}" \
+            hermes chat --yolo --max-turns 500 -m "$agent_model" --provider "$agent_provider" "${hermes_chat_flags[@]}" \
             -q "$continue_prompt_round" 2>> "$agent_err_log" \
             | awk '$0 ~ /^[[:space:]]*$/ {next} index($0,"╭")==1 {next} index($0,"╰")==1 {next} index($0,"│")==1 {next} index($0,"  ┊")==1 {next} $0=="Initializing agent..." {next} $0 ~ /^─+$/ {next} $0=="Resume this session with:" {next} $0 ~ /^Session:[[:space:]]+/ {next} $0 ~ /^Duration:[[:space:]]+/ {next} $0 ~ /^Messages:[[:space:]]+/ {next} /Resumed session/ {next} /^Query:/ {next} /^hermes --resume/ {next} /commits behind/ {next} /^⚠/ {next} {print; fflush()}' >> "$agent_log"; then
             cmd_ec=0
@@ -1018,7 +1084,11 @@ Current focus hint: ${top_goal_hint}"
       else
         echo "[$ts_end] Update: round=$round complete (exit=0)." >> "$hermes_log"
       fi
-      sleep 5
+      if [ "$role" = "orchestrator" ]; then
+        sleep 60
+      else
+        sleep 5
+      fi
     done
   ) &
   local pid="$!"
@@ -1084,7 +1154,7 @@ stop_kind() {
     local orphan_agent_pids
     orphan_agent_pids="$(
       ps eww -ax -o pid=,command= \
-      | awk -v home=".hermes-landfolk-${name_lower}" '$0 ~ /\/Users\/foz\/\.local\/bin\/hermes chat/ && index($0, home) {print $1}'
+      | awk -v home=".hermes-landfolk-${name_lower}" '$0 ~ /hermes chat/ && index($0, home) {print $1}'
     )"
     if [ -n "$orphan_agent_pids" ]; then
       for pid in $orphan_agent_pids; do
@@ -1093,7 +1163,7 @@ stop_kind() {
       sleep 1
       orphan_agent_pids="$(
         ps eww -ax -o pid=,command= \
-        | awk -v home=".hermes-landfolk-${name_lower}" '$0 ~ /\/Users\/foz\/\.local\/bin\/hermes chat/ && index($0, home) {print $1}'
+        | awk -v home=".hermes-landfolk-${name_lower}" '$0 ~ /hermes chat/ && index($0, home) {print $1}'
       )"
       if [ -n "$orphan_agent_pids" ]; then
         for pid in $orphan_agent_pids; do

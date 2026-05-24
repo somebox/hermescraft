@@ -1,0 +1,681 @@
+diff --git a/gateway/run.py b/gateway/run.py
+index de4bf9fe7..e4848dcf0 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -4776,6 +4776,26 @@ class GatewayRunner:
+         if max_spawn is not None:
+             logger.info(f"kanban dispatcher: max_spawn={max_spawn}")
+ 
++        # Per-assignee concurrency cap. Each profile owns at most one bot
++        # body (e.g. Mineflayer listener on a fixed port) that can only do
++        # one action at a time. Without this cap, when N cards for the
++        # same profile became ready the dispatcher would spawn N workers
++        # that fought over the same `mc` API, churning the bot's task
++        # queue and producing incoherent behaviour. Default 1; set to a
++        # higher value (or 0 / null to disable) only for profiles whose
++        # workers don't share exclusive state (pure terminal lanes).
++        raw_cap = kanban_cfg.get("per_assignee_cap", 1)
++        try:
++            per_assignee_cap = None if raw_cap in (None, 0, "0") else int(raw_cap)
++        except (TypeError, ValueError):
++            logger.warning(
++                "kanban dispatcher: invalid kanban.per_assignee_cap=%r; using 1",
++                raw_cap,
++            )
++            per_assignee_cap = 1
++        if per_assignee_cap is not None:
++            logger.info(f"kanban dispatcher: per_assignee_cap={per_assignee_cap}")
++
+         raw_failure_limit = kanban_cfg.get("failure_limit", _kb.DEFAULT_FAILURE_LIMIT)
+         try:
+             failure_limit = int(raw_failure_limit)
+@@ -4828,6 +4848,7 @@ class GatewayRunner:
+                     conn,
+                     board=slug,
+                     max_spawn=max_spawn,
++                    per_assignee_cap=per_assignee_cap,
+                     failure_limit=failure_limit,
+                 )
+             except Exception:
+diff --git a/hermes_cli/kanban_db.py b/hermes_cli/kanban_db.py
+index 5c2d03240..ade87b6f5 100644
+--- a/hermes_cli/kanban_db.py
++++ b/hermes_cli/kanban_db.py
+@@ -3887,6 +3887,7 @@ def dispatch_once(
+     ttl_seconds: int = DEFAULT_CLAIM_TTL_SECONDS,
+     dry_run: bool = False,
+     max_spawn: Optional[int] = None,
++    per_assignee_cap: Optional[int] = 1,
+     failure_limit: int = DEFAULT_SPAWN_FAILURE_LIMIT,
+     board: Optional[str] = None,
+ ) -> DispatchResult:
+@@ -3984,13 +3985,110 @@ def dispatch_once(
+         "WHERE status = 'ready' AND claim_lock IS NULL "
+         "ORDER BY priority DESC, created_at ASC"
+     ).fetchall()
++    # Per-assignee concurrency cap. Each profile has at most one bot
++    # body (Mineflayer listener on a fixed port) that can do one thing
++    # at a time. Without this cap the dispatcher spawned N workers
++    # for one profile the moment N cards became ready — they all
++    # raced for the same `mc` API, churning the bot's task queue and
++    # producing incoherent in-game behaviour (re44 2026-05-24:
++    # 5 concurrent Flint workers fighting over port 3002). With
++    # ``per_assignee_cap=1`` (default) the dispatcher waits for the
++    # current worker to complete before claiming the next ready card
++    # for that assignee. Set higher only if your workers DON'T share
++    # exclusive state (e.g. terminal-only profiles).
++    running_per_assignee: dict[str, int] = {}
++    try:
++        rows = conn.execute(
++            "SELECT assignee, COUNT(*) AS n FROM tasks "
++            "WHERE status = 'running' AND assignee IS NOT NULL "
++            "GROUP BY assignee"
++        ).fetchall()
++        for r in rows:
++            running_per_assignee[r["assignee"]] = int(r["n"])
++    except Exception:  # pragma: no cover - defensive
++        running_per_assignee = {}
++
++    # Pull-model: when a ready card has no assignee, route it to the
++    # least-loaded active worker profile so it gets claimed instead of
++    # sitting forever in `skipped_unassigned`. Active workers come from
++    # the same active-profiles file the inactive-cards-pauser reads.
++    # When no active worker is available the card stays unassigned and
++    # waits for an operator to assign or for a worker to come online.
++    def _load_active_workers() -> list[str]:
++        # Honour an explicit env override first; otherwise fall back to
++        # whichever roster file actually exists. The Landfolk CLI
++        # migrated `active-profiles` (legacy) → `active-players`; we
++        # accept both so older / external setups keep working.
++        env_path = os.environ.get("HERMES_ACTIVE_PROFILES_FILE")
++        candidates = [env_path] if env_path else [
++            "/tmp/hermescraft/active-players",
++            "/tmp/hermescraft/active-profiles",
++        ]
++        for path in candidates:
++            if not path:
++                continue
++            try:
++                with open(path, encoding="utf-8") as fh:
++                    names: list[str] = []
++                    for line in fh:
++                        s = line.strip()
++                        if not s or s.startswith("#"):
++                            continue
++                        name = s.split()[0].lower()
++                        # Exclude orchestrator-class names; they route work,
++                        # they don't execute worker-tier cards. Match
++                        # `ORCHESTRATORS` in inactive-cards-pauser.py.
++                        if name in {"steward"}:
++                            continue
++                        names.append(name)
++                    return names
++            except (FileNotFoundError, OSError):
++                continue
++        return []
++
++    active_workers = _load_active_workers()
++
+     spawned = 0
++    spawned_per_assignee: dict[str, int] = {}
+     for row in ready_rows:
+         if max_spawn is not None and running_count + spawned >= max_spawn:
+             break
++        # Unassigned card → pick the least-loaded active worker (running +
++        # already-spawned-this-tick) and ASSIGN before claim+spawn. This is
++        # the pull-model entry point: any worker eligible by role can take
++        # an unassigned ready card, balanced by current load.
+         if not row["assignee"]:
+-            result.skipped_unassigned.append(row["id"])
+-            continue
++            if not active_workers:
++                result.skipped_unassigned.append(row["id"])
++                continue
++            def _load(w: str) -> int:
++                return (running_per_assignee.get(w, 0)
++                        + spawned_per_assignee.get(w, 0))
++            chosen = min(active_workers, key=lambda w: (_load(w), w))
++            # Per-assignee cap still applies — if the lightest worker is
++            # already at cap, the card stays unassigned for the next tick.
++            if per_assignee_cap is not None and _load(chosen) >= per_assignee_cap:
++                continue
++            try:
++                assign_task(conn, row["id"], chosen)
++            except Exception as exc:  # pragma: no cover - defensive
++                logger = __import__("logging").getLogger(__name__)
++                logger.warning("dispatch: pull-route %s → %s failed: %s",
++                               row["id"], chosen, exc)
++                result.skipped_unassigned.append(row["id"])
++                continue
++            # Fall through with the new assignee in the row dict.
++            row = dict(row)
++            row["assignee"] = chosen
++        # Per-assignee cap check: any worker already running OR spawned
++        # this tick for this assignee counts against the cap.
++        if per_assignee_cap is not None:
++            already = running_per_assignee.get(row["assignee"], 0) \
++                + spawned_per_assignee.get(row["assignee"], 0)
++            if already >= per_assignee_cap:
++                # Don't bucket as skipped_* — the task is fine, just
++                # waiting its turn. Stays in ready for the next tick.
++                continue
+         # Skip ready tasks whose assignee is not a real Hermes profile.
+         # `_default_spawn` invokes ``hermes -p <assignee>`` which fails
+         # with "Profile 'X' does not exist" when the assignee names a
+@@ -4016,6 +4114,10 @@ def dispatch_once(
+             continue
+         if dry_run:
+             result.spawned.append((row["id"], row["assignee"], ""))
++            if per_assignee_cap is not None and row["assignee"]:
++                spawned_per_assignee[row["assignee"]] = (
++                    spawned_per_assignee.get(row["assignee"], 0) + 1
++                )
+             continue
+         claimed = claim_task(conn, row["id"], ttl_seconds=ttl_seconds)
+         if claimed is None:
+@@ -4057,6 +4159,10 @@ def dispatch_once(
+             # complete_task).
+             result.spawned.append((claimed.id, claimed.assignee or "", str(workspace)))
+             spawned += 1
++            if per_assignee_cap is not None and claimed.assignee:
++                spawned_per_assignee[claimed.assignee] = (
++                    spawned_per_assignee.get(claimed.assignee, 0) + 1
++                )
+         except Exception as exc:
+             auto = _record_spawn_failure(
+                 conn, claimed.id, str(exc),
+diff --git a/hermes_cli/kanban_decompose.py b/hermes_cli/kanban_decompose.py
+index 2ebe3f04c..73e75d164 100644
+--- a/hermes_cli/kanban_decompose.py
++++ b/hermes_cli/kanban_decompose.py
+@@ -77,18 +77,60 @@ Output a single JSON object with this exact shape:
+   }
+ 
+ Rules:
+-  - "parents" is a list of INDICES (0-based) into this same "tasks" list,
+-    expressing actual data dependencies. Tasks with no parents run in
+-    PARALLEL. Tasks with parents wait until every parent completes.
+-  - Prefer parallelism. If two tasks can be done independently, give
+-    them no parents so the dispatcher fans them out at once.
+-  - Use 2-6 tasks for normal work. Don't create 20 tiny tasks. Don't
+-    cram everything into 1 task.
+-  - Pick assignees from the roster by matching the task to the profile's
+-    DESCRIPTION (not just the name). When nothing matches well, use null
+-    and the system will route to the default_assignee.
+-  - Each child task body is what a fresh worker will read with no other
+-    context — be specific about goal, approach, and acceptance criteria.
++  - **Strong default: prefer ``fanout=false`` and defer to the orchestrator**
++    profile (typically ``steward``). You are a one-shot LLM with no access
++    to runtime data — world state, inventories, chest contents, blueprint
++    files, region anchors, current bot positions. ANY task that would
++    benefit from those signals belongs to the orchestrator, which DOES
++    have the tools (mc verbs, blueprint-plan.py, chest_search, marks,
++    regions) and the kanban primitives (kanban_create / kanban_link /
++    kanban_assign) to build a correct graph step by step. Concretely:
++      * **Anything multi-step that touches the world** (build, gather,
++        scout, route, store, harvest) → ``fanout=false``, assignee=
++        orchestrator. The orchestrator decomposes after gathering data.
++      * **Anything referencing external structured data** (URLs,
++        schematic files, blueprint refs, ledger snapshots, region ids)
++        → ``fanout=false``, assignee=orchestrator. See the
++        "Specialized decomposition tools" section below.
++      * **Anything requiring a scout / survey step first** (because the
++        anchor / coords / target aren't yet resolved) → ``fanout=false``.
++        The orchestrator will run the scout, then build the child graph
++        with resolved data inlined per the orchestrator's skill.
++  - **``fanout=true`` is reserved for narrow cases where the task is
++    OBVIOUSLY two-or-three independent parallel chores you can fully
++    describe without any runtime data.** Example that IS appropriate:
++    "Gather 32 coal AND 16 iron from the established mine" → two
++    sibling cards, both with concrete chest/anchor refs already in the
++    parent. Example that is NOT appropriate: "Build a farm" — needs
++    scout, blueprint, materials list, region — defer.
++  - When you DO fanout:
++    - "parents" is a list of INDICES (0-based) into this same "tasks" list,
++      expressing actual data dependencies. Tasks with no parents run in
++      PARALLEL. Tasks with parents wait until every parent completes.
++    - Prefer parallelism. If two tasks can be done independently, give
++      them no parents so the dispatcher fans them out at once.
++    - Use 2-3 tasks at most. If you're tempted to write 4+, you're
++      probably wrong about the runtime data — defer instead.
++    - **Pull-model assignees (DEFAULT NULL).** This board operates on a
++      pull model: cards are claimed by any active worker compatible with
++      the work. Set ``"assignee": null`` for any child that any
++      worker-tier profile could plausibly do. Only set a specific
++      ``assignee`` when:
++        * The card requires a SPECIFIC bot's state (rework / follow-up
++          on a half-finished piece — that bot's position, inventory, or
++          prior context matters).
++        * The card requires a SKILL only one profile has (mason-only
++          building primitive, flint-only deep-mine routine, etc.).
++        * The card is an orchestrator follow-up (decomposition,
++          review) — assign to the orchestrator.
++      Avoid front-loading routing decisions ("looks like a mining task
++      so flint", "looks like a building task so mason"). Let the
++      pull-router balance load at runtime — that's its job.
++    - Each child task body is what a fresh worker will read with no other
++      context — be specific about goal, approach, and acceptance criteria.
++      If you find yourself writing "scout first" or "find the location"
++      inside a child body, you're using fanout where you should have
++      deferred — stop and return fanout=false.
+ 
+ When the task is genuinely a single unit of work (no useful decomposition),
+ return:
+@@ -97,10 +139,36 @@ return:
+     "fanout": false,
+     "rationale": "<one sentence>",
+     "title": "<tightened title>",
+-    "body":  "<concrete spec for a single worker>"
++    "body":  "<concrete spec for a single worker>",
++    "assignee": "<profile name from the roster, or null for default>"
+   }
+ 
+ In that case the task stays as one work item, just with a tightened spec.
++``assignee`` is honoured here too — when deferring to an orchestrator
++(see "Specialized decomposition tools" below) you MUST set it explicitly
++so the card lands on the right profile.
++
++**Specialized decomposition tools — DEFER, don't fan out yourself**
++
++Some task patterns have a domain-specific decomposer tool the orchestrator
++profile knows how to invoke. The LLM decomposer CANNOT do better than the
++tool here, because the tool reads structured data (blueprints, schemas,
++external JSON, etc.) you don't have access to. If the body contains any
++of these patterns, return ``fanout=false`` and assign to the orchestrator
++profile, so it can run the right tool and produce concrete children:
++
++  - URL on ``grabcraft.com`` (Minecraft blueprint)
++    → assignee=``steward`` (uses ``scripts/blueprint-plan.py``)
++  - URL on ``schematic.com`` or ``minecraft-schematics.com``
++    → assignee=``steward``
++  - Body contains ``schematic://`` or ``litematica://`` URI
++    → assignee=``steward``
++
++Rationale: a Grabcraft URL points to a 3D voxel model with hundreds of
++specific block placements. Fanning out into "Scout / Mine stone / Build
++path / Construct" leaves the worker guessing because the actual block
++list, layer-by-layer placements, and material counts aren't in the card —
++they're in the blueprint JSON the orchestrator's tool produces. Defer.
+ 
+ No preamble, no closing remarks, no code fences. Output only the JSON object.
+ """
+@@ -211,21 +279,70 @@ def _resolve_default_assignee(cfg: dict) -> str:
+         return "default"
+ 
+ 
++def _load_active_roster_filter() -> Optional[set[str]]:
++    """Optional allow-list of currently-active profiles.
++
++    If ``$HERMES_ACTIVE_PROFILES_FILE`` (or default
++    ``/tmp/hermescraft/active-profiles``) exists, return the set of
++    lowercased names listed there. The decomposer will then only
++    surface those profiles to the LLM, so it can't route tasks to a
++    profile whose bot body isn't online. Returning None means
++    "no filter — use all on-disk profiles" (the legacy behaviour).
++
++    File format: one profile name per line, blanks and # comments OK.
++    """
++    path = os.environ.get(
++        "HERMES_ACTIVE_PROFILES_FILE",
++        "/tmp/hermescraft/active-profiles",
++    )
++    try:
++        with open(path, encoding="utf-8") as fh:
++            names = set()
++            for line in fh:
++                s = line.strip()
++                if not s or s.startswith("#"):
++                    continue
++                names.add(s.lower())
++            return names if names else None
++    except FileNotFoundError:
++        return None
++    except OSError as exc:
++        logger.warning("decompose: cannot read active-profiles file %s: %s", path, exc)
++        return None
++
++
++# Profiles that are always assignable even when not listed in the active
++# roster — these are virtual / operator lanes that don't need an in-game
++# body. Cards routed here are picked up via the dashboard or human flow.
++_ALWAYS_ASSIGNABLE = {"re44", "default", "librarian", "worker-a", "worker-b"}
++
++
+ def _build_roster() -> tuple[list[dict], set[str]]:
+     """Return (roster_for_prompt, valid_assignee_names).
+ 
+     Each roster entry is ``{name, description, has_description}``. The
+     valid-set is used after the LLM responds to rewrite invalid
+     assignees to the default fallback.
++
++    If an active-roster file exists, profiles not in it (and not in
++    ``_ALWAYS_ASSIGNABLE``) are filtered out — so the decomposer can't
++    route work to a profile whose bot isn't running. This prevents the
++    "gatherer card appears the moment something gets decomposed" loop
++    even though gatherer is offline.
+     """
+     roster: list[dict] = []
+     valid: set[str] = set()
++    active_filter = _load_active_roster_filter()
+     try:
+         all_profiles = profiles_mod.list_profiles()
+     except Exception as exc:
+         logger.warning("decompose: failed to list profiles: %s", exc)
+         return roster, valid
+     for p in all_profiles:
++        name_l = p.name.lower()
++        if active_filter is not None:
++            if name_l not in active_filter and name_l not in _ALWAYS_ASSIGNABLE:
++                continue
+         desc = (p.description or "").strip()
+         roster.append({
+             "name": p.name,
+@@ -347,10 +464,30 @@ def decompose_task(
+                 body=body_val,
+                 author=audit_author,
+             )
+-        if not ok:
+-            return DecomposeOutcome(
+-                task_id, False, "task moved out of triage before promotion",
+-            )
++            if not ok:
++                return DecomposeOutcome(
++                    task_id, False, "task moved out of triage before promotion",
++                )
++            # Honour ``assignee`` in the fanout=false JSON. The original
++            # code path ignored it, so a deferral-to-orchestrator rule
++            # (grabcraft URLs → steward) tightened the body but left
++            # ``assignee=None`` — the dispatcher then skipped the card
++            # as unassigned. Apply it the same way the fanout=true
++            # branch validates child assignees: rewrite unknown names to
++            # the default_assignee rather than leaving null.
++            assignee_raw = parsed.get("assignee")
++            if isinstance(assignee_raw, str):
++                desired = assignee_raw.strip() or None
++                if desired and desired not in valid_names:
++                    desired = default_assignee
++                if desired:
++                    try:
++                        kb.assign_task(conn, task_id, desired)
++                    except Exception as exc:
++                        logger.warning(
++                            "decompose: assign %s -> %s failed: %s",
++                            task_id, desired, exc,
++                        )
+         return DecomposeOutcome(
+             task_id, True, "single task (no fanout)",
+             fanout=False, new_title=title_val,
+@@ -362,8 +499,14 @@ def decompose_task(
+             task_id, False, "decomposer returned fanout=true with empty tasks list",
+         )
+ 
+-    # Rewrite invalid assignees to the default fallback. Never leave a
+-    # task with assignee=None — the user explicitly does not want that.
++    # Pull-model assignee policy. Children land **unassigned by default**;
++    # any active worker can claim a compatible card from the ready pool via
++    # the dispatcher's pull-router. The LLM may still set ``assignee`` when
++    # a specific profile is genuinely required (rework targeting a known
++    # bot, an orchestrator follow-up, a skill match that demands one
++    # particular worker). Unknown assignees are normalized to null rather
++    # than coerced to ``default_assignee`` — null is now the correct value
++    # for "any worker can take this", not an error condition.
+     children: list[dict] = []
+     for idx, entry in enumerate(raw_tasks):
+         if not isinstance(entry, dict):
+@@ -380,14 +523,14 @@ def decompose_task(
+             body = ""
+         assignee = entry.get("assignee")
+         if not isinstance(assignee, str) or not assignee.strip():
+-            chosen = default_assignee
++            chosen = None  # pull-model default: any worker can claim
+         elif assignee not in valid_names:
+             logger.info(
+                 "decompose: task %s child %d picked unknown assignee %r — "
+-                "routing to default_assignee %r",
+-                task_id, idx, assignee, default_assignee,
++                "leaving unassigned for pull-router",
++                task_id, idx, assignee,
+             )
+-            chosen = default_assignee
++            chosen = None
+         else:
+             chosen = assignee
+         parents = entry.get("parents") or []
+diff --git a/tools/kanban_tools.py b/tools/kanban_tools.py
+index eaf32a3a3..c808b0b93 100644
+--- a/tools/kanban_tools.py
++++ b/tools/kanban_tools.py
+@@ -73,15 +73,39 @@ def _check_kanban_mode() -> bool:
+     return _profile_has_kanban_toolset()
+ 
+ 
++def _profile_is_kanban_orchestrator() -> bool:
++    """Per-profile opt-in to orchestrator-tier kanban tools.
++
++    A profile sets ``kanban.orchestrator: true`` in its ``config.yaml`` to
++    declare itself an orchestrator — the dispatcher will still spawn it as
++    a worker for its own ``[SUPERVISE]`` / triage cards, but inside that
++    worker it can still ``kanban_list``, ``kanban_unblock``, ``kanban_archive``,
++    ``kanban_unlink``, and ``kanban_reassign``. Without this, an orchestrator
++    profile running its own supervise card would have to shell out to
++    ``hermes kanban …`` via terminal, losing structured tool semantics.
++    """
++    try:
++        from hermes_cli.config import load_config
++        cfg = load_config()
++        kb = cfg.get("kanban") or {}
++        return bool(kb.get("orchestrator", False))
++    except Exception:
++        return False
++
++
+ def _check_kanban_orchestrator_mode() -> bool:
+-    """Board-routing tools (kanban_list, kanban_unblock) are intentionally
+-    hidden from task workers.
++    """Board-routing tools (kanban_list, kanban_unblock, etc.) are
++    intentionally hidden from task workers — *except* when the profile
++    has explicitly opted into orchestrator mode.
+ 
+     Dispatcher-spawned workers should close their own task via the
+     lifecycle tools (complete/block/heartbeat), not enumerate or unblock
+-    board state. Profiles that explicitly opt into the kanban toolset
+-    and are NOT scoped to a single task are the orchestrator surface.
++    board state. The opt-in (``kanban.orchestrator: true`` in profile
++    config) is for profiles whose JOB is to route/decompose/archive
++    other cards — typically a "steward" / supervisor profile.
+     """
++    if _profile_is_kanban_orchestrator():
++        return True
+     if os.environ.get("HERMES_KANBAN_TASK"):
+         return False
+     return _profile_has_kanban_toolset()
+@@ -713,6 +737,85 @@ def _handle_link(args: dict, **kw) -> str:
+         return tool_error(f"kanban_link: {e}")
+ 
+ 
++def _handle_unlink(args: dict, **kw) -> str:
++    """Remove a parent→child dependency edge."""
++    guard = _require_orchestrator_tool("kanban_unlink")
++    if guard:
++        return guard
++    parent_id = args.get("parent_id")
++    child_id = args.get("child_id")
++    if not parent_id or not child_id:
++        return tool_error("both parent_id and child_id are required")
++    try:
++        kb, conn = _connect()
++        try:
++            ok = kb.unlink_tasks(conn, parent_id=str(parent_id), child_id=str(child_id))
++            if not ok:
++                return tool_error(f"no such edge: {parent_id} → {child_id}")
++            return _ok(parent_id=str(parent_id), child_id=str(child_id))
++        finally:
++            conn.close()
++    except Exception as e:
++        logger.exception("kanban_unlink failed")
++        return tool_error(f"kanban_unlink: {e}")
++
++
++def _handle_archive(args: dict, **kw) -> str:
++    """Archive (cancel) a task — remove from active flow without completing."""
++    guard = _require_orchestrator_tool("kanban_archive")
++    if guard:
++        return guard
++    tid = args.get("task_id")
++    if not tid:
++        return tool_error("task_id is required")
++    try:
++        kb, conn = _connect()
++        try:
++            ok = kb.archive_task(conn, str(tid))
++            if not ok:
++                return tool_error(f"could not archive {tid} (unknown or already archived)")
++            return _ok(task_id=str(tid), status="archived")
++        finally:
++            conn.close()
++    except Exception as e:
++        logger.exception("kanban_archive failed")
++        return tool_error(f"kanban_archive: {e}")
++
++
++def _handle_reassign(args: dict, **kw) -> str:
++    """Move a task to a different assignee, optionally reclaiming first."""
++    guard = _require_orchestrator_tool("kanban_reassign")
++    if guard:
++        return guard
++    tid = args.get("task_id")
++    if not tid:
++        return tool_error("task_id is required")
++    assignee = args.get("assignee")  # may be None to unassign
++    reclaim_first = bool(args.get("reclaim_first", False))
++    reason = args.get("reason")
++    try:
++        kb, conn = _connect()
++        try:
++            ok = kb.reassign_task(
++                conn,
++                str(tid),
++                assignee if assignee else None,
++                reclaim_first=reclaim_first,
++                reason=str(reason) if reason else None,
++            )
++            if not ok:
++                return tool_error(
++                    f"could not reassign {tid} — likely still running "
++                    f"(retry with reclaim_first=true)"
++                )
++            return _ok(task_id=str(tid), assignee=assignee, reclaim_first=reclaim_first)
++        finally:
++            conn.close()
++    except Exception as e:
++        logger.exception("kanban_reassign failed")
++        return tool_error(f"kanban_reassign: {e}")
++
++
+ # ---------------------------------------------------------------------------
+ # Schemas
+ # ---------------------------------------------------------------------------
+@@ -1116,6 +1219,72 @@ KANBAN_LINK_SCHEMA = {
+     },
+ }
+ 
++KANBAN_UNLINK_SCHEMA = {
++    "name": "kanban_unlink",
++    "description": (
++        "Remove a parent→child dependency edge. Use this when an "
++        "orchestrator decides a child should no longer wait on the "
++        "parent — e.g. the parent has been confirmed-blocked permanently "
++        "and the child can proceed with degraded inputs, or the "
++        "dependency was added by mistake."
++    ),
++    "parameters": {
++        "type": "object",
++        "properties": {
++            "parent_id": {"type": "string", "description": "Parent task id."},
++            "child_id":  {"type": "string", "description": "Child task id."},
++        },
++        "required": ["parent_id", "child_id"],
++    },
++}
++
++KANBAN_ARCHIVE_SCHEMA = {
++    "name": "kanban_archive",
++    "description": (
++        "Archive a task — remove it from the active flow without marking "
++        "it done. Use this for cancelled work, duplicate cards, or stale "
++        "supervise/triage cards that no longer apply. Archived tasks are "
++        "still queryable with include_archived=true."
++    ),
++    "parameters": {
++        "type": "object",
++        "properties": {
++            "task_id": {"type": "string", "description": "Task id to archive."},
++        },
++        "required": ["task_id"],
++    },
++}
++
++KANBAN_REASSIGN_SCHEMA = {
++    "name": "kanban_reassign",
++    "description": (
++        "Move a task to a different assignee profile. Refuses by default "
++        "if the task is currently running; pass reclaim_first=true to "
++        "release the active worker before reassigning. Pass assignee=null "
++        "to unassign entirely."
++    ),
++    "parameters": {
++        "type": "object",
++        "properties": {
++            "task_id":  {"type": "string", "description": "Task id."},
++            "assignee": {
++                "type": ["string", "null"],
++                "description": "New assignee profile (e.g. 'flint', 'mason') or null to unassign.",
++            },
++            "reclaim_first": {
++                "type": "boolean",
++                "description": "Reclaim any running worker before reassigning (default false).",
++                "default": False,
++            },
++            "reason": {
++                "type": "string",
++                "description": "Why the reassign — recorded in the task event log.",
++            },
++        },
++        "required": ["task_id"],
++    },
++}
++
+ 
+ # ---------------------------------------------------------------------------
+ # Registration
+@@ -1201,3 +1370,30 @@ registry.register(
+     check_fn=_check_kanban_mode,
+     emoji="🔗",
+ )
++
++registry.register(
++    name="kanban_unlink",
++    toolset="kanban",
++    schema=KANBAN_UNLINK_SCHEMA,
++    handler=_handle_unlink,
++    check_fn=_check_kanban_orchestrator_mode,
++    emoji="✂",
++)
++
++registry.register(
++    name="kanban_archive",
++    toolset="kanban",
++    schema=KANBAN_ARCHIVE_SCHEMA,
++    handler=_handle_archive,
++    check_fn=_check_kanban_orchestrator_mode,
++    emoji="📦",
++)
++
++registry.register(
++    name="kanban_reassign",
++    toolset="kanban",
++    schema=KANBAN_REASSIGN_SCHEMA,
++    handler=_handle_reassign,
++    check_fn=_check_kanban_orchestrator_mode,
++    emoji="↪",
++)

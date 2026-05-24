@@ -99,7 +99,7 @@ Typical loop:
 ```bash
 hermes gateway start
 hermes kanban --board landfolk-ops list
-# triage epic → wait for auto_decompose, or:
+# triage epic → steward decomposes manually (auto_decompose: false), or:
 hermes kanban --board landfolk-ops decompose <task_id>
 hermes kanban --board landfolk-ops dispatch --dry-run
 ```
@@ -195,9 +195,8 @@ Add or merge into `~/.hermes/config.yaml`:
 ```yaml
 kanban:
   orchestrator_profile: steward
-  default_assignee: steward
-  auto_decompose: true
-  auto_decompose_per_tick: 3
+  auto_decompose: false
+  auto_decompose_per_tick: 0
 ```
 
 Profile descriptions (used by the decomposer) are set by the setup script via `hermes profile describe`.

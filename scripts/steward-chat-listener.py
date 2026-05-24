@@ -11,7 +11,7 @@ For each new mention of "@steward" from a non-bot actor:
 
   1. `hermes kanban --board $BOARD create "<text>" --assignee steward --triage \
         --idempotency-key chat-<msg_time>`
-  2. (optional) `hermes kanban decompose <id>`  if AUTO_DECOMPOSE=1 (default)
+  2. (optional) `hermes kanban decompose <id>`  if AUTO_DECOMPOSE=1
   3. Ack in-game via `mc chat "@<player> triaged as <id>"` through the watched bot.
 
 State (last-processed message timestamp) lives at ~/.steward-listener-state.json
@@ -23,7 +23,7 @@ Env:
     BOT_PORT          (default 3005 — Steward's own bot; was 3002 Flint pre-2026-05-25)
     BOARD             (default landfolk-ops)
     POLL_INTERVAL_S   (default 5)
-    AUTO_DECOMPOSE    (default 1 — set 0 to leave cards in triage)
+    AUTO_DECOMPOSE    (default 0 — set 1 to auto-decompose after triage)
     STATE_FILE        (default ~/.steward-listener-state.json)
     DRY_RUN           (default 0 — set 1 to log what would happen without creating)
 """
@@ -39,7 +39,7 @@ from pathlib import Path
 BOT_PORT = int(os.environ.get("BOT_PORT", "3005"))  # Steward's own bot
 BOARD = os.environ.get("BOARD", "landfolk-ops")
 POLL_INTERVAL_S = float(os.environ.get("POLL_INTERVAL_S", "5"))
-AUTO_DECOMPOSE = os.environ.get("AUTO_DECOMPOSE", "1") == "1"
+AUTO_DECOMPOSE = os.environ.get("AUTO_DECOMPOSE", "0") == "1"
 DRY_RUN = os.environ.get("DRY_RUN", "0") == "1"
 STATE_FILE = Path(os.environ.get("STATE_FILE", str(Path.home() / ".steward-listener-state.json")))
 
@@ -93,9 +93,10 @@ def create_triage(text, requester, msg_time_ms):
         f"Triaged from in-game chat by @{requester} at "
         f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(msg_time_ms / 1000))}.\n\n"
         f"Original message:\n  {text.strip()}\n\n"
-        f"Steward: decompose into worker cards using the landfolk roster "
-        f"(flint=miner, mason=builder, gatherer). If the goal needs clarification, "
-        f"post a kanban_comment with the question — re44 will answer via @steward in chat."
+        f"Steward: review this triage card when you next plan — promote with "
+        f"hermes kanban specify/assign, decompose into worker cards with explicit "
+        f"assignees (flint, mason, gatherer) after scripts/roster.py --assignable. "
+        f"If clarification is needed, post a kanban_comment — re44 may answer via @steward in chat."
     )
     cmd = [
         "hermes", "kanban", "--board", BOARD, "create", title,

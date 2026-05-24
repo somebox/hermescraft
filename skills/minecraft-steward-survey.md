@@ -98,15 +98,12 @@ comments are for durable card history, chat is for live awareness):
 Keep each line ≤120 chars. If your action is "no change, blocked
 acknowledged", say so — silence reads as "Steward is asleep".
 
-### Prefer pull over assign — let workers claim ready cards
+### Roster-first assignee routing
 
-This is a kanban board. The default model is: cards land in `ready`
-with an assignee, the gateway dispatcher spawns the worker, the worker
-claims and executes. Steward's job is decomposition, supervision, and
-re-balancing — **not** routing every card by hand.
+Cards reach `ready` with an **assignee**; the gateway dispatcher spawns that profile. Steward's job is decomposition, supervision, and re-balancing — assign explicitly after checking the roster, not by leaving worker cards unassigned.
 
 When decomposing, route by role using the active roster
-(`scripts/roster.py`):
+(`scripts/roster.py --assignable`):
 
 - **Worker-tier work** → the worker whose role matches (flint=stone,
   mason=builder, gatherer=surface). If multiple workers are eligible
@@ -239,6 +236,81 @@ BUG. Skip this when the failure is already obvious from the run logs.
 
 `[INCIDENT]` is the same shape for system-level breakage (server crash,
 world rollback, bot wedged). Same routing — assign to `re44`.
+
+### Explicit assignee routing (roster-first)
+
+Before you `kanban_create` or promote a worker card, run
+`scripts/roster.py --assignable` and pick a lowercase profile
+(`flint`, `mason`, `gatherer`) that is online now. The gateway
+dispatcher only claims **`ready` cards with an assignee**.
+
+Set `assignee` explicitly for:
+
+1. **Every new worker card** from decomposition or triage promotion.
+2. **Rework / follow-up** on a known bot's prior state (`assignee=flint`, etc.).
+3. **Skill match required** — only one profile can execute the card.
+4. **Orchestrator follow-ups** — `assignee=steward` for surveys, epics, triage.
+5. **Operator escalations** — `assignee=re44` for human judgement or `[BUG]`/`[INCIDENT]`.
+
+Rebalance at runtime with `kanban_reassign` when one bot is overloaded and
+another is idle — do not leave worker cards unassigned expecting automatic routing.
+
+### Decomposition is your job — use the primitives, not auto-fanout
+
+The kanban auto-decomposer (the LLM that runs when a card enters triage)
+is **deliberately conservative**: it specifies (`fanout=false`) and
+hands cards to you with their original body intact. It does **NOT**
+fan out into a graph for anything non-trivial because it has no access
+to world state, inventories, blueprint files, or chest contents. That
+is your job.
+
+**The pattern is: read the card → gather data → build the graph
+primitively.** Do NOT defer back to the auto-decomposer (there is no
+"please decompose this for me" call); construct child cards yourself
+with the structured kanban tools listed below. Each child is a
+`kanban_create` with a fully-materialized body — concrete coords,
+concrete material counts, concrete chest refs.
+
+**Concrete workflow for a typical multi-step card** (e.g. a build):
+
+1. **`kanban_show`** — read the card.
+2. **Gather real data via your terminal + mc tools**:
+   - Blueprint URL? → `scripts/blueprint-plan.py URL --out /tmp/plan.json`
+     (see `minecraft-steward-blueprint-plan` skill for full flow).
+   - Site selection? → `mc nearby` near the suggested area, or
+     `kanban_create` a `[SCOUT]` child for flint to mark candidates
+     and wait for it to complete.
+   - Materials inventory? → `mc chest_search <item>` to find existing
+     stockpiles; subtract from material requirements.
+   - Active workers? → `scripts/roster.py --assignable` (one
+     profile per line) before picking child assignees.
+3. **Build the graph one card at a time using primitives**:
+   ```
+   sid = kanban_create(title="[SCOUT] mark anchor for storage hut", body="<concrete location hints>", assignee="flint", parent=<this-card-id>)
+   rid = kanban_create(title="[REGION] create :storage1: at anchor", body="<resolved anchor>", assignee="flint", parent=sid)
+   for layer in plan.phases:
+       supply_id = kanban_create(title=f"[SUPPLY] {layer.materials} for layer Y={layer.y}", body="<concrete material list + deposit chest>", assignee="flint", parent=rid)
+       build_id = kanban_create(title=f"[CONSTRUCT] layer Y={layer.y}", body="<resolved anchor + fill ranges + per-cell placements>", assignee="flint", parent=supply_id)
+   ```
+4. **Express dependencies via `parent=` on create** (or `kanban_link`
+   after the fact). The dispatcher's parent-gating handles the wait —
+   downstream cards stay in `todo` until parents complete.
+5. **Comment + close the root** with a summary of the children you
+   created. The root becomes the parent of every leaf, so when the
+   whole graph completes it wakes back up for verification.
+
+**Anti-patterns to avoid:**
+- "Auto-decomposer can break this down" — no, that's why it deferred to
+  you. The card is on your queue precisely because the auto-decomposer
+  couldn't do better than vague guesses.
+- One giant `[CONSTRUCT]` card with the whole blueprint — workers
+  will hit iteration cap. Decompose by layer or by region.
+- Sibling-comment handoffs ("see scout card for anchor") — workers
+  read their OWN body only. Materialize anchor/coords/material lists
+  INTO each child's body at `kanban_create` time.
+- Routing to re44 when there's an active worker — re44 is escalation-
+  only (decisions, real-world actions). Routine work goes to the
+  active worker in the roster.
 
 ### Orchestration tools available
 

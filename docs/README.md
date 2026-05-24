@@ -25,6 +25,7 @@ High-level references for working on HermesCraft.
 | [guides/agent-tests.md](guides/agent-tests.md) | LLM + bot end-to-end agent test runner |
 | [guides/perception-digest.md](guides/perception-digest.md) | Advise layer, integration tests, `MC_FORCE_REASON` |
 | [guides/run-logging.md](guides/run-logging.md) | `scripts/exp.sh` structured expedition logging |
+| [guides/hermes-platform.md](guides/hermes-platform.md) | Hermes Agent capabilities, commands, and Landfolk integration practices |
 
 ## Design
 
@@ -42,6 +43,7 @@ High-level references for working on HermesCraft.
 | [features/designated-regions-verification.md](features/designated-regions-verification.md) | Live-world verification checklist |
 | [features/sign-anchored-placemarks.md](features/sign-anchored-placemarks.md) | Sign-based placemark design |
 | [features/blueprints.md](features/blueprints.md) | GrabCraft JSON + future `mc construct` sketch |
+| [features/kanban-flow-cleanup.md](features/kanban-flow-cleanup.md) | Kanban / Steward loop cleanup plan (MVP + backlog) |
 
 ## Planning (logs and scratch)
 

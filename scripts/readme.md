@@ -38,8 +38,8 @@ durably; `stop` does NOT clear it (use `stop --clear-roster` to wipe).
 
 - `PLAYERS_DEFAULT=flint,mason,steward` (only used when roster is empty)
 - `LANDFOLK_DEFAULT_MODE=auto`
-- daemons on by default: `listener`, `supervisor`, `pauser`
-- gateway: not managed; opt in with `start --with-gateway`
+- daemons on by default: `listener` only (`supervisor` and `pauser` opt in via `landfolk restart` or flags)
+- gateway: started by `landfolk start` by default; use `--no-gateway` to leave running gateway untouched
 - `MC_HOST=192.168.1.202`, `LOG_DIR=/tmp/hermescraft`
 
 `scripts/landfolk-session.sh` is a deprecation shim that forwards old verbs.
@@ -70,7 +70,7 @@ but day-to-day use goes through `scripts/landfolk`.
 | `analyze-progress-logs.sh` | Read-only summaries over watchdog progress JSONL. |
 | `run-landfolk-agent.sh` | Thin Hermes launcher once a bot is listening on a known port. |
 | `setup-landfolk-profiles.sh` | Phase 2 workers + steward ops: profiles, `landfolk-ops` board, kanban config; `--solo-flint` for one-bot testing; `--apply-config` to refresh SOUL/skills/max_turns only (see `docs/design/phase-3/steward-mvp.md`). |
-| `inactive-cards-pauser.py` / `steward-supervisor.py` / `steward-chat-listener.py` | Operator daemons managed by `landfolk start`/`stop`. |
+| `inactive-cards-pauser.py` / `steward-supervisor.py` / `steward-chat-listener.py` | Optional operator daemons; listener starts with `landfolk start`, supervisor/pauser via `restart` or flags. |
 | `ledger-update.py` | Fold completed ops-board task metadata into `data/ops/logistics-ledger.yaml`. |
 | `blueprint-plan.py` | GrabCraft URL → build plan JSON (substitutions, phases); steward skill `minecraft-steward-blueprint-plan`. |
 | `watch-agent.py` | Tail Hermes session JSON for any Landfolk agent (`--agent flint`, etc.). |

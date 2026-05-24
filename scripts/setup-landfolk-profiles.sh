@@ -191,23 +191,23 @@ You control your body via the \`mc\` command. \$MC_API_URL points at your bot's 
 
 ## Card lifecycle (the only loop you run)
 
-1. \`hermes kanban show \$HERMES_KANBAN_TASK\` to read the card body, action_sequence, and success_predicate.
+1. \`kanban_show\` (or \`hermes kanban show \$HERMES_KANBAN_TASK\`) to read the card body, action_sequence, and success_predicate.
 2. If the card body includes \`worksite: <id>\` (bare region id, e.g. \`hut3\`), run \`mc task_context set <id>\` once before any dig/place inside that protect region. \`mc observe\` shows the active worksite while the grant is valid.
 3. Run prep if it isn't already done by an upstream step (capability_test fixtures usually have prep/cleanup; the human-as-steward runs them via \`scripts/run-fixture.sh\` before claiming the card).
 4. Execute the action_sequence one command at a time. Watch each \`mc\` response: if \`ok=false\`, stop and capture the error code + observed_state.
 5. Evaluate the success_predicate against \`mc observe\` (or the response data, depending on \`kind\`).
-6. \`hermes kanban complete \$HERMES_KANBAN_TASK --result PASS|FAIL --summary "<one-line>"\` with metadata for any inventory_delta / chest_delta / observed errors. Run \`mc task_context clear\` on \`kanban_complete\` or \`kanban_block\` so the worksite grant does not leak to the next card.
+6. \`kanban_complete\` (or \`hermes kanban complete \$HERMES_KANBAN_TASK --result PASS|FAIL --summary "<one-line>"\`) with metadata for any inventory_delta / chest_delta / observed errors. Run \`mc task_context clear\` on complete or block so the worksite grant does not leak to the next card.
 $(ops_worker_section)
 
 ## Hard rules
 
 - **In-world actions: \`mc <verb>\` ONLY.** The bot's HTTP API at \`\$MC_API_URL\` is the transport \`mc\` uses internally — **do NOT call \`curl \$MC_API_URL/action/...\` directly.** Bypassing the CLI skips argument validation, human-readable error envelopes, \`next_action_hint\` advice, auto-equip / auto-fetch behaviour, and the slow-tool digest pipeline. Every time a worker has reached for curl in past runs it has wasted iterations and produced worse outcomes than the equivalent \`mc <verb>\`. If you don't remember the right verb, run \`mc help\` or \`mc help <category>\`.
-- **Board interaction: \`hermes kanban\`** (or the \`kanban_*\` tools where available). No raw SQLite or REST against the board.
+- **Board interaction: \`kanban_*\` tools** (\`kanban_show\`, \`kanban_complete\`, \`kanban_block\`, \`kanban_comment\`). Use \`hermes kanban\` CLI only if a tool is unavailable in your session.
 - **No system shell commands** — no \`curl\`, \`lsof\`, \`ps\`, \`kill\`, \`grep\`, \`find\`, \`cat\`, \`sed\`, \`awk\`, \`node server.js\`. You don't restart the bot — that's the human's job (see "On failure" below).
 - One card per session. Don't pick up other work or chase tangents.
 - Never modify the production world (\`world\`) when running a capability_test — those use \`landfolk-test\`.
 - Chat sparingly: only when the card explicitly asks for it.
-- If a primitive returns \`ok=true\` but the post-state contradicts it, file a \`[BUG]\` card via \`hermes kanban create\` and FAIL the current card with reason \`action_contract_violation\`.
+- If a primitive returns \`ok=true\` but the post-state contradicts it, file a \`[BUG]\` card via \`kanban_create\` and FAIL the current card with reason \`action_contract_violation\`.
 
 ## Action contract reminders
 
@@ -232,14 +232,14 @@ Don't chat per \`mc\` call — that's spammy. Chat only at card boundaries unles
 
 ## Requesting steward help (escalation channel)
 
-When a structured obstacle stops your card and you've recognized the cause, \`kanban_block\` with a structured reason prefix so the steward supervisor can route the right response. Use these prefixes:
+When a structured obstacle stops your card and you've recognized the cause, \`kanban_block\` with a structured reason prefix so Steward can read blocked cards on the next planning cycle. Use these prefixes:
 
 - \`region_blocked:<region_id>:<short_reason>\` — dig/place blocked inside a protect region and your card has no matching \`worksite:\` grant (or the worksite id is wrong). First confirm you ran \`mc task_context set <id>\` when the card body names a worksite. If the card never had a worksite, block so the steward can add \`worksite:\` to the body or fix decomposition. Example: \`kanban_block "region_blocked:hut3:cannot_dig_ceiling_to_exit"\`.
 - \`prerequisite_missing:<item>:<count>\` — supply shortfall the card body didn't account for. Steward can create a \`[SUPPLY]\` precursor and link it as a parent.
 - \`stuck_pocket_no_escape:<pos>\` — wedged with no tool path out. Steward can rcon-tp you out or give a missing tool.
 - \`decision_needed:<options>\` — you have a partial result and need a stewarding judgment call (e.g. "accept 5 raw_iron vs continue mining for 32"). Steward decides and unblocks with guidance.
 
-Don't grind iterations after recognizing one of these. The supervisor (a polling daemon that watches blocked cards) creates a single \`[SUPERVISE]\` card the steward acts on directly — one decision, one session, no sub-tasks. If the steward determines the root cause is a tool defect (e.g. a misbehaving \`mc\` verb), it will open a separate \`[BUG]\` card assigned to re44 instead of retrying.
+Don't grind iterations after recognizing one of these. Steward (continuous orchestrator loop) should unblock, decompose, reassign, or open a \`[BUG]\` card for re44 — not spawn nested supervise sub-tasks.
 
 ## On failure
 
@@ -262,16 +262,9 @@ You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY
 - For surveys: use read-only `mc` observation per minecraft-steward-survey skill. If all floors are met, `kanban_complete(summary="no action needed")`.
 - For GrabCraft URLs on a card: run `python3 <repo>/scripts/blueprint-plan.py` per minecraft-steward-blueprint-plan skill; decompose into supply + construct worker cards.
 
-## [SUPERVISE] cards — single session, single action
+## Blocked-card escalation (optional [SUPERVISE] lane)
 
-When you pick up a `[SUPERVISE]` card from `scripts/steward-supervisor.py`:
-
-1. Read the blocked card it references (`hermes kanban show <target_id>`).
-2. Choose **exactly one** action: unblock+comment, decompose, reassign, archive, or open a `[BUG]`/`[INCIDENT]` card (see minecraft-steward-survey skill § BUG / INCIDENT cards).
-3. Execute it inline, then `kanban_complete` THIS supervise card with a one-line summary.
-4. Do NOT create `[INSPECT]`, `[DECIDE]`, `[EXECUTE]`, or further `[SUPERVISE]` children — that's the anti-pattern this lane was rewritten to remove.
-
-If the same card has been supervised before and the prior action didn't help, prefer opening a `[BUG]` for re44 over re-trying the same fix.
+If a legacy \`[SUPERVISE]\` card appears (from an optional supervisor daemon), treat it like any other steward card: read the blocked target, take **one** action (unblock, decompose, reassign, archive, or open \`[BUG]\` for re44), then complete the supervise card. Prefer handling blocked cards directly during your normal board read in the continuous loop.
 
 ## Read-only observation
 
@@ -515,7 +508,7 @@ patch_kanban_config() {
   echo
   echo "===== ~/.hermes/config.yaml kanban orchestration ====="
   if [ "$DRY_RUN" = true ]; then
-    echo "DRY: merge kanban.orchestrator_profile=steward default_assignee=steward"
+    echo "DRY: merge kanban.orchestrator_profile=steward auto_decompose=false"
     return 0
   fi
   python3 - "$HERMES_CONFIG" <<'PYEOF'
@@ -525,9 +518,8 @@ text = path.read_text() if path.is_file() else ""
 lines = text.splitlines()
 want = {
     "orchestrator_profile": "steward",
-    "default_assignee": "steward",
-    "auto_decompose": "true",
-    "auto_decompose_per_tick": "3",
+    "auto_decompose": "false",
+    "auto_decompose_per_tick": "0",
 }
 if "kanban:" not in text:
     block = ["kanban:"] + [f"  {k}: {v}" for k, v in want.items()]
@@ -548,7 +540,7 @@ while i < len(lines):
                 k, _, v = lines[i].strip().partition(":")
                 existing[k.strip()] = v.strip()
             i += 1
-        merged = {**existing, **{k: v for k, v in want.items()}}
+        merged = {**want, **existing}
         for k, v in merged.items():
             out.append(f"  {k}: {v}")
         continue
@@ -576,7 +568,8 @@ done
 setup_steward
 if [ "$APPLY_CONFIG" = true ]; then
   echo
-  echo "===== --apply-config: skipped board, descriptions, global kanban merge ====="
+  echo "===== --apply-config: SOUL/skills + kanban merge (skipped board/descriptions) ====="
+  patch_kanban_config
 else
   ensure_ops_board
   set_profile_descriptions

@@ -9,9 +9,12 @@
 #            kanban       — bot + connect-only watchdog, NO Hermes agent.
 #                          Kanban gateway workers drive the bot per card.
 #            continuous   — bot + full watchdog + always-on Hermes agent loop.
-#   DAEMONS  listener, supervisor, pauser          (operator support)
-#   GATEWAY  hermes gateway                        (external; observed, not
-#                                                   touched without --with-gateway)
+#   DAEMONS  listener (default on); supervisor, pauser (opt-in via start flags)
+#   GATEWAY  hermes gateway                        (managed by start/stop by
+#                                                   default; --no-gateway to
+#                                                   leave alone, --keep-gateway
+#                                                   on stop, --restart-gateway
+#                                                   on start to force replace)
 #
 # Roster is the DESIRED STATE. `enable`/`disable` modify it (sticky across
 # stop/start). `stop` does NOT wipe the roster — use `--clear-roster` for
@@ -20,10 +23,10 @@
 #
 # Usage:
 #   scripts/landfolk start    [--players a,b,c] [--mode auto|kanban|continuous]
-#                             [--continuous p,q] [--without daemons|listener|supervisor|pauser]
-#                             [--with-gateway] [--no-wait]
-#   scripts/landfolk stop     [--players a,b,c] [--keep daemons|listener|supervisor|pauser]
-#                             [--with-gateway] [--no-reclaim] [--clear-roster]
+#                             [--continuous p,q] [--without daemons|listener|supervisor|pauser|gateway]
+#                             [--no-gateway] [--restart-gateway] [--no-wait]
+#   scripts/landfolk stop     [--players a,b,c] [--keep daemons|listener|supervisor|pauser|gateway]
+#                             [--keep-gateway] [--no-reclaim] [--clear-roster]
 #   scripts/landfolk enable   <player> [--mode auto|kanban|continuous]
 #   scripts/landfolk disable  <player>
 #   scripts/landfolk restart  <player|players|daemons|listener|supervisor|pauser|gateway|all>
@@ -344,8 +347,64 @@ player_stop_one() {
   ok "$player stopped"
 }
 
+# List hermes kanban-worker processes for a player (or all canonical
+# players if no arg given). Prints lines of the form "<pid> <task_id>".
+kanban_workers_for() {
+  local player="${1:-}"
+  local pat
+  if [ -n "$player" ]; then
+    pat="hermes -p $player .* kanban task "
+  else
+    pat="hermes -p [a-z][a-z]* .* kanban task "
+  fi
+  # ps with full argv, then extract pid + the task id after `kanban task`.
+  ps -eo pid=,command= 2>/dev/null \
+    | awk -v re="$pat" '
+        $0 ~ re {
+          pid=$1
+          for (i=1; i<=NF; i++) {
+            if ($i=="task" && (i+1)<=NF) { print pid, $(i+1); next }
+          }
+        }'
+}
+
+# After the bots are dead, no kanban worker for our players has any reason
+# to be alive. SIGTERM whatever's left (typically zero — but cleans up
+# anything that escaped reclaim, like workers for tasks the gateway hadn't
+# reported as `running` yet, or workers whose reclaim raced with start_run).
+kanban_worker_sweep() {
+  local scope_csv="${1:-}"   # comma-separated players, or empty = all
+  local -a scope=()
+  if [ -n "$scope_csv" ]; then
+    IFS=',' read -r -a scope <<< "$scope_csv"
+  else
+    while IFS= read -r p; do [ -n "$p" ] && scope+=( "$p" ); done < <(canonical_players)
+  fi
+  local found=0 p pid tid
+  for p in "${scope[@]}"; do
+    while read -r pid tid; do
+      [ -z "$pid" ] && continue
+      kill "$pid" 2>/dev/null && { warn "killed stray worker $p pid=$pid task=$tid"; found=$((found+1)); }
+    done < <(kanban_workers_for "$p")
+  done
+  if [ "$found" -gt 0 ]; then
+    sleep 2
+    for p in "${scope[@]}"; do
+      while read -r pid tid; do
+        [ -z "$pid" ] && continue
+        kill -9 "$pid" 2>/dev/null && warn "force-killed worker $p pid=$pid task=$tid"
+      done < <(kanban_workers_for "$p")
+    done
+  fi
+}
+
 # Cards on landfolk-ops that are still `running` are reclaimed so kanban
 # workers exit cleanly before we touch their bots.
+#
+# Reclaim alone only releases the kanban lock — the worker process keeps
+# running (and keeps calling mc against a soon-to-be-dead bot). So we also
+# SIGTERM any hermes process whose argv contains `kanban task <tid>`.
+# A 2-second grace then SIGKILL anything that survived.
 reclaim_running() {
   local board="landfolk-ops" filter="${1:-}"
   local cmd=( hermes kanban --board "$board" list )
@@ -354,24 +413,58 @@ reclaim_running() {
     | awk '$3=="running"{print $2}' \
     | while read -r tid; do
         [ -z "$tid" ] && continue
-        hermes kanban --board "$board" reclaim "$tid" \
-          --reason "landfolk stop${filter:+ $filter}" >/dev/null 2>&1 \
-          && dim "reclaimed $tid"
+        if hermes kanban --board "$board" reclaim "$tid" \
+            --reason "landfolk stop${filter:+ $filter}" >/dev/null 2>&1; then
+          dim "reclaimed $tid"
+          # Match `... kanban task <tid>` literally (avoid partial matches).
+          local pids
+          pids="$(pgrep -f "kanban task $tid\$" 2>/dev/null || true)"
+          if [ -n "$pids" ]; then
+            kill $pids 2>/dev/null || true
+            dim "  signalled worker pid(s) $pids"
+            # Give them a moment to finish their last mc call, then force.
+            sleep 2
+            local still
+            still="$(pgrep -f "kanban task $tid\$" 2>/dev/null || true)"
+            if [ -n "$still" ]; then
+              kill -9 $still 2>/dev/null || true
+              warn "  force-killed unresponsive worker pid(s) $still"
+            fi
+          fi
+        fi
       done || true
 }
 
 # ─── Verbs ─────────────────────────────────────────────────────────────────
 
+# Detect a running hermes gateway. Two invocation styles produce different
+# argv (and the old `hermes_cli.*gateway` pattern only matched one):
+#   - Manual: `python -m hermes_cli.main gateway run --replace`
+#   - Via shim: `python /Users/foz/.local/bin/hermes gateway run --replace`
+# Both contain `gateway run` in argv. Falls back to `hermes gateway status`
+# (the official check) when pgrep is unavailable or returns nothing.
+gateway_running() {
+  pgrep -f "gateway run" >/dev/null 2>&1 && return 0
+  command -v hermes >/dev/null 2>&1 || return 1
+  hermes gateway status >/dev/null 2>&1
+}
+
 cmd_start() {
   local players_csv="" mode_override="" continuous_csv="" no_wait=0
-  local with_listener=1 with_supervisor=1 with_pauser=1 with_gateway=0
+  # Gateway is part of the session by default — `landfolk start` manages it.
+  # Use `--no-gateway` to leave whatever is running untouched. Use
+  # `--restart-gateway` to force a `hermes gateway run --replace` (useful
+  # after pulling new gateway code so the dispatcher / config knobs reload).
+  local with_listener=1 with_supervisor=0 with_pauser=0 with_gateway=1 restart_gateway=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --players)    players_csv="$2"; shift 2 ;;
       --mode)       mode_override="$2"; shift 2 ;;
       --continuous) continuous_csv="$2"; shift 2 ;;
       --no-wait)    no_wait=1; shift ;;
-      --with-gateway) with_gateway=1; shift ;;
+      --with-gateway)    with_gateway=1; shift ;;  # back-compat — now the default
+      --no-gateway)      with_gateway=0; shift ;;
+      --restart-gateway) with_gateway=1; restart_gateway=1; shift ;;
       --without)
         IFS=',' read -r -a parts <<< "$2"
         for w in "${parts[@]}"; do
@@ -380,6 +473,7 @@ cmd_start() {
             listener)   with_listener=0 ;;
             supervisor) with_supervisor=0 ;;
             pauser)     with_pauser=0 ;;
+            gateway)    with_gateway=0 ;;
             *) err "unknown --without target: $w"; return 1 ;;
           esac
         done
@@ -450,9 +544,13 @@ cmd_start() {
   [ "$with_pauser"     = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }pauser"
   echo "  daemons:   ${daemon_parts:-none}"
   if [ "$with_gateway" = 1 ]; then
-    echo "  gateway:   ensure running (--with-gateway)"
+    if [ "$restart_gateway" = 1 ]; then
+      echo "  gateway:   force-restart (--restart-gateway → hermes gateway run --replace)"
+    else
+      echo "  gateway:   ensure running (default; --no-gateway to skip)"
+    fi
   else
-    echo "  gateway:   observe only (use --with-gateway to manage)"
+    echo "  gateway:   observe only (--no-gateway)"
   fi
 
   # ─── execute
@@ -474,18 +572,28 @@ cmd_start() {
   if [ "$with_pauser" = 1 ];     then h1 "starting daemon: pauser";     ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE"; fi
 
   if [ "$with_gateway" = 1 ]; then
-    h1 "ensuring hermes gateway"
-    if pgrep -f "hermes_cli.*gateway" >/dev/null 2>&1; then
-      ok "hermes gateway already running"
-    elif command -v hermes >/dev/null 2>&1; then
+    h1 "hermes gateway"
+    if ! command -v hermes >/dev/null 2>&1; then
+      err "hermes CLI not on PATH — cannot manage gateway"
+    elif [ "$restart_gateway" = 1 ]; then
+      # Force replace: useful after gateway code changes (e.g. dispatcher
+      # config knobs like per_assignee_cap) so the in-memory dispatcher
+      # picks up new defaults.
       nohup hermes gateway run --replace >>"$LOG_DIR/gateway.log" 2>&1 &
       disown
-      sleep 1
-      pgrep -f "hermes_cli.*gateway" >/dev/null 2>&1 \
+      sleep 2
+      gateway_running \
+        && ok "hermes gateway replaced (log $LOG_DIR/gateway.log)" \
+        || err "hermes gateway didn't come back up; check $LOG_DIR/gateway.log"
+    elif gateway_running; then
+      ok "hermes gateway already running"
+    else
+      nohup hermes gateway run --replace >>"$LOG_DIR/gateway.log" 2>&1 &
+      disown
+      sleep 2
+      gateway_running \
         && ok "hermes gateway started (log $LOG_DIR/gateway.log)" \
         || err "hermes gateway didn't come up; check $LOG_DIR/gateway.log"
-    else
-      err "hermes CLI not on PATH"
     fi
   fi
 
@@ -494,8 +602,12 @@ cmd_start() {
 }
 
 cmd_stop() {
-  local players_csv="" with_gateway=0 do_reclaim=1 clear_roster=0
-  local keep_listener=0 keep_supervisor=0 keep_pauser=0
+  local players_csv="" do_reclaim=1 clear_roster=0
+  # Gateway IS stopped on a full down by default — `landfolk stop` owns the
+  # whole session. Narrowed stops (`--players X`) leave the gateway alone
+  # since other players might still need it. Use `--keep-gateway` to leave
+  # it running even on a full down.
+  local with_gateway=1 keep_listener=0 keep_supervisor=0 keep_pauser=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --players) players_csv="$2"; shift 2 ;;
@@ -507,6 +619,7 @@ cmd_stop() {
             listener)   keep_listener=1 ;;
             supervisor) keep_supervisor=1 ;;
             pauser)     keep_pauser=1 ;;
+            gateway)    with_gateway=0 ;;
             *) err "unknown --keep target: $k"; return 1 ;;
           esac
         done
@@ -514,13 +627,21 @@ cmd_stop() {
       --keep-listener)   keep_listener=1; shift ;;
       --keep-supervisor) keep_supervisor=1; shift ;;
       --keep-pauser)     keep_pauser=1; shift ;;
-      --with-gateway)    with_gateway=1; shift ;;
+      --keep-gateway)    with_gateway=0; shift ;;
+      --with-gateway)    with_gateway=1; shift ;;  # back-compat — now the default
+      --no-gateway)      with_gateway=0; shift ;;
       --no-reclaim)      do_reclaim=0; shift ;;
       --clear-roster)    clear_roster=1; shift ;;
       -h|--help) usage 0 ;;
       *) err "unknown flag: $1"; return 1 ;;
     esac
   done
+
+  # Narrowed `--players X`: only stop those players, never the gateway.
+  # The gateway is shared infrastructure across the whole session.
+  if [ -n "$players_csv" ]; then
+    with_gateway=0
+  fi
 
   if [ -z "$players_csv" ] && [ "$do_reclaim" = 1 ]; then
     h1 "reclaiming running kanban workers"
@@ -544,26 +665,74 @@ cmd_stop() {
   fi
 
   h1 "stopping players"
+  local scope_csv
   if [ -z "$players_csv" ]; then
-    # Stop everyone we know about (roster ∪ canonical) so we leave nothing
-    # behind even if the engine pidfile has drifted from the roster.
-    local all_csv
-    all_csv="$(canonical_players | paste -sd, -)"
-    "$ENGINE" stop --profiles "$all_csv" 2>&1 \
-      | grep -E "stopped|not running|not tracked" | sed 's/^/  /' || true
+    scope_csv="$(canonical_players | paste -sd, -)"
   else
-    local pl
-    pl="$(parse_players_csv "$players_csv")" || return 1
-    while IFS= read -r p; do [ -n "$p" ] && player_stop_one "$p"; done <<< "$pl"
+    scope_csv="$(parse_players_csv "$players_csv")" || return 1
+    scope_csv="$(echo "$scope_csv" | paste -sd, -)"
   fi
+
+  # Build a "name=mode" map for the players in scope so we can annotate
+  # the engine's `[agent] X not tracked` lines: kanban → "(none expected)",
+  # continuous → "(MISSING — agent failed to start; check landfolk-control.log)".
+  # Unknown roster entries (transient --players) fall back to effective mode.
+  local mode_map="" _p _stored _eff
+  IFS=',' read -r -a _scope_arr <<< "$scope_csv"
+  for _p in "${_scope_arr[@]}"; do
+    [ -z "$_p" ] && continue
+    _stored="$(roster_mode_for "$_p")"
+    _eff="$(resolve_mode "$_p" "${_stored:-$DEFAULT_MODE}")"
+    mode_map="${mode_map}${_p}=${_eff};"
+  done
+
+  "$ENGINE" stop --profiles "$scope_csv" 2>&1 \
+    | grep -E "stopped|not running|not tracked" \
+    | MODE_MAP="$mode_map" awk '
+        BEGIN {
+          n = split(ENVIRON["MODE_MAP"], pairs, ";")
+          for (i=1; i<=n; i++) {
+            if (pairs[i] == "") continue
+            eq = index(pairs[i], "=")
+            if (eq > 0) mode[tolower(substr(pairs[i], 1, eq-1))] = substr(pairs[i], eq+1)
+          }
+        }
+        {
+          # Lines look like: "[agent] Steward not tracked"
+          if (match($0, /^\[(agent|bot|watchdog)\] [A-Za-z]+/)) {
+            kind  = substr($0, 2, index($0,"]")-2)
+            rest  = substr($0, index($0,"]")+2)
+            split(rest, parts, " ")
+            name = tolower(parts[1])
+            tag = ""
+            if (kind == "agent" && index($0, "not tracked") > 0) {
+              m = mode[name]
+              if (m == "kanban")     tag = " (none expected)"
+              else if (m == "continuous") tag = " (MISSING — agent failed to start; check landfolk-control.log)"
+            }
+            print "  " $0 tag
+            next
+          }
+          print "  " $0
+        }'
+
+  # Belt-and-braces: now that bots are dead, sweep any surviving kanban
+  # workers (reclaim races, gateway-spawned workers we never saw, etc).
+  kanban_worker_sweep "$scope_csv"
 
   if [ "$with_gateway" = 1 ]; then
     h1 "stopping hermes gateway"
-    if command -v hermes >/dev/null 2>&1 && hermes gateway stop >/dev/null 2>&1; then
+    if ! command -v hermes >/dev/null 2>&1; then
+      warn "hermes CLI not on PATH — leaving gateway alone"
+    elif ! gateway_running; then
+      dim "hermes gateway not running"
+    elif hermes gateway stop >/dev/null 2>&1; then
       ok "hermes gateway stopped"
     else
-      warn "hermes gateway stop failed or gateway was not running"
+      warn "hermes gateway stop returned non-zero"
     fi
+  else
+    dim "hermes gateway left running (--keep-gateway or --players narrowing)"
   fi
 
   ok "session down"
@@ -725,12 +894,48 @@ except Exception: pass" 2>/dev/null || true)"
   done
 
   h1 "ambient services"
-  if pgrep -f "hermes_cli.*gateway" >/dev/null 2>&1; then ok "hermes gateway running"; else warn "hermes gateway NOT running (run: hermes gateway run --replace)"; fi
+  if gateway_running; then ok "hermes gateway running"; else warn "hermes gateway NOT running (run: hermes gateway run --replace)"; fi
   if lsof -nP -iTCP:9119 -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then ok "hermes dashboard on :9119"; else dim "hermes dashboard not listening"; fi
 
   h1 "kanban (landfolk-ops)"
   if command -v hermes >/dev/null 2>&1; then
     hermes kanban --board landfolk-ops stats 2>&1 | grep -E "By status|running|blocked|ready|todo|done" | head -8 | sed 's/^/  /' || true
+  fi
+
+  h1 "kanban workers"
+  # Workers spawned by the gateway show up in ps as
+  #   hermes -p <player> --skills kanban-worker chat -q work kanban task <tid>
+  # A worker is "live" if its task is still in `running` on the board;
+  # otherwise it's a stale orphan (reclaim raced, gateway crash, etc.) and
+  # `landfolk stop` (or `fix clean`) should sweep it.
+  local _running_tids=""
+  if command -v hermes >/dev/null 2>&1; then
+    _running_tids="$(hermes kanban --board landfolk-ops list 2>/dev/null | awk '$3=="running"{print $2}' | paste -sd, -)"
+  fi
+  local _worker_total=0 _stale_total=0
+  local _p _w_count _stale_lines=""
+  while IFS= read -r _p; do
+    [ -z "$_p" ] && continue
+    _w_count=0
+    while read -r _pid _tid; do
+      [ -z "$_pid" ] && continue
+      _worker_total=$((_worker_total + 1))
+      _w_count=$((_w_count + 1))
+      if [ -n "$_running_tids" ] && echo ",$_running_tids," | grep -q ",$_tid,"; then
+        :
+      else
+        _stale_total=$((_stale_total + 1))
+        _stale_lines+="    ${C_WARN}stale${C_RST} $_p pid=$_pid task=$_tid (not in running)"$'\n'
+      fi
+    done < <(kanban_workers_for "$_p")
+    if [ "$_w_count" -gt 0 ]; then
+      printf "  %-10s %d active\n" "$_p" "$_w_count"
+    fi
+  done < <(canonical_players)
+  if [ "$_worker_total" = 0 ]; then dim "no kanban workers running"; fi
+  if [ "$_stale_total" -gt 0 ]; then
+    warn "$_stale_total stale worker(s) — run \`landfolk stop\` or \`landfolk fix clean\` to sweep:"
+    printf "%b" "$_stale_lines"
   fi
 
   h1 "roster"
@@ -814,6 +1019,22 @@ cmd_fix() {
           rm -f "$f" && dim "removed stale pidfile $(basename "$f")"
         fi
       done
+      # Sweep stale kanban workers — those whose task is no longer in
+      # `running` on the board. Live workers are left alone.
+      local _running_tids=""
+      if command -v hermes >/dev/null 2>&1; then
+        _running_tids="$(hermes kanban --board landfolk-ops list 2>/dev/null | awk '$3=="running"{print $2}' | paste -sd, -)"
+      fi
+      local _p _pid _tid
+      while IFS= read -r _p; do
+        [ -z "$_p" ] && continue
+        while read -r _pid _tid; do
+          [ -z "$_pid" ] && continue
+          if [ -z "$_running_tids" ] || ! echo ",$_running_tids," | grep -q ",$_tid,"; then
+            kill "$_pid" 2>/dev/null && warn "killed stale worker $_p pid=$_pid task=$_tid"
+          fi
+        done < <(kanban_workers_for "$_p")
+      done < <(canonical_players)
       ok "clean done"
       ;;
     tp)
@@ -897,8 +1118,9 @@ cmd_defaults() {
   done < <(canonical_players)
   echo
   echo "  ${C_BOLD}daemons${C_RST}"
-  echo "    on by default:        listener, supervisor, pauser"
-  echo "    disable individually: --without listener|supervisor|pauser|daemons"
+  echo "    on by default:        listener"
+  echo "    opt-in:               supervisor, pauser (omit --without to start them manually via restart)"
+  echo "    disable listener:     --without listener|daemons"
   echo
   echo "  ${C_BOLD}gateway${C_RST}"
   echo "    on by default:        no (observe only)"
