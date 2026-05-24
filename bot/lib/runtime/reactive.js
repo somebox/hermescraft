@@ -65,6 +65,36 @@ const ANCHOR_RANGE_GUARD = 16;
 const TICK_MS = 400;
 const BACKSTEP_MS = 120;            // brief retreat after each swing (knockback dance)
 
+/**
+ * Pragmatic threat presence rule. A non-creeper mob is a "present
+ * danger" worth interrupting the agent for ONLY when it can actually
+ * reach the bot right now:
+ *
+ *   - **Visible to us (LOS)** — raycast from bot's eye to mob's chest
+ *     succeeded. The mob can walk to us, shoot at us, etc.
+ *   - **Currently damaging us (`state.recently_damaged`)** — proves the
+ *     threat is landing hits / arrows through whatever cover exists
+ *     (skeleton firing through a gap, drowned hitting from underwater,
+ *     etc.). Damage is the strongest signal that "this threat is real".
+ *
+ * A mob 5 blocks away in an adjacent unseen cave, not currently hitting
+ * us, is NOT a present danger — the agent should be allowed to keep
+ * thinking. Creeper proximity is excluded from this rule (still
+ * LOS-blind) because creepers detonate through partial cover faster
+ * than the agent loop can react.
+ *
+ * Exported for unit tests in test/reactive-los.test.js. Pure function:
+ * given the state shape produced by collectState(), determines whether
+ * a given threat object justifies a flee_step.
+ */
+export function isPresentDanger(state, threat) {
+  if (!threat) return false;
+  // Visible threats always count.
+  if (threat.visible) return true;
+  // Hidden threats only count when damage is actively reaching us.
+  return !!state?.recently_damaged;
+}
+
 export function createReactive(deps) {
   const { ctx, log, ACTIONS, sleep, hasLineOfSight, eyePosition } = deps;
 
@@ -409,22 +439,38 @@ export function createReactive(deps) {
       return { action: 'flee_step', threat: state.closest_creeper, why: 'creeper_close' };
     }
 
-    // Always-on safety: very low HP + a hostile in range → bounded flee.
-    // circuit-v11 (2026-05-22): the recently_damaged gate dropped this
-    // arm when the most recent damage was environmental (drowning, fall,
-    // etc.) — the bot then fell through to advance_step at hp=3 against
-    // an approaching drowned. With hp <= LOW_HP_FLEE, fleeing is always
-    // the safer call regardless of damage source. Keep the closest_hostile
-    // guard so we don't flee from nothing.
-    if (state.hp <= LOW_HP_FLEE && state.closest_hostile) {
-      return { action: 'flee_step', threat: state.closest_hostile, why: 'critical_hp' };
+    // Always-on safety: very low HP + a hostile we can actually reach
+    // → bounded flee. Use `isPresentDanger` to gate by LOS-or-damage so a
+    // hostile in an adjacent unseen cave at hp=5 doesn't yank the bot
+    // out of its agent task (re44 reported Steward's case 2026-05-24:
+    // zombie 5.4 blocks away through cave wall caused 4 minutes of
+    // `flee_step` retries while the agent was unable to think).
+    // Prefer the visible threat when present; only fall back to the
+    // LOS-blind closest_hostile when damage is actively being taken
+    // (skeleton firing through a gap, etc.).
+    if (state.hp <= LOW_HP_FLEE) {
+      const visible = state.closest_visible_hostile;
+      const lowHpThreat = isPresentDanger(state, visible)
+        ? visible
+        : (isPresentDanger(state, state.closest_hostile) ? state.closest_hostile : null);
+      if (lowHpThreat) {
+        return { action: 'flee_step', threat: lowHpThreat, why: 'critical_hp' };
+      }
     }
 
-    // Preemptive dodge: ranged hostile in sight + no weapon = always flee.
-    // Standing still under archer fire is the worst response, so the bot
-    // zig-zags continuously even before the first arrow lands.
-    if (state.closest_ranged && !state.weapon) {
-      return { action: 'flee_step', threat: state.closest_ranged, why: 'ranged_no_weapon' };
+    // Preemptive dodge: ranged hostile + no weapon = flee. Gated by
+    // `isPresentDanger` — visible OR currently damaging us. A skeleton
+    // on the other side of a cave wall not currently shooting through
+    // a gap shouldn't trigger continuous zig-zag (was: LOS-blind on
+    // `closest_ranged`, the source of the Steward cave-flee loop).
+    if (!state.weapon) {
+      const visibleRanged = state.closest_visible_ranged;
+      const rangedThreat = isPresentDanger(state, visibleRanged)
+        ? visibleRanged
+        : (isPresentDanger(state, state.closest_ranged) ? state.closest_ranged : null);
+      if (rangedThreat) {
+        return { action: 'flee_step', threat: rangedThreat, why: 'ranged_no_weapon' };
+      }
     }
 
     if (!state.closest_hostile) return null;
