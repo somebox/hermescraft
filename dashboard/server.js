@@ -15,6 +15,8 @@ import {
   playerNamesFromMarkersJson,
   playersMarkerUrls,
   playersMarkersUrl,
+  parseSquaremapWorldZoom,
+  worldSettingsJsonUrl,
 } from './lib/world-map.js';
 import { nearbyPlayerName, isPlaceholderPlayerName } from './lib/nearby-players.js';
 import {
@@ -41,6 +43,37 @@ if (!registry) {
 }
 
 const worldMapConfig = getWorldMapConfig(registry);
+
+/** @type {{ at: number, byHermes: Record<string, { def: number, max: number, extra: number, uiMax: number }> }} */
+let squaremapZoomCache = { at: 0, byHermes: {} };
+const SQUAREMAP_ZOOM_CACHE_MS = 60_000;
+
+async function fetchSquaremapZoomByHermesWorld() {
+  if (!worldMapConfig) return {};
+  const now = Date.now();
+  if (now - squaremapZoomCache.at < SQUAREMAP_ZOOM_CACHE_MS && squaremapZoomCache.byHermes) {
+    return squaremapZoomCache.byHermes;
+  }
+  /** @type {Record<string, { def: number, max: number, extra: number, uiMax: number }>} */
+  const byHermes = {};
+  const entries = Object.entries(worldMapConfig.hermesToTileWorld || {});
+  await Promise.all(
+    entries.map(async ([hermesWorld, tileWorld]) => {
+      try {
+        const url = worldSettingsJsonUrl(worldMapConfig.baseUrl, tileWorld);
+        const r = await fetchWithTimeout(url, { timeout: 5000 });
+        const body = await r.json().catch(() => null);
+        if (!r.ok || !body) return;
+        const parsed = parseSquaremapWorldZoom(body);
+        if (parsed) byHermes[hermesWorld] = parsed;
+      } catch {
+        /* upstream offline */
+      }
+    }),
+  );
+  squaremapZoomCache = { at: now, byHermes };
+  return byHermes;
+}
 
 let tick = 0;
 /** @type {any} */
@@ -548,6 +581,7 @@ const server = http.createServer(async (req, res) => {
     if (!worldMapConfig) {
       return sendJson(res, 200, { ok: false, enabled: false });
     }
+    const worldZoomByHermes = await fetchSquaremapZoomByHermesWorld();
     return sendJson(res, 200, {
       ok: true,
       enabled: true,
@@ -555,6 +589,7 @@ const server = http.createServer(async (req, res) => {
       hermesToTileWorld: worldMapConfig.hermesToTileWorld,
       iframeDefaults: worldMapConfig.iframeDefaults,
       tile: worldMapConfig.tile,
+      worldZoomByHermes,
     });
   }
 

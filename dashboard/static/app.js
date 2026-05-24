@@ -125,10 +125,30 @@ function setTab(name) {
   if (name === 'map') requestAnimationFrame(() => refreshTerrainMap());
 }
 
+function resolveMapZoom(cfg, hermesWorld) {
+  const requested = cfg.iframeDefaults?.zoom ?? 4;
+  const lim = cfg.worldZoomByHermes?.[hermesWorld];
+  if (!lim) return requested;
+  return Math.min(Math.max(requested, lim.def), lim.uiMax);
+}
+
+function patchTerrainZoomHint(hermesWorld) {
+  const el = document.getElementById('terrainZoomHint');
+  if (!el || !worldMapConfig?.enabled) return;
+  const lim = worldMapConfig.worldZoomByHermes?.[hermesWorld];
+  if (!lim) {
+    el.textContent = '';
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.textContent = `Squaremap zoom: default ${lim.def}, max ${lim.max} (+${lim.extra} extra). Closer view: raise zoom.maximum / zoom.extra in Squaremap on the MC server, then re-render tiles.`;
+}
+
 function buildTerrainIframeUrl(cfg, hermesWorld) {
   const tileWorld = cfg.hermesToTileWorld?.[hermesWorld];
   if (!tileWorld) return null;
-  const zoom = cfg.iframeDefaults?.zoom ?? 4;
+  const zoom = resolveMapZoom(cfg, hermesWorld);
   const u = new URL('/', cfg.baseUrl);
   u.searchParams.set('world', tileWorld);
   u.searchParams.set('zoom', String(zoom));
@@ -167,6 +187,7 @@ function refreshTerrainMap() {
     terrainLoadedUrl = next;
     frame.src = next;
   }
+  patchTerrainZoomHint(state.world);
 }
 
 async function fetchMapConfig() {

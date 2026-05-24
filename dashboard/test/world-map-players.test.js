@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { playerNamesFromMarkersJson } from '../lib/world-map.js';
+import { playerNamesFromMarkersJson, parseSquaremapWorldZoom, initialMapZoom } from '../lib/world-map.js';
 
 describe('world-map players', () => {
   it('playerNamesFromMarkersJson reads GeoJSON features', () => {
@@ -20,5 +20,23 @@ describe('world-map players', () => {
     ];
     const names = playerNamesFromMarkersJson(body);
     assert.deepEqual(names.sort(), ['Alex', 're44']);
+  });
+});
+
+describe('squaremap zoom', () => {
+  it('parseSquaremapWorldZoom reads max and extra', () => {
+    assert.deepEqual(parseSquaremapWorldZoom({ zoom: { def: 3, max: 3, extra: 2 } }), {
+      def: 3,
+      max: 3,
+      extra: 2,
+      uiMax: 5,
+    });
+  });
+
+  it('initialMapZoom clamps registry default to uiMax', () => {
+    const cfg = { iframeDefaults: { zoom: 6 }, hermesToTileWorld: {}, baseUrl: 'http://x' };
+    const lim = { def: 3, max: 3, extra: 2, uiMax: 5 };
+    assert.equal(initialMapZoom(cfg, lim), 5);
+    assert.equal(initialMapZoom({ ...cfg, iframeDefaults: { zoom: 4 } }, lim), 4);
   });
 });

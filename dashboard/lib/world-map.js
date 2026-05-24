@@ -62,12 +62,12 @@ export function hermesToTileWorldKey(config, hermesWorld) {
 /**
  * @param {WorldMapConfig} config
  * @param {string} hermesWorld
- * @param {{ zoom?: number, x?: number, z?: number }} [opts]
+ * @param {{ zoom?: number, x?: number, z?: number, squaremapZoom?: { uiMax: number, def: number, max: number, extra: number } | null }} [opts]
  */
 export function buildTerrainIframeUrl(config, hermesWorld, opts = {}) {
   const tileWorld = tileWorldForHermes(config, hermesWorld);
   if (!tileWorld) return null;
-  const zoom = opts.zoom ?? config.iframeDefaults?.zoom ?? 4;
+  const zoom = initialMapZoom(config, opts.squaremapZoom);
   const u = new URL('/', config.baseUrl);
   u.searchParams.set('world', tileWorld);
   u.searchParams.set('zoom', String(zoom));
@@ -173,4 +173,45 @@ export function playersMarkerUrls(baseUrl, tileWorld) {
 export function settingsJsonUrl(baseUrl) {
   const base = baseUrl.replace(/\/$/, '');
   return `${base}/tiles/settings.json`;
+}
+
+/**
+ * Per-world Squaremap UI settings (includes zoom limits served to the web map).
+ * @param {string} baseUrl
+ * @param {string} tileWorld
+ */
+export function worldSettingsJsonUrl(baseUrl, tileWorld) {
+  const base = baseUrl.replace(/\/$/, '');
+  const w = encodeURIComponent(tileWorld);
+  return `${base}/tiles/${w}/settings.json`;
+}
+
+/**
+ * @param {unknown} body — Squaremap `tiles/{world}/settings.json`
+ * @returns {{ def: number, max: number, extra: number, uiMax: number } | null}
+ */
+export function parseSquaremapWorldZoom(body) {
+  const z = body && typeof body === 'object' ? body.zoom : null;
+  if (!z || typeof z !== 'object') return null;
+  const max = Number(z.max);
+  if (!Number.isFinite(max)) return null;
+  const def = Number(z.def);
+  const extra = Number(z.extra);
+  return {
+    def: Number.isFinite(def) ? def : max,
+    max,
+    extra: Number.isFinite(extra) ? extra : 0,
+    uiMax: max + (Number.isFinite(extra) ? extra : 0),
+  };
+}
+
+/**
+ * Initial iframe zoom: registry default clamped to Squaremap's allowed UI range.
+ * @param {WorldMapConfig} config
+ * @param {{ def: number, max: number, extra: number, uiMax: number } | null | undefined} squaremapZoom
+ */
+export function initialMapZoom(config, squaremapZoom) {
+  const requested = config.iframeDefaults?.zoom ?? 4;
+  if (!squaremapZoom) return requested;
+  return Math.min(Math.max(requested, squaremapZoom.def), squaremapZoom.uiMax);
 }

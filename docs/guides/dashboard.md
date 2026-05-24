@@ -96,6 +96,22 @@ Install a tile map plugin on **Paper/Folia** (Squaremap, Dynmap, etc.). Point `w
 
 Hermes does not ship the plugin; it only links and proxies JSON when configured.
 
+#### Map zoom (Squaremap)
+
+The dashboard iframe does **not** cap zoom — limits come from **Squaremap on the Minecraft server**. The UI reads `http://<map-host>/tiles/<tile-world>/settings.json` (exposed on `GET /api/map/config` as `worldZoomByHermes`) and shows the current range under the map.
+
+Example for `minecraft_overworld` today:
+
+```json
+"zoom": { "def": 3, "max": 3, "extra": 2 }
+```
+
+- **`max`** — highest zoom level with native tiles (sharp). Raise this in Squaremap’s world config on the **MC server** (under `plugins/squaremap/`, world-specific settings; exact file layout depends on Squaremap version), then run a **full render** for that world so new zoom levels exist (`/squaremap fullrender <world>` or the plugin’s equivalent).
+- **`extra`** — additional “overzoom” steps beyond `max` (scaled tiles, less sharp). Safe to bump if you only need a bit more pinch-zoom without re-rendering.
+- **`iframeDefaults.zoom`** in `agent-registry.json` — **starting** zoom when the dashboard loads the iframe (clamped to `max + extra`). Use e.g. `"zoom": 5` to open closer when `max` 3 and `extra` 2 allow UI zoom 5.
+
+The registry `worldMap.tile.maxZoom` field is for a possible future native Leaflet map in Hermes; it does **not** change Squaremap’s iframe.
+
 ## Kanban (steward ops)
 
 The center **Kanban** tab reads cards from [Hermes Kanban Bridge](https://github.com/GumbyEnder/hermes-kanban) (`HERMES_KANBAN_BASE`, default `http://127.0.0.1:27124`) when it is running. If the bridge is down, the dashboard **falls back** to `hermes kanban --board <id> list --json` on the same machine (requires `hermes` on `PATH`, same board as `hermes kanban list`).

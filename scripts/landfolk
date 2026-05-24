@@ -1,0 +1,748 @@
+#!/usr/bin/env bash
+# landfolk — single CLI for the Landfolk sub-project of HermesCraft.
+#
+# Consolidates the older `landfolk-session.sh` (operator UX) and
+# `landfolk-control.sh` (per-bot engine) behind one verb set, one roster
+# file, one state directory, and one mental model:
+#
+#   PLAYERS  flint, mason, gatherer, steward, …   (from data/agent-models.json)
+#   MODES    kanban       — bot + connect-only watchdog, NO Hermes agent.
+#                          Kanban gateway workers drive the bot per card.
+#            continuous   — bot + full watchdog + always-on Hermes agent loop.
+#   DAEMONS  listener, supervisor, pauser          (operator support)
+#   GATEWAY  hermes gateway                        (external; observed, not
+#                                                   touched without --with-gateway)
+#
+# Usage:
+#   scripts/landfolk start    [--players a,b,c] [--mode kanban|continuous]
+#                             [--without listener|supervisor|pauser|daemons]
+#                             [--no-wait]
+#   scripts/landfolk stop     [--players a,b,c] [--keep listener|supervisor|pauser|daemons]
+#                             [--with-gateway] [--no-reclaim]
+#   scripts/landfolk enable   <player> [--mode kanban|continuous]
+#   scripts/landfolk disable  <player>
+#   scripts/landfolk restart  <target>
+#       target ∈ <player> | players | daemons | listener | supervisor | pauser
+#                | gateway | all
+#   scripts/landfolk status   [--json]
+#   scripts/landfolk logs     [agents|<player>|listener|supervisor|pauser|gateway] [opts]
+#       (see `scripts/landfolk logs --help` for tail/follow/profile/quiet flags)
+#   scripts/landfolk chat     <player> "<message>"
+#   scripts/landfolk fix      <issue> [args]
+#       issue ∈ reconnect <player> | clean | tp <player> <x> <y> <z>
+#               | unstick <player>
+#   scripts/landfolk players  list           # roster from data/agent-models.json
+#   scripts/landfolk players  show <player>  # resolved port/model/provider
+#
+# Defaults (override via env):
+#   MC_HOST=192.168.1.202
+#   BOT_MOVEMENT_PROFILE=slow
+#   WATCHDOG_CONNECT_ONLY=1             (kanban mode)
+#   PLAYERS_DEFAULT=flint,mason,steward
+#   LOG_DIR=/tmp/hermescraft
+#   STATE_DIR=$LOG_DIR/state            (CLI pidfiles + roster)
+#   ROSTER_FILE=$LOG_DIR/active-players (one "name mode" per line)
+#
+# Migration note: prior pidfiles under $LOG_DIR/session-state/ are
+# auto-moved to $LOG_DIR/state/ on first invocation.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+MC_HOST="${MC_HOST:-192.168.1.202}"
+BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-slow}"
+PLAYERS_DEFAULT="${PLAYERS_DEFAULT:-${PROFILES_DEFAULT:-flint,mason,steward}}"
+LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
+STATE_DIR="${STATE_DIR:-$LOG_DIR/state}"
+ROSTER_FILE="${ACTIVE_PROFILES_FILE:-$LOG_DIR/active-players}"
+AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
+RESOLVER="$SCRIPT_DIR/scripts/resolve-agent-model.py"
+ENGINE="$SCRIPT_DIR/scripts/landfolk-control.sh"
+DEFAULT_MODE="${LANDFOLK_DEFAULT_MODE:-kanban}"
+
+mkdir -p "$LOG_DIR" "$STATE_DIR"
+
+# One-shot migration of pidfiles + roster from the legacy session-state
+# layout (landfolk-session.sh era). Safe to re-run.
+_migrate_legacy_state() {
+  local legacy="$LOG_DIR/session-state"
+  if [ -d "$legacy" ]; then
+    local moved=0 f base
+    for f in "$legacy"/*.pid; do
+      [ -f "$f" ] || continue
+      base="$(basename "$f")"
+      if [ ! -f "$STATE_DIR/$base" ]; then
+        mv "$f" "$STATE_DIR/$base" && moved=$((moved + 1))
+      else
+        rm -f "$f"
+      fi
+    done
+    rmdir "$legacy" 2>/dev/null || true
+    [ "$moved" -gt 0 ] && echo "  ${C_DIM}migrated $moved pidfile(s) from session-state/ → state/${C_RST}" >&2
+  fi
+  # Legacy roster file (no mode column). Upgrade it in-place.
+  local legacy_roster="$LOG_DIR/active-profiles"
+  if [ -f "$legacy_roster" ] && [ ! -f "$ROSTER_FILE" ]; then
+    awk 'NF{print $1 " kanban"}' "$legacy_roster" > "$ROSTER_FILE"
+    rm -f "$legacy_roster"
+  fi
+}
+
+# ─── ANSI ──────────────────────────────────────────────────────────────────
+if [ -t 1 ]; then
+  C_OK=$'\033[32m'; C_WARN=$'\033[33m'; C_ERR=$'\033[31m'
+  C_DIM=$'\033[2m'; C_BOLD=$'\033[1m'; C_RST=$'\033[0m'
+else
+  C_OK=""; C_WARN=""; C_ERR=""; C_DIM=""; C_BOLD=""; C_RST=""
+fi
+ok()   { echo "  ${C_OK}✓${C_RST} $*"; }
+warn() { echo "  ${C_WARN}!${C_RST} $*"; }
+err()  { echo "  ${C_ERR}✗${C_RST} $*" >&2; }
+dim()  { echo "  ${C_DIM}$*${C_RST}"; }
+h1()   { echo; echo "── $* ──"; }
+
+usage() { sed -n '2,46p' "$0" | sed -E 's/^# ?//'; exit "${1:-0}"; }
+
+_migrate_legacy_state
+
+# ─── Roster helpers ────────────────────────────────────────────────────────
+
+# Canonical roster from agent-models.json (lowercase, one per line).
+canonical_players() {
+  python3 "$RESOLVER" agent-names "$AGENT_MODELS_JSON" 2>/dev/null \
+    | tr '[:upper:]' '[:lower:]' | awk 'NF'
+}
+
+is_canonical_player() {
+  local p="$1" line
+  while IFS= read -r line; do
+    [ "$line" = "$p" ] && return 0
+  done < <(canonical_players)
+  return 1
+}
+
+player_api_port() {
+  BASE_API_PORT="${BASE_API_PORT:-3001}" \
+    python3 "$RESOLVER" api-port "$1" "$AGENT_MODELS_JSON" 2>/dev/null
+}
+
+player_viewer_port() {
+  local api; api="$(player_api_port "$1")"
+  [ -z "$api" ] && return 1
+  echo $((api + 1000))
+}
+
+player_model()    { python3 "$RESOLVER" "$1" model    "$AGENT_MODELS_JSON" 2>/dev/null; }
+player_provider() { python3 "$RESOLVER" "$1" provider "$AGENT_MODELS_JSON" 2>/dev/null; }
+
+# Convert a CSV (or empty → default) of players into a deduped lowercase
+# list, validated against canonical names.
+parse_players_csv() {
+  local csv="${1:-$PLAYERS_DEFAULT}" out=() p key seen
+  IFS=',' read -r -a parts <<< "$csv"
+  for p in "${parts[@]}"; do
+    key="$(echo "$p" | tr '[:upper:]' '[:lower:]' | xargs)"
+    [ -z "$key" ] && continue
+    if ! is_canonical_player "$key"; then
+      err "unknown player: $p (try: scripts/landfolk players list)"; return 1
+    fi
+    seen=0
+    for s in "${out[@]:-}"; do [ "$s" = "$key" ] && { seen=1; break; }; done
+    [ "$seen" = 0 ] && out+=("$key")
+  done
+  printf '%s\n' "${out[@]:-}"
+}
+
+# Roster file format: one line "name mode" (mode ∈ kanban|continuous).
+roster_players() {
+  [ -f "$ROSTER_FILE" ] || return 0
+  awk 'NF && $1 !~ /^#/ {print tolower($1)}' "$ROSTER_FILE"
+}
+roster_mode_for() {
+  local target="$1"
+  [ -f "$ROSTER_FILE" ] || { echo "$DEFAULT_MODE"; return; }
+  local line m
+  line="$(awk -v t="$target" 'tolower($1)==t {print; exit}' "$ROSTER_FILE")"
+  m="$(echo "$line" | awk '{print $2}')"
+  echo "${m:-$DEFAULT_MODE}"
+}
+roster_upsert() {
+  local name="$1" mode="${2:-$DEFAULT_MODE}" tmp
+  tmp="$(mktemp "${ROSTER_FILE}.XXXX")"
+  [ -f "$ROSTER_FILE" ] && awk -v t="$name" 'tolower($1)!=t' "$ROSTER_FILE" > "$tmp" || true
+  printf '%s %s\n' "$name" "$mode" >> "$tmp"
+  mv "$tmp" "$ROSTER_FILE"
+}
+roster_remove() {
+  local name="$1" tmp
+  [ -f "$ROSTER_FILE" ] || return 0
+  tmp="$(mktemp "${ROSTER_FILE}.XXXX")"
+  awk -v t="$name" 'tolower($1)!=t' "$ROSTER_FILE" > "$tmp"
+  mv "$tmp" "$ROSTER_FILE"
+}
+
+# ─── Daemon helpers (operator-side, owned by this CLI) ────────────────────
+# Maps short daemon name → script path. Pidfiles under $STATE_DIR.
+
+daemon_script() {
+  case "$1" in
+    listener)   echo "$SCRIPT_DIR/scripts/steward-chat-listener.py" ;;
+    supervisor) echo "$SCRIPT_DIR/scripts/steward-supervisor.py" ;;
+    pauser)     echo "$SCRIPT_DIR/scripts/inactive-cards-pauser.py" ;;
+    *)          return 1 ;;
+  esac
+}
+
+# Long pidfile name for legacy compatibility (matches files migrated from
+# session-state/).
+daemon_pidfile() {
+  case "$1" in
+    listener)   echo "$STATE_DIR/steward-chat-listener.pid" ;;
+    supervisor) echo "$STATE_DIR/steward-supervisor.pid" ;;
+    pauser)     echo "$STATE_DIR/inactive-cards-pauser.pid" ;;
+  esac
+}
+
+daemon_pid()   { cat "$(daemon_pidfile "$1")" 2>/dev/null || true; }
+daemon_alive() { local p; p="$(daemon_pid "$1")"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
+
+daemon_start() {
+  local name="$1" extra_env="${2:-}" script log pidf
+  script="$(daemon_script "$name")" || { err "unknown daemon: $name"; return 1; }
+  pidf="$(daemon_pidfile "$name")"
+  log="$LOG_DIR/$(basename "$script" .py).log"
+  if daemon_alive "$name"; then
+    warn "$name already running (pid $(daemon_pid "$name"))"; return 0
+  fi
+  (
+    cd "$SCRIPT_DIR"
+    # shellcheck disable=SC2086
+    nohup env $extra_env python3 -u "$script" >"$log" 2>&1 &
+    echo $! > "$pidf"
+    disown
+  )
+  sleep 1
+  if daemon_alive "$name"; then
+    ok "$name started (pid $(daemon_pid "$name")) — log $log"
+  else
+    err "$name failed to start; see $log"
+    tail -5 "$log" 2>/dev/null | sed 's/^/    /'
+  fi
+}
+
+daemon_stop() {
+  local name="$1" pid pidf script_basename
+  pid="$(daemon_pid "$name")"
+  pidf="$(daemon_pidfile "$name")"
+  script_basename="$(basename "$(daemon_script "$name")")"
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+    dim "$name not running"
+    rm -f "$pidf"
+    pkill -f "scripts/$script_basename" 2>/dev/null && warn "killed orphan $name process(es)" || true
+    return 0
+  fi
+  kill "$pid" 2>/dev/null || true
+  sleep 1
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null && warn "$name (pid $pid) force-killed (SIGKILL)" || err "$name (pid $pid) won't die"
+  else
+    ok "$name (pid $pid) stopped"
+  fi
+  rm -f "$pidf"
+  pkill -f "scripts/$script_basename" 2>/dev/null || true
+}
+
+# ─── Player (bot) helpers — delegate to engine ─────────────────────────────
+
+# Bring one player up in the requested mode. Engine handles bot + watchdog.
+# Kanban mode passes --no-agent so we never spawn the continuous agent at
+# all (the old script started it then SIGKILLed it — a race).
+player_start_one() {
+  local player="$1" mode="${2:-$DEFAULT_MODE}"
+  local port vport
+  port="$(player_api_port "$player")"
+  vport="$(player_viewer_port "$player")"
+  [ -z "$port" ] && { err "$player has no api_port in $AGENT_MODELS_JSON"; return 1; }
+
+  local engine_args=( enable --profiles "$player" )
+  local engine_env=( "MC_HOST=$MC_HOST" "VIEWER_PORT=$vport" "BOT_MOVEMENT_PROFILE=$BOT_MOVEMENT_PROFILE" )
+  if [ "$mode" = "kanban" ]; then
+    engine_args+=( --no-agent )
+    engine_env+=( "WATCHDOG_CONNECT_ONLY=1" )
+  fi
+  # shellcheck disable=SC2086
+  env "${engine_env[@]}" "$ENGINE" "${engine_args[@]}" >>"$LOG_DIR/landfolk-control.log" 2>&1 || true
+
+  if [ "${LANDFOLK_NO_WAIT:-0}" = "1" ]; then
+    ok "$player launching (port=$port, mode=$mode; not waiting for connect)"
+    return 0
+  fi
+
+  local i=0
+  until curl -sf "http://127.0.0.1:$port/health" 2>/dev/null \
+        | python3 -c "import sys,json;d=json.load(sys.stdin);sys.exit(0 if d.get('connected')==True else 1)" 2>/dev/null; do
+    i=$((i + 1))
+    if [ $i -gt 30 ]; then
+      err "$player didn't connect within 60s (check $LOG_DIR/bot-$player.log)"
+      return 1
+    fi
+    sleep 2
+  done
+  ok "$player up (port=$port, viewer=:$vport, mode=$mode)"
+}
+
+player_stop_one() {
+  local player="$1"
+  "$ENGINE" stop --profiles "$player" >>"$LOG_DIR/landfolk-control.log" 2>&1 || true
+  ok "$player stopped"
+}
+
+# Cards on landfolk-ops that are still `running` are reclaimed so kanban
+# workers exit cleanly before we touch their bots.
+reclaim_running() {
+  local board="landfolk-ops" filter="${1:-}"
+  local cmd=( hermes kanban --board "$board" list )
+  [ -n "$filter" ] && cmd+=( --assignee "$filter" )
+  "${cmd[@]}" 2>/dev/null \
+    | awk '$3=="running"{print $2}' \
+    | while read -r tid; do
+        [ -z "$tid" ] && continue
+        hermes kanban --board "$board" reclaim "$tid" \
+          --reason "landfolk stop${filter:+ $filter}" >/dev/null 2>&1 \
+          && dim "reclaimed $tid"
+      done || true
+}
+
+# ─── Verbs ─────────────────────────────────────────────────────────────────
+
+cmd_start() {
+  local players_csv="" mode="$DEFAULT_MODE" no_wait=0
+  local with_listener=1 with_supervisor=1 with_pauser=1
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --players)  players_csv="$2"; shift 2 ;;
+      --mode)     mode="$2"; shift 2 ;;
+      --no-wait)  no_wait=1; shift ;;
+      --without)
+        IFS=',' read -r -a parts <<< "$2"
+        for w in "${parts[@]}"; do
+          case "$w" in
+            daemons)    with_listener=0; with_supervisor=0; with_pauser=0 ;;
+            listener)   with_listener=0 ;;
+            supervisor) with_supervisor=0 ;;
+            pauser)     with_pauser=0 ;;
+            *) err "unknown --without target: $w"; return 1 ;;
+          esac
+        done
+        shift 2 ;;
+      --no-listener)   with_listener=0; shift ;;
+      --no-supervisor) with_supervisor=0; shift ;;
+      --no-pauser)     with_pauser=0; shift ;;
+      -h|--help) usage 0 ;;
+      *) err "unknown flag: $1"; return 1 ;;
+    esac
+  done
+  case "$mode" in kanban|continuous) ;; *) err "invalid mode: $mode"; return 1 ;; esac
+
+  [ "$no_wait" = 1 ] && export LANDFOLK_NO_WAIT=1
+
+  local players_list
+  players_list="$(parse_players_csv "$players_csv")" || return 1
+  [ -z "$players_list" ] && { err "no players specified"; return 1; }
+
+  h1 "starting players (mode=$mode)"
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    player_start_one "$p" "$mode" || warn "$p start had errors (see logs)"
+    roster_upsert "$p" "$mode"
+  done <<< "$players_list"
+  ok "roster → $ROSTER_FILE ($(wc -l <"$ROSTER_FILE" | tr -d ' ') player(s))"
+
+  if [ "$with_listener" = 1 ];   then h1 "starting daemon: listener";   daemon_start listener;   fi
+  if [ "$with_supervisor" = 1 ]; then h1 "starting daemon: supervisor"; daemon_start supervisor; fi
+  if [ "$with_pauser" = 1 ];     then h1 "starting daemon: pauser";     ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE"; fi
+
+  h1 "ready"
+  cmd_status
+}
+
+cmd_stop() {
+  local players_csv="" with_gateway=0 do_reclaim=1
+  local keep_listener=0 keep_supervisor=0 keep_pauser=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --players) players_csv="$2"; shift 2 ;;
+      --keep)
+        IFS=',' read -r -a parts <<< "$2"
+        for k in "${parts[@]}"; do
+          case "$k" in
+            daemons)    keep_listener=1; keep_supervisor=1; keep_pauser=1 ;;
+            listener)   keep_listener=1 ;;
+            supervisor) keep_supervisor=1 ;;
+            pauser)     keep_pauser=1 ;;
+            *) err "unknown --keep target: $k"; return 1 ;;
+          esac
+        done
+        shift 2 ;;
+      --keep-listener)   keep_listener=1; shift ;;
+      --keep-supervisor) keep_supervisor=1; shift ;;
+      --keep-pauser)     keep_pauser=1; shift ;;
+      --with-gateway)    with_gateway=1; shift ;;
+      --no-reclaim)      do_reclaim=0; shift ;;
+      -h|--help) usage 0 ;;
+      *) err "unknown flag: $1"; return 1 ;;
+    esac
+  done
+
+  if [ -z "$players_csv" ] && [ "$do_reclaim" = 1 ]; then
+    h1 "reclaiming running kanban workers"
+    reclaim_running
+  fi
+
+  if [ "$keep_supervisor" != 1 ]; then h1 "stopping supervisor"; daemon_stop supervisor; fi
+  if [ "$keep_listener"   != 1 ]; then h1 "stopping listener";   daemon_stop listener;   fi
+  if [ -z "$players_csv" ]; then
+    if [ "$keep_pauser" != 1 ]; then
+      h1 "stopping pauser"; daemon_stop pauser
+      rm -f "$ROSTER_FILE" 2>/dev/null && dim "cleared $ROSTER_FILE"
+    fi
+  elif [ -f "$ROSTER_FILE" ]; then
+    local pl
+    pl="$(parse_players_csv "$players_csv")" || return 1
+    while IFS= read -r p; do [ -n "$p" ] && roster_remove "$p"; done <<< "$pl"
+    dim "pruned [$players_csv] from $ROSTER_FILE"
+  fi
+
+  h1 "stopping players"
+  if [ -z "$players_csv" ]; then
+    local all_csv
+    all_csv="$(canonical_players | paste -sd, -)"
+    "$ENGINE" stop --profiles "$all_csv" 2>&1 \
+      | grep -E "stopped|not running|not tracked" | sed 's/^/  /' || true
+  else
+    local pl
+    pl="$(parse_players_csv "$players_csv")" || return 1
+    while IFS= read -r p; do [ -n "$p" ] && player_stop_one "$p"; done <<< "$pl"
+  fi
+
+  if [ "$with_gateway" = 1 ]; then
+    h1 "stopping hermes gateway"
+    if command -v hermes >/dev/null 2>&1 && hermes gateway stop >/dev/null 2>&1; then
+      ok "hermes gateway stopped"
+    else
+      warn "hermes gateway stop failed or gateway was not running"
+    fi
+  fi
+
+  ok "session down"
+}
+
+cmd_enable() {
+  local player="${1:-}"; shift || true
+  [ -z "$player" ] && { err "enable needs a player name"; return 1; }
+  local mode="$DEFAULT_MODE"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --mode) mode="$2"; shift 2 ;;
+      *) err "unknown flag: $1"; return 1 ;;
+    esac
+  done
+  local pl; pl="$(parse_players_csv "$player")" || return 1
+  player_start_one "$pl" "$mode" && roster_upsert "$pl" "$mode"
+}
+
+cmd_disable() {
+  local player="${1:-}"
+  [ -z "$player" ] && { err "disable needs a player name"; return 1; }
+  local pl; pl="$(parse_players_csv "$player")" || return 1
+  reclaim_running "$pl"
+  player_stop_one "$pl"
+  roster_remove "$pl"
+}
+
+cmd_restart() {
+  local target="${1:-}"
+  [ -z "$target" ] && { err "restart needs a target"; return 1; }
+  case "$target" in
+    players|all-bots)
+      local mode; mode="$DEFAULT_MODE"
+      local roster
+      roster="$(roster_players)"
+      [ -z "$roster" ] && { err "roster empty — nothing to restart"; return 1; }
+      while IFS= read -r p; do [ -n "$p" ] && { reclaim_running "$p"; player_stop_one "$p"; }; done <<< "$roster"
+      sleep 1
+      while IFS= read -r p; do
+        [ -z "$p" ] && continue
+        mode="$(roster_mode_for "$p")"
+        player_start_one "$p" "$mode"
+      done <<< "$roster"
+      ;;
+    daemons)
+      for d in listener supervisor pauser; do daemon_stop "$d"; done
+      daemon_start listener
+      daemon_start supervisor
+      ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE"
+      ;;
+    listener|supervisor)
+      daemon_stop "$target"; daemon_start "$target" ;;
+    pauser)
+      daemon_stop pauser
+      ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE" ;;
+    gateway)
+      if command -v hermes >/dev/null 2>&1; then
+        hermes gateway stop >/dev/null 2>&1 || true
+        hermes gateway run --replace >/dev/null 2>&1 &
+        disown
+        ok "hermes gateway restart requested"
+      else
+        err "hermes CLI not on PATH"
+      fi
+      ;;
+    all)
+      cmd_stop
+      sleep 1
+      cmd_start ;;
+    *)
+      # Treat as a player name
+      if is_canonical_player "$(echo "$target" | tr '[:upper:]' '[:lower:]')"; then
+        local p="$(echo "$target" | tr '[:upper:]' '[:lower:]')"
+        local mode; mode="$(roster_mode_for "$p")"
+        reclaim_running "$p"
+        player_stop_one "$p"
+        sleep 1
+        player_start_one "$p" "$mode"
+      else
+        err "unknown restart target: $target"
+        return 1
+      fi
+      ;;
+  esac
+}
+
+cmd_status() {
+  local want_json=0
+  [ "${1:-}" = "--json" ] && want_json=1
+
+  if [ "$want_json" = 1 ]; then
+    python3 - <<'PYEOF'
+import json, subprocess, urllib.request, os
+players = subprocess.run(["python3", os.environ["RESOLVER"], "agent-names", os.environ["AGENT_MODELS_JSON"]],
+                         capture_output=True, text=True).stdout.split()
+out = {"players": {}}
+for raw in players:
+    p = raw.lower()
+    port = subprocess.run(["python3", os.environ["RESOLVER"], "api-port", raw, os.environ["AGENT_MODELS_JSON"]],
+                          capture_output=True, text=True).stdout.strip()
+    rec = {"port": int(port) if port else None}
+    if port:
+        try:
+            r = urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=1)
+            d = json.loads(r.read())
+            rec.update({"connected": d.get("connected"), "pos": d.get("position"),
+                        "holding": d.get("holding"), "uptime": d.get("uptime_sec")})
+        except Exception:
+            rec["reachable"] = False
+    out["players"][p] = rec
+print(json.dumps(out, indent=2))
+PYEOF
+    return
+  fi
+
+  h1 "MC server ($MC_HOST:25565)"
+  nc -z -w 2 "$MC_HOST" 25565 >/dev/null 2>&1 && ok "reachable" || err "unreachable"
+
+  h1 "players"
+  printf "  %-10s %-10s %-6s %-9s %-22s %-14s %s\n" "name" "mode" "port" "viewer" "position" "holding" "uptime"
+  local p port vport mode info connected pos holding uptime conn_mark
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    port="$(player_api_port "$p")"
+    vport="$(player_viewer_port "$p")"
+    mode="$(roster_mode_for "$p")"
+    info="$(curl -sf "http://127.0.0.1:$port/health" 2>/dev/null \
+      | python3 -c "
+import sys, json
+try:
+    d=json.load(sys.stdin); pos=d.get('position') or {}
+    print(f\"connected={d.get('connected')};pos={pos.get('x',0):.1f},{pos.get('y',0):.1f},{pos.get('z',0):.1f};holding={d.get('holding') or 'none'};uptime={d.get('uptime_sec',0)}\")
+except Exception: pass" 2>/dev/null || true)"
+    if [ -z "$info" ]; then
+      printf "  %-10s %-10s %-6s %-9s %-22s %-14s %s\n" "$p" "$mode" "${port:-?}" ":${vport:-?}" "DOWN" "-" "-"
+    else
+      connected="$(echo "$info" | sed -E 's/.*connected=([^;]*).*/\1/')"
+      pos="$(echo "$info" | sed -E 's/.*pos=([^;]*).*/\1/')"
+      holding="$(echo "$info" | sed -E 's/.*holding=([^;]*).*/\1/')"
+      uptime="$(echo "$info" | sed -E 's/.*uptime=([^;]*).*/\1/')"
+      [ "$connected" = "True" ] && conn_mark="${C_OK}OK${C_RST}" || conn_mark="${C_ERR}--${C_RST}"
+      printf "  %-10s %-10s %-6s %-9s %b %-19s %-14s %ss\n" "$p" "$mode" "$port" ":$vport" "$conn_mark" "$pos" "$holding" "$uptime"
+    fi
+  done < <(canonical_players)
+
+  h1 "daemons"
+  for d in listener supervisor pauser; do
+    if daemon_alive "$d"; then ok "$d running (pid $(daemon_pid "$d"))"
+    else dim "$d stopped"; fi
+  done
+
+  h1 "ambient services"
+  if pgrep -f "hermes_cli.*gateway" >/dev/null 2>&1; then ok "hermes gateway running"; else warn "hermes gateway NOT running (run: hermes gateway run --replace)"; fi
+  if lsof -nP -iTCP:9119 -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then ok "hermes dashboard on :9119"; else dim "hermes dashboard not listening"; fi
+
+  h1 "kanban (landfolk-ops)"
+  if command -v hermes >/dev/null 2>&1; then
+    hermes kanban --board landfolk-ops stats 2>&1 | grep -E "By status|running|blocked|ready|todo|done" | head -8 | sed 's/^/  /' || true
+  fi
+
+  h1 "roster"
+  if [ -s "$ROSTER_FILE" ]; then
+    sed 's/^/  /' "$ROSTER_FILE"
+  else
+    dim "no active roster (run: scripts/landfolk start)"
+  fi
+}
+
+cmd_logs() {
+  if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    sed -n '24,38p' "$0" | sed -E 's/^# ?//'; return 0
+  fi
+  local target="agents"
+  if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then target="$1"; shift; fi
+  local lines=20 follow="" profiles_csv="" no_bot=0 no_color=0 quiet=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tail) lines="$2"; shift 2 ;;
+      --follow|-f) follow="-f"; shift ;;
+      --profiles|--players) profiles_csv="$2"; shift 2 ;;
+      --no-bot-logs) no_bot=1; shift ;;
+      --no-color) no_color=1; shift ;;
+      --quiet|-q) quiet=1; shift ;;
+      *) err "unknown flag: $1"; return 1 ;;
+    esac
+  done
+  case "$target" in
+    agents|"")
+      local agg_args=( --profiles "${profiles_csv:-$(roster_players | paste -sd, - || echo "$PLAYERS_DEFAULT")}" --tail "$lines" )
+      [ "$no_bot"   = 1 ] && agg_args+=( --no-bot-logs )
+      [ "$no_color" = 1 ] && agg_args+=( --no-color )
+      [ "$quiet"    = 1 ] && agg_args+=( --quiet )
+      exec python3 -u "$SCRIPT_DIR/scripts/landfolk-logs-aggregate.py" "${agg_args[@]}"
+      ;;
+    flint|mason|gatherer|steward|barley) tail $follow -n "$lines" "$LOG_DIR/bot-$target.log" ;;
+    listener)   tail $follow -n "$lines" "$LOG_DIR/steward-chat-listener.log" ;;
+    supervisor) tail $follow -n "$lines" "$LOG_DIR/steward-supervisor.log" ;;
+    pauser)     tail $follow -n "$lines" "$LOG_DIR/inactive-cards-pauser.log" ;;
+    gateway)    tail $follow -n "$lines" "$LOG_DIR/gateway.log" 2>/dev/null || warn "no gateway log file" ;;
+    *) err "unknown logs target: $target"; return 1 ;;
+  esac
+}
+
+cmd_chat() {
+  local player="${1:-}"; shift || true
+  [ -z "$player" ] && { err "chat needs <player> \"message\""; return 1; }
+  local pl; pl="$(parse_players_csv "$player")" || return 1
+  local port; port="$(player_api_port "$pl")"
+  [ -z "$port" ] && { err "no port for $pl"; return 1; }
+  MC_API_URL="http://localhost:$port" "$SCRIPT_DIR/bin/mc" chat "$*" 2>&1 | head -3
+}
+
+cmd_fix() {
+  local issue="${1:-}"; shift || true
+  case "$issue" in
+    reconnect)
+      local player="${1:-}"; [ -z "$player" ] && { err "fix reconnect needs a player"; return 1; }
+      local pl; pl="$(parse_players_csv "$player")" || return 1
+      local port; port="$(player_api_port "$pl")"
+      curl -sf -X POST "http://127.0.0.1:$port/connect" -H "Content-Type: application/json" -d '{"force":true}' >/dev/null \
+        && ok "force-reconnect sent to $pl (:$port)" \
+        || err "force-reconnect FAILED for $pl"
+      ;;
+    clean)
+      h1 "cleaning orphan node bots + stale pidfiles"
+      local tracked=""
+      for f in /tmp/hermescraft/landfolk-control/bot-*.pid; do
+        [ -f "$f" ] && tracked="$tracked $(cat "$f")"
+      done
+      pgrep -af "node server.js" 2>/dev/null | while read -r pid _; do
+        if ! echo "$tracked" | grep -qw "$pid"; then
+          kill "$pid" 2>/dev/null && warn "killed orphan node bot pid=$pid"
+        fi
+      done
+      for f in /tmp/hermescraft/landfolk-control/*.pid "$STATE_DIR"/*.pid; do
+        [ -f "$f" ] || continue
+        local pid; pid="$(cat "$f")"
+        if ! kill -0 "$pid" 2>/dev/null; then
+          rm -f "$f" && dim "removed stale pidfile $(basename "$f")"
+        fi
+      done
+      ok "clean done"
+      ;;
+    tp)
+      local player="${1:-}" x="${2:-}" y="${3:-}" z="${4:-}"
+      [ -z "$player$x$y$z" ] && { err "fix tp needs <player> <x> <y> <z>"; return 1; }
+      ssh -n ubuntu-host "sudo docker exec minecraft rcon-cli 'tp $player $x $y $z'" 2>&1 | head -2 | sed 's/^/  /'
+      ;;
+    unstick)
+      local player="${1:-}"; [ -z "$player" ] && { err "fix unstick needs a player"; return 1; }
+      local pl; pl="$(parse_players_csv "$player")" || return 1
+      local port; port="$(player_api_port "$pl")"
+      curl -sf -X POST "http://127.0.0.1:$port/connect" -H "Content-Type: application/json" -d '{"force":true}' >/dev/null \
+        && ok "force-reconnect sent to $pl" \
+        || err "force-reconnect FAILED for $pl"
+      sleep 2
+      reclaim_running "$pl"
+      ok "unstick complete"
+      ;;
+    *) err "unknown fix issue: ${issue:-<none>} (valid: reconnect|clean|tp|unstick)"; return 1 ;;
+  esac
+}
+
+cmd_players() {
+  local sub="${1:-list}"; shift || true
+  case "$sub" in
+    list)
+      printf "  %-10s %-6s %-9s %s\n" "player" "port" "viewer" "model"
+      local p port vport model
+      while IFS= read -r p; do
+        [ -z "$p" ] && continue
+        port="$(player_api_port "$p")"
+        vport="$(player_viewer_port "$p")"
+        model="$(player_model "$p")"
+        printf "  %-10s %-6s :%-8s %s\n" "$p" "${port:-?}" "${vport:-?}" "${model:-?}"
+      done < <(canonical_players)
+      ;;
+    show)
+      local p="${1:-}"; [ -z "$p" ] && { err "players show needs a name"; return 1; }
+      local pl; pl="$(parse_players_csv "$p")" || return 1
+      printf "  %-10s %s\n" "player:"   "$pl"
+      printf "  %-10s %s\n" "port:"     "$(player_api_port "$pl")"
+      printf "  %-10s :%s\n" "viewer:"   "$(player_viewer_port "$pl")"
+      printf "  %-10s %s\n" "model:"    "$(player_model "$pl")"
+      printf "  %-10s %s\n" "provider:" "$(player_provider "$pl")"
+      printf "  %-10s %s\n" "mode:"     "$(roster_mode_for "$pl")"
+      ;;
+    *) err "unknown players subcommand: $sub (valid: list|show)"; return 1 ;;
+  esac
+}
+
+# ─── Dispatch ──────────────────────────────────────────────────────────────
+
+CMD="${1:-}"; shift || true
+# Make resolver paths available to subprocesses (status --json uses these)
+export AGENT_MODELS_JSON RESOLVER
+
+case "$CMD" in
+  start)            cmd_start "$@" ;;
+  stop)             cmd_stop "$@" ;;
+  enable)           cmd_enable "$@" ;;
+  disable)          cmd_disable "$@" ;;
+  restart)          cmd_restart "$@" ;;
+  status|st)        cmd_status "$@" ;;
+  logs|log)         cmd_logs "$@" ;;
+  chat)             cmd_chat "$@" ;;
+  fix)              cmd_fix "$@" ;;
+  players|player)   cmd_players "$@" ;;
+  -h|--help|help|"") usage 0 ;;
+  *) err "unknown command: $CMD"; usage 1 ;;
+esac

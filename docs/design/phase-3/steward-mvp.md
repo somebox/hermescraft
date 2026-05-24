@@ -185,6 +185,7 @@ Re-run setup **without** `--solo-flint`, start bots on 3001/3002/3003 (`./script
 ```bash
 scripts/setup-landfolk-profiles.sh          # flint, gatherer, mason, steward + ops board + kanban config hints
 scripts/setup-landfolk-profiles.sh --solo-flint   # decomposer routes in-world work to flint only (see above)
+scripts/setup-landfolk-profiles.sh --apply-config # refresh SOUL, steward skills, worker max_turns (150); skip board/descriptions
 scripts/setup-landfolk-profiles.sh --dry-run
 hermes gateway start                        # dispatcher picks up ready tasks
 ```

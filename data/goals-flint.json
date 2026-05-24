@@ -98,7 +98,7 @@
       "metric": "iron_total",
       "target_min": 16,
       "target_ok": 32,
-      "priority": -100
+      "priority": 80
     },
     {
       "enabled": true,
@@ -114,7 +114,7 @@
       "metric": "coal_total",
       "target_min": 32,
       "target_ok": 64,
-      "priority": -100
+      "priority": 75
     },
     {
       "enabled": true,
@@ -130,7 +130,7 @@
       "metric": "diamond_total",
       "target_min": 4,
       "target_ok": 8,
-      "priority": -100
+      "priority": 40
     },
     {
       "enabled": true,
@@ -149,7 +149,7 @@
       },
       "target_min": 32,
       "target_ok": 64,
-      "priority": 5
+      "priority": 55
     },
     {
       "enabled": true,
@@ -168,7 +168,7 @@
       },
       "target_min": 64,
       "target_ok": 128,
-      "priority": 5
+      "priority": 45
     }
   ],
   "deficitSince": {

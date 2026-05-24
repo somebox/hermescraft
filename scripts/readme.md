@@ -24,7 +24,7 @@ Environment: typically `.env` at repo root for keys and shared defaults; control
 | `resolve-agent-model.py` | Port and model/provider resolution from JSON + env. |
 | `analyze-progress-logs.sh` | Read-only summaries over watchdog progress JSONL. |
 | `run-landfolk-agent.sh` | Thin Hermes launcher once a bot is listening on a known port. |
-| `setup-landfolk-profiles.sh` | Phase 2 workers + steward ops: profiles, `landfolk-ops` board, kanban config; `--solo-flint` for one-bot testing (see `docs/design/phase-3/steward-mvp.md`). |
+| `setup-landfolk-profiles.sh` | Phase 2 workers + steward ops: profiles, `landfolk-ops` board, kanban config; `--solo-flint` for one-bot testing; `--apply-config` to refresh SOUL/skills/max_turns only (see `docs/design/phase-3/steward-mvp.md`). |
 | `ledger-update.py` | Fold completed ops-board task metadata into `data/ops/logistics-ledger.yaml`. |
 | `blueprint-plan.py` | GrabCraft URL → build plan JSON (substitutions, phases); steward skill `minecraft-steward-blueprint-plan`. |
 | `watch-agent.py` | Tail Hermes session JSON for any Landfolk agent (`--agent flint`, etc.). |
