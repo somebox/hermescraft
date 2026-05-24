@@ -69,6 +69,16 @@ FALLBACK = ("\033[38;5;250m", "\033[1;38;5;250m", "\033[2;38;5;250m")
 RST = "\033[0m"
 USER_C = "\033[38;5;245m"   # neutral grey — tool-call summaries
 META_C = "\033[2;38;5;244m"
+CHAT_C = "\033[1;38;5;51m"  # bright cyan — global in-game chat (dedup'd across bots)
+
+# In-game chat lines (`[Chat]`, `[Whisper]`, `[Overheard]`) are GLOBAL events
+# — every bot that hears them writes the same line to its own log, so
+# tailing N bot logs prints the same chat N times. Dedupe them and emit
+# once under the `chat` pseudo-profile with CHAT_C.
+#
+# `[Queued via mention]` stays per-profile: it's the bot's local
+# "I got @-mentioned" record, which IS profile-specific signal.
+_GLOBAL_CHAT_RE = re.compile(r"\[(Chat|Whisper|Overheard)\]")
 
 # Long absolute paths in shell snippets (replaced with basename or tail).
 _PATHLIKE_RE = re.compile(
@@ -514,6 +524,15 @@ def render_bot_line(profile: str, line: str, use_color: bool, pad: int) -> str:
     return f"{primary}{tag}{rst} {dim}[BOT] {s}{rst}"
 
 
+def render_chat_line(line: str, use_color: bool, pad: int) -> str:
+    """Color a deduped chat line under the `chat` pseudo-profile."""
+    chat_c = CHAT_C if use_color else ""
+    rst = RST if use_color else ""
+    tag = f"{'chat':<{pad}}"
+    s = line.rstrip()
+    return f"{chat_c}{tag} {s}{rst}"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--profiles", default="flint,mason,steward",
@@ -549,6 +568,15 @@ def main() -> int:
                 bot_log_offsets[p] = lp.stat().st_size
             except FileNotFoundError:
                 bot_log_offsets[p] = 0
+    # Dedup ring for global chat lines: every bot logs the same `[Chat]`
+    # message; emit only the first occurrence. Bounded LRU on (timestamp +
+    # message body) — the bot-log timestamp is server-driven and identical
+    # across listeners, so identical lines hash identically across files.
+    from collections import OrderedDict
+    chat_dedup: OrderedDict[str, None] = OrderedDict()
+    CHAT_DEDUP_MAX = 200
+    # Recompute pad to include the "chat" pseudo-profile so its banner aligns.
+    pad = max(pad, len("chat"))
 
     meta = META_C if use_color else ""
     rst = RST if use_color else ""
@@ -664,13 +692,33 @@ def main() -> int:
                         except OSError:
                             continue
                         for line in chunk.splitlines():
-                            if BOT_LOG_FILTER.search(line):
-                                bot_line = render_bot_line(p, line, use_color, pad)
+                            if not BOT_LOG_FILTER.search(line):
+                                continue
+                            # Global chat events: dedupe across bots and
+                            # emit once under the `chat` pseudo-profile.
+                            # Per-profile noise (Queued via mention,
+                            # Connected, Kicked, Disconnected) goes through
+                            # the normal per-profile path below.
+                            if _GLOBAL_CHAT_RE.search(line):
+                                key = line.rstrip()
+                                if key in chat_dedup:
+                                    continue
+                                chat_dedup[key] = None
+                                if len(chat_dedup) > CHAT_DEDUP_MAX:
+                                    chat_dedup.popitem(last=False)
+                                chat_line = render_chat_line(line, use_color, pad)
                                 if qp:
-                                    qp.add_line(p, bot_line)
+                                    qp.add_line('chat', chat_line)
                                 else:
-                                    print(bot_line)
+                                    print(chat_line)
                                 any_new = True
+                                continue
+                            bot_line = render_bot_line(p, line, use_color, pad)
+                            if qp:
+                                qp.add_line(p, bot_line)
+                            else:
+                                print(bot_line)
+                            any_new = True
             # Periodic flush — keeps long quiet runs from sitting hidden forever
             if qp:
                 qp.flush_stale()
