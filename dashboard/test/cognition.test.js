@@ -62,6 +62,13 @@ describe('cognition', () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it('extractTurns includes user prompts', () => {
+    const messages = [{ role: 'user', content: 'go mine iron' }];
+    const { turns } = extractTurns(messages, { limit: 5, sinceIndex: 0 });
+    assert.equal(turns.length, 1);
+    assert.equal(turns[0].kind, 'user');
+  });
+
   it('extractTurnsTail returns last turns only', () => {
     const messages = [
       { role: 'assistant', reasoning_content: 'first thought', content: '' },

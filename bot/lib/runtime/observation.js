@@ -8,6 +8,21 @@ import { buildActionStats, classifyIdleReason } from '../server/diagnostics.js';
 export function createObservation(deps) {
   const { ctx, ensureBot, fmt, posObj, loadLocations, filterEntitiesFairPlay, buildSceneSummary, fireDueReminders, FAIR_PLAY, itemStr } = deps;
 
+  function taskContextBrief() {
+    const tc = ctx.runtime?.taskContext;
+    if (!tc || !Number.isFinite(tc.expires_at) || tc.expires_at <= Date.now()) return {};
+    const id = tc.worksite_region;
+    if (!id) return { task_context: { card_id: tc.card_id, worksite: null } };
+    const mins = Math.max(1, Math.round((tc.expires_at - Date.now()) / 60_000));
+    return {
+      task_context: {
+        card_id: tc.card_id,
+        worksite: id,
+        hint: `worksite: :${id}: (expires in ${mins}m)`,
+      },
+    };
+  }
+
   function getGoalsScoreboard() {
     if (!ctx.world.bot || !ctx.world.botReady || !ctx.world.mcData) return { scored: [], context: null };
     const { scored, context, deficitSince } = scoreGoals(ctx.world.bot, ctx.world.mcData, ctx.goals.goalsStore, ctx.goals.chestSnapshots);
@@ -183,6 +198,13 @@ export function createObservation(deps) {
       food: ctx.world.bot.food,
       position: posObj(),
       holding: ctx.world.bot.heldItem?.name || 'empty',
+      ...(ctx.runtime.regions
+        ? (() => {
+            const here = ctx.runtime.regions.regionsHere(ctx.world.bot.entity?.position);
+            return here.length ? { regions_here: here } : {};
+          })()
+        : {}),
+      ...taskContextBrief(),
       // circuit-v16: explicit mount state for the brief view. Agent
       // would lose track of "I'm on a boat" between actions and try
       // mc move / mc board redundantly. Surface mounted at the top
@@ -477,6 +499,13 @@ export function createObservation(deps) {
       food: b.food,
       saturation: fmt(b.foodSaturation),
       position: posObj(),
+      ...(ctx.runtime.regions
+        ? (() => {
+            const here = ctx.runtime.regions.regionsHere(b.entity?.position);
+            return here.length ? { regions_here: here } : {};
+          })()
+        : {}),
+      ...taskContextBrief(),
       ...(lean ? {} : { dimension: b.game?.dimension?.replace('minecraft:', '') || 'overworld' }),
       ...(lean ? {} : { biome }),
       time: time,
@@ -612,22 +641,26 @@ export function createObservation(deps) {
     };
   }
 
-  function getNearby(radius = 32) {
+  function getNearby(radius = 32, opts = {}) {
     const b = ensureBot();
     const pos = b.entity.position;
+    const useFairPlay = opts.fairPlay !== false;
+    const entityLimit = Math.min(64, Math.max(1, Number(opts.entityLimit) || 20));
 
-    // Entities (fair-play filtered)
+    // Entities (fair-play filtered by default; dashboard passes fairPlay: false)
     const rawEnts = Object.values(b.entities)
       .filter(e => e !== b.entity && e.position.distanceTo(pos) < radius);
-    const entities = filterEntitiesFairPlay(rawEnts)
+    const visible = useFairPlay ? filterEntitiesFairPlay(rawEnts) : rawEnts;
+    const entities = visible
       .sort((a, c) => a.position.distanceTo(pos) - c.position.distanceTo(pos))
-      .slice(0, 20)
+      .slice(0, entityLimit)
       .map(e => ({
         type: e.name || e.mobType || 'unknown',
         distance: fmt(e.position.distanceTo(pos)),
         position: posObj(e.position),
         health: e.health,
         kind: e.type, // 'mob', 'player', 'object', etc.
+        username: e.username || undefined,
       }));
 
     // Notable blocks in wider radius.

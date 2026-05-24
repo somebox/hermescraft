@@ -29,72 +29,72 @@
       <div id="humanList" class="human-list" aria-label="Live human players"></div>
     </section>
 
-    <section class="pane pane-center" aria-label="Center tabs">
+    <section class="pane pane-center" aria-label="Center">
       <div class="center-stack">
-      <nav class="tabs" role="tablist">
-        <button type="button" class="tab active" data-tab="map" role="tab" aria-selected="true">Map</button>
-        <button type="button" class="tab" data-tab="kanban" role="tab" aria-selected="false">Kanban</button>
-        <button type="button" class="tab" data-tab="fpv" role="tab" aria-selected="false">FPV</button>
-      </nav>
-      <div class="center-body">
-      <div class="tab-panels">
-        <div id="panel-map" class="tab-panel active" role="tabpanel">
-          <nav id="mapSubtabs" class="map-subtabs" role="tablist" aria-label="Map mode" hidden>
-            <button type="button" class="map-subtab active" data-map-sub="tactical" role="tab" aria-selected="true">Tactical</button>
-            <button type="button" class="map-subtab" data-map-sub="terrain" role="tab" aria-selected="false">Terrain</button>
-          </nav>
-          <div id="mapPanelTactical" class="map-panel-tactical">
-            <div class="map-wrap">
-              <canvas id="mapCanvas" width="640" height="400" aria-label="2D tactical map"></canvas>
-              <div class="map-footer">
-                <p id="mapMeta" class="muted map-meta"></p>
-                <p class="muted map-hint">X/Z plane · +X east · +Z south · click to select</p>
-                <ul class="map-legend" aria-label="Map legend">
-                  <li><span class="swatch swatch-poi"></span> POI</li>
-                  <li><span class="swatch swatch-human"></span> Human</li>
-                  <li><span class="swatch swatch-bot"></span> Bot</li>
-                </ul>
+        <nav class="tabs center-main-tabs" role="tablist" aria-label="Main view">
+          <button type="button" class="tab active" data-tab="map" role="tab" aria-selected="true">Map</button>
+          <button type="button" class="tab" data-tab="fpv" role="tab" aria-selected="false">FPV</button>
+          <button type="button" class="tab" data-tab="kanban" role="tab" aria-selected="false">Kanban</button>
+        </nav>
+        <div class="center-split">
+          <div class="center-upper">
+            <div class="tab-panels">
+              <div id="panel-map" class="tab-panel active" role="tabpanel">
+                <div id="mapPanelTerrain" class="map-panel-terrain">
+                  <iframe id="terrainFrame" class="terrain-frame" title="World terrain map"></iframe>
+                  <p class="muted terrain-map-hint">
+                    <a id="terrainOpenLink" href="#" target="_blank" rel="noopener">Open map in new tab</a>
+                    · follows world selector
+                  </p>
+                </div>
+                <p id="mapUnavailable" class="map-unavailable muted" hidden>
+                  World map not configured — set <code>worldMap</code> in agent-registry.json.
+                </p>
+              </div>
+              <div id="panel-fpv" class="tab-panel" role="tabpanel" hidden>
+                <div class="fpv-wrap">
+                  <div id="fpvPlaceholder" class="fpv-placeholder muted">Select an online agent with a viewer port.</div>
+                  <iframe id="fpvFrame" class="fpv-frame" title="First-person view"></iframe>
+                  <a id="fpvOpenLink" class="fpv-open-link muted" href="#" target="_blank" rel="noopener" hidden>Open FPV in new tab</a>
+                </div>
+              </div>
+              <div id="panel-kanban" class="tab-panel" role="tabpanel" hidden>
+                <div class="kanban-toolbar">
+                  <div class="kanban-toolbar-row">
+                    <label class="kanban-board-label">
+                      <span class="muted">Board</span>
+                      <select id="kanbanBoardSelect" aria-label="Kanban board"></select>
+                    </label>
+                    <button type="button" id="kanbanRefresh" class="kanban-btn">Refresh</button>
+                    <button type="button" id="kanbanDispatch" class="kanban-btn" title="Runs hermes kanban dispatch once">Dispatch</button>
+                  </div>
+                </div>
+                <div id="kanbanBoard" class="kanban-board"></div>
+                <p id="kanbanStatus" class="muted kanban-status"></p>
               </div>
             </div>
           </div>
-          <div id="mapPanelTerrain" class="map-panel-terrain" hidden>
-            <iframe id="terrainFrame" class="terrain-frame" title="World terrain map"></iframe>
-            <p class="muted terrain-map-hint">
-              <a id="terrainOpenLink" href="#" target="_blank" rel="noopener">Open terrain map in new tab</a>
-              · follows world selector
-            </p>
+          <div class="center-lower" aria-label="Agent log">
+            <div id="agentLiveStrip" class="agent-live-strip muted" aria-live="polite">
+              Select an agent to see live status.
+            </div>
+            <div class="center-log-head">
+              <h2 class="center-log-title">Log</h2>
+              <nav id="chatSubtabs" class="chat-subtabs" role="tablist" aria-label="Log source">
+                <button type="button" class="chat-subtab active" data-chat-sub="ingame" role="tab" aria-selected="true">In-game</button>
+                <button type="button" class="chat-subtab" data-chat-sub="mind" role="tab" aria-selected="false">Mind</button>
+              </nav>
+            </div>
+            <div id="chatBody" class="chat-body log-scroll"></div>
+            <div id="mindBody" class="mind-body log-scroll" hidden></div>
           </div>
         </div>
-        <div id="panel-kanban" class="tab-panel" role="tabpanel" hidden>
-          <div id="kanbanBoard" class="kanban-board"></div>
-          <p id="kanbanStatus" class="muted kanban-status"></p>
-        </div>
-        <div id="panel-fpv" class="tab-panel" role="tabpanel" hidden>
-          <div class="fpv-wrap">
-            <div id="fpvPlaceholder" class="fpv-placeholder muted">Select an agent with viewer enabled, then open FPV.</div>
-            <iframe id="fpvFrame" class="fpv-frame" title="First-person view"></iframe>
-          </div>
-        </div>
-      </div>
-      <div id="agentLiveStrip" class="agent-live-strip muted" aria-live="polite">
-        Select an agent to see live status.
-      </div>
-      </div>
       </div>
     </section>
 
     <section class="pane pane-right" aria-label="Details">
       <h2 class="pane-title">Details</h2>
       <div id="detailPanel" class="detail-panel muted">Select an agent or map item.</div>
-      <div class="chat-strip">
-        <nav id="chatSubtabs" class="chat-subtabs" role="tablist" aria-label="Chat source">
-          <button type="button" class="chat-subtab active" data-chat-sub="ingame" role="tab" aria-selected="true">In-game</button>
-          <button type="button" class="chat-subtab" data-chat-sub="mind" role="tab" aria-selected="false">Mind</button>
-        </nav>
-        <button type="button" id="chatToggle" class="chat-toggle" aria-expanded="true">Chat</button>
-        <div id="chatBody" class="chat-body"></div>
-        <div id="mindBody" class="mind-body" hidden></div>
-      </div>
     </section>
   </main>
 

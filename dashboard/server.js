@@ -7,16 +7,19 @@ import { loadRegistry, boardIdForWorld } from './lib/registry.js';
 import { fetchWithTimeout } from './lib/poll.js';
 import { getCachedOpenRouterCredits } from './lib/openrouter.js';
 import { updateAgentMotion } from './lib/motion.js';
-import { fetchBoard } from './lib/kanban.js';
+import { fetchBoardWithFallback, fetchBoardsListWithFallback } from './lib/kanban.js';
 import {
   getWorldMapConfig,
   tileWorldForHermes,
   settingsJsonUrl,
   playerNamesFromMarkersJson,
+  playersMarkerUrls,
   playersMarkersUrl,
 } from './lib/world-map.js';
-import { resolveHermesHome } from './lib/agent-paths.js';
-import { loadCognitionFromHome } from './lib/cognition.js';
+import { nearbyPlayerName, isPlaceholderPlayerName } from './lib/nearby-players.js';
+import { hermesHomeCandidates, hermesHomeLabel } from './lib/agent-paths.js';
+import { loadCognitionFromHomes } from './lib/cognition.js';
+import { runHermesCli } from './lib/hermes-cli.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '..');
@@ -58,6 +61,14 @@ function briefTaskFromState(state) {
     status: 'running',
     elapsed: typeof t.elapsed === 'string' ? t.elapsed : null,
   };
+}
+
+function resolveViewerPort(agent, healthBody, connected) {
+  const hp = healthBody?.viewer_port;
+  if (connected && hp != null && Number(hp) > 0) return Number(hp);
+  if (agent.viewer_port != null && Number(agent.viewer_port) > 0) return Number(agent.viewer_port);
+  if (agent.api_port != null) return Number(agent.api_port) + 1000;
+  return null;
 }
 
 function normalizeAgentRow(agent, healthBody, obsBody, err) {
@@ -114,7 +125,13 @@ function normalizeAgentRow(agent, healthBody, obsBody, err) {
     mc_username: mcUsername,
     model: agent.model || null,
     api_port: agent.api_port,
-    viewer_port: agent.viewer_port ?? null,
+    viewer_port: resolveViewerPort(agent, healthBody, connected && identityOk),
+    viewer_active:
+      connected && identityOk
+        ? healthBody?.viewer_port != null
+          ? Number(healthBody.viewer_port) > 0
+          : null
+        : false,
     radar_port: agent.radar_port ?? null,
     world: agent.world || registry.defaultWorld,
     dimension: null,
@@ -172,6 +189,33 @@ async function pollAgent(agent) {
   return normalizeAgentRow(agent, healthBody, obsBody, err);
 }
 
+async function fetchRegions(agent) {
+  const url = botUrl(agent.api_port, '/regions');
+  const r = await fetchWithTimeout(url, { timeout: 8000 }).catch(() => null);
+  if (!r || !r.ok) return [];
+  const j = await r.json().catch(() => null);
+  const regions = j?.data?.regions;
+  return Array.isArray(regions) ? regions : [];
+}
+
+async function buildRegionsForWorld(world) {
+  // The region registry is shared per world; every bot in `world` reports
+  // the same rows. Dedup by id so the dashboard doesn't render N copies of
+  // each disc.
+  const byId = new Map();
+  const tasks = registry.agents.map(async (agent) => {
+    const w = agent.world || registry.defaultWorld;
+    if (w !== world) return;
+    const regions = await fetchRegions(agent);
+    for (const reg of regions) {
+      if (!reg?.id || byId.has(reg.id)) continue;
+      byId.set(reg.id, { world: w, ...reg });
+    }
+  });
+  await Promise.all(tasks);
+  return [...byId.values()];
+}
+
 async function fetchMarks(agent) {
   const url = botUrl(agent.api_port, '/marks');
   const r = await fetchWithTimeout(url, { timeout: 8000 }).catch(() => null);
@@ -202,20 +246,26 @@ async function fetchMapPlayerNames(hermesWorld) {
   if (!worldMapConfig) return [];
   const tileWorld = tileWorldForHermes(worldMapConfig, hermesWorld);
   if (!tileWorld) return [];
-  try {
-    const r = await fetchWithTimeout(playersMarkersUrl(worldMapConfig.baseUrl, tileWorld), {
-      timeout: 5000,
-    });
-    const body = await r.json().catch(() => null);
-    if (!r.ok || !body) return [];
-    return playerNamesFromMarkersJson(body);
-  } catch {
-    return [];
+  const urls = playersMarkerUrls(worldMapConfig.baseUrl, tileWorld);
+  for (const url of urls) {
+    try {
+      const r = await fetchWithTimeout(url, { timeout: 5000 });
+      const body = await r.json().catch(() => null);
+      if (!r.ok || !body) continue;
+      const names = playerNamesFromMarkersJson(body);
+      if (names.length) return names;
+    } catch {
+      /* try next URL */
+    }
   }
+  return [];
 }
 
 async function fetchNearbyPlayers(agent) {
-  const url = botUrl(agent.api_port, '/nearby?radius=48');
+  const url = botUrl(
+    agent.api_port,
+    '/nearby?radius=128&fair_play=false&entity_limit=48',
+  );
   const r = await fetchWithTimeout(url, { timeout: 8000 }).catch(() => null);
   if (!r || !r.ok) return [];
   const j = await r.json().catch(() => null);
@@ -251,8 +301,8 @@ async function buildFleetSnapshot() {
       const world = row.world || reg.world || registry.defaultWorld;
       const nearby = await fetchNearbyPlayers(reg);
       for (const e of nearby) {
-        const name = e.type || 'player';
-        if (!name || name === reg.name) continue;
+        const name = nearbyPlayerName(e);
+        if (!name || isPlaceholderPlayerName(name) || name === reg.name) continue;
         const prev = humansMap.get(name);
         if (!prev || (e.position && !prev.position)) {
           humansMap.set(name, {
@@ -275,17 +325,19 @@ async function buildFleetSnapshot() {
   for (const w of worldsForPlayers) {
     const mapNames = await fetchMapPlayerNames(w);
     for (const name of mapNames) {
-      if (!name || botNames.has(name.toLowerCase())) continue;
-      if (!humansMap.has(name)) {
-        humansMap.set(name, {
-          name,
-          online: true,
-          world: w,
-          position: null,
-          human: true,
-        });
-      }
+      if (!name || botNames.has(name.toLowerCase()) || isPlaceholderPlayerName(name)) continue;
+      humansMap.set(name, {
+        name,
+        online: true,
+        world: w,
+        position: humansMap.get(name)?.position ?? null,
+        human: true,
+      });
     }
+  }
+
+  for (const key of [...humansMap.keys()]) {
+    if (isPlaceholderPlayerName(key)) humansMap.delete(key);
   }
 
   const humans = [...humansMap.values()];
@@ -397,13 +449,20 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/fleet') {
     const snap = lastFleet || (await buildFleetSnapshot());
-    const agents = snap.agents.map(({ new_chat, ...rest }) => rest);
+    const agents = snap.agents.map((a) => ({
+      ...a,
+      new_chat: Array.isArray(a.new_chat) ? a.new_chat.slice(-12) : [],
+    }));
     const out = { ...snap, agents };
     return sendJson(res, 200, out);
   }
 
   if (req.method === 'GET' && url.pathname === '/api/worlds') {
-    return sendJson(res, 200, { worlds: registry.worlds || [] });
+    return sendJson(res, 200, {
+      worlds: registry.worlds || [],
+      kanbanBoardIdsByWorld: registry.kanbanBoardIdsByWorld || {},
+      defaultKanbanBoardId: registry.defaultKanbanBoardId || null,
+    });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/map/config') {
@@ -448,7 +507,8 @@ const server = http.createServer(async (req, res) => {
       });
       const body = await r.json().catch(() => null);
       if (!r.ok) return sendJson(res, r.status, { ok: false, error: 'upstream', status: r.status });
-      return sendJson(res, 200, { ok: true, hermesWorld, tileWorld, data: body });
+      const names = playerNamesFromMarkersJson(body);
+      return sendJson(res, 200, { ok: true, hermesWorld, tileWorld, names, data: body });
     } catch (e) {
       return sendJson(res, 502, {
         ok: false,
@@ -463,11 +523,52 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { world, pois });
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/regions') {
+    const world = url.searchParams.get('world') || registry.defaultWorld;
+    const regions = await buildRegionsForWorld(world);
+    return sendJson(res, 200, { world, regions });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/kanban/boards') {
+    const data = await fetchBoardsListWithFallback(HERMES_KANBAN_BASE);
+    return sendJson(res, 200, data);
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/kanban') {
     const world = url.searchParams.get('world') || registry.defaultWorld;
-    const boardId = boardIdForWorld(registry, world);
-    const data = await fetchBoard(HERMES_KANBAN_BASE, boardId);
+    const boardParam = url.searchParams.get('board');
+    const boardId = boardParam || boardIdForWorld(registry, world);
+    const data = await fetchBoardWithFallback(HERMES_KANBAN_BASE, boardId);
     return sendJson(res, 200, { world, boardId, ...data });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/kanban/dispatch') {
+    const world = url.searchParams.get('world') || registry.defaultWorld;
+    const boardParam = url.searchParams.get('board');
+    const boardId = boardParam || boardIdForWorld(registry, world);
+    if (!boardId) {
+      return sendJson(res, 400, { ok: false, error: 'no_board_for_world' });
+    }
+    const dryRun = url.searchParams.get('dry_run') === 'true';
+    const args = ['kanban', '--board', boardId, 'dispatch'];
+    if (dryRun) args.push('--dry-run');
+    try {
+      const out = await runHermesCli(args, 120_000);
+      return sendJson(res, 200, {
+        ok: true,
+        boardId,
+        dryRun,
+        output: out.stdout.slice(-4000),
+        stderr: out.stderr.slice(-2000),
+      });
+    } catch (e) {
+      return sendJson(res, 502, {
+        ok: false,
+        error: 'dispatch_failed',
+        message: e instanceof Error ? e.message : String(e),
+        boardId,
+      });
+    }
   }
 
   const agentRoute = url.pathname.match(/^\/api\/agent\/([^/]+)\/(inventory|goals|cognition)$/);
@@ -493,12 +594,22 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, goals: g.goals, context: g.context });
     }
     if (sub === 'cognition') {
-      const home = resolveHermesHome(agent);
-      const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit')) || 15));
+      const homes = hermesHomeCandidates(agent);
+      const limit = Math.min(80, Math.max(1, Number(url.searchParams.get('limit')) || 24));
       const cursor = Math.max(0, Number(url.searchParams.get('cursor')) || 0);
       const tail = url.searchParams.get('tail') === '1' || url.searchParams.get('tail') === 'true';
-      const cog = loadCognitionFromHome(home, { limit, cursor, tail });
-      return sendJson(res, 200, { agent: name, hermes_home: home, ...cog });
+      const kindsParam = url.searchParams.get('kinds');
+      const kinds = kindsParam
+        ? kindsParam.split(',').map((k) => k.trim()).filter(Boolean)
+        : undefined;
+      const cog = loadCognitionFromHomes(homes, { limit, cursor, tail, kinds });
+      const home = cog.hermes_home || homes[0];
+      return sendJson(res, 200, {
+        agent: name,
+        hermes_home: home,
+        home_label: home ? hermesHomeLabel(home) : null,
+        ...cog,
+      });
     }
   }
 

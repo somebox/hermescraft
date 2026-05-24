@@ -106,25 +106,65 @@ export function playerNamesFromMarkersJson(body) {
   const add = (n) => {
     if (typeof n !== 'string') return;
     const t = n.trim();
-    if (t && t !== 'players' && t !== 'Players') names.add(t);
+    if (!t || t === 'players' || t === 'Players') return;
+    if (/^[0-9a-f-]{36}$/i.test(t)) return;
+    names.add(t);
   };
   if (!body) return [];
+
+  if (body.type === 'FeatureCollection' && Array.isArray(body.features)) {
+    for (const f of body.features) {
+      if (!f || typeof f !== 'object') continue;
+      const p = f.properties;
+      if (p && typeof p === 'object') add(p.name ?? p.label ?? p.displayName);
+      else add(f.id);
+    }
+    return [...names];
+  }
+
   if (Array.isArray(body)) {
     for (const layer of body) {
       if (!layer || typeof layer !== 'object') continue;
       if (Array.isArray(layer.markers)) {
         for (const m of layer.markers) {
-          if (m && typeof m === 'object') add(m.name ?? m.label ?? m.id);
+          if (m && typeof m === 'object') add(m.name ?? m.label ?? m.displayName);
         }
       }
       if (layer.x != null || layer.z != null) add(layer.name ?? layer.label);
     }
-  } else if (typeof body === 'object' && Array.isArray(body.markers)) {
-    for (const m of body.markers) {
-      if (m && typeof m === 'object') add(m.name ?? m.label);
+    return [...names];
+  }
+
+  if (typeof body === 'object') {
+    if (Array.isArray(body.markers)) {
+      for (const m of body.markers) {
+        if (m && typeof m === 'object') add(m.name ?? m.label ?? m.displayName);
+      }
+    }
+    if (Array.isArray(body.players)) {
+      for (const p of body.players) {
+        if (typeof p === 'string') add(p);
+        else if (p && typeof p === 'object') add(p.name ?? p.label);
+      }
+    }
+    for (const v of Object.values(body)) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        add(v.name ?? v.label ?? v.displayName);
+      }
     }
   }
   return [...names];
+}
+
+/** Alternate Squaremap player marker URLs (version/layout differences). */
+export function playersMarkerUrls(baseUrl, tileWorld) {
+  const base = baseUrl.replace(/\/$/, '');
+  const w = encodeURIComponent(tileWorld);
+  return [
+    `${base}/tiles/${w}/markers/players.json`,
+    `${base}/tiles/${w}/live/players.json`,
+    `${base}/tiles/${w}/players.json`,
+  ];
 }
 
 /**

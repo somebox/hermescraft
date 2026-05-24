@@ -184,6 +184,49 @@ export function buildTaskCard(task) {
   return card;
 }
 
+/** Right-panel summary of assignee's active Hermes kanban card. */
+export function patchAgentKanbanHost(host, task, opts = {}) {
+  if (!host) return;
+  const key = task
+    ? `${task.id}|${task.status}|${task.title}`
+    : `empty|${opts.kanbanOk}|${opts.boardId || ''}`;
+  if (host.dataset.kanbanKey === key) return;
+  host.dataset.kanbanKey = key;
+  host.replaceChildren();
+  if (!opts.kanbanOk) {
+    host.appendChild(
+      el(
+        'p',
+        'detail-muted',
+        'Kanban not loaded — open Kanban tab or check hermes / bridge.',
+      ),
+    );
+    return;
+  }
+  if (!task) {
+    host.appendChild(
+      el('p', 'detail-muted', `No card assigned to this agent on ${opts.boardId || 'board'}.`),
+    );
+    return;
+  }
+  const card = el('div', 'detail-agent-kanban-card');
+  const head = el('div', 'detail-task-head');
+  head.appendChild(el('span', 'detail-task-action', task.title || task.id));
+  head.appendChild(badge(String(task.status || task.column || 'card'), taskStatusVariant(task.status)));
+  card.appendChild(head);
+  const meta = el('p', 'detail-muted detail-agent-kanban-meta', `${task.id}${task.assignee ? ` · ${task.assignee}` : ''}`);
+  card.appendChild(meta);
+  if (typeof opts.onOpen === 'function') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'detail-kanban-open';
+    btn.textContent = 'Show full card';
+    btn.addEventListener('click', () => opts.onOpen(task));
+    card.appendChild(btn);
+  }
+  host.appendChild(card);
+}
+
 export function buildGoalRow(topGoal) {
   const row = el('div', 'detail-goal-row');
   if (!topGoal?.id) {
@@ -313,6 +356,10 @@ export function mountPlayerDetailShell(main) {
   const goalsBody = el('div', 'detail-section-body');
   goalsBody.id = 'detailGoalsBody';
   main.appendChild(detailSection('Goals', goalsBody));
+
+  const kanbanBody = el('div', 'detail-section-body');
+  kanbanBody.id = 'detailKanbanBody';
+  main.appendChild(detailSection('Kanban', kanbanBody));
 
   const actBody = el('div', 'detail-section-body');
   actBody.id = 'detailActivityBody';

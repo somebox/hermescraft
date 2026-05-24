@@ -16,6 +16,7 @@ export function loadRegistry(repoRoot) {
     defaultWorld: raw.defaultWorld || 'world',
     worlds: raw.worlds || [],
     kanbanBoardIdsByWorld: raw.kanbanBoardIdsByWorld || {},
+    defaultKanbanBoardId: raw.defaultKanbanBoardId || null,
     worldMap: raw.worldMap || null,
     agents,
   };
@@ -23,5 +24,11 @@ export function loadRegistry(repoRoot) {
 
 export function boardIdForWorld(registry, world) {
   const map = registry?.kanbanBoardIdsByWorld || {};
-  return map[world] || map[registry?.defaultWorld] || null;
+  const w = world || registry?.defaultWorld;
+  return (
+    map[w] ||
+    map[registry?.defaultWorld] ||
+    registry?.defaultKanbanBoardId ||
+    null
+  );
 }

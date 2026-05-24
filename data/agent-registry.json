@@ -19,6 +19,12 @@
     "iframeDefaults": { "zoom": 4 },
     "tile": { "minZoom": 0, "maxZoom": 3, "tileSize": 512 }
   },
+  "defaultKanbanBoardId": "landfolk-ops",
+  "kanbanBoardIdsByWorld": {
+    "world": "landfolk-ops",
+    "landfolk-test": "default",
+    "testflat": "default"
+  },
   "agents": [
     {
       "name": "Steve",

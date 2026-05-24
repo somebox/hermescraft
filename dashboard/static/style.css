@@ -95,7 +95,9 @@ html {
   display: grid;
   grid-template-columns: minmax(220px, 280px) 1fr minmax(260px, 340px);
   gap: 0;
-  min-height: calc(100vh - 56px);
+  height: calc(100vh - 56px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 960px) {
@@ -110,6 +112,7 @@ html {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  padding: 0.5rem 0.65rem;
 }
 
 .center-stack {
@@ -120,33 +123,103 @@ html {
   min-width: 0;
 }
 
-.center-body {
+.center-split {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-height: 0;
-  min-width: 0;
+  overflow: hidden;
 }
 
-.center-body .tab-panels {
+.center-upper {
+  flex: 1 1 58%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.center-lower {
+  flex: 1 1 42%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--panel);
+  padding: 0.4rem 0.55rem 0.5rem;
+}
+
+.center-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  margin-bottom: 0.35rem;
+}
+
+.center-log-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.log-scroll {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: calc(100vh - 56px - 7.5rem);
   overflow: auto;
 }
 
-.center-body .tab-panel.active {
-  display: block;
+.center-upper .tab-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.center-upper .tab-panel.active {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#panel-map.tab-panel.active {
+  min-height: 0;
+}
+
+.center-upper .map-footer {
+  flex: 0 0 auto;
+}
+
+.center-upper .map-wrap canvas {
+  flex: 1 1 auto;
+  min-height: 100px;
+  max-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#panel-map .map-subtabs {
+  flex: 0 0 auto;
 }
 
 .agent-live-strip {
   flex: 0 0 auto;
-  margin-top: 0.5rem;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  padding: 0.35rem 0.55rem;
   font-size: 0.8rem;
-  max-height: 32vh;
+  max-height: 28%;
   overflow: auto;
 }
 
@@ -234,6 +307,7 @@ html {
   border-right: 1px solid var(--border);
   padding: 0.75rem;
   overflow: auto;
+  min-height: 0;
 }
 
 .pane:last-child {
@@ -252,6 +326,7 @@ html {
   display: flex;
   gap: 0.25rem;
   margin-bottom: 0.5rem;
+  flex: 0 0 auto;
 }
 
 .tab {
@@ -306,21 +381,68 @@ html {
 .map-panel-tactical,
 .map-panel-terrain {
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.center-upper .map-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#panel-map .map-panel-terrain {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.center-upper .terrain-frame {
+  flex: 1 1 auto;
+  min-height: 120px;
+  height: auto;
+  max-height: none;
 }
 
 .terrain-frame {
   display: block;
   width: 100%;
-  min-height: 360px;
-  height: min(72vh, 720px);
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #0a0a0a;
 }
 
+.map-unavailable {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.map-unavailable:not([hidden]) {
+  display: flex;
+}
+
+.map-unavailable[hidden] {
+  display: none !important;
+}
+
+#mapPanelTerrain[hidden] {
+  display: none !important;
+}
+
+#panel-map.tab-panel.active:not(:has(#mapPanelTerrain[hidden])) #mapUnavailable {
+  display: none !important;
+}
+
 .terrain-map-hint {
-  margin: 0.35rem 0 0;
-  font-size: 0.8rem;
+  flex: 0 0 auto;
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
 }
 
 .terrain-map-hint a.disabled {
@@ -715,6 +837,33 @@ html {
   color: var(--muted);
 }
 
+.detail-agent-kanban-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.55rem;
+}
+
+.detail-agent-kanban-meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+}
+
+.detail-kanban-open {
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.detail-kanban-open:hover {
+  border-color: var(--accent);
+}
+
 .detail-task-error {
   margin: 0.35rem 0 0;
   font-size: 0.78rem;
@@ -1011,16 +1160,16 @@ html {
   border-radius: 6px;
 }
 
+.chat-subtabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0;
+}
+
 .chat-strip {
   margin-top: 1rem;
   border-top: 1px solid var(--border);
   padding-top: 0.5rem;
-}
-
-.chat-subtabs {
-  display: flex;
-  gap: 0.35rem;
-  margin-bottom: 0.35rem;
 }
 
 .chat-subtab {
@@ -1047,11 +1196,59 @@ html {
 }
 
 .mind-body {
-  max-height: 200px;
-  overflow: auto;
   font-size: 0.78rem;
-  margin-top: 0.35rem;
   font-family: ui-monospace, monospace;
+}
+
+.mind-body.log-scroll {
+  margin-top: 0;
+}
+
+.chat-body.log-scroll {
+  margin-top: 0;
+  font-size: 0.78rem;
+}
+
+.mind-empty,
+.chat-empty {
+  font-size: 0.75rem;
+  padding: 0.35rem 0;
+}
+
+.cog-tag {
+  display: inline-block;
+  min-width: 3.2rem;
+  font-weight: 600;
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-right: 0.35rem;
+  vertical-align: top;
+}
+
+.cog-text-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cog-user {
+  color: var(--warn);
+}
+
+.cog-tool-name {
+  color: var(--accent);
+  margin-right: 0.35rem;
+}
+
+.cog-tool-args {
+  color: var(--muted);
+}
+
+.cog-out-text {
+  color: var(--muted);
+}
+
+.chat-body {
+  font-size: 0.78rem;
 }
 
 .cog-line {
@@ -1092,25 +1289,114 @@ html {
   text-align: left;
 }
 
-.chat-body {
-  max-height: 160px;
-  overflow: auto;
-  font-size: 0.78rem;
-  margin-top: 0.35rem;
-}
-
 .chat-line {
   border-bottom: 1px solid var(--border);
   padding: 0.25rem 0;
   color: var(--muted);
 }
 
+.chat-line.chat-heard {
+  color: var(--text);
+}
+
+.center-upper .kanban-board {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .kanban-board {
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 0.5rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.kanban-toolbar {
+  margin-bottom: 0.5rem;
+}
+
+.kanban-intro {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+}
+
+.kanban-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.kanban-board-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.kanban-board-label select {
+  font: inherit;
+  font-size: 0.8rem;
+  max-width: 12rem;
+}
+
+.kanban-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.kanban-btn:hover {
+  border-color: var(--accent);
+}
+
+.kanban-status {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+}
+
+.kanban-card-title {
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.kanban-card-meta {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.center-body .tab-panel#panel-kanban.active,
+.center-upper #panel-kanban.tab-panel.active,
+.center-upper .tab-panel#panel-kanban.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.center-upper #panel-fpv.tab-panel.active,
+.center-upper .tab-panel#panel-fpv.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.fpv-wrap .fpv-frame.visible {
+  flex: 1 1 auto;
   min-height: 280px;
+  max-height: none;
 }
 
 .kanban-col {
@@ -1150,9 +1436,20 @@ html {
   border-color: var(--accent);
 }
 
+.center-upper .fpv-wrap .fpv-frame.visible {
+  flex: 1 1 auto;
+  min-height: 140px;
+  max-height: none;
+  aspect-ratio: auto;
+}
+
 .fpv-wrap {
   width: 100%;
   min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .fpv-placeholder {
@@ -1165,9 +1462,7 @@ html {
 .fpv-frame {
   display: none;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  min-height: 280px;
-  max-height: 75vh;
+  min-height: 0;
   border: 0;
   border-radius: 8px;
   background: #000;
@@ -1175,6 +1470,16 @@ html {
 
 .fpv-frame.visible {
   display: block;
+}
+
+.fpv-open-link {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.fpv-open-link[hidden] {
+  display: none;
 }
 
 .inventory-summary {

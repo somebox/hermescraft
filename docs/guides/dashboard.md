@@ -36,6 +36,10 @@ No extra **Minecraft/Paper plugins** are required: the viewer streams from the *
 4. If the iframe is blank: check the bot log for `prismarine-viewer` errors and confirm `curl http://127.0.0.1:4001` returns HTML on the bot host.
 5. Remote browser: set dashboard **`BOT_HOST`** to the machine running the bots so `http://BOT_HOST:viewer_port` is reachable (firewall permitting).
 
+Each Landfolk bot uses **`VIEWER_PORT = api_port + 1000`** when started via `scripts/landfolk-control.sh` or `run-landfolk-bots.sh` (Flint → **4002**, not 4001). Port **4001** is only Steve/Gatherer on API **3001**. Select the agent whose bot is actually running, then open FPV.
+
+If the iframe is blank but the viewer URL works in a new tab, use **Open FPV in new tab** under the FPV panel.
+
 If you **disable** the viewer for a bot, unset `VIEWER_PORT` for that process and set `"viewer_port": null` for that agent in the registry so the dashboard does not point at a dead port.
 
 ## Minecraft server
@@ -45,14 +49,9 @@ Nothing special on the MC side beyond normal **offline/online** access for the b
 - **Roster:** `data/agent-registry.json` — agents (Steve companion + Landfolk workers), default world, world list.
 - Tune `world` per agent when using Multiverse; the dashboard filters the left list to **online** agents in the selected world.
 
-### Map tab: Tactical vs Terrain
+### Map tab (terrain iframe)
 
-| Sub-tab | Source | Purpose |
-|---------|--------|---------|
-| **Tactical** | Hermes fleet + POIs | Low-fidelity X/Z canvas; click to select agents/POIs |
-| **Terrain** | Dynmap / Squaremap-style web UI | Full tile map in an iframe when `worldMap` is configured |
-
-**Tactical** does not load map tiles. **Terrain** embeds the plugin UI (e.g. `http://192.168.1.202:8123/?world=minecraft_overworld&zoom=4`). The world selector drives the iframe `world` query param via a single mapping table in the registry (`worldMap.hermesToTileWorld`: Hermes world name → plugin key such as `minecraft_overworld`). Pan/zoom inside the iframe are not readable by the dashboard (one-way control); native Leaflet against `/tiles/{world}/{z}/{x}_{y}.png` is the path when you need bidirectional state or Hermes overlays.
+The center tabs are **Map**, **FPV**, and **Kanban**. **Map** embeds the Squaremap / Dynmap-style web UI in an iframe when `worldMap` is configured (e.g. `http://192.168.1.202:8123/?world=minecraft_overworld&zoom=4`). The world selector drives the iframe `world` query param via `worldMap.hermesToTileWorld` in the registry (Hermes world name → plugin key such as `minecraft_overworld`). Pan/zoom inside the iframe are not readable by the dashboard (one-way control).
 
 Configure in `data/agent-registry.json`:
 
@@ -86,6 +85,37 @@ Install a tile map plugin on **Paper/Folia** (Squaremap, Dynmap, etc.). Point `w
 
 Hermes does not ship the plugin; it only links and proxies JSON when configured.
 
+## Kanban (steward ops)
+
+The center **Kanban** tab reads cards from [Hermes Kanban Bridge](https://github.com/GumbyEnder/hermes-kanban) (`HERMES_KANBAN_BASE`, default `http://127.0.0.1:27124`) when it is running. If the bridge is down, the dashboard **falls back** to `hermes kanban --board <id> list --json` on the same machine (requires `hermes` on `PATH`, same board as `hermes kanban list`).
+
+Configure in `data/agent-registry.json`:
+
+```json
+"defaultKanbanBoardId": "landfolk-ops",
+"kanbanBoardIdsByWorld": {
+  "world": "landfolk-ops",
+  "landfolk-test": "default"
+}
+```
+
+- **World** selector picks the board via `kanbanBoardIdsByWorld`, with fallback to `defaultKanbanBoardId`.
+- **Board** dropdown can override (stored in browser localStorage).
+- **Refresh** reloads cards; **Nudge dispatch** runs `hermes kanban --board <id> dispatch` on the dashboard host (one pass — does not decompose triage; use `hermes gateway start` for auto-decompose).
+- Click a card for title, assignee, and body in the right **Details** panel.
+- With an **agent** selected, the **Kanban** section in Details shows that agent’s best-matching card (prefer **running**, then ready/todo) by **assignee** name. **Show full card** opens the Kanban tab and selects the card.
+
+Verify:
+
+```bash
+curl -s 'http://127.0.0.1:27124/boards' | jq '.boards[].id'
+curl -s 'http://127.0.0.1:3000/api/kanban?world=world' | jq '.ok, .boardId, (.tasks | length)'
+```
+
+Kanban data for the dashboard uses `fetchBoardWithFallback` in `dashboard/lib/kanban.js`: it tries the Hermes kanban HTTP bridge at `HERMES_KANBAN_BASE` first, then falls back to `hermes kanban … --json` CLI if the bridge is down or returns an error. Board list endpoints use the same pattern via `fetchBoardsListWithFallback`.
+
+Hermes’s native kanban UI (if enabled) is separate from this command center (`http://127.0.0.1:9119` in steward docs).
+
 ## Detail panel: goals and mind
 
 The right **Details** pane combines bot truth (goals engine, tasks, observe) with a read-only tail of the Hermes LLM session.
@@ -103,22 +133,23 @@ curl -s 'http://127.0.0.1:3001/goals?full=true' | jq '.data.goals[0].id, .data.g
 curl -s 'http://127.0.0.1:3000/api/agent/Steve/goals' | jq '.ok, (.goals | length)'
 ```
 
-### Mind stream (Hermes thinking)
+### Mind stream (Hermes session — like `watch-agent.py`)
 
-- Reasoning and tool calls are **not** on the bot API; they live in Hermes `HERMES_HOME/sessions/session_*.json`.
-- Default home per agent: `~/.hermes-landfolk-<nameLower>` (same as `scripts/landfolk-control.sh`). Override with optional `hermes_home` on that agent in `data/agent-registry.json` (supports `~/…` paths).
-- Dashboard: `GET /api/agent/<name>/cognition?limit=15&cursor=N` reads the **most recently updated** Hermes session file under that agent’s `HERMES_HOME` (by JSON `last_updated`, not directory mtime alone), then returns truncated turns (`think`, `say`, `tool`, `tool_result`) from message index `cursor` onward.
-- Chat strip sub-tabs: **In-game** (Minecraft chat from fleet observe) | **Mind** (last few Hermes `think` / `say` lines from the active session tail). Mind is **empty** when no bots are online or the selected agent is offline. It refreshes at most every **5s** while the Mind tab is open and only re-renders when the tail text changes (no auto-scroll carousel). `GET …/cognition?tail=1&limit=8` returns the last turns from the most recently updated session file.
+- Reasoning, tools, and prompts are **not** on the bot API; they live in Hermes session JSON under `HERMES_HOME/sessions/session_*.json`.
+- The dashboard picks the active home like `scripts/watch-agent.py --auto`: newest session between `~/.hermes-landfolk-<name>` and `~/.hermes/profiles/<name>` (kanban workers). Override landfolk home with `hermes_home` in `data/agent-registry.json`.
+- `GET /api/agent/<name>/cognition?tail=1&limit=24` returns the last turns: **USER**, reasoning (**·**), **AGENT** text, **⚙** tool calls, **← / ✗** tool output (same parsing as `watch-agent.py`).
+- Chat strip: **In-game** — chat heard by the **selected online agent** (`new_chat` from observe) plus world lines from that bot. **Mind** — Hermes tail; empty when no agent selected or agent offline. Poll every **5s** on the Mind tab.
 
-Verify:
+Compare with CLI:
 
 ```bash
-curl -s 'http://127.0.0.1:3000/api/agent/Steve/cognition?limit=5' | jq '.ok, .session, (.turns | length)'
+scripts/watch-agent.py --agent flint --auto --tail 20
+curl -s 'http://127.0.0.1:3000/api/agent/Flint/cognition?tail=1&limit=24' | jq '.home_label, .session, [.turns[].kind]'
 ```
 
 ### Live strip and activity (fleet poll)
 
-The **live strip** sits directly under Map / Kanban / FPV (not pinned to the viewport bottom) and shows equipped item, position, world clock and motion, task, vitals, and related telemetry. The right panel shows agent name with online/world/model badges, in-game session, **Goals**, inventory, **recent actions**, and **reactive** log lines.
+The **live strip** is at the top of the lower **Log** pane (below Map / FPV / Kanban) and shows equipped item, position, world clock and motion, task, vitals, and related telemetry. The right panel shows agent name with online/world/model badges, in-game session, **Goals**, inventory, **recent actions**, and **reactive** log lines.
 
 ## Sanity checks
 

@@ -631,10 +631,30 @@ start_watchdog() {
         curl -sf -X POST "http://localhost:${port}/task/cancel" -H "Content-Type: application/json" -d '{}' >/dev/null 2>&1 || true
         sleep 1
         if [ "$stuck_hits" -ge "$WATCHDOG_MAX_STUCK_EVENTS" ]; then
-          curl -sf -X POST "http://localhost:${port}/action/go_mark" -H "Content-Type: application/json" -d '{"name":"mine_base"}' >/dev/null 2>&1 \
-            || curl -sf -X POST "http://localhost:${port}/action/go_mark" -H "Content-Type: application/json" -d '{"name":"mine_entrance"}' >/dev/null 2>&1 \
-            || true
-          echo "[$ts] watchdog regroup attempted (mine_base -> mine_entrance)" >> "$wd_log"
+          # Regroup: walk to a known mark from the bot's locations file.
+          # Pull the live mark catalog once, then call go_mark on the first
+          # present candidate. Order: `home` (auto-set on first spawn /
+          # set_home), `mine_entrance` (base1 epic site), `base` (canonical
+          # production anchor). If none exist the bot stays put — next tick
+          # falls through to mc escape.
+          marks_json="$(curl -sf "http://localhost:${port}/marks" 2>/dev/null || echo '{}')"
+          regroup_target="$(printf '%s' "$marks_json" | python3 -c "
+import json, sys
+try: d = json.load(sys.stdin)
+except Exception: d = {}
+have = {m.get('name') for m in (d.get('data') or {}).get('marks') or [] if m.get('name')}
+for cand in ('home', 'mine_entrance', 'base'):
+    if cand in have:
+        print(cand); break
+" 2>/dev/null)"
+          if [ -n "$regroup_target" ]; then
+            curl -sf -X POST "http://localhost:${port}/action/go_mark" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\":\"${regroup_target}\"}" >/dev/null 2>&1 || true
+            echo "[$ts] watchdog regroup -> ${regroup_target}" >> "$wd_log"
+          else
+            echo "[$ts] watchdog regroup skipped (no canonical mark present)" >> "$wd_log"
+          fi
           stuck_hits=0
         fi
       else
@@ -1173,8 +1193,12 @@ case "$COMMAND" in
     done
     for name in "${connected_agents[@]}"; do
       port="$(port_for_name "$name")"
-      start_agent "$name" "$port"
-      start_watchdog "$name" "$port"
+      # Watchdog is critical infrastructure — keep it independent of the
+      # continuous-agent launch. Previously, a `start_agent` failure (e.g.
+      # missing prompt file under set -euo pipefail) would abort the loop
+      # and leave the bot un-watched, so a single disconnect was terminal.
+      start_agent "$name" "$port" || echo "[start] $name agent failed (continuing — watchdog still arms)"
+      start_watchdog "$name" "$port" || echo "[start] $name watchdog FAILED to launch — bot will not auto-reconnect"
       sleep 2
     done
     echo "Started. Logs: $LOG_DIR/bot-*.log and $LOG_DIR/agent-*.log"
@@ -1185,6 +1209,16 @@ case "$COMMAND" in
       echo "[$name] hermes log:  tail -f \"$LOG_DIR/hermes-${name_lower}.log\""
       echo "[$name] progress:    tail -f \"$LOG_DIR/progress-${name_lower}.log\""
       echo "[$name] session:     scripts/watch-agent.py --agent ${name_lower} --tail 30"
+    done
+    ;;
+  watchdog)
+    # Launch JUST the watchdog for the named profiles (bot must already be
+    # up). Used by landfolk-session.sh ensure_watchdog when a start aborted
+    # before the watchdog could be armed.
+    for name in "${AGENTS[@]}"; do
+      port="$(port_for_name "$name")"
+      [ -z "$port" ] && { echo "Unknown port mapping for $name"; exit 1; }
+      start_watchdog "$name" "$port"
     done
     ;;
   stop)

@@ -21,8 +21,10 @@ export function renderToolCallArgs(argsRaw) {
   if (!argsRaw) return '';
   try {
     const d = JSON.parse(argsRaw);
-    if (d && typeof d === 'object' && typeof d.command === 'string') {
-      return truncate(d.command, TRUNC_TOOL);
+    if (d && typeof d === 'object') {
+      if (typeof d.command === 'string') return truncate(d.command, TRUNC_TOOL);
+      if (typeof d.path === 'string') return truncate(d.path, TRUNC_TOOL);
+      if (typeof d.pattern === 'string') return truncate(d.pattern, TRUNC_TOOL);
     }
     return truncate(JSON.stringify(d), TRUNC_TOOL);
   } catch {
@@ -51,6 +53,10 @@ export function renderToolResult(content) {
     }
   } catch {
     /* fall through */
+  }
+  const lower = content.toLowerCase();
+  if (lower.includes('[error]') || lower.includes('"ok": false') || lower.includes('"ok":false')) {
+    return { text: truncate(content.replace(/\s+/g, ' ').trim(), TRUNC_TOOL), isError: true };
   }
   return { text: truncate(content, TRUNC_TOOL), isError: false };
 }
@@ -144,6 +150,13 @@ export function extractTurns(messages, opts = {}) {
     const msg = messages[i];
     nextIndex = i + 1;
     const role = msg?.role;
+    if (role === 'user') {
+      const text = truncate(String(msg.content || ''), opts.userTrunc ?? 600);
+      if (text) {
+        turns.push({ index: i, turnKey: `${i}:user`, kind: 'user', text });
+      }
+      continue;
+    }
     if (role === 'assistant') {
       const reasoning = (msg.reasoning_content || msg.reasoning || '').trim();
       const content = (msg.content || '').trim();
@@ -198,14 +211,50 @@ export function extractTurnsTail(messages, opts = {}) {
   const { turns } = extractTurns(messages, {
     limit: messages.length,
     sinceIndex: 0,
+    userTrunc: opts.userTrunc,
   });
   const filtered = kinds?.length ? turns.filter((t) => kinds.includes(t.kind)) : turns;
   return filtered.slice(-limit);
 }
 
 /**
+ * Pick HERMES_HOME with the most recently updated session (watch-agent --auto).
+ * @param {string[]} candidateHomes
+ */
+export function pickActiveHermesHome(candidateHomes) {
+  let bestHome = null;
+  let bestMs = -1;
+  for (const home of candidateHomes || []) {
+    const sessionsDir = path.join(home, 'sessions');
+    const sessionPath = activeSessionFile(sessionsDir);
+    if (!sessionPath) continue;
+    const ms = sessionActivityMs(sessionPath);
+    if (ms >= bestMs) {
+      bestMs = ms;
+      bestHome = home;
+    }
+  }
+  return bestHome;
+}
+
+/**
+ * @param {string[]} candidateHomes
+ * @param {{ limit?: number, cursor?: number, tail?: boolean, kinds?: string[] }} [opts]
+ */
+export function loadCognitionFromHomes(candidateHomes, opts = {}) {
+  const home =
+    pickActiveHermesHome(candidateHomes) ||
+    (candidateHomes?.length ? candidateHomes[0] : null);
+  if (!home) {
+    return { ok: false, error: 'no_home', turns: [], cursor: 0, session: null, hermes_home: null };
+  }
+  const out = loadCognitionFromHome(home, opts);
+  return { ...out, hermes_home: home };
+}
+
+/**
  * @param {string} hermesHome
- * @param {{ limit?: number, cursor?: number, tail?: boolean }} [opts]
+ * @param {{ limit?: number, cursor?: number, tail?: boolean, kinds?: string[] }} [opts]
  */
 export function loadCognitionFromHome(hermesHome, opts = {}) {
   const sessionsDir = path.join(hermesHome, 'sessions');
@@ -215,8 +264,13 @@ export function loadCognitionFromHome(hermesHome, opts = {}) {
   }
   const messages = loadSessionMessages(sessionPath);
   const limit = opts.limit ?? 15;
+  const tailKinds = opts.kinds;
   if (opts.tail) {
-    const turns = extractTurnsTail(messages, { limit, kinds: ['think', 'say'] });
+    const turns = extractTurnsTail(messages, {
+      limit,
+      kinds: tailKinds,
+      userTrunc: opts.userTrunc,
+    });
     return {
       ok: true,
       turns,

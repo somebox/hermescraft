@@ -1,7 +1,6 @@
 /**
  * HermesCraft dashboard frontend (vanilla ESM).
  */
-import { boundsXZ, worldToCanvas } from './map2d.js';
 import {
   actionLabel,
   buildChipList,
@@ -10,36 +9,42 @@ import {
   buildKanbanDetail,
   buildPoiDetail,
   collapsibleRaw,
+  detailSection,
   motionSummary,
   mountPlayerDetailShell,
   patchDetailHero,
   patchGoalsBody,
   patchRecentActionsHost,
   patchReactiveHost,
+  patchAgentKanbanHost,
   prettyItemName,
 } from './detail-view.js';
 import { patchAgentLiveStrip } from './agent-live-strip.js';
+import { pickAgentKanbanTask } from './kanban-agent.js';
+import { appendMindTurn, ensureMindSessionHeader, renderMindEmpty } from './cognition-view.js';
 
 const LS_WORLD = 'hc_dashboard_world';
 const LS_SEL = 'hc_dashboard_selection';
 const LS_TAB = 'hc_dashboard_tab';
-const LS_MAP_SUB = 'hc_dashboard_map_sub';
 const LS_CHAT_SUB = 'hc_dashboard_chat_sub';
+const LS_KANBAN_BOARD = 'hc_dashboard_kanban_board';
 
 const LANES = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archived'];
 
 let worlds = [];
 let fleet = null;
 let pois = [];
+let regions = [];
 let kanbanData = { tasks: [], grouped: null, ok: false };
-/** @type {{ cx: number, cy: number, r: number, kind: string, id: string, label: string }[]} */
-let mapHitTargets = [];
 
 /** Last FPV iframe URL we applied — avoids resetting `src` every fleet poll (full reload + viewer spam). */
 let fpvLoadedUrl = '';
 
 /** Last terrain map iframe URL (same stability as FPV). */
 let terrainLoadedUrl = '';
+
+/** Squaremap player names for current world (merged into Players sidebar). */
+let mapPlayersForWorld = [];
 
 /** From GET /api/map/config — null when disabled. */
 let worldMapConfig = null;
@@ -59,7 +64,7 @@ let cachedGoalsList = [];
 /** Mind panel: poll only while Mind tab + selected agent online. */
 let mindPollTimer = null;
 const MIND_POLL_MS = 5000;
-const MIND_TAIL_LIMIT = 8;
+const MIND_TAIL_LIMIT = 24;
 
 function loadJson(key, fallback) {
   try {
@@ -74,13 +79,21 @@ function saveJson(key, val) {
   localStorage.setItem(key, JSON.stringify(val));
 }
 
+let kanbanBoardIdsByWorld = {};
+let defaultKanbanBoardId = null;
+/** @type {{ id?: string, title?: string, name?: string, slug?: string, path?: string }[]} */
+let kanbanBoardsList = [];
+
 let state = {
   world: loadJson(LS_WORLD, null) || 'world',
   selection: loadJson(LS_SEL, null),
   centerTab: loadJson(LS_TAB, 'map') || 'map',
-  mapSub: loadJson(LS_MAP_SUB, 'tactical') || 'tactical',
   chatSub: loadJson(LS_CHAT_SUB, 'ingame') || 'ingame',
+  kanbanBoard: loadJson(LS_KANBAN_BOARD, null),
 };
+
+const CENTER_TABS = new Set(['map', 'fpv', 'kanban']);
+if (!CENTER_TABS.has(state.centerTab)) state.centerTab = 'map';
 
 function $(id) {
   const el = document.getElementById(id);
@@ -108,8 +121,8 @@ function setTab(name) {
     p.classList.toggle('active', on);
     p.hidden = !on;
   });
-  if (name === 'fpv') refreshFpv();
-  if (name === 'map' && state.mapSub === 'terrain') refreshTerrainMap();
+  if (name === 'fpv') requestAnimationFrame(() => refreshFpv());
+  if (name === 'map') requestAnimationFrame(() => refreshTerrainMap());
 }
 
 function buildTerrainIframeUrl(cfg, hermesWorld) {
@@ -123,32 +136,12 @@ function buildTerrainIframeUrl(cfg, hermesWorld) {
 }
 
 function applyWorldMapUi() {
-  const nav = document.getElementById('mapSubtabs');
-  if (!nav) return;
-  const enabled = Boolean(worldMapConfig?.enabled);
-  nav.hidden = !enabled;
-  if (!enabled && state.mapSub === 'terrain') {
-    state.mapSub = 'tactical';
-    saveJson(LS_MAP_SUB, state.mapSub);
-  }
-  setMapSubTab(state.mapSub, { skipSave: true });
-}
-
-function setMapSubTab(name, opts = {}) {
-  if (!worldMapConfig?.enabled && name === 'terrain') name = 'tactical';
-  state.mapSub = name;
-  if (!opts.skipSave) saveJson(LS_MAP_SUB, name);
-  document.querySelectorAll('.map-subtab').forEach((b) => {
-    const on = b.dataset.mapSub === name;
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  const tactical = document.getElementById('mapPanelTactical');
   const terrain = document.getElementById('mapPanelTerrain');
-  if (tactical) tactical.hidden = name !== 'tactical';
-  if (terrain) terrain.hidden = name !== 'terrain';
-  if (name === 'tactical' && state.centerTab === 'map') renderMap();
-  if (name === 'terrain') refreshTerrainMap();
+  const unavailable = document.getElementById('mapUnavailable');
+  const enabled = Boolean(worldMapConfig?.enabled);
+  if (terrain) terrain.hidden = !enabled;
+  if (unavailable) unavailable.hidden = enabled;
+  if (enabled && state.centerTab === 'map') refreshTerrainMap();
 }
 
 function refreshTerrainMap() {
@@ -187,6 +180,18 @@ async function fetchMapConfig() {
   applyWorldMapUi();
 }
 
+async function refreshMapPlayerNames() {
+  mapPlayersForWorld = [];
+  if (!worldMapConfig?.enabled) return;
+  try {
+    const r = await fetch(`/api/map/players?world=${encodeURIComponent(state.world)}`);
+    const j = await r.json();
+    if (j.ok && Array.isArray(j.names)) mapPlayersForWorld = j.names;
+  } catch {
+    mapPlayersForWorld = [];
+  }
+}
+
 function agentsInWorld() {
   if (!fleet?.agents) return [];
   return fleet.agents.filter((a) => a.online && a.world === state.world);
@@ -201,6 +206,8 @@ async function fetchWorlds() {
   const r = await fetch('/api/worlds');
   const j = await r.json();
   worlds = j.worlds || [];
+  kanbanBoardIdsByWorld = j.kanbanBoardIdsByWorld || {};
+  defaultKanbanBoardId = j.defaultKanbanBoardId || null;
   const sel = $('worldSelect');
   sel.replaceChildren();
   for (const w of worlds) {
@@ -213,6 +220,97 @@ async function fetchWorlds() {
     state.world = worlds[0]?.name || 'world';
   }
   sel.value = state.world;
+  syncKanbanBoardSelect();
+}
+
+function resolveKanbanBoardId() {
+  if (state.kanbanBoard) return state.kanbanBoard;
+  return kanbanBoardIdsByWorld[state.world] || defaultKanbanBoardId || null;
+}
+
+function syncKanbanBoardSelect() {
+  const sel = document.getElementById('kanbanBoardSelect');
+  if (!sel) return;
+  const current = resolveKanbanBoardId();
+  sel.replaceChildren();
+  const seen = new Set();
+  const add = (id, label) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    const o = document.createElement('option');
+    o.value = id;
+    o.textContent = label;
+    sel.appendChild(o);
+  };
+  if (current) add(current, `${current} (this world)`);
+  for (const b of kanbanBoardsList) {
+    const id = b.id || b.slug || b.path;
+    if (!id) continue;
+    add(id, b.title || b.name || id);
+  }
+  if (current && seen.has(current)) sel.value = current;
+  else if (state.kanbanBoard && seen.has(state.kanbanBoard)) sel.value = state.kanbanBoard;
+}
+
+async function loadKanbanBoardsList() {
+  try {
+    const r = await fetch('/api/kanban/boards');
+    const j = await r.json();
+    if (j.ok) kanbanBoardsList = j.boards || [];
+  } catch {
+    kanbanBoardsList = [];
+  }
+  syncKanbanBoardSelect();
+}
+
+async function fetchKanban() {
+  const board = resolveKanbanBoardId();
+  const q = new URLSearchParams({ world: state.world });
+  if (board) q.set('board', board);
+  const r = await fetch(`/api/kanban?${q}`);
+  kanbanData = await r.json();
+  const st = $('kanbanStatus');
+  if (!kanbanData.ok) {
+    const err = kanbanData.error || 'unknown';
+    if (err === 'no_board_for_world') {
+      st.textContent =
+        'No board mapped for this world — set kanbanBoardIdsByWorld / defaultKanbanBoardId in agent-registry.json.';
+    } else if (String(err).startsWith('kanban_http')) {
+      st.textContent =
+        'Kanban bridge unreachable — using local hermes CLI if available (HERMES_KANBAN_BASE :27124).';
+    } else if (err === 'kanban_cli_err') {
+      st.textContent = `Kanban CLI failed: ${kanbanData.message || 'is hermes on PATH?'}`;
+    } else {
+      st.textContent = `Kanban: ${err}`;
+    }
+  } else {
+    const n = kanbanData.tasks?.length ?? 0;
+    const base = fleet?._meta?.kanban_base || 'bridge';
+    const src = kanbanData.source === 'cli' ? 'hermes CLI' : base;
+    st.textContent = `${kanbanData.boardId || board || 'board'} · ${n} cards · ${src}`;
+  }
+  renderKanban();
+  renderDetail();
+}
+
+async function nudgeKanbanDispatch() {
+  const board = resolveKanbanBoardId();
+  const st = $('kanbanStatus');
+  st.textContent = 'Running dispatch…';
+  const q = new URLSearchParams({ world: state.world });
+  if (board) q.set('board', board);
+  try {
+    const r = await fetch(`/api/kanban/dispatch?${q}`, { method: 'POST' });
+    const j = await r.json();
+    if (j.ok) {
+      st.textContent = `Dispatch ok · ${board || 'board'}`;
+      await fetchKanban();
+    } else {
+      st.textContent = j.message || j.error || 'Dispatch failed (is hermes on PATH?)';
+    }
+  } catch (e) {
+    st.textContent = e instanceof Error ? e.message : 'Dispatch failed';
+  }
 }
 
 async function fetchFleet() {
@@ -224,36 +322,22 @@ async function fetchFleet() {
   renderDetail();
   if (state.chatSub === 'mind') syncMindPanel();
   else renderChat();
-  if (state.centerTab === 'map') {
-    if (state.mapSub === 'terrain' && worldMapConfig?.enabled) {
-      refreshTerrainMap();
-    } else {
-      await fetchPoi();
-      renderMap();
-    }
-  }
+  if (state.centerTab === 'map') refreshTerrainMap();
   if (state.centerTab === 'fpv') refreshFpv();
+  await refreshMapPlayerNames();
+  renderHumanList();
 }
 
 async function fetchPoi() {
-  const r = await fetch(`/api/poi?world=${encodeURIComponent(state.world)}`);
-  const j = await r.json();
+  const worldQ = encodeURIComponent(state.world);
+  const [poiRes, regRes] = await Promise.all([
+    fetch(`/api/poi?world=${worldQ}`),
+    fetch(`/api/regions?world=${worldQ}`),
+  ]);
+  const j = await poiRes.json();
   pois = j.pois || [];
-}
-
-async function fetchKanban() {
-  const r = await fetch(`/api/kanban?world=${encodeURIComponent(state.world)}`);
-  kanbanData = await r.json();
-  const st = $('kanbanStatus');
-  if (!kanbanData.ok) {
-    st.textContent = kanbanData.error
-      ? `Kanban: ${kanbanData.error}`
-      : 'Kanban unavailable (is Hermes Kanban Bridge running?)';
-  } else {
-    st.textContent = kanbanData.boardId ? `Board: ${kanbanData.boardId}` : '';
-  }
-  renderKanban();
-  renderDetail();
+  const rj = await regRes.json().catch(() => ({}));
+  regions = rj.regions || [];
 }
 
 function renderHeader() {
@@ -338,7 +422,6 @@ function renderAgentList() {
       renderHumanList();
       renderDetail();
       if (state.centerTab === 'fpv') refreshFpv();
-      if (state.centerTab === 'map') renderMap();
     });
     host.appendChild(btn);
   }
@@ -351,14 +434,29 @@ function botNameSet() {
   return new Set((fleet?.agents || []).map((a) => String(a.name).toLowerCase()));
 }
 
+function isSidebarPlayerName(name) {
+  const n = String(name || '').trim().toLowerCase();
+  return n && n !== 'player' && n !== 'unknown';
+}
+
 function renderHumanList() {
   const host = document.getElementById('humanList');
   if (!host) return;
   host.replaceChildren();
   const bots = botNameSet();
-  const list = humansInWorld()
-    .filter((h) => h.name && !bots.has(String(h.name).toLowerCase()))
-    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const byKey = new Map();
+  for (const h of humansInWorld()) {
+    if (!isSidebarPlayerName(h.name) || bots.has(String(h.name).toLowerCase())) continue;
+    byKey.set(String(h.name).toLowerCase(), h);
+  }
+  for (const name of mapPlayersForWorld) {
+    if (!isSidebarPlayerName(name) || bots.has(String(name).toLowerCase())) continue;
+    const key = String(name).toLowerCase();
+    if (!byKey.has(key)) {
+      byKey.set(key, { name, online: true, world: state.world, human: true });
+    }
+  }
+  const list = [...byKey.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
   if (!list.length) {
     host.appendChild(el('p', 'muted human-list-empty', 'No players in this world.'));
     return;
@@ -377,7 +475,6 @@ function renderHumanList() {
       renderHumanList();
       renderAgentList();
       renderDetail();
-      if (state.centerTab === 'map') renderMap();
     });
     host.appendChild(btn);
   }
@@ -442,6 +539,13 @@ async function renderDetail() {
       mountPlayerDetailShell(main);
       const metricsRoot = main.querySelector('#detailMetrics');
       if (metricsRoot) metricsRoot.appendChild(buildPlayerMetrics(a));
+    } else if (!main.querySelector('#detailKanbanBody')) {
+      const goalsSec = main.querySelector('#detailGoalsBody')?.closest('.detail-section');
+      const kanbanBody = el('div', 'detail-section-body');
+      kanbanBody.id = 'detailKanbanBody';
+      const sec = detailSection('Kanban', kanbanBody);
+      if (goalsSec?.nextSibling) main.insertBefore(sec, goalsSec.nextSibling);
+      else main.appendChild(sec);
     }
 
     const hero = main.querySelector('#detailHero');
@@ -466,6 +570,26 @@ async function renderDetail() {
         goalsBody.replaceChildren(el('p', 'detail-muted', a.online ? 'Loading goals…' : '—'));
       }
       if (a.online) refreshAgentGoals(a.name);
+    }
+
+    const kanbanBody = main.querySelector('#detailKanbanBody');
+    if (kanbanBody) {
+      const boardId = resolveKanbanBoardId();
+      const card = pickAgentKanbanTask(kanbanData.tasks || [], a.name);
+      patchAgentKanbanHost(kanbanBody, card, {
+        kanbanOk: kanbanData.ok,
+        boardId,
+        onOpen: (t) => {
+          state.selection = { kind: 'task', id: t.id };
+          saveJson(LS_SEL, state.selection);
+          setTab('kanban');
+          fetchKanban();
+          renderAgentList();
+          renderHumanList();
+          renderKanban();
+          renderDetail();
+        },
+      });
     }
 
     patchInvLive(main.querySelector('#detailInvLive'), a.inventory_summary);
@@ -541,6 +665,7 @@ async function renderDetail() {
     } else {
       lastInvFetch = { agent: null, at: 0 };
     }
+    if (state.chatSub === 'ingame') renderChat();
     return;
   }
   if (sel.kind === 'human') {
@@ -684,9 +809,7 @@ function setChatSubTab(name) {
 function clearMindPanel() {
   const mind = document.getElementById('mindBody');
   if (!mind) return;
-  mind.replaceChildren();
-  mind.dataset.mindKey = '';
-  mind.scrollTop = 0;
+  renderMindEmpty(mind, 'Select an online agent to tail Hermes session (like watch-agent.py).');
 }
 
 function stopMindPoll() {
@@ -730,44 +853,65 @@ function renderChat() {
   const body = $('chatBody');
   if (!body || state.chatSub !== 'ingame') return;
   body.replaceChildren();
-  const lines = fleet?.chat || [];
-  const filtered = lines.filter((c) => c.world === state.world).slice(-30);
-  for (const c of filtered) {
+  const sel = state.selection;
+  const ag =
+    sel?.kind === 'player' ? fleet?.agents?.find((x) => x.name === sel.id) : null;
+
+  /** @type {{ from: string, message: string, world?: string, source?: string }[]} */
+  const rows = [];
+
+  if (ag?.online && Array.isArray(ag.new_chat)) {
+    for (const line of ag.new_chat) {
+      rows.push({
+        from: line.from || '?',
+        message: line.message || line.text || '',
+        world: ag.world,
+        source: 'heard',
+      });
+    }
+  }
+
+  const global = (fleet?.chat || []).filter((c) => c.world === state.world);
+  for (const c of global) {
+    if (ag && c.agent && c.agent !== ag.name) continue;
+    rows.push({
+      from: c.from,
+      message: c.message,
+      world: c.world,
+      source: c.agent === ag?.name ? 'nearby' : 'world',
+    });
+  }
+
+  const seen = new Set();
+  const deduped = [];
+  for (const r of rows) {
+    const k = `${r.from}|${r.message}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    deduped.push(r);
+  }
+
+  const slice = deduped.slice(-40);
+  if (!slice.length) {
+    body.appendChild(
+      el(
+        'p',
+        'chat-empty muted',
+        ag?.online
+          ? 'No recent chat for this agent (mc read_chat / in-world messages).'
+          : 'Select an online agent for their chat tail.',
+      ),
+    );
+    return;
+  }
+
+  for (const c of slice) {
     const div = el('div', 'chat-line', null);
+    if (c.source === 'heard') div.classList.add('chat-heard');
     const wtag = c.world ? `[${c.world.slice(0, 3)}] ` : '';
     div.textContent = `${wtag}${c.from}: ${c.message}`;
     body.appendChild(div);
   }
-}
-
-function appendMindTurn(container, turn) {
-  const line = el('div', `cog-line cog-${turn.kind}`, null);
-  if (turn.kind === 'think') {
-    line.textContent = `think: ${turn.text}`;
-  } else if (turn.kind === 'say') {
-    line.textContent = `asst: ${turn.text}`;
-  } else if (turn.kind === 'tool') {
-    line.textContent = `${turn.toolName || 'tool'}: ${turn.text}`;
-  } else if (turn.kind === 'tool_result') {
-    line.classList.add(turn.isError ? 'cog-err' : 'cog-out');
-    line.textContent = `${turn.isError ? 'ERR' : 'out'} → ${turn.text}`;
-  } else {
-    line.textContent = turn.text || '';
-  }
-  const key = turn.turnKey || `${turn.index}:${turn.kind}`;
-  line.dataset.turnKey = key;
-  container.appendChild(line);
-}
-
-function ensureMindSessionHeader(mind, agentName, sessionFile) {
-  let head = mind.querySelector('.mind-session-head');
-  if (!head) {
-    head = el('div', 'mind-session-head muted', '');
-    mind.prepend(head);
-  }
-  head.textContent = sessionFile
-    ? `${agentName} · ${sessionFile}`
-    : `${agentName} · (no session)`;
 }
 
 function refreshMindFeed(force) {
@@ -787,15 +931,18 @@ function refreshMindFeed(force) {
       }
       if (state.selection?.id !== agentName) return;
       if (!j.ok) {
-        clearMindPanel();
+        renderMindEmpty(mind, j.error === 'no_session' ? 'No Hermes session yet for this agent.' : 'Mind feed unavailable.');
         return;
       }
-      const contentKey = `${agentName}|${j.session || ''}|${JSON.stringify(j.turns || [])}`;
+      const contentKey = `${agentName}|${j.session || ''}|${j.home_label || ''}|${JSON.stringify(j.turns || [])}`;
       if (!force && mind.dataset.mindKey === contentKey) return;
       mind.dataset.mindKey = contentKey;
       mind.replaceChildren();
-      if (!j.turns?.length) return;
-      ensureMindSessionHeader(mind, agentName, j.session);
+      if (!j.turns?.length) {
+        renderMindEmpty(mind, 'Session empty — waiting for Hermes turns…');
+        return;
+      }
+      ensureMindSessionHeader(mind, agentName, j.session, j.home_label);
       for (const t of j.turns) appendMindTurn(mind, t);
     })
     .catch(() => {
@@ -806,18 +953,27 @@ function refreshMindFeed(force) {
 function renderKanban() {
   const host = $('kanbanBoard');
   host.replaceChildren();
+  if (!kanbanData.ok) {
+    host.appendChild(
+      el('p', 'muted', 'No board data — see status line below (bridge or hermes CLI).'),
+    );
+    return;
+  }
   const g = kanbanData.grouped;
   if (!g) return;
   for (const lane of LANES) {
     const cards = g[lane] || [];
     const col = el('div', 'kanban-col', null);
-    col.appendChild(el('h4', null, lane));
+    col.appendChild(el('h4', null, `${lane} (${cards.length})`));
     for (const c of cards) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'kanban-card';
       if (state.selection?.kind === 'task' && state.selection.id === c.id) b.classList.add('selected');
-      b.textContent = c.title;
+      b.appendChild(el('span', 'kanban-card-title', c.title));
+      if (c.assignee) {
+        b.appendChild(el('span', 'kanban-card-meta', c.assignee));
+      }
       b.addEventListener('click', () => {
         state.selection = { kind: 'task', id: c.id };
         saveJson(LS_SEL, state.selection);
@@ -830,222 +986,20 @@ function renderKanban() {
   }
 }
 
-/** Size backing store for sharp rendering; CSS size follows container. */
-function syncMapCanvasSize() {
-  const canvas = $('mapCanvas');
-  const wrap = canvas.parentElement;
-  if (!wrap) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.25);
-  const cssW = Math.max(260, Math.floor(wrap.clientWidth));
-  const cssH = Math.max(200, Math.round((cssW * 400) / 640));
-  const bw = Math.round(cssW * dpr);
-  const bh = Math.round(cssH * dpr);
-  if (canvas.width !== bw || canvas.height !== bh) {
-    canvas.width = bw;
-    canvas.height = bh;
-  }
-  canvas.style.width = `${cssW}px`;
-  canvas.style.height = `${cssH}px`;
+function bindCenterUpperResize() {
+  const upper = document.querySelector('.center-upper');
+  if (!upper || typeof ResizeObserver === 'undefined') return;
+  const ro = new ResizeObserver(() => {
+    if (state.centerTab === 'fpv') refreshFpv();
+  });
+  ro.observe(upper);
 }
 
-/** @returns {{ cw: number, ch: number, dpr: number }} logical (CSS) pixel size */
-function mapBeginFrame(ctx, canvas) {
-  const cssW = parseFloat(canvas.style.width) || canvas.clientWidth || 640;
-  const cssH = parseFloat(canvas.style.height) || canvas.clientHeight || 400;
-  const dpr = canvas.width / cssW;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return { cw: cssW, ch: cssH, dpr };
-}
-
-function drawMapGrid(ctx, b, cw, ch) {
-  const span = Math.max(b.maxX - b.minX, b.maxZ - b.minZ, 8);
-  const step = span > 500 ? 64 : span > 180 ? 32 : span > 80 ? 16 : 8;
-  ctx.save();
-  ctx.strokeStyle = 'rgba(139, 148, 158, 0.14)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 5]);
-  const minX = Math.floor(b.minX / step) * step;
-  const maxX = Math.ceil(b.maxX / step) * step;
-  const minZ = Math.floor(b.minZ / step) * step;
-  const maxZ = Math.ceil(b.maxZ / step) * step;
-  for (let x = minX; x <= maxX; x += step) {
-    const p0 = worldToCanvas(x, b.minZ, b, cw, ch);
-    const p1 = worldToCanvas(x, b.maxZ, b, cw, ch);
-    ctx.beginPath();
-    ctx.moveTo(p0.cx, p0.cy);
-    ctx.lineTo(p1.cx, p1.cy);
-    ctx.stroke();
-  }
-  for (let z = minZ; z <= maxZ; z += step) {
-    const p0 = worldToCanvas(b.minX, z, b, cw, ch);
-    const p1 = worldToCanvas(b.maxX, z, b, cw, ch);
-    ctx.beginPath();
-    ctx.moveTo(p0.cx, p0.cy);
-    ctx.lineTo(p1.cx, p1.cy);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  ctx.restore();
-}
-
-function fillDiamond(ctx, cx, cy, r, fillStyle) {
-  ctx.save();
-  ctx.fillStyle = fillStyle;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - r);
-  ctx.lineTo(cx + r, cy);
-  ctx.lineTo(cx, cy + r);
-  ctx.lineTo(cx - r, cy);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawMapLabel(ctx, text, cx, cy, dy) {
-  const t = String(text).slice(0, 15);
-  ctx.save();
-  ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(13, 17, 23, 0.92)';
-  ctx.fillStyle = 'rgba(230, 237, 243, 0.96)';
-  const y = cy + dy;
-  ctx.strokeText(t, cx, y);
-  ctx.fillText(t, cx, y);
-  ctx.restore();
-}
-
-function mapIsSelected(kind, id) {
-  const s = state.selection;
-  return s?.kind === kind && s.id === id;
-}
-
-function renderMap() {
-  syncMapCanvasSize();
-  const canvas = $('mapCanvas');
-  const ctx = canvas.getContext('2d');
-  const { cw, ch } = mapBeginFrame(ctx, canvas);
-
-  const root = getComputedStyle(document.documentElement);
-  const bg = root.getPropertyValue('--bg').trim() || '#0d1117';
-  const borderCol = root.getPropertyValue('--border').trim() || '#30363d';
-  const accent = root.getPropertyValue('--accent').trim() || '#58a6ff';
-  const good = root.getPropertyValue('--good').trim() || '#3fb950';
-  const warn = root.getPropertyValue('--warn').trim() || '#d29922';
-
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, cw, ch);
-
-  const points = [];
-  for (const a of agentsInWorld()) {
-    if (a.position) points.push({ x: a.position.x, z: a.position.z });
-  }
-  for (const hum of humansInWorld()) {
-    if (hum.position) points.push({ x: hum.position.x, z: hum.position.z });
-  }
-  for (const p of pois) {
-    points.push({ x: p.x, z: p.z });
-  }
-
-  const b = boundsXZ(points);
-  mapHitTargets = [];
-
-  drawMapGrid(ctx, b, cw, ch);
-
-  ctx.strokeStyle = borderCol;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, cw - 1, ch - 1);
-
-  for (const p of pois) {
-    const { cx, cy } = worldToCanvas(p.x, p.z, b, cw, ch);
-    const rr = 5;
-    const id = poiKey(p);
-    const sel = mapIsSelected('poi', id);
-    fillDiamond(ctx, cx, cy, rr, warn);
-    if (sel) {
-      ctx.save();
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, rr + 4, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-    mapHitTargets.push({ cx, cy, r: 10, kind: 'poi', id, label: p.name });
-    drawMapLabel(ctx, p.name || 'POI', cx, cy, rr + 10);
-  }
-
-  for (const hum of humansInWorld()) {
-    if (!hum.position) continue;
-    const { cx, cy } = worldToCanvas(hum.position.x, hum.position.z, b, cw, ch);
-    const r = 6;
-    ctx.fillStyle = '#8b949e';
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    if (mapIsSelected('human', hum.name)) {
-      ctx.save();
-      ctx.strokeStyle = accent;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-    mapHitTargets.push({ cx, cy, r: 11, kind: 'human', id: hum.name, label: hum.name });
-    drawMapLabel(ctx, hum.name, cx, cy, r + 10);
-  }
-
-  for (const a of agentsInWorld()) {
-    if (!a.position) continue;
-    const { cx, cy } = worldToCanvas(a.position.x, a.position.z, b, cw, ch);
-    const r = 7;
-    ctx.fillStyle = good;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    const sel = mapIsSelected('player', a.name);
-    ctx.strokeStyle = sel ? accent : 'rgba(0,0,0,0.35)';
-    ctx.lineWidth = sel ? 2.5 : 1;
-    ctx.stroke();
-    mapHitTargets.push({ cx, cy, r: 12, kind: 'player', id: a.name, label: a.name });
-    drawMapLabel(ctx, a.name, cx, cy, r + 11);
-  }
-
-  const spanX = b.maxX - b.minX;
-  const spanZ = b.maxZ - b.minZ;
-  const stepHint =
-    spanX > 500 || spanZ > 500 ? '64' : spanX > 180 || spanZ > 180 ? '32' : spanX > 80 || spanZ > 80 ? '16' : '8';
-  const meta = document.getElementById('mapMeta');
-  if (meta) {
-    meta.textContent = `~${spanX.toFixed(0)} × ${spanZ.toFixed(0)} blocks · grid ${stepHint}`;
-  }
-}
-
-function canvasClick(ev) {
-  const canvas = $('mapCanvas');
-  const rect = canvas.getBoundingClientRect();
-  const cssW = parseFloat(canvas.style.width) || rect.width;
-  const cssH = parseFloat(canvas.style.height) || rect.height;
-  const sx = ((ev.clientX - rect.left) / rect.width) * cssW;
-  const sy = ((ev.clientY - rect.top) / rect.height) * cssH;
-  let best = null;
-  let bestD = Infinity;
-  for (const t of mapHitTargets) {
-    const d = Math.hypot(sx - t.cx, sy - t.cy);
-    if (d <= t.r && d < bestD) {
-      best = t;
-      bestD = d;
-    }
-  }
-  if (!best) return;
-  state.selection = { kind: best.kind, id: best.id };
-  saveJson(LS_SEL, state.selection);
-  renderAgentList();
-  renderHumanList();
-  renderDetail();
-  if (state.centerTab === 'map') renderMap();
+function resolveFpvPort(ag) {
+  if (!ag) return null;
+  if (ag.viewer_port != null && Number(ag.viewer_port) > 0) return Number(ag.viewer_port);
+  if (ag.api_port != null) return Number(ag.api_port) + 1000;
+  return null;
 }
 
 function refreshFpv() {
@@ -1055,8 +1009,24 @@ function refreshFpv() {
   const ag =
     sel?.kind === 'player' ? fleet?.agents?.find((x) => x.name === sel.id) : null;
   const botHost = fleet?._meta?.bot_host || '127.0.0.1';
-  if (ag?.viewer_port && sel?.kind === 'player') {
-    const next = `http://${botHost}:${ag.viewer_port}/`;
+  const link = document.getElementById('fpvOpenLink');
+
+  const port = resolveFpvPort(ag);
+  if (port && sel?.kind === 'player' && ag?.online) {
+    const next = `http://${botHost}:${port}/`;
+    if (link) {
+      link.href = next;
+      link.textContent = `Open FPV in new tab (${botHost}:${port})`;
+      link.hidden = false;
+    }
+
+    if (ag.viewer_active === false) {
+      ph.style.display = 'block';
+      ph.textContent = `No viewer reported on /health — if FPV is blank, restart bot with VIEWER_PORT=${port}.`;
+    } else {
+      ph.style.display = 'none';
+    }
+
     if (
       fpvLoadedUrl === next &&
       frame.classList.contains('visible') &&
@@ -1064,7 +1034,6 @@ function refreshFpv() {
     ) {
       return;
     }
-    ph.style.display = 'none';
     frame.classList.add('visible');
     if (fpvLoadedUrl !== next) {
       fpvLoadedUrl = next;
@@ -1074,10 +1043,15 @@ function refreshFpv() {
     fpvLoadedUrl = '';
     frame.classList.remove('visible');
     frame.removeAttribute('src');
+    if (link) link.hidden = true;
     ph.style.display = 'block';
-    ph.textContent = ag
-      ? 'No viewer_port for this agent (set VIEWER_PORT when starting the bot).'
-      : 'Select an agent to view FPV.';
+    if (!ag || sel?.kind !== 'player') {
+      ph.textContent = 'Select an online agent, then open FPV.';
+    } else if (!ag.online) {
+      ph.textContent = `${ag.name} is offline — FPV follows the running bot process.`;
+    } else {
+      ph.textContent = 'No viewer port for this agent (set VIEWER_PORT when starting the bot).';
+    }
   }
 }
 
@@ -1090,10 +1064,9 @@ function bindUi() {
     renderAgentList();
     renderHumanList();
     renderDetail();
-    if (state.centerTab === 'map') {
-      if (state.mapSub === 'terrain') refreshTerrainMap();
-      else fetchPoi().then(renderMap);
-    }
+    fetchPoi();
+    refreshMapPlayerNames().then(() => renderHumanList());
+    if (state.centerTab === 'map') refreshTerrainMap();
     if (state.centerTab === 'kanban') fetchKanban();
   });
 
@@ -1101,15 +1074,8 @@ function bindUi() {
     btn.addEventListener('click', () => {
       setTab(btn.dataset.tab);
       if (btn.dataset.tab === 'kanban') fetchKanban();
-      if (btn.dataset.tab === 'map') {
-        if (state.mapSub === 'terrain') refreshTerrainMap();
-        else fetchPoi().then(renderMap);
-      }
+      if (btn.dataset.tab === 'map') refreshTerrainMap();
     });
-  });
-
-  document.querySelectorAll('.map-subtab').forEach((btn) => {
-    btn.addEventListener('click', () => setMapSubTab(btn.dataset.mapSub));
   });
 
   document.querySelectorAll('.chat-subtab').forEach((btn) => {
@@ -1122,21 +1088,18 @@ function bindUi() {
     });
   });
 
-  $('mapCanvas').addEventListener('click', canvasClick);
-
-  $('chatToggle').addEventListener('click', () => {
-    const ingame = $('chatBody');
-    const mind = document.getElementById('mindBody');
-    const active = state.chatSub === 'mind' ? mind : ingame;
-    const open = active && active.style.display !== 'none' && !active.hidden;
-    const next = open ? 'none' : 'block';
-    if (ingame && state.chatSub === 'ingame') ingame.style.display = next;
-    if (mind && state.chatSub === 'mind') {
-      mind.style.display = next;
-      mind.hidden = false;
-    }
-    $('chatToggle').setAttribute('aria-expanded', open ? 'false' : 'true');
-  });
+  const kanbanSel = document.getElementById('kanbanBoardSelect');
+  if (kanbanSel) {
+    kanbanSel.addEventListener('change', () => {
+      state.kanbanBoard = kanbanSel.value || null;
+      saveJson(LS_KANBAN_BOARD, state.kanbanBoard);
+      fetchKanban();
+    });
+  }
+  const kanbanRefresh = document.getElementById('kanbanRefresh');
+  if (kanbanRefresh) kanbanRefresh.addEventListener('click', () => fetchKanban());
+  const kanbanDispatch = document.getElementById('kanbanDispatch');
+  if (kanbanDispatch) kanbanDispatch.addEventListener('click', () => nudgeKanbanDispatch());
 
   setChatSubTab(state.chatSub);
   if (state.chatSub === 'mind') startMindPoll();
@@ -1145,16 +1108,21 @@ function bindUi() {
 
 async function main() {
   bindUi();
+  bindCenterUpperResize();
   await fetchMapConfig();
+  await refreshMapPlayerNames();
   await fetchWorlds();
+  await loadKanbanBoardsList();
   await fetchFleet();
+  await fetchPoi();
+  await fetchKanban();
   setInterval(fetchFleet, 2000);
   setInterval(fetchWorlds, 30_000);
   setInterval(() => {
-    if (state.centerTab === 'kanban') fetchKanban();
-  }, 5000);
+    fetchKanban();
+  }, 8000);
   window.addEventListener('resize', () => {
-    if (state.centerTab === 'map' && state.mapSub === 'tactical') renderMap();
+    if (state.centerTab === 'fpv') refreshFpv();
   });
 }
 
