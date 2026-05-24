@@ -95,7 +95,7 @@ Landfolk cast (`data/agent-models.json`):
 - **Mason** — building and structures
 - **Barley** — food, animals, cooking
 
-**Steve** is the companion (`prompts/landfolk/steve.md`, `./start-steve.sh` or `./hermescraft.sh`). Use `scripts/landfolk-control.sh` to supervise the four Landfolk bots with watchdogs and a single roster file.
+**Steve** is the companion (`prompts/landfolk/steve.md`, `./start-steve.sh` or `./hermescraft.sh`). Use `scripts/landfolk` (the single CLI for the Landfolk sub-project) to bring the cast online, off, or for partial roster changes; it manages bots, watchdogs, and the operator daemons in one place.
 
 ## Core features
 
@@ -133,7 +133,7 @@ Landfolk cast (`data/agent-models.json`):
 
 Most stable path today:
 - **Steve companion:** `./start-steve.sh` or `./hermescraft.sh`
-- **Landfolk fleet:** `scripts/landfolk-control.sh` + `data/agent-models.json`
+- **Landfolk fleet:** `scripts/landfolk` (one CLI; engine is `scripts/landfolk-control.sh`) + `data/agent-models.json`
 - direct Hermes-per-agent launches when you want total control
 
 If you want the most reliable behavior, use the launcher flows shown below.
@@ -193,7 +193,11 @@ cd ~/hermescraft
 Or use the supervised fleet:
 
 ```bash
-./scripts/landfolk-control.sh start --profiles gatherer,flint,mason,barley
+./scripts/landfolk start --players gatherer,flint,mason,barley --mode continuous
+# kanban experiment (no per-agent Hermes loops; gateway workers drive the bots):
+./scripts/landfolk start --players flint,mason,steward     # default mode=kanban
+./scripts/landfolk status
+./scripts/landfolk stop --with-gateway
 ```
 
 Then launch Hermes brains per agent (example: Steve companion on port 3001 — do not run Steve and Gatherer on the same API port at once):
@@ -273,7 +277,8 @@ This matters for both believability and demo integrity.
 Primary files:
 - `start-dashboard.sh` — fleet dashboard aggregator (see `docs/guides/dashboard.md`)
 - `dashboard/` — standalone command-center UI (polls bot HTTP APIs + optional Kanban bridge)
-- `scripts/landfolk-control.sh` — supervised Landfolk fleet
+- `scripts/landfolk` — single Landfolk CLI (start/stop/enable/disable/restart/status/logs/chat/fix/players)
+- `scripts/landfolk-control.sh` — internal Landfolk engine (per-bot bot+watchdog+optional agent)
 - `scripts/run-landfolk-bots.sh` — start Landfolk bot bodies (Gatherer–Barley)
 - `scripts/run-landfolk-agent.sh` — launch one Landfolk Hermes brain cleanly
 - `bot/server.js` — wiring entrypoint (~600 LOC): config, dependency injection, HTTP startup
@@ -305,6 +310,7 @@ Sanity checks:
 node --check bot/server.js
 bash -n hermescraft.sh
 bash -n setup.sh
+bash -n scripts/landfolk
 bash -n scripts/landfolk-control.sh
 bash -n server/start.sh
 bash -n scripts/run-landfolk-agent.sh

@@ -1,45 +1,78 @@
 # HermesCraft scripts
 
-Operational and launcher glue. **Current direction** for multi-agent Landfolk is `landfolk-control.sh` plus `data/agent-models.json` and `resolve-agent-model.py`. Older root launchers remain for quick starts and backward compatibility; they do not define the consolidated config model.
+Operational and launcher glue. The supported entry point for the Landfolk
+sub-project is **`scripts/landfolk`** — one CLI for the whole session
+(players + daemons + kanban hygiene).
 
-## Design direction: `landfolk-control.sh`
+## `scripts/landfolk` — single CLI
 
-Single orchestrator for the Landfolk cast: `start`, `stop`, `status`, `enable`, `disable` (and aliases). Intent:
+One verb taxonomy, one roster file (`/tmp/hermescraft/active-players`,
+upgraded automatically from the old `active-profiles`), one state dir
+(`/tmp/hermescraft/state/`, migrated from `session-state/` on first run).
 
-- **Per agent**: start the bot (`node server.js` under `bot/`), wait for a healthy Minecraft connection, start the Hermes loop with the right `MC_API_URL` / `MC_USERNAME`, then attach a **watchdog** that polls health, task, and observe payloads—cancel stuck work, react to danger, and append structured progress lines (default under `/tmp/hermescraft`).
-- **Single roster source**: agent names, per-agent `api_port`, `model`, `provider`, and roles come from `data/agent-models.json`, resolved through `scripts/resolve-agent-model.py` so ports and models do not drift across terminals.
+| Verb | Purpose |
+|------|---------|
+| `start [--players a,b,c] [--mode kanban\|continuous] [--without daemons]` | Bring players + daemons up |
+| `stop  [--players a,b,c] [--keep daemons] [--with-gateway] [--no-reclaim]` | Tear down; reclaims running kanban cards by default |
+| `enable <player> [--mode ...]` | Add one player to the roster and start it |
+| `disable <player>` | Reclaim its cards, stop it, prune from roster |
+| `restart <target>` | `<player>` \| `players` \| `daemons` \| `listener` \| `supervisor` \| `pauser` \| `gateway` \| `all` |
+| `status [--json]` | MC reachability + per-player health + daemons + gateway + roster |
+| `logs [agents\|<player>\|listener\|supervisor\|pauser\|gateway]` | Aggregated agent stream (default) or one-component tail |
+| `chat <player> "<msg>"` | Send in-game chat through the bot's HTTP API |
+| `fix <issue> [args]` | `reconnect <p>` \| `clean` \| `tp <p> x y z` \| `unstick <p>` |
+| `players list \| show <player>` | Roster + per-player port/model resolution |
 
-Environment: typically `.env` at repo root for keys and shared defaults; control script sets Minecraft host/port and tuning knobs the bots and agents inherit.
+**Modes (per player):**
+- `kanban` (default) — bot + connect-only watchdog; **no agent**. Kanban
+  gateway workers drive the bot per card.
+- `continuous` — bot + full watchdog + always-on Hermes agent loop.
+
+**Defaults:** `PLAYERS_DEFAULT=flint,mason,steward`, `MC_HOST=192.168.1.202`,
+`LOG_DIR=/tmp/hermescraft`. Override via env.
+
+`scripts/landfolk-session.sh` is a deprecation shim that forwards old verbs.
+`scripts/landfolk-control.sh` is the **internal engine** (per-bot lifecycle:
+bot + watchdog + optional Hermes agent). It's still callable for debug,
+but day-to-day use goes through `scripts/landfolk`.
 
 ## Configuration model
 
-- **`data/agent-models.json`** — canonical roster: `agents` (name → model, provider, optional `api_port`, `role`), `defaults`, `landfolk.base_api_port` (and optional `entrypoints` for other flows).
-- **`scripts/resolve-agent-model.py`** — one resolver for the repo; subcommands include `agent-names`, `api-port`, `roster-lines`, `defaults`, `entrypoint`. Other scripts should call this instead of hardcoding ports or models.
-- **Identity and goals** — character text in `prompts/landfolk/`; `SOUL-landfolk.md` copied into each agent’s `HERMES_HOME`; goal *presets* live under `data/goal-presets/` and merge into per-username goal files under `data/` when agents run `mc goal_load`.
+- **`data/agent-models.json`** — canonical roster: `agents` (name → model,
+  provider, optional `api_port`, `role`), `defaults`, `landfolk.base_api_port`.
+- **`scripts/resolve-agent-model.py`** — single resolver; subcommands:
+  `agent-names`, `api-port`, `roster-lines`, `defaults`, `entrypoint`.
+  All other scripts (including `landfolk`) consult it for ports and models
+  instead of hardcoding them.
+- **Identity and goals** — character text in `prompts/landfolk/`;
+  `SOUL-landfolk.md` copied into each agent's `HERMES_HOME`; goal *presets*
+  live under `data/goal-presets/` and merge into per-username goal files
+  under `data/` when agents run `mc goal_load`.
 
 ## Supporting scripts
 
 | Script | Role |
 |--------|------|
 | `resolve-agent-model.py` | Port and model/provider resolution from JSON + env. |
+| `landfolk-control.sh` | Internal engine: per-bot start/stop/status, watchdog, optional agent. Supports `--no-agent` for kanban mode. |
+| `landfolk-logs-aggregate.py` | Multi-profile session-log tailer used by `landfolk logs`. |
 | `analyze-progress-logs.sh` | Read-only summaries over watchdog progress JSONL. |
 | `run-landfolk-agent.sh` | Thin Hermes launcher once a bot is listening on a known port. |
 | `setup-landfolk-profiles.sh` | Phase 2 workers + steward ops: profiles, `landfolk-ops` board, kanban config; `--solo-flint` for one-bot testing; `--apply-config` to refresh SOUL/skills/max_turns only (see `docs/design/phase-3/steward-mvp.md`). |
+| `inactive-cards-pauser.py` / `steward-supervisor.py` / `steward-chat-listener.py` | Operator daemons managed by `landfolk start`/`stop`. |
 | `ledger-update.py` | Fold completed ops-board task metadata into `data/ops/logistics-ledger.yaml`. |
 | `blueprint-plan.py` | GrabCraft URL → build plan JSON (substitutions, phases); steward skill `minecraft-steward-blueprint-plan`. |
 | `watch-agent.py` | Tail Hermes session JSON for any Landfolk agent (`--agent flint`, etc.). |
 | `cleanup-locations.py` | Remove accumulated `death_*` marks from `data/locations-*.json` (see `--keep-recent-deaths`). |
-
-Other files in `scripts/` (`run-landfolk-bots.sh`, etc.) support older split bot/agent workflows; prefer `landfolk-control.sh` when you want one supervised fleet.
 
 ## Other launchers (repo root)
 
 - `hermescraft.sh` / `start-steve.sh` — Steve companion (single bot)
 - `start-gatherer.sh` — goal-directed Gatherer only
 - `start-landfolk.sh` — multi-agent Landfolk from `agent-models.json` roster
-- `scripts/run-landfolk-bots.sh` — bot bodies only (Gatherer, Flint, Mason, Barley)
+- `scripts/run-landfolk-bots.sh` — bare bot bodies (no watchdog or agent)
 
-Prefer `landfolk-control.sh` for a supervised fleet with watchdogs.
+Prefer `scripts/landfolk` for a supervised session.
 
 ## Minecraft server expectations
 
