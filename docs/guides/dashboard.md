@@ -41,13 +41,13 @@ Registry rows remain the place for stable metadata (kanban board mapping, defaul
 
 No extra **Minecraft/Paper plugins** are required: the viewer streams from the **mineflayer bot** already connected to your server.
 
-1. Start each bot with **`VIEWER_PORT`** set (Landfolk: **`api_port + 1000`**, e.g. 3001 → 4001). `scripts/run-landfolk-bots.sh` and `scripts/landfolk-control.sh` do this.
+1. Start each bot with **`VIEWER_PORT`** set (Landfolk: **`api_port + 1000`**, e.g. 3001 → 4001). `scripts/run-landfolk-bots.sh` and `scripts/landfolk` (via its engine `scripts/landfolk-control.sh`) do this.
 2. Match **`viewer_port`** in `data/agent-registry.json` to the same ports (so the dashboard builds the iframe URL).
 3. Open the **FPV** tab, select an **online** agent.
 4. If the iframe is blank: check the bot log for `prismarine-viewer` errors and confirm `curl http://127.0.0.1:4001` returns HTML on the bot host.
 5. Remote browser: set dashboard **`BOT_HOST`** to the machine running the bots so `http://BOT_HOST:viewer_port` is reachable (firewall permitting).
 
-Each Landfolk bot uses **`VIEWER_PORT = api_port + 1000`** when started via `scripts/landfolk-control.sh` or `run-landfolk-bots.sh` (Flint → **4002**, not 4001). Port **4001** is only Steve/Gatherer on API **3001**. Select the agent whose bot is actually running, then open FPV.
+Each Landfolk bot uses **`VIEWER_PORT = api_port + 1000`** when started via `scripts/landfolk` (or directly via `scripts/landfolk-control.sh` / `run-landfolk-bots.sh`) — Flint → **4002**, not 4001. Port **4001** is only Steve/Gatherer on API **3001**. Select the agent whose bot is actually running, then open FPV.
 
 If the iframe is blank but the viewer URL works in a new tab, use **Open FPV in new tab** under the FPV panel.
 
