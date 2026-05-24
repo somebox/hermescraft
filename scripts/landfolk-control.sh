@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# landfolk-control.sh — internal Landfolk engine (per-bot lifecycle:
+# bot + watchdog + optional Hermes agent). The supported public CLI is
+# `scripts/landfolk` — use that for day-to-day session management.
+# This script is kept callable for advanced/debug workflows.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
