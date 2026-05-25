@@ -105,6 +105,35 @@ export function createBotHttpListener(deps) {
             moveRate = +(dist / dt).toFixed(2);
           }
         }
+        // Stuck detection: how long has the bot been within a 5-block radius
+        // of its current position? If the oldest history sample within radius
+        // is N minutes old AND the bot HAS moved before that (or history is
+        // saturated), the agent has been spinning in the same area for N min.
+        let stuckMinutes = null;
+        let stuckWarning = null;
+        if (connected && pos && positionHistory.length >= 4) {
+          const STUCK_RADIUS = 5; // blocks
+          const STUCK_THRESHOLD_MIN = 5;
+          const now = Date.now();
+          // Walk history backwards from newest; find the OLDEST sample still
+          // within the radius. Everything between that and now is "stuck."
+          let oldestInRadius = positionHistory[positionHistory.length - 1];
+          for (let i = positionHistory.length - 1; i >= 0; i--) {
+            const p = positionHistory[i];
+            const d = Math.sqrt((pos.x - p.x) ** 2 + (pos.y - p.y) ** 2 + (pos.z - p.z) ** 2);
+            if (d > STUCK_RADIUS) break;
+            oldestInRadius = p;
+          }
+          stuckMinutes = +((now - oldestInRadius.time) / 60000).toFixed(1);
+          if (stuckMinutes >= STUCK_THRESHOLD_MIN) {
+            stuckWarning =
+              `STUCK ${stuckMinutes}min at (${pos.x.toFixed(0)},${pos.y.toFixed(0)},${pos.z.toFixed(0)}). ` +
+              `Local iteration is failing. REQUIRED next action: ` +
+              `(1) mc advise --reason="stuck ${stuckMinutes}min: <one-line what you tried>" --target ${pos.x.toFixed(0)},${pos.y.toFixed(0)},${pos.z.toFixed(0)}, ` +
+              `OR (2) kanban_block reason="stuck:<short>" with a kanban_comment naming what you need. ` +
+              `Do NOT retry the same approach.`;
+          }
+        }
         return respond(res, 200, {
           ok: true,
           connected,
@@ -121,6 +150,8 @@ export function createBotHttpListener(deps) {
           holding: connected && ctx.world.bot?.heldItem ? ctx.world.bot.heldItem.name : null,
           position: pos ? { x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), z: +pos.z.toFixed(1) } : null,
           move_rate: moveRate,
+          stuck_minutes: stuckMinutes,
+          ...(stuckWarning ? { stuck_warning: stuckWarning } : {}),
           build: getBuildInfo(),
         });
       }

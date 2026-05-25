@@ -493,12 +493,57 @@ export function createObservation(deps) {
     // are all derivable from time; experience, fairPlay/hardcore/
     // permanentlyDead never change during a session). Cuts /status?lean
     // payload roughly in half.
+    // Stuck-detection — surface a hard prod when the bot has been spinning
+    // in the same area for 5+ minutes without escalating. Agents that
+    // iterate the same broken approach for 10+ minutes without calling
+    // mc advise / kanban_block burn iteration budget and often die mid-loop.
+    // The warning string appears in the result text so the agent sees it on
+    // every mc status read, not just buried in JSON.
+    let stuckBlock = {};
+    try {
+      const positionHistory = ctx.world.positionHistory || [];
+      if (positionHistory.length >= 4) {
+        const STUCK_RADIUS = 5;
+        const STUCK_THRESHOLD_MIN = 5;
+        const nowMs = Date.now();
+        let oldestInRadius = positionHistory[positionHistory.length - 1];
+        for (let i = positionHistory.length - 1; i >= 0; i--) {
+          const p = positionHistory[i];
+          const d = Math.sqrt(
+            (b.entity.position.x - p.x) ** 2 +
+            (b.entity.position.y - p.y) ** 2 +
+            (b.entity.position.z - p.z) ** 2,
+          );
+          if (d > STUCK_RADIUS) break;
+          oldestInRadius = p;
+        }
+        const stuckMin = +((nowMs - oldestInRadius.time) / 60000).toFixed(1);
+        if (stuckMin >= STUCK_THRESHOLD_MIN) {
+          const px = b.entity.position.x.toFixed(0);
+          const py = b.entity.position.y.toFixed(0);
+          const pz = b.entity.position.z.toFixed(0);
+          stuckBlock = {
+            stuck_minutes: stuckMin,
+            stuck_warning:
+              `STUCK ${stuckMin}min at (${px},${py},${pz}). Local iteration is failing. ` +
+              `REQUIRED next action: (1) mc advise --reason="stuck ${stuckMin}min: <one-line what you tried>" --target ${px},${py},${pz}, ` +
+              `OR (2) kanban_block reason="stuck:<short>" with a kanban_comment naming what you need from re44 or Steward. ` +
+              `Do NOT retry the same approach.`,
+          };
+        } else if (stuckMin >= 2) {
+          // Soft signal — not yet an emergency, but worth knowing.
+          stuckBlock = { stuck_minutes: stuckMin };
+        }
+      }
+    } catch { /* never let stuck-calc fail the whole status response */ }
+
     return {
       health: fmt(b.health),
       ...(lean ? {} : { maxHealth: 20 }),
       food: b.food,
       saturation: fmt(b.foodSaturation),
       position: posObj(),
+      ...stuckBlock,
       ...(ctx.runtime.regions
         ? (() => {
             const here = ctx.runtime.regions.regionsHere(b.entity?.position);

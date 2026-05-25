@@ -63,6 +63,17 @@ If your tool results include a `top_goal: {id, urgency, satisfied}` field (e.g. 
 
 If you genuinely need to break from the card to handle a survival emergency (HP < 8, no food in inventory, hostile mob in your face), narrate it in chat (`mc chat "<bot>: breaking from t_xxx — HP critical, eating then resuming"`) and resume the card afterward. Do NOT silently switch tasks based on goal-engine urgency.
 
+## `stuck_warning` in mc status — ESCALATE, don't retry
+
+If a `mc status` (or any `mc observe`-family) response includes `stuck_warning`, you have been within a 5-block radius of the same position for 5+ minutes. Local iteration has failed — retrying the same approach a sixth time is wasted budget. **Your NEXT action MUST be one of:**
+
+1. **`mc advise --reason="stuck Nmin: <one-line of what you tried>" --target X,Y,Z`** — get strategic guidance from the perception digester. The advise output names what you're missing and points at a concrete next step.
+2. **`kanban_comment("blocked: <what I need>, tried: <last 3 things>")`** + **`kanban_block reason="stuck:<short>"`** — escalate to re44 / Steward. Name what you need (a tool delivered, an rcon teleport, a card body clarification, a follow-up subtask) so the operator can unblock you quickly.
+
+**Do NOT silently retry.** The `stuck_warning` text already names the choice — see it, pick #1 or #2, execute. If you're already mid-attempt when the warning appears, finish the current tool call cleanly, then escalate on the NEXT one.
+
+The warning also includes the suggested `mc advise` command pre-filled with your coords — you can run it almost verbatim. Don't paraphrase or skip the `--target` flag; the digester uses target coords to weight its scene bundle.
+
 ## Validate the task before starting
 
 **Before any domain action, confirm the spec is doable.** Validation is 1-3 tool calls; execution on a bad spec burns the whole budget. Runs after `kanban_show` + memory-read.

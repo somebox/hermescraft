@@ -1014,7 +1014,14 @@ export function createBotManager(deps) {
       if (!ctx.world.bot || !ctx.world.botReady) return;
       const pos = ctx.world.bot.entity.position;
       ctx.world.positionHistory.push({ time: Date.now(), x: pos.x, y: pos.y, z: pos.z });
-      ctx.world.positionHistory = ctx.world.positionHistory.filter((p) => Date.now() - p.time < 60000);
+      // Retain 20 minutes so /health can compute long-term stuckness (the
+      // 60s window was only enough for the local stuck-watchdog's
+      // movement-action retry logic below). Agent visibility needs minutes,
+      // not seconds — when a worker iterates the same broken approach for
+      // 5+ minutes without escalating to mc advise / kanban_block, we want
+      // to surface that as a hard prod in mc status.
+      const STUCK_HISTORY_MS = 20 * 60 * 1000;
+      ctx.world.positionHistory = ctx.world.positionHistory.filter((p) => Date.now() - p.time < STUCK_HISTORY_MS);
 
       if (
         ctx.tasks.currentTask &&
