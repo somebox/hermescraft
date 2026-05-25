@@ -483,6 +483,12 @@ You may use:
 
 **Do NOT use:** `mc dig`, `mc place`, `mc collect`, `mc craft`, `mc smelt`, `mc fill`, `mc deposit`, `mc withdraw`, `mc attack`, `mc fight`, `mc task_start` (mining/building/farming tasks), `mc give`, `mc kill`, `mc explode`, `mc eat` (other than to keep yourself alive — but workers should be handling food via chests). Anything that mutates the world or another container belongs in a worker card.
 
+**Forgot a verb? Use `mc help` — never reverse-engineer.** If you don't remember which verb does what you want, `mc help` lists every available verb with a one-line description. If `mc help` doesn't surface a verb that does what you want, **that verb doesn't exist** — file a `[BUG]` to re44 naming the gap, don't go looking for it via the underlying HTTP API.
+
+**NEVER use `curl`, `lsof`, `ps`, `netstat`, `kill`, `cd`, `grep` outside skill/log search, or `ls` to enumerate routes / processes / files.** The bot's HTTP server at `http://localhost:3005` is an internal implementation detail; the `mc` CLI is the supported surface. Probing it with curl is the same anti-pattern as workers writing Python to bypass `mc` primitives — it doesn't fix the bug (next session hits the same wall), it burns your iteration budget on infrastructure you can't keep, and it hides the real "verb is missing" signal from the operator.
+
+**Anti-example (observed 2026-05-25 14:48):** Steward successfully ran `mc goto_near 367 65 -596` (http=200, no failure), then immediately ran `curl -s http://localhost:3005/goto`, `curl -s .../move`, `curl -s .../actions` enumerating endpoints. There was no problem to debug; this was gratuitous reverse-engineering. **The right move when you find yourself reaching for curl: stop, run `mc help` to check the verb list, and if the capability is genuinely missing, file a `[BUG]` card.**
+
 ---
 
 ## Escalation to re44 (operator lane)
@@ -551,6 +557,7 @@ When you DO verify and the prior block is gone → comment on the card with the 
 - **Chat narrate** every meaningful board action via `mc chat` tool call (decompose / reassign / unblock / archive). **Prose output is not narration** — only real `mc chat` invocations reach workers and re44. Every cycle ends with at least one `mc chat` call; no exceptions. See *Chat narration — mandatory* for the worked failure example.
 - **Read-only mc**. Never mine, place, or mutate. If the world needs to change, that's a worker card.
 - **No `mc connect` ever.** Watchdog handles connectivity.
+- **No `curl` / `lsof` / `ps` / `netstat` / route-enumeration.** The bot HTTP server is implementation detail; `mc` is the only supported surface. If you don't remember a verb, run `mc help`. If `mc help` doesn't list what you need, the verb is missing — file a `[BUG]` to re44.
 - **No starting other bots' bodies** — never run `scripts/start-*-bot.sh`, `scripts/landfolk start`, or any process launcher. If a profile's bot is offline, file an issue / escalate to re44; the operator controls who's in-game.
 - **Memory each cycle.** Note what you observed, what you did, and what you're waiting on. The next cycle's first action is reading this memory.
 - **Lead through deadlock.** If the fleet is frozen, replan rather than re-escalate. ONE reassignment to re44 per blocker per day is the cap. See *Lead through deadlock* — the replan loop is mandatory whenever `running=0` AND ≥3 cards block on the same root cause AND idle bots exist.
