@@ -174,6 +174,32 @@ EOF
 }
 
 soul_for_worker() {
+  # Body loaded from prompts/landfolk/worker.md (with {{NAME}} and {{ROLE}}
+  # placeholders substituted). Edit that file to change worker doctrine; this
+  # function just templates it. Before 2026-05-26 the entire SOUL was an
+  # inline heredoc here — moving to a file means edits don't require
+  # navigating bash quoting/escapes.
+  local name="$1"
+  local role
+  case "$name" in
+    flint)    role="miner" ;;
+    gatherer) role="gatherer" ;;
+    mason)    role="builder" ;;
+    *)        role="generic" ;;
+  esac
+  local template="$ROOT/prompts/landfolk/worker.md"
+  if [ ! -f "$template" ]; then
+    echo "ERROR: worker SOUL template missing: $template" >&2
+    return 1
+  fi
+  sed -e "s/{{NAME}}/$name/g" -e "s/{{ROLE}}/$role/g" "$template"
+}
+
+# Legacy inline worker SOUL — replaced by file load above (2026-05-26).
+# The original heredoc and ops_worker_section are preserved below as a
+# reference for diff'ing/restoring if the file-load breaks. Safe to delete
+# once the file-load path has run cleanly for several deploy cycles.
+_legacy_soul_for_worker_inline_OLD() {
   local name="$1"
   local role
   case "$name" in
@@ -267,6 +293,22 @@ EOF
 }
 
 soul_for_steward() {
+  # Profile SOUL body loaded from prompts/landfolk/steward-profile.md.
+  # This is the SHORT profile SOUL (loaded at hermes session start) — distinct
+  # from prompts/landfolk/steward.md (the LONG continuous-loop -q prompt
+  # loaded per-round in landfolk-control.sh). Both are now file-driven.
+  local template="$ROOT/prompts/landfolk/steward-profile.md"
+  if [ ! -f "$template" ]; then
+    echo "ERROR: steward profile SOUL missing: $template" >&2
+    return 1
+  fi
+  cat "$template"
+}
+
+# Legacy inline steward profile SOUL — preserved here as a reference;
+# the file-load above is canonical. Safe to delete once the file-load has
+# run cleanly for several deploys.
+_legacy_soul_for_steward_inline_OLD() {
   cat <<'EOF'
 # You are steward (Landfolk ops orchestrator)
 
