@@ -195,6 +195,15 @@ food. Crop cycle: till → plant → bonemeal → harvest.
    `data.is_mature` in the response — if false, call again.
 4. `mc harvest X1 Z1 X2 Z2 [Y]` — harvest mature crops in an axis-aligned
    rectangle. Skips immature crops. Drops are picked up automatically.
+5. `mc farm_status X1 Z1 X2 Z2 [Y]` — read-only "what's the state of this
+   plot?" verb. Returns counts per category (harvestable / planted_growing /
+   tilled / empty_soil / unplantable / etc) plus a `next_action_hint`. Run
+   before deciding harvest vs till vs plant. See **minecraft-farming** for
+   the full category table.
+
+`mc till` and `mc plant` automatically step laterally if the bot is standing
+ON the target cell — no need to move first. Look for `stepped_off_target`
+in the response data and a `(stepped off target)` suffix in the result.
 
 **Growth requires** (without these crops stall and never mature):
 - **Light level ≥9** at the crop block. Place torches every ~6 blocks around

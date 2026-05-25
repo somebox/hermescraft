@@ -52,9 +52,48 @@ mc find_entities SPECIES [R]     # count adults before breed/hunt decisions
 mc inspect X Y Z                 # crop maturity (data.is_mature)
 mc verify_plot X1 Z1 X2 Z2 [--worksite ID] [--expect-y N]  # before bulk till on construct cards
 mc till_area X1 Z1 X2 Z2 [Y]   # batch till up to 81 columns (per-column surface Y)
+mc farm_status X1 Z1 X2 Z2 [Y] # COUNT per category + next-action hint (see below)
 mc regions_terrain REGION [--expect-y N]   # steward: survey ground Y before writing card
 mc regions_terrain --rect X1 Z1 X2 Z2 [--expect-y N]
 ```
+
+### `mc farm_status` — the "what's the state of this plot?" verb
+
+Returns counts per category for every column in the rect, plus a sample of
+harvestable + empty coords and a `next_action_hint` that follows priority
+**harvest > till > plant > wait**. Run this BEFORE deciding what to do next
+on a known plot.
+
+```
+mc farm_status 355 -575 363 -567 64
+→ {
+    counts: { harvestable: 10, planted_growing: 12, tilled: 18,
+              empty_soil: 30, unplantable: 5, no_surface: 0,
+              farmland_occupied: 0, soil_occupied: 0, air: 6 },
+    harvestable_coords: [{x:358, y:64, z:-572, crop:'wheat'}, …],   # up to 12
+    empty_soil_coords:  [{x:362, y:64, z:-571}, …],                 # up to 12
+    next_action_hint: 'mc harvest 355 -575 363 -567 64   # 10 mature'
+  }
+```
+
+| Category | What it means | Next move |
+|---|---|---|
+| `harvestable` | mature crop on farmland | `mc harvest <rect> [Y]` |
+| `planted_growing` | crop on farmland, age < max | wait or `mc bonemeal` each |
+| `tilled` | farmland with air above | `mc plant SEED X Y Z` |
+| `empty_soil` | dirt/grass/coarse_dirt with air above | `mc till X Y Z` or `mc till_area` |
+| `unplantable` | solid non-soil surface (stone, cobble) | not farmable; skip |
+| `no_surface` | no solid block within scan window | column is air/void |
+| `farmland_occupied` | farmland with non-crop block above (rare — see note) | manual triage |
+| `soil_occupied` | soil with non-air block above (often `oak_log` etc) | manual triage |
+
+Note: placing a solid block above farmland causes vanilla Minecraft to
+revert the farmland to dirt, so `farmland_occupied` is almost always 0
+in practice. Cells you'd intuitively call "farmland with stuff above" show
+up as `soil_occupied`.
+
+Y handling: with Y, probes that row exactly. Without Y, uses each column's
+topmost solid block — useful for surveying unfamiliar terrain.
 
 ## Construct / till kanban cards
 
@@ -63,6 +102,7 @@ After `kanban_show`, if the card lists a plot rectangle and optional `worksite:`
 1. Run **`mc verify_plot …`** once before the first `mc till`.
 2. If `ok: false` with **`TASK_SPEC_INVALID`**: `kanban_comment` with the verify summary, then **`kanban_block`** with reason from `next_action_hint` (e.g. `task_spec_invalid:worksite_coverage:wheat1`), **`mc task_context clear`**, exit. Do not loop 81 tills on a bad spec.
 3. **`UNCHANGED`** on `mc till` is **not** region permission — Paper/hoe or bad cell. Read `next_action_hint`; use **`mc till_area`** for large plots.
+4. **`stepped_off_target` in the response data** is informational, not an error: when you call `mc till` or `mc plant` on the cell the bot is currently standing on (or one above it for plant), the action moves the bot laterally one block first so the native interaction works — no need to manually step aside yourself. Look for `data.stepped_off_target: {x, y, z, dx, dz, dy}` on success and a `(stepped off target)` suffix in the result string.
 
 | Block reason prefix | Meaning |
 |---|---|
