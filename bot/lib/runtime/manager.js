@@ -762,6 +762,47 @@ export function createBotManager(deps) {
           log(`[POS_GUARD] install failed: ${err?.message || err}`);
         }
 
+        // YAW_GUARD — wrap bot.look() to catch NaN yaw/pitch at the CALL
+        // site instead of at the wire. Root cause traced 2026-05-25 to
+        // mineflayer-pathfinder's tick() loop (index.js:646):
+        //   `bot.look(Math.atan2(-dx, -dz), 0)`
+        // where dx/dz = nextPoint.{x,z} - p.{x,z}. When a path waypoint
+        // has NaN coordinates, atan2 returns NaN; bot.look blindly
+        // assigns to bot.entity.yaw; mineflayer's 20Hz physics tick then
+        // ships the NaN yaw forever (POS_GUARD catches at the wire, but
+        // the bot.entity.yaw state is already polluted). Blocking the
+        // bad call here keeps bot.entity.yaw clean and avoids the
+        // watchdog-reconnect cascade.
+        //
+        // First blocked call per process also logs the JS stack so we
+        // can identify which path-generation code is producing NaN
+        // waypoints (the actual root upstream).
+        try {
+          const botRef = ctx.world.bot;
+          if (botRef && typeof botRef.look === 'function' && !botRef.__hermesYawGuardInstalled) {
+            const originalLook = botRef.look.bind(botRef);
+            let yawTraceLogged = false;
+            botRef.look = function (yaw, pitch, force) {
+              const yawOk = typeof yaw === 'number' && Number.isFinite(yaw);
+              const pitchOk = typeof pitch === 'number' && Number.isFinite(pitch);
+              if (!yawOk || !pitchOk) {
+                log(`[YAW_GUARD] blocked bot.look(yaw=${yaw}, pitch=${pitch}) — non-finite input`);
+                if (!yawTraceLogged) {
+                  yawTraceLogged = true;
+                  const stack = new Error('YAW_GUARD trace').stack || '(no stack)';
+                  log(`[YAW_GUARD_TRACE] first bot.look(NaN) call — stack:\n${stack}`);
+                }
+                return Promise.resolve();
+              }
+              return originalLook(yaw, pitch, force);
+            };
+            botRef.__hermesYawGuardInstalled = true;
+            log(`[YAW_GUARD] bot.look NaN guard installed`);
+          }
+        } catch (err) {
+          log(`[YAW_GUARD] install failed: ${err?.message || err}`);
+        }
+
         if (ctx.runtime.regions) {
           const prevDispose = ctx.runtime._regionSignWatcherDispose;
           if (typeof prevDispose === 'function') prevDispose();
