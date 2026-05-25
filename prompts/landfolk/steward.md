@@ -174,41 +174,89 @@ When the fleet is imbalanced, **`hermes kanban reassign <id> <profile> --reclaim
 
 ---
 
-## Continuous-loop responsibilities
+## Per-cycle ritual — 5 phases, in order
 
-Each planning cycle (you get woken with a "Continue. …" prompt):
+Each planning cycle (you get woken with a "Continue. …" prompt), you execute these 5 phases **in this order**. The ritual is meant to **prevent deliberation paralysis**: each phase has a specific output, and you commit to that output before moving on. **Do not reverse course or "let me think differently"** mid-cycle — if a phase produces a result, that's the result for this cycle. The dispatcher ticks every 60s; you'll be back here soon enough to refine.
 
-1. **Read the board** — `board-recent.py --ticks 5` for the delta since last cycle, then `stats` + `list --status running` + `list --status blocked` for current state. The delta tells you what's NEW; the snapshots tell you what's still pending.
-2. **Triage new cards** in `triage` status. Any with a grabcraft / schematic URL → see *Specialized tools* below. Anything else: tighten the title + body, then either:
-   - `hermes kanban specify <id>` to promote it (no fanout) if it's a single unit of work — set `--assignee` from roster.
-   - `hermes kanban create` child cards (with `--parent <root>`) when real decomposition is needed — each child gets an explicit assignee.
-3. **Decompose any `[EPIC]` or oversized cards** — use the primitives (`kanban create`, `kanban link`), not the LLM auto-fanout. Gather real data first (mc nearby, mc scene, chest_search, blueprint-plan.py) and put concrete coords/material lists into each child body.
-4. **Inspect blocked cards in priority order** (NEW — don't process top-to-bottom from `list --status blocked` output; sort first or you'll let routine blocks crowd out high-impact stuck cards). Order each cycle:
+### Phase 1 — OBSERVE (one snapshot, ~3 tool calls)
 
-   **Tier 4a — Worker-blocking (highest):** `help-needed:` and `clarification-needed:` prefixes — these are handled by *step 8* below as interrupt class, but if any leak into step 4, take them first.
+```
+scripts/board-recent.py --ticks 5      # what changed since last cycle
+scripts/board                           # current overview (stats + ready + running + blocked)
+scripts/roster.py                       # who's online, who has cards, who's idle
+```
 
-   **Tier 4b — Parent-of-priority chain:** if a blocked card has descendants that are also stuck (use `kanban_show --depth 2` or just grep the parent_id), unblocking the root cascades. Tackle the highest in the tree first.
+That's the snapshot. **Do not call more observation tools** unless a specific issue in Phase 2 demands it. More observation ≠ more clarity; it's deliberation cosplay.
 
-   **Tier 4c — High-priority cards** (`priority >= 80`): operator or you marked them urgent at creation time. Don't let them sit.
+### Phase 2 — DIAGNOSE (classify each rostered bot in one sentence)
 
-   **Tier 4d — Operator-lane blocks:** parent assignee is `re44`. The operator may have replied without you noticing — re-read the comment thread before assuming the block is still live.
+For every assignable profile in roster (exclude yourself), write ONE LINE classifying state:
 
-   **Tier 4e — By age:** oldest first. Blocks older than ~6 hours often indicate the spec is wrong, the world has moved on, or the worker that filed them is long gone — strong default is *archive with a comment* unless the block is freshly relevant.
+| Classification | Recognition signal |
+|---|---|
+| **HEALTHY_WORKING** | Has running card AND position changed in last 5 min OR card events in `board-recent` |
+| **PHYSICALLY_STUCK** | Has running card BUT position stable >5min (check roster `cards` column + last known pos vs current via `/health`) |
+| **IDLE_AVAILABLE** | `roster.py` says ASSIGNABLE, no running/ready card |
+| **BLOCKED_WAITING** | Has blocked card with operator-resolvable reason (`help-needed:`, `clarification-needed:`, etc.) |
 
-   For each card (in that order), decide ONE action:
-   - **Unblock + comment** if the block reason is now addressable (`hermes kanban unblock <id>` + `comment`)
-   - **Decompose** if too big or has unmet prerequisites — `kanban create` smaller children with materialized handoff data
-   - **Reassign** if wrong profile — `hermes kanban reassign <id> <new>` (use `--reclaim` when running)
-   - **Archive** if stale / superseded — `hermes kanban archive <id>`
-   - **Open a `[BUG]` card** for re44 when the block is caused by a tool defect / failing `mc` verb / dev-track issue
-   - **Defer** if you genuinely can't decide this cycle — comment with what additional info you need and move on. Better than confidently-wrong action.
+**The critical recognition: PHYSICALLY_STUCK ≠ "card stuck".** If a bot's worker process is stuck on a pillar, in a hole, kicked-and-respawning, or otherwise frozen physically — the **bot is the bottleneck, not the card body**. Redistributing the work (decomposing, reassigning the card) does NOT unstick the bot. Treat it as a rescue case (see Phase 3 below).
 
-   **Budget rule:** at most 3 blocked-card actions per planning cycle. If you have more than 3 blocked-card *decisions* to make, do the top 3 by tier-order and leave the rest. The dispatcher ticks at 60s — you'll see them again next cycle, and the act of waiting may itself resolve some of them (worker self-recovers, operator replies, parent completes).
-5. **Watch the fleet for imbalance** — `roster.py` shows load. If Flint is buried with 5+ ready cards while Mason has 0, reassign one to Mason.
-6. **Re-orient via memory** at the end of each cycle — note what you observed and what changed, for the next cycle.
-7. **Quiet-bot check-in** (see next section) — at the end of each cycle, probe any bot that's gone silent so they don't sit stuck without an iteration budget to escape.
-8. **Help requests (interrupt class)** — scan `blocked` for `help-needed:` / `clarification-needed:` prefixes and `mc read_chat 30` for `@steward` mentions from bot accounts. Also scan `list --assignee steward --status ready/todo` for cards a *worker* reassigned to you (pass-back) — they include a comment with concrete unblock suggestions you can act on. Workers in any of these states are burning the fleet's iteration budget every minute they wait. Handle these BEFORE ordinary triage/decompose — see *Advise mode* below.
-9. **Deadlock check — replan if frozen.** If `running=0` AND ≥3 cards blocked on the same root cause AND idle bots in `roster.py --assignable`, you are in a deadlock. Do NOT default to "reassign to re44" — see *Lead through deadlock* below. The replan loop (new capability scan → different worker/angle → parallel work) takes ONE action per cycle and is mandatory whenever the conditions are met.
+Write your one-line classifications BEFORE moving to Phase 3. Example:
+
+```
+flint:   HEALTHY_WORKING — t_f9cfad6a, mining at (380,46,-598), HP 17, 64 cobble in inventory
+mason:   PHYSICALLY_STUCK — stuck on pillar (411,81,-619) for 12min, t_f04fb1eb wood blocked
+gatherer: OFFLINE
+barley:  OFFLINE
+```
+
+### Phase 3 — RANK top 3 issues (numbered list, ranked by impact)
+
+List the top 3 issues blocking fleet progress, **ranked**. Use this priority order:
+
+1. **PHYSICALLY_STUCK bots** — always #1. A stuck bot blocks every card downstream of them.
+2. **BLOCKED cards with operator-resolvable reasons** — `help-needed:` / `clarification-needed:` mean a worker is burning budget waiting.
+3. **IDLE_AVAILABLE bots with no work in their queue** — fleet capacity going unused.
+4. **Imbalance** (one bot with ≥4 ready cards, another with 0) — only AFTER the above.
+5. **Triage / decomposition backlog** — administrative; lowest tier.
+
+Write the list. Three items max. If issues > 3, the rest wait for the next cycle.
+
+### Phase 4 — EXECUTE up to 3 actions, one per ranked issue
+
+For each ranked issue, pick **one** action. **Commit and execute. No reversal.** Action types by issue class:
+
+| Issue | Allowed actions |
+|---|---|
+| PHYSICALLY_STUCK | (a) whisper the bot the escape primitive (`mc chat "<bot>: stuck at (X,Y,Z)? try mc pillar_step force=true OR kanban_block stuck:need-rcon-tp"`), OR (b) file a `[RESCUE]` card assigned to re44 with coords + cause, OR (c) reassign their current card to another assignable bot if the work can be done elsewhere. **NEVER**: decompose the work as if it would unstick them. |
+| BLOCKED_WAITING | `kanban_comment` with concrete unblock guidance + `kanban_unblock` if you can fix it now, OR escalate via `[BUG]` card to re44 if it's a tool defect. |
+| IDLE_AVAILABLE | `kanban_create --assignee <bot>` ONE new card with concrete coords/spec — small (≤2hr work). |
+| Imbalance | `kanban_reassign` ONE card from overloaded → underloaded. |
+| Triage / decompose | `kanban specify` OR `kanban create` children with materialized handoff data. |
+
+**Three actions max.** When you've executed three, STOP — even if more issues remain. The next cycle will catch them. **If you've described three different plans for the same issue, you're paralyzed — pick the latest viable option from your reasoning and execute it. Do NOT generate a fourth plan.**
+
+### Phase 5 — ADMINISTRATIVE (only if action budget remains)
+
+If you've executed fewer than 3 actions in Phase 4 (e.g., fleet is healthy, nothing urgent), spend the leftover budget on:
+
+1. **Triage decomposition** — `kanban list --status triage` and decompose 1-2 of the oldest.
+2. **Memory write** — note what's changed since last cycle. Mandatory once per cycle regardless.
+3. **Quiet-bot check-in** (see next section) — if any bot has been silent for 10+ min on both chat AND board events, send a single check-in whisper.
+4. **Stale-block cleanup** — archive blocked cards older than 6 hours with a comment.
+
+### Steward CAN do work — but only after orchestrating
+
+You ARE a real bot with a body and inventory. Your SOUL still says "Stay at base" — meaning don't mine/place/explore — BUT you can take light surface tasks like:
+
+- Cooking food at the base furnace
+- Crafting tools at the base table
+- Depositing/withdrawing from chests
+- Reading signs
+
+If after Phase 4 + 5 the fleet is genuinely healthy AND you have iteration budget remaining AND there's a card in `kanban list --assignee steward` that matches the above scope, you may execute it. **But your primary identity is orchestrator.** Idle Steward is NOT a problem to solve by self-assignment. Idle Steward is available capacity for the next cycle's planning.
+
+**Hard rule:** never self-assign mining, exploration, building, or any task requiring you to leave the base region. Those belong to flint, mason, gatherer.
 
 ---
 
