@@ -128,27 +128,24 @@ Workers that finish their card emit a `done` transition; **only then** is that b
 
 **The kanban `assignee` field is just a string. It does NOT prove the bot is online.** A card assigned to an offline profile sits forever — the dispatcher can't spawn a worker for a missing bot.
 
-**Rule.** Before every `create`, `specify`, `reassign`, `decompose`, or `unblock`-with-assignee, run:
+**Rule.** Before every `create`, `specify`, `reassign`, `decompose`, or `unblock`-with-assignee, run `scripts/roster.py` and read the output. The default output now shows:
+- Each bot's state (ASSIGNABLE / OFFLINE / listener-only)
+- Card count per profile + breakdown by status
+- **Alerts** at the bottom: `⚠ STRANDED — <bot> OFFLINE but has N cards assigned` and `⚠ IMBALANCE — <idle> idle while <overloaded> overloaded`
 
-```bash
-scripts/roster.py --assignable
-```
+**Common failure mode (observed 2026-05-25 21:10):** Steward read the kanban board, saw "gatherer has 2 ready cards," and concluded "gatherer is available — assign more to her." THAT IS BACKWARDS. Gatherer was OFFLINE; the 2 ready cards were stranded from a prior session. Steward then assigned a NEW card to gatherer, making the strand worse. **A bot having assigned cards on the board does NOT mean the bot is online.** Only `roster.py` showing the bot as ASSIGNABLE proves she can take work.
 
-**`hermes kanban decompose` is dangerous** — it creates children with `assignee=default` (a non-spawnable fallback identity). After any `decompose`, you MUST immediately reassign each child to a real roster profile, or the children sit forever as `non-spawnable`. **Preferred**: skip `decompose` entirely. Use `hermes kanban create --assignee <profile> --parent <root>` per child so the assignee is correct from the start.
+**Self-test before any assign:**
+1. Run `scripts/roster.py` (full, NOT just `--assignable`).
+2. Confirm the target profile shows `ASSIGNABLE` (not OFFLINE, not listener-only).
+3. If `roster.py` flags `⚠ STRANDED — <bot> OFFLINE but has N cards`, those N cards must be REASSIGNED AWAY from that bot to an ASSIGNABLE one in the SAME cycle. Don't add MORE to a stranded bot.
 
-The output is one lowercase profile per line. **Only assign to a name in that list.** If the profile you want isn't assignable, pick a different one or leave the card in `todo` until the operator brings that bot online.
+**Stranded-card cleanup (mandatory whenever the alert fires):**
+- For each card on the offline bot: reassign to the closest active profile (mining → flint, build → mason, generic gathering → mason or flint by current load).
+- Archive only if the card depends specifically on the offline bot's body or location.
+- Narrate: `mc chat "reassigned t_xxx <offline>→<active>: <offline> offline this session"`.
 
-**Each cycle, scan for stranded cards** — assignees that aren't in the current `roster.py --assignable` output:
-
-```bash
-# Pseudo-flow: for each profile in `list --json` assignees that's NOT in roster --assignable,
-# reassign or archive its non-`done` cards.
-```
-
-Strategies:
-- **Reassign** to the closest active profile (farm work → flint, build work → mason).
-- **Archive** if the card depends specifically on the offline profile's body or location and another bot can't substitute.
-- Always narrate: `mc chat "reassigned t_xxx gatherer→flint: gatherer offline this session"`.
+**`hermes kanban decompose` is dangerous** — it creates children with `assignee=default` (non-spawnable fallback). After any `decompose`, immediately reassign each child to a real roster profile. **Preferred**: use `hermes kanban create --assignee <profile> --parent <root>` per child instead.
 
 A card assigned to a dead profile is worse than no card at all — it silently blocks board flow.
 
