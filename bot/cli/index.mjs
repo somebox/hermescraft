@@ -41,6 +41,19 @@ function timePhase(t) {
 function slimStatusEnvelope(raw) {
   const d = raw?.data || {};
   const pos = d.position || null;
+  // Stuck-warning prominence fix (2026-05-26): the thin envelope was DROPPING
+  // stuck_warning so the agent never saw it when calling mc status (only
+  // mc observe surfaced it, but agents call status far more often). Fold it
+  // into the hint text — when stuck, the warning REPLACES the default thin-
+  // status hint, so the agent reads it as the primary message instead of
+  // skimming past a buried JSON field.
+  const stuckMin = d.stuck_minutes;
+  const stuckWarning = d.stuck_warning;
+  const hint = stuckWarning
+    ? `⚠ ${stuckWarning}`
+    : ('thin status: only location/HP/food/holding/time. ' +
+       'For richer info use mc scene/find/map/nearby with --reason. ' +
+       'For polling a goto/collect task use mc task.');
   return {
     ok: true,
     command: 'status',
@@ -55,10 +68,9 @@ function slimStatusEnvelope(raw) {
       time: d.time ?? null,
       phase: timePhase(d.time),
       raining: d.isRaining ?? null,
-      hint:
-        'thin status: only location/HP/food/holding/time. ' +
-        'For richer info use mc scene/find/map/nearby with --reason. ' +
-        'For polling a goto/collect task use mc task.',
+      ...(stuckMin != null ? { stuck_minutes: stuckMin } : {}),
+      ...(stuckWarning ? { stuck_warning: stuckWarning } : {}),
+      hint,
     },
   };
 }
