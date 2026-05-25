@@ -39,10 +39,11 @@
       "target_ok": 81,
       "metric_id": "tilled_farmland",
       "description": "Till 9x9 wheat farm plot at farm",
-      "urgency_bias": 5
+      "urgency_bias": 5,
+      "enabled": false
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "collect_logs",
         "mc discover logs",
@@ -58,7 +59,7 @@
       "priority": 40
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "mine_stone",
         "mc discover stone"
@@ -73,7 +74,7 @@
       "priority": 55
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "craft_tools",
         "mc craft_plan wooden_axe",
@@ -126,7 +127,7 @@
       "priority": 90
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "mine_iron",
         "mc discover iron",
@@ -143,7 +144,7 @@
       "priority": 80
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "mine_coal",
         "mc discover coal",
@@ -159,7 +160,7 @@
       "priority": 75
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "mine_stone",
         "mc collect stone",
@@ -175,7 +176,7 @@
       "priority": 60
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "deep_mine",
         "mc discover diamond",
@@ -191,7 +192,7 @@
       "priority": 40
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "deposit",
         "mc deposit iron_ingot",
@@ -210,7 +211,7 @@
       "priority": 55
     },
     {
-      "enabled": true,
+      "enabled": false,
       "strategies_available": [
         "deposit",
         "mc deposit coal",
