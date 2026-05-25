@@ -77,6 +77,80 @@ except Exception as e:
     print(0)
     sys.exit(0)
 
+# ORCHESTRATOR PROTECTION (2026-05-26):
+# Steward runs in continuous-agent mode (her own long-lived process planning
+# the board). If the dispatcher ALSO spawns a worker for cards assigned to
+# her, the new worker process collides with her continuous process — both
+# try to claim port 3005 / session lock, second one dies. After 2 crashes,
+# the dispatcher's circuit-breaker auto-blocks the card. Observed
+# 2026-05-26 00:17 on t_361c3f3f.
+#
+# Fix: for any ready card assigned to an orchestrator-role profile, set
+# claim_lock to a recognizable marker. The dispatcher's selection SQL is
+# `WHERE status='ready' AND claim_lock IS NULL` — claimed cards are
+# skipped. Steward's continuous loop still sees the card via `kanban list
+# --assignee steward --status ready` (status is unchanged) and can act
+# on it via her normal flow (decompose, comment, complete, reassign).
+ORCHESTRATOR_PROFILES = {"steward"}
+ORCH_CLAIM_LOCK_PREFIX = "orch_continuous:"
+ORCH_CLAIM_TTL_SECONDS = 3600  # re-applied each tick; never expires in practice
+
+def _orch_claim_db_path():
+    return os.environ.get(
+        "HERMES_KANBAN_DB",
+        os.path.expanduser(f"~/.hermes/kanban/boards/{board}/kanban.db"),
+    )
+
+def park_orchestrator_cards(cards):
+    """For each ready card assigned to an orchestrator, set claim_lock so the
+    dispatcher skips it. Idempotent: skips cards already locked by us."""
+    import sqlite3, time as _t
+    locked = 0
+    db = _orch_claim_db_path()
+    targets = []
+    for c in cards:
+        a = (c.get("assignee") or "").lower()
+        if a not in ORCHESTRATOR_PROFILES:
+            continue
+        if c.get("status") != "ready":
+            continue
+        # claim_lock isn't in the json list output — check via SQL below
+        targets.append((c["id"], a))
+    if not targets:
+        return 0
+    try:
+        with sqlite3.connect(db, timeout=5) as con:
+            now = int(_t.time())
+            expires = now + ORCH_CLAIM_TTL_SECONDS
+            for tid, assignee in targets:
+                row = con.execute(
+                    "SELECT claim_lock FROM tasks WHERE id=?",
+                    (tid,),
+                ).fetchone()
+                if row is None:
+                    continue
+                existing_lock = row[0]
+                # Already locked by anyone? Don't touch — could be a real
+                # in-flight worker we shouldn't fight.
+                if existing_lock:
+                    continue
+                marker = f"{ORCH_CLAIM_LOCK_PREFIX}{assignee}"
+                con.execute(
+                    "UPDATE tasks SET claim_lock=?, claim_expires=? "
+                    "WHERE id=? AND status='ready' AND claim_lock IS NULL",
+                    (marker, expires, tid),
+                )
+                locked += con.total_changes
+            con.commit()
+    except Exception as e:
+        print(f"  mutex: park_orch failed: {e}", file=sys.stderr)
+        return 0
+    return locked
+
+orch_locked = park_orchestrator_cards(cards)
+if orch_locked > 0:
+    print(f"  mutex: parked {orch_locked} orchestrator card(s) (skip dispatcher spawn)", file=sys.stderr)
+
 # Build the in-flight set grouped by assignee. running > ready ordering
 # ensures we never pick a ready card as head when a running card exists.
 # todo is excluded — it's already parked.

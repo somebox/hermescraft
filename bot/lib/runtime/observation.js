@@ -499,10 +499,20 @@ export function createObservation(deps) {
     // mc advise / kanban_block burn iteration budget and often die mid-loop.
     // The warning string appears in the result text so the agent sees it on
     // every mc status read, not just buried in JSON.
+    //
+    // Suppress for orchestrator-role profiles: Steward is supposed to stay
+    // at base by design (her SOUL: "Stay at base; never mine/place"), so
+    // her position-stability is expected, not a problem. Firing the warning
+    // for her would be a false positive that distracts from her actual
+    // orchestration work.
+    const ORCHESTRATOR_PROFILES = new Set(['steward']);
+    // bot.username matches the profile (Flint/Mason/Steward) case-insensitively.
+    const profileName = String(ctx.world.bot?.username || '').toLowerCase();
+    const isOrchestrator = ORCHESTRATOR_PROFILES.has(profileName);
     let stuckBlock = {};
     try {
       const positionHistory = ctx.world.positionHistory || [];
-      if (positionHistory.length >= 4) {
+      if (!isOrchestrator && positionHistory.length >= 4) {
         const STUCK_RADIUS = 5;
         const STUCK_THRESHOLD_MIN = 5;
         const nowMs = Date.now();
