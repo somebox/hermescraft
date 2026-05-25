@@ -72,6 +72,130 @@ mc collect iron_ore 16           # now in LOS, collect again
 mc stair_up                      # uses your staircase
 ```
 
+## Production workflow — how to actually mine a SUPPLY card
+
+Most mining failures look like "the bot wandered" because the worker treated the card as open-ended exploration instead of a structured production run. **Follow this 5-phase template** for any `[SUPPLY] <ore>` or "gather N stone/iron/coal" card. Don't skip phases.
+
+### Phase 1 — Pre-flight (≤ 5 tool calls, before leaving base)
+
+Verify in inventory, in this order — stop and recover if any check fails:
+
+```
+mc inventory
+```
+
+| Item | Minimum | If missing |
+|---|---|---|
+| Pickaxe of correct tier | stone for iron/coal/cobble, iron for gold/redstone, iron+ for diamond | Walk to base crafting table; `mc craft stone_pickaxe` (3 cobble + 2 sticks) |
+| Cobblestone or dirt | 64 (for pillar/wall/escape) | `mc collect cobblestone 64` near surface stone first |
+| Torches | 16 | `mc craft torch 16` (1 coal + 1 stick → 4 torches) |
+| Food (cooked) | 8 | Visit `food_chest` mark; `mc withdraw cooked_beef 8` |
+
+If the card body lists `prep_required:` with thresholds, those win over this default. If you can't meet the prep, **`kanban_block prep_required_unmet`** — don't try to mine without gear. The orchestrator will queue a `[SUPPLY]` precursor for the missing items.
+
+### Phase 2 — Locate the seam
+
+The card body either has explicit coordinates OR it doesn't. Branch on this:
+
+**Branch A — card specifies location** (`(376, 44, -599)` or `mine at coal vein near (376,-599) Y43-45`):
+1. `mc move <x> 65 <z>` to land on the surface above the target (Y=65 is safe surface for our base area).
+2. Skip to Phase 3.
+
+**Do NOT pick your own ore location when the card gave you one.** If you find a surface ore cluster on the way and it's at the WRONG coord, ignore it. The audit task that produced this card already weighed surface vs underground; trust the body. Drift here is the #1 cause of stuck mining sessions.
+
+**Branch B — card has no location** (`gather 64 iron`, `mine cobblestone`, etc.):
+1. **Run `mc advise --reason "<ore> location scan" --target <last_known_mine_or_base>` first.** The advise digest will identify nearby ore signatures from your perception bundle and recommend a direction — this is free intelligence, use it.
+2. If advise returns a coord, treat it as Branch A.
+3. If advise has no answer, scout in steps of 30 blocks:
+   ```
+   for step in 1..6:
+       mc move <pos> + 30 blocks in chosen direction
+       mc nearby 16                       # see anything?
+       mc find_blocks <ore> 32             # explicit scan
+       if found: break
+   ```
+   After 6 steps (180m walked) with nothing, **`kanban_block no_seam_found:<area_explored>`** — the steward will pick a better starting area. Don't wander further.
+
+### Phase 3 — Descend (mandatory primitive: `mc stair_down`)
+
+**Pre-flight: verify the terrain in your chosen direction is SOLID.** This is the #1 cause of stair_down "no_progress" — calling stair_down at a cliff edge, an existing tunnel mouth, a building edge, or any spot where the column you'd dig INTO is already open air. The primitive correctly says "nothing to dig" because the targets ARE already air, but the no-progress message is silent about WHY.
+
+Before `mc stair_down DIR N`, run THREE inspect calls (cheap, ~5s):
+
+```bash
+# Replace X,Y,Z with your bot position from mc status; dx,dz from direction.
+# Direction → (dx,dz):  north=(0,-1) south=(0,1) east=(1,0) west=(-1,0)
+
+mc inspect <X+dx> <Y>   <Z+dz>     # body cell (where stair_down digs the head/body column)
+mc inspect <X+dx> <Y-1> <Z+dz>     # the new floor cell (the cell your bot will stand IN)
+mc inspect <X+dx> <Y-2> <Z+dz>     # the cell UNDER the new floor (support for the bot)
+```
+
+Pass condition: **all three SOLID** (stone/dirt/grass/cobble — anything not in {air, cave_air, water, lava, void_air}).
+
+- If the body or floor cell is **air**: you're at a cliff edge or above an existing tunnel. Move 3-5 blocks LATERAL toward solid ground (`mc move` to grass terrain), then re-check.
+- If only the bot's-feet-floor cell is air: you're floating on a ledge. `mc move` to the adjacent solid block first.
+- If all three are bedrock: pick a different starting Y or direction.
+
+Once verified solid:
+
+```
+mc stair_down south 30         # 3-wide staircase, lands ~30 blocks below
+```
+
+- Direction: pick the cardinal that keeps you AWAY from base structures (check `mc regions --at` if unsure).
+- Length 30 is the sweet spot for our world: lands ~Y34, in the iron + coal sweet zone, above the lava layer (Y10).
+- After it lands, **`mc set_mark mine_entrance`** at the top, **`mc set_mark <ore>_seam`** at the bottom. These become your return anchors.
+
+**Error envelope reading**:
+- `no_progress_at_step_N (M already_air, ...)` → you started at a hollow / cliff edge. Re-do the pre-flight inspect.
+- `cave_below_step_N_floor_is_air_at_X_Y_Z` → the seam works for a few steps then the column descends into a cave at coord X,Y,Z. Option A: lateral move 3-5 blocks and restart staircase. Option B: `mc place cobblestone X Y Z` to bridge the void, then continue.
+
+**Flag syntax** — `mc stair_down DIR [LENGTH] [X Y Z] [WIDTH] [HEIGHT]` is positional only. There is NO `--width` or `--height` long-form flag. Calling `mc stair_down south 16 --width 2 --height 3` errors with `stair_down:x:not_number` because it tries to parse `--width` as the X coordinate.
+
+NEVER pillar straight down. NEVER dig a 1-wide shaft. The escape primitives don't compensate for a missing staircase.
+
+### Phase 4 — Tunnel (mandatory primitive: `mc tunnel`)
+
+Pick a direction toward the densest ore signature (from Phase 2 advise/scan) and run:
+
+```
+mc tunnel <x> <y> <z> <dir> 50 2 3         # 2-wide × 3-high × 50 long corridor
+```
+
+The `tunnel` primitive uses the embedded pathfinder + dig_area slices — much more efficient than per-block `mc dig`. It also handles head clearance and torch-spacing automatically when the bot has torches in inventory.
+
+### Phase 5 — Scan-and-branch (every 10 blocks during Phase 4)
+
+The pathfinder handles the corridor, but YOU need to surface the ore intelligence. Between tunnel calls (or after each ~10-block run), interleave:
+
+```
+mc nearby 8                                # quick visual catalog
+mc find_blocks iron_ore 12                 # explicit scan (radius 12)
+```
+
+If ore is found within ~8 blocks but **off the corridor axis** (i.e. behind a wall):
+```
+mc tunnel <ore_x> <ore_y> <ore_z> <dir_toward> 6    # branch off
+mc collect iron_ore 16                              # pathfinder + pickup
+mc go_mark mine_entrance                            # or current main corridor end
+```
+
+If ore is found IN the corridor: `mc collect <ore> 16` and continue the main tunnel.
+
+After the main tunnel reaches 50 blocks total, **stop**. Don't keep extending — file a follow-up `[EXTEND]` card if more length is needed. Long-running cards exceed iteration budget.
+
+### Returning + completing
+
+When you have the deficit met (check `mc inventory` against the card's `Deficit:` field):
+
+1. `mc go_mark mine_entrance` (back to staircase top — your bot will use the staircase).
+2. `mc go_mark base` (surface base).
+3. `mc deposit <ore_name>` at the matching chest (per card body — usually `materials_chest` for cobble, `ore_chest` for iron).
+4. `kanban_complete summary:"deposited <N> <ore> at <chest>; tunnel left open at (<X>,<Y>,<Z>) <dir> for follow-up"`.
+
+The "tunnel left open at ..." line in the summary is critical — the next miner can resume from where you stopped instead of starting a new descent.
+
 ## Stuck-mining pivot heuristic
 
 If you get 3 errors in a row from `mc dig`, `mc goto`, or `mc escape` at the same target — **stop digging** and run the escape protocol below.

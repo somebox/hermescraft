@@ -192,6 +192,62 @@ kanban_complete(
 
 Shape `metadata` so downstream parsers (reviewers, aggregators, schedulers) can use it without re-reading your prose.
 
+## Creating cards: one-in-flight per assignee (`--parent` rule)
+
+**Hermes does not enforce per-assignee concurrency** — if you create three cards for `flint` while he already has one running, the dispatcher will spawn three more workers against the same mineflayer body and they will race each other (circles, jerk-teleports, contradictory commands). For Minecraft, the **profile IS the body** — one worker at a time, always.
+
+**Before `kanban_create` with `--assignee X`**, check if X already has any non-done card. If yes, link the new card to X's in-flight card so it parks in `todo` until X is free.
+
+```python
+# Check first — one CLI call.
+import os, subprocess, json
+board = os.environ.get("HERMES_KANBAN_BOARD", "landfolk-ops")
+out = subprocess.check_output([
+    "hermes", "kanban", "--board", board, "list",
+    "--assignee", "flint", "--json"
+])
+in_flight = [c["id"] for c in json.loads(out)
+             if c["status"] in ("running", "ready", "todo")]
+
+if in_flight:
+    # X is busy — chain new card behind their current head.
+    new = kanban_create(
+        title="[SUPPLY] Wood deficit −768 logs",
+        assignee="flint",
+        priority=1,
+        parents=[in_flight[0]],   # ← this is the whole fix
+    )
+else:
+    # X is free — card goes straight to ready, dispatcher picks it up.
+    new = kanban_create(
+        title="[SUPPLY] Wood deficit −768 logs",
+        assignee="flint",
+        priority=1,
+    )
+```
+
+**Why this works:** Hermes' `recompute_ready` only promotes `todo → ready` when ALL parents are `done`. A card parked behind an in-flight parent stays in `todo` automatically. When the parent finishes, the next dispatcher tick promotes the child to `ready` — and only then does a worker spawn. Result: at most one worker per assignee, ever.
+
+**For shell-form `hermes kanban create`** (Steward / scripts):
+
+```bash
+PARENT=$(hermes kanban --board landfolk-ops list --assignee flint --json \
+  | jq -r '[.[] | select(.status | IN("running","ready","todo"))] | .[0].id // empty')
+hermes kanban --board landfolk-ops create "[SUPPLY] Wood deficit" \
+  --assignee flint --priority 1 \
+  ${PARENT:+--parent "$PARENT"}
+```
+
+The `${PARENT:+--parent "$PARENT"}` syntax expands to nothing when PARENT is empty (assignee is free), so you don't need a separate code path.
+
+**If you forgot to check and ended up with parallel cards on the same assignee**, link them post-hoc:
+
+```bash
+hermes kanban link <existing_in_flight_card> <new_card>
+```
+
+The next dispatcher tick's `claim_task` will see "parent not done" and demote the new card to `todo`. No restart needed.
+
 ## Claiming cards you actually created
 
 If your run produced new kanban tasks (via `kanban_create`), pass the ids in `created_cards` on `kanban_complete`. The kernel verifies each id exists and was created by your profile; any phantom id blocks the completion with an error listing what went wrong, and the rejected attempt is permanently recorded on the task's event log. **Only list ids you captured from a successful `kanban_create` return value — never invent ids from prose, never paste ids from earlier runs, never claim cards another worker created.**

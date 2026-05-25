@@ -26,8 +26,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 
 class Fixture:
     """Parsed YAML fixture. All keys are optional; missing ones return defaults."""
@@ -76,6 +74,9 @@ class Fixture:
 
 
 def load_fixture(path: Path | str) -> Fixture:
+    import yaml  # lazy — keeps `from tests._lib import ...` working in
+                  # environments without PyYAML (e.g. the agent's restricted
+                  # python3 path used by mc advise).
     p = Path(path)
     with open(p) as f:
         data = yaml.safe_load(f) or {}

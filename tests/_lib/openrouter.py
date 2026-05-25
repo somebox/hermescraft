@@ -12,8 +12,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DIGEST_MODEL = "deepseek/deepseek-v4-flash"
 
@@ -27,6 +25,8 @@ def resolve_openrouter_api_key() -> str | None:
     if not secrets_path.is_file():
         return None
     try:
+        import yaml  # lazy: only needed when reading secrets.yaml; the
+                    # OPENROUTER_API_KEY env var short-circuits this path.
         data = yaml.safe_load(secrets_path.read_text(encoding="utf-8")) or {}
     except Exception:
         return None

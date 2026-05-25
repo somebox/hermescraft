@@ -17,8 +17,6 @@ import socket
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "config" / "hermescraft.yaml"
 
@@ -46,6 +44,9 @@ def load_config(path: Path | None = None, profile: str | None = None) -> dict[st
         Fully resolved config dict with $overrides applied and the
         $overrides key stripped from the result.
     """
+    import yaml  # lazy: callers that never invoke load_config() (e.g. mc advise
+                  # with MC_API_URL set) shouldn't need PyYAML installed.
+
     config_path = path or CONFIG_PATH
     if not config_path.exists():
         raise FileNotFoundError(
