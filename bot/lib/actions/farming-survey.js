@@ -211,4 +211,173 @@ export function runRegionsTerrain(deps, args) {
   };
 }
 
+/**
+ * Per-cell categorization of a farm rect: tilled vs planted vs harvestable
+ * vs empty. Designed as the one verb an agent calls to answer "what's the
+ * state of this plot?" before deciding to till / plant / harvest / wait.
+ *
+ * Categories:
+ *   harvestable        — mature crop on farmland (age == max). Direct
+ *                        next-action: mc harvest.
+ *   planted_growing    — crop on farmland, age < max. Wait or bonemeal.
+ *   tilled             — farmland with air above. Next: mc plant.
+ *   empty_soil         — dirt/grass/etc with air above. Next: mc till.
+ *   unplantable        — solid non-soil surface (stone, cobble, etc).
+ *   no_surface         — no solid block within scan window (cave / void).
+ *   farmland_occupied  — farmland with a non-crop block above (decor /
+ *                        torch / sapling). Manual triage.
+ *   soil_occupied      — soil with a non-air block above. Manual triage.
+ */
+const FARM_SURFACE_SOIL = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'podzol']);
+const FARM_AIR = new Set(['air', 'cave_air', 'void_air']);
+const FARM_CROP_MATURE_AGE = {
+  wheat: 7, carrots: 7, potatoes: 7, beetroots: 3,
+  // Stems mature at age 7 but the actual fruit (pumpkin/melon block) appears
+  // adjacent, not above. We report stems as planted_growing until they're
+  // age 7, then harvestable (stem-age == max, regardless of fruit presence).
+  melon_stem: 7, pumpkin_stem: 7,
+};
+
+function categorizeFarmCell(b, x, y, z) {
+  const surface = b.blockAt(new Vec3(x, y, z));
+  if (!surface) return { category: 'unknown' };
+  if (FARM_AIR.has(surface.name)) return { category: 'air' };
+
+  const aboveBlk = b.blockAt(new Vec3(x, y + 1, z));
+  const aboveName = aboveBlk?.name ?? null;
+  const aboveAir = !aboveBlk || FARM_AIR.has(aboveName);
+
+  if (surface.name === 'farmland') {
+    if (aboveAir) return { category: 'tilled' };
+    const mature = FARM_CROP_MATURE_AGE[aboveName];
+    if (mature != null) {
+      const age = Number((aboveBlk.getProperties?.() || {}).age ?? 0);
+      return {
+        category: age >= mature ? 'harvestable' : 'planted_growing',
+        crop: aboveName,
+        age,
+        mature_age: mature,
+      };
+    }
+    return { category: 'farmland_occupied', block_above: aboveName };
+  }
+  if (FARM_SURFACE_SOIL.has(surface.name)) {
+    return aboveAir
+      ? { category: 'empty_soil', soil: surface.name }
+      : { category: 'soil_occupied', soil: surface.name, block_above: aboveName };
+  }
+  return { category: 'unplantable', block: surface.name };
+}
+
+/**
+ * `mc farm_status X1 Z1 X2 Z2 [Y]` — categorize every column in the rect.
+ *
+ * If Y is given, the categorizer reads (X, Y, Z) as the surface block. If
+ * Y is omitted, each column auto-resolves its top non-air block (via
+ * columnTopSolid) and categorizes that. The latter is what a survey card
+ * usually wants ("scan this rect, tell me what's there").
+ */
+export function runFarmStatus(deps, body) {
+  const b = deps.ensureBot();
+
+  const x1 = Number(body.x1 ?? body.x);
+  const z1 = Number(body.z1 ?? body.z);
+  const x2 = Number(body.x2);
+  const z2 = Number(body.z2);
+  if (![x1, z1, x2, z2].every(Number.isFinite)) {
+    return {
+      ok: false,
+      error: { code: 'INVALID_ARGS', message: 'farm_status requires x1 z1 x2 z2.', retry_safe: false },
+    };
+  }
+  const explicitY = body.y != null ? Number(body.y) : null;
+
+  const cols = columnsInRect(x1, z1, x2, z2);
+  if (cols.length > MAX_VERIFY_CELLS) {
+    return {
+      ok: false,
+      error: {
+        code: 'RECT_TOO_LARGE',
+        message: `farm_status rect has ${cols.length} columns; max ${MAX_VERIFY_CELLS}.`,
+        retry_safe: false,
+      },
+    };
+  }
+
+  const counts = {
+    harvestable: 0,
+    planted_growing: 0,
+    tilled: 0,
+    empty_soil: 0,
+    unplantable: 0,
+    no_surface: 0,
+    farmland_occupied: 0,
+    soil_occupied: 0,
+    air: 0,
+    unknown: 0,
+  };
+  /** @type {{x:number,y:number,z:number,crop:string}[]} */
+  const harvestable_coords = [];
+  /** @type {{x:number,y:number,z:number}[]} */
+  const empty_soil_coords = [];
+  /** @type {{x:number,y:number,z:number,soil?:string,block_above?:string}[]} */
+  const issues = [];
+
+  for (const { x, z } of cols) {
+    let yToProbe;
+    if (explicitY != null) {
+      yToProbe = explicitY;
+    } else {
+      const top = columnTopSolid(b, x, z);
+      if (!top) {
+        counts.no_surface++;
+        continue;
+      }
+      yToProbe = top.topY;
+    }
+    const cell = categorizeFarmCell(b, x, yToProbe, z);
+    counts[cell.category] = (counts[cell.category] ?? 0) + 1;
+    if (cell.category === 'harvestable' && harvestable_coords.length < 12) {
+      harvestable_coords.push({ x, y: yToProbe, z, crop: cell.crop });
+    }
+    if (cell.category === 'empty_soil' && empty_soil_coords.length < 12) {
+      empty_soil_coords.push({ x, y: yToProbe, z });
+    }
+    if (cell.category === 'farmland_occupied' || cell.category === 'soil_occupied') {
+      if (issues.length < 8) issues.push({ x, y: yToProbe, z, ...cell });
+    }
+  }
+
+  // Next-action hint priority: harvest > till > plant > none.
+  const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+  const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+  let nextHint = null;
+  if (counts.harvestable > 0) {
+    const yHint = harvestable_coords[0]?.y;
+    nextHint = `mc harvest ${minX} ${minZ} ${maxX} ${maxZ}${yHint != null ? ` ${yHint}` : ''}   # ${counts.harvestable} mature`;
+  } else if (counts.empty_soil > 0) {
+    nextHint = `mc till_area ${minX} ${minZ} ${maxX} ${maxZ}   # ${counts.empty_soil} cells need tilling`;
+  } else if (counts.tilled > 0) {
+    nextHint = `mc plant <seed> X Y Z   # ${counts.tilled} farmland ready (no till_area equivalent for plant yet)`;
+  } else if (counts.planted_growing > 0) {
+    nextHint = `wait or mc bonemeal each cell — ${counts.planted_growing} crops still growing`;
+  } else {
+    nextHint = 'no farm-actionable cells in rect';
+  }
+
+  return {
+    ok: true,
+    data: {
+      bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: explicitY },
+      column_count: cols.length,
+      counts,
+      harvestable_coords,
+      empty_soil_coords,
+      ...(issues.length ? { manual_triage: issues } : {}),
+    },
+    next_action_hint: nextHint,
+    result: `${counts.harvestable} harvestable, ${counts.planted_growing} growing, ${counts.tilled} tilled, ${counts.empty_soil} empty soil, ${counts.unplantable + counts.no_surface + counts.farmland_occupied + counts.soil_occupied} other (of ${cols.length} columns).`,
+  };
+}
+
 export { columnsInRect, MAX_VERIFY_CELLS };

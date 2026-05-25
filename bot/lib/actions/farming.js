@@ -11,10 +11,10 @@
 import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { columnTopSolid } from '../runtime/dig-tools.js';
-import { findAdjustedTarget } from './_nav-helpers.js';
+import { findAdjustedTarget, botFootCell, findLateralStepOff } from './_nav-helpers.js';
 import { AIR_NAMES } from './_block-sets.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
-import { runVerifyPlot, MAX_VERIFY_CELLS } from './farming-survey.js';
+import { runVerifyPlot, runFarmStatus, MAX_VERIFY_CELLS } from './farming-survey.js';
 import { columnsInRect } from '../runtime/regions/terrain-survey.js';
 
 const HOE_NAMES = ['netherite_hoe', 'diamond_hoe', 'iron_hoe', 'stone_hoe', 'golden_hoe', 'wooden_hoe'];
@@ -236,6 +236,26 @@ export function createFarmingActions(deps) {
         }
       }
 
+      // If the bot is standing ON the target (foot cell directly above it),
+      // the bot's hitbox occludes the top face — native activateBlock
+      // silently no-ops and we always fall through to the PaperMCP setblock
+      // path. Step laterally onto a walkable neighbor first so the till
+      // happens via the normal interaction route. The lateral step also
+      // avoids the cosmetic foot-drop when grass→farmland (farmland height
+      // 0.9375 vs full block 1.0).
+      let stepOff = null;
+      const foot = botFootCell(b);
+      if (foot.x === targetPos.x && foot.z === targetPos.z && foot.y === targetPos.y + 1) {
+        const step = findLateralStepOff(b, targetPos.x, foot.y, targetPos.z);
+        if (step) {
+          try {
+            await pathfindGotoNear(b, goals, step.x, step.y, step.z, 1, { opName: 'till_step_off', capMs: ACTION_CAPS_MS.reach });
+            stepOff = step;
+            log(`[till] stepped off target column (${targetPos.x},${targetPos.z}) → standing at (${step.x},${step.y},${step.z})`);
+          } catch { /* couldn't step off; proceed and let PaperMCP fallback handle it */ }
+        }
+      }
+
       try { await b.equip(hoe, 'hand'); } catch (err) {
         return { ok: false, error: { code: 'INTERRUPTED', message: `equip ${hoe.name} failed: ${err.message}`, retry_safe: true }};
       }
@@ -294,9 +314,10 @@ export function createFarmingActions(deps) {
           tilled_coord: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
           hoe: hoe.name,
           ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
+          ...(stepOff ? { stepped_off_target: stepOff } : {}),
           ...(fallback ? { fallback } : {}),
         },
-        result: `Tilled ${target.name} → farmland at ${targetPos.x},${targetPos.y},${targetPos.z}${adjustedTarget ? ` (adjusted from ${x},${y},${z})` : ''}${fallback ? ' (server-side fallback)' : ''}.`,
+        result: `Tilled ${target.name} → farmland at ${targetPos.x},${targetPos.y},${targetPos.z}${adjustedTarget ? ` (adjusted from ${x},${y},${z})` : ''}${stepOff ? ` (stepped off target)` : ''}${fallback ? ' (server-side fallback)' : ''}.`,
       };
     },
 
@@ -401,6 +422,28 @@ export function createFarmingActions(deps) {
         }
       }
 
+      // If the bot's foot cell IS the crop's target cell (bot is standing
+      // on the soil/farmland this crop should sit on), placeBlock fails —
+      // the crop wants the cell the bot occupies. Step laterally so the
+      // crop cell is free, then plant from the side. Bot's foot cell could
+      // also be the soil cell (foot.y == targetPos.y - 1 == soilPos.y),
+      // which is a separate case: bot standing ON the soil but with feet
+      // INSIDE the crop cell — same fix.
+      let stepOff = null;
+      const foot = botFootCell(b);
+      const occupiesTarget = foot.x === targetPos.x && foot.z === targetPos.z &&
+        (foot.y === targetPos.y || foot.y === soilPos.y);
+      if (occupiesTarget) {
+        const step = findLateralStepOff(b, targetPos.x, foot.y, targetPos.z);
+        if (step) {
+          try {
+            await pathfindGotoNear(b, goals, step.x, step.y, step.z, 1, { opName: 'plant_step_off', capMs: ACTION_CAPS_MS.reach });
+            stepOff = step;
+            log(`[plant] stepped off target column (${targetPos.x},${targetPos.z}) → standing at (${step.x},${step.y},${step.z})`);
+          } catch { /* couldn't step off; proceed and let PaperMCP fallback handle it */ }
+        }
+      }
+
       try { await b.equip(seed, 'hand'); } catch (err) {
         return { ok: false, error: { code: 'INTERRUPTED', message: `equip ${itemName} failed: ${err.message}`, retry_safe: true }};
       }
@@ -452,9 +495,10 @@ export function createFarmingActions(deps) {
           crop_block: cropBlockName,
           target_coord: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
           ...(adjustedTarget ? { adjusted_target: adjustedTarget } : {}),
+          ...(stepOff ? { stepped_off_target: stepOff } : {}),
           ...(fallback ? { fallback } : {}),
         },
-        result: `Planted ${itemName} at ${targetPos.x},${targetPos.y},${targetPos.z}${adjustedTarget ? ` (adjusted from ${x},${y},${z})` : ''}${fallback ? ' (server-side fallback)' : ''}.`,
+        result: `Planted ${itemName} at ${targetPos.x},${targetPos.y},${targetPos.z}${adjustedTarget ? ` (adjusted from ${x},${y},${z})` : ''}${stepOff ? ` (stepped off target)` : ''}${fallback ? ' (server-side fallback)' : ''}.`,
       };
     },
 
@@ -654,6 +698,15 @@ export function createFarmingActions(deps) {
      */
     async verify_plot(body) {
       return runVerifyPlot({ ctx, ensureBot }, body || {});
+    },
+
+    /**
+     * Per-cell plot categorization: counts of harvestable / planted /
+     * tilled / empty_soil + sample coords + next-action hint. The "what's
+     * the state of this plot, what should I do next?" verb.
+     */
+    async farm_status(body) {
+      return runFarmStatus({ ctx, ensureBot }, body || {});
     },
   };
 

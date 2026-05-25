@@ -1126,6 +1126,28 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
 
+  g('farm_status', 'world', ['plot_status', 'farm_scan'], {
+    description: 'Plot status: counts per category (harvestable / planted_growing / tilled / empty_soil / unplantable / etc) + sample coords + next-action hint. Run once before deciding till/plant/harvest. With Y: probes that exact row; without Y: uses each column\'s topmost solid block.',
+    method: 'POST',
+    path: '/action/farm_status',
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'y', type: 'number', required: false },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x1: Number(p.x1), z1: Number(p.z1), x2: Number(p.x2), z2: Number(p.z2),
+      ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+    }),
+    usage: 'mc farm_status X1 Z1 X2 Z2 [Y]',
+    examples: [
+      'mc farm_status 355 -575 363 -567        # auto-Y per column',
+      'mc farm_status 355 -575 363 -567 64     # probe Y=64 explicitly',
+    ],
+  }),
+
   g('till_area', 'world', ['till_rect'], {
     description: 'Till all columns in axis-aligned rectangle (max 81). Uses per-column surface Y unless optional Y hint is passed.',
     method: 'POST',

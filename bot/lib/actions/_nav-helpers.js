@@ -85,6 +85,48 @@ export function isStandableCell(b, x, y, z) {
 }
 
 /**
+ * The block-index cell containing the bot's feet. Use for "is bot here?"
+ * comparisons in actions whose target overlaps the bot's hitbox
+ * (e.g. tilling the block underfoot, planting in the bot's foot cell).
+ */
+export function botFootCell(b) {
+  return {
+    x: Math.floor(b.entity.position.x),
+    y: Math.floor(b.entity.position.y + 0.001),
+    z: Math.floor(b.entity.position.z),
+  };
+}
+
+/**
+ * Find a horizontally-adjacent cell where the bot can stand WITHOUT
+ * occupying or supporting the column at (x, y, z). Returns
+ *   { x, y, z, dx, dz }  for the standable neighbor, or null.
+ *
+ * Used by till / plant when the target is the bot's standing cell (the
+ * native interaction silently no-ops because the bot's hitbox occludes
+ * the target face). Caller pathfinds to the returned coord, then retries
+ * the action from that side.
+ *
+ * Order tried: N, E, S, W — first walkable wins. Each direction probes
+ * the candidate at the same y first, then y+1 (step up), then y-1 (step
+ * down). This handles "bot standing on a partial-height block (farmland,
+ * slab) surrounded by full blocks one cell lower" — common in farm
+ * plots where the bot tills/plants the cell underfoot.
+ */
+export function findLateralStepOff(b, x, y, z) {
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const nx = x + dx;
+    const nz = z + dz;
+    for (const dy of [0, 1, -1]) {
+      if (isStandableCell(b, nx, y + dy, nz)) {
+        return { x: nx, y: y + dy, z: nz, dx, dz, dy };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Diagnose why a cell isn't standable. Returns one of:
  *   'ok'              — standable
  *   'head_blocked'    — foot is air but head has a block (most common
