@@ -1516,359 +1516,247 @@ EOF
 # the run aborts on the first failed check; without it, each failure is
 # logged and we continue so you see the full picture.
 cmd_diagnostics() {
-  local players_csv="${PLAYERS_DEFAULT}"
-  local skip_deploy=0 skip_gateway=0 skip_dispatcher=0 skip_daemons=0
-  local sleep_after_start=8 fail_fast=0
-
+  local fail_fast=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --players)         players_csv="$2"; shift 2 ;;
-      --skip-deploy)     skip_deploy=1; shift ;;
-      --skip-gateway)    skip_gateway=1; shift ;;
-      --skip-dispatcher) skip_dispatcher=1; shift ;;
-      --skip-daemons)    skip_daemons=1; shift ;;
-      --sleep)           sleep_after_start="$2"; shift 2 ;;
-      --fail-fast)       fail_fast=1; shift ;;
+      --fail-fast) fail_fast=1; shift ;;
       -h|--help)
-        cat <<'EOF'
-landfolk diagnostics — incremental startup with per-step checks
+        cat <<'HELP'
+landfolk diagnostics — REPORT fleet health. Read-only, idempotent.
 
-Brings up the fleet phase by phase, verifying each prerequisite before
-moving on. Use after a clean stop, after a code change, or whenever you
-want to spot startup failures precisely.
+Does NOT start, stop, or deploy anything. Each phase is a check; failures
+print a "→ remedy: <command>" hint so you can act explicitly.
 
 Options:
-  --players <csv>      Players to start (default: $PLAYERS_DEFAULT)
-  --skip-deploy        Don't sync repo skills/SOULs to runtime locations
-  --skip-gateway       Don't try to start hermes gateway
-  --skip-dispatcher    Don't try to start kanban dispatcher
-  --skip-daemons       Don't bring up listener / chat-wake daemons
-  --sleep <s>          Sleep between starts (default: 8)
-  --fail-fast          Abort on first failed check (default: warn and continue)
+  --fail-fast    Stop at first FAIL (default: full report)
 
-Phases:
-  0. Deploy            sync repo skills/SOULs/config to runtime locations
-  1. Pre-flight        inventory of what's up/down
-  2. Hermes gateway    start if not running
-  3. Kanban dispatcher start if not running
-  4. Steward           start, verify connection, verify HP-alert env wiring
-  5. Workers           start each kanban bot, verify POS_DIAG armed, report build
-  6. Daemons           start listener + chat-wake, verify each
-  7. Summary           final status + failure count
+Phases (all read-only):
+  1. Pre-flight        what's up vs down (gateway, dispatcher, daemons, bots)
+  2. Skills sync       repo skills/kanban-worker.md matches user-dir override
+  3. Hermes gateway    running check
+  4. Kanban dispatcher running check
+  5. Steward           connection + HP-alert env wiring + build version
+  6. Workers           connection + POS_DIAG armed + build + watchdog heartbeat
+  7. Daemons           listener + chat-wake running checks
+  8. Summary           failure count + remedy hints
 
-Exit code = number of phase failures (0 = clean).
-EOF
+Exit code = number of failures (0 = healthy).
+
+To actually fix things:
+  landfolk start [--players a,b,c]    # start gateway/dispatcher/bots/daemons
+  landfolk deploy                     # sync repo skills/SOULs to runtime
+  landfolk restart <player|all>       # bounce a stuck bot
+HELP
         return 0 ;;
       *) err "unknown flag: $1"; return 1 ;;
     esac
   done
 
   local diag_failures=0
-  local _check_failed=0
-
-  # Helper: run `cond` (passed as a string to eval). If true → ok, else → err
-  # + count failure. Honors --fail-fast.
   _diag_check() {
     local label="$1" cond="$2" hint="${3:-}"
     if eval "$cond" >/dev/null 2>&1; then
       ok "$label"
-      _check_failed=0
     else
       err "$label"
-      [ -n "$hint" ] && dim "hint: $hint"
-      _check_failed=1
+      [ -n "$hint" ] && dim "→ remedy: $hint"
       diag_failures=$((diag_failures + 1))
+      [ "$fail_fast" = 1 ] && return 99
     fi
   }
 
-  # ── Phase 0: deploy repo → runtime ───────────────────────────────────────
-  h1 "phase 0 — deploy skills + SOULs + config"
-  if [ "$skip_deploy" = 1 ]; then
-    dim "skipped (--skip-deploy)"
-  else
-    local _setup="$SCRIPT_DIR/scripts/setup-landfolk-profiles.sh"
-    if [ ! -x "$_setup" ]; then
-      err "$_setup not found or not executable"
-      diag_failures=$((diag_failures + 1))
-      [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-    else
-      echo "  running setup-landfolk-profiles.sh --apply-config..."
-      if "$_setup" --apply-config >/tmp/landfolk-deploy.log 2>&1; then
-        ok "deploy complete (full log: /tmp/landfolk-deploy.log)"
-      else
-        err "deploy failed (rc=$?) — see /tmp/landfolk-deploy.log"
-        diag_failures=$((diag_failures + 1))
-        [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-      fi
-      # Verify the canonical kanban-worker SKILL landed in the user-dir
-      # override AND at least one profile copy.
-      local _src="$SCRIPT_DIR/skills/kanban-worker.md"
-      local _user_md5 _src_md5
-      if [ -f "$_src" ]; then
-        _src_md5="$(md5 -q "$_src" 2>/dev/null || md5sum "$_src" 2>/dev/null | awk '{print $1}')"
-        _user_md5="$(md5 -q "$HOME/.hermes/skills/devops/kanban-worker/SKILL.md" 2>/dev/null || md5sum "$HOME/.hermes/skills/devops/kanban-worker/SKILL.md" 2>/dev/null | awk '{print $1}')"
-        if [ -n "$_src_md5" ] && [ "$_user_md5" = "$_src_md5" ]; then
-          ok "kanban-worker SKILL synced to user-dir override"
-        else
-          warn "kanban-worker SKILL drift detected (user-dir vs repo)"
-          diag_failures=$((diag_failures + 1))
-          [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-        fi
-      else
-        warn "$_src missing — kanban-worker SKILL is not version-controlled"
-      fi
-    fi
-  fi
-
-  # ── Phase 1: pre-flight ──────────────────────────────────────────────────
+  # ── Phase 1: pre-flight inventory ────────────────────────────────────────
   h1 "phase 1 — pre-flight inventory"
-  echo "  rostered (sticky):  $(roster_players | tr '\n' ' ')"
-  echo "  diagnostics target: $players_csv"
-  echo "  log dir:            $LOG_DIR"
-  echo "  state dir:          $STATE_DIR"
-  if gateway_running; then ok "hermes gateway already up"; else dim "hermes gateway down (will start in phase 2 unless --skip-gateway)"; fi
-  if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then ok "kanban dispatcher already up"
-  else dim "kanban dispatcher down (will start in phase 3 unless --skip-dispatcher)"; fi
-  local _up_now=0
+  echo "  rostered:  $(roster_players | tr '\n' ' ')"
+  echo "  log dir:   $LOG_DIR"
+  echo "  state dir: $STATE_DIR"
+  local _up_now=0 _total=0
   for _p in $(canonical_players); do
     local _port; _port="$(player_api_port "$_p")"
-    if [ -n "$_port" ] && curl -sf "http://127.0.0.1:$_port/health" >/dev/null 2>&1; then
-      _up_now=$((_up_now + 1))
-    fi
+    [ -z "$_port" ] && continue
+    _total=$((_total + 1))
+    curl -sf "http://127.0.0.1:$_port/health" >/dev/null 2>&1 && _up_now=$((_up_now + 1))
   done
-  echo "  players currently connected: $_up_now"
+  echo "  bots reachable: $_up_now/$_total"
 
-  # ── Phase 2: hermes gateway ──────────────────────────────────────────────
-  h1 "phase 2 — hermes gateway"
-  if [ "$skip_gateway" = 1 ]; then
-    dim "skipped (--skip-gateway)"
-  elif gateway_running; then
-    ok "hermes gateway already running"
+  # ── Phase 2: skills sync ─────────────────────────────────────────────────
+  h1 "phase 2 — skills sync"
+  local _src="$SCRIPT_DIR/skills/kanban-worker.md"
+  local _user_skill="$HOME/.hermes/skills/devops/kanban-worker/SKILL.md"
+  if [ ! -f "$_src" ]; then
+    warn "repo skills/kanban-worker.md missing"
+  elif [ ! -f "$_user_skill" ]; then
+    err "user-dir kanban-worker SKILL missing"
+    dim "→ remedy: scripts/landfolk deploy"
+    diag_failures=$((diag_failures + 1))
+    [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
   else
-    echo "  starting hermes gateway..."
-    if ! command -v hermes >/dev/null 2>&1; then
-      err "hermes CLI not on PATH — cannot manage gateway"
+    local _src_md5 _user_md5
+    _src_md5="$(md5 -q "$_src" 2>/dev/null || md5sum "$_src" 2>/dev/null | awk '{print $1}')"
+    _user_md5="$(md5 -q "$_user_skill" 2>/dev/null || md5sum "$_user_skill" 2>/dev/null | awk '{print $1}')"
+    if [ "$_src_md5" = "$_user_md5" ]; then
+      ok "kanban-worker SKILL synced (repo == user-dir)"
+    else
+      err "kanban-worker SKILL DRIFT — repo vs user-dir hash mismatch"
+      dim "→ remedy: scripts/landfolk deploy"
       diag_failures=$((diag_failures + 1))
       [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-    else
-      nohup hermes gateway run --replace >>"$LOG_DIR/gateway.log" 2>&1 &
-      disown
-      local _i=0
-      until gateway_running; do
-        _i=$((_i + 1))
-        [ "$_i" -gt 12 ] && break
-        sleep 1
-      done
-      _diag_check "hermes gateway running" "gateway_running" \
-                  "tail -40 $LOG_DIR/gateway.log"
-      [ "$_check_failed" = 1 ] && [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
     fi
-  fi
-
-  # ── Phase 3: kanban dispatcher ───────────────────────────────────────────
-  h1 "phase 3 — kanban dispatcher"
-  if [ "$skip_dispatcher" = 1 ]; then
-    dim "skipped (--skip-dispatcher)"
-  elif pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
-    ok "kanban dispatcher already running"
-  else
-    local _disp_log="$LOG_DIR/dispatcher.log"
-    local _disp_script="$SCRIPT_DIR/scripts/landfolk-dispatcher.sh"
-    if [ ! -x "$_disp_script" ]; then
-      err "$_disp_script not found or not executable"
-      diag_failures=$((diag_failures + 1))
-      [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-    else
-      echo "  starting kanban dispatcher..."
-      nohup "$_disp_script" >>"$_disp_log" 2>&1 &
-      disown
-      sleep 2
-      _diag_check "kanban dispatcher running" \
-                  "pgrep -f 'landfolk-dispatcher\\.sh' >/dev/null 2>&1" \
-                  "tail -40 $_disp_log"
-      [ "$_check_failed" = 1 ] && [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-    fi
-  fi
-
-  # ── Phase 4: steward ─────────────────────────────────────────────────────
-  h1 "phase 4 — steward"
-  local _has_steward=0
-  IFS=',' read -r -a _p_arr <<< "$players_csv"
-  for p in "${_p_arr[@]}"; do
-    [ "$(echo "$p" | tr '[:upper:]' '[:lower:]')" = "steward" ] && _has_steward=1
-  done
-  if [ "$_has_steward" = 1 ]; then
-    local _sport; _sport="$(player_api_port "steward")"
-    if curl -sf "http://127.0.0.1:$_sport/health" 2>/dev/null \
-         | python3 -c "import sys,json;sys.exit(0 if json.load(sys.stdin).get('connected') else 1)" 2>/dev/null; then
-      ok "steward already connected (port $_sport)"
-    else
-      echo "  starting steward..."
-      local _stored _eff
-      _stored="$(roster_mode_for "steward")"
-      _eff="$(resolve_mode "steward" "${_stored:-$DEFAULT_MODE}")"
-      LANDFOLK_NO_WAIT=0 player_start_one "steward" "$_eff" || true
-      sleep "$sleep_after_start"
-      _diag_check "steward connected" \
-                  "curl -sf http://127.0.0.1:$_sport/health 2>/dev/null | python3 -c 'import sys,json;sys.exit(0 if json.load(sys.stdin).get(\"connected\") else 1)' 2>/dev/null" \
-                  "tail -40 $LOG_DIR/bot-steward.log"
-      [ "$_check_failed" = 1 ] && [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-    fi
-    # Best-effort: confirm HP-alert env override is wired in source. Runtime
-    # confirmation would require inspecting the watchdog subshell env, which
-    # is not portable across macOS/Linux. Source check verifies our recent
-    # commit is on disk and would be applied by next watchdog spawn.
-    if grep -q 'DANGER_AUTOREACT_BROADCAST_CHAT=false' "$0" 2>/dev/null; then
-      ok "steward HP-alert chat suppression wired in launcher source"
-    else
-      warn "DANGER_AUTOREACT_BROADCAST_CHAT=false override not found in $0"
-    fi
-    local _sstatus
-    _sstatus="$(_probe_bot_build "$_sport")"
-    case "$_sstatus" in
-      ok\|*)            ok   "steward build: ${_sstatus#ok|}" ;;
-      drift\|*)
-        local _srest="${_sstatus#drift|}"
-        warn "steward build: DRIFT (${_srest%%|*}): ${_srest#*|}"
-        diag_failures=$((diag_failures + 1))
-        ;;
-      no-build-field\|*)
-        local _smt
-        _smt="$(_check_bot_mtime_drift steward)"
-        case "$_smt" in
-          ok)
-            warn "steward build: pre-build-info code (restart to enable build tracking)"
-            ;;
-          stale\|*)
-            warn "steward build: STALE — ${_smt#stale|}"
-            diag_failures=$((diag_failures + 1))
-            ;;
-        esac
-        ;;
-      unreachable) warn "steward build: /health unreachable for build probe" ;;
-      *)           warn "steward build: $_sstatus" ;;
-    esac
-  else
-    dim "steward not in --players — skipping"
-  fi
-
-  # ── Phase 5: workers ─────────────────────────────────────────────────────
-  h1 "phase 5 — workers"
-  local p eff stored port
-  for p in "${_p_arr[@]}"; do
-    p="$(echo "$p" | tr '[:upper:]' '[:lower:]')"
-    [ "$p" = "steward" ] && continue   # phase 4 handled
-    if ! is_canonical_player "$p"; then
-      warn "unknown player '$p' — skipping"
-      continue
-    fi
-    port="$(player_api_port "$p")"
-    if [ -z "$port" ]; then
-      warn "$p has no api_port in $AGENT_MODELS_JSON — skipping"
-      continue
-    fi
-    if curl -sf "http://127.0.0.1:$port/health" 2>/dev/null \
-         | python3 -c "import sys,json;sys.exit(0 if json.load(sys.stdin).get('connected') else 1)" 2>/dev/null; then
-      ok "$p already connected (port $port)"
-    else
-      echo "  starting $p (port $port)..."
-      stored="$(roster_mode_for "$p")"
-      eff="$(resolve_mode "$p" "${stored:-$DEFAULT_MODE}")"
-      LANDFOLK_NO_WAIT=0 player_start_one "$p" "$eff" || true
-      sleep "$sleep_after_start"
-      _diag_check "$p connected" \
-                  "curl -sf http://127.0.0.1:$port/health 2>/dev/null | python3 -c 'import sys,json;sys.exit(0 if json.load(sys.stdin).get(\"connected\") else 1)' 2>/dev/null" \
-                  "tail -40 $LOG_DIR/bot-$p.log"
-      if [ "$_check_failed" = 1 ] && [ "$fail_fast" = 1 ]; then _diag_summary; return "$diag_failures"; fi
-    fi
-    # POS_DIAG instrumentation should arm shortly after spawn. Sample.
-    if grep -q '\[POS_DIAG\] instrumentation armed' "$LOG_DIR/bot-$p.log" 2>/dev/null; then
-      ok "$p POS_DIAG instrumentation armed"
-    else
-      warn "$p POS_DIAG line not yet in log (may take 1-2s post-spawn)"
-      dim "manual check: grep POS_DIAG $LOG_DIR/bot-$p.log"
-    fi
-    # Build commit + drift check. Uses the same probe as `landfolk version`.
-    local _bstatus
-    _bstatus="$(_probe_bot_build "$port")"
-    case "$_bstatus" in
-      ok\|*)            ok   "$p build: ${_bstatus#ok|}" ;;
-      drift\|*)
-        local _rest="${_bstatus#drift|}"
-        warn "$p build: DRIFT (${_rest%%|*}): ${_rest#*|}"
-        diag_failures=$((diag_failures + 1))
-        ;;
-      no-build-field\|*)
-        # Bot doesn't have /health.build at all → pre-build-info code. Fall
-        # back to mtime comparison to detect real staleness.
-        local _mt
-        _mt="$(_check_bot_mtime_drift "$p")"
-        case "$_mt" in
-          ok)
-            warn "$p build: pre-build-info code (restart to enable build tracking)"
-            ;;
-          stale\|*)
-            warn "$p build: STALE — ${_mt#stale|}"
-            diag_failures=$((diag_failures + 1))
-            ;;
-        esac
-        ;;
-      unreachable) warn "$p build: /health unreachable for build probe" ;;
-      *)           warn "$p build: $_bstatus" ;;
-    esac
-    # Watchdog heartbeat freshness — proves the watchdog loop is running.
-    local _hb="$LOG_DIR/watchdog-$p.heartbeat"
-    if [ -e "$_hb" ]; then
-      local _now _mt _age
-      _now="$(date +%s)"
-      _mt="$(stat -f %m "$_hb" 2>/dev/null || stat -c %Y "$_hb" 2>/dev/null || echo "$_now")"
-      _age=$(( _now - _mt ))
-      if [ "$_age" -lt 30 ]; then
-        ok "$p watchdog heartbeat fresh (${_age}s)"
-      else
-        warn "$p watchdog heartbeat stale (${_age}s) — watchdog may not have started"
-      fi
-    else
-      warn "$p watchdog heartbeat file not yet present"
-    fi
-  done
-
-  # ── Phase 6: daemons ─────────────────────────────────────────────────────
-  h1 "phase 6 — daemons"
-  if [ "$skip_daemons" = 1 ]; then
-    dim "skipped (--skip-daemons)"
-  else
-    local d
-    for d in listener chat-wake; do
-      if daemon_alive "$d"; then
-        ok "$d already running (pid $(daemon_pid "$d"))"
-      else
-        echo "  starting $d..."
-        daemon_start "$d" >/dev/null
-        sleep 2
-        local _dlog
-        _dlog="$LOG_DIR/$(basename "$(daemon_script "$d")" .py).log"
-        _diag_check "$d running" "daemon_alive '$d'" "tail -40 $_dlog"
-        if [ "$_check_failed" = 1 ] && [ "$fail_fast" = 1 ]; then _diag_summary; return "$diag_failures"; fi
+    # Check profile copies for drift (informational, doesn't fail run)
+    local _drift_profiles=""
+    for _pdir in "$HOME"/.hermes/profiles/*/skills/devops/kanban-worker/SKILL.md; do
+      [ -f "$_pdir" ] || continue
+      local _pmd5
+      _pmd5="$(md5 -q "$_pdir" 2>/dev/null || md5sum "$_pdir" 2>/dev/null | awk '{print $1}')"
+      if [ "$_pmd5" != "$_src_md5" ]; then
+        local _pname
+        _pname="$(echo "$_pdir" | sed -E 's|.*/profiles/([^/]+)/.*|\1|')"
+        _drift_profiles="${_drift_profiles:+$_drift_profiles, }$_pname"
       fi
     done
-    dim "supervisor + pauser + cognition are opt-in — start with 'landfolk restart <name>'"
+    [ -n "$_drift_profiles" ] && { warn "profile copies drift: $_drift_profiles"; dim "→ remedy: scripts/landfolk deploy"; }
   fi
 
-  # ── Phase 7: summary ─────────────────────────────────────────────────────
+  # ── Phase 3: hermes gateway ──────────────────────────────────────────────
+  h1 "phase 3 — hermes gateway"
+  _diag_check "hermes gateway running" "gateway_running" \
+              "scripts/landfolk start  (or: nohup hermes gateway run --replace &)"
+  [ "${diag_failures:-0}" -gt 0 ] && [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
+
+  # ── Phase 4: kanban dispatcher ───────────────────────────────────────────
+  h1 "phase 4 — kanban dispatcher"
+  _diag_check "kanban dispatcher running" \
+              "pgrep -f 'landfolk-dispatcher\\.sh' >/dev/null 2>&1" \
+              "scripts/landfolk start  (or: nohup scripts/landfolk-dispatcher.sh > /tmp/hermescraft/dispatcher.log 2>&1 &)"
+  [ "${diag_failures:-0}" -gt 0 ] && [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
+
+  # ── Phase 5: steward ─────────────────────────────────────────────────────
+  h1 "phase 5 — steward"
+  local _sport; _sport="$(player_api_port "steward")"
+  if [ -n "$_sport" ]; then
+    if curl -sf "http://127.0.0.1:$_sport/health" 2>/dev/null \
+         | python3 -c "import sys,json;sys.exit(0 if json.load(sys.stdin).get('connected') else 1)" 2>/dev/null; then
+      ok "steward connected (port $_sport)"
+      if grep -q 'DANGER_AUTOREACT_BROADCAST_CHAT=false' "$0" 2>/dev/null; then
+        ok "steward HP-alert chat suppression wired in launcher source"
+      else
+        warn "DANGER_AUTOREACT_BROADCAST_CHAT=false override not found in $0"
+      fi
+      local _sstatus
+      _sstatus="$(_probe_bot_build "$_sport")"
+      _diag_render_build "steward" "$_sstatus"
+    else
+      err "steward not connected (no /health response on port $_sport)"
+      dim "→ remedy: scripts/landfolk start --players steward"
+      diag_failures=$((diag_failures + 1))
+      [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
+    fi
+  fi
+
+  # ── Phase 6: workers ─────────────────────────────────────────────────────
+  h1 "phase 6 — workers"
+  local p port
+  for p in $(canonical_players); do
+    [ "$p" = "steward" ] && continue
+    port="$(player_api_port "$p")"
+    [ -z "$port" ] && continue
+    if curl -sf "http://127.0.0.1:$port/health" 2>/dev/null \
+         | python3 -c "import sys,json;sys.exit(0 if json.load(sys.stdin).get('connected') else 1)" 2>/dev/null; then
+      ok "$p connected (port $port)"
+      grep -q '\[POS_DIAG\] instrumentation armed' "$LOG_DIR/bot-$p.log" 2>/dev/null \
+        && ok "$p POS_DIAG instrumentation armed" \
+        || warn "$p POS_DIAG line not yet in log"
+      local _bstatus
+      _bstatus="$(_probe_bot_build "$port")"
+      _diag_render_build "$p" "$_bstatus"
+      local _hb="$LOG_DIR/watchdog-$p.heartbeat"
+      if [ -e "$_hb" ]; then
+        local _now _mt _age
+        _now="$(date +%s)"
+        _mt="$(stat -f %m "$_hb" 2>/dev/null || stat -c %Y "$_hb" 2>/dev/null || echo "$_now")"
+        _age=$(( _now - _mt ))
+        if [ "$_age" -lt 30 ]; then
+          ok "$p watchdog heartbeat fresh (${_age}s)"
+        else
+          warn "$p watchdog heartbeat stale (${_age}s)"
+        fi
+      else
+        warn "$p watchdog heartbeat file not yet present"
+      fi
+    else
+      # Bot is rostered but not connected — only flag if rostered
+      local _stored
+      _stored="$(roster_mode_for "$p" 2>/dev/null)"
+      if [ -n "$_stored" ]; then
+        err "$p not connected (in roster, expected up)"
+        dim "→ remedy: scripts/landfolk start --players $p"
+        diag_failures=$((diag_failures + 1))
+        [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
+      else
+        dim "$p not connected (not in active roster — OK)"
+      fi
+    fi
+  done
+
+  # ── Phase 7: daemons ─────────────────────────────────────────────────────
+  h1 "phase 7 — daemons"
+  for d in listener chat-wake; do
+    if daemon_alive "$d"; then
+      ok "$d running (pid $(daemon_pid "$d"))"
+    else
+      err "$d not running"
+      dim "→ remedy: scripts/landfolk restart $d"
+      diag_failures=$((diag_failures + 1))
+      [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
+    fi
+  done
+  dim "supervisor + pauser + cognition are opt-in — not checked"
+
+  # ── Phase 8: summary ─────────────────────────────────────────────────────
   _diag_summary
   return "$diag_failures"
+}
+
+# Render the build/version status from _probe_bot_build into log line + counter.
+_diag_render_build() {
+  local label="$1" status="$2"
+  case "$status" in
+    ok\|*)            ok   "$label build: ${status#ok|}" ;;
+    drift\|*)
+      local rest="${status#drift|}"
+      warn "$label build: DRIFT (${rest%%|*}): ${rest#*|}"
+      diag_failures=$((diag_failures + 1))
+      dim "→ remedy: scripts/landfolk restart $label"
+      ;;
+    no-build-field\|*)
+      local mt
+      mt="$(_check_bot_mtime_drift "$label")"
+      case "$mt" in
+        ok)
+          warn "$label build: pre-build-info code"
+          dim "→ remedy: scripts/landfolk restart $label  (to enable build tracking)"
+          ;;
+        stale\|*)
+          warn "$label build: STALE — ${mt#stale|}"
+          diag_failures=$((diag_failures + 1))
+          dim "→ remedy: scripts/landfolk restart $label"
+          ;;
+      esac
+      ;;
+    unreachable) warn "$label build: /health unreachable" ;;
+    *)           warn "$label build: $status" ;;
+  esac
 }
 
 # Print the diagnostics summary block. Pulled out so phase early-exits can
 # call it before returning.
 _diag_summary() {
-  h1 "phase 7 — summary"
+  h1 "phase 8 — summary"
   if [ "${diag_failures:-0}" = 0 ]; then
-    ok "all phases passed — fleet is healthy"
+    ok "all checks passed — fleet is healthy"
   else
-    err "${diag_failures:-0} failure(s) — re-run with --fail-fast to abort on first error"
-    dim "full status: scripts/landfolk status"
+    err "${diag_failures:-0} failure(s) — see remedies above"
+    dim "  scripts/landfolk status   for a richer board / kanban / daemon view"
   fi
   echo
 }
