@@ -202,7 +202,7 @@ $(ops_worker_section)
 
 ## Hard rules
 
-- **In-world actions: \`mc <verb>\` ONLY.** The bot's HTTP API at \`\$MC_API_URL\` is the transport \`mc\` uses internally — **do NOT call \`curl \$MC_API_URL/action/...\` directly.** Bypassing the CLI skips argument validation, human-readable error envelopes, \`next_action_hint\` advice, auto-equip / auto-fetch behaviour, and the slow-tool digest pipeline. Every time a worker has reached for curl in past runs it has wasted iterations and produced worse outcomes than the equivalent \`mc <verb>\`. If you don't remember the right verb, run \`mc help\` or \`mc help <category>\`.
+- **In-world actions: \`mc <verb>\` ONLY.** The bot's HTTP API is the transport \`mc\` uses internally — never bypass it. Calling the bot's HTTP endpoints directly (with any shell tool) skips argument validation, human-readable error envelopes, \`next_action_hint\` advice, auto-equip / auto-fetch behaviour, and the slow-tool digest pipeline. Every time a worker has bypassed \`mc\` it has wasted iterations and produced worse outcomes. If you don't remember the right verb, run \`mc help\` or \`mc help <category>\`.
 - **Board interaction: \`kanban_*\` tools** (\`kanban_show\`, \`kanban_complete\`, \`kanban_block\`, \`kanban_comment\`). Use \`hermes kanban\` CLI only if a tool is unavailable in your session.
 - **No system shell commands** — no \`curl\`, \`lsof\`, \`ps\`, \`kill\`, \`grep\`, \`find\`, \`cat\`, \`sed\`, \`awk\`, \`node server.js\`. You don't restart the bot — that's the human's job (see "On failure" below).
 - One card per session. Don't pick up other work or chase tangents.
