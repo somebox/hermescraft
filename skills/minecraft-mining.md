@@ -290,6 +290,25 @@ The `--force` flag is two things at once:
 
 Never pass `--force` during normal navigation — it's an escape hatch for "trapped underground," nothing more.
 
+### Returning from the pillar — use `mc pillar_down`
+
+`mc pillar_step` is ONE-WAY without help. Once you've pillared up out of a shaft and re-anchored on a 1×1 column at the surface, **you cannot just walk off** — there's no ground around you, only the pillar you placed. The inverse primitive is:
+
+```
+mc pillar_down [N=12]      # descend by mining the block underfoot, drop one cell, repeat
+```
+
+**The pair `pillar_step` → `pillar_down` is the round trip.** Every time you pillar up to escape, plan on pillar-down (or `mc dig` the column laterally, or `mc move` to an adjacent solid block — but only if one exists) to return to ground-level pathfinding. Sitting on a pillar burns iteration budget without making progress.
+
+**Anti-pattern: do NOT use `mc pillar_step` for scouting / "seeing farther".** Your training data may suggest this — it's a real Minecraft tactic for human players. For our bots it's a trap:
+
+- `mc map [R]` gives a compact ASCII overhead view without moving (R ≤ 16)
+- `mc nearby 32` lists blocks + entities within 32 blocks
+- `mc scene --reason="<what you're looking for>"` gives an LLM-digested perception bundle
+- `mc advise --reason="..." --target X,Y,Z` recommends a direction based on world state
+
+All of these surface terrain intelligence without committing to a vertical excursion. Save `pillar_step` for escape situations only.
+
 ## Iteration budget reminder
 
 Kanban worker has ~90 turns. A descent + ore retrieval + return cycle should fit in ~30 turns if you use `mc collect` / `mc stair_down`. If you're past 50 turns and still underground without the ore, that's a signal to `kanban_block` and ask the steward to split the work into a smaller supply card.

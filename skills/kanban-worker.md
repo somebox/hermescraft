@@ -352,14 +352,15 @@ If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profile
 
 **First-touch escape verbs (in order):**
 
-1. **`mc pillar_step <N>`** — climb up N blocks (max 64). With NO block argument the primitive bare-hand-digs the cell overhead, captures the drop, and pillars with it. This is the canonical 1×1-shaft self-rescue.
+1. **`mc pillar_step <N>`** — climb up N blocks (max 64). With NO block argument the primitive bare-hand-digs the cell overhead, captures the drop, and pillars with it. This is the canonical 1×1-shaft self-rescue. **`pillar_step` is ONE-WAY without help — always plan the descent (see #2 below).**
    - `mc pillar_step 8` — climb 8, use captured drops (works for dirt/sand/gravel ceilings).
    - `mc pillar_step 8 --force` — same, but bypasses region/global denylists for the escape dig **only when the 4-walls+ceiling stuck-predicate is verified**. Use when the ceiling is stone and you're bare-handed, OR you're inside a protected region.
    - Drop-timing race: if you get `PILLAR_FAILED` with "capture-from-ceiling failed: cell above head is air", the drop arrived AFTER the call returned. **Call `mc pillar_step` a second time** — it'll use the captured block. Two-call pattern is reliable.
+   - **NEVER pillar_step to "see farther" or scout.** That's a Minecraft-human tactic that doesn't apply here. Use `mc map`, `mc nearby`, `mc scene`, or `mc advise` — they give you terrain intelligence without an excursion you then have to undo.
 
-2. **`mc escape`** — last-resort general unstuck (classifies your situation: sidestep / pillar / wait / break-out by surrounding terrain).
+2. **`mc pillar_down [N=12]`** — descend back from a pillar by mining underfoot, dropping one cell, repeating. **You'll need this every time you `pillar_step` up.** Sitting on the column after climbing IS stuck — the surface around you is air, you can't `mc move` off without falling. Once you're back at ground level via `pillar_down`, normal pathfinding works again.
 
-3. **`mc pillar_down`** — if you're on top of a 1×1 column you climbed, this mines underfoot and drops you safely.
+3. **`mc escape`** — last-resort general unstuck (classifies your situation: sidestep / pillar / wait / break-out by surrounding terrain).
 
 4. **`mc advise --reason="stuck at (X,Y,Z): <one-line symptom>"`** — perception bundle + LLM digest. Often spots an air opening you missed or a navigation angle you haven't tried.
 
