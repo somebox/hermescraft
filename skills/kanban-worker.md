@@ -51,54 +51,45 @@ If the task spans multiple workers (long-running collect, multi-layer build, etc
 
 ## Validate the task before starting
 
-**First-touch rule: before you run a single domain action, confirm the task as-written is actually doable. Cards drift; specs lie; prerequisites move.** A worker who jumps straight into execution on a malformed card spends their entire iteration budget discovering the card was malformed. Validation is cheap (1–3 tool calls), execution after a bad spec is expensive (full budget, no progress, then a forced retry).
+**Before any domain action, confirm the spec is doable.** Validation is 1-3 tool calls; execution on a bad spec burns the whole budget. Runs after `kanban_show` + memory-read.
 
-Validation pass — runs after `kanban_show` and memory-read, before any first domain action:
+1. **Read body + ALL comments.** The body you were dispatched with may be stale; clarifications live in the latest comments.
+2. **Verify named inputs exist:** coords (`mc regions --at X Y Z`), marks (`mc go_mark <name>` or `mc marks`), chest contents (`mc chest_search`), parent task done (`kanban_show <parent>`).
+3. **Check assumptions vs reality.** "Wall at (X,Y,Z)" → run `mc scene` at the spot. Comments are claims, not facts.
+4. **Check primitive surface.** If the body needs a verb that doesn't exist, that's a planning miss — flag it.
+5. **Check ambiguity.** Words like "appropriate / good enough / as needed" without numbers = a question, not work.
 
-1. **Read body + recent comments completely.** Don't skim. Specs sit at the bottom of the body; clarifications sit in the most recent comments. The body you got dispatched with may be **stale** relative to the comment thread.
-2. **Check required inputs against what's actually present.** If the body names coords, marks, chests, files, or prior-task ids, verify each one exists:
-   - Named coord — does it fall in a region you can reach? (`mc regions --at X Y Z`, or a quick `mc scene 4` if you're nearby)
-   - Mark name (`chest_food`, `:base:/anchor`) — does the mark resolve? (`mc go_mark` will tell you immediately; `mc marks` lists them all)
-   - Materials/items — are they actually in the named chest? (`mc chest_search <item>` or `mc list_container` after `mc go_mark <chest>`)
-   - Parent / prior-task id — is it `done`? (`kanban_show <parent_id>`)
-3. **Check assumptions named in the body match observable reality.** "Worksite has a partial wall at Y=66" → run `mc scene` at the worksite to confirm. "Chest_food has 256 cooked_beef" → run `mc list_container`. Worker reports in comments are claims, not facts.
-4. **Check the primitive surface matches the work.** If the body says "till these 81 blocks and plant wheat" and your `mc` toolbelt has `mc till` and `mc place` but no batch verb — that's an in-scope decomposition you can handle (one primitive per block). If the body says "design and lay out a 3-room building" and the only verbs available are dig/place/collect — that may be in-scope but it's a long task that needs an inline plan; flag it.
-5. **Check for ambiguity.** If a body uses words like "appropriate," "good enough," "as needed" without numbers, OR has multiple plausible interpretations of the same instruction, OR contradicts a prior comment — that's a question, not work.
+**On failure, choose lightest escalation:**
 
-**If validation passes**, proceed normally; the rest of your iteration budget is yours.
+| Failure | Action |
+|---|---|
+| Fixable in <3 turns (chest name typo, mark variant) | Fix inline; comment what you did; proceed. |
+| Ambiguous single decision | `kanban_comment` with numbered options + `kanban_block(reason="clarification-needed: <one-line>")`. |
+| Missing critical data, parent has it | Fetch from parent; comment where you got it; proceed. |
+| Missing critical data, parent doesn't either | `clarification-needed:` block naming what's missing. |
+| Spec conflicts with reality | Comment what you observed; `clarification-needed: <reality>` block. Your observation is the value-add. |
 
-**If validation fails**, do NOT start work. Choose the lightest escalation that fits the failure:
-
-- **Missing input is fixable by you in <3 turns** (e.g., the mark exists under a slightly different name, the chest is in `chest_food_2` not `chest_food`): fix in place, narrate the fix in a comment (`"used chest_food_2 since chest_food is empty"`), and proceed.
-- **Spec is ambiguous, single-decision** (one named coord vs another, which of two anchors): post a comment asking the specific question with the options, then `kanban_block(reason="clarification-needed: <one-line>")`. Steward / re44 reads the comment, replies, unblocks.
-- **Spec is missing critical data** (no coords at all, no materials list, no anchor): if the parent card has the data, fetch it from the parent and proceed with a comment noting where you got it. If the parent doesn't either, block with `clarification-needed:` and name what's missing.
-- **Spec is unreachable / impossible** (worksite is in unloaded chunks, required mark refers to a region that doesn't exist, parent task isn't done yet): block with `clarification-needed: <reason>`. Don't try to be clever — the operator can decide whether to fix the spec, reschedule the parent, or archive.
-- **Spec conflicts with reality** (body says "destroy the partial wall at A" but the wall isn't there, OR body says "use the iron pickaxe in chest_tools" but the chest holds none): comment with what you observed, block `clarification-needed: <reality>`. Your observation IS the value-add — Steward needs it to update the spec.
-
-**Comment + block template for validation failures:**
+Template:
 
 ```python
-kanban_comment(
-    body=(
-        f"Validation failed at start.\n\n"
-        f"Spec says: <one-line of what the body claims>\n"
-        f"I observed: <one-line of what I saw via mc/check>\n"
-        f"Specific question: <one-line>\n\n"
-        f"Options I see:\n"
-        f"  1. <option A — what would change in the spec>\n"
-        f"  2. <option B>\n"
-        f"  3. Archive — task is no longer relevant because <one-line>."
-    ),
-)
-kanban_block(reason="clarification-needed: <one-line question>")
+kanban_comment(body=(
+    "Validation failed at start.\n"
+    "Spec says: <one-line claim>\n"
+    "I observed: <one-line via mc/check>\n"
+    "Options:\n"
+    "  1. <option A>\n"
+    "  2. <option B>\n"
+    "  3. Archive — task no longer relevant because <one-line>."
+))
+kanban_block(reason="clarification-needed: <one-line>")
 ```
 
-**Do not** silently rewrite the task in your head and execute on the rewritten version. The whole point of validation is to surface ambiguity TO the spec author, not to absorb it.
+**Do not** silently rewrite the spec in your head. Surface ambiguity to the author.
 
-**Self-resolving validations are a memory write.** If you fixed something inline (chest name, mark variant), checkpoint that fact so the next worker on the same task — or a related task — doesn't have to rediscover it:
+If you fixed something inline, write memory so the next worker doesn't rediscover:
 
 ```python
-memory(action="add", content="Worker <profile>: chest_food currently empty; food is in chest_food_2 (mark exists in steward's locations).")
+memory(action="add", content="Worker <profile>: chest_food empty; food is in chest_food_2 (mark exists).")
 ```
 
 ## Workspace handling
@@ -247,78 +238,61 @@ If you open the task and `kanban_show` returns `runs: [...]` with one or more cl
 
 ## Failure escalation — when to ask for help instead of trying harder
 
-**The single most expensive failure mode is "try harder, in the same way, more times."** Workers in environments with rich domain primitives (Minecraft `mc` verbs, robotics actions, simulator steps) burn entire iteration budgets retrying a primitive that is failing for a *structural* reason (wrong target, missing prerequisite, framework bug, environment desync). The runs[] log captures that pattern — read it, classify it, and switch modes when a threshold trips. **Do not pivot to writing Python scripts, shell-outs, or other workarounds to bypass framework primitives.** If the primitive is broken, that's a `[BUG]` against the framework, not your decision to escape it.
-
-**Tiered escalation by failure count of the same-class operation:**
+**The expensive failure mode is "try harder, the same way, more times."** Read `runs[]`, classify same-class failures, switch modes at threshold.
 
 | Same-class failures | Action |
 |---|---|
-| 0 (fresh attempt) | Normal work. |
-| 1–2 | Vary your approach: try an adjacent coord, a different prerequisite, a smaller chunk. Narrate one chat line if it feels worth peer attention. |
-| **3rd same-class failure** | **MANDATORY `mc advise --reason="<one-line: what you're trying, what's failing, what you've tried">"`** before the 4th attempt. This is a perception bundle + LLM digest of your current situation; it often spots the structural reason you missed (wrong tool, missing nav target, terrain mismatch). The framework actively suggests this in tool-error `hint=` fields — *do not ignore those hints.* |
-| **4+ same-class failures** | Stop. `kanban_block(reason="help-needed: <one-line>")`. Drop a comment with the full failure pattern: which primitive, which inputs, which errors, what `mc advise` said, what assumptions you tested. Then exit. The Steward (or operator) will research and unblock with guidance. **The card is no longer yours to retry until someone replies.** |
-| **4+ failures AND you have a concrete unblock idea** | Pass the card BACK to Steward with a suggestion rather than just blocking. Use `kanban_reassign <id> steward` after dropping a comment that names specific things that would make the task possible: a needed primitive, a missing prerequisite, a coord change, a different toolkit. This is a more active escalation than `help-needed:` — you're asking Steward to *act* (often by creating a precondition card or amending the spec), not just *answer*. See "Pass-back to Steward" below. |
+| 0 | Normal work. |
+| 1–2 | Vary the approach (adjacent coord, smaller chunk, different prerequisite). |
+| **3rd** | **MANDATORY** `mc advise --reason="<one-line>"` before the 4th attempt. The framework prints `hint=mc advise ...` after consecutive failures — *don't ignore it*. |
+| **4+** | Stop. `kanban_block(reason="help-needed: <one-line>")` + comment with full failure pattern. Exit. |
+| **4+ AND you have an unblock idea** | `kanban_reassign <id> steward` with a comment naming what would unblock the task (precondition card, spec change, [BUG]). See *Pass-back* below. |
 
-**Same-class** means *same primitive + same target class*, not literal byte-for-byte identity. Examples:
+**Same-class** = same primitive + same target class. `mc dig (x,y,z)` → `mc dig (x,y,z+1)` → `mc dig (x,y+1,z)` is 3 same-class (same worksite). `mc till × 81` in a loop is 81 same-class — should have stopped at 3.
 
-- `mc dig (x1,y,z1)` failing → `mc dig (x1,y,z1+1)` failing → `mc dig (x1,y+1,z1)` failing = **3 same-class** (dig at the same worksite, three coords; the worksite is the structural issue).
-- `mc bg_goto A` failing → `mc collect B` failing → `mc craft C` failing = **3 different-class** (different primitives, unrelated targets).
-- `mc till (a)` failing 81 times in a loop = **81 same-class**. That is precisely the situation that should have stopped at attempt 3.
+**Anti-pattern — bypass via shell-out.** If you think "I'll write a Python script to batch this" or "I'll call the REST API myself" — that's help-needed, not a new plan. Workarounds don't fix the bug (next worker hits the same wall), touch files outside `$HERMES_KANBAN_WORKSPACE`, and waste your budget on disposable infrastructure.
 
-**The anti-pattern to avoid: silent pivot to a "general-purpose escape hatch."** If you find yourself thinking *"I'll just write a Python script to batch this"* or *"I'll shell out to the server to do it directly"* or *"let me call the REST API myself"* — that is the signal that you have already passed the help-needed threshold and are now trying to escape the primitive instead of asking why it's failing. Switch to `kanban_block(reason="help-needed: ...")` immediately. Writing a workaround:
+### Workspace data-analysis scripts ARE sanctioned
 
-1. Doesn't fix the underlying bug (next worker hits the same wall),
-2. Often touches code/files outside `$HERMES_KANBAN_WORKSPACE` (which you must not modify),
-3. Burns the rest of your iteration budget on infrastructure that will be discarded,
-4. Hides the real problem from the operator who could fix it in 30s.
+The anti-pattern is specifically **shelling out to `mc` in a loop to fake a missing primitive**. Python and shell are fine for:
 
-**One legitimate exception:** if the runs[] history shows that a *previous worker on this same task* already tried `mc advise` + chat + block and the operator replied "yes, write a one-off script for this specific case" via comment, then the workaround is sanctioned. Even then, the script lives inside `$HERMES_KANBAN_WORKSPACE` and ships with the card, not as a permanent change to the framework.
+- **Data parsing:** `data/ops/plans/<plan>.json` → world coords; chest snapshots → "missing: 12 iron_ingot"; `runs[]` → failure stats.
+- **Planning:** sort dig coords by distance; filter `find_blocks` by region; route across chests.
+- **Investigation:** grep prior session logs; diff `mc inspect` outputs.
+- **Demonstrating a gap:** writing `pillar_to_surface.py` because `mc pillar_step` didn't exist is *useful evidence* — it's how `mc pillar_step --force` got added.
 
-### Workspace data-analysis scripts ARE sanctioned (this is the useful pattern)
-
-The anti-pattern above is specifically about **shelling out to `mc` in a loop to fake a missing primitive**. It is NOT a blanket ban on writing scripts. Python and shell are perfectly fine tools for:
-
-- **Parsing JSON / log / data files.** Reading `data/ops/plans/<plan>.json` to compute world-space coordinates from local cells. Reading a chest snapshot to compute "do I have all materials for this build?" Reading `runs[]` history programmatically.
-- **Planning / computing.** Sorting a list of dig coords by distance from your current position. Filtering a list of `find_blocks` results by region permission. Computing a delivery route across multiple chests.
-- **Investigating failures.** Grep over previous session logs for the error you keep hitting. Diff two `mc inspect` outputs to find what changed.
-- **Demonstrating a needed primitive.** If you write a 30-line `pillar_to_surface.py` in your workspace because no `mc pillar_step` verb exists yet, that's *useful evidence for the operator* — it shows the gap concretely. The next worker on the next session may find that `mc pillar_step --force` got added to the framework precisely because someone wrote that script.
-
-**The line is in WHAT the script does, not WHETHER you wrote one:**
-
-| Pattern | Verdict |
+| Script | Verdict |
 |---|---|
-| `parse_layers.py` reads a blueprint JSON, prints `world=(370,65,-608)` for each cell, you then call `mc place` interactively | ✓ Sanctioned — Python is the right tool for the math |
-| `check_storage.py` reads chest snapshots, computes "missing: 12 iron_ingot", prints | ✓ Sanctioned — data analysis |
-| `till_all.sh` loops `for x in ...; for z in ...; do mc till $x $z; done` to till 81 blocks | ✗ Anti-pattern — that's a missing `mc till_area` verb begging to be filed as `help-needed:` |
-| `pillar_to_surface.py` implements its own pillar logic by calling `mc dig` + `mc place` in a custom loop because no pillar verb exists | ✗ Edge case. If you have NO sanctioned alternative AND have already filed `help-needed:` once, fine. But comment on the card with the script body and `mc chat "@steward needs `mc pillar` primitive — workspace has a candidate"` so the operator can promote. |
-| `analyze_failures.py` reads `runs[]`, classifies prior errors, prints the dominant pattern | ✓ Sanctioned — debugging tool |
+| Reads JSON, prints coord plan; you then call `mc place` | ✓ Planning |
+| Reads chest snapshot, prints "missing N items" | ✓ Data analysis |
+| `for x; for z; do mc till $x $z; done` | ✗ Missing primitive — file `help-needed:` instead |
+| Custom pillar loop using `mc dig` + `mc place` when no verb exists | ✗ Edge case. If `help-needed:` already filed, fine, but comment on the card flagging it as a primitive candidate. |
 
-**Pattern recognition for the operator:** if you write a workspace script that uses ONLY `mc` primitives (no shelling out, no REST API calls, no direct bot HTTP) AND solves a real problem AND you can imagine other workers needing the same logic — leave a comment on your card: `"workspace has <script>.py — candidate for promotion to scripts/ or as a new mc primitive."` That comment is how patterns graduate from workspace one-offs to framework features. Several `mc` verbs in the current toolbelt got there exactly this way.
+**Rule of thumb:** if your script ends with `print(plan)` and YOU still call `mc` to execute, that's planning. If it ends with `subprocess.run(['mc', 'dig', x])` in a loop, that's the anti-pattern.
 
-**Rule of thumb:** if your script ends with `print(plan)` and you (a human or another worker) would still call `mc` to execute it, that's planning — fine. If your script ends with `for x in ...: subprocess.run(['mc', 'dig', x])`, that's executing — and that's the anti-pattern; the framework should be doing that batching.
+**Promotion:** workspace scripts using ONLY `mc` primitives that solve a recurring problem → leave a comment `"workspace has <script>.py — primitive candidate"`. That's how patterns graduate.
 
-**Soft-help chat narration (optional but encouraged at the 2-failure mark):**
+### Soft-help chat (optional at 2-failure mark)
 
 ```
-mc chat "@steward <bot>: 2× fail on <primitive> at <target> — <error>. Trying <variant> next."
+mc chat "@steward <bot>: 2× fail on <primitive> at <target> — <error>. Trying <variant>."
 ```
 
-This invites real-time peer attention from Steward without blocking the card. Steward's continuous loop will see the mention and may comment / unblock / reassign before you reach the hard-help threshold.
+Invites Steward attention without blocking. She may comment / unblock / reassign before you hit the hard threshold.
 
-**Reading runs[] correctly:**
+### Reading `runs[]`
 
 ```python
 show = kanban_show(task_id=os.environ["HERMES_KANBAN_TASK"])
-prior = show.get("runs", [])
-fails = [r for r in prior if r.get("outcome") in ("crashed", "timed_out", "blocked", "failed")]
+fails = [r for r in show.get("runs", [])
+         if r.get("outcome") in ("crashed", "timed_out", "blocked", "failed")]
 if len(fails) >= 4:
-    # You should not be here — the framework should have circuit-broken.
-    # If you got dispatched anyway, treat it as help-needed from turn 1.
+    # Framework should have circuit-broken. Treat as help-needed turn 1.
     kanban_block(reason=f"help-needed: {len(fails)} prior failures, needs review")
     return
 ```
 
-The framework's `--max-retries` is the hard backstop; the SOUL rule above is the soft escalation that engages BEFORE the hard cap. If the soft rule is doing its job, the hard cap rarely fires.
+`--max-retries` is the hard backstop; the rule above is the soft escalation engaging before it.
 
 ### Pass-back to Steward — when you have an unblock idea but can't act on it yourself
 
