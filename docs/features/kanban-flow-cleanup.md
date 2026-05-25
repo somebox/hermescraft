@@ -386,6 +386,26 @@ Bot display names in `data/agent-models.json` use capitalized keys (`Flint`, `St
 
 ---
 
+## Known upstream limitations + landfolk workarounds
+
+### L1. No per-assignee concurrency cap (stock Hermes ≤ v0.13)
+
+**Symptom (2026-05-24 incident):** gateway-embedded dispatcher tick at 20:06 spawned 12 workers in one shot — 6 flint + 5 mason against 2 bot HTTP APIs. Workers serialized on shared bot state, sessions logged `Pos:null,66,null` / `NAV_BLOCKED from NaN,66.0,NaN`. Flint bot died; cascade auto-blocked 13 cards via `failure_limit=2` over 30 min before quiescing.
+
+**Stock cap available:** `kanban.max_spawn` — global concurrency across the board. We set `max_spawn: 3` (one per online bot). Verified honored by gateway dispatcher at boot.
+
+**Stock cap NOT available:** per-assignee / per-bot. The dispatcher loop in `hermes_cli/kanban_db.py:dispatch_once()` iterates ready cards by `priority DESC, created_at ASC` and spawns until the *global* cap is hit — it will happily spawn 3 workers for the same assignee. A `max_in_progress` parameter exists in the function signature as of v0.14 but is **unwired** (no config key reaches it).
+
+**Upstream tracking:**
+- [NousResearch/hermes-agent#29034](https://github.com/NousResearch/hermes-agent/issues/29034) — "Kanban defaults can auto-launch unbounded paid worker swarms across all boards" (same failure class)
+- [NousResearch/hermes-agent#28805](https://github.com/NousResearch/hermes-agent/issues/28805) — "no config key for a worker concurrency cap (`max_spawn` only reachable via CLI)" — calls out `max_in_progress` as the unwired internal parameter
+
+**Landfolk workaround (Option A — Steward per-bot mutex):** `prompts/landfolk/steward.md` § "Per-bot mutex" requires Steward to count `{ready, running}` for an assignee before promoting `todo → ready`. If ≥1, the card stays in `todo` until the bot's current card finishes. Combined with `max_spawn: 3`, this caps concurrency at 1 per bot at the orchestration layer — no framework patch.
+
+**Sunset condition:** when #28805 lands and exposes `kanban.max_in_progress: 1` to the gateway-embedded dispatcher, delete the Steward mutex rule and rely on the stock cap.
+
+---
+
 ## Backlog (deferred hardening)
 
 These were in earlier drafts and remain valuable, but **don’t block** stable operations. Pull from this list one at a time, after the MVP has been running boring for ≥1 week.

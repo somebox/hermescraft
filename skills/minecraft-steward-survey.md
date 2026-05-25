@@ -78,6 +78,21 @@ When a worker blocks with `region_blocked:<id>:<why>`:
 2. **If worksite is present** but the worker did not call `mc task_context set`, unblock with a comment reminding them to set context before digging.
 3. **Escape hatch (legacy):** `mc region_update_intent <id> marker` only for in-flight cards that cannot be edited and truly need a global intent change. Document the relock in a comment and run `mc region_update_intent <id> protect` when construction finishes. Prefer worksite for all new decomposition.
 
+When a worker blocks with **`task_spec_invalid:*`** (plot/worksite/Y mismatch — **not** permission):
+
+1. Read `kanban_comment` + verify output. Run `mc regions_terrain --rect … --expect-y N` yourself if needed.
+2. Fix the card: correct `worksite:`, rewrite Y range, extend region, or add a `[PREP] flatten/fill` child.
+3. `mc chat` one line, unblock when fixed. Do not re-dispatch the same till instructions without terrain survey.
+
+Before writing construct cards with a **fixed Y** for tilling, run:
+
+```
+mc regions_terrain --rect X1 Z1 X2 Z2 --expect-y N
+# or mc regions_terrain wheat1 --expect-y N  when the plot matches the region disc
+```
+
+If `delta_y > 1` or `expect_y_mismatch`, put **per-column till** or `mc till_area` in the card — not blind `mc till x 65 z` loops.
+
 Anti-patterns:
 
 - Flipping intent for every build → dashboard shows wrong intent and relock is easy to forget.

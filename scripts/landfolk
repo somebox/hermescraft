@@ -9,7 +9,7 @@
 #            kanban       — bot + connect-only watchdog, NO Hermes agent.
 #                          Kanban gateway workers drive the bot per card.
 #            continuous   — bot + full watchdog + always-on Hermes agent loop.
-#   DAEMONS  listener (default on); supervisor, pauser (opt-in via start flags)
+#   DAEMONS  listener, chat-wake (default on); supervisor, pauser (opt-in via start flags)
 #   GATEWAY  hermes gateway                        (managed by start/stop by
 #                                                   default; --no-gateway to
 #                                                   leave alone, --keep-gateway
@@ -23,13 +23,13 @@
 #
 # Usage:
 #   scripts/landfolk start    [--players a,b,c] [--mode auto|kanban|continuous]
-#                             [--continuous p,q] [--without daemons|listener|supervisor|pauser|gateway]
+#                             [--continuous p,q] [--without daemons|listener|supervisor|pauser|chat-wake|gateway]
 #                             [--no-gateway] [--restart-gateway] [--no-wait]
-#   scripts/landfolk stop     [--players a,b,c] [--keep daemons|listener|supervisor|pauser|gateway]
+#   scripts/landfolk stop     [--players a,b,c] [--keep daemons|listener|supervisor|pauser|chat-wake|gateway]
 #                             [--keep-gateway] [--no-reclaim] [--clear-roster]
 #   scripts/landfolk enable   <player> [--mode auto|kanban|continuous]
 #   scripts/landfolk disable  <player>
-#   scripts/landfolk restart  <player|players|daemons|listener|supervisor|pauser|gateway|all>
+#   scripts/landfolk restart  <player|players|daemons|listener|supervisor|pauser|chat-wake|gateway|all>
 #   scripts/landfolk status   [--json]
 #   scripts/landfolk logs     [agents|<player>|listener|supervisor|pauser|gateway] [opts]
 #   scripts/landfolk chat     <player> "<message>"
@@ -53,6 +53,14 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SCRIPT_DIR"
+
+# Ensure `mc` and `hermes` are on PATH for every subprocess we launch
+# (gateway, bots, agents, kanban workers spawned by the embedded
+# dispatcher which inherit gateway env). $HOME/.local/bin holds the
+# user's symlink to the hermes CLI; $SCRIPT_DIR/bin holds the `mc`
+# wrapper. Without this, gateway-spawned workers calling `mc` via the
+# terminal tool would have to absolute-path to the shim each time.
+export PATH="$SCRIPT_DIR/bin:$HOME/.local/bin:$PATH"
 
 MC_HOST="${MC_HOST:-192.168.1.202}"
 BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-slow}"
@@ -239,6 +247,8 @@ daemon_script() {
     listener)   echo "$SCRIPT_DIR/scripts/steward-chat-listener.py" ;;
     supervisor) echo "$SCRIPT_DIR/scripts/steward-supervisor.py" ;;
     pauser)     echo "$SCRIPT_DIR/scripts/inactive-cards-pauser.py" ;;
+    chat-wake)  echo "$SCRIPT_DIR/scripts/landfolk-chat-wake.py" ;;
+    cognition)  echo "$SCRIPT_DIR/scripts/landfolk-cognition-record.py" ;;
     *)          return 1 ;;
   esac
 }
@@ -250,6 +260,8 @@ daemon_pidfile() {
     listener)   echo "$STATE_DIR/steward-chat-listener.pid" ;;
     supervisor) echo "$STATE_DIR/steward-supervisor.pid" ;;
     pauser)     echo "$STATE_DIR/inactive-cards-pauser.pid" ;;
+    chat-wake)  echo "$STATE_DIR/landfolk-chat-wake.pid" ;;
+    cognition)  echo "$STATE_DIR/landfolk-cognition-record.pid" ;;
   esac
 }
 
@@ -320,6 +332,12 @@ player_start_one() {
     engine_args+=( --no-agent )
     engine_env+=( "WATCHDOG_CONNECT_ONLY=1" )
   fi
+  # Steward's danger-react still runs (flee/fight + watchdog log), but the chat
+  # broadcast is silenced — her ~25s low-hp alerts were dominating every nearby
+  # bot's chat queue. Per-bot watchdog alerts on Flint/Mason remain.
+  case "$(printf '%s' "$player" | tr '[:upper:]' '[:lower:]')" in
+    steward) engine_env+=( "DANGER_AUTOREACT_BROADCAST_CHAT=false" );;
+  esac
   # shellcheck disable=SC2086
   env "${engine_env[@]}" "$ENGINE" "${engine_args[@]}" >>"$LOG_DIR/landfolk-control.log" 2>&1 || true
 
@@ -444,7 +462,11 @@ reclaim_running() {
 # Both contain `gateway run` in argv. Falls back to `hermes gateway status`
 # (the official check) when pgrep is unavailable or returns nothing.
 gateway_running() {
-  pgrep -f "gateway run" >/dev/null 2>&1 && return 0
+  # Match the literal `hermes gateway run` argv signature — the bare
+  # `gateway run` substring also matched unrelated scripts that happen
+  # to contain the phrase (e.g. monitoring heredocs), causing false
+  # positives.
+  pgrep -f "hermes gateway run" >/dev/null 2>&1 && return 0
   command -v hermes >/dev/null 2>&1 || return 1
   hermes gateway status >/dev/null 2>&1
 }
@@ -455,7 +477,7 @@ cmd_start() {
   # Use `--no-gateway` to leave whatever is running untouched. Use
   # `--restart-gateway` to force a `hermes gateway run --replace` (useful
   # after pulling new gateway code so the dispatcher / config knobs reload).
-  local with_listener=1 with_supervisor=0 with_pauser=0 with_gateway=1 restart_gateway=0
+  local with_listener=1 with_supervisor=0 with_pauser=0 with_chatwake=1 with_gateway=1 with_cognition=1 restart_gateway=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --players)    players_csv="$2"; shift 2 ;;
@@ -469,10 +491,12 @@ cmd_start() {
         IFS=',' read -r -a parts <<< "$2"
         for w in "${parts[@]}"; do
           case "$w" in
-            daemons)    with_listener=0; with_supervisor=0; with_pauser=0 ;;
+            daemons)    with_listener=0; with_supervisor=0; with_pauser=0; with_chatwake=0 ;;
             listener)   with_listener=0 ;;
             supervisor) with_supervisor=0 ;;
             pauser)     with_pauser=0 ;;
+            chat-wake)  with_chatwake=0 ;;
+            cognition)  with_cognition=0 ;;
             gateway)    with_gateway=0 ;;
             *) err "unknown --without target: $w"; return 1 ;;
           esac
@@ -481,6 +505,8 @@ cmd_start() {
       --no-listener)   with_listener=0; shift ;;
       --no-supervisor) with_supervisor=0; shift ;;
       --no-pauser)     with_pauser=0; shift ;;
+      --no-chat-wake)  with_chatwake=0; shift ;;
+      --no-cognition)  with_cognition=0; shift ;;
       -h|--help) usage 0 ;;
       *) err "unknown flag: $1"; return 1 ;;
     esac
@@ -542,6 +568,8 @@ cmd_start() {
   [ "$with_listener"   = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }listener"
   [ "$with_supervisor" = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }supervisor"
   [ "$with_pauser"     = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }pauser"
+  [ "$with_chatwake"   = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }chat-wake"
+  [ "$with_cognition"  = 1 ] && daemon_parts="${daemon_parts:+$daemon_parts, }cognition-recorder"
   echo "  daemons:   ${daemon_parts:-none}"
   if [ "$with_gateway" = 1 ]; then
     if [ "$restart_gateway" = 1 ]; then
@@ -570,6 +598,7 @@ cmd_start() {
   if [ "$with_listener" = 1 ];   then h1 "starting daemon: listener";   daemon_start listener;   fi
   if [ "$with_supervisor" = 1 ]; then h1 "starting daemon: supervisor"; daemon_start supervisor; fi
   if [ "$with_pauser" = 1 ];     then h1 "starting daemon: pauser";     ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE"; fi
+  if [ "$with_chatwake" = 1 ];   then h1 "starting daemon: chat-wake";  daemon_start chat-wake; fi
 
   if [ "$with_gateway" = 1 ]; then
     h1 "hermes gateway"
@@ -597,6 +626,32 @@ cmd_start() {
     fi
   fi
 
+  # Out-of-process kanban dispatcher loop. The gateway-embedded dispatcher
+  # (kanban.dispatch_in_gateway: true) wedges silently — see
+  # scripts/landfolk-dispatcher.sh header for the full rationale.
+  if [ "$with_gateway" = 1 ]; then
+    h1 "kanban dispatcher"
+    if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
+      ok "dispatcher already running (log $LOG_DIR/dispatcher.log)"
+    else
+      nohup "$SCRIPT_DIR/scripts/landfolk-dispatcher.sh" >/dev/null 2>&1 &
+      disown
+      sleep 1
+      pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1 \
+        && ok "dispatcher started (log $LOG_DIR/dispatcher.log)" \
+        || err "dispatcher didn't come up; check $LOG_DIR/dispatcher.log"
+    fi
+  fi
+
+  if [ "$with_cognition" = 1 ]; then
+    h1 "cognition recorder"
+    if daemon_alive cognition; then
+      ok "cognition-recorder already running (log $LOG_DIR/landfolk-cognition-record.log)"
+    else
+      daemon_start cognition
+    fi
+  fi
+
   h1 "ready"
   cmd_status
 }
@@ -607,7 +662,7 @@ cmd_stop() {
   # whole session. Narrowed stops (`--players X`) leave the gateway alone
   # since other players might still need it. Use `--keep-gateway` to leave
   # it running even on a full down.
-  local with_gateway=1 keep_listener=0 keep_supervisor=0 keep_pauser=0
+  local with_gateway=1 keep_listener=0 keep_supervisor=0 keep_pauser=0 keep_chatwake=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --players) players_csv="$2"; shift 2 ;;
@@ -615,10 +670,11 @@ cmd_stop() {
         IFS=',' read -r -a parts <<< "$2"
         for k in "${parts[@]}"; do
           case "$k" in
-            daemons)    keep_listener=1; keep_supervisor=1; keep_pauser=1 ;;
+            daemons)    keep_listener=1; keep_supervisor=1; keep_pauser=1; keep_chatwake=1 ;;
             listener)   keep_listener=1 ;;
             supervisor) keep_supervisor=1 ;;
             pauser)     keep_pauser=1 ;;
+            chat-wake)  keep_chatwake=1 ;;
             gateway)    with_gateway=0 ;;
             *) err "unknown --keep target: $k"; return 1 ;;
           esac
@@ -627,6 +683,7 @@ cmd_stop() {
       --keep-listener)   keep_listener=1; shift ;;
       --keep-supervisor) keep_supervisor=1; shift ;;
       --keep-pauser)     keep_pauser=1; shift ;;
+      --keep-chat-wake)  keep_chatwake=1; shift ;;
       --keep-gateway)    with_gateway=0; shift ;;
       --with-gateway)    with_gateway=1; shift ;;  # back-compat — now the default
       --no-gateway)      with_gateway=0; shift ;;
@@ -650,6 +707,7 @@ cmd_stop() {
 
   if [ "$keep_supervisor" != 1 ]; then h1 "stopping supervisor"; daemon_stop supervisor; fi
   if [ "$keep_listener"   != 1 ]; then h1 "stopping listener";   daemon_stop listener;   fi
+  if [ "$keep_chatwake"   != 1 ]; then h1 "stopping chat-wake";  daemon_stop chat-wake;  fi
   # Pauser stops only on full-down (no --players narrowing). Roster is
   # NOT wiped unless --clear-roster: stop is supposed to be reversible by
   # `start` without re-listing players. enable/disable manage stickyness.
@@ -720,7 +778,20 @@ cmd_stop() {
   # workers (reclaim races, gateway-spawned workers we never saw, etc).
   kanban_worker_sweep "$scope_csv"
 
+  if [ -z "$players_csv" ] && daemon_alive cognition; then
+    h1 "stopping cognition recorder"
+    daemon_stop cognition
+  fi
+
   if [ "$with_gateway" = 1 ]; then
+    h1 "stopping kanban dispatcher"
+    if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
+      pkill -TERM -f 'landfolk-dispatcher\.sh' 2>/dev/null && ok "dispatcher stopped" \
+        || warn "pkill returned non-zero"
+    else
+      dim "dispatcher not running"
+    fi
+
     h1 "stopping hermes gateway"
     if ! command -v hermes >/dev/null 2>&1; then
       warn "hermes CLI not on PATH — leaving gateway alone"
@@ -785,12 +856,14 @@ cmd_restart() {
       done <<< "$roster"
       ;;
     daemons)
-      for d in listener supervisor pauser; do daemon_stop "$d"; done
+      for d in listener supervisor pauser chat-wake cognition; do daemon_stop "$d"; done
       daemon_start listener
       daemon_start supervisor
       ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE"
+      daemon_start chat-wake
+      daemon_start cognition
       ;;
-    listener|supervisor)
+    listener|supervisor|chat-wake|cognition)
       daemon_stop "$target"; daemon_start "$target" ;;
     pauser)
       daemon_stop pauser
@@ -888,14 +961,34 @@ except Exception: pass" 2>/dev/null || true)"
   done < <(canonical_players)
 
   h1 "daemons"
-  for d in listener supervisor pauser; do
+  for d in listener supervisor pauser chat-wake cognition; do
     if daemon_alive "$d"; then ok "$d running (pid $(daemon_pid "$d"))"
     else dim "$d stopped"; fi
   done
 
   h1 "ambient services"
   if gateway_running; then ok "hermes gateway running"; else warn "hermes gateway NOT running (run: hermes gateway run --replace)"; fi
+  if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then ok "kanban dispatcher running"; else warn "kanban dispatcher NOT running (run: scripts/landfolk-dispatcher.sh)"; fi
+  if [ -d "$LOG_DIR/cognition" ]; then
+    dim "cognition JSONL: $LOG_DIR/cognition/*.jsonl (recorder: scripts/landfolk-cognition-record.py)"
+  fi
   if lsof -nP -iTCP:9119 -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then ok "hermes dashboard on :9119"; else dim "hermes dashboard not listening"; fi
+
+  # Watchdog heartbeat staleness — alerts when a watchdog subshell has died
+  # silently or wedged. Each watchdog touches its heartbeat file once per
+  # WATCHDOG_INTERVAL_S (default 8s); if the file is older than 3× that, the
+  # supervisor loop is no longer running. See investigation 2026-05-25.
+  local _wd_threshold="${WATCHDOG_HEARTBEAT_STALE_S:-24}"
+  local _wd_now; _wd_now="$(date +%s)"
+  for _hb in "$LOG_DIR"/watchdog-*.heartbeat; do
+    [ -e "$_hb" ] || continue
+    local _hb_age _hb_who
+    _hb_age=$(( _wd_now - $(stat -f %m "$_hb" 2>/dev/null || echo "$_wd_now") ))
+    _hb_who="$(basename "$_hb" .heartbeat | sed 's/^watchdog-//')"
+    if [ "$_hb_age" -gt "$_wd_threshold" ]; then
+      warn "watchdog-$_hb_who heartbeat stale (${_hb_age}s ago, threshold ${_wd_threshold}s) — process may be dead or wedged"
+    fi
+  done
 
   h1 "kanban (landfolk-ops)"
   if command -v hermes >/dev/null 2>&1; then
@@ -944,6 +1037,56 @@ except Exception: pass" 2>/dev/null || true)"
   else
     dim "no active roster (run: scripts/landfolk start)"
   fi
+
+  # Roster drift detection: compare what's in the roster file against what's
+  # actually a live in-game bot (canonical username + /health returns
+  # connected=true). Two kinds of drift:
+  #   (a) live bot NOT in roster file — the bot is running but the roster
+  #       doesn't reflect it. The pauser/dispatcher won't see it as eligible
+  #       for routing.
+  #   (b) roster entry with NO live bot — stale roster line; bot died or
+  #       was killed without `landfolk stop`.
+  # Both are advisory; the user fixes via `landfolk enable <p>` (add to
+  # roster) or `landfolk disable <p>` (remove from roster).
+  local _roster_set=""
+  if [ -s "$ROSTER_FILE" ]; then
+    _roster_set="$(awk '{print $1}' "$ROSTER_FILE" | tr '\n' ' ')"
+  fi
+  local _drift_live_not_roster="" _drift_roster_not_live=""
+  local _cp _expected_port _ok
+  while IFS= read -r _cp; do
+    [ -z "$_cp" ] && continue
+    _expected_port="$(player_api_port "$_cp")"
+    [ -z "$_expected_port" ] && continue
+    _ok=0
+    curl -sf -m 1 "http://127.0.0.1:$_expected_port/health" 2>/dev/null \
+      | python3 -c "import sys,json;d=json.load(sys.stdin);sys.exit(0 if d.get('connected') else 1)" 2>/dev/null && _ok=1
+    if [ "$_ok" = 1 ]; then
+      case " $_roster_set " in *" $_cp "*) : ;; *) _drift_live_not_roster+="$_cp " ;; esac
+    fi
+  done < <(canonical_players)
+  for _entry in $_roster_set; do
+    _expected_port="$(player_api_port "$_entry")"
+    [ -z "$_expected_port" ] && continue
+    _ok=0
+    curl -sf -m 1 "http://127.0.0.1:$_expected_port/health" 2>/dev/null \
+      | python3 -c "import sys,json;d=json.load(sys.stdin);sys.exit(0 if d.get('connected') else 1)" 2>/dev/null && _ok=1
+    [ "$_ok" = 0 ] && _drift_roster_not_live+="$_entry "
+  done
+  if [ -n "$_drift_live_not_roster" ] || [ -n "$_drift_roster_not_live" ]; then
+    warn "roster drift detected:"
+    [ -n "$_drift_live_not_roster" ] && echo "    live bots NOT in roster: ${C_BOLD}$_drift_live_not_roster${C_RST} (run \`landfolk enable <player>\` to add)"
+    [ -n "$_drift_roster_not_live" ] && echo "    roster lists DOWN players: ${C_BOLD}$_drift_roster_not_live${C_RST} (run \`landfolk start --players <p>\` or \`landfolk disable <p>\`)"
+  fi
+
+  echo
+  echo "${C_DIM}── help ──${C_RST}"
+  echo "  ${C_DIM}lifecycle guide:  docs/guides/landfolk-lifecycle.md${C_RST}"
+  echo "  ${C_DIM}commands:         scripts/landfolk --help${C_RST}"
+  echo "  ${C_DIM}per-bot logs:     scripts/landfolk logs <player>${C_RST}"
+  echo "  ${C_DIM}board delta:      scripts/board-recent.py --ticks 5${C_RST}"
+  echo "  ${C_DIM}base inventory:   scripts/base-inventory.py${C_RST}"
+  echo "  ${C_DIM}role tags in ps:  ps -ax -o pid,command | grep landfolk:${C_RST}"
 }
 
 cmd_logs() {
@@ -952,7 +1095,7 @@ cmd_logs() {
   fi
   local target="agents"
   if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then target="$1"; shift; fi
-  local lines=20 follow="" profiles_csv="" no_bot=0 no_color=0 quiet=0
+  local lines=20 follow="" profiles_csv="" no_bot=0 no_color=0 quiet=0 show_reasoning=0 no_timestamps=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --tail) lines="$2"; shift 2 ;;
@@ -961,6 +1104,8 @@ cmd_logs() {
       --no-bot-logs) no_bot=1; shift ;;
       --no-color) no_color=1; shift ;;
       --quiet|-q) quiet=1; shift ;;
+      --reasoning) show_reasoning=1; shift ;;
+      --no-timestamps) no_timestamps=1; shift ;;
       *) err "unknown flag: $1"; return 1 ;;
     esac
   done
@@ -970,14 +1115,50 @@ cmd_logs() {
       [ "$no_bot"   = 1 ] && agg_args+=( --no-bot-logs )
       [ "$no_color" = 1 ] && agg_args+=( --no-color )
       [ "$quiet"    = 1 ] && agg_args+=( --quiet )
+      [ "$show_reasoning" = 1 ] && agg_args+=( --reasoning )
+      [ "$no_timestamps" = 1 ] && agg_args+=( --no-timestamps )
       exec python3 -u "$SCRIPT_DIR/scripts/landfolk-logs-aggregate.py" "${agg_args[@]}"
       ;;
     flint|mason|gatherer|steward|barley) tail $follow -n "$lines" "$LOG_DIR/bot-$target.log" ;;
     listener)   tail $follow -n "$lines" "$LOG_DIR/steward-chat-listener.log" ;;
     supervisor) tail $follow -n "$lines" "$LOG_DIR/steward-supervisor.log" ;;
     pauser)     tail $follow -n "$lines" "$LOG_DIR/inactive-cards-pauser.log" ;;
+    chat-wake)  tail $follow -n "$lines" "$LOG_DIR/landfolk-chat-wake.log" ;;
     gateway)    tail $follow -n "$lines" "$LOG_DIR/gateway.log" 2>/dev/null || warn "no gateway log file" ;;
     *) err "unknown logs target: $target"; return 1 ;;
+  esac
+}
+
+cmd_cognition() {
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    export)
+      local profile="${1:-}"; shift || true
+      [ -z "$profile" ] && { err "cognition export needs <player>"; return 1; }
+      exec python3 "$SCRIPT_DIR/scripts/landfolk-cognition-export.py" "$profile" "$@"
+      ;;
+    backfill)
+      local profiles_csv=""
+      local extra=( --once --session-hours 72 )
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --profiles|--players) profiles_csv="$2"; shift 2 ;;
+          --session-hours) extra+=( --session-hours "$2" ); shift 2 ;;
+          --backfill-bot-log) extra+=( --backfill-bot-log ); shift ;;
+          *) err "unknown flag: $1"; return 1 ;;
+        esac
+      done
+      local prof_arg
+      prof_arg="${profiles_csv:-$(roster_players | paste -sd, - || echo "$PLAYERS_DEFAULT")}"
+      exec python3 -u "$SCRIPT_DIR/scripts/landfolk-cognition-record.py" --profiles "$prof_arg" "${extra[@]}"
+      ;;
+    -h|--help|help|"")
+      echo "Usage:"
+      echo "  scripts/landfolk cognition export <player> [--grep REGEX] [--tail N] [-o DIR]"
+      echo "  scripts/landfolk cognition backfill [--profiles a,b,c] [--backfill-bot-log] [--session-hours N]"
+      return 0
+      ;;
+    *) err "unknown cognition subcommand: $sub (try export|backfill)"; return 1 ;;
   esac
 }
 
@@ -1003,14 +1184,46 @@ cmd_fix() {
       ;;
     clean)
       h1 "cleaning orphan node bots + stale pidfiles"
+      # Build the set of tracked PIDs from existing pidfiles.
       local tracked=""
       for f in /tmp/hermescraft/landfolk-control/bot-*.pid; do
         [ -f "$f" ] && tracked="$tracked $(cat "$f")"
       done
+      # Inspect each `node server.js` process and decide:
+      #   A. Tracked PID → leave alone.
+      #   B. Untracked but the process IS a live landfolk bot — i.e. its env
+      #      has MC_USERNAME=<canonical> + API_PORT listens on /health and
+      #      returns the same username — then it's a live bot whose pidfile
+      #      drifted. **Don't kill it; regenerate the pidfile instead.**
+      #   C. Otherwise truly orphan (no canonical username, or port silent) — kill.
+      #
+      # Earlier behaviour killed live bots whenever pidfiles drifted (re44
+      # 2026-05-24 bug). This guards against that false positive.
       pgrep -af "node server.js" 2>/dev/null | while read -r pid _; do
-        if ! echo "$tracked" | grep -qw "$pid"; then
-          kill "$pid" 2>/dev/null && warn "killed orphan node bot pid=$pid"
+        if echo "$tracked" | grep -qw "$pid"; then
+          continue
         fi
+        local _env _user _port _user_lower _expected_port _health_user
+        _env="$(ps eww -p "$pid" -o command= 2>/dev/null)"
+        _user="$(printf '%s' "$_env" | tr ' ' '\n' | awk -F= '$1=="MC_USERNAME"{print $2; exit}')"
+        _port="$(printf '%s' "$_env" | tr ' ' '\n' | awk -F= '$1=="API_PORT"{print $2; exit}')"
+        _user_lower="$(printf '%s' "$_user" | tr '[:upper:]' '[:lower:]')"
+        if [ -n "$_user_lower" ] && is_canonical_player "$_user_lower"; then
+          # Process claims to be a canonical landfolk bot — verify via /health.
+          _expected_port="$(player_api_port "$_user_lower")"
+          if [ -n "$_port" ] && [ "$_port" = "$_expected_port" ]; then
+            _health_user="$(curl -sf -m 1 "http://127.0.0.1:$_port/health" 2>/dev/null \
+              | python3 -c "import sys,json;print((json.load(sys.stdin).get('username') or '').lower())" 2>/dev/null)"
+            if [ "$_health_user" = "$_user_lower" ]; then
+              # Live bot — regenerate the pidfile so future `clean` won't
+              # mis-tag it again.
+              echo "$pid" > "/tmp/hermescraft/landfolk-control/bot-${_user_lower}.pid"
+              ok "kept live bot pid=$pid (${_user_lower} :$_port) — pidfile regenerated"
+              continue
+            fi
+          fi
+        fi
+        kill "$pid" 2>/dev/null && warn "killed orphan node bot pid=$pid (user=${_user:-?} port=${_port:-?})"
       done
       for f in /tmp/hermescraft/landfolk-control/*.pid "$STATE_DIR"/*.pid; do
         [ -f "$f" ] || continue
@@ -1118,9 +1331,10 @@ cmd_defaults() {
   done < <(canonical_players)
   echo
   echo "  ${C_BOLD}daemons${C_RST}"
-  echo "    on by default:        listener"
+  echo "    on by default:        listener, chat-wake"
   echo "    opt-in:               supervisor, pauser (omit --without to start them manually via restart)"
   echo "    disable listener:     --without listener|daemons"
+  echo "    disable chat-wake:    --without chat-wake|daemons"
   echo
   echo "  ${C_BOLD}gateway${C_RST}"
   echo "    on by default:        no (observe only)"
@@ -1152,6 +1366,7 @@ case "$CMD" in
   restart)          cmd_restart "$@" ;;
   status|st)        cmd_status "$@" ;;
   logs|log)         cmd_logs "$@" ;;
+  cognition)        cmd_cognition "$@" ;;
   chat)             cmd_chat "$@" ;;
   fix)              cmd_fix "$@" ;;
   players|player)   cmd_players "$@" ;;

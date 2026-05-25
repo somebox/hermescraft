@@ -1,0 +1,38 @@
+# Base-level supply targets — what the LANDFOLK BASE collectively needs.
+#
+# Distinct from per-bot goal presets in data/goal-presets/<role>.json which
+# drive a single bot's `mc goals` engine. Base goals roll up inventory
+# across all registered base chests (any mark prefixed `chest_`).
+#
+# Steward reads this each cycle. Deficits → [SUPPLY] cards filed to the
+# role-appropriate bot.
+#
+# Schema per resource:
+#   items       — Minecraft item IDs that count toward this resource
+#   target_min  — when current < target_min, Steward MUST file a [SUPPLY] card
+#   target_ok   — comfortable level; Steward stops topping up when above this
+#   assignee    — default profile to file [SUPPLY] cards against (overridable)
+
+food:
+  items: [bread, cooked_beef, cooked_chicken, cooked_porkchop, cooked_mutton, cooked_rabbit, baked_potato, apple, golden_apple, melon_slice]
+  target_min: 64
+  target_ok: 128
+  assignee: flint
+
+wood:
+  items: [oak_log, birch_log, spruce_log, jungle_log, acacia_log, dark_oak_log, mangrove_log, cherry_log]
+  target_min: 512
+  target_ok: 768
+  assignee: flint
+
+stone:
+  items: [cobblestone, stone]
+  target_min: 512
+  target_ok: 768
+  assignee: flint
+
+coal:
+  items: [coal, charcoal]
+  target_min: 64
+  target_ok: 128
+  assignee: flint

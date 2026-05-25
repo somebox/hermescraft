@@ -19,6 +19,80 @@
     {
       "enabled": true,
       "strategies_available": [
+        "craft_pickaxe",
+        "mc craft_plan stone_pickaxe",
+        "mc craft_plan iron_pickaxe"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_pickaxe",
+      "metric": "pickaxe_durability_pct",
+      "target_min": 35,
+      "target_ok": 60,
+      "priority": 85
+    },
+    {
+      "id": "farm_till_task",
+      "priority": 110,
+      "target_min": 81,
+      "target_ok": 81,
+      "metric_id": "tilled_farmland",
+      "description": "Till 9x9 wheat farm plot at farm",
+      "urgency_bias": 5
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "collect_logs",
+        "mc discover logs",
+        "mc collect"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_wood",
+      "metric": "logs_total",
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 40
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "mine_stone",
+        "mc discover stone"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_stone",
+      "metric": "stone_total",
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 55
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "craft_tools",
+        "mc craft_plan wooden_axe",
+        "mc craft_plan wooden_pickaxe",
+        "mc equip",
+        "mc unequip"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "maintain_tools",
+      "metric": "tool_durability_pct",
+      "target_min": 25,
+      "target_ok": 45,
+      "priority": 85
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
         "eat",
         "flee",
         "heal"
@@ -54,38 +128,6 @@
     {
       "enabled": true,
       "strategies_available": [
-        "craft_pickaxe",
-        "mc craft_plan stone_pickaxe",
-        "mc craft_plan iron_pickaxe"
-      ],
-      "constraints": {
-        "preempt_class": "normal"
-      },
-      "id": "maintain_pickaxe",
-      "metric": "pickaxe_durability_pct",
-      "target_min": 35,
-      "target_ok": 60,
-      "priority": 85
-    },
-    {
-      "enabled": true,
-      "strategies_available": [
-        "mine_stone",
-        "mc collect stone",
-        "mc tunnel"
-      ],
-      "constraints": {
-        "preempt_class": "normal"
-      },
-      "id": "supply_cobblestone",
-      "metric": "stone_total",
-      "target_min": 64,
-      "target_ok": 128,
-      "priority": 60
-    },
-    {
-      "enabled": true,
-      "strategies_available": [
         "mine_iron",
         "mc discover iron",
         "mc collect iron_ore",
@@ -115,6 +157,22 @@
       "target_min": 32,
       "target_ok": 64,
       "priority": 75
+    },
+    {
+      "enabled": true,
+      "strategies_available": [
+        "mine_stone",
+        "mc collect stone",
+        "mc tunnel"
+      ],
+      "constraints": {
+        "preempt_class": "normal"
+      },
+      "id": "supply_cobblestone",
+      "metric": "stone_total",
+      "target_min": 64,
+      "target_ok": 128,
+      "priority": 60
     },
     {
       "enabled": true,
@@ -174,6 +232,13 @@
   "deficitSince": {
     "supply_iron": 1779614565324,
     "supply_coal": 1779614565324,
-    "supply_diamond": 1779614565324
+    "supply_diamond": 1779614565324,
+    "supply_cobblestone": 1779635126147,
+    "maintain_wood": 1779660041532,
+    "maintain_stone": 1779660041532,
+    "maintain_food": 1779679297485,
+    "survive": 1779684561407,
+    "maintain_pickaxe": 1779696201455,
+    "maintain_tools": 1779696201455
   }
 }
