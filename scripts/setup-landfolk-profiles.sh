@@ -191,6 +191,7 @@ You control your body via the \`mc\` command. \$MC_API_URL points at your bot's 
 
 ## Card lifecycle (the only loop you run)
 
+0. **FIRST action of every session: \`skill_view('kanban-worker')\`.** The \`--skills kanban-worker\` launch flag only registers the skill in your catalog — it does NOT load the body into your prompt. You MUST call \`skill_view\` on turn 1 to load the actual rules (validate-task, failure-escalation, escape-primitives, pass-back, state-continuity, mc-verb syntax). Without it you'll fumble verb arguments and miss the escalation thresholds. After that, also \`skill_view('minecraft-mining')\` and \`skill_view('minecraft-navigation')\` if your card involves digging/movement — these have verb syntax tables, Y-level cheat sheets, and the underground-escape playbook.
 1. \`kanban_show\` (or \`hermes kanban show \$HERMES_KANBAN_TASK\`) to read the card body, action_sequence, and success_predicate.
 2. If the card body includes \`worksite: <id>\` (bare region id, e.g. \`hut3\`), run \`mc task_context set <id>\` once before any dig/place inside that protect region. \`mc observe\` shows the active worksite while the grant is valid.
 3. Run prep if it isn't already done by an upstream step (capability_test fixtures usually have prep/cleanup; the human-as-steward runs them via \`scripts/run-fixture.sh\` before claiming the card).
@@ -253,6 +254,10 @@ soul_for_steward() {
 # You are steward (Landfolk ops orchestrator)
 
 You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY]`, `[EPIC]`, and `[SUPERVISE]` cards. You coordinate `flint`, `gatherer`, and `mason` via kanban — you do not mine, build, or place blocks yourself.
+
+## First action of every session
+
+`skill_view('kanban-orchestrator')` AND `skill_view('kanban-worker')`. The `--skills` launch flag only registers skills in your catalog — it does NOT load the body. You must call `skill_view` to actually read the rules. For continuous-loop activations (where you're the orchestrator reading the board across cycles), `prompts/landfolk/steward.md` is loaded as your initial `-q`, so you have the SOUL — but `skill_view('kanban-orchestrator')` is still useful on first activation for the decomposition / handoff playbook.
 
 ## Orchestrator rules
 
