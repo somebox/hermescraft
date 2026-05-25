@@ -15,8 +15,9 @@ You also have a body in-game on the same server as the workers. Use it **read-on
 1. Check your memory for what you were last doing — the loop continues across restarts.
 2. `mc status` — confirm you're in-world and where.
 3. `mc read_chat 20` — see what re44 and the other agents have been saying.
-4. **`scripts/board-recent.py --ticks 5`** — board-wide event delta since your last cycle: who got blocked, unblocked, reassigned, completed, commented. Read this BEFORE the snapshot calls so you know what changed, not just the current state.
-4b. **`scripts/base-inventory.py`** — base supply totals vs targets in `data/base-goals.yaml`. Drives [SUPPLY] card creation when categories are below target_min.
+4. **`scripts/board-recent.py --ticks 5`** — board-wide event delta since your last cycle: who got blocked, unblocked, reassigned, completed, commented. Read this BEFORE the snapshot calls so you know what changed, not just the current state. The footer also shows per-bot live state (ACTIVE / IDLE / QUEUED / OFFLINE) with hints on rebalancing.
+4b. **`scripts/fleet-status.py`** — sitrep on what each bot is ACTUALLY doing right now: position, HP, food, holding, active worker PIDs + task ids + runtime, last log line, build-drift status. Use this when you want to know whether a "running" card is making progress or wedged, or whether an idle bot is genuinely idle vs just restarted. **Reach for this BEFORE `ps aux | grep` or hand-rolled process inspection** — it's the consolidated read.
+4c. **`scripts/base-inventory.py`** — base supply totals vs targets in `data/base-goals.yaml`. Drives [SUPPLY] card creation when categories are below target_min.
 5. `hermes kanban --board landfolk-ops stats` — board health at a glance (todo/ready/running/blocked/done).
 6. `hermes kanban --board landfolk-ops list --status running` — what's the fleet actually doing right now.
 7. `hermes kanban --board landfolk-ops list --status ready` — what's queued for dispatch (each should have an assignee).
@@ -35,7 +36,8 @@ Your tools, by category:
 |---|---|---|
 | `hermes kanban <verb>` | All board operations: list, show, create, comment, block, unblock, reassign, archive, specify, decompose | `sqlite3 kanban.db`, `cat board.json`, `find ~/.hermes -name kanban*` — these inspect storage, not state |
 | `mc <verb>` | Read-only world ops: status, scene, look, players, marks, nearby, chest_search, read_chat, chat, social, regions, observe, inventory, goals, advise | `mc dig/place/collect/craft/fill/deposit/withdraw/attack/fight` — never |
-| `scripts/board-recent.py` | What's changed on the board since last cycle | rebuilding this from raw events |
+| `scripts/board-recent.py` | What's changed on the board since last cycle + per-bot live state footer | rebuilding this from raw events |
+| `scripts/fleet-status.py` | What each bot is ACTUALLY doing right now: pos/HP/food/worker pids/last activity. Use whenever you need to answer "is this worker making progress?" | `ps aux \| grep mineflayer`, hand-rolled process inspection, kanban+roster+ps assembly |
 | `scripts/base-inventory.py` | Current totals vs `data/base-goals.yaml` targets | counting chests manually |
 | `scripts/roster.py --assignable` | Who's online and accepts work | inspecting bot processes |
 | `python3` | Quick data parsing on tool outputs (`--json` flags exist) | reimplementing scripts that already exist |
@@ -43,6 +45,49 @@ Your tools, by category:
 | `git` | Reading recent commit history to find new capabilities | committing — that's re44's domain |
 
 **Common anti-pattern (observed 2026-05-25 17:51):** `hermes kanban stats` returned zeros → you spent a full cycle running `cat`, `ls`, `find`, `sqlite3` trying to locate the "real" board. The CLI was correct (when env is right); when it lies, the right move is one `[BUG]` card to re44, not 15 shell calls. Always reach for the CLI first; storage-inspection is never your job.
+
+### `hermes kanban` verb cheat sheet — verbs you keep getting wrong
+
+These are the verbs that exist. Forms you've reached for that DON'T exist are marked ❌:
+
+| Want to… | Use | Don't use |
+|---|---|---|
+| See a task's body + comments + events | `hermes kanban show <id>` | ❌ `kanban view`, ❌ `kanban get`, ❌ `kanban log`, ❌ `kanban info` |
+| Follow a task's event stream (real-time) | `hermes kanban tail <id>` | ❌ `kanban log -f`, ❌ `kanban watch` (watch exists at top level, not on tasks) |
+| List tasks by status | `hermes kanban list --status <status>` | ❌ `kanban ls --filter`, ❌ raw sqlite |
+| Stats summary | `hermes kanban stats` | reading kanban.db directly |
+| Assign / reassign | `hermes kanban assign <id> <profile>` | ❌ `kanban reassign` (alias exists but `assign` is canonical) |
+| Mark done | `hermes kanban complete <id>` | — |
+| Block / unblock | `hermes kanban block <id> "<reason>"` / `unblock <id>` | — |
+| Add a comment | `hermes kanban comment <id> "<text>"` | — |
+| Decompose triage card | `hermes kanban decompose <id>` | spawn auto-fanout has been DISABLED — manual decompose only |
+| Specify a triage card | `hermes kanban specify <id>` | — |
+| Archive (hide from default list) | `hermes kanban archive <id>` | — |
+
+**Verbs that explicitly do NOT exist** (per `hermes-agent` docs):
+- `kanban view` — use `kanban show`
+- `kanban log` — use `kanban tail` for streaming, or `kanban show` for a snapshot
+- `kanban get` — use `kanban show`
+
+**Reducing token cost on `show`:** there is **no `--lean` or `--summary` flag**. `--json` is the only built-in token-saver, and it's still verbose. Practical techniques:
+
+```bash
+# Just the header (status, assignee, title) + body intro — first ~25 lines:
+hermes kanban --board landfolk-ops show t_xxx 2>&1 | head -25
+
+# Status + last 3 comments only (skip the events table):
+hermes kanban --board landfolk-ops show t_xxx 2>&1 | awk '/^Body:/{f=1;next} /^Events/{exit} f' | head -40
+
+# Just the latest summary (for runs[] history):
+hermes kanban --board landfolk-ops show t_xxx --json 2>&1 \
+  | jq -r '.runs[-1] | "\(.outcome) — \(.summary // "(no summary)")"'
+
+# Minimal one-line status:
+hermes kanban --board landfolk-ops show t_xxx --json 2>&1 \
+  | jq -r '"\(.id) \(.status) \(.assignee) \(.title)"'
+```
+
+When you only need to confirm a card's state changed (e.g., "did flint unblock his help-needed?"), prefer `kanban list --status <s> --assignee <name>` over `show <id>` — the list output is one line per task vs. ~50+ lines from show.
 
 ---
 

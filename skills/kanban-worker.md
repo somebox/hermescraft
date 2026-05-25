@@ -274,6 +274,29 @@ If you open the task and `kanban_show` returns `runs: [...]` with one or more cl
 
 **One legitimate exception:** if the runs[] history shows that a *previous worker on this same task* already tried `mc advise` + chat + block and the operator replied "yes, write a one-off script for this specific case" via comment, then the workaround is sanctioned. Even then, the script lives inside `$HERMES_KANBAN_WORKSPACE` and ships with the card, not as a permanent change to the framework.
 
+### Workspace data-analysis scripts ARE sanctioned (this is the useful pattern)
+
+The anti-pattern above is specifically about **shelling out to `mc` in a loop to fake a missing primitive**. It is NOT a blanket ban on writing scripts. Python and shell are perfectly fine tools for:
+
+- **Parsing JSON / log / data files.** Reading `data/ops/plans/<plan>.json` to compute world-space coordinates from local cells. Reading a chest snapshot to compute "do I have all materials for this build?" Reading `runs[]` history programmatically.
+- **Planning / computing.** Sorting a list of dig coords by distance from your current position. Filtering a list of `find_blocks` results by region permission. Computing a delivery route across multiple chests.
+- **Investigating failures.** Grep over previous session logs for the error you keep hitting. Diff two `mc inspect` outputs to find what changed.
+- **Demonstrating a needed primitive.** If you write a 30-line `pillar_to_surface.py` in your workspace because no `mc pillar_step` verb exists yet, that's *useful evidence for the operator* — it shows the gap concretely. The next worker on the next session may find that `mc pillar_step --force` got added to the framework precisely because someone wrote that script.
+
+**The line is in WHAT the script does, not WHETHER you wrote one:**
+
+| Pattern | Verdict |
+|---|---|
+| `parse_layers.py` reads a blueprint JSON, prints `world=(370,65,-608)` for each cell, you then call `mc place` interactively | ✓ Sanctioned — Python is the right tool for the math |
+| `check_storage.py` reads chest snapshots, computes "missing: 12 iron_ingot", prints | ✓ Sanctioned — data analysis |
+| `till_all.sh` loops `for x in ...; for z in ...; do mc till $x $z; done` to till 81 blocks | ✗ Anti-pattern — that's a missing `mc till_area` verb begging to be filed as `help-needed:` |
+| `pillar_to_surface.py` implements its own pillar logic by calling `mc dig` + `mc place` in a custom loop because no pillar verb exists | ✗ Edge case. If you have NO sanctioned alternative AND have already filed `help-needed:` once, fine. But comment on the card with the script body and `mc chat "@steward needs `mc pillar` primitive — workspace has a candidate"` so the operator can promote. |
+| `analyze_failures.py` reads `runs[]`, classifies prior errors, prints the dominant pattern | ✓ Sanctioned — debugging tool |
+
+**Pattern recognition for the operator:** if you write a workspace script that uses ONLY `mc` primitives (no shelling out, no REST API calls, no direct bot HTTP) AND solves a real problem AND you can imagine other workers needing the same logic — leave a comment on your card: `"workspace has <script>.py — candidate for promotion to scripts/ or as a new mc primitive."` That comment is how patterns graduate from workspace one-offs to framework features. Several `mc` verbs in the current toolbelt got there exactly this way.
+
+**Rule of thumb:** if your script ends with `print(plan)` and you (a human or another worker) would still call `mc` to execute it, that's planning — fine. If your script ends with `for x in ...: subprocess.run(['mc', 'dig', x])`, that's executing — and that's the anti-pattern; the framework should be doing that batching.
+
 **Soft-help chat narration (optional but encouraged at the 2-failure mark):**
 
 ```

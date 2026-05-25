@@ -31,6 +31,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +83,107 @@ def fetch_events(conn, since_epoch: int, assignee=None, kinds=None):
         args.extend(kinds)
     sql += " ORDER BY e.created_at ASC"
     return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+
+def fetch_per_assignee_state(conn, assignee=None):
+    """Current open-card counts + last-event time per assignee.
+
+    Returns dict keyed by assignee (None bucket excluded), each value:
+      {
+        'running':  int,
+        'ready':    int,
+        'blocked':  int,
+        'todo':     int,
+        'last_event_at': int (epoch seconds, max over all task_events),
+      }
+    """
+    sql = """
+        SELECT t.assignee, t.status, COUNT(*) AS n
+        FROM tasks t
+        WHERE t.assignee IS NOT NULL AND t.assignee != ''
+          AND t.status IN ('running','ready','blocked','todo')
+    """
+    args: list = []
+    if assignee:
+        sql += " AND t.assignee = ?"
+        args.append(assignee)
+    sql += " GROUP BY t.assignee, t.status"
+    rows = conn.execute(sql, args).fetchall()
+
+    out: dict = {}
+    for r in rows:
+        a = r["assignee"]
+        if a not in out:
+            out[a] = {"running": 0, "ready": 0, "blocked": 0, "todo": 0, "last_event_at": 0}
+        out[a][r["status"]] = r["n"]
+
+    # Last event timestamp per assignee (any kind, any time)
+    sql2 = """
+        SELECT t.assignee, MAX(e.created_at) AS last_at
+        FROM task_events e
+        LEFT JOIN tasks t ON t.id = e.task_id
+        WHERE t.assignee IS NOT NULL AND t.assignee != ''
+    """
+    args2: list = []
+    if assignee:
+        sql2 += " AND t.assignee = ?"
+        args2.append(assignee)
+    sql2 += " GROUP BY t.assignee"
+    for r in conn.execute(sql2, args2).fetchall():
+        a = r["assignee"]
+        if a not in out:
+            out[a] = {"running": 0, "ready": 0, "blocked": 0, "todo": 0, "last_event_at": 0}
+        out[a]["last_event_at"] = int(r["last_at"] or 0)
+
+    return out
+
+
+def detect_running_workers():
+    """Map of profile_name → list of (pid, task_id) for hermes -p <profile> kanban task runs."""
+    workers: dict = {}
+    try:
+        ps = subprocess.run(
+            ["ps", "-ax", "-o", "pid=,command="],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except Exception:
+        return workers
+    pat = re.compile(r"hermes -p (\S+).*kanban task (\S+)")
+    for line in ps.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        pid, cmd = parts
+        m = pat.search(cmd)
+        if not m:
+            continue
+        prof, tid = m.group(1).lower(), m.group(2)
+        workers.setdefault(prof, []).append((pid, tid))
+    return workers
+
+
+def humanize_age(seconds: int) -> str:
+    if seconds <= 0:
+        return "?"
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h{(seconds % 3600) // 60}m"
+    return f"{seconds // 86400}d{(seconds % 86400) // 3600}h"
+
+
+def load_assignable_roster():
+    """Best-effort: read roster.py --assignable, return set of profile names. Empty set on failure."""
+    try:
+        out = subprocess.run(
+            ["python3", str(Path(__file__).resolve().parent / "roster.py"), "--assignable"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        return {line.strip().lower() for line in out.splitlines() if line.strip()}
+    except Exception:
+        return set()
 
 
 def fetch_comments(conn, since_epoch: int, assignee=None):
@@ -168,6 +270,9 @@ def main():
     conn = open_db_readonly(args.board)
     events = fetch_events(conn, since_epoch, assignee=args.assignee, kinds=kinds)
     comments = [] if args.no_comments else fetch_comments(conn, since_epoch, assignee=args.assignee)
+    per_assignee = fetch_per_assignee_state(conn, assignee=args.assignee)
+    running_workers = detect_running_workers()
+    assignable = load_assignable_roster()
 
     # Suppress the `commented` event row when --no-comments is OFF — the
     # comment table already carries the real body. Otherwise each comment
@@ -201,12 +306,56 @@ def main():
     rows.sort(key=lambda r: r["time"])
     rows = rows[-args.limit:]
 
+    # Build worker-activity summary. Distinguishes:
+    #   ACTIVE  — has a kanban worker process running right now
+    #   READY   — has cards in ready/running on the board (dispatcher will spawn)
+    #   IDLE    — assignable, no cards, no worker → AVAILABLE FOR REASSIGN
+    #   STRANDED — has cards but not in --assignable (offline bot, dead profile)
+    worker_summary = []
+    # Assemble the union of assignees we have ANY signal for
+    candidates = set(per_assignee.keys()) | set(running_workers.keys()) | assignable
+    candidates.discard(None)
+    candidates.discard("")
+    candidates.discard("default")   # framework fallback, not a bot
+    for a in sorted(candidates):
+        st = per_assignee.get(a, {"running": 0, "ready": 0, "blocked": 0, "todo": 0, "last_event_at": 0})
+        worker_pids = running_workers.get(a, [])
+        is_assignable = a in assignable
+        last_event = st["last_event_at"]
+        age_s = (now - last_event) if last_event else None
+
+        if worker_pids:
+            label = "ACTIVE"
+        elif st["running"] + st["ready"] > 0:
+            label = "QUEUED"
+        elif st["blocked"] + st["todo"] > 0 and is_assignable:
+            label = "BLOCKED-ONLY"
+        elif is_assignable:
+            label = "IDLE"
+        elif st["running"] + st["ready"] + st["blocked"] + st["todo"] > 0:
+            label = "STRANDED"
+        else:
+            label = "OFFLINE"
+
+        worker_summary.append({
+            "profile": a,
+            "label": label,
+            "running": st["running"],
+            "ready": st["ready"],
+            "blocked": st["blocked"],
+            "todo": st["todo"],
+            "worker_pids": [pid for pid, _ in worker_pids],
+            "worker_tids": [tid for _, tid in worker_pids],
+            "last_event_age_s": age_s,
+            "assignable": is_assignable,
+        })
+
     if args.json:
-        json.dump(rows, sys.stdout, indent=2, default=str)
+        json.dump({"rows": rows, "workers": worker_summary}, sys.stdout, indent=2, default=str)
         print()
         return
 
-    if not rows:
+    if not rows and not worker_summary:
         win_desc = f"{window_s}s"
         if args.ticks:
             win_desc = f"{args.ticks} tick(s) = {window_s}s"
@@ -222,6 +371,39 @@ def main():
     for r in rows:
         print(fmt_line(r["time"], r["tid"], r["assignee"], r["status"],
                        r["kind"], r["detail"]))
+
+    # Worker activity footer — what each profile is doing right now.
+    # Helps Steward spot idle-but-assignable bots without running a separate
+    # ps + roster + kanban-list dance.
+    if worker_summary:
+        print()
+        print("# workers (snapshot — now state, not within window)")
+        print("# profile    label         counts                       worker / last_event")
+        for w in worker_summary:
+            label_pad = w["label"].ljust(13)
+            counts = f"run={w['running']} ready={w['ready']} block={w['blocked']} todo={w['todo']}"
+            counts = counts.ljust(28)
+            extras = []
+            if w["worker_pids"]:
+                tid = w["worker_tids"][0] if w["worker_tids"] else "?"
+                extras.append(f"pid={w['worker_pids'][0]} task={tid}")
+            if w["last_event_age_s"] is not None:
+                extras.append(f"last_event {humanize_age(w['last_event_age_s'])} ago")
+            elif w["last_event_age_s"] is None:
+                extras.append("no events on record")
+            if not w["assignable"] and w["label"] != "OFFLINE":
+                extras.append("⚠ NOT in roster --assignable")
+            extra_str = "  ".join(extras)
+            print(f"  {w['profile']:<10}  {label_pad} {counts}  {extra_str}")
+
+        # Quick guidance for Steward — what to do with the labels she sees
+        idle_assignable = [w["profile"] for w in worker_summary
+                           if w["label"] == "IDLE" and w["assignable"]]
+        stranded = [w["profile"] for w in worker_summary if w["label"] == "STRANDED"]
+        if idle_assignable:
+            print(f"# hint: {', '.join(idle_assignable)} idle and assignable — consider rebalancing flint/mason cards or generating parallel work")
+        if stranded:
+            print(f"# hint: {', '.join(stranded)} have cards but aren't in roster --assignable — reassign or archive")
 
 
 if __name__ == "__main__":

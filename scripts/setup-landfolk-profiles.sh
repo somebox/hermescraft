@@ -419,6 +419,18 @@ install_kanban_worker_skill() {
   # keep it in sync to avoid divergence.
   mkdir -p "$profile_dir"
   cp "$src" "$profile_dir/SKILL.md"
+
+  # Sync any OTHER profiles that already have the skill installed (e.g.
+  # legacy/test profiles like librarian, worker-a, worker-b that aren't in
+  # WORKER_PROFILES / ALL_PROFILES but were set up at some point). This
+  # prevents stale drift in those copies. We only update existing files —
+  # we don't create new ones for profiles we don't manage.
+  local other_skill
+  for other_skill in "$PROFILES_DIR"/*/skills/devops/kanban-worker/SKILL.md; do
+    [ -f "$other_skill" ] || continue
+    [ "$other_skill" = "$profile_dir/SKILL.md" ] && continue
+    cp "$src" "$other_skill"
+  done
 }
 
 verify_kanban_skills() {
@@ -463,7 +475,12 @@ setup_worker() {
 
   ensure_minecraft_skills "$name"
   install_kanban_worker_skill "$name"
-  verify_kanban_skills "$name" "kanban-worker"
+  # NOTE: do NOT call `verify_kanban_skills "$name" "kanban-worker"` here.
+  # `hermes skills list` doesn't see our raw file-drop as a registered skill;
+  # `verify_kanban_skills` then mistakes it for missing and runs
+  # `hermes skills reset --restore`, which clobbers our customization with
+  # the upstream bundled default. install_kanban_worker_skill (above) is
+  # the canonical install; trust it.
 
   echo "  ✓ $name ready"
 }
@@ -491,7 +508,9 @@ setup_steward() {
   install_steward_blueprint_skill
   install_kanban_worker_skill steward
   verify_kanban_skills steward "kanban-orchestrator"
-  verify_kanban_skills steward "kanban-worker"
+  # See note in setup_worker — don't verify (and thereby reset) kanban-worker
+  # after install_kanban_worker_skill. The orchestrator skill is fine because
+  # we don't customize it.
 
   echo "  ✓ steward ready"
 }
