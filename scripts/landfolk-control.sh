@@ -1146,6 +1146,18 @@ AGENTENV
     echo "# Bot HTTP for 'mc' verbs invoked from shell."
     echo "export MC_API_URL=\"http://localhost:${port}\""
     echo "export MC_USERNAME=\"$name\""
+    echo ""
+    echo "# mc advise spawns python3 via bot/cli/advise.mjs. Worker agents have"
+    echo "# python3 blocked in restricted_bin (to prevent ad-hoc scripting), so"
+    echo "# the spawn's PATH lookup hits the block stub. MC_ADVISE_PYTHON gives"
+    echo "# advise.mjs a direct path that bypasses PATH lookup — the worker still"
+    echo "# can't shell out to arbitrary python3, but mc advise (a curated tool)"
+    echo "# can run its perception bundler. Resolved at deploy time."
+    if [ -x "/opt/homebrew/bin/python3" ]; then
+      echo "export MC_ADVISE_PYTHON=\"/opt/homebrew/bin/python3\""
+    elif [ -x "/usr/local/bin/python3" ]; then
+      echo "export MC_ADVISE_PYTHON=\"/usr/local/bin/python3\""
+    fi
   } >> "$bash_env_file"
 
   rm -f "$session_ref_file"
