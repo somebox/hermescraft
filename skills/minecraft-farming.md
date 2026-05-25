@@ -95,6 +95,39 @@ up as `soil_occupied`.
 Y handling: with Y, probes that row exactly. Without Y, uses each column's
 topmost solid block — useful for surveying unfamiliar terrain.
 
+## `system_chest` — ops-managed dropoff chest at base
+
+A double chest at **(366, 65, −594)** (other half at (365, 65, −594)) with
+a CustomName label `system_chest` and a standing sign above it. Stocked
+ONLY by `scripts/system-chest.mjs` — bots may **withdraw** but should not
+deposit into it. Keeps a predictable starting kit (tools + food + wood)
+that scripts/players refill without contention from worker bot pipelines.
+
+```bash
+scripts/system-chest.mjs place                  # idempotent — chest + sign
+scripts/system-chest.mjs fill                   # default manifest (tools+food+wood)
+scripts/system-chest.mjs fill --manifest F.json # custom restock list
+scripts/system-chest.mjs show                   # list current stacks
+```
+
+Default manifest:
+- Tools: 2× stone_{pickaxe,axe,shovel,hoe}, 1× iron_{pickaxe,axe,sword}, 2× wooden_{pickaxe,axe}, 4 buckets, fishing_rod, shears, 64 torches, flint_and_steel
+- Food: 64 each of bread, cooked_beef, cooked_chicken, baked_potato, carrot; 8 golden_apples
+- Wood: 4× oak_log, 4× oak_planks, 2× spruce_log, 2× birch_log, 1 stack each of oak_stairs / oak_slab / oak_fence / oak_sapling — **~1024 wood total**
+
+Bot behaviour:
+- `mc list_container 366 65 -594` to see what's available
+- `mc withdraw <item> <count> 366 65 -594` to take what you need
+- **Do NOT `mc deposit` into this chest** — it'll be wiped on the next `fill`
+  call from ops anyway. Use a worker chest (`chest_wood`, `farm_chest`, etc.)
+  for things you produce.
+
+Implementation note: `fill` runs as Steward (the service bot — chosen
+because she's at base and read-only otherwise). The script tp's Steward
+adjacent, clears her inventory, then `/give` + `mc deposit` per manifest
+entry. The chest is replaced fresh first (via setblock) so each fill is
+idempotent — scripts own the chest, not bots.
+
 ## Construct / till kanban cards
 
 After `kanban_show`, if the card lists a plot rectangle and optional `worksite:`:
