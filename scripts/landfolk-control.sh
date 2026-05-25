@@ -1239,10 +1239,14 @@ print(json.dumps({k:v for k,v in out.items() if v is not None},separators=(',','
         if [ "$(printf '%s' "$CONTEXT_MINIMAL_CONTINUE" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
           if [ "$CONTEXT_REFRESH_EVERY_ROUNDS" -gt 0 ] && [ $((round % CONTEXT_REFRESH_EVERY_ROUNDS)) -ne 0 ]; then
             continue_prompt_round="$continue_prompt_minimal"
-            if [ "$role" != "orchestrator" ]; then
-              continue_prompt_round="${continue_prompt_round}
-Current focus hint: ${top_goal_hint}"
-            fi
+            # Removed (2026-05-25): "Current focus hint: ${top_goal_hint}"
+            # injection. The goal-engine signal contradicted kanban scheduling
+            # — workers got two competing directives per cycle (card body vs
+            # top_goal urgency) and jumped topics. The watchdog danger-react
+            # still handles acute safety; logistics goals are now covered by
+            # base-inventory.py + [SUPPLY] kanban cards. Kept top_goal_hint
+            # computation above so the log header still shows it for ops
+            # visibility.
           fi
         fi
         cont_target=""

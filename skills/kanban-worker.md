@@ -49,6 +49,14 @@ Hermes delimits memory entries with `§` automatically. Don't manually format se
 
 If the task spans multiple workers (long-running collect, multi-layer build, etc.), prefer **replacing** older state entries rather than accumulating — `memory(action="replace", name="state-snapshot", content=...)` keeps memory clean. Keep one canonical "current state" entry plus a few discrete fact entries (e.g., "discovered iron vein at 410,42,-615") rather than a sprawl of timestamps.
 
+## Your task source is the kanban card — `top_goal` is advisory only
+
+If your tool results include a `top_goal: {id, urgency, satisfied}` field (e.g. from `mc observe` or `mc status`), **ignore it for task selection**. The goal engine is a legacy task scheduler from before kanban; we keep it active only for survival signals (eat / flee) that the watchdog handles independently anyway.
+
+**Your task is the kanban card you were dispatched with.** Re-read its body when in doubt; don't pivot to whatever `top_goal` says is "urgent". If the goal-engine signal contradicts the card (card says "till plot," goal says "maintain_food u=1.26"), the card wins. Hunger only matters if your HP / food shows you're actually starving — and even then the watchdog's danger-react will catch low-HP cases before you do.
+
+If you genuinely need to break from the card to handle a survival emergency (HP < 8, no food in inventory, hostile mob in your face), narrate it in chat (`mc chat "<bot>: breaking from t_xxx — HP critical, eating then resuming"`) and resume the card afterward. Do NOT silently switch tasks based on goal-engine urgency.
+
 ## Validate the task before starting
 
 **Before any domain action, confirm the spec is doable.** Validation is 1-3 tool calls; execution on a bad spec burns the whole budget. Runs after `kanban_show` + memory-read.
