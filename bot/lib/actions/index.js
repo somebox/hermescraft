@@ -26,6 +26,7 @@ import { createWaterActions } from './water.js';
 import { createRegionsObserveActions } from './regions/observe.js';
 import { createRegionsMutateActions } from './regions/create.js';
 import { createRegionsCheckActions } from './regions/check.js';
+import { createBlueprintActions } from './blueprints/index.js';
 
 export function createAllActions(deps) {
   // Modules already on services use deps.services; modules still on the
@@ -62,6 +63,7 @@ export function createAllActions(deps) {
     ...createRegionsObserveActions(deps),
     ...createRegionsMutateActions(deps),
     ...createRegionsCheckActions(deps),
+    ...createBlueprintActions(deps),
     ...createTeamActions(deps),
     ...createRemindersActions(deps),
   };

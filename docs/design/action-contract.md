@@ -64,6 +64,26 @@ Pure parsers live in `bot/lib/actions/_args.js`. Canonical shapes are documented
 
 Adoption is incremental: handlers call `_args` at the top and `return parsed.response` on failure.
 
+## Blueprint verify envelope
+
+`mc blueprint verify` uses the standard success/failure envelope. It does **not** emit `guided_edit_progress` (that shape is reserved for `mc construct` / blueprint-aware `mc repair` in [designated-regions Phase 2c](../features/designated-regions.md)).
+
+On success (`ok()`), `data` includes:
+
+| Field | Notes |
+|--------|--------|
+| `blueprint_verify` | `true` |
+| `summary` | `{ ok, missing, wrong, extra, scanned }` — footprint cells only |
+| `mismatches` | Sample of `{ cell, local, expected, observed, category, compare_note? }` where `category` is `missing` \| `wrong` \| `extra` |
+| `truncated` | When scan hit `BLUEPRINT_VERIFY_MAX_CELLS_PER_CALL` |
+| `next_hint` | e.g. rerun with `--level` or `--range` |
+
+Inside the footprint, any cell not listed in `cells[]` is expected **air**. Failures use stable codes such as `NO_PLAN_CONTEXT`, `PLAN_NOT_FOUND`, `BLUEPRINT_SIZE_EXCEEDED`, `WRITE_LOCKED`, `POLICY_DENY` (adopt/capture).
+
+## Guided edit progress (construct / repair)
+
+When `mc construct` or blueprint-aware `mc repair` ship (Phase 2c), success responses should include `guided_edit_progress` alongside plan summaries (`plan_summary`, `materials_needed`, `verify_summary`, etc.). Until then, those verbs return `NOT_IMPLEMENTED` with a `next_action_hint` pointing at `mc blueprint verify` and manual place/dig.
+
 ## Test tagging
 
 - **`# spec`**: defines correct behavior; failing test → fix code.

@@ -72,6 +72,7 @@ export function regionRowFromSign(parsed, blockPos) {
     anchor: { x: blockPos.x, y: blockPos.y, z: blockPos.z },
     shape,
     sites: parsed.sites,
+    plan: parsed.directives.plan ? String(parsed.directives.plan).trim().toLowerCase() : undefined,
   };
 }
 

@@ -559,6 +559,54 @@ function customParse(canonicalName, positional) {
       }
       throw new Error('check_verb');
     }
+    case 'blueprint': {
+      const q = positional.slice();
+      const sub = String(q.shift() || '').toLowerCase();
+      if (!sub) throw new Error('blueprint_subcommand');
+      let target = null;
+      const body = { subcommand: sub };
+      while (q.length && !String(q[0]).startsWith('--')) {
+        if (!target) target = q.shift();
+        else break;
+      }
+      if (target) body.target = target;
+      while (q.length) {
+        const f = String(q.shift());
+        if (f === '--level') body.level = Number(q.shift());
+        else if (f === '--range') body.range = String(q.shift());
+        else if (f === '--at') {
+          body.x = Number(q.shift());
+          body.y = Number(q.shift());
+          body.z = Number(q.shift());
+        } else if (f === '--local') body.local = String(q.shift());
+        else if (f === '--y') body.y = Number(q.shift());
+        else if (f === '--limit') body.limit = Number(q.shift());
+        else if (f === '--note') body.note = String(q.shift());
+        else if (f === '--region') body.region = String(q.shift());
+        else if (f === '--force') body.force = true;
+        else if (f === '--allow-outside-region') body.allow_outside_region = true;
+        else if (f === '--site') body.site = String(q.shift());
+        else throw new Error(`unknown_flag:${f}`);
+      }
+      if (sub === 'capture' && target) body.plan_id = target.replace(/^:/, '').replace(/:$/, '');
+      return body;
+    }
+    case 'construct':
+    case 'repair': {
+      const q = positional.slice();
+      const body = { target: q.shift() };
+      while (q.length) {
+        const f = String(q.shift());
+        if (f === '--level') body.level = Number(q.shift());
+        else if (f === '--range') body.range = String(q.shift());
+        else if (f === '--at') {
+          body.x = Number(q.shift());
+          body.y = Number(q.shift());
+          body.z = Number(q.shift());
+        } else throw new Error(`unknown_flag:${f}`);
+      }
+      return body;
+    }
     case 'chest':
     case 'list_container':
       if (positional[0]?.startsWith('{')) return JSON.parse(positional[0]);
@@ -605,6 +653,62 @@ function customParse(canonicalName, positional) {
         item: positional[0],
         count: 0,
       };
+    case 'verify_plot': {
+      const q = positional.slice();
+      const out = {};
+      const pos = [];
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--worksite' || t === '-w') {
+          q.shift();
+          out.worksite = String(q.shift() ?? '');
+        } else if (t === '--expect-y' || t === '--expect_y') {
+          q.shift();
+          out.expect_y = Number(q.shift());
+        } else if (t === '--flat-max-delta') {
+          q.shift();
+          out.flat_max_delta = Number(q.shift());
+        } else if (t.startsWith('--')) {
+          throw new Error(`unknown_flag:${t}`);
+        } else {
+          pos.push(q.shift());
+        }
+      }
+      if (pos.length < 4) throw new Error('missing:rect');
+      out.x1 = Number(pos[0]);
+      out.z1 = Number(pos[1]);
+      out.x2 = Number(pos[2]);
+      out.z2 = Number(pos[3]);
+      return out;
+    }
+    case 'regions_terrain': {
+      const q = positional.slice();
+      const out = {};
+      if (q[0] === '--rect') {
+        q.shift();
+        const parts = q.splice(0, 4).map(Number);
+        if (parts.length < 4 || parts.some((n) => !Number.isFinite(n))) throw new Error('missing:rect');
+        out.rect = parts.join(',');
+      } else if (q.length && !String(q[0]).startsWith('--')) {
+        out.region = String(q.shift());
+      }
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--expect-y' || t === '--expect_y') {
+          q.shift();
+          out.expect_y = Number(q.shift());
+        } else if (t === '--flat-max-delta') {
+          q.shift();
+          out.flat_max_delta = Number(q.shift());
+        } else if (t.startsWith('--')) {
+          throw new Error(`unknown_flag:${t}`);
+        } else {
+          q.shift();
+        }
+      }
+      if (!out.region && !out.rect) throw new Error('missing:region_or_rect');
+      return out;
+    }
     default:
       throw new Error(`unhandled_custom_parse:${canonicalName}`);
   }

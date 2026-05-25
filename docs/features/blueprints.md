@@ -1,4 +1,52 @@
-# Blueprints
+# Blueprint library
+
+Committed plans under `data/ops/plans/<plan_id>-plan.json` are the **single source of truth** for what should exist inside a blueprint footprint. Region placemark signs bind with `plan=<plan_id>`. Bots verify against the world; the steward mutates the plan (JSON edit or `mc blueprint adopt`) when in-world changes should become design.
+
+See also: [designated-regions.md](./designated-regions.md) (Phase 2c guided construct/repair), [action-contract blueprint verify](../design/action-contract.md#blueprint-verify-envelope), skill [`skills/minecraft-blueprints.md`](../../skills/minecraft-blueprints.md).
+
+## Plan file shape
+
+Each plan includes `plan_id`, `footprint` (`mode: tight|metadata`, `local` axis ranges), `anchor.coords`, `cells[]` with `{ local: [x,y,z], block }`, and optional `history[]`. **`cells_index` is never stored on disk** — loaders build it in memory.
+
+**Footprint rule:** inside `footprint.local`, any coordinate not present in `cells[]` is expected **air**. Outside the footprint, verify is silent (staging chests, crafting tables, etc.).
+
+Import from GrabCraft:
+
+```bash
+python3 scripts/blueprint-plan.py "<url>" \
+  --out data/ops/plans/dystopian-hut-3-plan.json \
+  --plan-id dystopian-hut-3 \
+  --anchor 370,65,-608 --site :hut3:/anchor
+```
+
+Offline inspection:
+
+```bash
+python3 scripts/blueprint-tool.py show dystopian-hut-3
+python3 scripts/blueprint-tool.py audit
+```
+
+In-game (bot HTTP / `mc` CLI):
+
+```bash
+mc blueprint show :hut3:
+mc blueprint verify dystopian-hut-3 --level 5
+mc blueprint adopt :hut3: --at 370 65 -608 --note "approved change"
+```
+
+Target resolution: `:region:` requires `plan=` on the region row; bare `plan_id` loads the file and uses `anchor.coords` (or `--site`).
+
+## Block compare (v1 gaps)
+
+[`bot/lib/runtime/blueprints/compare.js`](../../bot/lib/runtime/blueprints/compare.js) and [`scripts/blueprint_lib.py`](../../scripts/blueprint_lib.py) normalize GrabCraft-style suffixes and Mineflayer `block.name` to a comparable base id (doors, ladders, bed parts). **Block states** (facing, half, waterlogged) are not verified in v1 — mismatches may appear as `wrong` until adopt/construct learn states. Entity/tile contents are out of scope.
+
+## Size limits
+
+Env-overridable caps (shared JS + Python): `BLUEPRINT_MAX_CELLS` (50k), `BLUEPRINT_MAX_FOOTPRINT_VOLUME` (200k), `BLUEPRINT_VERIFY_MAX_CELLS_PER_CALL` (2k), `BLUEPRINT_CAPTURE_MAX_REGION_RADIUS` (64). Verify `--all` truncates with `truncated: true` and `next_hint`.
+
+## Construct and repair
+
+`mc construct` and blueprint-aware `mc repair` depend on designated-regions **Phase 2c** (guided edit, worksite grants). Current builds use `mc blueprint layer`, existing `mc fill` / `mc wall` / `mc place`, and phase-scoped `mc blueprint verify`. Stubs return `NOT_IMPLEMENTED` until Phase 2c lands.
 
 ## GrabCraft downloader
 
@@ -45,24 +93,21 @@ python docs/features/grabcraft_downloader.py --compact "https://www.grabcraft.co
   },
   "materials": [
     {"name": "Clay", "count": 53},
-    {"name": "Stone", "count": 40},
-    ...
+    {"name": "Stone", "count": 40}
   ],
   "layers": [
     {
       "level": 1,
       "blocks": [
-        {"x": 1, "y": 1, "z": 2, "name": "Cobblestone", "mat_id": "18", "hex": "#595959", "rgb": [89,89,89], "texture": "4_0.png", "transparent": false},
-        ...
+        {"x": 1, "y": 1, "z": 2, "name": "Cobblestone", "mat_id": "18", "hex": "#595959", "rgb": [89,89,89], "texture": "4_0.png", "transparent": false}
       ]
     }
   ],
   "blocks_3d": {
-    "1,1,2": {"x": 1, "y": 1, "z": 2, "name": "Cobblestone", ...},
-    ...
+    "1,1,2": {"x": 1, "y": 1, "z": 2, "name": "Cobblestone"}
   },
   "layer_image_map": {
-    "1": [{"x": 5, "y": 291, "s": 21, "h": "Cobblestone", "y1": 185, "x2": 91}, ...]
+    "1": [{"x": 5, "y": 291, "s": 21, "h": "Cobblestone", "y1": 185, "x2": 91}]
   }
 }
 ```
@@ -85,50 +130,3 @@ python docs/features/grabcraft_downloader.py --compact "https://www.grabcraft.co
 | Age of Empires Castle | 12,405 | 40 | 10 |
 
 The `blocks_3d` flat dictionary is especially useful for automation — you can look up any coordinate directly with `"x,y,z"` keys.
-
-## Future command: `mc construct` (design sketch)
-
-`mc construct` can reuse most of the future `mc repair` pipeline, but the
-target state comes from a blueprint JSON instead of a region snapshot.
-
-Proposed execution shape:
-
-1. **Plan**: pick anchor/orientation, transform blueprint local coords to world coords,
-   diff expected blocks vs observed blocks.
-2. **Gather**: compute missing materials from diff and fetch/craft as needed.
-3. **Place**: place only missing/incorrect blocks, in a stable order
-   (support/foundation first, then walls/roof/details).
-4. **Verify**: re-scan planned cells and emit unresolved mismatches.
-
-### Shared contract with `mc repair`
-
-Both commands should use the same action envelope and telemetry fields:
-
-- `plan_summary`: total cells, already-correct cells, cells to place/replace
-- `materials_needed` and `materials_missing`
-- `blocked_cells` (unreachable/occupied by protected blocks/entities)
-- `verify_summary` with a short mismatch sample
-
-This keeps agent reasoning consistent: only the **source of truth** differs.
-
-### Inputs needed for v1
-
-- `--blueprint <path-or-id>`
-- `--anchor x,y,z` **or** `--site :region:/<name>` (resolves a
-  named site declared on a placemark sign; see
-  [`designated-regions.md`](./designated-regions.md))
-- `--rotation 0|90|180|270` (optional)
-- `--mirror x|z|none` (optional, can be deferred)
-- `--dry-run` (plan + materials + diff only — same as
-  `mc check construct …`)
-
-### Region interaction (important)
-
-`mc construct` should be treated as a **guided edit** action:
-
-- regions may deny ad-hoc `mc place` but still allow `mc construct`
-- protected areas can permit construction only at known sites
-  (example: `tower`, `mine_entrance`)
-- refusal should return an explicit policy reason, not generic placement failure
-
-This keeps designated-region safety strict while still enabling intentional builds.

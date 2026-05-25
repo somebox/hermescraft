@@ -22,7 +22,19 @@ import re
 import sys
 from collections import Counter
 from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from blueprint_lib import (
+    assert_plan_size,
+    metadata_footprint,
+    slug_from_name,
+    tight_footprint_from_cells,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 DOWNLOADER_PATH = ROOT / "docs" / "features" / "grabcraft_downloader.py"
@@ -63,7 +75,18 @@ NAME_TO_BLOCK: dict[str, str] = {
     "white wool": "white_wool",
     "iron block": "iron_block",
     "water": "water",
-    "lava": "lava",
+    "ladder": "ladder",
+    "ladders": "ladder",
+    "bed": "red_bed",
+    "red bed": "red_bed",
+    "stone slab": "stone_slab",
+    "stone slab (double)": "stone_slab",
+    "sandstone": "sandstone",
+    "oak wood stairs": "oak_stairs",
+    "oak wood stair": "oak_stairs",
+    "furnace": "furnace",
+    "wooden pressure plate": "oak_pressure_plate",
+    "pressure plate": "oak_pressure_plate",
 }
 
 # When --substitute: replace planned block id with something easier at base
@@ -133,6 +156,8 @@ def build_plan(
     simplify: bool,
     anchor: list[int] | None,
     site: str | None,
+    plan_id: str | None,
+    footprint_mode: str,
 ) -> dict:
     meta = blueprint.get("metadata") or {}
     blocks_3d = blueprint.get("blocks_3d") or {}
@@ -180,8 +205,22 @@ def build_plan(
             }
         )
 
+    meta = blueprint.get("metadata") or {}
+    if not plan_id:
+        plan_id = slug_from_name(meta.get("name") or "plan")
+
+    if footprint_mode == "metadata":
+        footprint = metadata_footprint(meta)
+    else:
+        footprint = tight_footprint_from_cells(planned_cells)
+
+    assert_plan_size(len(planned_cells), footprint["local"])
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     plan = {
         "kind": "construct",
+        "plan_id": plan_id,
         "source": {
             "type": "grabcraft",
             "url": meta.get("url"),
@@ -192,8 +231,18 @@ def build_plan(
                 "depth": meta.get("depth"),
             },
         },
+        "footprint": footprint,
         "options": {"substitute_easy_materials": substitute, "simplify_decorative": simplify},
         "anchor": {"coords": anchor, "site": site},
+        "history": [
+            {
+                "at": now,
+                "actor": "cli",
+                "action": "committed",
+                "note": "initial import from grabcraft",
+                "count": len(planned_cells),
+            }
+        ],
         "materials_original": materials_orig,
         "materials_planned": [{"item": k, "count": v} for k, v in mat_counts.most_common()],
         "stats": {
@@ -223,6 +272,13 @@ def main() -> int:
     ap.add_argument("--no-simplify", action="store_true", help="Keep decorative blocks")
     ap.add_argument("--anchor", help="World anchor x,y,z (metadata only until worker places)")
     ap.add_argument("--site", help="Region site ref e.g. :base1:/tower")
+    ap.add_argument("--plan-id", help="Stable plan slug (default: derived from blueprint name)")
+    ap.add_argument(
+        "--footprint",
+        choices=("tight", "metadata"),
+        default="tight",
+        help="Footprint box: tight AABB of cells or GrabCraft metadata dimensions",
+    )
     ap.add_argument("--compact", action="store_true", help="Compact JSON")
     args = ap.parse_args()
 
@@ -251,6 +307,8 @@ def main() -> int:
         simplify=not args.no_simplify,
         anchor=anchor,
         site=args.site,
+        plan_id=args.plan_id,
+        footprint_mode=args.footprint,
     )
 
     indent = None if args.compact else 2

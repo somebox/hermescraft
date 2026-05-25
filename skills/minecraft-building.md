@@ -72,6 +72,17 @@ A loop of `mc place` calls is slower, error-prone, and harder to debug.
 | Stairs out of a foundation pit | `mc build_stairs cobblestone east 4` |
 | Torches / decoration / single blocks | `mc place BLOCK X Y Z` |
 
+## Building from a blueprint
+
+When a construct card includes `plan_id` and a bound region (`plan=` on the sign), use the blueprint library instead of guessing block lists:
+
+```bash
+mc blueprint layer <plan_id> --y N       # expected cells for local layer N
+mc blueprint verify :region: --level N   # ok / missing / wrong / extra
+```
+
+Fix mismatches with `mc place`, `mc dig`, and bulk verbs; re-verify before marking the card done. Full workflow: skill [`minecraft-blueprints.md`](minecraft-blueprints.md). `mc construct` is not available yet (Phase 2c).
+
 ## Before you build ANYTHING
 
 1. **Check memory** for building lessons the player taught you.

@@ -104,6 +104,7 @@ const config = loadConfig(process.argv);
 locations = createLocationsStore({ dataDir: DATA_DIR, username: config.mc.username });
 const ctx = createBotState(config);
 ctx.runtime.regions = createRegionStore({ dataDir: DATA_DIR, world: config.behaviors.regionsWorld });
+ctx.runtime.dataDir = DATA_DIR;
 
 const viewerPortOpt = (() => {
   const raw = process.env.VIEWER_PORT;

@@ -17,3 +17,15 @@ site:tower=10,70,-5`;
   assert.equal(row.shape.radius, 24);
   assert.equal(row.status, 'active');
 });
+
+test('parseRegionSignText reads plan= directive', () => {
+  const text = `:hut3: hut
+region=base
+r=6
+plan=dystopian-hut-3
+site:anchor=370,65,-608`;
+  const parsed = parseRegionSignText(text);
+  assert.equal(parsed.directives.plan, 'dystopian-hut-3');
+  const row = regionRowFromSign({ ...parsed, id: 'hut3' }, { x: 370, y: 65, z: -608 });
+  assert.equal(row.plan, 'dystopian-hut-3');
+});

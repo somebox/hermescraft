@@ -2,12 +2,34 @@
 
 Plan structures from GrabCraft URLs for **steward** on `landfolk-ops` (orchestrator only — workers build).
 
+## Trigger: a card with a grabcraft URL lands on your queue
+
+The auto-decomposer is configured to **defer** any card containing a
+`grabcraft.com` (or schematic) URL straight to you with `fanout=false` —
+it knows it can't decompose a 3D voxel blueprint into useful child cards
+without the actual block data. So when you see such a card:
+
+1. **STOP** — do not start a `[SCOUT]` / `[CONSTRUCT]` fanout from the
+   LLM-decomposer pattern. The previous chain (`Scout → Mine → Build path
+   → Construct schematic`) was vague-by-design because the auto-
+   decomposer was guessing. You have the right tool — use it.
+2. **Run `scripts/blueprint-plan.py`** (the proper decomposer; wraps
+   `docs/features/grabcraft_downloader.py` with material substitutions).
+3. **Read the plan JSON** to extract: total block count, materials list
+   with counts, layer-by-layer cells.
+4. **Decompose into discrete, concrete cards** (see "Kanban workflow"
+   below). Each child card body includes the resolved anchor, the
+   specific block list / fill range for that layer, and the deposit
+   chest coords.
+
 ## Script
 
 From repo root:
 
 ```bash
-python3 scripts/blueprint-plan.py "<grabcraft_url>" --out /tmp/plan.json \
+python3 scripts/blueprint-plan.py "<grabcraft_url>" \
+  --out data/ops/plans/<plan_id>-plan.json \
+  --plan-id <plan_id> \
   --anchor 359,65,-571 --site :wheat1:/center
 ```
 
@@ -28,12 +50,13 @@ Output JSON includes `materials_planned`, `phases` (by blueprint Y layer), and `
 
 1. Read triage `[EPIC]` or `[CONSTRUCT]` card with a GrabCraft URL in the body.
 2. **Resolve the anchor FIRST** — either pick coords from existing marks/regions, or `kanban_create` a `[SCOUT]` child and wait for its result. The anchor must be *concrete numbers* (or a known `:region:/site` ref that resolves to numbers) before any downstream cards exist.
-3. Run `blueprint-plan.py --anchor X,Y,Z --site :id:/anchor` once you have the resolved anchor. Save plan to `/tmp/<name>-plan.json`.
+3. Run `blueprint-plan.py --plan-id <slug> --out data/ops/plans/<slug>-plan.json --anchor X,Y,Z --site :id:/anchor` once you have the resolved anchor. Commit under `data/ops/plans/` (not `/tmp`).
 4. Decompose into worker cards:
    - `[SUPPLY]` / gather materials from `materials_planned`
-   - `[REGION]` create + sites for the build pad
+   - `[REGION]` create + sites for the build pad; add `plan=<plan_id>` on the placemark sign when anchored
    - `[CONSTRUCT]` worker card with the resolved anchor written **into the card body** (see template below — do NOT just reference the scout card)
-5. Do **not** mine or place yourself — assign to `flint` (solo ops) or the appropriate worker profile.
+5. **Per-bot mutex:** promote at most one `[CONSTRUCT]` layer card per worker to `ready`/`running`; park extra layers with `queue-mutex:` blocks. Run `scripts/board-recent.py` before re-triaging blueprint epics.
+6. Do **not** mine or place yourself — assign to `flint` (solo ops) or the appropriate worker profile.
 
 ## Required handoff pattern: anchor lives IN the child body
 
@@ -57,7 +80,10 @@ anchor:
   coords: [370, 65, -608]              # REQUIRED — concrete numbers
   site: :hut3:/anchor                  # optional, redundant ref for the worker
   source_scout: t_73af3076             # traceability only — not used at runtime
-plan_file: data/ops/plans/hut3-plan.json
+plan_id: dystopian-hut-3
+plan_file: data/ops/plans/dystopian-hut-3-plan.json   # redundant path; prefer plan_id
+phase:
+  level: 5                              # worker runs verify with --level 5 after layer
 supplies_chest:
   coords: [376, 66, -589]              # where SUPPLY cards deposited materials
   mark: farm_supply_chest
@@ -103,9 +129,16 @@ intent: protect                        # default for build sites — protect
 profile: base
 sites:
   anchor: [370, 65, -608]              # plus other named sites if known
+# Placemark sign line: plan=dystopian-hut-3  (binds mc blueprint verify :hut3:)
 ```
 
-After running the script, paste `materials_planned` totals and `stats.cells_count` into the EPIC card via `kanban_comment` for human visibility — but the OPERATIONAL data (anchor, chests, region id, worksite) MUST be inside child bodies, not just in the EPIC's comments.
+## Verify-before-narrate and plan drift
+
+Before marking a construct card `blocked` on missing materials, confirm in-world: `mc blueprint verify :region:` (or phase `--level N`). Narrate mismatches (`missing` / `wrong` / `extra`), not guesses from the EPIC comment.
+
+When the player changes the build intentionally, update the committed plan (`blueprint-tool.py adopt-cell` or `mc blueprint adopt` with `HERMES_BLUEPRINT_MUTATORS`) — there is no separate amendments file. Re-verify after adopt.
+
+After running the script, paste `materials_planned` totals and `stats.cells_count` into the EPIC card via `kanban_comment` for human visibility — but the OPERATIONAL data (anchor, chests, region id, worksite, **plan_id**) MUST be inside child bodies, not just in the EPIC's comments.
 
 ### How `worksite:` works at runtime
 
