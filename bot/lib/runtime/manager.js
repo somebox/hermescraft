@@ -710,6 +710,34 @@ export function createBotManager(deps) {
             ]);
             const isFin = (v) => typeof v === 'number' && Number.isFinite(v);
             const originalWrite = cli.write.bind(cli);
+            // Capture the call stack on the FIRST NaN drop per process so we
+            // can pinpoint the originator. Suppress subsequent traces (the
+            // burst is the same source firing in a loop) but log a count so
+            // we know the rate. Reset on a clean run (60s without any drops)
+            // so a new cause in a later cascade also gets captured.
+            let firstTraceLogged = false;
+            let burstDrops = 0;
+            let burstResetTimer = null;
+            const traceOnce = (name, badStr) => {
+              if (firstTraceLogged) {
+                burstDrops++;
+                return;
+              }
+              firstTraceLogged = true;
+              burstDrops = 1;
+              const stack = new Error('POS_GUARD trace').stack || '(no stack)';
+              log(`[POS_GUARD_TRACE] first ${name} drop in this burst — ${badStr}`);
+              log(`[POS_GUARD_TRACE] stack:\n${stack}`);
+              if (burstResetTimer) clearTimeout(burstResetTimer);
+              burstResetTimer = setTimeout(() => {
+                if (burstDrops > 0) {
+                  log(`[POS_GUARD_TRACE] burst ended — ${burstDrops} packet(s) dropped total`);
+                }
+                firstTraceLogged = false;
+                burstDrops = 0;
+                burstResetTimer = null;
+              }, 60000);
+            };
             cli.write = function (name, params) {
               if (MOVEMENT_PACKETS.has(name) && params && typeof params === 'object') {
                 const bad = [];
@@ -719,7 +747,9 @@ export function createBotManager(deps) {
                 if ('yaw' in params && !isFin(params.yaw)) bad.push(`yaw=${params.yaw}`);
                 if ('pitch' in params && !isFin(params.pitch)) bad.push(`pitch=${params.pitch}`);
                 if (bad.length) {
-                  log(`[POS_GUARD] dropped ${name} — non-finite: ${bad.join(', ')}`);
+                  const badStr = bad.join(', ');
+                  log(`[POS_GUARD] dropped ${name} — non-finite: ${badStr}`);
+                  traceOnce(name, badStr);
                   return undefined; // skip — server would have kicked us
                 }
               }
