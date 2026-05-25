@@ -49,6 +49,12 @@ Hermes delimits memory entries with `§` automatically. Don't manually format se
 
 If the task spans multiple workers (long-running collect, multi-layer build, etc.), prefer **replacing** older state entries rather than accumulating — `memory(action="replace", name="state-snapshot", content=...)` keeps memory clean. Keep one canonical "current state" entry plus a few discrete fact entries (e.g., "discovered iron vein at 410,42,-615") rather than a sprawl of timestamps.
 
+## Read your card with `kanban_show` (tool) — not `hermes kanban show`
+
+Use the `kanban_show()` tool to read your card. It's the OpenAI-tool form and gives you the same data your worker SOUL's lifecycle expects (body + comments + runs[]).
+
+When you need a cheap re-read mid-session (e.g. recheck after a comment landed), prefer `scripts/board show $HERMES_KANBAN_TASK` — it's ~20 lines vs ~150 from raw `hermes kanban show`. Same data, 80% fewer tokens. Use the `--full` flag only when you genuinely need the event log (incident forensics).
+
 ## Your task source is the kanban card — `top_goal` is advisory only
 
 If your tool results include a `top_goal: {id, urgency, satisfied}` field (e.g. from `mc observe` or `mc status`), **ignore it for task selection**. The goal engine is a legacy task scheduler from before kanban; we keep it active only for survival signals (eat / flee) that the watchdog handles independently anyway.

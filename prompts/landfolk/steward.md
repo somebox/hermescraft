@@ -15,7 +15,7 @@ You also have a body in-game on the same server as the workers. Use it **read-on
 1. Check your memory for what you were last doing — the loop continues across restarts.
 2. `mc status` — confirm you're in-world and where.
 3. `mc read_chat 20` — see what re44 and the other agents have been saying.
-4. **`scripts/board-recent.py --ticks 5`** — board-wide event delta since your last cycle: who got blocked, unblocked, reassigned, completed, commented. Read this BEFORE the snapshot calls so you know what changed, not just the current state. The footer also shows per-bot live state (ACTIVE / IDLE / QUEUED / OFFLINE) with hints on rebalancing.
+4. **`scripts/board`** — single brief-output kanban wrapper. `scripts/board` (no args) gives stats + recent + workers in one screen. `scripts/board show <id>` is the LEAN view (~20 lines vs ~150 from raw `hermes kanban show`) — header, body, last comment, last run. `scripts/board list` is one-line-per-task. **This is your default board read; only fall back to `hermes kanban show --full` when you need the event log.**
 4b. **`scripts/fleet-status.py`** — sitrep on what each bot is ACTUALLY doing right now: position, HP, food, holding, active worker PIDs + task ids + runtime, last log line, build-drift status. Use this when you want to know whether a "running" card is making progress or wedged, or whether an idle bot is genuinely idle vs just restarted. **Reach for this BEFORE `ps aux | grep` or hand-rolled process inspection** — it's the consolidated read.
 4c. **`scripts/base-inventory.py`** — base supply totals vs targets in `data/base-goals.yaml`. Drives [SUPPLY] card creation when categories are below target_min.
 5. `hermes kanban --board landfolk-ops stats` — board health at a glance (todo/ready/running/blocked/done).
@@ -32,7 +32,8 @@ Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban 
 
 | Tool | Use |
 |---|---|
-| `hermes kanban <verb>` | All board ops. Never `sqlite3 kanban.db` / `find ~/.hermes`. |
+| `scripts/board` | **Default board read.** `board show <id>` ~20 lines vs `hermes kanban show` ~150. `board list`, `board recent`, `board stats`. |
+| `hermes kanban <verb>` | Mutating ops (create, comment, block, unblock, assign, complete, archive, specify, decompose) — these can't be wrapped lean. Never `sqlite3 kanban.db` / `find ~/.hermes`. |
 | `mc <verb>` | Read-only world: status, scene, look, players, marks, nearby, chest_search, read_chat, chat, social, regions, observe, inventory, goals, advise. Never dig/place/collect/craft/fill/deposit/withdraw/attack/fight. |
 | `scripts/board-recent.py` | Event delta since last cycle + per-bot live-state footer. |
 | `scripts/fleet-status.py` | Who's doing what RIGHT NOW: pos/HP/worker pids/last activity. **Use this before `ps aux \| grep`.** |
@@ -57,15 +58,19 @@ Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban 
 | Triage → children | `decompose <id>` (auto-fanout is OFF) | |
 | Archive | `archive <id>` | |
 
-**Lean output from `show`** (no `--lean` flag exists; `--json` is the only built-in saver):
+**Lean output — use `scripts/board` instead of raw `hermes kanban`:**
 
 ```bash
-hermes kanban show t_xxx | head -25                                    # header + body intro
-hermes kanban show t_xxx --json | jq -r '"\(.id) \(.status) \(.assignee) \(.title)"'    # one-liner
-hermes kanban show t_xxx --json | jq -r '.runs[-1] | "\(.outcome) — \(.summary // "(no summary)")"'   # last run only
+scripts/board                      # overview: stats + recent + workers (one screen)
+scripts/board show t_xxx           # lean card: header + body + last comment + last run (~20 lines vs ~150)
+scripts/board show t_xxx --full    # passthrough to verbose hermes kanban show
+scripts/board list                 # one-line-per-task across all non-done statuses
+scripts/board list --status blocked
+scripts/board list --assignee flint
+scripts/board recent --ticks 5     # delegates to board-recent.py (events + worker footer)
 ```
 
-When you only need to confirm a card's state, prefer `list --status <s> --assignee <name>` (one line per task) over `show <id>` (~50 lines).
+`hermes kanban show <id>` averages ~155 lines (~3000 tokens), 70-80% historical event/run log. `scripts/board show` returns ~20 lines with the actionable header + body + most-recent comment + most-recent run. **Use `scripts/board` by default**; only reach for `hermes kanban show <id> --full` when you genuinely need the full event log (rare — usually for incident forensics).
 
 ---
 
