@@ -385,6 +385,42 @@ install_steward_blueprint_skill() {
   cp "$src" "$dir/SKILL.md"
 }
 
+# Install our kanban-worker override (state continuity, validation,
+# failure-escalation, pass-back). The repo source at `skills/kanban-worker.md`
+# is the canonical truth; we deploy it to both the user-dir override
+# (`~/.hermes/skills/devops/kanban-worker/SKILL.md`) and the per-profile copy
+# (`~/.hermes/profiles/<profile>/skills/devops/kanban-worker/SKILL.md`).
+#
+# We do NOT touch `~/.hermes/hermes-agent/skills/...` (that's Hermes-shipped,
+# clobbered on upstream updates). The user-dir path overrides the platform
+# default via Hermes' skill-resolution precedence.
+install_kanban_worker_skill() {
+  local profile="$1"
+  local src="$SKILLS_SRC/kanban-worker.md"
+  if [ ! -f "$src" ]; then
+    echo "  WARN: missing $src" >&2
+    return 0
+  fi
+
+  local user_dir="$HOME/.hermes/skills/devops/kanban-worker"
+  local profile_dir="$PROFILES_DIR/$profile/skills/devops/kanban-worker"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "DRY: install kanban-worker override -> $user_dir/SKILL.md"
+    echo "DRY: install kanban-worker override -> $profile_dir/SKILL.md"
+    return 0
+  fi
+
+  # User-dir canonical override (idempotent — same content for every profile).
+  mkdir -p "$user_dir"
+  cp "$src" "$user_dir/SKILL.md"
+
+  # Per-profile copy. Hermes profile resolution may consult this first; we
+  # keep it in sync to avoid divergence.
+  mkdir -p "$profile_dir"
+  cp "$src" "$profile_dir/SKILL.md"
+}
+
 verify_kanban_skills() {
   local profile="$1"
   local need="${2:-kanban-worker}"
@@ -426,6 +462,7 @@ setup_worker() {
   write_file "$dir/SOUL.md" "$(soul_for_worker "$name")"
 
   ensure_minecraft_skills "$name"
+  install_kanban_worker_skill "$name"
   verify_kanban_skills "$name" "kanban-worker"
 
   echo "  ✓ $name ready"
@@ -452,6 +489,7 @@ setup_steward() {
 
   install_steward_survey_skill
   install_steward_blueprint_skill
+  install_kanban_worker_skill steward
   verify_kanban_skills steward "kanban-orchestrator"
   verify_kanban_skills steward "kanban-worker"
 
