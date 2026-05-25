@@ -1057,9 +1057,11 @@ Then take ONE of these actions, narrate it in chat:
   • Open a [BUG] card for re44 when blockage is a framework defect
   • If the board is healthy and fleet busy: write a memory note and wait.
 
+MANDATORY LAST STEP: end every cycle with a real \`mc chat\` tool call. Generating a summary in your prose output is NOT narration — workers and re44 ONLY see in-game chat, not your agent log. Format: \`mc chat \"<verb> t_xxx (was <prev>): <one-line reason>\"\` — max 120 chars. If you took no action this cycle, \`mc chat\` a one-line status note (\"no action — pipeline flowing, 3 flint workers running\"). If you didn't \`mc chat\` this cycle, you didn't communicate it, full stop.
+
 NEVER touch mc dig / place / collect / craft / fill / smelt — orchestrator only. Bot body stays near base unless a planning task requires going somewhere to inspect (and then come back).
 $shared_rules"
-    continue_prompt_minimal="Continue (orchestrator). Read the board (hermes kanban stats + list running/ready/blocked), then take ONE action: decompose with explicit assignee, unblock, reassign, archive, or comment + narrate in chat. Stay at base; never mine/place. No unassigned ready cards. Valid assignees: flint, mason, gatherer, steward, re44 (human operator). NEVER reassign to 'default' — it is the hermes-profile fallback, not a Mineflayer bot, and cannot perform in-world work. If an assignee is unrecognized, run scripts/roster.py --assignable to check before touching."
+    continue_prompt_minimal="Continue (orchestrator). Read the board (hermes kanban stats + list running/ready/blocked), then take ONE action: decompose with explicit assignee, unblock, reassign, archive, or comment + narrate in chat. MANDATORY LAST STEP: end with mc chat \"<one-line summary>\" — your prose output is NOT a chat post; only real mc chat calls reach workers and re44. Stay at base; never mine/place. No unassigned ready cards. Valid assignees: flint, mason, gatherer, steward, re44 (human operator). NEVER reassign to 'default' — it is the hermes-profile fallback, not a Mineflayer bot, and cannot perform in-world work. If an assignee is unrecognized, run scripts/roster.py --assignable to check before touching."
   else
     continue_prompt_full="Continue in Minecraft. Run mc status, mc read_chat, mc goals.
 $shared_rules
@@ -1114,6 +1116,29 @@ STUB
   cat > "$bash_env_file" <<'AGENTENV'
 enable -n kill 2>/dev/null || true
 AGENTENV
+  # Forward kanban env to terminal-spawned shells. Without this, when the
+  # agent runs `hermes kanban list` from its shell, the spawned hermes CLI
+  # falls back to $HERMES_HOME/kanban/ (the per-profile empty stub) instead
+  # of the shared landfolk-ops board. We hit this on 2026-05-25: Steward saw
+  # 0 cards across all statuses, went hunting through the filesystem +
+  # sqlite to find the "real" board, burned a cycle. Hardcoding the vars
+  # in BASH_ENV makes them available to every non-interactive bash subshell
+  # the terminal tool spawns, independent of Hermes env_passthrough config.
+  {
+    echo ""
+    echo "# Kanban env — points 'hermes kanban' from the agent's shell at the"
+    echo "# real shared board, not the empty per-profile fallback. Both the"
+    echo "# CLI (uses HERMES_KANBAN_DB) and scripts/board-recent.py (uses"
+    echo "# HERMES_KANBAN_ROOT) are pinned here to prevent drift."
+    echo "export HERMES_KANBAN_DB=\"$kanban_db\""
+    echo "export HERMES_KANBAN_BOARD=\"$kanban_board\""
+    echo "export HERMES_KANBAN_WORKSPACES_ROOT=\"$kanban_workspaces\""
+    echo "export HERMES_KANBAN_ROOT=\"${kanban_db%/boards/*}\""
+    echo ""
+    echo "# Bot HTTP for 'mc' verbs invoked from shell."
+    echo "export MC_API_URL=\"http://localhost:${port}\""
+    echo "export MC_USERNAME=\"$name\""
+  } >> "$bash_env_file"
 
   rm -f "$session_ref_file"
   rm -f "$hermes_log"
