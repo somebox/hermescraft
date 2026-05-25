@@ -323,7 +323,18 @@ export function createExcavationActions(services) {
 
     // Yaw values so the bot actually faces the dig direction. b.dig with
     // forceLook will then aim correctly at the column in front.
-    const yawByKey = { north: Math.PI, south: 0, east: -Math.PI / 2, west: Math.PI / 2 };
+    // ROOT CAUSE FIX 2026-05-25: cardinalDeltaOrFail returns key as the
+    // short-form lowercase (n/s/e/w) — it uppercases the input, looks up
+    // DIR_VEC_4, then .toLowerCase()s before returning. So the key here is
+    // ALWAYS one of {'n', 's', 'e', 'w'}, NEVER {'north', 'south', ...}.
+    // The previous map keyed by full names → yawByKey[key] was undefined
+    // for every call → `await b.look(undefined, 0)` made bot.entity.yaw
+    // = undefined → mineflayer's 20Hz physics tick computed
+    // `(undefined - lastSentYaw) = NaN` and shipped a NaN-yaw look packet
+    // until something rewrote yaw. THE source of every NaN-cascade
+    // disconnect this session. Identified by YAW_GUARD_TRACE on
+    // mason's stair_down south at 22:15:39.
+    const yawByKey = { n: Math.PI, s: 0, e: -Math.PI / 2, w: Math.PI / 2 };
 
     let totalDug = 0;
     let totalSkipped = 0;
