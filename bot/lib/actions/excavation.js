@@ -387,7 +387,32 @@ export function createExcavationActions(services) {
     // the 3-tall column ONE block forward (cx = bot.x + dx), with the
     // bottom cell one below the bot's feet (so stepping forward = drop
     // 1). Then we manually walk into the new cell and re-anchor.
+    // Capture the bot reference so we can detect mid-flight reconnects.
+    // The watchdog's NaN-position recovery (manager.js) closes the old
+    // socket and starts a fresh bot instance; the new instance is a
+    // different object even if it's bound to the same ctx.world.bot key.
+    // If we continue iterating against the stale `b`, our reads return
+    // stale or null world data and every dig fails with `(N error)` —
+    // the actual scenario observed 2026-05-25 21:42 on flint, where
+    // step 1 dug 2 blocks, the watchdog forced a reconnect mid-flight,
+    // and step 2 reported `no_progress_at_step_2 (3 error)` against the
+    // unloaded post-reconnect chunks.
+    const initialBot = ctx.world.bot;
+
     for (let i = 1; i <= L; i++) {
+      // Mid-flight reconnect check. If the bot we started with is no
+      // longer the live one, abort cleanly with a clear reason so the
+      // worker can retry from a fresh state instead of grinding through
+      // unloaded chunks.
+      if (ctx.world.bot !== initialBot || !initialBot?.entity) {
+        stoppedAtStep = i;
+        stoppedReason.value = `reconnect_during_step_${i}`;
+        errorMsgs.push(
+          `bot reconnected mid-stair_down (probably watchdog NaN-recovery). World state ` +
+          `is stale; retry mc stair_down from your current position once the bot is settled.`,
+        );
+        break;
+      }
       // Wait for the bot to be on ground before starting the next step.
       // Without this, a still-falling bot will cancel the first dig
       // with "Digging aborted" because mineflayer aborts on movement.
