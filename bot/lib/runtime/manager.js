@@ -637,6 +637,49 @@ export function createBotManager(deps) {
           handleChat(username, message).catch((e) => log(`Chat handler error: ${e.message}`));
         });
 
+        // POS_DIAG — diagnostic shim for the 2026-05-25 position-corruption
+        // investigation. Snapshots bot.entity.position after every relevant
+        // mineflayer event; logs ONE-time when position transitions to a
+        // null/NaN component while still "connected" — that single line
+        // identifies which mineflayer event corrupted the state.
+        //
+        // Output goes to the per-bot log via `log()`. Each entry is a single
+        // line tagged `[POS_DIAG]` so a grep can isolate them.
+        //
+        // REMOVE AFTER ROOT CAUSE IS CONFIRMED.
+        const POS_DIAG_EVENTS = [
+          'login', 'spawn', 'respawn', 'death', 'kicked', 'end',
+          'forcedMove', 'move', 'teleport', 'entityMoved',
+        ];
+        let _posDiagLastCorrupt = false;
+        const posDiagSnap = (evName) => {
+          try {
+            const p = ctx.world.bot?.entity?.position;
+            if (!p) {
+              if (!_posDiagLastCorrupt) {
+                log(`[POS_DIAG] event=${evName} entity=null connected=${!!ctx.world.botReady}`);
+                _posDiagLastCorrupt = true;
+              }
+              return;
+            }
+            const bad = (v) => v == null || Number.isNaN(v);
+            const corrupt = bad(p.x) || bad(p.y) || bad(p.z);
+            if (corrupt && !_posDiagLastCorrupt) {
+              log(`[POS_DIAG] event=${evName} CORRUPT pos=${JSON.stringify({ x: p.x, y: p.y, z: p.z })} connected=${!!ctx.world.botReady}`);
+              _posDiagLastCorrupt = true;
+            } else if (!corrupt && _posDiagLastCorrupt) {
+              log(`[POS_DIAG] event=${evName} RECOVERED pos=${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}`);
+              _posDiagLastCorrupt = false;
+            }
+          } catch (e) {
+            log(`[POS_DIAG] event=${evName} snap-error: ${e.message}`);
+          }
+        };
+        for (const ev of POS_DIAG_EVENTS) {
+          try { ctx.world.bot.on(ev, () => posDiagSnap(ev)); } catch {}
+        }
+        log(`[POS_DIAG] instrumentation armed on events: ${POS_DIAG_EVENTS.join(',')}`);
+
         if (ctx.runtime.regions) {
           const prevDispose = ctx.runtime._regionSignWatcherDispose;
           if (typeof prevDispose === 'function') prevDispose();

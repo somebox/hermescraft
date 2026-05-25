@@ -29,7 +29,7 @@ WATCHDOG_STUCK_ELAPSED_S="${WATCHDOG_STUCK_ELAPSED_S:-30}"
 WATCHDOG_MAX_STUCK_EVENTS="${WATCHDOG_MAX_STUCK_EVENTS:-2}"
 WATCHDOG_COLLECT_ELAPSED_S="${WATCHDOG_COLLECT_ELAPSED_S:-45}"
 WATCHDOG_CONNECT_COOLDOWN_SEC="${WATCHDOG_CONNECT_COOLDOWN_SEC:-45}"
-AGENT_ROUND_TIMEOUT_S="${AGENT_ROUND_TIMEOUT_S:-90}"
+AGENT_ROUND_TIMEOUT_S="${AGENT_ROUND_TIMEOUT_S:-180}"
 DANGER_AUTOREACT_ENABLED="${DANGER_AUTOREACT_ENABLED:-true}"
 DANGER_AUTOREACT_NIGHT_ONLY="${DANGER_AUTOREACT_NIGHT_ONLY:-true}"
 DANGER_SCAN_RADIUS="${DANGER_SCAN_RADIUS:-32}"
@@ -112,7 +112,7 @@ Environment:
   WATCHDOG_MAX_STUCK_EVENTS (default 2)
   WATCHDOG_COLLECT_ELAPSED_S (default 45)
   WATCHDOG_CONNECT_COOLDOWN_SEC (default 45) — min seconds between watchdog POST /connect retries when disconnected
-  AGENT_ROUND_TIMEOUT_S (default 120) — kill stalled Hermes round and continue next loop
+  AGENT_ROUND_TIMEOUT_S (default 180) — kill stalled Hermes round and continue next loop
   DANGER_AUTOREACT_ENABLED=true|false (default true) — watchdog auto danger response
   DANGER_AUTOREACT_NIGHT_ONLY=true|false (default true) — react only at night unless distress chat
   DANGER_SCAN_RADIUS (default 32), DANGER_HELP_RADIUS (default 24)
@@ -512,8 +512,31 @@ start_bot() {
   # Ensure this API port is exclusively owned by this launch.
   kill_listener_on_port "$port"
 
+  # Sweep zombie node bots that crashed on EADDRINUSE but didn't exit (the
+  # uncaught-exception-but-alive state — see [BUG] in bot/server.js
+  # listen-error handling). These won't show up in `lsof` because they
+  # never bound the port. We find them by argv (`node server.js`) AND
+  # check whether the bot's pid is responsive on /health; unresponsive
+  # node processes get TERM'd so the bot-loop respawns them cleanly.
   if [ -f "$pidf" ] && is_pid_alive "$(cat "$pidf")"; then
-    echo "[bot] $name already running (pid $(cat "$pidf"))"
+    if curl -sf --max-time 1 "http://localhost:${port}/health" >/dev/null 2>&1; then
+      echo "[bot] $name already running (pid $(cat "$pidf"))"
+      return 0
+    fi
+    # Loop subshell alive but bot HTTP unresponsive — kill any child node
+    # so the bot-loop's while-loop respawns it on its next iteration.
+    local _loop_pid; _loop_pid="$(cat "$pidf")"
+    local _zombie_nodes
+    _zombie_nodes="$(pgrep -P "$_loop_pid" 2>/dev/null | tr '\n' ' ')"
+    if [ -n "$_zombie_nodes" ]; then
+      echo "[bot] $name loop alive but HTTP dead — killing zombie node(s): $_zombie_nodes"
+      # shellcheck disable=SC2086
+      kill -TERM $_zombie_nodes 2>/dev/null || true
+      sleep 1
+      # shellcheck disable=SC2086
+      kill -9 $_zombie_nodes 2>/dev/null || true
+    fi
+    echo "[bot] $name will be respawned by existing loop pid $_loop_pid"
     return 0
   fi
 
@@ -522,24 +545,43 @@ start_bot() {
     return 0
   fi
 
+  # Run the node-restart loop in a backgrounded subshell that re-execs
+  # itself as a self-identifying bash process. Without exec -a, `ps` shows
+  # every backgrounded role-loop with the originating script's argv —
+  # bot-loop, watchdog, and agent all look identical. With exec -a, each
+  # role gets a unique argv[0] (`landfolk:bot-loop:<name>`), making
+  # `ps -ax | grep landfolk:` trivially diagnoseable.
+  #
+  # Body delivered via single-quoted heredoc (no outer-shell expansion).
+  # All values come in as positional args; env vars (MC_HOST, …) are
+  # exported below so the re-exec'd bash inherits them.
   (
     cd "$BOT_DIR"
-    trap '' HUP
-    _bot_stop=false
-    trap '_bot_stop=true; kill %1 2>/dev/null' TERM INT
-    while [ "$_bot_stop" = false ]; do
-      FAIR_PLAY="${FAIR_PLAY:-true}" \
-        MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$name" API_PORT="$port" \
-        MC_CONNECT_TIMEOUT_MS="${MC_CONNECT_TIMEOUT_MS:-55000}" \
-        PAPERMCP_HOST="$MC_HOST" PAPERMCP_PORT="$PAPERMCP_PORT" PAPERMCP_TOKEN="$PAPERMCP_TOKEN" \
-        AGENT_PROFILE="$name" AGENT_MODEL="$bot_agent_model" AGENT_PROVIDER="$bot_agent_provider" \
-        VIEWER_PORT="$viewer_port" \
-        BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-}" \
-        node server.js >> "$LOG_DIR/bot-${name_lower}.log" 2>&1
-      if [ "$_bot_stop" = true ]; then break; fi
-      echo "[$(date '+%H:%M:%S')] bot $name exited, restarting in 5s..." >> "$LOG_DIR/bot-${name_lower}.log"
-      sleep 5
-    done
+    export MC_HOST MC_PORT PAPERMCP_PORT PAPERMCP_TOKEN
+    export FAIR_PLAY="${FAIR_PLAY:-true}"
+    export MC_CONNECT_TIMEOUT_MS="${MC_CONNECT_TIMEOUT_MS:-55000}"
+    export BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-}"
+    export HERMES_BLUEPRINT_MUTATORS="${HERMES_BLUEPRINT_MUTATORS:-mason,steward}"
+    exec -a "landfolk:bot-loop:$name" bash /dev/stdin "$name" "$port" "$viewer_port" "$bot_agent_model" "$bot_agent_provider" "$LOG_DIR" <<'BOT_LOOP_BODY'
+set -uo pipefail
+name="$1"; port="$2"; viewer_port="$3"
+bot_agent_model="$4"; bot_agent_provider="$5"
+log_dir="$6"
+name_lower="${name,,}"
+trap '' HUP
+_bot_stop=false
+trap '_bot_stop=true' TERM INT
+while [ "$_bot_stop" = false ]; do
+  MC_USERNAME="$name" API_PORT="$port" \
+    PAPERMCP_HOST="$MC_HOST" \
+    AGENT_PROFILE="$name" AGENT_MODEL="$bot_agent_model" AGENT_PROVIDER="$bot_agent_provider" \
+    VIEWER_PORT="$viewer_port" \
+    node server.js >> "$log_dir/bot-${name_lower}.log" 2>&1
+  [ "$_bot_stop" = true ] && break
+  echo "[$(date '+%H:%M:%S')] bot $name exited, restarting in 5s..." >> "$log_dir/bot-${name_lower}.log"
+  sleep 5
+done
+BOT_LOOP_BODY
   ) &
   local pid="$!"
   echo "$pid" > "$pidf"
@@ -567,22 +609,72 @@ start_watchdog() {
     return 0
   fi
 
+  # Backgrounded watchdog loop. Renamed via `exec -a` so `ps` shows
+  # `landfolk:watchdog:<name>`. Body is delivered via a single-quoted
+  # heredoc so its embedded python/curl quoting survives intact.
   (
-    stuck_hits=0
-    last_danger_chat_wall=0
-    last_danger_action_wall=0
-    ts="$(date '+%Y-%m-%d %H:%M:%S')"
-    echo "[$ts] watchdog active interval=${WATCHDOG_INTERVAL_S}s stuck_elapsed=${WATCHDOG_STUCK_ELAPSED_S}s collect_elapsed=${WATCHDOG_COLLECT_ELAPSED_S}s connect_cooldown=${WATCHDOG_CONNECT_COOLDOWN_SEC}s max_hits=${WATCHDOG_MAX_STUCK_EVENTS}" >> "$wd_log"
-    last_connect_wall=0
-    while true; do
+    export WATCHDOG_INTERVAL_S WATCHDOG_STUCK_ELAPSED_S WATCHDOG_COLLECT_ELAPSED_S
+    export WATCHDOG_CONNECT_COOLDOWN_SEC WATCHDOG_MAX_STUCK_EVENTS
+    export WATCHDOG_CONNECT_ONLY="${WATCHDOG_CONNECT_ONLY:-}"
+    export DANGER_AUTOREACT_ENABLED DANGER_CHAT_COOLDOWN_SEC DANGER_ACTION_COOLDOWN_SEC DANGER_FLEE_HEALTH
+    export DANGER_AUTOREACT_BROADCAST_CHAT="${DANGER_AUTOREACT_BROADCAST_CHAT:-true}"
+    exec -a "landfolk:watchdog:$name" bash /dev/stdin "$name" "$port" "$wd_log" <<'WATCHDOG_LOOP_BODY'
+set -uo pipefail
+name="$1"; port="$2"; wd_log="$3"
+heartbeat_file="${wd_log%.log}.heartbeat"
+# EXIT trap — catches every shell-termination route EXCEPT SIGKILL.
+# Combined with the heartbeat file (touched each loop iteration), the
+# absence of an EXIT log + stale heartbeat = strong inference of SIGKILL
+# (or OOM kill). See investigation 2026-05-25 for context.
+trap 'rc=$?; echo "[$(date "+%Y-%m-%d %H:%M:%S")] watchdog EXIT rc=$rc pid=$$" >> "$wd_log"' EXIT
+stuck_hits=0
+last_danger_chat_wall=0
+last_danger_action_wall=0
+ts="$(date '+%Y-%m-%d %H:%M:%S')"
+echo "[$ts] watchdog active interval=${WATCHDOG_INTERVAL_S}s stuck_elapsed=${WATCHDOG_STUCK_ELAPSED_S}s collect_elapsed=${WATCHDOG_COLLECT_ELAPSED_S}s connect_cooldown=${WATCHDOG_CONNECT_COOLDOWN_SEC}s max_hits=${WATCHDOG_MAX_STUCK_EVENTS}" >> "$wd_log"
+last_connect_wall=0
+while true; do
       ts="$(date '+%Y-%m-%d %H:%M:%S')"
       now_wall="$(date +%s)"
+      # Heartbeat — proves this loop iteration ran. landfolk status reads
+      # this file's mtime; if older than 3× WATCHDOG_INTERVAL_S it warns
+      # of a stalled watchdog (process alive but wedged, or crashed).
+      touch "$heartbeat_file"
       health_json="$(curl -sf "http://localhost:${port}/health" 2>/dev/null || true)"
       connected="false"
+      pos_corrupted="false"
       if [ -z "$health_json" ]; then
         echo "[$ts] watchdog: no HTTP response from http://localhost:${port}/health (listener down or refused)" >> "$wd_log"
       else
-        connected="$(printf '%s' "$health_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(bool(d.get('connected'))).lower())" 2>/dev/null || echo "false")"
+        # Parse connected + position-corruption together. position.x or .z being
+        # null/None/NaN while connected=true is the signature of mineflayer's
+        # client-state corruption (see Paper kick: "Invalid move player packet
+        # received"). Treat it identically to a disconnect — force-reconnect to
+        # rebuild mineflayer state before pathfinder sends NaN coords.
+        eval_out="$(printf '%s' "$health_json" | python3 -c "
+import sys,json,math
+try:
+  d = json.load(sys.stdin)
+  c = bool(d.get('connected'))
+  p = d.get('position') or {}
+  bad = False
+  for k in ('x','z'):
+    v = p.get(k)
+    if v is None or (isinstance(v,float) and math.isnan(v)):
+      bad = True; break
+  print(('true' if c else 'false') + ' ' + ('true' if bad else 'false'))
+except Exception:
+  print('false false')
+" 2>/dev/null || echo 'false false')"
+        connected="${eval_out%% *}"
+        pos_corrupted="${eval_out##* }"
+        if [ "$pos_corrupted" = "true" ] && [ "$connected" = "true" ]; then
+          # Position is null/NaN while still socket-connected — mineflayer client
+          # state is corrupted. Demote to "disconnected" so the existing
+          # force-reconnect path below clears the corruption.
+          echo "[$ts] watchdog: position CORRUPTED while connected=true — forcing reconnect (NaN-position recovery)" >> "$wd_log"
+          connected="false"
+        fi
       fi
 
       if [ "$connected" != "true" ]; then
@@ -713,8 +805,12 @@ print(f'{1 if bool(is_day) else 0}|{int(round(health))}|{1 if under_attack else 
         if [ "$should_react" = true ]; then
           if [ "$((now_wall - last_danger_chat_wall))" -ge "${DANGER_CHAT_COOLDOWN_SEC:-25}" ]; then
             alert_msg="ALERT ${name}: ${react_reason} hp=${danger_health}"
-            alert_body="$(python3 -c "import json,sys; print(json.dumps({'message':sys.argv[1]}))" "$alert_msg" 2>/dev/null || echo '{"message":"ALERT: under attack"}')"
-            curl -sf -X POST "http://localhost:${port}/action/chat" -H "Content-Type: application/json" -d "$alert_body" >/dev/null 2>&1 || true
+            if [ "${DANGER_AUTOREACT_BROADCAST_CHAT:-true}" = "true" ]; then
+              alert_body="$(python3 -c "import json,sys; print(json.dumps({'message':sys.argv[1]}))" "$alert_msg" 2>/dev/null || echo '{"message":"ALERT: under attack"}')"
+              curl -sf -X POST "http://localhost:${port}/action/chat" -H "Content-Type: application/json" -d "$alert_body" >/dev/null 2>&1 || true
+            else
+              echo "[$ts] danger-react: chat suppressed (DANGER_AUTOREACT_BROADCAST_CHAT=false) msg=${alert_msg}" >> "$wd_log"
+            fi
             last_danger_chat_wall="$now_wall"
           fi
 
@@ -734,6 +830,7 @@ print(f'{1 if bool(is_day) else 0}|{int(round(health))}|{1 if under_attack else 
 
       sleep "$WATCHDOG_INTERVAL_S"
     done
+WATCHDOG_LOOP_BODY
   ) &
   local pid="$!"
   echo "$pid" > "$pidf"
@@ -851,7 +948,36 @@ NEVER start bot bodies for yourself or other profiles. If your mc API at
 \$MC_API_URL doesn't respond, kanban_block with reason \"bot_offline:<your-name>\"
 and stop. Operators control which bots are online via landfolk-session.sh.
 Forbidden launchers: start-gatherer-bot.sh, start-flint-bot.sh,
-start-mason-bot.sh, landfolk-control.sh start, run-landfolk-agent.sh."
+start-mason-bot.sh, landfolk-control.sh start, run-landfolk-agent.sh.
+
+## Distress: ask for rescue, don't spin forever
+
+If you get stuck — ANY of: NaN coords / pos shows null; HP < 6 with food_level = 0 and no edible item; 3+ consecutive NAV_BLOCKED / NAV_FAILED on movement; 5+ consecutive 'mining_no_tool' or 'TOOL_INADEQUATE'; bot died and respawned > 200 blocks from your task coords; you've called the same mc verb 10+ times with the same error — STOP retrying. Ask for rescue ONCE, then exit cleanly:
+
+  1. Use the terminal tool to file ONE triage card on the landfolk board:
+
+       hermes kanban --board landfolk-ops create \\
+         --triage --assignee steward --priority 95 \\
+         --body 'bot: <your-name>\\nstuck_reason: <one-line>\\ncoords: [<x>, <y>, <z>]\\nhp: <n>\\nfood_level: <n>\\ninventory_summary: <one-line, top items>\\nsurroundings_summary: <one-line from mc nearby>' \\
+         '[RESCUE_REQUEST] <your-name> stuck — <one-line reason>'
+
+  2. kanban_block your CURRENT card with reason 'awaiting_rescue: <rescue_request_tid>'.
+  3. Exit normally (the worker is done; the operator/Steward handles the rest).
+
+ONE rescue card per stuck episode. Do not spam. Do not retry. The Steward triages within 1-2 cycles.
+
+## Rescue dispatch: how to execute a [RESCUE_DISPATCH] card
+
+If your card title starts with [RESCUE_DISPATCH] the body is a structured rescue plan (stuck_bot, stuck_coords, kit_chest mark name, kit_items list). Steps:
+
+  1. mc go_mark <kit_chest>  (e.g. chest_misc) and mc list_container to confirm contents.
+  2. For each kit item: mc withdraw <item> <count> from the chest. If short, take what's there and note the gap in your final report.
+  3. mc goto_near <stuck_coords>. If NAV_FAILED 3+ times, stop and kanban_block with reason 'rescue_unreachable: <details>' so re44 / steward can re-plan.
+  4. When within ~6 blocks of the stuck bot: mc drop <each kit_item>. Do not 'mc deposit' (no chest at rescue site).
+  5. mc chat 'rescue kit delivered to <stuck_bot> at <coords>: <one-line summary>'
+  6. kanban_complete this card with a short summary.
+
+Hard limits: 5 minutes total rescue time. If you can't deliver in 5 min, kanban_block with reason 'rescue_timeout' and the operator decides next steps. The original [RESCUE_REQUEST] card stays in triage as the audit trail — do not touch it; Steward closes it."
   runtime_rules=""
   build_policy=""
   # Role classification — drives starter + continue prompt shape. Orchestrators
@@ -917,7 +1043,7 @@ Then take ONE of these actions, narrate it in chat:
 
 NEVER touch mc dig / place / collect / craft / fill / smelt — orchestrator only. Bot body stays near base unless a planning task requires going somewhere to inspect (and then come back).
 $shared_rules"
-    continue_prompt_minimal="Continue (orchestrator). Read the board (hermes kanban stats + list running/ready/blocked), then take ONE action: decompose with explicit assignee, unblock, reassign, archive, or comment + narrate in chat. Stay at base; never mine/place. No unassigned ready cards."
+    continue_prompt_minimal="Continue (orchestrator). Read the board (hermes kanban stats + list running/ready/blocked), then take ONE action: decompose with explicit assignee, unblock, reassign, archive, or comment + narrate in chat. Stay at base; never mine/place. No unassigned ready cards. Valid assignees: flint, mason, gatherer, steward, re44 (human operator). NEVER reassign to 'default' — it is the hermes-profile fallback, not a Mineflayer bot, and cannot perform in-world work. If an assignee is unrecognized, run scripts/roster.py --assignable to check before touching."
   else
     continue_prompt_full="Continue in Minecraft. Run mc status, mc read_chat, mc goals.
 $shared_rules
@@ -977,8 +1103,37 @@ AGENTENV
   rm -f "$hermes_log"
   touch "$hermes_log"
 
+  # Backgrounded agent loop. Renamed via `exec -a` so `ps` shows
+  # `landfolk:agent-loop:<name>` instead of the generic enable invocation.
+  # Closure over the parent's local vars/arrays is passed:
+  #   - simple strings & env: via export
+  #   - arrays (hermes_timeout_prefix, mc_debug_env, hermes_chat_flags):
+  #     serialized via `declare -p`, eval'd back in the inner shell.
   (
     export PATH="$BIN_DIR:$PATH"
+    export CONTEXT_MINIMAL_CONTINUE CONTEXT_REFRESH_EVERY_ROUNDS
+    exec -a "landfolk:agent-loop:$name" bash /dev/stdin \
+      "$name" "$port" \
+      "$agent_log" "$agent_err_log" "$hermes_log" "$progress_log" "$mc_debug_log" \
+      "$session_ref_file" "$bash_env_file" "$agent_home" \
+      "$kanban_db" "$kanban_board" "$kanban_workspaces" \
+      "$hermes_runtime_path" "$prompt" \
+      "$continue_prompt_full" "$continue_prompt_minimal" "$role" \
+      "$agent_model" "$agent_provider" \
+      "$(declare -p hermes_timeout_prefix)" \
+      "$(declare -p mc_debug_env)" \
+      "$(declare -p hermes_chat_flags)" <<'AGENT_LOOP_BODY'
+set -uo pipefail
+name="$1"; port="$2"
+agent_log="$3"; agent_err_log="$4"; hermes_log="$5"; progress_log="$6"; mc_debug_log="$7"
+session_ref_file="$8"; bash_env_file="$9"; agent_home="${10}"
+kanban_db="${11}"; kanban_board="${12}"; kanban_workspaces="${13}"
+hermes_runtime_path="${14}"; prompt="${15}"
+continue_prompt_full="${16}"; continue_prompt_minimal="${17}"; role="${18}"
+agent_model="${19}"; agent_provider="${20}"
+eval "${21}"  # restore hermes_timeout_prefix
+eval "${22}"  # restore mc_debug_env
+eval "${23}"  # restore hermes_chat_flags
     while ! curl -sf "http://localhost:${port}/health" >/dev/null 2>&1; do
       sleep 1
     done
@@ -986,8 +1141,10 @@ AGENTENV
     cmd_ec=0
     while true; do
       round=$((round + 1))
-      agent_model="$(model_for_name "$name")"
-      agent_provider="$(provider_for_name "$name")"
+      # NOTE: agent_model/agent_provider come from the parent script's
+      # model_for_name/provider_for_name lookups (passed as args $19/$20).
+      # We don't re-resolve per-round because model_for_name is a parent
+      # function not available in the re-exec'd shell.
       ts="$(date '+%Y-%m-%d %H:%M:%S')"
       health_json="$(curl -sf "http://localhost:${port}/health" 2>/dev/null || echo '{"ok":false,"connected":false}')"
       observe_json="$(curl -sf "http://localhost:${port}/observe" 2>/dev/null || echo '{}')"
@@ -1090,6 +1247,7 @@ Current focus hint: ${top_goal_hint}"
         sleep 5
       fi
     done
+AGENT_LOOP_BODY
   ) &
   local pid="$!"
   echo "$pid" > "$pidf"
