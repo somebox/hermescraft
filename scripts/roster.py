@@ -120,10 +120,14 @@ def print_table(rows: list[dict], loads: dict) -> None:
         load = loads.get(r["lower"], {})
         total = load.get("total", 0)
         if total:
+            # Distinct abbreviations: ru=running, rd=ready, bl=blocked,
+            # to=todo, tr=triage. Single-char (r/t) was ambiguous.
+            abbr = {"running": "ru", "ready": "rd", "blocked": "bl",
+                    "todo": "to", "triage": "tr"}
             parts = []
             for s in ("running", "ready", "blocked", "todo", "triage"):
                 if s in load:
-                    parts.append(f"{s[0]}={load[s]}")
+                    parts.append(f"{abbr[s]}={load[s]}")
             cards = f"{total} ({', '.join(parts)})"
         else:
             cards = "—"

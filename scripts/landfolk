@@ -468,13 +468,24 @@ reclaim_running() {
 # Both contain `gateway run` in argv. Falls back to `hermes gateway status`
 # (the official check) when pgrep is unavailable or returns nothing.
 gateway_running() {
-  # Match the literal `hermes gateway run` argv signature — the bare
-  # `gateway run` substring also matched unrelated scripts that happen
-  # to contain the phrase (e.g. monitoring heredocs), causing false
-  # positives.
-  pgrep -f "hermes gateway run" >/dev/null 2>&1 && return 0
+  # Match the literal `hermes gateway run` argv signature. The char-class
+  # `[g]ateway` is a self-exclusion trick: it matches the regex char 'g'
+  # plus 'ateway', but the *literal* string '[g]ateway' is what appears in
+  # pgrep's own argv — so pgrep won't match itself. Without this trick,
+  # `pgrep -f "hermes gateway run"` returns its own PID (false positive
+  # observed 2026-05-25 — diagnostics reported gateway running when it
+  # wasn't).
+  pgrep -f "hermes [g]ateway run" >/dev/null 2>&1 && return 0
+  # Fallback: parse `hermes gateway status` output. The CLI ALWAYS exits
+  # 0 (informational command, not a probe), so we have to inspect the
+  # text. A loaded service prints a "✓" line about being loaded; an
+  # unloaded service prints "✗ Gateway service is not loaded". Match
+  # the negative marker — it's the most reliable signal.
   command -v hermes >/dev/null 2>&1 || return 1
-  hermes gateway status >/dev/null 2>&1
+  if hermes gateway status 2>/dev/null | grep -q "is not loaded"; then
+    return 1
+  fi
+  return 0
 }
 
 cmd_start() {
@@ -1097,7 +1108,45 @@ except Exception: pass" 2>/dev/null || true)"
 
 cmd_logs() {
   if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-    sed -n '24,38p' "$0" | sed -E 's/^# ?//'; return 0
+    cat <<'HELP'
+Usage: landfolk logs [<target>] [options]
+
+Targets:
+  agents              (default) Aggregated stream across kanban-worker sessions,
+                      colorized per profile, with bot-log chat folded in.
+                      Uses scripts/landfolk-logs-aggregate.py.
+  <player>            Tail one bot's mineflayer log (flint|mason|gatherer|steward|barley).
+  listener            steward-chat-listener.log
+  supervisor          steward-supervisor.log
+  pauser              inactive-cards-pauser.log
+  chat-wake           landfolk-chat-wake.log
+  gateway             gateway.log
+
+Options for `agents` target:
+  --profiles <csv>    Comma-separated profiles to follow. Defaults to active roster.
+                      A single name works: `--profiles flint`.
+  --players <csv>     Alias for --profiles.
+  --tail <N>          Print last N messages per profile before following (default 20).
+  --reasoning         Show assistant reasoning content (chain-of-thought) when present.
+  --quiet, -q         Collapse consecutive tool calls; hide non-error tool output;
+                      keep thoughts + errors.
+  --no-bot-logs       Don't fold in bot-<profile>.log chat/connection events.
+  --no-color          Disable ANSI color (e.g. when piping to a file).
+  --no-timestamps     Drop the leading HH:MM:SS column.
+
+Options for per-target tail (any non-`agents` target):
+  --tail <N>          Last N lines (default 20).
+  --follow, -f        Follow the file (tail -f).
+
+Examples:
+  landfolk logs                              # default: agents, full roster, color
+  landfolk logs agents --profiles flint --reasoning
+                                             # follow flint only, with reasoning
+  landfolk logs agents --profiles mason -q   # mason, quiet (errors + thoughts only)
+  landfolk logs flint -f --tail 50           # raw bot log, follow
+  landfolk logs gateway -f                   # follow the gateway log
+HELP
+    return 0
   fi
   local target="agents"
   if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then target="$1"; shift; fi
@@ -1655,8 +1704,19 @@ HELP
 
   # ── Phase 6: workers ─────────────────────────────────────────────────────
   h1 "phase 6 — workers"
-  local p port
-  for p in $(canonical_players); do
+  # Iterate the sticky roster directly. Previously we iterated
+  # canonical_players (all 5 from agent-models.json) and then asked
+  # roster_mode_for() if the player was in the roster — but that helper
+  # falls back to DEFAULT_MODE for unrostered names, so the "is rostered"
+  # check always passed and gatherer/barley got flagged as "expected up"
+  # even when the roster file only contained steward/flint/mason.
+  # (False positive observed 2026-05-25.)
+  local p port _rostered
+  _rostered="$(roster_players)"
+  if [ -z "$_rostered" ]; then
+    dim "no players in active roster — skipping per-bot checks"
+  fi
+  for p in $_rostered; do
     [ "$p" = "steward" ] && continue
     port="$(player_api_port "$p")"
     [ -z "$port" ] && continue
@@ -1684,17 +1744,10 @@ HELP
         warn "$p watchdog heartbeat file not yet present"
       fi
     else
-      # Bot is rostered but not connected — only flag if rostered
-      local _stored
-      _stored="$(roster_mode_for "$p" 2>/dev/null)"
-      if [ -n "$_stored" ]; then
-        err "$p not connected (in roster, expected up)"
-        dim "→ remedy: scripts/landfolk start --players $p"
-        diag_failures=$((diag_failures + 1))
-        [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
-      else
-        dim "$p not connected (not in active roster — OK)"
-      fi
+      err "$p not connected (in roster, expected up)"
+      dim "→ remedy: scripts/landfolk start --players $p"
+      diag_failures=$((diag_failures + 1))
+      [ "$fail_fast" = 1 ] && { _diag_summary; return "$diag_failures"; }
     fi
   done
 
