@@ -236,6 +236,41 @@ If you open the task and `kanban_show` returns `runs: [...]` with one or more cl
 - `outcome: "reclaimed"` + `summary: "task archived..."` — operator archived the task out from under the previous run; you probably shouldn't be running at all, check status carefully.
 - `outcome: "blocked"` — a previous attempt blocked; the unblock comment should be in the thread by now.
 
+## Stuck in the world? Try escape primitives BEFORE escalating
+
+If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profiles) and your symptoms look physical-stuckness (NOT spec confusion or missing materials), there are dedicated `mc` verbs that resolve most cases without `kanban_block`. Try them FIRST — they often work and they're cheap.
+
+**Symptoms that mean "you're physically stuck":**
+
+- 3 failed `mc dig` / `mc move` / `mc goto_near` at the same spot.
+- `pathfinder_error` or "no path found" responses.
+- Position unchanged after 5+ navigation attempts.
+- 4 walls + ceiling around you (a 1×1 shaft you dug into).
+- `mc nearby` shows you boxed in by solid blocks.
+- Standing on top of a 1-wide column you can't safely jump from.
+
+**First-touch escape verbs (in order):**
+
+1. **`mc pillar_step <N>`** — climb up N blocks (max 64). With NO block argument the primitive bare-hand-digs the cell overhead, captures the drop, and pillars with it. This is the canonical 1×1-shaft self-rescue.
+   - `mc pillar_step 8` — climb 8, use captured drops (works for dirt/sand/gravel ceilings).
+   - `mc pillar_step 8 --force` — same, but bypasses region/global denylists for the escape dig **only when the 4-walls+ceiling stuck-predicate is verified**. Use when the ceiling is stone and you're bare-handed, OR you're inside a protected region.
+   - Drop-timing race: if you get `PILLAR_FAILED` with "capture-from-ceiling failed: cell above head is air", the drop arrived AFTER the call returned. **Call `mc pillar_step` a second time** — it'll use the captured block. Two-call pattern is reliable.
+
+2. **`mc escape`** — last-resort general unstuck (classifies your situation: sidestep / pillar / wait / break-out by surrounding terrain).
+
+3. **`mc pillar_down`** — if you're on top of a 1×1 column you climbed, this mines underfoot and drops you safely.
+
+4. **`mc advise --reason="stuck at (X,Y,Z): <one-line symptom>"`** — perception bundle + LLM digest. Often spots an air opening you missed or a navigation angle you haven't tried.
+
+**Don't:**
+- Don't `mc dig` straight up in a 1×1 shaft (you'll be in the same shaft, one block higher).
+- Don't hand-roll `mc place + mc jump + mc place` loops to climb. That's what `mc pillar_step` does, faster and correctly.
+- Don't immediately `kanban_block(reason="stuck")`. Try the four verbs above first.
+
+**Deeper playbook:** `skill_view minecraft-mining` → "Underground pillar escape" + "Escape protocol" sections. Load it on demand if the above doesn't resolve.
+
+**Only after the escape verbs fail** (and you've tried the two-call pillar pattern + `--force` if appropriate + `mc advise`), proceed to Failure escalation below. A worker who blocks "stuck" without trying `mc pillar_step` is the anti-pattern this section exists to prevent.
+
 ## Failure escalation — when to ask for help instead of trying harder
 
 **The expensive failure mode is "try harder, the same way, more times."** Read `runs[]`, classify same-class failures, switch modes at threshold.
