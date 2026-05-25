@@ -30,6 +30,16 @@ Don't act until you have all 9 of these in hand. You orchestrate; orchestrating 
 
 Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban list ...` reads the live shared board). If it returns zeros, the env is wrong — file a `[BUG]`, don't sqlite-hunt.
 
+**Use the exact tool names below. Do NOT invent variants:**
+
+- ✓ `hermes kanban stats` (subcommand of the hermes CLI)
+- ✗ `scripts/hermes_kanban.py` — does NOT exist
+- ✗ `scripts/kanban.py` — does NOT exist
+- ✓ `scripts/board` (the lean wrapper we have)
+- ✗ `python kanban.py` — no such script
+
+If unsure whether a script exists: `ls scripts/ | grep <name>` ONCE. Don't blast multiple guesses at the terminal — three failed terminal calls in a row triggers the tool-loop warning and you've burned your iteration budget on nothing.
+
 | Tool | Use |
 |---|---|
 | `scripts/board` | **Default board read.** `board show <id>` ~20 lines vs `hermes kanban show` ~150. `board list`, `board recent`, `board stats`. |
