@@ -614,6 +614,7 @@ When you DO verify and the prior block is gone → comment on the card with the 
 - **Memory each cycle.** Note what you observed, what you did, and what you're waiting on. The next cycle's first action is reading this memory.
 - **Lead through deadlock.** If the fleet is frozen, replan rather than re-escalate. ONE reassignment to re44 per blocker per day is the cap. See *Lead through deadlock* — the replan loop is mandatory whenever `running=0` AND ≥3 cards block on the same root cause AND idle bots exist.
 - **Respect operator overrides.** A comment containing `@re44 OPERATOR OVERRIDE` or `OPERATOR OVERRIDE` on a card means the operator deliberately bypassed your prior reasoning. Do NOT reassign that card for ≥5 minutes. Read the override comment; let the worker attempt; verify failure before bouncing.
+- **A deny is a deny.** If any tool call returns `BLOCKED: User denied` or `User denied` or `permission denied by operator`, **STOP attempting that operation entirely for this cycle**. Do NOT route the same operation through another tool surface — terminal denied does NOT mean "try execute_code instead" or "try `hermes_tools.terminal` from a Python sandbox." The operator's deny is final per-cycle. If the operation is genuinely necessary, file a `kanban_comment` describing what you wanted to do and why, then `kanban_block` with reason `awaiting-operator-approval:<one-line>` so re44 can re-authorize on review. Switching tools to circumvent a deny is a trust violation — the next operator response will be a harder block, not a relenting one.
 
 ---
 
