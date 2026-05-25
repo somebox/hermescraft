@@ -185,6 +185,20 @@ export function createReactive(deps) {
     const myPos = b.entity.position;
     const hostiles = Object.values(b.entities)
       .filter(isHostile)
+      // Drop entities with NaN / Infinity position components. Mineflayer's
+      // entity tracker occasionally hands us packets where x or z is NaN
+      // (chunk-boundary unload, render-distance edge, packet desync seen
+      // 2026-05-25 on flint/mason). If we keep them in the hostiles list,
+      // distance becomes NaN; downstream comparisons silently return false;
+      // sort produces a non-deterministic order; closest_creeper picks the
+      // NaN-positioned entity; flee_step computes a movement vector with
+      // NaN components → bot sends a NaN position to the server → kicked
+      // with `invalid_player_movement`. Filter at the source so no
+      // downstream code has to defend against NaN positions.
+      .filter((e) => e.position
+        && Number.isFinite(e.position.x)
+        && Number.isFinite(e.position.y)
+        && Number.isFinite(e.position.z))
       .map((e) => ({
         entity: e,
         name: e.name,

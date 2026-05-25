@@ -680,6 +680,58 @@ export function createBotManager(deps) {
         }
         log(`[POS_DIAG] instrumentation armed on events: ${POS_DIAG_EVENTS.join(',')}`);
 
+        // POS_GUARD — outgoing-packet validator.
+        //
+        // Vanilla Minecraft kicks with `multiplayer.disconnect.invalid_player_movement`
+        // when the server receives a Serverbound Move/Look packet whose
+        // x|y|z|yRot|xRot field is NaN or Infinity (see
+        // ServerGamePacketListenerImpl.containsInvalidValues). Confirmed
+        // 2026-05-25: flint/mason got kicked dozens of times today; the
+        // server log showed `Invalid move player packet received` every
+        // time. POS_DIAG caught entity-position NaN on `entityMoved`, and
+        // the reactive.js filter plugged the hostile-entity intake — but
+        // post-restart the kicks continued, and POS_DIAG showed zero
+        // CORRUPT events. The remaining vector is yaw/pitch (not tracked
+        // by POS_DIAG): pathfinder's `Math.atan2(-dx,-dz)`, fair-play's
+        // facing math, and reactive's `b.lookAt(target.position)` can all
+        // produce NaN yaw when their inputs include a NaN.
+        //
+        // Rather than play whack-a-mole at each NaN source, guard the
+        // single choke point: mineflayer's `_client.write(packetName,
+        // params)`. For position / position_look / look packets, validate
+        // x|y|z|yaw|pitch are finite numbers; if not, DROP the packet and
+        // log which field corrupted. The bot's state self-corrects on the
+        // next valid tick (physics ticker re-reads entity.position).
+        try {
+          const cli = ctx.world.bot._client;
+          if (cli && typeof cli.write === 'function' && !cli.__hermesPosGuardInstalled) {
+            const MOVEMENT_PACKETS = new Set([
+              'position', 'position_look', 'look',
+            ]);
+            const isFin = (v) => typeof v === 'number' && Number.isFinite(v);
+            const originalWrite = cli.write.bind(cli);
+            cli.write = function (name, params) {
+              if (MOVEMENT_PACKETS.has(name) && params && typeof params === 'object') {
+                const bad = [];
+                if ('x' in params && !isFin(params.x)) bad.push(`x=${params.x}`);
+                if ('y' in params && !isFin(params.y)) bad.push(`y=${params.y}`);
+                if ('z' in params && !isFin(params.z)) bad.push(`z=${params.z}`);
+                if ('yaw' in params && !isFin(params.yaw)) bad.push(`yaw=${params.yaw}`);
+                if ('pitch' in params && !isFin(params.pitch)) bad.push(`pitch=${params.pitch}`);
+                if (bad.length) {
+                  log(`[POS_GUARD] dropped ${name} — non-finite: ${bad.join(', ')}`);
+                  return undefined; // skip — server would have kicked us
+                }
+              }
+              return originalWrite(name, params);
+            };
+            cli.__hermesPosGuardInstalled = true;
+            log(`[POS_GUARD] outgoing-packet guard installed on: ${[...MOVEMENT_PACKETS].join(',')}`);
+          }
+        } catch (err) {
+          log(`[POS_GUARD] install failed: ${err?.message || err}`);
+        }
+
         if (ctx.runtime.regions) {
           const prevDispose = ctx.runtime._regionSignWatcherDispose;
           if (typeof prevDispose === 'function') prevDispose();

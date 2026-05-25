@@ -425,13 +425,70 @@ export function createExcavationActions(services) {
         targets.push({ x: fx, y: fy + h, z: fz });
       }
       let stepDug = 0;
+      // Track WHY each target failed so the error envelope is actionable.
+      // Without this, "no_progress_at_step_1: dug=0, skipped=0, errors=0"
+      // is silent: the worker has no idea whether the targets were already
+      // air, the wrong tool tier, region-protected, or what. Observed
+      // 2026-05-25: mason tried stair_down south from a cliff edge where
+      // the target column was open air; the loop returned dug=0 with no
+      // counters, and mason concluded "stair_down is broken" and tried
+      // increasingly desperate workarounds (manual dig-and-jump shafts).
+      const reasons = { already_air: 0, bedrock: 0, protected: 0, error: 0 };
       for (const t of targets) {
-        const ok = await digOne(t.x, t.y, t.z);
-        if (ok) stepDug++;
+        const blk = b.blockAt(new Vec3(t.x, t.y, t.z));
+        const dugIt = await digOne(t.x, t.y, t.z);
+        if (dugIt) {
+          stepDug++;
+          continue;
+        }
+        if (!blk) { reasons.error++; continue; }
+        if (DIG_PASSABLE_NAMES.has(blk.name)) { reasons.already_air++; continue; }
+        if (blk.name === 'bedrock') { reasons.bedrock++; continue; }
+        // If we got here digOne returned false but block was diggable —
+        // either region-protected (shouldSkipDigAt) or a dig error.
+        // Region skips don't increment errorMsgs, so if errorMsgs grew
+        // we attribute to error; otherwise protected.
+        reasons.protected++;
       }
       if (stepDug === 0) {
         stoppedAtStep = i;
-        stoppedReason.value = `no_progress_at_step_${i}`;
+        const parts = Object.entries(reasons)
+          .filter(([, n]) => n > 0)
+          .map(([k, n]) => `${n} ${k}`);
+        const detail = parts.length ? ` (${parts.join(', ')})` : '';
+        stoppedReason.value = `no_progress_at_step_${i}${detail}`;
+        // If everything was already air, add an explicit hint to the
+        // error envelope so the LLM understands the column is open.
+        if (reasons.already_air === targets.length) {
+          errorMsgs.push(
+            `target column at (${fx},${fy - 1}..${fy + H - 2},${fz}) is fully air — you're at a cliff edge or existing tunnel. ` +
+            `Move to solid ground first (mc move + mc terrain_top to find a fresh surface), then retry stair_down.`,
+          );
+        }
+        break;
+      }
+
+      // CAVE-BELOW guard. The new stand cell is (fx, fy-1, fz); its
+      // floor is the block at (fx, fy-2, fz). If that floor is air
+      // (cave, chasm, void), stepping into the stand cell drops the bot
+      // through. Pathfinder reports "arrived" but server physics
+      // diverge: the bot's position packet says "stationary at Y=fy-1"
+      // while the server simulation says "still falling" — the
+      // mismatch is reported as `invalid_player_movement` and the bot
+      // gets kicked, every single step-2 (observed 2026-05-25 on flint
+      // when staircase descended into a cave at Y=62 from surface).
+      // Abort cleanly with a clear reason so the worker picks a
+      // different direction or uses `mc dig` to handle the void
+      // manually (placing a support block, then continuing).
+      const floorBlock = b.blockAt(new Vec3(fx, fy - 2, fz));
+      const floorName = floorBlock?.name || 'unknown';
+      const floorIsPassable = !floorBlock || DIG_PASSABLE_NAMES.has(floorName);
+      if (floorIsPassable) {
+        stoppedAtStep = i;
+        stoppedReason.value = `cave_below_step_${i}_floor_is_${floorName}_at_${fx}_${fy - 2}_${fz}`;
+        errorMsgs.push(
+          `cave_below: floor under next stand cell (${fx},${fy - 1},${fz}) is ${floorName} at (${fx},${fy - 2},${fz}) — bot would fall through. Use mc place to bridge OR pick another direction.`,
+        );
         break;
       }
 
