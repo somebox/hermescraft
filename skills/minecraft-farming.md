@@ -50,9 +50,27 @@ mc smelt RAW_FOOD [FUEL] [N]     # cook in nearest reachable furnace
 mc find_blocks BLOCK [R]         # locate farmland, water, crops, mature crops
 mc find_entities SPECIES [R]     # count adults before breed/hunt decisions
 mc inspect X Y Z                 # crop maturity (data.is_mature)
+mc verify_plot X1 Z1 X2 Z2 [--worksite ID] [--expect-y N]  # before bulk till on construct cards
+mc till_area X1 Z1 X2 Z2 [Y]   # batch till up to 81 columns (per-column surface Y)
+mc regions_terrain REGION [--expect-y N]   # steward: survey ground Y before writing card
+mc regions_terrain --rect X1 Z1 X2 Z2 [--expect-y N]
 ```
 
-## Food source decision
+## Construct / till kanban cards
+
+After `kanban_show`, if the card lists a plot rectangle and optional `worksite:`:
+
+1. Run **`mc verify_plot …`** once before the first `mc till`.
+2. If `ok: false` with **`TASK_SPEC_INVALID`**: `kanban_comment` with the verify summary, then **`kanban_block`** with reason from `next_action_hint` (e.g. `task_spec_invalid:worksite_coverage:wheat1`), **`mc task_context clear`**, exit. Do not loop 81 tills on a bad spec.
+3. **`UNCHANGED`** on `mc till` is **not** region permission — Paper/hoe or bad cell. Read `next_action_hint`; use **`mc till_area`** for large plots.
+
+| Block reason prefix | Meaning |
+|---|---|
+| `task_spec_invalid:worksite_coverage:*` | Plot bbox outside worksite disc — Steward fixes region/card |
+| `task_spec_invalid:terrain_*` | Wrong Y / not flat / floating grass — Steward adds `[PREP]` or fixes Y on card |
+| `region_blocked:*` | Real dig/place deny (see minecraft-mining) |
+
+```
 
 Combined cooked + bread stockpile low? Scan once, pick the cheapest source:
 

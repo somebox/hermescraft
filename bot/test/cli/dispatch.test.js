@@ -232,4 +232,17 @@ describe('cli dispatch', () => {
       else process.env.HERMES_KANBAN_TASK = prev;
     }
   });
+
+  it('verify_plot parses rect, worksite, expect-y', () => {
+    const def = defOf('verify_plot');
+    const built = buildHttpRequest(def, 'verify_plot', [
+      '365', '-575', '373', '-567', '--worksite', 'wheat1', '--expect-y', '65',
+    ]);
+    assert.equal(built.method, 'POST');
+    assert.equal(built.path, '/action/verify_plot');
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.x1, 365);
+    assert.equal(body.worksite, 'wheat1');
+    assert.equal(body.expect_y, 65);
+  });
 });

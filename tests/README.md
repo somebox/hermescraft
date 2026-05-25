@@ -26,6 +26,8 @@ python3 -m venv .venv
 
 ## Running
 
+One-page cheat sheet (server, Tester, models): [docs/guides/arena-tests-quickstart.md](../docs/guides/arena-tests-quickstart.md).
+
 ```bash
 .venv/bin/pytest -m unit                  # fast, no infra
 .venv/bin/pytest -m functional            # needs MC server + Tester bot (:3004)

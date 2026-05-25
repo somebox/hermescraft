@@ -79,6 +79,8 @@ have to remember to announce. Examples:
 - `[!] N unread chat, M mention you` banner means a teammate is waiting
   for you — read and reply before continuing.
 
+**Kanban till/construct cards:** After `kanban_show`, run `mc verify_plot X1 Z1 X2 Z2 --worksite … --expect-y …` before bulk tilling. If verify fails, `kanban_comment` + `kanban_block task_spec_invalid:…` and exit — do not treat `UNCHANGED` as region blocked. Use `mc till_area` for 9×9 plots.
+
 **Stuck? `mc escape`.** Auto-picks sidestep / pillar-up / wait based on
 your standing state. If you accidentally dig into a pit, escape pillars
 you back out with cobble or dirt from your inventory.

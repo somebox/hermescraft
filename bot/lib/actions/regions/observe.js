@@ -1,4 +1,5 @@
 import { ok } from '../../shared/action-contract.js';
+import { runRegionsTerrain } from '../farming-survey.js';
 
 /**
  * Read-only region listing (create/remove in regions/create.js).
@@ -36,6 +37,11 @@ export function createRegionsObserveActions(deps) {
         result: regions.length ? `${regions.length} region(s)` : 'No regions defined',
         data: { world: store.world, regions, preview, regions_here: store.regionsHere(botPos) },
       });
+    },
+
+    async regions_terrain(args) {
+      ensureBot();
+      return runRegionsTerrain({ ctx, ensureBot }, args || {});
     },
   };
 }

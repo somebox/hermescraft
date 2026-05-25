@@ -10,9 +10,12 @@
 
 import { Vec3 } from 'vec3';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
+import { columnTopSolid } from '../runtime/dig-tools.js';
 import { findAdjustedTarget } from './_nav-helpers.js';
 import { AIR_NAMES } from './_block-sets.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
+import { runVerifyPlot, MAX_VERIFY_CELLS } from './farming-survey.js';
+import { columnsInRect } from '../runtime/regions/terrain-survey.js';
 
 const HOE_NAMES = ['netherite_hoe', 'diamond_hoe', 'iron_hoe', 'stone_hoe', 'golden_hoe', 'wooden_hoe'];
 const TILLABLE = new Set(['dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'dirt_path']);
@@ -154,7 +157,7 @@ export function createFarmingActions(deps) {
     return null;
   }
 
-  return {
+  const actions = {
     /**
      * Till a single dirt/grass block at (x, y, z) → farmland.
      * Action contract: NO_HOE, NOT_TILLABLE, OUT_OF_RANGE, UNCHANGED.
@@ -202,10 +205,15 @@ export function createFarmingActions(deps) {
           adj = findAdjustedTarget(b, isTillableAt, Number(x), Number(y), Number(z), TILL_SPIRAL_RADIUS);
         }
         if (!adj) {
+          const targetName = target?.name ?? 'unloaded';
+          const hint = targetName === 'air' || (target && AIR_NAMES.has(target.name))
+            ? `mc farm verify_plot … or mc inspect ${x} ${y - 1} ${z} — surface may be below requested Y.`
+            : `mc farm verify_plot … — no tillable block within ${TILL_SPIRAL_RADIUS} horizontally or ${TILL_SCAN_DROP} below.`;
           return { ok: false, error: {
             code: 'NOT_TILLABLE',
-            message: `Block at (${x},${y},${z}) is ${target?.name ?? 'unloaded'} and no tillable cell within ${TILL_SPIRAL_RADIUS} blocks or ${TILL_SCAN_DROP} below — only dirt/grass/coarse_dirt can be tilled.`,
-            observed_state: { target_block: target?.name ?? null, requested_coord: { x, y, z }, tillable: [...TILLABLE], searched_radius: TILL_SPIRAL_RADIUS, searched_drop: TILL_SCAN_DROP },
+            message: `Block at (${x},${y},${z}) is ${targetName} and no tillable cell within ${TILL_SPIRAL_RADIUS} blocks or ${TILL_SCAN_DROP} below — only dirt/grass/coarse_dirt can be tilled. Not a region permission issue.`,
+            observed_state: { target_block: targetName, requested_coord: { x, y, z }, tillable: [...TILLABLE], searched_radius: TILL_SPIRAL_RADIUS, searched_drop: TILL_SCAN_DROP },
+            next_action_hint: hint,
             retry_safe: false,
           }};
         }
@@ -241,15 +249,11 @@ export function createFarmingActions(deps) {
       } catch { /* fall through */ }
       let after = b.blockAt(targetPos);
       let fallback = null;
+      let papermcpError = null;
       if (after?.name !== 'farmland') {
         const pmcp = paperMcpConfig();
         if (pmcp) {
           log(`[till] native no-op (block still ${after?.name}) — using PaperMCP fallback`);
-          // Bug fix: was hardcoded to `execute in landfolk-test` (the test
-          // fixture world), silently failing on production. Same class as
-          // commit 631dbb5's water-primitive fix. Console RCON runs in the
-          // server default world (overworld) without the wrapper.
-          // Also use targetPos coords (post-adjust) not original (x,y,z).
           const r = await executeServerCommand(pmcp, `setblock ${targetPos.x} ${targetPos.y} ${targetPos.z} minecraft:farmland`);
           if (r.ok) {
             for (let i = 0; i < 6; i++) {
@@ -258,14 +262,29 @@ export function createFarmingActions(deps) {
               if (after?.name === 'farmland') break;
             }
             fallback = 'papermcp_server_side';
+          } else {
+            papermcpError = r.error || 'PaperMCP setblock failed';
+            log(`[till] PaperMCP fallback failed: ${papermcpError}`);
           }
         }
       }
       if (after?.name !== 'farmland') {
+        const below = b.blockAt(targetPos.offset(0, -1, 0));
+        const floating = below && AIR_NAMES.has(below.name) && TILLABLE.has(after?.name ?? '');
         return { ok: false, error: {
           code: 'UNCHANGED',
-          message: `Tilled (${targetPos.x},${targetPos.y},${targetPos.z}) but block is still ${after?.name ?? 'unloaded'}, expected farmland.`,
-          observed_state: { target_block_after: after?.name, fallback_attempted: !!paperMcpConfig() },
+          message: `Tilled (${targetPos.x},${targetPos.y},${targetPos.z}) but block is still ${after?.name ?? 'unloaded'}, expected farmland. Not a region permission issue — Paper native hoe often no-ops; server-side fallback may have failed or chunk did not sync.`,
+          observed_state: {
+            target_block_after: after?.name,
+            fallback_attempted: !!paperMcpConfig(),
+            papermcp_error: papermcpError,
+            adjusted_target: adjustedTarget ?? undefined,
+            requested_coord: { x, y, z },
+            floating_surface: floating || undefined,
+          },
+          next_action_hint: floating
+            ? 'mc farm verify_plot … — floating tillable top; fill column below before till.'
+            : (papermcpError ? 'help-needed:till_unchanged:papermcp' : 'help-needed:till_unchanged — retry once or mc farm verify_plot'),
           retry_safe: true,
         }};
       }
@@ -629,5 +648,94 @@ export function createFarmingActions(deps) {
         result: `Harvested ${mature} mature crops${immatureCount ? ` (${immatureCount} immature skipped)` : ''}. Gained: ${Object.entries(gained).map(([n, c]) => `${c}x ${n}`).join(', ') || 'nothing'}.`,
       };
     },
+
+    /**
+     * Dry-run a construct plot: worksite coverage, flatness, till readiness.
+     */
+    async verify_plot(body) {
+      return runVerifyPlot({ ctx, ensureBot }, body || {});
+    },
   };
+
+  actions.till_area = async function till_area({ x1, z1, x2, z2, y }) {
+      const b = ensureBot();
+      const minX = Math.min(Number(x1), Number(x2));
+      const maxX = Math.max(Number(x1), Number(x2));
+      const minZ = Math.min(Number(z1), Number(z2));
+      const maxZ = Math.max(Number(z1), Number(z2));
+      const cols = columnsInRect(minX, minZ, maxX, maxZ);
+      if (cols.length > MAX_VERIFY_CELLS) {
+        return { ok: false, error: {
+          code: 'RECT_TOO_LARGE',
+          message: `till_area has ${cols.length} columns; max ${MAX_VERIFY_CELLS}.`,
+          retry_safe: false,
+        }};
+      }
+
+      const hintY = y !== undefined ? Number(y) : Math.floor(b.entity.position.y) - 1;
+      let tilled = 0;
+      let skipped_farmland = 0;
+      let failed = 0;
+      /** @type {object[]} */
+      const failures_sample = [];
+
+      for (const { x, z } of cols) {
+        const top = columnTopSolid(b, x, z);
+        if (!top) {
+          failed++;
+          if (failures_sample.length < 8) failures_sample.push({ x, z, code: 'NO_SOLID' });
+          continue;
+        }
+        if (top.blockName === 'farmland') {
+          skipped_farmland++;
+          continue;
+        }
+        let ty = top.topY;
+        if (y !== undefined) {
+          const surf = findTillableSurfaceBelow(b, x, Number(y), z, 4);
+          if (surf) ty = surf.y;
+          else if (!TILLABLE.has(top.blockName)) {
+            failed++;
+            if (failures_sample.length < 8) failures_sample.push({ x, z, code: 'NOT_TILLABLE', topY: top.topY });
+            continue;
+          }
+        }
+        const res = await actions.till({ x, y: ty, z });
+        if (res.ok) tilled++;
+        else {
+          failed++;
+          if (failures_sample.length < 8) {
+            failures_sample.push({
+              x, z, y: ty,
+              code: res.error?.code ?? 'FAIL',
+              message: res.error?.message,
+            });
+          }
+        }
+      }
+
+      const ok = failed === 0 || tilled > 0;
+      return {
+        ok,
+        data: {
+          tilled,
+          skipped_farmland,
+          failed,
+          bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y_hint: hintY },
+          failures_sample,
+        },
+        result: `till_area: ${tilled} tilled, ${skipped_farmland} already farmland, ${failed} failed.`,
+        ...(failed > 0 && tilled === 0 ? {
+          error: {
+            code: 'TILL_AREA_FAILED',
+            message: `All ${failed} columns failed to till.`,
+            observed_state: { failures_sample },
+            next_action_hint: 'mc farm verify_plot … before retry',
+            retry_safe: true,
+          },
+        } : {}),
+    };
+  };
+
+  return actions;
 }
