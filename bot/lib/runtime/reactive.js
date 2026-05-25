@@ -183,6 +183,22 @@ export function createReactive(deps) {
     const b = ctx.world.bot;
     if (!b || !b.entity) return null;
     const myPos = b.entity.position;
+    // Bail out of reactive evaluation entirely if our OWN position is
+    // corrupt. distanceTo(myPos) returns NaN for every entity when myPos
+    // has a NaN component — that contaminates the sort, closest_creeper
+    // picks something with NaN distance, flee_step computes a movement
+    // vector relative to NaN, and the cascade restarts even though the
+    // entity-position filter below already screens out NaN hostiles.
+    // POS_GUARD drops the resulting outgoing packets so the server
+    // doesn't kick, but the watchdog still forces a reconnect to recover
+    // the bot state. Skipping this tick lets the watchdog handle it
+    // without us layering another bad packet stream on top.
+    if (!myPos
+        || !Number.isFinite(myPos.x)
+        || !Number.isFinite(myPos.y)
+        || !Number.isFinite(myPos.z)) {
+      return null;
+    }
     const hostiles = Object.values(b.entities)
       .filter(isHostile)
       // Drop entities with NaN / Infinity position components. Mineflayer's
