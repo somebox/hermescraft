@@ -96,7 +96,12 @@ function finalize(def, canonicalName, params) {
   let body = null;
   if (method === 'POST') {
     if (def.bodyFn) body = def.bodyFn(params);
-    else body = empty;
+    else if (def.customParse) {
+      const clean = { ...params };
+      delete clean._httpMethod;
+      delete clean._rest;
+      body = JSON.stringify(clean);
+    } else body = empty;
   }
 
   return { method, path, body, params };
@@ -250,7 +255,7 @@ function customParse(canonicalName, positional) {
       return out;
     }
     case 'move': {
-      // mc move X Y Z [--max-doors N] [--door GX GY GZ]
+      // mc move X Y Z [--max-doors N] [--door GX GY GZ] [--force]
       const q = positional.slice();
       const out = {};
       const positionals = [];
@@ -262,7 +267,8 @@ function customParse(canonicalName, positional) {
           const dx = Number(q.shift()), dy = Number(q.shift()), dz = Number(q.shift());
           if (![dx, dy, dz].every(Number.isFinite)) throw new Error('invalid:--door requires 3 numeric coords');
           out.door = { x: dx, y: dy, z: dz };
-        } else { positionals.push(q.shift()); }
+        } else if (t === '--force') { q.shift(); out.force = true; }
+        else { positionals.push(q.shift()); }
       }
       if (positionals.length < 3) throw new Error('missing:coords');
       out.x = Number(positionals[0]);

@@ -137,6 +137,72 @@ export function createMove(deps) {
     const doors_used = [];
     let lastPathfinderError = null;
 
+    // Detour sanity check (one-shot, before any goto).
+    //
+    // Observed 2026-05-25: flint at (378,58,-597) underground asked to move to
+    // (378,46,-600) — 12 blocks DOWN, 3 south. Pathfinder couldn't find a
+    // direct down-path through solid stone, so it routed UP the existing stair,
+    // across surface, back down somewhere else — ~50 blocks of travel for a
+    // 12-block goal. Bot died to mobs on the way. The LLM saw an HTTP timeout
+    // and had no idea the bot had respawned at world spawn.
+    //
+    // Fix: pre-compute the path with `getPathTo` (doesn't execute), compare to
+    // straight-line distance, refuse if detour exceeds max(straight * 3.5,
+    // straight + 25). The error envelope tells the worker the actual path
+    // length and suggests the right primitive (tunnel/stair_down) when the
+    // target is below them. `force: true` bypasses the check for cases where
+    // the long route is genuinely intended.
+    const force = args.force === true || args.force === 'true' || args.force === 1;
+    {
+      const myPos = b.entity.position;
+      const dx = target.x - myPos.x;
+      const dy = target.y - myPos.y;
+      const dz = target.z - myPos.z;
+      const straightLine = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (straightLine >= 5 && !force) {
+        let pathCheck = null;
+        try {
+          const checkGoal = new goals.GoalBlock(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z));
+          pathCheck = b.pathfinder.getPathTo(b.pathfinder.movements, checkGoal, 3000);
+        } catch { /* if precheck fails, fall through and let goto try */ }
+
+        if (pathCheck && pathCheck.status === 'success' && pathCheck.path) {
+          const pathLength = pathCheck.path.length;
+          const maxAllowed = Math.max(straightLine * 3.5, straightLine + 25);
+          if (pathLength > maxAllowed) {
+            const ratio = pathLength / Math.max(straightLine, 1);
+            let hint;
+            if (dy < -3) {
+              hint = `Target is ${Math.abs(Math.round(dy))} blocks below you — use mc tunnel <X> <Y> <Z> <DIR> or mc stair_down to dig down. mc move can't traverse solid blocks.`;
+            } else if (dy > 3) {
+              hint = `Target is ${Math.round(dy)} blocks above you — use mc stair_up to ascend safely, or move to a known surface route.`;
+            } else {
+              hint = `The direct route is blocked. Pick an intermediate waypoint, or mc tunnel through the obstacle.`;
+            }
+            recordMoveFailure('move', target.x, target.y, target.z, posObj(), 'detour_too_long');
+            return {
+              ok: false,
+              error: {
+                code: 'NAV_DETOUR_TOO_LONG',
+                message: `No direct route to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} — shortest path pathfinder found is ${pathLength} blocks but straight-line is only ${straightLine.toFixed(0)}m (${ratio.toFixed(1)}x detour). ${hint} To force the long route anyway, append --force.`,
+                observed_state: {
+                  current: { x: myPos.x, y: myPos.y, z: myPos.z },
+                  target,
+                  straight_line_distance: Math.round(straightLine),
+                  actual_path_length: pathLength,
+                  detour_ratio: parseFloat(ratio.toFixed(2)),
+                  max_allowed_ratio: 3.5,
+                  dy: Math.round(dy),
+                },
+                next_action_hint: hint,
+                retry_safe: false,
+              },
+            };
+          }
+        }
+      }
+    }
+
     for (let leg = 1; leg <= maxDoors + 1; leg++) {
       const goal = new goals.GoalBlock(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z));
       try {

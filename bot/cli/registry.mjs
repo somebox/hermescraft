@@ -147,7 +147,7 @@ export const RAW_COMMAND_DEFS = [
 
   /* Movement */
   g('move', 'movement', ['mv'], {
-    description: 'Smart non-destructive navigation to X Y Z. Like mc goto but if the path is blocked by a door/gate, automatically opens it (mc through, closes behind) and continues. Up to MAX_DOORS legs. Never digs. Use this instead of mc goto when navigating buildings.',
+    description: 'Smart non-destructive navigation to X Y Z. Like mc goto but if the path is blocked by a door/gate, automatically opens it (mc through, closes behind) and continues. Up to MAX_DOORS legs. Never digs. Refuses if pathfinder finds only a long detour (e.g., target is below you and the only route is back up via surface); pass --force to override. Use this instead of mc goto when navigating buildings.',
     method: 'POST',
     path: '/action/move',
     customParse: true,
@@ -158,12 +158,14 @@ export const RAW_COMMAND_DEFS = [
         z: Number(p.z),
         ...(p.max_doors !== undefined ? { max_doors: Number(p.max_doors) } : {}),
         ...(p.door ? { door: p.door } : {}),
+        ...(p.force ? { force: true } : {}),
       }),
-    usage: 'mc move X Y Z [--max-doors N] [--door GX GY GZ]',
+    usage: 'mc move X Y Z [--max-doors N] [--door GX GY GZ] [--force]',
     examples: [
       'mc move 100 64 -200',
       'mc move 0 65 6 --max-doors 3',
       'mc move 0 65 6 --door 0 65 2',
+      'mc move 50 30 -200 --force   # bypass detour check (long route accepted)',
     ],
   }),
   g('goto', 'movement', ['go', 'g'], {
