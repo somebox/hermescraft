@@ -99,10 +99,35 @@ export function setupRegionSignWatcher(bot, store) {
     setTimeout(scanLoadedSigns, 2000);
   });
 
+  // Chunks loaded after spawn (because the bot moved or the server streamed
+  // new chunks) may contain signs we haven't seen. But chunkColumnLoad fires
+  // HUNDREDS of times during the post-spawn chunk-streaming burst, and
+  // scanLoadedSigns calls bot.findBlocks across 128 blocks each time — that
+  // saturated CPU to 99% in early testing. Debounce: coalesce all chunk-load
+  // events in a 5-second window into a single rescan.
+  let chunkLoadDebounce = null;
+  const onChunkLoad = () => {
+    if (chunkLoadDebounce) return;
+    chunkLoadDebounce = setTimeout(() => {
+      chunkLoadDebounce = null;
+      scanLoadedSigns();
+    }, 5000);
+  };
+  bot.on('chunkColumnLoad', onChunkLoad);
+
+  // Periodic safety net: every 5 minutes, rescan loaded chunks. Catches
+  // signs that were missed by chunkColumnLoad races (sign-entity NBT lands
+  // after the chunk event in some Paper versions), and recovers if the
+  // bot moved into range of a sign that was already in a loaded chunk.
+  const rescanTimer = setInterval(scanLoadedSigns, 5 * 60 * 1000);
+
   const api = {
     scan: scanLoadedSigns,
     dispose: () => {
       bot.removeListener('blockUpdate', onBlockUpdate);
+      bot.removeListener('chunkColumnLoad', onChunkLoad);
+      if (chunkLoadDebounce) clearTimeout(chunkLoadDebounce);
+      clearInterval(rescanTimer);
       delete bot[INSTALLED];
     },
   };

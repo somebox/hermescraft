@@ -264,6 +264,19 @@ function getMemoryHints(limit = 4) {
 
 // Handle incoming chat message with routing
 async function handleChat(username, message) {
+  // Drop all rcon / server-broadcast chat. These are control-plane identities
+  // — vanilla command-feedback ("Successfully filled", "Teleported X"), `say`
+  // broadcasts from operators, and test harness announcements (`say [test #N]`
+  // from tests/conftest.py) all reach every connected bot regardless of world
+  // and pollute production-agent chat context. Different servers/proxies use
+  // different sender names: Paper reports `Rcon`, vanilla `say` shows as
+  // `Server` or `server`, some plugins prefix with `[Server]`. Drop them all
+  // — a player character has no reason to react to operator broadcasts.
+  const u = String(username || '').toLowerCase();
+  if (u === 'rcon' || u === 'server' || u === '[server]' || u === '') {
+    return;
+  }
+
   const knownNames = buildKnownNames(getMyName(), getNearbyPlayerNames());
   const routing = parseMessageRouting(message, { knownNames });
   let forMe = isMessageForMe(routing, getMyName());
@@ -631,6 +644,15 @@ const httpServer = http.createServer(
 // Startup
 // ═══════════════════════════════════════════════════════════════════
 
+httpServer.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    log(`Port ${config.api.port} already in use — exiting so bot-loop can respawn`);
+  } else {
+    log(`HTTP server error: ${err.message}`);
+  }
+  process.exit(1);
+});
+
 httpServer.listen(config.api.port, () => {
   if (config.logging.banner) {
     log(`╔═══════════════════════════════════════╗`);
@@ -662,8 +684,10 @@ httpServer.listen(config.api.port, () => {
 });
 
 process.on('uncaughtException', (err) => {
-  log(`Uncaught exception: ${err.message}`);
+  log(`Uncaught exception: ${err.message} — exiting so bot-loop can respawn`);
+  process.exit(1);
 });
 process.on('unhandledRejection', (err) => {
-  log(`Unhandled rejection: ${err}`);
+  log(`Unhandled rejection: ${err} — exiting so bot-loop can respawn`);
+  process.exit(1);
 });

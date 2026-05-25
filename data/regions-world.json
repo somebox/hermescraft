@@ -94,6 +94,94 @@
       },
       "created": "2026-05-24T12:59:20.756Z",
       "updated": "2026-05-24T13:05:40.459Z"
+    },
+    {
+      "id": "storage1",
+      "profile": "base",
+      "intent": "marker",
+      "status": "unanchored",
+      "anchor": {
+        "x": 380,
+        "y": 65,
+        "z": -630
+      },
+      "shape": {
+        "kind": "column",
+        "radius": 10,
+        "y_min": 64,
+        "y_max": 76
+      },
+      "sites": {
+        "anchor": {
+          "x": 380,
+          "y": 65,
+          "z": -630
+        },
+        "entrance": {
+          "x": 383,
+          "y": 66,
+          "z": -619
+        }
+      },
+      "capabilities": {
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": false,
+        "allow_harvest": true,
+        "overrides_global_denylist": false
+      },
+      "created": "2026-05-24T17:50:09.982Z",
+      "updated": "2026-05-25T03:58:59.072Z"
+    },
+    {
+      "id": "base",
+      "profile": "base",
+      "intent": "marker",
+      "status": "unanchored",
+      "anchor": {
+        "x": 365,
+        "y": 65,
+        "z": -592
+      },
+      "shape": {
+        "kind": "column",
+        "radius": 16
+      },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": false,
+        "allow_harvest": true,
+        "overrides_global_denylist": false
+      },
+      "created": "2026-05-24T23:50:12.306Z",
+      "updated": "2026-05-25T03:34:13.819Z"
+    },
+    {
+      "id": "tower",
+      "profile": "base",
+      "intent": "marker",
+      "status": "unanchored",
+      "anchor": {
+        "x": 350,
+        "y": 65,
+        "z": -565
+      },
+      "shape": {
+        "kind": "column",
+        "radius": 16
+      },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": false,
+        "allow_harvest": true,
+        "overrides_global_denylist": false
+      },
+      "created": "2026-05-25T02:15:31.072Z",
+      "updated": "2026-05-25T02:15:42.445Z"
     }
   ]
 }
