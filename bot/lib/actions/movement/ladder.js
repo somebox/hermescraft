@@ -94,6 +94,80 @@ function clearAllControls(b) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
+const isAirLike = (blk) => !blk || AIR_NAMES.has(blk.name);
+
+/**
+ * Scan 4 horizontal neighbors at foot.y and foot.y-1 for a ladder cell.
+ * If one is found and the intervening "step destination" cell is air
+ * (bot can step into it without colliding), turn the bot to face that
+ * direction and press forward briefly. The bot walks off the edge, falls
+ * one cell, and the ladder physics catches it.
+ *
+ * Returns { x, y, z, dx, dz } pointing at the ladder cell entered,
+ * or null if no entry path was found or the entry didn't land in a ladder.
+ *
+ * Used for `mc ladder down` when the bot starts on a tower roof beside
+ * an enclosed ladder shaft (Flint, 2026-05-26).
+ */
+async function tryEnterShaftFromAbove(b, fx, fy, fz) {
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const nx = fx + dx;
+    const nz = fz + dz;
+    // Candidate ladder Y values: same y (lateral walk into ladder), or
+    // one below (step off edge and fall onto the topmost ladder cell).
+    for (const dy of [0, -1]) {
+      const ny = fy + dy;
+      const cand = b.blockAt(new Vec3(nx, ny, nz));
+      if (cand?.name !== 'ladder') continue;
+      // The step destination at (nx, fy, nz) must be air (foot) and
+      // (nx, fy+1, nz) must be air (head) so the bot can walk there.
+      const stepFoot = b.blockAt(new Vec3(nx, fy, nz));
+      const stepHead = b.blockAt(new Vec3(nx, fy + 1, nz));
+      if (!isAirLike(stepFoot) || !isAirLike(stepHead)) continue;
+
+      // Turn to face the step direction so forward pressure moves the
+      // bot correctly. Same yaw convention as the climb code.
+      const yaw = Math.atan2(-dx, -dz);
+      try { await b.look(yaw, 0, true); } catch { /* tolerate */ }
+      await sleep(120);
+
+      // Sneak + forward — slow approach (~1.3 m/s vs sprint's 4.3 m/s).
+      // Without sneak, the forward press carries the bot OVER the 1-cell
+      // shaft hole at full walk speed, landing it on the far side of
+      // the tower roof. With sneak the bot creeps to the edge; once its
+      // foot cell is empty (over the shaft), it falls straight down into
+      // the ladder cell below. Vanilla sneak does NOT prevent falling
+      // off the edge for AI controls — only for player controls — so
+      // pressing sneak here just slows movement, not edge-blocking.
+      try { b.setControlState('sneak', true); } catch { /* */ }
+      try { b.setControlState('forward', true); } catch { /* */ }
+      const entryDeadline = Date.now() + 2400;
+      let landedInLadder = false;
+      try {
+        while (Date.now() < entryDeadline) {
+          await sleep(80);
+          const p = b.entity.position;
+          const cx = Math.floor(p.x);
+          const cy = Math.floor(p.y);
+          const cz = Math.floor(p.z);
+          const here = b.blockAt(new Vec3(cx, cy, cz));
+          if (here?.name === 'ladder') { landedInLadder = true; break; }
+          // Also check head cell — bot may have its feet just below.
+          const head = b.blockAt(new Vec3(cx, cy + 1, cz));
+          if (head?.name === 'ladder') { landedInLadder = true; break; }
+        }
+      } finally {
+        try { b.setControlState('forward', false); } catch { /* */ }
+        try { b.setControlState('sneak', false); } catch { /* */ }
+      }
+      if (landedInLadder) return { x: nx, y: ny, z: nz, dx, dz };
+      // Entry attempt failed — try the next neighbor direction.
+    }
+  }
+  return null;
+}
+
 /**
  * @param {{ ensureBot: () => any, posObj: (p?: any) => any }} deps
  */
@@ -117,29 +191,64 @@ export function createLadder({ ensureBot, posObj }) {
     const exitMode = exit === 'none' ? 'none' : 'auto';
 
     const startPos = b.entity.position.clone();
-    const startCellX = Math.floor(startPos.x);
-    const startCellY = Math.floor(startPos.y);
-    const startCellZ = Math.floor(startPos.z);
+    let startCellX = Math.floor(startPos.x);
+    let startCellY = Math.floor(startPos.y);
+    let startCellZ = Math.floor(startPos.z);
 
-    const hereBlock = b.blockAt(new Vec3(startCellX, startCellY, startCellZ));
+    let hereBlock = b.blockAt(new Vec3(startCellX, startCellY, startCellZ));
+    /** Audit field — set if the descent maneuvered into the shaft from above. */
+    let enteredFromAbove = null;
+
     if (!isClimbableBlock(hereBlock)) {
       // Check one cell up — bot's head may be in the ladder while feet
       // are on a block-below.
       const headBlock = b.blockAt(new Vec3(startCellX, startCellY + 1, startCellZ));
       if (!isClimbableBlock(headBlock)) {
-        return fail(
-          'LADDER_NOT_FOUND',
-          `No ladder at bot's current cell (${startCellX},${startCellY},${startCellZ}). Pathfind to the ladder first (mc move <x> <y> <z>).`,
-          {
-            observed_state: {
-              bot_position: posObj(startPos),
-              here_block: hereBlock?.name || 'air',
-              head_block: headBlock?.name || 'air',
-            },
-            next_action_hint: 'mc find_blocks ladder 16   # locate nearest ladder',
-            retry_safe: false,
-          },
-        );
+        // ── Entry-from-above for dir=down (Flint, 2026-05-26) ────────────
+        // Bot is not in a ladder cell. For DESCENT only, scan the 4
+        // horizontal neighbors at foot.y and foot.y-1 for a ladder block.
+        // If one is found AND the bot can step horizontally into the
+        // intervening cell (foot+head air), execute a sneak-step toward
+        // the shaft: bot's foot leaves the roof, drops onto the ladder
+        // cell below, the climbable physics catches it. Then we fall
+        // through to the normal descent loop.
+        //
+        // Why dir=down only: entering from BELOW is `mc move` territory
+        // (pathfinder handles walking up to a ladder base just fine).
+        // Drop-from-above is the only entry geometry pathfinder can't
+        // do (it won't voluntarily step off an edge into a ladder).
+        if (direction === 'down') {
+          const entry = await tryEnterShaftFromAbove(b, startCellX, startCellY, startCellZ);
+          if (entry) {
+            enteredFromAbove = entry;
+            // Re-read position; bot is now inside the ladder cell.
+            const pos2 = b.entity.position;
+            startCellX = Math.floor(pos2.x);
+            startCellY = Math.floor(pos2.y);
+            startCellZ = Math.floor(pos2.z);
+            hereBlock = b.blockAt(new Vec3(startCellX, startCellY, startCellZ));
+            // If the entry maneuver didn't actually land the bot in a
+            // ladder, fall through to the LADDER_NOT_FOUND error below.
+          }
+        }
+        if (!enteredFromAbove && !isClimbableBlock(hereBlock)) {
+          const head2 = b.blockAt(new Vec3(startCellX, startCellY + 1, startCellZ));
+          if (!isClimbableBlock(head2)) {
+            return fail(
+              'LADDER_NOT_FOUND',
+              `No ladder at bot's current cell (${startCellX},${startCellY},${startCellZ}). Pathfind to the ladder first (mc move <x> <y> <z>).`,
+              {
+                observed_state: {
+                  bot_position: posObj(startPos),
+                  here_block: hereBlock?.name || 'air',
+                  head_block: headBlock?.name || 'air',
+                },
+                next_action_hint: 'mc find_blocks ladder 16   # locate nearest ladder',
+                retry_safe: false,
+              },
+            );
+          }
+        }
       }
     }
 
@@ -336,8 +445,9 @@ export function createLadder({ ensureBot, posObj }) {
         column_bottom_y: bottomY,
         dy,
         still_on_ladder: stillOnLadder,
+        ...(enteredFromAbove ? { entered_from_above: enteredFromAbove } : {}),
       },
-      result: `Ladder ${direction}: Y ${startPos.y.toFixed(1)} → ${endPos.y.toFixed(1)} (Δy=${dy >= 0 ? '+' : ''}${dy})${stillOnLadder ? ' [still on ladder]' : ''}.`,
+      result: `Ladder ${direction}: Y ${startPos.y.toFixed(1)} → ${endPos.y.toFixed(1)} (Δy=${dy >= 0 ? '+' : ''}${dy})${enteredFromAbove ? ' [entered shaft from above]' : ''}${stillOnLadder ? ' [still on ladder]' : ''}.`,
     };
   };
 }

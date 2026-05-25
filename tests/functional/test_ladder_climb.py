@@ -187,3 +187,116 @@ def test_ladder_invalid_dir_arg(bot):
     r = bot.post("/action/ladder", {"dir": "sideways"}, timeout=5)
     assert not r.get("ok"), r
     assert r.get("error", {}).get("code") == "INVALID_ARG", r
+
+
+# ─── tower-shaft-from-above (Flint, 2026-05-26) ─────────────────────────
+#
+# Flint at (374.5, 70, -583.5) sat on a tower roof whose interior had a
+# ladder shaft. Tower walls at y=65..70, ladder inside the shaft at
+# y=66..71 (1 block above the wall top). All 4 lateral cells around the
+# ladder at y=70 were cobblestone; the ONLY entry was to drop into the
+# shaft from y=71. No primitive handled that — Flint sat there until he
+# fell and died. This test paints that geometry and asserts mc ladder
+# down detects the shaft, drops in, and descends to the bottom.
+
+def _build_tower_with_inner_shaft(rcon, world: str, *, base_y: int = 66, wall_top_y: int = 70):
+    """Sealed-roof cobble tower with an inner 1x1 ladder shaft. The ladder
+    extends ONE BLOCK ABOVE the wall top so the entry cell at
+    (1, wall_top_y + 1, 0) is exposed air with a ladder block directly
+    beneath. Bot starts standing on the wall top at (0, wall_top_y + 1, 0)."""
+    ladder_top_y = wall_top_y + 1
+    cmds = []
+    # Reset a 4x(wall_top+5)x4 box to air.
+    cmds.append(f"execute in {world} run fill -2 {base_y - 2} -2 3 {ladder_top_y + 4} 3 air")
+    # Stone floor (the "ground" the tower sits on AND the bot's roof landing).
+    cmds.append(f"execute in {world} run fill -2 {base_y - 1} -2 3 {base_y - 1} 3 minecraft:stone")
+    # Tower walls — 3x3 footprint at (0..2, *, 0..2), hollow inside. Walls
+    # are 1-block thick at x=0 and x=2 (east/west), z=0 and z=2 (n/s).
+    for y in range(base_y, wall_top_y + 1):
+        # West wall x=0
+        for z in range(0, 3):
+            cmds.append(f"execute in {world} run setblock 0 {y} {z} minecraft:cobblestone")
+        # East wall x=2
+        for z in range(0, 3):
+            cmds.append(f"execute in {world} run setblock 2 {y} {z} minecraft:cobblestone")
+        # North wall z=0 (already partially covered by east/west)
+        cmds.append(f"execute in {world} run setblock 1 {y} 0 minecraft:cobblestone")
+        # South wall z=2
+        cmds.append(f"execute in {world} run setblock 1 {y} 2 minecraft:cobblestone")
+    # Inner shaft column at (1, *, 1) — left as air for the bot to descend through.
+    for y in range(base_y, wall_top_y + 1):
+        cmds.append(f"execute in {world} run setblock 1 {y} 1 minecraft:air")
+    # Ladder at (1, base_y..ladder_top_y, 1) facing south (so the wall the
+    # ladder attaches to is at z=2). The ladder extends 1 above the wall
+    # top — its top block at (1, ladder_top_y, 1) is exposed air-above.
+    for y in range(base_y, ladder_top_y + 1):
+        cmds.append(f"execute in {world} run setblock 1 {y} 1 minecraft:ladder[facing=south]")
+    # Cobblestone ROOF over the tower except for the 1-block hole above
+    # the shaft. The bot stands on this roof.
+    for x in range(0, 3):
+        for z in range(0, 3):
+            if x == 1 and z == 1:
+                continue  # shaft hole — ladder top block at y=ladder_top_y lives here
+            cmds.append(f"execute in {world} run setblock {x} {wall_top_y + 1} {z} minecraft:cobblestone")
+    rcon.batch(cmds)
+    return {
+        "base_y": base_y,
+        "wall_top_y": wall_top_y,
+        "ladder_top_y": ladder_top_y,
+        "shaft_xz": (1, 1),
+        # Bot starts on the roof, one cell north of the shaft hole.
+        "roof_start": {"x": 1, "y": wall_top_y + 2, "z": 0},
+    }
+
+
+@pytest.fixture
+def tower_shaft_arena(arena, rcon, config):
+    """4-walled tower with inner ladder shaft; ladder extends 1 above
+    wall top. See _build_tower_with_inner_shaft docstring."""
+    world = config["mc"]["world"]
+    info = _build_tower_with_inner_shaft(rcon, world, base_y=66, wall_top_y=70)
+    arena.settle_default()
+    yield info
+    # Teardown: wipe the whole tower zone.
+    rcon.run(f"execute in {world} run fill -2 {info['base_y'] - 2} -2 3 {info['ladder_top_y'] + 4} 3 air")
+
+
+@pytest.mark.functional
+def test_ladder_down_enters_shaft_from_tower_roof(bot, rcon, arena, config, tower_shaft_arena):
+    """Bot on the tower roof adjacent to the shaft hole. mc ladder down
+    must detect the ladder in the neighboring shaft cell, drop the bot
+    into the shaft (entering at the topmost ladder cell), then descend.
+
+    Pass criteria:
+      - ok=true
+      - final Y at or near the bottom of the shaft (base_y or just above)
+      - data.entered_from_above is present and points at the shaft cell
+    """
+    world = config["mc"]["world"]
+    info = tower_shaft_arena
+
+    # TP bot to the roof, one cell north of the shaft hole. Face south
+    # (toward the shaft) so any look-driven step-in works naturally.
+    start = info["roof_start"]
+    rcon.run(f"execute in {world} run tp Tester {start['x']} {start['y']} {start['z']} 180 0")
+    arena.settle()
+
+    r = bot.post("/action/ladder", {"dir": "down"}, timeout=30)
+    assert r.get("ok"), f"ladder down from tower roof failed: {r}"
+
+    # Bot should end at the bottom of the shaft (feet on the stone floor
+    # below the ladder). base_y is the cell containing the bottom ladder
+    # block; the stone floor is at base_y - 1, so feet ≈ base_y.
+    end = r["data"]["end"]
+    assert end["y"] <= info["base_y"] + 0.5, (
+        f"bot didn't descend through the shaft (Y={end['y']}, expected ≤{info['base_y'] + 0.5})"
+    )
+    # And horizontally inside the shaft column.
+    shaft_x, shaft_z = info["shaft_xz"]
+    assert abs(end["x"] - (shaft_x + 0.5)) <= 0.8, f"end x={end['x']} not in shaft column x={shaft_x}"
+    assert abs(end["z"] - (shaft_z + 0.5)) <= 0.8, f"end z={end['z']} not in shaft column z={shaft_z}"
+
+    # The primitive should report the entry maneuver for audit.
+    assert r["data"].get("entered_from_above") is not None, (
+        f"expected data.entered_from_above on response, got: {r['data']}"
+    )
