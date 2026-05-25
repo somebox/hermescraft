@@ -1,6 +1,6 @@
 {
   "defaults": {
-    "model": "deepseek/deepseek-v4-flash",
+    "model": "deepseek/deepseek-v4-flash:exacto",
     "provider": "openrouter"
   },
   "landfolk": {
@@ -8,19 +8,19 @@
   },
   "agents": {
     "Gatherer": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "deepseek/deepseek-v4-flash:exacto",
       "provider": "openrouter",
       "role": "gatherer",
       "api_port": 3001
     },
     "Flint": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "deepseek/deepseek-v4-flash:exacto",
       "provider": "openrouter",
       "role": "stone",
       "api_port": 3002
     },
     "Mason": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "deepseek/deepseek-v4-flash:exacto",
       "provider": "openrouter",
       "role": "builder",
       "api_port": 3003
@@ -32,7 +32,7 @@
       "api_port": 3004
     },
     "Steward": {
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "deepseek/deepseek-v4-flash:exacto",
       "provider": "openrouter",
       "role": "orchestrator",
       "api_port": 3005
