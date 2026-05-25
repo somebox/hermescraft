@@ -30,15 +30,7 @@ Don't act until you have all 9 of these in hand. You orchestrate; orchestrating 
 
 Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban list ...` reads the live shared board). If it returns zeros, the env is wrong — file a `[BUG]`, don't sqlite-hunt.
 
-**Use the exact tool names below. Do NOT invent variants:**
-
-- ✓ `hermes kanban stats` (subcommand of the hermes CLI)
-- ✗ `scripts/hermes_kanban.py` — does NOT exist
-- ✗ `scripts/kanban.py` — does NOT exist
-- ✓ `scripts/board` (the lean wrapper we have)
-- ✗ `python kanban.py` — no such script
-
-If unsure whether a script exists: `ls scripts/ | grep <name>` ONCE. Don't blast multiple guesses at the terminal — three failed terminal calls in a row triggers the tool-loop warning and you've burned your iteration budget on nothing.
+**Use exact tool names from the table below. If the table doesn't list it, it doesn't exist** — verify with `ls scripts/ | grep <name>` ONCE before invoking. Three failed `command not found` calls in a row triggers the tool-loop warning and burns iteration budget. The kanban CLI is `hermes kanban <verb>`; the lean wrapper is `scripts/board`. Anything else is a guess.
 
 | Tool | Use |
 |---|---|
