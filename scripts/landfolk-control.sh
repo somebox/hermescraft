@@ -555,6 +555,18 @@ start_bot() {
   # Body delivered via single-quoted heredoc (no outer-shell expansion).
   # All values come in as positional args; env vars (MC_HOST, …) are
   # exported below so the re-exec'd bash inherits them.
+  # Build-info capture at spawn time. Sourced by bot/lib/runtime/build-info.js
+  # to surface in /health.build. Drift (disk HEAD differs from spawn) means
+  # the bot needs a restart to pick up new code.
+  local _build_commit _build_branch _build_dirty
+  _build_commit="$(cd "$BOT_DIR/.." 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo '')"
+  _build_branch="$(cd "$BOT_DIR/.." 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  if [ -n "$_build_commit" ] && [ -n "$(cd "$BOT_DIR/.." 2>/dev/null && git status --porcelain -uno 2>/dev/null)" ]; then
+    _build_dirty=1
+  else
+    _build_dirty=0
+  fi
+
   (
     cd "$BOT_DIR"
     export MC_HOST MC_PORT PAPERMCP_PORT PAPERMCP_TOKEN
@@ -562,6 +574,10 @@ start_bot() {
     export MC_CONNECT_TIMEOUT_MS="${MC_CONNECT_TIMEOUT_MS:-55000}"
     export BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-}"
     export HERMES_BLUEPRINT_MUTATORS="${HERMES_BLUEPRINT_MUTATORS:-mason,steward}"
+    export BUILD_COMMIT="$_build_commit"
+    export BUILD_BRANCH="$_build_branch"
+    export BUILD_DIRTY="$_build_dirty"
+    export BUILD_CAPTURED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     exec -a "landfolk:bot-loop:$name" bash /dev/stdin "$name" "$port" "$viewer_port" "$bot_agent_model" "$bot_agent_provider" "$LOG_DIR" <<'BOT_LOOP_BODY'
 set -uo pipefail
 name="$1"; port="$2"; viewer_port="$3"

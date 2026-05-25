@@ -7,6 +7,7 @@ import { probeRouteAlongLine, probeRouteCorridor } from './route-probe.js';
 import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/water-route.js';
 import { normalizeId } from '../runtime/regions/index.js';
 import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
+import { getBuildInfo } from '../runtime/build-info.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -120,6 +121,7 @@ export function createBotHttpListener(deps) {
           holding: connected && ctx.world.bot?.heldItem ? ctx.world.bot.heldItem.name : null,
           position: pos ? { x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), z: +pos.z.toFixed(1) } : null,
           move_rate: moveRate,
+          build: getBuildInfo(),
         });
       }
 
