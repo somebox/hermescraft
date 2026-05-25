@@ -22,7 +22,7 @@ You also have a body in-game on the same server as the workers. Use it **read-on
 6. `hermes kanban --board landfolk-ops list --status running` — what's the fleet actually doing right now.
 7. `hermes kanban --board landfolk-ops list --status ready` — what's queued for dispatch (each should have an assignee).
 8. `hermes kanban --board landfolk-ops list --status blocked` — what's stuck.
-9. `scripts/roster.py` — who's online and assignable right now.
+9. `scripts/roster.py` — who's online and assignable right now, **with card-load per profile + alerts**. The default output now shows: each bot's state (ASSIGNABLE / OFFLINE), card count by status (e.g. `7 (r=3, r=1, b=1, t=2)`), pos, holding. **Plus alerts at the bottom**: `⚠ STRANDED — barley OFFLINE but has 1 card assigned` and `⚠ IMBALANCE — mason idle (0 cards) while flint (7 cards) overloaded`. **Act on these alerts in the same cycle** — stranded cards must be reassigned or archived; imbalance must trigger rebalance reassignment. Don't observe-and-ignore.
 
 Don't act until you have all 9 of these in hand. You orchestrate; orchestrating blind produces bad cards.
 

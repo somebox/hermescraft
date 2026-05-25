@@ -1091,6 +1091,14 @@ Only use mc commands. If blocked twice, mc help (or skill_view minecraft-<topic>
     mc_debug_env=("MC_DEBUG_LOG=$mc_debug_log")
   fi
   mkdir -p "$restricted_bin"
+  # Always clear stale stubs first — a profile that was previously launched as
+  # role=worker would have ~35 stubs ("Blocked shell command. Use mc commands
+  # only.") that persist on disk. If the SAME profile is later launched as
+  # role=orchestrator (Steward), those stubs still take precedence on PATH and
+  # silently block legitimate commands like `python scripts/roster.py`.
+  # Observed 2026-05-25: Steward couldn't run roster.py for hours because of
+  # leftover stubs from a May 24 worker-mode launch.
+  rm -f "$restricted_bin"/* 2>/dev/null || true
   if [ "${AGENT_ROUND_TIMEOUT_S:-0}" -gt 0 ]; then
     hermes_timeout_prefix=(perl -e 'alarm shift; exec @ARGV' "${AGENT_ROUND_TIMEOUT_S}")
   fi

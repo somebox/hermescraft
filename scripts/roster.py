@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import sys
 import urllib.error
 import urllib.request
@@ -34,6 +35,37 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODELS_JSON = REPO_ROOT / "data" / "agent-models.json"
+KANBAN_DB = Path(os.environ.get(
+    "HERMES_KANBAN_DB",
+    str(Path.home() / ".hermes" / "kanban" / "boards" / "landfolk-ops" / "kanban.db"),
+))
+
+
+def card_load() -> dict:
+    """Return {assignee_lower: {status: count, ..., total: N}} from live kanban DB.
+    Empty dict if DB unreachable (don't fail the roster probe)."""
+    if not KANBAN_DB.is_file():
+        return {}
+    try:
+        con = sqlite3.connect(f"file:{KANBAN_DB}?mode=ro", uri=True)
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT assignee, status, COUNT(*) AS n FROM tasks "
+            "WHERE assignee IS NOT NULL AND assignee != '' "
+            "AND status NOT IN ('done','archived') "
+            "GROUP BY assignee, status"
+        ).fetchall()
+        out: dict = {}
+        for r in rows:
+            a = (r["assignee"] or "").lower()
+            if not a:
+                continue
+            out.setdefault(a, {})[r["status"]] = r["n"]
+        for a, sts in out.items():
+            sts["total"] = sum(sts.values())
+        return out
+    except Exception:
+        return {}
 
 
 def load_roster() -> dict:
@@ -76,21 +108,55 @@ def build_status(roster: dict) -> list[dict]:
     return rows
 
 
-def print_table(rows: list[dict]) -> None:
-    print(f"{'profile':<10} {'role':<12} {'port':<6} {'state':<14} {'pos':<22} {'holding':<14}")
+def print_table(rows: list[dict], loads: dict) -> None:
+    print(f"{'profile':<10} {'role':<12} {'state':<14} {'cards':<28} {'pos':<22} {'holding':<10}")
     for r in rows:
         if not r["online"]:
             state = "OFFLINE"
         elif not r["mc_connected"]:
-            state = "listener-only"  # bot up, but disconnected from MC
+            state = "listener-only"
         else:
             state = "ASSIGNABLE"
-        pos = ",".join(f"{x:.1f}" if isinstance(x, (int, float)) else "?" for x in (r["pos"] or [0, 0, 0])) if r["pos"] else "-"
-        holding = r["holding"] or "-"
-        print(f"{r['lower']:<10} {r['role']:<12} {str(r['port'] or '-'):<6} {state:<14} {pos:<22} {holding:<14}")
+        load = loads.get(r["lower"], {})
+        total = load.get("total", 0)
+        if total:
+            parts = []
+            for s in ("running", "ready", "blocked", "todo", "triage"):
+                if s in load:
+                    parts.append(f"{s[0]}={load[s]}")
+            cards = f"{total} ({', '.join(parts)})"
+        else:
+            cards = "—"
+        pos = ",".join(f"{x:.0f}" if isinstance(x, (int, float)) else "?" for x in (r["pos"] or [0, 0, 0])) if r["pos"] else "-"
+        holding = (r["holding"] or "-")[:10]
+        print(f"{r['lower']:<10} {r['role']:<12} {state:<14} {cards:<28} {pos:<22} {holding:<10}")
     print()
     assignable = [r["lower"] for r in rows if r["assignable"]]
     print(f"ASSIGNABLE profiles right now: {', '.join(assignable) if assignable else '(none)'}")
+
+    # ── alerts ──────────────────────────────────────────────────────────────
+    alerts = []
+    # STRANDED: offline profiles holding cards
+    for r in rows:
+        if not r["mc_connected"]:
+            load = loads.get(r["lower"], {})
+            if load.get("total", 0) > 0:
+                alerts.append(f"⚠ STRANDED — {r['lower']} is OFFLINE but has {load['total']} card(s) assigned (running={load.get('running',0)}, ready={load.get('ready',0)}, todo={load.get('todo',0)}, blocked={load.get('blocked',0)}). Reassign or archive.")
+    # IDLE: assignable but 0 cards
+    idle = [r["lower"] for r in rows if r["assignable"] and loads.get(r["lower"], {}).get("total", 0) == 0 and r["role"] != "orchestrator"]
+    # OVERLOADED: any single assignable with ≥4 cards while another assignable has 0
+    overloaded = [(r["lower"], loads[r["lower"]]["total"]) for r in rows
+                  if r["assignable"] and loads.get(r["lower"], {}).get("total", 0) >= 4]
+    if idle and overloaded:
+        ov = ", ".join(f"{n} ({t} cards)" for n, t in overloaded)
+        alerts.append(f"⚠ IMBALANCE — {', '.join(idle)} idle (0 cards) while {ov} overloaded. Reassign 1-2 cards to balance.")
+    elif idle:
+        alerts.append(f"ℹ  {', '.join(idle)} assignable with 0 cards — generate parallel work or wait for natural assignment.")
+
+    if alerts:
+        print()
+        for a in alerts:
+            print(f"  {a}")
 
 
 def main() -> int:
@@ -104,6 +170,7 @@ def main() -> int:
 
     roster = load_roster()
     rows = build_status(roster)
+    loads = card_load()
 
     if args.assignable:
         for r in rows:
@@ -111,9 +178,12 @@ def main() -> int:
                 print(r["lower"])
         return 0
     if args.json:
+        # Attach card loads to each row in JSON mode
+        for r in rows:
+            r["card_load"] = loads.get(r["lower"], {})
         print(json.dumps({"agents": rows}, indent=2))
     else:
-        print_table(rows)
+        print_table(rows, loads)
 
     if args.online:
         offline = [r["lower"] for r in rows if not r["online"]]
