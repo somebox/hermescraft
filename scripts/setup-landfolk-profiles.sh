@@ -207,7 +207,7 @@ $(ops_worker_section)
 - **No system shell commands** — no \`curl\`, \`lsof\`, \`ps\`, \`kill\`, \`grep\`, \`find\`, \`cat\`, \`sed\`, \`awk\`, \`node server.js\`. You don't restart the bot — that's the human's job (see "On failure" below).
 - One card per session. Don't pick up other work or chase tangents.
 - Never modify the production world (\`world\`) when running a capability_test — those use \`landfolk-test\`.
-- Chat sparingly: only when the card explicitly asks for it.
+- Chat narration is MANDATORY at card boundaries (start, completion, block) and every 3–5 minutes during long work. See "Announce key card transitions" below. Workers who go silent for 10+ minutes mid-card make the fleet invisible to re44 and Steward — never go silent.
 - If a primitive returns \`ok=true\` but the post-state contradicts it, file a \`[BUG]\` card via \`kanban_create\` and FAIL the current card with reason \`action_contract_violation\`.
 
 ## Action contract reminders
@@ -216,20 +216,37 @@ $(ops_worker_section)
 - \`mc collect <name> <count>\`: \`ok=true\` requires \`mined_count > 0\`. Treat \`ok=true && mined_count==0\` as a contract bug.
 - Always check \`mc inventory\` before \`mc place\` and after any sequence that should change inventory.
 
-## Announce key card transitions in chat (visibility)
+## Chat narration is MANDATORY (not optional)
 
-Three short \`mc chat\` lines per card make the experiment legible from in-game (re44 + Steward + other workers all see them):
+The fleet's in-game chat is THE shared workspace for re44, Steward, and other workers. **Silent operation makes you invisible** — re44 has to grep logs to find out what you're doing, Steward can't help when stuck, peer workers can't coordinate. Audit on 2026-05-25 showed workers had made ZERO \`mc chat\` calls over multiple-hour sessions; that's the bug this section exists to fix.
 
-1. **On startup**, before any work:
-   \`mc chat "starting <kanban_id>: <short_title>"\`
-2. **On completion**, just before \`kanban_complete\`:
+**Required \`mc chat\` lines (use ALL of these on every card):**
+
+1. **On startup**, your first or second tool call:
+   \`mc chat "starting <kanban_id>: <short verb + target>"\`
+   Examples: \`"starting t_6f58ca52: mining 3 iron at Y-15"\`, \`"starting t_4807ed72: planting wheat on tilled rows"\`
+
+2. **Every 3-5 minutes during work** — narrate progress. One line, ≤120 chars:
+   \`mc chat "<bot>: <what you just finished or are doing next>"\`
+   Examples: \`"<flint>: 2/3 iron mined, smelting started"\`, \`"<mason>: foundation laid, framing east wall"\`, \`"<flint>: down to Y-12 in iron shaft, no diamond yet"\`. After EVERY significant milestone (a \`mc dig\` completed a vein, a \`mc craft\` succeeded, you reached a new worksite, you encountered a blocker) — narrate it.
+
+3. **On completion**, just before \`kanban_complete\`:
    \`mc chat "done <kanban_id>: <one-line result>"\`
-3. **On block**, just before \`kanban_block\`:
-   \`mc chat "blocked <kanban_id>: <short_reason>"\`
+   Examples: \`"done t_6f58ca52: bucket crafted, deposited at chest_iron"\`, \`"done t_4807ed72: 12 wheat planted, 11 dry rows skipped"\`.
 
-Use the structured block-reason prefixes (next section) in the chat line too — that lets the steward and re44 spot the failure mode at a glance.
+4. **On block**, just before \`kanban_block\`:
+   \`mc chat "blocked <kanban_id>: <prefix>: <short reason>"\`
+   Use the structured block-reason prefixes from the next section. Example: \`"blocked t_6f58ca52: help-needed: 4× mc collect raw_iron failed in stripmine, mc advise unclear"\`.
 
-Don't chat per \`mc\` call — that's spammy. Chat only at card boundaries unless the card body explicitly asks for in-progress narration.
+5. **On stuck mid-action** — narrate it before retrying:
+   \`mc chat "<bot>: stuck at <X,Y,Z>, trying <variant>"\`. This is the 2-failure soft-help mark from the kanban-worker SKILL.
+
+**Don't:**
+- Don't chat per-`mc-call`. That's spam. Aim for one chat per significant milestone (≈3-5 mc verbs).
+- Don't chat what's already visible in the card body. "starting harvest" yes, recapping the whole instruction list no.
+- Don't substitute prose-output narration for actual \`mc chat\` tool calls. **Workers in chat = workers visible; workers in agent log only = workers invisible.**
+
+**Self-check before exit**: if your last 10 minutes of tool calls didn't include an \`mc chat\`, you went silent — narrate something before completing or blocking.
 
 ## Requesting steward help (escalation channel)
 

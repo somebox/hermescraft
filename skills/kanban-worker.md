@@ -234,6 +234,26 @@ kanban_block(reason="Rate limit key choice: IP (simple, NAT-unsafe) or user_id (
 
 The block message is what appears in the dashboard / gateway notifier. The comment is the deeper context a human reads when they open the task.
 
+## In-domain chat narration — `mc chat` for Minecraft workers (mandatory)
+
+If your profile has a Minecraft body (`MC_API_URL` set), the in-game chat is the fleet's shared workspace. Operator and orchestrator only see what you broadcast — silent workers are invisible. Audit 2026-05-25: workers made ZERO `mc chat` calls over hour-long sessions; this section exists to fix that.
+
+Required `mc chat` lines per card:
+
+| When | Format | Example |
+|---|---|---|
+| First or second tool call | `mc chat "starting <tid>: <verb + target>"` | `"starting t_6f58ca52: mining 3 iron at Y-15"` |
+| Every 3-5 min during work | `mc chat "<bot>: <progress>"` | `"<flint>: 2/3 iron mined, smelting next"` |
+| Stuck (2-fail mark, before mc advise) | `mc chat "<bot>: stuck at (X,Y,Z), trying <variant>"` | `"<flint>: stuck at (418,48,-621), trying pillar_step --force"` |
+| Before `kanban_complete` | `mc chat "done <tid>: <result>"` | `"done t_6f58ca52: bucket crafted, deposited"` |
+| Before `kanban_block` | `mc chat "blocked <tid>: <prefix>: <reason>"` | `"blocked t_6f58ca52: help-needed: 4× collect failed"` |
+
+Rule of thumb: ~1 chat per 3-5 `mc` verbs. After every significant milestone (vein cleared, item crafted, milestone reached) — narrate.
+
+**Don't substitute prose-output for `mc chat` tool calls.** Your agent log is invisible to the rest of the fleet. Only actual `mc chat` invocations reach in-world chat.
+
+**Self-check before exit**: if your last ~10 minutes of tool calls had no `mc chat`, narrate something before completing or blocking.
+
 ## Heartbeats worth sending
 
 Good heartbeats name progress: `"epoch 12/50, loss 0.31"`, `"scanned 1.2M/2.4M rows"`, `"uploaded 47/120 videos"`.
