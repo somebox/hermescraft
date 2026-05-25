@@ -1034,34 +1034,31 @@ ${shared_rules}
 Start with: ${starter_cmds}"
 
   if [ "$role" = "orchestrator" ]; then
-    # Steward's per-cycle prompt: kanban-first observation, then ONE
-    # orchestration action (decompose / supervise / reassign / unblock /
-    # archive / comment). Never \"pick a goal\" — Steward's goals are
-    # board flow + fleet balance, not wood/stone gaps. The bot body is
-    # read-only; if anything in-world needs changing, it becomes a card.
-    continue_prompt_full="Continue (orchestrator cycle). Steward checks the board, then acts.
+    # Steward's per-cycle prompt: load the canonical SOUL from
+    # prompts/landfolk/steward.md (where all the ritual, escalation, and
+    # rule edits live). The file is re-read every round via cat, so SOUL
+    # edits land on the NEXT round without a restart.
+    #
+    # PRE-FIX (2026-05-26): this block had a hardcoded inline 30-line
+    # prompt that didn't reference prompts/landfolk/steward.md, so every
+    # SOUL edit we made was silently ignored — Steward kept quoting
+    # "take ONE action" from the hardcoded version even after we replaced
+    # the file's loop with a 5-phase ritual. Fixed by loading from the
+    # file directly. The setup-landfolk-profiles.sh comment ("steward.md
+    # is loaded as your initial -q") was aspirational, not actual; now
+    # it is actual.
+    local _steward_soul=""
+    if [ -f "$PROMPT_DIR/steward.md" ]; then
+      _steward_soul="$(cat "$PROMPT_DIR/steward.md")"
+    else
+      echo "[$ts_boot] WARN: $PROMPT_DIR/steward.md missing — falling back to minimal prompt" >> "$agent_log"
+    fi
+    continue_prompt_full="${_steward_soul:-Continue (orchestrator cycle). Steward checks the board, then acts.}
 
-Each cycle:
-1. hermes kanban --board landfolk-ops stats
-2. hermes kanban --board landfolk-ops list --status running
-3. hermes kanban --board landfolk-ops list --status ready
-4. hermes kanban --board landfolk-ops list --status blocked
-5. mc status (verify you're safe at base; no mining/building)
-6. mc read_chat (look for @steward triggers from re44 + worker chatter)
-
-Then take ONE of these actions, narrate it in chat:
-  • Decompose triage / oversized cards with hermes kanban create — set explicit --assignee flint|mason|gatherer after scripts/roster.py --assignable
-  • Unblock / comment on a blocked card
-  • Reassign a card if the fleet is imbalanced (hermes kanban reassign <id> <profile> --reclaim)
-  • Archive a stale / superseded card
-  • Open a [BUG] card for re44 when blockage is a framework defect
-  • If the board is healthy and fleet busy: write a memory note and wait.
-
-MANDATORY LAST STEP: end every cycle with a real \`mc chat\` tool call. Generating a summary in your prose output is NOT narration — workers and re44 ONLY see in-game chat, not your agent log. Format: \`mc chat \"<verb> t_xxx (was <prev>): <one-line reason>\"\` — max 120 chars. If you took no action this cycle, \`mc chat\` a one-line status note (\"no action — pipeline flowing, 3 flint workers running\"). If you didn't \`mc chat\` this cycle, you didn't communicate it, full stop.
-
-NEVER touch mc dig / place / collect / craft / fill / smelt — orchestrator only. Bot body stays near base unless a planning task requires going somewhere to inspect (and then come back).
 $shared_rules"
-    continue_prompt_minimal="Continue (orchestrator). Read the board (hermes kanban stats + list running/ready/blocked), then take ONE action: decompose with explicit assignee, unblock, reassign, archive, or comment + narrate in chat. MANDATORY LAST STEP: end with mc chat \"<one-line summary>\" — your prose output is NOT a chat post; only real mc chat calls reach workers and re44. Stay at base; never mine/place. No unassigned ready cards. Valid assignees: flint, mason, gatherer, steward, re44 (human operator). NEVER reassign to 'default' — it is the hermes-profile fallback, not a Mineflayer bot, and cannot perform in-world work. If an assignee is unrecognized, run scripts/roster.py --assignable to check before touching."
+    # Minimal prompt is a fallback used only when the full prompt is too
+    # large for the model's context window. Keep it tight + actionable.
+    continue_prompt_minimal="Continue (orchestrator). Read board (board-recent.py --ticks 5 + scripts/board + roster.py), DIAGNOSE each bot (HEALTHY_WORKING/PHYSICALLY_STUCK/IDLE_AVAILABLE/BLOCKED_WAITING), RANK top 3 issues (stuck bots first, then blocked cards, then idle, then imbalance), EXECUTE up to 3 actions one-per-issue, COMMIT and don't reverse. PHYSICALLY_STUCK bots get rescue (whisper escape primitive / file [RESCUE] for re44 / reassign card to another bot) — never decompose work to unstick a bot. End with mc chat \"<summary>\". Stay at base; never mine/place. NEVER reassign to 'default'. If unsure of an assignee, run scripts/roster.py --assignable first."
   else
     continue_prompt_full="Continue in Minecraft. Run mc status, mc read_chat, mc goals.
 $shared_rules
