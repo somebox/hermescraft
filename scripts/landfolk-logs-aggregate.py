@@ -13,6 +13,11 @@ Within a player's stream, shades distinguish:
   - info      (tool results)          → dim primary color
   - user      (cards / handoff)       → light grey, no player color
 
+Each line is prefixed with ``HH:MM:SS`` (local time), interpolated from the
+session JSON the same way as ``$LOG_DIR/cognition/*.jsonl`` (``--no-timestamps``
+to disable). Bot ``[BOT]`` / ``chat`` lines use the timestamp embedded in the
+bot log line when present.
+
 Usage:
   scripts/landfolk-logs-aggregate.py                       # flint+mason+steward
   scripts/landfolk-logs-aggregate.py --profiles flint,steward
@@ -28,6 +33,19 @@ import re
 import sys
 import time
 from pathlib import Path
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from hermes_session_lib import (
+    load_session_document,
+    message_event_time,
+    parse_bot_log_timestamp,
+    parse_iso_dt,
+    session_times_from_path,
+    short_ts_local_prefix,
+)
 
 PROFILES_DIR = Path.home() / ".hermes" / "profiles"
 BOT_LOG_DIR = Path(os.environ.get("LOG_DIR", "/tmp/hermescraft"))
@@ -94,6 +112,44 @@ _MC_CMD_RE = re.compile(
 
 def palette_for(profile: str):
     return PALETTE.get(profile.lower(), FALLBACK)
+
+
+class SessionClock:
+    """Interpolated message times (same logic as cognition JSONL)."""
+
+    def __init__(self) -> None:
+        self._cache: dict[Path, tuple[float, object, object]] = {}
+
+    def _bounds(self, sess: Path):
+        mtime = sess.stat().st_mtime
+        hit = self._cache.get(sess)
+        if hit and hit[0] == mtime:
+            return hit[1], hit[2]
+        doc = load_session_document(sess)
+        meta = session_times_from_path(sess, doc)
+        start = parse_iso_dt(meta.get("session_start"))
+        end = parse_iso_dt(meta.get("session_last_updated"))
+        self._cache[sess] = (mtime, start, end)
+        return start, end
+
+    def prefix_for_message(self, sess: Path, msg_index: int, msg: dict, message_count: int) -> str:
+        start, end = self._bounds(sess)
+        iso, _ = message_event_time(
+            session_start=start,
+            session_end=end,
+            msg_index=msg_index,
+            message_count=message_count,
+            msg=msg,
+        )
+        return short_ts_local_prefix(iso)
+
+
+def time_col(show: bool, time_p: str, use_color: bool) -> str:
+    if not show:
+        return ""
+    if use_color:
+        return f"{META_C}{time_p}{RST} "
+    return f"{time_p} "
 
 
 def newest_session(profile: str) -> Path | None:
@@ -296,13 +352,16 @@ class QuietPrinter:
 
     STALE_FLUSH_S = 3.0
 
-    def __init__(self, pad: int, use_color: bool):
+    def __init__(self, pad: int, use_color: bool, *, show_times: bool = True):
         self.pad = pad
         self.use_color = use_color
+        self.show_times = show_times
         # profile → {"name": str, "n": int, "last": float, "summaries": list[str]}
         self.pending: dict[str, dict] = {}
 
-    def _fmt_tool_summary(self, profile: str, name: str, n: int, summaries: list[str]) -> str:
+    def _fmt_tool_summary(
+        self, profile: str, name: str, n: int, summaries: list[str], time_p: str = "        "
+    ) -> str:
         primary, bold, dim = palette_for(profile) if self.use_color else ("", "", "")
         hint = USER_C if self.use_color else ""
         rst = RST if self.use_color else ""
@@ -310,12 +369,21 @@ class QuietPrinter:
         count = f"×{n}" if n > 1 else ""
         hint_text = collapse_tool_summaries(summaries)
         hint_suffix = f"  {hint}{hint_text}{rst}" if hint_text else ""
-        return f"{primary}{tag}{rst} {bold}⚙ {count} {name}{rst}{hint_suffix}"
+        tcol = time_col(self.show_times, time_p, self.use_color)
+        return f"{tcol}{primary}{tag}{rst} {bold}⚙ {count} {name}{rst}{hint_suffix}"
 
     def flush(self, profile: str) -> None:
         p = self.pending.pop(profile, None)
         if p:
-            print(self._fmt_tool_summary(profile, p["name"], p["n"], p.get("summaries") or []))
+            print(
+                self._fmt_tool_summary(
+                    profile,
+                    p["name"],
+                    p["n"],
+                    p.get("summaries") or [],
+                    p.get("time_p") or "        ",
+                )
+            )
 
     def flush_all(self) -> None:
         for profile in list(self.pending):
@@ -327,7 +395,7 @@ class QuietPrinter:
             if now - p["last"] > self.STALE_FLUSH_S:
                 self.flush(profile)
 
-    def add_tool(self, profile: str, name: str, summary: str = "") -> None:
+    def add_tool(self, profile: str, name: str, summary: str = "", time_p: str = "        ") -> None:
         p = self.pending.get(profile)
         if p and p["name"] == name:
             p["n"] += 1
@@ -343,6 +411,7 @@ class QuietPrinter:
                 "n": 1,
                 "last": time.time(),
                 "summaries": [summary] if summary else [],
+                "time_p": time_p,
             }
 
     def add_line(self, profile: str, line: str) -> None:
@@ -351,7 +420,16 @@ class QuietPrinter:
         print(line)
 
 
-def render_quiet_items(profile: str, msg: dict, use_color: bool, pad: int) -> list[tuple[str, str]]:
+def render_quiet_items(
+    profile: str,
+    msg: dict,
+    use_color: bool,
+    pad: int,
+    show_reasoning: bool = False,
+    *,
+    show_times: bool = True,
+    time_p: str = "        ",
+) -> list[tuple[str, str]]:
     """Quiet-mode renderer: emit structured items instead of lines so the
     caller can run-length-compress tool calls across messages.
 
@@ -363,6 +441,7 @@ def render_quiet_items(profile: str, msg: dict, use_color: bool, pad: int) -> li
     user_c = USER_C if use_color else ""
     rst = RST if use_color else ""
     tag = f"{profile.lower():<{pad}}"
+    tcol = time_col(show_times, time_p, use_color)
     role = msg.get("role")
     out: list[tuple[str, str]] = []
 
@@ -370,19 +449,24 @@ def render_quiet_items(profile: str, msg: dict, use_color: bool, pad: int) -> li
         text = truncate(str(msg.get("content", "")), 200)
         if text:
             for ln in text.splitlines():
-                out.append(("line", f"{user_c}{tag}{rst} {user_c}USER {ln}{rst}"))
+                out.append(("line", f"{tcol}{user_c}{tag}{rst} {user_c}USER {ln}{rst}"))
         return out
 
     if role == "assistant":
+        reasoning = (msg.get("reasoning_content") or msg.get("reasoning") or "").strip()
         text = (msg.get("content") or "").strip()
+        hint_c = META_C if use_color else ""
+        if show_reasoning and reasoning and reasoning != text:
+            for ln in reasoning.splitlines():
+                out.append(("line", f"{tcol}{primary}{tag}{rst} {hint_c}· {ln.strip()}{rst}"))
         if text:
             for ln in text.splitlines():
-                out.append(("line", f"{primary}{tag}{rst} {primary}{ln}{rst}"))
-        for tc in msg.get("tool_calls") or []:
-            fn = tc.get("function") or {}
+                out.append(("line", f"{tcol}{primary}{tag}{rst} {primary}{ln}{rst}"))
+        for tcall in msg.get("tool_calls") or []:
+            fn = tcall.get("function") or {}
             name = fn.get("name", "?")
             summary = summarize_tool(name, fn.get("arguments", ""))
-            out.append(("tool", (name, summary)))
+            out.append(("tool", (name, summary, time_p if show_times else "")))
         return out
 
     if role == "tool":
@@ -391,13 +475,23 @@ def render_quiet_items(profile: str, msg: dict, use_color: bool, pad: int) -> li
             return out  # hide non-error results entirely
         one = " ⏎ ".join(line for line in raw.splitlines() if line.strip())
         short = truncate(one, 160)
-        out.append(("line", f"{primary}{tag}{rst} {bold}✗ {short}{rst}"))
+        out.append(("line", f"{tcol}{primary}{tag}{rst} {bold}✗ {short}{rst}"))
         return out
 
     return out
 
 
-def render(profile: str, msg: dict, use_color: bool, pad: int, quiet: bool = False) -> list[str]:
+def render(
+    profile: str,
+    msg: dict,
+    use_color: bool,
+    pad: int,
+    quiet: bool = False,
+    show_reasoning: bool = False,
+    *,
+    show_times: bool = True,
+    time_p: str = "        ",
+) -> list[str]:
     """Return list of printable lines for this message.
 
     When ``quiet`` is true:
@@ -411,6 +505,7 @@ def render(profile: str, msg: dict, use_color: bool, pad: int, quiet: bool = Fal
     user_c = USER_C if use_color else ""
     rst = RST if use_color else ""
     tag = f"{profile.lower():<{pad}}"
+    tcol = time_col(show_times, time_p, use_color)
     role = msg.get("role")
     lines: list[str] = []
 
@@ -418,38 +513,43 @@ def render(profile: str, msg: dict, use_color: bool, pad: int, quiet: bool = Fal
         text = truncate(str(msg.get("content", "")), 200 if quiet else 400)
         if text:
             for ln in text.splitlines():
-                lines.append(f"{user_c}{tag}{rst} {user_c}USER {ln}{rst}")
+                lines.append(f"{tcol}{user_c}{tag}{rst} {user_c}USER {ln}{rst}")
         return lines
 
     if role == "assistant":
+        reasoning = (msg.get("reasoning_content") or msg.get("reasoning") or "").strip()
         text = (msg.get("content") or "").strip()
+        if show_reasoning and reasoning and reasoning != text:
+            hint_c = META_C if use_color else ""
+            for ln in reasoning.splitlines():
+                lines.append(f"{tcol}{primary}{tag}{rst} {hint_c}· {ln.strip()}{rst}")
         if text:
             for ln in text.splitlines():
-                lines.append(f"{primary}{tag}{rst} {primary}{ln}{rst}")
+                lines.append(f"{tcol}{primary}{tag}{rst} {primary}{ln}{rst}")
         tool_calls = msg.get("tool_calls") or []
         if quiet:
             if tool_calls:
                 summaries = [
                     summarize_tool(
-                        (tc.get("function") or {}).get("name", "?"),
-                        (tc.get("function") or {}).get("arguments", ""),
+                        (tcall.get("function") or {}).get("name", "?"),
+                        (tcall.get("function") or {}).get("arguments", ""),
                     )
-                    for tc in tool_calls
+                    for tcall in tool_calls
                 ]
                 hint = collapse_tool_summaries(summaries)
                 hint_c = USER_C if use_color else ""
                 lines.append(
-                    f"{primary}{tag}{rst} {bold}⚙ ×{len(tool_calls)}{rst}"
+                    f"{tcol}{primary}{tag}{rst} {bold}⚙ ×{len(tool_calls)}{rst}"
                     + (f"  {hint_c}{hint}{rst}" if hint else "")
                 )
         else:
-            for tc in tool_calls:
-                fn = tc.get("function") or {}
+            for tcall in tool_calls:
+                fn = tcall.get("function") or {}
                 name = fn.get("name", "?")
                 summary = summarize_tool(name, fn.get("arguments", ""))
                 hint_c = USER_C if use_color else ""
                 hint_suffix = f"  {hint_c}{summary}{rst}" if summary else ""
-                lines.append(f"{primary}{tag}{rst} {bold}⚙  {name}{rst}{hint_suffix}")
+                lines.append(f"{tcol}{primary}{tag}{rst} {bold}⚙  {name}{rst}{hint_suffix}")
         return lines
 
     if role == "tool":
@@ -462,7 +562,7 @@ def render(profile: str, msg: dict, use_color: bool, pad: int, quiet: bool = Fal
         marker = "✗" if err else "←"
         # In quiet mode, errors get the player's bold color (not dim) so they pop.
         body_c = bold if (quiet and err) else dim
-        lines.append(f"{primary}{tag}{rst} {body_c}{marker} {out_short}{rst}")
+        lines.append(f"{tcol}{primary}{tag}{rst} {body_c}{marker} {out_short}{rst}")
         return lines
 
     return lines
@@ -514,23 +614,28 @@ def print_freshness_banner(profiles: list[str], pad: int, use_color: bool) -> No
         print(f"  {primary}{p:<{pad}}{rst} {dim}{sess_note}  |  {bot_note}{rst}")
 
 
-def render_bot_line(profile: str, line: str, use_color: bool, pad: int) -> str:
+def render_bot_line(
+    profile: str, line: str, use_color: bool, pad: int, *, show_times: bool = True
+) -> str:
     """Color a bot-log line in the player's dim shade, prefixed with [BOT]."""
     primary, _, dim = palette_for(profile) if use_color else ("", "", "")
     rst = RST if use_color else ""
     tag = f"{profile.lower():<{pad}}"
-    # Strip trailing newline + tighten whitespace
     s = line.rstrip()
-    return f"{primary}{tag}{rst} {dim}[BOT] {s}{rst}"
+    time_p = short_ts_local_prefix(parse_bot_log_timestamp(s)) if show_times else ""
+    tc = time_col(show_times, time_p, use_color)
+    return f"{tc}{primary}{tag}{rst} {dim}[BOT] {s}{rst}"
 
 
-def render_chat_line(line: str, use_color: bool, pad: int) -> str:
+def render_chat_line(line: str, use_color: bool, pad: int, *, show_times: bool = True) -> str:
     """Color a deduped chat line under the `chat` pseudo-profile."""
     chat_c = CHAT_C if use_color else ""
     rst = RST if use_color else ""
     tag = f"{'chat':<{pad}}"
     s = line.rstrip()
-    return f"{chat_c}{tag} {s}{rst}"
+    time_p = short_ts_local_prefix(parse_bot_log_timestamp(s)) if show_times else ""
+    tc = time_col(show_times, time_p, use_color)
+    return f"{tc}{chat_c}{tag} {s}{rst}"
 
 
 def main() -> int:
@@ -546,10 +651,21 @@ def main() -> int:
     ap.add_argument("-q", "--quiet", action="store_true",
                     help="collapse consecutive tool calls to one summary line, "
                          "hide non-error tool output, keep thoughts + errors")
+    ap.add_argument(
+        "--reasoning",
+        action="store_true",
+        help="include reasoning_content / reasoning (hidden chain-of-thought) before assistant text",
+    )
+    ap.add_argument(
+        "--no-timestamps",
+        action="store_true",
+        help="omit HH:MM:SS column (legacy layout)",
+    )
     ap.add_argument("--poll", type=float, default=1.0)
     args = ap.parse_args()
 
     use_color = (not args.no_color) and sys.stdout.isatty()
+    show_times = not args.no_timestamps
     profiles = [p.strip().lower() for p in args.profiles.split(",") if p.strip()]
     pad = max(len(p) for p in profiles) if profiles else 8
 
@@ -584,17 +700,40 @@ def main() -> int:
     print(f"{meta}── aggregating {sources}: {', '.join(profiles)}{' (tail '+str(args.tail)+')' if args.tail else ''} ──{rst}")
     print_freshness_banner(profiles, pad, use_color)
 
-    qp = QuietPrinter(pad=pad, use_color=use_color) if args.quiet else None
+    qp = QuietPrinter(pad=pad, use_color=use_color, show_times=show_times) if args.quiet else None
+    clock = SessionClock()
 
-    def emit_msg(p: str, m: dict) -> None:
+    def emit_msg(p: str, m: dict, msg_index: int, sess: Path | None, n: int) -> None:
+        time_p = (
+            clock.prefix_for_message(sess, msg_index, m, n)
+            if show_times and sess is not None
+            else "        "
+        )
         if qp is None:
-            for ln in render(p, m, use_color, pad):
+            for ln in render(
+                p,
+                m,
+                use_color,
+                pad,
+                quiet=args.quiet,
+                show_reasoning=args.reasoning,
+                show_times=show_times,
+                time_p=time_p,
+            ):
                 print(ln)
             return
-        for kind, payload in render_quiet_items(p, m, use_color, pad):
+        for kind, payload in render_quiet_items(
+            p,
+            m,
+            use_color,
+            pad,
+            show_reasoning=args.reasoning,
+            show_times=show_times,
+            time_p=time_p,
+        ):
             if kind == "tool":
-                name, summary = payload
-                qp.add_tool(p, name, summary)
+                name, summary, tp = payload
+                qp.add_tool(p, name, summary, time_p=tp or time_p)
             else:  # "line"
                 qp.add_line(p, payload)
 
@@ -607,8 +746,8 @@ def main() -> int:
                     continue
                 msgs = load_messages(sess)
                 start = max(0, len(msgs) - args.tail)
-                for m in msgs[start:]:
-                    emit_msg(p, m)
+                for i, m in enumerate(msgs[start:], start):
+                    emit_msg(p, m, i, sess, len(msgs))
                 state[p] = (sess, len(msgs))
                 file_cursors[sess] = len(msgs)
             if qp:
@@ -622,8 +761,8 @@ def main() -> int:
                 if sess is None:
                     continue
                 msgs = load_messages(sess)
-                for m in msgs:
-                    emit_msg(p, m)
+                for i, m in enumerate(msgs):
+                    emit_msg(p, m, i, sess, len(msgs))
             if qp:
                 qp.flush_all()
             return 0
@@ -665,8 +804,8 @@ def main() -> int:
                             print(f"{meta}── {p}: new session {sess.name} ──{rst}")
                     msgs = load_messages(sess)
                     if len(msgs) > last_n:
-                        for m in msgs[last_n:]:
-                            emit_msg(p, m)
+                        for i, m in enumerate(msgs[last_n:], last_n):
+                            emit_msg(p, m, i, sess, len(msgs))
                         last_n = len(msgs)
                         any_new = True
                     file_cursors[sess] = last_n
@@ -706,14 +845,14 @@ def main() -> int:
                                 chat_dedup[key] = None
                                 if len(chat_dedup) > CHAT_DEDUP_MAX:
                                     chat_dedup.popitem(last=False)
-                                chat_line = render_chat_line(line, use_color, pad)
+                                chat_line = render_chat_line(line, use_color, pad, show_times=show_times)
                                 if qp:
                                     qp.add_line('chat', chat_line)
                                 else:
                                     print(chat_line)
                                 any_new = True
                                 continue
-                            bot_line = render_bot_line(p, line, use_color, pad)
+                            bot_line = render_bot_line(p, line, use_color, pad, show_times=show_times)
                             if qp:
                                 qp.add_line(p, bot_line)
                             else:

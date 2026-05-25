@@ -62,6 +62,8 @@ docker exec → rcon-cli). No bot needed — this only manipulates the world.
 
 ## Tier 3 — Python functional tests (pytest)
 
+**Quick reference:** [arena-tests-quickstart.md](arena-tests-quickstart.md) — Tester on `:3004`, `ubuntu-host` / `minecraft` rcon, `landfolk-test` arena, model notes.
+
 `tests/functional/` — pytest modules including `functional/combat/` (9 reactive
 L3 scenarios, `@slow`), `functional/mining/`, and nested stairs/water cases.
 Regression tests for the bot's behavior contracts (pathfinding, mining LOS,

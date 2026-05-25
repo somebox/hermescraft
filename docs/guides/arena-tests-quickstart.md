@@ -1,0 +1,58 @@
+# Arena tests quickstart (Tester + landfolk-test)
+
+Short reference for **Tier 3 pytest functional** runs. Full tier map: [testing.md](testing.md). World layout: [test-world.md](test-world.md). Harness details: [tests/README.md](../../tests/README.md).
+
+## Server stack
+
+| Piece | Where / how |
+|-------|-------------|
+| **Paper MC** | Host **`ubuntu-host`**, Docker container **`minecraft`**, TCP **`25565`** |
+| **Console (rcon)** | Pytest shells **`ssh ubuntu-host`** → **`docker exec minecraft rcon-cli …`** (`config/hermescraft.yaml` → `rcon.*`) |
+| **Test dimension** | Multiverse world **`landfolk-test`** (peaceful, flat; production **`world`** untouched) |
+| **Arena** | Harness rebuilds **65×65 grass** at origin each test; **Tester** parked at **`(0, 65, 0)`** |
+
+Per-machine MC/bot URLs: **`config/hermescraft.yaml`** and optional **`$overrides`** keyed by hostname or **`HERMESCRAFT_PROFILE`**.
+
+## Tester bot (local)
+
+| Setting | Value |
+|---------|--------|
+| Identity | **`Tester`** |
+| HTTP API | **`http://localhost:3004`** (`config.bot.roles.tester`; pytest `bot` fixture) |
+| MC login target | **`MC_HOST:MC_PORT`** — launcher default **`192.168.1.202:25565`** (`scripts/run-tester-bot.sh`; override with env) |
+| Logs | **`/tmp/hermescraft/bot-tester.log`** (default) |
+
+Functional tests drive **HTTP only** (no Hermes agent). Leave **Steve/Flint on `:3001`** running; stop **Tester** only.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+
+./scripts/stop-bots.sh Tester
+./scripts/run-tester-bot.sh
+
+# one test
+.venv/bin/pytest tests/functional/path/test_file.py::test_name -v
+
+# one file / keyword / skip slow
+.venv/bin/pytest tests/functional/mining/test_foo.py -v
+.venv/bin/pytest -m "functional and not integration" -k dig -v
+./scripts/run-functional-fast.sh    # not slow
+./scripts/combat-suite.sh           # combat @slow only
+```
+
+Harness **`mvtp Tester landfolk-test`** + rescue runs automatically; do not use **`stop-bots.sh --all`** mid-suite.
+
+## Model / LLM (when it applies)
+
+| Run type | Model |
+|----------|--------|
+| **`@pytest.mark.functional`** | **None** — bot action layer via Tester HTTP API |
+| **`@pytest.mark.integration`** (e.g. perception digest) | OpenRouter: **`OPENROUTER_API_KEY`** or **`secrets.yaml`** → `openrouter_api_key`. Model: **`DIGEST_MODEL`** env, else code default **`deepseek/deepseek-v4-flash`** (`tests/_lib/openrouter.py`). Config also documents **`models.integration_default`** (`google/gemini-2.5-flash`) for future integration tests — not all integration paths read it yet. |
+| **Agent YAML** (`scripts/agent-test.py`, Tier 4) | Default **`google/gemini-2.5-flash`** (`DEFAULT_MODEL` in script). Override: **`--model`**, or **`model:`** in the YAML spec. Hermes launched with **`-m <model>`**. Uses **Flint `:3001`** by default, not Tester. See [agent-tests.md](agent-tests.md). |
+
+Functional arena work does **not** need an API key. Integration/agent tiers do.
+
+## See also
+
+- Tier 2 rcon-only fixtures (no bot): `scripts/run-fixture.sh prep|cleanup data/test-fixtures/…`
+- Coord check: `python3 scripts/check-arena-coords.py --strict`

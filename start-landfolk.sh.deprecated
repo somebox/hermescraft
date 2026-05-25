@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
-# HermesCraft Landfolk — 5 characters helping build a community
-# Adapted for ubuntu-host server + OpenRouter
+# DEPRECATED 2026-05-25 — use `scripts/landfolk start` instead.
+#
+# This legacy launcher races the new `scripts/landfolk` lifecycle:
+# it tries to bring up ALL 5 bots (gatherer, flint, mason, barley, steward),
+# attempts to launch continuous agents for each, then tears the whole session
+# down on the first missing-prompt-file error. If invoked while
+# `scripts/landfolk start` has already brought up the live roster, it kills
+# those bots in its error-path cleanup (the "Stopping landfolk... All
+# stopped." line).
+#
+# Hard-block invocation to prevent accidental reruns. To use the legacy
+# 5-bot startup flow, edit this file and remove the exit below.
+echo "DEPRECATED: ./start-landfolk.sh is no longer supported." >&2
+echo "Use: scripts/landfolk start  (see scripts/landfolk --help)" >&2
+exit 64
+# --- original script preserved below for reference ---
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

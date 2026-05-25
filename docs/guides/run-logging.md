@@ -103,3 +103,86 @@ positions + events. Use `watch-steve.py` directly only outside a run
 - **Append-only events:** post-mortem has full chronology even after the agent dies.
 - **Deterministic paths:** any script can find logs by convention, not by ad-hoc
   filename guessing.
+
+## Landfolk agent cognition (kanban / continuous)
+
+Expedition runs (`exp.sh`) already capture thinking in `runs/<RUN_ID>/agent.log`.
+Day-to-day landfolk workers store the **full** LLM trace in Hermes session JSON
+(`~/.hermes/profiles/<name>/sessions/session_*.json` and
+`~/.hermes-landfolk-<name>/sessions/`), but that is split across many session
+files and is easy to miss in `bot-*.log` alone.
+
+| Artifact | Path | Contents |
+|---|---|---|
+| Session JSON (source of truth) | `~/.hermes/.../sessions/session_*.json` | `reasoning`, `content`, tool calls, tool results |
+| Live tail (operators) | `scripts/landfolk logs agents --reasoning` | Same stream as aggregate + hidden reasoning (`·` lines) |
+| Append-only capture | `$LOG_DIR/cognition/<profile>.jsonl` | Full-text `reasoning`, `content`, tools (recorder daemon) |
+| Bot correlate | `$LOG_DIR/cognition/bot-events.jsonl` | `[till]`, chat, STUCK, reactive lines from `bot-*.log` |
+| Export bundle | `scripts/landfolk-cognition-export.py mason` | Snapshot jsonl + newest session + bot log for analysis |
+
+The **cognition recorder** (`scripts/landfolk-cognition-record.py`) starts with
+`scripts/landfolk start` by default. Disable with `--without cognition` or
+`--no-cognition`. Cursors: `$LOG_DIR/state/cognition-record.json`.
+
+### Timestamps on cognition JSONL
+
+Each record includes:
+
+| Field | Meaning |
+|---|---|
+| `ts` | Best event time: `message` (if Hermes adds per-message `created_at`), else **interpolated** between `session_start` and `last_updated` using `msg_index`, else **bot_log** time parsed from `[h:mm:ss AM]` in bot lines |
+| `ts_source` | `message` \| `interpolated` \| `bot_log` \| `ingest` |
+| `recorded_at` | When the recorder appended the line (always UTC) |
+| `session_start` / `session_last_updated` | Session window from Hermes JSON (copied on session-derived rows) |
+
+Backfill rows written **before** this convention may have `ts_source: ingest` for
+everything — re-run `scripts/landfolk cognition backfill` after clearing or
+rotating `$LOG_DIR/cognition/*.jsonl` if you need a clean timeline.
+
+Interpolation is approximate (messages are evenly spaced in time); bot `[till]`
+lines use real log clock time and are the best correlate for Mineflayer events.
+
+### Fidelity vs Hermes chat / `landfolk log`
+
+| Channel | Source | Matches session JSON? |
+|---|---|---|
+| Kanban workers (Flint, Mason, …) | `~/.hermes/profiles/<name>/sessions/*.json` | **Yes** — same `reasoning` / `content` / `tool_calls` / `tool` results the dashboard Mind API reads |
+| `scripts/landfolk logs agents --reasoning` | Same JSON via aggregate | **Yes** for text; live view truncates tool summaries and hides non-error tool output in `-q`; each line prefixed with local `HH:MM:SS` using the same session interpolation as cognition JSONL (`--no-timestamps` to disable) |
+| Continuous Steward (`hermes chat` loop) | Session JSON under `~/.hermes-landfolk-steward/` **and** filtered stdout in `agent-steward.log` | JSON capture is authoritative; `agent-steward.log` strips TUI boxes (`╭│┊`) and is **not** a full duplicate |
+| Cognition JSONL | Session JSON + selected bot log lines | **Full text** (no 300-char dashboard cap); includes full tool results; splits one assistant turn into separate `reasoning` + `content` + `tool_call` rows |
+
+Not captured in cognition JSONL: system prompt, skill list, Hermes TUI chrome,
+or streaming tokens that never landed in the saved session file.
+
+Example (Mason till debugging):
+
+```bash
+scripts/landfolk logs agents --profiles mason --reasoning --tail 40
+grep till /tmp/hermescraft/cognition/mason.jsonl | tail -20
+scripts/landfolk cognition export mason --grep till --tail 300
+```
+
+Flint (shaft / rescue / pillar loops):
+
+```bash
+scripts/landfolk logs agents --profiles flint --reasoning --tail 40
+grep -iE 'stuck|trapped|pillar|418' /tmp/hermescraft/cognition/flint.jsonl | tail -30
+scripts/landfolk cognition export flint --grep '418|trapped|pillar' --tail 500
+```
+
+Steward (orchestrator / kanban / board actions):
+
+```bash
+scripts/landfolk logs agents --profiles steward --reasoning --tail 40
+grep -iE 'kanban|reassign|decompose|flint rescue' /tmp/hermescraft/cognition/steward.jsonl | tail -30
+scripts/landfolk cognition export steward --grep kanban --tail 500
+```
+
+Backfill all roster profiles (parallel kanban sessions + bot logs):
+
+```bash
+scripts/landfolk cognition backfill --profiles flint,mason,steward --backfill-bot-log
+```
+
+Dashboard Mind panel still polls session JSON (truncated); use JSONL export for
+full reasoning when post-morteming multi-round failures.
