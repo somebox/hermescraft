@@ -137,16 +137,41 @@ def cmd_show(args):
         print(f"  last comment ({author}, {_ts_ago(ts)}, {len(comments)} total):")
         print(f"    {body_one}")
 
-    # Last run only
+    # Last run only. Distinguish in-progress runs (outcome=None) from finished
+    # ones. A running run has status="running" but outcome=null until it
+    # ends — render that as "in progress" not the literal string "None".
     if runs:
         r = runs[-1]
-        outcome = r.get("outcome", "?")
-        ts = r.get("started_at") or r.get("created_at")
+        outcome = r.get("outcome")
+        status_field = r.get("status")
+        started = r.get("started_at")
+        ended = r.get("ended_at")
         summary = _truncate((r.get("summary") or r.get("error") or ""), 120)
         n = len(runs)
-        print(f"  last run #{n}: {outcome} ({_ts_ago(ts)})")
+
+        if outcome:
+            # Finished — show outcome + ended time
+            label = outcome
+            ts = ended or started
+        elif status_field == "running":
+            label = f"in progress (status={status_field})"
+            ts = started
+        else:
+            # Unknown / unstarted
+            label = f"{status_field or '?'}"
+            ts = started
+
+        # Compute elapsed for in-progress runs to make "is this stale?" obvious
+        suffix = ""
+        if outcome is None and started and not ended:
+            elapsed = int(datetime.now().timestamp()) - int(started)
+            mins = elapsed // 60
+            suffix = f", running {mins}m"
+        print(f"  last run #{n}: {label} ({_ts_ago(ts)}{suffix})")
         if summary:
             print(f"    {summary}")
+        elif r.get("error"):
+            print(f"    error: {_truncate(r['error'], 120)}")
 
     print(f"  # full view: scripts/board show {tid} --full   (≈150 lines)")
 
