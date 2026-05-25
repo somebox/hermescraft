@@ -148,14 +148,29 @@ The right primitive depends on what's around you and whether you already have a 
 | Situation | Primitive | Why |
 |---|---|---|
 | You dug a `mc stair_down` on the way in | **`mc stair_up <opposite_dir> <length>`** | Cleanest exit — auto floor-block placement over voids, walkable + reversible. Mirror the direction you came down with. |
-| In open cave / no staircase, blocks in hand | **`mc pillar_step cobblestone 30`** | Vertical pillaring up to 30 blocks in one call. Far faster than manual `mc place + mc jump`. Stops at first ceiling. |
+| In open cave / no staircase, blocks in hand | **`mc pillar_step cobblestone 30`** | Vertical pillaring up to 30 blocks in one call. Far faster than manual `mc place + mc jump`. Iterates dig+place through ceilings. |
+| Buried under thick ceiling, no blocks in hand | **`mc pillar_step 20`** (no block arg) | Primitive bare-hand digs the cell overhead, picks up the drop, and pillars with that. Self-sustains as long as the ceiling material drops (dirt/sand/gravel: yes; stone bare-hand: no — needs a pickaxe OR `--force`). |
 | Stuck on top of a 1×1 column (over-pillared) | **`mc pillar_down`** | Mines underfoot block, drops 1, repeats until you reach proper surface. |
 | You marked `mc mark return_to_surface` at entry | **`mc go_mark return_to_surface`** | One-shot return — pathfinder routes via known-walkable path back. |
 | In water | **`mc surface`** | Swims you up to air. No-op on dry land. |
 
 **Anti-pattern: hand-rolling `mc place cobblestone X Y Z` + `mc jump`** one block at a time. That's slow (4× the rounds vs `pillar_step`), eats iteration budget, and is error-prone (your bounding box and the new block fight each tick). Use `mc pillar_step <block> <count>` instead — it handles the place-then-jump-then-rise cycle internally.
 
-If `mc pillar_step` errors (no headroom, no blocks), check `mc inventory` for placeable blocks (cobblestone, dirt, anything full-cube). If you're truly out of blocks, `mc dig` the block above you to make a chimney first, then pillar up through it.
+### Underground pillar escape (ceiling breakthrough)
+
+When you're stuck underground with a ceiling overhead:
+
+- **Default**: `mc pillar_step 20` (no block argument). The primitive itself will dig the cell directly above your head, wait for the drop to enter inventory, then pillar up using that captured block.
+- **Drop-timing caveat** (current implementation): the dirt drop from the ceiling dig sometimes arrives in inventory *after* one pillar_step call returns (Paper item_spawn packet vs. magnet-collect race). If you call once and get `PILLAR_FAILED` with `capture-from-ceiling failed: cell above head at … is air`, your inventory likely has 1 captured block now — **call `mc pillar_step` a second time** and it'll use the captured block normally. Iterating this 2-call pattern is the reliable self-rescue today.
+- **`ESCAPE_NO_DROP` returned**: the ceiling dug but dropped nothing — you bare-hand dug stone (no cobblestone unless you have a pickaxe), or the block was a non-collectible like a slab. Get a pickaxe (`mc craft wooden_pickaxe`) or extract pillar material from the walls/floor first (`mc dig <wall_coord>` → `mc pickup`), then retry `mc pillar_step 20 --force`.
+- **`PILLAR_FAILED` with `--force` already used**: you're genuinely unrescuable from the bot's perspective — no tool, no diggable material that drops. File a `[RESCUE_REQUEST]` card with your coords; do NOT loop.
+- **`POLICY_DENY` (region refusal)**: you're inside a protected region. Pass `--force` and the primitive will bypass region/global denylists for the escape dig **only when** you're verifiably stuck (4 cardinal walls + ceiling overhead). Otherwise file a rescue card; do not retry without `--force`.
+
+The `--force` flag is two things at once:
+1. Skips the slow-dig refusal so a bare-hand stone dig is allowed (slow — multiple seconds per cell — but legal).
+2. Bypasses region/global denylists for that single dig, *only* when the stuck-predicate fires. Every bypass is logged on the action result for audit.
+
+Never pass `--force` during normal navigation — it's an escape hatch for "trapped underground," nothing more.
 
 ## Iteration budget reminder
 

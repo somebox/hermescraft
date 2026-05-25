@@ -35,7 +35,7 @@ mc flee [X Y Z]            # combat retreat (see minecraft-combat)
 # Vertical
 mc stair_down DIR [LEN=12] [X Y Z] [W=1 H=3]   # dig descending staircase
 mc stair_up DIR [LEN=12] [X Y Z] [W=1 H=3]     # dig ascending, places floor over voids
-mc pillar_step [BLK] [N=1]   # climb up by placing blocks underfoot
+mc pillar_step [BLK] [N=1] [--force]   # climb up. Omit BLK to dig overhead + capture + pillar. See minecraft-mining "Underground pillar escape" for --force semantics.
 mc pillar_down [N=12]        # descend a pillar by mining the block underfoot
 
 # Survey + look
@@ -140,6 +140,7 @@ Vertical mining is dangerous (lava, deep caves, suffocation). Use staircases for
 | Surface → mining depth | `mc stair_down DIR LEN` (default LEN=12) |
 | Deep mine → surface | `mc stair_up DIR LEN` (places floor over voids) |
 | Climb 1–8 blocks to reach something high | `mc pillar_step dirt 5` (dirt is cheap to re-dig) |
+| Trapped underground with ceiling overhead | `mc pillar_step 20` (no block arg — primitive digs ceiling, captures drop, pillars). Add `--force` if ceiling is stone and you're bare-handed. Full playbook in **minecraft-mining → Underground pillar escape**. |
 | Stuck on top of a 1×1 pillar with no walkable neighbours | `mc pillar_down` — mines block-underfoot, drops 1, repeats |
 
 `mc move` refuses to plan from a 1×1 pillar — it surfaces `BOT_ON_PILLAR` with `mc pillar_down N` as the next-action hint. Always descend the pillar BEFORE trying to navigate from it.

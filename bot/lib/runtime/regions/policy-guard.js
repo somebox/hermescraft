@@ -90,15 +90,30 @@ export function evaluateRegionPolicy(ctx, config, verb, x, y, z, blockName, over
 }
 
 /**
- * @returns {{ skip: boolean, regionId: string|null }}
+ * @param {{ forceEscape?: boolean }} [opts] If `forceEscape` is true, both
+ *   region-deny and the global denylist are bypassed. Callers MUST gate this
+ *   flag on a "genuinely stuck" predicate (e.g. 4 cardinal walls + ceiling
+ *   overhead) and emit an audit event. Used by pillar_step --force to let a
+ *   trapped bot dig its way out of a protected region.
+ * @returns {{ skip: boolean, regionId: string|null, forceEscapeBypassed?: string|null }}
  */
-export function shouldSkipDigAt(ctx, config, blockName, x, y, z, isDigProtectedFn) {
+export function shouldSkipDigAt(ctx, config, blockName, x, y, z, isDigProtectedFn, opts = {}) {
   const pol = evaluateRegionPolicy(ctx, config, 'dig', x, y, z, blockName);
   if (pol.deny) {
+    if (opts.forceEscape) {
+      return {
+        skip: false,
+        regionId: null,
+        forceEscapeBypassed: pol.regionResult?.winning_region?.id ?? 'unknown',
+      };
+    }
     return { skip: true, regionId: pol.regionResult?.winning_region?.id ?? null };
   }
   if (pol.skipGlobalDeny) return { skip: false, regionId: null };
   if (isDigProtectedFn(blockName, { x, y, z }, ctx)) {
+    if (opts.forceEscape) {
+      return { skip: false, regionId: null, forceEscapeBypassed: 'global_denylist' };
+    }
     return { skip: true, regionId: null };
   }
   return { skip: false, regionId: null };

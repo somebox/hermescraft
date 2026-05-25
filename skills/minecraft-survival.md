@@ -37,6 +37,7 @@ mc goto X Y Z          # raw pathfinder (open spaces only)
 mc goto_near X Y Z     # pathfind near position
 mc stair_down DIR LEN  # safely descend by digging stairs (see minecraft-navigation)
 mc stair_up DIR LEN    # safely ascend; places floor over voids
+mc pillar_step [BLK] [N] [--force]  # climb up. Omit BLK to dig overhead + capture + pillar. --force only when genuinely stuck (4 walls + ceiling).
 mc follow PLAYER       # follow a player
 mc attack [target]     # attack nearest hostile (or specific mob)
 mc eat                 # eat best food in inventory

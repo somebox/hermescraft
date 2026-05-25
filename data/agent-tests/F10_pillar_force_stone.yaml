@@ -1,0 +1,105 @@
+# F10 — --force flag: slow bare-hand stone dig + pillar with seed inventory.
+#
+# Bot is in a tiny cave under a 3-block-thick STONE ceiling. It has 4 dirt
+# blocks pre-stocked but NO pickaxe. Stone is hand-breakable in vanilla
+# Minecraft (slow — ~7.5s per cell — and drops nothing without a pickaxe),
+# but pillar_step's default slow-dig guard refuses the dig. The agent must
+# call pillar_step with --force to bypass the guard.
+#
+# Arena geometry:
+#   - Stone column y=62..68 (3-block ceiling above the cavity)
+#   - Cavity 3x3 at y=64..65
+#   - Bot at 0, 64, 0
+#   - Ceiling: y=66..68 (3 stone blocks)
+#   - Open air at y=69+
+#
+# What the bot needs to do:
+#   First, default `mc pillar_step 5` will likely fail with PILLAR_FAILED
+#   citing slow-dig refusal in the ensureHeadroom dig of the stone above.
+#   The error hint points at --force. The agent retries:
+#     `mc pillar_step 5 --force`
+#   The primitive now allows the slow bare-hand stone dig (no drop, but
+#   opens the air cell), pillars using one of the 4 stocked dirt blocks,
+#   iterates 3 times to clear the stone ceiling. Final y >= 69.
+#
+# This tests the --force flag end-to-end:
+#   1. slow-dig guard bypass (equipForDig opts.force=true)
+#   2. shaft_trap predicate gating of the region-policy bypass (not
+#      exercised here since there's no protected region, but the code
+#      path is the same as in C)
+#   3. force_escape_bypassed audit field reports 0 (no region bypassed,
+#      just slow-dig guard)
+#
+# Pass criteria:
+#   - Final bot y >= 69
+#   - Total mc/cli ≤ 12
+
+agent_test_id: F10_pillar_force_stone
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: reach y >= 69 (the surface above your cave).
+
+  Your situation: you are in a 3x3 underground cave at (0, 64, 0) with a
+  3-block STONE ceiling overhead. You have 4 dirt blocks in inventory but
+  NO PICKAXE. Bare-handed stone digging is allowed by the game (slow,
+  drops nothing), but the bot refuses by default to avoid wear-and-tear.
+
+  Strategy:
+    1. First try: `mc pillar_step 5`. Expect PILLAR_FAILED with a hint
+       about slow-dig refusal — that's the guard kicking in.
+    2. Retry: `mc pillar_step 5 --force`. This bypasses the slow-dig guard
+       (the dig takes ~7.5s per stone cell, no drops) AND allows the
+       primitive to keep pillaring using your stocked dirt as it punches
+       through the stone.
+    3. `mc status` to confirm y >= 69.
+
+  Notes:
+    - Stone bare-hand digging drops NOTHING — you can't capture pillar
+      material from the ceiling. Your 4 dirt blocks are what gets you up.
+    - --force is for situations where you're genuinely stuck (4 walls +
+      ceiling overhead). Don't use it for normal navigation.
+
+  Stop once your foot y is 69 or higher.
+
+skills: [minecraft-survival, minecraft-mining, minecraft-navigation]
+max_turns: 10
+timeout_seconds: 480
+
+expect:
+  bot_y_at_least: 69
+  mc_cli_invocations_max: 12
+
+verify_after_prep:
+  - { block: stone, min_count: 100 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 50 -10 10 100 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 50 -10 10 50 10 minecraft:bedrock"
+  # Stone column up to y=68 (gives us a 3-block ceiling above the y=66..68 layer)
+  - "execute in landfolk-test run fill -5 62 -5 5 68 5 minecraft:stone"
+  # Carve the 3x3x2 cavity at y=64..65
+  - "execute in landfolk-test run fill -1 64 -1 1 65 1 minecraft:air"
+  # Open air at y=69+ already from the initial clear
+  # TP bot, give 4 dirt only (no pickaxe)
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 64 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "give Flint minecraft:dirt 4"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 50 -10 10 100 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 50 -10 10 50 10 minecraft:bedrock"
+  - "execute in landfolk-test run fill -10 51 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"

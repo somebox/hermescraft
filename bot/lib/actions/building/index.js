@@ -14,7 +14,7 @@ export function createBuildingActions(services) {
   const { resolveInventoryItem } = resolver;
   const { rememberSocialEvent, getMyName } = social;
 
-  const pillarPart = createBuildingPillarPart({ ctx, ensureBot, sleep });
+  const pillarPart = createBuildingPillarPart({ ctx, ensureBot, sleep, getActions });
   const placeSinglePart = createBuildingPlaceSinglePart({
     services, ctx, ensureBot, posObj, sleep, fairPlay,
   });

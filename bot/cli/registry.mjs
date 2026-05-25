@@ -323,7 +323,7 @@ export const RAW_COMMAND_DEFS = [
   g('pillar_step', 'world', ['tower', 'pillar'], {
     method: 'POST',
     path: '/action/pillar_step',
-    description: 'Climb upward by placing blocks underfoot. Use count to climb multiple blocks in one call (max 64).',
+    description: 'Climb upward by placing blocks underfoot. Use count to climb multiple blocks in one call (max 64). If inventory has no pillar block, the primitive bare-hand digs the cell overhead, collects the drop, and pillars with that. Pass --force when genuinely stuck (4 walls + ceiling) to bypass slow-dig refusal and protected-region denylists for the escape dig.',
     argSchema: [
       { key: 'block', type: 'string' },
       { key: 'count', type: 'number', description: 'blocks to climb (default 1, max 64)' },
@@ -331,6 +331,11 @@ export const RAW_COMMAND_DEFS = [
         key: 'jump',
         type: 'string',
         description: 'true|false — jump after placing (default true)',
+      },
+      {
+        key: 'force',
+        type: 'string',
+        description: 'true|false — bypass slow-dig refusal + region/global denylist when genuinely stuck (default false)',
       },
     ],
     bodyFn: (p) => {
@@ -351,9 +356,20 @@ export const RAW_COMMAND_DEFS = [
               jump: p.jump === true || `${p.jump}`.toLowerCase() === 'true' || `${p.jump}` === '1',
             }
           : {}),
+        ...(p.force !== undefined && `${p.force}`.trim() !== ''
+          ? {
+              force: p.force === true || `${p.force}`.toLowerCase() === 'true' || `${p.force}` === '1',
+            }
+          : {}),
       });
     },
-    examples: [`mc pillar_step`, `mc pillar_step 5`, `mc pillar_step cobblestone 10`, `mc pillar_step dirt 20`],
+    examples: [
+      `mc pillar_step`,
+      `mc pillar_step 5`,
+      `mc pillar_step cobblestone 10`,
+      `mc pillar_step dirt 20`,
+      `mc pillar_step 10 --force   # stuck underground, bare-hand dig + capture + pillar`,
+    ],
   }),
   g('pillar_down', 'world', ['descend', 'pillardown'], {
     method: 'POST',
@@ -1098,6 +1114,37 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc harvest 0 0 4 4 65', 'mc harvest -2 -2 2 2'],
   }),
 
+  g('verify_plot', 'world', ['farm_verify_plot'], {
+    description: 'Verify construct plot: worksite coverage, terrain flatness, till readiness. Run before bulk till on kanban cards. Till is not region-guarded — failures here are spec/prep, not permission.',
+    method: 'POST',
+    path: '/action/verify_plot',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify(p),
+    usage: 'mc verify_plot X1 Z1 X2 Z2 [--worksite ID] [--expect-y N] [--flat-max-delta N]',
+    examples: [
+      'mc verify_plot 365 -575 373 -567 --worksite wheat1 --expect-y 65',
+    ],
+  }),
+
+  g('till_area', 'world', ['till_rect'], {
+    description: 'Till all columns in axis-aligned rectangle (max 81). Uses per-column surface Y unless optional Y hint is passed.',
+    method: 'POST',
+    path: '/action/till_area',
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'y', type: 'number', required: false },
+    ],
+    bodyFn: (p) => JSON.stringify({
+      x1: Number(p.x1), z1: Number(p.z1), x2: Number(p.x2), z2: Number(p.z2),
+      ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+    }),
+    usage: 'mc till_area X1 Z1 X2 Z2 [Y]',
+    examples: ['mc till_area 365 -575 373 -567'],
+  }),
+
   g('breed', 'world', [], {
     description: 'Feed 2 adult animals of SPECIES (chicken/cow/sheep/pig) to start breeding. Auto-picks a breeding item from inventory: wheat for cow/sheep, wheat_seeds for chicken (also pumpkin/melon/beetroot seeds), carrot/potato/beetroot for pig. Returns NO_FOOD, NO_PAIR, ANIMAL_ON_COOLDOWN.',
     method: 'POST',
@@ -1545,6 +1592,18 @@ export const RAW_COMMAND_DEFS = [
     pathFn: (p) => (p.at ? `/regions?at=${encodeURIComponent(String(p.at))}` : '/regions'),
     customParse: true,
   }),
+  g('regions_terrain', 'memory', ['regions-terrain'], {
+    description: 'Per-column top solid survey for a region disc or --rect x1 z1 x2 z2. Use when authoring construct cards with fixed Y.',
+    method: 'POST',
+    path: '/action/regions_terrain',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify(p),
+    usage: 'mc regions_terrain REGION_ID [--expect-y N] | mc regions_terrain --rect X1 Z1 X2 Z2 [--expect-y N]',
+    examples: [
+      'mc regions_terrain wheat1 --expect-y 65',
+      'mc regions_terrain --rect 365 -575 373 -567 --expect-y 65',
+    ],
+  }),
   g('region_create', 'memory', ['region-create'], {
     description: 'Create unanchored region at bot position. PROFILE preset implies a default intent: base/farm/dock=protect (no ad-hoc dig/place), mine=resource (allow harvest). Override the default with --intent. Use --intent marker for a build-anchor that allows workers to dig+place inside.',
     usage: 'mc region_create <ID> <PROFILE> [--r N] [--y MIN..MAX] [--intent protect|resource|marker] [--shape column|sphere]',
@@ -1602,6 +1661,32 @@ export const RAW_COMMAND_DEFS = [
     description: 'Dry-run region policy for dig/place',
     method: 'POST',
     path: '/action/check',
+    customParse: true,
+  }),
+  g('blueprint', 'observe', [], {
+    description: 'Blueprint library: show, cell, layer, materials, verify, adopt, capture',
+    usage:
+      'mc blueprint show|cell|layer|materials|verify|adopt|capture <target> [flags]',
+    examples: [
+      'mc blueprint show :hut3:',
+      'mc blueprint verify dystopian-hut-3 --level 5',
+      'mc blueprint cell :hut3: --at 370 65 -608',
+      'mc blueprint adopt :hut3: --at 370 65 -608 --note "approved chest"',
+    ],
+    method: 'POST',
+    path: '/action/blueprint',
+    customParse: true,
+  }),
+  g('construct', 'building', [], {
+    description: 'Guided construct from region blueprint (Phase 2c)',
+    method: 'POST',
+    path: '/action/construct',
+    customParse: true,
+  }),
+  g('repair', 'building', [], {
+    description: 'Repair region to blueprint or edit-log target',
+    method: 'POST',
+    path: '/action/repair',
     customParse: true,
   }),
   g('task_context', 'task', ['task-context'], {

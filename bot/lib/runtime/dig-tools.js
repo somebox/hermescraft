@@ -261,6 +261,7 @@ export function blockNeedsAxeHarvest(blockName) {
   const n = blockName;
   if (/_log$|_wood$|hyphae$|stem$|bamboo_block$/i.test(n)) return true;
   if (/^stripped_/i.test(n) && /_log$|_wood$|hyphae$|stem$/i.test(n)) return true;
+  if (/^crafting_table$|_planks$|bookshelf|jukebox|note_block|daylight_detector$/i.test(n)) return true;
   if (/^melon$|^pumpkin$/i.test(n)) return true;
   return false;
 }
@@ -370,6 +371,7 @@ export function trustDigEstimateForHeld(held, blockName) {
   }
   if (/_axe$/.test(h)) {
     if (/_log$|_wood$|hyphae$|stem$/i.test(n) || n === 'bamboo_block' || /^stripped_/i.test(n)) return true;
+    if (n === 'crafting_table' || /_planks$/.test(n)) return true;
   }
   return false;
 }
@@ -517,8 +519,14 @@ export function guardSlowDigEstimate(b, block) {
 
 /**
  * Best available tool for mining + advisory hints.
+ * @param {object} b - mineflayer Bot
+ * @param {object} block
+ * @param {{ force?: boolean }} [opts] If `force` is true, skips the slow-dig
+ *   guard so callers (e.g. pillar_step --force when stuck) can bare-hand
+ *   slow-dig stone without throwing. Caller is responsible for tolerating
+ *   the resulting long b.dig wait.
  */
-export async function equipForDig(b, block) {
+export async function equipForDig(b, block, opts = {}) {
   /** @type {string[]} */
   const hints = [];
   if (!block?.name) return { hints };
@@ -557,7 +565,7 @@ export async function equipForDig(b, block) {
   }
 
   await preferPracticalDigHand(b, block);
-  guardSlowDigEstimate(b, block);
+  if (!opts.force) guardSlowDigEstimate(b, block);
   return { hints };
 }
 

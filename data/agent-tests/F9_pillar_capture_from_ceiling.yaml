@@ -1,0 +1,96 @@
+# F9 — bare-hand dig + capture + pillar from EMPTY inventory.
+#
+# Bot is in a tiny cave under an 8-block-thick dirt ceiling with NOTHING in
+# inventory — no tools, no blocks. To escape, the pillar_step primitive must
+# bare-hand dig the cell overhead (dirt is hand-breakable), pick up the
+# dropped item into inventory, then pillar with that captured block. Loop
+# until the surface is reached.
+#
+# Arena geometry:
+#   - Stone column y=62..73 (with dirt insert as ceiling, see below)
+#   - Carved cavity 3x3 at y=64..65 — bot's room
+#   - Bot at 0, 64, 0 (feet on stone at y=63)
+#   - Ceiling: y=66..73 = 8 blocks of DIRT (bare-hand-diggable, drops dirt)
+#   - Open air starts at y=74 (surface)
+#
+# What the bot needs to do (and why this test exists):
+#   This is the user's prescribed recovery loop:
+#     1. dig overhead with bare hands
+#     2. pickup the drop
+#     3. pillar with captured block
+#     4. repeat
+#   The extended pillar_step primitive handles this entirely internally —
+#   the agent just calls `mc pillar_step 10` and the primitive does all 4
+#   steps per iteration. No --force needed (dirt drops fine bare-handed; no
+#   region policy in play; no slow-dig guard fires on dirt).
+#
+# Pass criteria:
+#   - Final bot y >= 74 (escaped to surface).
+#   - Total mc/cli ≤ 15 (loop is internal — agent's call count is small).
+
+agent_test_id: F9_pillar_capture_from_ceiling
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set.
+
+  Goal: reach y >= 74 (the surface above your cave).
+
+  Your situation: you are in a 3x3 underground cave at (0, 64, 0) with a
+  DIRT ceiling 8 blocks thick. You have NOTHING in inventory — no tools,
+  no blocks. Bare hands.
+
+  Strategy:
+    - `mc pillar_step 10` — the primitive will detect an empty inventory,
+      bare-hand dig the dirt cell directly above your head, pick up the
+      drop, and pillar with that captured block. Repeats up to 10 times.
+      Dirt is hand-breakable so no tool is needed.
+    - `mc status` afterward — confirm y >= 74. If not, call `mc pillar_step`
+      again with the remaining count.
+
+  You should be able to escape with just ONE call to `mc pillar_step 10`.
+
+  Stop once your foot y is 74 or higher.
+
+skills: [minecraft-survival, minecraft-mining, minecraft-navigation]
+max_turns: 8
+timeout_seconds: 480
+
+expect:
+  bot_y_at_least: 74
+  mc_cli_invocations_max: 15
+
+verify_after_prep:
+  - { block: dirt, min_count: 60 }
+  - { block: stone, min_count: 100 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 50 -10 10 100 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 50 -10 10 50 10 minecraft:bedrock"
+  # Stone shell up to floor + walls of cavity
+  - "execute in landfolk-test run fill -5 62 -5 5 65 5 minecraft:stone"
+  # Carve the 3x3x2 cavity at y=64..65, centered on (0, _, 0)
+  - "execute in landfolk-test run fill -1 64 -1 1 65 1 minecraft:air"
+  # DIRT ceiling: 8 blocks thick at y=66..73, only above the cavity column
+  # (3x3 footprint) so the bot can't sidestep around it
+  - "execute in landfolk-test run fill -1 66 -1 1 73 1 minecraft:dirt"
+  # Open air at y=74+ already from the initial fill above
+  # TP bot to floor center, EMPTY inventory, no effects
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 64 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -10 50 -10 10 100 10 minecraft:air"
+  - "execute in landfolk-test run fill -10 50 -10 10 50 10 minecraft:bedrock"
+  - "execute in landfolk-test run fill -10 51 -10 10 64 10 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
