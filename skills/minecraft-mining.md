@@ -76,6 +76,10 @@ mc stair_up                      # uses your staircase
 
 Most mining failures look like "the bot wandered" because the worker treated the card as open-ended exploration instead of a structured production run. **Follow this 5-phase template** for any `[SUPPLY] <ore>` or "gather N stone/iron/coal" card. Don't skip phases.
 
+**Bias to action.** Mining primitives (`stair_down`, `tunnel`, `dig_area`, `collect`) have rich error envelopes that already tell you what's wrong AND where. Pre-inspecting cells before calling a primitive is almost always wasted iteration budget — you check 3+ blocks, the primitive could have told you in one call. Default: **call the primitive, read the error, react with ONE adjustment, retry.** If you've failed twice in different ways on the same target, then probe. Probing first is paralysis.
+
+Bot session is bounded (max-turns + max-runtime). 30 inspect calls = no descent = card incomplete = next worker starts from scratch. 1 stair_down + 1 error read + 1 lateral move + 1 retry = descended, in flight, making progress.
+
 ### Phase 1 — Pre-flight (≤ 5 tool calls, before leaving base)
 
 Verify in inventory, in this order — stop and recover if any check fails:
@@ -116,42 +120,32 @@ The card body either has explicit coordinates OR it doesn't. Branch on this:
    ```
    After 6 steps (180m walked) with nothing, **`kanban_block no_seam_found:<area_explored>`** — the steward will pick a better starting area. Don't wander further.
 
-### Phase 3 — Descend (mandatory primitive: `mc stair_down`)
+### Phase 3 — Descend (just try `mc stair_down`)
 
-**Pre-flight: verify the terrain in your chosen direction is SOLID.** This is the #1 cause of stair_down "no_progress" — calling stair_down at a cliff edge, an existing tunnel mouth, a building edge, or any spot where the column you'd dig INTO is already open air. The primitive correctly says "nothing to dig" because the targets ARE already air, but the no-progress message is silent about WHY.
+**Action first. Don't probe first.** The stair_down primitive has good error envelopes — call it, read the error if it fails, react. Pre-inspecting every cell is a paralysis trap; you burn 5-10 calls verifying terrain that the primitive itself can tell you about in one call.
 
-Before `mc stair_down DIR N`, run THREE inspect calls (cheap, ~5s):
-
-```bash
-# Replace X,Y,Z with your bot position from mc status; dx,dz from direction.
-# Direction → (dx,dz):  north=(0,-1) south=(0,1) east=(1,0) west=(-1,0)
-
-mc inspect <X+dx> <Y>   <Z+dz>     # body cell (where stair_down digs the head/body column)
-mc inspect <X+dx> <Y-1> <Z+dz>     # the new floor cell (the cell your bot will stand IN)
-mc inspect <X+dx> <Y-2> <Z+dz>     # the cell UNDER the new floor (support for the bot)
-```
-
-Pass condition: **all three SOLID** (stone/dirt/grass/cobble — anything not in {air, cave_air, water, lava, void_air}).
-
-- If the body or floor cell is **air**: you're at a cliff edge or above an existing tunnel. Move 3-5 blocks LATERAL toward solid ground (`mc move` to grass terrain), then re-check.
-- If only the bot's-feet-floor cell is air: you're floating on a ledge. `mc move` to the adjacent solid block first.
-- If all three are bedrock: pick a different starting Y or direction.
-
-Once verified solid:
+Standard descent — first attempt:
 
 ```
-mc stair_down south 30         # 3-wide staircase, lands ~30 blocks below
+mc stair_down south 30
 ```
 
-- Direction: pick the cardinal that keeps you AWAY from base structures (check `mc regions --at` if unsure).
-- Length 30 is the sweet spot for our world: lands ~Y34, in the iron + coal sweet zone, above the lava layer (Y10).
-- After it lands, **`mc set_mark mine_entrance`** at the top, **`mc set_mark <ore>_seam`** at the bottom. These become your return anchors.
+- Direction: pick a cardinal that points AWAY from base structures. If unsure, `mc regions --at` once.
+- Length 30 lands ~Y34 — iron + coal sweet zone, above the lava layer (Y10).
+- If it succeeds, `mc set_mark mine_entrance` at the top, continue to Phase 4.
 
-**Error envelope reading**:
-- `no_progress_at_step_N (M already_air, ...)` → you started at a hollow / cliff edge. Re-do the pre-flight inspect.
-- `cave_below_step_N_floor_is_air_at_X_Y_Z` → the seam works for a few steps then the column descends into a cave at coord X,Y,Z. Option A: lateral move 3-5 blocks and restart staircase. Option B: `mc place cobblestone X Y Z` to bridge the void, then continue.
+**If stair_down errors, read the envelope and react with ONE move:**
 
-**Flag syntax** — `mc stair_down DIR [LENGTH] [X Y Z] [WIDTH] [HEIGHT]` is positional only. There is NO `--width` or `--height` long-form flag. Calling `mc stair_down south 16 --width 2 --height 3` errors with `stair_down:x:not_number` because it tries to parse `--width` as the X coordinate.
+| Error | Meaning | What to do (one action, then retry) |
+|---|---|---|
+| `no_progress_at_step_1 (3 already_air)` | You're at a cliff edge or existing tunnel | `mc move <X> <Y> <Z>` 5 blocks in any direction away from your current spot, then retry stair_down |
+| `cave_below_step_N_floor_is_air_at_X_Y_Z` | Hit a cave after N steps down | You're already partway down — `mc place cobblestone X Y Z` to bridge, retry stair_down (it continues from your current position) |
+| `no_progress_at_step_N (M bedrock)` | Bedrock hit | You're as deep as you'll get on this shaft — switch to `mc tunnel` horizontally |
+| `reconnect_during_step_N` | Watchdog forced a reconnect mid-flight | Just retry — bot is settled now |
+
+**Do not inspect cells before calling stair_down.** The primitive's own error envelope already tells you what blocked it AND where, in fewer calls than a pre-check. Pre-checking is only useful if you've already failed twice in a row in different ways.
+
+**Flag syntax** — positional only: `mc stair_down DIR [LENGTH] [X Y Z] [WIDTH] [HEIGHT]`. No `--width` / `--height` long-form flags. After it lands, `mc set_mark mine_entrance` and `mc set_mark <ore>_seam`.
 
 NEVER pillar straight down. NEVER dig a 1-wide shaft. The escape primitives don't compensate for a missing staircase.
 
