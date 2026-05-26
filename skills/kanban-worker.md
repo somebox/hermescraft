@@ -49,6 +49,25 @@ Hermes delimits memory entries with `§` automatically. Don't manually format se
 
 If the task spans multiple workers (long-running collect, multi-layer build, etc.), prefer **replacing** older state entries rather than accumulating — `memory(action="replace", name="state-snapshot", content=...)` keeps memory clean. Keep one canonical "current state" entry plus a few discrete fact entries (e.g., "discovered iron vein at 410,42,-615") rather than a sprawl of timestamps.
 
+## Don't invent verbs — `mc help` discovers, doesn't cost much
+
+Your training data has Minecraft commands from other contexts; not all of them exist in our `mc` CLI. Examples seen in production logs: `mc chest_scan`, `mc chests`, `mc list_containers`, `mc rcon`, `mc tp` — none of these exist. When a worker invokes a non-existent verb the framework returns `unknown command: <verb>`, the call wastes an iteration, and the LLM often follows up with 2-3 more guesses before recovering.
+
+**Rule: if you're not 100% sure a verb exists from your skill memory, run `mc help` first.** It's one cheap call, lists every real verb organized by category, and prevents the 3-call hallucination chain. Specifically:
+
+- `mc help` — top-level list of all categories (platform, observe, movement, mining, building, …) and the verbs in each.
+- `mc help <category>` — focused listing for one area (e.g. `mc help observe` shows status / map / nearby / scene / find / advise / etc.).
+
+Audit baseline 2026-05-26: workers made **zero `mc help` calls in 30 minutes across 278 tool invocations.** Every "unknown command" error in the same window was a verb that could have been confirmed with one `mc help` first.
+
+**When to default to `mc help`:**
+
+1. **First time touching a domain in this session.** "I need to interact with chests" → `mc help containers` before guessing `mc chest_scan`.
+2. **You've gotten one `unknown command` error.** Stop guessing variants — `mc help <category>` once is faster than 3 more guesses.
+3. **The verb you remember has 2+ argument shapes you're not sure about.** `mc help` shows usage strings; saves a parse-error round-trip.
+
+The skill files (this one, minecraft-mining, minecraft-navigation, minecraft-survival) are NOT a comprehensive verb catalog — they teach patterns, not exhaustive surface. `mc help` IS the catalog.
+
 ## Read your card with `kanban_show` (tool) — not `hermes kanban show`
 
 Use the `kanban_show()` tool to read your card. It's the OpenAI-tool form and gives you the same data your worker SOUL's lifecycle expects (body + comments + runs[]).
