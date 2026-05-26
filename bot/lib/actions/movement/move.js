@@ -11,6 +11,49 @@ import { enrichWithStand } from './_preflight.js';
 import { coord3 } from '../_args.js';
 
 /**
+ * Compute the {near_side, far_side} cells used by `mc through` when
+ * traversing a door at `doorPos` toward `target`.
+ *
+ * The near_side is the cell the bot must reach to be in range to activate
+ * the door; the far_side is what gets passed to `mc through` as its
+ * destination (it determines `b.lookAt` and the forward-walk direction).
+ *
+ * Y-component fix (2026-05-26): the previous version used `target.y` for
+ * both sides. When the door is at a different Y than the target — e.g.
+ * an underground rescue door at Y=59 between bot and a surface target at
+ * Y=65 — the far_side ended up 6 blocks ABOVE the door. `mc through`
+ * called `b.lookAt(farSide)`, which pitched the bot's view sharply
+ * upward; `setControlState('forward')` then translated to almost-zero
+ * XZ velocity, and the bot stalled touching the doorframe ("Opened door
+ * but bot stalled at X,Y,Z" — 26 such failures observed in the
+ * 2026-05-26 hut1 supply run, all targeting the underground door at
+ * (370,59,-591)). Using the door's own Y for both sides keeps the
+ * traversal vector horizontal regardless of the surface target's
+ * altitude. The leg loop in `move()` will resume vertical-axis routing
+ * from the door's far side on the next iteration.
+ */
+export function computeDoorSides(doorPos, target) {
+  const ddx = target.x - doorPos.x;
+  const ddz = target.z - doorPos.z;
+  if (Math.abs(ddx) >= Math.abs(ddz)) {
+    const dir = Math.sign(ddx || 1);
+    return {
+      far_side: new Vec3(doorPos.x + dir * 2, doorPos.y, doorPos.z),
+      near_side: new Vec3(doorPos.x - dir * 2, doorPos.y, doorPos.z),
+      axis: 'x',
+      dir,
+    };
+  }
+  const dir = Math.sign(ddz || 1);
+  return {
+    far_side: new Vec3(doorPos.x, doorPos.y, doorPos.z + dir * 2),
+    near_side: new Vec3(doorPos.x, doorPos.y, doorPos.z - dir * 2),
+    axis: 'z',
+    dir,
+  };
+}
+
+/**
  * @param {object} deps
  */
 export function createMove(deps) {
@@ -80,7 +123,31 @@ export function createMove(deps) {
     const isPassable = (name) =>
       (/(_door|_fence_gate)$/.test(name)) && !name.startsWith('iron_') && !name.endsWith('_trapdoor');
 
-    const findBestDoor = (maxDistance = 32) => {
+    // Connectivity precheck: confirm pathfinder can actually reach a
+    // door's near_side. Catches the "distant unreachable door" pattern
+    // — bot at (326,60,-618) was repeatedly picking a door at
+    // (370,59,-591) 52m away because findBlocks(64) surfaced it, even
+    // though pathfinder couldn't route to it. Without this check the
+    // bot wastes 8-30s of the reach cap on a doomed approach. Uses
+    // getPathTo (no movement) with a tight 1500ms compute cap.
+    const isDoorReachable = (nearSide) => {
+      try {
+        const movements = b.pathfinder?.movements;
+        if (!movements) return true; // movements not yet bound — assume yes
+        const checkGoal = new goals.GoalNear(
+          Math.floor(nearSide.x),
+          Math.floor(nearSide.y),
+          Math.floor(nearSide.z),
+          2,
+        );
+        const r = b.pathfinder.getPathTo(movements, checkGoal, 1500);
+        return r && r.status === 'success' && Array.isArray(r.path);
+      } catch {
+        return true; // precheck never blocks on its own errors
+      }
+    };
+
+    const findBestDoor = (maxDistance = 32, excludeKeys = null) => {
       const me = b.entity.position;
       const targetVec = new Vec3(target.x, target.y, target.z);
       const myDist = me.distanceTo(targetVec);
@@ -89,34 +156,51 @@ export function createMove(deps) {
         maxDistance,
         count: 30,
       });
-      let best = null;
-      let bestScore = Infinity;
+      // Two-pass: score all viable candidates, then reachability-precheck
+      // them in score order. Returns the first reachable candidate; falls
+      // back to the highest-scoring candidate even if unreachable (so the
+      // existing "Could not traverse" error path still fires with the
+      // most plausible door, not nothing).
+      /** @type {Array<{pos:any, block:string, near_side:Vec3, far_side:Vec3, near_dist:number, far_dist:number, _score:number}>} */
+      const candidates = [];
       for (const dPos of positions) {
         const dBlock = b.blockAt(dPos);
         if (!dBlock) continue;
         const props = (typeof dBlock.getProperties === 'function') ? dBlock.getProperties() : {};
         if (props.half === 'upper') continue;
-        const ddx = target.x - dPos.x;
-        const ddz = target.z - dPos.z;
-        let farSide, nearSide;
-        if (Math.abs(ddx) >= Math.abs(ddz)) {
-          const dir = Math.sign(ddx || 1);
-          farSide = new Vec3(dPos.x + dir * 2, target.y, dPos.z);
-          nearSide = new Vec3(dPos.x - dir * 2, target.y, dPos.z);
-        } else {
-          const dir = Math.sign(ddz || 1);
-          farSide = new Vec3(dPos.x, target.y, dPos.z + dir * 2);
-          nearSide = new Vec3(dPos.x, target.y, dPos.z - dir * 2);
-        }
+        const key = `${dPos.x},${dPos.y},${dPos.z}`;
+        if (excludeKeys && excludeKeys.has(key)) continue;
+        const { far_side: farSide, near_side: nearSide } = computeDoorSides(dPos, target);
         const farDist = farSide.distanceTo(targetVec);
         if (farDist >= myDist - 0.5) continue;
         const nearDist = me.distanceTo(nearSide);
-        if (nearDist < bestScore) {
-          bestScore = nearDist;
-          best = { pos: dPos, block: dBlock.name, near_side: nearSide, far_side: farSide, near_dist: nearDist, far_dist: farDist };
+        candidates.push({
+          pos: dPos,
+          block: dBlock.name,
+          near_side: nearSide,
+          far_side: farSide,
+          near_dist: nearDist,
+          far_dist: farDist,
+          _score: nearDist,
+        });
+      }
+      if (candidates.length === 0) return null;
+      candidates.sort((a, c) => a._score - c._score);
+      // Precheck top-3 by score — capped to avoid spending more than ~5s
+      // total on connectivity checks even when many candidates exist.
+      // If NONE of the top-3 is reachable, return null so the caller
+      // emits the clean "no door/gate between to use" error (with its
+      // tunnel/dig_area hint) instead of burning 8-30s of the reach
+      // cap on a doomed approach. The findBlocks-scan candidates that
+      // were rejected here still appear in `nearby_doors` in the
+      // failure envelope, so the agent retains full visibility.
+      const PRECHECK_CAP = 3;
+      for (let i = 0; i < Math.min(PRECHECK_CAP, candidates.length); i++) {
+        if (isDoorReachable(candidates[i].near_side)) {
+          return candidates[i];
         }
       }
-      return best;
+      return null;
     };
 
     const nearbyDoorList = (maxDistance = 32) =>
@@ -278,11 +362,7 @@ export function createMove(deps) {
             },
           };
         }
-        const ddx = target.x - dPos.x;
-        const ddz = target.z - dPos.z;
-        const farSide = (Math.abs(ddx) >= Math.abs(ddz))
-          ? new Vec3(dPos.x + Math.sign(ddx || 1) * 2, target.y, dPos.z)
-          : new Vec3(dPos.x, target.y, dPos.z + Math.sign(ddz || 1) * 2);
+        const { far_side: farSide } = computeDoorSides(dPos, target);
         chosen = { pos: dPos, block: dBlock.name, far_side: farSide };
       } else {
         chosen = findBestDoor(32);
