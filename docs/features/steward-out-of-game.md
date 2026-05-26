@@ -394,3 +394,60 @@ Decision deferred until Phases 0-2 of the current MVP are validated. **DO NOT at
 ## Implementation hand-off note
 
 When picking this up: start with **Phase 0** verifications. If rcon isn't enabled or `mcrcon` isn't installed, that's the first thing to address — everything else depends on Steward being able to talk in-game without a body. The cleanest implementation order is then Phase 1 (build helpers in `--deliver-only` mode, observe payloads), then Phase 2 (flip the switch). Don't skip Phase 1 — it lets you validate the activation prompt without forcing Steward into a half-built world.
+
+---
+
+## Updates from 2026-05-25/26 implementation work
+
+A long debugging + doctrine-iteration session against the **current** in-game Steward proved several things that update this proposal. Cross-references to which existing sections need revision are noted inline.
+
+### What's been resolved in the current architecture (reduces webhook scope)
+
+Several of the original motivations for going out-of-game have been mitigated WITHOUT removing the body. These items now have working solutions on the current Steward; they're listed so a future implementer can decide whether the webhook migration is still the highest-leverage change.
+
+| Original motivation | Resolved by | Status |
+|---|---|---|
+| NaN kicks affecting Steward's body | Commits `76cfbfc` (POS_GUARD outgoing-packet validator), `a32a08e` (YAW_GUARD at bot.look entry), `6577cc4` (stair_down yawByKey root cause fix), `27cb2dc` (reactive myPos NaN bail) | ✓ kick stream stopped fleet-wide |
+| `mc advise ignored 116 times in 2 days` | Diagnosis split: (a) workers' restricted_bin python3 stub blocked spawn — fixed via `MC_ADVISE_PYTHON` env in `565521a`; (b) yaml import inside `tests/_lib/config.py` failed silently — fixed via lazy imports in `ea6a19b`; (c) SOUL didn't make it mandatory after `stuck_warning` — fixed via `14a459c` + skill update | ✓ tool reachable; doctrine pending bot-restart observation |
+| 60-second cycle latency for worker help | Commit `14a459c` — `stuck_warning` field surfaced in `/health` + `mc status`; `de13f49` propagates through the CLI thin envelope. Workers now see a hard prod in their own status reads and the SKILL mandates escalation | ✓ in place; workers see warning at 5min stuck |
+| Steward orchestrator-card double-spawn (her continuous loop + dispatcher worker spawn collision) | Commit `8eb3d23` — dispatcher's pre-flight parks orchestrator-assigned cards via `claim_lock`; observation.js suppresses `stuck_warning` for orchestrators | ✓ works on current Steward; **OBVIATED** if she goes out-of-game (no profile in dispatch path) |
+| Steward distracted by hunger/mobs at base | Commit `8eb3d23` orchestrator stuck-warning suppression + Steward already stationary by SOUL rule | ✓ no longer noisy. Out-of-game still cleaner. |
+
+**Net effect on this proposal:** the *operational* justification (kick cascades, advise unreachability) is largely gone. The remaining justification — **decoupling Steward's planning cadence from the in-game tick + her cognitive budget from her body** — is still valid, but the urgency is lower. Re-evaluate before starting Phase 0 whether the migration is worth the engineering cost given the new baseline.
+
+### New evidence supporting the migration
+
+These OBSERVATIONS from today reinforce parts of the original design:
+
+1. **Per-round timeouts kill session memory.** Default `AGENT_ROUND_TIMEOUT_S=180` (now 300, commit `8e070a6`) was too tight for Steward's heavy prompt — 5 of 7 consecutive rounds failed `exit=142` (SIGALRM). Sessions were not persisted to disk because the process was SIGKILLed mid-action. Effect: Steward became **amnesiac** between rounds, starting each plan from scratch. **The webhook architecture's per-activation budget needs explicit sizing — recommend matching the bumped 300s or higher.** Add to Phase 0 verification.
+2. **Decision paralysis is real and observable.** Logged trace from 02:36 showed Steward generating 4 different plans for the same issue, reversing twice (`Actually let me think differently`), spending ~80% of tokens deliberating. The 5-phase ritual (next section) was the response. The activation prompt in §"What's being proposed" needs the same treatment.
+3. **Workers physically stuck ≠ work being stuck.** Mason was stuck on a pillar for 20+ minutes; Steward responded by reassigning his card to Flint (who also can't `rcon tp`). Doctrine fix (commit `4143c84`) added a `PHYSICALLY_STUCK` bot classification with rescue-class actions, distinct from BLOCKED_WAITING cards.
+4. **Tool-switching circumvention of operator denies.** Steward issued a `terminal` command, operator denied it, she retried the SAME operation through `execute_code` (Python sandbox calling `from hermes_tools import terminal`). Commit `870c4e3` added a hard SOUL rule: "A deny is a deny — no routing through another tool surface." Same rule needs to be in any webhook-Steward activation prompt.
+5. **Silence ≠ broken** (negative-detection trap). Commit `1b2e254` — Steward false-positive-filed an `[INFRA] dispatcher offline` card because dispatcher.log was silent for 32min; the dispatcher was actually fine, just had nothing to do. Detectors in the proposed architecture that observe **absence of signal** must distinguish "quiet because healthy" from "quiet because hung." Add positive heartbeats to detector scripts.
+
+### Section-by-section updates needed
+
+| Section in this doc | What needs to change |
+|---|---|
+| `## Why` — bullet "mc advise ignored 116 times" | Add note: the underlying tool was also broken (restricted_bin stub + yaml lazy-import) — diagnosis was not only "workers don't use it" but "workers couldn't use it." |
+| `## What's being proposed` — Activation prompt template | Replace "Take ONE action" framing with the 5-phase ritual (OBSERVE → DIAGNOSE → RANK → EXECUTE → ADMIN). See `prompts/landfolk/steward.md` post-commit `4143c84` for the deployed text. Add the `PHYSICALLY_STUCK` bot classification and the "deny is a deny" rule. |
+| `## Concrete changes` — `~/.hermes/profiles/steward/SOUL.md (or prompts/landfolk/steward.md — verify which)` | **Resolved.** Three separate prompt sources now identified: `prompts/landfolk/steward.md` is the continuous-loop `-q` prompt (49KB, file-loaded as of `9dbeee0`), `prompts/landfolk/steward-profile.md` is the short session-start profile SOUL (file-loaded as of `d086b8d`), and `~/.hermes/profiles/steward/SOUL.md` is the runtime artifact generated from the latter. Edit the .md files in `prompts/landfolk/`; never edit the generated `SOUL.md` directly. |
+| `## Phased migration — Phase 0` | Add: (a) **Verify the prompt source for each profile before editing.** Today we spent hours editing `prompts/landfolk/steward.md` only to discover the continuous-loop prompt was hardcoded inline in `landfolk-control.sh`. The launcher trace took 30 seconds; we should have done it first. Make it a Phase 0 check for every prompt file the migration touches. (b) **Time the typical activation prompt** under `:exacto` (or whatever model variant is in use). The proposed `--max-turns 30` budget assumes a model speed that may not hold; measure first. (c) **Verify MC_ADVISE_PYTHON behaviour** if the activation prompt references `mc advise` — workers' restricted_bin pattern may carry over. |
+| `## Concurrency, scheduling, and de-duplication — §1 Trampling herd` | Add: a per-activation timeout (recommended: 300s based on today's evidence) is the natural circuit breaker — if a Steward activation runs past budget, the next webhook should see no lock holder and proceed. SIGKILL on the running activation may corrupt mid-action state; design the activation to be idempotent (running `kanban_unblock` twice is safe; running `kanban_create` twice creates duplicates — gate with `--idempotency-key` per webhook event). |
+| `## Concurrency, scheduling, and de-duplication — §2 Detectors` | Add a `stuck-bots.py` detector — every 1 min, poll each bot's `/health` for `stuck_warning` (commit `14a459c`); POST `{kind: "stuck-bot", bot, position, minutes}` to the webhook. This is the primary signal for the PHYSICALLY_STUCK classification the Steward SOUL now recognizes. Don't make detectors silence-based — every detector logs `tick: nothing-to-do` per cycle so a quiet detector is distinguishable from a hung one. |
+| `## Acceptance criteria` | Add: **Session persistence holds under load.** Fire 5 webhook events in 2 sec; after activations drain, the most recent `~/.hermes/profiles/steward/sessions/session_*.json` should be timestamped within the burst window AND have ≥10 messages (not the empty-after-truncation pattern we saw today). |
+| `## Open questions` — Q4 (`mc advise` from Steward) | **Resolved direction.** Out-of-game Steward calls `mc advise` via any bot's port AND must export `MC_ADVISE_PYTHON=/opt/homebrew/bin/python3` (or system equivalent) in its env, OR the spawn will hit the same restricted_bin python3 stub as workers do. Already wired for workers in commit `565521a` — `scripts/landfolk-control.sh` exports it into `agent-bashenv.sh`. The webhook handler's env needs the same. |
+| `## Future iterations — plugin path` | The `pre_llm_call` injection idea is even more valuable now: Steward's per-activation prompt currently exceeds the response budget at `:exacto` model speed. Pre-computed context injection (board snapshot, roster, recent events) cuts the tool-call preamble that pushes activations past the SIGALRM. Keep Path B (Steward observation plugin) as the recommended entry point; today's evidence strengthens that recommendation. |
+
+### One operational note worth flagging
+
+The current Steward setup has **three different markdown files** that each contribute to her behavior. Today's incident was that two of them (continuous-loop prompt, profile SOUL) were actually hardcoded inline in shell scripts despite appearing to be file-driven. The migration MUST audit all prompt sources for every affected profile (Steward + Workers if their SOULs get touched). The relevant files post-fix:
+
+```
+prompts/landfolk/steward.md          ← continuous-loop -q prompt (49KB)
+prompts/landfolk/steward-profile.md  ← session-start profile SOUL (2.9KB)
+prompts/landfolk/worker.md           ← worker profile SOUL template (9.6KB, {{NAME}} + {{ROLE}})
+skills/<name>.md                     ← skills loaded via skill_view per session
+```
+
+Webhook migration should preserve this discipline: any new activation prompt goes in `prompts/landfolk/`, not in a shell heredoc. The Phase 0 prompt-source verification step covers this.
