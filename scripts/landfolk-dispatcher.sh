@@ -194,6 +194,55 @@ def release_stale_orchestrator_parks():
 orch_released = release_stale_orchestrator_parks()
 if orch_released > 0:
     print(f"  mutex: released {orch_released} stale orchestrator claim_lock(s)", file=sys.stderr)
+
+
+def prune_cross_assignee_chain_edges():
+    """Remove task_links edges where parent.assignee != child.assignee, child is
+    still pending (todo/ready), AND parent is not yet resolved (done/archived).
+
+    These edges accumulate when Steward reassigns cards between bots without
+    unlinking the previous bot's serial-chain dependencies. Observed
+    2026-05-26 03:00: Mason had 6 todo cards stuck because their chain
+    parents were still in Flint's queue (running/todo). Steward intended
+    Mason to work in parallel; the chain links from before reassignment
+    silently re-enforced serial dependency on Flint's progress.
+
+    Heuristic: cross-assignee + child pending + parent not resolved → mutex
+    artifact, prune. Legitimate cross-bot domain deps (e.g. "flint mines →
+    mason builds") would more typically have parent already done by the time
+    consumer activates; if not, the consumer worker would fail on missing
+    preconditions and escalate via help-needed:, which Steward can handle.
+
+    Trade-off accepted: occasional false-positive prune of a real cross-bot
+    domain dep, recoverable via the worker's failure path. Trade-off
+    rejected: silently stranding cards for hours when they should be ready.
+    """
+    import sqlite3
+    db = _orch_claim_db_path()
+    pruned = 0
+    try:
+        with sqlite3.connect(db, timeout=5) as con:
+            cur = con.execute("""
+                DELETE FROM task_links
+                WHERE EXISTS (
+                    SELECT 1 FROM tasks p, tasks c
+                    WHERE p.id = task_links.parent_id
+                      AND c.id = task_links.child_id
+                      AND lower(coalesce(p.assignee,'')) != lower(coalesce(c.assignee,''))
+                      AND c.status IN ('todo', 'ready')
+                      AND p.status NOT IN ('done', 'archived')
+                )
+            """)
+            pruned = cur.rowcount
+            con.commit()
+    except Exception as e:
+        print(f"  mutex: prune_cross_assignee failed: {e}", file=sys.stderr)
+    return pruned
+
+chain_pruned = prune_cross_assignee_chain_edges()
+if chain_pruned > 0:
+    print(f"  mutex: pruned {chain_pruned} stale cross-assignee chain edge(s)", file=sys.stderr)
+
 orch_locked = park_orchestrator_cards(cards)
 if orch_locked > 0:
     print(f"  mutex: parked {orch_locked} orchestrator card(s) (skip dispatcher spawn)", file=sys.stderr)
