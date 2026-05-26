@@ -147,6 +147,53 @@ def park_orchestrator_cards(cards):
         return 0
     return locked
 
+def release_stale_orchestrator_parks():
+    """Counterpart to park_orchestrator_cards: release any claim_lock with the
+    orch_continuous: prefix when the card is no longer assigned to an
+    orchestrator profile (reassignment) OR claim_expires is in the past.
+
+    Hermes' own release_stale_claims only handles `running` tasks (verified
+    in kanban_db.py: 'Reset any running task whose claim has expired').
+    A claim_lock on a READY card never gets released by Hermes — so when
+    we reassign Steward's card to flint, the lock persists forever and
+    dispatch silently ignores the card. Observed 2026-05-26 02:50:
+    t_cda2e6d8 sat ready for 8033s with a stuck `orch_continuous:steward`
+    lock even though it had been reassigned to flint.
+    """
+    import sqlite3, time as _t
+    db = _orch_claim_db_path()
+    released = 0
+    try:
+        with sqlite3.connect(db, timeout=5) as con:
+            now = int(_t.time())
+            # Release if assignee is no longer an orchestrator. The orchestrator
+            # set must match what park_orchestrator_cards uses; keep them in
+            # sync if you add another orchestrator profile.
+            placeholders = ",".join(["?"] * len(ORCHESTRATOR_PROFILES))
+            params = list(ORCHESTRATOR_PROFILES)
+            cur1 = con.execute(
+                f"UPDATE tasks SET claim_lock=NULL, claim_expires=NULL "
+                f"WHERE claim_lock LIKE ? AND lower(coalesce(assignee,'')) NOT IN ({placeholders})",
+                [f"{ORCH_CLAIM_LOCK_PREFIX}%"] + params,
+            )
+            released += cur1.rowcount
+            # Also release if expires has passed (defensive — park_orchestrator_cards
+            # re-applies the lock with a fresh TTL each tick, so this should be a
+            # rare race, but better than leaking).
+            cur2 = con.execute(
+                "UPDATE tasks SET claim_lock=NULL, claim_expires=NULL "
+                "WHERE claim_lock LIKE ? AND claim_expires IS NOT NULL AND claim_expires < ?",
+                (f"{ORCH_CLAIM_LOCK_PREFIX}%", now),
+            )
+            released += cur2.rowcount
+            con.commit()
+    except Exception as e:
+        print(f"  mutex: release_stale_orch failed: {e}", file=sys.stderr)
+    return released
+
+orch_released = release_stale_orchestrator_parks()
+if orch_released > 0:
+    print(f"  mutex: released {orch_released} stale orchestrator claim_lock(s)", file=sys.stderr)
 orch_locked = park_orchestrator_cards(cards)
 if orch_locked > 0:
     print(f"  mutex: parked {orch_locked} orchestrator card(s) (skip dispatcher spawn)", file=sys.stderr)
