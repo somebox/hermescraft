@@ -26,6 +26,7 @@ const LONG_ACTION_PATHS = new Set([
   '/action/craft',
   '/action/smelt',
   '/action/wait',
+  '/action/goto',
   '/action/goto_near',
   '/action/follow',
   '/action/pillar_step',
@@ -45,6 +46,28 @@ const LONG_ACTION_PATHS = new Set([
   '/action/hunt',
   '/action/through',
   '/task/start',
+  // 2026-05-26 hut1-supply forensics: stair_down/stair_up/tunnel/move
+  // are compound primitives (per-step pathfind + dig + settle) that
+  // routinely run 30-90s server-side. Pre-fix they used the 25s default
+  // and clients aborted with "HTTP wait ended before the bot replied"
+  // while the bot kept executing. Across a 12-hour run we logged 23×
+  // tunnel, 11× stair_down, 7× stair_up, 6× move aborts. The server
+  // also caps move at 30s (ACTION_CAPS_MS.move) — guaranteed mismatch
+  // with the 25s client deadline. /action/goto has a 300s server cap
+  // (long surface legs) and falls into the same trap. Multi-block
+  // shape primitives (fill/dig_pit/level/wall/build_stairs/till_area)
+  // are dig_area-class — same rationale.
+  '/action/stair_down',
+  '/action/stair_up',
+  '/action/tunnel',
+  '/action/move',
+  '/action/safe_dig',
+  '/action/dig_pit',
+  '/action/level',
+  '/action/wall',
+  '/action/build_stairs',
+  '/action/till_area',
+  '/task/place_fill',
 ]);
 
 function classifyPathDeadline(method, pathname) {
