@@ -255,8 +255,17 @@ while true; do
        [ "${crashed:-0}" != "0" ] || [ "${auto_blocked:-0}" != "0" ] || \
        [ "${promoted:-0}" != "0" ]; then
     echo "[$ts] tick: spawned=$spawned reclaimed=$reclaimed crashed=$crashed promoted=$promoted auto_blocked=$auto_blocked" >>"$LOG_FILE"
+  else
+    # Heartbeat for quiet ticks. Previously we skipped logging entirely
+    # when nothing happened, which made a quiet but functional dispatcher
+    # indistinguishable from a hung one — operators (and Steward) couldn't
+    # tell a tidy log from a frozen process. 2026-05-26: Steward filed an
+    # [INFRA] card declaring the dispatcher offline after 32min of silence;
+    # the dispatcher was actually ticking normally on a stable board.
+    # One terse line per tick costs ~60 lines/hour, trivially manageable,
+    # and gives observability where it was missing.
+    echo "[$ts] tick: idle (no spawns / reclaims / promotions / mutex actions)" >>"$LOG_FILE"
   fi
-  # quiet ticks (everything zero) skip logging to keep the log tidy
 
   sleep "$INTERVAL"
 done
