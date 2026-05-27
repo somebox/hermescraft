@@ -125,12 +125,17 @@ def next_run_id() -> str:
     return f"{prefix}{n}"
 
 
+_DATED_RUN_RE = re.compile(r"^g-\d{4}-\d{2}-\d{2}-\d+$")
+
+
 def last_completed_run_id_before(run_id: str) -> str | None:
-    """Return the most-recent prior run (by directory name sort) that has a
-    config.json. Used by `--keep-world` to inherit anchor + seed."""
+    """Return the most-recent prior DATED run (g-YYYY-MM-DD-N) that has a
+    config.json. Used by `--keep-world` to inherit anchor + seed. Excludes
+    g-dryrun-*, g-test-*, and any other non-dated run-id formats that may
+    sort lexicographically after real runs."""
     candidates = sorted(
         p for p in runs_root().iterdir()
-        if p.is_dir() and p.name.startswith("g-") and p.name < run_id
+        if p.is_dir() and _DATED_RUN_RE.match(p.name) and p.name < run_id
     )
     for p in reversed(candidates):
         if (p / "config.json").exists():

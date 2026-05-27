@@ -109,8 +109,16 @@ case "$cmd" in
     # We still require a seed for the run config so cross-run benchmarks
     # remain comparable; reuse the prior run's seed if not supplied.
     if [[ -z "$SEED" && -n "$KEEP_WORLD" ]]; then
-      PREV=$(ls -1 "$REPO_ROOT/data/genesis-runs" 2>/dev/null | grep '^g-' | sort | tail -1)
-      if [[ -n "$PREV" ]] && [[ -f "$REPO_ROOT/data/genesis-runs/$PREV/config.json" ]]; then
+      # Delegate to last_completed_run_id_before() — Python helper that
+      # iterates from newest backward, skipping dirs without config.json,
+      # and filters to dated run-ids only (g-YYYY-MM-DD-N).
+      PREV=$("$PY" -c "
+import sys; sys.path.insert(0, '$SCRIPT_DIR')
+import genesis_lib as gl
+prev = gl.last_completed_run_id_before('zzz')  # sentinel: lex-max
+print(prev or '')
+" 2>/dev/null)
+      if [[ -n "$PREV" ]]; then
         SEED=$("$PY" -c "import json; print(json.load(open('$REPO_ROOT/data/genesis-runs/$PREV/config.json'))['seed'])")
         echo "[genesis] --keep-world: reusing prior seed $SEED from $PREV"
       fi
@@ -167,10 +175,10 @@ try:
         with gl.log_step(run_id, 'reuse_prior_anchor'):
             prior = gl.last_completed_run_id_before(run_id)
             if not prior:
-                raise RuntimeError("--keep-world but no prior run with config.json")
+                raise RuntimeError('keep-world flag set but no prior run with config.json was found')
             prior_cfg = gl.load_config(prior)
             anchor = prior_cfg['base_anchor']
-            print(f"[genesis] reusing anchor {anchor} from {prior}")
+            print('[genesis] reusing anchor', anchor, 'from', prior)
     else:
         with gl.log_step(run_id, 'probe'):
             anchor = gl.probe_base_anchor()
