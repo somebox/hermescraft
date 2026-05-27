@@ -98,7 +98,14 @@ def _parse_iso_dt(raw: str | None) -> datetime | None:
             return datetime.fromisoformat(s.replace("Z", "+00:00"))
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
+            # Hermes session JSONs write `session_start` / `last_updated`
+            # as naive `datetime.now().isoformat()` strings — i.e. LOCAL
+            # time. Treating them as UTC double-shifts when
+            # `short_ts_local_prefix()` later calls `astimezone()`, which
+            # is why agent log timestamps appeared TZ-offset hours ahead
+            # of the operator's actual wall clock. Attach the local
+            # tzinfo so the round-trip is identity.
+            return dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
         return dt
     except ValueError:
         return None

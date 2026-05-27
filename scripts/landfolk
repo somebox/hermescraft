@@ -859,9 +859,15 @@ cmd_restart() {
   [ -z "$target" ] && { err "restart needs a target"; return 1; }
   case "$target" in
     players|all-bots)
-      local roster
-      roster="$(roster_players)"
-      [ -z "$roster" ] && { err "roster empty — nothing to restart"; return 1; }
+      shift || true
+      local roster explicit_csv="${1:-}"
+      if [ -n "$explicit_csv" ]; then
+        roster="$(parse_players_csv "$explicit_csv")" || return 1
+      else
+        roster="$(roster_players)"
+        [ -z "$roster" ] && roster="$(parse_players_csv "$PLAYERS_DEFAULT")"
+      fi
+      [ -z "$roster" ] && { err "no players to restart (roster empty and PLAYERS_DEFAULT unset)"; return 1; }
       while IFS= read -r p; do [ -n "$p" ] && { reclaim_running "$p"; player_stop_one "$p"; }; done <<< "$roster"
       sleep 1
       local stored eff
@@ -1131,6 +1137,8 @@ Options for `agents` target:
   --quiet, -q         Collapse consecutive tool calls; hide non-error tool output;
                       keep thoughts + errors.
   --no-bot-logs       Don't fold in bot-<profile>.log chat/connection events.
+  --no-dispatcher     Don't fold in /tmp/hermescraft/dispatcher.log
+                      (kanban dispatch ticks + landfolk plugin gate-check).
   --no-color          Disable ANSI color (e.g. when piping to a file).
   --no-timestamps     Drop the leading HH:MM:SS column.
 
@@ -1150,13 +1158,14 @@ HELP
   fi
   local target="agents"
   if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then target="$1"; shift; fi
-  local lines=20 follow="" profiles_csv="" no_bot=0 no_color=0 quiet=0 show_reasoning=0 no_timestamps=0
+  local lines=20 follow="" profiles_csv="" no_bot=0 no_color=0 quiet=0 show_reasoning=0 no_timestamps=0 no_dispatcher=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --tail) lines="$2"; shift 2 ;;
       --follow|-f) follow="-f"; shift ;;
       --profiles|--players) profiles_csv="$2"; shift 2 ;;
       --no-bot-logs) no_bot=1; shift ;;
+      --no-dispatcher) no_dispatcher=1; shift ;;
       --no-color) no_color=1; shift ;;
       --quiet|-q) quiet=1; shift ;;
       --reasoning) show_reasoning=1; shift ;;
@@ -1166,10 +1175,19 @@ HELP
   done
   case "$target" in
     agents|"")
-      local agg_args=( --profiles "${profiles_csv:-$(roster_players | paste -sd, - || echo "$PLAYERS_DEFAULT")}" --tail "$lines" )
-      [ "$no_bot"   = 1 ] && agg_args+=( --no-bot-logs )
-      [ "$no_color" = 1 ] && agg_args+=( --no-color )
-      [ "$quiet"    = 1 ] && agg_args+=( --quiet )
+      # roster_players returns empty (with exit 0) when the roster file
+      # doesn't exist; `paste -sd,` then emits an empty string, and the
+      # `:-` fallback inside the substitution sees "" as non-empty so
+      # the `|| echo $PLAYERS_DEFAULT` never fires. Compute the default
+      # explicitly so the empty-roster case falls back correctly.
+      local default_profiles
+      default_profiles="$(roster_players | paste -sd, -)"
+      [ -z "$default_profiles" ] && default_profiles="$PLAYERS_DEFAULT"
+      local agg_args=( --profiles "${profiles_csv:-$default_profiles}" --tail "$lines" )
+      [ "$no_bot"        = 1 ] && agg_args+=( --no-bot-logs )
+      [ "$no_dispatcher" = 1 ] && agg_args+=( --no-dispatcher )
+      [ "$no_color"      = 1 ] && agg_args+=( --no-color )
+      [ "$quiet"         = 1 ] && agg_args+=( --quiet )
       [ "$show_reasoning" = 1 ] && agg_args+=( --reasoning )
       [ "$no_timestamps" = 1 ] && agg_args+=( --no-timestamps )
       exec python3 -u "$SCRIPT_DIR/scripts/landfolk-logs-aggregate.py" "${agg_args[@]}"

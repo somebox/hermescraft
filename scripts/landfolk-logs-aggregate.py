@@ -49,6 +49,7 @@ from hermes_session_lib import (
 
 PROFILES_DIR = Path.home() / ".hermes" / "profiles"
 BOT_LOG_DIR = Path(os.environ.get("LOG_DIR", "/tmp/hermescraft"))
+DISPATCHER_LOG = BOT_LOG_DIR / "dispatcher.log"
 
 
 def candidate_homes(profile: str) -> list[Path]:
@@ -88,6 +89,7 @@ RST = "\033[0m"
 USER_C = "\033[38;5;245m"   # neutral grey — tool-call summaries
 META_C = "\033[2;38;5;244m"
 CHAT_C = "\033[1;38;5;51m"  # bright cyan — global in-game chat (dedup'd across bots)
+DISP_C = "\033[1;38;5;208m"  # bright orange — landfolk dispatcher.log + plugin gate-check ticks
 
 # In-game chat lines (`[Chat]`, `[Whisper]`, `[Overheard]`) are GLOBAL events
 # — every bot that hears them writes the same line to its own log, so
@@ -578,8 +580,9 @@ def fmt_age(seconds: int) -> str:
     return f"{seconds // 86400}d{(seconds % 86400) // 3600:02d}h"
 
 
-def print_freshness_banner(profiles: list[str], pad: int, use_color: bool) -> None:
+def print_freshness_banner(profiles: list[str], pad: int, use_color: bool, *, show_dispatcher: bool = True) -> None:
     meta = META_C if use_color else ""
+    disp_c = DISP_C if use_color else ""
     rst = RST if use_color else ""
     now = time.time()
     # Apply same realpath dedup as the main loop so the banner reflects what
@@ -612,6 +615,13 @@ def print_freshness_banner(profiles: list[str], pad: int, use_color: bool) -> No
         else:
             bot_note = "no bot log"
         print(f"  {primary}{p:<{pad}}{rst} {dim}{sess_note}  |  {bot_note}{rst}")
+    if show_dispatcher:
+        if DISPATCHER_LOG.exists():
+            dage = fmt_age(int(now - DISPATCHER_LOG.stat().st_mtime))
+            dnote = f"last entry {dage} ago"
+        else:
+            dnote = "no dispatcher.log yet"
+        print(f"  {disp_c}{'dispatcher':<{pad}}{rst} {META_C if use_color else ''}{dnote}{rst}")
 
 
 def render_bot_line(
@@ -638,6 +648,45 @@ def render_chat_line(line: str, use_color: bool, pad: int, *, show_times: bool =
     return f"{tc}{chat_c}{tag} {s}{rst}"
 
 
+# 24-hour [HH:MM:SS] prefix used by scripts/landfolk-dispatcher.sh and
+# plugins/landfolk/landfolk/orchestrator/log.py. Different from the
+# 12-hour AM/PM format that mineflayer bot-log lines use, so the
+# shared parse_bot_log_timestamp() doesn't match it.
+_DISPATCHER_TS_RE = re.compile(r"^\[(\d{1,2}):(\d{2}):(\d{2})\]")
+
+
+def _parse_dispatcher_timestamp(line: str) -> str | None:
+    m = _DISPATCHER_TS_RE.match((line or "").strip())
+    if not m:
+        return None
+    hh, mm, ss = m.group(1), m.group(2), m.group(3)
+    return f"{int(hh):02d}:{mm}:{ss}"
+
+
+def render_dispatcher_line(line: str, use_color: bool, pad: int, *, show_times: bool = True) -> str:
+    """Render a dispatcher.log line under the `dispatcher` pseudo-profile.
+
+    Strips the redundant ``[HH:MM:SS]`` prefix from the body since we
+    already extract it into the time column. Used for landfolk
+    dispatcher ticks AND for `orch: promoted=N mutex_parked=M ...`
+    lines emitted by the landfolk plugin's gate-check.
+    """
+    disp_c = DISP_C if use_color else ""
+    rst = RST if use_color else ""
+    tag = f"{'dispatcher':<{pad}}"
+    s = line.rstrip()
+    time_p = _parse_dispatcher_timestamp(s) if show_times else ""
+    # Strip the leading [HH:MM:SS] prefix from the body once we've
+    # surfaced it into the time column — no need to print it twice.
+    body = s
+    if show_times and time_p and body.startswith("["):
+        bracket_end = body.find("]")
+        if bracket_end != -1:
+            body = body[bracket_end + 1:].lstrip()
+    tc = time_col(show_times, time_p, use_color)
+    return f"{tc}{disp_c}{tag} {body}{rst}"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--profiles", default="flint,mason,steward",
@@ -648,6 +697,8 @@ def main() -> int:
     ap.add_argument("--no-color", action="store_true")
     ap.add_argument("--no-bot-logs", action="store_true",
                     help="don't fold in bot-<profile>.log chat/connection events")
+    ap.add_argument("--no-dispatcher", action="store_true",
+                    help="don't fold in /tmp/hermescraft/dispatcher.log (kanban tick + landfolk gate-check)")
     ap.add_argument("-q", "--quiet", action="store_true",
                     help="collapse consecutive tool calls to one summary line, "
                          "hide non-error tool output, keep thoughts + errors")
@@ -684,6 +735,13 @@ def main() -> int:
                 bot_log_offsets[p] = lp.stat().st_size
             except FileNotFoundError:
                 bot_log_offsets[p] = 0
+    # Dispatcher log byte offset — single file, no per-profile state.
+    dispatcher_log_offset = 0
+    if not args.no_dispatcher:
+        try:
+            dispatcher_log_offset = DISPATCHER_LOG.stat().st_size
+        except FileNotFoundError:
+            dispatcher_log_offset = 0
     # Dedup ring for global chat lines: every bot logs the same `[Chat]`
     # message; emit only the first occurrence. Bounded LRU on (timestamp +
     # message body) — the bot-log timestamp is server-driven and identical
@@ -691,14 +749,22 @@ def main() -> int:
     from collections import OrderedDict
     chat_dedup: OrderedDict[str, None] = OrderedDict()
     CHAT_DEDUP_MAX = 200
-    # Recompute pad to include the "chat" pseudo-profile so its banner aligns.
+    # Recompute pad to include the "chat" and "dispatcher" pseudo-profiles
+    # so their banners align with real-profile rows.
     pad = max(pad, len("chat"))
+    if not args.no_dispatcher:
+        pad = max(pad, len("dispatcher"))
 
     meta = META_C if use_color else ""
     rst = RST if use_color else ""
-    sources = "session+bot-log" if not args.no_bot_logs else "session-only"
+    src_parts = ["session"]
+    if not args.no_bot_logs:
+        src_parts.append("bot-log")
+    if not args.no_dispatcher:
+        src_parts.append("dispatcher.log")
+    sources = "+".join(src_parts)
     print(f"{meta}── aggregating {sources}: {', '.join(profiles)}{' (tail '+str(args.tail)+')' if args.tail else ''} ──{rst}")
-    print_freshness_banner(profiles, pad, use_color)
+    print_freshness_banner(profiles, pad, use_color, show_dispatcher=not args.no_dispatcher)
 
     qp = QuietPrinter(pad=pad, use_color=use_color, show_times=show_times) if args.quiet else None
     clock = SessionClock()
@@ -858,6 +924,38 @@ def main() -> int:
                             else:
                                 print(bot_line)
                             any_new = True
+
+            # 3) Dispatcher log — single file, not per-profile. Includes
+            # `tick: spawned=N reclaimed=M ...` from hermes kanban dispatch
+            # AND `orch: promoted=N mutex_parked=M ...` from the landfolk
+            # plugin's gate-check. Emitted under the `dispatcher` pseudo-
+            # profile so it interleaves chronologically with agent activity.
+            if not args.no_dispatcher:
+                try:
+                    size = DISPATCHER_LOG.stat().st_size
+                except FileNotFoundError:
+                    size = -1
+                if size >= 0:
+                    if size < dispatcher_log_offset:
+                        dispatcher_log_offset = 0  # rotation / truncation
+                    if size > dispatcher_log_offset:
+                        try:
+                            with DISPATCHER_LOG.open("r", encoding="utf-8", errors="replace") as fh:
+                                fh.seek(dispatcher_log_offset)
+                                chunk = fh.read()
+                                dispatcher_log_offset = fh.tell()
+                        except OSError:
+                            chunk = ""
+                        for line in chunk.splitlines():
+                            if not line.strip():
+                                continue
+                            disp_line = render_dispatcher_line(line, use_color, pad, show_times=show_times)
+                            if qp:
+                                qp.add_line("dispatcher", disp_line)
+                            else:
+                                print(disp_line)
+                            any_new = True
+
             # Periodic flush — keeps long quiet runs from sitting hidden forever
             if qp:
                 qp.flush_stale()
