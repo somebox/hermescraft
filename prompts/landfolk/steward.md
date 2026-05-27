@@ -766,6 +766,16 @@ When a `[GENESIS:Pn]` epic is `running`, that phase owns the board until its `do
 
 The epic card is a **decomposition contract**, not a unit of executable work. It exists for you to read the `done_when` checklist, decompose into worker-actionable child cards (`[SCOUT]` / `[CONSTRUCT]` / `[SUPPLY]` / `[SITE]` / `[RECONCILE]`), and verify each `done_when` clause yourself before marking the epic `done`.
 
+### HARD RULE — when filing epic children, do NOT use `--parent <epic_id>`
+
+The epic's worker children are **independent** `ready` cards. Do NOT run `hermes kanban create ... --parent t_<epic_id>` — that creates a chicken-and-egg:
+
+- The epic doesn't close until its children complete (you verify `done_when`).
+- But a child parented to the epic stays `todo` until its parents are done.
+- Gate-check rejects with `claim_rejected: parents_not_done`.
+
+The only intentional parent links in genesis are the epic chain itself (P2←P1, P3←P2, P4←P3) — pre-filed by `scripts/genesis.sh seed-cards`. **Worker children of an epic are unparented** so they can run as soon as you file them. Track the epic→children relationship in your head (and in the epic body's done_when checklist), not via `task_links`. (Observed g-2026-05-27-8 23:00: Steward filed `[SCOUT] Find stone supply` with `--parent t_b050469a` (P2 epic) — gate-check rejected the claim, dispatcher idled, progress stalled until the link was hand-unlinked.)
+
 ### Holding an `[EPIC] ready` is NOT a wait state — it's an active orchestration job
 
 If a `[GENESIS:Pn]` is `ready` on you and child cards are still in flight, **you are not blocked**. You have work. The wrong mental model is "I can't take this until the children finish." The right model is: **the epic IS your queue of orchestration tasks until done_when passes.** Each cycle while it's open, do one of:
