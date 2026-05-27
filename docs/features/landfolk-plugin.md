@@ -513,13 +513,20 @@ Plugged in as a Hermes memory provider plugin. Single-select; competes with the 
 
 Polls each bot's `/chat` endpoint (or subscribes via SSE if added later). On `@steward` mentions or `help-needed:` block patterns, builds a `MessageEvent` and `await self.handle_message(event)` routing to Steward as a normal gateway message.
 
-Replaces the standalone `landfolk-chat-bridge.py` proposed in [steward-out-of-game.md](../archive/steward-out-of-game.md). Steward's outbound becomes an rcon `say` via a helper. Detector cron jobs send their signals through the same adapter (synthesized system messages) or directly via `hermes kanban` CLI calls.
+Three canonical message categories the adapter routes to Steward:
+
+- **Mark proposals** — worker chats `@steward propose chest_food at 361,65,-583` (or whisper variant). Becomes a `[CHAT_REQUEST]` card on Steward's queue, or routes to her continuous loop directly. Steward verifies in-game and updates the shared marks file (`data/locations-base.json`) — the authoritative source for fleet-prefix marks (see Glossary: *Fleet-prefix mark*). Workers writing those names privately is treated as proposal-only.
+- **Rescue requests** — worker's `mc rescue_request` output picked up as a synthesized message. The adapter is the unified intake even when the underlying mechanism is structured.
+- **Help-needed blocks** — worker block messages prefixed `help-needed:` synthesized into a chat-style event so they're observable through the same pipeline as live chat.
+
+Replaces the standalone `landfolk-chat-bridge.py` proposed in [steward-out-of-game.md](../archive/steward-out-of-game.md). Steward's outbound becomes an rcon `say` via a helper. Detector cron jobs send their signals through the same adapter (synthesized system messages) or directly via `hermes kanban` CLI calls. The shared-marks file becomes one of Steward's write surfaces alongside the kanban DB.
 
 ### `detectors/` — cron-script-only board health probes
 
 - `stranded-cards.py` — every 10 min — finds cards with offline assignees; comments + optionally reassigns.
 - `base-inventory-deficit.py` — every 5 min — runs `scripts/base-inventory.py --json`; files `[SUPPLY]` cards on deficit.
 - `stale-blocks.py` — every 4 hr — finds blocks older than 6h that aren't `queue-mutex:`; comments or files `[HEALTH]`.
+- `mark-drift.py` — every 30 min — scans every `data/locations-*.json` for fleet-prefix marks (`chest_*`, `base_*`, etc.). When a name has divergent coords across bots and no matching entry in `data/locations-base.json`, files a `[HEALTH] reconcile <mark>` card for Steward with the conflicting per-bot coords + timestamps. Steward verifies in-game and writes the canonical entry to `locations-base.json`; the next read by each bot picks it up.
 
 Each is a Hermes `cron --no-agent` job pointing at `hermes landfolk detect <name>`. Zero LLM cost.
 
@@ -575,3 +582,4 @@ Designed here; built when the mutex-demote model is verified in production and w
 - **Mutex park** — `claim_lock=mutex_park:<assignee>` written to an excess ready card by the gate-check or post-hook. The card stays in `ready` status (visible in the queue) but the dispatcher's `WHERE claim_lock IS NULL` selector skips it. The next gate-check tick releases the lock when the assignee's active card finishes, making the parked card eligible to be claimed. Re-evaluated every tick — if a parked card's priority is bumped above the current head's priority (via SQL or dashboard), the gate-check swaps them on the next tick: releases the parked card's lock and parks the now-outranked head.
 - **Orchestrator park** — `claim_lock=orch_continuous:<assignee>` written to ready cards assigned to an orchestrator profile (steward). Same mechanism as mutex park, different prefix so release logic stays separable. The orchestrator processes her own queue out-of-band; the dispatcher must never spawn a worker for her.
 - **Status demote** — Original design (rejected during Phase A live test): flip excess ready cards back to `todo`. Hermes' `recompute_ready` runs inside `kanban_list` (and many other paths) and re-promotes any parent-less todo to ready on every call, undoing the demote within milliseconds. Replaced by mutex park.
+- **Fleet-prefix mark** — A mark name beginning with a reserved prefix denoting shared base infrastructure: `chest_*` (base chests), `base_*` (base landmarks), `lt_*` (long-term sites). Workers may write these to their private `data/locations-<bot>.json` but the entry is treated as a *proposal*, not authoritative. The canonical coordinate lives in `data/locations-base.json`, written only by Steward — either directly during her continuous loop or in response to a worker chat proposal routed through the `mc_chat_adapter`. Every bot reads private + shared at startup and on mark lookup; shared takes precedence for fleet-prefix names. Drift between private and shared is surfaced by the `mark-drift.py` detector and resolved by Steward filing a `[HEALTH] reconcile <mark>` card and writing the verified entry to `locations-base.json`. Same authority pattern as orchestrator-park cards: shared fleet state, single writer, observer detectors.
