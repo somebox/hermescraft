@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "comment": "Material economy reference. Read by bot/lib/runtime/materials.js. See docs/conventions/coordinates.md for the related coordinate convention. Editing: add new blocks by name to the right tier; cascades define which blocks a primitive will try in order; region_palettes name the preferred fill for each region profile.",
+
+  "tiers": {
+    "tier_1": {
+      "description": "Free, abundant, fill-grade. Use freely as fill / cleanup material.",
+      "blocks": [
+        "dirt",
+        "grass_block",
+        "coarse_dirt",
+        "rooted_dirt",
+        "sand",
+        "red_sand",
+        "gravel",
+        "cobblestone",
+        "stone",
+        "andesite",
+        "diorite",
+        "granite",
+        "deepslate",
+        "cobbled_deepslate",
+        "tuff",
+        "netherrack",
+        "blackstone"
+      ]
+    },
+    "tier_2": {
+      "description": "Cheap craft / mid-value. Reserve for construction, not fill.",
+      "blocks": [
+        "oak_planks",
+        "birch_planks",
+        "spruce_planks",
+        "dark_oak_planks",
+        "acacia_planks",
+        "jungle_planks",
+        "smooth_stone",
+        "stone_bricks",
+        "polished_andesite",
+        "polished_diorite",
+        "polished_granite",
+        "polished_deepslate",
+        "deepslate_bricks",
+        "bricks"
+      ]
+    },
+    "tier_3": {
+      "description": "Crafted / scarce / structural. Never used as fill; protected from cleanup operations.",
+      "blocks": [
+        "iron_block",
+        "copper_block",
+        "glass",
+        "glass_pane",
+        "white_stained_glass",
+        "torch",
+        "wall_torch",
+        "ladder",
+        "scaffolding",
+        "oak_door",
+        "birch_door",
+        "spruce_door",
+        "iron_door",
+        "oak_trapdoor",
+        "oak_fence",
+        "birch_fence",
+        "spruce_fence",
+        "oak_fence_gate",
+        "oak_log",
+        "birch_log",
+        "spruce_log",
+        "oak_stairs",
+        "cobblestone_stairs",
+        "stone_stairs",
+        "oak_slab",
+        "cobblestone_slab",
+        "stone_slab",
+        "smooth_stone_slab",
+        "bookshelf",
+        "crafting_table",
+        "furnace",
+        "blast_furnace",
+        "smoker",
+        "chest",
+        "barrel",
+        "ender_chest",
+        "bed",
+        "white_bed",
+        "red_bed",
+        "anvil",
+        "enchanting_table",
+        "lectern",
+        "bell"
+      ]
+    },
+    "tier_4": {
+      "description": "Expensive / irreplaceable. Operator-placed only; never produced or moved by automation.",
+      "blocks": [
+        "diamond_block",
+        "netherite_block",
+        "gold_block",
+        "emerald_block",
+        "beacon",
+        "conduit",
+        "dragon_egg",
+        "nether_star"
+      ]
+    }
+  },
+
+  "cascades": {
+    "fill_default": [
+      "dirt",
+      "sand",
+      "gravel",
+      "cobblestone",
+      "stone"
+    ],
+    "pillar_rescue": [
+      "dirt",
+      "sand",
+      "gravel",
+      "netherrack",
+      "cobblestone",
+      "stone",
+      "cobbled_deepslate"
+    ],
+    "bridge_default": [
+      "cobblestone",
+      "stone",
+      "dirt"
+    ]
+  },
+
+  "region_palettes": {
+    "base": ["cobblestone"],
+    "farm": ["dirt"],
+    "dock": ["oak_planks"],
+    "mine": ["cobblestone"],
+    "wild": ["dirt", "sand", "cobblestone"]
+  }
+}
