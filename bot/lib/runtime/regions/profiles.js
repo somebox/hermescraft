@@ -2,6 +2,8 @@
  * Region profile defaults: intent, capabilities, and block tolerances.
  */
 
+import { isStructural as materialsIsStructural } from '../materials.js';
+
 /** @typedef {'protect'|'resource'|'marker'} RegionIntent */
 /** @typedef {'base'|'farm'|'dock'|'mine'} RegionProfileName */
 
@@ -137,12 +139,26 @@ export function isProtectedInRegion(blockName, region) {
 
 /**
  * Built/structural materials never permitted under a worksite grant.
+ *
+ * Implementation: defers to the tier_2+ classification in
+ * data/materials.json (see bot/lib/runtime/materials.js). The
+ * hardcoded STRUCTURAL_BY_PROFILE table above stays as a
+ * profile-specific safety net — it includes blocks that should be
+ * protected for that profile even if the materials.json classifier
+ * doesn't pick them up. This is the C6 migration from the
+ * coordinates+materials plan: single source of truth for the
+ * structural set, with a fail-safe.
+ *
  * @param {string} blockName
  * @param {object} region normalized with applyProfile
  */
 export function isStructuralInRegion(blockName, region) {
   if (!blockName || !region) return false;
   if (region.intent === 'marker' || region.intent === 'resource') return false;
+  // Primary: materials.json tier_2+ classification.
+  if (materialsIsStructural(blockName)) return true;
+  // Fail-safe: profile-specific hardcoded set (catches anything the
+  // tier classifier might miss for a given profile).
   const profile = region.profile || 'base';
   const structural = STRUCTURAL_BY_PROFILE[profile] || STRUCTURAL_BY_PROFILE.base;
   return structural.has(blockName);
