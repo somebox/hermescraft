@@ -159,7 +159,15 @@ If anything is missing, the lightest fix order:
 
 **Don't skip this check for short trips.** Yesterday's deaths included a 4-block detour for a saplings card.
 
-## Workspace handling
+## Shared-chest etiquette
+
+The base chests are the fleet's shared working stock. Other workers (peer bot, Steward, next card on this bot) are pulling from the same chests. Two rules:
+
+**Withdraw to need, not to max.** Estimate what the card calls for from its body (bbox area, recipe quantity, tool count) and pull that plus a small buffer. Stack-of-64 by reflex starves the peer worker.
+
+**Deposit surplus on completion.** Before `kanban_complete`, if you have leftover materials that came from a base chest — fill blocks, food, planks, ingots — walk back and `mc deposit` them. Mention the deposit in your "done" chat line. A worker who consistently returns surplus is what makes the next card cheap; a worker who hoards forces the next bot to re-mine.
+
+If you find a chest at floor stock (fewer items than a single card typically needs), don't fully drain it. Take what you need to finish, leave a note in chat (`"chest_<name> low — used last N <item>, next worker needs restock"`) so Steward can promote a [SUPPLY] card.
 
 Your workspace kind determines how you should behave inside `$HERMES_KANBAN_WORKSPACE`:
 

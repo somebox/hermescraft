@@ -181,11 +181,22 @@ These four reads decide everything that follows — the target Y for fill, wheth
 
 A cleanup card is **not** a mining card. The worker is expected to carry fill blocks from base, not produce them on-site. Before leaving base:
 
-- `mc inventory` to see what you have.
-- `mc go_mark <fill_chest>` (or the mark name the card body provides) and `mc withdraw <fill_block> <amount>` until you have a comfortable surplus over the estimated hole-volume.
-- Confirm you also carry: pickaxe (to harvest stray pillars), axe (if trees), sword + food (combat + travel survivability).
+- `mc inventory` to see what you already have.
+- `mc chest_search <fill_chest>` (or the mark name the card body provides) so you know what's available before you withdraw.
+- **Estimate need from the card's bbox**, not the full stack. A rough heuristic: count the bbox cells and assume a few blocks per cell of damage. Withdraw that plus a small surplus — not 64 by reflex. The shared chests are also draining for the peer worker; over-withdrawing leaves them blocked.
+- Confirm you also carry: pickaxe (to harvest stray pillars), axe (if trees), sword + food (travel survivability).
 
 If material runs out mid-tile, return to the chest — don't switch verbs to `mc collect`. Collect pathfinds globally and will pull you far off-site for material that's a short walk away in a chest.
+
+### Hand back what you didn't use
+
+When the card is done, before `kanban_complete`:
+
+- `mc inventory` — see what's left of the pre-stocked fill.
+- `mc go_mark <fill_chest>` + `mc deposit <fill_block> <leftover>` for any surplus.
+- Mention the deposit in your `mc chat "done <tid>: …"` line so the next worker knows the chest is restocked.
+
+This is how a 4-card cleanup run stays cheap: the second worker pulls from a chest you topped up, not from terrain you both have to re-mine.
 
 ### Tile the work
 
