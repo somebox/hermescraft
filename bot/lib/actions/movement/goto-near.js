@@ -113,6 +113,21 @@ export function createGotoNear(deps) {
         return navBlockedError(b, pos, x, y, z, dist);
       }
       clearMoveFailure();
+      // Post-action position read (used by every success path below).
+      // Pathfinder reports "arrived" at the goal cell, but server physics
+      // can drop the bot if the landing cell's support failed (cave-below,
+      // floating block, etc.). Live evidence 2026-05-27: Flint's
+      // `mc goto_near 386 63 -601` returned success; his actual Y by the
+      // time the response arrived was 43 (20-block fall). Worker read
+      // only the message text and assumed Y=63 → looped pillar_step ↔
+      // pillar_down without realizing he was on a totally different
+      // level. Always include end_position; surface a loud fall warning
+      // when the bot dropped >3 from the target Y (4+ is fall damage).
+      const endPos = posObj();
+      const fellBy = Math.floor(Number(y)) - Math.floor(endPos.y);
+      const fellWarning = fellBy >= 4
+        ? `⚠ FELL ${fellBy} blocks during pathfinding — now at (${fmt(endPos.x)}, ${fmt(endPos.y)}, ${fmt(endPos.z)}). The path landed on or led through a hole/cave; surface terrain at the target cell may differ from what scouting showed. Verify with mc terrain_top before any further dig/place. `
+        : '';
       let landingInfo;
       try {
         const ss = standingState(b);
@@ -171,20 +186,23 @@ export function createGotoNear(deps) {
         const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
           ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
           : '';
+        landingInfo.end_position = endPos;
+        if (fellBy >= 4) landingInfo.fell_by_blocks = fellBy;
         return {
-          result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${yAdjNote}${note}${reachNote}`,
+          result: `${fellWarning}Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${yAdjNote}${note}${reachNote}`,
           observed_state: landingInfo,
         };
       }
       if (losPicked) {
-        const obs = { los_cell_picked: { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz } };
+        const obs = { los_cell_picked: { x: losPicked.cx, y: losPicked.cy, z: losPicked.cz }, end_position: endPos };
+        if (fellBy >= 4) obs.fell_by_blocks = fellBy;
         if (reachability) Object.assign(obs, reachability);
         if (yAdjusted) obs.y_adjusted = yAdjusted;
         const reachNote = reachability && !reachability.walkable_to_target && reachability.next_hop_suggestion
           ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
           : '';
         return {
-          result: `Arrived at LOS cell ${losPicked.cx}, ${losPicked.cy}, ${losPicked.cz} (clear sight to target ${fmt(x)}, ${fmt(y)}, ${fmt(z)})${yAdjNote}${reachNote}`,
+          result: `${fellWarning}Arrived at LOS cell ${losPicked.cx}, ${losPicked.cy}, ${losPicked.cz} (clear sight to target ${fmt(x)}, ${fmt(y)}, ${fmt(z)})${yAdjNote}${reachNote}`,
           observed_state: obs,
         };
       }
@@ -192,10 +210,12 @@ export function createGotoNear(deps) {
         ? ` — can't reach target from here; try mc goto_near ${reachability.next_hop_suggestion.x} ${reachability.next_hop_suggestion.y} ${reachability.next_hop_suggestion.z} range=1`
         : '';
       const obs = reachability ? { ...reachability } : {};
+      obs.end_position = endPos;
+      if (fellBy >= 4) obs.fell_by_blocks = fellBy;
       if (yAdjusted) obs.y_adjusted = yAdjusted;
       return ok({
-        result: `Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${yAdjNote}${reachNote}`,
-        ...(Object.keys(obs).length ? { data: obs } : {}),
+        result: `${fellWarning}Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${yAdjNote}${reachNote}`,
+        data: obs,
       });
     } catch (e) {
       try { b.pathfinder.setGoal(null); } catch {}

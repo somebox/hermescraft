@@ -29,19 +29,14 @@ export function createBuildingPlaceBulkPart(deps) {
       const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
       const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
       const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-      // Cap lowered from 500 → 32 cells (2026-05-27, re44 directive).
-      // Live evidence: 64-cell `mc level` (which uses place_fill internally)
-      // timed out at 20s wallclock; workers also hit "Task 'place_fill'
-      // already running" when chaining adjacent boxes because the prior
-      // call hadn't completed yet. Lower cap + the synchronous semantics
-      // change below mean each call completes inline before returning.
+      // Cap lowered from 500 → 32 cells (2026-05-27).
       if (total > 32) {
         return fail(
           'AREA_TOO_LARGE',
-          `mc place_fill area is ${total} blocks (max 32) — split into smaller boxes.`,
+          `mc fill: ${total} blocks is too many — the per-call limit is 32. Run ${Math.ceil(total / 32)} smaller calls instead, each with ≤32 blocks (e.g. a ${Math.min(maxX - minX + 1, 4)}×${Math.min(maxY - minY + 1, 4)}×${Math.min(maxZ - minZ + 1, 2)} slice).`,
           {
             observed_state: { requested_volume: total, max_volume: 32, x1, y1, z1, x2, y2, z2 },
-            next_action_hint: `Split into ${Math.ceil(total / 32)} smaller boxes (≤32 cells each).`,
+            next_action_hint: `Pick a sub-box with ≤32 blocks and repeat for the rest.`,
             retry_safe: false,
           },
         );

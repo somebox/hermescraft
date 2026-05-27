@@ -118,19 +118,37 @@ export function createGoto(deps) {
       }
       clearMoveFailure();
       clearGotoRetry('goto', x, y, z);
+      // Post-action position + fall detection — mirrors goto_near. Server
+      // physics can drop the bot after pathfinder reports "arrived" if
+      // the landing cell's support is gone. Workers were reasoning from
+      // stale Y values and looping pillar_step ↔ pillar_down.
+      const endPos = posObj();
+      const fellBy = Math.floor(Number(y)) - Math.floor(endPos.y);
+      const fellWarning = fellBy >= 4
+        ? `⚠ FELL ${fellBy} blocks during pathfinding — now at (${fmt(endPos.x)}, ${fmt(endPos.y)}, ${fmt(endPos.z)}). Surface terrain may differ from scouting; verify with mc terrain_top before further action. `
+        : '';
       if (targetAdjusted) {
+        const obs = { target_adjusted: targetAdjusted, end_position: endPos };
+        if (fellBy >= 4) obs.fell_by_blocks = fellBy;
         return {
-          result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (target adjusted ${targetAdjusted.distance}b from requested ${targetAdjusted.from.x},${targetAdjusted.from.y},${targetAdjusted.from.z} — original was unstandable)`,
-          observed_state: { target_adjusted: targetAdjusted },
+          result: `${fellWarning}Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (target adjusted ${targetAdjusted.distance}b from requested ${targetAdjusted.from.x},${targetAdjusted.from.y},${targetAdjusted.from.z} — original was unstandable)`,
+          observed_state: obs,
         };
       }
       if (yAdjusted) {
+        const obs = { y_adjusted: yAdjusted, end_position: endPos };
+        if (fellBy >= 4) obs.fell_by_blocks = fellBy;
         return ok({
-          result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`,
-          data: { y_adjusted: yAdjusted },
+          result: `${fellWarning}Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)} (y adjusted from ${yAdjusted.from} to ${yAdjusted.to}, Δ=${yAdjusted.dy >= 0 ? '+' : ''}${yAdjusted.dy} — original Y was ${yAdjusted.reason})`,
+          data: obs,
         });
       }
-      return ok({ result: `Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)}` });
+      const obs = { end_position: endPos };
+      if (fellBy >= 4) obs.fell_by_blocks = fellBy;
+      return ok({
+        result: `${fellWarning}Arrived at ${fmt(x)}, ${fmt(y)}, ${fmt(z)}`,
+        data: obs,
+      });
     } catch (e) {
       try { b.pathfinder.setGoal(null); } catch {}
       if (e instanceof NoProgressError) {

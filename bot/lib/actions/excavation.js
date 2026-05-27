@@ -74,15 +74,11 @@ export function createExcavationActions(services) {
     const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
     const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
     const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-    // Cap lowered from 500 → 32 on 2026-05-27. Live evidence: a 64-cell
-    // `mc level` call timed out at 20s wallclock and patchwork-fragmented
-    // workers into per-section 5-cell calls. 32 is "already a big set to
-    // dig at once" per re44 — bounds CLI timeout risk + keeps progress
-    // visible to the worker between calls.
+    // Cap lowered from 500 → 32 on 2026-05-27.
     if (total > 32) {
-      return fail('AREA_TOO_LARGE', `Area too large (${total} blocks, max 32). Split into smaller digs — 32 blocks is the per-call ceiling.`, {
+      return fail('AREA_TOO_LARGE', `mc dig_area: ${total} blocks is too many — the per-call limit is 32. Run ${Math.ceil(total / 32)} smaller calls instead, each with ≤32 blocks.`, {
         observed_state: { requested_volume: total, max_volume: 32, x1, y1, z1, x2, y2, z2 },
-        next_action_hint: `Split into ${Math.ceil(total / 32)} smaller boxes (≤32 cells each).`,
+        next_action_hint: `Pick a sub-box with ≤32 blocks (e.g. a ${Math.min(maxX - minX + 1, 4)}×${Math.min(maxY - minY + 1, 4)}×${Math.min(maxZ - minZ + 1, 2)} slice) and repeat for the rest.`,
         retry_safe: false,
       });
     }

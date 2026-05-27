@@ -144,14 +144,13 @@ export function createBuildingTerrainPart(deps) {
         }
       }
       const totalBlocks = W * L * D;
-      // Cap lowered to 32 cells per re44 directive (2026-05-27): bounds
-      // CLI timeout risk; workers should split into smaller pits.
+      // Cap lowered to 32 cells per re44 directive (2026-05-27).
       if (totalBlocks > 32) {
         return {
           ok: false,
           error: {
             code: 'OUT_OF_RANGE',
-            message: `mc dig_pit ${W}×${L}×${D} = ${totalBlocks} blocks exceeds 32-block limit; split into smaller pits`,
+            message: `mc dig_pit: ${W}×${L}×${D} = ${totalBlocks} blocks is too many — the per-call limit is 32. Make ${Math.ceil(totalBlocks / 32)} smaller pits (e.g. halve the width or length).`,
             retry_safe: false,
           },
         };
@@ -210,14 +209,13 @@ export function createBuildingTerrainPart(deps) {
       const upRange = Math.min(Math.max(parseInt(String(up || 8), 10) || 8, 1), 16);
       const w = maxX - minX + 1;
       const l = maxZ - minZ + 1;
-      // Cap lowered 256 → 16 columns on 2026-05-27. Each column = dig + fill =
-      // ~2 ops minimum, so 16 columns ≈ 32 block ops — matches the 32-cell
-      // ceiling re44 set for the dig family. Mason's 64-cell `mc level`
-      // call timed out at 20s wallclock; 16 columns fits comfortably.
+      // Cap lowered 256 → 16 columns on 2026-05-27. Each column may do a
+      // dig + a fill (≈2 ops), so 16 columns ≈ the dig family's 32-op
+      // ceiling. Mason's 64-cell `mc level` call timed out at 20s.
       if (w * l > 16) {
         return { ok: false, error: {
           code: 'OUT_OF_RANGE',
-          message: `mc level area ${w}×${l}=${w * l} exceeds 16-column limit (each column is dig+fill = ~2 ops; 16 columns ≈ 32 block ops). Split into smaller boxes.`,
+          message: `mc level: ${w}×${l} = ${w * l} columns is too many — the per-call limit is 16 columns. Run ${Math.ceil(w * l / 16)} smaller calls instead, each with ≤16 columns (e.g. ${Math.min(w, 4)}×${Math.min(l, 4)}).`,
           observed_state: { requested_cols: w * l, max_cols: 16 },
           next_action_hint: `Split into ${Math.ceil(w * l / 16)} smaller rectangles (≤16 columns each).`,
           retry_safe: false,
@@ -369,12 +367,12 @@ export function createBuildingTerrainPart(deps) {
       const l = maxZ - minZ + 1;
       const totalCols = w * l;
       // Cap matches mc level (16 columns). level_ground delegates to mc
-      // level on execute, so the underlying primitive enforces the same
-      // limit anyway — checking here gives a faster + clearer error.
+      // level on execute, so we enforce the same limit upstream for a
+      // faster + clearer error.
       if (totalCols > 16) {
         return { ok: false, error: {
           code: 'OUT_OF_RANGE',
-          message: `mc level_ground area ${w}×${l}=${totalCols} exceeds 16-column limit (matches mc level cap). Split into smaller rectangles.`,
+          message: `mc level_ground: ${w}×${l} = ${totalCols} columns is too many — the per-call limit is 16 columns. Run ${Math.ceil(totalCols / 16)} smaller calls instead, each with ≤16 columns (e.g. ${Math.min(w, 4)}×${Math.min(l, 4)}).`,
           observed_state: { requested_cols: totalCols, max_cols: 16 },
           next_action_hint: `Split into ${Math.ceil(totalCols / 16)} smaller rectangles (≤16 columns each).`,
           retry_safe: false,
