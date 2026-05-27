@@ -38,10 +38,15 @@ from pathlib import Path
 
 DEFAULT_BOARD = "landfolk-ops"
 DEFAULT_TICK_SECONDS = 60  # matches kanban.dispatch_interval_seconds
-KANBAN_ROOT = Path(os.environ.get(
-    "HERMES_KANBAN_ROOT",
-    Path.home() / ".hermes" / "kanban",
-))
+# `os.environ.get(NAME, default)` returns "" when NAME is exported as empty —
+# we want the default in that case. `or` falls through on falsy strings. Caught
+# 2026-05-27: Steward's `scripts/board-recent.py --ticks 5` raised
+# `sqlite3.OperationalError: unable to open database file` because
+# HERMES_KANBAN_ROOT was "" in her subprocess env, the path became a relative
+# string, `is_file()` happened to pass on a stray cwd entry, and sqlite then
+# failed at first query.
+_DEFAULT_KANBAN_ROOT = Path.home() / ".hermes" / "kanban"
+KANBAN_ROOT = Path(os.environ.get("HERMES_KANBAN_ROOT") or str(_DEFAULT_KANBAN_ROOT))
 
 
 def coerce_epoch(value) -> int:

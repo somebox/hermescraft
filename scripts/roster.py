@@ -35,16 +35,31 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MODELS_JSON = REPO_ROOT / "data" / "agent-models.json"
-KANBAN_DB = Path(os.environ.get(
-    "HERMES_KANBAN_DB",
-    str(Path.home() / ".hermes" / "kanban" / "boards" / "landfolk-ops" / "kanban.db"),
-))
+DEFAULT_KANBAN_DB = Path.home() / ".hermes" / "kanban" / "boards" / "landfolk-ops" / "kanban.db"
+# `os.environ.get(NAME, default)` returns "" when NAME is exported as empty —
+# we want the default in that case. `or` falls through on falsy strings.
+# Caught 2026-05-27: Steward's `scripts/roster.py` call showed `—` for every
+# bot's card count because HERMES_KANBAN_DB resolved to "" in her terminal
+# subprocess. Path("") becomes Path('.'); is_file() is false; card_load
+# returned {} silently; the "assignable with 0 cards" alert then told her
+# to generate parallel work while bots were already busy.
+KANBAN_DB = Path(os.environ.get("HERMES_KANBAN_DB") or str(DEFAULT_KANBAN_DB))
+
+# Captured at module import so we can distinguish "DB really has no cards"
+# from "we couldn't open the DB" downstream — the alert logic depends on it.
+_CARD_LOAD_FAILED = False
 
 
 def card_load() -> dict:
     """Return {assignee_lower: {status: count, ..., total: N}} from live kanban DB.
-    Empty dict if DB unreachable (don't fail the roster probe)."""
+
+    Sets the module-level _CARD_LOAD_FAILED flag if anything goes wrong so the
+    caller can suppress alerts that assume "0 cards = idle bot, file more work".
+    """
+    global _CARD_LOAD_FAILED
     if not KANBAN_DB.is_file():
+        print(f"warning: kanban DB not at {KANBAN_DB} — card counts unavailable", file=sys.stderr)
+        _CARD_LOAD_FAILED = True
         return {}
     try:
         con = sqlite3.connect(f"file:{KANBAN_DB}?mode=ro", uri=True)
@@ -64,7 +79,9 @@ def card_load() -> dict:
         for a, sts in out.items():
             sts["total"] = sum(sts.values())
         return out
-    except Exception:
+    except Exception as e:
+        print(f"warning: kanban DB read failed ({e}) — card counts unavailable", file=sys.stderr)
+        _CARD_LOAD_FAILED = True
         return {}
 
 
@@ -140,22 +157,29 @@ def print_table(rows: list[dict], loads: dict) -> None:
 
     # ── alerts ──────────────────────────────────────────────────────────────
     alerts = []
-    # STRANDED: offline profiles holding cards
-    for r in rows:
-        if not r["mc_connected"]:
-            load = loads.get(r["lower"], {})
-            if load.get("total", 0) > 0:
-                alerts.append(f"⚠ STRANDED — {r['lower']} is OFFLINE but has {load['total']} card(s) assigned (running={load.get('running',0)}, ready={load.get('ready',0)}, todo={load.get('todo',0)}, blocked={load.get('blocked',0)}). Reassign or archive.")
-    # IDLE: assignable but 0 cards
-    idle = [r["lower"] for r in rows if r["assignable"] and loads.get(r["lower"], {}).get("total", 0) == 0 and r["role"] != "orchestrator"]
-    # OVERLOADED: any single assignable with ≥4 cards while another assignable has 0
-    overloaded = [(r["lower"], loads[r["lower"]]["total"]) for r in rows
-                  if r["assignable"] and loads.get(r["lower"], {}).get("total", 0) >= 4]
-    if idle and overloaded:
-        ov = ", ".join(f"{n} ({t} cards)" for n, t in overloaded)
-        alerts.append(f"⚠ IMBALANCE — {', '.join(idle)} idle (0 cards) while {ov} overloaded. Reassign 1-2 cards to balance.")
-    elif idle:
-        alerts.append(f"ℹ  {', '.join(idle)} assignable with 0 cards — generate parallel work or wait for natural assignment.")
+    if _CARD_LOAD_FAILED:
+        # Suppress every card-count-derived alert. A failed DB read makes every
+        # assignable bot look "idle" — the previous code happily fired
+        # "generate parallel work" and routed Steward to file new cards while
+        # bots were already busy. Tell the operator the count is unknown.
+        alerts.append("⚠ kanban card counts UNAVAILABLE — alerts suppressed. Check HERMES_KANBAN_DB.")
+    else:
+        # STRANDED: offline profiles holding cards
+        for r in rows:
+            if not r["mc_connected"]:
+                load = loads.get(r["lower"], {})
+                if load.get("total", 0) > 0:
+                    alerts.append(f"⚠ STRANDED — {r['lower']} is OFFLINE but has {load['total']} card(s) assigned (running={load.get('running',0)}, ready={load.get('ready',0)}, todo={load.get('todo',0)}, blocked={load.get('blocked',0)}). Reassign or archive.")
+        # IDLE: assignable but 0 cards
+        idle = [r["lower"] for r in rows if r["assignable"] and loads.get(r["lower"], {}).get("total", 0) == 0 and r["role"] != "orchestrator"]
+        # OVERLOADED: any single assignable with ≥4 cards while another assignable has 0
+        overloaded = [(r["lower"], loads[r["lower"]]["total"]) for r in rows
+                      if r["assignable"] and loads.get(r["lower"], {}).get("total", 0) >= 4]
+        if idle and overloaded:
+            ov = ", ".join(f"{n} ({t} cards)" for n, t in overloaded)
+            alerts.append(f"⚠ IMBALANCE — {', '.join(idle)} idle (0 cards) while {ov} overloaded. Reassign 1-2 cards to balance.")
+        elif idle:
+            alerts.append(f"ℹ  {', '.join(idle)} assignable with 0 cards — generate parallel work or wait for natural assignment.")
 
     if alerts:
         print()
