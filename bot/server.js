@@ -591,6 +591,7 @@ const ACTIONS = createAllActions({
   isContainerBlock,
   findNearbyContainer,
   snapshotChestAtPosition,
+  persistChestSnapshotsToDisk,
   saveReminders,
 });
 

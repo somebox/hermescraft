@@ -4,6 +4,30 @@ import { ensureWithinReach } from './_helpers.js';
 import { canSeeBlockFaces } from './_los.js';
 import { fail } from '../shared/action-contract.js';
 
+// Snapshots older than this surface with `stale: true` in chest_search and
+// sort behind fresh hits. Override via MC_CHEST_STALE_HOURS env var.
+const CHEST_SNAPSHOT_STALE_HOURS = Number(process.env.MC_CHEST_STALE_HOURS || 6);
+
+/**
+ * Remove every chestSnapshots entry whose `position` matches (ix,iy,iz).
+ * Returns the list of removed keys (mark names or "x,y,z" strings).
+ * Called when openContainerStructured confirms the chest is gone, so the
+ * next chest_search doesn't keep returning the phantom location.
+ */
+export function evictChestSnapshotsAtPosition(snapshots, ix, iy, iz) {
+  const removed = [];
+  if (!snapshots) return removed;
+  for (const [key, snap] of Object.entries(snapshots)) {
+    const p = snap?.position;
+    if (!p) continue;
+    if (Math.floor(p.x) === ix && Math.floor(p.y) === iy && Math.floor(p.z) === iz) {
+      removed.push(key);
+      delete snapshots[key];
+    }
+  }
+  return removed;
+}
+
 // ─ Phase-2 chest contract helpers (see docs/design/phase-2/action-contracts.md mc chest) ─
 
 /**
@@ -19,7 +43,16 @@ import { fail } from '../shared/action-contract.js';
  *   INTERRUPTED     openContainer threw (server reject, anti-grief, mid-flight)
  */
 async function openContainerStructured(deps, body) {
-  const { ensureBot, goals, resolveContainerCoords, isContainerBlock, findNearbyContainer, flagMarkStale, clearMarkStale, hasLineOfSight, eyePosition } = deps;
+  const { ctx, ensureBot, goals, resolveContainerCoords, isContainerBlock, findNearbyContainer, flagMarkStale, clearMarkStale, hasLineOfSight, eyePosition, persistChestSnapshotsToDisk } = deps;
+
+  /** Evict snapshots at (ix,iy,iz) and persist. Best-effort. */
+  function evictAndPersist(ix, iy, iz) {
+    const evicted = evictChestSnapshotsAtPosition(ctx?.goals?.chestSnapshots, ix, iy, iz);
+    if (evicted.length && typeof persistChestSnapshotsToDisk === 'function') {
+      try { persistChestSnapshotsToDisk(); } catch {}
+    }
+    return evicted;
+  }
   const b = ensureBot();
 
   let coords;
@@ -54,19 +87,23 @@ async function openContainerStructured(deps, body) {
   if (!block || !isContainerBlock(block)) {
     const markName = body.mark || body.at_mark || '';
     if (markName) flagMarkStale(markName, 'no container found at location');
+    const evicted = evictAndPersist(ix, iy, iz);
     return {
       ok: false,
       error: {
         code: 'NO_CONTAINER',
-        message: `No chest/container found near ${ix},${iy},${iz}${markName ? ` (mark '${markName}' flagged stale)` : ''}`,
+        message: `No chest/container found near ${ix},${iy},${iz}${markName ? ` (mark '${markName}' flagged stale)` : ''}${evicted.length ? `; evicted ${evicted.length} stale snapshot(s)` : ''}`,
         observed_state: {
           requested_coord: { x: ix, y: iy, z: iz },
           requested_mark: markName || null,
           block_at_target: block ? block.name : null,
+          ...(evicted.length ? { evicted_snapshots: evicted } : {}),
         },
         next_action_hint: markName
           ? `mc unmark ${markName}; verify with mc scene or mc find_blocks chest 8`
-          : 'mc scene to confirm the block at these coords; chest may have been broken',
+          : (evicted.length
+            ? `Snapshot evicted; chest was destroyed/moved. Re-discover with mc find_blocks chest 12 or skip this location.`
+            : 'mc scene to confirm the block at these coords; chest may have been broken'),
         retry_safe: false,
       },
     };
@@ -107,13 +144,26 @@ async function openContainerStructured(deps, body) {
   try {
     chest = await b.openContainer(block);
   } catch (err) {
+    // The block looked like a container to mineflayer's cached chunk view, but
+    // the server never sent windowOpen. Common cause: stale chest snapshot at a
+    // position where the chest was destroyed since mineflayer's chunk cache was
+    // last reconciled. Evict any snapshot at this coord so chest_search stops
+    // routing the bot back here; tradeoff is a re-scan on transient server lag.
+    const evicted = evictAndPersist(x, y, z);
     return {
       ok: false,
       error: {
         code: 'INTERRUPTED',
-        message: `Failed to open container at ${x},${y},${z}: ${/** @type {Error} */(err).message}`,
-        observed_state: { chest_position: { x, y, z }, mineflayer_error: /** @type {Error} */(err).message },
-        retry_safe: true,
+        message: `Failed to open container at ${x},${y},${z}: ${/** @type {Error} */(err).message}${evicted.length ? `; evicted ${evicted.length} snapshot(s) at this position` : ''}`,
+        observed_state: {
+          chest_position: { x, y, z },
+          mineflayer_error: /** @type {Error} */(err).message,
+          ...(evicted.length ? { evicted_snapshots: evicted } : {}),
+        },
+        next_action_hint: evicted.length
+          ? `Snapshot evicted. If the chest is genuinely there, re-discover with mc find_blocks chest 6 — otherwise abandon this location.`
+          : undefined,
+        retry_safe: !evicted.length,
       },
     };
   }
@@ -570,18 +620,31 @@ export function createContainerActions(deps) {
       const maxResults = Math.max(1, Math.min(50, Number(body.max_results) || 10));
       const exactPreferred = body.exact !== false; // default true; pass {exact:false} to allow substring
       const botPos = b.entity.position;
+      const now = Date.now();
+      const staleMs = CHEST_SNAPSHOT_STALE_HOURS * 3600 * 1000;
+
+      function snapshotAge(snap) {
+        const raw = snap?.at || snap?.last_seen;
+        if (!raw) return { age_minutes: null, stale: true };
+        const t = Date.parse(raw);
+        if (!Number.isFinite(t)) return { age_minutes: null, stale: true };
+        const ageMs = Math.max(0, now - t);
+        return { age_minutes: Math.round(ageMs / 60000), stale: ageMs >= staleMs };
+      }
 
       const matches = [];
       for (const [markName, snap] of Object.entries(ctx.goals.chestSnapshots || {})) {
         if (!snap?.items?.length) continue;
         const containerItems = snap.items.map((i) => ({ name: i.name, count: i.count, slot: -1 }));
         const ref = resolveItemRef(containerItems, requested);
+        const age = snapshotAge(snap);
+        const distance = snap.position ? Math.round(botPos.distanceTo(new Vec3(snap.position.x, snap.position.y, snap.position.z)) * 10) / 10 : null;
         if (!ref.ok && ref.code === 'AMBIGUOUS' && !exactPreferred) {
           // include all sub-name matches
           for (const cand of ref.candidates) {
             const subItems = containerItems.filter((i) => i.name === cand);
             const total = subItems.reduce((s, i) => s + i.count, 0);
-            if (total > 0) matches.push({ mark: markName, position: snap.position, item: cand, count: total, last_seen: snap.last_seen, distance: snap.position ? Math.round(botPos.distanceTo(new Vec3(snap.position.x, snap.position.y, snap.position.z)) * 10) / 10 : null });
+            if (total > 0) matches.push({ mark: markName, position: snap.position, item: cand, count: total, last_seen: snap.last_seen, distance, ...age });
           }
           continue;
         }
@@ -593,22 +656,32 @@ export function createContainerActions(deps) {
           count: ref.match.total_count,
           match_kind: ref.match.match_kind,
           last_seen: snap.last_seen,
-          distance: snap.position ? Math.round(botPos.distanceTo(new Vec3(snap.position.x, snap.position.y, snap.position.z)) * 10) / 10 : null,
+          distance,
+          ...age,
         });
       }
-      matches.sort((a, c) => (a.distance ?? Infinity) - (c.distance ?? Infinity));
+      // Fresh hits before stale hits, then by distance. A stale entry can still
+      // be the correct answer (worker may want to confirm) but should never beat
+      // a fresh one — that's how the 10-hour phantom routed mason 67m.
+      matches.sort((a, c) => {
+        if (Boolean(a.stale) !== Boolean(c.stale)) return a.stale ? 1 : -1;
+        return (a.distance ?? Infinity) - (c.distance ?? Infinity);
+      });
       const top = matches.slice(0, maxResults);
+      const staleCount = matches.filter((m) => m.stale).length;
 
       return {
         ok: true,
         data: {
           requested_item: requested,
           match_count: matches.length,
+          match_count_stale: staleCount,
+          stale_after_hours: CHEST_SNAPSHOT_STALE_HOURS,
           matches: top,
           chests_scanned: Object.keys(ctx.goals.chestSnapshots || {}).length,
         },
         result: matches.length > 0
-          ? `Found ${requested} in ${matches.length} chest(s); nearest @ ${top[0].mark} (${top[0].count}x, ${top[0].distance}m)`
+          ? `Found ${requested} in ${matches.length} chest(s)${staleCount ? ` (${staleCount} stale)` : ''}; nearest @ ${top[0].mark} (${top[0].count}x, ${top[0].distance}m${top[0].stale ? `, STALE ${top[0].age_minutes}m old — verify` : ''})`
           : `${requested} not found in any of ${Object.keys(ctx.goals.chestSnapshots || {}).length} chest snapshots`,
       };
     },
