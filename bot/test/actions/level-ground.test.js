@@ -307,6 +307,90 @@ test('level_ground execute=true calls the level handler with computed target + u
   assert.match(res.result, /executed/);
 });
 
+test('level_ground: accepts surface_y as input (= target + 1)', async () => {
+  const { terrain } = synthesizeMessyField({
+    minX: 0, maxX: 3, minZ: 0, maxZ: 3, groundY: 64, n_holes: 2, n_pillars: 2, seed: 11,
+  });
+  const part = makePart(makeMockBotWithTerrain(terrain));
+  // surface_y=65 → expect block_y=64 selected
+  const res = await part.level_ground({ x1: 0, z1: 0, x2: 3, z2: 3, surface_y: 65 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.block_y, 64);
+  assert.equal(res.data.surface_y, 65);
+  assert.equal(res.data.target_y, 64);  // legacy alias still present
+  assert.equal(res.data.mode, 'explicit');
+});
+
+test('level_ground: surface_y wins when both target and surface_y are given', async () => {
+  const { terrain } = synthesizeMessyField({
+    minX: 0, maxX: 3, minZ: 0, maxZ: 3, groundY: 64, n_holes: 1, n_pillars: 1, seed: 12,
+  });
+  const part = makePart(makeMockBotWithTerrain(terrain));
+  // target=99 (block_y) AND surface_y=65 → surface_y wins → block_y=64
+  const res = await part.level_ground({ x1: 0, z1: 0, x2: 3, z2: 3, target: 99, surface_y: 65 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.block_y, 64);
+  assert.equal(res.data.surface_y, 65);
+});
+
+test('level_ground: returns block_y + surface_y on every column entry', async () => {
+  const { terrain } = synthesizeMessyField({
+    minX: 0, maxX: 3, minZ: 0, maxZ: 3, groundY: 64, n_holes: 0, n_pillars: 0,
+  });
+  const part = makePart(makeMockBotWithTerrain(terrain));
+  const res = await part.level_ground({ x1: 0, z1: 0, x2: 3, z2: 3 });
+  assert.equal(res.ok, true);
+  for (const c of res.data.columns) {
+    assert.equal(c.top_block_y, 64);
+    assert.equal(c.top_surface_y, 65);
+    assert.equal(c.top_block, 'grass_block');  // synthesizer baseline
+    assert.equal(c.top_y, 64);  // legacy alias
+  }
+});
+
+test('level_ground: structural blocks above target → action=preserve, not dig', async () => {
+  // Build a 3×3 field: flat dirt at Y=64 in all 9 cells, plus an oak_log at
+  // Y=65 in the center column. Without structural classification this would
+  // be planned as action=dig with delta=1. With it, action=preserve.
+  const minX = 0, maxX = 2, minZ = 0, maxZ = 2;
+  const groundY = 64;
+  const { terrain } = synthesizeMessyField({
+    minX, maxX, minZ, maxZ, groundY, n_holes: 0, n_pillars: 0,
+  });
+  // Inject a structural block above center
+  terrain.set(`1,${groundY + 1},1`, { name: 'oak_log' });
+  const part = makePart(makeMockBotWithTerrain(terrain));
+  const res = await part.level_ground({ x1: minX, z1: minZ, x2: maxX, z2: maxZ });
+  assert.equal(res.ok, true);
+  // Center column should now be classified as preserve
+  const center = res.data.columns.find((c) => c.x === 1 && c.z === 1);
+  assert.ok(center);
+  assert.equal(center.action, 'preserve');
+  assert.equal(center.top_block, 'oak_log');
+  // Summary counts preserved_n
+  assert.equal(res.data.summary.preserved_n, 1);
+  // structural_columns array lists it
+  assert.equal(res.data.structural_columns.length, 1);
+  assert.equal(res.data.structural_columns[0].block_name, 'oak_log');
+  // Pillar count stays 0 — log is preserved, not counted as a pillar to dig
+  assert.equal(res.data.summary.pillars_n, 0);
+});
+
+test('level_ground: palette_observed counts blocks per type', async () => {
+  // 4×4 field with dirt baseline + 2 cobblestone pillars
+  const minX = 0, maxX = 3, minZ = 0, maxZ = 3;
+  const { terrain } = synthesizeMessyField({
+    minX, maxX, minZ, maxZ, groundY: 64,
+    n_holes: 0, n_pillars: 2, seed: 7,
+  });
+  const part = makePart(makeMockBotWithTerrain(terrain));
+  const res = await part.level_ground({ x1: minX, z1: minZ, x2: maxX, z2: maxZ });
+  assert.equal(res.ok, true);
+  // 14 grass_block baseline + 2 cobblestone pillar tops
+  assert.equal(res.data.palette_observed.grass_block, 14);
+  assert.equal(res.data.palette_observed.cobblestone, 2);
+});
+
 test('level_ground execute=true surfaces underlying level errors without blowing up', async () => {
   const { terrain } = synthesizeMessyField({
     minX: 0, maxX: 2, minZ: 0, maxZ: 2, groundY: 64, n_holes: 1, n_pillars: 1, seed: 3,
@@ -326,4 +410,112 @@ test('level_ground execute=true surfaces underlying level errors without blowing
   assert.equal(res.ok, false);
   assert.match(res.data.execute_error, /no fill in inventory/);
   assert.match(res.result, /execute FAILED/);
+});
+
+// ─── level (direct) — region-aware palette default ────────────────────────
+// Validates that without an explicit `block=` arg, `mc level` inside a
+// protect-intent base region defaults to cobblestone (the base profile's
+// region palette) instead of the generic tier_1 cascade that starts with
+// dirt. This is the patchwork-prevention behavior from phase C1.
+
+test('level: region palette default — base region → cobblestone before dirt', async () => {
+  // Mock region store: returns a protect region with profile=base at the
+  // bbox center query.
+  const fakeRegionStore = {
+    at(x, y, z) {
+      return [{ id: 'base', intent: 'protect', profile: 'base', capabilities: {} }];
+    },
+  };
+
+  // Synthesize a 2×2 area with no work to do (so `level` exercises just
+  // the cascade selection without any actual placement).
+  const minX = 0, maxX = 1, minZ = 0, maxZ = 1;
+  const groundY = 64;
+  const terrain = new Map();
+  for (let x = minX; x <= maxX; x++) {
+    for (let z = minZ; z <= maxZ; z++) {
+      terrain.set(`${x},${groundY},${z}`, { name: 'cobblestone' });  // already at target
+    }
+  }
+  const bot = makeMockBotWithTerrain(terrain);
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+
+  const res = await part.level({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: groundY });
+  assert.equal(res.ok, true);
+  // Cascade should start with cobblestone (the base palette) and then fall
+  // through to the tier_1 default cascade (dirt, sand, gravel, stone…).
+  assert.equal(res.data.fill_cascade[0], 'cobblestone');
+  assert.equal(res.data.fill_cascade_reason, 'region:base');
+  // Block_y / surface_y reported correctly:
+  assert.equal(res.data.block_y, groundY);
+  assert.equal(res.data.surface_y, groundY + 1);
+});
+
+test('level: outside any region → tier_1 fill_default cascade (dirt first)', async () => {
+  const fakeRegionStore = { at() { return []; } };
+  const terrain = new Map();
+  for (let x = 0; x <= 1; x++) for (let z = 0; z <= 1; z++) {
+    terrain.set(`${x},64,${z}`, { name: 'dirt' });
+  }
+  const bot = makeMockBotWithTerrain(terrain);
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 1, z2: 1, y: 64 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.fill_cascade_reason, 'fill_default');
+  assert.equal(res.data.fill_cascade[0], 'dirt');
+});
+
+test('level: explicit block= wins over region palette', async () => {
+  const fakeRegionStore = {
+    at() { return [{ id: 'base', intent: 'protect', profile: 'base', capabilities: {} }]; },
+  };
+  const terrain = new Map();
+  for (let x = 0; x <= 1; x++) for (let z = 0; z <= 1; z++) {
+    terrain.set(`${x},64,${z}`, { name: 'cobblestone' });
+  }
+  const bot = makeMockBotWithTerrain(terrain);
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 1, z2: 1, y: 64, block: 'sand' });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.data.fill_cascade, ['sand']);
+  assert.equal(res.data.fill_cascade_reason, 'explicit');
+});
+
+test('level: surface_y wins over y; block_y derived as surface_y - 1', async () => {
+  const fakeRegionStore = { at() { return []; } };
+  const terrain = new Map();
+  for (let x = 0; x <= 1; x++) for (let z = 0; z <= 1; z++) {
+    terrain.set(`${x},64,${z}`, { name: 'dirt' });
+  }
+  const bot = makeMockBotWithTerrain(terrain);
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  // y=99 (block_y), surface_y=65 → surface_y wins, block_y becomes 64
+  const res = await part.level({ x1: 0, z1: 0, x2: 1, z2: 1, y: 99, surface_y: 65 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.block_y, 64);
+  assert.equal(res.data.surface_y, 65);
 });

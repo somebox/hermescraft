@@ -4,6 +4,8 @@ import { equipForDig, isDigProtected, recordRecentPlace, columnTopSolid } from '
 import { shouldSkipDigAt, shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
 import { cardinalDelta } from '../_directions.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from '../_helpers.js';
+import { parseYInput, withYBoth } from '../../runtime/coordinates.js';
+import { cascadeFor, paletteForRegion, tierOf, isStructural } from '../../runtime/materials.js';
 
 const { goals } = pathfinderPkg;
 
@@ -19,7 +21,7 @@ export function createBuildingTerrainPart(deps) {
   const { ctx, ensureBot, sleep, getActions, config } = deps;
 
   return {
-    async path({ x1, z1, x2, z2, y }) {
+    async path({ x1, z1, x2, z2, y, surface_y }) {
       const b = ensureBot();
       for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
@@ -30,7 +32,10 @@ export function createBuildingTerrainPart(deps) {
       const maxX = Math.max(Number(x1), Number(x2));
       const minZ = Math.min(Number(z1), Number(z2));
       const maxZ = Math.max(Number(z1), Number(z2));
-      const pathY = Number.isFinite(Number(y)) ? Number(y) : Math.floor(b.entity.position.y) - 1;
+      // Y input: y (= block_y of the path tile, legacy) or surface_y (= one
+      // above, where bots walk). Default: bot's foot block.
+      const parsedPathY = parseYInput({ y, surface_y });
+      const pathY = parsedPathY !== null ? parsedPathY : Math.floor(b.entity.position.y) - 1;
 
       const shovel = b.inventory.items().find((i) => /shovel/.test(i.name));
       if (!shovel) {
@@ -102,7 +107,7 @@ export function createBuildingTerrainPart(deps) {
       if (placed === 0 && failed === 0 && skipped > 0) {
         return {
           ok: true,
-          data: { paths_placed: 0, paths_skipped: skipped, paths_failed: 0, bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: pathY } },
+          data: { paths_placed: 0, paths_skipped: skipped, paths_failed: 0, bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: pathY }, pathY) },
           result: `Path: nothing to convert (${skipped} columns already path or non-dirt)`,
         };
       }
@@ -115,7 +120,7 @@ export function createBuildingTerrainPart(deps) {
           paths_failed: failed,
           missing_blocks: missing,
           errors: errors.slice(0, 5),
-          bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: pathY },
+          bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: pathY }, pathY),
         },
         result: `Path: ${placed} placed, ${skipped} skipped, ${failed} failed at Y=${pathY}`,
       };
@@ -126,7 +131,7 @@ export function createBuildingTerrainPart(deps) {
      * unless `top_y` is given. Capped at 256 columns × 16 depth = 4096 blocks.
      * Thin wrapper over dig_area; stair-out is a separate verb (mc build_stairs).
      */
-    async dig_pit({ x, z, w, l, d, top_y }) {
+    async dig_pit({ x, z, w, l, d, top_y, surface_y }) {
       const b = ensureBot();
       for (const [k, v] of Object.entries({ x, z, w, l, d })) {
         if (!Number.isFinite(Number(v))) {
@@ -156,7 +161,10 @@ export function createBuildingTerrainPart(deps) {
         };
       }
 
-      const surfaceY = Number.isFinite(Number(top_y)) ? Math.floor(Number(top_y)) : Math.floor(b.entity.position.y) - 1;
+      // Y input: top_y (= block_y of the pit's top surface block, legacy) or
+      // surface_y (= the walk-on Y above it). Default: bot's foot block.
+      const parsedTopY = parseYInput({ y: top_y, surface_y });
+      const surfaceY = parsedTopY !== null ? parsedTopY : Math.floor(b.entity.position.y) - 1;
       const x1 = cornerX, x2 = cornerX + W - 1;
       const z1 = cornerZ, z2 = cornerZ + L - 1;
       const y1 = surfaceY - D + 1, y2 = surfaceY;
@@ -183,9 +191,16 @@ export function createBuildingTerrainPart(deps) {
           errors_count: Array.isArray(res?.errors) ? res.errors.length : 0,
           bounds: { x1, y1, z1, x2, y2, z2 },
           size: { w: W, l: L, d: D },
+          // Floor of the pit is the block below y1 — bots stand on its top.
+          floor_block_y: y1 - 1,
+          floor_surface_y: y1,
+          // Top opening of the pit (the original surface).
+          top_block_y: surfaceY,
+          top_surface_y: surfaceY + 1,
+          // Legacy alias:
           floor_y: y1 - 1,
         },
-        result: `dig_pit ${W}×${L}×${D} at (${cornerX}, surface=${surfaceY}, ${cornerZ}): dug ${res?.dug || 0}, skipped ${res?.skipped || 0}. Floor Y=${y1 - 1}.`,
+        result: `dig_pit ${W}×${L}×${D} at (${cornerX}, top_block_y=${surfaceY}, ${cornerZ}): dug ${res?.dug || 0}, skipped ${res?.skipped || 0}. Pit floor block_y=${y1 - 1}, walk surface_y=${y1}.`,
       };
     },
 
@@ -193,19 +208,32 @@ export function createBuildingTerrainPart(deps) {
      * Flatten a rectangle to target Y: dig solid blocks above Y, place a
      * fill block at Y if the column is air at that level. Touches up to
      * `up` blocks above Y (default 8). Below Y is not touched.
+     *
+     * Y inputs: pass either `y` (= block_y of the fill block, legacy) or
+     * `surface_y` (= where bots walk = block_y + 1). When both are passed,
+     * `surface_y` wins. See docs/conventions/coordinates.md.
+     *
+     * Block selection: explicit `block=NAME` wins; otherwise picks the
+     * region's profile palette (e.g. cobblestone inside :base:) if the
+     * bbox center is in a protect region; otherwise falls back to the
+     * tier_1 `fill_default` cascade. See data/materials.json.
      */
-    async level({ x1, z1, x2, z2, y, block: fillBlockName, up }) {
+    async level({ x1, z1, x2, z2, y, surface_y, block: fillBlockName, up }) {
       const b = ensureBot();
-      for (const [k, v] of Object.entries({ x1, z1, x2, z2, y })) {
+      for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
           return { ok: false, error: { code: 'INVALID_COORD', message: `mc level requires numeric ${k}`, retry_safe: false } };
         }
+      }
+      const parsedY = parseYInput({ y, surface_y });
+      if (parsedY === null) {
+        return { ok: false, error: { code: 'INVALID_COORD', message: `mc level requires y or surface_y`, retry_safe: false } };
       }
       const minX = Math.min(Number(x1), Number(x2));
       const maxX = Math.max(Number(x1), Number(x2));
       const minZ = Math.min(Number(z1), Number(z2));
       const maxZ = Math.max(Number(z1), Number(z2));
-      const targetY = Math.floor(Number(y));
+      const targetY = parsedY;
       const upRange = Math.min(Math.max(parseInt(String(up || 8), 10) || 8, 1), 16);
       const w = maxX - minX + 1;
       const l = maxZ - minZ + 1;
@@ -223,7 +251,31 @@ export function createBuildingTerrainPart(deps) {
       }
 
       const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
-      const fillCascade = fillBlockName ? [fillBlockName] : ['dirt', 'cobblestone', 'stone', 'cobbled_deepslate', 'deepslate'];
+      // Cascade selection — explicit > region palette > tier_1 default.
+      // Region detection: sample at bbox center; if a protect region wins,
+      // use its profile palette (base→cobble, farm→dirt, dock→planks).
+      let fillCascade;
+      let cascadeReason;
+      if (fillBlockName) {
+        fillCascade = [fillBlockName];
+        cascadeReason = 'explicit';
+      } else {
+        const midX = Math.floor((minX + maxX) / 2);
+        const midZ = Math.floor((minZ + maxZ) / 2);
+        const regionsHere = ctx?.runtime?.regions?.at?.(midX, targetY, midZ) || [];
+        const protectRegion = regionsHere.find((r) => r.intent === 'protect') || null;
+        const palette = protectRegion ? paletteForRegion(protectRegion) : [];
+        const defaultCascade = cascadeFor('fill_default');
+        if (palette.length > 0) {
+          // Palette items first, then fall back to defaults the palette omits.
+          const seen = new Set(palette);
+          fillCascade = [...palette, ...defaultCascade.filter((nm) => !seen.has(nm))];
+          cascadeReason = `region:${protectRegion.id}`;
+        } else {
+          fillCascade = defaultCascade;
+          cascadeReason = 'fill_default';
+        }
+      }
       const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
 
       let dug = 0, placed = 0, skipped = 0, failed = 0;
@@ -289,7 +341,7 @@ export function createBuildingTerrainPart(deps) {
                 error: {
                   code: 'MISSING_INVENTORY',
                   message: `mc level: no fill block in inventory (tried ${fillCascade.join(', ')})`,
-                  observed_state: { dug, placed, columns_remaining: (maxX - x + 1) * l + (maxZ - z), bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY } },
+                  observed_state: { dug, placed, columns_remaining: (maxX - x + 1) * l + (maxZ - z), bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY }, targetY), fill_cascade: fillCascade },
                   retry_safe: true,
                 },
               };
@@ -307,11 +359,15 @@ export function createBuildingTerrainPart(deps) {
           placed,
           skipped,
           failed,
-          bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY },
+          bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY }, targetY),
+          block_y: targetY,
+          surface_y: targetY + 1,
+          fill_cascade: fillCascade,
+          fill_cascade_reason: cascadeReason,
           up_range: upRange,
           errors: errors.slice(0, 5),
         },
-        result: `level ${w}×${l} to Y=${targetY}: dug ${dug}, placed ${placed}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`,
+        result: `level ${w}×${l} block_y=${targetY} (surface_y=${targetY + 1}): dug ${dug}, placed ${placed}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''} [cascade=${cascadeReason}]`,
       };
     },
 
@@ -335,24 +391,34 @@ export function createBuildingTerrainPart(deps) {
      *
      * Args:
      *   x1, z1, x2, z2   — rectangle bounds (inclusive)
-     *   target           — explicit target Y (optional; auto-picks if absent)
+     *   target           — explicit target Y (block_y, legacy)
+     *   surface_y        — alternative to `target`: the Y a bot walks on
+     *                      (= block_y + 1). When both given, surface_y wins.
+     *                      See docs/conventions/coordinates.md.
      *   mode             — 'median' (default) | 'min' | 'max', only used
-     *                      when target is auto
-     *   block            — fill block name (defaults to dirt/cobble cascade)
+     *                      when neither target nor surface_y is given
+     *   block            — fill block name; otherwise picks the region's
+     *                      profile palette (base→cobble) or the tier_1
+     *                      `fill_default` cascade. See data/materials.json.
      *   execute          — false (default): dry-run, returns plan only.
      *                      true: invokes the work via mc level.
      *
      * Returns:
      *   { ok: true, data: {
-     *       target_y, mode, bounds, columns_n,
-     *       summary: { holes_n, pillars_n, level_n, max_dig, max_fill, max_pillar_height },
+     *       block_y, surface_y, mode, bounds, columns_n,
+     *       summary: { holes_n, pillars_n, level_n, preserved_n,
+     *                  max_dig, max_fill, max_pillar_height },
+     *       palette_observed: { dirt: N, oak_log: M, ... },
+     *       structural_columns: [{ x, z, block_y, block_name }],
      *       up_range_recommended,
-     *       columns: [{ x, z, top_y, action: 'fill'|'dig'|'level', delta }],
+     *       columns: [{ x, z, top_block_y, top_surface_y, top_block,
+     *                   action: 'fill'|'dig'|'level'|'preserve'|'unknown',
+     *                   delta }],
      *       executed?: true | undefined,
      *       execute_result?: { dug, placed, skipped, failed }  // present iff execute=true
      *     } }
      */
-    async level_ground({ x1, z1, x2, z2, target, mode, block: fillBlockName, execute }) {
+    async level_ground({ x1, z1, x2, z2, target, surface_y, mode, block: fillBlockName, execute }) {
       const b = ensureBot();
       for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
@@ -407,41 +473,69 @@ export function createBuildingTerrainPart(deps) {
         } };
       }
 
-      // Phase 2 — pick target Y
+      // Phase 2 — pick target Y. Accept surface_y (preferred) or target (legacy).
+      const explicitBlockY = parseYInput({ y: target, surface_y });
       let targetY;
-      if (Number.isFinite(Number(target))) {
-        targetY = Math.floor(Number(target));
+      let targetMode;
+      if (explicitBlockY !== null) {
+        targetY = explicitBlockY;
+        targetMode = 'explicit';
       } else if (pickMode === 'min') {
         targetY = Math.min(...tops);
+        targetMode = 'min';
       } else if (pickMode === 'max') {
         targetY = Math.max(...tops);
+        targetMode = 'max';
       } else {
-        // median
         const sorted = [...tops].sort((a, c) => a - c);
         targetY = sorted[Math.floor(sorted.length / 2)];
+        targetMode = 'median';
       }
 
-      // Phase 3 — categorize + summarize
-      /** @type {{ x: number, z: number, top_y: number | null, action: string, delta: number | null }[]} */
+      // Phase 3 — categorize + summarize. Structural blocks (oak_log,
+      // fences, doors, planks…) get action='preserve' instead of 'dig'
+      // even when they sit above target — they're built infrastructure,
+      // not orphan terrain. See data/materials.json tier_2+.
+      /** @type {{ x: number, z: number, top_block_y: number | null, top_surface_y: number | null, top_block: string | null, action: string, delta: number | null }[]} */
       const columns = [];
-      let holes_n = 0, pillars_n = 0, level_n = 0, no_data_n = 0;
+      const palette_observed = {};
+      const structural_columns = [];
+      let holes_n = 0, pillars_n = 0, level_n = 0, no_data_n = 0, preserved_n = 0;
       let max_dig = 0, max_fill = 0, max_pillar_height = 0;
       for (const s of surveys) {
+        if (s.block) {
+          palette_observed[s.block] = (palette_observed[s.block] || 0) + 1;
+        }
         if (s.top_y == null) {
-          columns.push({ x: s.x, z: s.z, top_y: null, action: 'unknown', delta: null });
+          columns.push({ x: s.x, z: s.z, top_y: null, top_block_y: null, top_surface_y: null, top_block: null, action: 'unknown', delta: null });
           no_data_n++;
           continue;
         }
         const delta = s.top_y - targetY;
+        const baseCol = {
+          x: s.x,
+          z: s.z,
+          // Canonical fields:
+          top_block_y: s.top_y,
+          top_surface_y: s.top_y + 1,
+          top_block: s.block,
+          // Legacy alias for one release:
+          top_y: s.top_y,
+        };
         if (delta === 0) {
-          columns.push({ x: s.x, z: s.z, top_y: s.top_y, action: 'level', delta: 0 });
+          columns.push({ ...baseCol, action: 'level', delta: 0 });
           level_n++;
         } else if (delta < 0) {
-          columns.push({ x: s.x, z: s.z, top_y: s.top_y, action: 'fill', delta });
+          columns.push({ ...baseCol, action: 'fill', delta });
           holes_n++;
           if (-delta > max_fill) max_fill = -delta;
+        } else if (s.block && isStructural(s.block)) {
+          // Structural infrastructure above target — never dig.
+          columns.push({ ...baseCol, action: 'preserve', delta });
+          structural_columns.push({ x: s.x, z: s.z, block_y: s.top_y, block_name: s.block });
+          preserved_n++;
         } else {
-          columns.push({ x: s.x, z: s.z, top_y: s.top_y, action: 'dig', delta });
+          columns.push({ ...baseCol, action: 'dig', delta });
           pillars_n++;
           if (delta > max_dig) max_dig = delta;
           if (delta > max_pillar_height) max_pillar_height = delta;
@@ -451,15 +545,17 @@ export function createBuildingTerrainPart(deps) {
       // up_range used by `mc level`'s dig phase. Cap at 16 (level's own limit).
       const upRecommended = Math.min(Math.max(max_pillar_height + 1, 1), 16);
 
-      const planSummary = `${w}×${l} target=Y${targetY} (${pickMode}): ${holes_n} holes (max fill ${max_fill}), ${pillars_n} pillars (max dig ${max_dig}), ${level_n} level${no_data_n ? `, ${no_data_n} unloaded` : ''}`;
+      const preservedNote = preserved_n > 0 ? `, ${preserved_n} preserved (structural)` : '';
+      const planSummary = `${w}×${l} block_y=${targetY} surface_y=${targetY + 1} (${targetMode}): ${holes_n} holes (max fill ${max_fill}), ${pillars_n} pillars (max dig ${max_dig}), ${level_n} level${preservedNote}${no_data_n ? `, ${no_data_n} unloaded` : ''}`;
 
       // Phase 4 — execute? (optional)
       let executeResult = null;
       let executeErrors = null;
       if (doExecute) {
-        // Delegate to mc level. Pass our computed targetY + recommended up_range,
+        // Delegate to mc level. Pass block_y target + recommended up_range,
         // optionally the operator's preferred fill block. level handles
-        // standpoint pathfinding, top-down ordering (debris-safe), and fill.
+        // standpoint pathfinding, top-down ordering (debris-safe), and fill;
+        // and picks region-palette default when no explicit block given.
         try {
           const handlers = (typeof getActions === 'function' ? getActions() : null);
           const levelFn = handlers && typeof handlers.level === 'function'
@@ -494,19 +590,26 @@ export function createBuildingTerrainPart(deps) {
       return {
         ok: !(doExecute && executeErrors),
         data: {
+          // Canonical Y vocabulary (docs/conventions/coordinates.md):
+          block_y: targetY,
+          surface_y: targetY + 1,
+          // Legacy alias for back-compat (same as block_y).
           target_y: targetY,
-          mode: Number.isFinite(Number(target)) ? 'explicit' : pickMode,
-          bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ },
+          mode: targetMode,
+          bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ }, targetY),
           columns_n: surveys.length,
           summary: {
             holes_n,
             pillars_n,
             level_n,
+            preserved_n,
             no_data_n,
             max_dig,
             max_fill,
             max_pillar_height,
           },
+          palette_observed,
+          structural_columns,
           up_range_recommended: upRecommended,
           columns,
           ...(doExecute ? { executed: true, execute_result: executeResult } : {}),
@@ -522,7 +625,7 @@ export function createBuildingTerrainPart(deps) {
      * giving every block a solid face neighbor below to place against.
      * Block count grows as LEN*(LEN+1)/2 — keep LEN modest.
      */
-    async build_stairs({ block: blockName, direction, length, x, y, z }) {
+    async build_stairs({ block: blockName, direction, length, x, y, surface_y, z }) {
       const b = ensureBot();
       if (!blockName || typeof blockName !== 'string') {
         return { ok: false, error: { code: 'MISSING_BLOCK_TYPE', message: 'mc build_stairs requires a block type', retry_safe: false } };
@@ -534,7 +637,10 @@ export function createBuildingTerrainPart(deps) {
 
       const L = Math.min(Math.max(parseInt(String(length), 10) || 0, 1), 16);
       const startX = Number.isFinite(Number(x)) ? Math.floor(Number(x)) : Math.floor(b.entity.position.x);
-      const startY = Number.isFinite(Number(y)) ? Math.floor(Number(y)) : Math.floor(b.entity.position.y);
+      // Y input: accept either y (= block_y, legacy) or surface_y (= block_y + 1).
+      // Default: bot's current block_y (foot Y).
+      const parsedStartY = parseYInput({ y, surface_y });
+      const startY = parsedStartY !== null ? parsedStartY : Math.floor(b.entity.position.y);
       const startZ = Number.isFinite(Number(z)) ? Math.floor(Number(z)) : Math.floor(b.entity.position.z);
 
       const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
@@ -621,8 +727,8 @@ export function createBuildingTerrainPart(deps) {
           block: blockName,
           direction: key,
           length: L,
-          start: { x: startX, y: startY, z: startZ },
-          end: { x: startX + dx * L, y: startY + L - 1, z: startZ + dz * L },
+          start: withYBoth({ x: startX, y: startY, z: startZ }, startY),
+          end: withYBoth({ x: startX + dx * L, y: startY + L - 1, z: startZ + dz * L }, startY + L - 1),
           errors: errors.slice(0, 5),
         },
         result: `build_stairs ${key} ${L} ${blockName}: ${placed}/${expectedBlocks} blocks placed${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`,

@@ -27,9 +27,9 @@ test('building.place_fill: AREA_TOO_LARGE returns structured failure # spec', as
   });
   assertFailure(r, {
     code: 'AREA_TOO_LARGE',
-    messageIncludes: '500',
+    messageIncludes: '32',  // cap lowered from 500 → 32 (2026-05-27)
     observedKeys: ['requested_volume', 'max_volume'],
     retrySafe: false,
   });
-  assert.match(r.error.next_action_hint, /place_fill/i);
+  assert.match(r.error.next_action_hint, /sub-box|smaller/i);
 });

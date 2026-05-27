@@ -5,6 +5,25 @@ import { shouldSkipPlaceAt, shouldSkipDigAt, createRegionSkipTracker } from '../
 import { fail } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
+import { withYBoth, parseYInput, blockFromSurface } from '../../runtime/coordinates.js';
+
+/**
+ * Allow callers to pass surface_y1/surface_y2 (= block_y+1) as alternatives
+ * to y1/y2. When present, they win (surface_y semantics — bots walk at Y).
+ * Returns a new args object with y1/y2 normalized so the underlying box6
+ * helper sees what it expects.
+ */
+function normalizeBoxYArgs(args) {
+  if (args == null || typeof args !== 'object') return args;
+  const out = { ...args };
+  if (out.surface_y1 != null && Number.isFinite(Number(out.surface_y1))) {
+    out.y1 = blockFromSurface(Number(out.surface_y1));
+  }
+  if (out.surface_y2 != null && Number.isFinite(Number(out.surface_y2))) {
+    out.y2 = blockFromSurface(Number(out.surface_y2));
+  }
+  return out;
+}
 
 const { goals } = pathfinderPkg;
 
@@ -16,7 +35,10 @@ export function createBuildingPlaceBulkPart(deps) {
 
   return {
     async place_fill(args) {
-      const box = box6(args);
+      // Y inputs: y1/y2 are block_y (legacy); surface_y1/surface_y2 are
+      // an alternative perspective (= block_y + 1, where bots stand).
+      // See docs/conventions/coordinates.md.
+      const box = box6(normalizeBoxYArgs(args));
       if (!box.ok) return box.response;
       const { x1, y1, z1, x2, y2, z2 } = box;
       const blockParsed = itemName(args);
@@ -346,6 +368,15 @@ export function createBuildingPlaceBulkPart(deps) {
           occupied_by_counts,
           total: positions.length,
           partial: skipped_total > 0,
+          bounds: {
+            x1: minX, x2: maxX,
+            z1: minZ, z2: maxZ,
+            // Y range — both perspectives:
+            block_y1: minY, block_y2: maxY,
+            surface_y1: minY + 1, surface_y2: maxY + 1,
+            // Legacy aliases:
+            y1: minY, y2: maxY,
+          },
           ...regionSkips.dataFields(),
           ...(autoDisplaced ? { auto_displaced: autoDisplaced } : {}),
           ...(botWasInsideRegion ? {
@@ -372,7 +403,9 @@ export function createBuildingPlaceBulkPart(deps) {
      * placing a slab. See docs/design/phase-2/sprints.md (Sprint 5 — Building primitives).
      * — Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc wall) —
      */
-    async wall({ block: blockName, x1, y1, z1, x2, y2, z2 }) {
+    async wall(args) {
+      const normalized = normalizeBoxYArgs(args);
+      const { block: blockName, x1, y1, z1, x2, y2, z2 } = normalized;
       const b = ensureBot();
 
       if (!blockName || typeof blockName !== 'string') {
@@ -388,29 +421,29 @@ export function createBuildingPlaceBulkPart(deps) {
       }
 
       const coords = ['x1', 'y1', 'z1', 'x2', 'y2', 'z2'];
-      const args = { x1, y1, z1, x2, y2, z2 };
+      const boxArgs = { x1, y1, z1, x2, y2, z2 };
       for (const k of coords) {
-        const n = Number(args[k]);
+        const n = Number(boxArgs[k]);
         if (!Number.isFinite(n)) {
           return {
             ok: false,
             error: {
               code: 'INVALID_COORD',
-              message: `mc wall requires numeric ${k}, got ${args[k]}`,
-              observed_state: { received: args },
+              message: `mc wall requires numeric ${k}, got ${boxArgs[k]}`,
+              observed_state: { received: boxArgs },
               retry_safe: false,
             },
           };
         }
-        args[k] = n;
+        boxArgs[k] = n;
       }
 
-      const minX = Math.min(args.x1, args.x2);
-      const maxX = Math.max(args.x1, args.x2);
-      const minY = Math.min(args.y1, args.y2);
-      const maxY = Math.max(args.y1, args.y2);
-      const minZ = Math.min(args.z1, args.z2);
-      const maxZ = Math.max(args.z1, args.z2);
+      const minX = Math.min(boxArgs.x1, boxArgs.x2);
+      const maxX = Math.max(boxArgs.x1, boxArgs.x2);
+      const minY = Math.min(boxArgs.y1, boxArgs.y2);
+      const maxY = Math.max(boxArgs.y1, boxArgs.y2);
+      const minZ = Math.min(boxArgs.z1, boxArgs.z2);
+      const maxZ = Math.max(boxArgs.z1, boxArgs.z2);
 
       if (minY === maxY) {
         return {
@@ -418,7 +451,7 @@ export function createBuildingPlaceBulkPart(deps) {
           error: {
             code: 'NOT_A_WALL',
             message: `y1=y2=${minY}: walls need vertical height. Use mc fill for a flat slab.`,
-            observed_state: { y1: args.y1, y2: args.y2 },
+            observed_state: { y1: boxArgs.y1, y2: boxArgs.y2 },
             retry_safe: false,
           },
         };
@@ -505,7 +538,13 @@ export function createBuildingPlaceBulkPart(deps) {
           blocks_attempted: positions.length,
           skipped_existing,
           failed,
-          bounds: { x1: minX, y1: minY, z1: minZ, x2: maxX, y2: maxY, z2: maxZ },
+          bounds: {
+            x1: minX, x2: maxX,
+            z1: minZ, z2: maxZ,
+            block_y1: minY, block_y2: maxY,
+            surface_y1: minY + 1, surface_y2: maxY + 1,
+            y1: minY, y2: maxY,  // legacy
+          },
           block: blockName,
           ...regionSkips.dataFields(),
         },
@@ -520,7 +559,7 @@ export function createBuildingPlaceBulkPart(deps) {
      * (e.g. oak_fence → oak_fence_gate).
      * — Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc fence) —
      */
-    async fence({ block: blockName, x1, z1, x2, z2, gate, y }) {
+    async fence({ block: blockName, x1, z1, x2, z2, gate, y, surface_y }) {
       const b = ensureBot();
 
       if (!blockName || typeof blockName !== 'string') {
@@ -550,8 +589,11 @@ export function createBuildingPlaceBulkPart(deps) {
         return { ok: false, error: { code: 'ENCLOSURE_TOO_SMALL', message: `Enclosure ${w}×${l} too small (min 3×3 to have an interior)`, retry_safe: false } };
       }
 
-      // Use bot's current Y if not specified (fences need a solid block beneath, so picking the bot's standing Y is usually right).
-      const fenceY = Number.isFinite(Number(y)) ? Number(y) : Math.floor(b.entity.position.y);
+      // Y input: y (= block_y of the fence post, legacy) or surface_y
+      // (= one above where the fence top stands). Default to bot's current
+      // block_y (foot Y), where a fence will sit at body height.
+      const parsedFenceY = parseYInput({ y, surface_y });
+      const fenceY = parsedFenceY !== null ? parsedFenceY : Math.floor(b.entity.position.y);
 
       // Compute perimeter positions (top + bottom rows + left + right columns, no duplicates).
       const positions = [];
@@ -655,7 +697,7 @@ export function createBuildingPlaceBulkPart(deps) {
               failed,
               gate_placed: false,
               gate_skipped_reason: `no ${gateType} in inventory`,
-              bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: fenceY },
+              bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: fenceY }, fenceY),
               block: blockName,
             },
             result: `Fence: ${placed}/${fencePositions.length} ${blockName} placed; gate skipped (no ${gateType})`,
