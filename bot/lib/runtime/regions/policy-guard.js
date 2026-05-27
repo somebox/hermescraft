@@ -182,9 +182,14 @@ export function regionProtectedFailure(verb, blockName, x, y, z, regionResult) {
   const intent = regionResult.winning_region?.intent || '';
   const targetLabel = verb === 'dig' ? (blockName || 'block') : (blockName || 'block');
   const { hint, exit_hint_kind } = buildRegionExitHint(regionResult, verb, blockName, x, y, z);
+  const isStructural = regionResult.reason === 'REGION_STRUCTURAL_BLOCK';
+  const code = isStructural ? 'REGION_STRUCTURAL_BLOCK' : 'REGION_PROTECTED';
+  const message = isStructural
+    ? `Cannot ${verb} ${targetLabel} — structural block inside region :${id}:; worksite grant does not cover built infrastructure`
+    : `Cannot ${verb} ${targetLabel} — inside region :${id}: (${intent})`.replace(/\s+/g, ' ').trim();
   return fail(
-    'REGION_PROTECTED',
-    `Cannot ${verb} ${targetLabel} — inside region :${id}: (${intent})`.replace(/\s+/g, ' ').trim(),
+    code,
+    message,
     {
       observed_state: {
         region_id: id,

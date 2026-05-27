@@ -50,6 +50,25 @@ const PROTECTED_BY_PROFILE = {
   mine: new Set(),
 };
 
+/**
+ * Built/structural blocks — never dig under any grant (including WORKSITE_GRANT).
+ * Subset of PROTECTED_BY_PROFILE: omits natural-terrain materials (dirt,
+ * grass_block, cobblestone) that a cleanup card legitimately harvests from
+ * orphan pillars. Add a material here only if mining it indicates the bot
+ * is demolishing intentional infrastructure.
+ */
+const STRUCTURAL_BY_PROFILE = {
+  base: new Set([
+    'oak_planks', 'birch_planks', 'spruce_planks', 'dark_oak_planks',
+    'oak_log', 'birch_log', 'spruce_log',
+    'oak_fence', 'birch_fence', 'oak_door', 'glass', 'glass_pane',
+    'oak_stairs', 'cobblestone_stairs', 'oak_slab', 'cobblestone_slab',
+  ]),
+  farm: new Set(['oak_fence', 'birch_fence', 'oak_log']),
+  dock: new Set(['oak_planks', 'oak_log', 'oak_fence']),
+  mine: new Set(),
+};
+
 /** OK to break even inside protect profile (e.g. torch relight, harvest). */
 const TOLERATED_BY_PROFILE = {
   base: new Set(['torch', 'wall_torch']),
@@ -114,6 +133,19 @@ export function isProtectedInRegion(blockName, region) {
   if (tolerated.has(blockName)) return false;
   const protectedSet = PROTECTED_BY_PROFILE[profile] || PROTECTED_BY_PROFILE.base;
   return protectedSet.has(blockName);
+}
+
+/**
+ * Built/structural materials never permitted under a worksite grant.
+ * @param {string} blockName
+ * @param {object} region normalized with applyProfile
+ */
+export function isStructuralInRegion(blockName, region) {
+  if (!blockName || !region) return false;
+  if (region.intent === 'marker' || region.intent === 'resource') return false;
+  const profile = region.profile || 'base';
+  const structural = STRUCTURAL_BY_PROFILE[profile] || STRUCTURAL_BY_PROFILE.base;
+  return structural.has(blockName);
 }
 
 export function isToleratedBreak(blockName, region) {

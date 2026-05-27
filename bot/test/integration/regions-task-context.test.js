@@ -68,6 +68,35 @@ test('worksite grant allows dig inside protect region; clear restores deny', asy
   assert.equal(digDeny.error.code, 'REGION_PROTECTED');
 });
 
+test('worksite grant denies dig of structural blocks (planks/logs/fences)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-tctx-struct-'));
+  const store = setupProtectRegion(dir);
+  const ctx = { runtime: { regions: store, recentDigFailures: [] } };
+  const bot = makeMockBot({
+    blockAt: () => ({ name: 'oak_planks', boundingBox: 'block', position: { x: 0, y: 64, z: 0 } }),
+    extra: {
+      dig: async () => {},
+      tool: { itemInHand: () => null },
+    },
+  });
+  bot.entity.position.distanceTo = () => 1.5;
+  const config = { behaviors: { regionsEnabled: true, allowSlowDig: true } };
+  const check = createRegionsCheckActions({ ctx, config, ensureBot: () => bot });
+  const dig = digHarness(ctx, config, bot);
+
+  ctx.runtime.taskContext = {
+    card_id: 't_struct',
+    worksite_region: 'hut3',
+    expires_at: Date.now() + 60_000,
+    source: 'test',
+  };
+  const checkResult = await check.check({ verb: 'dig', x: 0, y: 64, z: 0 });
+  assert.equal(checkResult.data.region_decision.reason, 'REGION_STRUCTURAL_BLOCK');
+  const digResult = await dig.dig({ x: 0, y: 64, z: 0 });
+  assert.equal(digResult.ok, false);
+  assert.equal(digResult.error.code, 'REGION_STRUCTURAL_BLOCK');
+});
+
 test('expired task context behaves like no worksite', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-tctx-exp-'));
   const store = setupProtectRegion(dir);

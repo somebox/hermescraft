@@ -346,6 +346,58 @@
             "winning_region": "hut3",
             "matched_capability": "allow_ad_hoc_dig"
           }
+        },
+        {
+          "name": "worksite cannot dig structural planks",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": "hut3" },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "oak_planks",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_STRUCTURAL_BLOCK",
+            "winning_region": "hut3",
+            "matched_capability": "task_worksite"
+          }
+        },
+        {
+          "name": "worksite cannot dig structural log",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": "hut3" },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "oak_log",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_STRUCTURAL_BLOCK",
+            "winning_region": "hut3",
+            "matched_capability": "task_worksite"
+          }
+        },
+        {
+          "name": "worksite cannot dig fence",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": "hut3" },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "oak_fence",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_STRUCTURAL_BLOCK",
+            "winning_region": "hut3",
+            "matched_capability": "task_worksite"
+          }
+        },
+        {
+          "name": "worksite can still dig natural dirt for cleanup",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": "hut3" },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "dirt",
+          "expect": {
+            "decision": "allow",
+            "reason": "WORKSITE_GRANT",
+            "winning_region": "hut3",
+            "matched_capability": "task_worksite"
+          }
         }
       ]
     },

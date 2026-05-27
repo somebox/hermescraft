@@ -1,7 +1,7 @@
 /**
  * Pure region policy resolver (no Mineflayer).
  */
-import { applyProfile, isProtectedInRegion, isToleratedBreak } from './profiles.js';
+import { applyProfile, isProtectedInRegion, isStructuralInRegion, isToleratedBreak } from './profiles.js';
 
 /**
  * @param {object} shape
@@ -192,6 +192,15 @@ export function resolve(verb, args, position, blockName, regions) {
 
   const taskWorksite = args?.task_worksite ?? null;
   if (winner.intent === 'protect' && taskWorksite && taskWorksite === winner.id) {
+    if (verb === 'dig' && isStructuralInRegion(blockName, winner)) {
+      return {
+        decision: 'deny',
+        reason: 'REGION_STRUCTURAL_BLOCK',
+        winning_region: summarizeRegion(winner),
+        losing_regions: losers,
+        matched_capability: 'task_worksite',
+      };
+    }
     return {
       decision: 'allow',
       reason: 'WORKSITE_GRANT',
