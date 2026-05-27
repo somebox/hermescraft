@@ -75,15 +75,41 @@ def parse_yaml(path: Path) -> dict:
     return out
 
 
+SHARED_LOCATIONS_FILE = DATA_DIR / "locations-base.json"
+
+
 def load_chest_marks() -> dict[str, dict]:
     """Aggregate all chest_<name> marks across every bot's locations file.
 
     Returns: { mark_name: { coord: [x,y,z], owner_bot: str, ... } }
-    Duplicates (same mark name across bots) — last writer wins; coord
-    mismatch is logged to stderr.
+
+    Mirrors bot/lib/runtime/locations.js → mergeMarks: shared
+    (locations-base.json) wins for fleet-prefix names. Private writes are
+    proposals and surface as `(shadowed)` info — never as conflict warnings,
+    since shared is the canonical source.
     """
+    # 1) Load shared (steward-owned) entries first; they're authoritative.
     marks: dict[str, dict] = {}
-    for path in glob.glob(str(DATA_DIR / "locations-*.json")):
+    try:
+        with open(SHARED_LOCATIONS_FILE) as fh:
+            shared = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        shared = {}
+    if isinstance(shared, dict):
+        for name, entry in shared.items():
+            if not isinstance(entry, dict) or not name.startswith(MARK_PREFIX):
+                continue
+            coord = [entry.get("x"), entry.get("y"), entry.get("z")]
+            if any(c is None for c in coord):
+                continue
+            marks[name] = {"coord": coord, "owner_bot": "base",
+                           "saved": entry.get("saved"), "source": "shared"}
+
+    # 2) Per-bot files fill in names not in shared. Conflicts among private
+    # files are still warned about; private-vs-shared differences are not.
+    for path in sorted(glob.glob(str(DATA_DIR / "locations-*.json"))):
+        if Path(path).name == "locations-base.json":
+            continue
         owner = Path(path).stem.replace("locations-", "")
         try:
             with open(path) as fh:
@@ -91,34 +117,59 @@ def load_chest_marks() -> dict[str, dict]:
         except Exception:
             continue
         for name, entry in locs.items():
-            if not isinstance(entry, dict):
-                continue
-            if not name.startswith(MARK_PREFIX):
+            if not isinstance(entry, dict) or not name.startswith(MARK_PREFIX):
                 continue
             coord = [entry.get("x"), entry.get("y"), entry.get("z")]
             if any(c is None for c in coord):
                 continue
-            if name in marks:
-                prev = marks[name]["coord"]
-                if prev != coord:
-                    print(f"  [warn] mark {name} coord mismatch: "
-                          f"{marks[name]['owner_bot']} says {prev}, "
-                          f"{owner} says {coord}", file=sys.stderr)
+            existing = marks.get(name)
+            if existing and existing.get("source") == "shared":
+                # Shadowed by shared — no warning, but record the proposal
+                # for visibility in audit modes (future use).
+                continue
+            if existing and existing["coord"] != coord:
+                print(f"  [warn] mark {name} coord mismatch: "
+                      f"{existing['owner_bot']} says {existing['coord']}, "
+                      f"{owner} says {coord} — run scripts/reconcile-marks.py",
+                      file=sys.stderr)
             marks[name] = {"coord": coord, "owner_bot": owner,
-                           "saved": entry.get("saved")}
+                           "saved": entry.get("saved"), "source": "private"}
     return marks
 
 
 def fetch_chest_snapshots(port: int, timeout: float = 1.5) -> dict:
-    """Fetch a bot's /state response and extract chestSnapshots map."""
+    """Fetch a bot's /marks endpoint and synthesize a snapshot lookup map.
+
+    Each /marks entry already merges the chestSnapshots map server-side
+    (see buildMarksList in bot/lib/runtime/locations.js — line that does
+    `chestSnapshots[name] ?? chestSnapshots[key]`). We index by both mark
+    name and coord string so snapshot_for_coord's existing lookup chain
+    works without changes.
+    """
+    snaps: dict = {}
     try:
         with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/state", timeout=timeout,
+            f"http://127.0.0.1:{port}/marks", timeout=timeout,
         ) as r:
             data = json.loads(r.read())
-            return data.get("goals", {}).get("chestSnapshots", {}) or {}
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-        return {}
+        return snaps
+    marks = (data.get("data") or {}).get("marks") or []
+    for m in marks:
+        chest = m.get("chest_snapshot")
+        if not chest:
+            continue
+        # Ensure each snapshot carries a position so snapshot_for_coord's
+        # tolerance scan can match by coord even if mark names disagree.
+        pos = chest.get("position") or {
+            "x": m.get("x"), "y": m.get("y"), "z": m.get("z"),
+        }
+        synthesized = {**chest, "position": pos}
+        if m.get("name"):
+            snaps[m["name"]] = synthesized
+        if all(v is not None for v in (pos.get("x"), pos.get("y"), pos.get("z"))):
+            snaps[f"{int(pos['x'])},{int(pos['y'])},{int(pos['z'])}"] = synthesized
+    return snaps
 
 
 def coord_key(coord: list[int]) -> str:
@@ -126,19 +177,42 @@ def coord_key(coord: list[int]) -> str:
     return f"{int(coord[0])},{int(coord[1])},{int(coord[2])}"
 
 
-def snapshot_for_coord(snapshots: dict, coord: list[int]):
-    """Find a snapshot for this coord, also tolerating mark-name keys."""
+def snapshot_for_coord(snapshots: dict, coord: list[int], mark_name: str | None = None,
+                       xz_tolerance: int = 2, y_tolerance: int = 1):
+    """Find a snapshot for this mark/coord, tolerating two common offsets.
+
+    Lookup order:
+      1. By mark name. server.js' snapshotChestAtPosition keys snapshots by
+         mark name whenever a mark matches the chest position, so this is
+         the canonical path once the shared marks file is reconciled.
+      2. By exact coord-string key (back-compat for older snapshots written
+         before a mark existed for that position).
+      3. Position scan with tolerance. Mark coords and actual chest-block
+         coords often differ by 1-2 blocks (the mark records where the bot
+         was standing when set; the block is one of the adjacent cells).
+         Box matches findNearbyContainer in bot/lib/runtime/locations.js
+         (xz ±2, y ±1). Closest match wins on Manhattan distance.
+    """
+    if mark_name and mark_name in snapshots:
+        return snapshots[mark_name]
     key = coord_key(coord)
     if key in snapshots:
         return snapshots[key]
-    # Fall back to scanning by position
-    for k, snap in snapshots.items():
+    cx, cy, cz = int(coord[0]), int(coord[1]), int(coord[2])
+    candidates = []
+    for _k, snap in snapshots.items():
         pos = snap.get("position") or {}
-        if (int(pos.get("x", -9999)) == int(coord[0])
-                and int(pos.get("y", -9999)) == int(coord[1])
-                and int(pos.get("z", -9999)) == int(coord[2])):
-            return snap
-    return None
+        try:
+            sx, sy, sz = int(pos.get("x")), int(pos.get("y")), int(pos.get("z"))
+        except (TypeError, ValueError):
+            continue
+        dx, dy, dz = abs(sx - cx), abs(sy - cy), abs(sz - cz)
+        if dx <= xz_tolerance and dy <= y_tolerance and dz <= xz_tolerance:
+            candidates.append((dx + dy + dz, snap))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0])
+    return candidates[0][1]
 
 
 def aggregate(goals: dict, chest_marks: dict[str, dict]) -> dict:
@@ -155,7 +229,7 @@ def aggregate(goals: dict, chest_marks: dict[str, dict]) -> dict:
         best_snap = None
         best_ts = ""
         for bot, snaps in all_snaps.items():
-            snap = snapshot_for_coord(snaps, mark["coord"])
+            snap = snapshot_for_coord(snaps, mark["coord"], mark_name=mark_name)
             if snap is None:
                 continue
             ts = snap.get("at", "")

@@ -44,6 +44,37 @@ KANBAN_ROOT = Path(os.environ.get(
 ))
 
 
+def coerce_epoch(value) -> int:
+    """Best-effort epoch-seconds normalization for kanban.db `created_at`.
+
+    The schema doesn't declare a type for created_at and historically a
+    small number of rows were written as ISO timestamp strings
+    (e.g. "2026-05-26 01:01:56") while the rest are epoch ints. Sorting
+    a mixed-type list raises TypeError, so we normalize here. Returns 0
+    on unparseable input — those rows sort to the start without
+    crashing the script.
+    """
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    s = str(value).strip()
+    if not s:
+        return 0
+    # Try epoch-as-string first (cheapest happy-path).
+    try:
+        return int(float(s))
+    except ValueError:
+        pass
+    # Fall back to ISO 8601 / common SQL datetime formats.
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return int(datetime.strptime(s, fmt).timestamp())
+        except ValueError:
+            continue
+    return 0
+
+
 def parse_duration(s: str) -> int:
     """'5m' → 300, '2h' → 7200, '30s' → 30, '1d' → 86400. Bare int → seconds."""
     s = s.strip().lower()
@@ -133,7 +164,12 @@ def fetch_per_assignee_state(conn, assignee=None):
         a = r["assignee"]
         if a not in out:
             out[a] = {"running": 0, "ready": 0, "blocked": 0, "todo": 0, "last_event_at": 0}
-        out[a]["last_event_at"] = int(r["last_at"] or 0)
+        raw = r["last_at"]
+        if raw and isinstance(raw, str):
+            from datetime import datetime
+            out[a]["last_event_at"] = int(datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").timestamp())
+        else:
+            out[a]["last_event_at"] = int(raw or 0)
 
     return out
 
@@ -280,11 +316,16 @@ def main():
     if not args.no_comments:
         events = [e for e in events if e["kind"] != "commented"]
 
-    # Merge by time
+    # Merge by time. Normalize created_at to int epoch via coerce_epoch
+    # to defend against mixed text/int storage in kanban.db (4 rows in
+    # task_events were observed as ISO strings on 2026-05-27 — sort
+    # crashed with "'<' not supported between str and int"). Unparseable
+    # values sort to 0 = far past, surfacing them at the start of the
+    # list rather than crashing.
     rows = []
     for e in events:
         rows.append({
-            "time": e["created_at"],
+            "time": coerce_epoch(e["created_at"]),
             "tid": e["task_id"],
             "assignee": e["assignee"],
             "status": e["status"],
@@ -295,7 +336,7 @@ def main():
     for c in comments:
         body_one_line = re.sub(r"\s+", " ", c["body"] or "").strip()
         rows.append({
-            "time": c["created_at"],
+            "time": coerce_epoch(c["created_at"]),
             "tid": c["task_id"],
             "assignee": c["assignee"],
             "status": c["status"],

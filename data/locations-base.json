@@ -1,0 +1,61 @@
+{
+  "chest_misc": {
+    "category": null,
+    "last_visited": "2026-05-27T07:28:51.851Z",
+    "mode": null,
+    "note": "369 65 -597 --force",
+    "radius": null,
+    "reconciled_at": "2026-05-27T13:48:06.443249Z",
+    "reconciled_from": [
+      "steward"
+    ],
+    "saved": "2026-05-24T23:42:49.976Z",
+    "stale": false,
+    "stale_reason": null,
+    "updated": "2026-05-27T13:48:06.443249Z",
+    "visit_count": 11,
+    "x": 369,
+    "y": 66,
+    "z": -596
+  },
+  "chest_stone": {
+    "category": null,
+    "last_visited": "2026-05-27T11:29:06.770Z",
+    "mode": null,
+    "note": "cobble/stone chest at 365 65 -597",
+    "radius": null,
+    "reconciled_at": "2026-05-27T13:48:06.443249Z",
+    "reconciled_from": [
+      "mason",
+      "steward"
+    ],
+    "saved": "2026-05-26T05:13:06.936Z",
+    "stale": false,
+    "stale_reason": null,
+    "updated": "2026-05-27T13:48:06.443249Z",
+    "visit_count": 7,
+    "x": 366,
+    "y": 65,
+    "z": -595
+  },
+  "chest_wood": {
+    "category": null,
+    "last_visited": "2026-05-27T12:07:26.690Z",
+    "mode": null,
+    "note": "",
+    "radius": null,
+    "reconciled_at": "2026-05-27T13:48:06.443249Z",
+    "reconciled_from": [
+      "mason",
+      "steward"
+    ],
+    "saved": "2026-05-26T05:03:55.538Z",
+    "stale": false,
+    "stale_reason": null,
+    "updated": "2026-05-27T13:48:06.443249Z",
+    "visit_count": 3,
+    "x": 406,
+    "y": 65,
+    "z": -614
+  }
+}

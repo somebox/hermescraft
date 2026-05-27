@@ -44,6 +44,7 @@ scripts/benchmark/runs/
 # Local agent runtime state
 data/locations-*.json
 !data/locations.json
+!data/locations-base.json
 server/*/placemarks.json
 
 # Cursor IDE (local plans / machine-only)
