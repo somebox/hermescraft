@@ -119,10 +119,12 @@ test('sync: soft-failure result records "error" status + errorMsg', async () => 
 test('sync: pre-middleware intercept short-circuits the action', async () => {
   const { services, state } = fixture();
   // Trigger the position-guard intercept by setting a recent failed move.
+  // actual_pos must match the mock bot's entity.position (0, 64, 0) so the
+  // drift-clear branch doesn't fire and consume the flag.
   state.runtime.lastMoveFailed = {
     ts: Date.now(),
     intended_target: { x: 10, y: 64, z: 5 },
-    actual_pos: { x: 7, y: 64, z: 5 },
+    actual_pos: { x: 0, y: 64, z: 0 },
     reason: 'NAV_NO_PROGRESS',
     verb: 'goto',
   };

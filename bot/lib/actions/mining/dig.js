@@ -1,6 +1,6 @@
 // @size-exempt: dig handler oversized; inherited from legacy mining.js
 import { Vec3 } from 'vec3';
-import { equipForDig, detectDigHazards, isDigProtected, getSupportedDoorAbove } from '../../runtime/dig-tools.js';
+import { equipForDig, detectDigHazards, isDigProtected, getSupportedDoorAbove, detectPostDigBreach } from '../../runtime/dig-tools.js';
 import { OperationTimeoutError, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 import { gotoWithTimeout } from './goto-with-timeout.js';
 import { coord3 } from '../_args.js';
@@ -347,7 +347,15 @@ export function createDigHandlers(deps) {
         }
     
         const tips = [...new Set(hints)];
-    
+
+        // Post-dig breach detection. The drop scan above already slept
+        // ~dropScanMs, which gives flowing water 1-3 cells of spread —
+        // enough for face-neighbour source flow to reach the dug cell.
+        // Pass settleMs:0 so we don't double-sleep. Lava is slower
+        // (~30 ticks/cell) but a face-adjacent lava source still flows
+        // in within our window.
+        const breach = await detectPostDigBreach(b, { x, y, z }, { settleMs: 0 });
+
         // Success: clear any stale dig-failure record for this cell so the
         // repeat-blocked detector doesn't fire on later attempts at the
         // same spot (e.g. agent unblocked itself and is mining a new
@@ -356,18 +364,67 @@ export function createDigHandlers(deps) {
           ctx.runtime.recentDigFailures = ctx.runtime.recentDigFailures.filter(e =>
             !(e.cell.x === cell.x && e.cell.y === cell.y && e.cell.z === cell.z));
         }
-    
+
+        const breachFields = breach ? buildBreachFields(b, breach) : null;
+        const breachSuffix = breachFields
+          ? ` ⚠ ${breachFields.severity === 'critical' ? 'LAVA' : 'WATER'} BREACH at ${breach.breach_cell.x},${breach.breach_cell.y},${breach.breach_cell.z} — ${breachFields.hint}`
+          : '';
+
         return {
           ok: true,
           data: {
             block_name: target.name,
             dropped_items: dropped,
             position_after: posObj(b.entity.position),
+            ...(breach ? { breach } : {}),
           },
           // Preserve legacy fields so existing callers (goal engine, older tests) still see them.
-          result: `Mined ${target.name} at ${x}, ${y}, ${z}${tips.length ? ` Tips: ${tips.join(' | ')}` : ''}`,
+          result: `Mined ${target.name} at ${x}, ${y}, ${z}${tips.length ? ` Tips: ${tips.join(' | ')}` : ''}${breachSuffix}`,
           ...(tips.length ? { hints: tips } : {}),
+          ...(breachFields ? { next_action_hint: breachFields.next_action_hint } : {}),
         };
+  }
+
+  // Non-falling placeable blocks. Sand/gravel are intentionally excluded
+  // because they fall through a fluid column instead of plugging it.
+  // Order = preference (cobblestone is the cheapest universal plug).
+  const PLUG_PRIORITY = ['cobblestone', 'stone', 'dirt', 'coarse_dirt', 'netherrack'];
+  const PLUG_PLANKS_RE = /_planks$/;
+
+  function pickPlugItem(b) {
+    const inv = b.inventory?.items?.() || [];
+    for (const name of PLUG_PRIORITY) {
+      if (inv.some((it) => it.name === name)) return name;
+    }
+    const planks = inv.find((it) => PLUG_PLANKS_RE.test(it.name));
+    return planks ? planks.name : null;
+  }
+
+  function buildBreachFields(b, breach) {
+    const { x, y, z } = breach.breach_cell;
+    const plug = pickPlugItem(b);
+    if (breach.severity === 'critical') {
+      // Lava: retreat first, plug second. Don't suggest standing next to it.
+      return {
+        severity: 'critical',
+        hint: plug
+          ? `back away first, then \`mc place ${plug} ${x} ${y} ${z}\``
+          : `back away — no non-falling plug block in inventory (need cobble/stone/dirt/planks/netherrack)`,
+        next_action_hint: plug
+          ? `mc move <safe coord> then mc place ${plug} ${x} ${y} ${z}`
+          : `mc move <safe coord> then craft/fetch a plug block`,
+      };
+    }
+    // Water: plug the dug cell.
+    return {
+      severity: 'warn',
+      hint: plug
+        ? `plug with \`mc place ${plug} ${x} ${y} ${z}\``
+        : `no non-falling plug block in inventory — fetch cobble/dirt/planks before retrying`,
+      next_action_hint: plug
+        ? `mc place ${plug} ${x} ${y} ${z}`
+        : `mc inventory to confirm; need cobble/stone/dirt/planks/netherrack to plug ${x},${y},${z}`,
+    };
   }
 
   function createSafeDig(invokeDig) {

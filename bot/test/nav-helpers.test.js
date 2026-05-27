@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { findStandableSameXZ, targetChunkLoaded, findAdjustedTarget } from '../lib/actions/_nav-helpers.js';
+import { findStandableSameXZ, targetChunkLoaded, findAdjustedTarget, standingState } from '../lib/actions/_nav-helpers.js';
 
 // Minimal mock bot exposing blockAt(Vec3). Block model: a 1×W×Z slab of
 // stone at y=63 with air everywhere else. The cell (0, 64, 0) is
@@ -195,4 +195,173 @@ test('findAdjustedTarget: coerces non-int radius safely', () => {
   const matches = () => false;
   assert.equal(findAdjustedTarget(null, matches, 0, 0, 0, -5), null);
   assert.equal(findAdjustedTarget(null, matches, 0, 0, 0, 0), null);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// standingState — step_down classification fix.
+//
+// Bug: a bot on a 1-block bump in flat grass had every cardinal neighbour's
+// (feet-1) be air (grass surface sits at feet-2). The old neighborStatus
+// returned 'no_support' for all 4 directions → 'on_pillar' classification
+// → mc move refused with BOT_ON_PILLAR. Mason hit this 69× across 25
+// sessions, 24× at the single spot (436, 67, -619). The recommended
+// `mc pillar_down` mines the supporting block — destructive descent for
+// what should be a free 1-block step-off.
+//
+// Fix: neighborStatus probes up to 3 blocks down (pathfinder's default
+// maxCumulativeDropDown). Safe drops with a clear fall column return
+// 'step_down', exposed as step_down_dirs, and excluded from cliff_dirs.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Mock bot. `at(x,y,z) -> name` describes terrain; default is 'air'.
+// Bot is centered in the cell at (cell.x, cell.y, cell.z).
+function makeStandingMockBot(cell, at = () => 'air') {
+  const AIR_LIKE = new Set(['air', 'cave_air', 'void_air']);
+  return {
+    entity: { position: { x: cell.x + 0.5, y: cell.y, z: cell.z + 0.5 } },
+    blockAt(pos) {
+      const name = at(pos.x, pos.y, pos.z) || 'air';
+      // Anything non-air is treated as a full block for these tests. The
+      // production code distinguishes water/lava via boundingBox; tests
+      // that care about those set boundingBox explicitly via `at`
+      // returning an object.
+      if (typeof name === 'object') return name;
+      return { name, boundingBox: AIR_LIKE.has(name) ? 'empty' : 'block' };
+    },
+  };
+}
+
+test('standingState: 1-block bump in flat grass → "open", step_down on all 4 sides (not on_pillar)', () => {
+  // The Mason regression case. Bot at (5,65,5) standing on a single
+  // grass block at (5,64,5). Surrounding terrain is grass at y=63 —
+  // a 1-block drop in every cardinal direction.
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'grass_block';
+    if (y === 63) return 'grass_block';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'open', `expected open, got ${ss.classification}`);
+  assert.deepEqual([...ss.cliff_dirs].sort(), [], 'no true cliffs');
+  assert.deepEqual([...ss.step_down_dirs].sort(), ['E', 'N', 'S', 'W'], 'all 4 dirs are safe step-downs');
+});
+
+test('standingState: true 1×1 pillar (no ground within 3 blocks) → "on_pillar"', () => {
+  // Bot at (5,65,5) on a stone block at (5,64,5). NO other ground for
+  // many blocks down. This is what on_pillar should fire on.
+  const at = (x, y, z) => (x === 5 && y === 64 && z === 5 ? 'stone' : 'air');
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'on_pillar');
+  assert.deepEqual([...ss.cliff_dirs].sort(), ['E', 'N', 'S', 'W']);
+  assert.deepEqual([...ss.step_down_dirs].sort(), []);
+});
+
+test('standingState: 2-block drop on all sides → "open" via step_down', () => {
+  // Bump at y=64, surrounding ground at y=62 (2-block drop).
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'stone';
+    if (y === 62) return 'stone';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'open');
+  assert.deepEqual([...ss.step_down_dirs].sort(), ['E', 'N', 'S', 'W']);
+});
+
+test('standingState: 3-block drop (at pathfinder default cap) → "open" via step_down', () => {
+  // Bump at y=64, ground at y=61. by-dy where dy=4 → y=61. Within the
+  // dy=2..4 probe range; should classify as step_down.
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'stone';
+    if (y === 61) return 'stone';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'open');
+  assert.deepEqual([...ss.step_down_dirs].sort(), ['E', 'N', 'S', 'W']);
+});
+
+test('standingState: 4+ block drop on all sides → "on_pillar" (beyond safe-drop cap)', () => {
+  // Bump at y=64, ground at y=60 (4-block drop). Past our probe range.
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'stone';
+    if (y === 60) return 'stone';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'on_pillar');
+  assert.deepEqual([...ss.cliff_dirs].sort(), ['E', 'N', 'S', 'W']);
+});
+
+test('standingState: water in the fall column blocks step_down (true cliff)', () => {
+  // Bump at y=64, water at y=63, stone at y=62 on the sides. Bot must
+  // not classify these as safe step-downs — water changes physics
+  // (swimming, not clean drop) and submerged-dig guards trip easily.
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'stone';
+    if (y === 63 && !(x === 5 && z === 5)) return { name: 'water', boundingBox: 'empty' };
+    if (y === 62 && !(x === 5 && z === 5)) return 'stone';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'on_pillar');
+  assert.deepEqual([...ss.step_down_dirs].sort(), []);
+});
+
+test('standingState: mixed neighbours — 1 wall + 1 open + 2 step_downs → "open"', () => {
+  // Bump at (5,64,5). Wall to N at (5,65,4)+(5,66,4). Open to E means
+  // grass at the same Y as the bump: grass at (6,64,5). Step-down to
+  // S and W (grass surface at y=63).
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'grass_block';   // bump under bot
+    if (x === 5 && (y === 65 || y === 66) && z === 4) return 'stone';  // N wall
+    if (x === 6 && y === 64 && z === 5) return 'grass_block';   // E walk-level
+    if (y === 63 && (x === 4 || z === 6)) return 'grass_block'; // S/W ground
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'open');
+  assert.deepEqual([...ss.blocked_dirs].sort(), ['N']);
+  assert.deepEqual([...ss.open_dirs].sort(), ['E']);
+  assert.deepEqual([...ss.step_down_dirs].sort(), ['S', 'W']);
+  assert.deepEqual([...ss.cliff_dirs].sort(), []);
+});
+
+test('standingState: edge classification only for TRUE cliffs (not step_downs)', () => {
+  // Bot on grass at y=64 next to a real cliff to N (drop > 3). Other
+  // dirs walkable. Pre-fix this would be 'edge' even for a 1-block
+  // step-down to the N. Post-fix the N must be a real cliff.
+  const at = (x, y, z) => {
+    // Ground at y=64 for the bot's cell + S/E/W neighbours
+    if (y === 64 && (z >= 5 || x !== 5)) return 'grass_block';
+    // North is a true cliff: bot at (5,65,5), N neighbour (5,*,4) is
+    // all air down to y=50.
+    if (y === 50 && z === 4) return 'stone';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'edge');
+  assert.deepEqual([...ss.cliff_dirs], ['N']);
+  assert.deepEqual([...ss.step_down_dirs].sort(), []);
+});
+
+test('standingState: 1-block step-down adjacent to a real cliff is still safe — no "edge"', () => {
+  // Bot on grass at y=64 (cell 5,65,5). To N a 1-block drop: (5,64,4)
+  // is air, landing at (5,63,4)=grass. To E a true cliff: column
+  // (6,*,5) is air all the way down. S and W are walk-level (grass at
+  // y=64). Pre-fix: cliff_dirs would include N and E → 'edge'. Post-
+  // fix: only E counts; N is a step_down.
+  const at = (x, y, z) => {
+    // Bot's floor + walk-level S/W
+    if (y === 64 && z === 5 && (x === 5 || x === 4)) return 'grass_block';
+    if (y === 64 && x === 5 && z === 6) return 'grass_block';
+    // N step-down landing one block lower
+    if (y === 63 && x === 5 && z === 4) return 'grass_block';
+    // E column (x=6, z=5) is air all the way down (true cliff).
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'edge', 'one real cliff to E → edge');
+  assert.deepEqual([...ss.cliff_dirs], ['E']);
+  assert.deepEqual([...ss.step_down_dirs], ['N']);
 });

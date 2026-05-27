@@ -14,12 +14,17 @@
  *   - next successful move (set by the movement handlers themselves)
  *   - `mc status` call (explicit acknowledgement — handled in http-app.js)
  *   - 30s decay (handled by this middleware)
+ *   - bot's actual position drifted >POSITION_DRIFT_BLOCKS from the recorded
+ *     `actual_pos` (handled by this middleware) — covers `mc pillar_down`,
+ *     `mc escape`, falling off a ledge, or any other recovery that physically
+ *     moves the bot. Without this, BOT_ON_PILLAR → mc pillar_down (the
+ *     recommended fix) → next mc dig still tripped the stale guard.
  *
  * Middleware contract (per docs/archive/refactor-plan-2026.md § Assembly rules):
  *   check(services, body, actionName) → { intercept: true, response } | { intercept: false }
  *
  * The function may mutate `services.state.runtime.lastMoveFailed` as a
- * side effect of the 30s decay; this matches the pre-extraction behaviour.
+ * side effect of the 30s decay or the position-drift check.
  */
 
 import { fail } from '../../shared/action-contract.js';
@@ -36,6 +41,10 @@ export const POSITION_DEPENDENT_VERBS = Object.freeze(new Set([
 
 const FAILURE_TTL_MS = 30_000;
 const NEAR_RADIUS = 5;
+// `actual_pos` is rounded to 1 decimal in recordMoveFailure; a drift
+// >1.5 blocks means the bot has genuinely relocated (fell, pillar_down'd,
+// escape'd) — the stale failure is no longer descriptive.
+const POSITION_DRIFT_BLOCKS = 1.5;
 
 /**
  * Extract the primary target coord from a request body. Most verbs use
@@ -68,6 +77,24 @@ export function check(services, body, actionName) {
   // 30s decay: drop stale failures regardless of which verb is calling.
   if (state.runtime.lastMoveFailed && (Date.now() - state.runtime.lastMoveFailed.ts) > FAILURE_TTL_MS) {
     state.runtime.lastMoveFailed = null;
+  }
+  // Position-drift decay: if the bot has physically moved since the
+  // failure was recorded, the lmf record is describing a position the
+  // bot is no longer at. Defensive against ensureBot throwing — if we
+  // can't read the live position, fall through to the radius check.
+  if (state.runtime.lastMoveFailed?.actual_pos && typeof services.ensureBot === 'function') {
+    try {
+      const live = services.ensureBot().entity?.position;
+      const stored = state.runtime.lastMoveFailed.actual_pos;
+      if (live) {
+        const dx = live.x - stored.x;
+        const dy = live.y - stored.y;
+        const dz = live.z - stored.z;
+        if (Math.sqrt(dx * dx + dy * dy + dz * dz) > POSITION_DRIFT_BLOCKS) {
+          state.runtime.lastMoveFailed = null;
+        }
+      }
+    } catch { /* bot not ready / dead / no entity — let the normal check run */ }
   }
   if (!POSITION_DEPENDENT_VERBS.has(actionName)) return { intercept: false };
   if (!state.runtime.lastMoveFailed) return { intercept: false };

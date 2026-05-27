@@ -319,13 +319,25 @@ const DIRS = [
  *   - 'open'        — can walk that way at same Y
  *   - 'foot_solid'  — solid block at foot level (wall)
  *   - 'head_solid'  — air at foot but solid at head (low ceiling)
- *   - 'no_support'  — foot+head clear but no ground below (cliff edge)
+ *   - 'step_down'   — foot+head clear, no support at by-1, BUT solid ground
+ *                     within 3 blocks down and the fall column is air.
+ *                     Safe to walk that way (no fall damage at drop ≤ 3).
+ *   - 'no_support'  — foot+head clear and no safe landing within 3 blocks
+ *                     (true cliff, or fall column blocked by water/lava)
  *   - 'unknown'     — chunk not loaded
  *
- * We DON'T consider hop-up / drop-down here. Those are pathfinder moves,
- * not "is this direction immediately walkable". Stair geometry is
- * classified as `foot_solid` because the bot can't walk into a stair
- * side without a jump; the brain still gets the right signal.
+ * We DON'T consider hop-up here — that's a pathfinder move, not "is this
+ * direction immediately walkable". Stair geometry is classified as
+ * `foot_solid` because the bot can't walk into a stair side without a
+ * jump; the brain still gets the right signal.
+ *
+ * We DO consider drop-down (step_down) because the old "any air at by-1
+ * is a cliff" rule misclassified 1-block bumps in flat terrain as
+ * `on_pillar` and made `mc move` refuse with BOT_ON_PILLAR. Observed
+ * 2026-05-24..27: mason hit BOT_ON_PILLAR 69× across 25 sessions,
+ * 24× at the single spot (436, 67, -619). Pathfinder's default
+ * maxCumulativeDropDown is 3, so neighbour drops within that range
+ * should look like walkable ground to the preflight, not cliffs.
  */
 function neighborStatus(b, bx, by, bz, dx, dz) {
   const fx = bx + dx, fz = bz + dz;
@@ -335,8 +347,25 @@ function neighborStatus(b, bx, by, bz, dx, dz) {
   if (!foot || !head || !below) return 'unknown';
   if (!TRAVERSABLE_FOOT.has(foot.name)) return 'foot_solid';
   if (!AIR_NAMES.has(head.name)) return 'head_solid';
-  if (below.boundingBox !== 'block') return 'no_support';
-  return 'open';
+  if (below.boundingBox === 'block') return 'open';
+
+  // Safe step-down probe. Match pathfinder's default maxCumulativeDropDown
+  // (3 blocks; see manager.js MAX_CUMULATIVE_DROP_DOWN_DEFAULT). For each
+  // candidate landing depth, every cell the bot falls through must be
+  // truly air — water/lava/leaves change physics and aren't a clean drop.
+  for (let dy = 2; dy <= 4; dy++) {
+    const probe = b.blockAt(new Vec3(fx, by - dy, fz));
+    if (!probe) break;                       // unloaded — be conservative
+    if (probe.boundingBox !== 'block') continue;
+    let fallColumnClear = true;
+    for (let pyDown = 1; pyDown <= dy - 1; pyDown++) {
+      const through = b.blockAt(new Vec3(fx, by - pyDown, fz));
+      if (!through || !AIR_NAMES.has(through.name)) { fallColumnClear = false; break; }
+    }
+    if (fallColumnClear) return 'step_down';
+    break;
+  }
+  return 'no_support';
 }
 
 /**
@@ -363,7 +392,9 @@ function neighborStatus(b, bx, by, bz, dx, dz) {
  *   'corner'             — 2 perpendicular dirs blocked (N+E, E+S, S+W, W+N)
  *   'alley'              — 2 opposite dirs blocked (N+S or E+W)
  *   'three_walled'       — 3 dirs blocked (one escape)
- *   'edge'               — ≥1 dir has 'no_support' (cliff)
+ *   'edge'               — ≥1 dir has 'no_support' (true cliff — no safe
+ *                          landing within 3 blocks). 1–3 block step-downs
+ *                          to flat ground are 'open', not 'edge'.
  *   'wedge'              — bot's position is fractionally between two cells
  *   'in_flowing_water'   — foot block is flowing_water; current pushes the
  *                          bot every tick. Special escape needed (sprint
@@ -404,6 +435,11 @@ export function standingState(b) {
   }).map(d => d.name);
   const open_dirs = DIRS.filter(d => neighbor_status[d.name] === 'open').map(d => d.name);
   const cliff_dirs = DIRS.filter(d => neighbor_status[d.name] === 'no_support').map(d => d.name);
+  // Safe drops (1–3 blocks down with clear fall column). Exposed as its
+  // own field so the brain can distinguish "walk and drop a bit" from
+  // "walk at level". Critically, these do NOT count toward cliff_dirs —
+  // an `on_pillar` classification requires real cliffs in all 4 dirs.
+  const step_down_dirs = DIRS.filter(d => neighbor_status[d.name] === 'step_down').map(d => d.name);
 
   // Step-up escape: even with all 4 foot-neighbours solid, the bot can
   // still walk OUT by jump-stepping onto an adjacent block whose top
@@ -519,11 +555,16 @@ export function standingState(b) {
   } else if (isWedged) {
     classification = 'wedge';
   } else if (cliff_dirs.length === 4 && blocked_dirs.length === 0) {
-    // #99: bot is standing on a 1×1 column with empty air in every
-    // cardinal direction at foot level. mc move has nowhere walkable to
-    // go; callers get this classification + the next_action_hint should
-    // suggest `mc pillar_down` to descend or `mc dig` the supporting
-    // block to drop one level.
+    // #99: bot is standing on a 1×1 column with a TRUE cliff (no landing
+    // within 3 blocks) in every cardinal direction. mc move has nowhere
+    // walkable to go; callers get this classification + the
+    // next_action_hint should suggest `mc pillar_down` to descend or
+    // `mc dig` the supporting block to drop one level.
+    //
+    // Bumps in flat terrain (1-block protrusions with grass 1-3 below)
+    // are NOT on_pillar — those neighbours now classify as step_down
+    // and are excluded from cliff_dirs, so this branch only fires for
+    // real towers/pinnacles.
     classification = 'on_pillar';
   } else if (cliff_dirs.length > 0 && blocked_dirs.length === 0) {
     classification = 'edge';
@@ -538,6 +579,7 @@ export function standingState(b) {
     blocked_dirs,
     open_dirs,
     cliff_dirs,
+    step_down_dirs,
     step_up_dirs,
     head_blocked,
     foot_support,

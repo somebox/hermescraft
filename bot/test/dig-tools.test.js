@@ -10,6 +10,7 @@ import {
   HARVEST_PICK_PRIORITY,
   isDigProtected,
   recordRecentPlace,
+  detectPostDigBreach,
 } from '../lib/runtime/dig-tools.js';
 
 test('blockNeedsAxeHarvest recognizes log types', () => {
@@ -138,4 +139,121 @@ test('recordRecentPlace: idempotent on same cell (refreshes ts, no duplicate)', 
   recordRecentPlace(ctx, { x: 5, y: 64, z: 5 }, 'oak_fence');
   recordRecentPlace(ctx, { x: 5, y: 64, z: 5 }, 'oak_fence');
   assert.equal(ctx.runtime.recentPlaces.length, 1);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// detectPostDigBreach — post-dig water/lava detection.
+//
+// Returns null when the just-dug cell is air. Returns a breach record when
+// the cell contains water/flowing_water/lava/flowing_lava, with
+// source_cell populated when a face-neighbour is a non-flowing source.
+// ─────────────────────────────────────────────────────────────────────────
+
+function makeBreachBot(terrain) {
+  return {
+    blockAt({ x, y, z }) {
+      const name = terrain(x, y, z) || 'air';
+      return { name, boundingBox: name === 'air' ? 'empty' : 'block' };
+    },
+  };
+}
+
+// Skip the settle in tests — we don't need real timing for stub block reads.
+const NO_SLEEP = { settleMs: 0 };
+
+test('detectPostDigBreach: returns null when dug cell is air', async () => {
+  const bot = makeBreachBot(() => 'air');
+  const r = await detectPostDigBreach(bot, { x: 5, y: 64, z: 5 }, NO_SLEEP);
+  assert.equal(r, null);
+});
+
+test('detectPostDigBreach: water source on east face → kind=water, source_cell=east', async () => {
+  // The dug cell has water that flowed in; an adjacent source is to the east.
+  const terrain = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'water';        // dug cell now wet
+    if (x === 6 && y === 64 && z === 5) return 'water';        // E source
+    return 'air';
+  };
+  const r = await detectPostDigBreach(makeBreachBot(terrain), { x: 5, y: 64, z: 5 }, NO_SLEEP);
+  assert.ok(r, 'expected a breach record');
+  assert.equal(r.kind, 'water');
+  assert.equal(r.severity, 'warn');
+  assert.deepEqual(r.breach_cell, { x: 5, y: 64, z: 5 });
+  assert.deepEqual(r.source_cell, { x: 6, y: 64, z: 5 });
+  assert.equal(r.wet_neighbors.length, 1);
+});
+
+test('detectPostDigBreach: lava in dug cell → kind=lava, severity=critical', async () => {
+  const terrain = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'lava';
+    if (x === 5 && y === 65 && z === 5) return 'lava';   // overhead source dripped down
+    return 'air';
+  };
+  const r = await detectPostDigBreach(makeBreachBot(terrain), { x: 5, y: 64, z: 5 }, NO_SLEEP);
+  assert.ok(r);
+  assert.equal(r.kind, 'lava');
+  assert.equal(r.severity, 'critical');
+  assert.deepEqual(r.source_cell, { x: 5, y: 65, z: 5 });
+});
+
+test('detectPostDigBreach: flowing-only fluid (no nearby source visible) → source_cell=null', async () => {
+  // Flowing water can reach the dug cell from off-frame; the immediate
+  // neighbours are also flowing (not source). We still report the breach
+  // but can't pinpoint the leak.
+  const terrain = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'flowing_water';
+    if (x === 6 && y === 64 && z === 5) return 'flowing_water';
+    return 'air';
+  };
+  const r = await detectPostDigBreach(makeBreachBot(terrain), { x: 5, y: 64, z: 5 }, NO_SLEEP);
+  assert.ok(r);
+  assert.equal(r.kind, 'flowing_water');
+  assert.equal(r.source_cell, null);
+  assert.equal(r.wet_neighbors.length, 1);
+});
+
+test('detectPostDigBreach: counts wet face-neighbours from any of the 6 sides', async () => {
+  // Source above + flowing on east and below.
+  const terrain = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'water';
+    if (x === 5 && y === 65 && z === 5) return 'water';          // up source
+    if (x === 6 && y === 64 && z === 5) return 'flowing_water';  // east flowing
+    if (x === 5 && y === 63 && z === 5) return 'flowing_water';  // down flowing
+    return 'air';
+  };
+  const r = await detectPostDigBreach(makeBreachBot(terrain), { x: 5, y: 64, z: 5 }, NO_SLEEP);
+  assert.equal(r.wet_neighbors.length, 3);
+  // Source preferred over flowing for source_cell.
+  assert.deepEqual(r.source_cell, { x: 5, y: 65, z: 5 });
+});
+
+test('detectPostDigBreach: dug cell is solid (race lost) → null', async () => {
+  // If by the time we check, the cell has been re-filled with a solid
+  // block (e.g. gravity collapse), it's not a fluid breach.
+  const terrain = (x, y, z) => (x === 5 && y === 64 && z === 5 ? 'cobblestone' : 'air');
+  const r = await detectPostDigBreach(makeBreachBot(terrain), { x: 5, y: 64, z: 5 }, NO_SLEEP);
+  assert.equal(r, null);
+});
+
+test('detectPostDigBreach: defensive — blockAt throwing on neighbour does not crash', async () => {
+  const bot = {
+    blockAt({ x, y, z }) {
+      if (x === 5 && y === 64 && z === 5) return { name: 'water', boundingBox: 'empty' };
+      throw new Error('chunk unloaded');
+    },
+  };
+  const r = await detectPostDigBreach(bot, { x: 5, y: 64, z: 5 }, NO_SLEEP);
+  // We still detect the breach (dug cell is fluid) but no neighbours
+  // could be inspected.
+  assert.ok(r);
+  assert.equal(r.wet_neighbors.length, 0);
+  assert.equal(r.source_cell, null);
+});
+
+test('detectPostDigBreach: honors custom sleep injection (no real-time wait)', async () => {
+  let slept = 0;
+  const bot = makeBreachBot(() => 'air');
+  const fakeSleep = async (ms) => { slept = ms; };
+  await detectPostDigBreach(bot, { x: 5, y: 64, z: 5 }, { settleMs: 250, sleep: fakeSleep });
+  assert.equal(slept, 250);
 });

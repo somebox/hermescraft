@@ -3,6 +3,21 @@ import { bearingFromDelta, classifySector, angleDiffDegrees } from '../../shared
 import { fail, ok } from '../../shared/action-contract.js';
 import { annotateReachability } from '../_nav-helpers.js';
 
+// Mirrors discovery.js's trunk-harvest detection so the find_blocks note
+// matches what mc collect will actually require. The three branches:
+//   - trunks (logs/stems) → fairPlayHarvestTrunkCandidates needs the
+//     trunk in line-of-sight (the historical "trunk in sight" note)
+//   - non-solid plants (grass/flowers/crops) → proximity search, no LOS
+//     requirement, so we skip the note
+//   - everything else (cobble, ore, stone, dirt) → raycast visibility
+//     sweep, i.e. the bot must be able to see the block face
+const TRUNK_RE = /_log$|_stem$|^crimson_stem$|^warped_stem$/i;
+export function fairPlayCollectNote(blockName, blockType) {
+  if (TRUNK_RE.test(blockName)) return ' (scout; mc collect needs trunk in sight)';
+  if (blockType && blockType.boundingBox !== 'block') return '';   // non-solid plant: proximity
+  return ' (scout; mc collect needs line-of-sight to the block face)';
+}
+
 export function createScoutHandlers(deps) {
   const {
     ctx,
@@ -63,7 +78,7 @@ export function createScoutHandlers(deps) {
         const locations = annotateReachability(b, rawLocations, 512);
         const nReachable = locations.filter((l) => l.reachable).length;
     
-        const fpNote = ctx.reactive.fairPlayMode ? ` (scout; mc collect needs trunk in sight)` : '';
+        const fpNote = ctx.reactive.fairPlayMode ? fairPlayCollectNote(blockName, blockType) : '';
         const reachNote = nReachable === locations.length
           ? ''
           : ` — ${nReachable}/${locations.length} reachable`;

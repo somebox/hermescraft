@@ -1402,7 +1402,7 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc reachable 0 65 12', 'mc reachable 0 65 12 range=4'],
   }),
   g('standing', 'world', ['stand_state', 'where_am_i'], {
-    description: 'Classify your current standing state. Returns {classification, blocked_dirs, open_dirs, cliff_dirs, head_blocked, foot_support, ceiling_within, wedge_offset, neighbor_status}. classification ∈ {open, alley, corner, trapped, three_walled, enclosure_inside, wedge, edge, in_air}. Use this BEFORE issuing a move/place/goto that might fail — if you are in a corner or trapped, sidestep to an open_dir first, or run `mc escape`.',
+    description: 'Classify your current standing state. Returns {classification, blocked_dirs, open_dirs, cliff_dirs, step_down_dirs, head_blocked, foot_support, ceiling_within, wedge_offset, neighbor_status}. classification ∈ {open, alley, corner, trapped, three_walled, enclosure_inside, wedge, edge, on_pillar, in_air}. Use this BEFORE issuing a move/place/goto that might fail — if you are in a corner or trapped, sidestep to an open_dir first, or run `mc escape`. step_down_dirs are safe 1–3 block drops; treat them as walkable.',
     method: 'POST',
     path: '/action/standing',
     bodyFn: () => '{}',

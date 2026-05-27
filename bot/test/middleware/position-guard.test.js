@@ -99,6 +99,80 @@ test('intercept honors x1/y1/z1 coords (fill/place_fill variant)', () => {
   assert.equal(r.response.error.code, 'MOVEMENT_PRECONDITION_FAILED');
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Position-drift invalidation. Pre-fix: BOT_ON_PILLAR refusal recommended
+// `mc pillar_down`, the bot dropped 2 blocks, and the next `mc dig` was
+// still rejected because the lmf record's actual_pos didn't match where
+// the bot actually was. Mason hit this 2026-05-27 04:14: pillar_down at
+// (333,66,-575) → bot at (333.5, 64, -574.5) → mc dig blocked by stale
+// (333.6, 66, -575.5). The agent burned cycles calling mc status just
+// to clear the flag.
+// ─────────────────────────────────────────────────────────────────────────
+
+function botAt(x, y, z) {
+  return { entity: { position: { x, y, z } } };
+}
+
+test('clears stale lmf when bot has drifted >1.5 blocks (e.g. after pillar_down)', () => {
+  const services = fixtureServices();
+  setFailedMove(services.state, { x: 334, y: 66, z: -574 });
+  // Lmf records bot at (7, 64, 5); simulate bot has fallen / been
+  // displaced to (7, 60, 5) — 4 blocks down, well past the threshold.
+  services.ensureBot = () => botAt(7, 60, 5);
+
+  const r = positionGuard.check(services, { x: 335, y: 65, z: -574 }, 'dig');
+  assert.equal(r.intercept, false, 'guard should pass through after drift');
+  assert.equal(services.state.runtime.lastMoveFailed, null, 'flag should be cleared');
+});
+
+test('keeps lmf when bot has barely moved (<1.5 blocks — just settling)', () => {
+  const services = fixtureServices();
+  setFailedMove(services.state, { x: 10, y: 64, z: 5 });
+  // Bot drifted 0.3 blocks (within stored 7,64,5 ± a tick of physics).
+  services.ensureBot = () => botAt(7.2, 64, 5.1);
+
+  const r = positionGuard.check(services, { x: 11, y: 64, z: 5 }, 'place');
+  assert.equal(r.intercept, true, 'small drift should not clear lmf');
+  assert.equal(r.response.error.code, 'MOVEMENT_PRECONDITION_FAILED');
+});
+
+test('ensureBot throwing does not crash the guard (bot dead / not ready)', () => {
+  const services = fixtureServices();
+  setFailedMove(services.state, { x: 10, y: 64, z: 5 });
+  services.ensureBot = () => { throw new Error('Bot dead — respawn in progress'); };
+
+  const r = positionGuard.check(services, { x: 11, y: 64, z: 5 }, 'place');
+  // Falls through to normal radius check — should still intercept.
+  assert.equal(r.intercept, true);
+  assert.equal(r.response.error.code, 'MOVEMENT_PRECONDITION_FAILED');
+});
+
+test('drift check is a no-op when services has no ensureBot (legacy callers)', () => {
+  const services = fixtureServices(); // no ensureBot
+  setFailedMove(services.state, { x: 10, y: 64, z: 5 });
+
+  const r = positionGuard.check(services, { x: 11, y: 64, z: 5 }, 'place');
+  assert.equal(r.intercept, true, 'still intercepts via radius when drift cannot be measured');
+});
+
+test('drift check is a no-op when lmf has no actual_pos', () => {
+  const services = fixtureServices();
+  services.state.runtime.lastMoveFailed = {
+    ts: Date.now(),
+    intended_target: { x: 10, y: 64, z: 5 },
+    actual_pos: null,
+    reason: 'NAV_NO_PROGRESS',
+    verb: 'goto',
+  };
+  // Provide an ensureBot that would otherwise trigger the drift clear —
+  // but since actual_pos is null, the drift branch should not run.
+  services.ensureBot = () => botAt(100, 200, 300);
+
+  const r = positionGuard.check(services, { x: 11, y: 64, z: 5 }, 'place');
+  assert.equal(r.intercept, true);
+  assert.equal(r.response.error.code, 'MOVEMENT_PRECONDITION_FAILED');
+});
+
 test('POSITION_DEPENDENT_VERBS is the documented set', () => {
   const got = [...positionGuard.POSITION_DEPENDENT_VERBS].sort();
   const want = [

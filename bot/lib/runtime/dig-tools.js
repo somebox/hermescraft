@@ -237,6 +237,82 @@ export function detectDigHazards(b, x, y, z) {
   return checkLavaHazard(b, x, y, z) || checkFallHazard(b, x, y, z) || checkSuffocateHazard(b, x, y, z);
 }
 
+const FLUID_KINDS = {
+  water: 'water', flowing_water: 'flowing_water',
+  lava:  'lava',  flowing_lava:  'flowing_lava',
+};
+const FLUID_NEIGHBOR_OFFSETS = [
+  [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1],
+];
+
+/**
+ * Post-dig breach detection.
+ *
+ * Read the just-dug cell (and the 6 face neighbours) after a settle period
+ * and report whether water/lava has flowed in. Used by `mc dig` (and
+ * eventually dig_area/tunnel/collect) to interrupt the implicit "I just
+ * created air" assumption and surface a hint to plug the cell.
+ *
+ * Why a settle: mineflayer's blockAt is current-tick-only. Flowing water
+ * arrives at ~5 ticks/cell, lava much slower. ~300 ms catches direct
+ * face-neighbour source flow without dragging dig throughput; callers
+ * that don't care can pass settleMs:0.
+ *
+ * Return shape:
+ *   null                                        — no breach
+ *   { kind, breach_cell, source_cell?, wet_neighbors[], severity }
+ *     kind ∈ 'water' | 'flowing_water' | 'lava' | 'flowing_lava'
+ *     severity = 'critical' for lava, 'warn' for water
+ *     source_cell is one of the 6 neighbours whose block is a SOURCE
+ *     (non-flowing) variant — present when we can pinpoint the leak.
+ *     Plugging the breach_cell stops the immediate flow into the dug
+ *     cell; if source_cell is on a different face the agent may need to
+ *     plug there too.
+ *
+ * @param {object} b mineflayer bot
+ * @param {{x:number,y:number,z:number}} pos block coord that was just dug
+ * @param {{ settleMs?: number, sleep?: (ms:number)=>Promise<void> }} [opts]
+ */
+export async function detectPostDigBreach(b, pos, { settleMs = 300, sleep = null } = {}) {
+  if (settleMs > 0) {
+    const _sleep = sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+    await _sleep(settleMs);
+  }
+  const at = (x, y, z) => {
+    try { return b.blockAt(new Vec3(x, y, z)); } catch { return null; }
+  };
+  const here = at(pos.x, pos.y, pos.z);
+  // No breach unless the dug cell itself contains a fluid.
+  if (!here || !FLUID_KINDS[here.name]) return null;
+
+  // Find a face neighbour that's a source (non-flowing) variant of the
+  // same fluid family — that's the leak. mineflayer reports flowing
+  // vs source via the block name on 1.13+; older versions used metadata.
+  const family = here.name.startsWith('lava') || here.name === 'flowing_lava' ? 'lava' : 'water';
+  const sourceName = family === 'lava' ? 'lava' : 'water';
+  const flowingName = family === 'lava' ? 'flowing_lava' : 'flowing_water';
+  let source_cell = null;
+  /** @type {{x:number,y:number,z:number,name:string}[]} */
+  const wet_neighbors = [];
+  for (const [dx, dy, dz] of FLUID_NEIGHBOR_OFFSETS) {
+    const nb = at(pos.x + dx, pos.y + dy, pos.z + dz);
+    if (!nb) continue;
+    if (nb.name === sourceName || nb.name === flowingName) {
+      wet_neighbors.push({ x: pos.x + dx, y: pos.y + dy, z: pos.z + dz, name: nb.name });
+      if (!source_cell && nb.name === sourceName) {
+        source_cell = { x: pos.x + dx, y: pos.y + dy, z: pos.z + dz };
+      }
+    }
+  }
+  return {
+    kind: here.name,
+    breach_cell: { x: pos.x, y: pos.y, z: pos.z },
+    source_cell,
+    wet_neighbors,
+    severity: family === 'lava' ? 'critical' : 'warn',
+  };
+}
+
 export function isSoftLandscapeBlock(block) {
   if (!block?.name) return false;
   const n = block.name;
