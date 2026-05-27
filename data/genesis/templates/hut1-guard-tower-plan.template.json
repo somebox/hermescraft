@@ -1,0 +1,11 @@
+{
+  "_comment": "Rendered by genesis_lib: copies source plan and patches anchor.coords + anchor.marker.coords",
+  "source_plan": "data/ops/plans/hut1-guard-tower-plan.json",
+  "anchor": {
+    "coords": [{tower_x}, {tower_y}, {tower_z}],
+    "site": ":hut1:/anchor",
+    "marker": {
+      "coords": [{anchor_x}, {anchor_y}, {anchor_z}]
+    }
+  }
+}

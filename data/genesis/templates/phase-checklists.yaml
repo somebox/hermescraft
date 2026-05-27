@@ -1,0 +1,30 @@
+# Machine-readable phase gates for check_phases and snapshot phase_checks.
+phases:
+  P1:
+    marks:
+      required_prefixes: [base_anchor]
+      chest_marks_min: 4
+      chest_mark_prefix: chest_
+    regions:
+      required_ids: [shelter]
+      shelter_allow_ad_hoc_place: true
+  P2:
+    inventory:
+      resources: [food, wood, stone]
+      compare: target_min
+    marks:
+      lt_prefix_min: 3
+    regions:
+      farm_wheat_prefix_min: 1
+  P3:
+    regions:
+      required_ids: [hut1]
+      hut1_status_active: true
+    blueprint:
+      plan_id: hut1-guard-tower
+      verify_all_layers: true
+  P4:
+    marks:
+      lt_poi_min: 3
+      min_distance_from_base_anchor: 1000
+      require_value_note: true

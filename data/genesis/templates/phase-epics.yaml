@@ -1,0 +1,55 @@
+# Four genesis epics — parent chain P2←P1, P3←P2, P4←P3 only.
+epics:
+  - phase: P1
+    title: "[GENESIS:P1] Establish base"
+    assignee: steward
+    initial_status: ready
+    difficulty_on_done: null
+    done_when:
+      - base_anchor mark present in shared locations
+      - four chest_* marks in locations-base.json
+      - shelter region exists with allow_ad_hoc_place true
+      - four chest snapshots refreshed
+    body: |
+      Phase 1 bootstrap at anchor ({anchor_x}, {anchor_y}, {anchor_z}).
+      System chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}) — workers must not withdraw in P1.
+      Five worker cards are pre-filed without parent link; verify done_when before closing this epic.
+
+  - phase: P2
+    title: "[GENESIS:P2] Sustainable resources"
+    assignee: steward
+    initial_status: todo
+    difficulty_on_done: null
+    done_when:
+      - base-inventory food wood stone at or above target_min
+      - at least three lt_* resource marks
+      - at least one farm_wheat_* resource region
+    body: |
+      Decompose after P1 closes. Benchmark thresholds from data/base-goals.yaml (64/128/128/64).
+      SCOUT lt_* marks, SUPPLY wood/stone/bread, SITE farm region.
+
+  - phase: P3
+    title: "[GENESIS:P3] Defenses and watch tower"
+    assignee: steward
+    initial_status: todo
+    difficulty_on_done: easy
+    done_when:
+      - hut1 region active in regions-world.json
+      - mc blueprint verify passes all hut1-guard-tower layers
+      - defensive readiness noted on cards
+    body: |
+      Still peaceful until this epic completes. Shelter 5x5→7x7, tower from hut1-guard-tower-plan.json at pad ({tower_x}, {tower_y}, {tower_z}).
+      Use mc blueprint verify + manual mc place (construct N/I).
+
+  - phase: P4
+    title: "[GENESIS:P4] Long-range expeditions"
+    assignee: steward
+    initial_status: todo
+    difficulty_on_done: normal
+    done_when:
+      - at least three unique lt_* POI marks
+      - each POI at least 1000 blocks from base_anchor
+      - each POI has a strategic value note
+    body: |
+      First hostile-pressure scouting phase (easy after P3 done). File [EXPEDITION] cards.
+      Close only when 3+ distant POIs are marked and documented.

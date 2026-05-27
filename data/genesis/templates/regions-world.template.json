@@ -1,0 +1,62 @@
+{
+  "world": "world",
+  "regions": [
+    {
+      "id": "base",
+      "profile": "base",
+      "intent": "protect",
+      "status": "active",
+      "anchor": { "x": {anchor_x}, "y": {anchor_y}, "z": {anchor_z} },
+      "shape": { "kind": "column", "radius": 16 },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": false,
+        "allow_ad_hoc_place": false,
+        "allow_guided_edit": true,
+        "allow_harvest": false,
+        "overrides_global_denylist": false
+      },
+      "created": "{started_at}",
+      "updated": "{started_at}",
+      "notes": "Genesis run {run_id} seed {seed}"
+    },
+    {
+      "id": "shelter",
+      "profile": "base",
+      "intent": "marker",
+      "status": "unanchored",
+      "anchor": { "x": {anchor_x}, "y": {anchor_y}, "z": {anchor_z} },
+      "shape": { "kind": "column", "radius": 8 },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": false,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": true,
+        "allow_harvest": false,
+        "overrides_global_denylist": false
+      },
+      "created": "{started_at}",
+      "updated": "{started_at}",
+      "notes": "P1 shelter footprint marker — steward refines bounds after build"
+    },
+    {
+      "id": "hut1",
+      "profile": "base",
+      "intent": "protect",
+      "status": "unanchored",
+      "anchor": { "x": {tower_x}, "y": {tower_y}, "z": {tower_z} },
+      "shape": { "kind": "column", "radius": 10, "y_min": 59, "y_max": 94 },
+      "sites": { "anchor": { "x": {tower_x}, "y": {tower_y}, "z": {tower_z} } },
+      "capabilities": {
+        "allow_ad_hoc_dig": false,
+        "allow_ad_hoc_place": false,
+        "allow_guided_edit": true,
+        "allow_harvest": false,
+        "overrides_global_denylist": false
+      },
+      "created": "{started_at}",
+      "updated": "{started_at}",
+      "notes": "Guard tower pad for genesis run {run_id}"
+    }
+  ]
+}

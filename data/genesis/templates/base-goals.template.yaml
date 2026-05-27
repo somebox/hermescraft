@@ -1,0 +1,24 @@
+# Genesis benchmark supply targets (not production 512/768).
+food:
+  items: [bread, cooked_beef, cooked_chicken, cooked_porkchop, cooked_mutton, cooked_rabbit, baked_potato, apple, golden_apple, melon_slice]
+  target_min: 64
+  target_ok: 128
+  assignee: flint
+
+wood:
+  items: [oak_log, birch_log, spruce_log, jungle_log, acacia_log, dark_oak_log, mangrove_log, cherry_log]
+  target_min: 128
+  target_ok: 192
+  assignee: flint
+
+stone:
+  items: [cobblestone, stone]
+  target_min: 128
+  target_ok: 192
+  assignee: flint
+
+coal:
+  items: [coal, charcoal]
+  target_min: 64
+  target_ok: 128
+  assignee: flint

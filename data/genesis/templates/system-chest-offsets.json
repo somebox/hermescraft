@@ -1,0 +1,7 @@
+{
+  "description": "Integer block offsets from base_anchor. Applied at render time to system_chest_at coords.",
+  "primary": { "dx": 1, "dy": 0, "dz": -2 },
+  "other": { "dx": 0, "dy": 0, "dz": -2 },
+  "sign": { "dx": 1, "dy": 1, "dz": -2 },
+  "tower_pad": { "dx": -55, "dy": 0, "dz": -8 }
+}

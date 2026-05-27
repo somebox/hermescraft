@@ -1,0 +1,35 @@
+# Phase 1 worker cards — no --parent to [GENESIS:P1] epic.
+cards:
+  - title: "[SCOUT] Confirm base anchor"
+    assignee: flint
+    initial_status: ready
+    body: |
+      Confirm anchor ({anchor_x}, {anchor_y}, {anchor_z}) is non-water, flat (≤2 block delta within 5m), system_chest visible at ({system_chest_x}, {system_chest_y}, {system_chest_z}).
+      Pin base_anchor mark. Do not withdraw from system_chest.
+
+  - title: "[CONSTRUCT] Place four base chests"
+    assignee: flint
+    initial_status: ready
+    body: |
+      Place chest_food, chest_wood, chest_stone, chest_misc adjacent to anchor at (+1,0), (+1,+1), (-1,0), (-1,+1) relative offsets.
+      Mark each in private locations; steward reconcile promotes to shared.
+
+  - title: "[CONSTRUCT] Build 5x5 cobble shelter"
+    assignee: mason
+    initial_status: ready
+    body: |
+      Build 5×5 cobble shelter (walls, roof, door) around ({anchor_x}, {anchor_y}, {anchor_z}) using world-gathered resources only.
+      No system_chest withdrawals.
+
+  - title: "[RECONCILE] Promote chest marks"
+    assignee: steward
+    initial_status: ready
+    body: |
+      Run scripts/reconcile-marks.py --auto to promote the four worker chest marks into data/locations-base.json.
+
+  - title: "[SITE] Create shelter region marker"
+    assignee: steward
+    initial_status: todo
+    body: |
+      Once footprint known: mc region_create :shelter: base --intent marker (allow_ad_hoc_place).
+      mc regions_reload if edited offline.
