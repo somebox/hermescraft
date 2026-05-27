@@ -2,141 +2,9 @@
   "world": "world",
   "regions": [
     {
-      "id": "hut3",
-      "profile": "base",
-      "intent": "marker",
-      "status": "unanchored",
-      "anchor": {
-        "x": 369,
-        "y": 67,
-        "z": -603
-      },
-      "shape": {
-        "kind": "column",
-        "radius": 16
-      },
-      "sites": {
-        "anchor": {
-          "x": 370,
-          "y": 65,
-          "z": -608
-        }
-      },
-      "capabilities": {
-        "allow_ad_hoc_dig": true,
-        "allow_ad_hoc_place": true,
-        "allow_guided_edit": false,
-        "allow_harvest": true,
-        "overrides_global_denylist": false
-      },
-      "created": "2026-05-24T02:28:03.035Z",
-      "updated": "2026-05-24T09:28:52.215Z"
-    },
-    {
-      "id": "wheat1",
-      "profile": "farm",
-      "intent": "marker",
-      "status": "unanchored",
-      "anchor": {
-        "x": 359,
-        "y": 65,
-        "z": -571
-      },
-      "shape": {
-        "kind": "column",
-        "radius": 6,
-        "y_min": 64,
-        "y_max": 72
-      },
-      "sites": {
-        "nw": {
-          "x": 355,
-          "y": 65,
-          "z": -567
-        },
-        "ne": {
-          "x": 363,
-          "y": 65,
-          "z": -567
-        },
-        "se": {
-          "x": 363,
-          "y": 65,
-          "z": -575
-        },
-        "sw": {
-          "x": 355,
-          "y": 65,
-          "z": -575
-        },
-        "center": {
-          "x": 359,
-          "y": 65,
-          "z": -571
-        },
-        "water": {
-          "x": 374,
-          "y": 61,
-          "z": -580
-        },
-        "test": {
-          "x": 374,
-          "y": 61,
-          "z": -580
-        }
-      },
-      "capabilities": {
-        "allow_ad_hoc_dig": true,
-        "allow_ad_hoc_place": true,
-        "allow_guided_edit": false,
-        "allow_harvest": true,
-        "overrides_global_denylist": false
-      },
-      "created": "2026-05-24T12:59:20.756Z",
-      "updated": "2026-05-24T13:05:40.459Z"
-    },
-    {
-      "id": "storage1",
-      "profile": "base",
-      "intent": "marker",
-      "status": "unanchored",
-      "anchor": {
-        "x": 380,
-        "y": 65,
-        "z": -630
-      },
-      "shape": {
-        "kind": "column",
-        "radius": 10,
-        "y_min": 64,
-        "y_max": 76
-      },
-      "sites": {
-        "anchor": {
-          "x": 380,
-          "y": 65,
-          "z": -630
-        },
-        "entrance": {
-          "x": 383,
-          "y": 66,
-          "z": -619
-        }
-      },
-      "capabilities": {
-        "allow_ad_hoc_dig": true,
-        "allow_ad_hoc_place": true,
-        "allow_guided_edit": false,
-        "allow_harvest": true,
-        "overrides_global_denylist": false
-      },
-      "created": "2026-05-24T17:50:09.982Z",
-      "updated": "2026-05-25T03:58:59.072Z"
-    },
-    {
       "id": "base",
       "profile": "base",
-      "intent": "marker",
+      "intent": "protect",
       "status": "unanchored",
       "anchor": {
         "x": 365,
@@ -149,39 +17,48 @@
       },
       "sites": {},
       "capabilities": {
-        "allow_ad_hoc_dig": true,
-        "allow_ad_hoc_place": true,
-        "allow_guided_edit": false,
-        "allow_harvest": true,
+        "allow_ad_hoc_dig": false,
+        "allow_ad_hoc_place": false,
+        "allow_guided_edit": true,
+        "allow_harvest": false,
         "overrides_global_denylist": false
       },
       "created": "2026-05-24T23:50:12.306Z",
-      "updated": "2026-05-25T03:34:13.819Z"
+      "updated": "2026-05-27T00:00:00.000Z"
     },
     {
-      "id": "tower",
+      "id": "hut1",
       "profile": "base",
-      "intent": "marker",
+      "intent": "protect",
       "status": "unanchored",
       "anchor": {
-        "x": 350,
+        "x": 320,
         "y": 65,
-        "z": -565
+        "z": -590
       },
       "shape": {
         "kind": "column",
-        "radius": 16
+        "radius": 10,
+        "y_min": 59,
+        "y_max": 94
       },
-      "sites": {},
+      "sites": {
+        "anchor": {
+          "x": 320,
+          "y": 65,
+          "z": -590
+        }
+      },
       "capabilities": {
-        "allow_ad_hoc_dig": true,
-        "allow_ad_hoc_place": true,
-        "allow_guided_edit": false,
-        "allow_harvest": true,
+        "allow_ad_hoc_dig": false,
+        "allow_ad_hoc_place": false,
+        "allow_guided_edit": true,
+        "allow_harvest": false,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-25T02:15:31.072Z",
-      "updated": "2026-05-25T02:15:42.445Z"
+      "created": "2026-05-26T12:00:00.000Z",
+      "updated": "2026-05-27T00:00:00.000Z",
+      "notes": "Placemark :hut1: at pad center. Guard tower 21x21 centered here; plan anchor min 310,65,-600. r=10 => 21-block column."
     }
   ]
 }

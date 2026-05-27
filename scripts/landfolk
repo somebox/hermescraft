@@ -27,8 +27,9 @@
 #                             [--no-gateway] [--restart-gateway] [--no-wait]
 #   scripts/landfolk stop     [--players a,b,c] [--keep daemons|listener|supervisor|pauser|chat-wake|gateway]
 #                             [--keep-gateway] [--no-reclaim] [--clear-roster]
-#   scripts/landfolk enable   <player> [--mode auto|kanban|continuous]
-#   scripts/landfolk disable  <player>
+#   scripts/landfolk enable   <player> [<player> …] [--mode auto|kanban|continuous]
+#                                # accepts space- or comma-separated names
+#   scripts/landfolk disable  <player> [<player> …]
 #   scripts/landfolk restart  <player|players|daemons|listener|supervisor|pauser|chat-wake|gateway|all>
 #   scripts/landfolk status   [--json]
 #   scripts/landfolk diagnostics [--players a,b,c] [--skip-deploy|--skip-gateway|--skip-dispatcher|--skip-daemons]
@@ -827,31 +828,55 @@ cmd_stop() {
 }
 
 cmd_enable() {
-  local player="${1:-}"; shift || true
-  [ -z "$player" ] && { err "enable needs a player name"; return 1; }
-  local stored="$DEFAULT_MODE"
+  # Accept any mix of space- and comma-separated names; --mode is the
+  # only flag and must come after the names. Each name is upserted and
+  # started individually — passing the whole multi-line list as one arg
+  # to roster_upsert/player_start_one made the helpers look up an
+  # api_port for "flint\nmason\nsteward" and fail (issue caught
+  # 2026-05-27).
+  local stored="$DEFAULT_MODE" names=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --mode) stored="$2"; shift 2 ;;
-      *) err "unknown flag: $1"; return 1 ;;
+      --) shift; while [ $# -gt 0 ]; do names+=("$1"); shift; done ;;
+      -*) err "unknown flag: $1"; return 1 ;;
+      *) names+=("$1"); shift ;;
     esac
   done
+  [ "${#names[@]}" -eq 0 ] && { err "enable needs at least one player name (space- or comma-separated)"; return 1; }
   case "$stored" in auto|kanban|continuous) ;; *) err "invalid --mode: $stored"; return 1 ;; esac
-  local pl; pl="$(parse_players_csv "$player")" || return 1
-  local eff; eff="$(resolve_mode "$pl" "$stored")"
-  echo "  ${C_DIM}enable $pl: stored=$stored, effective=$eff${C_RST}"
-  roster_upsert "$pl" "$stored"
-  player_start_one "$pl" "$eff"
+  local csv pl p eff
+  csv="$(IFS=,; echo "${names[*]}")"
+  pl="$(parse_players_csv "$csv")" || return 1
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    eff="$(resolve_mode "$p" "$stored")"
+    echo "  ${C_DIM}enable $p: stored=$stored, effective=$eff${C_RST}"
+    roster_upsert "$p" "$stored"
+    player_start_one "$p" "$eff"
+  done <<< "$pl"
 }
 
 cmd_disable() {
-  local player="${1:-}"
-  [ -z "$player" ] && { err "disable needs a player name"; return 1; }
-  local pl; pl="$(parse_players_csv "$player")" || return 1
-  reclaim_running "$pl"
-  player_stop_one "$pl"
-  roster_remove "$pl"
-  dim "disabled $pl (removed from roster — won't auto-start next time)"
+  local names=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --) shift; while [ $# -gt 0 ]; do names+=("$1"); shift; done ;;
+      -*) err "unknown flag: $1"; return 1 ;;
+      *) names+=("$1"); shift ;;
+    esac
+  done
+  [ "${#names[@]}" -eq 0 ] && { err "disable needs at least one player name (space- or comma-separated)"; return 1; }
+  local csv pl p
+  csv="$(IFS=,; echo "${names[*]}")"
+  pl="$(parse_players_csv "$csv")" || return 1
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    reclaim_running "$p"
+    player_stop_one "$p"
+    roster_remove "$p"
+    dim "disabled $p (removed from roster — won't auto-start next time)"
+  done <<< "$pl"
 }
 
 cmd_restart() {
