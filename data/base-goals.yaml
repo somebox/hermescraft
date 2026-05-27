@@ -37,6 +37,17 @@ stone:
   target_ok: 768
   assignee: flint
 
+# D6 pilot — designated_site validates the resource-intent region path.
+# When base dirt stock drops below target_min, the low-stock hint emitted
+# by `mc withdraw` (containers.js → base-goals.js) will name
+# mine_dirt_hilltop_pilot. See docs/pilots/mine-dirt-hilltop-pilot.md.
+dirt:
+  items: [dirt, grass_block, coarse_dirt]
+  target_min: 32
+  target_ok: 128
+  assignee: flint
+  designated_site: mine_dirt_hilltop_pilot
+
 coal:
   items: [coal, charcoal]
   target_min: 64
