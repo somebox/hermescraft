@@ -1,9 +1,9 @@
 # landfolk Hermes plugin — kanban orchestration cleanup
 
-**Status:** Proposed (2026-05-27). Supersedes `kanban-flow-cleanup.md` (deleted).
+**Status:** Shipped 2026-05-27 (commit `73ab8cf`). Phases A–C complete; Phase D (cleanup + soak) in progress. Supersedes `kanban-flow-cleanup.md` (deleted).
 **Owner:** re44 + steward
 **Companion docs:**
-- [steward-out-of-game.md](./steward-out-of-game.md) — future Steward runtime model (webhook-driven, no in-game body). Orthogonal; not blocked by this plan.
+- [steward-out-of-game.md](../archive/steward-out-of-game.md) — future Steward runtime model (webhook-driven, no in-game body). Orthogonal; not blocked by this plan.
 - [../guides/hermes-platform.md](../guides/hermes-platform.md) — broader Hermes platform integration practices.
 
 ## Goal
@@ -159,7 +159,7 @@ The two layers don't conflict — hooks are an *acceleration* of the gate-check 
 - `mc_chat_adapter/` platform adapter (bot chat → Steward as gateway messages)
 - `detectors/` subsystem (cron-script-only board health probes)
 - `kanban_yield` custom tool (partial-completion signal for iteration-budget case)
-- Steward out-of-game cutover — tracked separately in [steward-out-of-game.md](./steward-out-of-game.md)
+- Steward out-of-game cutover — tracked separately in [steward-out-of-game.md](../archive/steward-out-of-game.md)
 - Steward migration to bundled `kanban-orchestrator` skill (separate small change)
 
 ## Design decisions (locked)
@@ -513,7 +513,7 @@ Plugged in as a Hermes memory provider plugin. Single-select; competes with the 
 
 Polls each bot's `/chat` endpoint (or subscribes via SSE if added later). On `@steward` mentions or `help-needed:` block patterns, builds a `MessageEvent` and `await self.handle_message(event)` routing to Steward as a normal gateway message.
 
-Replaces the standalone `landfolk-chat-bridge.py` proposed in [steward-out-of-game.md](./steward-out-of-game.md). Steward's outbound becomes an rcon `say` via a helper. Detector cron jobs send their signals through the same adapter (synthesized system messages) or directly via `hermes kanban` CLI calls.
+Replaces the standalone `landfolk-chat-bridge.py` proposed in [steward-out-of-game.md](../archive/steward-out-of-game.md). Steward's outbound becomes an rcon `say` via a helper. Detector cron jobs send their signals through the same adapter (synthesized system messages) or directly via `hermes kanban` CLI calls.
 
 ### `detectors/` — cron-script-only board health probes
 
@@ -563,7 +563,7 @@ Designed here; built when the mutex-demote model is verified in production and w
 | Steward SOUL (mutex to remove, smaller-card to add) | `prompts/landfolk/steward.md:79-126` |
 | Worker SOUL (--parent to remove, review/in-place to add) | `skills/kanban-worker.md:225-279` |
 | Setup script (symlink + enable) | `scripts/setup-landfolk-profiles.sh` |
-| Companion future-work doc | `docs/features/steward-out-of-game.md` (unchanged) |
+| Companion future-work doc (archived) | `docs/archive/steward-out-of-game.md` — body-less Steward proposal, parked 2026-05-27 |
 | Block-event analysis source | The kanban DB `task_events` table; query in §Problem 3 |
 
 ## Glossary

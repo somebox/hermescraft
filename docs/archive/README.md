@@ -20,4 +20,5 @@ Completed plans, superseded designs, experiment write-ups, and pre-fork notes. N
 | Perception digest (split docs) | [perception-digest-experiment.md](perception-digest-experiment.md), [perception-digest-findings.md](perception-digest-findings.md) — merged in [guides/perception-digest.md](../guides/perception-digest.md) |
 | Phase 1–2 experiments | [experiments/](experiments/) — phase-1 summaries, g21/m2/m3 findings, [phase-2-sprint-log.md](experiments/phase-2-sprint-log.md) |
 | Phase 3 steward bootstrap | [experiments/phase-3-steward-mvp.md](experiments/phase-3-steward-mvp.md) — ops board smoke log (design: [phase-3/steward-mvp.md](../design/phase-3/steward-mvp.md)) |
+| Parked design | [steward-out-of-game.md](steward-out-of-game.md) — webhook-driven Steward proposal; operational drivers resolved in-place, revisit if planning cadence becomes a bottleneck |
 | Hackathon / early vision | HACKATHON-PLAN, AUDIT-REPORT, ARENA, COMPANION_MODE, CIVILIZATION_MODE, LAN_PLAY, homelab-experiment, MC_TARGET_ARCHITECTURE |

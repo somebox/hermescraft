@@ -10,8 +10,8 @@ How to bring the Landfolk fleet up, down, and back up cleanly. Use this guide in
 scripts/landfolk start       # bring up the roster (sticky in /tmp/hermescraft/active-players)
 scripts/landfolk status      # see what's up — players, daemons, gateway, dispatcher, board
 scripts/landfolk stop        # shut everything down (bots, daemons, gateway, dispatcher)
-scripts/landfolk enable  <p> # add player to roster + start
-scripts/landfolk disable <p> # remove from roster + stop
+scripts/landfolk enable  <p> [<p> ...]  # add player(s) to roster + start (space- or comma-separated)
+scripts/landfolk disable <p> [<p> ...]  # remove player(s) from roster + stop
 ```
 
 ## What `landfolk start` actually does
@@ -124,6 +124,26 @@ ps -ax -o pid,etime,command | grep -E 'node server.js|start-landfolk' | grep -v 
 ```
 
 If you see anything from `start-landfolk.sh.deprecated`, that's the racer — it's been disabled but still kill its leftover processes. The deprecation also tells you who did it.
+
+### "No cards available to work on" / empty roster
+
+**Symptom:** `landfolk status` reports `no active roster` (with a "roster drift detected" warning naming live bots NOT in the roster), `no kanban workers running`, and dispatcher log shows `tick: idle` continuously.
+
+**Sequence to diagnose:**
+
+```bash
+scripts/landfolk status                 # check roster vs. live bots
+scripts/board                           # board stats — what's in ready/blocked/todo
+scripts/board list --status ready       # who's the assignee on ready cards?
+```
+
+Three failure shapes to distinguish:
+
+1. **Roster drift** — bots are running on MC but not in `/tmp/hermescraft/active-players`. The dispatcher only spawns workers for roster members. Fix: `scripts/landfolk enable flint mason steward` (accepts space- or comma-separated names).
+2. **Ready card assigned to an offline bot** — typical when Steward (the orchestrator) is the assignee of a card that needs *decomposition* before workers can claim children. Fix: bring Steward up (`scripts/landfolk start --players steward` or `landfolk enable steward`). Once she splits the parent into worker cards, Mason/Flint will pick them up automatically via the plugin's gate-check.
+3. **All worker cards blocked / superseded** — every Mason/Flint card has `status=blocked` from prior triage (e.g. "superseded: wrong plan, use X after cleanup"). Fix: have Steward read the blocked column and either unblock with new direction or archive the supersedees so the queue isn't cluttered.
+
+The recurring case: `ready=1, blocked=3, running=0` with the only ready card assigned to Steward — Steward is the lever.
 
 ## Model layering (two config files, both must match)
 

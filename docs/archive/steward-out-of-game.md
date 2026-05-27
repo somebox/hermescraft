@@ -1,9 +1,17 @@
 # Steward Out-of-Game — Webhook-Driven Orchestrator
 
-**Status:** Proposed (2026-05-25). Not yet implemented. Awaiting approval to start Phase 1.
+> **ARCHIVED 2026-05-27.** Most of the operational drivers behind this proposal were
+> resolved in-place during the 2026-05-25/26 implementation work (kick cascades,
+> `mc advise` unreachability, orchestrator double-spawn) — see the `## Updates from
+> 2026-05-25/26 implementation work` section below for the full audit. The remaining
+> justification (decoupling Steward's planning cadence from the in-game tick) is still
+> valid but no longer urgent. Revisit when planning cadence becomes the bottleneck.
+> Kept here for design context if the migration is ever picked up again.
+
+**Status:** Proposed (2026-05-25), archived without execution (2026-05-27).
 **Owner:** re44 + steward
 **Companion docs:**
-- [landfolk-plugin.md](./landfolk-plugin.md) — landfolk Hermes plugin (per-assignee kanban concurrency + future subsystems). The chat-bridge daemon proposed below is reframed as the plugin's `mc_chat_adapter/` subsystem.
+- [../features/landfolk-plugin.md](../features/landfolk-plugin.md) — landfolk Hermes plugin (per-assignee kanban concurrency + future subsystems). The chat-bridge daemon proposed below is reframed as the plugin's `mc_chat_adapter/` subsystem.
 - [../guides/landfolk-lifecycle.md](../guides/landfolk-lifecycle.md) — current bot/daemon lifecycle.
 
 ## Goal
