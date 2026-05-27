@@ -56,3 +56,27 @@ test('reload() picks up file edits made after store creation', () => {
   assert.equal(store.get('hut1').capabilities.allow_guided_edit, true);
   assert.equal(store.get('hut1').intent, 'protect');
 });
+
+test('resource intent region with resource.blocks survives upsert + reload', () => {
+  // D2 schema test (coordinates+materials plan): resource-intent regions
+  // get an optional `resource: { tier, blocks }` field used by the policy
+  // resolver to restrict ad-hoc dig to listed blocks only.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-regions-resource-'));
+  const store = createRegionStore({ dataDir: dir, world: 'w' });
+  store.upsert({
+    id: 'mine_dirt_hilltop_pilot',
+    profile: 'mine',
+    intent: 'resource',
+    anchor: { x: 100, y: 64, z: 200 },
+    shape: { kind: 'column', radius: 8 },
+    resource: { tier: 1, blocks: ['dirt', 'grass_block'] },
+  });
+  const r1 = store.get('mine_dirt_hilltop_pilot');
+  assert.equal(r1.intent, 'resource');
+  assert.deepEqual(r1.resource, { tier: 1, blocks: ['dirt', 'grass_block'] });
+
+  // Cold-load from disk: resource field round-trips
+  const fresh = createRegionStore({ dataDir: dir, world: 'w' });
+  const r2 = fresh.get('mine_dirt_hilltop_pilot');
+  assert.deepEqual(r2.resource, { tier: 1, blocks: ['dirt', 'grass_block'] });
+});

@@ -441,6 +441,102 @@
           }
         }
       ]
+    },
+    {
+      "name": "resource with block filter — only listed blocks allowed",
+      "regions": [
+        {
+          "id": "minedirt",
+          "intent": "resource",
+          "profile": "mine",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 },
+          "resource": { "tier": 1, "blocks": ["dirt", "grass_block"] }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "dig listed block (dirt) → allow",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": null },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "dirt",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_OVERRIDE",
+            "winning_region": "minedirt",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        },
+        {
+          "name": "dig listed block (grass_block) → allow",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": null },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "grass_block",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_OVERRIDE",
+            "winning_region": "minedirt",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        },
+        {
+          "name": "dig unlisted block (cobblestone) → deny",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": null },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "cobblestone",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_RESOURCE_RESTRICTED",
+            "winning_region": "minedirt",
+            "matched_capability": "resource_blocks"
+          }
+        },
+        {
+          "name": "dig unlisted block (oak_log) → deny",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": null },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "oak_log",
+          "expect": {
+            "decision": "deny",
+            "reason": "REGION_RESOURCE_RESTRICTED",
+            "winning_region": "minedirt",
+            "matched_capability": "resource_blocks"
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource without block filter — any block allowed (back-compat)",
+      "regions": [
+        {
+          "id": "minegeneric",
+          "intent": "resource",
+          "profile": "mine",
+          "status": "active",
+          "anchor": { "x": 0, "y": 64, "z": 0 },
+          "shape": { "kind": "column", "radius": 8 }
+        }
+      ],
+      "decisions": [
+        {
+          "name": "no filter → dig any block allowed",
+          "verb": "dig",
+          "args": { "ad_hoc": true, "task_worksite": null },
+          "position": { "x": 2, "y": 64, "z": 2 },
+          "block": "oak_log",
+          "expect": {
+            "decision": "allow",
+            "reason": "REGION_OVERRIDE",
+            "winning_region": "minegeneric",
+            "matched_capability": "allow_ad_hoc_dig"
+          }
+        }
+      ]
     }
   ]
 }

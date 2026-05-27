@@ -190,6 +190,31 @@ export function resolve(verb, args, position, blockName, regions) {
     };
   }
 
+  // Resource-intent regions with an explicit `resource.blocks` filter:
+  // only the listed blocks may be dug inside; other digs are denied so a
+  // designated mine zone doesn't leak into ad-hoc terrain mining. Without
+  // a resource filter, behavior is unchanged (resource intent → ad_hoc_dig
+  // allowed via the default capabilities).
+  // Coordinates+materials plan D1; data/regions-world.json D2 schema.
+  if (
+    winner.intent === 'resource' &&
+    winner.resource &&
+    Array.isArray(winner.resource.blocks) &&
+    winner.resource.blocks.length > 0
+  ) {
+    if (verb === 'dig' && blockName && !winner.resource.blocks.includes(blockName)) {
+      return {
+        decision: 'deny',
+        reason: 'REGION_RESOURCE_RESTRICTED',
+        winning_region: summarizeRegion(winner),
+        losing_regions: losers,
+        matched_capability: 'resource_blocks',
+      };
+    }
+    // Inside the resource list → standard verb branches handle the allow
+    // (caps.allow_ad_hoc_dig is true for resource intent by default).
+  }
+
   const taskWorksite = args?.task_worksite ?? null;
   if (winner.intent === 'protect' && taskWorksite && taskWorksite === winner.id) {
     if (verb === 'dig' && isStructuralInRegion(blockName, winner)) {
