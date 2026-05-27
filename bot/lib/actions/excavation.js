@@ -6,6 +6,24 @@ import { ok, fail } from '../shared/action-contract.js';
 import { cardinalDelta } from './_directions.js';
 import { box6 } from './_args.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
+import { withYBoth, parseYInput, blockFromSurface } from '../runtime/coordinates.js';
+
+/**
+ * Allow callers of dig_area / similar box-taking handlers to pass
+ * surface_y1/surface_y2 (= block_y + 1) as alternatives to y1/y2.
+ * Returns a normalized args object the underlying box6 helper accepts.
+ */
+function normalizeBoxYArgs(args) {
+  if (args == null || typeof args !== 'object') return args;
+  const out = { ...args };
+  if (out.surface_y1 != null && Number.isFinite(Number(out.surface_y1))) {
+    out.y1 = blockFromSurface(Number(out.surface_y1));
+  }
+  if (out.surface_y2 != null && Number.isFinite(Number(out.surface_y2))) {
+    out.y2 = blockFromSurface(Number(out.surface_y2));
+  }
+  return out;
+}
 
 const { goals } = pathfinderPkg;
 
@@ -57,7 +75,9 @@ export function createExcavationActions(services) {
   };
   return {
   async dig_area(args) {
-    const boxParsed = box6(args);
+    // Y inputs: y1/y2 (= block_y, legacy) or surface_y1/surface_y2 (= the
+    // Y a bot stands on, = block_y + 1). See docs/conventions/coordinates.md.
+    const boxParsed = box6(normalizeBoxYArgs(args));
     if (!boxParsed.ok) return boxParsed.response;
     const { x1, y1, z1, x2, y2, z2 } = boxParsed;
     const pickupRaw = args.pickup;
@@ -215,6 +235,7 @@ export function createExcavationActions(services) {
   async tunnel({
     x,
     y,
+    surface_y,
     z,
     direction = 'north',
     length = 12,
@@ -224,7 +245,10 @@ export function createExcavationActions(services) {
   }) {
     const b = ensureBot();
     const startX = Number.isFinite(Number(x)) ? Math.floor(Number(x)) : Math.floor(b.entity.position.x);
-    const startY = Number.isFinite(Number(y)) ? Math.floor(Number(y)) : Math.floor(b.entity.position.y);
+    // Y input: y (= block_y, legacy) or surface_y (= block_y + 1). Tunnels
+    // are dug at feet-level Y so the bot can walk through them.
+    const parsedStartY = parseYInput({ y, surface_y });
+    const startY = parsedStartY !== null ? parsedStartY : Math.floor(b.entity.position.y);
     const startZ = Number.isFinite(Number(z)) ? Math.floor(Number(z)) : Math.floor(b.entity.position.z);
     const L = Math.min(Math.max(parseInt(String(length), 10) || 12, 1), 64);
     const W = Math.min(Math.max(parseInt(String(width), 10) || 2, 1), 5);
@@ -292,8 +316,8 @@ export function createExcavationActions(services) {
       dug: totalDug,
       skipped: totalSkipped,
       errors: totalErrors,
-      start: { x: startX, y: startY, z: startZ },
-      end: { x: startX + dx * L, y: startY, z: startZ + dz * L },
+      start: withYBoth({ x: startX, y: startY, z: startZ }, startY),
+      end: withYBoth({ x: startX + dx * L, y: startY, z: startZ + dz * L }, startY),
     };
   },
 
@@ -600,8 +624,8 @@ export function createExcavationActions(services) {
       ...regionSkips.dataFields(),
       ...(errorMsgs.length ? { error_messages: errorMsgs.slice(0, 5) } : {}),
       ...(stoppedAtStep ? { stopped_at_step: stoppedAtStep, stopped_reason: stoppedReason.value } : {}),
-      start: { x: startX, y: startY, z: startZ },
-      end: { x: endX, y: endY, z: endZ },
+      start: withYBoth({ x: startX, y: startY, z: startZ }, startY),
+      end: withYBoth({ x: endX, y: endY, z: endZ }, endY),
     };
   },
 
@@ -746,8 +770,8 @@ export function createExcavationActions(services) {
       placed: totalPlaced,
       skipped: totalSkipped,
       errors: totalErrors,
-      start: { x: startX, y: startY, z: startZ },
-      end: { x: startX + dx * L, y: endY, z: startZ + dz * L },
+      start: withYBoth({ x: startX, y: startY, z: startZ }, startY),
+      end: withYBoth({ x: startX + dx * L, y: endY, z: startZ + dz * L }, endY),
     };
   },
 
@@ -856,11 +880,16 @@ export function createExcavationActions(services) {
     return {
       result: `pillar_down dug ${dugCount} block${dugCount === 1 ? '' : 's'}: Y ${startY} → ${endY}${lastDugBlock ? ` (last: ${lastDugBlock})` : ''}. Stop reason: ${stopReason || 'unknown'}.${pickupSuffix}`,
       dug: dugCount,
+      // Both-Y form for new readers; legacy startY/endY kept as block_y aliases.
       startY,
       endY,
+      start_block_y: startY,
+      end_block_y: endY,
+      start_surface_y: startY + 1,
+      end_surface_y: endY + 1,
       stop_reason: stopReason,
       last_block: lastDugBlock,
-      position: { x: Math.floor(b.entity.position.x), y: endY, z: Math.floor(b.entity.position.z) },
+      position: withYBoth({ x: Math.floor(b.entity.position.x), y: endY, z: Math.floor(b.entity.position.z) }, endY),
     };
   },
 

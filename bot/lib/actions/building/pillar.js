@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import { equipForDig, isDigProtected, recordRecentPlace } from '../../runtime/dig-tools.js';
 import { shouldSkipDigAt } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
+import { cascadeFor } from '../../runtime/materials.js';
 
 /**
  * @param {{ ctx: any, ensureBot: () => any, sleep: (ms: number) => Promise<void>,
@@ -32,16 +33,22 @@ export function createBuildingPillarPart(deps) {
 
       const cascade = [];
       if (blockName) cascade.push(String(blockName));
-      // #99: prefer dirt/sand/gravel/netherrack — bare-hand-diggable so the
-      // bot can recover the pillar after climbing. Cobblestone / stone /
-      // granite-family need at least a wooden pickaxe to re-mine, so they
-      // come last as fallbacks. Bottom-of-cascade planks are last resort.
-      cascade.push(
-        'dirt', 'sand', 'gravel', 'netherrack',
-        'cobblestone', 'stone',
-        'granite', 'andesite', 'diorite', 'deepslate', 'cobbled_deepslate',
-        'oak_planks', 'spruce_planks', 'birch_planks',
-      );
+      // Pillar-rescue cascade — prefer bare-hand-diggable terrain blocks so
+      // the bot can recover the pillar after climbing. Defined in
+      // data/materials.json `cascades.pillar_rescue` (single source of truth
+      // across primitives). Planks are intentionally NOT included — they are
+      // tier_2 structural material; pillar_rescue stays tier_1 only.
+      const rescueCascade = cascadeFor('pillar_rescue');
+      for (const nm of rescueCascade) {
+        if (!cascade.includes(nm)) cascade.push(nm);
+      }
+      // Legacy fallback: a few mid-tier stones the rescue cascade omits but
+      // historically appeared in pillar_step's fallback. Kept for back-compat
+      // until the live fleet has run long enough on the rescue-only cascade
+      // to confirm they aren't needed.
+      for (const nm of ['granite', 'andesite', 'diorite', 'deepslate']) {
+        if (!cascade.includes(nm)) cascade.push(nm);
+      }
 
       const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
 

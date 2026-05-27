@@ -400,7 +400,16 @@ function fmt(v) { return typeof v === 'number' ? Math.round(v * 10) / 10 : v; }
 function posObj(pos) {
   const p = pos || ctx.world.bot?.entity?.position;
   if (!p) return null;
-  return { x: fmt(p.x), y: fmt(p.y), z: fmt(p.z) };
+  // Canonical Y vocabulary (docs/conventions/coordinates.md):
+  //   block_y   = the Y of the block the entity's feet are sitting on
+  //   surface_y = the Y of the feet themselves (= block_y + 1)
+  // For an entity grounded on a block at block_y=64, the entity's
+  // position.y is 65.0; floor(y)=65 is surface_y, surface_y-1=64 is block_y.
+  // For mid-air positions these become "if you landed now" snapshots —
+  // still useful as a unified reference.
+  const surface_y = Math.floor(p.y);
+  const block_y = surface_y - 1;
+  return { x: fmt(p.x), y: fmt(p.y), z: fmt(p.z), block_y, surface_y };
 }
 
 function itemStr(item) {

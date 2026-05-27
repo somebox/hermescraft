@@ -2,6 +2,7 @@ import { Vec3 } from 'vec3';
 import { columnTopSolid } from '../../runtime/dig-tools.js';
 import { standabilityReason, findClosestStandable } from '../_nav-helpers.js';
 import { AIR_NAMES } from '../_block-sets.js';
+import { withYBoth, parseYInput } from '../../runtime/coordinates.js';
 
 export function createRegionQueries({ ensureBot, posObj, goals }) {
   return {
@@ -35,45 +36,73 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
       return {
         result: `No solid blocks in column(s) around ${cx},${cz} (radius ${r}).`,
         topY: null,
+        block_y: null,
+        surface_y: null,
         blockName: null,
+        block_name: null,
         columns: [],
       };
     }
 
-    const feetYHint = maxTopY + 1;
-    // #103 context-trim: omit the per-column array by default. The summary
-    // (topY, blockName, columnX/Z, feetYHint) is enough for the common
-    // "where can I stand near here" case. Pass `full: true` to opt back in
-    // — needed when the agent really wants a full per-cell heightmap.
+    // Canonical Y vocabulary (docs/conventions/coordinates.md):
+    //   block_y = topmost solid block's Y
+    //   surface_y = where a bot stands on top (= block_y + 1)
+    // `feetYHint` kept as a back-compat alias for one release.
+    const surface_y = maxTopY + 1;
     return {
-      result: `Top solid ≈Y${maxTopY} (${maxBlock}) at ${maxAt.x},${maxAt.z}${r ? ` (max over radius ${r})` : ''}`,
-      topY: maxTopY,
-      blockName: maxBlock,
+      result: `Top solid block_y=${maxTopY} (${maxBlock}) at ${maxAt.x},${maxAt.z}; surface_y=${surface_y}${r ? ` (max over radius ${r})` : ''}`,
+      block_y: maxTopY,
+      surface_y,
+      block_name: maxBlock,
       columnX: maxAt.x,
       columnZ: maxAt.z,
-      feetYHint,
+      // Legacy aliases:
+      topY: maxTopY,
+      blockName: maxBlock,
+      feetYHint: surface_y,
       columns_omitted: !full && r > 0 ? columns.length : undefined,
-      ...(r > 0 && full ? { columns } : {}),
+      // Per-column entries also surfaced with canonical names + legacy.
+      ...(r > 0 && full ? {
+        columns: columns.map((c) => ({
+          x: c.x, z: c.z,
+          block_y: c.topY, surface_y: c.topY + 1,
+          block_name: c.blockName,
+          topY: c.topY, blockName: c.blockName,  // legacy
+        })),
+      } : {}),
     };
   },
 
   /**
-   * Clear a box of diggable blocks (inverse of place_fill): top Y down, stand-block deferred per layer.
+   * Reachability pre-flight: is (x, y, z) standable? If not, find the
+   * closest standable cell within range. Accepts y or surface_y on input;
+   * returns both forms on `target` and `best_stand`.
    */
-  async reachable({ x, y, z, range = 3 }) {
+  async reachable({ x, y, surface_y, z, range = 3 }) {
     const b = ensureBot();
-    if (![x, y, z].every((v) => Number.isFinite(Number(v)))) {
+    if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(z))) {
       return {
         ok: false,
         error: {
           code: 'INVALID_COORD',
-          message: 'mc reachable requires numeric x, y, z',
+          message: 'mc reachable requires numeric x, z',
+          retry_safe: false,
+        },
+      };
+    }
+    const parsedY = parseYInput({ y, surface_y });
+    if (parsedY === null) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_COORD',
+          message: 'mc reachable requires y or surface_y',
           retry_safe: false,
         },
       };
     }
     const ix = Math.floor(Number(x));
-    const iy = Math.floor(Number(y));
+    const iy = parsedY;
     const iz = Math.floor(Number(z));
     const maxScan = Math.max(1, Math.min(6, Number(range) || 3));
     const target_reason = standabilityReason(b, ix, iy, iz);
@@ -92,10 +121,12 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
     return {
       ok: true,
       data: {
-        target: { x: ix, y: iy, z: iz },
+        target: withYBoth({ x: ix, y: iy, z: iz }, iy),
         target_standable,
         target_reason,
-        best_stand: best ? { x: best.x, y: best.y, z: best.z, distance: best.distance } : null,
+        best_stand: best
+          ? withYBoth({ x: best.x, y: best.y, z: best.z, distance: best.distance }, best.y)
+          : null,
         bot_position: posObj(b.entity.position),
         scan_range: maxScan,
       },
