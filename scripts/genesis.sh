@@ -208,6 +208,12 @@ try:
     # bot to TP + /give + mc deposit, so Steward must be online.
     with gl.log_step(run_id, 'landfolk_start'):
         gl.landfolk_start()
+    # Pin each connected bot's per-player spawn to the anchor. apply_worldspawn
+    # ran earlier but `spawnpoint @a` matched zero entities then; now that
+    # bots are up, this call binds their spawn so death-respawn lands on
+    # the pad instead of any stale per-player spawn from a prior run.
+    with gl.log_step(run_id, 'pin_player_spawns'):
+        gl.pin_all_player_spawns(anchor)
     with gl.log_step(run_id, 'system_chest_fill'):
         gl.seed_system_chest_fill(cfg)
     # Snapshot AFTER fill so the start snapshot reflects the populated chest

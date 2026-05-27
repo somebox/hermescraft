@@ -42,6 +42,12 @@ export async function escapeStrategyInAir({ b, standingState, fail, recordEscape
   );
 }
 
+// Names that would kill or hurt-then-trap a bot if exposed by an auto-dig.
+const LETHAL_NEIGHBORS = new Set([
+  'lava', 'flowing_lava', 'fire', 'soul_fire', 'cactus', 'magma_block',
+  'sweet_berry_bush', 'powder_snow', 'wither_rose',
+]);
+
 export async function escapeStrategyEnclosureInside(ctx) {
   // Auto-dig the nearest adjacent wall cell so the bot can step out. Mason
   // 2026-05-27 entombed himself by filling the shelter interior; the prior
@@ -50,10 +56,23 @@ export async function escapeStrategyEnclosureInside(ctx) {
   // advice. The dig is itself the escape primitive.
   //
   // Strategy: scan the 8 cells adjacent to the bot (foot + head level, 4
-  // cardinal dirs), pick the first that's a non-bedrock solid block, dig
-  // it with force=true to bypass the dig-under-feet refusal. After the
-  // dig, the cell becomes air and the bot can step or fall into it.
+  // cardinal dirs). For each candidate, verify the block BEHIND it (one
+  // further out) is not lava/cactus/fire AND the cell 2 below isn't air
+  // (fall risk). Pick the first SAFE solid block, dig with force=true.
+  //
+  // HP gate: refuse if HP < 8. At low HP any exposure to a damage source
+  // (fall, mob aggro, lava splash) is fatal. Better to escalate than to
+  // gamble. Mason died at HP 2.5 calling mc escape underground 2026-05-27
+  // and lost his full inventory to the death + bad respawn.
   const { b, before, cls, fromPos, getActions, recordEscapeSuccess } = ctx;
+  const hp = Number(b.health || 0);
+  if (hp < 8) {
+    return fail('ESCAPE_HP_TOO_LOW', `HP=${hp.toFixed(1)} is below the auto-dig threshold (8). Opening new terrain at low HP risks lava/fall/mob exposure with no recovery margin. Operator must teleport.`, {
+      observed_state: { classification: cls, hp, blocked_dirs: before.blocked_dirs },
+      next_action_hint: `tp ${b.username || 'bot'} <safe_coord>  # operator rcon`,
+      retry_safe: false,
+    });
+  }
   const actions = getActions ? getActions() : null;
   if (!actions || typeof actions.dig !== 'function') {
     return fail('ESCAPE_ENCLOSURE_NO_DIG', `You're enclosed inside a built structure but mc dig action is unavailable. Operator intervention required.`, {
@@ -65,12 +84,12 @@ export async function escapeStrategyEnclosureInside(ctx) {
   const fy = Math.floor(b.entity.position.y);
   const fz = Math.floor(b.entity.position.z);
   // Try each of the 8 adjacent wall cells. Bias toward foot level first
-  // (lets the bot step horizontally) then head level (drop-through).
+  // (lets the bot step horizontally — less drop risk than head-level dig).
   const candidates = [];
   for (const lvl of ['foot', 'head']) {
     const yy = fy + (lvl === 'head' ? 1 : 0);
     for (const [dx, dz, dir] of [[1,0,'east'],[-1,0,'west'],[0,1,'south'],[0,-1,'north']]) {
-      candidates.push({ x: fx + dx, y: yy, z: fz + dz, dir, lvl });
+      candidates.push({ x: fx + dx, y: yy, z: fz + dz, dx, dz, dir, lvl });
     }
   }
   const tried = [];
@@ -78,6 +97,33 @@ export async function escapeStrategyEnclosureInside(ctx) {
     const blk = b.blockAt({ x: c.x, y: c.y, z: c.z });
     if (!blk || AIR_NAMES.has(blk.name)) continue;
     if (blk.name === 'bedrock') continue;
+
+    // Safety scan A: block immediately BEHIND the candidate (one further
+    // out in same dir). If that's lava/cactus/fire, digging exposes the
+    // bot to it.
+    const behind = b.blockAt({ x: c.x + c.dx, y: c.y, z: c.z + c.dz });
+    if (behind && LETHAL_NEIGHBORS.has(behind.name)) {
+      tried.push({ ...c, block: blk.name, result: `skipped: ${behind.name} behind` });
+      continue;
+    }
+    // Safety scan B: cell at c.y below the candidate (foot-level only —
+    // a head-level dig already drops bot down one block which is fine).
+    if (c.lvl === 'foot') {
+      const below = b.blockAt({ x: c.x, y: c.y - 1, z: c.z });
+      const below2 = b.blockAt({ x: c.x, y: c.y - 2, z: c.z });
+      // If both directly-below cells are air, the bot would fall ≥2 blocks
+      // after stepping into the opening. Skip — find a less risky side.
+      if (below && AIR_NAMES.has(below.name) && below2 && AIR_NAMES.has(below2.name)) {
+        tried.push({ ...c, block: blk.name, result: 'skipped: 2+ block drop below' });
+        continue;
+      }
+      // Lava directly below is instant death on step-out.
+      if (below && LETHAL_NEIGHBORS.has(below.name)) {
+        tried.push({ ...c, block: blk.name, result: `skipped: ${below.name} below` });
+        continue;
+      }
+    }
+
     try {
       const r = await actions.dig({ x: c.x, y: c.y, z: c.z, force: true });
       tried.push({ ...c, block: blk.name, result: r?.ok ? 'dug' : (r?.error?.code || 'failed') });
@@ -98,7 +144,7 @@ export async function escapeStrategyEnclosureInside(ctx) {
       tried.push({ ...c, block: blk?.name, result: `exception:${(e && e.message) || e}` });
     }
   }
-  return fail('ESCAPE_ENCLOSURE_DIG_FAILED', `Bot enclosed inside built structure; tried digging ${tried.length} adjacent block(s) but none succeeded. Likely no tool, all bedrock, or all blocks dig-protected. Operator: rcon /tp <bot> to a clear cell.`, {
+  return fail('ESCAPE_ENCLOSURE_DIG_FAILED', `Bot enclosed inside built structure; tried ${tried.length} adjacent block(s) but none were both diggable AND safe (no lava/cactus behind, no 2-block drop below). Operator: rcon /tp <bot> to a clear cell.`, {
     observed_state: {
       classification: cls,
       blocked_dirs: before.blocked_dirs,

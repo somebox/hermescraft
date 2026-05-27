@@ -645,19 +645,41 @@ def _finalize_anchor(x: int, y: int, z: int) -> None:
 
 
 def apply_worldspawn(anchor: dict[str, int]) -> None:
-    """Set MC worldspawn to the genesis anchor.
+    """Set MC worldspawn AND every connected player's per-player spawn to the genesis anchor.
 
-    Runs on every new-run regardless of --keep-world. Without this, a
-    --keep-world run inherits whatever level.dat has for spawn, which
-    drifts every time a bot dies and respawns elsewhere. Caught
-    g-2026-05-27-7: Steward ended up trapped in solid stone at
-    (354, 63, -592) — the world's drifted default spawn — far from
-    the genesis anchor at (258, 64, 63).
+    Runs on every new-run regardless of --keep-world. Two commands:
+      1. `setworldspawn` — the world-wide fallback spawn used when a player
+         has no per-player spawn set (no bed, no /spawnpoint).
+      2. `spawnpoint @a <x> <y> <z>` — pins the per-player spawn for every
+         currently-connected player. Paper saves first-connect position as
+         a per-player spawn, which then overrides worldspawn on death.
+         Without this, mason 2026-05-27 died near a lethal terrain feature
+         and respawned at his stale per-player spawn (354,63,-592) — INSIDE
+         stone — and re-died on suffocation in a loop until /kill +
+         operator tp recovered him.
     """
     if GENESIS_DRY_RUN:
         return
     x, y, z = anchor["x"], anchor["y"], anchor["z"]
     rcon(f"setworldspawn {x} {y} {z}", quiet=True)
+    # @a targets all online players. If no players are online yet (apply
+    # runs before landfolk_start), the selector matches zero entities and
+    # the command is a no-op — that's fine. After landfolk_start, the
+    # bots are connected and their spawns get pinned on the next call.
+    rcon(f"spawnpoint @a {x} {y} {z}", quiet=True)
+
+
+def pin_all_player_spawns(anchor: dict[str, int]) -> None:
+    """Re-pin every online player's spawn to the anchor.
+
+    Called after landfolk_start so the bots (newly connected) get their
+    per-player spawn pinned. apply_worldspawn runs BEFORE bots are up;
+    this runs AFTER and only targets the spawnpoint command.
+    """
+    if GENESIS_DRY_RUN:
+        return
+    x, y, z = anchor["x"], anchor["y"], anchor["z"]
+    rcon(f"spawnpoint @a {x} {y} {z}", quiet=True)
 
 
 def system_chest_env_from_config(cfg: dict) -> dict[str, str]:
