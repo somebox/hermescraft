@@ -411,6 +411,7 @@ export function createBotManager(deps) {
     FAIR_PLAY,
     handleChat,
     loadGoalsFromDisk,
+    loadChestSnapshotsFromDisk,
     loadReminders,
     posObj,
     fmt,
@@ -521,6 +522,7 @@ export function createBotManager(deps) {
 
           ctx.world.mcData = minecraftData(ctx.world.bot.version);
         loadGoalsFromDisk();
+        if (typeof loadChestSnapshotsFromDisk === 'function') loadChestSnapshotsFromDisk();
         loadReminders();
 
         ctx.world.bot.loadPlugin(pathfinder);

@@ -190,6 +190,88 @@ function diffInventory(before, after) {
 }
 
 /**
+ * Take two inventory snapshots ~1s apart and report any divergence.
+ *
+ * Why two snapshots? Mineflayer 4.37 + Paper 1.21.4 update local
+ * inventory state OPTIMISTICALLY on window-clicks. The server can
+ * reject some clicks (anti-cheat, partial-transfer, cursor-on-close
+ * drop) and send SET_SLOT correction packets ~hundreds of ms later.
+ * Observed 2026-05-27: flint withdraw oak_log×16 reported
+ * `inventory_delta:{oak_log:16}` per the optimistic snapshot at
+ * +50ms, but the actual server-confirmed state ~6s later showed only
+ * 1 log. Sampling twice and reporting both states lets the caller
+ * detect the divergence and treat the LATER number as authoritative.
+ *
+ * Returns `{ inventory, sync_warning?: {first, second, diverged_items} }`.
+ */
+async function verifiedInventorySnapshot(b, sleep, initialDelayMs = 500, verifyDelayMs = 1000) {
+  await sleep(initialDelayMs);
+  const first = inventorySnapshot(b);
+  await sleep(verifyDelayMs);
+  const second = inventorySnapshot(b);
+  // Compute item-by-item divergence
+  const keys = new Set([...Object.keys(first), ...Object.keys(second)]);
+  /** @type {Record<string, {first:number, second:number, lost:number}>} */
+  const diverged = {};
+  for (const k of keys) {
+    const a = first[k] || 0;
+    const b2 = second[k] || 0;
+    if (a !== b2) diverged[k] = { first: a, second: b2, lost: a - b2 };
+  }
+  const out = { inventory: second };
+  if (Object.keys(diverged).length > 0) {
+    out.sync_warning = {
+      message:
+        'Mineflayer/server inventory state diverged between optimistic and ' +
+        'server-confirmed snapshots — items may have been dropped to the ' +
+        'world on cursor-close or rejected by anti-cheat. Authoritative ' +
+        'values are in `inventory_delta` (computed from the second snapshot).',
+      diverged_items: diverged,
+      first_snapshot_at_ms: initialDelayMs,
+      second_snapshot_at_ms: initialDelayMs + verifyDelayMs,
+    };
+  }
+  return out;
+}
+
+/**
+ * Scan ``bot.entities`` for recently-dropped item entities within
+ * ``maxDistance`` of the bot. Returns a compact list the caller can
+ * include in the response so the agent knows where to walk to pick
+ * up items that went to the world floor (cursor-on-close drop).
+ *
+ * Mineflayer's autopickup magnet has a ~1.5m radius; dropped items
+ * outside that may need explicit `mc pickup` / `mc goto_near`.
+ */
+function nearbyDroppedItems(b, maxDistance = 4) {
+  const out = [];
+  try {
+    const eyes = b.entity?.position;
+    if (!eyes) return out;
+    for (const e of Object.values(b.entities || {})) {
+      if (!e || !e.position) continue;
+      // mineflayer marks dropped items as `name === 'item'` or displayName='Item'.
+      if (e.name !== 'item' && e.displayName !== 'Item') continue;
+      const d = e.position.distanceTo(eyes);
+      if (d > maxDistance) continue;
+      // Try to extract the item id from metadata index 8 (1.16+) or 7.
+      const meta = e.metadata?.[8] || e.metadata?.[7];
+      const itemId = meta?.itemId;
+      const count = meta?.itemCount ?? meta?.count ?? 1;
+      out.push({
+        position: { x: Math.floor(e.position.x), y: Math.floor(e.position.y), z: Math.floor(e.position.z) },
+        distance: Math.round(d * 10) / 10,
+        item_id: itemId ?? null,
+        count,
+      });
+    }
+  } catch {
+    // best-effort; never throw from a response-shape helper
+  }
+  return out;
+}
+
+/**
  * createContainerActions — extracted from former lib/actions/containers.js (Phase 5 split).
  */
 export function createContainerActions(deps) {
@@ -292,12 +374,15 @@ export function createContainerActions(deps) {
       }
 
       // Sample inventoryAfter AFTER chest.close() so the window→inventory sync has happened.
-      // Brief await so mineflayer can flush the close packet.
-      await sleep(50);
-      const inventoryAfter = inventorySnapshot(b);
+      // Two snapshots ~1s apart so we capture any server SET_SLOT
+      // corrections that arrive after the optimistic mineflayer update;
+      // see verifiedInventorySnapshot() for the rationale.
+      const verified = await verifiedInventorySnapshot(b, sleep);
+      const inventoryAfter = verified.inventory;
       const totalAfter = after.reduce((s, i) => s + i.count, 0);
       const inventory_delta = diffInventory(inventoryBefore, inventoryAfter);
       const container_delta = diffInventory(containerBefore, containerAfter);
+      const dropped_nearby = verified.sync_warning ? nearbyDroppedItems(b) : [];
 
       {
         // Soft failure if requests came in but NOTHING moved at all.
@@ -338,6 +423,8 @@ export function createContainerActions(deps) {
             steps,
             ambiguous_skipped: ambiguous,
             not_found_skipped: not_found,
+            ...(verified.sync_warning ? { sync_warning: verified.sync_warning } : {}),
+            ...(dropped_nearby.length ? { dropped_nearby } : {}),
           },
           result: `Deposit: ${steps.join('; ') || '(nothing moved)'}`,
         };
@@ -404,11 +491,16 @@ export function createContainerActions(deps) {
       }
 
       // Sample inventoryAfter AFTER chest.close() — see deposit comment for why.
-      await sleep(50);
-      const inventoryAfter = inventorySnapshot(b);
+      // Two snapshots ~1s apart catches server SET_SLOT corrections that
+      // arrive after mineflayer's optimistic local update. Critical for
+      // withdraw because cursor-on-close drops + Paper anti-cheat both
+      // produce divergence here; see verifiedInventorySnapshot().
+      const verified = await verifiedInventorySnapshot(b, sleep);
+      const inventoryAfter = verified.inventory;
       const totalAfter = after.reduce((s, i) => s + i.count, 0);
       const inventory_delta = diffInventory(inventoryBefore, inventoryAfter);
       const container_delta = diffInventory(containerBefore, containerAfter);
+      const dropped_nearby = verified.sync_warning ? nearbyDroppedItems(b) : [];
 
       {
         const movedAnything = Object.values(inventory_delta).some((v) => v > 0);
@@ -448,8 +540,10 @@ export function createContainerActions(deps) {
             steps,
             ambiguous_skipped: ambiguous,
             not_found_skipped: not_found,
+            ...(verified.sync_warning ? { sync_warning: verified.sync_warning } : {}),
+            ...(dropped_nearby.length ? { dropped_nearby } : {}),
           },
-          result: `Withdraw: ${steps.join('; ') || '(nothing moved)'}`,
+          result: `Withdraw: ${steps.join('; ') || '(nothing moved)'}${verified.sync_warning ? ' ⚠ inventory sync diverged — see sync_warning' : ''}`,
         };
       }
     },

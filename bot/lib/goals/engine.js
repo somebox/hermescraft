@@ -41,6 +41,59 @@ export function saveGoalsStore(filePath, store) {
   fs.writeFileSync(filePath, JSON.stringify(store, null, 2));
 }
 
+export function chestSnapshotsFileForUser(username) {
+  const u = String(username || 'HermesBot').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  return path.join(getDataDir(), `chest-snapshots-${u}.json`);
+}
+
+/**
+ * Load persisted chest snapshots. Returns `{}` on any failure
+ * (missing file, parse error, wrong shape) — never throws.
+ * @param {string} filePath
+ * @returns {Record<string, {at:string, position:{x:number,y:number,z:number}, total:number, items:Array<{name:string,count:number}>}>}
+ */
+export function loadChestSnapshots(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    /** @type {Record<string, any>} */
+    const out = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      if (!val || typeof val !== 'object') continue;
+      const items = Array.isArray(val.items) ? val.items.filter((i) => i && typeof i === 'object') : [];
+      const total = typeof val.total === 'number' ? val.total : items.reduce((s, i) => s + (i.count || 0), 0);
+      const position =
+        val.position && typeof val.position === 'object'
+          ? { x: Number(val.position.x) || 0, y: Number(val.position.y) || 0, z: Number(val.position.z) || 0 }
+          : { x: 0, y: 0, z: 0 };
+      out[key] = {
+        at: typeof val.at === 'string' ? val.at : new Date(0).toISOString(),
+        position,
+        total,
+        items,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Atomically persist chest snapshots: write to <file>.tmp then rename.
+ * Creates the parent directory if it does not exist.
+ * @param {string} filePath
+ * @param {Record<string, any>} snapshots
+ */
+export function saveChestSnapshots(filePath, snapshots) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(snapshots || {}, null, 2));
+  fs.renameSync(tmp, filePath);
+}
+
 const LOG_NAMES = (itemName) =>
   itemName.endsWith('_log') || itemName.endsWith('_wood') || itemName === 'crimson_stem' || itemName === 'warped_stem';
 

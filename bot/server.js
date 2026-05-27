@@ -55,6 +55,9 @@ import {
   goalsFileForUser,
   loadGoalsStore,
   saveGoalsStore,
+  chestSnapshotsFileForUser,
+  loadChestSnapshots,
+  saveChestSnapshots,
   loadPreset,
   listPresets,
   mergePresetIntoStore,
@@ -170,6 +173,16 @@ function persistGoalsToDisk() {
   });
 }
 
+function chestSnapshotsPath() {
+  return chestSnapshotsFileForUser(config.mc.username);
+}
+function loadChestSnapshotsFromDisk() {
+  ctx.goals.chestSnapshots = loadChestSnapshots(chestSnapshotsPath());
+}
+function persistChestSnapshotsToDisk() {
+  saveChestSnapshots(chestSnapshotsPath(), ctx.goals.chestSnapshots || {});
+}
+
 function snapshotChestAtPosition(x, y, z, containerItems) {
   const ix = Math.floor(x);
   const iy = Math.floor(y);
@@ -190,6 +203,10 @@ function snapshotChestAtPosition(x, y, z, containerItems) {
     total,
     items,
   };
+  // Best-effort persistence — never let a write failure break a chest action.
+  try {
+    persistChestSnapshotsToDisk();
+  } catch {}
 }
 
 function pushTaskHistoryRecord(task, finalStatus) {
@@ -473,6 +490,7 @@ const { createBot, startStuckWatchdog } = createBotManager({
   FAIR_PLAY,
   handleChat,
   loadGoalsFromDisk,
+  loadChestSnapshotsFromDisk,
   loadReminders,
   posObj,
   fmt,
