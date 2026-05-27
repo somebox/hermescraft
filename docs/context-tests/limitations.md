@@ -2,7 +2,7 @@
 
 ## Default: `mc` lines only
 
-The matcher and pattern pipeline grades lines that start with `mc ` after light markdown stripping (`scripts/benchmark/grading.mjs` → `extractMcLines`). Everything else is ignored for matchers.
+The matcher and pattern pipeline grades lines that start with `mc ` after light markdown stripping (`scripts/context-tests/grading.mjs` → `extractMcLines`). Everything else is ignored for matchers.
 
 | Bot class | Typical output | Harness fit |
 |-----------|----------------|-------------|

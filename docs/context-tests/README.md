@@ -6,9 +6,9 @@ Signal workbench for **prompt/context iteration** (not live MC, not a production
 
 You suspect a prompt hotspot causes bad `mc` choices. You edit the hotspot under `prompts/experiments/`, re-run a small suite, and read:
 
-1. **This run** — `runs show last`
-2. **A vs B** — `compare last last~1` (or default pairing by `label` / `suite`)
-3. **Trend** — `trend <suite> -n 10` per-scenario scores over recent runs
+1. **This run** — `runs query last` (or `runs show last` for full manifest JSON on stderr)
+2. **A vs B** — `compare <run-a> <run-b>` or `compare last last~1` (auto-pairs prior run with same scenario when one id omitted)
+3. **Trend** — `trend <suite-preset> -n 10` or `trend --scenario <id> -n 10`
 
 Inputs live in **git** (scenarios, experiment configs). Runs store **scores + manifest** only.
 
@@ -20,6 +20,8 @@ Inputs live in **git** (scenarios, experiment configs). Runs store **scores + ma
 ./context-tuner run examples --runs 1 --no-judge --yes -q
 ./context-tuner runs query last
 ```
+
+Suite `examples` includes `pillar_down_hint_honored` and `goals_gap_not_withdraw`. Example experiment write-up: [reports/2026-05-27-goals-gap-context-tuning.md](./reports/2026-05-27-goals-gap-context-tuning.md).
 
 See [agent-workflow.md](./agent-workflow.md) for the full change-validation loop.
 

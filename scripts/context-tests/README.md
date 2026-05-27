@@ -1,12 +1,18 @@
 # Context tests workbench
 
-Offline harness for **prompt/context interpretation**: given persona, skills, synthetic `observe`, and optional prior tool results, does the model emit the expected `mc` calls? No live Mineflayer or Hermes.
+Offline harness for **prompt/context interpretation**: given persona, skills, synthetic `observe`, and optional prior tool results, does the model emit the expected `mc` (or shell) lines? No live Mineflayer or Hermes.
 
-## Layers
+**Entry point:** `./context-tuner` at repo root (dispatches here). Human-oriented docs: `docs/context-tests/README.md`.
 
-1. **Runner** — `node scripts/context-tests/run.mjs` (config-driven)
-2. **Capture** — `python3 scripts/context-tests/capture.py` (Hermes cognition JSONL → draft YAML)
-3. **Experiments** — `configs/experiments/*.yaml` + `compare.mjs`
+## Layout
+
+| Path | Role |
+|------|------|
+| `bench.mjs` + `cli/` | `./context-tuner` subcommands |
+| `run.mjs` | OpenRouter subject + grading + run records |
+| `configs/` | `default.yaml`, `configs/experiments/*.yaml` overrides |
+| `runs/` | Local scores + manifest (gitignored) |
+| `_archive/` | Retired one-shots (`capture.py`, old compare scripts) |
 
 ## Quick start
 
@@ -15,59 +21,47 @@ Offline harness for **prompt/context interpretation**: given persona, skills, sy
 node scripts/context-tests/run.mjs --canary
 ./context-tuner scenario validate --all
 
-# Smoke (one scenario, one run, no judge)
-./context-tuner run pillar_down_hint_honored --runs 1 --no-judge --yes -q
+./context-tuner run examples --runs 1 --no-judge --yes -q
+./context-tuner runs query last
+./context-tuner compare last last~1
 ```
-
-Full docs: `docs/context-tests/README.md`.
 
 Requires `OPENROUTER_API_KEY` or `secrets.yaml` with `openrouter_api_key`.
 
-## CLI (small surface)
+## `run.mjs` flags (direct runner)
 
 | Flag | Purpose |
 |------|---------|
 | `--config` | YAML config (default `configs/default.yaml`) |
-| `--runs-override` | Override per-scenario run count |
+| `--scenario-id` | Run one scenario from config suite filter |
+| `--suite-file` | Suite YAML under `data/context-tests/suites/` |
+| `--runs-override` | Override per-scenario sample count |
 | `--no-judge` | Skip diagnostic LLM judge |
 | `--yes` | Bypass cost preflight |
 | `--estimate-only` | Print cost estimate and exit |
-| `--verify-only` | Run fixture verifier only |
-| `--canary` | Matcher self-tests (no API) |
+| `--verify-only` | Fixture verifier only |
 
-## Matchers
+Prefer `./context-tuner run …` so `--config` on a scenario id is applied correctly (see `cli/run-cmd.mjs`).
 
-Structured grading on `cli-simulate` output (`canonical_name`, `simulated_request.body`). See `grading.mjs`. Pass/fail outcomes: `pass`, `matcher_fail`, `model_error`, `infra_error`, `invalid_fixture`. Judge is **diagnostic only** in v1.
-
-## Capture locations
-
-- Recommended: `HERMESCRAFT_CAPTURE_ROOT` (default `~/.hermescraft/captures`) and `COGNITION_DIR` (set by `scripts/landfolk` on start).
-- Workbench archives slices under `data/context-tests/captures/_raw/<id>/` (gitignored).
-
-## Judge context (mc conventions)
-
-By default the NL judge sees only scenario `description`, expectation text, parsed `simulated_requests`, and agent output — **not** the cheatsheet the subject saw.
-
-To ground the judge on HermesCraft verb naming:
-
-```yaml
-judge:
-  context_mode: mc_conventions      # built-in conventions blurb
-  include_cheatsheet: true          # append docs/mc-cheatsheet.md (truncated)
-  cheatsheet_max_chars: 8000
-```
-
-Per-scenario override: `judge_context: |` in the scenario YAML.
-
-Compare on a saved run without re-calling the subject:
+## Experiments
 
 ```bash
-node scripts/context-tests/compare-judge-context.mjs \
-  scripts/context-tests/runs/<slug>/<stamp>-context.json --samples 3
+./context-tuner variant new goals_gap_not_withdraw my-label --override prompts/landfolk/steve.md
+# edit prompts/experiments/steve-my-label.md + configs/experiments/my-label.yaml
+./context-tuner run scripts/context-tests/configs/experiments/my-label.yaml --runs 3 --no-judge --yes -q
+./context-tuner compare <baseline-run-id> <variant-run-id>
 ```
 
-Experiment config with context enabled: `configs/experiments/safety-experiment-a-mc-context.yaml`.
+## Grading
+
+- **mc** (default): `expect.tool_calls`, `patterns` — see `grading.mjs`, `lib/shell-lines.mjs` for shell.
+- **shell**: `expect.shell_commands` for Steward-style output.
+- NL judge: diagnostic; defaults in `configs/default.yaml` (`mc_conventions`, no cheatsheet).
+
+## Capture (optional)
+
+Draft scenarios from cognition JSONL: `python3 scripts/context-tests/_archive/capture.py` (archived; not required for the workbench loop). Runtime captures: `HERMESCRAFT_CAPTURE_ROOT`, `COGNITION_DIR` from `scripts/landfolk`; workbench may store slices under `data/context-tests/captures/` (gitignored).
 
 ## Overfitting
 
-If a prompt change fixes real play but fails a scenario, fix or retire the scenario — do not treat the scenario as ground truth for production behaviour.
+If a prompt change fixes live play but fails a scenario, fix or retire the scenario — do not treat the scenario as ground truth for production behaviour.

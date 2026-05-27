@@ -99,6 +99,7 @@ The `produce-not-find` Steve paragraph (`**Iron supply_iron` gaps...**` in `prom
 ./context-tuner run goals_gap_not_withdraw --runs 5 --no-judge --yes -q
 ./context-tuner run scripts/context-tests/configs/experiments/produce-not-find.yaml --runs 5 --no-judge --yes -q
 ./context-tuner run scripts/context-tests/configs/experiments/goals-priority-first.yaml --runs 5 --no-judge --yes -q
+# equivalent: ./context-tuner run goals_gap_not_withdraw --config scripts/context-tests/configs/experiments/goals-priority-first.yaml ...
 ./context-tuner compare r_2026-05-27T23-05-28-663Z r_2026-05-27T23-08-17-265Z
 ```
 

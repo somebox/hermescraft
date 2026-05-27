@@ -174,12 +174,11 @@ suite regressed. Matchers/patterns are the reliable signal; the NL judge uses
 ./context-tuner doctor
 node scripts/context-tests/run.mjs --canary
 ./context-tuner scenario validate --all
-./context-tuner run data/context-tests/suites/recovery-hints.yaml --yes
-./context-tuner compare last~1 last
+./context-tuner run examples --runs 1 --no-judge --yes -q
+./context-tuner compare <baseline-run-id> <variant-run-id>
 ```
 
-See `docs/context-tests/README.md`. Scenarios live in `data/context-tests/`.
-Drafts: `data/context-tests/_drafts/`.
+See `docs/context-tests/README.md`. Scenarios live in `data/context-tests/`; drafts in `data/context-tests/_drafts/`. Example tuning report: `docs/context-tests/reports/2026-05-27-goals-gap-context-tuning.md`.
 
 `scripts/benchmark/leaderboard.mjs` aggregates Tier 5 runs into a
 markdown leaderboard.

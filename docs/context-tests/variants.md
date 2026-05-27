@@ -6,8 +6,10 @@ Experiment config: `scripts/context-tests/configs/experiments/<label>.yaml`
 inherits: ../default.yaml
 label: my-label
 suite:
-  preset: recovery-hints
+  preset: recovery-hints          # or scenarios: [goals_gap_not_withdraw]
 overrides:
+  skills:
+    "skills/minecraft-survival.md": "skills/experiments/survival-my-label.md"
   prompts:
     "prompts/landfolk/flint.md": "prompts/experiments/flint-my-label.md"
 ```

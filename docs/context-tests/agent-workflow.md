@@ -8,11 +8,11 @@ Human suspects a prompt hotspot. Agent measures signal, human promotes.
 2. `./context-tuner scenario new <id> --template=policy-rule --profile=prompts/landfolk/flint.md`
 3. Edit `data/context-tests/_drafts/<id>.yaml` (remove all `TODO`)
 4. `./context-tuner scenario validate <id>` then `scenario validate --all`
-5. Baseline: `./context-tuner run <id> --runs 3 --yes -q` → save `run_id` from stdout
-6. `./context-tuner variant new <id> <label> --override prompts/landfolk/flint.md`
-7. Edit `prompts/experiments/...` hotspot
-8. Variant run: `./context-tuner run scripts/context-tests/configs/experiments/<label>.yaml --runs 3 --yes -q`
-9. `./context-tuner compare last last~1` — targeted delta + stderr `WARN` if git/model drift
+5. Baseline: `./context-tuner run <id> --runs 3 --no-judge --yes -q` → save `run_id` from stdout
+6. `./context-tuner variant new <id> <label> --override prompts/landfolk/flint.md` (or `--override skills/minecraft-survival.md`)
+7. Edit `prompts/experiments/...` and/or `skills/experiments/...`; ensure `configs/experiments/<label>.yaml` lists overrides + suite scenarios
+8. Variant run: `./context-tuner run scripts/context-tests/configs/experiments/<label>.yaml --runs 3 --no-judge --yes -q` (or same with `--config` on step 5’s scenario id)
+9. `./context-tuner compare <baseline-run-id> <variant-run-id>` — prefer explicit ids when re-running the same scenario; `compare last last~1` works when the latest two runs are the pair you intend
 10. Side effects: `./context-tuner run <suite> --config scripts/context-tests/configs/experiments/<label>.yaml --yes`
 11. `./context-tuner trend --scenario <id> -n 5` or `./context-tuner trend <suite> -n 5`
 12. Report to human: deltas, warnings, diff path; **do not** commit production prompt without human OK

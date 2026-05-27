@@ -2,7 +2,7 @@
 
 File: `data/context-tests/<id>.yaml` or draft `data/context-tests/_drafts/<id>.yaml`.
 
-`schema_version: 2` fields: `id`, `description`, `category`, `contract_level`, `profile`, `skills`, `observe`, `prior`, `user_prompt`, `memory`, optional `grading_surface` (`mc` | `shell`) or `profile_family` (`worker` | `orchestrator`), `expect.tool_calls` or `expect.shell_commands`, `patterns` (mc only), `expectations`.
+`schema_version: 1` or `2`. Common fields: `id`, `description`, `category`, `contract_level`, `profile`, `skills`, `observe`, `prior`, `user_prompt`, `memory`, optional `grading_surface` (`mc` | `shell`) or `profile_family` (`worker` | `orchestrator`), `expect.tool_calls` or `expect.shell_commands`, `patterns` (mc only), `expectations`. Prefer `schema_version: 2` for new scenarios.
 
 Use **`profile`** (path to persona markdown), not a separate soul field.
 

@@ -21,6 +21,18 @@ Usage:
 Exit codes: 0 ok, 1 usage, 2 validate fail, 3 grading failures, 4 infra abort
 ```
 
+## Running scenarios and experiments
+
+| Target | Example |
+|--------|---------|
+| Scenario id (default config) | `./context-tuner run goals_gap_not_withdraw --runs 3 --no-judge --yes -q` |
+| Scenario + experiment overrides | `./context-tuner run goals_gap_not_withdraw --config scripts/context-tests/configs/experiments/goals-priority-first.yaml --runs 3 --yes -q` |
+| Experiment config (suite in YAML) | `./context-tuner run scripts/context-tests/configs/experiments/goals-priority-first.yaml --runs 3 --yes -q` |
+| Suite preset name | `./context-tuner run examples --yes` |
+| Suite file path | `./context-tuner run data/context-tests/suites/region-protect.yaml --yes` |
+
+After `run -q`, stdout is a single `run_id` (e.g. `r_2026-05-27T23-08-17-265Z`). Exit code `3` means matcher (or pattern) failures in at least one sample — expected when tuning.
+
 ## Conventions
 
 - Progress and errors → **stderr**; machine ids and tables → **stdout**.

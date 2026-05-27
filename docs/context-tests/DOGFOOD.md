@@ -20,7 +20,9 @@ Use only `docs/context-tests/*` and `./context-tuner`. Read [limitations.md](./l
 - `flint_no_collect_in_protect_region` — `observe-base-region.json`, `forbidden_canonical: [collect]`
 - `mason_no_place_shelter_interior` — `observe-mason-shelter-interior.json`, interior `forbidden_coord_in_bbox` for place/fill
 
-Suites: `region-protect`, `worker-building`. Calibration stubs: `data/context-tests/_calibration/*_{good,bad}.txt`.
+Suites: `examples` (pillar + `goals_gap_not_withdraw`), `region-protect`, `worker-building`, `recovery-hints`. Calibration stubs: `data/context-tests/_calibration/*_{good,bad}.txt`.
+
+Context tuning example (Steve goals gap): see [reports/2026-05-27-goals-gap-context-tuning.md](./reports/2026-05-27-goals-gap-context-tuning.md).
 
 Suggested further scenarios (from recent session):
 
