@@ -1114,6 +1114,112 @@ STUB
       chmod +x "$restricted_bin/$blocked_cmd"
     done
   fi
+
+  # Orchestrator (steward) sandbox: process/HTTP/infra blocks with
+  # redirect hints. Keeps file readers + scripts/ + python3 + mc verbs
+  # accessible (those ARE the orchestrator's interface). The blocks
+  # target the failure modes observed g-2026-05-27-8: Steward burned
+  # 56-msg sessions running `ps aux | grep hermes`, `curl /status`,
+  # `hermes landfolk gate-check`, `hermes kanban dispatch --dry-run`
+  # instead of reading the board + roster.
+  if [ "$role" = "orchestrator" ]; then
+    # Process inspection / control — operator concern, not orchestrator
+    for c in ps pgrep pkill top htop fuser lsof; do
+      cat > "$restricted_bin/$c" <<STUB
+#!/bin/sh
+echo "ERROR: '$c' is not available to the orchestrator." >&2
+echo "  Use scripts/roster.py for bot health + assignability." >&2
+echo "  Use scripts/board for kanban state." >&2
+echo "  Use mc status / mc inspect for in-world bot state." >&2
+echo "  Process management is operator (re44) territory." >&2
+exit 126
+STUB
+      chmod +x "$restricted_bin/$c"
+    done
+
+    # Raw HTTP — orchestrator should never poke bot endpoints directly
+    for c in curl wget nc netcat; do
+      cat > "$restricted_bin/$c" <<STUB
+#!/bin/sh
+echo "ERROR: '$c' is blocked for the orchestrator." >&2
+echo "  Don't hit bot HTTP endpoints directly — they're an internal API." >&2
+echo "  Use the mc CLI: mc status, mc chat, mc inspect, mc marks, mc regions." >&2
+echo "  For HTTP-shaped state queries, prefer scripts/base-inventory.py --json or scripts/board-recent.py." >&2
+exit 126
+STUB
+      chmod +x "$restricted_bin/$c"
+    done
+
+    # Shared infrastructure access — not orchestrator scope
+    for c in docker ssh kubectl; do
+      cat > "$restricted_bin/$c" <<STUB
+#!/bin/sh
+echo "ERROR: '$c' touches shared infrastructure — out of orchestrator scope." >&2
+echo "  If something on the MC server / host needs attention, file a [BUG] card for re44." >&2
+exit 126
+STUB
+      chmod +x "$restricted_bin/$c"
+    done
+
+    # Block scripts/landfolk start/stop/restart — those are operator-only
+    # destructive ops. Steward CAN read scripts/landfolk status / logs.
+    cat > "$restricted_bin/landfolk" <<'STUB'
+#!/bin/sh
+case "$1" in
+  status|logs|players|current|''|-h|--help|help)
+    exec /Users/foz/hermescraft/scripts/landfolk "$@"
+    ;;
+  *)
+    echo "ERROR: 'scripts/landfolk $1' is operator-only (start/stop/restart/enable/disable/etc)." >&2
+    echo "  Read-only subcommands available: status, logs, players, current." >&2
+    echo "  If a bot needs restart or rescue, file a [RESCUE_REQUEST] card or escalate to re44." >&2
+    exit 126
+    ;;
+esac
+STUB
+    chmod +x "$restricted_bin/landfolk"
+
+    # Hermes CLI wrapper — allow most subcommands but block infrastructure
+    # ones the orchestrator shouldn't drive (the dispatcher does dispatch;
+    # the operator owns gateway/daemon/plugins).
+    cat > "$restricted_bin/hermes" <<'STUB'
+#!/bin/bash
+# Restricted hermes for orchestrator. Pass-through with subcommand denylist.
+REAL=/Users/foz/.local/bin/hermes
+sub="$1"
+sub2="$2"
+case "$sub" in
+  gateway|daemon|plugins|update|setup|postinstall)
+    echo "ERROR: 'hermes $sub' is operator-owned infrastructure." >&2
+    echo "  Don't restart/reconfigure platform components from the orchestrator loop." >&2
+    echo "  Use scripts/landfolk status to inspect; escalate to re44 if a restart is needed." >&2
+    exit 126
+    ;;
+  kanban)
+    case "$sub2" in
+      dispatch)
+        echo "ERROR: 'hermes kanban dispatch' is the dispatcher's job — it auto-ticks every 60s." >&2
+        echo "  If cards aren't moving, the most common cause is bad parent links or a stuck worker." >&2
+        echo "  Inspect with: hermes kanban list / hermes kanban show <id> / scripts/board." >&2
+        exit 126
+        ;;
+    esac
+    ;;
+  landfolk)
+    case "$sub2" in
+      gate-check)
+        echo "ERROR: 'hermes landfolk gate-check' is run automatically by the dispatcher." >&2
+        echo "  Manual invocation almost never helps — the same tick re-runs it." >&2
+        echo "  Inspect dispatcher activity via: tail /tmp/hermescraft/dispatcher.log" >&2
+        exit 126
+        ;;
+    esac
+    ;;
+esac
+exec "$REAL" "$@"
+STUB
+    chmod +x "$restricted_bin/hermes"
+  fi
   hermes_runtime_path="$restricted_bin:$BIN_DIR:$PATH"
 
   # Disable 'kill' bash builtin so the restricted-bin stub takes effect in agent subshells
