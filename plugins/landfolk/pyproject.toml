@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# Make the plugin importable as `landfolk.*` during tests without
+# needing a `pip install -e .` step. `pythonpath` is enough; pytest
+# picks up the nearest pyproject.toml as rootdir automatically.
+pythonpath = ["."]
+testpaths = ["tests"]

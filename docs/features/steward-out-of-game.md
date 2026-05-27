@@ -3,7 +3,7 @@
 **Status:** Proposed (2026-05-25). Not yet implemented. Awaiting approval to start Phase 1.
 **Owner:** re44 + steward
 **Companion docs:**
-- [kanban-flow-cleanup.md](./kanban-flow-cleanup.md) — current kanban + assignment model (still applies).
+- [landfolk-plugin.md](./landfolk-plugin.md) — landfolk Hermes plugin (per-assignee kanban concurrency + future subsystems). The chat-bridge daemon proposed below is reframed as the plugin's `mc_chat_adapter/` subsystem.
 - [../guides/landfolk-lifecycle.md](../guides/landfolk-lifecycle.md) — current bot/daemon lifecycle.
 
 ## Goal

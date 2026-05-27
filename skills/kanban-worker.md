@@ -222,61 +222,53 @@ kanban_complete(
 
 Shape `metadata` so downstream parsers (reviewers, aggregators, schedulers) can use it without re-reading your prose.
 
-## Creating cards: one-in-flight per assignee (`--parent` rule)
+## Creating cards: per-assignee concurrency is automatic
 
-**Hermes does not enforce per-assignee concurrency** — if you create three cards for `flint` while he already has one running, the dispatcher will spawn three more workers against the same mineflayer body and they will race each other (circles, jerk-teleports, contradictory commands). For Minecraft, the **profile IS the body** — one worker at a time, always.
+Per-assignee concurrency is handled by the `landfolk` plugin's gate-check. Just `kanban_create` normally with the right assignee; if that assignee is busy, the plugin parks the new card via `claim_lock=mutex_park:<assignee>` until the bot frees up, then auto-promotes. **No `--parent` chaining required for mutex.**
 
-**Before `kanban_create` with `--assignee X`**, check if X already has any non-done card. If yes, link the new card to X's in-flight card so it parks in `todo` until X is free.
+`parents=[...]` should now ONLY express real domain dependencies ("Mason crafts pickaxe needs Flint's iron"). `parents` is no longer overloaded as a mutex primitive — `task_links` is purely a prerequisite graph again.
+
+Exception: `[CHAT_REQUEST]` cards (operator whispers) are exempt from the cap. They run alongside the bot's current task by design.
+
+## First-turn spec review — judge clarity before working
+
+When you claim a card, your **first turn** is a spec review. Before doing any in-game work:
+
+1. `kanban_show` and read the body fully.
+2. Judge: are inputs named (coords, marks, chest ids, quantities)? Are acceptance criteria specific? Does the bot have a fit (right tools, right location)?
+3. If the card is clearly underspec'd, **bounce it back** without burning iteration budget:
+   ```python
+   kanban_comment(task_id=os.environ["HERMES_KANBAN_TASK"],
+                  body="clarification-needed: <one sentence naming what's missing>")
+   kanban_reassign(steward)
+   # exit cleanly — no in-game actions
+   ```
+4. If the card is clear enough, proceed.
+
+**Why:** a worker hitting "what does this card even mean?" 30 turns in burns its iteration budget figuring it out. A 1-turn spec review costs almost nothing and routes ambiguity back to Steward where it belongs. This isn't "blocked" — it's a clarification bounce; Steward fixes the spec and reassigns when ready.
+
+## In-place blocker resolution — fix small obstacles before bouncing
+
+When you discover a small obstacle on-site **with materials in hand**, resolve it in place rather than `kanban_block`'ing and walking away. Examples:
+
+- Caves under a foundation cell → place a few dirt blocks to fill.
+- One tile of unwanted vegetation → clear it.
+- A missing torch in a corridor → place one from your inventory.
+- A doorway with a stray block → mine the block.
+
+Comment what you did on the current card so Steward sees the deviation:
 
 ```python
-# Check first — one CLI call.
-import os, subprocess, json
-board = os.environ.get("HERMES_KANBAN_BOARD", "landfolk-ops")
-out = subprocess.check_output([
-    "hermes", "kanban", "--board", board, "list",
-    "--assignee", "flint", "--json"
-])
-in_flight = [c["id"] for c in json.loads(out)
-             if c["status"] in ("running", "ready", "todo")]
-
-if in_flight:
-    # X is busy — chain new card behind their current head.
-    new = kanban_create(
-        title="[SUPPLY] Wood deficit −768 logs",
-        assignee="flint",
-        priority=1,
-        parents=[in_flight[0]],   # ← this is the whole fix
-    )
-else:
-    # X is free — card goes straight to ready, dispatcher picks it up.
-    new = kanban_create(
-        title="[SUPPLY] Wood deficit −768 logs",
-        assignee="flint",
-        priority=1,
-    )
+kanban_comment(task_id=os.environ["HERMES_KANBAN_TASK"],
+               body="in-place fix: filled 3 cave cells under foundation at (372,62,-588); resumed construct.")
 ```
 
-**Why this works:** Hermes' `recompute_ready` only promotes `todo → ready` when ALL parents are `done`. A card parked behind an in-flight parent stays in `todo` automatically. When the parent finishes, the next dispatcher tick promotes the child to `ready` — and only then does a worker spawn. Result: at most one worker per assignee, ever.
+**Only bounce to `kanban_block`** when:
+- The fix would take **>20 turns** of your iteration budget.
+- The fix requires **materials you don't have** (and there's no nearby chest with them).
+- The fix requires **another bot's body** (e.g. you need a stone pickaxe and only have wood).
 
-**For shell-form `hermes kanban create`** (Steward / scripts):
-
-```bash
-PARENT=$(hermes kanban --board landfolk-ops list --assignee flint --json \
-  | jq -r '[.[] | select(.status | IN("running","ready","todo"))] | .[0].id // empty')
-hermes kanban --board landfolk-ops create "[SUPPLY] Wood deficit" \
-  --assignee flint --priority 1 \
-  ${PARENT:+--parent "$PARENT"}
-```
-
-The `${PARENT:+--parent "$PARENT"}` syntax expands to nothing when PARENT is empty (assignee is free), so you don't need a separate code path.
-
-**If you forgot to check and ended up with parallel cards on the same assignee**, link them post-hoc:
-
-```bash
-hermes kanban link <existing_in_flight_card> <new_card>
-```
-
-The next dispatcher tick's `claim_task` will see "parent not done" and demote the new card to `todo`. No restart needed.
+The previous pattern was: discover blocker → block → Steward triages → files a new SUPPLY card → reassigns to you → spawn fresh worker → walk all the way back to the site. That's expensive (4-5 task transitions, 2 spawns, lots of movement) when the in-place fix would have been 5 turns. Bounce only when bouncing is genuinely cheaper.
 
 ## Claiming cards you actually created
 

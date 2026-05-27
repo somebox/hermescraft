@@ -625,6 +625,40 @@ set_profile_descriptions() {
   done
 }
 
+install_landfolk_plugin() {
+  # Idempotent: ensure the landfolk plugin is symlinked into
+  # ~/.hermes/plugins/ and enabled in config. The plugin owns
+  # per-assignee kanban concurrency (gate-check + hooks). See
+  # docs/features/landfolk-plugin.md.
+  local plugin_src="$ROOT/plugins/landfolk"
+  local plugin_dst="$HOME/.hermes/plugins/landfolk"
+
+  if [ ! -d "$plugin_src" ]; then
+    echo "  landfolk plugin source missing at $plugin_src — skipping install" >&2
+    return 0
+  fi
+
+  # Symlink (idempotent — -fn replaces existing link, never follows a dir).
+  if [ "$DRY_RUN" = true ]; then
+    echo "DRY: ln -sfn $plugin_src $plugin_dst"
+  else
+    mkdir -p "$(dirname "$plugin_dst")"
+    ln -sfn "$plugin_src" "$plugin_dst"
+    echo "  landfolk plugin symlinked: $plugin_dst -> $plugin_src"
+  fi
+
+  # Enable (idempotent — `hermes plugins enable` is a no-op if already on).
+  if [ "$DRY_RUN" = true ]; then
+    echo "DRY: hermes plugins enable landfolk"
+  else
+    if hermes plugins enable landfolk >/dev/null 2>&1; then
+      echo "  landfolk plugin enabled"
+    else
+      echo "  WARN: 'hermes plugins enable landfolk' returned non-zero — check 'hermes plugins list'" >&2
+    fi
+  fi
+}
+
 patch_kanban_config() {
   echo
   echo "===== ~/.hermes/config.yaml kanban orchestration ====="
@@ -687,6 +721,7 @@ for p in "${WORKER_PROFILES[@]}"; do
   setup_worker "$p"
 done
 setup_steward
+install_landfolk_plugin
 if [ "$APPLY_CONFIG" = true ]; then
   echo
   echo "===== --apply-config: SOUL/skills + kanban merge (skipped board/descriptions) ====="

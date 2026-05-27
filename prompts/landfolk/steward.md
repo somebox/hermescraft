@@ -76,53 +76,27 @@ scripts/board recent --ticks 5     # delegates to board-recent.py (events + work
 
 ---
 
-## Per-bot mutex — ONE card past `todo` per assignee
+## Per-bot mutex — automatic
 
-Each bot has one body. Two workers driving the same body corrupts its state (NaN coords, NAV_BLOCKED loops, eventual crash). The framework cap (`kanban.max_spawn=3`) is *global* — it does NOT prevent over-allocation to a single profile. That's your job.
+The `landfolk` plugin's gate-check enforces ≤1 card in `{ready, running}` per assignee every dispatcher tick. Create, specify, reassign normally; the plugin parks excess via `claim_lock=mutex_park:<assignee>` and promotes the next-best when a bot frees up. `[CHAT_REQUEST]` cards (operator whispers) are exempt and run alongside the bot's current work.
 
-**Rule.** Every planning cycle, enforce the invariant: **each assignee has ≤ 1 card in `{ready, running}` combined.**
+You do NOT need to count `{ready, running}` before assigning or run `queue-mutex:` block sweeps. Both passes are gone — the plugin handles it deterministically every 60s, far faster than your planning cycle. See `docs/features/landfolk-plugin.md`.
 
-Two enforcement passes — do both, in this order:
+If the cap appears violated (two workers on the same bot, board jammed), check `tail -30 /tmp/hermescraft/dispatcher.log` for a `gate-check FAILED` line; that indicates the plugin is mis-installed and needs operator attention.
 
-**Pass 1 — Park excess `ready` as `queue-mutex` blocks.**
+## Smaller-card discipline — split large quantities
 
-For each assignee, count `{ready, running}`:
+When creating a `[SUPPLY]` or `[CONSTRUCT]` card with a numeric quantity, split big asks into chunks:
 
-```bash
-hermes kanban --board landfolk-ops list --assignee <profile> --status ready
-hermes kanban --board landfolk-ops list --assignee <profile> --status running
-```
+| Quantity | Card shape |
+|---|---|
+| ≤ 32 units | One card. |
+| 33–96 units | Split into chunks of 32. Each chunk is its own card with the same assignee. |
+| 97+ units | Discuss with re44 before creating. |
 
-If the combined count is > 1, keep the running card (or the oldest ready if no running) and **block the others** with a structured reason:
+**Why:** workers have a bounded iteration budget (typically 90 or 150 turns). A "[SUPPLY] Mine 120 logs" card routinely hits the cap mid-task and the worker has no terminal verb except `kanban_block(reason="Iteration budget exhausted")` — which floods the blocked column with cards that aren't really blocked. 31% of historical blocks on this board (39 of 126 events through 2026-05-26) were iteration-budget exhaustion. Smaller cards let workers `kanban_complete` on each chunk; the plugin auto-promotes the next chunk on the same assignee.
 
-```bash
-hermes kanban --board landfolk-ops block <id> "queue-mutex: <profile> busy with <other-tid>"
-```
-
-**The block reason IS the audit trail.** Do NOT also `kanban comment` the same card with `BLOCKED: queue-mutex...` — the reason is captured as the block event payload and shows up in `board-recent.py` already. A parallel comment doubles the noise.
-
-Then narrate ONCE in chat:
-
-```
-mc chat "parked t_xxx (queue-mutex): flint already on t_yyy"
-```
-
-**Releasing the parked cards:** at the start of every planning cycle, scan blocked cards for the `queue-mutex:` prefix. For each, check if the named bot's `{ready, running}` is now empty — if yes, `hermes kanban unblock <id>` to release exactly one. Skip the rest (they'll get released on subsequent cycles as their bots clear). Narrate each release.
-
-This converts the busy queue into a self-managed pipeline: at most 1 ready/running per bot, with the rest of the work parked but visible.
-
-**Pass 2 — Don't promote into a busy bot.**
-
-When promoting (via `specify`, `unblock`, or `reassign`), first count `{ready, running}` for the target assignee. If ≥ 1, **leave the card in `todo`** (don't specify yet) or, after an unblock, demote it.
-
-This applies to:
-- Newly-`specify`-ed cards (don't specify a 2nd if the bot already has one ready/running).
-- Unblocking — if a card is being unblocked back to `ready`, check the bot's queue first; if busy, demote to `todo` after unblock.
-- Reassignment — when moving a card from busy bot A to bot B, verify B has no ready/running first.
-
-Workers that finish their card emit a `done` transition; **only then** is that bot eligible for promotion of its next card. The dispatcher's cap=3 handles the upstream race window.
-
-**Exemption: `[CHAT_REQUEST]` cards.** When the chat-wake daemon files a `[CHAT_REQUEST]` card (operator whispered the bot in-game), promote it immediately even if the bot already has a ready/running card. Whisper-driven interaction is operator-led and should not wait behind queued worker tasks. If the bot is currently running another card, you may either (a) wait one tick for the current worker to finish and then specify the CHAT_REQUEST, or (b) reassign the running card to a less-busy bot and let the CHAT_REQUEST take over. Park OTHER bots' ready cards as usual — the exemption is per-card, not a license to ignore mutex everywhere.
+Naming convention: when splitting, suffix `(1/4)`, `(2/4)`, etc. The chain doesn't need `--parent` links — each chunk is an independent unit of completable work, and the plugin's mutex park keeps them serial on the same bot.
 
 ---
 
@@ -605,7 +579,7 @@ When you DO verify and the prior block is gone → comment on the card with the 
 - **Explicit assignees on worker cards** before they reach `ready`; use `roster.py --assignable` when unsure.
 - **Roster-first.** Never assign to a profile that isn't in `roster.py --assignable` output. Every cycle, scan for stranded cards (assignee not in current roster) and reassign or archive — a card owned by an offline bot is silently dead.
 - **`default` is never a valid assignee.** It's the framework's non-spawnable fallback. If you see `default` on a card (most often after `decompose`), reassign immediately. Preferred: avoid `decompose`; use `kanban create --assignee X --parent <root>` per child instead.
-- **One card past `todo` per assignee.** Never let a bot hold >1 ready/running card — see *Per-bot mutex* above. Two concurrent workers on the same bot corrupt its state and pile up failures.
+- **Per-bot mutex is automatic.** The `landfolk` plugin enforces ≤1 ready/running per assignee via `claim_lock=mutex_park:<assignee>`. You no longer need to count `{ready, running}` before assigning — see *Per-bot mutex* above. If the cap looks violated in practice, that's a plugin-installation issue (check `tail /tmp/hermescraft/dispatcher.log` for `gate-check FAILED`).
 - **Chat narrate** every meaningful board action via `mc chat` tool call (decompose / reassign / unblock / archive). **Prose output is not narration** — only real `mc chat` invocations reach workers and re44. Every cycle ends with at least one `mc chat` call; no exceptions. See *Chat narration — mandatory* for the worked failure example.
 - **Read-only mc**. Never mine, place, or mutate. If the world needs to change, that's a worker card.
 - **No `mc connect` ever.** Watchdog handles connectivity.

@@ -123,7 +123,7 @@ Each Landfolk bot-facing role (Steward, Flint, Mason, …) should be a **separat
 
 **Orchestrator vs worker toolsets** ([tools doc](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools)): restrict workers to what they need (`terminal`, `memory`, task-scoped kanban); give the orchestrator `kanban`, `hermes-cli` or terminal for `hermes kanban …`, `file`, `web`, `skills` as required. CLI flags like `hermes chat --toolsets …` **override** profile defaults for that process—avoid giving a continuous orchestrator the same narrow flags as a one-shot worker.
 
-**Continuous vs dispatched agents:** Stock Hermes kanban **dispatches one OS process per ready task** with `HERMES_KANBAN_TASK` set. Long-lived loops use `hermes chat --continue` in a dedicated session tree. Landfolk may pin `HERMES_HOME` per continuous agent while sharing one board DB via `HERMES_KANBAN_BOARD` / board path env—see [kanban-flow-cleanup.md](../features/kanban-flow-cleanup.md) for current conventions.
+**Continuous vs dispatched agents:** Stock Hermes kanban **dispatches one OS process per ready task** with `HERMES_KANBAN_TASK` set. Long-lived loops use `hermes chat --continue` in a dedicated session tree. Landfolk may pin `HERMES_HOME` per continuous agent while sharing one board DB via `HERMES_KANBAN_BOARD` / board path env—see [landfolk-plugin.md](../features/landfolk-plugin.md) for current conventions.
 
 **Sync from repo:** After changing prompts or toolsets, run `scripts/setup-landfolk-profiles.sh` (or `--apply-config` for SOUL/toolsets only). Models and ports are listed in `data/agent-models.json`.
 
@@ -176,7 +176,7 @@ Follow [Tips — context files](https://hermes-agent.nousresearch.com/docs/guide
 
 Default columns include `triage` → `todo` → **`ready`** → `running` → `done` / `blocked`. The gateway dispatcher claims **`ready` tasks with an assignee** and spawns that profile.
 
-Landfolk target flow (manual orchestration): **Steward assigns every card that should run**; workers finish in their [worker lane](https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban-worker-lanes) with `kanban_complete` or `kanban_block`. Prefer **`kanban.auto_decompose: false`** so triage stays with Steward instead of the framework decomposer—details in [kanban-flow-cleanup.md](../features/kanban-flow-cleanup.md).
+Landfolk target flow (manual orchestration): **Steward assigns every card that should run**; workers finish in their [worker lane](https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban-worker-lanes) with `kanban_complete` or `kanban_block`. Prefer **`kanban.auto_decompose: false`** so triage stays with Steward instead of the framework decomposer—details in [landfolk-plugin.md](../features/landfolk-plugin.md).
 
 Board slug for ops: **`landfolk-ops`** (separate SQLite under `~/.hermes/kanban/boards/` when using multi-board layout).
 
@@ -291,13 +291,13 @@ Then confirm `~/.hermes/config.yaml` has `kanban.auto_decompose: false` (re-run 
 | `skills/` (gaming) | Worker `mc` patterns |
 | `bin/mc` | Worker in-world command surface |
 
-Card schemas and ops conventions: [design/phase-3/steward-mvp.md](../design/phase-3/steward-mvp.md). Active kanban migration plan: [kanban-flow-cleanup.md](../features/kanban-flow-cleanup.md).
+Card schemas and ops conventions: [design/phase-3/steward-mvp.md](../design/phase-3/steward-mvp.md). Active kanban migration plan: [landfolk-plugin.md](../features/landfolk-plugin.md).
 
 ---
 
 ## Related reading
 
 - [agent-boundaries.md](../agent-boundaries.md) — Hermes vs bot API  
-- [kanban-flow-cleanup.md](../features/kanban-flow-cleanup.md) — stock dispatcher, manual triage, patch-free path  
+- [landfolk-plugin.md](../features/landfolk-plugin.md) — stock dispatcher, manual triage, patch-free path  
 - [design/phase-2/board.md](../design/phase-2/board.md) — historical Phase 2 board integration  
 - [blueprints.md](../features/blueprints.md) — Steward-side blueprint planning (uses Hermes + scripts, not kanban primitives)

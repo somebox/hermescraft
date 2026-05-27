@@ -43,7 +43,8 @@ High-level references for working on HermesCraft.
 | [features/designated-regions-verification.md](features/designated-regions-verification.md) | Live-world verification checklist |
 | [features/sign-anchored-placemarks.md](features/sign-anchored-placemarks.md) | Sign-based placemark design |
 | [features/blueprints.md](features/blueprints.md) | GrabCraft JSON + future `mc construct` sketch |
-| [features/kanban-flow-cleanup.md](features/kanban-flow-cleanup.md) | Kanban / Steward loop cleanup plan (MVP + backlog) |
+| [features/landfolk-plugin.md](features/landfolk-plugin.md) | Hermes plugin for landfolk: kanban per-assignee concurrency, future home for mc-tools / compressor / memory / chat-adapter subsystems |
+| [features/steward-out-of-game.md](features/steward-out-of-game.md) | Webhook-driven Steward (no in-game body) — future-phase design |
 
 ## Planning (logs and scratch)
 

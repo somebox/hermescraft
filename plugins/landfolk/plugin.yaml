@@ -1,0 +1,21 @@
+name: landfolk
+version: 0.1.0
+description: |
+  Landfolk Minecraft project Hermes integrations. Phase 1 ships the
+  `orchestrator/` subsystem: a per-assignee kanban concurrency cap for
+  the landfolk-ops board (one card in {ready, running} per profile;
+  excess parks in todo). Replaces three independent userland mutex
+  layers — Steward SOUL queue-mutex passes, worker SOUL --parent rule,
+  and 322 lines of inline Python in landfolk-dispatcher.sh.
+
+  Future subsystems (placeholder directories present; not loaded yet):
+    - mc_tools/    custom mc_* primitives as native Hermes tools
+    - compressor/  mc-aware context engine for observation outputs
+    - memory/      mc-aware memory provider for locations + regions
+    - mc_chat_adapter/  platform adapter for in-game @steward routing
+
+  Full spec: hermescraft/docs/features/landfolk-plugin.md
+author: jeremy@somebox.com
+kind: standalone
+hooks:
+  - post_tool_call
