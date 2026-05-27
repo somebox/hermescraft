@@ -3,6 +3,36 @@ import { Vec3 } from 'vec3';
 import { ensureWithinReach } from './_helpers.js';
 import { canSeeBlockFaces } from './_los.js';
 import { fail } from '../shared/action-contract.js';
+import { evaluateStock } from '../runtime/base-goals.js';
+
+/**
+ * Build a low-stock hints object from a container snapshot. For each
+ * item in the snapshot, look up its base-goals threshold and surface a
+ * hint when stock is at or below target_min/target_ok. Used by
+ * withdraw + deposit to embed the hint at exactly the moment the agent
+ * needs to act on it (no separate cycle, no SOUL lookup).
+ */
+function buildLowStockHints(containerSnapshotArr) {
+  if (!Array.isArray(containerSnapshotArr)) return null;
+  const hints = [];
+  for (const entry of containerSnapshotArr) {
+    if (!entry || typeof entry.name !== 'string') continue;
+    const assessment = evaluateStock(entry.name, entry.count);
+    if (assessment.hint) {
+      hints.push({
+        item: entry.name,
+        count: entry.count,
+        resource: assessment.resource,
+        target_min: assessment.target_min,
+        target_ok: assessment.target_ok,
+        designated_site: assessment.designated_site,
+        below_min: assessment.below_min,
+        hint: assessment.hint,
+      });
+    }
+  }
+  return hints.length > 0 ? hints : null;
+}
 
 // Snapshots older than this surface with `stale: true` in chest_search and
 // sort behind fresh hits. Override via MC_CHEST_STALE_HOURS env var.
@@ -460,6 +490,15 @@ export function createContainerActions(deps) {
           };
         }
 
+        // Phase C7: after deposit, surface a recovery hint if any
+        // tracked resource is now ABOVE its target_ok (= "we're stocked,
+        // no need to chase more"). The negative case — depositing while
+        // still below target_min — also surfaces as a hint, signalling
+        // "good work but still under the floor; more needed".
+        const lowStockHints = buildLowStockHints(containerAfter);
+        const lowStockSuffix = lowStockHints && lowStockHints[0]
+          ? ` ${lowStockHints[0].hint}`
+          : '';
         return {
           ok: true,
           data: {
@@ -475,8 +514,9 @@ export function createContainerActions(deps) {
             not_found_skipped: not_found,
             ...(verified.sync_warning ? { sync_warning: verified.sync_warning } : {}),
             ...(dropped_nearby.length ? { dropped_nearby } : {}),
+            ...(lowStockHints ? { low_stock_hints: lowStockHints } : {}),
           },
-          result: `Deposit: ${steps.join('; ') || '(nothing moved)'}`,
+          result: `Deposit: ${steps.join('; ') || '(nothing moved)'}${lowStockSuffix}`,
         };
       }
     },
@@ -577,6 +617,15 @@ export function createContainerActions(deps) {
           };
         }
 
+        // Phase C7: low-stock hints — for each item in the chest after the
+        // withdraw, if its post-withdraw count falls under the
+        // base-goals.yaml threshold, surface a hint so the agent sees
+        // "this chest is now low — file a [SUPPLY]" at the moment of
+        // action, not in a separate cycle.
+        const lowStockHints = buildLowStockHints(containerAfter);
+        const lowStockSuffix = lowStockHints && lowStockHints[0]
+          ? ` ${lowStockHints[0].hint}`
+          : '';
         return {
           ok: true,
           data: {
@@ -592,8 +641,9 @@ export function createContainerActions(deps) {
             not_found_skipped: not_found,
             ...(verified.sync_warning ? { sync_warning: verified.sync_warning } : {}),
             ...(dropped_nearby.length ? { dropped_nearby } : {}),
+            ...(lowStockHints ? { low_stock_hints: lowStockHints } : {}),
           },
-          result: `Withdraw: ${steps.join('; ') || '(nothing moved)'}${verified.sync_warning ? ' ⚠ inventory sync diverged — see sync_warning' : ''}`,
+          result: `Withdraw: ${steps.join('; ') || '(nothing moved)'}${verified.sync_warning ? ' ⚠ inventory sync diverged — see sync_warning' : ''}${lowStockSuffix}`,
         };
       }
     },

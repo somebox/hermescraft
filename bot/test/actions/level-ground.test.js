@@ -499,6 +499,85 @@ test('level: explicit block= wins over region palette', async () => {
   assert.equal(res.data.fill_cascade_reason, 'explicit');
 });
 
+test('level: tier_2 fallback fill emits a hint and records placed_by_block', async () => {
+  const fakeRegionStore = {
+    at() { return []; },
+    resolve() { return { decision: 'allow', reason: 'OUTSIDE_ALL_REGIONS', winning_region: null, losing_regions: [], matched_capability: null }; },
+  };
+  // 1×1 hole at Y=64 → needs exactly one fill placement. Bot inventory
+  // carries oak_planks (tier_2) only; the cascade is fill_default
+  // (dirt/sand/gravel/cobblestone/stone — all tier_1). When placing the
+  // bot picks the first cascade item ACTUALLY IN INVENTORY, which is
+  // none of the tier_1 set — so it falls through. To exercise the
+  // tier_2 fallback we pass block=oak_planks explicitly (the cascade
+  // becomes [oak_planks]) and verify the hint surfaces.
+  const terrain = new Map();
+  // No fill block at (0, 64, 0); bot must place something here.
+  // Solid neighbor for placement:
+  terrain.set(`0,64,1`, { name: 'cobblestone' });
+  const bot = {
+    entity: { position: { x: 0, y: 65, z: 0, distanceTo: () => 0 } },
+    game: { minY: -64, height: 384 },
+    inventory: { items: () => [{ name: 'oak_planks', count: 64 }] },
+    blockAt({ x, y, z }) {
+      const t = terrain.get(`${x},${y},${z}`);
+      if (!t) return { name: 'air', boundingBox: 'empty', position: { x, y, z } };
+      return { name: t.name, boundingBox: 'block', position: { x, y, z } };
+    },
+    equip: async () => {},
+    placeBlock: async () => {},
+  };
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 0, z2: 0, y: 64, block: 'oak_planks' });
+  assert.equal(res.ok, true);
+  // 1 cell filled with oak_planks
+  assert.equal(res.data.placed_by_block.oak_planks, 1);
+  // Tier-2 fallback hint surfaces both in data + result
+  assert.ok(res.data.fill_fallback_hint);
+  assert.match(res.data.fill_fallback_hint, /tier_2/);
+  assert.match(res.data.fill_fallback_hint, /oak_planks/);
+  assert.match(res.result, /tier_2\+ fallback/);
+});
+
+test('level: tier_1 fill emits NO fallback hint', async () => {
+  const fakeRegionStore = {
+    at() { return []; },
+    resolve() { return { decision: 'allow', reason: 'OUTSIDE_ALL_REGIONS', winning_region: null, losing_regions: [], matched_capability: null }; },
+  };
+  const terrain = new Map();
+  terrain.set(`0,64,1`, { name: 'cobblestone' });
+  const bot = {
+    entity: { position: { x: 0, y: 65, z: 0, distanceTo: () => 0 } },
+    game: { minY: -64, height: 384 },
+    inventory: { items: () => [{ name: 'dirt', count: 64 }] },
+    blockAt({ x, y, z }) {
+      const t = terrain.get(`${x},${y},${z}`);
+      if (!t) return { name: 'air', boundingBox: 'empty', position: { x, y, z } };
+      return { name: t.name, boundingBox: 'block', position: { x, y, z } };
+    },
+    equip: async () => {},
+    placeBlock: async () => {},
+  };
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 0, z2: 0, y: 64 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.placed_by_block.dirt, 1);
+  assert.equal(res.data.fill_fallback_hint, undefined);
+  assert.doesNotMatch(res.result, /tier_2/);
+});
+
 test('level: surface_y wins over y; block_y derived as surface_y - 1', async () => {
   const fakeRegionStore = { at() { return []; } };
   const terrain = new Map();

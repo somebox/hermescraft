@@ -280,6 +280,10 @@ export function createBuildingTerrainPart(deps) {
 
       let dug = 0, placed = 0, skipped = 0, failed = 0;
       const errors = [];
+      // Track per-block placements so we can detect tier_2 fallback (= a
+      // placement happened because tier_1 was unavailable in inventory).
+      /** @type {Record<string, number>} */
+      const placedByBlock = {};
 
       for (let x = minX; x <= maxX; x++) {
         for (let z = minZ; z <= maxZ; z++) {
@@ -326,6 +330,7 @@ export function createBuildingTerrainPart(deps) {
                   recordRecentPlace(ctx, { x, y: targetY, z }, blockName);
                   didPlace = true;
                   placed++;
+                  placedByBlock[blockName] = (placedByBlock[blockName] || 0) + 1;
                   break;
                 } catch { /* try next face */ }
               }
@@ -352,6 +357,18 @@ export function createBuildingTerrainPart(deps) {
         }
       }
 
+      // Phase C7: tier-2 fallback hint. If any placement used a non-tier_1
+      // block (planks, smooth_stone, etc.), that's the patchwork failure
+      // mode in miniature — the agent should know it ran out of cheap fill.
+      const tier2PlacedBlocks = Object.entries(placedByBlock).filter(
+        ([nm, n]) => n > 0 && tierOf(nm) !== null && tierOf(nm) >= 2,
+      );
+      let fillFallbackHint = null;
+      if (tier2PlacedBlocks.length > 0) {
+        const summary = tier2PlacedBlocks.map(([nm, n]) => `${n}× ${nm} (tier_${tierOf(nm)})`).join(', ');
+        fillFallbackHint = `⚠ tier_2+ fallback fill used (${summary}). Restock tier_1 (dirt/sand/cobble) before the next cleanup card — these placements stand out visually.`;
+      }
+
       return {
         ok: true,
         data: {
@@ -364,10 +381,12 @@ export function createBuildingTerrainPart(deps) {
           surface_y: targetY + 1,
           fill_cascade: fillCascade,
           fill_cascade_reason: cascadeReason,
+          placed_by_block: placedByBlock,
+          ...(fillFallbackHint ? { fill_fallback_hint: fillFallbackHint } : {}),
           up_range: upRange,
           errors: errors.slice(0, 5),
         },
-        result: `level ${w}×${l} block_y=${targetY} (surface_y=${targetY + 1}): dug ${dug}, placed ${placed}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''} [cascade=${cascadeReason}]`,
+        result: `level ${w}×${l} block_y=${targetY} (surface_y=${targetY + 1}): dug ${dug}, placed ${placed}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''} [cascade=${cascadeReason}]${fillFallbackHint ? ` ${fillFallbackHint}` : ''}`,
       };
     },
 
