@@ -74,17 +74,31 @@ function defaultCapabilities(profile, intent) {
  * Normalize a region: fill profile/intent, recompute capabilities from
  * profile+intent (so changing intent via sign upsert refreshes caps).
  *
+ * Operator-level capability overrides: if the region carries an explicit
+ * `capability_overrides` object, those keys override the intent defaults
+ * after normalization. Use this to grant `allow_ad_hoc_*` inside a
+ * protect-intent region without flipping the intent (e.g. an active
+ * build site that still wants protect semantics on the perimeter).
+ * The overrides survive `applyProfile` invocations — unlike a manually-
+ * edited `capabilities` block, which would be normalized away on the
+ * next sign upsert or store reload.
+ *
  * @param {object} region
  * @returns {object}
  */
 export function applyProfile(region) {
   const profile = region.profile || 'base';
   const intent = region.intent || PROFILE_DEFAULT_INTENT[profile] || 'protect';
+  const baseCaps = defaultCapabilities(profile, intent);
+  const overrides = region.capability_overrides && typeof region.capability_overrides === 'object'
+    ? region.capability_overrides
+    : null;
+  const capabilities = overrides ? { ...baseCaps, ...overrides } : baseCaps;
   return {
     ...region,
     intent,
     profile,
-    capabilities: defaultCapabilities(profile, intent),
+    capabilities,
   };
 }
 

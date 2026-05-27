@@ -83,6 +83,96 @@ export function createBotHttpListener(deps) {
   const path = url.pathname;
 
   try {
+    // ── Mixed-method endpoints (do own dispatch; must be top-level) ────
+    // These handle GET/POST/DELETE on the same path and live before the
+    // method-specific branches so non-GET requests don't get swallowed
+    // by the catch-all 404. Caught 2026-05-27: Mason's `mc task_context
+    // set hut1` (POST) was returning "Unknown endpoint" because this
+    // block lived inside the `if (req.method === 'GET')` branch — only
+    // GET reached the handler; POST/DELETE fell through to the 404 at
+    // line ~889. The verb is documented at registry.mjs:1716 and is the
+    // worker pattern for protect-region worksite grants — without it,
+    // every protect-intent region is unusable for build work.
+    if (path === '/task-context') {
+      const TASK_DEFAULT_MS = 30 * 60 * 1000;
+      const TASK_MAX_MS = 4 * 60 * 60 * 1000;
+      if (req.method === 'GET') {
+        return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
+      }
+      if (req.method === 'DELETE') {
+        ctx.runtime.taskContext = null;
+        return respond(res, 200, { ok: true, data: { cleared: true } });
+      }
+      if (req.method === 'POST') {
+        let body;
+        try {
+          body = await parseBody(req);
+        } catch (e) {
+          return respond(res, 400, { ok: false, error: { message: e.message } });
+        }
+        const cardId = String(body.card_id || body.card || '').trim();
+        if (!cardId) {
+          return respond(res, 400, {
+            ok: false,
+            error: { code: 'MISSING_CARD_ID', message: 'task-context requires card_id' },
+          });
+        }
+        const now = Date.now();
+        let expiresAt = now + TASK_DEFAULT_MS;
+        if (body.expires_at_ms != null && Number.isFinite(Number(body.expires_at_ms))) {
+          expiresAt = Number(body.expires_at_ms);
+        } else if (body.expires_min != null && Number.isFinite(Number(body.expires_min))) {
+          expiresAt = now + Number(body.expires_min) * 60 * 1000;
+        }
+        const maxExp = now + TASK_MAX_MS;
+        if (expiresAt > maxExp) expiresAt = maxExp;
+        if (expiresAt < now) expiresAt = now + TASK_DEFAULT_MS;
+        const worksiteRaw = body.worksite_region ?? body.worksite ?? null;
+        const worksite_region =
+          worksiteRaw != null && String(worksiteRaw).trim() !== ''
+            ? normalizeId(worksiteRaw)
+            : null;
+        ctx.runtime.taskContext = {
+          card_id: cardId,
+          worksite_region,
+          expires_at: expiresAt,
+          source: String(body.source || 'http'),
+        };
+        return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
+      }
+      return respond(res, 405, { ok: false, error: { message: 'Method not allowed' } });
+    }
+
+    // POST /regions/reload — re-read regions JSON from disk + re-apply
+    // profile normalization. Lets the operator edit
+    // data/regions-world.json (e.g. flip an intent or add a
+    // capability_overrides block) and have the change take effect in
+    // running bots without a restart. Caught 2026-05-27: file edits
+    // were invisible to the in-memory cache, which is loaded once at
+    // createRegionStore() time.
+    if (path === '/regions/reload' && req.method === 'POST') {
+      ensureBot();
+      const store = ctx.runtime.regions;
+      if (!store) {
+        return respond(res, 503, { ok: false, error: { message: 'regions store not initialized' } });
+      }
+      store.reload();
+      const regions = store.list();
+      return respond(res, 200, {
+        ok: true,
+        data: {
+          world: store.world,
+          region_count: regions.length,
+          regions: regions.map((r) => ({
+            id: r.id,
+            intent: r.intent,
+            profile: r.profile,
+            capabilities: r.capabilities,
+          })),
+        },
+      });
+    }
+
     // ── GET endpoints (observation) ──────────────
     if (req.method === 'GET') {
       if (path === '/health' || path === '/') {
@@ -179,56 +269,6 @@ export function createBotHttpListener(deps) {
       if (path === '/marks') {
         ensureBot();
         return respond(res, 200, { ok: true, data: { marks: buildMarksListApi() } });
-      }
-
-      if (path === '/task-context') {
-        const TASK_DEFAULT_MS = 30 * 60 * 1000;
-        const TASK_MAX_MS = 4 * 60 * 60 * 1000;
-        if (req.method === 'GET') {
-          return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
-        }
-        if (req.method === 'DELETE') {
-          ctx.runtime.taskContext = null;
-          return respond(res, 200, { ok: true, data: { cleared: true } });
-        }
-        if (req.method === 'POST') {
-          let body;
-          try {
-            body = await parseBody(req);
-          } catch (e) {
-            return respond(res, 400, { ok: false, error: { message: e.message } });
-          }
-          const cardId = String(body.card_id || body.card || '').trim();
-          if (!cardId) {
-            return respond(res, 400, {
-              ok: false,
-              error: { code: 'MISSING_CARD_ID', message: 'task-context requires card_id' },
-            });
-          }
-          const now = Date.now();
-          let expiresAt = now + TASK_DEFAULT_MS;
-          if (body.expires_at_ms != null && Number.isFinite(Number(body.expires_at_ms))) {
-            expiresAt = Number(body.expires_at_ms);
-          } else if (body.expires_min != null && Number.isFinite(Number(body.expires_min))) {
-            expiresAt = now + Number(body.expires_min) * 60 * 1000;
-          }
-          const maxExp = now + TASK_MAX_MS;
-          if (expiresAt > maxExp) expiresAt = maxExp;
-          if (expiresAt < now) expiresAt = now + TASK_DEFAULT_MS;
-          const worksiteRaw = body.worksite_region ?? body.worksite ?? null;
-          const worksite_region =
-            worksiteRaw != null && String(worksiteRaw).trim() !== ''
-              ? normalizeId(worksiteRaw)
-              : null;
-          ctx.runtime.taskContext = {
-            card_id: cardId,
-            worksite_region,
-            expires_at: expiresAt,
-            source: String(body.source || 'http'),
-          };
-          return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
-        }
-        return respond(res, 405, { ok: false, error: { message: 'Method not allowed' } });
       }
 
       if (path === '/regions') {

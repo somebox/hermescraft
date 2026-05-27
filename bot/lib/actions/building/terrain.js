@@ -1,6 +1,6 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
-import { equipForDig, isDigProtected, recordRecentPlace } from '../../runtime/dig-tools.js';
+import { equipForDig, isDigProtected, recordRecentPlace, columnTopSolid } from '../../runtime/dig-tools.js';
 import { shouldSkipDigAt, shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
 import { cardinalDelta } from '../_directions.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from '../_helpers.js';
@@ -144,12 +144,14 @@ export function createBuildingTerrainPart(deps) {
         }
       }
       const totalBlocks = W * L * D;
-      if (totalBlocks > 500) {
+      // Cap lowered to 32 cells per re44 directive (2026-05-27): bounds
+      // CLI timeout risk; workers should split into smaller pits.
+      if (totalBlocks > 32) {
         return {
           ok: false,
           error: {
             code: 'OUT_OF_RANGE',
-            message: `mc dig_pit ${W}×${L}×${D} = ${totalBlocks} blocks exceeds 500-block limit; split into smaller pits`,
+            message: `mc dig_pit ${W}×${L}×${D} = ${totalBlocks} blocks exceeds 32-block limit; split into smaller pits`,
             retry_safe: false,
           },
         };
@@ -208,8 +210,18 @@ export function createBuildingTerrainPart(deps) {
       const upRange = Math.min(Math.max(parseInt(String(up || 8), 10) || 8, 1), 16);
       const w = maxX - minX + 1;
       const l = maxZ - minZ + 1;
-      if (w * l > 256) {
-        return { ok: false, error: { code: 'OUT_OF_RANGE', message: `mc level area ${w}×${l}=${w * l} exceeds 256-column limit`, retry_safe: false } };
+      // Cap lowered 256 → 16 columns on 2026-05-27. Each column = dig + fill =
+      // ~2 ops minimum, so 16 columns ≈ 32 block ops — matches the 32-cell
+      // ceiling re44 set for the dig family. Mason's 64-cell `mc level`
+      // call timed out at 20s wallclock; 16 columns fits comfortably.
+      if (w * l > 16) {
+        return { ok: false, error: {
+          code: 'OUT_OF_RANGE',
+          message: `mc level area ${w}×${l}=${w * l} exceeds 16-column limit (each column is dig+fill = ~2 ops; 16 columns ≈ 32 block ops). Split into smaller boxes.`,
+          observed_state: { requested_cols: w * l, max_cols: 16 },
+          next_action_hint: `Split into ${Math.ceil(w * l / 16)} smaller rectangles (≤16 columns each).`,
+          retry_safe: false,
+        } };
       }
 
       const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
@@ -302,6 +314,207 @@ export function createBuildingTerrainPart(deps) {
           errors: errors.slice(0, 5),
         },
         result: `level ${w}×${l} to Y=${targetY}: dug ${dug}, placed ${placed}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`,
+      };
+    },
+
+    /**
+     * Survey + flatten an area of "lumpy" terrain to a single target Y.
+     *
+     * Recipe (the operator-described "level ground" pattern, 2026-05-27):
+     *   1. Survey the rectangle's column tops (terrain_top per cell).
+     *   2. Pick a target Y — by default the median of the observed tops,
+     *      so half the columns are dug down + half filled up (minimum total
+     *      work). `--mode min` picks the lowest top (dig-only, no fill
+     *      required), `--mode max` picks the highest (fill-only, no dig).
+     *      Explicit `--target Y` overrides.
+     *   3. Categorize each column: hole (top < target), level (top == target),
+     *      pillar (top > target). Compute up_range = (max pillar height) + 1
+     *      so the underlying `mc level` dig phase clears every pillar.
+     *   4. Return a structured plan. With `--execute`, delegate to `mc level`
+     *      to perform the work (which top-down digs above target then
+     *      back-fills air at target — order designed to avoid the bot
+     *      falling into a hole it just dug).
+     *
+     * Args:
+     *   x1, z1, x2, z2   — rectangle bounds (inclusive)
+     *   target           — explicit target Y (optional; auto-picks if absent)
+     *   mode             — 'median' (default) | 'min' | 'max', only used
+     *                      when target is auto
+     *   block            — fill block name (defaults to dirt/cobble cascade)
+     *   execute          — false (default): dry-run, returns plan only.
+     *                      true: invokes the work via mc level.
+     *
+     * Returns:
+     *   { ok: true, data: {
+     *       target_y, mode, bounds, columns_n,
+     *       summary: { holes_n, pillars_n, level_n, max_dig, max_fill, max_pillar_height },
+     *       up_range_recommended,
+     *       columns: [{ x, z, top_y, action: 'fill'|'dig'|'level', delta }],
+     *       executed?: true | undefined,
+     *       execute_result?: { dug, placed, skipped, failed }  // present iff execute=true
+     *     } }
+     */
+    async level_ground({ x1, z1, x2, z2, target, mode, block: fillBlockName, execute }) {
+      const b = ensureBot();
+      for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
+        if (!Number.isFinite(Number(v))) {
+          return { ok: false, error: { code: 'INVALID_COORD', message: `mc level_ground requires numeric ${k}`, retry_safe: false } };
+        }
+      }
+      const minX = Math.min(Number(x1), Number(x2));
+      const maxX = Math.max(Number(x1), Number(x2));
+      const minZ = Math.min(Number(z1), Number(z2));
+      const maxZ = Math.max(Number(z1), Number(z2));
+      const w = maxX - minX + 1;
+      const l = maxZ - minZ + 1;
+      const totalCols = w * l;
+      // Cap matches mc level (16 columns). level_ground delegates to mc
+      // level on execute, so the underlying primitive enforces the same
+      // limit anyway — checking here gives a faster + clearer error.
+      if (totalCols > 16) {
+        return { ok: false, error: {
+          code: 'OUT_OF_RANGE',
+          message: `mc level_ground area ${w}×${l}=${totalCols} exceeds 16-column limit (matches mc level cap). Split into smaller rectangles.`,
+          observed_state: { requested_cols: totalCols, max_cols: 16 },
+          next_action_hint: `Split into ${Math.ceil(totalCols / 16)} smaller rectangles (≤16 columns each).`,
+          retry_safe: false,
+        } };
+      }
+      const pickMode = String(mode || 'median').toLowerCase();
+      if (!['median', 'min', 'max'].includes(pickMode)) {
+        return { ok: false, error: { code: 'INVALID_VALUE', message: `mc level_ground --mode must be median|min|max (got ${mode})`, retry_safe: false } };
+      }
+      const doExecute = execute === true || execute === 'true' || execute === '1';
+
+      // Phase 1 — survey
+      /** @type {{ x: number, z: number, top_y: number | null, block: string | null }[]} */
+      const surveys = [];
+      const tops = [];
+      for (let x = minX; x <= maxX; x++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          const top = columnTopSolid(b, x, z);
+          if (top) {
+            surveys.push({ x, z, top_y: top.topY, block: top.blockName });
+            tops.push(top.topY);
+          } else {
+            surveys.push({ x, z, top_y: null, block: null });
+          }
+        }
+      }
+      if (tops.length === 0) {
+        return { ok: false, error: {
+          code: 'NO_SURFACE', message: `mc level_ground: every column in ${w}×${l} returned no solid block — chunks unloaded?`,
+          observed_state: { bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ } },
+          retry_safe: true,
+        } };
+      }
+
+      // Phase 2 — pick target Y
+      let targetY;
+      if (Number.isFinite(Number(target))) {
+        targetY = Math.floor(Number(target));
+      } else if (pickMode === 'min') {
+        targetY = Math.min(...tops);
+      } else if (pickMode === 'max') {
+        targetY = Math.max(...tops);
+      } else {
+        // median
+        const sorted = [...tops].sort((a, c) => a - c);
+        targetY = sorted[Math.floor(sorted.length / 2)];
+      }
+
+      // Phase 3 — categorize + summarize
+      /** @type {{ x: number, z: number, top_y: number | null, action: string, delta: number | null }[]} */
+      const columns = [];
+      let holes_n = 0, pillars_n = 0, level_n = 0, no_data_n = 0;
+      let max_dig = 0, max_fill = 0, max_pillar_height = 0;
+      for (const s of surveys) {
+        if (s.top_y == null) {
+          columns.push({ x: s.x, z: s.z, top_y: null, action: 'unknown', delta: null });
+          no_data_n++;
+          continue;
+        }
+        const delta = s.top_y - targetY;
+        if (delta === 0) {
+          columns.push({ x: s.x, z: s.z, top_y: s.top_y, action: 'level', delta: 0 });
+          level_n++;
+        } else if (delta < 0) {
+          columns.push({ x: s.x, z: s.z, top_y: s.top_y, action: 'fill', delta });
+          holes_n++;
+          if (-delta > max_fill) max_fill = -delta;
+        } else {
+          columns.push({ x: s.x, z: s.z, top_y: s.top_y, action: 'dig', delta });
+          pillars_n++;
+          if (delta > max_dig) max_dig = delta;
+          if (delta > max_pillar_height) max_pillar_height = delta;
+        }
+      }
+
+      // up_range used by `mc level`'s dig phase. Cap at 16 (level's own limit).
+      const upRecommended = Math.min(Math.max(max_pillar_height + 1, 1), 16);
+
+      const planSummary = `${w}×${l} target=Y${targetY} (${pickMode}): ${holes_n} holes (max fill ${max_fill}), ${pillars_n} pillars (max dig ${max_dig}), ${level_n} level${no_data_n ? `, ${no_data_n} unloaded` : ''}`;
+
+      // Phase 4 — execute? (optional)
+      let executeResult = null;
+      let executeErrors = null;
+      if (doExecute) {
+        // Delegate to mc level. Pass our computed targetY + recommended up_range,
+        // optionally the operator's preferred fill block. level handles
+        // standpoint pathfinding, top-down ordering (debris-safe), and fill.
+        try {
+          const handlers = (typeof getActions === 'function' ? getActions() : null);
+          const levelFn = handlers && typeof handlers.level === 'function'
+            ? handlers.level
+            : null;
+          if (!levelFn) {
+            executeErrors = 'level handler not exposed via getActions()';
+          } else {
+            const res = await levelFn({
+              x1: minX, z1: minZ, x2: maxX, z2: maxZ,
+              y: targetY, up: upRecommended,
+              ...(fillBlockName ? { block: fillBlockName } : {}),
+            });
+            if (res && res.ok === false) {
+              executeErrors = res.error?.message || 'level returned ok:false';
+              executeResult = res.error?.observed_state || null;
+            } else {
+              executeResult = res?.data || null;
+            }
+          }
+        } catch (e) {
+          executeErrors = e?.message || String(e);
+        }
+      }
+
+      const resultText = doExecute
+        ? (executeErrors
+          ? `level_ground ${planSummary} — execute FAILED: ${executeErrors}`
+          : `level_ground ${planSummary} — executed: dug ${executeResult?.dug ?? 0}, placed ${executeResult?.placed ?? 0}${executeResult?.skipped ? `, ${executeResult.skipped} skipped` : ''}${executeResult?.failed ? `, ${executeResult.failed} failed` : ''}`)
+        : `level_ground PLAN ${planSummary} — dry-run (pass execute=true to run, recommended up=${upRecommended})`;
+
+      return {
+        ok: !(doExecute && executeErrors),
+        data: {
+          target_y: targetY,
+          mode: Number.isFinite(Number(target)) ? 'explicit' : pickMode,
+          bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ },
+          columns_n: surveys.length,
+          summary: {
+            holes_n,
+            pillars_n,
+            level_n,
+            no_data_n,
+            max_dig,
+            max_fill,
+            max_pillar_height,
+          },
+          up_range_recommended: upRecommended,
+          columns,
+          ...(doExecute ? { executed: true, execute_result: executeResult } : {}),
+          ...(executeErrors ? { execute_error: executeErrors } : {}),
+        },
+        result: resultText,
       };
     },
 

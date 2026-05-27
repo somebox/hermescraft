@@ -580,11 +580,56 @@ export function guardSlowDigEstimate(b, block) {
 
   const secs = Number.isFinite(ticks) ? Math.round((ticks / 20) * 10) / 10 : '∞';
   const nm = block.name;
-  const heldLabel = hn || 'empty hand';
   const woodHarvest = blockNeedsAxeHarvest(nm);
   const pickHint =
     /ore$|_ore|deepslate|netherrack|obsidian|blackstone$/i.test(nm) ||
     /(^|_)(stone|cobblestone|andesite|diorite|granite|tuff)$/i.test(nm);
+
+  // Pre-throw re-equip recovery (2026-05-27). Live evidence: Flint hit
+  // "empty hand" refusals 5+ times in an hour despite having a pickaxe in
+  // inventory. Mineflayer's held-item state can desync after deaths,
+  // timeouts, or craft delta=0 fallbacks — `b.tool.itemInHand()` reports
+  // empty even when inventory has the tool. Before refusing, attempt a
+  // single re-equip from inventory and re-check. If that succeeds, the
+  // throw is silently avoided and the dig proceeds.
+  try {
+    const needPick = pickHint || blockNeedsPickaxeHarvest(nm);
+    const needAxe = woodHarvest;
+    const priority = needAxe ? HARVEST_AXE_PRIORITY : needPick ? HARVEST_PICK_PRIORITY : null;
+    if (priority) {
+      const candidate = firstInvItemByPriority(b, priority);
+      if (candidate) {
+        // The candidate IS in inventory but not in hand. Re-equip and
+        // re-check. If the slot updates, recompute estimate and bail
+        // early (no throw) when the new tool brings ticks under the cap.
+        // eslint-disable-next-line no-await-in-loop
+        try { b.equip && b.equip(candidate, 'hand'); } catch { /* sync fallback path */ }
+        const reHeld = effectiveHeldForDig(b);
+        if (reHeld && reHeld.name && reHeld.name !== 'air') {
+          // Re-estimate. If the now-equipped tool dispatches it under cap,
+          // we're done — silent recovery, no throw.
+          const reTicks = t.getDigTime(block, reHeld);
+          if (Number.isFinite(reTicks) && reTicks < maxTicks) return;
+          // Re-equip happened but still slow — fall through to throw with
+          // updated heldLabel so the message reflects current state.
+          // Update locally-scoped held label for the message.
+          // (Re-assigning hn is safe — only used in the message below.)
+          // eslint-disable-next-line no-param-reassign
+          const reHn = reHeld.name;
+          if (reHn) {
+            throw new Error(`Refusing to dig ${nm} with "${reHn}" (re-equipped from inventory; ~${Math.round((reTicks / 20) * 10) / 10}s break time ≥ ${maxTicks} ticks). ${needAxe ? 'Tool tier insufficient — upgrade.' : 'Tool tier insufficient — try stone_pickaxe or better.'}`);
+          }
+        }
+      }
+    }
+  } catch (recoveryErr) {
+    // If recovery itself throws our own error (slow even after re-equip),
+    // propagate it. If it throws something else (mineflayer internals),
+    // fall through to the original empty-hand error.
+    if (recoveryErr && /^Refusing to dig/.test(recoveryErr.message || '')) throw recoveryErr;
+  }
+
+  const heldLabel = hn || 'empty hand';
   const hint = woodHarvest
     ? 'Use an axe for wood (`mc craft wooden_axe` then `mc equip wooden_axe`). Bare fist is OK; pickaxes and blocks (cobblestone, planks, …) in main hand are wrong for logs.'
     : pickHint

@@ -1,6 +1,6 @@
 // @size-exempt: pillar_step (from actions/building split)
 import { Vec3 } from 'vec3';
-import { equipForDig, isDigProtected } from '../../runtime/dig-tools.js';
+import { equipForDig, isDigProtected, recordRecentPlace } from '../../runtime/dig-tools.js';
 import { shouldSkipDigAt } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
 
@@ -366,7 +366,17 @@ export function createBuildingPillarPart(deps) {
           b.setControlState('jump', false);
         }
         if (placedY !== null) await sleep(150);  // let bot settle on new block
-        if (placedY !== null) return { y: placedY };
+        if (placedY !== null) {
+          // Read the now-placed block back so we have its canonical name
+          // for the recentPlaces audit trail (mineflayer may have placed a
+          // captured-from-ceiling variant rather than what we asked for).
+          const placedBlock = b.blockAt(targetPos);
+          return {
+            y: placedY,
+            cell: { x: targetPos.x, y: targetPos.y, z: targetPos.z },
+            blockName: placedBlock?.name || null,
+          };
+        }
         // Failed to place. Include headroom info so the loop knows whether
         // the issue was overhead-blocked (couldn't jump high enough) vs
         // place-rejected (server refused the place at threshold).
@@ -417,6 +427,12 @@ export function createBuildingPillarPart(deps) {
             await b.placeBlock(standing, new Vec3(0, 1, 0));
             placed++;
             consecutiveFails = 0;
+            // Track this placed cell so isDigProtected exempts it during
+            // cleanup AND so future audit / pillar_undo passes can find
+            // the bot's own pillar blocks. See dig-tools.js:116.
+            const placedCell = { x: standing.position.x, y: standing.position.y + 1, z: standing.position.z };
+            const placedBlk = b.blockAt(new Vec3(placedCell.x, placedCell.y, placedCell.z));
+            recordRecentPlace(ctx, placedCell, placedBlk?.name || 'unknown');
           } catch {
             consecutiveFails++;
             if (consecutiveFails >= 2) break;
@@ -428,6 +444,16 @@ export function createBuildingPillarPart(deps) {
         if (result.y !== undefined) {
           placed++;
           consecutiveFails = 0;
+          // Record into the recentPlaces ring so isDigProtected exempts
+          // this block during the bot's own cleanup (the bot is allowed
+          // to mine its own recently-placed pillar blocks). See the
+          // 2026-05-27 audit: pillar_step previously never populated
+          // recentPlaces, so 377+ orphan columns accumulated in one
+          // session because Steward couldn't dig them via mc collect
+          // (they looked like protected infrastructure).
+          if (result.cell) {
+            recordRecentPlace(ctx, result.cell, result.blockName || 'unknown');
+          }
         } else {
           failReasons.push(result.failReason);
           consecutiveFails++;
@@ -500,14 +526,29 @@ export function createBuildingPillarPart(deps) {
       const forceSuffix = forceBypasses.length
         ? ` force=true bypassed ${forceBypasses.length} protected dig${forceBypasses.length === 1 ? '' : 's'}.`
         : '';
+
+      // Cleanup hint — fires when the bot climbed but has no lateral exit.
+      // From 2026-05-27 live evidence: workers were oscillating
+      // pillar_step → mc move → BOT_ON_PILLAR → partial pillar_down →
+      // pillar_step again, each cycle leaving 1-2 orphan blocks. The
+      // hint nudges the caller toward immediate cleanup OR explicit
+      // sideways escape via mc dig of a wall.
+      const cleanupHint = (!lateralExit && placed > 0)
+        ? `mc pillar_down ${placed}`
+        : null;
+      const cleanupSuffix = cleanupHint
+        ? ` ⚠ Pathfinding from a 1×1 column will refuse with BOT_ON_PILLAR. Cleanup options: \`${cleanupHint}\` to come back down, OR \`mc dig\` an adjacent wall block to step off sideways.`
+        : '';
+
       return {
-        result: `pillar_step climbed ${placed} block${placed !== 1 ? 's' : ''}: Y ${startY} → ${endY} (pos ${Math.floor(pos.x)},${endY},${Math.floor(pos.z)})${exitSuffix}${forceSuffix}`,
+        result: `pillar_step climbed ${placed} block${placed !== 1 ? 's' : ''}: Y ${startY} → ${endY} (pos ${Math.floor(pos.x)},${endY},${Math.floor(pos.z)})${exitSuffix}${forceSuffix}${cleanupSuffix}`,
         placed,
         startY,
         endY,
         position: { x: Math.floor(pos.x), y: endY, z: Math.floor(pos.z) },
         ...(lateralExit ? { lateral_exit: lateralExit } : {}),
         ...(shaftTrap ? { shaft_trap: shaftTrap } : {}),
+        ...(cleanupHint ? { cleanup_hint: cleanupHint } : {}),
         ...(forceBypasses.length ? { force_escape_bypassed: forceBypasses } : {}),
       };
     },

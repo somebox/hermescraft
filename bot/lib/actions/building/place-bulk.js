@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
-import { recordRecentPlace } from '../../runtime/dig-tools.js';
-import { shouldSkipPlaceAt, createRegionSkipTracker } from '../../runtime/regions/policy-guard.js';
+import { recordRecentPlace, equipForDig, isDigProtected } from '../../runtime/dig-tools.js';
+import { shouldSkipPlaceAt, shouldSkipDigAt, createRegionSkipTracker } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
@@ -23,18 +23,25 @@ export function createBuildingPlaceBulkPart(deps) {
       if (!blockParsed.ok) return blockParsed.response;
       const blockName = blockParsed.name;
       const hollow = bool(args.hollow, false);
+      const overwrite = bool(args.overwrite, false);
       const b = ensureBot();
       const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
       const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
       const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
       const total = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-      if (total > 500) {
+      // Cap lowered from 500 → 32 cells (2026-05-27, re44 directive).
+      // Live evidence: 64-cell `mc level` (which uses place_fill internally)
+      // timed out at 20s wallclock; workers also hit "Task 'place_fill'
+      // already running" when chaining adjacent boxes because the prior
+      // call hadn't completed yet. Lower cap + the synchronous semantics
+      // change below mean each call completes inline before returning.
+      if (total > 32) {
         return fail(
           'AREA_TOO_LARGE',
-          `mc place_fill area is ${total} blocks (max 500) — split into smaller boxes.`,
+          `mc place_fill area is ${total} blocks (max 32) — split into smaller boxes.`,
           {
-            observed_state: { requested_volume: total, max_volume: 500, x1, y1, z1, x2, y2, z2 },
-            next_action_hint: 'mc place_fill with a smaller coordinate box (≤500 cells)',
+            observed_state: { requested_volume: total, max_volume: 32, x1, y1, z1, x2, y2, z2 },
+            next_action_hint: `Split into ${Math.ceil(total / 32)} smaller boxes (≤32 cells each).`,
             retry_safe: false,
           },
         );
@@ -49,6 +56,74 @@ export function createBuildingPlaceBulkPart(deps) {
               if (!onEdge) continue;
             }
             positions.push({ x, y, z });
+          }
+        }
+      }
+
+      // Pre-check: detect cells already occupied by something other than
+      // the target block. Default `overwrite=false` returns a clear
+      // FILL_BLOCKED_BY_EXISTING error so the worker knows to either
+      // `mc dig_area` first OR retry with `overwrite=true`. Pre-fix
+      // (2026-05-27 session): Mason's `mc fill oak_log` over a
+      // site-prep cobblestone layer silently returned FILL_PARTIAL with
+      // 5/5 occupied — looked like "we tried but nothing happened",
+      // sent Mason into a patchwork retry loop. Clear error +
+      // overwrite flag eliminate that surprise.
+      const occupiedByOther = [];
+      for (const pos of positions) {
+        const existing = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+        if (existing && existing.name !== 'air' && existing.name !== 'cave_air'
+            && existing.name !== 'void_air' && existing.name !== blockName) {
+          occupiedByOther.push({ x: pos.x, y: pos.y, z: pos.z, by: existing.name });
+        }
+      }
+      if (occupiedByOther.length > 0 && !overwrite) {
+        // Summarize by occupying block name so the worker can pick a
+        // strategy (one big dig_area for cobble vs. several for mixed).
+        const byKind = {};
+        for (const c of occupiedByOther) byKind[c.by] = (byKind[c.by] || 0) + 1;
+        const summary = Object.entries(byKind)
+          .map(([n, c]) => `${c}× ${n}`).join(', ');
+        return fail(
+          'FILL_BLOCKED_BY_EXISTING',
+          `mc fill ${blockName}: ${occupiedByOther.length}/${positions.length} cells already occupied by other blocks (${summary}). Pass overwrite=true to dig-then-fill, or run mc dig_area first.`,
+          {
+            observed_state: {
+              block: blockName,
+              total_cells: positions.length,
+              occupied_count: occupiedByOther.length,
+              occupied_by: byKind,
+              first_5_blockers: occupiedByOther.slice(0, 5),
+            },
+            next_action_hint: `Retry as: mc fill ${blockName} ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} overwrite=true`,
+            retry_safe: false,
+          },
+        );
+      }
+
+      // Overwrite path: dig the blocking cells before the place pass.
+      // Inline-iterate to keep this primitive self-contained (avoids the
+      // async-task surprise that motivated this fix). Hazard checks per
+      // cell so we don't release lava/water into a fill area.
+      const dugForOverwrite = [];
+      const overwriteSkipped = [];
+      if (overwrite && occupiedByOther.length > 0) {
+        for (const c of occupiedByOther) {
+          const blk = b.blockAt(new Vec3(c.x, c.y, c.z));
+          if (!blk) continue;
+          if (shouldSkipDigAt(ctx, config, blk.name, c.x, c.y, c.z, isDigProtected).skip) {
+            overwriteSkipped.push({ x: c.x, y: c.y, z: c.z, reason: 'region_or_global_protect' });
+            continue;
+          }
+          try {
+            if (b.entity.position.distanceTo(blk.position) > 4.5) {
+              try { await pathfindGotoNear(b, goals, c.x, c.y, c.z, 3, { opName: 'fill_overwrite', capMs: ACTION_CAPS_MS.reach }); } catch {}
+            }
+            await equipForDig(b, blk);
+            await b.dig(blk);
+            dugForOverwrite.push({ x: c.x, y: c.y, z: c.z, was: c.by });
+          } catch (e) {
+            overwriteSkipped.push({ x: c.x, y: c.y, z: c.z, reason: e?.message || String(e) });
           }
         }
       }
@@ -282,6 +357,14 @@ export function createBuildingPlaceBulkPart(deps) {
             bot_was_inside_region: true,
             bot_blocked_cells: botBlockedCells,
             next_action_hint: `Move outside the region (mc goto_near <outside coord>), then mc fill ${blockName} ${x1} ${y1} ${z1} ${x2} ${y2} ${z2}`,
+          } : {}),
+          ...(dugForOverwrite.length || overwriteSkipped.length ? {
+            overwrite_summary: {
+              dug: dugForOverwrite.length,
+              dug_cells: dugForOverwrite.slice(0, 10),
+              skipped: overwriteSkipped.length,
+              skipped_cells: overwriteSkipped.slice(0, 5),
+            },
           } : {}),
         },
       };

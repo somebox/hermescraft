@@ -640,9 +640,12 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc place BLOCK X Y Z',
   }),
   g('fill', 'world', [], {
-    description: 'Fill an axis-aligned box with BLOCK',
+    description: 'Fill an axis-aligned box with BLOCK. Synchronous: returns when the placement finishes (or partially fails). Max 32 cells per call — split larger areas into multiple calls. With overwrite=true, dig-then-fills any non-air cells in the box; default behavior only places in air (returns FILL_BLOCKED if cells are occupied).',
     method: 'POST',
-    path: '/task/place_fill',
+    // Synchronous — was '/task/place_fill' (async, returned task_id and
+    // chained calls hit "place_fill already running"). With the 32-cell
+    // cap the call completes within typical CLI timeout windows.
+    path: '/action/place_fill',
     bodyFn: (p) =>
       JSON.stringify({
         block: String(p.block),
@@ -653,6 +656,7 @@ export const RAW_COMMAND_DEFS = [
         y2: Number(p.y2),
         z2: Number(p.z2),
         hollow: !!p.hollow,
+        ...(p.overwrite !== undefined ? { overwrite: p.overwrite === true || p.overwrite === 'true' || p.overwrite === '1' } : {}),
       }),
     argSchema: [
       { key: 'block', type: 'string', required: true },
@@ -663,8 +667,13 @@ export const RAW_COMMAND_DEFS = [
       { key: 'y2', type: 'number', required: true },
       { key: 'z2', type: 'number', required: true },
       { key: 'hollow', type: 'boolean', default: false },
+      { key: 'overwrite', type: 'boolean', default: false },
     ],
-    usage: 'mc fill BLOCK X1 Y1 Z1 X2 Y2 Z2 [HOLLOW]',
+    usage: 'mc fill BLOCK X1 Y1 Z1 X2 Y2 Z2 [HOLLOW] [overwrite=true]',
+    examples: [
+      'mc fill cobblestone 360 64 -595 367 64 -595        # 8-cell row',
+      'mc fill cobblestone 360 64 -595 367 64 -595 overwrite=true   # dig existing first',
+    ],
   }),
 
   /* Sprint 5 — Building primitives. mc wall is sugar over place_fill that
@@ -747,6 +756,39 @@ export const RAW_COMMAND_DEFS = [
     examples: [
       'mc level 0 0 4 4 64',
       'mc level -3 -3 3 3 64 dirt',
+    ],
+  }),
+
+  g('level_ground', 'world', ['level-ground'], {
+    description: 'Survey + flatten "lumpy" terrain to a single Y. Scans each column\'s top-solid, picks a target Y (median by default, --mode min|max alt), categorizes columns as hole/level/pillar, and reports a plan. Pass execute=true to do the work (delegates to mc level with up_range=max-pillar-height+1). Defaults to dry-run so you can review the plan before acting. Use to clean up scattered pillars + holes left by pillar_step churn or interrupted leveling sessions. Max 256 columns.',
+    method: 'POST',
+    path: '/action/level_ground',
+    bodyFn: (p) =>
+      JSON.stringify({
+        x1: Number(p.x1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        z2: Number(p.z2),
+        ...(p.target !== undefined ? { target: Number(p.target) } : {}),
+        ...(p.mode ? { mode: String(p.mode) } : {}),
+        ...(p.block ? { block: String(p.block) } : {}),
+        ...(p.execute !== undefined ? { execute: p.execute === true || p.execute === 'true' || p.execute === '1' } : {}),
+      }),
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'target', type: 'number' },
+      { key: 'mode', type: 'string' },
+      { key: 'block', type: 'string' },
+      { key: 'execute', type: 'string' },
+    ],
+    usage: 'mc level_ground X1 Z1 X2 Z2 [target=Y] [mode=median|min|max] [block=NAME] [execute=true]',
+    examples: [
+      'mc level_ground 360 -605 376 -589                     # dry-run, median Y',
+      'mc level_ground 360 -605 376 -589 mode=min            # plan flatten-down (dig-only)',
+      'mc level_ground 360 -605 376 -589 target=65 execute=true block=cobblestone',
     ],
   }),
 
@@ -1652,6 +1694,16 @@ export const RAW_COMMAND_DEFS = [
     path: '/action/region_update_intent',
     customParse: true,
     bodyFn: (p) => JSON.stringify({ id: p.id, intent: p.intent }),
+  }),
+  g('regions_reload', 'memory', ['regions-reload', 'region-reload'], {
+    description: 'Re-read regions JSON from disk and re-apply profile normalization. Use this after editing data/regions-world.json so live bots pick up the change without a restart. Returns the new region count + per-region (id, intent, profile, capabilities).',
+    usage: 'mc regions_reload',
+    examples: [
+      'mc regions_reload                          # apply file edits to the in-memory cache',
+    ],
+    method: 'POST',
+    path: '/regions/reload',
+    bodyFn: () => '{}',
   }),
   g('region_remove', 'memory', ['region-remove'], {
     description: 'Remove region (requires --confirm). Usage: mc region_remove :base1: --confirm',
