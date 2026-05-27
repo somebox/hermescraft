@@ -13,11 +13,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import genesis_lib as gl  # noqa: E402
 
+# Match `[GENESIS:Pn]` as a SUBSTRING — the actual title is prefixed with
+# `[EPIC] ` (so worker/steward skills' [EPIC]-decomposition handlers fire),
+# but we only key on the GENESIS tag for phase routing. Substring match
+# keeps the poller robust to future title prefix additions.
 PHASE_MAP = {
-    "[GENESIS:P1] Establish base": ("P1", "phase1", None),
-    "[GENESIS:P2] Sustainable resources": ("P2", "phase2", None),
-    "[GENESIS:P3] Defenses and watch tower": ("P3", "phase3", "P3"),
-    "[GENESIS:P4] Long-range expeditions": ("P4", "phase4", "P4"),
+    "[GENESIS:P1]": ("P1", "phase1", None),
+    "[GENESIS:P2]": ("P2", "phase2", None),
+    "[GENESIS:P3]": ("P3", "phase3", "P3"),
+    "[GENESIS:P4]": ("P4", "phase4", "P4"),
 }
 
 
@@ -41,10 +45,19 @@ def main() -> int:
             if key in seen:
                 continue
             seen.add(key)
-            for prefix, (_p, label, diff_phase) in PHASE_MAP.items():
-                if title == prefix or title.startswith(prefix.split("]")[0] + "]"):
+            for substring, (_p, label, diff_phase) in PHASE_MAP.items():
+                if substring in title:
                     if diff_phase:
                         gl.apply_difficulty(diff_phase, cfg)
+                    # Lock the base region to `protect` once the tower +
+                    # shelter are built (P3 done). Before P3 close, `base`
+                    # is `marker` so Phase 1/2 workers can dig/place freely
+                    # inside the construction zone.
+                    if label == "phase3":
+                        try:
+                            gl.lock_base_region_protect()
+                        except Exception as e:
+                            sys.stderr.write(f"lock_base_region_protect failed: {e}\n")
                     try:
                         gl.capture_snapshot(label, args.run_id)
                     except Exception as e:

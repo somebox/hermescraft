@@ -1,7 +1,15 @@
 # Four genesis epics — parent chain P2←P1, P3←P2, P4←P3 only.
+# Titles use double-tag `[EPIC] [GENESIS:Pn]`:
+#  - `[EPIC]` engages the existing kanban-worker / Steward decomposition
+#    skills (skills/minecraft-steward-survey.md, minecraft-steward-blueprint-plan.md)
+#    which already pattern-match on the [EPIC] prefix to mean "decompose, do
+#    not claim as a worker."
+#  - `[GENESIS:Pn]` is the automation handle used by scripts/genesis-phase-poller.py,
+#    scripts/genesis-snapshot.py, and scripts/genesis_lib.py:check_phases for
+#    phase boundary detection. Keep both.
 epics:
   - phase: P1
-    title: "[GENESIS:P1] Establish base"
+    title: "[EPIC] [GENESIS:P1] Establish base"
     assignee: steward
     initial_status: ready
     difficulty_on_done: null
@@ -10,13 +18,18 @@ epics:
       - four chest_* marks in locations-base.json
       - shelter region exists with allow_ad_hoc_place true
       - four chest snapshots refreshed
+      - shelter passes `mc is_sheltered walls=x1,y1,z1,x2,y2,z2` (full perimeter, no air gaps)
     body: |
+      This is an **[EPIC] decomposition card** — read the done_when checklist, file/track the pre-filed worker children, and mark this epic done yourself when all checks pass. Do NOT reassign this card to flint/mason.
+
       Phase 1 bootstrap at anchor ({anchor_x}, {anchor_y}, {anchor_z}).
       System chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}) — workers must not withdraw in P1.
       Five worker cards are pre-filed without parent link; verify done_when before closing this epic.
 
+      **Shelter verification (mandatory before close):** after mason finishes the walls + roof, run `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2` to confirm the 5×5×3 enclosure has no perimeter gaps. If WALLS_INCOMPLETE, file a `[FIX] patch shelter` card listing the missing cells before marking P1 done.
+
   - phase: P2
-    title: "[GENESIS:P2] Sustainable resources"
+    title: "[EPIC] [GENESIS:P2] Sustainable resources"
     assignee: steward
     initial_status: todo
     difficulty_on_done: null
@@ -25,24 +38,39 @@ epics:
       - at least three lt_* resource marks
       - at least one farm_wheat_* resource region
     body: |
+      This is an **[EPIC] decomposition card** — file worker child cards yourself, do not reassign to workers.
+
       Decompose after P1 closes. Benchmark thresholds from data/base-goals.yaml (64/128/128/64).
-      SCOUT lt_* marks, SUPPLY wood/stone/bread, SITE farm region.
+
+      **Resource-gathering protocol** (enforce before any [SUPPLY] card):
+      1. File a `[SCOUT]` card for the resource (flint or mason). Worker scouts a candidate location and `mc mark`s it with `lt_<resource>_<dir>` (private write).
+      2. Worker chats back: `mc chat "found lt_wood_ne at <coords>, 32 oak, no hostiles nearby"`.
+      3. Steward second-review: run `scripts/reconcile-marks.py --auto` to promote to shared, AND verify no overlap with `base`/`hut1`/other `lt_*` regions, no hostile-prone biome (swamp/desert at night), within reasonable travel distance (<200 blocks from base).
+      4. If the location is genuinely new and useful: Steward files the `[SUPPLY]` card pointing at the registered mark.
+      5. Worker acknowledges in chat (`mc chat "starting [SUPPLY] lt_wood_ne for 128 oak"`) BEFORE the supply card begins extraction.
+
+      No bulk extraction without a registered `lt_*` mark + Steward sign-off + worker ack.
 
   - phase: P3
-    title: "[GENESIS:P3] Defenses and watch tower"
+    title: "[EPIC] [GENESIS:P3] Defenses and watch tower"
     assignee: steward
     initial_status: todo
     difficulty_on_done: easy
     done_when:
       - hut1 region active in regions-world.json
       - mc blueprint verify passes all hut1-guard-tower layers
+      - shelter STILL passes `mc is_sheltered walls=…` (verify before flipping to easy)
       - defensive readiness noted on cards
     body: |
+      This is an **[EPIC] decomposition card** — file worker children, do not reassign.
+
       Still peaceful until this epic completes. Shelter 5x5→7x7, tower from hut1-guard-tower-plan.json at pad ({tower_x}, {tower_y}, {tower_z}).
       Use mc blueprint verify + manual mc place (construct N/I).
 
+      **Before marking P3 done** (the moment difficulty flips to easy and mobs spawn): re-run `mc is_sheltered walls=…` on the shelter to confirm walls still complete. If WALLS_INCOMPLETE, fix BEFORE closing — once difficulty=easy, mobs can enter through gaps and damage bots overnight.
+
   - phase: P4
-    title: "[GENESIS:P4] Long-range expeditions"
+    title: "[EPIC] [GENESIS:P4] Long-range expeditions"
     assignee: steward
     initial_status: todo
     difficulty_on_done: normal
@@ -51,5 +79,8 @@ epics:
       - each POI at least 1000 blocks from base_anchor
       - each POI has a strategic value note
     body: |
-      First hostile-pressure scouting phase (easy after P3 done). File [EXPEDITION] cards.
+      This is an **[EPIC] decomposition card** — file worker children, do not reassign.
+
+      First hostile-pressure scouting phase (easy after P3 done). File [EXPEDITION] cards. Each expedition follows the same resource-gathering protocol as P2: scout → register → ack → extract.
+
       Close only when 3+ distant POIs are marked and documented.

@@ -79,6 +79,7 @@ case "$cmd" in
     ANCHOR=""
     DIFF=""
     NO_CONFIRM=""
+    KEEP_WORLD=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --seed|--seed=*)
@@ -92,6 +93,7 @@ case "$cmd" in
         --anchor) ANCHOR="$2"; shift 2 ;;
         --difficulty) DIFF="$2"; shift 2 ;;
         --no-confirm) NO_CONFIRM=1; shift ;;
+        --keep-world) KEEP_WORLD=1; shift ;;
         *)
           if [[ -z "$SEED" ]] && _is_seed_token "$1"; then
             SEED="$1"
@@ -103,8 +105,19 @@ case "$cmd" in
           ;;
       esac
     done
-    [[ -n "$SEED" ]] || { echo "--seed <int> required (negative: --seed=-8675309)" >&2; exit 1; }
+    # When --keep-world is set, the seed is unused at runtime (no world regen).
+    # We still require a seed for the run config so cross-run benchmarks
+    # remain comparable; reuse the prior run's seed if not supplied.
+    if [[ -z "$SEED" && -n "$KEEP_WORLD" ]]; then
+      PREV=$(ls -1 "$REPO_ROOT/data/genesis-runs" 2>/dev/null | grep '^g-' | sort | tail -1)
+      if [[ -n "$PREV" ]] && [[ -f "$REPO_ROOT/data/genesis-runs/$PREV/config.json" ]]; then
+        SEED=$("$PY" -c "import json; print(json.load(open('$REPO_ROOT/data/genesis-runs/$PREV/config.json'))['seed'])")
+        echo "[genesis] --keep-world: reusing prior seed $SEED from $PREV"
+      fi
+    fi
+    [[ -n "$SEED" ]] || { echo "--seed <int> required (negative: --seed=-8675309). Or use --keep-world after a prior run." >&2; exit 1; }
     export GENESIS_SEED="$SEED"
+    export GENESIS_KEEP_WORLD="${KEEP_WORLD:-}"
     exec "$PY" -c "
 import os
 import sys
@@ -134,20 +147,41 @@ try:
     with gl.log_step(run_id, 'archive'):
         gl.ensure_run_layout(run_id)
         gl.archive_run_state(run_id)
-    with gl.log_step(run_id, 'reset_world'):
-        gl.reset_world(seed)
+    keep_world = bool(os.environ.get('GENESIS_KEEP_WORLD'))
+    if keep_world:
+        with gl.log_step(run_id, 'reset_world_skipped'):
+            pass
+    else:
+        with gl.log_step(run_id, 'reset_world'):
+            gl.reset_world(seed)
     with gl.log_step(run_id, 'reinit_kanban'):
         gl.reinit_kanban_board()
     if anchor_s:
         anchor = gl.parse_anchor(anchor_s)
         with gl.log_step(run_id, 'probe_skip'):
             pass
+    elif keep_world:
+        # Reuse the prior run's anchor — the world is unchanged so re-probing
+        # would return the same coords anyway, and reusing is deterministic
+        # for benchmarking.
+        with gl.log_step(run_id, 'reuse_prior_anchor'):
+            prior = gl.last_completed_run_id_before(run_id)
+            if not prior:
+                raise RuntimeError("--keep-world but no prior run with config.json")
+            prior_cfg = gl.load_config(prior)
+            anchor = prior_cfg['base_anchor']
+            print(f"[genesis] reusing anchor {anchor} from {prior}")
     else:
         with gl.log_step(run_id, 'probe'):
             anchor = gl.probe_base_anchor()
     with gl.log_step(run_id, 'render'):
         cfg = gl.render_templates(run_id=run_id, seed=seed, anchor=anchor, difficulty=diff)
-    # Place the chest blocks BEFORE bots start (rcon-only, idempotent).
+    # Lay the cobblestone pad first so the chests + future shelter sit on
+    # a clean, solid floor instead of grass/dirt. The pad is the genesis
+    # foundation; everything Phase 1 builds rests on it.
+    with gl.log_step(run_id, 'seed_base_pad'):
+        gl.seed_base_pad(cfg)
+    # Place the chest blocks on top of the pad (rcon-only, idempotent).
     with gl.log_step(run_id, 'system_chest_place'):
         gl.seed_system_chest_place(cfg)
     ctx = gl.build_context(run_id=run_id, seed=seed, anchor=anchor, started_at=cfg['started_at'])

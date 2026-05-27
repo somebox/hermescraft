@@ -125,6 +125,19 @@ def next_run_id() -> str:
     return f"{prefix}{n}"
 
 
+def last_completed_run_id_before(run_id: str) -> str | None:
+    """Return the most-recent prior run (by directory name sort) that has a
+    config.json. Used by `--keep-world` to inherit anchor + seed."""
+    candidates = sorted(
+        p for p in runs_root().iterdir()
+        if p.is_dir() and p.name.startswith("g-") and p.name < run_id
+    )
+    for p in reversed(candidates):
+        if (p / "config.json").exists():
+            return p.name
+    return None
+
+
 def active_run_id() -> str | None:
     p = runs_root() / ".active"
     if not p.exists():
@@ -500,6 +513,16 @@ def reset_world(seed: int, *, world: str = "world") -> None:
         f"else "
         f"  echo 'level-seed={seed}' | sudo tee -a {host_props} >/dev/null; "
         f"fi; "
+        # spawn-radius=0 forces players (and bots) to spawn AT exactly the
+        # worldspawn coord set by `setworldspawn` in the probe, rather than
+        # at a random offset 0-32 blocks away under Paper's safe-spawn algo.
+        # Combined with the probe placing worldspawn at the base anchor,
+        # this means bot reconnects land right at the base.
+        f"if sudo grep -q '^spawn-radius=' {host_props}; then "
+        f"  sudo sed -i 's/^spawn-radius=.*/spawn-radius=0/' {host_props}; "
+        f"else "
+        f"  echo 'spawn-radius=0' | sudo tee -a {host_props} >/dev/null; "
+        f"fi; "
         f"sudo docker compose -f {compose} up -d minecraft; "
         f"echo '[genesis] waiting for healthcheck...'; "
         f"for i in $(seq 1 90); do "
@@ -633,6 +656,79 @@ def system_chest_env_from_config(cfg: dict) -> dict[str, str]:
     return env
 
 
+def seed_base_pad(cfg: dict, *, half: int = 3, pad_block: str = "cobblestone") -> None:
+    """Lay a flat cobblestone pad centered on the base anchor.
+
+    The pad becomes the floor of the Phase 1 shelter and the platform the
+    system_chests sit on. Without it, Phase 1's [CONSTRUCT] cards have to
+    grass-dig + level the foundation before placing chests — extra busywork
+    on every fresh run and a frequent source of REGION_PROTECTED friction
+    during early genesis development.
+
+    Coord convention: `anchor_y` is the bot's FOOT y (the air block the
+    bot occupies). The terrain surface block is therefore at `anchor_y-1`,
+    and the pad replaces that surface layer. Chests at `anchor_y` (per
+    system-chest-offsets dy=0) then sit ON the pad as normal blocks.
+
+    Pad dimensions: (2*half + 1) × (2*half + 1) centered on the anchor.
+    Default half=3 → 7×7 pad: enough for a 5×5 shelter footprint plus a
+    1-block apron on every side for door, ingress, and chest access.
+
+    Chunk loading: a 7×7 pad straddles up to 4 chunks at typical anchors.
+    Without forceload, the first `fill` lands only in chunks already
+    resident → partial pads (observed g-2026-05-27-6: 16 of 49 blocks
+    placed). We forceload every chunk the pad touches, fill, then verify
+    the count matches the expected cell count and retry once on mismatch.
+    """
+    if GENESIS_DRY_RUN:
+        return
+    ax = cfg["base_anchor"]["x"]
+    ay = cfg["base_anchor"]["y"]
+    az = cfg["base_anchor"]["z"]
+    x1, z1 = ax - half, az - half
+    x2, z2 = ax + half, az + half
+    pad_y = ay - 1
+    expected_cells = (x2 - x1 + 1) * (z2 - z1 + 1)
+
+    # 1. Force-load every chunk the pad covers (one `forceload add` per chunk;
+    # the range form takes block-units in vanilla but command varies — the
+    # per-chunk form is unambiguous).
+    cx1, cx2 = x1 >> 4, x2 >> 4
+    cz1, cz2 = z1 >> 4, z2 >> 4
+    for cx in range(cx1, cx2 + 1):
+        for cz in range(cz1, cz2 + 1):
+            rcon(f"forceload add {cx} {cz}", quiet=True)
+    time.sleep(0.5)  # give the server a beat to load chunks
+
+    def _fill_pad() -> int:
+        out = rcon(f"fill {x1} {pad_y} {z1} {x2} {pad_y} {z2} minecraft:{pad_block} replace", quiet=False)
+        # Paper output: "Successfully filled N block(s)" or "No blocks were filled"
+        m = re.search(r"Successfully filled (\d+) block", out)
+        return int(m.group(1)) if m else 0
+
+    filled = _fill_pad()
+    if filled < expected_cells:
+        # One retry — chunks may have needed a moment more.
+        time.sleep(1.5)
+        filled2 = _fill_pad()
+        filled = max(filled, filled2)
+    if filled < expected_cells:
+        # Don't fail the whole run — the pad is mostly there, workers can
+        # patch the remainder. Log the gap.
+        out_path = REPO_ROOT / "data" / "genesis-runs" / cfg["run_id"] / "run.log"
+        rec = {"ts": _iso_utc(), "step": "seed_base_pad_warn",
+               "outcome": "partial", "duration_ms": 0,
+               "notes": f"filled {filled}/{expected_cells} cells; chunk load may still be incomplete"}
+        with out_path.open("a") as f:
+            f.write(json.dumps(rec) + "\n")
+
+    # Clear three Y-blocks above the pad so chests, doors, walls, and the
+    # bot's body all have clean placement targets. Without this, tall_grass
+    # or oak_leaves overhead break Phase 1 construct cards.
+    for dy in (0, 1, 2):
+        rcon(f"fill {x1} {ay+dy} {z1} {x2} {ay+dy} {z2} minecraft:air replace", quiet=True)
+
+
 def seed_system_chest_place(cfg: dict) -> None:
     """Place chest blocks via rcon — runs BEFORE bots start (no bot needed)."""
     _run_system_chest(cfg, "place")
@@ -760,6 +856,53 @@ def apply_difficulty(phase: str, cfg: dict) -> None:
         level = "normal"
     if level:
         rcon(f"difficulty {level}", quiet=True)
+
+
+def lock_base_region_protect() -> None:
+    """Flip `base` region from marker → protect after Phase 3 closes.
+
+    Genesis ships `base` as a marker so workers can dig/place inside it
+    during construction (P1 shelter, P2 supply pipelines, P3 tower).
+    Once the tower and shelter are built (P3 → done), we want the base
+    locked down so ad-hoc dig/place can't damage the structure. This
+    function rewrites data/regions-world.json and reloads regions on
+    every bot.
+    """
+    if GENESIS_DRY_RUN:
+        return
+    path = DATA_DIR / "regions-world.json"
+    if not path.exists():
+        return
+    data = json.loads(path.read_text())
+    changed = False
+    for r in data.get("regions", []):
+        if r.get("id") == "base" and r.get("intent") != "protect":
+            r["intent"] = "protect"
+            cap = r.setdefault("capabilities", {})
+            cap["allow_ad_hoc_dig"] = False
+            cap["allow_ad_hoc_place"] = False
+            cap["allow_harvest"] = False
+            r["updated"] = _iso_utc()
+            r["notes"] = (r.get("notes") or "") + " | locked protect after P3 done"
+            changed = True
+    if not changed:
+        return
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    # Reload each bot's in-memory region cache so the protection takes
+    # effect without a full bot restart.
+    import urllib.request
+
+    for port in (3001, 3002, 3003, 3004, 3005):
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/regions/reload",
+                method="POST",
+                data=b"",
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=3).read()
+        except Exception:
+            pass  # bot may be offline; next bot reconnect re-reads file
 
 
 def _kanban_list() -> list[dict]:

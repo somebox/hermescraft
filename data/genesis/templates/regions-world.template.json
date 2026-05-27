@@ -4,21 +4,21 @@
     {
       "id": "base",
       "profile": "base",
-      "intent": "protect",
+      "intent": "marker",
       "status": "active",
       "anchor": { "x": {anchor_x}, "y": {anchor_y}, "z": {anchor_z} },
       "shape": { "kind": "column", "radius": 16 },
       "sites": {},
       "capabilities": {
-        "allow_ad_hoc_dig": false,
-        "allow_ad_hoc_place": false,
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
         "allow_guided_edit": true,
-        "allow_harvest": false,
+        "allow_harvest": true,
         "overrides_global_denylist": false
       },
       "created": "{started_at}",
       "updated": "{started_at}",
-      "notes": "Genesis run {run_id} seed {seed}"
+      "notes": "Genesis run {run_id} seed {seed} — starts as marker (workers can dig/place to build). Phase-poller flips to protect when [GENESIS:P3] completes (Defenses + watch tower done)."
     },
     {
       "id": "shelter",

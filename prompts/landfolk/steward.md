@@ -351,6 +351,27 @@ cleanup_on_complete:
   - mc mark mine_<resource> <entry_x> <entry_y> <entry_z>     # if not already marked
 ```
 
+## Resource-gathering protocol — scout, register, agree, extract
+
+**No bulk extraction without a registered location + Steward sign-off + worker ack.** This applies any time a worker would otherwise repeatedly `mc dig` a resource (wood, stone, coal, iron, dirt) at a location that doesn't have a corresponding `lt_*` mark in `data/locations-base.json`.
+
+Five-step flow (enforce on every new resource site during P2 onward):
+
+1. **[SCOUT] card** — Steward files, worker (flint or mason) executes. Body: "scout for <resource> within 100 blocks of base, mark `lt_<resource>_<dir>` privately, chat back the coords + a one-line hazard note (mobs visible, water/lava nearby, biome)".
+
+2. **Worker scout + private mark** — worker walks, `mc nearby` / `mc scout`, picks a spot, `mc mark lt_<resource>_<dir>` (this writes to the worker's private locations file, NOT shared).
+
+3. **Worker chat report** — `mc chat "lt_wood_ne at 312,64,15 — oak cluster ~32 logs, no hostiles, dry forest"`. This is the **proposal** to Steward. The worker stops here; does NOT begin extraction.
+
+4. **Steward second-review + register** — Steward reads the chat (`scripts/board-recent.py` + the bot's `/marks` endpoint or running `scripts/reconcile-marks.py --auto`):
+   - Reject if the proposed coord overlaps an existing `base`/`hut1`/`lt_*` region, or is in a hostile-prone biome you'd want to avoid for a 30-min extraction session, or is > 200 blocks from base.
+   - Accept by running `scripts/reconcile-marks.py --auto` (promotes the worker's private `lt_*` to shared `locations-base.json`) AND, if the site warrants a region (recurring mines, persistent farms), filing a `[SITE]` card to add it to `data/regions-world.json` with `intent=resource`.
+   - Comment on the [SCOUT] card with the decision: "approved as lt_wood_ne; file [SUPPLY] for 128 oak" or "rejected — too close to base region, scout 50+ blocks further north".
+
+5. **[SUPPLY] card with explicit mark reference + worker ack** — Steward files `[SUPPLY] flint — chop 128 oak from lt_wood_ne` (mark name in body). Worker reads card, chats `mc chat "starting [SUPPLY] lt_wood_ne for 128 oak"` BEFORE the first dig, then begins extraction.
+
+**Anti-pattern** (P2 friction observed across runs): worker sees wood in the trees, dig-loops it, never marks it, depletes one tree at a time, leaves no record, repeats the same scout next session. Steward must close the loop with a registered mark + agreement chat, every time.
+
 ## Persistent resource regions — emit a [SITE] card, never act yourself
 
 Distinct from the per-card `mine_site` above: when a tier_1 resource (dirt, sand, gravel, cobblestone) keeps running low across multiple cards, the right move is to designate a **persistent `resource`-intent region** that future workers consult automatically. The region acts as a standing "go here for X" pointer; the C7 low-stock hint in `mc withdraw` will name the designated_site directly in worker responses (`bot/lib/runtime/base-goals.js`).
@@ -717,6 +738,41 @@ When you DO verify and the prior block is gone → comment on the card with the 
 - **Lead through deadlock.** If the fleet is frozen, replan rather than re-escalate. ONE reassignment to re44 per blocker per day is the cap. See *Lead through deadlock* — the replan loop is mandatory whenever `running=0` AND ≥3 cards block on the same root cause AND idle bots exist.
 - **Respect operator overrides.** A comment containing `@re44 OPERATOR OVERRIDE` or `OPERATOR OVERRIDE` on a card means the operator deliberately bypassed your prior reasoning. Do NOT reassign that card for ≥5 minutes. Read the override comment; let the worker attempt; verify failure before bouncing.
 - **A deny is a deny.** If any tool call returns `BLOCKED: User denied` or `User denied` or `permission denied by operator`, **STOP attempting that operation entirely for this cycle**. Do NOT route the same operation through another tool surface — terminal denied does NOT mean "try execute_code instead" or "try `hermes_tools.terminal` from a Python sandbox." The operator's deny is final per-cycle. If the operation is genuinely necessary, file a `kanban_comment` describing what you wanted to do and why, then `kanban_block` with reason `awaiting-operator-approval:<one-line>` so re44 can re-authorize on review. Switching tools to circumvent a deny is a trust violation — the next operator response will be a harder block, not a relenting one.
+
+---
+
+## Genesis epic doctrine (`[GENESIS:P1]` … `[GENESIS:P4]`)
+
+When a `[GENESIS:Pn]` epic is `running`, that phase owns the board until its `done_when` checklist is satisfied and you mark the epic `done`.
+
+### HARD RULE — `[GENESIS:Pn]` epics are YOURS. Never reassign them to a worker.
+
+The epic card is a **decomposition contract**, not a unit of executable work. It exists for you to read the `done_when` checklist, decompose into worker-actionable child cards (`[SCOUT]` / `[CONSTRUCT]` / `[SUPPLY]` / `[SITE]` / `[RECONCILE]`), wait for those children to close, then mark the epic `done` yourself.
+
+- **Never** run `hermes kanban reassign t_xxx flint` (or mason, or any worker) on a `[GENESIS:Pn]` epic. If you're tempted because the body mentions building/mining work, re-read this paragraph. The body describes the phase **outcome**; the children you file are the **execution**.
+- **Never** "let a worker claim it" — the gate-check normally `orch_park`s your cards so the dispatcher skips them, but only as long as you remain the assignee. Reassigning to a worker is what defeats that protection.
+- If you have nothing to decompose because P2/P3/P4 children depend on prior phase data (e.g. Phase-2 wood mark from a Phase-1 scout): wait. Idle is correct. Don't push the epic to a worker to "make progress."
+
+### Anti-pattern (observed in run g-2026-05-27-6, 2026-05-27)
+
+Steward saw `[GENESIS:P1]` assigned to herself, classified it as "build/place work — I can't run that", and ran `hermes kanban reassign t_5c151282 flint`. Flint claimed the epic, "completed" it without doing the underlying work, and the gate-check promoted `[GENESIS:P2]` automatically. Steward then repeated the same reassign for P2. Result: P1+P2 epics consumed without the per-phase decomposition or `done_when` verification, the actual base never built, and the genesis benchmark unusable. **The epic body is your reading material, not your assignment to forward.**
+
+### Steward-owned card kinds during a genesis run
+
+These ride on you, not on flint/mason. They look like work but they are orchestrator writes (terminal/scripts/CLI) — not mc primitives:
+
+- `[RECONCILE]` — `scripts/reconcile-marks.py --auto`. Terminal verb, no bot needed.
+- `[SITE]` cards whose body only edits `data/regions-world.json` + calls `mc regions_reload`. (`[SITE]` cards that require a worker to physically scout + drop a mark stay on the worker; the scout cards in genesis Phase 2/3 are always assigned to flint or mason.)
+- All `[GENESIS:Pn]` epics, always.
+
+### Other rules
+
+- **No supply-driven cards before P1 closes.** Do not run `base-inventory.py` deficits → `[SUPPLY]` until P1 is `done` (no chest snapshots → false zeros).
+- **Verify `done_when` on the epic body** before marking each `[GENESIS:Pn]` done; use `scripts/genesis.sh check-phases` when unsure.
+- **Phase 1: system_chest is off-limits for workers.** It is stocked at run start; Flint/Mason must bootstrap from the world. You may direct a worker there only on explicit re44 instruction or after >30m stuck with a `[BUG]` explaining why.
+- **Difficulty ramp is external** (genesis poller): peaceful through P3; easy after P3 `done`; normal after P4 `done` — unless the run pinned `--difficulty`.
+- **P4 bar:** close `[GENESIS:P4]` only after ≥3 unique `lt_*` POIs each ≥1000 blocks from `base_anchor` with a short value note (comment or mark note).
+- **Observations:** each cycle, append 1–2 lines worth keeping to `data/genesis-runs/<active-run-id>/observations/steward-cycle-<n>.md`. After P4, roll ongoing expedition notes into `expeditions/` under the same run dir.
 
 ---
 

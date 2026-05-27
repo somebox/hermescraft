@@ -7,19 +7,41 @@ cards:
       Confirm anchor ({anchor_x}, {anchor_y}, {anchor_z}) is non-water, flat (≤2 block delta within 5m), system_chest visible at ({system_chest_x}, {system_chest_y}, {system_chest_z}).
       Pin base_anchor mark. Do not withdraw from system_chest.
 
-  - title: "[CONSTRUCT] Place four base chests"
+  - title: "[CONSTRUCT] Place four base chests on the pad"
     assignee: flint
     initial_status: ready
     body: |
-      Place chest_food, chest_wood, chest_stone, chest_misc adjacent to anchor at (+1,0), (+1,+1), (-1,0), (-1,+1) relative offsets.
-      Mark each in private locations; steward reconcile promotes to shared.
+      Genesis pre-laid a 7×7 cobblestone pad centered on ({anchor_x}, {anchor_y}, {anchor_z}) at floor-y={anchor_y}-1. The two system_chest halves already sit on the pad at y={anchor_y}. Place the four base storage chests on the same pad surface (also at y={anchor_y}):
 
-  - title: "[CONSTRUCT] Build 5x5 cobble shelter"
+        chest_food   at ({anchor_x}+2, {anchor_y}, {anchor_z})
+        chest_wood   at ({anchor_x}+2, {anchor_y}, {anchor_z}+1)
+        chest_stone  at ({anchor_x}-2, {anchor_y}, {anchor_z})
+        chest_misc   at ({anchor_x}-2, {anchor_y}, {anchor_z}+1)
+
+      (Offsets are ±2 on x so the chests don't collide with the system_chest at +1.) Mark each in private locations after placement; steward reconcile promotes to shared. Do NOT dig the pad — it's the shelter floor.
+
+  - title: "[CONSTRUCT] Build 5x5 cobble shelter walls on the pad"
     assignee: mason
     initial_status: ready
     body: |
-      Build 5×5 cobble shelter (walls, roof, door) around ({anchor_x}, {anchor_y}, {anchor_z}) using world-gathered resources only.
-      No system_chest withdrawals.
+      Genesis laid the floor: a 7×7 cobblestone pad at y={anchor_y}-1 centered on ({anchor_x}, {anchor_y}, {anchor_z}). Chests already sit on it at y={anchor_y}. Build the shelter walls + roof + door ON TOP of the pad.
+
+      Walls: 5×5 footprint around the anchor, two blocks tall (y={anchor_y} and y={anchor_y}+1), one door on a chosen side.
+      Roof: cobblestone covering the 5×5 interior at y={anchor_y}+2.
+
+      **HARD RULE — do NOT `mc dig` any block in the pad footprint.** The pad IS the shelter floor. Mining it leaves you building walls on grass/air, then you have to refill, costing two passes.
+
+      Pad bounds (off-limits to `mc dig`): x={anchor_x}-3..{anchor_x}+3, y={anchor_y}-1, z={anchor_z}-3..{anchor_z}+3.
+
+      **Source cobblestone from one of these instead:**
+      1. Dig DOWN from a spot just outside the pad (e.g. start at x={anchor_x}+4, dig column down). Layers at y={anchor_y}-4..{anchor_y}-2 are typically stone — break with wooden_pickaxe to get cobblestone directly.
+      2. Walk to a nearby exposed stone face / shallow cave (`mc nearby 24` to spot one, `mc go_mark` to navigate).
+      3. The system_chest at (anchor+1, anchor_y, anchor-2) is stocked with cobble but **withdraw from it is forbidden in P1 doctrine** (see Steward SOUL — relief valve only, not a supply line).
+
+      The base region is `marker` until [GENESIS:P3] done — ad-hoc dig/place is allowed in general, but the pad footprint is your shelter foundation, not a supply.
+
+      **Closing verification (REQUIRED before marking this card done):**
+      Run `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2` to confirm the 5×5×3 perimeter has no air gaps. If WALLS_INCOMPLETE, the response lists the missing cells — patch them with cobblestone and re-check before completing. The card is NOT done until is_sheltered returns ok.
 
   - title: "[RECONCILE] Promote chest marks"
     assignee: steward
