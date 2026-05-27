@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
 import { gotoWithTimeout } from '../goto-with-timeout.js';
 import { AIR_NAMES } from '../../_block-sets.js';
+import { ok, fail } from '../../../shared/action-contract.js';
 
 /**
  * Given an item name (e.g. "cobblestone"), return the list of OTHER block
@@ -28,35 +29,19 @@ export function sourceBlocksForItem(mcData, itemName) {
 }
 
 /**
- * @typedef {object} DiscoveryDeps
- * @property {import('mineflayer').Bot} b
- * @property {object} ctx
- * @property {object} goals
- * @property {(msg: string) => void} log
- * @property {(block: unknown) => string} resolveMiningBlockName
- * @property {(blockName:string,blockTypeId:number,batchSize:number,b: import('mineflayer').Bot) => Vec3[]} fairPlayHarvestTrunkCandidates
- * @property {(name:string,opts:object) => Promise<{position:{x:number,y:number,z:number}}[]>} findVisibleBlocksByNameWithPhysicalSweep
- *
  * Runs candidate discovery after block type validation and inventory prelude.
+ *
+ * @param {import('./index.js').CollectContext} cctx
  * @returns Terminal success response OR continuation payload with `found`.
  */
-export async function collectDiscoveryPhase(deps, {
-  b,
-  blockName,
-  blockType,
-  batchSize,
-  count,
-  inventoryAt,
-  startedInventory,
-  startedBlockCount,
-}) {
+export async function collectDiscoveryPhase(cctx) {
   const {
-    ctx,
-    goals,
-    log,
+    b, ctx, goals, log,
+    blockName, blockType, batchSize, count,
+    inventoryAt, startedInventory, startedBlockCount,
     fairPlayHarvestTrunkCandidates,
     findVisibleBlocksByNameWithPhysicalSweep,
-  } = deps;
+  } = cctx;
 
   // F72: short-circuit when the bot just auto-picked up the requested
   // item from a recent dig. Previously this path returned
@@ -85,8 +70,7 @@ export async function collectDiscoveryPhase(deps, {
       ctx.runtime.recentPickups = ctx.runtime.recentPickups.filter((p) => p.count > 0);
       return {
         terminal: true,
-        response: {
-          ok: true,
+        response: ok({
           data: {
             block_name: blockName,
             mined_count: 0,
@@ -94,7 +78,7 @@ export async function collectDiscoveryPhase(deps, {
             source: 'recent_pickup',
           },
           result: `Already have ${count} ${blockName} in inventory — auto-picked up from a recent dig.`,
-        },
+        }),
       };
     }
   }
@@ -172,11 +156,10 @@ export async function collectDiscoveryPhase(deps, {
           if (found.length === 0) {
             return {
               terminal: true,
-              response: {
-                ok: false,
-                error: {
-                  code: 'NO_VISIBLE_BLOCKS',
-                  message: `Can't see any ${blockName} right now. Nearest scout hit at ${nearest.x}, ${nearest.y}, ${nearest.z}.`,
+              response: fail(
+                'NO_VISIBLE_BLOCKS',
+                `Can't see any ${blockName} right now. Nearest scout hit at ${nearest.x}, ${nearest.y}, ${nearest.z}.`,
+                {
                   observed_state: {
                     requested_block: blockName,
                     requested_count: count,
@@ -187,7 +170,7 @@ export async function collectDiscoveryPhase(deps, {
                   next_action_hint: `mc goto_near ${nearest.x} ${nearest.y} ${nearest.z} 2, then mc scene and mc collect ${blockName} 2`,
                   retry_safe: false,
                 },
-              },
+              ),
             };
           }
         }
@@ -271,27 +254,23 @@ export async function collectDiscoveryPhase(deps, {
   }
 
   if (found.length === 0) {
+    const message = ctx.reactive.fairPlayMode
+      ? isTrunkHarvest
+        ? `No ${blockName} with harvest line-of-sight in range (leaves/water between you and the trunk are ok; dirt/stone/other wood are not).`
+        : `Can't see any ${blockName} right now. Turn, move, or use mc scene/mc look before collecting.`
+      : `No ${blockName} found within 64 blocks.`;
     return {
       terminal: true,
-      response: {
-        ok: false,
-        error: {
-          code: 'NO_VISIBLE_BLOCKS',
-          message: ctx.reactive.fairPlayMode
-            ? isTrunkHarvest
-              ? `No ${blockName} with harvest line-of-sight in range (leaves/water between you and the trunk are ok; dirt/stone/other wood are not).`
-              : `Can't see any ${blockName} right now. Turn, move, or use mc scene/mc look before collecting.`
-            : `No ${blockName} found within 64 blocks.`,
-          observed_state: {
-            requested_block: blockName,
-            requested_count: count,
-            mined_count: 0,
-            fair_play: ctx.reactive.fairPlayMode,
-            search_range: ctx.reactive.fairPlayMode ? 16 : 64,
-          },
-          retry_safe: false,
+      response: fail('NO_VISIBLE_BLOCKS', message, {
+        observed_state: {
+          requested_block: blockName,
+          requested_count: count,
+          mined_count: 0,
+          fair_play: ctx.reactive.fairPlayMode,
+          search_range: ctx.reactive.fairPlayMode ? 16 : 64,
         },
-      },
+        retry_safe: false,
+      }),
     };
   }
 

@@ -2,10 +2,37 @@
 import { collectDiscoveryPhase } from './discovery.js';
 import { collectOrderingPhase } from './ordering.js';
 import { executeCollectHarvest } from './execute.js';
+import { canSeeBotFacingFace } from '../../_los.js';
+import { fail } from '../../../shared/action-contract.js';
+
+/**
+ * @typedef {object} CollectContext
+ *   The bag of bot + runtime + per-call inputs that every phase reads from.
+ *   Phases also receive a separate `phaseInputs` arg carrying the outputs
+ *   of earlier phases.
+ * @property {import('mineflayer').Bot} b
+ * @property {object} ctx                  runtime state (reactive/tasks/world/runtime)
+ * @property {object} config               app config (behaviors, etc.)
+ * @property {object} goals                mineflayer-pathfinder goals namespace
+ * @property {(ms:number)=>Promise<void>} sleep
+ * @property {(msg:string)=>void} log
+ * @property {string} blockName            requested item/block name
+ * @property {object} blockType            mcData entry for blockName
+ * @property {number} count                requested count
+ * @property {number} batchSize            min(count, 20)
+ * @property {boolean} force               --force flag
+ * @property {() => Record<string, number>} inventoryAt
+ * @property {Record<string, number>} startedInventory
+ * @property {number} startedBlockCount
+ * @property {(pos: {x:number,y:number,z:number}) => boolean} canSeeMinableFace
+ * @property {Function} fairPlayHarvestTrunkCandidates
+ * @property {Function} findVisibleBlocksByNameWithPhysicalSweep
+ */
 
 export function createCollectHandler(deps) {
   const {
     ctx,
+    config,
     ensureBot,
     resolveMiningBlockName,
     goals,
@@ -13,51 +40,26 @@ export function createCollectHandler(deps) {
     log,
     hasLineOfSight,
     eyePosition,
+    fairPlayHarvestTrunkCandidates,
+    findVisibleBlocksByNameWithPhysicalSweep,
   } = deps;
 
-  // Raycast from bot eye to a point just OUTSIDE the target block on the
-  // bot-facing face. Returns true if the ray reaches that face with no
-  // intervening solid block. Aims at the nearest face center pulled back
-  // by 0.02 so the endpoint sits in air, not inside the target — avoids
-  // false negatives where the ray ends inside its own target block.
-  function canSeeMinableFace(targetPos) {
-    if (!hasLineOfSight || !eyePosition) return true; // pre-wire safety
-    const eye = eyePosition();
-    if (!eye) return true;
-    const cx = targetPos.x + 0.5;
-    const cy = targetPos.y + 0.5;
-    const cz = targetPos.z + 0.5;
-    const dx = eye.x - cx;
-    const dy = eye.y - cy;
-    const dz = eye.z - cz;
-    const adx = Math.abs(dx);
-    const ady = Math.abs(dy);
-    const adz = Math.abs(dz);
-    const candidates = [];
-    if (adx > 0.001) candidates.push({ x: cx + Math.sign(dx) * 0.48, y: cy, z: cz });
-    if (ady > 0.001) candidates.push({ x: cx, y: cy + Math.sign(dy) * 0.48, z: cz });
-    if (adz > 0.001) candidates.push({ x: cx, y: cy, z: cz + Math.sign(dz) * 0.48 });
-    for (const f of candidates) {
-      if (hasLineOfSight(eye, f)) return true;
-    }
-    return false;
-  }
+  // Thin closure over the shared `canSeeBotFacingFace` helper so we can
+  // pass it to the execute phase as a no-arg-coord function.
+  const canSeeMinableFace = (targetPos) =>
+    canSeeBotFacingFace(targetPos.x, targetPos.y, targetPos.z, { hasLineOfSight, eyePosition });
 
-  return async function collect({ block, count = 1 }) {
+  return async function collect({ block, count = 1, force = false }) {
     const b = ensureBot();
     ctx.tasks.cancelRequested = false;
     const blockName = resolveMiningBlockName(block);
     const blockType = ctx.world.mcData.blocksByName[blockName];
     if (!blockType) {
-      return {
-        ok: false,
-        error: {
-          code: 'UNKNOWN_BLOCK',
-          message: `Unknown block "${blockName}". Check spelling (e.g. oak_log, iron_ore, cobblestone).`,
-          observed_state: { requested_block: blockName },
-          retry_safe: false,
-        },
-      };
+      return fail(
+        'UNKNOWN_BLOCK',
+        `Unknown block "${blockName}". Check spelling (e.g. oak_log, iron_ore, cobblestone).`,
+        { observed_state: { requested_block: blockName }, retry_safe: false },
+      );
     }
 
     const batchSize = Math.min(count, 20);
@@ -69,45 +71,27 @@ export function createCollectHandler(deps) {
     const startedInventory = inventoryAt();
     const startedBlockCount = startedInventory[blockName] || 0;
 
-    const disc = await collectDiscoveryPhase(deps, {
-      b,
-      blockName,
-      blockType,
-      batchSize,
-      count,
-      inventoryAt,
-      startedInventory,
-      startedBlockCount,
-    });
+    /** @type {CollectContext} */
+    const cctx = {
+      b, ctx, config, goals, sleep, log,
+      blockName, blockType, count, batchSize, force,
+      inventoryAt, startedInventory, startedBlockCount,
+      canSeeMinableFace,
+      fairPlayHarvestTrunkCandidates,
+      findVisibleBlocksByNameWithPhysicalSweep,
+    };
+
+    const disc = await collectDiscoveryPhase(cctx);
     if (disc.terminal) return disc.response;
 
-    const {
-      found,
-      resolvedFromSource,
-      acceptedTargetNames,
-      isTrunkHarvest,
-    } = disc.value;
+    const { found, resolvedFromSource, acceptedTargetNames, isTrunkHarvest } = disc.value;
 
-    const ord = collectOrderingPhase({
-      b,
-      blockName,
-      count,
-      found,
-      isTrunkHarvest,
-    });
+    const ord = collectOrderingPhase(cctx, { found, isTrunkHarvest });
     if (!ord.ok) return ord.response;
 
     const { sorted, stripPlaneFloorY, stripSort, isFlooded } = ord.value;
 
-    return executeCollectHarvest({
-      b,
-      ctx,
-      goals,
-      sleep,
-      log,
-      blockName,
-      count,
-      batchSize,
+    return executeCollectHarvest(cctx, {
       found,
       acceptedTargetNames,
       resolvedFromSource,
@@ -116,10 +100,6 @@ export function createCollectHandler(deps) {
       stripPlaneFloorY,
       stripSort,
       isFlooded,
-      inventoryAt,
-      startedInventory,
-      startedBlockCount,
-      canSeeMinableFace,
     });
   };
 }

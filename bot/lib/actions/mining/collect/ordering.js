@@ -1,17 +1,13 @@
+import { fail } from '../../../shared/action-contract.js';
+
 /**
- * @param {object} opts
- * @param {import('mineflayer').Bot} opts.b
- * @param {string} opts.blockName
- * @param {number} opts.count
- * @param {Vec3[]} opts.found — original discovery list (for errors / hints)
+ * Sorts the discovery output into a strip-mine-friendly order.
+ *
+ * @param {import('./index.js').CollectContext} cctx
+ * @param {{ found: import('vec3').Vec3[], isTrunkHarvest: boolean }} phaseInputs
  */
-export function collectOrderingPhase({
-  b,
-  blockName,
-  count,
-  found,
-  isTrunkHarvest,
-}) {
+export function collectOrderingPhase(cctx, { found, isTrunkHarvest }) {
+  const { b, blockName, count } = cctx;
   const botPos = b.entity.position;
   // Only skip the bot's own foot block (digging it would drop the bot
   // into the hole on the same tick — useless). Everything else stays
@@ -40,11 +36,10 @@ export function collectOrderingPhase({
   if (safe.length === 0) {
     return {
       ok: false,
-      response: {
-        ok: false,
-        error: {
-          code: 'NO_VISIBLE_BLOCKS',
-          message: `No safely reachable ${blockName} found (all candidates were below the bot).`,
+      response: fail(
+        'NO_VISIBLE_BLOCKS',
+        `No safely reachable ${blockName} found (all candidates were below the bot).`,
+        {
           observed_state: {
             requested_block: blockName,
             requested_count: count,
@@ -54,7 +49,7 @@ export function collectOrderingPhase({
           },
           retry_safe: false,
         },
-      },
+      ),
     };
   }
 
@@ -69,6 +64,16 @@ export function collectOrderingPhase({
 
   let stripAxis = 'x';
   let perpAxis = 'z';
+  // Anchored at the bot's START position. INTENTIONALLY frozen across
+  // refreshPool calls — preserves the direction-discipline of strip mining:
+  // once the bot picks a perp direction at start, the sort keeps pulling
+  // candidates forward in that direction even after the bot has walked
+  // past the original anchor. Using current bot position here would let
+  // the perp sort flip direction every time the pathfinder bounces back
+  // (e.g. bot routed back to z=+2 to reach a hidden candidate, then sort
+  // reorients toward z=0 instead of continuing forward to z=+5+). The
+  // strip-axis tertiary key (`botStrip`) DOES use current bot position —
+  // that's right because within a row the bot can move freely.
   let initialPerpAnchor = Math.floor(b.entity.position[perpAxis]);
   let perpDirection = 1;
   const initialYAnchor = Math.floor(b.entity.position.y);
@@ -94,11 +99,10 @@ export function collectOrderingPhase({
   if (dryCandidates.length === 0) {
     return {
       ok: false,
-      response: {
-        ok: false,
-        error: {
-          code: 'TARGET_IN_WATER',
-          message: `All ${safe.length} ${blockName} candidates are in/under water — bot would drown trying to mine them. Drain the pond first, approach from a dry side, or look for a drier deposit.`,
+      response: fail(
+        'TARGET_IN_WATER',
+        `All ${safe.length} ${blockName} candidates are in/under water — bot would drown trying to mine them. Drain the pond first, approach from a dry side, or look for a drier deposit.`,
+        {
           observed_state: {
             requested_block: blockName,
             requested_count: count,
@@ -109,7 +113,7 @@ export function collectOrderingPhase({
           },
           retry_safe: false,
         },
-      },
+      ),
     };
   }
 

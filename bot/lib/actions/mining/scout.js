@@ -3,14 +3,29 @@ import { bearingFromDelta, classifySector, angleDiffDegrees } from '../../shared
 import { fail, ok } from '../../shared/action-contract.js';
 import { annotateReachability } from '../_nav-helpers.js';
 
-// Mirrors discovery.js's trunk-harvest detection so the find_blocks note
-// matches what mc collect will actually require. The three branches:
+// IMPORTANT: `find_blocks` uses raw `b.findBlocks` — an x-ray scan that
+// doesn't gate on line-of-sight. That's deliberate: scout's job is to
+// REPORT what exists, not to confirm reachability. `mc collect`, in
+// contrast, applies a per-candidate LOS check (canSeeBotFacingFace) and
+// will refuse to mine candidates whose bot-facing face is occluded
+// (causes.behind_wall). So scout results are a SUPERSET of collect's
+// minable set in fair-play mode.
+//
+// `fairPlayCollectNote` surfaces this mismatch to callers as a string
+// suffix on the result message, mirroring discovery.js's trunk-harvest
+// detection so the wording matches what collect will actually require:
 //   - trunks (logs/stems) → fairPlayHarvestTrunkCandidates needs the
-//     trunk in line-of-sight (the historical "trunk in sight" note)
+//     trunk in line-of-sight (historical "trunk in sight" wording)
 //   - non-solid plants (grass/flowers/crops) → proximity search, no LOS
 //     requirement, so we skip the note
 //   - everything else (cobble, ore, stone, dirt) → raycast visibility
 //     sweep, i.e. the bot must be able to see the block face
+//
+// Reachability is a SEPARATE concern, surfaced via `annotateReachability`
+// in `find_blocks` (the `reachable` field on each location). A candidate
+// can be reachable (pathfinder can navigate to within range) AND fail
+// LOS (a block sits between bot eye and the candidate's face) — both
+// checks must pass for collect to mine the cell.
 const TRUNK_RE = /_log$|_stem$|^crimson_stem$|^warped_stem$/i;
 export function fairPlayCollectNote(blockName, blockType) {
   if (TRUNK_RE.test(blockName)) return ' (scout; mc collect needs trunk in sight)';
@@ -28,6 +43,13 @@ export function createScoutHandlers(deps) {
     entitiesMatchingAfterLookSweep,
   } = deps;
 
+  /**
+   * Locate blocks of a given name within radius. Returns x-ray scan
+   * results (no LOS gating); each entry carries `reachable` from BFS
+   * pathfinding annotation. mc collect WILL re-check LOS at dig time and
+   * reject candidates whose bot-facing face is occluded — see the note
+   * suffix added in fair-play mode for the user-facing version of this.
+   */
   async function find_blocks({ block, radius = 32, count = 10 }) {
         const b = ensureBot();
         const blockName = resolveMiningBlockName(block);
