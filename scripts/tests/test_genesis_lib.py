@@ -51,14 +51,19 @@ def test_seed_starter_cards_topology(mock_create, tmp_path, monkeypatch):
     meta = gl.seed_starter_cards("g-2026-01-01-1", ctx)
     assert len(meta["epic_ids"]) == 4
     assert len(meta["p1_card_ids"]) == 5
-    # epics chain parents
-    assert calls[0]["parent_id"] is None
-    assert calls[1]["parent_id"] == "1"
-    assert calls[2]["parent_id"] == "2"
-    assert calls[3]["parent_id"] == "3"
-    # p1 cards no parent
+    # Epic chain uses depends_on as real prerequisite: P2 depends-on P1, P3
+    # depends-on P2, P4 depends-on P3. Epic IDs are returned in order, so
+    # call[0]=P1, call[1]=P2, etc.
+    assert calls[0].get("depends_on") is None
+    assert calls[1]["depends_on"] == "1"
+    assert calls[2]["depends_on"] == "2"
+    assert calls[3]["depends_on"] == "3"
+    # P1 worker cards: NO depends_on (children of an open epic must promote
+    # immediately) but EVERY card carries `epic_id == P1_id` so the facade
+    # can navigate the membership.
     for c in calls[4:]:
-        assert c["parent_id"] is None
+        assert c.get("depends_on") is None
+        assert c.get("epic_id") == "1"  # P1 epic was the first card created
 
 
 def test_check_phases_empty_state(tmp_path, monkeypatch):

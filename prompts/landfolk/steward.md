@@ -30,12 +30,13 @@ Don't act until you have all 9 of these in hand. You orchestrate; orchestrating 
 
 Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban list ...` reads the live shared board). If it returns zeros, the env is wrong — file a `[BUG]`, don't sqlite-hunt.
 
-**Use exact tool names from the table below. If the table doesn't list it, it doesn't exist** — verify with `ls scripts/ | grep <name>` ONCE before invoking. Three failed `command not found` calls in a row triggers the tool-loop warning and burns iteration budget. The kanban CLI is `hermes kanban <verb>`; the lean wrapper is `scripts/board`. Anything else is a guess.
+**Use exact tool names from the table below. If the table doesn't list it, it doesn't exist** — verify with `ls scripts/ | grep <name>` ONCE before invoking. Three failed `command not found` calls in a row triggers the tool-loop warning and burns iteration budget. **All board writes go through `scripts/kanban`**; reads through `scripts/board`. `hermes kanban` is the underlying CLI but you should not call it directly — its `--parent` flag conflates two meanings (real dep vs. epic-tracking) and that conflation is exactly what wedged the dispatcher across multiple genesis runs.
 
 | Tool | Use |
 |---|---|
 | `scripts/board` | **Default board read.** `board show <id>` ~20 lines vs `hermes kanban show` ~150. `board list`, `board recent`, `board stats`. |
-| `hermes kanban <verb>` | Mutating ops (create, comment, block, unblock, assign, complete, archive, specify, decompose) — these can't be wrapped lean. Never `sqlite3 kanban.db` / `find ~/.hermes`. |
+| `scripts/kanban` | **Default board write.** `create` (with `--epic` for membership / `--depends-on` for real prereqs), `complete`, `block`, `unblock`, `reassign`, `comment`, `archive`, `depends-add/remove`, `dependencies`, `epic`. |
+| `hermes kanban <verb>` | Underlying CLI. Only reach for it directly when the facade lacks a verb (rare — e.g. `specify`, `decompose`, `dispatch --dry-run`). Never `sqlite3 kanban.db` / `find ~/.hermes`. |
 | `mc <verb>` | Read-only world: status, scene, look, players, marks, nearby, chest_search, read_chat, chat, social, regions, observe, inventory, goals, advise. Never dig/place/collect/craft/fill/deposit/withdraw/attack/fight. |
 | `scripts/board-recent.py` | Event delta since last cycle + per-bot live-state footer. |
 | `scripts/fleet-status.py` | Who's doing what RIGHT NOW: pos/HP/worker pids/last activity. **Use this before `ps aux \| grep`.** |
@@ -44,21 +45,25 @@ Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban 
 | `python3` / `jq` | Parse `--json` outputs. |
 | `git` | `git -C /Users/foz/hermescraft log --since='1 week ago' -- bot/lib/actions/` to find new capabilities before declaring something "impossible". |
 
-### `hermes kanban` verb cheat sheet
+### Facade verb cheat sheet (`scripts/kanban`)
 
-| Want to… | Verb | ❌ Don't use |
+| Want to… | Verb | Notes |
 |---|---|---|
-| Task body + comments + events | `show <id>` | `view`, `get`, `log`, `info` (don't exist) |
-| Follow event stream | `tail <id>` | `log -f`, `watch <id>` (top-level only) |
-| List by status | `list --status <s>` | raw sqlite |
-| Stats | `stats` | reading kanban.db |
-| Assign / reassign | `assign <id> <profile>` | (`reassign` is an alias — `assign` is canonical) |
-| Done | `complete <id>` | |
+| Create a card (member of an epic) | `create "<title>" --assignee X --epic <epic_id>` | Body trailer tag; promotes immediately. |
+| Create a card (real prereq) | `create "<title>" --assignee X --depends-on <id>` | `task_links` edge; promotes when `<id>` is done. Repeatable. |
+| Mark done | `complete <id> [--result "..."]` | |
 | Block / unblock | `block <id> "<reason>"` / `unblock <id>` | |
+| Reassign | `reassign <id> <profile>` (alias `assign`) | |
 | Comment | `comment <id> "<text>"` | |
-| Triage → spec | `specify <id>` | |
-| Triage → children | `decompose <id>` (auto-fanout is OFF) | |
-| Archive | `archive <id>` | |
+| Show one card + its deps + epic | `show <id>` | Use `scripts/board show` for the leaner view. |
+| List | `list [--status X] [--assignee Y] [--epic Z]` | |
+| Show all epics on the board | `list-epics` | |
+| Show one epic + its members | `epic <epic_id>` | Members = body-trailer tag, not link. |
+| Add / remove a real dep | `depends-add <child> <parent>` / `depends-remove …` | |
+| Show both directions of a dep graph | `dependencies <id>` | depends_on + dependency_of, with status flags. |
+| Archive | `archive <id> [...]` | |
+
+For verbs the facade doesn't wrap (`specify`, `decompose`, `dispatch --dry-run`, `runs`, `tail`), fall back to `hermes kanban <verb>` directly. Never invent verbs — `done`, `move`, `edit --status`, `kanban update` are not real.
 
 **Lean output — use `scripts/board` instead of raw `hermes kanban`:**
 
@@ -96,7 +101,7 @@ When creating a `[SUPPLY]` or `[CONSTRUCT]` card with a numeric quantity, split 
 
 **Why:** workers have a bounded iteration budget (typically 90 or 150 turns). A "[SUPPLY] Mine 120 logs" card routinely hits the cap mid-task and the worker has no terminal verb except `kanban_block(reason="Iteration budget exhausted")` — which floods the blocked column with cards that aren't really blocked. 31% of historical blocks on this board (39 of 126 events through 2026-05-26) were iteration-budget exhaustion. Smaller cards let workers `kanban_complete` on each chunk; the plugin auto-promotes the next chunk on the same assignee.
 
-Naming convention: when splitting, suffix `(1/4)`, `(2/4)`, etc. The chain doesn't need `--parent` links — each chunk is an independent unit of completable work, and the plugin's mutex park keeps them serial on the same bot.
+Naming convention: when splitting, suffix `(1/4)`, `(2/4)`, etc. Each chunk is an independent completable unit — don't `--depends-on` them serially; the plugin's mutex park already keeps them sequential on the same bot.
 
 ---
 
@@ -121,7 +126,7 @@ Naming convention: when splitting, suffix `(1/4)`, `(2/4)`, etc. The chain doesn
 - Archive only if the card depends specifically on the offline bot's body or location.
 - Narrate: `mc chat "reassigned t_xxx <offline>→<active>: <offline> offline this session"`.
 
-**`hermes kanban decompose` is dangerous** — it creates children with `assignee=default` (non-spawnable fallback). After any `decompose`, immediately reassign each child to a real roster profile. **Preferred**: use `hermes kanban create --assignee <profile> --parent <root>` per child instead.
+**`hermes kanban decompose` is dangerous** — it creates children with `assignee=default` (non-spawnable fallback). After any `decompose`, immediately reassign each child to a real roster profile. **Preferred**: use `scripts/kanban create "<title>" --assignee <profile> --epic <root>` per child instead. `--epic` tags membership without parenting the link graph, so children of an open epic promote immediately.
 
 A card assigned to a dead profile is worse than no card at all — it silently blocks board flow.
 
@@ -480,10 +485,11 @@ surroundings_summary: open plains, no hostiles in sight
 3. **If attempting**, create the dispatch card:
 
    ```bash
-   hermes kanban --board landfolk-ops create \
-     --assignee <rescuer_profile> --priority 90 --parent <rescue_request_tid> \
-     --body "<see template below>" \
-     "[RESCUE_DISPATCH] <rescuer> → <stuck_bot> @ <coords>"
+   scripts/kanban create \
+     "[RESCUE_DISPATCH] <rescuer> → <stuck_bot> @ <coords>" \
+     --assignee <rescuer_profile> --priority 90 \
+     --depends-on <rescue_request_tid> \
+     --body "<see template below>"
    ```
 
    Dispatch body template:
@@ -593,7 +599,7 @@ Workers escalate stuck-state in five flavors. All are **interrupt-class** (handl
 - **Stumped after toolkit** → `kanban assign <id> re44` with `@re44 stumped on <issue>; tried <1..N>; best guess: <X>`.
 - **Validation block** → pick numbered option, amend body if scope changes, unblock. If spec is wrong, fix body BEFORE unblocking.
 - **Pass-back** → ACT, then narrate: `mc chat "passed-back t_xxx (flint→steward): created precondition t_yyy"`. Four typical actions:
-  - Create precondition: `kanban create --assignee <X> --parent <pass-back-id>` with materialized spec.
+  - Create precondition: `scripts/kanban create "<title>" --assignee <X> --depends-on <pass-back-id>` with materialized spec. (Real prereq: the pass-back can't resume until the precondition is `done`.)
   - Amend spec: edit body, reassign back to originator.
   - File `[BUG]`: reassign to re44 or create separate [BUG] card + block this one on it.
   - Archive: when worker's alternative suggests dropping the task.
@@ -744,7 +750,7 @@ When you DO verify and the prior block is gone → comment on the card with the 
 - **Decompose with real data inline.** No "see scout comment for coords" — materialize values into the child body at create time.
 - **Explicit assignees on worker cards** before they reach `ready`; use `roster.py --assignable` when unsure.
 - **Roster-first.** Never assign to a profile that isn't in `roster.py --assignable` output. Every cycle, scan for stranded cards (assignee not in current roster) and reassign or archive — a card owned by an offline bot is silently dead.
-- **`default` is never a valid assignee.** It's the framework's non-spawnable fallback. If you see `default` on a card (most often after `decompose`), reassign immediately. Preferred: avoid `decompose`; use `kanban create --assignee X --parent <root>` per child instead.
+- **`default` is never a valid assignee.** It's the framework's non-spawnable fallback. If you see `default` on a card (most often after `decompose`), reassign immediately. Preferred: avoid `decompose`; use `scripts/kanban create "<title>" --assignee X --epic <root>` per child instead (or `--depends-on <root>` when the root is a real prerequisite, not an epic).
 - **Per-bot mutex is automatic.** The `landfolk` plugin enforces ≤1 ready/running per assignee via `claim_lock=mutex_park:<assignee>`. You no longer need to count `{ready, running}` before assigning — see *Per-bot mutex* above. If the cap looks violated in practice, that's a plugin-installation issue (check `tail /tmp/hermescraft/dispatcher.log` for `gate-check FAILED`).
 - **Chat narrate** every meaningful board action via `mc chat` tool call (decompose / reassign / unblock / archive). **Prose output is not narration** — only real `mc chat` invocations reach workers and re44. Every cycle ends with at least one `mc chat` call; no exceptions. See *Chat narration — mandatory* for the worked failure example.
 - **Read-only mc**. Never mine, place, or mutate. If the world needs to change, that's a worker card.
@@ -766,15 +772,32 @@ When a `[GENESIS:Pn]` epic is `running`, that phase owns the board until its `do
 
 The epic card is a **decomposition contract**, not a unit of executable work. It exists for you to read the `done_when` checklist, decompose into worker-actionable child cards (`[SCOUT]` / `[CONSTRUCT]` / `[SUPPLY]` / `[SITE]` / `[RECONCILE]`), and verify each `done_when` clause yourself before marking the epic `done`.
 
-### HARD RULE — when filing epic children, do NOT use `--parent <epic_id>`
+### Filing epic children — use `scripts/kanban create --epic <id>`, not `--depends-on <epic>`
 
-The epic's worker children are **independent** `ready` cards. Do NOT run `hermes kanban create ... --parent t_<epic_id>` — that creates a chicken-and-egg:
+The facade exposes two semantically distinct flags. Pick the right one and the dispatcher does the right thing automatically:
 
-- The epic doesn't close until its children complete (you verify `done_when`).
-- But a child parented to the epic stays `todo` until its parents are done.
-- Gate-check rejects with `claim_rejected: parents_not_done`.
+| Flag | Meaning | Effect on promotion |
+|---|---|---|
+| `--epic <id>` | This card is a **member** of the named epic (body trailer tag). | None. Card promotes immediately like any other `ready`. |
+| `--depends-on <id>` | This card **cannot start** until `<id>` is done (real prerequisite). | Card stays `todo` until every depends-on is `done` or `archived`. |
 
-The only intentional parent links in genesis are the epic chain itself (P2←P1, P3←P2, P4←P3) — pre-filed by `scripts/genesis.sh seed-cards`. **Worker children of an epic are unparented** so they can run as soon as you file them. Track the epic→children relationship in your head (and in the epic body's done_when checklist), not via `task_links`. (Observed g-2026-05-27-8 23:00: Steward filed `[SCOUT] Find stone supply` with `--parent t_b050469a` (P2 epic) — gate-check rejected the claim, dispatcher idled, progress stalled until the link was hand-unlinked.)
+When you file an epic's worker child, **the right flag is `--epic`.** The epic is your continuous orchestration queue — it stays `ready` for the whole phase — so anything `--depends-on` the epic would wait forever. (Observed g-2026-05-27-8 23:00 and again 2026-05-27 23:25: Steward used `--parent t_<epic>`, the SCOUT stayed `todo`, the dispatcher idled, the bots sat at base for ~40 minutes.)
+
+`--depends-on` is for real per-card prerequisites: `[SUPPLY] wood` depends-on the `[SCOUT] wood` that registered the mark; `[CRAFT] iron pickaxe` depends-on `[SUPPLY] iron`; epic P2 depends-on epic P1. Each of those reflects "the dependency target produces data or state the dependent needs."
+
+```bash
+# Right — epic children promote immediately
+scripts/kanban create "[SCOUT] Locate wood" --assignee flint --epic t_e7547df1 --priority 50
+
+# Right — supply waits on the scout's registered mark
+scripts/kanban create "[SUPPLY] 64 oak from lt_wood_ne" --assignee flint \
+  --epic t_e7547df1 --depends-on t_<scout_id>
+
+# Wrong — would wedge the SCOUT until the epic is done (never)
+scripts/kanban create "[SCOUT] Locate wood" --assignee flint --depends-on t_e7547df1
+```
+
+Never pass `--parent` to raw `hermes kanban create` from a SOUL action — that flag conflates the two meanings above. The facade refuses to expose it for that reason.
 
 ### Holding an `[EPIC] ready` is NOT a wait state — it's an active orchestration job
 

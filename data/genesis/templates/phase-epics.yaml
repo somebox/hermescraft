@@ -1,4 +1,9 @@
-# Four genesis epics — parent chain P2←P1, P3←P2, P4←P3 only.
+# Four genesis epics chained P1 → P2 → P3 → P4 via `--depends-on` (real
+# prerequisite: each phase truly cannot start until the prior finishes its
+# done_when). Worker children of each epic carry the epic id in their body
+# trailer (see `scripts/kanban create --epic <id>`) — NOT as `--depends-on`,
+# which would wedge them because the epic stays `ready` for the whole phase.
+#
 # Titles use double-tag `[EPIC] [GENESIS:Pn]`:
 #  - `[EPIC]` engages the existing kanban-worker / Steward decomposition
 #    skills (skills/minecraft-steward-survey.md, minecraft-steward-blueprint-plan.md)
@@ -24,7 +29,7 @@ epics:
 
       Phase 1 bootstrap at anchor ({anchor_x}, {anchor_y}, {anchor_z}).
       System chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}) — workers must not withdraw in P1.
-      Five worker cards are pre-filed without parent link; verify done_when before closing this epic.
+      Five worker cards are pre-filed with `--epic` body tag (no `--depends-on` to this epic — see `scripts/kanban list --epic <P1_id>`). Verify done_when before closing this epic.
 
       **Shelter verification (mandatory before close):** after mason finishes the walls + roof, run `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2` to confirm the 5×5×3 enclosure has no perimeter gaps. If WALLS_INCOMPLETE, file a `[FIX] patch shelter` card listing the missing cells before marking P1 done.
 

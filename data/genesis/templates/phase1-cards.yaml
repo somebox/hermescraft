@@ -1,4 +1,9 @@
-# Phase 1 worker cards — no --parent to [GENESIS:P1] epic.
+# Phase 1 worker cards. Each card is tagged with `epic: <P1_id>` in its body
+# trailer so `scripts/kanban epic <P1_id>` lists them and `scripts/kanban list
+# --epic <P1_id>` filters to just P1's children. NO `--depends-on` to the P1
+# epic — that would wedge the children (P1 stays `ready` while orchestrating;
+# children would never promote). See prompts/landfolk/steward.md "Filing epic
+# children" for the rule.
 cards:
   - title: "[SCOUT] Confirm base anchor"
     assignee: flint

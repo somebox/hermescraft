@@ -546,11 +546,17 @@ After reassign, **exit cleanly** with no further action on the card. Don't `kanb
 
 ## CLI fallback (for scripting)
 
-Every tool has a CLI equivalent for human operators and scripts:
-- `kanban_show` ↔ `hermes kanban show <id> --json`
-- `kanban_complete` ↔ `hermes kanban complete <id> --summary "..." --metadata '{...}'`
-- `kanban_block` ↔ `hermes kanban block <id> "reason"`
-- `kanban_create` ↔ `hermes kanban create "title" --assignee <profile> [--parent <id>]`
-- etc.
+Every tool has a CLI equivalent for human operators and out-of-agent scripts. **From a SOUL action use the `kanban_*` tools, not the CLI** — the tools work across all terminal backends (Docker, Modal, SSH); the CLI only works locally.
 
-Use the tools from inside an agent; the CLI exists for the human at the terminal.
+For scripts and human operators on the landfolk-ops board, prefer the `scripts/kanban` facade over raw `hermes kanban`:
+
+- `kanban_show` ↔ `scripts/kanban show <id>` (or `hermes kanban show <id> --json` for full event log)
+- `kanban_complete` ↔ `scripts/kanban complete <id> [--result "..."]`
+- `kanban_block` ↔ `scripts/kanban block <id> "reason"`
+- `kanban_create` ↔ `scripts/kanban create "title" --assignee <profile> [--epic <epic_id>] [--depends-on <id>...]`
+
+Notes on `kanban_create` / `scripts/kanban create`:
+
+- **`--epic <id>`** marks epic membership (body trailer tag). Children of `ready` orchestrator epics promote immediately — no waiting on the epic.
+- **`--depends-on <id>`** is a real prerequisite (writes a `task_links` edge). The child stays `todo` until `<id>` is `done`. Use this for the natural-language "I can't start until X finishes" case: a `[SUPPLY]` waiting on a `[SCOUT]`'s registered mark, a `[CRAFT]` waiting on a `[SUPPLY]`'s output, etc.
+- The raw `hermes kanban` CLI has a single `--parent` flag that overloads both meanings. Do not call it directly. The `kanban_create` in-process tool's `parents=[...]` parameter expresses real prereqs ONLY; epic membership belongs in the body trailer (passed via the tool's `body=` argument as `…\n\n---\nepic: <id>\n`).

@@ -1,0 +1,841 @@
+#!/usr/bin/env python3
+"""kanban — write-side facade over `hermes kanban` for the landfolk-ops board.
+
+Why this exists
+---------------
+The `hermes kanban` CLI's `--parent` flag carries two semantically distinct
+meanings — real domain prerequisite vs. epic-tracking bookkeeping — that the
+gate-check (`_undone_parents_exist`) cannot tell apart. Agents (and humans)
+routinely conflate them. The result, observed multiple times in genesis runs,
+is that an epic stays `ready` forever (it's the orchestrator's continuous
+queue card) while its title-mate "children" stay `todo` waiting for the
+epic to be `done` — which it never will be. Dispatcher idle.
+
+This wrapper splits `--parent` into two:
+
+  --depends-on <id>   real prerequisite. Writes a task_links edge. The
+                      child cannot promote until the parent is done.
+  --epic <id>         membership only. Writes a body-trailer tag, NOT a
+                      link. The child promotes immediately; the epic
+                      tracks its kids by tag, not by edge.
+
+Plus a small set of explicit dependency verbs so the relationship is named
+in commands instead of inferred from `--parent`:
+
+  depends-add <child> <parent>
+  depends-remove <child> <parent>
+  dependencies <id>           # both directions, with status
+
+The facade also normalizes status-change verbs (`complete`, `block`,
+`unblock`, `reassign`, `comment`, `archive`) so SOULs and skills can refer
+to one verb set that's stable across Hermes upgrades.
+
+Implementation
+--------------
+- READS go direct to ~/.hermes/kanban/boards/<board>/kanban.db (read-only
+  SQLite). Faster than shelling out, and lets us join task_links with
+  task status in a single query.
+- WRITES shell out to `hermes kanban` so the events table, claim_lock
+  parking, and recompute_ready cascades all stay consistent.
+
+Coexistence
+-----------
+Raw `hermes kanban` remains callable for ad-hoc ops. SOULs and skills
+should reference this facade. Future move (not yet): a sandbox PATH stub
+that blocks `--parent` to make the bug class structurally impossible
+even from raw shells.
+
+Usage
+-----
+  scripts/kanban create "<title>" --assignee X
+                       [--epic <id>] [--depends-on <id>]...
+                       [--body "..."] [--priority N] [--skill ...]
+                       [--triage] [--json]
+  scripts/kanban list [--status X] [--assignee Y] [--epic Z]
+  scripts/kanban show <id>
+  scripts/kanban complete <id> [--result "..."]
+  scripts/kanban block <id> [--reason "..."]
+  scripts/kanban unblock <id>
+  scripts/kanban reassign <id> <new_assignee>
+  scripts/kanban assign <id> <profile>           # alias of reassign
+  scripts/kanban comment <id> "<text>"
+  scripts/kanban archive <id> [<id>...]
+  scripts/kanban depends-add <child> <parent>
+  scripts/kanban depends-remove <child> <parent>
+  scripts/kanban dependencies <id>
+  scripts/kanban epic-of <id>
+  scripts/kanban epic <epic_id>                  # show epic + its children
+  scripts/kanban list-epics
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+from typing import Optional
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+BOARD = os.environ.get("HERMES_KANBAN_BOARD", "landfolk-ops")
+DB_PATH = Path(
+    os.environ.get(
+        "HERMES_KANBAN_DB",
+        str(Path.home() / ".hermes" / "kanban" / "boards" / BOARD / "kanban.db"),
+    )
+)
+
+EPIC_TRAILER_RE = re.compile(r"^---\s*\nepic:\s*(\S+)\s*$", re.MULTILINE)
+
+
+# ─── shared helpers ─────────────────────────────────────────────────────────
+
+
+def _die(msg: str, code: int = 1) -> None:
+    print(f"kanban: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def _run(cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def _hermes(*args: str, timeout: int = 30, json_flag: bool = False) -> dict | list | str:
+    """Run `hermes kanban --board <board> <args>`. Returns parsed JSON if json_flag,
+    else raw stdout. Raises on non-zero exit (prints stderr first)."""
+    cmd = ["hermes", "kanban", "--board", BOARD, *args]
+    if json_flag and "--json" not in args:
+        cmd.append("--json")
+    proc = _run(cmd, timeout=timeout)
+    if proc.returncode != 0:
+        msg = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
+        _die(f"hermes kanban {' '.join(args[:2])} failed: {msg}", code=proc.returncode or 1)
+    if json_flag:
+        try:
+            return json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            _die(f"hermes returned non-JSON: {e}: {proc.stdout[:200]}")
+    return proc.stdout
+
+
+def _db() -> sqlite3.Connection:
+    if not DB_PATH.exists():
+        _die(f"kanban DB not found at {DB_PATH} — is the board initialized?")
+    # Open read-only via URI so we never accidentally write through here.
+    uri = f"file:{DB_PATH}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# ─── epic trailer parsing ───────────────────────────────────────────────────
+
+
+def _split_body_trailer(body: str) -> tuple[str, dict[str, str]]:
+    """Split a body string into (visible_body, trailer_dict).
+
+    The trailer is a single `---\\n` separator followed by YAML-ish `key: value`
+    lines at the END of the body. We only recognize a small fixed set of keys
+    (`epic`, `genesis_run`) — anything else gets folded back into the body.
+    """
+    if "---" not in (body or ""):
+        return body or "", {}
+    parts = (body or "").rsplit("\n---\n", 1)
+    if len(parts) != 2:
+        # Also accept leading `---\n` if body starts with the trailer (rare)
+        if (body or "").startswith("---\n"):
+            parts = ["", body[4:]]
+        else:
+            return body or "", {}
+    visible, trailer_block = parts[0], parts[1]
+    trailer: dict[str, str] = {}
+    for line in trailer_block.splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        k = k.strip()
+        v = v.strip()
+        if k in ("epic", "genesis_run"):
+            trailer[k] = v
+    if not trailer:
+        return body or "", {}
+    return visible.rstrip("\n"), trailer
+
+
+def _epic_of(body: Optional[str]) -> Optional[str]:
+    if not body:
+        return None
+    _, trailer = _split_body_trailer(body)
+    return trailer.get("epic")
+
+
+def _attach_trailer(body: str, epic: Optional[str], genesis_run: Optional[str] = None) -> str:
+    """Append (or replace) a trailer block at the end of body."""
+    visible, existing = _split_body_trailer(body or "")
+    merged = dict(existing)
+    if epic is not None:
+        merged["epic"] = epic
+    if genesis_run is not None:
+        merged["genesis_run"] = genesis_run
+    if not merged:
+        return visible
+    lines = [f"{k}: {v}" for k, v in merged.items()]
+    sep = "\n\n" if visible else ""
+    return f"{visible}{sep}---\n" + "\n".join(lines)
+
+
+# ─── DB queries ─────────────────────────────────────────────────────────────
+
+
+def _fetch_task(conn: sqlite3.Connection, task_id: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT id, title, body, assignee, status, priority, claim_lock, created_at, completed_at "
+        "FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+
+
+def _fetch_parents(conn: sqlite3.Connection, task_id: str) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT p.id, p.title, p.status, p.assignee
+            FROM task_links l JOIN tasks p ON p.id = l.parent_id
+            WHERE l.child_id = ?
+            ORDER BY p.created_at
+            """,
+            (task_id,),
+        )
+    )
+
+
+def _fetch_children(conn: sqlite3.Connection, task_id: str) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT c.id, c.title, c.status, c.assignee
+            FROM task_links l JOIN tasks c ON c.id = l.child_id
+            WHERE l.parent_id = ?
+            ORDER BY c.created_at
+            """,
+            (task_id,),
+        )
+    )
+
+
+def _all_tasks(conn: sqlite3.Connection, status: Optional[str], assignee: Optional[str]) -> list[sqlite3.Row]:
+    where = []
+    params: list = []
+    if status:
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
+        where.append(f"status IN ({','.join('?' * len(statuses))})")
+        params.extend(statuses)
+    if assignee:
+        where.append("lower(coalesce(assignee, '')) = lower(?)")
+        params.append(assignee)
+    sql = "SELECT id, title, body, assignee, status, priority, claim_lock FROM tasks"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY priority DESC, created_at"
+    return list(conn.execute(sql, params))
+
+
+def _scan_epic_children(conn: sqlite3.Connection, epic_id: str) -> list[sqlite3.Row]:
+    """Return all cards whose body trailer references this epic.
+
+    Scans every task body. The board is small (hundreds of cards lifetime);
+    if this gets slow we add a `body LIKE '%epic: <id>%'` prefilter.
+    """
+    candidates = conn.execute(
+        "SELECT id, title, body, assignee, status, priority FROM tasks "
+        "WHERE body LIKE ? ORDER BY priority DESC, created_at",
+        (f"%epic: {epic_id}%",),
+    ).fetchall()
+    out = []
+    for row in candidates:
+        if _epic_of(row["body"]) == epic_id:
+            out.append(row)
+    return out
+
+
+# ─── command: create ────────────────────────────────────────────────────────
+
+
+def cmd_create(args: argparse.Namespace) -> int:
+    """Create a new card. NO --parent flag — use --epic (no gate) or
+    --depends-on (real prerequisite gate)."""
+
+    body = args.body or ""
+    if args.epic:
+        # Validate epic exists before tagging — silent typos are the
+        # opposite of the cognitive clarity this facade is trying to buy.
+        with _db() as conn:
+            row = _fetch_task(conn, args.epic)
+        if row is None:
+            _die(f"--epic {args.epic} does not exist on board {BOARD}")
+        body = _attach_trailer(body, epic=args.epic)
+
+    cmd: list[str] = [
+        "hermes",
+        "kanban",
+        "--board",
+        BOARD,
+        "create",
+        args.title,
+        "--assignee",
+        args.assignee,
+    ]
+    if body:
+        cmd.extend(["--body", body])
+    if args.priority is not None:
+        cmd.extend(["--priority", str(args.priority)])
+    if args.triage:
+        cmd.append("--triage")
+    for s in args.skill or []:
+        cmd.extend(["--skill", s])
+    if args.max_retries is not None:
+        cmd.extend(["--max-retries", str(args.max_retries)])
+    if args.idempotency_key:
+        cmd.extend(["--idempotency-key", args.idempotency_key])
+    # We always need JSON back to extract the task id and attach
+    # depends-on edges atomically-ish.
+    cmd.append("--json")
+
+    proc = _run(cmd, timeout=30)
+    if proc.returncode != 0:
+        _die(f"create failed: {proc.stderr.strip() or proc.stdout.strip()}")
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        _die(f"create returned non-JSON: {proc.stdout[:200]}")
+    tid = str(
+        data.get("id")
+        or data.get("task_id")
+        or (data.get("task") or {}).get("id")
+        or ""
+    )
+    if not tid or tid == "None":
+        _die(f"could not parse task id from {proc.stdout[:200]}")
+
+    # Attach depends-on edges via `hermes kanban link`. Order doesn't
+    # matter; each is independent. If any link fails we report it but
+    # don't roll back — the card is created, the operator can fix the
+    # link by hand if needed.
+    failed_links: list[tuple[str, str]] = []
+    for parent in args.depends_on or []:
+        link_cmd = ["hermes", "kanban", "--board", BOARD, "link", parent, tid]
+        lp = _run(link_cmd, timeout=15)
+        if lp.returncode != 0:
+            failed_links.append((parent, lp.stderr.strip() or f"exit {lp.returncode}"))
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "id": tid,
+                    "title": args.title,
+                    "assignee": args.assignee,
+                    "epic": args.epic,
+                    "depends_on": list(args.depends_on or []),
+                    "depends_on_failed": [
+                        {"parent": p, "error": e} for p, e in failed_links
+                    ],
+                }
+            )
+        )
+    else:
+        epic_note = f" epic={args.epic}" if args.epic else ""
+        dep_note = (
+            f" depends_on={','.join(args.depends_on)}" if args.depends_on else ""
+        )
+        print(f"{tid}  {args.title}  → {args.assignee}{epic_note}{dep_note}")
+        for parent, err in failed_links:
+            print(f"  ! depends-on {parent} FAILED: {err}", file=sys.stderr)
+
+    return 1 if failed_links else 0
+
+
+# ─── command: list ──────────────────────────────────────────────────────────
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    """List cards, with optional --epic filter (body-trailer scan)."""
+    with _db() as conn:
+        rows = _all_tasks(conn, args.status, args.assignee)
+        if args.epic:
+            rows = [r for r in rows if _epic_of(r["body"]) == args.epic]
+
+    if not rows:
+        suffix = []
+        if args.status:
+            suffix.append(f"status={args.status}")
+        if args.assignee:
+            suffix.append(f"assignee={args.assignee}")
+        if args.epic:
+            suffix.append(f"epic={args.epic}")
+        print(f"# no cards match ({', '.join(suffix) or 'all'})")
+        return 0
+
+    print(f"# board={BOARD}  rows={len(rows)}")
+    # Group by status, preserving a sensible order
+    order = ["running", "ready", "todo", "blocked", "triage", "done", "archived"]
+    rows.sort(
+        key=lambda r: (
+            order.index(r["status"]) if r["status"] in order else 99,
+            -(r["priority"] or 0),
+            r["id"],
+        )
+    )
+    cur_status = None
+    for r in rows:
+        if r["status"] != cur_status:
+            cur_status = r["status"]
+            print(f"# ── {cur_status} ──")
+        epic = _epic_of(r["body"])
+        epic_tag = f" [epic={epic}]" if epic else ""
+        lock = ""
+        if r["claim_lock"] and r["claim_lock"].startswith("mutex_park:"):
+            lock = " [parked]"
+        elif r["claim_lock"] and r["claim_lock"].startswith("orch_continuous:"):
+            lock = " [orch]"
+        title = (r["title"] or "").strip()
+        if len(title) > 60:
+            title = title[:59] + "…"
+        assignee = r["assignee"] or "—"
+        print(
+            f"  {r['id']}  {assignee:<10}  p{(r['priority'] or 0):>2}  {title}{epic_tag}{lock}"
+        )
+    return 0
+
+
+# ─── command: show ──────────────────────────────────────────────────────────
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    """Show one card + its dependencies + epic membership."""
+    with _db() as conn:
+        row = _fetch_task(conn, args.task_id)
+        if row is None:
+            _die(f"no task {args.task_id} on board {BOARD}")
+        parents = _fetch_parents(conn, args.task_id)
+        children = _fetch_children(conn, args.task_id)
+    visible, trailer = _split_body_trailer(row["body"] or "")
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "id": row["id"],
+                    "title": row["title"],
+                    "status": row["status"],
+                    "assignee": row["assignee"],
+                    "priority": row["priority"],
+                    "body": visible,
+                    "trailer": trailer,
+                    "depends_on": [dict(p) for p in parents],
+                    "dependency_of": [dict(c) for c in children],
+                },
+                default=str,
+            )
+        )
+        return 0
+
+    print(f"{row['id']}  {row['title']}")
+    print(f"  status:    {row['status']}")
+    print(f"  assignee:  {row['assignee'] or '—'}")
+    print(f"  priority:  {row['priority'] or 0}")
+    if trailer.get("epic"):
+        print(f"  epic:      {trailer['epic']}")
+    if trailer.get("genesis_run"):
+        print(f"  genesis:   {trailer['genesis_run']}")
+    if row["claim_lock"]:
+        print(f"  lock:      {row['claim_lock']}")
+
+    if parents:
+        print(f"  depends_on ({len(parents)}):")
+        for p in parents:
+            done = "✓" if p["status"] in ("done", "archived") else "◻"
+            print(f"    {done} {p['id']}  [{p['status']}]  {p['title']}")
+    if children:
+        print(f"  dependency_of ({len(children)}):")
+        for c in children:
+            done = "✓" if c["status"] in ("done", "archived") else "◻"
+            print(f"    {done} {c['id']}  [{c['status']}]  {c['title']}")
+
+    if visible:
+        print("  body:")
+        for line in visible.splitlines()[:30]:
+            print(f"    {line}")
+        more = len(visible.splitlines()) - 30
+        if more > 0:
+            print(f"    … (+{more} more lines; `hermes kanban show {row['id']}` for full)")
+    return 0
+
+
+# ─── command: dependencies / depends-add / depends-remove ───────────────────
+
+
+def cmd_dependencies(args: argparse.Namespace) -> int:
+    """Print both directions of the dependency graph for one card.
+
+    depends_on    = task_links where this card is the CHILD
+                    (cards that must be done before this one promotes)
+    dependency_of = task_links where this card is the PARENT
+                    (cards that are waiting on this one)
+    """
+    with _db() as conn:
+        row = _fetch_task(conn, args.task_id)
+        if row is None:
+            _die(f"no task {args.task_id}")
+        parents = _fetch_parents(conn, args.task_id)
+        children = _fetch_children(conn, args.task_id)
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "task": {"id": row["id"], "title": row["title"], "status": row["status"]},
+                    "depends_on": [dict(p) for p in parents],
+                    "dependency_of": [dict(c) for c in children],
+                }
+            )
+        )
+        return 0
+
+    print(f"{row['id']}  {row['title']}  [{row['status']}]")
+    if not parents and not children:
+        print("  (no dependencies)")
+        return 0
+
+    if parents:
+        print("  depends_on:")
+        for p in parents:
+            done = "✓" if p["status"] in ("done", "archived") else "◻"
+            print(f"    {done} {p['id']}  [{p['status']}]  {p['title']}")
+    if children:
+        print("  dependency_of:")
+        for c in children:
+            done = "✓" if c["status"] in ("done", "archived") else "◻"
+            print(f"    {done} {c['id']}  [{c['status']}]  {c['title']}")
+    return 0
+
+
+def cmd_depends_add(args: argparse.Namespace) -> int:
+    """Add a real prerequisite: <child> cannot promote until <parent> is done."""
+    # `hermes kanban link <parent> <child>` — the verb order is parent-first.
+    out = _hermes("link", args.parent, args.child, timeout=15)
+    print(f"linked {args.child} depends-on {args.parent}")
+    if out and not out.strip().startswith("("):
+        # echo any framework message
+        sys.stdout.write(out)
+    return 0
+
+
+def cmd_depends_remove(args: argparse.Namespace) -> int:
+    out = _hermes("unlink", args.parent, args.child, timeout=15)
+    print(f"unlinked {args.child} from {args.parent}")
+    if out and not out.strip().startswith("("):
+        sys.stdout.write(out)
+    return 0
+
+
+# ─── command: epic + epic-of + list-epics ───────────────────────────────────
+
+
+def cmd_epic_of(args: argparse.Namespace) -> int:
+    with _db() as conn:
+        row = _fetch_task(conn, args.task_id)
+    if row is None:
+        _die(f"no task {args.task_id}")
+    epic = _epic_of(row["body"])
+    if args.json:
+        print(json.dumps({"id": row["id"], "epic": epic}))
+    elif epic:
+        print(epic)
+    else:
+        print(f"# {args.task_id} has no epic tag")
+        return 1
+    return 0
+
+
+def cmd_epic(args: argparse.Namespace) -> int:
+    """Show one epic + all cards body-tagged as members of it."""
+    with _db() as conn:
+        row = _fetch_task(conn, args.epic_id)
+        if row is None:
+            _die(f"no task {args.epic_id}")
+        children = _scan_epic_children(conn, args.epic_id)
+        # Also include any real-dep children so the view is complete
+        link_children = _fetch_children(conn, args.epic_id)
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "id": row["id"],
+                    "title": row["title"],
+                    "status": row["status"],
+                    "members": [dict(c) for c in children],
+                    "dep_children": [dict(c) for c in link_children],
+                },
+                default=str,
+            )
+        )
+        return 0
+
+    print(f"{row['id']}  {row['title']}  [{row['status']}]")
+    if children:
+        print(f"  members (epic tag, {len(children)}):")
+        for c in children:
+            done = "✓" if c["status"] in ("done", "archived") else "◻"
+            assignee = c["assignee"] or "—"
+            print(f"    {done} {c['id']}  [{c['status']:<8}] {assignee:<10} {c['title']}")
+    if link_children:
+        # Filter out any that are already shown as epic members (some cards
+        # may legitimately be both — depends-on AND epic-tagged — though we
+        # discourage this).
+        member_ids = {c["id"] for c in children}
+        extras = [c for c in link_children if c["id"] not in member_ids]
+        if extras:
+            print(f"  dep-children (real prerequisite, {len(extras)}):")
+            for c in extras:
+                done = "✓" if c["status"] in ("done", "archived") else "◻"
+                assignee = c["assignee"] or "—"
+                print(
+                    f"    {done} {c['id']}  [{c['status']:<8}] {assignee:<10} {c['title']}"
+                )
+    if not children and not link_children:
+        print("  (no members or dep-children)")
+    return 0
+
+
+def cmd_list_epics(args: argparse.Namespace) -> int:
+    """Show every card that has an [EPIC] title prefix or is the target of an
+    epic-trailer tag from at least one other card. Useful for `kanban epic`
+    discovery."""
+    with _db() as conn:
+        rows = list(
+            conn.execute(
+                "SELECT id, title, status, assignee, body FROM tasks "
+                "WHERE title LIKE '%[EPIC]%' OR title LIKE '[EPIC]%' "
+                "ORDER BY status, created_at"
+            )
+        )
+    if args.json:
+        out = []
+        for r in rows:
+            with _db() as conn:
+                members = _scan_epic_children(conn, r["id"])
+            out.append(
+                {
+                    "id": r["id"],
+                    "title": r["title"],
+                    "status": r["status"],
+                    "assignee": r["assignee"],
+                    "members": len(members),
+                }
+            )
+        print(json.dumps(out))
+        return 0
+    if not rows:
+        print("# no epics on board")
+        return 0
+    print(f"# board={BOARD}  epics={len(rows)}")
+    for r in rows:
+        with _db() as conn:
+            members = _scan_epic_children(conn, r["id"])
+        print(
+            f"  {r['id']}  [{r['status']:<8}] {r['assignee'] or '—':<10}  members={len(members)}  {r['title']}"
+        )
+    return 0
+
+
+# ─── command: complete / block / unblock / reassign / comment / archive ────
+
+
+def cmd_complete(args: argparse.Namespace) -> int:
+    cmd_args = ["complete", args.task_id]
+    if args.result:
+        cmd_args.extend(["--result", args.result])
+    out = _hermes(*cmd_args, timeout=20)
+    if out and out.strip():
+        sys.stdout.write(out)
+    print(f"# completed {args.task_id}")
+    return 0
+
+
+def cmd_block(args: argparse.Namespace) -> int:
+    cmd_args = ["block", args.task_id]
+    if args.reason:
+        cmd_args.append(args.reason)
+    out = _hermes(*cmd_args, timeout=15)
+    if out and out.strip():
+        sys.stdout.write(out)
+    print(f"# blocked {args.task_id}")
+    return 0
+
+
+def cmd_unblock(args: argparse.Namespace) -> int:
+    out = _hermes("unblock", args.task_id, timeout=15)
+    if out and out.strip():
+        sys.stdout.write(out)
+    print(f"# unblocked {args.task_id}")
+    return 0
+
+
+def cmd_reassign(args: argparse.Namespace) -> int:
+    out = _hermes("reassign", args.task_id, args.assignee, timeout=15)
+    if out and out.strip():
+        sys.stdout.write(out)
+    print(f"# reassigned {args.task_id} → {args.assignee}")
+    return 0
+
+
+def cmd_comment(args: argparse.Namespace) -> int:
+    out = _hermes("comment", args.task_id, args.text, timeout=15)
+    if out and out.strip():
+        sys.stdout.write(out)
+    print(f"# commented on {args.task_id}")
+    return 0
+
+
+def cmd_archive(args: argparse.Namespace) -> int:
+    out = _hermes("archive", *args.task_ids, timeout=15)
+    if out and out.strip():
+        sys.stdout.write(out)
+    print(f"# archived {', '.join(args.task_ids)}")
+    return 0
+
+
+# ─── dispatch ───────────────────────────────────────────────────────────────
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="kanban",
+        description=__doc__.split("\n\n", 1)[0],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Environment:\n"
+            "  HERMES_KANBAN_BOARD  default: landfolk-ops\n"
+            "  HERMES_KANBAN_DB     default: ~/.hermes/kanban/boards/<board>/kanban.db\n"
+        ),
+    )
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    # create
+    p = sub.add_parser("create", help="Create a card; --epic for membership, --depends-on for real prereqs")
+    p.add_argument("title", help="Card title (often starts with [SCOUT]/[CONSTRUCT]/[SUPPLY]/[EPIC]…)")
+    p.add_argument("--assignee", required=True)
+    p.add_argument("--epic", help="Epic id this card belongs to (body trailer, no link)")
+    p.add_argument(
+        "--depends-on",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="Real prerequisite — repeatable; cannot promote until each is done",
+    )
+    p.add_argument("--body", default="")
+    p.add_argument("--priority", type=int)
+    p.add_argument("--skill", action="append", default=[])
+    p.add_argument("--triage", action="store_true")
+    p.add_argument("--max-retries", type=int)
+    p.add_argument("--idempotency-key")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_create)
+
+    # list
+    p = sub.add_parser("list", help="List cards (optionally filtered)")
+    p.add_argument("--status", help="comma-separated statuses; default = all")
+    p.add_argument("--assignee")
+    p.add_argument("--epic", help="Filter by epic membership (body trailer)")
+    p.set_defaults(func=cmd_list)
+
+    # show
+    p = sub.add_parser("show", help="Show one card + its dependencies + epic")
+    p.add_argument("task_id")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_show)
+
+    # dependencies + depends-add + depends-remove
+    p = sub.add_parser("dependencies", help="List both directions of the dep graph for a card")
+    p.add_argument("task_id")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_dependencies)
+
+    p = sub.add_parser("depends-add", help="<child> cannot start until <parent> is done")
+    p.add_argument("child")
+    p.add_argument("parent")
+    p.set_defaults(func=cmd_depends_add)
+
+    p = sub.add_parser("depends-remove", help="Remove a prerequisite edge")
+    p.add_argument("child")
+    p.add_argument("parent")
+    p.set_defaults(func=cmd_depends_remove)
+
+    # epic / epic-of / list-epics
+    p = sub.add_parser("epic", help="Show an epic + every card body-tagged to it")
+    p.add_argument("epic_id")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_epic)
+
+    p = sub.add_parser("epic-of", help="Print the epic id this card belongs to (if any)")
+    p.add_argument("task_id")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_epic_of)
+
+    p = sub.add_parser("list-epics", help="Every card with an [EPIC] title prefix")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_list_epics)
+
+    # status verbs
+    p = sub.add_parser("complete", help="Mark a card done")
+    p.add_argument("task_id")
+    p.add_argument("--result")
+    p.set_defaults(func=cmd_complete)
+
+    p = sub.add_parser("block", help="Mark a card blocked")
+    p.add_argument("task_id")
+    p.add_argument("reason", nargs="?")
+    p.set_defaults(func=cmd_block)
+
+    p = sub.add_parser("unblock", help="Return a blocked card to ready")
+    p.add_argument("task_id")
+    p.set_defaults(func=cmd_unblock)
+
+    p = sub.add_parser("reassign", help="Reassign a card to a different profile")
+    p.add_argument("task_id")
+    p.add_argument("assignee")
+    p.set_defaults(func=cmd_reassign)
+
+    p = sub.add_parser("assign", help="Alias of reassign")
+    p.add_argument("task_id")
+    p.add_argument("assignee")
+    p.set_defaults(func=cmd_reassign)
+
+    p = sub.add_parser("comment", help="Append a comment to a card")
+    p.add_argument("task_id")
+    p.add_argument("text")
+    p.set_defaults(func=cmd_comment)
+
+    p = sub.add_parser("archive", help="Archive one or more cards")
+    p.add_argument("task_ids", nargs="+")
+    p.set_defaults(func=cmd_archive)
+
+    return ap
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    if not shutil.which("hermes"):
+        _die("`hermes` not on PATH — install Hermes Agent first")
+    ap = _build_parser()
+    args = ap.parse_args(argv)
+    return args.func(args) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

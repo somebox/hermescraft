@@ -806,20 +806,42 @@ def seed_system_chest(cfg: dict) -> None:
     seed_system_chest_fill(cfg)
 
 
+def _attach_epic_trailer(body: str, epic_id: str) -> str:
+    """Append `\\n\\n---\\nepic: <epic_id>\\n` to the body so the facade's
+    `scripts/kanban list --epic` and `scripts/kanban epic <id>` queries can
+    find this card by trailer scan. Keeps task_links clean — the trailer is
+    body-only metadata, not a link.
+    """
+    sep = "\n\n" if body and not body.endswith("\n\n") else ""
+    if body and body.endswith("\n") and not body.endswith("\n\n"):
+        sep = "\n"
+    return f"{body}{sep}---\nepic: {epic_id}\n"
+
+
 def _kanban_create(
     *,
     title: str,
     body: str,
     assignee: str,
     status: str,
-    parent_id: str | None = None,
+    depends_on: str | None = None,
+    epic_id: str | None = None,
 ) -> str:
-    # hermes kanban create: title is POSITIONAL, no --status flag.
-    # Cards default to `ready` on creation. todo/triage status is achieved via:
-    #   - todo: parent linking (recompute_ready holds children until parent done)
-    #   - triage: --triage flag (spec needs fleshing out before promotion)
-    # The genesis template's initial_status: todo is informational — actual
-    # gating relies on the epic parent chain (P2←P1, P3←P2, P4←P3).
+    """Create a card on the landfolk-ops board.
+
+    `depends_on` writes a `task_links` edge — the child stays `todo` until
+    the parent is `done`. This is the right knob for the epic chain itself
+    (P2 truly cannot start until P1 finishes).
+
+    `epic_id` attaches a body-trailer tag — purely cosmetic for promotion
+    (children of an open epic promote immediately) but visible to the
+    `scripts/kanban` facade for navigation.
+
+    Never both, never neither-when-it-matters — pick the right one per call.
+    """
+    body_out = body
+    if epic_id:
+        body_out = _attach_epic_trailer(body_out, epic_id)
     cmd = [
         "hermes",
         "kanban",
@@ -828,13 +850,13 @@ def _kanban_create(
         "create",
         title,
         "--body",
-        body,
+        body_out,
         "--assignee",
         assignee,
         "--json",
     ]
-    if parent_id:
-        cmd.extend(["--parent", parent_id])
+    if depends_on:
+        cmd.extend(["--parent", depends_on])
     proc = _run(cmd, timeout=30)
     if proc.returncode != 0:
         raise RuntimeError(f"kanban create failed: {proc.stderr[:400]}")
@@ -857,8 +879,11 @@ def seed_starter_cards(run_id: str, ctx: dict[str, str]) -> dict[str, list[str]]
     epics_data = parse_yaml_simple(TEMPLATES_DIR / "phase-epics.yaml")
     cards_data = parse_yaml_simple(TEMPLATES_DIR / "phase1-cards.yaml")
 
+    # Epic chain: P1 → P2 → P3 → P4 via depends_on (real prerequisite —
+    # each phase's done_when must pass before the next phase can begin).
     epic_ids: list[str] = []
-    parent: str | None = None
+    p1_epic_id: str | None = None
+    prev: str | None = None
     for epic in epics_data["epics"]:
         title = epic["title"]
         body = substitute(epic.get("body", ""), ctx)
@@ -868,12 +893,17 @@ def seed_starter_cards(run_id: str, ctx: dict[str, str]) -> dict[str, list[str]]
             body=body,
             assignee=epic["assignee"],
             status=status,
-            parent_id=parent,
+            depends_on=prev,
         )
         epic_ids.append(eid)
-        parent = eid
+        if epic.get("phase") == "P1":
+            p1_epic_id = eid
+        prev = eid
         (rendered / f"epic-{epic['phase']}.txt").write_text(f"{title}\n\n{body}\n")
 
+    # P1 worker cards: tagged via epic body trailer (no link). Children of
+    # an open epic must promote immediately; the trailer is for navigation
+    # only, the dispatcher ignores it.
     p1_ids: list[str] = []
     for card in cards_data["cards"]:
         title = card["title"]
@@ -884,7 +914,7 @@ def seed_starter_cards(run_id: str, ctx: dict[str, str]) -> dict[str, list[str]]
             body=body,
             assignee=card["assignee"],
             status=status,
-            parent_id=None,
+            epic_id=p1_epic_id,
         )
         p1_ids.append(cid)
         (rendered / f"p1-{title[:20]}.txt").write_text(f"{title}\n\n{body}\n")
