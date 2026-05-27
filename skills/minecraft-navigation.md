@@ -160,6 +160,56 @@ Don't use pillar_step to:
 
 Every successful `pillar_step` response now includes a `cleanup_hint` field (`"mc pillar_down N"`) and a warning in the result string. **Always call the cleanup before doing anything else** unless you have a specific reason to remain elevated. Placed pillar blocks are tracked in `recentPlaces` so the bot is permitted to mine its own pillars on cleanup (no `PROTECTED_BLOCK` refusal).
 
+## Surface cleanup — fill-from-edge doctrine
+
+Cleanup cards (filling scattered holes, removing orphan pillars, leveling lumpy terrain) share a single shape: **arrive prepared, work the edge, never enter the damage.**
+
+### Sense first
+
+Before any movement at a cleanup site, get oriented:
+
+```
+mc status                          # current pos + HP + food
+mc terrain_top <corner_x> <corner_z>   # what Y is the surface at?
+mc map 12                          # visualize the damage shape
+mc inventory                       # do you have fill material + tools?
+```
+
+These four reads decide everything that follows — the target Y for fill, whether you need to withdraw more material, and whether you're standing somewhere safe to start.
+
+### Arrive with material in hand
+
+A cleanup card is **not** a mining card. The worker is expected to carry fill blocks from base, not produce them on-site. Before leaving base:
+
+- `mc inventory` to see what you have.
+- `mc go_mark <fill_chest>` (or the mark name the card body provides) and `mc withdraw <fill_block> <amount>` until you have a comfortable surplus over the estimated hole-volume.
+- Confirm you also carry: pickaxe (to harvest stray pillars), axe (if trees), sword + food (combat + travel survivability).
+
+If material runs out mid-tile, return to the chest — don't switch verbs to `mc collect`. Collect pathfinds globally and will pull you far off-site for material that's a short walk away in a chest.
+
+### Tile the work
+
+`mc level_ground` is capped at 16 columns per call. Any hotspot larger than that gets split into ≤4×4 tiles, processed one at a time. For each tile:
+
+1. **Pick a standpoint outside the tile.** Use `mc terrain_top` at the tile corners (or one block beyond) to find a cell that's solid on top — that's your safe block.
+2. **Move to it.** `mc move <safe_x> <safe_y> <safe_z>`. If the response carries `⚠ FELL`, the pathfinder dropped you into the damage — return to a known-safe Y before continuing.
+3. **Dry-run plan.** `mc level_ground <tile_x1> <tile_z1> <tile_x2> <tile_z2>` (no `execute=true`). Read the column-by-column plan it returns.
+4. **Harvest in-tile pillars by coordinate.** For each `action: 'dig'` column the plan reports, call `mc dig <x> <y> <z>` on that exact cell. Named coords keep you on-site; `mc collect` does not.
+5. **Execute the fill.** Re-run `mc level_ground …` with `execute=true block=<your_fill_block>`. The primitive picks standpoints outside the fill region so you stay on the edge, not in the holes.
+6. **Verify with senses.** `mc terrain_top` at the tile's corners and center should all report the target Y.
+
+### Deep holes — creep, don't dive
+
+The dry-run plan may include columns with very large `fill_depth`. Those are cave openings or mineshaft exposures, not surface damage — filling from above wastes a stack of blocks and still leaves the cavity below.
+
+If you need a continuous walking surface across one of these, **creep**: stand on a known-safe block, place a fill block against your block's side (one step toward the void), step onto the new block, repeat. You build a horizontal bridge while the void stays open beneath. Mark deep cells with `mc mark <descriptive_name>` and report them in the card resolution so an operator can decide whether to cap, sign, or fill-from-below later.
+
+The principle: **your standing block always supports the next placement.** Never step before you've built.
+
+### Why these patterns, not improvisation
+
+Workers who improvise on cleanup cards converge on the same failure modes: pathfinding underground to "collect" fill, falling into the holes during traversal, pillaring up to "see better" and getting stuck on the resulting columns. The shape above avoids all three by keeping the worker on solid edges with pre-stocked material and sensory checks between each action.
+
 ## Coordinate system
 
 - **X**: East (+) / West (−)

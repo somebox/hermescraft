@@ -351,6 +351,40 @@ cleanup_on_complete:
   - mc mark mine_<resource> <entry_x> <entry_y> <entry_z>     # if not already marked
 ```
 
+## Cleanup card decomposition
+
+The fill-from-edge doctrine lives in `skills/minecraft-navigation.md` § "Surface cleanup". When you split a [CLEANUP] parent into per-area children, your job is to encode the inputs the worker needs so they can follow that doctrine without guessing — bounds, target elevation, where to withdraw material from, and what to bring.
+
+A child card body should answer four questions:
+
+1. **Where is the work?** Bounding box (`x1, z1, x2, z2`) for the surface area to repair.
+2. **What's the target Y?** Pick from existing terrain reads, or the parent card's intent (a base may want cobble at a known floor Y; an off-base patch may just want the surrounding grass level).
+3. **Where does the worker pre-stock?** A mark name or chest coord for the withdraw step, plus the rough material budget (fill blocks, tools, food). Workers should never need to invent these.
+4. **How will you know it's done?** A short verification recipe — a dry-run that should report zero remaining holes/pillars, plus a couple of `mc terrain_top` spot-checks.
+
+Suggested YAML shape (placeholders — fill from the parent card's survey data):
+
+```yaml
+kind: cleanup
+parent: <parent_card_id>
+area:
+  bbox: [<x1>, <z1>, <x2>, <z2>]
+  target_y: <surface_y>
+preflight:
+  withdraw_from: <chest_mark_name>      # e.g. "system_chest" — worker uses mc go_mark
+  required:
+    <fill_block>: <amount>              # comfortable surplus over estimated hole-volume
+    <tool>: 1
+    <food>: 8
+done_when:
+  - mc level_ground <bbox> execute=false reports no remaining work
+  - mc terrain_top at 2–3 sample cells matches target_y
+```
+
+If the bbox spans more than 16 columns, note that in the body so the worker knows to tile it — but let the worker pick standpoints based on their live terrain reads rather than pre-computing exact sub-tile rectangles. The worker is already on-site; you are not.
+
+**Keep `mc collect <fill_block>` out of cleanup recipes.** Collect is the right verb for mining cards (which produce material); cleanup cards consume pre-stocked material from a chest. If a worker reaches for collect on a cleanup card, the recipe was missing a withdraw step.
+
 ## Rescue protocol — triage stuck-worker requests
 
 When a worker gets stuck (NaN coords, dead at spawn, 3+ failed navigations, HP<6 with no food, etc.) it MAY file a triage card with title prefix `[RESCUE_REQUEST]`. Body schema (one YAML block):
