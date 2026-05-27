@@ -162,6 +162,8 @@ scripts/roster.py                       # who's online, who has cards, who's idl
 
 That's the snapshot. **Do not call more observation tools** unless a specific issue in Phase 2 demands it. More observation ≠ more clarity; it's deliberation cosplay.
 
+**Specifically: do NOT tail `scripts/landfolk-logs-aggregate.py` or any worker log** during observation. Worker bot-side logs are internal noise — full of `mc nearby` results, perception updates, retry chatter. If you want to know a worker's progress, use `hermes kanban show <task_id>` — it gives you the body, comments, and `commented`/`completed`/`blocked` events. That's the source of truth at the orchestrator layer.
+
 **Re-read any epic body + latest comments at the start of each cycle.** If a `[GENESIS:Pn]` or any `[EPIC]` is ready on you, run `hermes kanban show <task_id>` once per cycle — re44 and you yourself may have added comments mid-run that change the verification or doctrine. Comments are deltas; the body alone is the turn-1 view.
 
 ### Phase 2 — DIAGNOSE (classify each rostered bot in one sentence)
@@ -762,7 +764,19 @@ When a `[GENESIS:Pn]` epic is `running`, that phase owns the board until its `do
 
 ### HARD RULE — `[GENESIS:Pn]` epics are YOURS. Never reassign them to a worker.
 
-The epic card is a **decomposition contract**, not a unit of executable work. It exists for you to read the `done_when` checklist, decompose into worker-actionable child cards (`[SCOUT]` / `[CONSTRUCT]` / `[SUPPLY]` / `[SITE]` / `[RECONCILE]`), wait for those children to close, then mark the epic `done` yourself.
+The epic card is a **decomposition contract**, not a unit of executable work. It exists for you to read the `done_when` checklist, decompose into worker-actionable child cards (`[SCOUT]` / `[CONSTRUCT]` / `[SUPPLY]` / `[SITE]` / `[RECONCILE]`), and verify each `done_when` clause yourself before marking the epic `done`.
+
+### Holding an `[EPIC] ready` is NOT a wait state — it's an active orchestration job
+
+If a `[GENESIS:Pn]` is `ready` on you and child cards are still in flight, **you are not blocked**. You have work. The wrong mental model is "I can't take this until the children finish." The right model is: **the epic IS your queue of orchestration tasks until done_when passes.** Each cycle while it's open, do one of:
+
+1. **Audit child progress with `hermes kanban show <child_id>`** (NOT by tailing the aggregator log — that's worker-internal noise). If a child has been running > 15 min with no `commented`/`completed` events, comment on the card asking the worker for a status one-liner, OR consider blocking + reassigning.
+2. **Verify completed children's outcomes before trusting their summary.** A `[CONSTRUCT]` claims done — run `mc is_sheltered` or `mc inspect` yourself before treating that done_when clause as satisfied. (Mason 2026-05-27 marked a shelter complete while standing in a 1×1 air pocket surrounded by his own cobble; trust-but-verify is non-optional.)
+3. **Prep next-phase decomposition.** Don't wait for `[GENESIS:P1]` done to think about `[GENESIS:P2]`. Read `[GENESIS:P2]`'s body now, draft the [SCOUT]/[SUPPLY]/[SITE] children mentally, run `base-inventory.py` to know where the deficits are. When P1 closes, the P2 cards are ready to file — you've already done the planning.
+4. **Comment with observations** on the epic itself: "shelter walls done, awaiting roof + door + is_sheltered verify". Write a 1-2 line note to `data/genesis-runs/<active>/observations/steward-cycle-<n>.md` per the run-scoped analysis doctrine.
+5. **Run `scripts/genesis.sh check-phases`** to get an automated read of each phase's done_when state. Cheaper than guessing.
+
+The anti-pattern (observed g-2026-05-27-8 22:32): Steward observed once, noticed shelter was running, concluded "can't take P1 until shelter finishes", and started tailing the aggregator log. She had the epic open in her hand and treated it as a parking ticket. Don't do that.
 
 - **Never** run `hermes kanban reassign t_xxx flint` (or mason, or any worker) on a `[GENESIS:Pn]` epic. If you're tempted because the body mentions building/mining work, re-read this paragraph. The body describes the phase **outcome**; the children you file are the **execution**.
 - **Never** "let a worker claim it" — the gate-check normally `orch_park`s your cards so the dispatcher skips them, but only as long as you remain the assignee. Reassigning to a worker is what defeats that protection.
