@@ -8,10 +8,16 @@
 # role-appropriate bot.
 #
 # Schema per resource:
-#   items       — Minecraft item IDs that count toward this resource
-#   target_min  — when current < target_min, Steward MUST file a [SUPPLY] card
-#   target_ok   — comfortable level; Steward stops topping up when above this
-#   assignee    — default profile to file [SUPPLY] cards against (overridable)
+#   items            — Minecraft item IDs that count toward this resource
+#   target_min       — when current < target_min, Steward MUST file a [SUPPLY] card
+#   target_ok        — comfortable level; Steward stops topping up when above this
+#   assignee         — default profile to file [SUPPLY] cards against (overridable)
+#   designated_site  — (optional) mark name of a `resource`-intent region the
+#                      worker should harvest from. When unset and stock is low,
+#                      Steward emits a [SITE] card to scout + create one
+#                      (see prompts/landfolk/steward.md § Site designation).
+#                      Set by an operator (or Steward via a [SITE] card) once
+#                      a mine_<resource> region exists in data/regions-world.json.
 
 food:
   items: [bread, cooked_beef, cooked_chicken, cooked_porkchop, cooked_mutton, cooked_rabbit, baked_potato, apple, golden_apple, melon_slice]

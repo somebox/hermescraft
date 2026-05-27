@@ -351,6 +351,34 @@ cleanup_on_complete:
   - mc mark mine_<resource> <entry_x> <entry_y> <entry_z>     # if not already marked
 ```
 
+## Persistent resource regions — emit a [SITE] card, never act yourself
+
+Distinct from the per-card `mine_site` above: when a tier_1 resource (dirt, sand, gravel, cobblestone) keeps running low across multiple cards, the right move is to designate a **persistent `resource`-intent region** that future workers consult automatically. The region acts as a standing "go here for X" pointer; the C7 low-stock hint in `mc withdraw` will name the designated_site directly in worker responses (`bot/lib/runtime/base-goals.js`).
+
+**You don't designate sites yourself** — you stay read-only. When the gap appears (a resource has no `designated_site` in `data/base-goals.yaml` and is below `target_min`), emit a `[SITE]` card to a scout-capable worker:
+
+```yaml
+kind: site
+goal: designate mine_dirt_hilltop near the flat hilltop NE of base
+steps:
+  - mc scout for a flat-topped hill / sand patch / exposed stone face within 100 blocks
+  - mc mark mine_<resource>_<descriptor> at the center of the patch
+  - edit data/regions-world.json: add a column region radius 8, intent: resource,
+    resource: { tier: 1, blocks: [<material_list>] }
+  - POST /regions/reload on all bots
+  - update data/base-goals.yaml: <resource>.designated_site = mine_<resource>_<descriptor>
+done_when:
+  - mc regions --at <anchor> reports the new region active
+  - any worker can mc go_mark mine_<resource>_<descriptor> and dig the listed
+    materials without REGION_PROTECTED
+```
+
+**One [SITE] card per resource per drought.** Don't emit a fresh [SITE] for the same resource if a prior one is `running` or `ready`. Check `kanban list --kind site` before emitting.
+
+**Why not designate yourself.** The Steward design (top of this file) keeps you read-only on the world. Editing `data/regions-world.json` and reloading regions is a multi-step shared-infrastructure mutation — that belongs to a worker who can be observed, retried, or rolled back. You stay above the action layer; workers do the action.
+
+**Pilot status (2026-05-27):** Resource-intent regions are new (`bot/lib/runtime/regions/resolver.js` D1+D2 commit `fe64913`). The first end-to-end [SITE]→worker→region→worker-consults-mark cycle has NOT yet been validated in production. Until the pilot in `docs/pilots/mine-dirt-hilltop-pilot.md` succeeds, prefer hand-created regions (operator does the YAML edit) and skip emitting [SITE] cards autonomously.
+
 ## Cleanup card decomposition
 
 The fill-from-edge doctrine lives in `skills/minecraft-navigation.md` § "Surface cleanup". When you split a [CLEANUP] parent into per-area children, your job is to encode the inputs the worker needs so they can follow that doctrine without guessing — bounds, target elevation, where to withdraw material from, and what to bring.
