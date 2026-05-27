@@ -129,7 +129,7 @@ export function createEscapeQueries({ ctx, ensureBot, getActions, utils, goals }
       in_water: () => escapeStrategyInWater(escapeCtx),
       in_flowing_water: () => escapeStrategyInWater(escapeCtx),
       step_up_only: () => escapeStrategyStepUpOnly(escapeCtx),
-      enclosure_inside: () => escapeStrategyEnclosureInside({ cls, before }),
+      enclosure_inside: () => escapeStrategyEnclosureInside(escapeCtx),
     };
     if (escapeDispatch[cls]) {
       return escapeDispatch[cls]();

@@ -11,66 +11,43 @@ cards:
     assignee: flint
     initial_status: ready
     body: |
-      Genesis pre-laid a 7×7 cobblestone pad centered on ({anchor_x}, {anchor_y}, {anchor_z}) at floor-y={anchor_y}-1. The two system_chest halves already sit on the pad at y={anchor_y}. Place the four base storage chests on the same pad surface (also at y={anchor_y}):
+      The genesis 9×9 cobblestone pad is centered on ({anchor_x}, {anchor_y}, {anchor_z}) at floor-y={anchor_y}-1. The shelter (built by mason) is a 5×5×3 box at the pad center — walls at x={anchor_x}±2, z={anchor_z}±2. The system_chest sits on the pad OUTSIDE the shelter footprint.
 
-        chest_food   at ({anchor_x}+2, {anchor_y}, {anchor_z})
-        chest_wood   at ({anchor_x}+2, {anchor_y}, {anchor_z}+1)
-        chest_stone  at ({anchor_x}-2, {anchor_y}, {anchor_z})
-        chest_misc   at ({anchor_x}-2, {anchor_y}, {anchor_z}+1)
+      **Place four base chests on the pad, all OUTSIDE the 5×5 shelter footprint, at y={anchor_y} (chest height = pad+1).** This is the constraint; pick coords that satisfy it. A clean layout: chest_food on east side (x={anchor_x}+3), chest_wood east-adjacent, chest_stone west (x={anchor_x}-3), chest_misc west-adjacent. Each chest at chest_x in {{ {anchor_x}-3, {anchor_x}+3 }} and z in {{ {anchor_z}-1, {anchor_z}, {anchor_z}+1 }} keeps them clear of the shelter wall and inside the pad bounds.
 
-      (Offsets are ±2 on x so the chests don't collide with the system_chest at +1.) Mark each in private locations after placement; steward reconcile promotes to shared. Do NOT dig the pad — it's the shelter floor.
+      **Verification:** after placement, `mc inspect <chest_x> {anchor_y} <chest_z>` for each — block must be `chest`. Mark each in private locations (mc mark chest_food, etc.); steward reconcile promotes to shared. Do NOT dig the pad — it's the shelter floor.
 
-  - title: "[CONSTRUCT] Build 5x5 cobble shelter walls on the pad"
+  - title: "[CONSTRUCT] Build 5x5 cobble shelter on the pad"
     assignee: mason
     initial_status: ready
     body: |
-      Genesis laid the floor: a 7×7 cobblestone pad at y={anchor_y}-1 centered on ({anchor_x}, {anchor_y}, {anchor_z}). Chests already sit on it at y={anchor_y}. Build the shelter walls + roof + door ON TOP of the pad.
+      Build a small 5×5×3 shelter centered on anchor ({anchor_x}, {anchor_y}, {anchor_z}) on top of the genesis pad. Chests have been placed OUTSIDE the shelter footprint (the previous card handles that), so your wall coords are clear of chest collisions.
 
-      ## Precise geometry — copy this layout exactly
+      ## Geometry
 
-      The shelter is **3 layers** of building above the pad: walls layer y={anchor_y}, walls layer y={anchor_y}+1, roof y={anchor_y}+2. Footprint 5×5 (x={anchor_x}-2..{anchor_x}+2, z={anchor_z}-2..{anchor_z}+2).
+      - Footprint: 5×5 cells centered on anchor (x={anchor_x}±2, z={anchor_z}±2).
+      - Walls: 2 layers — y={anchor_y} and y={anchor_y}+1. **Each wall layer is the 16 PERIMETER cells only.** The 9 interior cells of each wall layer stay as air; that's where the bot's foot+head fit when standing inside.
+      - Roof: full 5×5 cobblestone at y={anchor_y}+2 (all 25 cells).
+      - Door: replace 2 cells of one perimeter wall (one at y={anchor_y}, one at y={anchor_y}+1, same x,z) with an oak_door bottom and upper half. South side is conventional.
 
-      **Each wall layer = PERIMETER ONLY. The 9 interior cells STAY AIR — bot's foot + head fit there.**
+      ## Hard rule — walls are perimeter only
 
-      Layer y={anchor_y} (chest + wall) — 16 perimeter cells:
-        - z={anchor_z}-2 (north): 5 cells. Some are already chests (system_chest at {anchor_x}, {anchor_y}, {anchor_z}-2 and {anchor_x}+1, {anchor_y}, {anchor_z}-2). Where not a chest, place cobblestone.
-        - z={anchor_z}+2 (south): 5 cells. No chests here. Place 5 cobblestone — or place 4 cobblestone + 1 oak_door (bottom half).
-        - x={anchor_x}-2 (west): 3 cells. Two are already chest_stone / chest_misc per [CONSTRUCT] Place four base chests card. Where not a chest, place cobblestone.
-        - x={anchor_x}+2 (east): 3 cells. Same: chest_food / chest_wood. Cobblestone where not chest.
-        - **Interior y={anchor_y}**: 9 cells at x={anchor_x}-1..{anchor_x}+1, z={anchor_z}-1..{anchor_z}+1 — ALL AIR. Do NOT place blocks here.
+      **NEVER `mc fill cobblestone <x1> <y> <z1> <x2> <y> <z2>`** across the full 5×5 footprint — that puts cobble inside the shelter where you and the chests live. Walls = the 4 sides of the perimeter, each side a 5×1×1 strip. Place each strip with its own `mc fill` (one per side), not as a slab.
 
-      Layer y={anchor_y}+1 (head level) — 16 perimeter cells, all cobblestone (no chests at this layer). If you put a door at y={anchor_y} on the south wall, place the door's upper half here at the same x,z.
-        - **Interior y={anchor_y}+1**: 9 cells — ALL AIR.
+      ## Do not mine the pad
 
-      Roof y={anchor_y}+2 — full 5×5 = 25 cobblestone cells.
+      The pad (x={anchor_x}±4, y={anchor_y}-1, z={anchor_z}±4) IS the shelter floor. Off-limits to `mc dig`. Source cobblestone by digging down a column just outside the pad (start at x={anchor_x}+5 for example), or by mining a nearby exposed stone face. The system_chest is stocked with cobble but P1 doctrine forbids withdrawing from it (relief valve only).
 
-      ## ANTI-PATTERN — observed in g-2026-05-27-7
+      ## Verification — both must pass before completing this card
 
-      Do NOT `mc fill cobblestone <x1> <y> <z1> <x2> <y> <z2>` across the whole 5×5 footprint at y={anchor_y}+1 — that places SOLID cobblestone on the chests at y={anchor_y}, sealing the shelter shut with no head room. The interior cells of each wall layer must remain AIR. Walls = perimeter only.
+      1. **Walls intact:** `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2`. Success = `ok: true` with `walls_complete: true` in the data. If WALLS_INCOMPLETE: the response lists missing perimeter cells — `mc place cobblestone <x> <y> <z>` each, then re-verify.
 
-      Recommended verb pattern for walls (one mc fill per perimeter side, NOT a slab fill):
-        - North wall: `mc fill cobblestone {anchor_x}-2 {anchor_y} {anchor_z}-2 {anchor_x}+2 {anchor_y} {anchor_z}-2` (5×1×1 strip)
-        - South wall, west wall, east wall: similar strip fills along the single perimeter line.
+      2. **Door usable:** verify ingress + egress.
+         - Stand outside the door, run `mc move {anchor_x} {anchor_y} {anchor_z}` (the anchor inside).
+         - From inside, run `mc move <outside_coord>` (e.g. {anchor_x}, {anchor_y}, {anchor_z}+4 — 2 blocks south of the south wall).
+         - Both moves must succeed. A shelter you can't enter or leave isn't a shelter, it's a tomb.
 
-      ## HARD RULE — do NOT `mc dig` any block in the pad footprint
-
-      The pad IS the shelter floor. Mining it leaves you building walls on grass/air, then you have to refill.
-
-      Pad bounds (off-limits to `mc dig`): x={anchor_x}-3..{anchor_x}+3, y={anchor_y}-1, z={anchor_z}-3..{anchor_z}+3.
-
-      Source cobblestone from one of:
-      1. Dig DOWN from a spot just outside the pad (e.g. start at x={anchor_x}+4, dig column down). Layers at y={anchor_y}-4..{anchor_y}-2 are typically stone — break with wooden_pickaxe to get cobblestone directly.
-      2. Walk to a nearby exposed stone face (`mc nearby 24` to spot one, `mc go_mark` to navigate).
-      3. The system_chest is stocked with cobble but **withdraw from it is forbidden in P1 doctrine** (relief valve only).
-
-      ## Closing verification (REQUIRED before marking this card done)
-
-      1. TP yourself to the anchor so you're INSIDE the shelter: `mc move {anchor_x} {anchor_y} {anchor_z}` (or stand wherever inside).
-      2. Run `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2`.
-      3. **Success criterion: `ok: true` with NO `WALLS_INCOMPLETE` error in the response.** Disregard `pathfinder_enclosed: false` if returned — that flag fires because the oak_door is pathfinder-passable (which is correct; you need to enter/exit). The walls= perimeter scan is what proves integrity.
-      4. If WALLS_INCOMPLETE fires: the response lists each missing perimeter cell — `mc place cobblestone <x> <y> <z>` and re-verify.
-
-      The card is NOT done until is_sheltered returns ok without WALLS_INCOMPLETE.
+      Only after BOTH (1) and (2) pass: `mc kanban_complete` with a summary stating which checks ran and their results.
 
   - title: "[RECONCILE] Promote chest marks"
     assignee: steward

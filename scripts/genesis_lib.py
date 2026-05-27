@@ -632,7 +632,8 @@ def _spot_solid_8x8(x: int, y: int, z: int) -> bool:
 
 
 def _finalize_anchor(x: int, y: int, z: int) -> None:
-    rcon(f"setworldspawn {x} {y} {z}", quiet=True)
+    # Forceload + sign only — worldspawn is set by apply_worldspawn() so it
+    # also runs on --keep-world (which skips this probe path entirely).
     rcon(f"forceload add {x >> 4} {z >> 4}", quiet=True)
     try:
         rcon(
@@ -641,6 +642,22 @@ def _finalize_anchor(x: int, y: int, z: int) -> None:
         )
     except Exception:
         pass
+
+
+def apply_worldspawn(anchor: dict[str, int]) -> None:
+    """Set MC worldspawn to the genesis anchor.
+
+    Runs on every new-run regardless of --keep-world. Without this, a
+    --keep-world run inherits whatever level.dat has for spawn, which
+    drifts every time a bot dies and respawns elsewhere. Caught
+    g-2026-05-27-7: Steward ended up trapped in solid stone at
+    (354, 63, -592) — the world's drifted default spawn — far from
+    the genesis anchor at (258, 64, 63).
+    """
+    if GENESIS_DRY_RUN:
+        return
+    x, y, z = anchor["x"], anchor["y"], anchor["z"]
+    rcon(f"setworldspawn {x} {y} {z}", quiet=True)
 
 
 def system_chest_env_from_config(cfg: dict) -> dict[str, str]:
@@ -661,7 +678,7 @@ def system_chest_env_from_config(cfg: dict) -> dict[str, str]:
     return env
 
 
-def seed_base_pad(cfg: dict, *, half: int = 3, pad_block: str = "cobblestone") -> None:
+def seed_base_pad(cfg: dict, *, half: int = 4, pad_block: str = "cobblestone") -> None:
     """Lay a flat cobblestone pad centered on the base anchor.
 
     The pad becomes the floor of the Phase 1 shelter and the platform the
@@ -676,8 +693,12 @@ def seed_base_pad(cfg: dict, *, half: int = 3, pad_block: str = "cobblestone") -
     system-chest-offsets dy=0) then sit ON the pad as normal blocks.
 
     Pad dimensions: (2*half + 1) × (2*half + 1) centered on the anchor.
-    Default half=3 → 7×7 pad: enough for a 5×5 shelter footprint plus a
-    1-block apron on every side for door, ingress, and chest access.
+    Default half=4 → 9×9 pad: 5×5 shelter footprint at the center, plus a
+    2-block apron on every side. The 2-block apron is essential so chests
+    can sit OUTSIDE the shelter walls (at offsets ±3 from anchor) while
+    still resting on the pad surface. Pre-2026-05-27-7 used half=3 (7×7
+    pad) which forced chests onto the shelter perimeter line — Mason
+    couldn't tell wall from chest and the geometry got muddled.
 
     Chunk loading: a 7×7 pad straddles up to 4 chunks at typical anchors.
     Without forceload, the first `fill` lands only in chunks already

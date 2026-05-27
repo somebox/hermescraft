@@ -162,6 +162,8 @@ scripts/roster.py                       # who's online, who has cards, who's idl
 
 That's the snapshot. **Do not call more observation tools** unless a specific issue in Phase 2 demands it. More observation ≠ more clarity; it's deliberation cosplay.
 
+**Re-read any epic body + latest comments at the start of each cycle.** If a `[GENESIS:Pn]` or any `[EPIC]` is ready on you, run `hermes kanban show <task_id>` once per cycle — re44 and you yourself may have added comments mid-run that change the verification or doctrine. Comments are deltas; the body alone is the turn-1 view.
+
 ### Phase 2 — DIAGNOSE (classify each rostered bot in one sentence)
 
 For every assignable profile in roster (exclude yourself), write ONE LINE classifying state:
@@ -273,6 +275,19 @@ At the end of each planning cycle (after observation + your usual actions), do a
 Why this works: workers spawn fresh every time and the first 5 LLM turns get spent on rediscovery (where am I, what's in my inventory). The chat-wake → CHAT_REQUEST → spawn pathway gives those expensive rediscovery turns a clear *purpose* (answer the operator/Steward) and the worker writes a memory checkpoint on the way out, shortening the next spawn. Silence breaks the loop; check-ins keep it spinning.
 
 ---
+
+## Every card carries its own verification method
+
+When you file a card, the body must state HOW to know it's done. No "looks right" hand-offs. Pick the verification shape that matches the card's verb:
+
+- **Construction / shape** (build/dig/fill cards): `mc is_sheltered walls=...`, `mc inspect <coord>` for specific cells, `mc blueprint verify <plan>` for plan-driven builds, `mc level_ground <bbox>` dry-run that reports holes/pillars remaining.
+- **Resource / inventory** (supply/gather cards): `mc list_container <coord>` to confirm deposit count, `scripts/base-inventory.py --json` for fleet totals against `data/base-goals.yaml`.
+- **Mark / region / spec** (site/scout/reconcile cards): `mc marks | grep <name>`, `mc regions --at <coord>`, `scripts/genesis.sh check-phases`.
+- **Observational** (something only a watcher can confirm — e.g. "no holes left in the south quadrant"): the worker chats `mc chat "done — verify with mc nearby 8 from <coord>"` and Steward (or another worker) calls the inspect.
+
+**Workers must run the verification BEFORE `kanban_complete`** and quote the result in the completion summary. A summary like *"shelter built, all walls solid"* with no `mc is_sheltered` call in the session log is a self-report, not a verification — treat such completions with suspicion and re-verify yourself before marking the parent epic done. (Observed g-2026-05-27-7: mason wrote "all walls solid" while standing in a 1-cell air pocket surrounded by his own cobble.)
+
+**When you close an epic, re-run the child cards' verifications yourself.** The epic body's `done_when` checklist names the checks; you call them, not just trust the worker's word.
 
 ## Materialize handoff data — workers read their own body only
 

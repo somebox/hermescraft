@@ -184,6 +184,11 @@ try:
             anchor = gl.probe_base_anchor()
     with gl.log_step(run_id, 'render'):
         cfg = gl.render_templates(run_id=run_id, seed=seed, anchor=anchor, difficulty=diff)
+    # Pin worldspawn to the genesis anchor — runs every new-run, including
+    # --keep-world (which skips the probe). Without this, dead/respawning
+    # bots can drift to whatever spawn the world had pre-genesis.
+    with gl.log_step(run_id, 'apply_worldspawn'):
+        gl.apply_worldspawn(anchor)
     # Lay the cobblestone pad first so the chests + future shelter sit on
     # a clean, solid floor instead of grass/dirt. The pad is the genesis
     # foundation; everything Phase 1 builds rests on it.

@@ -1,7 +1,7 @@
 {
-  "description": "Integer block offsets from base_anchor. Applied at render time to system_chest_at coords.",
-  "primary": { "dx": 1, "dy": 0, "dz": -2 },
-  "other": { "dx": 0, "dy": 0, "dz": -2 },
-  "sign": { "dx": 1, "dy": 1, "dz": -2 },
+  "description": "Integer block offsets from base_anchor. Applied at render time to system_chest_at coords. The system_chest sits at dz=-3 (north of the anchor, ONE block outside the 5x5 shelter footprint which spans z=anchor-2..anchor+2). This way the shelter walls don't collide with chest blocks — clean perimeter geometry.",
+  "primary": { "dx": 1, "dy": 0, "dz": -3 },
+  "other": { "dx": 0, "dy": 0, "dz": -3 },
+  "sign": { "dx": 1, "dy": 1, "dz": -3 },
   "tower_pad": { "dx": -55, "dy": 0, "dz": -8 }
 }

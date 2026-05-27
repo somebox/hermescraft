@@ -334,7 +334,7 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
           ok: false,
           error: {
             code: 'WALLS_INCOMPLETE',
-            message: `${missing.length} perimeter cell${missing.length > 1 ? 's' : ''} missing in walls region (${totalPerimeter} total). Fill the gaps before checking enclosure.`,
+            message: `${missing.length} perimeter cell${missing.length > 1 ? 's' : ''} missing in walls region (${totalPerimeter} total). Place blocks at the listed coords with mc place, then re-verify.`,
             observed_state: {
               walls_region: { x1: X1, y1: Y1, z1: Z1, x2: X2, y2: Y2, z2: Z2 },
               total_perimeter_cells: totalPerimeter,
@@ -346,6 +346,24 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
           },
         };
       }
+
+      // Walls verified intact AND caller provided explicit walls= bbox —
+      // return a clean walls-only result. Previously we fell through to the
+      // pathfinder enclosure check, which reports `enclosed: false` whenever
+      // a door is operable in the perimeter. Mason 2026-05-27: spent ~30min
+      // chasing `pathfinder_enclosed: false` and eventually entombed himself
+      // trying to make pathfinder say "trapped". For a shelter you WANT the
+      // door to be operable; usability is `mc move <inside_coord>` +
+      // `mc move <outside_coord>` from the caller, not this verb.
+      return {
+        ok: true,
+        data: {
+          walls_complete: true,
+          walls_region: { x1: X1, y1: Y1, z1: Z1, x2: X2, y2: Y2, z2: Z2 },
+          total_perimeter_cells: totalPerimeter,
+        },
+        result: `Walls intact: all ${totalPerimeter} perimeter cells solid. Run mc move <inside_coord> and mc move <outside_coord> to verify ingress/egress separately.`,
+      };
     }
 
     // Try cardinal targets at `radius` blocks horizontally + one straight up.

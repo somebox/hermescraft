@@ -42,11 +42,72 @@ export async function escapeStrategyInAir({ b, standingState, fail, recordEscape
   );
 }
 
-export function escapeStrategyEnclosureInside({ cls, before }) {
-              return fail('ESCAPE_ENCLOSURE', `You're inside a built structure (walls in all 4 dirs within 4 cells, ceiling within 4 cells). Use mc dig to break a wall, or mc move to a door slot if one exists. mc escape can't solve this case (yet).`, {
-          observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, ceiling_within: before.ceiling_within },
-          retry_safe: false,
+export async function escapeStrategyEnclosureInside(ctx) {
+  // Auto-dig the nearest adjacent wall cell so the bot can step out. Mason
+  // 2026-05-27 entombed himself by filling the shelter interior; the prior
+  // strategy returned ESCAPE_ENCLOSURE and told him to "use mc dig", but
+  // a bot with no tool / wedged in a 1×1 air pocket couldn't follow that
+  // advice. The dig is itself the escape primitive.
+  //
+  // Strategy: scan the 8 cells adjacent to the bot (foot + head level, 4
+  // cardinal dirs), pick the first that's a non-bedrock solid block, dig
+  // it with force=true to bypass the dig-under-feet refusal. After the
+  // dig, the cell becomes air and the bot can step or fall into it.
+  const { b, before, cls, fromPos, getActions, recordEscapeSuccess } = ctx;
+  const actions = getActions ? getActions() : null;
+  if (!actions || typeof actions.dig !== 'function') {
+    return fail('ESCAPE_ENCLOSURE_NO_DIG', `You're enclosed inside a built structure but mc dig action is unavailable. Operator intervention required.`, {
+      observed_state: { classification: cls, blocked_dirs: before.blocked_dirs, ceiling_within: before.ceiling_within },
+      retry_safe: false,
+    });
+  }
+  const fx = Math.floor(b.entity.position.x);
+  const fy = Math.floor(b.entity.position.y);
+  const fz = Math.floor(b.entity.position.z);
+  // Try each of the 8 adjacent wall cells. Bias toward foot level first
+  // (lets the bot step horizontally) then head level (drop-through).
+  const candidates = [];
+  for (const lvl of ['foot', 'head']) {
+    const yy = fy + (lvl === 'head' ? 1 : 0);
+    for (const [dx, dz, dir] of [[1,0,'east'],[-1,0,'west'],[0,1,'south'],[0,-1,'north']]) {
+      candidates.push({ x: fx + dx, y: yy, z: fz + dz, dir, lvl });
+    }
+  }
+  const tried = [];
+  for (const c of candidates) {
+    const blk = b.blockAt({ x: c.x, y: c.y, z: c.z });
+    if (!blk || AIR_NAMES.has(blk.name)) continue;
+    if (blk.name === 'bedrock') continue;
+    try {
+      const r = await actions.dig({ x: c.x, y: c.y, z: c.z, force: true });
+      tried.push({ ...c, block: blk.name, result: r?.ok ? 'dug' : (r?.error?.code || 'failed') });
+      if (r?.ok) {
+        return recordEscapeSuccess({
+          ok: true,
+          data: {
+            action_taken: 'dig_out_of_enclosure',
+            from: fromPos,
+            dug: { x: c.x, y: c.y, z: c.z, dir: c.dir, level: c.lvl, block: blk.name },
+            classification_before: cls,
+            success: true,
+          },
+          result: `Escape: dug ${blk.name} at ${c.x},${c.y},${c.z} (${c.dir}, ${c.lvl}-level). Step out through the new opening.`,
         });
+      }
+    } catch (e) {
+      tried.push({ ...c, block: blk?.name, result: `exception:${(e && e.message) || e}` });
+    }
+  }
+  return fail('ESCAPE_ENCLOSURE_DIG_FAILED', `Bot enclosed inside built structure; tried digging ${tried.length} adjacent block(s) but none succeeded. Likely no tool, all bedrock, or all blocks dig-protected. Operator: rcon /tp <bot> to a clear cell.`, {
+    observed_state: {
+      classification: cls,
+      blocked_dirs: before.blocked_dirs,
+      ceiling_within: before.ceiling_within,
+      attempts: tried,
+    },
+    next_action_hint: `tp ${ctx.b?.username || 'bot'} <safe_x> <safe_y> <safe_z>`,
+    retry_safe: false,
+  });
 }
 
 export async function escapeStrategyStepUpOnly({ b, before, cell, fromPos, cls, standingState, recordEscapeSuccess, goals }) {
