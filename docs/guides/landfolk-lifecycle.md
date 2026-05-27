@@ -145,6 +145,40 @@ Three failure shapes to distinguish:
 
 The recurring case: `ready=1, blocked=3, running=0` with the only ready card assigned to Steward — Steward is the lever.
 
+### Edits to `data/regions-world.json` don't propagate to live bots
+
+**Symptom:** You hand-edit `data/regions-world.json` (flip an intent, add a `capability_overrides` block, remove a stale region) but the running bots keep enforcing the old rules. Workers chat things like `"region_blocked:hut1: bot-cached-region not refreshed — needs bot restart or region reload."`
+
+**Cause:** `createRegionStore()` at `bot/lib/runtime/regions/index.js:35` loads the JSON exactly once at bot startup. File changes after that don't reach the in-memory cache. Additionally, `applyProfile()` re-runs at load time and normalizes the `capabilities` block from the intent's defaults — so a manually-edited `capabilities` field gets overwritten on the next reload anyway.
+
+**The supported way to override capabilities** is the explicit `capability_overrides` field (added 2026-05-27). `applyProfile` honors it as a merge on top of the intent defaults:
+
+```json
+{
+  "id": "hut1",
+  "intent": "protect",
+  "capability_overrides": {
+    "allow_ad_hoc_dig": true,
+    "allow_ad_hoc_place": true
+  }
+}
+```
+
+This preserves protect-intent semantics on the perimeter while granting workers ad-hoc edit inside an active build site.
+
+**To pick up file edits in running bots** (since 2026-05-27):
+
+```bash
+# Hot reload — re-reads the JSON + re-applies applyProfile across all bots:
+for port in 3002 3003 3005; do
+  curl -sS -X POST http://localhost:$port/regions/reload | python3 -m json.tool
+done
+# OR via the mc CLI against any one bot:
+mc regions_reload
+```
+
+**Fallback (if `mc regions_reload` is broken or missing on your build):** `scripts/landfolk restart players` — full restart of all bots, picks up the new file at startup. Heavier (~30s of bot reconnects) but always works.
+
 ## Model layering (two config files, both must match)
 
 | File | Consumer | Affects |

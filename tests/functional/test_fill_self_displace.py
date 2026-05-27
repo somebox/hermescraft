@@ -6,13 +6,20 @@ outside the fill region BEFORE iterating, so all cells place cleanly.
 
 Scenarios:
   A: bot in center of 3×3 fill region top → auto-displace, all 9 placed,
-     no bot_was_inside_region flag.
+     no bot_was_inside_region flag. Asserts `auto_displaced` truthy.
   B: bot far outside region → per-cell pathfind may drag it in, but
      mid-loop displace recovers; clean fill regardless.
   C: bot in middle of larger 5×1×3 region → displace + complete, AND
      bot's final foot cell is air (safety check from inventory flag —
      a regression where the bot ends up stuck inside placed cobble
      would slip through if we only checked the bot_was_inside flag).
+
+Each scenario asserts a DISTINCT contract — A: auto_displaced flag fires;
+B: clean fill when bot was never in-region; C: post-fill end-cell safety.
+All three use symmetric rectangles pre-cleared to air. Irregular hole
+filling + the `overwrite=true` path are covered separately in
+`tests/functional/terrain/test_terrain_shaping.py::test_fill_overwrite_scattered_holes`
+— don't duplicate that pattern here.
 """
 
 from __future__ import annotations

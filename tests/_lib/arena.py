@@ -478,6 +478,113 @@ class Arena:
                     )
         return self.rcon.batch(cmds)
 
+    def scatter_holes_and_pillars(
+        self,
+        bbox: tuple[int, int, int, int],
+        *,
+        ground_y: int = 64,
+        n_holes: int = 4,
+        n_pillars: int = 4,
+        max_hole_depth: int = 3,
+        max_pillar_height: int = 4,
+        floor_block: str = "grass_block",
+        subsurface_block: str = "stone",
+        pillar_block: str = "cobblestone",
+        seed: int = 1337,
+    ) -> dict:
+        """Synthesize a "messy field" — a flat baseline with randomly-injected
+        holes (1..max_hole_depth deep) and pillars (1..max_pillar_height tall).
+
+        Python parallel of `synthesizeMessyField` in
+        `bot/test/actions/level-ground.test.js`. Seeded for reproducible
+        failures; the same seed across Node + Python won't match RNG output
+        (different LCGs) but each side is deterministic on its own.
+
+        Args:
+            bbox: (x1, z1, x2, z2) inclusive horizontal rectangle.
+            ground_y: baseline surface Y (default 64).
+            n_holes / n_pillars: how many anomalies to inject (capped at
+                area-size so they don't overlap).
+            max_hole_depth: holes are 1..max blocks deep.
+            max_pillar_height: pillars are 1..max blocks tall.
+            floor_block / subsurface_block / pillar_block: terrain palette.
+            seed: PRNG seed (Park-Miller LCG).
+
+        Returns:
+            dict {
+              'holes':   [{'x', 'z', 'depth', 'new_top'}, ...],
+              'pillars': [{'x', 'z', 'height', 'new_top'}, ...],
+              'ground_y': int,
+              'bbox': (x1, z1, x2, z2),
+            }
+
+        The arena is left in the "messy" state. Call `reset_workspace` or
+        `flat_arena` before the next test to clean up.
+
+        Used by terrain-shaping tests: `mc fill --overwrite` (irregular
+        hole fill), `mc level_ground execute=true` (lumpy → flat), and
+        `mc collect` (scattered targets vs deterministic grids).
+        """
+        x1, z1, x2, z2 = bbox
+        if x1 > x2: x1, x2 = x2, x1
+        if z1 > z2: z1, z2 = z2, z1
+
+        # Park-Miller LCG so seed → identical layout across runs.
+        state = [seed % 2147483647 or 1]
+        def rand_float() -> float:
+            state[0] = (state[0] * 16807) % 2147483647
+            return state[0] / 2147483647.0
+
+        # Lay subsurface (8 thick) + grass cap. Mirrors the JS synth so
+        # holes that remove the cap still have a stone floor below — match
+        # what `terrain_top` reads on a real MC world.
+        floor_full = floor_block if ":" in floor_block else f"minecraft:{floor_block}"
+        sub_full = subsurface_block if ":" in subsurface_block else f"minecraft:{subsurface_block}"
+        pillar_full = pillar_block if ":" in pillar_block else f"minecraft:{pillar_block}"
+        cmds: list[str] = []
+        cmds.append(f"execute in {self.world} run fill {x1} {ground_y - 8} {z1} {x2} {ground_y - 1} {z2} {sub_full}")
+        cmds.append(f"execute in {self.world} run fill {x1} {ground_y} {z1} {x2} {ground_y} {z2} {floor_full}")
+        # Air above (1..max_pillar_height) so pillar inserts have room.
+        cmds.append(f"execute in {self.world} run fill {x1} {ground_y + 1} {z1} {x2} {ground_y + max_pillar_height + 1} {z2} minecraft:air")
+        self.rcon.batch(cmds)
+        self.settle_default()
+
+        # Build candidate cell list + shuffle so anomalies don't overlap.
+        cells = [(x, z) for x in range(x1, x2 + 1) for z in range(z1, z2 + 1)]
+        # Fisher-Yates.
+        for i in range(len(cells) - 1, 0, -1):
+            j = int(rand_float() * (i + 1))
+            cells[i], cells[j] = cells[j], cells[i]
+
+        holes: list[dict] = []
+        pillars: list[dict] = []
+        idx = 0
+        cmds = []
+        # Holes: remove surface + (depth-1) blocks below it.
+        for _ in range(min(n_holes, len(cells))):
+            if idx >= len(cells): break
+            x, z = cells[idx]; idx += 1
+            depth = 1 + int(rand_float() * max_hole_depth)
+            cmds.append(f"execute in {self.world} run fill {x} {ground_y - depth + 1} {z} {x} {ground_y} {z} minecraft:air")
+            holes.append({"x": x, "z": z, "depth": depth, "new_top": ground_y - depth})
+        # Pillars: stack on top of the surface.
+        for _ in range(min(n_pillars, len(cells) - idx)):
+            if idx >= len(cells): break
+            x, z = cells[idx]; idx += 1
+            height = 1 + int(rand_float() * max_pillar_height)
+            cmds.append(f"execute in {self.world} run fill {x} {ground_y + 1} {z} {x} {ground_y + height} {z} {pillar_full}")
+            pillars.append({"x": x, "z": z, "height": height, "new_top": ground_y + height})
+        if cmds:
+            self.rcon.batch(cmds)
+            self.settle_default()
+
+        return {
+            "holes": holes,
+            "pillars": pillars,
+            "ground_y": ground_y,
+            "bbox": (x1, z1, x2, z2),
+        }
+
     def forceload(self, bbox: tuple[int, int, int] | tuple[int, int, int, int]) -> str:
         """Forceload a chunk or rectangular chunk range. Accepts either
         (cx, cz) for a single chunk or (cx1, cz1, cx2, cz2) for a range.

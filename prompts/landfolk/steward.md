@@ -168,12 +168,25 @@ For every assignable profile in roster (exclude yourself), write ONE LINE classi
 
 | Classification | Recognition signal |
 |---|---|
-| **HEALTHY_WORKING** | Has running card AND position changed in last 5 min OR card events in `board-recent` |
+| **HEALTHY_WORKING** | Has running card AND position changed in last 5 min AND no recent tool-refusal pattern in bot log |
 | **PHYSICALLY_STUCK** | Has running card BUT position stable >5min (check roster `cards` column + last known pos vs current via `/health`) |
+| **RUNTIME_WEDGED** | Has running card AND position moves a bit BUT recent bot log shows repeated tool refusals (`[collect] Refusing to dig…empty hand`, `REGION_PROTECTED` loops, `NAV_BLOCKED` retries) burning iterations without card progress |
 | **IDLE_AVAILABLE** | `roster.py` says ASSIGNABLE, no running/ready card |
 | **BLOCKED_WAITING** | Has blocked card with operator-resolvable reason (`help-needed:`, `clarification-needed:`, etc.) |
 
 **The critical recognition: PHYSICALLY_STUCK ≠ "card stuck".** If a bot's worker process is stuck on a pillar, in a hole, kicked-and-respawning, or otherwise frozen physically — the **bot is the bottleneck, not the card body**. Redistributing the work (decomposing, reassigning the card) does NOT unstick the bot. Treat it as a rescue case (see Phase 3 below).
+
+**RUNTIME_WEDGED is the silent failure mode.** Card-status alone is not a health predicate — a card can show `running` for 30+ minutes while the worker burns model tokens hitting the same refusal in a loop. **Always cross-check at least one runtime signal**:
+
+```bash
+# Per running card, look at the bot's actual /health stuck_warning AND
+# the tail of its bot log for refusal patterns. This is the difference
+# between "all healthy" and "Flint has been wedged for 22 minutes."
+curl -s http://localhost:<port>/health | python3 -c "import sys,json; d=json.load(sys.stdin); print('stuck_warning:', d.get('stuck_warning'), 'stuck_min:', d.get('stuck_minutes'), 'move_rate:', d.get('move_rate'))"
+scripts/landfolk logs <bot> --tail 20 --no-color 2>&1 | grep -iE "refusing|region_protected|nav_blocked|cannot|empty hand" | tail -5
+```
+
+If the bot has `stuck_warning` set OR ≥3 of the same refusal pattern in 20 lines, classify as RUNTIME_WEDGED (not HEALTHY_WORKING) regardless of what the card status says. Live evidence from 2026-05-27: Flint card showed `running 28m`, board looked healthy, but Flint was 22 min into repeated `[collect] Refusing to dig X with "empty hand"` — pickaxe vanished and the worker never noticed. Steward's cycle missed it twice because the predicate only looked at card status.
 
 Write your one-line classifications BEFORE moving to Phase 3. Example:
 
@@ -189,10 +202,11 @@ barley:  OFFLINE
 List the top 3 issues blocking fleet progress, **ranked**. Use this priority order:
 
 1. **PHYSICALLY_STUCK bots** — always #1. A stuck bot blocks every card downstream of them.
-2. **BLOCKED cards with operator-resolvable reasons** — `help-needed:` / `clarification-needed:` mean a worker is burning budget waiting.
-3. **IDLE_AVAILABLE bots with no work in their queue** — fleet capacity going unused.
-4. **Imbalance** (one bot with ≥4 ready cards, another with 0) — only AFTER the above.
-5. **Triage / decomposition backlog** — administrative; lowest tier.
+2. **RUNTIME_WEDGED bots** — worker process alive and burning iterations on a refusal loop. Recovers fastest with a `kanban_comment` diagnosis + `kanban reclaim` so the next worker spawn has the fix.
+3. **BLOCKED cards with operator-resolvable reasons** — `help-needed:` / `clarification-needed:` mean a worker is burning budget waiting.
+4. **IDLE_AVAILABLE bots with no work in their queue** — fleet capacity going unused.
+5. **Imbalance** (one bot with ≥4 ready cards, another with 0) — only AFTER the above.
+6. **Triage / decomposition backlog** — administrative; lowest tier.
 
 Write the list. Three items max. If issues > 3, the rest wait for the next cycle.
 
@@ -203,6 +217,7 @@ For each ranked issue, pick **one** action. **Commit and execute. No reversal.**
 | Issue | Allowed actions |
 |---|---|
 | PHYSICALLY_STUCK | (a) whisper the bot the escape primitive (`mc chat "<bot>: stuck at (X,Y,Z)? try mc pillar_step force=true OR kanban_block stuck:need-rcon-tp"`), OR (b) file a `[RESCUE]` card assigned to re44 with coords + cause, OR (c) reassign their current card to another assignable bot if the work can be done elsewhere. **NEVER**: decompose the work as if it would unstick them. |
+| RUNTIME_WEDGED | (a) `kanban_comment` on the running card with the diagnosed root cause + concrete next-action (`"empty hand pattern at 06:09,06:15,06:24 — run mc equip stone_pickaxe before next collect"`), OR (b) `hermes kanban reclaim <id>` to force-respawn the worker if the in-flight one is unrecoverable, OR (c) reassign the card to a different bot if this one keeps hitting the same env-specific bug. **Don't just whisper and hope** — the worker's reading loop is already wedged. |
 | BLOCKED_WAITING | `kanban_comment` with concrete unblock guidance + `kanban_unblock` if you can fix it now, OR escalate via `[BUG]` card to re44 if it's a tool defect. |
 | IDLE_AVAILABLE | `kanban_create --assignee <bot>` ONE new card with concrete coords/spec — small (≤2hr work). |
 | Imbalance | `kanban_reassign` ONE card from overloaded → underloaded. |
@@ -283,7 +298,58 @@ anchor: "see scout task t_73af3076 comment for coordinates"
 
 If the upstream value isn't resolved yet, **don't create the downstream child yet**. Either run the scout synchronously yourself (via `mc nearby` / `mc scene`) or create a `[SCOUT]` card and decompose the next stage on its completion. The dispatcher's parent-link gating handles the wait.
 
+### File references — always absolute paths
+
+When a card body references a plan, blueprint, build guide, or any other file on disk, **render it with an absolute path**. Workers spawn in `~/.hermes/profiles/<bot>/` — a directory unrelated to the project repo — so any relative path like `data/ops/plans/hut1-guard-tower-build.md` is ambiguous and forces the worker to guess (or worse, recall stale repo names from training context).
+
+**Right:**
+
+```yaml
+build_guide: /Users/foz/hermescraft/data/ops/plans/hut1-guard-tower-build.md
+plan_json:   /Users/foz/hermescraft/data/ops/plans/hut1-guard-tower-plan.json
+```
+
+**Wrong** (caught 2026-05-27: Mason guessed `/Users/foz/src/hermes-webui/...` from prior model context, his `find` fell back to a 15s timeout, the worker exited, the card got auto-blocked):
+
+```yaml
+build_guide: data/ops/plans/hut1-guard-tower-build.md  # ambiguous — workers can't reliably resolve
+```
+
+The project root is `/Users/foz/hermescraft/` (also available to workers as `$HERMESCRAFT_HOME` if exported in their agent-bashenv — but don't rely on it; just inline the absolute path).
+
 ---
+
+## Mine-site designation — YOU pick, workers obey
+
+A [SUPPLY] mining card without a designated mine site is a worker liability. Without an entry point the worker improvises — opportunistic surface shafts, abandoned 1×1 pillars, exposed bedrock in the front yard. Live evidence (2026-05-27): no mining card today designated an entry, and the resulting surface mess required a separate `mc level_ground` cleanup pass.
+
+**Every [SUPPLY] card you create for mining MUST include a `mine_site` block in the body**:
+
+```yaml
+mine_site:
+  entry: [395, 65, -615]        # surface coord — the stair_down origin
+  direction: north              # stair direction (cardinal only — no diagonals)
+  target_y: 12                  # depth band — pick from minecraft-mining § "Common ore Y bands"
+  resource: iron_ore
+  reuse_existing: true          # if a saved mark like `mine_iron` exists, descend there instead
+```
+
+**Picking the entry — checklist:**
+
+1. **≥ 24 blocks** from any base/hut1/storage1 region anchor (`scripts/board show` or `mc regions list` for anchors).
+2. **Not on a road, path, or in front of a chest.** Inspect with `mc nearby <coord> 6` before committing — if you see `oak_door`, `crafting_table`, `chest`, or `dirt_path` within 4 blocks, pick a different spot.
+3. **One entry per depth band per resource.** Iron @ Y=16, diamond @ Y=-59, coal @ Y=96 are three different sites. Don't try to consolidate.
+4. **Re-use first.** Before committing to a new entry, check `mc marks` for `mine_<resource>` marks from prior sessions; if one exists, set `reuse_existing: true` and use its coord. Workers will pillar_up the existing stair instead of digging new.
+
+**Why this matters operationally:** the worker pattern is `mc stair_down → mc tunnel → branches` (`skills/minecraft-mining.md` § "Stair → tunnel → branch pattern"). With a materialized entry, the worker's first action is `mc goto <entry>` — no scouting, no improvisation. Without one, the worker spawns near base, picks a random direction, and the surface around base gets chipped every iteration.
+
+**The cleanup contract.** Every mining card body should end with this stanza so workers know the expected finishing state:
+
+```yaml
+cleanup_on_complete:
+  - mc level_ground <entry_x-2> <entry_z-2> <entry_x+2> <entry_z+2> execute=true
+  - mc mark mine_<resource> <entry_x> <entry_y> <entry_z>     # if not already marked
+```
 
 ## Rescue protocol — triage stuck-worker requests
 

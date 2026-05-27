@@ -136,6 +136,29 @@ If you fixed something inline, write memory so the next worker doesn't rediscove
 memory(action="add", content="Worker <profile>: chest_food empty; food is in chest_food_2 (mark exists).")
 ```
 
+## Before leaving base — confirm gear
+
+**Mob attrition is the #1 silent killer of card completion.** A 2026-05-27 session log shows **15 bot deaths in ~4.5 hours** — every single one with `weap=none armor=0` in the reactive log. The bot's reactive flee_step saves most low-HP encounters, but at HP ≤ 5 a single creeper detonation or skeleton volley is lethal — and death drops your inventory (logs, ores, planks, pickaxes), erasing card progress.
+
+**Before traveling outside base for any fieldwork card** (mining, gathering, building at a remote site, supply runs to wilderness):
+
+```python
+inv = terminal("mc inventory --json", timeout=10)  # or `mc inventory` for human-readable
+```
+
+Confirm at minimum:
+- **A weapon**: any `_sword` or `_axe`. Wooden tier is fine if that's all you have — it's better than bare hands by ~2-3 damage per swing.
+- **Pickaxe** if the card involves mining (stone/ore). Card-body matching `mine|cobble|stone|ore|smelt` ⇒ pickaxe required.
+- **Food**: at least 4 of any `cooked_*` / `bread` / `baked_potato`. The bot auto-eats at hunger ≤ 14.
+- **Optional but recommended**: shield or any helmet/chestplate — even leather. Half-damage on a skeleton arrow can be the difference between surviving and respawning.
+
+If anything is missing, the lightest fix order:
+1. `mc chest_search` at the relevant base chest (`chest_tools`, `chest_food`, `chest_wood`) — most kit is on hand.
+2. `mc craft <item>` at a nearby crafting table if materials exist (planks for swords/axes/picks; coal + log for cooking).
+3. Only after both fail: `kanban_block(reason="clarification-needed: no_combat_gear — need <missing items> before leaving base")`. Steward will source it or reassign.
+
+**Don't skip this check for short trips.** Yesterday's deaths included a 4-block detour for a saplings card.
+
 ## Workspace handling
 
 Your workspace kind determines how you should behave inside `$HERMES_KANBAN_WORKSPACE`:

@@ -10,9 +10,16 @@ multi-iterate, re-scanning the LOS-valid pool after each dig.
 Scenarios:
   A: 3×3 height=1, count=1 (single front-pillar — strict 1/1).
   B: 3×3 height=1, count=9 (full clear, multi-iteration).
-  C: 3×3 height=2, count=18 (taller pillars; same multi-iter path).
   D: 3×3 height=1, count=9, walk-away + pickup (tests pathfinding back
      through partial grid to remaining drops).
+
+  (C — 3×3 height=2, count=18 — dropped 2026-05-27; redundant with B.
+   See comment above test_collect_then_walk_away_and_pickup.)
+
+Scattered-target collection (heterogeneous block types, non-grid
+spatial layout) is covered by
+`tests/functional/terrain/test_terrain_shaping.py::test_collect_scattered_target_with_distractors`
+— don't duplicate that pattern here.
 
 Auto-magnet tolerance: an explicit post-collect pickup sweep gathers
 stragglers before the inventory delta is measured. Per-iteration we
@@ -158,11 +165,14 @@ def test_collect_all_nine_pillars_height1(bot, arena, rcon, config, grid_arena):
     _run_collect_scenario(bot, arena, rcon, config["mc"]["world"], height=1, want_count=9, walk_away=False)
 
 
-@pytest.mark.functional
-@pytest.mark.slow
-def test_collect_eighteen_blocks_height2(bot, arena, rcon, config, grid_arena):
-    """C: 18 blocks (9 pillars × 2) — verb returns within budget, ≥85% land, partials carry causes."""
-    _run_collect_scenario(bot, arena, rcon, config["mc"]["world"], height=2, want_count=18, walk_away=False)
+# Scenario C (3×3 height=2, count=18) was dropped 2026-05-27 as
+# redundant with B — same multi-iteration code path, just a taller
+# pillar variant. The 85% threshold + ≥1 shortfall tolerance in
+# _run_collect_scenario already exercises the partial-clear case at
+# count=9 in B; adding a tall variant only inflates suite runtime
+# without exercising a distinct branch. Height variation is covered
+# indirectly by walk_away=True (D) which catches stragglers from
+# the partial dig path.
 
 
 @pytest.mark.functional

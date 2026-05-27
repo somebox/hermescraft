@@ -27,6 +27,72 @@ On `kanban_complete` or `kanban_block`, run `mc task_context clear` so the grant
 
 If you see repeated `policy_violation` / `region_protected` errors AND your card has no `worksite:` line, `kanban_block` with reason `region_blocked:<id>:<short_reason>` — the steward supervisor will add the worksite via comment + unblock you. Don't try to flip region intent yourself.
 
+## Site selection + structured-mining doctrine
+
+**Random surface mining is forbidden.** Live-session evidence (2026-05-27): bots that mined opportunistically near base left a trail of orphan stair-down shafts, exposed bedrock, and 1×1 pillars across the surface. Subsequent workers tripped over the resulting terrain; later they had to be dispatched on `level_ground` cards just to clean it up. Every mining card MUST follow the doctrine below.
+
+### Mine-site selection (Steward picks this; workers obey)
+
+A "mine site" is a single (x, z) on the surface where a stair_down descends to a target depth band. Steward should designate this in the card body:
+
+```yaml
+mine_site:
+  entry: [395, 65, -615]       # surface coord — the stair_down origin
+  direction: north             # stair direction (north|south|east|west)
+  target_y: 12                 # depth band for the resource (use Y-band table below)
+  resource: iron_ore
+  reuse_existing: true         # if a stair_down already lands at this entry, descend it instead of digging a new one
+```
+
+**Site selection rules:**
+
+1. **Distance from base.** Mine entries should be ≥ 24 blocks horizontally from any `base`/`hut1`/`storage1` region anchor. Mining inside a base region's column risks chunked-load surprises and surface damage even with worksite grants.
+2. **Not on a path.** Don't put a stair entrance on a road or in front of a chest. The bot will dig the supporting block of whatever the entrance opens onto.
+3. **One entrance per resource band.** Iron @ Y=16 and diamond @ Y=-59 are different sites. Don't dig a single shaft 100 blocks deep and tunnel sideways for everything — that's a session-killer pillar collapse waiting to happen.
+4. **Re-use entrances aggressively.** Before designating a new entry, check `scripts/board list --status done --assignee <bot>` for previously-mined sites at the same depth band and reassign workers to the existing entrance. Marks like `mine_iron`, `mine_coal`, `mine_diamond` should be saved at each entry with `mc mark` for future use.
+
+### Stair → tunnel → branch pattern
+
+Once the entry is chosen, mining follows a fixed three-phase shape:
+
+```
+        [SURFACE Y=65]
+              │
+              │ mc stair_down north 50   ←  Phase 1: stair (one-time per entry)
+              ▼
+        [LANDING Y=15]
+              │
+              ├──→ mc tunnel north 32     ←  Phase 2: trunk tunnel
+              │
+        ┌─────┴──────┐
+        ▼            ▼
+   mc tunnel    mc tunnel               ←  Phase 3: branches every 6 blocks
+   east 16      west 16                    (room-and-pillar pattern)
+```
+
+**Phase 1 — the single descent.** Use `mc stair_down DIR LEN` with LEN sized to reach the target band (Y=16 ≈ 50 stair steps from Y=65). Always pillar UP for cleanup at the end via the same stair — never dig your way up through fresh ceiling.
+
+**Phase 2 — the trunk tunnel.** `mc tunnel north <len> width=2 height=3`. Width=2 lets the bot turn around without backtracking; height=3 prevents the head-clearance corner-case kicks.
+
+**Phase 3 — branches.** Every 6 blocks along the trunk, side-tunnel `mc tunnel east 16` (or west). This is the classic room-and-pillar layout: 2-wide branches with 4-wide pillars between, max ore exposure per dig.
+
+### Surface preservation rules
+
+- **Never dig from the surface straight down past Y=60** unless you've capped a stair_down. A 1×1 vertical shaft is a hazard for every later bot, and the operator will lose patience.
+- **Cap exposed shafts.** If a worker has to abandon mid-stair (deaths, reclaim), the next worker assigned to that mine site must `mc place dirt` over the exposed entrance pit before doing anything else.
+- **No diagonal/spiral shafts.** Stick to cardinal directions. Diagonal stair_down has a 22% higher kick rate (NaN-cascade tracking, 2026-05-25 investigation).
+- **Don't expose lava to the surface.** If `mc tunnel` returns `HAZARD_LAVA`, do NOT widen the breach by trying again with `--force`. Place dirt to seal it, comment the coords on your card, and `kanban_block reason=hazard:lava_at_X_Y_Z` for operator review.
+
+### When to clean up vs. abandon
+
+A mine card completes when the resource quota is met. **Before completing**, run:
+
+```
+mc level_ground <entry_x-2> <entry_z-2> <entry_x+2> <entry_z+2> execute=true
+```
+
+This levels the 5×5 around your stair entry so the next worker (or a passing operator) doesn't trip. If the entry was a reused site, the cleanup is idempotent — `level_ground` just re-confirms the cap.
+
 ## Pre-mining checklist
 
 Before descending more than 5 blocks below your current foot Y, verify in inventory:

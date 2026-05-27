@@ -145,6 +145,21 @@ Vertical mining is dangerous (lava, deep caves, suffocation). Use staircases for
 
 `mc move` refuses to plan from a 1×1 pillar — it surfaces `BOT_ON_PILLAR` with `mc pillar_down N` as the next-action hint. Always descend the pillar BEFORE trying to navigate from it.
 
+### Pillar-step is for climbing only — not for navigation
+
+If your goal is to **move to a horizontal coordinate**, `pillar_step` is the wrong primitive. Pillaring up just to "see" or "reach over" a wall traps you on a 1-block column from which `mc move` refuses to plan, forcing a `pillar_down` cleanup of every block you just placed. Live evidence (2026-05-27 session): 286 pillar_step calls vs 130 pillar_down by Mason, 390 vs **13** by Flint — workers oscillated for hours and left a trail of orphan columns across the map.
+
+Use pillar_step when:
+- you need actual height to break overhead ceiling, place something elevated, or escape a pit you've fallen into
+- the bot is genuinely trapped (sealed cave, 4-wall+ceiling enclosure)
+
+Don't use pillar_step to:
+- get over a wall — `mc dig` through it, or walk around
+- scout/survey — `mc map`, `mc nearby`, `mc scene` work without climbing
+- reach a destination — `mc move`, `mc stair_up`, `mc bridge`/`mc place` to bridge a gap
+
+Every successful `pillar_step` response now includes a `cleanup_hint` field (`"mc pillar_down N"`) and a warning in the result string. **Always call the cleanup before doing anything else** unless you have a specific reason to remain elevated. Placed pillar blocks are tracked in `recentPlaces` so the bot is permitted to mine its own pillars on cleanup (no `PROTECTED_BLOCK` refusal).
+
 ## Coordinate system
 
 - **X**: East (+) / West (−)
