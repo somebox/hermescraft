@@ -60,3 +60,6 @@ server/*/placemarks.json
 # Per-machine Claude Code allowlist (auto-grown from session activity;
 # settings.json holds the shared curated list).
 .claude/settings.local.json
+
+# context-tuner local run scores (git holds scenarios + experiment configs)
+scripts/context-tests/runs/

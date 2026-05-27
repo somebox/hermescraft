@@ -1,0 +1,33 @@
+schema_version: 1
+id: craft_plan_sub_craft_planks
+category: crafting
+description: |
+  craft_plan for sticks missing pale_oak but have oak_log — craft planks then sticks.
+contract_level: hard
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+observe: data/context-tests/_shared/observe-craft-planks.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc craft_plan sticks"
+    tool_result:
+      ok: true
+      missing: { pale_oak_planks: 4 }
+      have: { oak_log: 1 }
+
+user_prompt: "Decide your next action."
+
+expect:
+  tool_calls:
+    forbidden_canonical: [find_blocks]
+    order:
+      sequence: [craft, craft]
+      horizon: 8
+      ignore: [status, observe, read_chat, task, goals, inventory]
+    require_parse_ok: true
+    max_lines: 6

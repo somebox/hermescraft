@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "state": { "health": 20, "position": { "x": 54, "y": 65, "z": 54 } },
+  "standing": { "block_below": "cobblestone", "classification": "ground" },
+  "structure": {
+    "id": "hut1_shelter",
+    "phase": "walls_and_roof",
+    "interior_bbox": { "x1": 52, "y1": 64, "z1": 52, "x2": 56, "y2": 65, "z2": 56 },
+    "note": "Do not place/fill inside interior_bbox — perimeter and roof only"
+  },
+  "inventory_summary": { "cobblestone": 48, "oak_planks": 16 },
+  "goals": [
+    {
+      "id": "build_hut1_shelter",
+      "urgency": 1.5,
+      "satisfied": false,
+      "strategies_available": ["wall", "place", "fence"]
+    }
+  ]
+}

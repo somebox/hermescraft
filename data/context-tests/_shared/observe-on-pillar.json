@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "food": 20,
+    "position": { "x": 12.5, "y": 65, "z": 12.5 },
+    "holding": "wooden_pickaxe"
+  },
+  "standing": {
+    "classification": "on_pillar",
+    "cliff_dirs": ["N", "S", "E", "W"]
+  },
+  "inventory_summary": { "wooden_pickaxe": 1, "cobblestone": 32 },
+  "goals": [],
+  "idle_reason": "awaiting_agent"
+}

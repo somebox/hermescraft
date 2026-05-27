@@ -1,0 +1,4 @@
+id: worker-building
+scenarios:
+  - mason_no_place_shelter_interior
+  - pillar_down_hint_honored

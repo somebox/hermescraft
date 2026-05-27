@@ -1,0 +1,10 @@
+inherits: ../default.yaml
+label: produce-not-find
+suite:
+  scenarios:
+    - goals_gap_not_withdraw
+overrides:
+  prompts:
+    "prompts/landfolk/steve.md": "prompts/experiments/steve-produce-not-find.md"
+  skills:
+    "skills/minecraft-survival.md": "skills/experiments/survival-produce-not-find.md"

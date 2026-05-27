@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "state": { "health": 20, "position": { "x": 52.5, "y": 65, "z": 52.5 } },
+  "inventory_summary": { "cobblestone": 32, "stick": 8 },
+  "goals": [
+    {
+      "id": "maintain_base_defense",
+      "urgency": 1.4,
+      "satisfied": false,
+      "strategies_available": ["wall", "fence", "place"]
+    }
+  ],
+  "nearby_entities": [{ "name": "chicken", "type": "chicken", "distance": 6 }]
+}

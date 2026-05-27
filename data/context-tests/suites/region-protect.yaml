@@ -1,0 +1,4 @@
+id: region-protect
+scenarios:
+  - flint_no_collect_in_protect_region
+  - goals_gap_not_withdraw

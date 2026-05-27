@@ -1,0 +1,1 @@
+mc place cobblestone 52 66 52

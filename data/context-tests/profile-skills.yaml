@@ -1,0 +1,19 @@
+flint:
+  registered:
+    - minecraft-survival
+    - minecraft-mining
+    - minecraft-navigation
+    - minecraft-perception-advise
+mason:
+  registered:
+    - minecraft-survival
+    - minecraft-building
+    - minecraft-combat
+steve:
+  registered:
+    - minecraft-survival
+    - minecraft-chores
+    - minecraft-navigation
+worker:
+  registered:
+    - kanban-worker

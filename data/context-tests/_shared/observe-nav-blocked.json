@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 0.5, "y": 65, "z": 0.5 }
+  },
+  "inventory_summary": { "cobblestone": 16 }
+}

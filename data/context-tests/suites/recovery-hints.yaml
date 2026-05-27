@@ -1,0 +1,3 @@
+id: recovery-hints
+scenarios:
+  - pillar_down_hint_honored

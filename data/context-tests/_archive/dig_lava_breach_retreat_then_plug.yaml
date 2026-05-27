@@ -1,0 +1,38 @@
+schema_version: 1
+id: dig_lava_breach_retreat_then_plug
+category: recovery
+description: |
+  After dig with critical lava breach, retreat then plug — do not keep digging.
+contract_level: hard
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+observe: data/context-tests/_shared/observe-nav-blocked.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc dig 10 63 10"
+    tool_result:
+      ok: true
+      data:
+        breach:
+          kind: lava
+          severity: critical
+          breach_cell: { x: 10, y: 63, z: 10 }
+          next_action_hint: "mc place cobblestone 10 63 10"
+
+user_prompt: "Decide your next action."
+
+expect:
+  tool_calls:
+    forbidden_canonical: [dig]
+    order:
+      sequence: [move, place]
+      horizon: 6
+      ignore: [status, observe]
+    required_canonical_any: [place]
+    require_parse_ok: true
+    max_lines: 6

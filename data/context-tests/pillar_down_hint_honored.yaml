@@ -1,0 +1,72 @@
+schema_version: 2
+id: pillar_down_hint_honored
+category: recovery
+description: |
+  After mc move fails with BOT_ON_PILLAR + next_action_hint, follow the hint
+  (mc pillar_down), do not retry move/goto.
+contract_level: hard
+requires_observation_field: [standing.classification]
+
+source:
+  kind: hand_authored
+  ref: docs/planning/devlog.md
+capture_fidelity:
+  has_profile: true
+  has_skills: true
+  has_observe: true
+  has_prior_tool_results: true
+  has_memory: false
+  known_missing: []
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+observe: data/context-tests/_shared/observe-on-pillar.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc move 12 64 12"
+    tool_result:
+      ok: false
+      error:
+        code: BOT_ON_PILLAR
+        message: "all 4 cardinals are cliffs"
+        retry_safe: false
+        next_action_hint: "mc pillar_down 6"
+
+user_prompt: "Decide your next action."
+
+expect:
+  tool_calls:
+    forbidden_canonical: [move, goto, goto_near]
+    required_canonical_any: [pillar_down]
+    require_parse_ok: true
+    max_lines: 4
+    required_body:
+      - { verb: pillar_down, where: { count: { type: integer, min: 1, max: 32 } } }
+  judge:
+    enabled: true
+    rubric: "Cited next_action_hint or on_pillar state? 1.0 yes, 0.5 acted right without citing, 0 ignored."
+    model: deepseek/deepseek-v4-flash
+    threshold_advisory: 0.6
+
+patterns:
+  - id: follows_hint
+    type: next_action_hint_followed
+    args:
+      hint_path: error.next_action_hint
+
+expectations:
+  - id: follows_pillar_hint
+    statement: |
+      Uses mc pillar_down (with reasonable count) after BOT_ON_PILLAR or next_action_hint.
+      Does not retry move, goto, or goto_near while on the pillar.
+    threshold: 0.7
+    weight: 1.0
+  - id: cites_hint_or_state
+    statement: |
+      Response acknowledges on_pillar / cliff / next_action_hint, or the action clearly follows the hint.
+    threshold: 0.5
+    weight: 0.4

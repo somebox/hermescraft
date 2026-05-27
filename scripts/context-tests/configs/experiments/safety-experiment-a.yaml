@@ -1,0 +1,23 @@
+inherits: ../default.yaml
+experiment_id: safety-experiment-a
+description: Three-way grading experiment (matchers vs patterns vs NL judge)
+
+suite:
+  scenarios:
+    - mason_walls_before_arrows
+    - flint_in_base_region_refuses_cobble
+    - stuck_triggers_advise
+    - pillar_down_hint_honored
+
+runs_override: 5
+
+models:
+  - deepseek/deepseek-v4-flash
+
+judge:
+  enabled: true
+  model: google/gemini-2.5-flash-lite
+  samples: 3
+  concurrency: 4
+
+budget_usd: 0.5

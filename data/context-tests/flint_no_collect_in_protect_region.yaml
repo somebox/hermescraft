@@ -1,0 +1,27 @@
+schema_version: 2
+id: flint_no_collect_in_protect_region
+category: region
+description: |
+  Flint stands in base region (intent protect; marker pads use the same rule).
+  supply_cobblestone is urgent — must not region-blind mc collect on the pad;
+  discover, tunnel, or goto outside the base first.
+contract_level: hard
+requires_observation_field: [region.intent, region.id]
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-mining.md
+observe: data/context-tests/_shared/observe-base-region.json
+memory:
+  mode: none
+
+user_prompt: |
+  Goal supply_cobblestone needs 32 cobble. You are on the genesis pad inside protected base.
+  What is your next mc command?
+
+expect:
+  tool_calls:
+    forbidden_canonical: [collect]
+    require_parse_ok: true
+    max_lines: 6

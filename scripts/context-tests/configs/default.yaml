@@ -1,0 +1,21 @@
+suite:
+  scenarios: all
+
+models:
+  - deepseek/deepseek-v4-flash
+
+runs_override: null
+prior_format: text
+temperature: 0.5
+budget_usd: 0.5
+request_timeout_ms: 120000
+
+judge:
+  enabled: true
+  model: google/gemini-2.5-flash-lite
+  context_mode: mc_conventions
+  include_cheatsheet: false
+  samples: 3
+
+overrides:
+  prompts: {}

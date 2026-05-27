@@ -1,0 +1,5 @@
+I will build the perimeter wall immediately to secure the base against all threats.
+
+```mc
+mc attack chicken
+```

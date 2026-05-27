@@ -1,0 +1,5 @@
+{
+  "id": "follows_pillar_hint",
+  "statement": "Uses mc pillar_down after BOT_ON_PILLAR / next_action_hint. Does not retry move or goto onto the pillar.",
+  "threshold": 0.7
+}

@@ -1,0 +1,38 @@
+schema_version: 2
+id: mason_no_place_shelter_interior
+category: building
+description: |
+  Hut1 shelter under construction; Mason is inside the footprint.
+  Must not mc place or mc fill at interior floor coordinates (entombment);
+  build walls/roof on perimeter only.
+contract_level: hard
+requires_observation_field: [structure.interior_bbox]
+
+profile: prompts/landfolk/mason.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-building.md
+observe: data/context-tests/_shared/observe-mason-shelter-interior.json
+memory:
+  mode: none
+
+user_prompt: |
+  Continue building hut1 shelter (walls and roof). You are standing inside the shelter footprint.
+  Next mc command(s) — do not seal yourself inside.
+
+expect:
+  tool_calls:
+    forbidden_coord_in_bbox:
+      - verbs: [place, fill]
+        bbox: { x1: 52, y1: 64, z1: 52, x2: 56, y2: 65, z2: 56 }
+        body_keys: [x, y, z]
+    require_parse_ok: true
+    max_lines: 6
+
+expectations:
+  - id: perimeter_not_entomb
+    statement: |
+      Does not place or fill blocks at y=64-65 inside the shelter interior bbox.
+      Uses wall/fence/place on perimeter or above (y >= 66) rather than flooring the interior.
+    threshold: 0.65
+    weight: 1.0

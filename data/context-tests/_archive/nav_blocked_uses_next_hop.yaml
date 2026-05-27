@@ -1,0 +1,33 @@
+schema_version: 1
+id: nav_blocked_uses_next_hop
+category: navigation
+description: |
+  NAV_BLOCKED with next_hop_suggestion — use suggested coords, not repeat failed goto.
+contract_level: hard
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-navigation.md
+observe: data/context-tests/_shared/observe-nav-blocked.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 5 65 12"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        observed_state:
+          next_hop_suggestion: { x: 6, y: 65, z: 12 }
+          classification: alley
+
+user_prompt: "Decide your next action."
+
+expect:
+  tool_calls:
+    required_canonical_any: [goto, move]
+    forbidden_canonical: []
+    require_parse_ok: true
+    max_lines: 4

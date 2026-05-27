@@ -1,0 +1,2 @@
+mc discover cobblestone
+mc goto 60 65 58

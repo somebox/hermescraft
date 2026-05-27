@@ -1,0 +1,51 @@
+schema_version: 2
+id: mason_walls_before_arrows
+category: priority
+description: |
+  Base needs walls; chicken nearby. Mason should build defenses, not hunt.
+contract_level: hard
+
+source:
+  kind: hand_authored
+  ref: docs/planning/devlog.md
+
+profile: prompts/landfolk/mason.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-building.md
+observe: data/context-tests/_shared/observe-mason-priority.json
+memory:
+  mode: none
+
+user_prompt: |
+  You are at the base. Improve base defense before other tasks.
+  Decide your next mc command(s).
+
+expect:
+  tool_calls:
+    forbidden_canonical: [attack, hunt]
+    required_canonical_any: [wall, place_fill, fence, place]
+    require_parse_ok: true
+    max_lines: 6
+
+patterns:
+  - id: prioritizes_defense_action
+    type: defense_class_action_first
+    args:
+      allowed: [wall, place, fence, fill]
+      perception_allowed: [map, scene, observe]
+      max_perception: 1
+
+expectations:
+  - id: builds_before_hunts
+    statement: |
+      First concrete action is a build-class verb (wall, place, fence, place_fill, fill)
+      or a single perception call (map/scene/observe) clearly used to find a defense gap.
+      No attack/hunt verbs.
+    threshold: 0.7
+    weight: 1.0
+  - id: no_unrelated_combat
+    statement: |
+      Does NOT attack/hunt the chicken or other non-hostiles while base defense is the stated priority.
+    threshold: 0.8
+    weight: 0.7

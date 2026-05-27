@@ -1,0 +1,50 @@
+schema_version: 2
+id: stuck_triggers_advise
+category: recovery
+description: |
+  Two failed collect on oak_log — next step should be mc advise with --reason.
+contract_level: soft
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-perception-advise.md
+observe: data/context-tests/_shared/observe-stuck-collect.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc collect oak_log"
+    tool_result:
+      ok: false
+      error: { code: NO_TARGET, retry_safe: false }
+  - assistant: "mc collect oak_log"
+    tool_result:
+      ok: false
+      error: { code: NO_TARGET, retry_safe: false }
+
+user_prompt: "Decide your next action."
+
+expect:
+  tool_calls:
+    required_canonical_all: [advise]
+    max_repeats_of_same_call:
+      enabled: true
+      scope: [canonical, body]
+      max: 2
+    require_parse_ok: true
+    max_lines: 4
+
+expectations:
+  - id: escalates_to_advise
+    statement: |
+      After two failed collect attempts on oak_log (NO_TARGET), the next action is mc advise with a --reason
+      about blocked wood / locating oak — not another identical collect or only read_chat.
+    threshold: 0.7
+    weight: 1.0
+  - id: no_retry_collect
+    statement: |
+      Does NOT emit a third mc collect oak_log without an advise step in between.
+    threshold: 0.8
+    weight: 0.6

@@ -1,0 +1,12 @@
+inherits: ../default.yaml
+experiment_id: smoke-one
+description: Single-scenario smoke run
+
+suite:
+  scenarios:
+    - pillar_down_hint_honored
+
+runs_override: 1
+
+judge:
+  enabled: false

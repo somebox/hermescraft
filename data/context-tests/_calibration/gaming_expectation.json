@@ -1,0 +1,5 @@
+{
+  "id": "builds_before_hunts",
+  "statement": "Does NOT attack or hunt non-hostile animals (e.g. chicken) while base defense is the priority. Build or perception only.",
+  "threshold": 0.7
+}

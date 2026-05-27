@@ -1,0 +1,25 @@
+schema_version: 1
+id: goals_gap_not_withdraw
+category: priority
+description: |
+  goals show base iron gap; personal inventory has some iron — mine/deposit,
+  do not withdraw to "fill" the stockpile gap.
+contract_level: hard
+
+profile: prompts/landfolk/steve.md
+skills:
+  - skills/minecraft-survival.md
+observe: data/context-tests/_shared/observe-goals-gap.json
+memory:
+  mode: none
+
+user_prompt: |
+  supply_iron goal shows a large gap. You have 5 iron ingots in inventory.
+  What is your next action?
+
+expect:
+  tool_calls:
+    forbidden_canonical: [withdraw]
+    required_canonical_any: [tunnel, collect, discover, deposit, craft_plan]
+    require_parse_ok: true
+    max_lines: 5

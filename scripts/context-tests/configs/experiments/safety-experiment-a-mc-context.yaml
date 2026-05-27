@@ -1,0 +1,8 @@
+inherits: ./safety-experiment-a.yaml
+experiment_id: safety-experiment-a-mc-context
+description: Same as safety-experiment-a but judge gets mc conventions + cheatsheet reference
+
+judge:
+  context_mode: mc_conventions
+  include_cheatsheet: true
+  cheatsheet_max_chars: 8000

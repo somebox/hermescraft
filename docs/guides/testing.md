@@ -162,7 +162,26 @@ Requires `secrets.yaml` with an `openrouter_api_key` (see
 `secrets.example.yaml`). Results go to
 `scripts/benchmark/runs/<model_slug>/<timestamp>-realistic.json`.
 
-`scripts/benchmark/leaderboard.mjs` aggregates past runs into a
+## Tier 5b — Context tests (signal workbench)
+
+`./context-tuner` (under `scripts/context-tests/`) measures **prompt/context
+interpretation** with synthetic `observe` fixtures — not live MC. Use it after
+hotspot edits to see whether a scenario improved and whether an assumption
+suite regressed. Matchers/patterns are the reliable signal; the NL judge uses
+`mc_conventions` context only (no cheatsheet) and is diagnostic, not a CI gate.
+
+```bash
+./context-tuner doctor
+node scripts/context-tests/run.mjs --canary
+./context-tuner scenario validate --all
+./context-tuner run data/context-tests/suites/recovery-hints.yaml --yes
+./context-tuner compare last~1 last
+```
+
+See `docs/context-tests/README.md`. Scenarios live in `data/context-tests/`.
+Drafts: `data/context-tests/_drafts/`.
+
+`scripts/benchmark/leaderboard.mjs` aggregates Tier 5 runs into a
 markdown leaderboard.
 
 ---

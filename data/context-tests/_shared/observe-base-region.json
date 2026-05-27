@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "state": { "health": 20, "position": { "x": 52.5, "y": 65, "z": 52.5 } },
+  "region": {
+    "id": "base",
+    "intent": "protect",
+    "protected_blocks": ["cobblestone", "planks", "fence"]
+  },
+  "inventory_summary": { "wooden_pickaxe": 1 },
+  "goals": [{ "id": "supply_cobblestone", "gap": 32, "urgency": 1.3, "satisfied": false }]
+}
