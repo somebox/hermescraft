@@ -153,7 +153,11 @@ test('mining.collect: source-block fallback applies surface-bias filter (buried 
   const isStone  = (pos) => surfaceStones.concat(buriedStones).some((p) => p.x === pos.x && p.y === pos.y && p.z === pos.z);
 
   const digOrder = [];
-  const bot = makeStubBot({ position: new Vec3(0.5, 64, -3.5) });
+  // Pickaxe in inventory so pre-flight tool check passes.
+  const bot = makeStubBot({
+    position: new Vec3(0.5, 64, -3.5),
+    inventoryItems: [{ name: 'iron_pickaxe', count: 1 }],
+  });
   bot.blockAt = (pos) => {
     // The cell ABOVE a buried stone is grass_block; above a surface stone is air.
     const below = new Vec3(pos.x, pos.y - 1, pos.z);
@@ -216,7 +220,11 @@ test('mining.collect: source-block fallback keeps buried fallback when NO surfac
   const buriedStones = [new Vec3(-1, 63, 0), new Vec3(1, 63, 0)];
 
   const digOrder = [];
-  const bot = makeStubBot({ position: new Vec3(0.5, 64, -3.5) });
+  // Pickaxe in inventory so pre-flight tool check passes.
+  const bot = makeStubBot({
+    position: new Vec3(0.5, 64, -3.5),
+    inventoryItems: [{ name: 'iron_pickaxe', count: 1 }],
+  });
   bot.blockAt = (pos) => {
     // Every above-cell is grass_block — no surface candidates exist.
     const below = new Vec3(pos.x, pos.y - 1, pos.z);
@@ -277,7 +285,11 @@ test('mining.collect: scout-assist rejects buried candidates and surfaces NO_VIS
   const dirtAboveBuried = [new Vec3(0, 61, 0), new Vec3(1, 62, 0)];
 
   let pathfindCalls = 0;
-  const bot = makeStubBot({ position: new Vec3(0.5, 64, 0.5) });
+  // Pickaxe in inventory so pre-flight tool check passes.
+  const bot = makeStubBot({
+    position: new Vec3(0.5, 64, 0.5),
+    inventoryItems: [{ name: 'iron_pickaxe', count: 1 }],
+  });
   bot.blockAt = (pos) => {
     if (buriedStones.some((p) => p.x === pos.x && p.y === pos.y && p.z === pos.z)) {
       return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}), type: 1, hardness: 1.5 };
@@ -324,7 +336,11 @@ test('mining.collect: scout-assist surface-accessible candidate triggers pathfin
 
   let pathfindCalls = 0;
   let pathfindTarget = null;
-  const bot = makeStubBot({ position: new Vec3(0.5, 64, 0.5) });
+  // Pickaxe in inventory so pre-flight tool check passes.
+  const bot = makeStubBot({
+    position: new Vec3(0.5, 64, 0.5),
+    inventoryItems: [{ name: 'iron_pickaxe', count: 1 }],
+  });
   bot.blockAt = (pos) => {
     if (pos.x === surfaceStone.x && pos.y === surfaceStone.y && pos.z === surfaceStone.z) {
       return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}), type: 1, hardness: 1.5 };
@@ -525,12 +541,91 @@ test('mining.collect: non-trunk sort follows the bot row before stepping to next
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// Pre-dig refusal bail — equipForDig throwing "Refusing to dig X with empty
-// hand" BEFORE the dig starts used to fall into the burn-candidate branch,
-// producing same-second cascades of 20+ refusals. Bail the whole call.
+// Pre-flight tool check + cascade bail. Two layers of defense:
+//   1. NEW pre-flight check at collect entry — refuses BEFORE discovery
+//      when no pickaxe (or axe, etc.) is in inventory. Prevents the
+//      "pillared down with no pickaxe" failure mode by not pathfinding
+//      toward an unreachable harvest.
+//   2. equipForDig's per-candidate refusal cascade — surfaces TOOL_INADEQUATE
+//      when force=true bypasses pre-flight but the tool state desyncs at
+//      dig time. Still must bail the whole call (no cascade of 20+ retries).
 // ─────────────────────────────────────────────────────────────────────────
 
-test('mining.collect: pre-dig tool refusal bails the call with TOOL_INADEQUATE (no cascade)', async () => {
+test('mining.collect: pre-flight refuses with NO_SUITABLE_TOOL when no pickaxe in inventory', async () => {
+  let digCalls = 0;
+  const stonePositions = [];
+  for (let dx = -3; dx <= 3; dx++) {
+    for (let dz = -3; dz <= 3; dz++) {
+      if (dx === 0 && dz === 0) continue;
+      stonePositions.push(new Vec3(dx, 63, dz));
+    }
+  }
+  const bot = makeStubBot({
+    inventoryItems: [], // empty — pre-flight should refuse
+    position: new Vec3(0, 64, 0),
+    findBlocksByName: () => stonePositions,
+    dig: async () => { digCalls++; },
+  });
+  bot.blockAt = (pos) => ({
+    name: 'stone', position: pos, boundingBox: 'block', hardness: 1.5, type: 1,
+    getProperties: () => ({}),
+  });
+  bot.heldItem = null;
+  const deps = makeDeps({ bot });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'stone', count: 32 });
+  const v = validate(r);
+  assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_SUITABLE_TOOL');
+  assert.match(r.error.message, /pickaxe/);
+  assert.equal(digCalls, 0, 'pre-flight should bail before any dig or pathfind');
+  assert.match(r.error.next_action_hint, /mc craft wooden_pickaxe/);
+});
+
+test('mining.collect: pre-flight covers source blocks (collect cobblestone refuses without pickaxe)', async () => {
+  // Requesting cobblestone → source-block fallback is stone → needs pickaxe.
+  // Pre-flight must check the source's tool requirement, not just the
+  // requested item's.
+  const bot = makeStubBot({ inventoryItems: [], position: new Vec3(0, 64, 0) });
+  bot.blockAt = (pos) => ({
+    name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}),
+  });
+  const deps = makeDeps({ bot });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'cobblestone', count: 4 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_SUITABLE_TOOL');
+  // The unmet_for should be a stone-family block (the source), not cobblestone.
+  assert.match(r.error.observed_state.unmet_for, /stone|cobblestone/);
+});
+
+test('mining.collect: pre-flight passes with a pickaxe — runs through to harvest path', async () => {
+  // Same setup as the refusal test, but bot has a wooden_pickaxe.
+  // Pre-flight should pass and the call proceeds (eventually finishing with
+  // NO_VISIBLE_BLOCKS or similar — that's not what we test here).
+  const bot = makeStubBot({
+    inventoryItems: [{ name: 'wooden_pickaxe', count: 1 }],
+    position: new Vec3(0, 64, 0),
+  });
+  bot.blockAt = (pos) => ({
+    name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}),
+  });
+  const deps = makeDeps({ bot, findVisible: async () => [] });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'stone', count: 4 });
+  // Past the pre-flight gate — any code from here is legitimate. Just verify
+  // it's NOT a NO_SUITABLE_TOOL refusal (it should be NO_VISIBLE_BLOCKS).
+  if (r.ok === false) {
+    assert.notEqual(r.error.code, 'NO_SUITABLE_TOOL',
+      `pre-flight should pass with a pickaxe; got ${r.error.code}`);
+  }
+});
+
+test('mining.collect: force=true bypasses pre-flight (TOOL_INADEQUATE cascade-bail still works)', async () => {
+  // force=true skips pre-flight. If the bot then has no usable tool, the
+  // per-candidate equipForDig refusal cascade should still bail the whole
+  // call with TOOL_INADEQUATE (NOT cascade through 20+ candidates).
   let digCalls = 0;
   const stonePositions = [];
   for (let dx = -3; dx <= 3; dx++) {
@@ -546,17 +641,11 @@ test('mining.collect: pre-dig tool refusal bails the call with TOOL_INADEQUATE (
     dig: async () => { digCalls++; },
   });
   bot.blockAt = (pos) => ({
-    name: 'stone',
-    position: pos,
+    name: 'stone', position: pos, boundingBox: 'block', hardness: 1.5, type: 1,
     getProperties: () => ({}),
-    boundingBox: 'block',
-    hardness: 1.5,
-    type: 1,
   });
   bot.heldItem = null;
-  // Stub mineflayer-tool's getDigTime to return a slow estimate so the
-  // guardSlowDigEstimate inside equipForDig throws "Refusing to dig …".
-  // (Default slowDigTicksMax is 280; bare-hand stone is ~7500 ticks IRL.)
+  // Stub getDigTime so guardSlowDigEstimate throws "Refusing to dig …".
   bot.tool.getDigTime = () => 7500;
   const deps = makeDeps({
     bot,
@@ -568,7 +657,7 @@ test('mining.collect: pre-dig tool refusal bails the call with TOOL_INADEQUATE (
     findVisible: async () => stonePositions.map((p) => ({ position: p })),
   });
   const actions = createMiningActions(deps);
-  const r = await actions.collect({ block: 'stone', count: 32 });
+  const r = await actions.collect({ block: 'stone', count: 32, force: true });
   const v = validate(r);
   assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
   assert.equal(r.ok, false);
@@ -603,7 +692,8 @@ test('mining.collect: behind_wall MIXED_FAILURE includes next_action_hint and fi
   ];
   const bot = makeStubBot({
     position: new Vec3(7, 64, 0), // bot is east of the grove
-    inventoryItems: [],
+    // Axe in inventory so pre-flight tool check passes for oak_log.
+    inventoryItems: [{ name: 'iron_axe', count: 1 }],
     findBlocksByName: () => trunks.slice(),
     dig: async () => { /* not reached — LOS check fails first */ },
   });

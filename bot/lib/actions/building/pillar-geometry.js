@@ -13,6 +13,25 @@
  * with bot.position.y at the slab's top face = cell.y + 0.5) is the
  * primary suspect — the floor-rounding semantics of feetY differ from
  * the actual physical Y delta after a place + jump.
+ *
+ * ─ Y CONVENTION (read this before changing anything in this module) ────
+ *
+ * `bot.entity.position.y` is the bot's FOOT Y (continuous fractional).
+ * For a bot standing on top of a block at cell.y=63:
+ *   - foot Y = 64.0 (or 64.0001 due to physics noise — usually exactly 64)
+ *   - `feetCellY(foot)` returns 64 — the cell the bot OCCUPIES
+ *   - `blockUnderFeetCellY(foot)` returns 63 — the block the bot STANDS ON
+ *
+ * On a slab top (slab fills bottom half of cell.y=64; top face at y=64.5):
+ *   - foot Y = 64.5
+ *   - `feetCellY(foot)` returns 64 — the slab's cell
+ *   - `blockUnderFeetCellY(foot)` returns 64 — same cell (the slab itself)
+ *
+ * Two helpers, named, used consistently. The `±0.001` epsilon handles the
+ * exact-integer-Y edge case (foot Y = 64.0 → -0.001 → 63.999 → floor 63;
+ * +0.001 → 64.001 → floor 64). Diverging conventions caused subtle bugs
+ * across pillar.js / excavation.js / _nav-helpers.js — using these named
+ * helpers eliminates the choice at every call site.
  */
 
 import { Vec3 } from 'vec3';
@@ -20,28 +39,62 @@ import { Vec3 } from 'vec3';
 const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
 
 /**
+ * The Y of the cell the bot OCCUPIES — its foot cell. Use this when you
+ * need the index of the cell the bot is currently INSIDE (e.g., to find
+ * the headroom cell at feetCellY+1, or the air-foot-cell predicate for
+ * `reachedSurface`).
+ *
+ * For integer foot Y (standing on a full block top), returns floor(y).
+ * For slab top (foot Y = 64.5), returns 64 (the slab's cell).
+ *
+ * @param {{y: number}} footPos
+ * @returns {number}
+ */
+export function feetCellY(footPos) {
+  return Math.floor(footPos.y + 0.001);
+}
+
+/**
+ * The Y of the block the bot STANDS ON — typically feetCellY - 1 (the
+ * block below the foot cell), but for partial-block stands (slab, stairs)
+ * it equals feetCellY because the bot IS on the slab cell.
+ *
+ * Use this when you need the index of the block whose top face the bot is
+ * resting on (e.g., the placement reference for pillar_step, or the dig
+ * target for pillar_down's "block under feet").
+ *
+ * For integer foot Y (standing on full block top), returns floor(y - 0.001) = floor(y) - 1.
+ * For slab top (foot Y = 64.5), returns 64 (the slab itself).
+ *
+ * @param {{y: number}} footPos
+ * @returns {number}
+ */
+export function blockUnderFeetCellY(footPos) {
+  return Math.floor(footPos.y - 0.001);
+}
+
+/**
  * Y-walk-down to find the block the bot is currently standing on.
  *
- * Walks from floor(footY - 0.001) downward up to `maxDown` cells, returning
- * the first block whose boundingBox === 'block'. The -0.001 nudge handles
- * the case where the bot's foot Y is exactly an integer (e.g. y=64.0 means
- * standing on top of the block at y=63 — feetY should resolve to 63, not 64).
+ * Walks from `blockUnderFeetCellY(footPos)` downward up to `maxDown` cells,
+ * returning the first block whose boundingBox === 'block'. The starting Y
+ * is the "block under feet" convention (see module docstring).
  *
  * Returns null if no block within range. The caller can fall back to
  * lateral references or fail.
  *
  * @param {{x: number, y: number, z: number}} footPos  bot.entity.position
  * @param {(pos: import('vec3').Vec3) => { boundingBox?: string, position?: {x:number,y:number,z:number} } | null} blockAt
- * @param {number} [maxDown=1]  How many cells below feetY to also probe.
+ * @param {number} [maxDown=1]  How many cells below the start Y to also probe.
  *   Default 1 covers the standard "feet on full block" + "feet on slab top"
  *   shapes without diving into shaft geometry.
  */
 export function findStandingBlockCell(footPos, blockAt, maxDown = 1) {
   const ix = Math.floor(footPos.x);
   const iz = Math.floor(footPos.z);
-  const feetY = Math.floor(footPos.y - 0.001);
+  const startY = blockUnderFeetCellY(footPos);
   for (let dy = 0; dy <= maxDown; dy++) {
-    const y = feetY - dy;
+    const y = startY - dy;
     const blk = blockAt(new Vec3(ix, y, iz));
     if (blk && blk.boundingBox === 'block') return blk;
   }
@@ -85,6 +138,28 @@ export function nextPillarDownCell(footPos) {
     y: Math.floor(footPos.y) - 1,
     z: Math.floor(footPos.z),
   };
+}
+
+/**
+ * True when a block's NAME indicates a partial-height shape (slab, stairs,
+ * carpet, snow layer, etc.) — anything whose top face is NOT at the cell's
+ * full +1.0 Y boundary. Pillar_step from such a block produces an
+ * off-by-one in floor-Y reporting: bot foot is at slab.y + 0.5 (or similar
+ * fraction); after one jump-and-place the foot lands at place.y + 1.0;
+ * the floor-Y delta is 2 for placed=1.
+ *
+ * Used by pillar_step's pre-flight guard to refuse starts that would
+ * misreport. Force flag lets power-users override.
+ *
+ * Conservative list — only includes shapes we're confident about. Adding
+ * a name here is one-line; removing requires verifying the floor-Y math
+ * works out.
+ */
+const PARTIAL_BLOCK_RE = /(^|_)(slab|stairs|carpet|snow_layer|trapdoor|fence_gate)$/i;
+
+export function isPartialBlockShape(blockName) {
+  if (!blockName) return false;
+  return PARTIAL_BLOCK_RE.test(blockName);
 }
 
 /**

@@ -34,6 +34,9 @@ import {
   expectedFootYAfterPillarStep,
   nextPillarDownCell,
   reachedSurface,
+  isPartialBlockShape,
+  feetCellY,
+  blockUnderFeetCellY,
 } from '../../lib/actions/building/pillar-geometry.js';
 
 /** Build a blockAt(pos) callable from a {key: blockSpec} map. */
@@ -48,6 +51,66 @@ function world(specs) {
     return m.get(k) || { name: 'air', boundingBox: 'empty', position: pos };
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Y-convention helpers — feetCellY / blockUnderFeetCellY
+//
+// Same axis, two different cells. Pin both at every shape (integer Y,
+// slab top, fractional mid-jump). Diverging usage caused the bugs this
+// module documents.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('Y-convention: feetCellY = floor(y+ε), blockUnderFeetCellY = floor(y-ε)', () => {
+  // Integer foot Y (standing on full block top at cell 63 → foot Y = 64.0).
+  assert.equal(feetCellY({ y: 64.0 }), 64,
+    'foot on full block top: feet occupy cell 64');
+  assert.equal(blockUnderFeetCellY({ y: 64.0 }), 63,
+    'foot on full block top: standing on block 63');
+});
+
+test('Y-convention: slab top (foot Y = 64.5) — feet AND block-under both = 64', () => {
+  // Slab occupies bottom half of cell.y=64; top face at y=64.5; foot Y = 64.5.
+  // Both conventions converge to cell 64 (the slab itself).
+  assert.equal(feetCellY({ y: 64.5 }), 64);
+  assert.equal(blockUnderFeetCellY({ y: 64.5 }), 64);
+});
+
+test('Y-convention: fractional foot Y mid-jump — divergence only at integer Y', () => {
+  // For non-integer foot Y safely INSIDE a cell (not within ε of the
+  // boundary), the ±ε nudge doesn't cross a cell boundary — both helpers
+  // return the same cell.
+  assert.equal(feetCellY({ y: 65.4 }), 65);
+  assert.equal(blockUnderFeetCellY({ y: 65.4 }), 65);
+  assert.equal(feetCellY({ y: 65.7 }), 65);
+  assert.equal(blockUnderFeetCellY({ y: 65.7 }), 65);
+});
+
+test('Y-convention: foot Y within ε of the cell-boundary above — feetCellY rounds up', () => {
+  // y = 65.999 is essentially "at the floor of cell 66". feetCellY's +ε
+  // pushes over the boundary → returns 66 (the next cell). This is
+  // intentional: the bot's effective foot cell IS 66 at that point.
+  // blockUnderFeetCellY's -ε stays in cell 65. Documenting the edge.
+  assert.equal(feetCellY({ y: 65.999 }), 66, 'feet effectively in cell 66 at y≈66');
+  assert.equal(blockUnderFeetCellY({ y: 65.999 }), 65, '-ε keeps it in cell 65');
+});
+
+test('Y-convention: foot Y just above integer (y=64.001) — both round to the same cell', () => {
+  // y = 64.001 means foot is slightly above the cell-64 boundary (just
+  // past integer Y=64). feetCellY's +ε: floor(64.002) = 64. blockUnderFeetCellY's
+  // -ε: floor(64.000) = 64. Same cell.
+  assert.equal(feetCellY({ y: 64.001 }), 64);
+  assert.equal(blockUnderFeetCellY({ y: 64.001 }), 64);
+});
+
+test('Y-convention: negative epsilon prevents the integer-Y off-by-one in block lookup', () => {
+  // The classic bug findStandingBlockCell guards against:
+  //   floor(64.0) === 64 → would look for a block AT the bot's foot cell
+  //   (which is AIR if the bot is standing — bot's feet are in the air-
+  //   above-block cell), missing the actual standing block at 63.
+  // The -0.001 nudge fixes this.
+  assert.equal(blockUnderFeetCellY({ y: 64.0 }), 63,
+    'integer foot Y must resolve to block-below, not air-at-foot');
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // findStandingBlockCell — feet on full block, slab, air, fractional
@@ -168,12 +231,14 @@ test('pillar geom: PROPERTY pillar_step from slab top — placed=N, reported flo
   // Step 1: standing = slab at y=64. target = y=65. After place, bot
   // jumps from foot=64.5, lands at foot=66 (top of new full block at y=65).
   // Floor delta this step: floor(66) - floor(64.5) = 66 - 64 = +2 for a
-  // SINGLE pillar_step.
+  // SINGLE pillar_step. Off-by-one.
   //
-  // This is the off-by-one the observation hints at: 1 placed block,
-  // floor-Y reports +2. Lock the behaviour in so a future "fix" (e.g.
-  // refusing to pillar from a slab, or normalizing footY to slab.top
-  // explicitly) shows up as a test change.
+  // Status: production code now REFUSES pillar_step from a partial-block
+  // start (PILLAR_FROM_PARTIAL_BLOCK guard) unless force=true, so this
+  // math is unreachable on the happy path. The pure-geometry property is
+  // still documented here because (a) force=true callers still hit it,
+  // and (b) if someone removes the guard without addressing the math,
+  // this test continues to flag the off-by-one as a known property.
   //
   // For N=2: step1 ends footY=66, step2 standing=block@65, target=66,
   // foot after = 67. Floor delta total = 67 - 64 = 3 for placed=2.
@@ -270,6 +335,53 @@ test('pillar geom: reachedSurface false when a cardinal floor exists but the fee
 // pillar_down property: N digs from foot Y should land bot N blocks lower
 // (assuming each dug cell has another block below it / floor settles).
 // ─────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────
+// isPartialBlockShape — used by pillar_step's PILLAR_FROM_PARTIAL_BLOCK guard
+// to refuse starts from blocks whose top face is below the cell's +1.0
+// boundary. False-positives here cause spurious refusals; false-negatives
+// re-introduce the slab off-by-one. Worth a coverage matrix.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('pillar geom: isPartialBlockShape recognizes slabs and stairs', () => {
+  assert.equal(isPartialBlockShape('oak_slab'), true);
+  assert.equal(isPartialBlockShape('cobblestone_slab'), true);
+  assert.equal(isPartialBlockShape('stone_brick_slab'), true);
+  assert.equal(isPartialBlockShape('oak_stairs'), true);
+  assert.equal(isPartialBlockShape('cobblestone_stairs'), true);
+  assert.equal(isPartialBlockShape('deepslate_brick_stairs'), true);
+});
+
+test('pillar geom: isPartialBlockShape recognizes carpet / snow_layer / trapdoor / fence_gate', () => {
+  assert.equal(isPartialBlockShape('white_carpet'), true);
+  assert.equal(isPartialBlockShape('snow_layer'), true);
+  assert.equal(isPartialBlockShape('oak_trapdoor'), true);
+  assert.equal(isPartialBlockShape('iron_trapdoor'), true);
+  assert.equal(isPartialBlockShape('oak_fence_gate'), true);
+});
+
+test('pillar geom: isPartialBlockShape rejects full-cube blocks', () => {
+  assert.equal(isPartialBlockShape('stone'), false);
+  assert.equal(isPartialBlockShape('cobblestone'), false);
+  assert.equal(isPartialBlockShape('oak_planks'), false);
+  assert.equal(isPartialBlockShape('dirt'), false);
+  assert.equal(isPartialBlockShape('grass_block'), false);
+  assert.equal(isPartialBlockShape('iron_ore'), false);
+});
+
+test('pillar geom: isPartialBlockShape handles null/undefined/empty without throwing', () => {
+  assert.equal(isPartialBlockShape(null), false);
+  assert.equal(isPartialBlockShape(undefined), false);
+  assert.equal(isPartialBlockShape(''), false);
+});
+
+test('pillar geom: isPartialBlockShape is NOT fooled by names with "slab"/"stairs" in the middle', () => {
+  // Watch for false positives — names ending in slab/stairs are the target.
+  // (Currently nothing in mcData fits this risk, but the regex anchors `$`
+  // so a hypothetical "slabby_thing" wouldn't match. Lock that in.)
+  assert.equal(isPartialBlockShape('slab_foo'), false);
+  assert.equal(isPartialBlockShape('stairs_to_nowhere'), false);
+});
 
 test('pillar geom: PROPERTY pillar_down N digs lowers floor-Y by N when each cell has support', () => {
   // Stack of blocks from y=58..63 (column under the bot). Bot starts at

@@ -4,6 +4,7 @@ import { equipForDig, isDigProtected, recordRecentPlace } from '../../runtime/di
 import { shouldSkipDigAt } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
 import { cascadeFor } from '../../runtime/materials.js';
+import { findStandingBlockCell, isPartialBlockShape } from './pillar-geometry.js';
 
 /**
  * @param {{ ctx: any, ensureBot: () => any, sleep: (ms: number) => Promise<void>,
@@ -30,6 +31,43 @@ export function createBuildingPillarPart(deps) {
       const wantJump = doJump !== false && doJump !== 'false';
       const maxSteps = Math.min(Math.max(parseInt(rawCount, 10) || 1, 1), 64);
       const force = rawForce === true || rawForce === 'true' || rawForce === '1';
+
+      // Pre-flight: refuse pillar_step from a partial-height block (slab,
+      // stairs, snow_layer, etc.). The bot's foot Y is fractional in that
+      // state (e.g. slab.y + 0.5), so each pillar_step physically rises
+      // +1.5 instead of +1 — endY - startY misreports by 1 per call (see
+      // pillar-geometry.test.js's slab property test). Force lets a power-
+      // user override; cleanup ops calling pillar_step from a known
+      // partial-block context can pass force=true.
+      const standingPre = findStandingBlockCell(
+        b.entity.position,
+        (pos) => b.blockAt(pos),
+      );
+      if (!force && standingPre && isPartialBlockShape(standingPre.name)) {
+        return fail(
+          'PILLAR_FROM_PARTIAL_BLOCK',
+          `Refusing pillar_step from a ${standingPre.name} (partial-height block). ` +
+          `Bot foot is on a half-block top (Y=${Math.floor(b.entity.position.y * 10) / 10}); ` +
+          `pillar_step would over-rise by ~0.5-1 block per step and the reported ` +
+          `endY-startY would be ${maxSteps + 1} instead of ${maxSteps}. ` +
+          `Step off the slab first (mc move to an adjacent full-block cell), or ` +
+          `pass force=true to acknowledge and proceed with off-by-one reporting.`,
+          {
+            observed_state: {
+              standing_block: standingPre.name,
+              standing_cell: standingPre.position,
+              bot_position: {
+                x: Math.floor(b.entity.position.x),
+                y: b.entity.position.y,
+                z: Math.floor(b.entity.position.z),
+              },
+              requested_count: maxSteps,
+            },
+            next_action_hint: 'mc move to an adjacent full-block cell, then mc pillar_step',
+            retry_safe: false,
+          },
+        );
+      }
 
       const cascade = [];
       if (blockName) cascade.push(String(blockName));
@@ -477,6 +515,15 @@ export function createBuildingPillarPart(deps) {
         }
       }
 
+      // Final settle before snapshotting endY. doOneStep ends with a 150ms
+      // sleep after a successful place — enough for 1 block fall on a local
+      // network, marginal under server lag. Without this wait, position.y
+      // can be mid-fall when we read it → floor(position.y) reports one
+      // less than the bot's actual settled foot. waitForOnGround spins on
+      // bot.entity.onGround, returning early once the fall completes.
+      // No-op when the bot is already settled (last step exited via
+      // lateralExit or stallbreak without a recent place).
+      await waitForOnGround(400);
       const endY = Math.floor(b.entity.position.y);
       const pos = b.entity.position;
 

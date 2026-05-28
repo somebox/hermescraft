@@ -6,24 +6,7 @@ import { ok, fail } from '../shared/action-contract.js';
 import { cardinalDelta } from './_directions.js';
 import { box6 } from './_args.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
-import { withYBoth, parseYInput, blockFromSurface } from '../runtime/coordinates.js';
-
-/**
- * Allow callers of dig_area / similar box-taking handlers to pass
- * surface_y1/surface_y2 (= block_y + 1) as alternatives to y1/y2.
- * Returns a normalized args object the underlying box6 helper accepts.
- */
-function normalizeBoxYArgs(args) {
-  if (args == null || typeof args !== 'object') return args;
-  const out = { ...args };
-  if (out.surface_y1 != null && Number.isFinite(Number(out.surface_y1))) {
-    out.y1 = blockFromSurface(Number(out.surface_y1));
-  }
-  if (out.surface_y2 != null && Number.isFinite(Number(out.surface_y2))) {
-    out.y2 = blockFromSurface(Number(out.surface_y2));
-  }
-  return out;
-}
+import { withYBoth, parseYInput, normalizeBoxYArgs } from '../runtime/coordinates.js';
 
 const { goals } = pathfinderPkg;
 
@@ -803,6 +786,21 @@ export function createExcavationActions(services) {
       return blk.name === 'lava' || blk.name === 'void_air';
     };
 
+    // Settle helper — spin on b.entity.onGround for up to `maxMs` so the
+    // post-dig fall completes before the next iteration reads
+    // Math.floor(b.entity.position.y). The 150ms post-dig sleep below is
+    // marginal under server lag — without this wait, `fy` and the
+    // surface check's `newFy` can be one cell too high, leading to
+    // wrong underfoot reads or false-positive `reached_surface`.
+    const waitForOnGround = async (maxMs = 400) => {
+      const deadline = Date.now() + maxMs;
+      while (Date.now() < deadline) {
+        if (b.entity.onGround) return true;
+        await sleep(20);
+      }
+      return false;
+    };
+
     const startY = Math.floor(b.entity.position.y);
     let dugCount = 0;
     let stopReason = null;
@@ -840,8 +838,14 @@ export function createExcavationActions(services) {
         await b.dig(underfoot, true);
         dugCount++;
         lastDugBlock = underfoot.name;
-        // Let the bot settle on the new platform.
+        // Let the bot settle on the new platform. 150ms covers a 1-block
+        // fall on local network; waitForOnGround handles laggy networks.
+        // Without the onGround wait, the surface check below reads
+        // floor(position.y) mid-fall and reads neighbour floors from the
+        // wrong layer — false-positive reached_surface OR wrong underfoot
+        // next iteration.
         await sleep(150);
+        await waitForOnGround(400);
       } catch (err) {
         stopReason = `dig_failed:${/** @type {Error} */ (err).message || 'unknown'}`;
         break;
@@ -864,6 +868,24 @@ export function createExcavationActions(services) {
       }
     }
 
+    // Final settle before snapshotting end position. Most exit paths
+    // already include a waitForOnGround inside the loop body, but
+    // early exits (`no_support_below` on iteration entry, hazard checks
+    // before the dig) can leave the bot mid-fall. One extra wait here
+    // covers both — costs ~0ms when already settled.
+    await waitForOnGround(400);
+    // Snapshot bot position BEFORE the pickup pass. Pickup pathfinds to
+    // dropped items, which can move the bot laterally (and occasionally
+    // vertically) to grab scattered drops. If we read b.entity.position
+    // AFTER pickup, the report's `position` reflects where pickup left
+    // the bot — NOT where pillar_down actually landed. The next mc op
+    // then makes decisions based on a stale "pillar_down ending" coord.
+    // (Genesis run g-2026-05-27-10: "next op doesn't realize where the
+    // previous one really stopped".) Snapshot here, report from snapshot.
+    const endX = Math.floor(b.entity.position.x);
+    const endY = Math.floor(b.entity.position.y);
+    const endZ = Math.floor(b.entity.position.z);
+
     let pickupSuffix = '';
     if (doPickup && dugCount > 0) {
       try {
@@ -874,7 +896,6 @@ export function createExcavationActions(services) {
       }
     }
 
-    const endY = Math.floor(b.entity.position.y);
     if (!stopReason && dugCount === maxSteps) stopReason = 'max_steps_reached';
 
     return {
@@ -889,7 +910,7 @@ export function createExcavationActions(services) {
       end_surface_y: endY + 1,
       stop_reason: stopReason,
       last_block: lastDugBlock,
-      position: withYBoth({ x: Math.floor(b.entity.position.x), y: endY, z: Math.floor(b.entity.position.z) }, endY),
+      position: withYBoth({ x: endX, y: endY, z: endZ }, endY),
     };
   },
 
