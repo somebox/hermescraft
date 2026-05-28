@@ -111,6 +111,12 @@ const DEFAULT_MANIFEST = [
   [33, 'oak_slab', 64],
   [34, 'oak_fence', 64],
   [35, 'oak_sapling', 64],
+  // Cobblestone — P1 shelter exception per phase1-cards.yaml shelter card
+  // (32 needed for walls+roof, 64 gives buffer for re-shelter / chest pad).
+  // Mason cannot improvise pillar-mining adjacent to the genesis pad — prior
+  // runs entombed bots that did. The shelter card explicitly directs him
+  // here for cobble; if this slot is empty, the card blocks correctly.
+  [36, 'cobblestone', 64],
 ];
 
 // ── .env loader (PAPERMCP_TOKEN lives in repo .env) ───────────────────
