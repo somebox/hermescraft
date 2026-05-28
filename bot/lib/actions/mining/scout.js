@@ -2,6 +2,7 @@
 import { bearingFromDelta, classifySector, angleDiffDegrees } from '../../shared/perception.js';
 import { fail, ok } from '../../shared/action-contract.js';
 import { annotateReachability } from '../_nav-helpers.js';
+import { toolReadiness } from '../../runtime/inventory-hints.js';
 
 // IMPORTANT: `find_blocks` uses raw `b.findBlocks` — an x-ray scan that
 // doesn't gate on line-of-sight. That's deliberate: scout's job is to
@@ -104,7 +105,17 @@ export function createScoutHandlers(deps) {
         const reachNote = nReachable === locations.length
           ? ''
           : ` — ${nReachable}/${locations.length} reachable`;
-        return ok({ result: `Found ${found.length} ${blockName}${fpNote}${reachNote}`, locations });
+        // Pre-emptive tool-readiness check. Saves the agent a wasted walk +
+        // dig attempt when scanning for blocks they can't mine. Adds a hint
+        // string to the result message AND a structured tool_readiness
+        // object to the data envelope so reasoning can branch deterministically.
+        const toolStatus = toolReadiness(b, blockName);
+        const toolNote = toolStatus?.hint ? ` — ${toolStatus.hint}` : '';
+        return ok({
+          result: `Found ${found.length} ${blockName}${fpNote}${reachNote}${toolNote}`,
+          locations,
+          tool_readiness: toolStatus,
+        });
   }
 
   async function find_entities({ type, radius = 32 }) {
