@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { stripGlobalFlags, positionalToParams, normalizeMark } from '../../cli/args.mjs';
+import {
+  stripGlobalFlags,
+  positionalToParams,
+  normalizeMark,
+  expandMarkTokens,
+  hasMarkTokens,
+} from '../../cli/args.mjs';
 import { RAW_COMMAND_DEFS } from '../../cli/registry.mjs';
 
 describe('cli args', () => {
@@ -426,6 +432,215 @@ describe('cli args', () => {
         () => positionalToParams('demo', SCHEMA, ['--no-bogus']),
         /demo:.+:(not_bool|not_number)/,
       );
+    });
+  });
+
+  // C5: positional swap rescue. When the schema declares (string, number)
+  // and the agent types (number-looking, non-number) — the classic
+  // transposed-args mistake — the parser swaps the two tokens before strict
+  // coercion. Conservative: requires both tokens to be strings AND the
+  // pattern to be unambiguous (numeric-looking at string slot, non-numeric
+  // at number slot).
+  describe('positional swap rescue (count/block transposition)', () => {
+    const COLLECT_SCHEMA = [
+      { key: 'block', type: 'string', required: true },
+      { key: 'count', type: 'number', default: 1, min: 1, max: 64 },
+    ];
+
+    it('mc collect 5 oak_log → block=oak_log, count=5 (swapped)', () => {
+      const p = positionalToParams('collect', COLLECT_SCHEMA, ['5', 'oak_log']);
+      assert.equal(p.block, 'oak_log');
+      assert.equal(p.count, 5);
+    });
+
+    it('mc collect oak_log 5 (correct order) → no swap', () => {
+      const p = positionalToParams('collect', COLLECT_SCHEMA, ['oak_log', '5']);
+      assert.equal(p.block, 'oak_log');
+      assert.equal(p.count, 5);
+    });
+
+    it('mc collect oak_log → block=oak_log, count=default (no swap with 1 token)', () => {
+      const p = positionalToParams('collect', COLLECT_SCHEMA, ['oak_log']);
+      assert.equal(p.block, 'oak_log');
+      assert.equal(p.count, 1);
+    });
+
+    it('mc collect 5 → block="5" (looks like a block name; no second token to swap)', () => {
+      // With one token and a string-spec first, "5" goes to block. The
+      // action layer will surface UNKNOWN_BLOCK; that's a clearer error
+      // than guessing at intent here.
+      const p = positionalToParams('collect', COLLECT_SCHEMA, ['5']);
+      assert.equal(p.block, '5');
+      assert.equal(p.count, 1);
+    });
+
+    it('mc collect 5 6 → no swap (BOTH numeric-looking; ambiguous)', () => {
+      // The rescue only fires when the second token is NON-numeric.
+      // "5 6" stays as-is: block="5" (string), count=6.
+      const p = positionalToParams('collect', COLLECT_SCHEMA, ['5', '6']);
+      assert.equal(p.block, '5');
+      assert.equal(p.count, 6);
+    });
+
+    it('swap rescue does NOT trigger when first token is a quoted phrase that contains digits', () => {
+      // "iron_ore_5" is non-numeric per the strict NUMERIC regex, so no swap.
+      const p = positionalToParams('collect', COLLECT_SCHEMA, ['iron_ore_5', '10']);
+      assert.equal(p.block, 'iron_ore_5');
+      assert.equal(p.count, 10);
+    });
+
+    it('swap rescue treats negative literals as numeric (downstream min:1 catches the value)', () => {
+      // "-5" matches the NUMERIC regex, so the swap fires (block <- oak_log,
+      // count <- -5). count then fails coercion against COLLECT_SCHEMA's
+      // min:1 — exactly the same error the user would have gotten if they
+      // typed the args in the correct order with a negative count. The
+      // swap layer is type-only; bounds checks live in coerceValue.
+      assert.throws(
+        () => positionalToParams('collect', COLLECT_SCHEMA, ['-5', 'oak_log']),
+        /collect:count:min:1/,
+      );
+    });
+
+    it('pillar_step retains its built-in count-only shorthand alongside the swap rescue', () => {
+      // `mc pillar_step 5` had its own bodyFn-level shorthand before this
+      // change. Verify it still works (swap rescue is a no-op for single
+      // positionals) AND that the bodyFn rewrite to count fires.
+      const pillarStep = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_step');
+      const params = positionalToParams('pillar_step', pillarStep.argSchema, ['5']);
+      const body = JSON.parse(pillarStep.bodyFn(params));
+      assert.equal(body.count, 5);
+      assert.equal(body.block, undefined);
+    });
+
+    it('rescue covers consecutive (string, number) inside a longer schema', () => {
+      // Schema: (string, number, number). The rescue should only swap the
+      // first pair — the trailing number stays where it is.
+      const SCHEMA_3 = [
+        { key: 'name', type: 'string', required: true },
+        { key: 'a', type: 'number', default: 0 },
+        { key: 'b', type: 'number', default: 0 },
+      ];
+      const p = positionalToParams('demo', SCHEMA_3, ['7', 'hello', '99']);
+      assert.equal(p.name, 'hello');
+      assert.equal(p.a, 7);
+      assert.equal(p.b, 99);
+    });
+
+    it('rescue is skipped when the first slot is already filled by kwarg', () => {
+      // If block=cobblestone was passed via kw, the unfilled list starts at
+      // count — rescue won't see a (string, number) pair to swap, even if
+      // positional tokens look swapped. The leftover "oak_log" positional
+      // surfaces as an extra_arguments error (existing behaviour); this test
+      // pins that the kw-filled slot is honoured.
+      assert.throws(
+        () => positionalToParams('collect', COLLECT_SCHEMA, ['block=cobblestone', '5', 'oak_log']),
+        /extra_arguments:collect/,
+      );
+    });
+  });
+
+  // B4: @mark token expansion. The CLI dispatcher (execute.mjs) fetches
+  // /marks once and passes a name→{x,y,z} map to expandMarkTokens, which
+  // returns a new positional list where every `@name` has been replaced
+  // with three numeric string tokens. This makes EVERY coord-taking verb
+  // automatically accept marks without per-verb wiring.
+  describe('@mark token expansion (universal coord shortcut)', () => {
+    const MARKS = {
+      home: { x: 259, y: 64, z: 63 },
+      corner1: { x: 100, y: 64, z: -50 },
+      corner2: { x: 120, y: 65, z: -30 },
+      deep: { x: -5, y: -45, z: 7 },
+    };
+
+    it('hasMarkTokens detects single @name', () => {
+      assert.equal(hasMarkTokens(['@home']), true);
+      assert.equal(hasMarkTokens(['oak_planks', '@home']), true);
+      assert.equal(hasMarkTokens(['1', '2', '3']), false);
+      assert.equal(hasMarkTokens([]), false);
+    });
+
+    it('hasMarkTokens ignores bare "@" (length 1)', () => {
+      // A standalone "@" with no name is meaningless; don't trigger a fetch.
+      assert.equal(hasMarkTokens(['@']), false);
+    });
+
+    it('expandMarkTokens expands @home into three coord strings', () => {
+      const r = expandMarkTokens(['@home'], MARKS);
+      assert.deepEqual(r.expanded, ['259', '64', '63']);
+      assert.deepEqual(r.usedMarks, ['home']);
+    });
+
+    it('expandMarkTokens passes through non-@ tokens unchanged', () => {
+      const r = expandMarkTokens(['oak_planks', '@home'], MARKS);
+      assert.deepEqual(r.expanded, ['oak_planks', '259', '64', '63']);
+      assert.deepEqual(r.usedMarks, ['home']);
+    });
+
+    it('expandMarkTokens expands multiple marks in order', () => {
+      const r = expandMarkTokens(['cobblestone', '@corner1', '@corner2'], MARKS);
+      assert.deepEqual(r.expanded, ['cobblestone', '100', '64', '-50', '120', '65', '-30']);
+      assert.deepEqual(r.usedMarks, ['corner1', 'corner2']);
+    });
+
+    it('expandMarkTokens preserves negative + low Y coords', () => {
+      // Mark at (-5, -45, 7) — negative coords typical of bedrock-adjacent
+      // shafts. String() round-trips integers cleanly.
+      const r = expandMarkTokens(['@deep'], MARKS);
+      assert.deepEqual(r.expanded, ['-5', '-45', '7']);
+    });
+
+    it('expandMarkTokens returns error for unknown marks', () => {
+      const r = expandMarkTokens(['@bogus'], MARKS);
+      assert.deepEqual(r, { error: 'unknown_mark', name: 'bogus' });
+    });
+
+    it('expandMarkTokens errors on bare "@" (empty name)', () => {
+      const r = expandMarkTokens(['@'], MARKS);
+      assert.deepEqual(r, { error: 'unknown_mark', name: '' });
+    });
+
+    it('expansion + positionalToParams: mc dig @home works against the dig schema', () => {
+      // End-to-end: agent types `mc dig @home`. The dispatcher fetches
+      // marks, expands to ['259', '64', '63'], the dig action's argSchema
+      // (x, y, z numbers) consumes them.
+      const dig = RAW_COMMAND_DEFS.find((d) => d.name === 'dig');
+      assert.ok(dig, 'dig must be registered');
+      const expansion = expandMarkTokens(['@home'], MARKS);
+      assert.ok('expanded' in expansion);
+      // dig uses customParse, but the argSchema is also declared for help
+      // text. Walk through positionalToParams to verify the expanded
+      // tokens land in x/y/z slots correctly.
+      const params = positionalToParams('dig', dig.argSchema, expansion.expanded);
+      assert.equal(params.x, 259);
+      assert.equal(params.y, 64);
+      assert.equal(params.z, 63);
+    });
+
+    it('expansion + positionalToParams: mc place oak_planks @home works against the place schema', () => {
+      const place = RAW_COMMAND_DEFS.find((d) => d.name === 'place');
+      assert.ok(place);
+      const expansion = expandMarkTokens(['oak_planks', '@home'], MARKS);
+      assert.ok('expanded' in expansion);
+      const params = positionalToParams('place', place.argSchema, expansion.expanded);
+      assert.equal(params.block, 'oak_planks');
+      assert.equal(params.x, 259);
+      assert.equal(params.y, 64);
+      assert.equal(params.z, 63);
+    });
+
+    it('expansion + positionalToParams: mc fill block @corner1 @corner2 works against the fill schema', () => {
+      const fill = RAW_COMMAND_DEFS.find((d) => d.name === 'fill');
+      assert.ok(fill);
+      const expansion = expandMarkTokens(['cobblestone', '@corner1', '@corner2'], MARKS);
+      assert.ok('expanded' in expansion);
+      const params = positionalToParams('fill', fill.argSchema, expansion.expanded);
+      assert.equal(params.block, 'cobblestone');
+      assert.equal(params.x1, 100);
+      assert.equal(params.y1, 64);
+      assert.equal(params.z1, -50);
+      assert.equal(params.x2, 120);
+      assert.equal(params.y2, 65);
+      assert.equal(params.z2, -30);
     });
   });
 });

@@ -1,6 +1,7 @@
 import { appendFileSync } from 'node:fs';
 import { requestHttp } from './http.mjs';
 import { buildEnvelope } from './results.mjs';
+import { expandMarkTokens, hasMarkTokens } from './args.mjs';
 
 /**
  * Append one debug line — matches legacy MC_DEBUG_LOG behavior.
@@ -29,9 +30,39 @@ export async function executeHttp(spec, positional, globals, runtime) {
   const { requestBuilder, apiBase } = runtime;
   const { def, canonicalName } = spec;
 
+  // B4: pre-expand `@mark` tokens into the mark's stored (x, y, z) coords
+  // BEFORE the verb's argument parser runs. Universal across all
+  // coord-taking verbs without per-verb wiring. Fetches /marks once if
+  // any token starts with `@`; otherwise zero overhead.
+  let expandedPositional = positional;
+  if (hasMarkTokens(positional)) {
+    let marksByName = {};
+    try {
+      const marksRes = await requestHttp(apiBase, '/marks', { method: 'GET' });
+      const list = marksRes?.json?.data?.marks || marksRes?.json?.marks || [];
+      for (const m of list) {
+        if (m && typeof m.name === 'string') marksByName[m.name] = m;
+      }
+    } catch {
+      // If /marks fetch fails (bot down, network), surface a clear error
+      // instead of letting the @token fall through to the verb's parser
+      // and produce a confusing coord-coercion failure.
+      throw new Error('mark_resolution_failed: could not fetch /marks from bot');
+    }
+    const r = expandMarkTokens(positional, marksByName);
+    if ('error' in r) {
+      const known = Object.keys(marksByName).slice(0, 8).join(', ');
+      throw new Error(
+        `unknown_mark: @${r.name} — no such mark. ${known ? `Known: ${known}${Object.keys(marksByName).length > 8 ? ', …' : ''}.` : 'No marks defined.'} Use \`mc marks\` to list.`
+      );
+    }
+    expandedPositional = r.expanded;
+    logDebug(runtime.debugLog, `MARK_EXPAND ${canonicalName} used=${r.usedMarks.join(',')} positional=${JSON.stringify(expandedPositional)}`);
+  }
+
   let built;
   try {
-    built = requestBuilder(def, canonicalName, positional);
+    built = requestBuilder(def, canonicalName, expandedPositional);
   } catch (parseErr) {
     const msg = String(parseErr.message || parseErr);
     const usageHint = def.usage ? `\n  Usage: ${def.usage}` : '';

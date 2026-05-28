@@ -131,6 +131,56 @@ export function stripGlobalFlags(argv) {
   };
 }
 
+/**
+ * B4: replace `@mark` tokens in a positional list with three numeric string
+ * tokens (`["x", "y", "z"]` of the mark's stored coords), so every coord-
+ * taking verb accepts marks without per-verb wiring. The lookup map is
+ * supplied by the caller (`runMcCommand` fetches /marks once if any token
+ * starts with `@`).
+ *
+ * Returns:
+ *   { expanded: string[], usedMarks: string[] }     on success
+ *   { error: 'unknown_mark', name: string }         on lookup miss
+ *
+ * Notes:
+ *   - Token form is `@name` (single leading `@`); deeper transforms like
+ *     `@name.x` are NOT supported (kept simple).
+ *   - Negative or fractional coords are preserved via String(n).
+ *   - Tokens that don't start with `@` pass through unchanged.
+ *   - An empty `@` token errors as `unknown_mark` with name=''.
+ *
+ * @param {string[]} positional
+ * @param {Record<string, { x: number, y: number, z: number }>} marksByName
+ */
+export function expandMarkTokens(positional, marksByName) {
+  const out = [];
+  const usedMarks = [];
+  for (const tok of positional) {
+    if (typeof tok !== 'string' || !tok.startsWith('@')) {
+      out.push(tok);
+      continue;
+    }
+    const name = tok.slice(1);
+    const mark = marksByName[name];
+    if (!mark) {
+      return { error: 'unknown_mark', name };
+    }
+    out.push(String(mark.x), String(mark.y), String(mark.z));
+    usedMarks.push(name);
+  }
+  return { expanded: out, usedMarks };
+}
+
+/**
+ * Convenience: scan a positional list for any `@` tokens. Cheap pre-check
+ * the dispatcher uses to decide whether to fetch /marks.
+ *
+ * @param {string[]} positional
+ */
+export function hasMarkTokens(positional) {
+  return positional.some((t) => typeof t === 'string' && t.startsWith('@') && t.length > 1);
+}
+
 /** @returns {unknown} */
 export function coerceValue(spec, raw) {
   const t = spec.type;
@@ -254,6 +304,32 @@ export function positionalToParams(commandName, argSchema = [], positional) {
       kwOverrides[m[1]] = m[2];
     } else {
       remaining.push(t);
+    }
+  }
+
+  // Positional swap rescue (C5): if the next two unfilled specs are
+  // (string, number) and the upcoming positional tokens look swapped
+  // (numeric-looking at the string slot, non-numeric at the number slot),
+  // swap them in `remaining` before strict consumption. Catches agent
+  // mistakes like `mc collect 5 oak_log` (count + block transposed).
+  // Conservative — only fires when both signals line up:
+  //   1. consecutive (string, number) schema pair
+  //   2. tokenA is a clean numeric literal (matches /^-?\d+(\.\d+)?$/)
+  //   3. tokenB is NOT a clean numeric literal
+  // Three-arg sequences (string, number, number) only swap the first pair.
+  {
+    const unfilled = argSchema.filter((s) => !(s.key in kwOverrides));
+    for (let i = 0; i + 1 < unfilled.length && i + 1 < remaining.length; i++) {
+      const a = unfilled[i];
+      const b = unfilled[i + 1];
+      if (a.type !== 'string' || b.type !== 'number') continue;
+      const ra = remaining[i];
+      const rb = remaining[i + 1];
+      if (typeof ra !== 'string' || typeof rb !== 'string') continue;
+      const NUMERIC = /^-?\d+(\.\d+)?$/;
+      if (NUMERIC.test(ra) && !NUMERIC.test(rb)) {
+        [remaining[i], remaining[i + 1]] = [rb, ra];
+      }
     }
   }
 
