@@ -236,6 +236,19 @@ export function positionalToParams(commandName, argSchema = [], positional) {
       kwOverrides[m[1]] = 'true';
       continue;
     }
+    // --no-FLAG → false for boolean specs (common CLI convention).
+    // Accept dashes and underscores both BETWEEN --no and the key, and
+    // INSIDE the key (CLI users commonly write `--no-clear-stand` even
+    // when the schema declares `clear_stand`). Normalise the captured
+    // identifier to the underscore form for spec lookup.
+    m = t.match(/^--no[-_]([A-Za-z][A-Za-z0-9_-]*)$/);
+    if (m) {
+      const flagKey = m[1].replace(/-/g, '_');
+      if (specByKey[flagKey]?.type === 'boolean') {
+        kwOverrides[flagKey] = 'false';
+        continue;
+      }
+    }
     m = t.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
     if (m && specByKey[m[1]]) {
       kwOverrides[m[1]] = m[2];

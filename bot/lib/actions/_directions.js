@@ -26,6 +26,12 @@ const ALIAS = {
   nw: 'NW', northwest: 'NW',
   se: 'SE', southeast: 'SE',
   sw: 'SW', southwest: 'SW',
+  // Engineering shorthand: Minecraft +x is east, -x west, +z south, -z north.
+  // Agents reasoning from coord deltas reach for this form; cheap to accept.
+  '+x': 'E', '-x': 'W',
+  '+z': 'S', '-z': 'N',
+  'plus_x': 'E', 'minus_x': 'W',
+  'plus_z': 'S', 'minus_z': 'N',
 };
 
 /**

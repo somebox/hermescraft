@@ -348,5 +348,84 @@ describe('cli args', () => {
       assert.equal(body.count, undefined);
       assert.equal(body.pickup, undefined);
     });
+
+    it('mc pillar_down --no-pickup → body { pickup: false } (negation form)', () => {
+      // --no-FLAG sugar is the agent-friendly alternative to --pickup=false.
+      // Many CLIs support both; before this fix only the =-form worked.
+      const body = pipeline('pillar_down', downSchema, downBodyFn, ['--no-pickup']);
+      assert.equal(body.pickup, false);
+    });
+
+    it('mc pillar_step --no-force --no-jump → both false', () => {
+      const body = pipeline('pillar_step', stepSchema, stepBodyFn, ['--no-force', '--no-jump']);
+      assert.equal(body.force, false);
+      assert.equal(body.jump, false);
+    });
+
+    it('mc pillar_step 5 --no-force → count=5, force=false', () => {
+      const body = pipeline('pillar_step', stepSchema, stepBodyFn, ['5', '--no-force']);
+      assert.equal(body.count, 5);
+      assert.equal(body.force, false);
+    });
+  });
+
+  // --no-FLAG sugar — common CLI convention agents reach for. Was silently
+  // unsupported before; "--no-pickup" used to fall through to positional
+  // consumption and either get coerced wrong (for a number spec) or
+  // silently ignored. This block pins the universal sugar at the parser
+  // layer (positionalToParams), independent of any single verb's schema.
+  describe('--no-FLAG boolean negation', () => {
+    const SCHEMA = [
+      { key: 'foo', type: 'boolean' },
+      { key: 'bar_baz', type: 'boolean' },
+      { key: 'qux', type: 'number' },
+    ];
+
+    it('--no-foo → foo=false', () => {
+      const p = positionalToParams('demo', SCHEMA, ['--no-foo']);
+      assert.equal(p.foo, false);
+    });
+
+    it('--no-bar-baz (dash form) → bar_baz=false', () => {
+      // CLI users often write the key with dashes even when the schema
+      // declares it with underscores. Accept both.
+      const p = positionalToParams('demo', SCHEMA, ['--no-bar-baz']);
+      assert.equal(p.bar_baz, false);
+    });
+
+    it('--no_bar_baz (underscore form) → bar_baz=false', () => {
+      const p = positionalToParams('demo', SCHEMA, ['--no_bar_baz']);
+      assert.equal(p.bar_baz, false);
+    });
+
+    it('--foo and --no-foo can co-exist; last one wins', () => {
+      // kwOverrides assignment is last-write-wins. Documented behaviour.
+      const p = positionalToParams('demo', SCHEMA, ['--foo', '--no-foo']);
+      assert.equal(p.foo, false);
+      const q = positionalToParams('demo', SCHEMA, ['--no-foo', '--foo']);
+      assert.equal(q.foo, true);
+    });
+
+    it('--no-FLAG for a non-boolean spec falls through as positional', () => {
+      // Safety: only boolean specs accept --no-FLAG. A number/string spec
+      // with --no- prefix should NOT silently bind to false (the user
+      // probably meant something else, or the spec is wrong). It falls
+      // through to positional consumption — the first non-string spec it
+      // hits then fails its coercion, surfacing a clear error.
+      assert.throws(
+        () => positionalToParams('demo', SCHEMA, ['--no-qux']),
+        /demo:.+:(not_bool|not_number)/,
+      );
+    });
+
+    it('--no-bogus (unknown key) falls through as positional', () => {
+      // Unknown --no-FLAG should error like any other unknown flag — gets
+      // pushed onto positional and fails the next type coercion. Confirms
+      // the matcher checks specByKey before binding.
+      assert.throws(
+        () => positionalToParams('demo', SCHEMA, ['--no-bogus']),
+        /demo:.+:(not_bool|not_number)/,
+      );
+    });
   });
 });
