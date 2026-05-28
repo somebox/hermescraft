@@ -30,16 +30,40 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 // ── Contract (do not change without doc updates) ──────────────────────
-// DOUBLE chest at y=65 spanning two cells along x: (365,_,-594) is the
-// "right" half, (366,_,-594) is the "left" half. Both face south. 54 slots
-// total — enough for tools (non-stackable, 1 slot each) + food + lots of wood.
+// Per-run coords: genesis sets SYSTEM_CHEST_{PRIMARY,OTHER,SIGN}_{X,Y,Z} (ints).
+// Fallback: legacy hardcoded production base coords.
+function envCoord(role, axis, fallback) {
+  const key = `SYSTEM_CHEST_${role}_${axis}`;
+  const v = process.env[key];
+  if (v !== undefined && v !== '') {
+    const n = parseInt(v, 10);
+    if (!Number.isNaN(n)) return n;
+  }
+  return fallback;
+}
+
+const DEFAULT_PRIMARY = { x: 366, y: 65, z: -594 };
+const DEFAULT_OTHER = { x: 365, y: 65, z: -594 };
+const DEFAULT_SIGN = { x: 366, y: 66, z: -594 };
+
 const SYSTEM_CHEST = {
-  primary: { x: 366, y: 65, z: -594 },   // left half — `mc deposit` targets this
-  other:   { x: 365, y: 65, z: -594 },   // right half — paired by facing+type
+  primary: {
+    x: envCoord('PRIMARY', 'X', DEFAULT_PRIMARY.x),
+    y: envCoord('PRIMARY', 'Y', DEFAULT_PRIMARY.y),
+    z: envCoord('PRIMARY', 'Z', DEFAULT_PRIMARY.z),
+  },
+  other: {
+    x: envCoord('OTHER', 'X', DEFAULT_OTHER.x),
+    y: envCoord('OTHER', 'Y', DEFAULT_OTHER.y),
+    z: envCoord('OTHER', 'Z', DEFAULT_OTHER.z),
+  },
   name: 'system_chest',
 };
-// Standing oak sign one block above the primary half, with a 4-line label.
-const SYSTEM_SIGN = { x: 366, y: 66, z: -594 };
+const SYSTEM_SIGN = {
+  x: envCoord('SIGN', 'X', DEFAULT_SIGN.x),
+  y: envCoord('SIGN', 'Y', DEFAULT_SIGN.y),
+  z: envCoord('SIGN', 'Z', DEFAULT_SIGN.z),
+};
 
 // ── Built-in default manifest ─────────────────────────────────────────
 // [slot, item, count] tuples. `slot` is informational (mc deposit lets the
@@ -257,6 +281,28 @@ async function cmdFill(client, manifestPath) {
   }
   process.stdout.write(`${name} @ (${x},${y},${z}) — ${ok}/${items.length} deposited, ${fail} failed.\n`);
   if (fail > 0) process.exit(2);
+
+  // Verify the chest actually has contents. `mc deposit` returns ok when
+  // the bot's action ran, NOT when items landed in the chest. If the
+  // chest's chunk isn't loaded or the bot's path to the chest is blocked,
+  // deposit reports ok with zero items written. Observed g-2026-05-28-1:
+  // 33 deposits reported ok, chest verified empty by Mason. Catch it here
+  // before bots build on top of a broken setup.
+  await new Promise((r) => setTimeout(r, 1500));
+  const verifyRes = await botPost(FILL_BOT.api, '/action/list_container', { x, y, z });
+  const verifyStr = String(verifyRes.result || '');
+  const stacks = verifyStr.startsWith('Container:')
+    ? verifyStr.slice('Container:'.length).split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  process.stdout.write(`verify: chest has ${stacks.length} stacks\n`);
+  if (stacks.length === 0 && items.length > 0) {
+    process.stderr.write(
+      `fill verify FAILED: chest at (${x},${y},${z}) empty after ${items.length} deposit ops.\n` +
+      `Likely cause: chunk not loaded when fill ran, or service bot was not in reach.\n` +
+      `Retry fill in 5s, or run scripts/system-chest.mjs show to inspect.\n`
+    );
+    process.exit(3);
+  }
 }
 
 async function cmdShow(client) {
