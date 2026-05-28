@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   toolReadiness,
   inventoryHas,
+  sceneToolNeeds,
 } from '../lib/runtime/inventory-hints.js';
 
 // Mock bot factory — produces a bot stub with the minimal mineflayer
@@ -152,4 +153,86 @@ test('inventoryHas: defensive on missing bot/item', () => {
   assert.deepEqual(inventoryHas(null, 'cobblestone'), { count: 0, slots: [] });
   assert.deepEqual(inventoryHas({}, 'cobblestone'), { count: 0, slots: [] });
   assert.deepEqual(inventoryHas({ inventory: { items: () => [] } }, ''), { count: 0, slots: [] });
+});
+
+// ── sceneToolNeeds — aggregate across visible blocks ───────────────────
+
+test('sceneToolNeeds: pickaxe-needed visible, no pickaxe → tools_missing.pickaxe', () => {
+  const b = mockBot([]);
+  const visible = [
+    { name: 'cobblestone', count: 12 },
+    { name: 'stone', count: 8 },
+  ];
+  const r = sceneToolNeeds(b, visible);
+  assert.equal(r.tools_missing.length, 1);
+  assert.equal(r.tools_missing[0].category, 'pickaxe');
+  assert.equal(r.tools_missing[0].total_count, 20);
+  const blockNames = r.tools_missing[0].blocks.map((b) => b.name).sort();
+  assert.deepEqual(blockNames, ['cobblestone', 'stone']);
+  assert.match(r.tools_missing[0].hint, /no pickaxe/);
+});
+
+test('sceneToolNeeds: pickaxe-needed visible AND have pickaxe → tools_ready, no tools_missing', () => {
+  const b = mockBot([{ name: 'stone_pickaxe', count: 1 }]);
+  const visible = [{ name: 'cobblestone', count: 12 }];
+  const r = sceneToolNeeds(b, visible);
+  assert.equal(r.tools_missing.length, 0);
+  assert.equal(r.tools_ready.length, 1);
+  assert.equal(r.tools_ready[0].category, 'pickaxe');
+  assert.equal(r.tools_ready[0].best_available, 'stone_pickaxe');
+});
+
+test('sceneToolNeeds: mixed scene — missing one category, have another', () => {
+  const b = mockBot([{ name: 'wooden_pickaxe', count: 1 }]);
+  const visible = [
+    { name: 'cobblestone', count: 12 },   // pickaxe — have
+    { name: 'oak_log', count: 3 },        // axe — missing
+  ];
+  const r = sceneToolNeeds(b, visible);
+  assert.equal(r.tools_ready.length, 1);
+  assert.equal(r.tools_ready[0].category, 'pickaxe');
+  assert.equal(r.tools_missing.length, 1);
+  assert.equal(r.tools_missing[0].category, 'axe');
+});
+
+test('sceneToolNeeds: shovel-class blocks (dirt) do NOT surface as missing', () => {
+  // dirt mines with bare hand fine; shovel is optimization. Hint must be null
+  // so the agent doesn't get noise telling them to craft a shovel they don't need.
+  const b = mockBot([]);
+  const visible = [{ name: 'dirt', count: 32 }];
+  const r = sceneToolNeeds(b, visible);
+  assert.equal(r.tools_missing.length, 0);
+  assert.equal(r.tools_ready.length, 0);
+});
+
+test('sceneToolNeeds: non-mineable blocks (poppy) ignored entirely', () => {
+  const b = mockBot([]);
+  const visible = [
+    { name: 'poppy', count: 4 },
+    { name: 'tall_grass', count: 8 },
+  ];
+  const r = sceneToolNeeds(b, visible);
+  assert.equal(r.tools_missing.length, 0);
+  assert.equal(r.tools_ready.length, 0);
+});
+
+test('sceneToolNeeds: empty / missing args → empty result', () => {
+  assert.deepEqual(sceneToolNeeds(null, []), { tools_missing: [], tools_ready: [] });
+  assert.deepEqual(sceneToolNeeds(mockBot([]), null), { tools_missing: [], tools_ready: [] });
+  assert.deepEqual(sceneToolNeeds(mockBot([]), []), { tools_missing: [], tools_ready: [] });
+});
+
+test('sceneToolNeeds: aggregates counts when same category has multiple blocks', () => {
+  const b = mockBot([]);
+  const visible = [
+    { name: 'cobblestone', count: 10 },
+    { name: 'andesite', count: 5 },
+    { name: 'iron_ore', count: 2 },
+  ];
+  const r = sceneToolNeeds(b, visible);
+  // All three need pickaxe; aggregated into one tools_missing entry
+  assert.equal(r.tools_missing.length, 1);
+  assert.equal(r.tools_missing[0].category, 'pickaxe');
+  assert.equal(r.tools_missing[0].total_count, 17);
+  assert.equal(r.tools_missing[0].blocks.length, 3);
 });

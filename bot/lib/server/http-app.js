@@ -8,6 +8,7 @@ import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/w
 import { normalizeId } from '../runtime/regions/index.js';
 import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
 import { getBuildInfo } from '../runtime/build-info.js';
+import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -516,6 +517,20 @@ export function createBotHttpListener(deps) {
         const range = parseInt(url.searchParams.get('range') || '16');
         const lean = url.searchParams.get('lean') === 'true';
         const data = buildSceneSummary({ range: Math.min(range, 24) });
+        // Pre-emptive tool-readiness across visible blocks. `tools_missing`
+        // names categories the agent needs but doesn't carry — actionable
+        // signal that mc scene used to surface only after the bot walked
+        // to a candidate and tried to dig. Always-computed (cheap; just
+        // an inventory scan + category lookup) but only emitted when
+        // there's something to say.
+        if (data?.visible_blocks?.length) {
+          try {
+            const needs = sceneToolNeeds(ensureBot(), data.visible_blocks);
+            if (needs.tools_missing.length || needs.tools_ready.length) {
+              data.tool_readiness = needs;
+            }
+          } catch { /* never let a hint feature break the scene response */ }
+        }
         if (lean && data) {
           // Drop the heaviest fields: full ray-hit array and detailed entity
           // list. Keep summary (text), aggregate visible_blocks, hazards,
