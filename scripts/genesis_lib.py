@@ -746,7 +746,6 @@ def seed_base_pad(cfg: dict, *, half: int = 4, pad_block: str = "cobblestone") -
     for cx in range(cx1, cx2 + 1):
         for cz in range(cz1, cz2 + 1):
             rcon(f"forceload add {cx} {cz}", quiet=True)
-    time.sleep(0.5)  # give the server a beat to load chunks
 
     def _fill_pad() -> int:
         out = rcon(f"fill {x1} {pad_y} {z1} {x2} {pad_y} {z2} minecraft:{pad_block} replace", quiet=False)
@@ -754,15 +753,43 @@ def seed_base_pad(cfg: dict, *, half: int = 4, pad_block: str = "cobblestone") -
         m = re.search(r"Successfully filled (\d+) block", out)
         return int(m.group(1)) if m else 0
 
+    # 2. Probe chunk readiness with a 1×1 dummy fill at the anchor center.
+    # Chunks need to be generated → streamed → forceload-activated; on a
+    # fresh-world reset that can take 5-15s while the server warms. The
+    # fixed `time.sleep(0.5)` previously here was too short on cold starts
+    # (g-2026-05-28-1: filled 0/81). Poll until the probe lands a block,
+    # then do the real fill.
+    chunks_ready = False
+    for attempt in range(8):
+        time.sleep(1.0)
+        probe = rcon(f"fill {ax} {pad_y} {az} {ax} {pad_y} {az} minecraft:{pad_block} replace", quiet=True)
+        if "Successfully filled" in probe:
+            chunks_ready = True
+            break
+    if not chunks_ready:
+        raise RuntimeError(
+            f"seed_base_pad: chunks not ready after 8s polling at anchor ({ax},{pad_y},{az}); "
+            f"last probe output: {probe[:200]!r}"
+        )
+
     filled = _fill_pad()
     if filled < expected_cells:
         # One retry — chunks may have needed a moment more.
         time.sleep(1.5)
         filled2 = _fill_pad()
         filled = max(filled, filled2)
+    if filled == 0:
+        # Zero is hard failure — workers cannot patch a missing pad without
+        # the lt_stone marks the Site Survey produces (chicken-and-egg), so
+        # don't pretend a 0-cell pad is recoverable. Hard fail so the
+        # operator either retries the run or fixes the underlying chunk-load
+        # issue before bots see a grass anchor.
+        raise RuntimeError(
+            f"seed_base_pad: 0/{expected_cells} cells filled after probe + 2 attempts; "
+            f"anchor ({ax},{ay},{az}); chunks ({cx1},{cz1})..({cx2},{cz2})"
+        )
     if filled < expected_cells:
-        # Don't fail the whole run — the pad is mostly there, workers can
-        # patch the remainder. Log the gap.
+        # Partial — workers can patch the remainder. Log the gap.
         out_path = REPO_ROOT / "data" / "genesis-runs" / cfg["run_id"] / "run.log"
         rec = {"ts": _iso_utc(), "step": "seed_base_pad_warn",
                "outcome": "partial", "duration_ms": 0,
