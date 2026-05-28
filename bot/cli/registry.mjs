@@ -331,13 +331,13 @@ export const RAW_COMMAND_DEFS = [
       { key: 'count', type: 'number', description: 'blocks to climb (default 1, max 64)' },
       {
         key: 'jump',
-        type: 'string',
-        description: 'true|false — jump after placing (default true)',
+        type: 'boolean',
+        description: 'jump after placing (default true). Pass --no-jump or jump=false to disable.',
       },
       {
         key: 'force',
-        type: 'string',
-        description: 'true|false — bypass slow-dig refusal + region/global denylist when genuinely stuck (default false)',
+        type: 'boolean',
+        description: 'bypass slow-dig refusal + region/global denylist + partial-block guard when genuinely stuck (default false)',
       },
     ],
     bodyFn: (p) => {
@@ -379,7 +379,7 @@ export const RAW_COMMAND_DEFS = [
     description: 'Descend a vertical pillar — mine the block directly underfoot, drop 1, repeat. Stops on bedrock, lava, or when surface is reached (multiple solid floor cells around the bot at the new level). Use when stuck on top of a 1×1 column you climbed with mc pillar_step.',
     argSchema: [
       { key: 'count', type: 'number', description: 'max blocks to descend (default 12, max 64)' },
-      { key: 'pickup', type: 'string', description: 'true|false — pickup drops as you go (default true)' },
+      { key: 'pickup', type: 'boolean', description: 'pickup drops as you go (default true). Pass pickup=false to skip.' },
     ],
     bodyFn: (p) => JSON.stringify({
       ...(p.count !== undefined ? { count: Number(p.count) } : {}),

@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { stripGlobalFlags, positionalToParams, normalizeMark } from '../../cli/args.mjs';
+import { RAW_COMMAND_DEFS } from '../../cli/registry.mjs';
 
 describe('cli args', () => {
   it('stripGlobalFlags peels known globals anywhere; leaves unrelated flags intact', () => {
@@ -247,6 +248,105 @@ describe('cli args', () => {
     it('handles fractional / decimal coords', () => {
       const { globals } = stripGlobalFlags(['advise', '--target=1.5,64.0,-2.25']);
       assert.deepEqual(globals.target, { x: 1.5, y: 64, z: -2.25 });
+    });
+  });
+
+  // pillar_step --force / pillar_down --pickup=false used to fail because
+  // the schema declared force/jump/pickup as type:'string'. The bare --force
+  // token then wasn't recognized as a flag (the bare-flag handler only
+  // fires for type:'boolean'), so it leaked into the positional queue and
+  // was coerced as the next positional — typically `count` (type:'number').
+  // Number('--force') → NaN → "pillar_step:count:not_number". The fix
+  // flipped the schema to type:'boolean'; these tests drive the FULL
+  // registry pipeline (schema + bodyFn) so we lock in the HTTP body the
+  // action layer actually receives.
+  describe('pillar_step / pillar_down boolean-flag parsing', () => {
+    // Find the canonical command definitions from the registry. Keeping
+    // schema in one place means a schema regression here surfaces
+    // immediately, not in a duplicated local copy that drifts.
+    const pillarStep = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_step');
+    const pillarDown = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_down');
+    assert.ok(pillarStep, 'pillar_step must be in RAW_COMMAND_DEFS');
+    assert.ok(pillarDown, 'pillar_down must be in RAW_COMMAND_DEFS');
+    const stepSchema = pillarStep.argSchema;
+    const stepBodyFn = pillarStep.bodyFn;
+    const downSchema = pillarDown.argSchema;
+    const downBodyFn = pillarDown.bodyFn;
+
+    /** Run the whole pipeline a real CLI invocation goes through. */
+    function pipeline(verb, schema, bodyFn, argv) {
+      const params = positionalToParams(verb, schema, argv);
+      return JSON.parse(bodyFn(params));
+    }
+
+    it('regression guard: pillar_step schema declares jump+force as type:boolean', () => {
+      const byKey = Object.fromEntries(stepSchema.map((s) => [s.key, s]));
+      assert.equal(byKey.jump?.type, 'boolean',
+        'pillar_step.jump must be type:boolean — string causes the bare-flag parser to skip it');
+      assert.equal(byKey.force?.type, 'boolean',
+        'pillar_step.force must be type:boolean — string causes Number("--force") → NaN');
+    });
+
+    it('regression guard: pillar_down schema declares pickup as type:boolean', () => {
+      const byKey = Object.fromEntries(downSchema.map((s) => [s.key, s]));
+      assert.equal(byKey.pickup?.type, 'boolean',
+        'pillar_down.pickup must be type:boolean — string breaks "--pickup=false" routing');
+    });
+
+    it('mc pillar_step --force (no count) → body force=true, no count', () => {
+      const body = pipeline('pillar_step', stepSchema, stepBodyFn, ['--force']);
+      assert.equal(body.force, true);
+      assert.equal(body.count, undefined, 'count should be omitted, action defaults it to 1');
+    });
+
+    it('mc pillar_step 5 --force → body { count: 5, force: true }', () => {
+      // Pre-fix this threw "pillar_step:count:not_number". Two orderings:
+      // --force-first and count-first must both work.
+      const a = pipeline('pillar_step', stepSchema, stepBodyFn, ['5', '--force']);
+      assert.equal(a.count, 5);
+      assert.equal(a.force, true);
+      assert.equal(a.block, undefined, 'numeric-only positional must be rewritten to count');
+
+      const b = pipeline('pillar_step', stepSchema, stepBodyFn, ['--force', '5']);
+      assert.equal(b.count, 5);
+      assert.equal(b.force, true);
+    });
+
+    it('mc pillar_step cobblestone 10 --force → block, count, force', () => {
+      const body = pipeline('pillar_step', stepSchema, stepBodyFn, ['cobblestone', '10', '--force']);
+      assert.equal(body.block, 'cobblestone');
+      assert.equal(body.count, 10);
+      assert.equal(body.force, true);
+    });
+
+    it('mc pillar_step force=true (kw=value form) still works', () => {
+      const body = pipeline('pillar_step', stepSchema, stepBodyFn, ['force=true']);
+      assert.equal(body.force, true);
+    });
+
+    it('mc pillar_step force=false → force omitted from body (false is the default)', () => {
+      // The bodyFn's conditional spread emits force only when truthy after
+      // normalization; force=false produces `{ force: false }` in the body.
+      const body = pipeline('pillar_step', stepSchema, stepBodyFn, ['force=false']);
+      assert.equal(body.force, false);
+    });
+
+    it('mc pillar_down --pickup=false → body { pickup: false }, count omitted', () => {
+      const body = pipeline('pillar_down', downSchema, downBodyFn, ['--pickup=false']);
+      assert.equal(body.pickup, false);
+      assert.equal(body.count, undefined);
+    });
+
+    it('mc pillar_down 8 --pickup=false → body { count: 8, pickup: false }', () => {
+      const body = pipeline('pillar_down', downSchema, downBodyFn, ['8', '--pickup=false']);
+      assert.equal(body.count, 8);
+      assert.equal(body.pickup, false);
+    });
+
+    it('mc pillar_down (no args) → empty body, action defaults apply', () => {
+      const body = pipeline('pillar_down', downSchema, downBodyFn, []);
+      assert.equal(body.count, undefined);
+      assert.equal(body.pickup, undefined);
     });
   });
 });
