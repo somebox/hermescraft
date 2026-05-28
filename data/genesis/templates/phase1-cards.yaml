@@ -61,6 +61,10 @@ cards:
 
       **NEVER `mc fill cobblestone <x1> <y> <z1> <x2> <y> <z2>`** across the full 5×5 footprint — that puts cobble inside the shelter where you and the chests live. Walls = the 4 sides of the perimeter, each side a 5×1×1 strip. Place each strip with its own `mc fill` (one per side), not as a slab.
 
+      ## Hard rule — whole cobblestone blocks only
+
+      **Do not place `cobblestone_slab`, `cobblestone_stairs`, or any half-block / partial-block variant** in walls or roof, even if inventory carries them. Half-blocks fail `mc is_sheltered` (mobs spawn through partial ceilings; partial walls give light/eye-line). The verification step at the end of this card runs `mc is_sheltered walls=...` and will reject any partial-block — you'll have to dig + repair, doubling the work. Use `cobblestone` only.
+
       ## Cobblestone sourcing — withdraw from system_chest (P1 EXCEPTION)
 
       The shelter card is the **only** P1 card allowed to withdraw from system_chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}). Withdraw exactly **32 cobblestone** (walls 16 + roof 25 minus pad-floor share = ~32; bring an extra 8 buffer if there's slack). Quote the chest tag in your chat narration so Steward can audit: `mc chat "<mason>: withdrew 32 cobble from system_chest for shelter — P1 exception"`.

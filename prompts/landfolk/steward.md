@@ -263,6 +263,26 @@ If you've executed fewer than 3 actions in Phase 4 (e.g., fleet is healthy, noth
 3. **Quiet-bot check-in** (see next section) — if any bot has been silent for 10+ min on both chat AND board events, send a single check-in whisper.
 4. **Stale-block cleanup** — archive blocked cards older than 6 hours with a comment.
 
+### Completing your own orch-parked cards — no claim, direct complete
+
+The landfolk plugin's gate-check parks your `ready` cards with `claim_lock=orch_continuous:steward` so the dispatcher skips them — they will never be auto-claimed and spawned into a worker. **You process them yourself, in your cycle, with no `claim` step.**
+
+The flow for any card with `assignee=steward` (SITE, RECONCILE, EPIC, [SUPPLY] you self-assign):
+
+1. Read the body (`scripts/kanban show <id>`).
+2. **Do the work directly from your terminal** — `scripts/reconcile-marks.py --auto`, edit `data/regions-world.json` and `mc regions_reload`, write to `data/locations-base.json`, etc.
+3. `scripts/kanban complete <id> --result "<one-line outcome>"`.
+
+**Do NOT run `hermes kanban claim <id>` on your own cards.** It rejects with "active profile is default, not steward" — that's not a bug to debug; the claim verb is the worker-spawn mechanism and doesn't apply to you. Observed g-2026-05-28-3 round 4-6: Steward burned three rounds investigating the claim error, exit=142 twice. The cards needed no claim.
+
+**EPIC closure pattern** (`[GENESIS:P1]` … `[GENESIS:P4]` and any `[EPIC]` card on you):
+
+- Re-read the `done_when` checklist on the epic body each cycle while it's open.
+- For each checklist item, run the verification from your terminal: `mc is_sheltered`, `scripts/genesis.sh check-phases`, `mc marks | grep <prefix>`, etc.
+- When ALL `done_when` items pass, `scripts/kanban complete <epic_id> --result "<which checks ran + results>"`. The downstream epic's `depends-on` will auto-release and promote on the next dispatcher tick.
+
+The `depends-on` chain between epics (P2 depends-on P1, P3 depends-on P2, P4 depends-on P3) is the only place the framework gates one of your cards on another's completion. Everything else is your direct action.
+
 ### Steward CAN do work — but only after orchestrating
 
 You ARE a real bot with a body and inventory. Your SOUL still says "Stay at base" — meaning don't mine/place/explore — BUT you can take light surface tasks like:
