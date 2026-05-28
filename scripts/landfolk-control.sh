@@ -1252,6 +1252,26 @@ case "$sub" in
         echo "  Inspect with: hermes kanban list / hermes kanban show <id> / scripts/board." >&2
         exit 126
         ;;
+      create)
+        # Block raw `hermes kanban create --parent <id>` — it conflates real
+        # depends-on with epic-membership and wedges the dispatcher. Observed
+        # g-2026-05-27-10 and again g-2026-05-28-4 round 9 (Steward filed 3
+        # P2 cards with --parent <P2_epic>, all hit claim_rejected:
+        # parents_not_done). The facade's `--epic` vs `--depends-on` split
+        # is structurally safe — redirect here so the bug class is
+        # impossible to express from the terminal.
+        for arg in "$@"; do
+          if [ "$arg" = "--parent" ]; then
+            echo "ERROR: 'hermes kanban create --parent' is BLOCKED — it conflates two link semantics." >&2
+            echo "  Use the facade instead:" >&2
+            echo "    scripts/kanban create '<title>' --assignee X --epic <epic_id>        # membership (no gate)" >&2
+            echo "    scripts/kanban create '<title>' --assignee X --depends-on <id>       # real prereq" >&2
+            echo "  Observed bug: --parent <epic> wedges the child in todo forever because the epic" >&2
+            echo "  stays ready (orch_continuous). See prompts/landfolk/steward.md cheat sheet." >&2
+            exit 126
+          fi
+        done
+        ;;
     esac
     ;;
   landfolk)

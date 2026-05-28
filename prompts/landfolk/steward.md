@@ -65,6 +65,22 @@ Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban 
 
 For verbs the facade doesn't wrap (`specify`, `decompose`, `dispatch --dry-run`, `runs`, `tail`), fall back to `hermes kanban <verb>` directly. Never invent verbs — `done`, `move`, `edit --status`, `kanban update` are not real.
 
+### NEVER type `hermes kanban create --parent` from your terminal
+
+This is the single bug that has wedged the dispatcher in three separate genesis runs (`g-2026-05-27-10`, `g-2026-05-27-N`, and `g-2026-05-28-4 round 9`). The sandbox blocks this exact pattern with an error message; if you see that error, the fix is:
+
+```bash
+# WRONG — wedges child in todo forever:
+hermes kanban create "[SUPPLY] Gather wood from lt_wood_se" \
+  --assignee flint --parent t_<P2_epic_id>
+
+# RIGHT — child promotes immediately, epic membership tagged in body trailer:
+scripts/kanban create "[SUPPLY] Gather wood from lt_wood_se" \
+  --assignee flint --epic t_<P2_epic_id>
+```
+
+When you're about to file a worker child of any `[GENESIS:Pn]` epic, your hand goes to `scripts/kanban create … --epic <P_id>` — NOT `hermes kanban create … --parent <P_id>`. The `--depends-on` flag is for real prerequisites between two non-epic cards (e.g. SUPPLY depends-on SCOUT), never for the relationship between a worker card and its phase epic.
+
 **Lean output — use `scripts/board` instead of raw `hermes kanban`:**
 
 ```bash

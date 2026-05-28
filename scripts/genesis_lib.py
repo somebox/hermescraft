@@ -311,6 +311,11 @@ def build_context(
         "anchor_x": str(ax),
         "anchor_y": str(ay),
         "anchor_z": str(az),
+        # Derived Y bounds for region/blueprint cards. anchor_y is foot;
+        # pad floor sits at anchor_y-1; shelter roof at anchor_y+2; the
+        # +4 ceiling leaves headroom for the SITE region's column shape.
+        "anchor_y_floor": str(ay - 1),
+        "anchor_y_ceil": str(ay + 4),
         "system_chest_x": str(ax + pr["dx"]),
         "system_chest_y": str(ay + pr["dy"]),
         "system_chest_z": str(az + pr["dz"]),

@@ -96,5 +96,15 @@ cards:
     assignee: steward
     initial_status: todo
     body: |
-      Once footprint known: mc region_create :shelter: base --intent marker (allow_ad_hoc_place).
-      mc regions_reload if edited offline.
+      Anchor a `:shelter:` region centered on the genesis pad at ({anchor_x}, {anchor_y}, {anchor_z}), intent=marker (so ad-hoc place is allowed inside).
+
+      **Step 1 — move to shelter center first.** `mc region_create` uses your CURRENT position as the anchor by default. If you're standing anywhere else when you run it, the region anchors at the wrong spot. Run `mc move {anchor_x} {anchor_y} {anchor_z}` BEFORE region_create. Observed g-2026-05-28-4: Mason had to remove+recreate the region twice because he ran region_create from (259,64,59) instead of (258,64,63).
+
+      **Step 2 — create the region:**
+      `mc region_create :shelter: base --r 5 --y {anchor_y_floor}..{anchor_y_ceil} --intent marker --shape column`
+
+      Where `{anchor_y_floor}` = `{anchor_y}-1` (pad floor) and `{anchor_y_ceil}` = `{anchor_y}+4` (clear of roof).
+
+      **Step 3 — reload regions** so the in-memory cache for every bot picks it up: `mc regions_reload`.
+
+      **Verify before complete:** `mc regions --at {anchor_x} {anchor_y} {anchor_z}` should list `:shelter:` with intent=marker. Quote that result in your complete summary.
