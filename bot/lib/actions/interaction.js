@@ -230,6 +230,16 @@ export function createInteractionActions(services) {
       };
     }
 
+    // Defense in depth against the "open door + pathfinder re-eval lag"
+    // family of races (cf. test_door_pathfind.py's xfail'd N/S closed-door
+    // cases). Clear any in-flight pathfinder goal BEFORE flipping the
+    // door state, so a stale goal can't react to the world change with
+    // outdated passability data. Then activate. Then clear again — the
+    // first clear racing against a tick that's already started a path
+    // computation can leave that computation finishing with stale data;
+    // the second clear cancels its eventual goal-pursuit.
+    try { b.pathfinder.setGoal(null); } catch {}
+
     // Open. activateBlock toggles, so check shape state first via _properties when available.
     let opened = false;
     try {
@@ -238,6 +248,12 @@ export function createInteractionActions(services) {
       if (!wasOpen) {
         await b.activateBlock(gate);
         opened = true;
+        // Immediately re-clear pathfinder state — closes the microsecond
+        // window between activateBlock returning and the next-statement
+        // setGoal(null) below. mineflayer-pathfinder's tick loop runs at
+        // ~50ms; without this, a tick that fires between activate-resolve
+        // and the standard clear can pursue a stale path.
+        try { b.pathfinder.setGoal(null); } catch {}
       }
     } catch (e) {
       return { ok: false, error: { code: 'TRAVERSAL_FAILED', message: `Failed to open ${gate.name}: ${e?.message || e}`, retry_safe: true } };
