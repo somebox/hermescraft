@@ -1228,6 +1228,42 @@ STUB
       chmod +x "$restricted_bin/$c"
     done
 
+    # Node wrapper — symmetric to python3. With python3 -c blocked, node -e
+    # would have been the next equivalent inline-eval escape hatch for
+    # Steward's heredoc-investigation habit. Allow script-path invocations
+    # (some scripts/* helpers are node, e.g. scripts/system-chest.mjs);
+    # refuse -e / -p / --eval / --print / REPL / stdin.
+    cat > "$restricted_bin/node" <<'STUB'
+#!/bin/bash
+REAL="$(command -v /opt/homebrew/bin/node || command -v /usr/local/bin/node || command -v /usr/bin/node)"
+[ -z "$REAL" ] && REAL=node.real
+case "$1" in
+  -e|--eval|-p|--print|-i|--interactive|-)
+    echo "ERROR: 'node $1' (inline code / REPL / stdin) is blocked for the orchestrator." >&2
+    echo "  Use a script path: node scripts/<name>.mjs [args]" >&2
+    echo "  For ad-hoc data work, prefer python3 scripts/<name>.py or jq." >&2
+    exit 126
+    ;;
+  "")
+    echo "ERROR: bare 'node' (REPL) is blocked for the orchestrator." >&2
+    echo "  Use a script path: node scripts/<name>.mjs" >&2
+    exit 126
+    ;;
+  --version|--help|-v|-h)
+    exec "$REAL" "$@"
+    ;;
+  *.js|*.mjs|*.cjs|*/*)
+    exec "$REAL" "$@"
+    ;;
+  *)
+    echo "ERROR: 'node $1' doesn't look like a script path." >&2
+    echo "  Use node scripts/<name>.mjs [args]" >&2
+    exit 126
+    ;;
+esac
+STUB
+    chmod +x "$restricted_bin/node"
+
     # Hermes CLI wrapper — allow most subcommands but block infrastructure
     # ones the orchestrator shouldn't drive (the dispatcher does dispatch;
     # the operator owns gateway/daemon/plugins).
