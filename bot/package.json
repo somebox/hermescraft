@@ -8,6 +8,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "HERMES_VALIDATE=1 node --test",
+    "cheatsheet": "node ../scripts/gen-mc-cheatsheet.mjs",
+    "cheatsheet:check": "node --test test/cheatsheet-sync.test.js",
     "log-view": "node scripts/landfolk-log-view.mjs",
     "postinstall": "patch-package"
   },
