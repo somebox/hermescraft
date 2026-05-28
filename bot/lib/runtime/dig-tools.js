@@ -5,6 +5,7 @@
  */
 import { Vec3 } from 'vec3';
 import { getConfig } from '../config/index.js';
+import { logEquipRecovery } from './metrics.js';
 
 export const HARVEST_AXE_PRIORITY = [
   'netherite_axe',
@@ -598,7 +599,20 @@ export function guardSlowDigEstimate(b, block) {
     const priority = needAxe ? HARVEST_AXE_PRIORITY : needPick ? HARVEST_PICK_PRIORITY : null;
     if (priority) {
       const candidate = firstInvItemByPriority(b, priority);
-      if (candidate) {
+      const recoveryCtx = {
+        bot: b?.username || 'unknown',
+        block: nm,
+        category: needAxe ? 'axe' : needPick ? 'pick' : 'other',
+        before_held: hn || 'empty',
+        before_ticks: Number.isFinite(ticks) ? Math.round(ticks) : null,
+        max_ticks: maxTicks,
+      };
+      if (!candidate) {
+        // No tool of the needed category in inventory at all. The original
+        // throw below will fire; record that the recovery had nothing to
+        // try. This is the "agent needs to craft/withdraw a tool" case.
+        logEquipRecovery({ ...recoveryCtx, result: 'no_candidate' });
+      } else {
         // The candidate IS in inventory but not in hand. Re-equip and
         // re-check. If the slot updates, recompute estimate and bail
         // early (no throw) when the new tool brings ticks under the cap.
@@ -609,7 +623,15 @@ export function guardSlowDigEstimate(b, block) {
           // Re-estimate. If the now-equipped tool dispatches it under cap,
           // we're done — silent recovery, no throw.
           const reTicks = t.getDigTime(block, reHeld);
-          if (Number.isFinite(reTicks) && reTicks < maxTicks) return;
+          if (Number.isFinite(reTicks) && reTicks < maxTicks) {
+            logEquipRecovery({
+              ...recoveryCtx,
+              result: 'saved',
+              after_held: reHeld.name,
+              after_ticks: Math.round(reTicks),
+            });
+            return;
+          }
           // Re-equip happened but still slow — fall through to throw with
           // updated heldLabel so the message reflects current state.
           // Update locally-scoped held label for the message.
@@ -617,6 +639,12 @@ export function guardSlowDigEstimate(b, block) {
           // eslint-disable-next-line no-param-reassign
           const reHn = reHeld.name;
           if (reHn) {
+            logEquipRecovery({
+              ...recoveryCtx,
+              result: 'still_slow',
+              after_held: reHn,
+              after_ticks: Math.round(reTicks),
+            });
             throw new Error(`Refusing to dig ${nm} with "${reHn}" (re-equipped from inventory; ~${Math.round((reTicks / 20) * 10) / 10}s break time ≥ ${maxTicks} ticks). ${needAxe ? 'Tool tier insufficient — upgrade.' : 'Tool tier insufficient — try stone_pickaxe or better.'}`);
           }
         }
