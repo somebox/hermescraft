@@ -1179,6 +1179,55 @@ esac
 STUB
     chmod +x "$restricted_bin/landfolk"
 
+    # Python3 wrapper — Steward calls helper scripts (scripts/roster.py,
+    # scripts/board-recent.py, scripts/base-inventory.py) but `python3 -c
+    # '...'` is a full shell escape hatch and was being used to run
+    # arbitrary commands. Wrap: allow script invocations, refuse inline
+    # code / module / REPL / stdin / interactive flags.
+    cat > "$restricted_bin/python3" <<'STUB'
+#!/bin/bash
+# Restricted python3 for orchestrator. Allow only script-file invocations.
+REAL="$(command -v /opt/homebrew/bin/python3 || command -v /usr/bin/python3)"
+[ -z "$REAL" ] && REAL=python3.real  # fallback; will error loudly if unresolved
+case "$1" in
+  -c|-i|-m|-|-x|-I)
+    echo "ERROR: 'python3 $1' (inline code / module / REPL / stdin / isolated) is blocked for the orchestrator." >&2
+    echo "  Run helper scripts directly: python3 scripts/<name>.py [args]" >&2
+    echo "  If you need a one-off calculation, file a [BUG] card asking re44 to add it as a script." >&2
+    exit 126
+    ;;
+  "")
+    echo "ERROR: bare 'python3' (REPL) is blocked for the orchestrator." >&2
+    echo "  Use python3 scripts/<name>.py instead." >&2
+    exit 126
+    ;;
+  --version|--help|-V|-h)
+    exec "$REAL" "$@"
+    ;;
+  *.py|*/*)
+    exec "$REAL" "$@"
+    ;;
+  *)
+    echo "ERROR: 'python3 $1' doesn't look like a script path." >&2
+    echo "  Use python3 scripts/<name>.py [args]" >&2
+    exit 126
+    ;;
+esac
+STUB
+    chmod +x "$restricted_bin/python3"
+
+    # Same shape as python3 for other interpreter escape hatches that
+    # would otherwise route around the wrapper.
+    for c in python python2; do
+      cat > "$restricted_bin/$c" <<STUB
+#!/bin/sh
+echo "ERROR: '$c' is blocked for the orchestrator." >&2
+echo "  Use python3 scripts/<name>.py — and python3 only accepts a script path, not -c / -m." >&2
+exit 126
+STUB
+      chmod +x "$restricted_bin/$c"
+    done
+
     # Hermes CLI wrapper — allow most subcommands but block infrastructure
     # ones the orchestrator shouldn't drive (the dispatcher does dispatch;
     # the operator owns gateway/daemon/plugins).

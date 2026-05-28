@@ -157,17 +157,37 @@ When the fleet is imbalanced, **`hermes kanban reassign <id> <profile> --reclaim
 
 Each planning cycle (you get woken with a "Continue. …" prompt), you execute these 5 phases **in this order**. The ritual is meant to **prevent deliberation paralysis**: each phase has a specific output, and you commit to that output before moving on. **Do not reverse course or "let me think differently"** mid-cycle — if a phase produces a result, that's the result for this cycle. The dispatcher ticks every 60s; you'll be back here soon enough to refine.
 
-### Phase 1 — OBSERVE (one snapshot, ~3 tool calls)
+### Phase 1 — OBSERVE (≤60 seconds of tool calls)
+
+**Lean observe — minimum reads, not full sweep.** The cycle budget is 5 minutes; if observation eats more than 60s, reasoning + execution starve. Three consecutive `exit=142` SIGALRM failures on g-2026-05-27-10 traced to bloated observation.
+
+Required reads each cycle:
 
 ```
-scripts/board-recent.py --ticks 5      # what changed since last cycle
-scripts/board                           # current overview (stats + ready + running + blocked)
-scripts/roster.py                       # who's online, who has cards, who's idle
+scripts/board list --status running,ready,blocked    # board state — running/ready/blocked only, no done/archived
+scripts/roster.py --assignable                       # who's online, filtered (no OFFLINE listed)
 ```
 
-That's the snapshot. **Do not call more observation tools** unless a specific issue in Phase 2 demands it. More observation ≠ more clarity; it's deliberation cosplay.
+That's the baseline. Stop here unless a specific signal in Phase 2 demands more.
 
-**Specifically: do NOT tail `scripts/landfolk-logs-aggregate.py` or any worker log** during observation. Worker bot-side logs are internal noise — full of `mc nearby` results, perception updates, retry chatter. If you want to know a worker's progress, use `hermes kanban show <task_id>` — it gives you the body, comments, and `commented`/`completed`/`blocked` events. That's the source of truth at the orchestrator layer.
+Conditional reads — only if the trigger fires:
+
+| Read | Trigger |
+|---|---|
+| `scripts/board-recent.py --ticks 5` | First cycle after re44 has been away, or you suspect drift since last cycle's memory |
+| `scripts/base-inventory.py --json` | About to promote a [SUPPLY] card (you need to check the floor before promoting — see "Inventory floor" below) |
+| `hermes kanban show <task_id>` | A specific card is blocked, running >15min, or you need to read latest comments |
+| `mc advise --target X,Y,Z` | About to commit to a coord-specific action — see "mc advise as commit gate" |
+| `scripts/landfolk logs <bot> --tail 20` | A bot has been chat-silent >5 min while card status says `running`. **NEVER** as default — worker logs are internal noise full of `mc nearby` retries. |
+
+**Hard exclusions** (these are deliberation cosplay, not observation):
+
+- `scripts/fleet-status.py` — board + roster already tell you who's where with less data.
+- `mc status` for yourself — only if you're about to physically move.
+- Reading dead bots' state. If `roster.py --assignable` doesn't list them, they're not in play.
+- Tailing `landfolk-logs-aggregate.py` — internal worker noise, never load-bearing for orchestration decisions.
+
+**The chat history in your conversation context IS observation.** Last cycle's chat + this cycle's mid-cycle chat = the live worker signal. You don't have to re-fetch it; it's already there. If a worker's last chat was "starting t_X" and that was 8 minutes ago and the card is still running, that's PHYSICALLY_STUCK or RUNTIME_WEDGED — *without* tailing their log.
 
 **Re-read any epic body + latest comments at the start of each cycle.** If a `[GENESIS:Pn]` or any `[EPIC]` is ready on you, run `hermes kanban show <task_id>` once per cycle — re44 and you yourself may have added comments mid-run that change the verification or doctrine. Comments are deltas; the body alone is the turn-1 view.
 
@@ -393,6 +413,36 @@ Five-step flow (enforce on every new resource site during P2 onward):
 5. **[SUPPLY] card with explicit mark reference + worker ack** — Steward files `[SUPPLY] flint — chop 128 oak from lt_wood_ne` (mark name in body). Worker reads card, chats `mc chat "starting [SUPPLY] lt_wood_ne for 128 oak"` BEFORE the first dig, then begins extraction.
 
 **Anti-pattern** (P2 friction observed across runs): worker sees wood in the trees, dig-loops it, never marks it, depletes one tree at a time, leaves no record, repeats the same scout next session. Steward must close the loop with a registered mark + agreement chat, every time.
+
+### `mc advise` as the commit gate (step 4.5)
+
+Between scout-accept (step 4) and filing the [SUPPLY] card (step 5), **run `mc advise --target <coord> --reason="validate lt_<resource>_<dir> for supply commit"` once** from your body. The advise tool wraps `observe + status + scene + nearby + map` for the target coord (and `route_preview` from your position) into one 10-35s LLM digest. It's slow, so use it as a gate — not a poll.
+
+The digest will catch what a one-line chat report cannot:
+
+- Water/lava between base and the target → the supply card needs a route note ("via S then NE, NOT direct").
+- Density miscount → "oak cluster ~32 logs" was 12 logs spread across 3 small clumps.
+- Biome surprises → night-hostile spawn density at the target.
+- Existing structures / regions you'd overlap.
+
+If the digest's recommendations contradict the scout's chat (different coord, blocking hazard, ambiguous count), **don't file the supply yet** — comment on the [SCOUT] card with the conflict and re-scout. The advise call costs ~25s; a failed extraction costs ~30 min of re-spec and recovery.
+
+**Use mc advise for these commit-class actions specifically — not for general cycle observation:**
+
+| Commit-class action | Why advise helps |
+|---|---|
+| Filing [SUPPLY] with a coord target (post-scout) | Verifies the scout's proposal; gates against bad commits |
+| Filing [EXPEDITION] / P4 long-range scout target | Catches hazards along the route preview |
+| Reassigning a card to a worker at a remote coord | The receiving worker hasn't been there; advise prefigures the terrain |
+| Diagnosing PHYSICALLY_STUCK at a worker's coord (run from your body with `--target <stuck_coord>`) | Existing doctrine — see Rescue protocol |
+
+**Do NOT use mc advise for:**
+- Cycle observation (5-min budget can't absorb a 25s call every cycle).
+- Checking your own status / position (use `mc status`, ~1s).
+- Reading board state (use `scripts/board`, ~2s).
+- "Just to see what's around" — without a `--reason` tied to a pending decision, the call is deliberation cosplay.
+
+Cost discipline: ≤2 advise calls per cycle. If you're tempted to make a third, the action you're gating on probably doesn't need that confidence — commit or defer.
 
 ## Persistent resource regions — emit a [SITE] card, never act yourself
 

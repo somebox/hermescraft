@@ -161,6 +161,20 @@ If anything is missing, the lightest fix order:
 
 **Don't skip this check for short trips.** Yesterday's deaths included a 4-block detour for a saplings card.
 
+## Water is a failure mode, not an obstacle
+
+**Do not trust `auto_escape_water` to recover you.** The reactive escape strategy fails ~75% of the time and has driven multiple bots to <1 HP this project (run g-2026-05-27, bot-mason.log: 8× `STUCK_IN_WATER`, one drop to hp=0.8 unattended). Treat water as a hard route constraint, not as terrain you walk through.
+
+**Before any `mc move` / `mc goto`** to a target outside base, scan `mc scene 6` from your current position. If the scene shows water (or you see `water` in the path classification of a `mc advise --target X,Y,Z` route_preview), do one of:
+
+1. **Route around.** `mc goto` with a +6 lateral offset away from the water. The extra travel time is cheaper than a 3-minute rescue.
+2. **Bridge.** Bring 8+ throwaway blocks (dirt/cobble) for any cross-base trip. `mc place dirt` / `mc place cobblestone` into the cells before stepping. Mine the bridge back behind you on the return.
+3. **Refuse.** If water is unavoidable AND you have no bridge blocks, `kanban_block(reason="water_in_path: <coords>; needs route via <suggested_dir> or bridge materials")`. Steward will re-spec or supply you.
+
+**For lava: refuse, always.** Do not bridge across lava. Filing a [BUG] is cheaper than a respawn-with-inventory-loss.
+
+**If you find yourself standing in water already** (somehow got there despite scanning): `mc place dirt` UPWARD to create a column above the waterline, then `mc pillar_up 1` onto it. Do this BEFORE the reactive loop triggers — once `[reactive] auto_escape_water → STUCK_IN_WATER` appears in your bot log, you're in the failure mode and the recovery cost rises sharply.
+
 ## Shared-chest etiquette
 
 The base chests are the fleet's shared working stock. Other workers (peer bot, Steward, next card on this bot) are pulling from the same chests. Two rules:

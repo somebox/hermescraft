@@ -12,6 +12,28 @@ cards:
       Confirm anchor ({anchor_x}, {anchor_y}, {anchor_z}) is non-water, flat (≤2 block delta within 5m), system_chest visible at ({system_chest_x}, {system_chest_y}, {system_chest_z}).
       Pin base_anchor mark. Do not withdraw from system_chest.
 
+  - title: "[SCOUT] Survey resources around base anchor"
+    assignee: flint
+    initial_status: ready
+    body: |
+      Walk a roughly square pattern around the base anchor ({anchor_x}, {anchor_y}, {anchor_z}). Sample what's at the surface (and ≤8 blocks down via `mc inspect`) at each cardinal (N/E/S/W) and intercardinal (NE/NW/SE/SW) at 20m, 40m, 60m out. Surface-only — no digging.
+
+      Record marks for the FIRST hit in each category (closer is better; one mark per direction is enough — don't over-collect):
+
+      - `lt_wood_<dir>`   — any oak/birch/spruce ≥4 logs in one cluster
+      - `lt_stone_<dir>`  — exposed stone face ≥8 blocks (cliff, ravine, hill)
+      - `lt_water_<dir>`  — water/lava body within 10m of the survey arc (HAZARD: workers must route around)
+      - `lt_sand_<dir>`   — desert/badlands biome (HAZARD at night)
+
+      Chat findings as a single summary line at the end:
+      `mc chat "survey: wood NE (x,y,z), stone NE (x,y,z), water S (x,y,z), no sand"`
+
+      **Tree-drought variant.** If no trees within 60m of the base, end your summary with the literal string `TREE_DROUGHT — sapling sourcing needed before P2 wood`. Steward will file a wider-radius scout + sapling-bootstrap protocol. Do not proceed to plant or sow; that's Phase-2 work.
+
+      Tools allowed: only `mc move`, `mc scene`, `mc inspect`, `mc mark`, `mc chat`. Surface only. Do not engage hostiles; `mc flee 16` if HP ≤ 16. Do not dig. Do not place blocks.
+
+      **Verification before complete:** `mc marks | grep ^lt_` should show at least three `lt_*` marks (or zero plus TREE_DROUGHT note). Quote that line in your `kanban_complete` summary.
+
   - title: "[CONSTRUCT] Place four base chests on the pad"
     assignee: flint
     initial_status: ready
@@ -39,9 +61,15 @@ cards:
 
       **NEVER `mc fill cobblestone <x1> <y> <z1> <x2> <y> <z2>`** across the full 5×5 footprint — that puts cobble inside the shelter where you and the chests live. Walls = the 4 sides of the perimeter, each side a 5×1×1 strip. Place each strip with its own `mc fill` (one per side), not as a slab.
 
-      ## Do not mine the pad
+      ## Cobblestone sourcing — withdraw from system_chest (P1 EXCEPTION)
 
-      The pad (x={anchor_x}±4, y={anchor_y}-1, z={anchor_z}±4) IS the shelter floor. Off-limits to `mc dig`. Source cobblestone by digging down a column just outside the pad (start at x={anchor_x}+5 for example), or by mining a nearby exposed stone face. The system_chest is stocked with cobble but P1 doctrine forbids withdrawing from it (relief valve only).
+      The shelter card is the **only** P1 card allowed to withdraw from system_chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}). Withdraw exactly **32 cobblestone** (walls 16 + roof 25 minus pad-floor share = ~32; bring an extra 8 buffer if there's slack). Quote the chest tag in your chat narration so Steward can audit: `mc chat "<mason>: withdrew 32 cobble from system_chest for shelter — P1 exception"`.
+
+      The pad (x={anchor_x}±4, y={anchor_y}-1, z={anchor_z}±4) IS the shelter floor. Off-limits to `mc dig`.
+
+      **Do NOT pillar-down to mine cobble adjacent to the pad.** Multiple prior runs entombed bots that improvised this. If system_chest is empty (operator error), `kanban_block reason="system_chest_empty: shelter exception cannot be honored"` — re44 will refill or escalate. Do not improvise a mining excursion.
+
+      The `lt_stone_<dir>` mark registered by the Site Survey card is for **Phase-2 supply runs**, not for P1 shelter cobble. If you find yourself reading that mark mid-task, you're off-script.
 
       ## Verification — both must pass before completing this card
 

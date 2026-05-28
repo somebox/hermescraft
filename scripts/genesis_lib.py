@@ -286,8 +286,8 @@ def validate_templates() -> None:
     if len(epics.get("epics", [])) != 4:
         raise ValueError("phase-epics.yaml must have 4 epics")
     cards = parse_yaml_simple(TEMPLATES_DIR / "phase1-cards.yaml")
-    if len(cards.get("cards", [])) != 5:
-        raise ValueError("phase1-cards.yaml must have 5 cards")
+    if len(cards.get("cards", [])) != 6:
+        raise ValueError("phase1-cards.yaml must have 6 cards")
 
 
 def load_offsets() -> dict:

@@ -50,7 +50,7 @@ def test_seed_starter_cards_topology(mock_create, tmp_path, monkeypatch):
     ctx = gl.build_context(run_id="g-2026-01-01-1", seed=1, anchor={"x": 0, "y": 64, "z": 0})
     meta = gl.seed_starter_cards("g-2026-01-01-1", ctx)
     assert len(meta["epic_ids"]) == 4
-    assert len(meta["p1_card_ids"]) == 5
+    assert len(meta["p1_card_ids"]) == 6
     # Epic chain uses depends_on as real prerequisite: P2 depends-on P1, P3
     # depends-on P2, P4 depends-on P3. Epic IDs are returned in order, so
     # call[0]=P1, call[1]=P2, etc.
