@@ -195,10 +195,18 @@ export function createDigHandlers(deps) {
    * Equip the right tool for the target. On equipForDig failure (no
    * appropriate tool + slow-dig refusal), returns a TOOL_INADEQUATE fail
    * envelope. On success, returns `{ hints }`.
+   *
+   * When `force` is true (e.g. `mc dig --force` for a trapped bot escape),
+   * the slow-dig guard is bypassed — the bot will attempt the dig even
+   * with bare hands on stone. In vanilla MC bare-hand digs on stone are
+   * legal but slow (~5s/block); the guard exists to catch agents wasting
+   * iteration budget on the slow path when a pickaxe is on hand. For an
+   * actual emergency (sealed in own shelter, no pickaxe), `--force` is
+   * the right escape hatch.
    */
-  async function equipOrFail(b, target, distance, tracker) {
+  async function equipOrFail(b, target, distance, tracker, force = false) {
     try {
-      const ed = await equipForDig(b, target);
+      const ed = await equipForDig(b, target, { force });
       return { hints: ed.hints || [], err: null };
     } catch (err) {
       tracker.record('TOOL_INADEQUATE');
@@ -210,7 +218,7 @@ export function createDigHandlers(deps) {
             held: b.tool?.itemInHand()?.name ?? null,
             distance: Math.round(distance * 10) / 10,
           },
-          next_action_hint: err.message,
+          next_action_hint: `${err.message} (or re-run with --force for bare-hand emergency dig)`,
           retry_safe: false,
         }),
       };
@@ -405,8 +413,10 @@ export function createDigHandlers(deps) {
 
     const distance = b.entity.position.distanceTo(target.position);
 
-    // 3) Equip the right tool, or bail with TOOL_INADEQUATE.
-    const equipResult = await equipOrFail(b, target, distance, tracker);
+    // 3) Equip the right tool, or bail with TOOL_INADEQUATE. force=true
+    // (mc dig --force) bypasses the slow-dig refusal so a trapped bot can
+    // bare-hand its way out — stone bare-hand is legal in MC, just slow.
+    const equipResult = await equipOrFail(b, target, distance, tracker, force);
     if (equipResult.err) return equipResult.err;
 
     // 4) Approach if out of reach.

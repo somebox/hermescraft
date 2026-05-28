@@ -150,7 +150,7 @@ inv = terminal("mc inventory --json", timeout=10)  # or `mc inventory` for human
 
 Confirm at minimum:
 - **A weapon**: any `_sword` or `_axe`. Wooden tier is fine if that's all you have — it's better than bare hands by ~2-3 damage per swing.
-- **Pickaxe** if the card involves mining (stone/ore). Card-body matching `mine|cobble|stone|ore|smelt` ⇒ pickaxe required.
+- **Pickaxe** if the card involves mining OR placing blocks inside a sealed structure (the "pencil and eraser" rule — if you might over-place and need to undo a stone-class block, you need a pickaxe to dig it back out). Card-body matching `mine|cobble|stone|ore|smelt|shelter|patch|fix walls|enclosed` ⇒ pickaxe required. Observed g-2026-05-28-5: Mason on a [FIX] shelter-wall card brought 8 cobble but no pickaxe, over-placed onto the door cells, sealed himself in, couldn't dig out. The pickaxe is the eraser; without it you cannot recover from a single misplaced cobble in a 5x5 shelter.
 - **Food**: at least 4 of any `cooked_*` / `bread` / `baked_potato`. The bot auto-eats at hunger ≤ 14.
 - **Optional but recommended**: shield or any helmet/chestplate — even leather. Half-damage on a skeleton arrow can be the difference between surviving and respawning.
 

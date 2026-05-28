@@ -254,7 +254,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc collect BLOCK [COUNT]',
   }),
   g('dig', 'world', ['d'], {
-    description: 'Break the block at X Y Z (single block, raw — no hazard checks). Refuses (SUPPORT_BLOCK) if a door or fence_gate sits directly above. Pass --force to override that guard. Prefer mc safe_dig for general use.',
+    description: 'Break the block at X Y Z (single block, raw — no hazard checks). Refuses (SUPPORT_BLOCK) if a door or fence_gate sits directly above. Pass --force to override that guard AND to bypass the slow-dig refusal (bare-hand stone/cobble dig — slow but legal in MC, useful for trapped-bot escape when no pickaxe). Prefer mc safe_dig for general use.',
     method: 'POST',
     path: '/action/dig',
     customParse: true,

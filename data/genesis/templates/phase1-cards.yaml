@@ -67,7 +67,12 @@ cards:
 
       ## Cobblestone sourcing — withdraw from system_chest (P1 EXCEPTION)
 
-      The shelter card is the **only** P1 card allowed to withdraw from system_chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}). Withdraw exactly **32 cobblestone** (walls 16 + roof 25 minus pad-floor share = ~32; bring an extra 8 buffer if there's slack). Quote the chest tag in your chat narration so Steward can audit: `mc chat "<mason>: withdrew 32 cobble from system_chest for shelter — P1 exception"`.
+      **Bring both cobble AND a pickaxe.** Like a pencil and an eraser: if you're placing cobble in a sealed shelter, you may need to dig your own placement back out (over-patched the door, misjudged a position, etc.). Pickaxes don't deplete from carrying them; not having one when trapped is the failure mode that locked Mason in g-2026-05-28-5 for 27 minutes. Withdraw from system_chest:
+
+      - **32 cobblestone** (walls 16 + roof 25 minus pad-floor share = ~32; bring an extra 8 buffer if there's slack)
+      - **1 stone_pickaxe** (insurance against sealing yourself in — `mc withdraw stone_pickaxe 1 {system_chest_x} {system_chest_y} {system_chest_z}`)
+
+      The shelter card is the **only** P1 card allowed to withdraw from system_chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}). Quote both withdrawals in chat: `mc chat "<mason>: withdrew 32 cobble + 1 stone_pickaxe from system_chest for shelter — P1 exception"`.
 
       The pad (x={anchor_x}±4, y={anchor_y}-1, z={anchor_z}±4) IS the shelter floor. Off-limits to `mc dig`.
 

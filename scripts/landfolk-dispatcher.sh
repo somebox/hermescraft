@@ -54,6 +54,20 @@ MAX="${MAX:-3}"
 LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 LOG_FILE="${LOG_FILE:-$LOG_DIR/dispatcher.log}"
 
+# Use absolute path for hermes so the orchestrator sandbox stub (per-profile
+# restricted_bin/hermes for Steward) never binds the dispatcher. Observed
+# g-2026-05-28-5: steward's stubs leaked into the dispatcher's PATH after
+# a deploy/restart, causing every tick to log "gate-check FAILED" because
+# the stub message ("ERROR: 'hermes landfolk gate-check' is run automatically
+# by the dispatcher.") landed in dispatcher.log as if it were a real failure.
+# The orchestrator stub is correct policy for Steward; it must never bind
+# the dispatcher itself. Pinning the binary keeps the two enforcement layers
+# from interfering.
+HERMES_BIN="${HERMES_BIN:-/Users/foz/.local/bin/hermes}"
+if [ ! -x "$HERMES_BIN" ]; then
+  HERMES_BIN="$(command -v hermes 2>/dev/null || echo hermes)"
+fi
+
 mkdir -p "$LOG_DIR"
 
 trap 'echo "[$(date +%H:%M:%S)] dispatcher stopping (SIGTERM)" >>"$LOG_FILE"; exit 0' TERM INT
@@ -73,13 +87,13 @@ while true; do
   # to $LOG_FILE on non-trivial ticks; the `|| echo ... FAILED` clause
   # logs catastrophic failures (e.g. plugin not installed) and lets the
   # dispatcher continue with Hermes' built-in scheduling.
-  hermes landfolk gate-check --board "$BOARD" >/dev/null 2>>"$LOG_FILE" \
+  "$HERMES_BIN" landfolk gate-check --board "$BOARD" >/dev/null 2>>"$LOG_FILE" \
     || echo "[$ts] gate-check FAILED — falling through to dispatch" >>"$LOG_FILE"
 
   # `hermes kanban dispatch` runs one tick: reclaim stale, detect crashed,
   # promote ready, spawn workers up to --max. Exit code reflects whether
   # the CLI itself succeeded, not whether work was spawned.
-  out=$(hermes kanban --board "$BOARD" dispatch --max "$MAX" 2>&1)
+  out=$("$HERMES_BIN" kanban --board "$BOARD" dispatch --max "$MAX" 2>&1)
   rc=$?
   # Compact summary — full output saved on non-trivial events only.
   spawned=$(echo "$out" | awk '/^Spawned:/ {print $2}')
