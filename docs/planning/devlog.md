@@ -2,6 +2,21 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-05-28 — CLI forgivingness sweep + B3 empirical analysis
+
+Closed five agent-failure-mode bugs in the mc CLI parser surface from a single survey:
+- `pillar_step/pillar_down` arg-schema type bug (`force`/`jump`/`pickup` declared as string instead of boolean — caused `Number("--force") = NaN` → "not_number" coercion failures). Commit `1f9ded5`.
+- `--no-FLAG` boolean negation, universal across all 14 boolean specs. Commit `36240fa`.
+- Engineering-shorthand directions (`+x`/`-z`/`plus_x` aliases) in `cardinalDelta`. Commit `36240fa`.
+- Positional swap rescue: `mc collect 5 oak_log` (count/block transposed) now parses correctly via a (string, number) → (number, string) swap detector in `positionalToParams`. Commit `7589799`.
+- Universal `@mark` token expansion in `executeHttp`: every coord-taking verb now accepts `mc dig @home` / `mc place block @corner1 @corner2`. Smoke-tested against live Tester. Commit `7589799`.
+
+B3 (block/item name normalization in non-mining verbs — `mc place "Oak Planks"` style) was **DROPPED after empirical analysis**. New scripts `scripts/analyze-mc-name-shapes.py` and `scripts/analyze-mc-name-failures.py` scanned 5 days of cognition logs (flint + mason + steward, 58k tool_calls, 4587 mc <verb> <material> invocations): **99.74% of agent names are already canonical** lowercase+underscore mcData ids. The 12 non-canonical cases (0.26%) are all regex artifacts — prose, placeholder text, env var names. Of 91 observed `UNKNOWN_BLOCK` failures, ALL are SEMANTIC mistakes (plural `sticks`, conceptual `tree`/`village`, mcData-version-drift `grass`/`grass_path`/`wheat_crop`) — case/whitespace normalization would fix none of them. Ticket: [features/resolver-semantic-aliases.md](../features/resolver-semantic-aliases.md) for the right fix (extend `resolveBlockQuery`'s alias table).
+
+## 2026-05-27 — genesis boot Core v1
+
+Shipped operator tooling for repeatable fresh-world benchmarks: `scripts/genesis.sh`, `scripts/genesis_lib.py`, `scripts/genesis-snapshot.py`, `scripts/genesis-diff.py`, `scripts/genesis-phase-poller.py`, seven templates under `data/genesis/templates/`, Steward genesis doctrine in `prompts/landfolk/steward.md`, and `docs/guides/genesis-runbook.md`. Conventions: `--anchor X,Y,Z`, `SYSTEM_CHEST_{PRIMARY,OTHER,SIGN}_{X,Y,Z}`, run ids `g-YYYY-MM-DD-N`, `config.json` schema pinned. `system-chest.mjs` reads per-run env with legacy coord fallback. Acceptance tests: `scripts/tests/test_genesis_*.py`. v1.1 backlog: watch-rescues daemon, Paper/Cubiomes targets, plugin snapshot hook.
+
 ## 2026-05-27 (PM) — landfolk plugin shipped + safety patches
 
 The plugin designed earlier today landed in commit `73ab8cf` (`landfolk plugin: per-assignee kanban concurrency via gate-check + hooks`). Phases A–C of the migration plan in [features/landfolk-plugin.md](../features/landfolk-plugin.md) are done: plugin installed under `plugins/landfolk/` and symlinked into `~/.hermes/plugins/`; `landfolk-dispatcher.sh` no longer contains `enforce_assignee_mutex` (net −260 lines); Steward + worker SOULs updated to reference plugin-driven mutex parking (`claim_lock=mutex_park:<assignee>` / `orch_continuous:<assignee>`) instead of `--parent` chains. Phase D (6-hour soak gate, `task_links` audit) remains.
