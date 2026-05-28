@@ -257,6 +257,115 @@ test('mining.collect: source-block fallback keeps buried fallback when NO surfac
   assert.ok(digOrder.length >= 1, `expected buried stones to be dug as last resort: ${JSON.stringify(digOrder)}`);
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Scout-assist surface-bias: discovery.js's fair-play fallback (lines 126-176)
+// calls b.findBlocks (x-ray) to locate the nearest target, then pathfinds.
+// Without a surface-bias filter, picking a BURIED candidate sends the
+// pathfinder digging straight down through dirt to reach it — the exact
+// "collect pillared down with no pickaxe" failure from genesis run
+// g-2026-05-27-10. Verify the filter rejects buried scout hits and falls
+// through to the actionable NO_VISIBLE_BLOCKS hint when no surface
+// candidates exist.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: scout-assist rejects buried candidates and surfaces NO_VISIBLE_BLOCKS hint', async () => {
+  // Two stones below y=63 (under a dirt pad): both buried. The scout's
+  // b.findBlocks scan would return them; the surface-bias filter must
+  // reject both, leaving no candidates → NO_VISIBLE_BLOCKS with hint.
+  // Request 'stone' directly so the scout-assist scans for stone id=1.
+  const buriedStones = [new Vec3(0, 60, 0), new Vec3(1, 61, 0)];
+  const dirtAboveBuried = [new Vec3(0, 61, 0), new Vec3(1, 62, 0)];
+
+  let pathfindCalls = 0;
+  const bot = makeStubBot({ position: new Vec3(0.5, 64, 0.5) });
+  bot.blockAt = (pos) => {
+    if (buriedStones.some((p) => p.x === pos.x && p.y === pos.y && p.z === pos.z)) {
+      return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}), type: 1, hardness: 1.5 };
+    }
+    if (dirtAboveBuried.some((p) => p.x === pos.x && p.y === pos.y && p.z === pos.z)) {
+      return { name: 'dirt', position: pos, boundingBox: 'block', getProperties: () => ({}), type: 3, hardness: 0.5 };
+    }
+    return { name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}) };
+  };
+  bot.findBlocks = ({ matching }) => {
+    const ids = Array.isArray(matching) ? matching : [matching];
+    if (ids.includes(1)) return buriedStones;
+    return [];
+  };
+  bot.pathfinder.goto = async () => { pathfindCalls++; };
+
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => true,
+    eyePosition: () => new Vec3(0.5, 65.6, 0.5),
+    findVisible: async () => [], // no visible stone → triggers scout-assist branch
+  });
+
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'stone', count: 4 });
+  const v = validate(r);
+  assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_VISIBLE_BLOCKS');
+  // Scout-assist pathfind should NOT have been called — every candidate
+  // was rejected by surface-bias.
+  assert.equal(pathfindCalls, 0,
+    `pathfinder should not be invoked when all scout candidates are buried; pathfindCalls=${pathfindCalls}`);
+});
+
+test('mining.collect: scout-assist surface-accessible candidate triggers pathfind', async () => {
+  // Mirror case: one surface stone (above=air), one buried stone (above=dirt).
+  // Surface-bias should KEEP the surface stone and pathfind to it.
+  // Place the surface stone CLOSER so the "nearest" pick chooses it after
+  // the surface filter (the buried one is closer but should be rejected).
+  const surfaceStone = new Vec3(4, 63, 0);
+  const buriedStone = new Vec3(-2, 60, 0);
+  const dirtAboveBuried = new Vec3(-2, 61, 0);
+
+  let pathfindCalls = 0;
+  let pathfindTarget = null;
+  const bot = makeStubBot({ position: new Vec3(0.5, 64, 0.5) });
+  bot.blockAt = (pos) => {
+    if (pos.x === surfaceStone.x && pos.y === surfaceStone.y && pos.z === surfaceStone.z) {
+      return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}), type: 1, hardness: 1.5 };
+    }
+    if (pos.x === buriedStone.x && pos.y === buriedStone.y && pos.z === buriedStone.z) {
+      return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}), type: 1, hardness: 1.5 };
+    }
+    if (pos.x === dirtAboveBuried.x && pos.y === dirtAboveBuried.y && pos.z === dirtAboveBuried.z) {
+      return { name: 'dirt', position: pos, boundingBox: 'block', getProperties: () => ({}), type: 3, hardness: 0.5 };
+    }
+    return { name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}) };
+  };
+  bot.findBlocks = ({ matching }) => {
+    const ids = Array.isArray(matching) ? matching : [matching];
+    if (ids.includes(1)) return [buriedStone, surfaceStone];
+    return [];
+  };
+  bot.pathfinder.goto = async (goal) => {
+    pathfindCalls++;
+    pathfindTarget = { x: goal.x, y: goal.y, z: goal.z };
+  };
+
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => true,
+    eyePosition: () => new Vec3(0.5, 65.6, 0.5),
+    findVisible: async () => [], // empty initial visible scan → triggers scout-assist
+  });
+
+  const actions = createMiningActions(deps);
+  await actions.collect({ block: 'stone', count: 4 });
+
+  // Pathfind should have been called targeting the SURFACE stone, not the buried one.
+  assert.ok(pathfindCalls >= 1, `expected pathfind to fire toward the surface candidate; pathfindCalls=${pathfindCalls}`);
+  assert.deepEqual(
+    pathfindTarget,
+    { x: surfaceStone.x, y: surfaceStone.y, z: surfaceStone.z },
+    `pathfind target should be the surface stone, not buried: got ${JSON.stringify(pathfindTarget)}`,
+  );
+});
+
 test('mining.collect: source-block fallback NOT triggered when found >= batchSize', async () => {
   const logs = [];
   const dirtSpots = Array.from({ length: 10 }, (_, i) => new Vec3(i, 64, 0));

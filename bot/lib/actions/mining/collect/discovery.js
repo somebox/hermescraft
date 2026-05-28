@@ -126,10 +126,23 @@ export async function collectDiscoveryPhase(cctx) {
     if (found.length === 0 && !isNonSolidPlant) {
       // Fair-play fallback: scout nearby ore coordinates and use short-range
       // assist to avoid repeated "look/check" loops in tight caves.
-      const scout = b.findBlocks({
+      const scoutRaw = b.findBlocks({
         matching: blockType.id,
         maxDistance: 10,
         count: Math.max(batchSize * 2, 8),
+      });
+      // Surface-bias: b.findBlocks is x-ray. Without this filter, scoring
+      // a "nearest" pick of buried stone (e.g. dirt-pad with stone two
+      // layers below) sends the pathfinder digging straight down through
+      // the pad to reach it — exactly the "collect pillared down with no
+      // pickaxe" failure mode from genesis run g-2026-05-27-10. Reject
+      // candidates whose above-cell isn't air; if NONE are surface-accessible
+      // we fall through to the NO_VISIBLE_BLOCKS path with the actionable
+      // hint, which is the right outcome ("move/scene first").
+      const scout = scoutRaw.filter((p) => {
+        const above = b.blockAt(p.offset(0, 1, 0));
+        if (!above) return true;
+        return AIR_NAMES.has(above.name);
       });
       if (scout.length > 0) {
         const nearest = scout.sort(
