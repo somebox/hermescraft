@@ -280,6 +280,33 @@ def cmd_create(args: argparse.Namespace) -> int:
             _die(f"--epic {args.epic} does not exist on board {BOARD}")
         body = _attach_trailer(body, epic=args.epic)
 
+    # Refuse --depends-on against an [EPIC]-titled card. Symmetric to the
+    # sandbox block on raw `hermes kanban create --parent`. Observed
+    # g-2026-05-28-5: Steward filed FIX with `--depends-on t_<P1_epic>`,
+    # which wedged the card in todo because orchestrator-continuous epics
+    # never reach `done`. The right flag for epic membership is `--epic`;
+    # `--depends-on` is for real per-card prereqs (e.g. SUPPLY depends-on
+    # SCOUT's registered mark). Catch the mistake at write time rather
+    # than letting the dispatcher fail-silent.
+    if args.depends_on:
+        with _db() as conn:
+            for parent_id in args.depends_on:
+                parent_row = _fetch_task(conn, parent_id)
+                if parent_row is None:
+                    _die(f"--depends-on {parent_id} does not exist on board {BOARD}")
+                parent_title = parent_row["title"] or ""
+                if "[EPIC]" in parent_title:
+                    _die(
+                        f"--depends-on {parent_id} targets an [EPIC] card "
+                        f"({parent_title!r}). Epics stay `ready` for the whole phase "
+                        f"and never reach `done`, so a child depends-on'd to one is "
+                        f"wedged in `todo` forever (observed g-2026-05-28-5).\n"
+                        f"  Use --epic {parent_id} instead — that tags membership "
+                        f"via body trailer without gating promotion.\n"
+                        f"  --depends-on is for real per-card prereqs (e.g. SUPPLY "
+                        f"depends-on a SCOUT that registered the mark)."
+                    )
+
     cmd: list[str] = [
         "hermes",
         "kanban",

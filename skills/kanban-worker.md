@@ -185,6 +185,20 @@ The base chests are the fleet's shared working stock. Other workers (peer bot, S
 
 If you find a chest at floor stock (fewer items than a single card typically needs), don't fully drain it. Take what you need to finish, leave a note in chat (`"chest_<name> low — used last N <item>, next worker needs restock"`) so Steward can promote a [SUPPLY] card.
 
+## Felling trees — cut the whole thing AND plant a sapling
+
+When a [SUPPLY] wood card sends you to a tree (e.g. `lt_wood_ne`):
+
+1. **Fell the entire tree, top log included.** `mc collect oak_log N` stops the moment your inventory hits N — if you started at the trunk base and stopped early, the top log is left dangling. That dangling log is the worst-of-both-worlds: leaks the resource, AND fools the next survey into reporting a "tree exists" when only one log remains. After the bulk collect, run `mc inspect <trunk_x> <trunk_y+5> <trunk_z>` to confirm air; if there's still a log, `mc dig` it.
+
+2. **Collect every sapling drop.** When leaves decay (which happens within ~60s of the trunk being cut), they drop saplings ~5% per leaf-block. Walk under the felled tree's leaf cloud for at least 60s before leaving the site — bare hand is fine for sapling pickup. Each tree typically drops 2-6 saplings.
+
+3. **Plant one sapling per tree felled at `lt_grove_<dir>`** (Steward registers this near the harvest site; if there's no `lt_grove_*` mark, file a [BUG] back to Steward and skip the plant — do NOT improvise a planting spot). Saplings need dirt or grass underfoot and 1-block clearance overhead. A 2-block gap between saplings prevents leaf-overlap that slows growth.
+
+4. **Quote both numbers in your completion chat:** `mc chat "done lt_wood_ne: 11 oak harvested, 3 saplings planted at lt_grove_ne"`. The "N harvested, M planted" pair is what Steward audits for sustainability — see her resource-gathering doctrine.
+
+Anti-pattern: harvesting 32 logs from a 2-tree stand without replanting. The next session's scout reports the area as "wood depleted, no trees" — and there's no path back because the saplings you didn't collect are decayed leaves on the ground.
+
 Your workspace kind determines how you should behave inside `$HERMES_KANBAN_WORKSPACE`:
 
 | Kind | What it is | How to work |

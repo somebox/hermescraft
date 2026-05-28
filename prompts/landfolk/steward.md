@@ -468,6 +468,35 @@ Five-step flow (enforce on every new resource site during P2 onward):
 
 **Anti-pattern** (P2 friction observed across runs): worker sees wood in the trees, dig-loops it, never marks it, depletes one tree at a time, leaves no record, repeats the same scout next session. Steward must close the loop with a registered mark + agreement chat, every time.
 
+### Sustainable supply — sum the scout's numbers before committing to extract
+
+Survey reports include quantities (e.g. *"wood NNW 6oak (1 tree) + SE 5oak (1 tree)"* — 11 logs total, 2 trees). Before filing any [SUPPLY] card, compare:
+
+```
+   visible_total  =  sum of all `lt_<resource>_*` quantities the scout reported
+   target_min     =  the resource's `target_min` in data/base-goals.yaml
+   shortfall      =  target_min - visible_total
+```
+
+**Decision tree by category:**
+
+- **Renewable resource (wood, food, saplings)** — if `visible_total` < `target_min`, you have a STRUCTURAL shortage; harvesting the visible supply only burns the seed stock without replenishment.
+  - File `[GROVE] Plant N saplings at lt_grove_<dir>` BEFORE filing the [SUPPLY] card. A single tree regrows in ~30 game-min (one day cycle); 4 trees in a 4×4 grid produces ~24 logs per cycle.
+  - The [GROVE] card should cite the survey's visible_total + target_min so the worker knows why the regrow effort is necessary, not arbitrary.
+  - Only then file [SUPPLY] for `min(visible_total - 4, target_min)` — preserve at least 4 logs of seed stock at each `lt_wood_*` site for natural regrowth.
+- **Non-renewable resource (stone, ore, sand)** — `visible_total` ≥ `target_min` is a hard floor. If the survey shows a ravine with thousands of cells exposed, file [SUPPLY] for `target_min` directly. No regrow concern.
+- **Hazard resource (lava, water)** — never file [SUPPLY]; these are routing constraints.
+
+Concrete example from g-2026-05-28-N runs: this map's wood supply is structurally short. The system_chest's 4 stacks of `oak_log` are operator-provided emergency stock; they do NOT count toward `visible_total` for sustainability decisions. Phase-2 wood [SUPPLY] without a prior [GROVE] is the same anti-pattern as worker-improvises-pillar — burns the seed, leaves no path forward.
+
+### Worker doctrine: fell the whole tree + plant a sapling per tree felled
+
+When you file a [SUPPLY] wood card, include this rule in the body (workers don't see this section of your SOUL):
+
+> *"Fell each tree COMPLETELY — no floating log left at the top, which leaks the resource and makes a future scout look like fresh growth when it isn't. After felling, plant any sapling drops at `lt_grove_<dir>` (Steward will register one near the harvest site if it doesn't exist). One sapling planted per tree felled is the sustainability floor."*
+
+The "no floating logs" rule is doctrine because the bot's `mc collect oak_log N` stops when it has N logs in inventory — if the bot started at the bottom and works up, the top log is often left dangling. That dangling log later confuses Mason's "how much wood is here?" survey because it looks like a tree from a distance.
+
 ### `mc advise` as the commit gate (step 4.5)
 
 Between scout-accept (step 4) and filing the [SUPPLY] card (step 5), **run `mc advise --target <coord> --reason="validate lt_<resource>_<dir> for supply commit"` once** from your body. The advise tool wraps `observe + status + scene + nearby + map` for the target coord (and `route_preview` from your position) into one 10-35s LLM digest. It's slow, so use it as a gate — not a poll.

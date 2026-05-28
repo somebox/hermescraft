@@ -50,10 +50,16 @@ cards:
       - `lt_water_<dir>`  — water/lava body within 10m of the survey arc (HAZARD: workers must route around)
       - `lt_sand_<dir>`   — desert/badlands biome (HAZARD at night)
 
-      Chat findings as a single summary line at the end:
-      `mc chat "survey: wood NE (x,y,z), stone NE (x,y,z), water S (x,y,z), no sand"`
+      **Always include quantities** in the mark note AND in the chat summary — Steward needs the numbers to decide whether a [SUPPLY] card is satisfiable from what you found OR whether the world has a structural shortage. Count the cluster size, not just "trees exist":
 
-      **Tree-drought variant.** If no trees within 60m of the base, end your summary with the literal string `TREE_DROUGHT — sapling sourcing needed before P2 wood`. Steward will file a wider-radius scout + sapling-bootstrap protocol. Do not proceed to plant or sow; that's Phase-2 work.
+      - wood: count distinct trees AND total visible logs (e.g. `2 trees, 11 oak`)
+      - stone: estimate exposed cells (e.g. `~3.2k accessible at Y=62 via 5-step stair`)
+      - water: rough body size (e.g. `large lake ~12m wide`)
+
+      Chat findings as a single summary line at the end:
+      `mc chat "survey: wood NNW (249,70,0) 6oak (1 tree) + SE (279,64,75) 5oak (1 tree), stone W (233,58,64) ~3k cells exposed, water ENE (303,62,50) large lake, no sand"`
+
+      **Tree-drought variant.** If total visible logs across ALL `lt_wood_*` marks is < 32 (which is roughly one Phase-2 supply card's worth), end your summary with the literal string `TREE_DROUGHT — local supply ${TOTAL} logs, need replanting before bulk extraction`. Steward will file a [GROVE] sapling-bootstrap card. Do not proceed to plant or sow during this survey; that's a follow-up card.
 
       Tools allowed: only `mc move`, `mc scene`, `mc inspect`, `mc mark`, `mc chat`. Surface only. Do not engage hostiles; `mc flee 16` if HP ≤ 16. Do not dig. Do not place blocks.
 
