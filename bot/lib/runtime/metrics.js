@@ -45,6 +45,11 @@ async function ensureDir(path) {
  * @param {number}  [record.before_ticks]  estimated dig ticks with original held
  * @param {number}  [record.after_ticks]   estimated dig ticks with re-equipped tool
  * @param {number}  [record.max_ticks]     the slow-dig cap that triggered the recovery
+ * @param {Object<string, number>|null} [record.inv_snapshot]
+ *   { item_name: count } for the bot's inventory at the moment of the event.
+ *   Captured for `no_candidate` rows so the analyzer can decide whether the
+ *   bot could have crafted the missing tool (comprehension gap) vs lacked
+ *   the precursor materials (capability gap). May be null on capture failure.
  */
 export function logEquipRecovery(record) {
   const line = JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n';

@@ -4,6 +4,31 @@
 # epic — that would wedge the children (P1 stays `ready` while orchestrating;
 # children would never promote). See prompts/landfolk/steward.md "Filing epic
 # children" for the rule.
+#
+# ──────────────────────────────────────────────────────────────────────────
+# SCAFFOLDING NOTE (added post-g-2026-05-28-5, see reports/genesis/2026-05-28-
+# run-5-postmortem.md and this audit thread):
+#
+# Several card bodies below contain prescriptive procedure — exact walls=
+# bboxes, specific withdraw counts, step-by-step `mc move` then `mc region_
+# create` sequences. That detail is genesis-as-INTEGRATION-TEST scaffolding:
+# it lets us verify the kanban + facade + verify-before-trust architecture
+# end-to-end without conflating those failures with agent-decomposition
+# failures. The real "@steward build a base" surface should require the
+# agent to derive these values from primitives (5x5 perimeter → walls bbox,
+# count needed cobble from geometry, choose tools from inventory).
+#
+# Sections marked `# SCAFFOLD:` below are the prescriptive parts. Relax in
+# this order once P1 reliably closes:
+#   1. Withdraw counts ("32 cobble + 1 pickaxe") → "compute from geometry + bring tools"
+#   2. walls= bbox literal → "derive from 5x5 perimeter centered on anchor"
+#   3. SITE step-by-step mc move/create/reload → "anchor a region around the shelter"
+#   4. Survey 8-direction × 20/40/60m protocol → "explore + record useful resource directions"
+#
+# Keep the verification-shape rules (walls= required, is_sheltered output
+# semantics) and the architectural rules (--epic vs --depends-on, pencil-
+# and-eraser) as SOUL doctrine — those generalize.
+# ──────────────────────────────────────────────────────────────────────────
 cards:
   - title: "[SCOUT] Confirm base anchor"
     assignee: flint

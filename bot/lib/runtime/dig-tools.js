@@ -538,6 +538,26 @@ async function preferShearsForLeaves(b, block) {
   try { await b.equip(shears, 'hand'); } catch {}
 }
 
+// Compact inventory snapshot for equip-recovery telemetry. Returns
+// { item_name: count } for everything in main inventory + hotbar.
+// Defensive: never throws — bad shape returns null so the metric still
+// logs the other fields.
+function snapshotInventoryForRecovery(b) {
+  try {
+    const items = b?.inventory?.items?.();
+    if (!Array.isArray(items)) return null;
+    const out = {};
+    for (const it of items) {
+      const name = it?.name;
+      if (!name) continue;
+      out[name] = (out[name] || 0) + (it.count || 0);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 export function guardSlowDigEstimate(b, block) {
   const t = b.tool;
   if (!block?.name || typeof t?.getDigTime !== 'function' || typeof t.itemInHand !== 'function') return;
@@ -606,6 +626,10 @@ export function guardSlowDigEstimate(b, block) {
         before_held: hn || 'empty',
         before_ticks: Number.isFinite(ticks) ? Math.round(ticks) : null,
         max_ticks: maxTicks,
+        // Inventory at the moment of the refusal — lets the analyzer split
+        // `no_candidate` into "could have crafted the missing tool" vs
+        // "truly out of materials" (comprehension vs capability gap).
+        inv_snapshot: snapshotInventoryForRecovery(b),
       };
       if (!candidate) {
         // No tool of the needed category in inventory at all. The original
