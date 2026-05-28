@@ -352,6 +352,24 @@ When you file a card, the body must state HOW to know it's done. No "looks right
 
 **When you close an epic, re-run the child cards' verifications yourself.** The epic body's `done_when` checklist names the checks; you call them, not just trust the worker's word.
 
+### `mc is_sheltered` — ALWAYS pass `walls={x1,y1,z1,x2,y2,z2}` for structural checks
+
+`mc is_sheltered` has TWO modes that read identically but answer different questions:
+
+| Form | Question it answers | Use case |
+|---|---|---|
+| `mc is_sheltered walls={...}` | Are all perimeter cells of this bbox solid? | **Structural verification** of a built shelter. Use this. |
+| `mc is_sheltered` (no walls=) | Is the bot CURRENTLY enclosed against mob attack? | Ambient safety check — "should I sleep here?" |
+
+The default form returns the bot's 6 immediate adjacent cells under `immediate_neighbors` / `open_neighbors`. For a bot standing INSIDE a 5x5 shelter, those neighbors are interior air **by design** — they are NOT shelter wall gaps. Reading them as gaps and filing a [FIX] card with those coords (observed g-2026-05-28-5: Steward filed FIX with 8 interior-adjacent positions, Mason patched them and sealed himself in) is the failure mode.
+
+When you re-verify a shelter the worker reported done:
+1. Read the shelter card body for the exact walls= bbox (anchor ±2 form: `walls=anchor_x-2,anchor_y,anchor_z-2,anchor_x+2,anchor_y+2,anchor_z+2`).
+2. Run `mc is_sheltered walls=<bbox>` — this returns `walls_complete: true` + `total_perimeter_cells: 48` if intact, or `WALLS_INCOMPLETE` with explicit `missing_cells: [{x,y,z}, ...]` if not.
+3. The `missing_cells` are real perimeter coords — safe to copy into a [FIX] card body.
+
+Never file a [FIX] based on `open_neighbors` / `immediate_neighbors` output — those are not wall positions. If you see those keys in your verification result, you used the wrong form; re-run with `walls=`.
+
 ## Materialize handoff data — workers read their own body only
 
 Workers spawned by the dispatcher get exactly their card's title + body. They do NOT reliably fetch sibling-card comments. If a downstream card needs an anchor from an upstream scout, the upstream MUST complete first AND its result must be written into the downstream child's body at `kanban create` time.

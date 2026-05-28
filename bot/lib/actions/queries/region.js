@@ -424,13 +424,26 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
     // said enclosed because a crafting-table-blocked-foot + air-head
     // gap had no walkable path, but a zombie outside reached through
     // the head-level air gap and killed the bot.
+    // ─── Immediate-neighbor (6-direction) attack-reach check ───
+    //
+    // Names use the `neighbor_*` prefix and explicit warning text so a caller
+    // does NOT confuse these cells with structural wall positions. They are
+    // the bot's IMMEDIATE adjacent cells regardless of which shelter (if any)
+    // the bot is inside. For a bot standing in the interior of a 5x5 shelter,
+    // these cells are interior air BY DESIGN — that does NOT mean the
+    // shelter's walls have gaps. Use the `walls={x1,y1,z1,x2,y2,z2}` form
+    // for structural verification.
+    //
+    // The naming `foot_east` was renamed (g-2026-05-28-5 postmortem): Steward
+    // read the original keys as wall positions, filed a [FIX] card with the
+    // bot's interior-adjacent cells listed as gaps, Mason sealed himself in.
     const botFootX = Math.floor(start.x), botFootY = Math.floor(start.y), botFootZ = Math.floor(start.z);
-    const wallReport = {};
+    const neighborReport = {};
     for (const lvl of ['foot', 'head']) {
       const wy = botFootY + (lvl === 'head' ? 1 : 0);
       for (const [dx, dz, name] of [[1,0,'east'],[-1,0,'west'],[0,1,'south'],[0,-1,'north']]) {
         const blk = b.blockAt(start.offset(dx, lvl === 'head' ? 1 : 0, dz).floored());
-        wallReport[`${lvl}_${name}`] = {
+        neighborReport[`neighbor_${lvl}_${name}`] = {
           pos: { x: botFootX + dx, y: wy, z: botFootZ + dz },
           block: blk?.name ?? 'unknown',
           solid: blk ? (blk.boundingBox === 'block') : false,
@@ -439,28 +452,28 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
     }
     // Plus the roof (1 block above head).
     const roof = b.blockAt(start.offset(0, 2, 0).floored());
-    wallReport.roof = {
+    neighborReport.neighbor_roof = {
       pos: { x: botFootX, y: botFootY + 2, z: botFootZ },
       block: roof?.name ?? 'unknown',
       solid: roof ? (roof.boundingBox === 'block') : false,
     };
 
-    const openWalls = Object.entries(wallReport)
+    const openNeighbors = Object.entries(neighborReport)
       .filter(([_, v]) => !v.solid)
       .map(([k, v]) => `${k}=${v.block}@(${v.pos.x},${v.pos.y},${v.pos.z})`);
 
     // Final verdict combines BOTH checks. Pathfinder says no walk-path,
     // AND every immediate-neighbour cell is solid → truly safe. Either
     // failing → not enclosed.
-    const enclosed = pathfinderEnclosed && openWalls.length === 0;
+    const enclosed = pathfinderEnclosed && openNeighbors.length === 0;
 
     let resultMsg;
     if (enclosed) {
-      resultMsg = `SHELTERED — pathfinder found no exit within ${r} blocks AND all 9 immediate-neighbour cells (4 foot, 4 head, roof) are solid blocks. Safe to wait out the night.`;
-    } else if (pathfinderEnclosed && openWalls.length > 0) {
-      resultMsg = `OPEN — pathfinder found no walk-path out, BUT ${openWalls.length} immediate cell(s) are not solid: ${openWalls.join(', ')}. Mobs can attack-reach you through these 1-block gaps even though they can't walk in. Seal every immediate-neighbour cell (foot, head, roof) before nightfall.`;
+      resultMsg = `SHELTERED — pathfinder found no exit within ${r} blocks AND all 9 immediate neighbor cells (4 foot, 4 head, roof) are solid. Safe to wait out the night. (For structural wall verification of a built shelter, re-run with walls={x1,y1,z1,x2,y2,z2}.)`;
+    } else if (pathfinderEnclosed && openNeighbors.length > 0) {
+      resultMsg = `EXPOSED at bot's adjacent cells — pathfinder found no walk-path out, BUT ${openNeighbors.length} of the bot's 9 immediate neighbor cells are not solid: ${openNeighbors.join(', ')}. Mobs can attack-reach you through these 1-block gaps. NOTE: these are the bot's neighbors, NOT shelter wall positions — for wall structure verification use walls={...}.`;
     } else {
-      resultMsg = `OPEN — escape route via ${firstLeak.direction} starts at (${firstLeak.exit.x},${firstLeak.exit.y},${firstLeak.exit.z}). Mobs can use that path to reach you. Seal it before nightfall.${openWalls.length > 0 ? ' Immediate gaps: ' + openWalls.join(', ') : ''}`;
+      resultMsg = `OPEN — escape route via ${firstLeak.direction} starts at (${firstLeak.exit.x},${firstLeak.exit.y},${firstLeak.exit.z}). Mobs can use that path to reach you. Seal it before nightfall.${openNeighbors.length > 0 ? ' Adjacent neighbor cells exposed: ' + openNeighbors.join(', ') : ''}`;
     }
 
     return {
@@ -470,13 +483,15 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
         // Sub-signals so callers can distinguish "walk-path leak" from
         // "attack-reach leak". Useful for nuanced agent reasoning.
         pathfinder_enclosed: pathfinderEnclosed,
-        all_walls_solid: openWalls.length === 0,
+        all_neighbors_solid: openNeighbors.length === 0,
         bot_position: { x: Math.round(start.x * 10) / 10, y: Math.round(start.y * 10) / 10, z: Math.round(start.z * 10) / 10 },
         radius: r,
         leak: firstLeak,
         checks,
-        immediate_walls: wallReport,
-        open_walls: openWalls,
+        // The bot's IMMEDIATE adjacent cells — NOT to be confused with
+        // shelter wall positions. Use walls={...} form for structural checks.
+        immediate_neighbors: neighborReport,
+        open_neighbors: openNeighbors,
       },
       result: resultMsg,
     };

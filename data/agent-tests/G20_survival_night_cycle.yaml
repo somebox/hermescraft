@@ -185,8 +185,8 @@ prompt: |
      If `mc status` shows your position outside (cx, cy, cz),
      `mc goto cx cy cz` first, then verify. Read BOTH fields:
        • `enclosed: true` AND
-       • `open_walls: []` (empty list of immediate gaps)
-     If either fails, the `leak` or `open_walls` tells you the exact
+       • `open_neighbors: []` (empty list of bot-adjacent gaps)
+     If either fails, the `leak` or `open_neighbors` tells you the exact
      coord to plug. `mc place BLOCK <coord>`, then re-verify.
 
   6. **Announce "sheltered in place"** in your reply and start

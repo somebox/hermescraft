@@ -77,14 +77,22 @@ cards:
 
       ## Verification — both must pass before completing this card
 
-      1. **Walls intact:** `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2`. Success = `ok: true` with `walls_complete: true` in the data. If WALLS_INCOMPLETE: the response lists missing perimeter cells — `mc place cobblestone <x> <y> <z>` each, then re-verify.
+      The walls bbox for this shelter is:
+
+          walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2
+
+      **Use that bbox literally in BOTH the verify and the completion summary** — Steward will re-run the same call when she closes the EPIC, so consistency matters.
+
+      1. **Walls intact:** `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2`. Success = `ok: true` with `walls_complete: true` in the data. If WALLS_INCOMPLETE: the response lists missing perimeter cells under `missing_cells` — those are real perimeter coords. `mc place cobblestone <x> <y> <z>` each, then re-verify.
+
+         **Do NOT run `mc is_sheltered` without the `walls=` argument.** The default form returns the bot's 6 immediate-neighbor cells under `open_neighbors` — those are NOT wall positions, they're the bot's adjacent cells (interior air for a built shelter). Reading them as gaps and filing a FIX card with those coords entombed a bot in g-2026-05-28-5.
 
       2. **Door usable:** verify ingress + egress.
          - Stand outside the door, run `mc move {anchor_x} {anchor_y} {anchor_z}` (the anchor inside).
          - From inside, run `mc move <outside_coord>` (e.g. {anchor_x}, {anchor_y}, {anchor_z}+4 — 2 blocks south of the south wall).
          - Both moves must succeed. A shelter you can't enter or leave isn't a shelter, it's a tomb.
 
-      Only after BOTH (1) and (2) pass: `mc kanban_complete` with a summary stating which checks ran and their results.
+      Only after BOTH (1) and (2) pass: `mc kanban_complete` with a summary that **quotes the exact walls= bbox** (so Steward can re-run the same call without guessing).
 
   - title: "[RECONCILE] Promote chest marks"
     assignee: steward
