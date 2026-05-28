@@ -34,9 +34,12 @@ Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban 
 
 | Tool | Use |
 |---|---|
-| `scripts/board` | **Default board read.** `board show <id>` ~20 lines vs `hermes kanban show` ~150. `board list`, `board recent`, `board stats`. |
-| `scripts/kanban` | **Default board write.** `create` (with `--epic` for membership / `--depends-on` for real prereqs), `complete`, `block`, `unblock`, `reassign`, `comment`, `archive`, `depends-add/remove`, `dependencies`, `epic`. |
-| `hermes kanban <verb>` | Underlying CLI. Only reach for it directly when the facade lacks a verb (rare — e.g. `specify`, `decompose`, `dispatch --dry-run`). Never `sqlite3 kanban.db` / `find ~/.hermes`. |
+| `scripts/kanban board` | **One-screen orient view.** IN-FLIGHT + READY + NEEDS REVIEW + BLOCKED + EPICS OPEN + RECENT, all in ≤30 lines. Replaces `hermes kanban stats` + four `list --status …` calls. Use first thing every cycle. |
+| `scripts/kanban card <id>` | Detailed card view with size, location, full comments, recent events. ~30 lines vs `hermes kanban show`'s ~150. |
+| `scripts/kanban epic <id>` | Epic + every card body-tagged or linked under it. |
+| `scripts/kanban` (write verbs) | Action-oriented writes: `add-epic`, `add` (with `--for <epic>` / `--after <prereq>` / `--size S\|M\|L\|XL` / `--at X,Y,Z`), `promote`, `complete`, `block`, `unblock`, `resolve` (clear escalations), `archive`, `set-after`, `unset-after`, `set-priority`, `edit`, `assign`, `comment`. Old verbs (`create`, `depends-add`, `depends-remove`, `reassign`) still work as aliases during the transition. |
+| `scripts/board` | Legacy lean reader. Kept working; `scripts/kanban board` supersedes it. |
+| `hermes kanban <verb>` | Underlying CLI. Only reach for it directly when the facade lacks a verb (`specify`, `decompose`, `dispatch --dry-run`, `runs`, `tail`). Never `sqlite3 kanban.db` / `find ~/.hermes`. |
 | `mc <verb>` | Read-only world: status, scene, look, players, marks, nearby, chest_search, read_chat, chat, social, regions, observe, inventory, goals, advise. Never dig/place/collect/craft/fill/deposit/withdraw/attack/fight. |
 | `scripts/board-recent.py` | Event delta since last cycle + per-bot live-state footer. |
 | `scripts/fleet-status.py` | Who's doing what RIGHT NOW: pos/HP/worker pids/last activity. **Use this before `ps aux \| grep`.** |
@@ -57,43 +60,42 @@ Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban 
 | Comment | `comment <id> "<text>"` | |
 | Show one card + its deps + epic | `show <id>` | Use `scripts/board show` for the leaner view. |
 | List | `list [--status X] [--assignee Y] [--epic Z]` | |
-| Show all epics on the board | `list-epics` | |
-| Show one epic + its members | `epic <epic_id>` | Members = body-trailer tag, not link. |
-| Add / remove a real dep | `depends-add <child> <parent>` / `depends-remove …` | |
-| Show both directions of a dep graph | `dependencies <id>` | depends_on + dependency_of, with status flags. |
-| Archive | `archive <id> [...]` | |
+| Show one epic + its members | `kanban epic <epic_id>` | Members = body-trailer tag ∪ real link children. |
+| Add / remove a real dep | `kanban set-after <child> <parent>` / `kanban unset-after …` | |
+| Edit live card | `kanban edit <id> [--title T] [--body B] [--size S] [--at X,Y,Z] [--priority P]` | Refuses done/archived cards. |
+| Promote (override dep-gate) | `kanban promote <id> [--force]` | todo/triage → ready. `--force` overrides parent-not-done. |
+| Resolve an escalation | `kanban resolve <id> "<note>"` | unblock + `[RESOLVED]` audit comment. |
+| Archive | `kanban archive <id> [...]` | |
 
-For verbs the facade doesn't wrap (`specify`, `decompose`, `dispatch --dry-run`, `runs`, `tail`), fall back to `hermes kanban <verb>` directly. Never invent verbs — `done`, `move`, `edit --status`, `kanban update` are not real.
+For verbs the facade doesn't wrap (`specify`, `decompose`, `dispatch --dry-run`, `runs`, `tail`), fall back to `hermes kanban <verb>` directly. Never invent verbs — `done`, `move`, `kanban update` are not real.
 
-### NEVER type `hermes kanban create --parent` from your terminal
-
-This is the single bug that has wedged the dispatcher in three separate genesis runs (`g-2026-05-27-10`, `g-2026-05-27-N`, and `g-2026-05-28-4 round 9`). The sandbox blocks this exact pattern with an error message; if you see that error, the fix is:
-
-```bash
-# WRONG — wedges child in todo forever:
-hermes kanban create "[SUPPLY] Gather wood from lt_wood_se" \
-  --assignee flint --parent t_<P2_epic_id>
-
-# RIGHT — child promotes immediately, epic membership tagged in body trailer:
-scripts/kanban create "[SUPPLY] Gather wood from lt_wood_se" \
-  --assignee flint --epic t_<P2_epic_id>
-```
-
-When you're about to file a worker child of any `[GENESIS:Pn]` epic, your hand goes to `scripts/kanban create … --epic <P_id>` — NOT `hermes kanban create … --parent <P_id>`. The `--depends-on` flag is for real prerequisites between two non-epic cards (e.g. SUPPLY depends-on SCOUT), never for the relationship between a worker card and its phase epic.
-
-**Lean output — use `scripts/board` instead of raw `hermes kanban`:**
+### Creating cards (new action verbs)
 
 ```bash
-scripts/board                      # overview: stats + recent + workers (one screen)
-scripts/board show t_xxx           # lean card: header + body + last comment + last run (~20 lines vs ~150)
-scripts/board show t_xxx --full    # passthrough to verbose hermes kanban show
-scripts/board list                 # one-line-per-task across all non-done statuses
-scripts/board list --status blocked
-scripts/board list --assignee flint
-scripts/board recent --ticks 5     # delegates to board-recent.py (events + worker footer)
+# Epic — Steward's phase tracker. Title gets [EPIC] prefix if missing.
+scripts/kanban add-epic "[GENESIS:P3] Defenses and watch tower" --body "..." --priority 50
+
+# Worker card under an epic. Size defaults to M (a soft default — aim for S).
+scripts/kanban add "[SUPPLY] Gather wood from lt_wood_se" --assignee flint \
+  --for t_<P3_epic_id> --size M --at -100,64,200
+
+# Worker card with a real prereq (SUPPLY waits on SCOUT registering the mark).
+scripts/kanban add "[SUPPLY] 64 oak from lt_wood_ne" --assignee flint \
+  --for t_<P3_epic_id> --after t_<scout_id> --size S
 ```
 
-`hermes kanban show <id>` averages ~155 lines (~3000 tokens), 70-80% historical event/run log. `scripts/board show` returns ~20 lines with the actionable header + body + most-recent comment + most-recent run. **Use `scripts/board` by default**; only reach for `hermes kanban show <id> --full` when you genuinely need the full event log (rare — usually for incident forensics).
+`--for <epic>` writes a body trailer (membership, no dep gate). `--after <id>` writes a real prereq edge — refuses to target an `[EPIC]` card (those never reach done, so an after-edge would wedge the child forever). Size defaults to M with a stderr note; prefer to break work down to S over time.
+
+### Escalation handling
+
+Workers can `wb escalate "<reason>"` when a card is mis-specified or the world doesn't match the body. The card moves to `blocked` with reason `[!ESCALATED] <text>`, and `kanban board`'s **NEEDS REVIEW** lane surfaces it. Triage in the same cycle you see it:
+
+- Body or scope wrong → `kanban edit <id> --body "..."` then `kanban resolve <id> "spec corrected"`.
+- Wrong worker → `kanban assign <id> <profile>` then `kanban resolve <id> "reassigned"`.
+- Real obstacle → `kanban block <id> "<root cause>"` (drops it back to plain BLOCKED, no escalation).
+- Bot bug → file `[BUG]` card, leave the escalation in place pointing at the BUG id.
+
+Don't let NEEDS REVIEW stack — a single unresolved escalation parks a worker indefinitely.
 
 ---
 
@@ -911,26 +913,26 @@ The facade exposes two semantically distinct flags. Pick the right one and the d
 
 | Flag | Meaning | Effect on promotion |
 |---|---|---|
-| `--epic <id>` | This card is a **member** of the named epic (body trailer tag). | None. Card promotes immediately like any other `ready`. |
-| `--depends-on <id>` | This card **cannot start** until `<id>` is done (real prerequisite). | Card stays `todo` until every depends-on is `done` or `archived`. |
+| `--for <id>` (`add`) | This card is a **member** of the named epic (body trailer tag). | None. Card promotes immediately like any other `ready`. |
+| `--after <id>` (`add`) | This card **cannot start** until `<id>` is done (real prerequisite). | Card stays `todo` until every after-edge is `done` or `archived`. |
 
-When you file an epic's worker child, **the right flag is `--epic`.** The epic is your continuous orchestration queue — it stays `ready` for the whole phase — so anything `--depends-on` the epic would wait forever. (Observed g-2026-05-27-8 23:00 and again 2026-05-27 23:25: Steward used `--parent t_<epic>`, the SCOUT stayed `todo`, the dispatcher idled, the bots sat at base for ~40 minutes.)
+When you file an epic's worker child, **the right flag is `--for`.** The epic is your continuous orchestration queue — it stays `ready` for the whole phase — so anything `--after` the epic would wait forever. (Observed g-2026-05-27-8 23:00 and again 2026-05-27 23:25: Steward used `--parent t_<epic>`, the SCOUT stayed `todo`, the dispatcher idled, the bots sat at base for ~40 minutes.) The new `add` verb refuses `--after <epic>` at write time so this class of bug is unreachable.
 
-`--depends-on` is for real per-card prerequisites: `[SUPPLY] wood` depends-on the `[SCOUT] wood` that registered the mark; `[CRAFT] iron pickaxe` depends-on `[SUPPLY] iron`; epic P2 depends-on epic P1. Each of those reflects "the dependency target produces data or state the dependent needs."
+`--after` is for real per-card prerequisites: `[SUPPLY] wood` after the `[SCOUT] wood` that registered the mark; `[CRAFT] iron pickaxe` after `[SUPPLY] iron`; epic P2 after epic P1. Each of those reflects "the dependency target produces data or state the dependent needs."
 
 ```bash
 # Right — epic children promote immediately
-scripts/kanban create "[SCOUT] Locate wood" --assignee flint --epic t_e7547df1 --priority 50
+scripts/kanban add "[SCOUT] Locate wood" --assignee flint --for t_e7547df1 --priority 50 --size S
 
 # Right — supply waits on the scout's registered mark
-scripts/kanban create "[SUPPLY] 64 oak from lt_wood_ne" --assignee flint \
-  --epic t_e7547df1 --depends-on t_<scout_id>
+scripts/kanban add "[SUPPLY] 64 oak from lt_wood_ne" --assignee flint \
+  --for t_e7547df1 --after t_<scout_id> --size M
 
-# Wrong — would wedge the SCOUT until the epic is done (never)
-scripts/kanban create "[SCOUT] Locate wood" --assignee flint --depends-on t_e7547df1
+# Wrong — would wedge the SCOUT until the epic is done (never); `add` refuses this
+scripts/kanban add "[SCOUT] Locate wood" --assignee flint --after t_e7547df1
 ```
 
-Never pass `--parent` to raw `hermes kanban create` from a SOUL action — that flag conflates the two meanings above. The facade refuses to expose it for that reason.
+(The legacy `scripts/kanban create … --epic … --depends-on …` still works as an alias; new code should use `add`.)
 
 ### Holding an `[EPIC] ready` is NOT a wait state — it's an active orchestration job
 

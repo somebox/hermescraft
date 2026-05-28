@@ -78,6 +78,7 @@ import { createLocationsStore, isContainerBlock, findNearbyContainer } from './l
 import { createRegionStore } from './lib/runtime/regions/index.js';
 import { createAllActions } from './lib/actions/index.js';
 import { createObservation } from './lib/runtime/observation.js';
+import { maybeRecordChatComment } from './lib/server/chat-card-comment.js';
 
 // Per-bot locations file to prevent race conditions in multi-agent mode
 const DATA_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'data');
@@ -332,6 +333,7 @@ async function handleChat(username, message) {
     });
     if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
     log(`[Chat${routing.isBroadcast ? '' : ' @me'}] <${username}> ${routing.body}`);
+    maybeRecordChatComment({ author: username, message: routing.body });
     
     // If directly addressed (Name: msg format), queue as command
     if (!routing.isBroadcast) {
@@ -382,6 +384,7 @@ async function handleChat(username, message) {
     if (ctx.social.overheardLog.length > ctx.social.MAX_LOG) ctx.social.overheardLog.shift();
     rememberSocialEvent({ actor: username, kind: 'heard', channel: `overheard_${routing.channel}`, message: routing.body });
     log(`[Overheard] <${username}> → [${routing.targets.join(',')}] ${routing.body}`);
+    maybeRecordChatComment({ author: username, message: routing.body });
   }
 }
 

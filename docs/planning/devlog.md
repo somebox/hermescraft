@@ -2,6 +2,22 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-05-29 — worker board proxy + Steward kanban redesign (commit A)
+
+Three genesis runs (`g-2026-05-27-10`, `g-2026-05-27-N`, `g-2026-05-28-4 round 9`) wedged on the same flag: `hermes kanban create --parent` overloads epic membership and real-prereq dependency onto a single argument. Steward SOUL (`prompts/landfolk/steward.md:68-82`) and the kanban-worker skill both carry dedicated interdiction sections telling the LLM "do not type this" — the warnings' existence IS the bug. Fix: split the kanban surface **by role**, not by syntax. Workers get a tiny verb set on a new CLI scoped to their active card; Steward keeps `scripts/kanban` but with action-oriented verbs (Commit B). The wedge becomes structurally unreachable from the worker surface even before Steward switches over. Underlying philosophy: workers are the agile team, Steward is product/PM — give each the surface their role actually needs.
+
+Commit A (shipped today):
+- **P0 schema** — `scripts/migrations/add_card_meta_cols.py` (idempotent) adds nullable `location_x/y/z` (INTEGER) + `size` (TEXT, CLI validates `S|M|L|XL`) to the `tasks` table. Locality enables nearest-worker dispatch; size enables learned time estimates from `created_at` → `completed_at` deltas (no hardcoded minute map). Tests: `scripts/tests/test_card_meta_migration.py`.
+- **P1 worker CLI** — `scripts/wb` (Python, 5 verbs): `context`, `comment`, `close`, `block`, `escalate`. Reads go direct to sqlite (read-only URI); writes shell out to `hermes kanban` for event/lock-cascade consistency with the dispatcher. `wb context` folds card body + epic + siblings (titles/status only — scope-locked) + recent comments + bot pose into one call. `wb escalate` reuses `kanban_block` events with a `[!ESCALATED] ` prefix so Steward's forthcoming `kanban board` can surface a NEEDS REVIEW lane without a schema change. Tests: `scripts/tests/test_wb_environment.py`.
+- **P5 worker portion** — `prompts/landfolk/flint.md` and `prompts/landfolk/mason.md` now have a "Worker proxy: `wb`" section; `wb context` is the documented first-turn orient command.
+- **P6 pre-flight** — `scripts/tests/test_board_environment.sh` runs in ~1.3s, eight checks (wb help, no-env error, bogus-card error, live-DB columns, migration idempotency, `scripts/kanban` still operational, wb pytest, migration pytest). Designed for `scripts/genesis.sh` to call before bots come up.
+
+Architectural invariant: **no patches to Hermes**. Schema changes are additive nullable columns; all CLI lives in `scripts/`; the bot layer changes for P4 are landing under a separate agent.
+
+Queued for commit B: P2 Steward action-verb redesign (`promote`, `complete`, `block`, `unblock`, `resolve`, `archive`, `assign`, `set-after`, `edit`, `comment`, plus `add` with `--size`/`--at`), P3 consolidated read views (`kanban board` / `kanban epic <id>` / `kanban card <id>` — single-screen orient, ≤30 lines), P4 chat→comment auto-capture (shipping in parallel under another agent — `bot/server.js` hook + `scripts/lib/kanban_chat_comment.py`), P5 Steward SOUL rewrite (delete the wedge-warning section at line 68, swap to action verbs, add t-shirt-size + locality guidance), P7 genesis replay smoke test.
+
+Design doc: [features/worker-board-proxy.md](../features/worker-board-proxy.md). Plan of record: `~/.claude/plans/investigate-the-open-points-wondrous-karp.md`.
+
 ## 2026-05-28 — CLI forgivingness sweep + B3 empirical analysis
 
 Closed five agent-failure-mode bugs in the mc CLI parser surface from a single survey:

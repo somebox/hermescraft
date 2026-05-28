@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+"""wb — worker board proxy. Tiny, scope-locked CLI for landfolk workers.
+
+Workers should never reach raw `hermes kanban`. Their card id is in the
+env var ``HERMES_KANBAN_TASK`` (set by the dispatcher); every verb here
+acts on that one card unless ``--task <id>`` is passed for ad-hoc use.
+
+Verbs
+-----
+  wb context [--json]              # active card + epic + siblings + (best-effort bot pose)
+  wb comment "<text>"              # append a comment
+  wb close   [--result "..."]      # mark the card done
+  wb block   "<reason>"            # park the card; status stays running, lane → blocked
+  wb escalate "<reason>"           # like block but prefixes "[!ESCALATED] " for Steward's NEEDS REVIEW lane
+
+The wedge bug — `--parent` vs `--epic` vs `--depends-on` conflation that
+stalled three genesis runs — is structurally impossible from this surface:
+``wb`` cannot create cards or edit graph edges.
+
+Implementation
+--------------
+- READS  → direct sqlite (read-only URI) on the same DB the dispatcher uses.
+- WRITES → shell-out to ``hermes kanban`` so events / lock cascades stay
+           consistent with the dispatcher.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import sqlite3
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Optional
+
+BOARD = os.environ.get("HERMES_KANBAN_BOARD", "landfolk-ops")
+DB_PATH = Path(
+    os.environ.get(
+        "HERMES_KANBAN_DB",
+        str(Path.home() / ".hermes" / "kanban" / "boards" / BOARD / "kanban.db"),
+    )
+)
+ESCALATE_PREFIX = "[!ESCALATED] "
+EPIC_TRAILER_PREFIX = "epic: "
+SIBLING_LIMIT = 12
+COMMENT_LIMIT = 5
+BODY_PREVIEW_LINES = 20
+
+
+# ─── helpers ──────────────────────────────────────────────────────────────
+
+
+def _die(msg: str, code: int = 1) -> None:
+    print(f"wb: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def _active_task_id(cli_value: Optional[str]) -> str:
+    if cli_value:
+        return cli_value
+    tid = os.environ.get("HERMES_KANBAN_TASK", "").strip()
+    if not tid:
+        _die(
+            "no active card — HERMES_KANBAN_TASK is unset and --task wasn't passed.\n"
+            "  (Workers are dispatched with this env var set; if you're testing "
+            "manually, pass --task <id>.)"
+        )
+    return tid
+
+
+def _db() -> sqlite3.Connection:
+    if not DB_PATH.exists():
+        _die(f"kanban DB not found at {DB_PATH}")
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=5.0)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _run(cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def _hermes(*args: str, timeout: int = 30) -> str:
+    """Run ``hermes kanban --board <board> <args>``; raise on failure."""
+    cmd = ["hermes", "kanban", "--board", BOARD, *args]
+    proc = _run(cmd, timeout=timeout)
+    if proc.returncode != 0:
+        msg = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
+        _die(f"hermes kanban {args[0] if args else ''} failed: {msg}",
+             code=proc.returncode or 1)
+    return proc.stdout
+
+
+def _epic_from_body(body: Optional[str]) -> Optional[str]:
+    """Extract ``epic: <id>`` from a body trailer."""
+    if not body or "---" not in body:
+        return None
+    parts = body.rsplit("\n---\n", 1)
+    if len(parts) != 2:
+        if body.startswith("---\n"):
+            parts = ["", body[4:]]
+        else:
+            return None
+    for line in parts[1].splitlines():
+        line = line.strip()
+        if line.startswith(EPIC_TRAILER_PREFIX):
+            v = line[len(EPIC_TRAILER_PREFIX):].strip()
+            return v or None
+    return None
+
+
+def _resolve_epic_id(conn: sqlite3.Connection, task_row: sqlite3.Row) -> Optional[str]:
+    """Find the epic this card belongs to.
+
+    Prefers the body trailer (``epic: <id>``); falls back to the first
+    parent edge whose title carries an ``[EPIC]`` marker.
+    """
+    epic = _epic_from_body(task_row["body"])
+    if epic:
+        return epic
+    rows = conn.execute(
+        """
+        SELECT p.id, p.title FROM task_links l
+          JOIN tasks p ON p.id = l.parent_id
+         WHERE l.child_id = ?
+         ORDER BY p.created_at
+        """,
+        (task_row["id"],),
+    ).fetchall()
+    for r in rows:
+        if "[EPIC]" in (r["title"] or ""):
+            return r["id"]
+    return None
+
+
+def _fetch_siblings(conn: sqlite3.Connection, epic_id: str, exclude_id: str) -> list[sqlite3.Row]:
+    """Cards under the same epic — by trailer scan OR by link.
+
+    Returns title + status + assignee only. Bodies are deliberately NOT
+    selected: workers should not see other cards' bodies (scope-locked).
+    """
+    trailer_hits = conn.execute(
+        "SELECT id, title, status, assignee FROM tasks "
+        "WHERE body LIKE ? AND id != ? "
+        "ORDER BY status, created_at LIMIT ?",
+        (f"%{EPIC_TRAILER_PREFIX}{epic_id}%", exclude_id, SIBLING_LIMIT * 2),
+    ).fetchall()
+    link_hits = conn.execute(
+        """
+        SELECT c.id, c.title, c.status, c.assignee
+          FROM task_links l JOIN tasks c ON c.id = l.child_id
+         WHERE l.parent_id = ? AND c.id != ?
+         ORDER BY c.status, c.created_at LIMIT ?
+        """,
+        (epic_id, exclude_id, SIBLING_LIMIT * 2),
+    ).fetchall()
+    seen: set[str] = set()
+    merged: list[sqlite3.Row] = []
+    for r in (*trailer_hits, *link_hits):
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        merged.append(r)
+        if len(merged) >= SIBLING_LIMIT:
+            break
+    return merged
+
+
+def _fetch_comments(conn: sqlite3.Connection, task_id: str, limit: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            "SELECT author, body, created_at FROM task_comments "
+            "WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
+            (task_id, limit),
+        )
+    )
+
+
+def _fetch_bot_pose(timeout: float = 1.0) -> Optional[dict]:
+    """Best-effort GET against the local Steve API (default :3001).
+
+    Returns None on any failure — workers without a bot bound to them
+    still get a useful ``wb context`` (just no pose block).
+    """
+    port = os.environ.get("STEVE_PORT", os.environ.get("MC_HTTP_PORT", "3001"))
+    url = f"http://127.0.0.1:{port}/status?lean=true&preserve=true"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        return data
+    except (urllib.error.URLError, urllib.error.HTTPError, ConnectionError,
+            TimeoutError, json.JSONDecodeError, OSError):
+        return None
+
+
+# ─── command: context ────────────────────────────────────────────────────
+
+
+def _build_context(task_id: str) -> dict:
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT id, title, body, assignee, status, priority, "
+            "       created_at, started_at, "
+            "       location_x, location_y, location_z, size "
+            "FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            _die(f"no card {task_id} on board {BOARD}")
+        epic_id = _resolve_epic_id(conn, row)
+        epic_row = None
+        siblings: list[sqlite3.Row] = []
+        if epic_id:
+            epic_row = conn.execute(
+                "SELECT id, title, body, status FROM tasks WHERE id = ?",
+                (epic_id,),
+            ).fetchone()
+            siblings = _fetch_siblings(conn, epic_id, task_id)
+        comments = _fetch_comments(conn, task_id, COMMENT_LIMIT)
+
+    visible_body = (row["body"] or "")
+    if "\n---\n" in visible_body:
+        visible_body = visible_body.rsplit("\n---\n", 1)[0].rstrip("\n")
+
+    epic_data = None
+    if epic_row:
+        epic_visible = (epic_row["body"] or "")
+        if "\n---\n" in epic_visible:
+            epic_visible = epic_visible.rsplit("\n---\n", 1)[0].rstrip("\n")
+        epic_data = {
+            "id": epic_row["id"],
+            "title": epic_row["title"],
+            "status": epic_row["status"],
+            "body_summary": "\n".join(epic_visible.splitlines()[:3]),
+        }
+
+    pose = _fetch_bot_pose()
+
+    return {
+        "card": {
+            "id": row["id"],
+            "title": row["title"],
+            "status": row["status"],
+            "assignee": row["assignee"],
+            "priority": row["priority"] or 0,
+            "size": row["size"],
+            "location": (
+                {"x": row["location_x"], "y": row["location_y"], "z": row["location_z"]}
+                if any(row[k] is not None for k in ("location_x", "location_y", "location_z"))
+                else None
+            ),
+            "body": visible_body,
+        },
+        "epic": epic_data,
+        "siblings": [
+            {"id": s["id"], "title": s["title"], "status": s["status"], "assignee": s["assignee"]}
+            for s in siblings
+        ],
+        "comments": [
+            {"author": c["author"], "body": c["body"], "created_at": c["created_at"]}
+            for c in comments
+        ],
+        "bot_pose": pose,
+        "board": BOARD,
+    }
+
+
+def _render_context(ctx: dict) -> str:
+    card = ctx["card"]
+    out: list[str] = []
+    out.append(f"Card {card['id']} ── {card['status']} ── {card['assignee'] or '—'}")
+    loc = card.get("location")
+    size = card.get("size") or "—"
+    loc_s = f"{loc['x']},{loc['y']},{loc['z']}" if loc else "—"
+    out.append(f"  {card['title']}")
+    out.append(f"  size: {size}  ·  location: {loc_s}  ·  priority: {card['priority']}")
+    if card["body"]:
+        out.append("  body:")
+        for line in card["body"].splitlines()[:BODY_PREVIEW_LINES]:
+            out.append(f"    {line}")
+        more = len(card["body"].splitlines()) - BODY_PREVIEW_LINES
+        if more > 0:
+            out.append(f"    … (+{more} more lines)")
+    if ctx["comments"]:
+        out.append(f"  comments (last {len(ctx['comments'])}):")
+        for c in reversed(ctx["comments"]):
+            body_first = (c["body"] or "").splitlines()[0] if c["body"] else ""
+            if len(body_first) > 110:
+                body_first = body_first[:109] + "…"
+            out.append(f"    [{c['author']}] {body_first}")
+
+    if ctx["epic"]:
+        e = ctx["epic"]
+        out.append("")
+        out.append(f"Epic {e['id']} ── {e['status']}")
+        out.append(f"  {e['title']}")
+        if e["body_summary"]:
+            for line in e["body_summary"].splitlines():
+                out.append(f"  | {line}")
+
+    if ctx["siblings"]:
+        out.append("")
+        out.append(f"Siblings in this epic ({len(ctx['siblings'])}):")
+        for s in ctx["siblings"]:
+            assignee = s["assignee"] or "—"
+            title = (s["title"] or "")
+            if len(title) > 56:
+                title = title[:55] + "…"
+            out.append(f"  {s['id']}  [{s['status']:<8}] {assignee:<10} {title}")
+
+    pose = ctx["bot_pose"]
+    if pose:
+        out.append("")
+        out.append("Bot state:")
+        p = pose.get("position") or pose.get("pos") or {}
+        if p:
+            out.append(f"  pos {p.get('x')},{p.get('y')},{p.get('z')}")
+        hp = pose.get("health")
+        food = pose.get("food")
+        held = pose.get("heldItem") or pose.get("holding")
+        bits = []
+        if hp is not None:
+            bits.append(f"hp {hp}")
+        if food is not None:
+            bits.append(f"food {food}")
+        if held:
+            bits.append(f"holding {held}")
+        if bits:
+            out.append(f"  {' · '.join(bits)}")
+
+    return "\n".join(out)
+
+
+def cmd_context(args: argparse.Namespace) -> int:
+    task_id = _active_task_id(args.task)
+    ctx = _build_context(task_id)
+    if args.json:
+        print(json.dumps(ctx, default=str))
+    else:
+        print(_render_context(ctx))
+    return 0
+
+
+# ─── command: comment / close / block / escalate ─────────────────────────
+
+
+def cmd_comment(args: argparse.Namespace) -> int:
+    task_id = _active_task_id(args.task)
+    _hermes("comment", task_id, args.text, timeout=15)
+    print(f"# commented on {task_id}")
+    return 0
+
+
+def cmd_close(args: argparse.Namespace) -> int:
+    task_id = _active_task_id(args.task)
+    argv: list[str] = ["complete", task_id]
+    if args.result:
+        argv.extend(["--result", args.result])
+    _hermes(*argv, timeout=20)
+    print(f"# closed {task_id}")
+    return 0
+
+
+def cmd_block(args: argparse.Namespace) -> int:
+    task_id = _active_task_id(args.task)
+    _hermes("block", task_id, args.reason, timeout=15)
+    print(f"# blocked {task_id}: {args.reason}")
+    return 0
+
+
+def cmd_escalate(args: argparse.Namespace) -> int:
+    """Reuse the block event with a marker prefix so Steward's board view
+    can surface a NEEDS REVIEW lane without a schema change."""
+    task_id = _active_task_id(args.task)
+    reason = f"{ESCALATE_PREFIX}{args.reason}"
+    _hermes("block", task_id, reason, timeout=15)
+    print(f"# escalated {task_id}: {args.reason}")
+    return 0
+
+
+# ─── dispatch ────────────────────────────────────────────────────────────
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="wb",
+        description=__doc__.split("\n\n", 1)[0],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Environment:\n"
+            "  HERMES_KANBAN_TASK   active card id (dispatcher injects this)\n"
+            "  HERMES_KANBAN_BOARD  default: landfolk-ops\n"
+            "  HERMES_KANBAN_DB     default: ~/.hermes/kanban/boards/<board>/kanban.db\n"
+            "  STEVE_PORT           bot HTTP port for pose (default: 3001)\n"
+        ),
+    )
+    ap.add_argument("--task", help="Override HERMES_KANBAN_TASK for ad-hoc use")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("context", help="Show active card + epic + siblings + pose")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_context)
+
+    p = sub.add_parser("comment", help="Append a comment to the active card")
+    p.add_argument("text")
+    p.set_defaults(func=cmd_comment)
+
+    p = sub.add_parser("close", help="Mark the active card done")
+    p.add_argument("--result", help="Short result text")
+    p.set_defaults(func=cmd_close)
+
+    p = sub.add_parser("block", help="Block the active card with a reason")
+    p.add_argument("reason")
+    p.set_defaults(func=cmd_block)
+
+    p = sub.add_parser("escalate", help="Block the active card + flag for Steward review")
+    p.add_argument("reason")
+    p.set_defaults(func=cmd_escalate)
+
+    return ap
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    ap = _build_parser()
+    args = ap.parse_args(argv)
+    # `hermes` only needs to be on PATH for write verbs.
+    if args.cmd in {"comment", "close", "block", "escalate"} and not shutil.which("hermes"):
+        _die("`hermes` not on PATH — write verbs need it for event/lock cascades")
+    return args.func(args) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

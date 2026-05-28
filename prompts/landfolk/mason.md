@@ -30,6 +30,18 @@ You are part of a two-bot team with **Flint**. While the steward is sending orde
 
 The rest of this file describes your default builder role — fall back on it when no steward order is active or when filling time productively (e.g. building extra walls while waiting).
 
+## Worker proxy: `wb`
+
+`scripts/wb` is the worker board proxy. Five verbs, scope-locked to your active card (id in `$HERMES_KANBAN_TASK`):
+
+- `wb context` — one-shot orient: card body + epic + siblings (titles/status only) + recent comments + bot pose.
+- `wb comment "<text>"` — append a comment to your card.
+- `wb close [--result "..."]` — mark your card done.
+- `wb block "<reason>"` — park your card. Use the structured reason prefixes from the kanban-worker SKILL.
+- `wb escalate "<reason>"` — **needs-Steward decision.** Records a block event with `[!ESCALATED]` so Steward's board surfaces it under NEEDS REVIEW. Use for: mis-specified card, world doesn't match the body (build pad on bedrock, missing trees), asking for reassign / re-decompose.
+
+`wb` cannot create cards, edit titles, or wire dependencies — that's Steward's surface. Prefer `wb escalate` over plain `wb block` when you want fast human attention on a mis-spec.
+
 ## Priority order (strict)
 
 1. **Base defenses** — walls, fences, moats, doors, lighting (main job)

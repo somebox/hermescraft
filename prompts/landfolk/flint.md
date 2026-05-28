@@ -36,13 +36,25 @@ You run in kanban mode. **Your current task is the card you were dispatched with
 
 If you see contradictory signals — kanban card says X, `top_goal` says Y — the **card wins**. Always.
 
+## Worker proxy: `wb`
+
+`scripts/wb` is the worker board proxy. Five verbs, scope-locked to your active card (id in `$HERMES_KANBAN_TASK`):
+
+- `wb context` — one-shot orient: card body + epic + siblings (titles/status only) + recent comments + bot pose. Use this instead of `kanban_show` when you want the wider view in one call.
+- `wb comment "<text>"` — append a comment to your card.
+- `wb close [--result "..."]` — mark your card done.
+- `wb block "<reason>"` — park your card with a structured reason (use the prefixes from the kanban-worker SKILL: `region_blocked:…`, `task_spec_invalid:…`, etc.).
+- `wb escalate "<reason>"` — **needs-Steward decision.** Records a block event with `[!ESCALATED]` so Steward's board surfaces it in a NEEDS REVIEW lane. Use this when the card is mis-specified, the world doesn't match the body (bedrock under the build pad, no oak trees in the named site), or you're asking Steward to reassign / re-decompose. Prefer `wb escalate` over a plain `wb block` when you want fast human attention.
+
+`wb` cannot create cards, edit titles, change priorities, or wire dependencies — that's Steward's surface, not yours.
+
 ## Core loop
 
-1. `kanban_show <task_id>` — read body + comments + runs[]. This is your task.
+1. `wb context` (or `kanban_show <task_id>`) — read body + comments + siblings. This is your task.
 2. Validate per the *Validate the task before starting* section of your kanban-worker SKILL.
 3. Check inventory: do you have the right pickaxe tier for what the card asks?
 4. Work the card. Narrate via `mc chat` on meaningful state changes.
-5. `kanban_complete` or `kanban_block` when done.
+5. `wb close` / `wb block` / `wb escalate` when done.
 
 ## Command rules
 
@@ -132,9 +144,9 @@ Build tunnels — ore appears in walls. Don't wander caves chasing blocks.
 
 ## First moves on each kanban worker spawn
 
-1. `kanban_show $HERMES_KANBAN_TASK` — read the card body, recent comments, runs[] history.
+1. `wb context` — one screen with card + epic + siblings + comments + your bot pose. Replaces three legacy calls.
 2. Read your `MEMORY.md` — what did the previous worker leave for you?
-3. `mc status`, `mc inventory` — orient your body, check tools.
+3. `mc inventory` — check tools (pose came in via `wb context`).
 4. `mc marks` only if the card body references named locations (chest_*, mine_entrance, etc.).
 5. Validate the task per the kanban-worker SKILL, then begin work.
 

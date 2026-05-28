@@ -132,6 +132,59 @@ def _db() -> sqlite3.Connection:
     return conn
 
 
+def _db_rw() -> sqlite3.Connection:
+    """Read-write connection for verbs Hermes doesn't expose (promote,
+    set-priority, in-flight edit). Use sparingly; most state transitions
+    should still shell out to `hermes kanban …` so event-table cascades
+    and claim-lock parking stay consistent."""
+    if not DB_PATH.exists():
+        _die(f"kanban DB not found at {DB_PATH}")
+    conn = sqlite3.connect(str(DB_PATH), isolation_level=None, timeout=10.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def _write_event(conn: sqlite3.Connection, task_id: str, kind: str,
+                 payload: Optional[dict] = None) -> None:
+    """Append a task_events row. Mirrors upstream `_append_event` shape so
+    the dashboard and `hermes kanban watch` see our writes."""
+    import time as _time
+    conn.execute(
+        "INSERT INTO task_events (task_id, kind, payload, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (task_id, kind, json.dumps(payload) if payload else None, int(_time.time())),
+    )
+
+
+VALID_SIZES = ("S", "M", "L", "XL")
+DEFAULT_SIZE = "M"
+
+
+def _validate_size(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    v = value.strip().upper()
+    if v not in VALID_SIZES:
+        _die(f"--size must be one of {VALID_SIZES}, got {value!r}")
+    return v
+
+
+def _parse_location(value: Optional[str]) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """Parse ``X,Y,Z`` into a tuple of ints. Returns (None, None, None)
+    if value is falsy."""
+    if not value:
+        return (None, None, None)
+    parts = [p.strip() for p in value.split(",")]
+    if len(parts) != 3:
+        _die(f"--at must be X,Y,Z (three signed integers), got {value!r}")
+    try:
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
+    except ValueError:
+        _die(f"--at coordinates must be integers, got {value!r}")
+    return (None, None, None)  # unreachable; satisfies type
+
+
 # ─── epic trailer parsing ───────────────────────────────────────────────────
 
 
@@ -384,6 +437,142 @@ def cmd_create(args: argparse.Namespace) -> int:
         for parent, err in failed_links:
             print(f"  ! depends-on {parent} FAILED: {err}", file=sys.stderr)
 
+    return 1 if failed_links else 0
+
+
+# ─── command: add-epic / add ────────────────────────────────────────────────
+
+
+def cmd_add_epic(args: argparse.Namespace) -> int:
+    """Create an epic card. Ensures the title starts with ``[EPIC]``."""
+    title = args.title.strip()
+    if "[EPIC]" not in title:
+        title = f"[EPIC] {title}"
+    cmd: list[str] = [
+        "hermes", "kanban", "--board", BOARD, "create", title,
+        "--assignee", args.assignee or "steward",
+    ]
+    if args.body:
+        cmd.extend(["--body", args.body])
+    if args.priority is not None:
+        cmd.extend(["--priority", str(args.priority)])
+    cmd.append("--json")
+    proc = _run(cmd, timeout=30)
+    if proc.returncode != 0:
+        _die(f"add-epic failed: {proc.stderr.strip() or proc.stdout.strip()}")
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        _die(f"add-epic returned non-JSON: {proc.stdout[:200]}")
+    tid = str(data.get("id") or data.get("task_id") or (data.get("task") or {}).get("id") or "")
+    if args.json:
+        print(json.dumps({"id": tid, "title": title}))
+    else:
+        print(f"{tid}  {title}")
+    return 0
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    """Create a worker card under an epic.
+
+    Action-oriented replacement for ``create``: ``--for`` is the epic
+    (body trailer, no gate), ``--after`` is real prereqs (task_links).
+    Size defaults to ``M`` when omitted, with a stderr note so Steward
+    knows it's defaulted rather than chosen.
+    """
+    size = _validate_size(args.size)
+    if size is None:
+        size = DEFAULT_SIZE
+        print(f"# (size defaulted to {DEFAULT_SIZE})", file=sys.stderr)
+    loc_x, loc_y, loc_z = _parse_location(args.at)
+
+    body = args.body or ""
+    if args.epic_for:
+        with _db() as conn:
+            row = _fetch_task(conn, args.epic_for)
+        if row is None:
+            _die(f"--for {args.epic_for} does not exist on board {BOARD}")
+        body = _attach_trailer(body, epic=args.epic_for)
+
+    if args.after:
+        with _db() as conn:
+            for parent_id in args.after:
+                p = _fetch_task(conn, parent_id)
+                if p is None:
+                    _die(f"--after {parent_id} does not exist on board {BOARD}")
+                # Same wedge guard as cmd_create's --depends-on: refuse real
+                # prereqs against an [EPIC] (epics stay `ready` forever; the
+                # child would wedge in todo).
+                if "[EPIC]" in (p["title"] or ""):
+                    _die(
+                        f"--after {parent_id} targets an [EPIC] card. "
+                        f"Use --for {parent_id} for epic membership; "
+                        f"--after is for per-card prereqs that actually reach done."
+                    )
+
+    cmd: list[str] = [
+        "hermes", "kanban", "--board", BOARD, "create", args.title,
+        "--assignee", args.assignee,
+    ]
+    if body:
+        cmd.extend(["--body", body])
+    if args.priority is not None:
+        cmd.extend(["--priority", str(args.priority)])
+    for s in args.skill or []:
+        cmd.extend(["--skill", s])
+    if args.max_retries is not None:
+        cmd.extend(["--max-retries", str(args.max_retries)])
+    if args.idempotency_key:
+        cmd.extend(["--idempotency-key", args.idempotency_key])
+    cmd.append("--json")
+    proc = _run(cmd, timeout=30)
+    if proc.returncode != 0:
+        _die(f"add failed: {proc.stderr.strip() or proc.stdout.strip()}")
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        _die(f"add returned non-JSON: {proc.stdout[:200]}")
+    tid = str(data.get("id") or data.get("task_id") or (data.get("task") or {}).get("id") or "")
+    if not tid:
+        _die(f"could not parse task id from {proc.stdout[:200]}")
+
+    # Apply real-prereq edges.
+    failed_links: list[tuple[str, str]] = []
+    for parent in args.after or []:
+        lp = _run(["hermes", "kanban", "--board", BOARD, "link", parent, tid], timeout=15)
+        if lp.returncode != 0:
+            failed_links.append((parent, lp.stderr.strip() or f"exit {lp.returncode}"))
+
+    # Write size + location directly (Hermes create doesn't know about them).
+    with _db_rw() as conn:
+        conn.execute(
+            "UPDATE tasks SET size = ?, location_x = ?, location_y = ?, location_z = ? "
+            "WHERE id = ?",
+            (size, loc_x, loc_y, loc_z, tid),
+        )
+
+    if args.json:
+        print(json.dumps({
+            "id": tid, "title": args.title, "assignee": args.assignee,
+            "epic": args.epic_for, "after": list(args.after or []),
+            "size": size,
+            "location": (
+                {"x": loc_x, "y": loc_y, "z": loc_z}
+                if loc_x is not None else None
+            ),
+            "after_failed": [{"parent": p, "error": e} for p, e in failed_links],
+        }))
+    else:
+        bits = [f"size={size}"]
+        if args.epic_for:
+            bits.append(f"for={args.epic_for}")
+        if args.after:
+            bits.append(f"after={','.join(args.after)}")
+        if loc_x is not None:
+            bits.append(f"at={loc_x},{loc_y},{loc_z}")
+        print(f"{tid}  {args.title}  → {args.assignee}  ({' '.join(bits)})")
+        for parent, err in failed_links:
+            print(f"  ! after {parent} FAILED: {err}", file=sys.stderr)
     return 1 if failed_links else 0
 
 
@@ -738,6 +927,533 @@ def cmd_archive(args: argparse.Namespace) -> int:
     return 0
 
 
+# ─── consolidated read views (board / card) ────────────────────────────────
+
+
+def _format_age(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86_400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86_400}d"
+
+
+def _latest_block_payload(conn: sqlite3.Connection, task_id: str) -> Optional[str]:
+    """Return the most recent kanban_block event's reason text for a card."""
+    row = conn.execute(
+        "SELECT payload FROM task_events WHERE task_id = ? AND kind = 'blocked' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+    if not row or not row["payload"]:
+        return None
+    try:
+        data = json.loads(row["payload"])
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict):
+        return data.get("reason") or data.get("message")
+    return None
+
+
+def _latest_card_note(conn: sqlite3.Connection, task_id: str) -> Optional[str]:
+    """Return a short trailing chat-like marker for the in-flight view."""
+    row = conn.execute(
+        "SELECT body FROM task_comments WHERE task_id = ? "
+        "ORDER BY created_at DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+    if not row:
+        return None
+    line = (row["body"] or "").splitlines()[0] if row["body"] else ""
+    return line.strip() or None
+
+
+def _epic_member_counts(conn: sqlite3.Connection, epic_id: str) -> dict:
+    """Count members of an epic by status. Members = body-trailer hits ∪
+    real task_links children. Used by the EPICS OPEN section."""
+    trailer = conn.execute(
+        "SELECT id, status FROM tasks WHERE body LIKE ? ",
+        (f"%epic: {epic_id}%",),
+    ).fetchall()
+    links = conn.execute(
+        "SELECT c.id, c.status FROM task_links l JOIN tasks c ON c.id = l.child_id "
+        "WHERE l.parent_id = ?",
+        (epic_id,),
+    ).fetchall()
+    seen: dict[str, str] = {}
+    for r in (*trailer, *links):
+        # Trust trailer matches that resolve to the epic exactly — skip
+        # noise from substring matches in unrelated bodies.
+        seen[r["id"]] = r["status"]
+    out = {"total": len(seen), "done": 0, "running": 0, "ready": 0,
+           "blocked": 0, "todo": 0, "triage": 0, "needs_review": 0}
+    for tid, status in seen.items():
+        if status == "done" or status == "archived":
+            out["done"] += 1
+        elif status == "running":
+            out["running"] += 1
+        elif status == "ready":
+            out["ready"] += 1
+        elif status == "blocked":
+            # Cards blocked with an [!ESCALATED] event count under needs_review.
+            reason = _latest_block_payload(conn, tid) or ""
+            if reason.startswith("[!ESCALATED]"):
+                out["needs_review"] += 1
+            else:
+                out["blocked"] += 1
+        elif status == "todo":
+            out["todo"] += 1
+        elif status == "triage":
+            out["triage"] += 1
+    return out
+
+
+def cmd_board(args: argparse.Namespace) -> int:
+    """One-screen orient view for Steward.
+
+    Replaces the today-fragmented `list` + `fleet-status.py` +
+    `base-inventory.py` pass with a single render that fits on a single
+    terminal screen. Sections: IN-FLIGHT, READY, NEEDS REVIEW, BLOCKED,
+    EPICS OPEN, RECENT.
+    """
+    import time as _time
+    now = int(_time.time())
+    cutoff_recent = now - 15 * 60
+
+    with _db() as conn:
+        in_flight = list(conn.execute(
+            "SELECT id, title, assignee, status, size, started_at "
+            "FROM tasks WHERE status = 'running' ORDER BY started_at"
+        ))
+        # READY excludes [EPIC] cards — epics stay `ready` for a whole
+        # phase as orchestrator-continuous trackers. They get their own
+        # EPICS OPEN section below; double-listing them here would
+        # crowd the lane Steward actually dispatches from.
+        ready = list(conn.execute(
+            "SELECT id, title, assignee, size, priority "
+            "FROM tasks WHERE status = 'ready' AND title NOT LIKE '%[EPIC]%' "
+            "ORDER BY priority DESC, created_at"
+        ))
+        blocked_rows = list(conn.execute(
+            "SELECT id, title, assignee, size FROM tasks WHERE status = 'blocked' "
+            "ORDER BY created_at"
+        ))
+        epics = list(conn.execute(
+            "SELECT id, title, status FROM tasks "
+            "WHERE title LIKE '%[EPIC]%' AND status NOT IN ('done', 'archived') "
+            "ORDER BY priority DESC, created_at"
+        ))
+        recent = list(conn.execute(
+            "SELECT e.task_id, e.kind, e.payload, e.created_at, t.title, t.assignee "
+            "FROM task_events e LEFT JOIN tasks t ON t.id = e.task_id "
+            "WHERE e.created_at >= ? "
+            "ORDER BY e.created_at DESC LIMIT 12",
+            (cutoff_recent,),
+        ))
+        # Split blocked into needs-review vs vanilla blocked.
+        needs_review = []
+        plain_blocked = []
+        for r in blocked_rows:
+            reason = _latest_block_payload(conn, r["id"]) or ""
+            if reason.startswith("[!ESCALATED]"):
+                needs_review.append((r, reason))
+            else:
+                plain_blocked.append((r, reason))
+        # Prereq status for ready cards.
+        ready_with_prereqs = []
+        for r in ready:
+            undone = conn.execute(
+                "SELECT p.id, p.status FROM task_links l JOIN tasks p ON p.id = l.parent_id "
+                "WHERE l.child_id = ? AND p.status NOT IN ('done', 'archived')",
+                (r["id"],),
+            ).fetchall()
+            ready_with_prereqs.append((r, undone))
+        # Latest comment for in-flight cards.
+        in_flight_with_notes = [(r, _latest_card_note(conn, r["id"])) for r in in_flight]
+        # Epic counts.
+        epic_counts = [(e, _epic_member_counts(conn, e["id"])) for e in epics]
+
+    if args.json:
+        print(json.dumps({
+            "board": BOARD,
+            "in_flight": [
+                {"id": r["id"], "title": r["title"], "assignee": r["assignee"],
+                 "size": r["size"], "runtime_s": now - (r["started_at"] or now),
+                 "last": note}
+                for r, note in in_flight_with_notes
+            ],
+            "ready": [
+                {"id": r["id"], "title": r["title"], "assignee": r["assignee"],
+                 "size": r["size"], "priority": r["priority"],
+                 "prereqs_undone": [u["id"] for u in undone]}
+                for r, undone in ready_with_prereqs
+            ],
+            "needs_review": [
+                {"id": r["id"], "title": r["title"], "assignee": r["assignee"],
+                 "reason": reason}
+                for r, reason in needs_review
+            ],
+            "blocked": [
+                {"id": r["id"], "title": r["title"], "assignee": r["assignee"],
+                 "reason": reason}
+                for r, reason in plain_blocked
+            ],
+            "epics_open": [
+                {"id": e["id"], "title": e["title"], **counts}
+                for e, counts in epic_counts
+            ],
+            "recent": [
+                {"task_id": r["task_id"], "kind": r["kind"], "title": r["title"],
+                 "assignee": r["assignee"], "ts": r["created_at"]}
+                for r in recent
+            ],
+        }, default=str))
+        return 0
+
+    import datetime as _dt
+    stamp = _dt.datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M")
+    print(f"{BOARD} ─ {stamp}")
+    print("─" * 60)
+
+    print(f"IN-FLIGHT ({len(in_flight_with_notes)})")
+    for r, note in in_flight_with_notes:
+        runtime = _format_age(now - (r["started_at"] or now))
+        size = r["size"] or "—"
+        title = (r["title"] or "")[:50]
+        tail = f" · last: \"{note[:50]}\"" if note else ""
+        print(f"  {r['assignee'] or '—':<10} {r['id']}  size {size:<3} runtime {runtime:<5} {title}{tail}")
+    if not in_flight_with_notes:
+        print("  (none)")
+
+    print()
+    print(f"READY ({len(ready_with_prereqs)})")
+    for r, undone in ready_with_prereqs[:6]:
+        size = r["size"] or "—"
+        title = (r["title"] or "")[:46]
+        if undone:
+            mark = f"prereqs ⏳ waits {undone[0]['id']}"
+        else:
+            mark = "prereqs ✓"
+        print(f"  {r['id']}  {r['assignee'] or '—':<10} size {size:<3} {title:<46} {mark}")
+    if len(ready_with_prereqs) > 6:
+        print(f"  … (+{len(ready_with_prereqs) - 6} more)")
+    if not ready_with_prereqs:
+        print("  (none)")
+
+    print()
+    print(f"NEEDS REVIEW ({len(needs_review)})")
+    for r, reason in needs_review:
+        # Strip the [!ESCALATED] prefix for display; the section header
+        # already conveys it.
+        short = reason.removeprefix("[!ESCALATED]").strip().lstrip(":")[:80]
+        print(f"  {r['id']}  {r['assignee'] or '—':<10} {short}")
+    if not needs_review:
+        print("  (none)")
+
+    if plain_blocked:
+        print()
+        print(f"BLOCKED ({len(plain_blocked)})")
+        for r, reason in plain_blocked:
+            short = (reason or "")[:80]
+            print(f"  {r['id']}  {r['assignee'] or '—':<10} {short}")
+
+    print()
+    print(f"EPICS OPEN ({len(epic_counts)})")
+    for e, c in epic_counts:
+        title = (e["title"] or "")[:50]
+        bits = [f"{c['done']}/{c['total']} done"]
+        if c["running"]:
+            bits.append(f"{c['running']} in-flight")
+        if c["ready"]:
+            bits.append(f"{c['ready']} ready")
+        if c["needs_review"]:
+            bits.append(f"{c['needs_review']} needs-review")
+        print(f"  {e['id']}  {title}  {' · '.join(bits)}")
+    if not epic_counts:
+        print("  (none)")
+
+    print()
+    print(f"RECENT (last 15m, {len(recent)})")
+    for r in recent:
+        when = _dt.datetime.fromtimestamp(r["created_at"]).strftime("%H:%M")
+        action_map = {
+            "created":       "created",
+            "promoted":      "promoted",
+            "blocked":       "blocked",
+            "unblocked":     "unblocked",
+            "completed":     "closed",
+            "comment_added": "comment",
+            "reassigned":    "reassign",
+            "reprioritized": "repri",
+            "edited":        "edited",
+        }
+        action = action_map.get(r["kind"], r["kind"])
+        title = (r["title"] or "")[:36]
+        print(f"  {when}  {r['assignee'] or '—':<10} {action:<8} {r['task_id']}  {title}")
+    if not recent:
+        print("  (none in window)")
+
+    return 0
+
+
+def cmd_card(args: argparse.Namespace) -> int:
+    """Detailed card view with location, size, full comments, and recent
+    events. Like ``show`` but tuned for the new schema."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT id, title, body, assignee, status, priority, "
+            "       size, location_x, location_y, location_z, "
+            "       created_at, started_at, completed_at, claim_lock "
+            "FROM tasks WHERE id = ?",
+            (args.task_id,),
+        ).fetchone()
+        if row is None:
+            _die(f"no task {args.task_id}")
+        parents = _fetch_parents(conn, args.task_id)
+        children = _fetch_children(conn, args.task_id)
+        comments = list(conn.execute(
+            "SELECT author, body, created_at FROM task_comments WHERE task_id = ? "
+            "ORDER BY created_at",
+            (args.task_id,),
+        ))
+        events = list(conn.execute(
+            "SELECT kind, payload, created_at FROM task_events WHERE task_id = ? "
+            "ORDER BY created_at DESC LIMIT 8",
+            (args.task_id,),
+        ))
+    visible, trailer = _split_body_trailer(row["body"] or "")
+
+    if args.json:
+        loc = None
+        if row["location_x"] is not None:
+            loc = {"x": row["location_x"], "y": row["location_y"], "z": row["location_z"]}
+        print(json.dumps({
+            "id": row["id"], "title": row["title"], "status": row["status"],
+            "assignee": row["assignee"], "priority": row["priority"],
+            "size": row["size"], "location": loc,
+            "body": visible, "trailer": trailer,
+            "depends_on": [dict(p) for p in parents],
+            "dependency_of": [dict(c) for c in children],
+            "comments": [
+                {"author": c["author"], "body": c["body"], "created_at": c["created_at"]}
+                for c in comments
+            ],
+            "events": [
+                {"kind": e["kind"], "payload": e["payload"], "created_at": e["created_at"]}
+                for e in events
+            ],
+        }, default=str))
+        return 0
+
+    print(f"{row['id']}  ─ {row['status']} ─ {row['assignee'] or '—'}")
+    print(f"  {row['title']}")
+    size = row["size"] or "—"
+    loc_s = (f"{row['location_x']},{row['location_y']},{row['location_z']}"
+             if row["location_x"] is not None else "—")
+    print(f"  size: {size}  ·  location: {loc_s}  ·  priority: {row['priority'] or 0}")
+    if trailer.get("epic"):
+        print(f"  epic: {trailer['epic']}")
+    if row["claim_lock"]:
+        print(f"  lock: {row['claim_lock']}")
+    if visible:
+        print("  body:")
+        for line in visible.splitlines()[:30]:
+            print(f"    {line}")
+    if parents:
+        print(f"  depends on ({len(parents)}):")
+        for p in parents:
+            tick = "✓" if p["status"] in ("done", "archived") else "◻"
+            print(f"    {tick} {p['id']}  [{p['status']}]  {p['title']}")
+    if children:
+        print(f"  blocks ({len(children)}):")
+        for c in children:
+            tick = "✓" if c["status"] in ("done", "archived") else "◻"
+            print(f"    {tick} {c['id']}  [{c['status']}]  {c['title']}")
+    if comments:
+        print(f"  comments ({len(comments)}):")
+        import datetime as _dt
+        for c in comments:
+            when = _dt.datetime.fromtimestamp(c["created_at"]).strftime("%m-%d %H:%M")
+            first = (c["body"] or "").splitlines()[0] if c["body"] else ""
+            if len(first) > 120:
+                first = first[:119] + "…"
+            print(f"    [{when} {c['author']}] {first}")
+    if events:
+        print(f"  recent events ({len(events)}):")
+        import datetime as _dt2
+        for e in events:
+            when = _dt2.datetime.fromtimestamp(e["created_at"]).strftime("%m-%d %H:%M")
+            print(f"    [{when}] {e['kind']}")
+    return 0
+
+
+# ─── command: promote / resolve / set-priority / set-after / unset-after / edit / assign ─
+
+
+def cmd_promote(args: argparse.Namespace) -> int:
+    """Manual override: force a card from todo → ready.
+
+    Used when Steward judges a card unblocked even though the dep-gate
+    would still keep it in todo (e.g. parent is an [EPIC] orchestrator
+    card that won't reach done for the whole phase). Writes a
+    ``promoted`` event so the dashboard and watchers see the transition.
+    """
+    with _db_rw() as conn:
+        row = conn.execute(
+            "SELECT id, status, title FROM tasks WHERE id = ?",
+            (args.task_id,),
+        ).fetchone()
+        if row is None:
+            _die(f"no task {args.task_id}")
+        if row["status"] not in ("todo", "triage"):
+            _die(f"promote: {args.task_id} is {row['status']}, can only promote from todo/triage")
+        # Soft warning when parents aren't all done — Steward's call to override.
+        undone_parents = conn.execute(
+            """
+            SELECT p.id, p.status FROM task_links l
+              JOIN tasks p ON p.id = l.parent_id
+             WHERE l.child_id = ? AND p.status NOT IN ('done', 'archived')
+            """,
+            (args.task_id,),
+        ).fetchall()
+        if undone_parents and not args.force:
+            ids = ", ".join(r["id"] for r in undone_parents)
+            _die(
+                f"promote: {args.task_id} has {len(undone_parents)} undone parents ({ids}). "
+                f"Re-run with --force to override the dep-gate."
+            )
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "UPDATE tasks SET status = 'ready' WHERE id = ? AND status IN ('todo', 'triage')",
+                (args.task_id,),
+            )
+            _write_event(conn, args.task_id, "promoted", {"forced": bool(undone_parents)})
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+    note = " (forced)" if undone_parents else ""
+    print(f"# promoted {args.task_id} → ready{note}")
+    return 0
+
+
+def cmd_resolve(args: argparse.Namespace) -> int:
+    """Clear an escalation: unblock + record a [RESOLVED] comment.
+
+    Mirror of ``wb escalate`` from the worker side. ``wb escalate
+    "<reason>"`` records a ``kanban_block`` with ``[!ESCALATED] …`` and
+    the dashboard surfaces it; ``kanban resolve <id> "<note>"`` reverses
+    the block and leaves an audit trail in comments. No new event kind
+    — keeps the schema flat.
+    """
+    note = args.note or "resolved by steward"
+    _hermes("unblock", args.task_id, timeout=15)
+    _hermes("comment", args.task_id, f"[RESOLVED] {note}", timeout=15)
+    print(f"# resolved {args.task_id}: {note}")
+    return 0
+
+
+def cmd_set_priority(args: argparse.Namespace) -> int:
+    with _db_rw() as conn:
+        row = conn.execute(
+            "SELECT id, priority FROM tasks WHERE id = ?", (args.task_id,)
+        ).fetchone()
+        if row is None:
+            _die(f"no task {args.task_id}")
+        old = row["priority"] or 0
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "UPDATE tasks SET priority = ? WHERE id = ?", (args.priority, args.task_id)
+            )
+            _write_event(conn, args.task_id, "reprioritized",
+                         {"from": old, "to": args.priority})
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+    print(f"# set-priority {args.task_id}: {old} → {args.priority}")
+    return 0
+
+
+def cmd_set_after(args: argparse.Namespace) -> int:
+    """Add a real prereq edge: <child> cannot start until <parent> is done."""
+    _hermes("link", args.parent, args.child, timeout=15)
+    print(f"# set-after {args.child} ← {args.parent}")
+    return 0
+
+
+def cmd_unset_after(args: argparse.Namespace) -> int:
+    _hermes("unlink", args.parent, args.child, timeout=15)
+    print(f"# unset-after {args.child} ← {args.parent}")
+    return 0
+
+
+def cmd_edit_v2(args: argparse.Namespace) -> int:
+    """Edit in-flight card fields (title / body / size / location / priority).
+
+    Hermes' upstream ``kanban edit`` only backfills result/summary on
+    completed tasks. We need to touch live cards, so this writes
+    directly. Refuses to operate on archived/done cards — those go
+    through Hermes' ``edit`` instead.
+    """
+    sets: list[str] = []
+    params: list = []
+    if args.title is not None:
+        sets.append("title = ?")
+        params.append(args.title)
+    if args.body is not None:
+        sets.append("body = ?")
+        params.append(args.body)
+    if args.size is not None:
+        size = _validate_size(args.size)
+        sets.append("size = ?")
+        params.append(size)
+    if args.at is not None:
+        x, y, z = _parse_location(args.at)
+        sets.extend(["location_x = ?", "location_y = ?", "location_z = ?"])
+        params.extend([x, y, z])
+    if args.priority is not None:
+        sets.append("priority = ?")
+        params.append(args.priority)
+    if not sets:
+        _die("edit: nothing to change (pass at least one of --title/--body/--size/--at/--priority)")
+
+    with _db_rw() as conn:
+        row = conn.execute(
+            "SELECT id, status FROM tasks WHERE id = ?", (args.task_id,)
+        ).fetchone()
+        if row is None:
+            _die(f"no task {args.task_id}")
+        if row["status"] in ("done", "archived"):
+            _die(f"edit: {args.task_id} is {row['status']} — use `hermes kanban edit` "
+                 "for backfilling result/summary on completed tasks")
+        params.append(args.task_id)
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?", params)
+            _write_event(conn, args.task_id, "edited",
+                         {"fields": [s.split(" = ")[0] for s in sets]})
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+    print(f"# edited {args.task_id}: {', '.join(s.split(' = ')[0] for s in sets)}")
+    return 0
+
+
+def cmd_assign(args: argparse.Namespace) -> int:
+    out = _hermes("assign", args.task_id, args.assignee, timeout=15)
+    if out and out.strip():
+        sys.stdout.write(out)
+    print(f"# assigned {args.task_id} → {args.assignee}")
+    return 0
+
+
 # ─── dispatch ───────────────────────────────────────────────────────────────
 
 
@@ -754,8 +1470,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    # create
-    p = sub.add_parser("create", help="Create a card; --epic for membership, --depends-on for real prereqs")
+    # create (legacy alias — kept working; prefer `add`/`add-epic`)
+    p = sub.add_parser("create", help="(legacy) Create a card; prefer `add` / `add-epic`")
     p.add_argument("title", help="Card title (often starts with [SCOUT]/[CONSTRUCT]/[SUPPLY]/[EPIC]…)")
     p.add_argument("--assignee", required=True)
     p.add_argument("--epic", help="Epic id this card belongs to (body trailer, no link)")
@@ -774,6 +1490,36 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--idempotency-key")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_create)
+
+    # add-epic
+    p = sub.add_parser("add-epic", help="Create an epic card (Steward's tracking unit for a phase)")
+    p.add_argument("title")
+    p.add_argument("--body", default="")
+    p.add_argument("--priority", type=int)
+    p.add_argument("--assignee", default="steward",
+                   help="Profile that owns the epic (default: steward)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_add_epic)
+
+    # add (action-oriented replacement for create)
+    p = sub.add_parser("add",
+                       help="Create a worker card. Use --for for epic membership, --after for real prereqs.")
+    p.add_argument("title")
+    p.add_argument("--assignee", required=True)
+    p.add_argument("--for", dest="epic_for",
+                   help="Epic id this card belongs to (body trailer, no dep gate)")
+    p.add_argument("--after", action="append", default=[], metavar="ID",
+                   help="Real prerequisite — repeatable; cannot start until each is done")
+    p.add_argument("--body", default="")
+    p.add_argument("--size", help=f"T-shirt estimate: {'/'.join(VALID_SIZES)} (default M)")
+    p.add_argument("--at", metavar="X,Y,Z",
+                   help="Location where the work happens (integer coords)")
+    p.add_argument("--priority", type=int)
+    p.add_argument("--skill", action="append", default=[])
+    p.add_argument("--max-retries", type=int)
+    p.add_argument("--idempotency-key")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_add)
 
     # list
     p = sub.add_parser("list", help="List cards (optionally filtered)")
@@ -839,10 +1585,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("assignee")
     p.set_defaults(func=cmd_reassign)
 
-    p = sub.add_parser("assign", help="Alias of reassign")
+    p = sub.add_parser("assign", help="Assign a card to a profile (upstream `hermes kanban assign`)")
     p.add_argument("task_id")
     p.add_argument("assignee")
-    p.set_defaults(func=cmd_reassign)
+    p.set_defaults(func=cmd_assign)
 
     p = sub.add_parser("comment", help="Append a comment to a card")
     p.add_argument("task_id")
@@ -852,6 +1598,58 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("archive", help="Archive one or more cards")
     p.add_argument("task_ids", nargs="+")
     p.set_defaults(func=cmd_archive)
+
+    # new action-oriented transitions
+    p = sub.add_parser("promote",
+                       help="Force a card from todo/triage → ready (override dep-gate with --force)")
+    p.add_argument("task_id")
+    p.add_argument("--force", action="store_true",
+                   help="Promote even when parents aren't all done")
+    p.set_defaults(func=cmd_promote)
+
+    p = sub.add_parser("resolve",
+                       help="Clear an escalation: unblock + record a [RESOLVED] comment")
+    p.add_argument("task_id")
+    p.add_argument("note", nargs="?")
+    p.set_defaults(func=cmd_resolve)
+
+    p = sub.add_parser("set-priority", help="Change a card's priority")
+    p.add_argument("task_id")
+    p.add_argument("priority", type=int)
+    p.set_defaults(func=cmd_set_priority)
+
+    p = sub.add_parser("set-after",
+                       help="Add a real prereq edge: <child> waits on <parent>")
+    p.add_argument("child")
+    p.add_argument("parent")
+    p.set_defaults(func=cmd_set_after)
+
+    p = sub.add_parser("unset-after", help="Remove a prereq edge")
+    p.add_argument("child")
+    p.add_argument("parent")
+    p.set_defaults(func=cmd_unset_after)
+
+    p = sub.add_parser("edit",
+                       help="Edit a live card's title/body/size/location/priority")
+    p.add_argument("task_id")
+    p.add_argument("--title")
+    p.add_argument("--body")
+    p.add_argument("--size", help=f"T-shirt estimate: {'/'.join(VALID_SIZES)}")
+    p.add_argument("--at", metavar="X,Y,Z", help="Location coords")
+    p.add_argument("--priority", type=int)
+    p.set_defaults(func=cmd_edit_v2)
+
+    # consolidated read views
+    p = sub.add_parser("board",
+                       help="One-screen orient view: in-flight + ready + needs-review + epics + recent")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_board)
+
+    p = sub.add_parser("card",
+                       help="Detailed card view with location, size, comments, and recent events")
+    p.add_argument("task_id")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_card)
 
     return ap
 
