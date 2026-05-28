@@ -1272,7 +1272,39 @@ STUB
 # Restricted hermes for orchestrator. Pass-through with subcommand denylist.
 REAL=/Users/foz/.local/bin/hermes
 sub="$1"
-sub2="$2"
+
+# Find the kanban/landfolk subcommand, skipping past global flags like
+# `--board <name>` and `--tenant <name>` that can appear between the
+# top-level command and its subcommand. Observed g-2026-05-28-6: Steward
+# invoked `hermes kanban --board landfolk-ops create ... --parent t_X`
+# and the previous `$2`-based check missed it because `$2` was `--board`.
+sub2=""
+if [ "$sub" = "kanban" ] || [ "$sub" = "landfolk" ]; then
+  skip_next=0
+  for arg in "${@:2}"; do
+    if [ "$skip_next" = "1" ]; then
+      skip_next=0
+      continue
+    fi
+    case "$arg" in
+      --board|--tenant|--workspace)
+        skip_next=1
+        continue
+        ;;
+      --*=*)
+        continue
+        ;;
+      --*)
+        continue
+        ;;
+      *)
+        sub2="$arg"
+        break
+        ;;
+    esac
+  done
+fi
+
 case "$sub" in
   gateway|daemon|plugins|update|setup|postinstall)
     echo "ERROR: 'hermes $sub' is operator-owned infrastructure." >&2
@@ -1291,21 +1323,23 @@ case "$sub" in
       create)
         # Block raw `hermes kanban create --parent <id>` — it conflates real
         # depends-on with epic-membership and wedges the dispatcher. Observed
-        # g-2026-05-27-10 and again g-2026-05-28-4 round 9 (Steward filed 3
-        # P2 cards with --parent <P2_epic>, all hit claim_rejected:
-        # parents_not_done). The facade's `--epic` vs `--depends-on` split
-        # is structurally safe — redirect here so the bug class is
-        # impossible to express from the terminal.
+        # g-2026-05-27-10, g-2026-05-28-4 round 9, g-2026-05-28-6 P2 transition
+        # (Steward filed 4 P2 SCOUT cards with --parent <P2_epic>; all hit
+        # claim_rejected: parents_not_done). The facade's `--epic` vs
+        # `--depends-on` split is structurally safe — redirect here so the
+        # bug class is impossible to express from the terminal.
         for arg in "$@"; do
-          if [ "$arg" = "--parent" ]; then
-            echo "ERROR: 'hermes kanban create --parent' is BLOCKED — it conflates two link semantics." >&2
-            echo "  Use the facade instead:" >&2
-            echo "    scripts/kanban create '<title>' --assignee X --epic <epic_id>        # membership (no gate)" >&2
-            echo "    scripts/kanban create '<title>' --assignee X --depends-on <id>       # real prereq" >&2
-            echo "  Observed bug: --parent <epic> wedges the child in todo forever because the epic" >&2
-            echo "  stays ready (orch_continuous). See prompts/landfolk/steward.md cheat sheet." >&2
-            exit 126
-          fi
+          case "$arg" in
+            --parent|--parent=*)
+              echo "ERROR: 'hermes kanban create --parent' is BLOCKED — it conflates two link semantics." >&2
+              echo "  Use the facade instead:" >&2
+              echo "    scripts/kanban create '<title>' --assignee X --epic <epic_id>        # membership (no gate)" >&2
+              echo "    scripts/kanban create '<title>' --assignee X --depends-on <id>       # real prereq" >&2
+              echo "  Observed bug: --parent <epic> wedges the child in todo forever because the epic" >&2
+              echo "  stays ready (orch_continuous). See prompts/landfolk/steward.md cheat sheet." >&2
+              exit 126
+              ;;
+          esac
         done
         ;;
     esac
