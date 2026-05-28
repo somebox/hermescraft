@@ -21,6 +21,28 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "config" / "hermescraft.yaml"
 
 
+# Defaults used when PyYAML isn't installed (e.g. bot worker Python envs
+# that ship a minimal stdlib). Keeps mc advise / capture_perception_bundle
+# working even with no yaml. Cross-check against config/hermescraft.yaml —
+# the keys below are the ones touched by tests/_lib/perception_advise.py
+# and tests/_lib/bot.py. If new code paths add a config dependency, either
+# extend this defaults dict OR have the caller env-var-override first.
+_DEFAULTS_WITHOUT_YAML: dict[str, Any] = {
+    "mc": {
+        "host": "localhost",
+        "port": 25565,
+        "auth": "offline",
+        "world": "landfolk-test",
+        "connect_timeout_ms": 55000,
+    },
+    "bot": {
+        # MC_API_URL env var always overrides this in resolve_api_url().
+        "default_api_url": "http://localhost:3001",
+        "health_poll_timeout_s": 10,
+    },
+}
+
+
 def _deep_merge(base: dict, overlay: dict) -> dict:
     """Recursive merge — overlay values win, nested dicts merged."""
     out = dict(base)
@@ -44,8 +66,24 @@ def load_config(path: Path | None = None, profile: str | None = None) -> dict[st
         Fully resolved config dict with $overrides applied and the
         $overrides key stripped from the result.
     """
-    import yaml  # lazy: callers that never invoke load_config() (e.g. mc advise
-                  # with MC_API_URL set) shouldn't need PyYAML installed.
+    try:
+        import yaml  # lazy: bot worker Python envs may not have PyYAML.
+    except ImportError:
+        # Bot workers (mc advise et al.) don't always carry PyYAML. Fall back
+        # to minimal defaults so the advise/digest path works with just
+        # MC_API_URL env var. Observed g-2026-05-28-5: Flint hit
+        # "advise is broken (missing yaml module)" while trying to dig out
+        # mason mid-rescue — a real loss-of-tool moment. Returning defaults
+        # is correct because every config key we use here also has an
+        # env-var override layer above.
+        import warnings
+        warnings.warn(
+            "PyYAML not installed — using built-in config defaults. "
+            "Install pyyaml for full config/hermescraft.yaml support.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return {k: dict(v) if isinstance(v, dict) else v for k, v in _DEFAULTS_WITHOUT_YAML.items()}
 
     config_path = path or CONFIG_PATH
     if not config_path.exists():
