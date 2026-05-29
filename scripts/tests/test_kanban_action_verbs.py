@@ -444,6 +444,30 @@ def test_board_json(env, capsys):
     assert "recent" in data
 
 
+def test_board_epic_count_excludes_chain_epics(env, capsys):
+    """A next-phase epic linked as a child must not inflate an epic's
+    member count. Observed g-2026-05-29-1: P1 showed 0/7 done · 6 ready
+    because P2 (parent-linked to P1) was counted as a 7th member."""
+    # P1 epic + 2 real worker children.
+    _insert_task(env, id="t_p1", title="[EPIC] [GENESIS:P1] base", status="ready")
+    _insert_task(env, id="t_c1", title="[SCOUT] anchor", status="ready",
+                 body="---\nepic: t_p1")
+    _insert_task(env, id="t_c2", title="[CONSTRUCT] chests", status="ready",
+                 body="---\nepic: t_p1")
+    # P2 epic depends-on P1 via task_links (the legitimate phase chain).
+    _insert_task(env, id="t_p2", title="[EPIC] [GENESIS:P2] supplies", status="todo")
+    with sqlite3.connect(str(env.DB_PATH)) as conn:
+        conn.execute("INSERT INTO task_links (parent_id, child_id) VALUES (?, ?)",
+                     ("t_p1", "t_p2"))
+    rc = env.main(["board", "--json"])
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    p1 = next(e for e in data["epics_open"] if e["id"] == "t_p1")
+    assert p1["total"] == 2  # t_c1 + t_c2, NOT t_p2
+    assert p1["ready"] == 2
+    assert p1["done"] == 0
+
+
 # ─── card (read view) ────────────────────────────────────────────────────
 
 

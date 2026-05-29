@@ -462,6 +462,11 @@ def reinit_kanban_board() -> None:
     the .db in archive_run_state; the slug dir itself still exists with
     workspaces and notify state — that's fine, board create will rebuild
     only the missing schema.
+
+    After the upstream schema lands, applies the landfolk-side card-meta
+    migration (location_x/y/z + size). Without this step a fresh genesis
+    leaves `scripts/kanban board` crashing because its query references
+    the new columns; observed g-2026-05-29-1.
     """
     if GENESIS_DRY_RUN:
         return
@@ -473,11 +478,33 @@ def reinit_kanban_board() -> None:
         # If the board record survived (only the DB was removed), `create`
         # may complain "already exists" — that's the desired end state, so
         # treat as success when the DB file now exists.
-        if KANBAN_DB.exists():
-            return
-        raise RuntimeError(
-            f"kanban board create failed: {proc.stderr[:400]}"
+        if not KANBAN_DB.exists():
+            raise RuntimeError(
+                f"kanban board create failed: {proc.stderr[:400]}"
+            )
+    _apply_landfolk_migrations()
+
+
+def _apply_landfolk_migrations() -> None:
+    """Apply landfolk-side schema migrations on top of Hermes' baseline.
+
+    Idempotent — re-running against an already-migrated DB is a no-op.
+    Each migration script must be self-contained Python that operates
+    via `--db <path> --quiet`.
+    """
+    migrations_dir = REPO_ROOT / "scripts" / "migrations"
+    if not migrations_dir.is_dir():
+        return
+    for script in sorted(migrations_dir.glob("*.py")):
+        proc = _run(
+            ["python3", str(script), "--db", str(KANBAN_DB), "--quiet"],
+            timeout=30,
         )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"landfolk migration {script.name} failed: "
+                f"{proc.stderr[:400] or proc.stdout[:400]}"
+            )
 
 
 def reset_world(seed: int, *, world: str = "world") -> None:
@@ -758,23 +785,39 @@ def seed_base_pad(cfg: dict, *, half: int = 4, pad_block: str = "cobblestone") -
         m = re.search(r"Successfully filled (\d+) block", out)
         return int(m.group(1)) if m else 0
 
-    # 2. Probe chunk readiness with a 1×1 dummy fill at the anchor center.
-    # Chunks need to be generated → streamed → forceload-activated; on a
-    # fresh-world reset that can take 5-15s while the server warms. The
-    # fixed `time.sleep(0.5)` previously here was too short on cold starts
-    # (g-2026-05-28-1: filled 0/81). Poll until the probe lands a block,
-    # then do the real fill.
+    # 2. Probe chunk readiness with a 1×1 dummy fill in EACH chunk the pad
+    # covers (not just the center). Chunks gen → stream → forceload-activate
+    # asynchronously on a fresh-world reset; the per-chunk warm time is 5-15s
+    # for the spawn chunk but can be longer for neighbors. Probing only the
+    # center (g-2026-05-29-1) confirmed cx=58,cz=3 was ready, but the actual
+    # fill spanned chunks (57,3), (57,4), (58,3), (58,4); the other three
+    # weren't loaded and the 9×9 fill returned 0 cells.
+    probe_points: list[tuple[int, int]] = []
+    for cx in range(cx1, cx2 + 1):
+        for cz in range(cz1, cz2 + 1):
+            # Pick a point inside this chunk that's also inside the pad.
+            px = max(x1, min(x2, cx * 16 + 8))
+            pz = max(z1, min(z2, cz * 16 + 8))
+            probe_points.append((px, pz))
     chunks_ready = False
-    for attempt in range(8):
+    last_failed = None
+    for attempt in range(20):
         time.sleep(1.0)
-        probe = rcon(f"fill {ax} {pad_y} {az} {ax} {pad_y} {az} minecraft:{pad_block} replace", quiet=True)
-        if "Successfully filled" in probe:
+        all_ok = True
+        for (px, pz) in probe_points:
+            probe = rcon(f"fill {px} {pad_y} {pz} {px} {pad_y} {pz} minecraft:{pad_block} replace", quiet=True)
+            if "Successfully filled" not in probe:
+                all_ok = False
+                last_failed = (px, pz, probe[:120])
+                break
+        if all_ok:
             chunks_ready = True
             break
     if not chunks_ready:
         raise RuntimeError(
-            f"seed_base_pad: chunks not ready after 8s polling at anchor ({ax},{pad_y},{az}); "
-            f"last probe output: {probe[:200]!r}"
+            f"seed_base_pad: chunks not ready after 20s polling; "
+            f"last unready cell {last_failed!r}; "
+            f"anchor ({ax},{pad_y},{az}); chunks ({cx1},{cz1})..({cx2},{cz2})"
         )
 
     filled = _fill_pad()

@@ -975,20 +975,26 @@ def _latest_card_note(conn: sqlite3.Connection, task_id: str) -> Optional[str]:
 
 def _epic_member_counts(conn: sqlite3.Connection, epic_id: str) -> dict:
     """Count members of an epic by status. Members = body-trailer hits ∪
-    real task_links children. Used by the EPICS OPEN section."""
+    real task_links children, **excluding next-phase epic-chain links**
+    (e.g. P2 is parent-linked to P1 but is its own epic, not a member of
+    P1). Used by the EPICS OPEN section."""
     trailer = conn.execute(
-        "SELECT id, status FROM tasks WHERE body LIKE ? ",
+        "SELECT id, title, status FROM tasks WHERE body LIKE ? ",
         (f"%epic: {epic_id}%",),
     ).fetchall()
     links = conn.execute(
-        "SELECT c.id, c.status FROM task_links l JOIN tasks c ON c.id = l.child_id "
-        "WHERE l.parent_id = ?",
+        "SELECT c.id, c.title, c.status FROM task_links l "
+        "JOIN tasks c ON c.id = l.child_id WHERE l.parent_id = ?",
         (epic_id,),
     ).fetchall()
     seen: dict[str, str] = {}
     for r in (*trailer, *links):
-        # Trust trailer matches that resolve to the epic exactly — skip
-        # noise from substring matches in unrelated bodies.
+        # Skip child cards that are themselves epics — those are the
+        # phase-chain neighbors (P2 depends on P1, etc.), not real
+        # worker children. Without this, P1's `0/N done` over-counts
+        # by the chain depth and Steward sees N+1 instead of N.
+        if "[EPIC]" in (r["title"] or ""):
+            continue
         seen[r["id"]] = r["status"]
     out = {"total": len(seen), "done": 0, "running": 0, "ready": 0,
            "blocked": 0, "todo": 0, "triage": 0, "needs_review": 0}
