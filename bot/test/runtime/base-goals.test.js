@@ -41,24 +41,28 @@ test('evaluateStock: stock above target_ok → no hint', () => {
 });
 
 test('evaluateStock: stock between min and ok → soft hint only', () => {
-  // stone: min=512, ok=768
-  const r = evaluateStock('cobblestone', 600);
+  const t = thresholdsFor('cobblestone');
+  assert.ok(t);
+  const stock = Math.floor((t.target_min + t.target_ok) / 2);
+  const r = evaluateStock('cobblestone', stock);
   assert.equal(r.below_min, false);
   assert.equal(r.below_ok, true);
   assert.ok(r.hint);
-  assert.match(r.hint, /600\/768/);
-  // No [SUPPLY] mention in soft-warning hint (only when below_min)
+  assert.match(r.hint, new RegExp(`${stock}\\/${t.target_ok}`));
   assert.doesNotMatch(r.hint, /SUPPLY/);
 });
 
 test('evaluateStock: stock below target_min → SUPPLY hint', () => {
-  const r = evaluateStock('cobblestone', 100);
+  const t = thresholdsFor('cobblestone');
+  assert.ok(t);
+  const stock = Math.max(0, t.target_min - 28);
+  const r = evaluateStock('cobblestone', stock);
   assert.equal(r.below_min, true);
   assert.equal(r.below_ok, true);
   assert.ok(r.hint);
-  assert.match(r.hint, /100\/512/);
+  assert.match(r.hint, new RegExp(`${stock}\\/${t.target_min}`));
   assert.match(r.hint, /SUPPLY/);
-  assert.match(r.hint, /target_ok 768/);
+  assert.match(r.hint, new RegExp(`target_ok ${t.target_ok}`));
 });
 
 test('evaluateStock: unknown item → all-empty assessment', () => {
@@ -71,8 +75,11 @@ test('evaluateStock: unknown item → all-empty assessment', () => {
 });
 
 test('evaluateStock: floors fractional counts', () => {
-  const r = evaluateStock('cobblestone', 100.7);
-  assert.match(r.hint, /100\/512/);  // floored to 100
+  const t = thresholdsFor('cobblestone');
+  assert.ok(t);
+  const stock = t.target_min - 28;
+  const r = evaluateStock('cobblestone', stock + 0.7);
+  assert.match(r.hint, new RegExp(`${stock}\\/${t.target_min}`));
 });
 
 test('resourceNames: includes at least the four documented resources', () => {

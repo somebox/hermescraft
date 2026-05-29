@@ -1,3 +1,7 @@
+<!-- NULL RESULT (2026-05-28): skill-side intervention paired with steve-produce-not-find.md;
+     underperformed persona-only arm (0.60 vs 0.80) and contributed to the broader null
+     result. See docs/context-tests/reports/2026-05-27-goals-gap-context-tuning.md. -->
+
 ---
 name: minecraft-survival
 description: "Minecraft survival progression — phase-by-phase from first day through Nether. Crafting recipes, smelting rules, home base setup, block/item name reference. Load when starting fresh, crafting, smelting, setting up base, or checking item/block names."
@@ -24,9 +28,10 @@ Command surface reference (schemas, ferry playbooks, error recovery): [`docs/mc-
 
 You control your Minecraft bot via the `mc` CLI in the terminal:
 ```
-mc status              # see everything — health, pos, inventory, nearby, chat
-mc inventory           # detailed categorized inventory
-mc nearby              # blocks + entities nearby
+mc status              # self: health, pos, holding, supplies, situation when stuck
+mc inventory           # full slot list (use before mining trips)
+mc scene               # world: LOS blocks + topology when blocked
+mc nearby              # cube scan + entities
 mc read_chat           # read player messages
 mc collect BLOCK N     # find and mine N blocks (e.g. mc collect oak_log 5)
 mc craft ITEM [N]      # craft item (need crafting table nearby for 3x3)
@@ -530,16 +535,12 @@ answers what you actually need:
 | What block am I looking at? | `mc look` | ~0.3 KB |
 | What's in front of me? | `mc map 16` | ~1.7 KB |
 | Counts of nearby blocks? | `mc nearby 16` | ~0.4 KB |
-| Quick game state + goals? | `mc status` (lean default) | ~1-2 KB |
+| Self snapshot (holding, supplies, situation)? | `mc status` (lean) | ~1-2 KB |
 | Same + recent_actions? | `mc observe` (lean default) | ~2 KB |
 | Full goal objects + plan hints? | `mc observe --full` | ~7-10 KB |
-| Every visible block's coords? | `mc scene` | ~10 KB (heavy!) |
+| World LOS + topology when blocked? | `mc scene` | varies |
 
-`mc status` and `mc observe` default to **lean** mode — they cap nearby
-entities/blocks, trim goals to {id, urgency, satisfied, gap}, and drop
-plan_hints/dashboard_signals/action_stats. Add `--full` if you genuinely
-need the verbose view. The lean default is 60-80% smaller and almost
-always sufficient.
+`mc status` is **self-only** (no block cube or embedded scene). Use `mc scene` / `mc nearby` / `mc map` for surroundings. `mc observe` defaults to lean and trims goals; add `--full` when you need verbose task context.
 
 ## When stuck
 

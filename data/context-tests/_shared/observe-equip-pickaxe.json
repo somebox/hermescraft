@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "food": 18,
+    "position": { "x": 10.5, "y": 65, "z": 10.5 },
+    "holding": "empty",
+    "hand_vs_inventory": "hand empty; iron_pickaxe in inventory — mc equip iron_pickaxe"
+  },
+  "inventory_summary": { "iron_pickaxe": 1, "cobblestone": 12 }
+}

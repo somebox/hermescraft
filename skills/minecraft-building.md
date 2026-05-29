@@ -41,7 +41,8 @@ mc through GX GY GZ [DX DY DZ]    # open door/gate, walk through, close behind
 mc interact X Y Z                 # toggle a door/gate (without traversal)
 
 # Site prep + survey
-mc status                         # position + inventory
+mc status                         # self: position, holding, supplies
+mc scene                          # world: blocks in view
 mc nearby [R]                     # blocks + entities nearby
 mc map [R]                        # compact ASCII map of the area
 mc terrain_top X Z [R]            # highest non-air Y at a column (find flat ground)

@@ -1,5 +1,5 @@
 import { ok } from '../../shared/action-contract.js';
-import { runRegionsTerrain } from '../farming-survey.js';
+import { runRegionsTerrain } from '../_farming-survey.js';
 
 /**
  * Read-only region listing (create/remove in regions/create.js).

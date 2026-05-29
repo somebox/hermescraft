@@ -54,7 +54,63 @@ Some samples returned **empty `raw_output`** (baseline 1/5, produce-not-find 1/5
 
 `context-tuner run <scenario-id> --config <experiment.yaml>` previously always passed `default.yaml` for scenario-id targets. That was fixed in `scripts/context-tests/cli/run-cmd.mjs` so `--config` is honored. Experiment runs should still use the experiment yaml as the run target (or the fixed `--config` flag) so run records show the correct `label` and fixture hashes.
 
-## Changes to consider
+## Update 2026-05-28 — counter-test results
+
+External review flagged the original recommendation: the experiment prompt named 4 of 5 allowed verbs and the single forbidden verb from the scenario matchers verbatim, so the 4/5 pass rate could not distinguish "rule internalized" from "menu recited". Two follow-up tests were run.
+
+### Softened experiment
+
+`prompts/experiments/steve-goals-priority-softened.md` replaces the explicit verb menu with a positive-only paragraph (`add to the stockpile — pick the right mc verb for producing or staging more`). No verbs from the rubric named. Config: `scripts/context-tests/configs/experiments/goals-priority-softened.yaml`.
+
+### Counter-scenario
+
+`data/context-tests/goals_gap_but_hungry.yaml` keeps the same `supply_iron` gap and iron-in-inventory state, but adds `food: 6` (≤ 14, hunger threshold from `skills/minecraft-survival.md`) and `cooked_beef: 4` in inventory. Matcher: `required_canonical_any: [eat]`, `forbidden_canonical: [withdraw]`. The right action is `mc eat`; this tests whether any change that pushes Steve toward production verbs damages hunger prioritization.
+
+### Results (5 samples per arm; softened arm was run twice, n=10 combined)
+
+| Arm | Config | `goals_gap_not_withdraw` | `goals_gap_but_hungry` |
+|-----|--------|--------------------------|------------------------|
+| baseline | production `steve.md` | 0/5 = 0.00 | 4/5 = 0.80 |
+| verbatim (`goals-priority-first`) | rubric verbs in priority block | 4/5 = 0.80 | not run on this arm |
+| softened (`goals-priority-softened`) | positive-only block, no verbs | 1/10 = 0.10 | 4/10 = 0.40 |
+
+Run ids: baseline goals_gap `r_2026-05-27T23-05-28-663Z`; baseline hungry `r_2026-05-27T23-27-10-730Z`; softened pair `r_2026-05-27T23-28-17-502Z`, `r_2026-05-27T23-31-28-056Z`.
+
+### Interpretation
+
+- **Rubric leak confirmed.** Removing the verb menu collapses pass rate from 0.80 → 0.10 on `goals_gap_not_withdraw`. The verbatim arm's win was dominated by recitation; the underlying rule did not generalize at all in this model.
+- **Side regression confirmed.** The softened arm also drops hunger handling from 0.80 → 0.40. The "Survival rules still come first" footnote in the softened text was not enough to keep the model from over-applying the new goals-gap heuristic when hungry.
+- **Net effect: worse than baseline.** Softened version produces no measurable improvement on the original scenario AND degrades a tangential one. Verbatim version is non-generalizing.
+- **Empty-output anomaly.** The two softened runs had 11 of 20 empty `raw_output` responses. Production baseline runs at similar prompt length had 1 of 5. Cause unclear (API flake correlated to a single afternoon's calls vs prompt-specific destabilization); not actionable from this data but noted for follow-up.
+
+### Observe-layer follow-up (no prompt change)
+
+External review suggested testing whether the failure is doctrine-shaped or observation-shaped. Hypothesis: the model fails not because it lacks the rule, but because it doesn't cross-reference inventory against the open goal. Test: add `you_hold: 5` and `gap_after_deposit: 23` to the goal entry in the observe, leave Steve and survival skill at production. New fixture: `data/context-tests/_shared/observe-goals-gap-itemized.json`. Experiment: `scripts/context-tests/configs/experiments/goals-observe-itemized.yaml`. Scenario-patched via overrides (no scenario duplication).
+
+Result: `r_2026-05-27T23-47-32-382Z` — **2/5 = 0.40** vs baseline 0.00. No prompt change, no rubric leak.
+
+Outputs: passing samples opened with `mc collect oak_log 4` (gearing up toward iron pickaxe). Failing samples opened with `mc inventory`, `mc craft iron_pickaxe`, or `mc read_chat` — all arguably reasonable opening moves the matcher classifies as fail. Zero empty outputs on this arm (5/5 non-empty), which weakens the "longer prompt destabilizes generation" hypothesis from the softened arm.
+
+The observe-layer fix is **directionally correct** but limited by matcher narrowness. Two interpretations:
+
+- The scenario matcher should accept `inventory` and possibly `craft` as legitimate produce-adjacent opening moves; widening would lift 0.40 → ~0.80 without doctrine.
+- Some samples still picked `craft iron_pickaxe` directly (no produce intent at all), so observation cues alone don't fully internalize the rule.
+
+### Revised recommendation
+
+1. **Do not promote either Steve variant.** Neither version is a net improvement.
+2. **Keep the experiment files in `prompts/experiments/` and the counter-scenario in `data/context-tests/`** as a documented null result. The harness behaved correctly; the failure mode is in the doctrine, not the workbench.
+3. The scenario `goals_gap_not_withdraw` may itself be too narrow: `mc inventory`, `mc find iron_ingot`, `mc craft_plan iron_pickaxe` are arguably reasonable opening moves the matcher classifies as fail. Either widen the matcher (allow `inventory`, `find`) or accept that this is exploratory rather than a promotion gate.
+4. **Prefer the observe-layer fix over a doctrine fix.** Exposing `you_hold` / `gap_after_deposit` in the goals observation lifts baseline 0.00 → 0.40 with no prompt change. If `mc goals` ships this shape in production, the connection between inventory and goal is forced by the data rather than taught by a rule — cheaper to maintain, harder to overfit, applies to scenarios we haven't authored yet. This is the recommended direction.
+5. If the goals-gap rule still seems worth teaching after the observe change, the survival skill (near smelting/resource decisions) is the next-cheapest place — re-test with the counter-scenario before promoting.
+
+### Skill-side intervention also underperformed
+
+The `produce-not-find` arm forked both the persona (Steve iron paragraph) and the skill (survival crafting guard). It scored 0.60 on `goals_gap_not_withdraw` vs the persona-only verbatim arm's 0.80. The heavier delta did not help. **Do not reach for skill forks first** when a persona-level change is available.
+
+---
+
+## Changes to consider (original, retained for context — superseded by Update above)
 
 ### 1. Promote (recommended candidate): priority checklist in production Steve
 

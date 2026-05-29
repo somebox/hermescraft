@@ -95,22 +95,23 @@ class BotClient:
         return self.status_lean().get("position") or {}
 
     def inventory(self) -> dict[str, int]:
-        """Bot inventory flattened to {item_name: count}.
-
-        The /status endpoint returns a list of {name, count, ...} items;
-        most legacy tests iterate it looking for a specific item. Returning
-        a dict is the canonical form.
-        """
-        items = self.status_lean().get("inventory") or []
+        """Bot inventory flattened to {item_name: count} via GET /inventory."""
+        data = self.get("/inventory", timeout=5.0).get("data") or {}
+        categories = data.get("categories") or {}
         out: dict[str, int] = {}
-        for it in items:
-            name = it.get("name")
-            if not name:
+        for _cat, entries in categories.items():
+            if not isinstance(entries, list):
                 continue
-            try:
-                out[name] = out.get(name, 0) + int(it.get("count") or 0)
-            except (TypeError, ValueError):
-                continue
+            for it in entries:
+                if not isinstance(it, dict):
+                    continue
+                name = it.get("name")
+                if not name:
+                    continue
+                try:
+                    out[name] = out.get(name, 0) + int(it.get("count") or 0)
+                except (TypeError, ValueError):
+                    continue
         return out
 
     def inventory_delta(

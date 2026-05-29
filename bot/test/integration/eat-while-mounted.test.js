@@ -93,12 +93,13 @@ const mcData = {
 
 // ─────────────────────────────────────────────────────────────────────────
 
-test('mc eat: on dry land + food not held → equip + consume', async () => {
+test('mc eat: on dry land + food in hotbar → quickbar select + consume', async () => {
   const bot = makeBot();
   const combat = createCombatActions(eatDeps(bot, mcData));
   const r = await combat.eat();
   assert.match(r.result, /Ate cooked_beef/);
-  assert.equal(bot._stats().equipCalls, 1);
+  assert.equal(bot._stats().equipCalls, 0, 'hotbar food uses setQuickBarSlot, not equip');
+  assert.equal(bot._stats().setSlotCalls, 1);
   assert.equal(bot._stats().consumed, true);
 });
 
@@ -113,19 +114,15 @@ test('mc eat: food already in hand → skip equip, call consume directly', async
   assert.equal(bot._stats().consumed, true);
 });
 
-test('mc eat: mounted + equip fails → fall through to consume via hotbar slot', async () => {
-  // mineflayer's b.equip throws when mounted. The fix: catch + try
-  // setQuickBarSlot, then consume anyway. As long as the underlying
-  // server accepts the use-item packet, vanilla MC eats in boats.
+test('mc eat: mounted + hotbar food → quickbar select + consume', async () => {
   const food = { name: 'cooked_beef', count: 32, slot: 36 };
   const bot = makeBot({ foods: [food], mounted: true, equipWorks: false });
   const combat = createCombatActions(eatDeps(bot, mcData));
   const r = await combat.eat();
-  // Eat succeeds; result mentions "(mounted)" + an equip warning.
   assert.match(r.result, /Ate cooked_beef/);
   assert.match(r.result, /mounted/);
-  assert.match(r.result, /equip warn/);
-  assert.equal(bot._stats().setSlotCalls, 1, 'hotbar-slot fallback should fire on equip failure');
+  assert.equal(bot._stats().equipCalls, 0);
+  assert.equal(bot._stats().setSlotCalls, 1);
   assert.equal(bot._stats().consumed, true);
 });
 

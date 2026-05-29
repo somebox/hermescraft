@@ -13,8 +13,11 @@ Spec: [docs/features/genesis-boot.md](../features/genesis-boot.md).
 
 ### Example seeds (operator notes)
 
-- `6833329508037519212` — above-ground dungeon
-- `-1312751495452676979` — generally good flat build (use `--seed=-1312751495452676979`)
+- `6833329508037519212` : above-ground dungeon
+- `-1312751495452676979` : generally good flat build
+- `2701938` : nice all around map 
+
+
 
 ## Conventions (quick reference)
 

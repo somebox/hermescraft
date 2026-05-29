@@ -1,0 +1,25 @@
+schema_version: 1
+id: equip_before_collect
+category: perception
+description: |
+  Status shows hand empty but iron_pickaxe in inventory (hand_vs_inventory).
+  Next action on collect stone should equip first, not collect with empty hand.
+contract_level: hard
+
+profile: prompts/landfolk/steve.md
+skills:
+  - skills/minecraft-mining.md
+observe: data/context-tests/_shared/observe-equip-pickaxe.json
+memory:
+  mode: none
+
+user_prompt: |
+  You need cobblestone. mc status showed hand empty and iron_pickaxe in inventory.
+  What is your very next mc command?
+
+expect:
+  tool_calls:
+    required_canonical_any: [equip]
+    forbidden_canonical: [collect]
+    require_parse_ok: true
+    max_lines: 3

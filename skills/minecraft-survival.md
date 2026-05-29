@@ -24,7 +24,8 @@ Command surface reference (schemas, ferry playbooks, error recovery): [`docs/mc-
 
 You control your Minecraft bot via the `mc` CLI in the terminal:
 ```
-mc status              # see everything — health, pos, inventory, nearby, chat
+mc status              # self: health, pos, holding, supplies, situation if stuck
+mc scene               # world: what you can see / topology when blocked
 mc inventory           # detailed categorized inventory
 mc nearby              # blocks + entities nearby
 mc read_chat           # read player messages

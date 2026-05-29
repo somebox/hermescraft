@@ -1,0 +1,9 @@
+inherits: ../default.yaml
+label: goals-priority-softened
+suite:
+  scenarios:
+    - goals_gap_not_withdraw
+    - goals_gap_but_hungry
+overrides:
+  prompts:
+    "prompts/landfolk/steve.md": "prompts/experiments/steve-goals-priority-softened.md"

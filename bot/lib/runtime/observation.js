@@ -3,10 +3,36 @@ import { Vec3 } from 'vec3';
 import { scoreGoals } from '../goals/engine.js';
 import { refreshLeaseCheckpoint, taskToApi } from '../goals/tasks.js';
 import { summarizeSocialGraph, selectRecentChat } from '../shared/chat.js';
+import { formatStandingSituation, isStuckStandingClassification } from '../shared/perception.js';
 import { buildActionStats, classifyIdleReason } from '../server/diagnostics.js';
 
+/** Remaining durability for tools/weapons/armor (F54.3 damage model). */
+function durabilityRemaining(item) {
+  if (!item?.maxDurability || item.maxDurability <= 0) return null;
+  let damage = 0;
+  if (Array.isArray(item.components)) {
+    const dmg = item.components.find((c) => c && c.type === 'damage');
+    if (dmg && typeof dmg.data === 'number') damage = dmg.data;
+  } else if (item.durability != null) {
+    damage = item.durability;
+  }
+  return Math.max(0, item.maxDurability - damage);
+}
+
+function buildSuppliesDict(inv, limit = 12) {
+  const supplies = {};
+  const sorted = [...inv].sort((a, b) => (b.count || 0) - (a.count || 0));
+  for (const i of sorted.slice(0, limit)) {
+    supplies[i.name] = (supplies[i.name] || 0) + i.count;
+  }
+  return supplies;
+}
+
 export function createObservation(deps) {
-  const { ctx, ensureBot, fmt, posObj, loadLocations, filterEntitiesFairPlay, buildSceneSummary, fireDueReminders, FAIR_PLAY, itemStr } = deps;
+  const {
+    ctx, ensureBot, fmt, posObj, loadLocations, filterEntitiesFairPlay, buildSceneSummary,
+    fireDueReminders, FAIR_PLAY, itemStr, getStandingState,
+  } = deps;
 
   function taskContextBrief() {
     const tc = ctx.runtime?.taskContext;
@@ -440,46 +466,18 @@ export function createObservation(deps) {
         health: e.health ?? undefined,
       }));
 
-    // Nearby blocks (scan 5-block radius, aggregate by type)
-    const blockCounts = {};
-    const notableBlocks = []; // specific blocks worth calling out
-    for (let dx = -5; dx <= 5; dx++) {
-      for (let dy = -3; dy <= 4; dy++) {
-        for (let dz = -5; dz <= 5; dz++) {
-          const block = b.blockAt(pos.offset(dx, dy, dz));
-          if (block && block.name !== 'air' && block.name !== 'cave_air') {
-            blockCounts[block.name] = (blockCounts[block.name] || 0) + 1;
-            // Note ores and interesting blocks with positions
-            if (block.name.includes('ore') || block.name === 'crafting_table' || 
-                block.name === 'furnace' || block.name === 'chest' ||
-                block.name.includes('log') || block.name === 'water' ||
-                block.name === 'lava') {
-              if (notableBlocks.length < 20) {
-                notableBlocks.push({
-                  name: block.name,
-                  position: { x: block.position.x, y: block.position.y, z: block.position.z },
-                });
-              }
-            }
-          }
-        }
-      }
+    const supplies = buildSuppliesDict(inv, lean ? 12 : 24);
+    const held = ctx.world.bot.heldItem;
+    let holding = 'empty';
+    if (held) {
+      const base = itemStr(held) || { name: held.name, count: held.count };
+      const rem = durabilityRemaining(held);
+      holding = rem != null ? { ...base, durability_left: rem } : base;
     }
 
-    const nearbyBlocks = Object.entries(blockCounts)
-      .sort((a, c) => c[1] - a[1])
-      .slice(0, lean ? 6 : 20)
-      .map(([name, count]) => ({ name, count }));
-
-    // What we're looking at. Scene summary is the heavy hitter inside
-    // /status (~2KB). In lean mode we still build the summary text but
-    // drop the structured visible_block_hits/visible_entities arrays.
-    const scene = buildSceneSummary({ range: lean ? 12 : 16 });
-    const leanScene = lean && scene ? { summary: scene.summary, range: scene.range } : null;
     const target = b.blockAtCursor?.(5);
     const lookingAt = target ? { name: target.name, position: posObj(target.position) } : null;
 
-    // Biome
     const biome = b.blockAt(pos)?.biome?.name || 'unknown';
 
     // Unread chat
@@ -547,6 +545,34 @@ export function createObservation(deps) {
       }
     } catch { /* never let stuck-calc fail the whole status response */ }
 
+    let hand_vs_inventory;
+    const items = inv;
+    const handName = held?.name;
+    const toolInHand = handName && (
+      handName.endsWith('_pickaxe')
+      || (handName.endsWith('_axe') && !handName.endsWith('_pickaxe'))
+      || handName.endsWith('_shovel')
+    );
+    if (!toolInHand) {
+      const pick = items.find((i) => i.name?.endsWith('_pickaxe'));
+      const axe = items.find((i) => i.name?.endsWith('_axe') && !i.name?.endsWith('_pickaxe'));
+      const shovel = items.find((i) => i.name?.endsWith('_shovel'));
+      const tool = pick || axe || shovel;
+      if (tool && (!held || !handName || handName === 'air')) {
+        hand_vs_inventory = `hand empty; ${tool.name} in inventory — mc equip ${tool.name}`;
+      }
+    }
+
+    let situation;
+    if (getStandingState) {
+      try {
+        const st = getStandingState(b);
+        if (isStuckStandingClassification(st.classification) || st.head_blocked) {
+          situation = formatStandingSituation(st);
+        }
+      } catch { /* ignore */ }
+    }
+
     return {
       health: fmt(b.health),
       ...(lean ? {} : { maxHealth: 20 }),
@@ -566,7 +592,9 @@ export function createObservation(deps) {
       time: time,
       ...(lean ? {} : { isDay: time < 12000 }),
       ...(lean ? {} : { timePhase: time < 6000 ? 'morning' : time < 12000 ? 'afternoon' : time < 18000 ? 'evening' : 'night' }),
-      holding: ctx.world.bot.heldItem ? itemStr(ctx.world.bot.heldItem) : 'empty',
+      holding,
+      ...(hand_vs_inventory ? { hand_vs_inventory } : {}),
+      ...(situation ? { situation } : {}),
       // circuit-v16: explicit mounted-state on /status so the agent
       // doesn't lose track of "I'm on a boat" between actions.
       //
@@ -581,11 +609,9 @@ export function createObservation(deps) {
         hint: "You are mounted. Use mc sail_to X Y Z to travel — it resumes from the current mounted position. mc disembark to dismount. Do not call mc move while mounted.",
       } : false,
       ...(lean ? {} : { experience: { level: b.experience?.level || 0 } }),
-      inventory: inv.map(i => ({ name: i.name, count: i.count })),
+      supplies,
       ...(lean ? {} : { inventoryCount: inv.length }),
-      nearbyBlocks,
-      ...(lean ? {} : { notableBlocks }),
-      nearbyEntities: lean ? entities.slice(0, 5) : entities,
+      nearby_entities: lean ? entities.slice(0, 5) : entities,
       ...(entities.some(e => e.kind === 'player') ? {
         nearbyPlayers: entities.filter(e => e.kind === 'player').map(p => ({ name: p.username || p.type, distance: p.distance, position: p.position })),
       } : {}),
@@ -602,7 +628,6 @@ export function createObservation(deps) {
       ...(ctx.runtime.soundEvents.length > 0 ? {
         sounds: ctx.runtime.soundEvents.slice(lean ? -2 : -5),
       } : {}),
-      scene: leanScene || scene,
       ...(lean ? {} : { social_summary: summarizeSocialGraph(ctx.social.socialGraph) }),
       // Team info
       ...(ctx.team.teamConfig.team ? {

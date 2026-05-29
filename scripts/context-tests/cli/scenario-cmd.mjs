@@ -55,7 +55,7 @@ export function runScenario(argv) {
     return;
   }
   if (sub === 'validate') {
-    const id = positional[0];
+    const id = positional[1];
     if (id === '--all' || flags.has('all')) {
       const r = spawnSync('node', [VERIFY], { cwd: REPO_ROOT, encoding: 'utf8' });
       if (r.stdout) process.stderr.write(r.stdout);

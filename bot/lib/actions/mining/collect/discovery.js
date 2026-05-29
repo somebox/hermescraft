@@ -2,6 +2,8 @@ import { Vec3 } from 'vec3';
 import { gotoWithTimeout } from '../goto-with-timeout.js';
 import { AIR_NAMES } from '../../_block-sets.js';
 import { ok, fail } from '../../../shared/action-contract.js';
+import { standingState } from '../../_nav-helpers.js';
+import { formatStandingSituation, isStuckStandingClassification } from '../../../shared/perception.js';
 
 /**
  * Given an item name (e.g. "cobblestone"), return the list of OTHER block
@@ -267,11 +269,18 @@ export async function collectDiscoveryPhase(cctx) {
   }
 
   if (found.length === 0) {
-    const message = ctx.reactive.fairPlayMode
+    let message = ctx.reactive.fairPlayMode
       ? isTrunkHarvest
         ? `No ${blockName} with harvest line-of-sight in range (leaves/water between you and the trunk are ok; dirt/stone/other wood are not).`
         : `Can't see any ${blockName} right now. Turn, move, or use mc scene/mc look before collecting.`
       : `No ${blockName} found within 64 blocks.`;
+    try {
+      const st = standingState(b);
+      if (isStuckStandingClassification(st.classification) || st.head_blocked) {
+        const line = formatStandingSituation(st);
+        if (line) message += ` ${line}`;
+      }
+    } catch { /* ignore */ }
     return {
       terminal: true,
       response: fail('NO_VISIBLE_BLOCKS', message, {

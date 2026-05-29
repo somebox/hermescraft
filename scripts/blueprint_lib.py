@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections import Counter
 from typing import Any
 
 STRIP_SUFFIX_RE = re.compile(
@@ -70,6 +71,32 @@ def metadata_footprint(meta: dict) -> dict[str, Any]:
     return {"mode": "metadata", "local": {"x": [1, w], "y": [1, h], "z": [1, d]}}
 
 
+def footprint_mins(footprint: dict) -> tuple[int, int, int]:
+    loc = footprint["local"]
+    return loc["x"][0], loc["y"][0], loc["z"][0]
+
+
+def floor_world_y(anchor: list[int], footprint: dict) -> int:
+    """World Y of the lowest local layer (foundation / layer 1)."""
+    mx, my, _mz = footprint_mins(footprint)
+    loc = footprint["local"]
+    return int(anchor[1] + (loc["y"][0] - my))
+
+
+def anchor_from_marker(marker: list[int], footprint: dict) -> list[int]:
+    """Min-corner anchor: footprint center on marker XZ, floor Y = marker Y."""
+    loc = footprint["local"]
+    mx, my, mz = footprint_mins(footprint)
+    cx = (loc["x"][0] + loc["x"][1]) // 2
+    cz = (loc["z"][0] + loc["z"][1]) // 2
+    floor_local_y = loc["y"][0]
+    return [
+        int(marker[0] - (cx - mx)),
+        int(marker[1] - (floor_local_y - my)),
+        int(marker[2] - (cz - mz)),
+    ]
+
+
 def normalize_block_id(raw: str) -> str:
     s = (raw or "").strip().lower().replace(" ", "_").replace("-", "_")
     s = re.sub(r"[^a-z0-9_]", "", s)
@@ -78,6 +105,38 @@ def normalize_block_id(raw: str) -> str:
         prev = s
         s = STRIP_SUFFIX_RE.sub("", s)
     return s or "unknown"
+
+
+def is_door_block(block_id: str) -> bool:
+    return normalize_block_id(block_id).endswith("_door")
+
+
+def placement_block_id(block_id: str) -> str:
+    """Canonical id stored in plan cells (GrabCraft door halves → oak_door, etc.)."""
+    base = normalize_block_id(block_id)
+    if base.endswith("_door"):
+        return base
+    return block_id
+
+
+def materials_planned_from_cells(cells: list[dict]) -> list[tuple[str, int]]:
+    """Supply manifest: normalized ids; one door item per (local x,z) column."""
+    counts: Counter = Counter()
+    door_at: dict[tuple[int, int], tuple[int, str]] = {}
+    for c in cells:
+        bid = c["block"]
+        base = normalize_block_id(bid)
+        lx, ly, lz = c["local"]
+        if base.endswith("_door"):
+            key = (lx, lz)
+            prev = door_at.get(key)
+            if prev is None or ly < prev[0]:
+                door_at[key] = (ly, base)
+            continue
+        counts[base] += 1
+    for _, door_id in door_at.values():
+        counts[door_id] += 1
+    return counts.most_common()
 
 
 def compare_blocks(plan_id: str, world_name: str) -> tuple[bool, str | None]:

@@ -204,6 +204,11 @@ try:
     with gl.log_step(run_id, 'difficulty_initial'):
         if not cfg.get('difficulty'):
             gl.rcon(f'difficulty {pin}', quiet=True)
+    # Refresh derived artifacts + sync repo skills/SOULs/config to
+    # ~/.hermes profiles BEFORE bringing bots up, so this run starts with
+    # the current cheatsheet and any skill edits since the last deploy.
+    with gl.log_step(run_id, 'landfolk_deploy'):
+        gl.landfolk_deploy()
     # Start bots BEFORE filling the chest — fill uses Steward as the service
     # bot to TP + /give + mc deposit, so Steward must be online.
     with gl.log_step(run_id, 'landfolk_start'):

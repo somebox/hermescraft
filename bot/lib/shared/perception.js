@@ -104,3 +104,32 @@ export function summarizeSceneText({ lookingAt, visibleBlocks = [], visibleEntit
   parts.push('Unknown areas remain hidden behind terrain and outside the current view cone.');
   return parts.join(' ');
 }
+
+/** One-line locale summary from standingState() (pit vs sealed vs head-block). */
+export function formatStandingSituation(standing) {
+  if (!standing || standing.error) return null;
+  const { classification: c, head_blocked: headBlocked, ceiling_within: ceilingWithin } = standing;
+  if (headBlocked || c === 'head_blocked') {
+    return 'Head-level block is blocking movement — dig or step aside.';
+  }
+  if (c === 'enclosure_inside') {
+    const ceil = ceilingWithin != null ? ` within ${ceilingWithin}` : '';
+    return `Sealed: walls and ceiling${ceil} — dig out before moving or collecting.`;
+  }
+  if (c === 'trapped' || c === 'three_walled') {
+    if (ceilingWithin == null) {
+      return 'Boxed in: walls on several sides, open sky above — dig up or escape.';
+    }
+    return 'Walled on multiple sides — find an open direction or dig out.';
+  }
+  if (c === 'edge' && standing.cliff_dirs?.length) {
+    return `Ledge nearby (${standing.cliff_dirs.join(', ')}) — mind drops before moving.`;
+  }
+  return null;
+}
+
+const STUCK_CLASSIFICATIONS = new Set(['trapped', 'enclosure_inside', 'three_walled', 'head_blocked']);
+
+export function isStuckStandingClassification(classification) {
+  return STUCK_CLASSIFICATIONS.has(classification);
+}

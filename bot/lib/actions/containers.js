@@ -4,6 +4,7 @@ import { ensureWithinReach } from './_helpers.js';
 import { canSeeBlockFaces } from './_los.js';
 import { fail } from '../shared/action-contract.js';
 import { evaluateStock } from '../runtime/base-goals.js';
+import { inventoryHas } from '../runtime/inventory-hints.js';
 
 /**
  * Build a low-stock hints object from a container snapshot. For each
@@ -36,7 +37,20 @@ function buildLowStockHints(containerSnapshotArr) {
 
 // Snapshots older than this surface with `stale: true` in chest_search and
 // sort behind fresh hits. Override via MC_CHEST_STALE_HOURS env var.
-const CHEST_SNAPSHOT_STALE_HOURS = Number(process.env.MC_CHEST_STALE_HOURS || 6);
+export function parseChestSnapshotStaleHours(rawValue, fallback = 6) {
+  const fallbackHours = Number.isFinite(Number(fallback)) && Number(fallback) > 0
+    ? Math.floor(Number(fallback))
+    : 6;
+  const n = Number(rawValue);
+  if (!Number.isFinite(n) || n <= 0) return fallbackHours;
+  // Guard extreme values from accidentally disabling stale-ness in practice.
+  return Math.min(Math.floor(n), 24 * 30);
+}
+
+const CHEST_SNAPSHOT_STALE_HOURS = parseChestSnapshotStaleHours(
+  process.env.MC_CHEST_STALE_HOURS,
+  6,
+);
 
 /**
  * Remove every chestSnapshots entry whose `position` matches (ix,iy,iz).
@@ -356,6 +370,134 @@ function nearbyDroppedItems(b, maxDistance = 4) {
  */
 export function createContainerActions(deps) {
   const { ctx, config, ensureBot, goals, fmt, posObj, sleep, log, loadLocations, saveLocations, flagMarkStale, clearMarkStale, resolveMarkPlaceFromBody, resolveContainerCoords, normalizeDepositWithdrawItems, buildMarksListApi, isContainerBlock, findNearbyContainer, snapshotChestAtPosition, rememberSocialEvent, saveReminders, getMyName } = deps;
+  async function runContainerTransfer(mode, body) {
+    const isDeposit = mode === 'deposit';
+    const b = ensureBot();
+    const opened = await openContainerStructured(deps, body);
+    if (!opened.ok) return opened;
+    const { chest, x, y, z, block } = opened;
+    const containerKind = block.name;
+    const modeLabel = isDeposit ? 'Deposit' : 'Withdraw';
+
+    let itemsNorm;
+    try {
+      itemsNorm = normalizeDepositWithdrawItems(body);
+    } catch (err) {
+      try { chest.close(); } catch {}
+      return {
+        ok: false,
+        error: {
+          code: 'MISSING_ITEMS',
+          message: /** @type {Error} */(err).message,
+          observed_state: { body_keys: Object.keys(body || {}) },
+          retry_safe: false,
+        },
+      };
+    }
+
+    const inventoryBefore = inventorySnapshot(b);
+    const containerBefore = containerSnapshot(chest.containerItems());
+    const steps = [];
+    const ambiguous = [];
+    const not_found = [];
+    let containerAfter = {};
+    let after = [];
+
+    try {
+      for (const req of itemsNorm) {
+        const sourceItems = isDeposit ? b.inventory.items() : chest.containerItems();
+        const ref = resolveItemRef(sourceItems, req.item);
+        if (!ref.ok) {
+          if (ref.code === 'AMBIGUOUS') {
+            ambiguous.push({ item: req.item, candidates: ref.candidates });
+            steps.push(
+              isDeposit
+                ? `skip ${req.item} (ambiguous: ${ref.candidates.join(', ')})`
+                : `skip ${req.item} (ambiguous in chest: ${ref.candidates.join(', ')})`,
+            );
+          } else {
+            not_found.push(req.item);
+            steps.push(isDeposit ? `skip ${req.item} (missing in inventory)` : `skip ${req.item} (not in chest)`);
+          }
+          continue;
+        }
+        const targetCount =
+          req.count && req.count > 0 ? Math.min(req.count, ref.match.total_count) : ref.match.total_count;
+        const liveItem = sourceItems.find((i) => i.name === ref.match.name);
+        if (!liveItem) {
+          not_found.push(req.item);
+          steps.push(isDeposit ? `skip ${req.item} (missing in inventory)` : `skip ${req.item} (not in chest)`);
+          continue;
+        }
+        if (isDeposit) await chest.deposit(liveItem.type, null, targetCount);
+        else await chest.withdraw(liveItem.type, null, targetCount);
+        steps.push(`${isDeposit ? 'deposited' : 'withdrew'} ${targetCount}x ${ref.match.name}`);
+      }
+
+      after = chest.containerItems();
+      snapshotChestAtPosition(x, y, z, after);
+      containerAfter = containerSnapshot(after);
+    } finally {
+      try { chest.close(); } catch {}
+    }
+
+    const verified = await verifiedInventorySnapshot(b, sleep);
+    const inventoryAfter = verified.inventory;
+    const totalAfter = after.reduce((s, i) => s + i.count, 0);
+    const inventory_delta = diffInventory(inventoryBefore, inventoryAfter);
+    const container_delta = diffInventory(containerBefore, containerAfter);
+    const dropped_nearby = verified.sync_warning ? nearbyDroppedItems(b) : [];
+    const movedAnything = Object.values(inventory_delta).some((v) => (isDeposit ? v < 0 : v > 0));
+
+    if (!movedAnything && (ambiguous.length > 0 || not_found.length > 0)) {
+      return {
+        ok: false,
+        error: {
+          code: ambiguous.length > 0 ? 'AMBIGUOUS_ITEM' : 'ITEM_NOT_FOUND',
+          message: ambiguous.length > 0
+            ? `${modeLabel} blocked — ambiguous item references: ${ambiguous.map((a) => `${a.item}→[${a.candidates.join(', ')}]`).join('; ')}`
+            : `${modeLabel} blocked — items ${isDeposit ? 'not in inventory' : 'not in chest'}: ${not_found.join(', ')}`,
+          observed_state: {
+            container_kind: containerKind,
+            container_position: { x, y, z },
+            ambiguous,
+            not_found,
+            ...(isDeposit ? { inventory_before: inventoryBefore } : { container_before: containerBefore }),
+          },
+          next_action_hint: ambiguous.length > 0
+            ? 'Re-run with the exact item name (e.g. oak_planks instead of planks)'
+            : (isDeposit ? 'mc inventory to check what you actually have' : 'mc list_container to see what is actually in this chest'),
+          retry_safe: false,
+        },
+      };
+    }
+
+    const lowStockHints = buildLowStockHints(containerAfter);
+    const lowStockSuffix = lowStockHints && lowStockHints[0]
+      ? ` ${lowStockHints[0].hint}`
+      : '';
+
+    return {
+      ok: true,
+      data: {
+        container_kind: containerKind,
+        container_position: { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) },
+        inventory_delta,
+        container_delta,
+        container_inventory_after: containerAfter,
+        container_slots_after: after.map((i) => ({ name: i.name, count: i.count, slot: i.slot })),
+        container_total_after: totalAfter,
+        steps,
+        ambiguous_skipped: ambiguous,
+        not_found_skipped: not_found,
+        ...(verified.sync_warning ? { sync_warning: verified.sync_warning } : {}),
+        ...(dropped_nearby.length ? { dropped_nearby } : {}),
+        ...(lowStockHints ? { low_stock_hints: lowStockHints } : {}),
+      },
+      result: `${modeLabel}: ${steps.join('; ') || '(nothing moved)'}${(!isDeposit && verified.sync_warning) ? ' ⚠ inventory sync diverged — see sync_warning' : ''}${lowStockSuffix}`,
+    };
+  }
+
   return {
     async list_container(body) {
       const b = ensureBot();
@@ -390,262 +532,11 @@ export function createContainerActions(deps) {
     },
 
     async deposit(body) {
-      const b = ensureBot();
-      const opened = await openContainerStructured(deps, body);
-      if (!opened.ok) return opened;
-      const { chest, x, y, z, block } = opened;
-      const containerKind = block.name;
-
-      let itemsNorm;
-      try {
-        itemsNorm = normalizeDepositWithdrawItems(body);
-      } catch (err) {
-        try { chest.close(); } catch {}
-        return {
-          ok: false,
-          error: {
-            code: 'MISSING_ITEMS',
-            message: /** @type {Error} */(err).message,
-            observed_state: { body_keys: Object.keys(body || {}) },
-            retry_safe: false,
-          },
-        };
-      }
-
-      const inventoryBefore = inventorySnapshot(b);
-      const containerBefore = containerSnapshot(chest.containerItems());
-
-      const steps = [];
-      const ambiguous = [];
-      const not_found = [];
-      // Capture container state INSIDE the try (chest open) and inventory
-      // state AFTER chest.close (mineflayer syncs window→bot.inventory only
-      // on close — sampling inventory while the window is open returns the
-      // pre-open snapshot).
-      let containerAfter = null;
-      let after = null;
-      try {
-        for (const req of itemsNorm) {
-          const ref = resolveItemRef(b.inventory.items(), req.item);
-          if (!ref.ok) {
-            if (ref.code === 'AMBIGUOUS') {
-              ambiguous.push({ item: req.item, candidates: ref.candidates });
-              steps.push(`skip ${req.item} (ambiguous: ${ref.candidates.join(', ')})`);
-            } else {
-              not_found.push(req.item);
-              steps.push(`skip ${req.item} (missing in inventory)`);
-            }
-            continue;
-          }
-          const targetCount =
-            req.count && req.count > 0 ? Math.min(req.count, ref.match.total_count) : ref.match.total_count;
-          // mineflayer chest.deposit(itemType,...) handles multi-slot transfers.
-          // We need the itemType id — pull from any one of the slots' actual items.
-          const liveSlot = b.inventory.items().find((i) => i.name === ref.match.name);
-          await chest.deposit(liveSlot.type, null, targetCount);
-          steps.push(`deposited ${targetCount}x ${ref.match.name}`);
-        }
-
-        after = chest.containerItems();
-        snapshotChestAtPosition(x, y, z, after);
-        containerAfter = containerSnapshot(after);
-      } finally {
-        try { chest.close(); } catch {}
-      }
-
-      // Sample inventoryAfter AFTER chest.close() so the window→inventory sync has happened.
-      // Two snapshots ~1s apart so we capture any server SET_SLOT
-      // corrections that arrive after the optimistic mineflayer update;
-      // see verifiedInventorySnapshot() for the rationale.
-      const verified = await verifiedInventorySnapshot(b, sleep);
-      const inventoryAfter = verified.inventory;
-      const totalAfter = after.reduce((s, i) => s + i.count, 0);
-      const inventory_delta = diffInventory(inventoryBefore, inventoryAfter);
-      const container_delta = diffInventory(containerBefore, containerAfter);
-      const dropped_nearby = verified.sync_warning ? nearbyDroppedItems(b) : [];
-
-      {
-        // Soft failure if requests came in but NOTHING moved at all.
-        const movedAnything = Object.values(inventory_delta).some((v) => v < 0);
-        if (!movedAnything && (ambiguous.length > 0 || not_found.length > 0)) {
-          return {
-            ok: false,
-            error: {
-              code: ambiguous.length > 0 ? 'AMBIGUOUS_ITEM' : 'ITEM_NOT_FOUND',
-              message: ambiguous.length > 0
-                ? `Deposit blocked — ambiguous item references: ${ambiguous.map((a) => `${a.item}→[${a.candidates.join(', ')}]`).join('; ')}`
-                : `Deposit blocked — items not in inventory: ${not_found.join(', ')}`,
-              observed_state: {
-                container_kind: containerKind,
-                container_position: { x, y, z },
-                ambiguous,
-                not_found,
-                inventory_before: inventoryBefore,
-              },
-              next_action_hint: ambiguous.length > 0
-                ? 'Re-run with the exact item name (e.g. oak_planks instead of planks)'
-                : 'mc inventory to check what you actually have',
-              retry_safe: false,
-            },
-          };
-        }
-
-        // Phase C7: after deposit, surface a recovery hint if any
-        // tracked resource is now ABOVE its target_ok (= "we're stocked,
-        // no need to chase more"). The negative case — depositing while
-        // still below target_min — also surfaces as a hint, signalling
-        // "good work but still under the floor; more needed".
-        const lowStockHints = buildLowStockHints(containerAfter);
-        const lowStockSuffix = lowStockHints && lowStockHints[0]
-          ? ` ${lowStockHints[0].hint}`
-          : '';
-        return {
-          ok: true,
-          data: {
-            container_kind: containerKind,
-            container_position: { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) },
-            inventory_delta,
-            container_delta,
-            container_inventory_after: containerAfter,
-            container_slots_after: after.map((i) => ({ name: i.name, count: i.count, slot: i.slot })),
-            container_total_after: totalAfter,
-            steps,
-            ambiguous_skipped: ambiguous,
-            not_found_skipped: not_found,
-            ...(verified.sync_warning ? { sync_warning: verified.sync_warning } : {}),
-            ...(dropped_nearby.length ? { dropped_nearby } : {}),
-            ...(lowStockHints ? { low_stock_hints: lowStockHints } : {}),
-          },
-          result: `Deposit: ${steps.join('; ') || '(nothing moved)'}${lowStockSuffix}`,
-        };
-      }
+      return runContainerTransfer('deposit', body);
     },
 
     async withdraw(body) {
-      const b = ensureBot();
-      const opened = await openContainerStructured(deps, body);
-      if (!opened.ok) return opened;
-      const { chest, x, y, z, block } = opened;
-      const containerKind = block.name;
-
-      let itemsNorm;
-      try {
-        itemsNorm = normalizeDepositWithdrawItems(body);
-      } catch (err) {
-        try { chest.close(); } catch {}
-        return {
-          ok: false,
-          error: {
-            code: 'MISSING_ITEMS',
-            message: /** @type {Error} */(err).message,
-            observed_state: { body_keys: Object.keys(body || {}) },
-            retry_safe: false,
-          },
-        };
-      }
-
-      const inventoryBefore = inventorySnapshot(b);
-      const containerBefore = containerSnapshot(chest.containerItems());
-
-      const steps = [];
-      const ambiguous = [];
-      const not_found = [];
-      let containerAfter = null;
-      let after = null;
-
-      try {
-        for (const req of itemsNorm) {
-          const ref = resolveItemRef(chest.containerItems(), req.item);
-          if (!ref.ok) {
-            if (ref.code === 'AMBIGUOUS') {
-              ambiguous.push({ item: req.item, candidates: ref.candidates });
-              steps.push(`skip ${req.item} (ambiguous in chest: ${ref.candidates.join(', ')})`);
-            } else {
-              not_found.push(req.item);
-              steps.push(`skip ${req.item} (not in chest)`);
-            }
-            continue;
-          }
-          const targetCount =
-            req.count && req.count > 0 ? Math.min(req.count, ref.match.total_count) : ref.match.total_count;
-          const liveItem = chest.containerItems().find((i) => i.name === ref.match.name);
-          await chest.withdraw(liveItem.type, null, targetCount);
-          steps.push(`withdrew ${targetCount}x ${ref.match.name}`);
-        }
-
-        after = chest.containerItems();
-        snapshotChestAtPosition(x, y, z, after);
-        containerAfter = containerSnapshot(after);
-      } finally {
-        try { chest.close(); } catch {}
-      }
-
-      // Sample inventoryAfter AFTER chest.close() — see deposit comment for why.
-      // Two snapshots ~1s apart catches server SET_SLOT corrections that
-      // arrive after mineflayer's optimistic local update. Critical for
-      // withdraw because cursor-on-close drops + Paper anti-cheat both
-      // produce divergence here; see verifiedInventorySnapshot().
-      const verified = await verifiedInventorySnapshot(b, sleep);
-      const inventoryAfter = verified.inventory;
-      const totalAfter = after.reduce((s, i) => s + i.count, 0);
-      const inventory_delta = diffInventory(inventoryBefore, inventoryAfter);
-      const container_delta = diffInventory(containerBefore, containerAfter);
-      const dropped_nearby = verified.sync_warning ? nearbyDroppedItems(b) : [];
-
-      {
-        const movedAnything = Object.values(inventory_delta).some((v) => v > 0);
-        if (!movedAnything && (ambiguous.length > 0 || not_found.length > 0)) {
-          return {
-            ok: false,
-            error: {
-              code: ambiguous.length > 0 ? 'AMBIGUOUS_ITEM' : 'ITEM_NOT_FOUND',
-              message: ambiguous.length > 0
-                ? `Withdraw blocked — ambiguous item references: ${ambiguous.map((a) => `${a.item}→[${a.candidates.join(', ')}]`).join('; ')}`
-                : `Withdraw blocked — items not in chest: ${not_found.join(', ')}`,
-              observed_state: {
-                container_kind: containerKind,
-                container_position: { x, y, z },
-                ambiguous,
-                not_found,
-                container_before: containerBefore,
-              },
-              next_action_hint: ambiguous.length > 0
-                ? 'Re-run with the exact item name (e.g. oak_planks instead of planks)'
-                : 'mc list_container to see what is actually in this chest',
-              retry_safe: false,
-            },
-          };
-        }
-
-        // Phase C7: low-stock hints — for each item in the chest after the
-        // withdraw, if its post-withdraw count falls under the
-        // base-goals.yaml threshold, surface a hint so the agent sees
-        // "this chest is now low — file a [SUPPLY]" at the moment of
-        // action, not in a separate cycle.
-        const lowStockHints = buildLowStockHints(containerAfter);
-        const lowStockSuffix = lowStockHints && lowStockHints[0]
-          ? ` ${lowStockHints[0].hint}`
-          : '';
-        return {
-          ok: true,
-          data: {
-            container_kind: containerKind,
-            container_position: { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) },
-            inventory_delta,
-            container_delta,
-            container_inventory_after: containerAfter,
-            container_slots_after: after.map((i) => ({ name: i.name, count: i.count, slot: i.slot })),
-            container_total_after: totalAfter,
-            steps,
-            ambiguous_skipped: ambiguous,
-            not_found_skipped: not_found,
-            ...(verified.sync_warning ? { sync_warning: verified.sync_warning } : {}),
-            ...(dropped_nearby.length ? { dropped_nearby } : {}),
-            ...(lowStockHints ? { low_stock_hints: lowStockHints } : {}),
-          },
-          result: `Withdraw: ${steps.join('; ') || '(nothing moved)'}${verified.sync_warning ? ' ⚠ inventory sync diverged — see sync_warning' : ''}${lowStockSuffix}`,
-        };
-      }
+      return runContainerTransfer('withdraw', body);
     },
 
     // ── chest_search: search known chest snapshots across marks ──
@@ -720,6 +611,17 @@ export function createContainerActions(deps) {
       const top = matches.slice(0, maxResults);
       const staleCount = matches.filter((m) => m.stale).length;
 
+      // Pre-emptive inventory check. If the bot is already carrying the
+      // requested item, walking to a chest to withdraw is wasted motion
+      // (and risks the duplicate-withdraw confusion observed in g-2026-05-
+      // 27-N runs). Add a structured `already_in_inventory` field plus
+      // prefix the result message so the agent's first action can be "use
+      // what I have" rather than "walk to chest".
+      const invHave = inventoryHas(b, requested);
+      const haveNote = invHave.count > 0
+        ? ` — you already have ${invHave.count} ${requested} in inventory`
+        : '';
+
       return {
         ok: true,
         data: {
@@ -727,12 +629,14 @@ export function createContainerActions(deps) {
           match_count: matches.length,
           match_count_stale: staleCount,
           stale_after_hours: CHEST_SNAPSHOT_STALE_HOURS,
+          already_in_inventory: invHave.count,
+          inventory_slots: invHave.slots,
           matches: top,
           chests_scanned: Object.keys(ctx.goals.chestSnapshots || {}).length,
         },
         result: matches.length > 0
-          ? `Found ${requested} in ${matches.length} chest(s)${staleCount ? ` (${staleCount} stale)` : ''}; nearest @ ${top[0].mark} (${top[0].count}x, ${top[0].distance}m${top[0].stale ? `, STALE ${top[0].age_minutes}m old — verify` : ''})`
-          : `${requested} not found in any of ${Object.keys(ctx.goals.chestSnapshots || {}).length} chest snapshots`,
+          ? `Found ${requested} in ${matches.length} chest(s)${staleCount ? ` (${staleCount} stale)` : ''}${haveNote}; nearest @ ${top[0].mark} (${top[0].count}x, ${top[0].distance}m${top[0].stale ? `, STALE ${top[0].age_minutes}m old — verify` : ''})`
+          : `${requested} not found in any of ${Object.keys(ctx.goals.chestSnapshots || {}).length} chest snapshots${haveNote}`,
       };
     },
 

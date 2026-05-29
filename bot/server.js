@@ -69,6 +69,7 @@ import { createServices } from './lib/server/services.js';
 import { resolveInventoryItem, resolveCraftTarget, resolveBlockQuery } from './lib/shared/resolver.js';
 import { FAIR_PLAY } from './lib/runtime/fair-play-constants.js';
 import { createFairPlaySuite } from './lib/runtime/fair-play.js';
+import { standingState } from './lib/actions/_nav-helpers.js';
 import { createSpatial } from './lib/runtime/spatial.js';
 import { createActionRegistry } from './lib/server/action-registry.js';
 import { createBotHttpListener } from './lib/server/http-app.js';
@@ -445,6 +446,7 @@ const fairPlayApi = createFairPlaySuite({
   posObj,
   sleep,
   getMemoryHints,
+  getStandingState: (bot) => standingState(bot),
 });
 
 const {
@@ -549,6 +551,7 @@ const observation = createObservation({
   fireDueReminders,
   FAIR_PLAY,
   itemStr,
+  getStandingState: (bot) => standingState(bot),
 });
 const {
   briefState,

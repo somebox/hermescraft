@@ -533,7 +533,7 @@ export function createBotHttpListener(deps) {
         }
         if (lean && data) {
           // Drop the heaviest fields: full ray-hit array and detailed entity
-          // list. Keep summary (text), aggregate visible_blocks, hazards,
+          // list. Keep summary, topology, aggregate visible_blocks, hazards,
           // looking_at, and short entity preview.
           const { visible_block_hits, visible_entities, ...rest } = data;
           rest.visible_entities = (visible_entities || []).slice(0, 4);

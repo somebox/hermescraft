@@ -20,8 +20,10 @@ import { dirname, join } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const CHEATSHEET_PATH = join(ROOT, 'docs/mc-cheatsheet.md');
 
-// Display order — most-touched categories first.
-export const CATEGORY_ORDER = ['observe', 'movement', 'world', 'craft', 'combat', 'memory', 'goals', 'task', 'social', 'platform'];
+import { CATEGORY_ORDER as REGISTRY_CATEGORY_ORDER } from '../bot/cli/registry.mjs';
+
+/** Same order as `mc help` / registry `CATEGORY_ORDER`. */
+export const CATEGORY_ORDER = REGISTRY_CATEGORY_ORDER;
 
 function compactUsage(cmd) {
   if (cmd.usage) return cmd.usage;
@@ -51,7 +53,8 @@ function emitCategory(lines, cat, cmds) {
  * Render the full mc-cheatsheet.md content from a RAW_COMMAND_DEFS array.
  * Returns the file body as a string (no trailing newline — matches writeFileSync output).
  */
-export function buildCheatsheet(rawDefs) {
+export function buildCheatsheet(rawDefs, categoryOrder = CATEGORY_ORDER) {
+  const order = categoryOrder;
   const groups = {};
   for (const cmd of rawDefs) {
     if (!groups[cmd.category]) groups[cmd.category] = [];
@@ -67,7 +70,7 @@ export function buildCheatsheet(rawDefs) {
   lines.push('');
 
   const seenCats = new Set();
-  for (const cat of CATEGORY_ORDER) {
+  for (const cat of order) {
     if (!groups[cat]) continue;
     seenCats.add(cat);
     emitCategory(lines, cat, groups[cat]);
@@ -83,8 +86,8 @@ export function buildCheatsheet(rawDefs) {
 }
 
 async function main() {
-  const { RAW_COMMAND_DEFS } = await import(join(ROOT, 'bot/cli/registry.mjs'));
-  const text = buildCheatsheet(RAW_COMMAND_DEFS);
+  const { RAW_COMMAND_DEFS, CATEGORY_ORDER } = await import(join(ROOT, 'bot/cli/registry.mjs'));
+  const text = buildCheatsheet(RAW_COMMAND_DEFS, CATEGORY_ORDER);
   writeFileSync(CHEATSHEET_PATH, text);
   const categories = new Set(RAW_COMMAND_DEFS.map((c) => c.category)).size;
   console.log(`wrote ${CHEATSHEET_PATH} (${RAW_COMMAND_DEFS.length} commands across ${categories} categories)`);

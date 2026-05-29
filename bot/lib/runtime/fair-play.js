@@ -8,6 +8,7 @@ import {
   makeBlockMemoryKey,
   summarizeVisibleBlocks,
   summarizeSceneText,
+  formatStandingSituation,
 } from '../shared/perception.js';
 
 /**
@@ -20,10 +21,11 @@ import {
  *   posObj: (pos?: import('vec3').Vec3) => { x: number; y: number; z: number } | null;
  *   sleep: (ms: number) => Promise<void>;
  *   getMemoryHints: (limit?: number) => string[];
+ *   getStandingState?: (bot: import('mineflayer').Bot) => Record<string, unknown>;
  * }} deps
  */
 export function createFairPlaySuite(deps) {
-  const { ctx, ensureBot, fmt, posObj, sleep, getMemoryHints } = deps;
+  const { ctx, ensureBot, fmt, posObj, sleep, getMemoryHints, getStandingState } = deps;
 
   /**
    * Blocks that may sit between eyes and a trunk without blocking fair-play harvest LOS.
@@ -311,7 +313,15 @@ export function createFairPlaySuite(deps) {
       }));
     const lookingAt = b.blockAtCursor?.(5);
     const hazards = detectHazardsFromVisibleBlocks(visibleBlocks);
-    const summary = summarizeSceneText({
+    let topology = null;
+    let standingLine = null;
+    if (getStandingState) {
+      try {
+        topology = getStandingState(b);
+        standingLine = formatStandingSituation(topology);
+      } catch { /* never break scene */ }
+    }
+    let summary = summarizeSceneText({
       lookingAt: lookingAt ? { name: lookingAt.name, position: posObj(lookingAt.position) } : null,
       visibleBlocks,
       visibleEntities,
@@ -319,9 +329,11 @@ export function createFairPlaySuite(deps) {
       sounds: ctx.runtime.soundEvents.slice(-5),
       memoryHints: getMemoryHints(),
     });
+    if (standingLine) summary = `${standingLine} ${summary}`;
 
     return {
       summary,
+      ...(topology ? { topology } : {}),
       visible_blocks: summarizeVisibleBlocks(visibleBlocks),
       visible_block_hits: visibleBlocks,
       visible_entities: visibleEntities,

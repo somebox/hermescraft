@@ -37,6 +37,9 @@
 #                                # incremental startup with per-phase health checks
 #   scripts/landfolk deploy   [--dry-run]
 #                                # sync repo skills/SOULs/config to runtime locations
+#                                # (also regenerates derived artifacts first; see `regenerate`)
+#   scripts/landfolk regenerate
+#                                # regenerate derived artifacts (mc-cheatsheet, …) without deploying
 #   scripts/landfolk version  # check which bots are running latest code (exit code = stale count)
 #   scripts/landfolk logs     [agents|<player>|listener|supervisor|pauser|gateway] [opts]
 #   scripts/landfolk chat     <player> "<message>"
@@ -74,13 +77,15 @@ BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-slow}"
 PLAYERS_DEFAULT="${PLAYERS_DEFAULT:-${PROFILES_DEFAULT:-flint,mason,steward}}"
 LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 STATE_DIR="${STATE_DIR:-$LOG_DIR/state}"
+HERMESCRAFT_CAPTURE_ROOT="${HERMESCRAFT_CAPTURE_ROOT:-$HOME/.hermescraft/captures}"
+export COGNITION_DIR="${COGNITION_DIR:-$HERMESCRAFT_CAPTURE_ROOT/cognition}"
 ROSTER_FILE="${ACTIVE_PROFILES_FILE:-$LOG_DIR/active-players}"
 AGENT_MODELS_JSON="${AGENT_MODELS_JSON:-$SCRIPT_DIR/data/agent-models.json}"
 RESOLVER="$SCRIPT_DIR/scripts/resolve-agent-model.py"
 ENGINE="$SCRIPT_DIR/scripts/landfolk-control.sh"
 DEFAULT_MODE="${LANDFOLK_DEFAULT_MODE:-auto}"
 
-mkdir -p "$LOG_DIR" "$STATE_DIR"
+mkdir -p "$LOG_DIR" "$STATE_DIR" "$COGNITION_DIR"
 
 # One-shot migration of pidfiles + roster from the legacy session-state
 # layout (landfolk-session.sh era). Safe to re-run.
@@ -1582,6 +1587,19 @@ EOF
     return 1
   fi
 
+  # Regenerate any derived artifacts (mc-cheatsheet, etc.) before pushing
+  # to runtime locations so deployed agents read the current view of the
+  # registry. Best-effort: regenerate-artifacts.sh swallows missing-tool
+  # errors so a deploy from a node-less host still proceeds.
+  local regen="$SCRIPT_DIR/scripts/regenerate-artifacts.sh"
+  if [ -x "$regen" ]; then
+    if [ "$dry_run" = 1 ]; then
+      dim "DRY: would run $regen"
+    else
+      "$regen" --quiet || warn "artifact regeneration reported a non-zero exit — continuing"
+    fi
+  fi
+
   h1 "deploying skills + SOULs + config to runtime locations"
   if [ "$dry_run" = 1 ]; then
     DRY_RUN=true "$setup" --dry-run --apply-config
@@ -1595,6 +1613,31 @@ EOF
     err "deploy exited rc=$rc — review output above"
   fi
   return "$rc"
+}
+
+# ─── Regenerate derived artifacts ─────────────────────────────────────────
+# Standalone entry point for `scripts/regenerate-artifacts.sh`. `deploy`
+# calls the same helper internally; use this when you only want to refresh
+# generated files (e.g. mc-cheatsheet) without touching ~/.hermes profiles.
+cmd_regenerate() {
+  case "${1:-}" in
+    -h|--help)
+      cat <<'EOF'
+landfolk regenerate — regenerate derived repo artifacts
+
+Runs scripts/regenerate-artifacts.sh, which currently refreshes
+docs/mc-cheatsheet.md from bot/cli/registry.mjs. `landfolk deploy` calls
+this helper internally; this subcommand is for ad-hoc use (e.g. after
+editing the registry and before committing).
+EOF
+      return 0 ;;
+  esac
+  local regen="$SCRIPT_DIR/scripts/regenerate-artifacts.sh"
+  if [ ! -x "$regen" ]; then
+    err "$regen not found or not executable"
+    return 1
+  fi
+  "$regen"
 }
 
 # ─── Diagnostics mode ──────────────────────────────────────────────────────
@@ -1954,6 +1997,7 @@ case "$CMD" in
   status|st)        cmd_status "$@" ;;
   diagnostics|diag) cmd_diagnostics "$@" ;;
   deploy)           cmd_deploy "$@" ;;
+  regenerate|regen) cmd_regenerate "$@" ;;
   version|ver)      cmd_version "$@" ;;
   logs|log)         cmd_logs "$@" ;;
   cognition)        cmd_cognition "$@" ;;

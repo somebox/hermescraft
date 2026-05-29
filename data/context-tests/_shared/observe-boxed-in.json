@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "food": 16,
+    "position": { "x": 10.5, "y": 64, "z": 10.5 },
+    "situation": "Boxed in: walls on several sides, open sky above — dig up or escape."
+  }
+}

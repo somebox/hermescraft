@@ -19,7 +19,8 @@ test('sign break orphans matching active region', () => {
   });
   const bot = new EventEmitter();
   bot.findBlocks = () => [];
-  setupRegionSignWatcher(bot, store);
+  const watcher = setupRegionSignWatcher(bot, store);
+  test.after(() => watcher.dispose());
   const oldBlock = {
     name: 'oak_wall_sign',
     position: { x: 1, y: 64, z: 2 },

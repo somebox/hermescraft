@@ -38,6 +38,10 @@ Stdin body: `./context-tuner variant new <scenario> <label> --profile - < patche
 ./context-tuner run region-protect --config scripts/context-tests/configs/experiments/my-fix.yaml --yes
 ```
 
+## Override-surface ordering
+
+Prefer the **smallest** override surface first: **persona → skill → suite**. Add a layer only after the smaller intervention fails to move the needle. In the 2026-05-27/28 cycle, every skill-fork arm underperformed its persona-only counterpart on the same scenario; see [reports/2026-05-27-goals-gap-context-tuning.md](./reports/2026-05-27-goals-gap-context-tuning.md).
+
 ## What an AI agent should do here
 
-Never edit production `prompts/landfolk/*.md` until a human promotes after `compare` + optional suite re-run.
+Never edit production `prompts/landfolk/*.md` until a human promotes after `compare` + counter-scenario + optional suite re-run. See the **rubric-coupling check** in [agent-workflow.md](./agent-workflow.md).

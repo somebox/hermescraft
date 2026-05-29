@@ -67,3 +67,22 @@ export function parseYInput(args) {
   }
   return null;
 }
+
+/**
+ * Normalize box args that may carry surface_y1/surface_y2 aliases.
+ * surface_y1/surface_y2 win over y1/y2 when present and finite.
+ *
+ * @param {{ y1?: number|string, y2?: number|string, surface_y1?: number|string, surface_y2?: number|string } | null | undefined} args
+ * @returns {typeof args}
+ */
+export function normalizeBoxYArgs(args) {
+  if (args == null || typeof args !== 'object') return args;
+  const out = { ...args };
+  if (out.surface_y1 != null && Number.isFinite(Number(out.surface_y1))) {
+    out.y1 = blockFromSurface(Number(out.surface_y1));
+  }
+  if (out.surface_y2 != null && Number.isFinite(Number(out.surface_y2))) {
+    out.y2 = blockFromSurface(Number(out.surface_y2));
+  }
+  return out;
+}

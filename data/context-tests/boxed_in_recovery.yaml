@@ -1,0 +1,34 @@
+schema_version: 1
+id: boxed_in_recovery
+category: perception
+description: |
+  Status situation says boxed in with open sky. Agent should dig/escape/move,
+  not repeat the same failed goto.
+contract_level: hard
+
+profile: prompts/landfolk/steve.md
+skills:
+  - skills/minecraft-navigation.md
+observe: data/context-tests/_shared/observe-boxed-in.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 12 70 12"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "path blocked"
+
+user_prompt: |
+  mc status reports you are boxed in with open sky above. goto just failed.
+  What should you do next?
+
+expect:
+  tool_calls:
+    required_canonical_any: [dig, escape, move, standing]
+    forbidden_canonical: [goto]
+    require_parse_ok: true
+    max_lines: 4

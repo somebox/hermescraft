@@ -196,7 +196,7 @@ ANIMALS / HOSTILES:
   sheep drop raw_mutton + wool.
 
 INVENTORY DISCIPLINE:
-  Never claim the bot has an item that isn't in status.inventory.
+  Never claim the bot has an item that isn't in status.supplies or mc inventory.
   Never assume crafting will succeed without verifying every ingredient.
   If a needed ingredient is absent, recommend gathering it instead of crafting.
 """

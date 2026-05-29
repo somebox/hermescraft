@@ -45,7 +45,7 @@ next: <one-line of what to do next or what's blocking>.
 
 Hermes delimits memory entries with `§` automatically. Don't manually format separators.
 
-**What the next worker will do with your memory**: they read it as a frozen snapshot at the start of their session. If your last entry says `pos=(418,48,-621) ... next: pillar up out of shaft`, the next worker boots already knowing the situation and can act in turn 1 instead of burning 5 turns on `mc status` / `mc nearby` / `mc inventory` rediscovery. **The iteration budget you save by writing memory is worth multiples of itself in the next worker's life.**
+**What the next worker will do with your memory**: they read it as a frozen snapshot at the start of their session. If your last entry says `pos=(418,48,-621) ... next: pillar up out of shaft`, the next worker boots already knowing the situation and can act in turn 1 instead of burning 5 turns on `mc status` (self) / `mc scene` or `mc nearby` (world) / `mc inventory` rediscovery. **The iteration budget you save by writing memory is worth multiples of itself in the next worker's life.**
 
 If the task spans multiple workers (long-running collect, multi-layer build, etc.), prefer **replacing** older state entries rather than accumulating — `memory(action="replace", name="state-snapshot", content=...)` keeps memory clean. Keep one canonical "current state" entry plus a few discrete fact entries (e.g., "discovered iron vein at 410,42,-615") rather than a sprawl of timestamps.
 
@@ -85,6 +85,8 @@ If your tool results include a `top_goal: {id, urgency, satisfied}` field (e.g. 
 If you genuinely need to break from the card to handle a survival emergency (HP < 8, no food in inventory, hostile mob in your face), narrate it in chat (`mc chat "<bot>: breaking from t_xxx — HP critical, eating then resuming"`) and resume the card afterward. Do NOT silently switch tasks based on goal-engine urgency.
 
 ## `stuck_warning` in mc status — ESCALATE, don't retry
+
+`mc status` is **self** (supplies, holding, `situation` when boxed in). World layout: `mc scene` / `mc nearby`.
 
 If a `mc status` (or any `mc observe`-family) response includes `stuck_warning`, you have been within a 5-block radius of the same position for 5+ minutes. Local iteration has failed — retrying the same approach a sixth time is wasted budget. **Your NEXT action MUST be one of:**
 

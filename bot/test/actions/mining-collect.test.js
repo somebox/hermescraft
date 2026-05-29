@@ -488,6 +488,29 @@ test('mining.collect: NO_VISIBLE_BLOCKS conforms to contract when no candidates 
   assert.equal(r.error.observed_state.requested_count, 4);
 });
 
+test('mining.collect: NO_VISIBLE_BLOCKS appends standing situation when enclosed', async () => {
+  const pos = new Vec3(0.5, 64, 0.5);
+  const solid = (p) => {
+    const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    if (y === 63) return { name: 'stone', boundingBox: 'block' };
+    if (Math.abs(x) <= 4 && Math.abs(z) <= 4 && y >= 64 && y <= 67) {
+      if (Math.abs(x) === 4 || Math.abs(z) === 4 || y === 67) return { name: 'stone', boundingBox: 'block' };
+    }
+    return { name: 'air', boundingBox: 'empty' };
+  };
+  const bot = makeStubBot({
+    position: pos,
+    inventoryItems: [{ name: 'iron_pickaxe', count: 1 }],
+  });
+  bot.blockAt = solid;
+  const deps = makeDeps({ bot, findVisible: async () => [] });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'stone', count: 2 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NO_VISIBLE_BLOCKS');
+  assert.match(r.error.message, /boxed|enclosed|dig|move/i);
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 10. Strip-mine ordering (Fix E) — non-trunk harvests follow rows along
 //     the densest axis instead of 3D-distance star pattern.

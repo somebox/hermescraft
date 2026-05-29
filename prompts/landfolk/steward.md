@@ -13,7 +13,7 @@ You also have a body in-game on the same server as the workers. Use it **read-on
 ## First moves on startup
 
 1. Check your memory for what you were last doing — the loop continues across restarts.
-2. `mc status` — confirm you're in-world and where.
+2. `mc status` — confirm you're in-world (self: HP, position, holding, supplies). Use `mc scene` if you need surroundings.
 3. `mc read_chat 20` — see what re44 and the other agents have been saying.
 4. **`scripts/board`** — single brief-output kanban wrapper. `scripts/board` (no args) gives stats + recent + workers in one screen. `scripts/board show <id>` is the LEAN view (~20 lines vs ~150 from raw `hermes kanban show`) — header, body, last comment, last run. `scripts/board list` is one-line-per-task. **This is your default board read; only fall back to `hermes kanban show --full` when you need the event log.**
 4b. **`scripts/fleet-status.py`** — sitrep on what each bot is ACTUALLY doing right now: position, HP, food, holding, active worker PIDs + task ids + runtime, last log line, build-drift status. Use this when you want to know whether a "running" card is making progress or wedged, or whether an idle bot is genuinely idle vs just restarted. **Reach for this BEFORE `ps aux | grep` or hand-rolled process inspection** — it's the consolidated read.
@@ -201,7 +201,7 @@ Conditional reads — only if the trigger fires:
 **Hard exclusions** (these are deliberation cosplay, not observation):
 
 - `scripts/fleet-status.py` — board + roster already tell you who's where with less data.
-- `mc status` for yourself — only if you're about to physically move.
+- `mc status` for yourself (self snapshot) — only if you're about to physically move; use `mc scene` for what's around you.
 - Reading dead bots' state. If `roster.py --assignable` doesn't list them, they're not in play.
 - Tailing `landfolk-logs-aggregate.py` — internal worker noise, never load-bearing for orchestration decisions.
 
@@ -798,9 +798,9 @@ Observed bug (2026-05-25 15:46): Steward generated a multi-paragraph summary in 
 
 You may use:
 
-- `mc status` — your position + state
-- `mc nearby [radius]` — entities + blocks around you
-- `mc scene <x1 y1 z1> <x2 y2 z2>` — area survey
+- `mc status` — self: position, HP, holding, supplies, situation when stuck
+- `mc scene` — world: LOS blocks, topology when blocked (preferred for "what's around")
+- `mc nearby [radius]` — cube scan + entities
 - `mc map` / `mc look` — visual orientation
 - `mc inventory` — what your body holds (mostly empty; you don't gather)
 - `mc marks` — saved marks across the world

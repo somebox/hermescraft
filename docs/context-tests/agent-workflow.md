@@ -15,8 +15,9 @@ Human suspects a prompt hotspot. Agent measures signal, human promotes.
 9. `./context-tuner compare <baseline-run-id> <variant-run-id>` — prefer explicit ids when re-running the same scenario; `compare last last~1` works when the latest two runs are the pair you intend
 10. Side effects: `./context-tuner run <suite> --config scripts/context-tests/configs/experiments/<label>.yaml --yes`
 11. `./context-tuner trend --scenario <id> -n 5` or `./context-tuner trend <suite> -n 5`
-12. Report to human: deltas, warnings, diff path; **do not** commit production prompt without human OK
-13. Human promotes → `./context-tuner run <suite> --yes` → optional `./context-tuner compare ... --append-learnings`
+12. **Rubric-coupling check (before recommending promotion):** if the experiment text could be read as a cheat sheet for any matcher in the scenario (names allowed verbs, names the forbidden verb, recites the whitelist), the win may be recital, not internalization. Either rephrase the prompt to avoid the matcher's vocabulary, or run a **counter-scenario** whose right action is outside the matcher's whitelist. Only call the result "promotable" if the counter passes too.
+13. Report to human: deltas, warnings, diff path; **do not** commit production prompt without human OK
+14. Human promotes → `./context-tuner run <suite> --yes` → optional `./context-tuner compare ... --append-learnings`
 
 ## What an AI agent should do here
 

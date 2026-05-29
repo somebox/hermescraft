@@ -219,7 +219,7 @@ test('queries.escape # characterization: trapped refuses when no pillar block', 
   assert.equal(r.error.code, 'ESCAPE_NO_PILLAR_BLOCK');
 });
 
-test('queries.escape # characterization: enclosure_inside → ESCAPE_ENCLOSURE', async () => {
+test('queries.escape # characterization: enclosure_inside + low HP → ESCAPE_HP_TOO_LOW', async () => {
   const pos = new Vec3(0.5, 64, 0.5);
   const solid = (p) => {
     const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
@@ -231,6 +231,7 @@ test('queries.escape # characterization: enclosure_inside → ESCAPE_ENCLOSURE',
   };
   const bot = {
     entity: { position: pos, isInWater: false },
+    health: 0,
     inventory: { items: () => [] },
     blockAt: solid,
     findBlocks: () => [],
@@ -239,5 +240,35 @@ test('queries.escape # characterization: enclosure_inside → ESCAPE_ENCLOSURE',
   const actions = createQueriesActions(escapeServices(bot));
   const r = await actions.escape();
   assert.equal(r.ok, false);
-  assert.equal(r.error.code, 'ESCAPE_ENCLOSURE');
+  assert.equal(r.error.code, 'ESCAPE_HP_TOO_LOW');
+});
+
+test('queries.escape # characterization: enclosure_inside + healthy → auto-dig escape', async () => {
+  const pos = new Vec3(0.5, 64, 0.5);
+  const solid = (p) => {
+    const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    if (y === 63) return { name: 'stone', boundingBox: 'block' };
+    if (Math.abs(x) <= 4 && Math.abs(z) <= 4 && y >= 64 && y <= 67) {
+      if (Math.abs(x) === 4 || Math.abs(z) === 4 || y === 67) return { name: 'stone', boundingBox: 'block' };
+    }
+    return { name: 'air', boundingBox: 'empty' };
+  };
+  const bot = {
+    entity: { position: pos, isInWater: false },
+    health: 20,
+    inventory: { items: () => [] },
+    blockAt: (p) => {
+      const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+      if (x === 1 && y === 64 && z === 0) return { name: 'stone', boundingBox: 'block' };
+      return solid(p);
+    },
+    findBlocks: () => [],
+    entities: {},
+  };
+  const dig = async () => ({ ok: true });
+  const actions = createQueriesActions(escapeServices(bot, () => ({ dig })));
+  const r = await actions.escape();
+  assertContract(r);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.action_taken, 'dig_out_of_enclosure');
 });

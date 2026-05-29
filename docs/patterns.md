@@ -207,7 +207,12 @@ shim, ask why.
 ## P13. Benchmark LLM accuracy on `mc` after pattern changes
 
 **Pattern:** when the registry, cheatsheet, or skill text changes, run
-`scripts/benchmark/run.mjs` to verify LLM accuracy didn't regress. Outputs land
+`scripts/benchmark/run.mjs` to verify LLM accuracy didn't regress. For
+**persona/skill/observe/prior-context** regressions (devlog episodes, STUCK
+hints, goals gaps), use `./context-tuner` (Tier 5b) — scenarios are signals,
+not ground truth; judge is conventions-only and diagnostic. If production
+improves but a scenario fails, update the scenario.
+Outputs land
 under `scripts/benchmark/runs/<model_slug>/` (one JSON per model per run). Use
 `scripts/benchmark/compare.mjs --model <id>` to diff the last two runs for that
 model, or pass two explicit paths; **>5pp drop in accuracy or in average

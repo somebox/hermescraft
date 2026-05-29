@@ -114,16 +114,7 @@ ensure_profile_exists() {
 patch_env_passthrough() {
   local config="$1"
   local extra="${2:-}"
-  if grep -q 'env_passthrough: \[MC_API_URL, MC_USERNAME' "$config" 2>/dev/null; then
-    if [ -n "$extra" ] && ! grep -q 'HERMES_KANBAN_BOARD' "$config" 2>/dev/null; then
-      echo "  env_passthrough: adding HERMES_KANBAN_BOARD"
-    else
-      echo "  env_passthrough: already correct"
-      return 0
-    fi
-  else
-    echo "  env_passthrough: patching"
-  fi
+  echo "  env_passthrough: syncing"
   if [ "$DRY_RUN" = true ]; then
     return 0
   fi
@@ -131,7 +122,17 @@ patch_env_passthrough() {
 import sys, re, pathlib
 path = pathlib.Path(sys.argv[1])
 extra = sys.argv[2].split() if len(sys.argv) > 2 and sys.argv[2] else []
-base = ["MC_API_URL", "MC_USERNAME"]
+# Terminal shells need the full kanban env surface. If any of these are
+# dropped by env_passthrough filtering, downstream scripts can see empty
+# values (or fallback incorrectly), even when parent launch env is correct.
+base = [
+    "MC_API_URL",
+    "MC_USERNAME",
+    "HERMES_KANBAN_DB",
+    "HERMES_KANBAN_ROOT",
+    "HERMES_KANBAN_WORKSPACES_ROOT",
+    "HERMES_KANBAN_BOARD",
+]
 for e in extra:
     if e and e not in base:
         base.append(e)

@@ -68,6 +68,21 @@ if [ ! -x "$HERMES_BIN" ]; then
   HERMES_BIN="$(command -v hermes 2>/dev/null || echo hermes)"
 fi
 
+# Scrub HERMES_HOME (and other HERMES_* env vars) inherited from a parent
+# context — e.g. a sandboxed Steward agent terminal that exports
+# HERMES_HOME=/Users/foz/.hermes-landfolk-steward. If the dispatcher
+# inherits that, `hermes` loads plugins from steward's restricted home,
+# the landfolk plugin isn't installed there, and every tick logs
+# "invalid choice: 'landfolk'" → "gate-check FAILED". Observed
+# g-2026-05-28-6: a second dispatcher spawned from inside Steward's
+# session ran in parallel with the clean one, alternating ticks failed.
+# HERMES_BIN already pins the binary path (above); this pins HERMES_HOME
+# to the operator's real ~/.hermes so plugin discovery works.
+unset HERMES_HOME
+unset HERMES_PROFILE
+unset HERMES_MODEL
+unset HERMES_PROVIDER
+
 mkdir -p "$LOG_DIR"
 
 trap 'echo "[$(date +%H:%M:%S)] dispatcher stopping (SIGTERM)" >>"$LOG_FILE"; exit 0' TERM INT

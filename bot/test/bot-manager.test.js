@@ -5,6 +5,7 @@ import {
   STUCK_MOVEMENT_ACTIONS,
   MOVEMENTS_TUNING,
   applyMovementsTuning,
+  parsePositiveIntEnv,
 } from '../lib/runtime/manager.js';
 
 test('reconnectBackoffMs caps exponential delay', () => {
@@ -58,6 +59,16 @@ test('MOVEMENTS_TUNING: maxCumulativeDropDown = 3 (hyd2 Y-drift cap)', () => {
   // target, then bot needed ~50 cmds to climb back. Refuse any path
   // step whose landing is >3 below current foot Y.
   assert.equal(MOVEMENTS_TUNING.maxCumulativeDropDown, 3);
+});
+
+test('parsePositiveIntEnv: rejects invalid values and floors valid inputs', () => {
+  assert.equal(parsePositiveIntEnv(undefined, 3), 3);
+  assert.equal(parsePositiveIntEnv('', 3), 3);
+  assert.equal(parsePositiveIntEnv('abc', 3), 3);
+  assert.equal(parsePositiveIntEnv(0, 3), 3);
+  assert.equal(parsePositiveIntEnv(-2, 3), 3);
+  assert.equal(parsePositiveIntEnv('7.9', 3), 7);
+  assert.equal(parsePositiveIntEnv('12', 3), 12);
 });
 
 test('MOVEMENTS_TUNING: avoidWater defaults to "shallow" mode (depth-aware)', () => {

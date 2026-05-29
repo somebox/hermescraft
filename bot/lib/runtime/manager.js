@@ -24,6 +24,15 @@ export const STUCK_MOVEMENT_ACTIONS = [
 /** Min ms with almost no position change before declaring stuck (pathfinder can crawl in tight caves). */
 const STUCK_IDLE_MS = 20000;
 
+export function parsePositiveIntEnv(rawValue, fallback) {
+  const fallbackValue = Number.isFinite(Number(fallback)) && Number(fallback) > 0
+    ? Math.floor(Number(fallback))
+    : 1;
+  const n = Number(rawValue);
+  if (!Number.isFinite(n) || n <= 0) return fallbackValue;
+  return Math.floor(n);
+}
+
 /**
  * Default pathfinder Movements tuning. Exported so tests can lock the
  * specific knobs we tune, and so users can override via env var.
@@ -84,9 +93,10 @@ const AVOID_WATER_DEFAULT = (() => {
  * Override via env `BOT_MAX_CUMULATIVE_DROP_DOWN=<int>`. Set very
  * high (e.g. 256) to effectively disable.
  */
-const MAX_CUMULATIVE_DROP_DOWN_DEFAULT = Number.isFinite(parseInt(process.env.BOT_MAX_CUMULATIVE_DROP_DOWN, 10))
-  ? parseInt(process.env.BOT_MAX_CUMULATIVE_DROP_DOWN, 10)
-  : 3;
+const MAX_CUMULATIVE_DROP_DOWN_DEFAULT = parsePositiveIntEnv(
+  process.env.BOT_MAX_CUMULATIVE_DROP_DOWN,
+  3,
+);
 
 /**
  * Soft-block allowlist (task #4). Pathfinder respects these as

@@ -7,7 +7,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Vec3 } from 'vec3';
 
-import { createContainerActions, evictChestSnapshotsAtPosition } from '../../lib/actions/containers.js';
+import {
+  createContainerActions,
+  evictChestSnapshotsAtPosition,
+  parseChestSnapshotStaleHours,
+} from '../../lib/actions/containers.js';
 import { createMockServices } from '../../lib/server/mock-services.js';
 import { assertFailure } from '../_helpers/action-harness.js';
 
@@ -32,7 +36,7 @@ function containerDeps(overrides = {}) {
     goals: { GoalNear: function () {} },
     fmt: services.utils.fmt,
     posObj: services.utils.posObj,
-    sleep: services.utils.sleep,
+    sleep: overrides.sleep || services.utils.sleep,
     log: services.utils.log,
     loadLocations: () => ({}),
     saveLocations: () => {},
@@ -60,6 +64,20 @@ function containerDeps(overrides = {}) {
     eyePosition: () => ({ x: 0, y: 65, z: 0 }),
   };
 }
+
+test('parseChestSnapshotStaleHours: uses fallback for invalid values', () => {
+  assert.equal(parseChestSnapshotStaleHours(undefined, 6), 6);
+  assert.equal(parseChestSnapshotStaleHours('', 6), 6);
+  assert.equal(parseChestSnapshotStaleHours('oops', 6), 6);
+  assert.equal(parseChestSnapshotStaleHours('0', 6), 6);
+  assert.equal(parseChestSnapshotStaleHours('-5', 6), 6);
+});
+
+test('parseChestSnapshotStaleHours: parses, floors, and clamps valid values', () => {
+  assert.equal(parseChestSnapshotStaleHours('12', 6), 12);
+  assert.equal(parseChestSnapshotStaleHours(7.8, 6), 7);
+  assert.equal(parseChestSnapshotStaleHours('10000', 6), 24 * 30);
+});
 
 test('containers.deposit: missing item in body → MISSING_ITEMS', async () => {
   const bot = {
@@ -264,4 +282,61 @@ test('evictChestSnapshotsAtPosition: tolerates null/undefined input', () => {
   assert.deepEqual(evictChestSnapshotsAtPosition(null, 0, 0, 0), []);
   assert.deepEqual(evictChestSnapshotsAtPosition(undefined, 0, 0, 0), []);
   assert.deepEqual(evictChestSnapshotsAtPosition({}, 0, 0, 0), []);
+});
+
+test('deposit + withdraw success path uses shared transfer pipeline', async () => {
+  const inv = [{ name: 'oak_log', count: 10, slot: 0, type: 1 }];
+  const chestStacks = [{ name: 'oak_log', count: 5, slot: 0, type: 1 }];
+  const findByType = (arr, type) => arr.find((i) => i.type === type);
+  const ensureStack = (arr, type, name) => {
+    let s = findByType(arr, type);
+    if (!s) {
+      s = { name, count: 0, slot: arr.length, type };
+      arr.push(s);
+    }
+    return s;
+  };
+  const chest = {
+    containerItems: () => chestStacks.filter((i) => i.count > 0).map((i) => ({ ...i })),
+    async deposit(type, _meta, count) {
+      const src = findByType(inv, type);
+      const take = Math.min(Number(count) || 0, src?.count || 0);
+      if (!src || take <= 0) return;
+      src.count -= take;
+      ensureStack(chestStacks, type, src.name).count += take;
+    },
+    async withdraw(type, _meta, count) {
+      const src = findByType(chestStacks, type);
+      const take = Math.min(Number(count) || 0, src?.count || 0);
+      if (!src || take <= 0) return;
+      src.count -= take;
+      ensureStack(inv, type, src.name).count += take;
+    },
+    close: async () => {},
+  };
+  const bot = {
+    entity: { position: new Vec3(1.5, 64, 1.5) },
+    inventory: { items: () => inv.filter((i) => i.count > 0).map((i) => ({ ...i })) },
+    blockAt: () => ({ name: 'chest', boundingBox: 'block', position: { x: 1, y: 64, z: 1 } }),
+    openContainer: async () => chest,
+    pathfinder: { goto: async () => {} },
+  };
+  const actions = createContainerActions(containerDeps({
+    bot,
+    resolveContainerCoords: () => ({ ix: 1, iy: 64, iz: 1 }),
+    isContainerBlock: () => true,
+    sleep: async () => {},
+  }));
+
+  const dep = await actions.deposit({ item: 'oak_log', count: 4 });
+  assert.equal(dep.ok, true);
+  assert.equal(dep.data.inventory_delta.oak_log, -4);
+  assert.equal(dep.data.container_inventory_after.oak_log, 9);
+  assert.match(dep.result, /^Deposit:/);
+
+  const wd = await actions.withdraw({ item: 'oak_log', count: 3 });
+  assert.equal(wd.ok, true);
+  assert.equal(wd.data.inventory_delta.oak_log, 3);
+  assert.equal(wd.data.container_inventory_after.oak_log, 6);
+  assert.match(wd.result, /^Withdraw:/);
 });

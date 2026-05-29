@@ -38,41 +38,49 @@ function timePhase(t) {
  * agents must call `mc inventory`, `mc scene --reason=...`, `mc look` for
  * those. Keeps: position, HP/food, holding, time/phase, weather.
  */
-function slimStatusEnvelope(raw) {
+function slimStatusEnvelope(raw, { verbose = false } = {}) {
   const d = raw?.data || {};
   const pos = d.position || null;
-  // Stuck-warning prominence fix (2026-05-26): the thin envelope was DROPPING
-  // stuck_warning so the agent never saw it when calling mc status (only
-  // mc observe surfaced it, but agents call status far more often). Fold it
-  // into the hint text — when stuck, the warning REPLACES the default thin-
-  // status hint, so the agent reads it as the primary message instead of
-  // skimming past a buried JSON field.
   const stuckMin = d.stuck_minutes;
   const stuckWarning = d.stuck_warning;
   const hint = stuckWarning
     ? `⚠ ${stuckWarning}`
-    : ('thin status: only location/HP/food/holding/time. ' +
-       'For richer info use mc scene/find/map/nearby with --reason. ' +
-       'For polling a goto/collect task use mc task.');
-  return {
-    ok: true,
-    command: 'status',
-    data: {
-      position: pos
-        ? { x: Math.round((pos.x ?? 0) * 10) / 10, y: Math.round(pos.y ?? 0), z: Math.round((pos.z ?? 0) * 10) / 10 }
-        : null,
-      health: d.health ?? null,
-      food: d.food ?? null,
-      saturation: d.saturation ?? null,
-      holding: d.holding ?? null,
-      time: d.time ?? null,
-      phase: timePhase(d.time),
-      raining: d.isRaining ?? null,
-      ...(stuckMin != null ? { stuck_minutes: stuckMin } : {}),
-      ...(stuckWarning ? { stuck_warning: stuckWarning } : {}),
-      hint,
-    },
+    : ('status = self (location/HP/food/holding/supplies). ' +
+       'World vision: mc scene / nearby / map. Task poll: mc task.');
+  const data = {
+    position: pos
+      ? { x: Math.round((pos.x ?? 0) * 10) / 10, y: Math.round(pos.y ?? 0), z: Math.round((pos.z ?? 0) * 10) / 10 }
+      : null,
+    health: d.health ?? null,
+    food: d.food ?? null,
+    saturation: d.saturation ?? null,
+    holding: d.holding ?? null,
+    time: d.time ?? null,
+    phase: timePhase(d.time),
+    raining: d.isRaining ?? null,
+    ...(stuckMin != null ? { stuck_minutes: stuckMin } : {}),
+    ...(stuckWarning ? { stuck_warning: stuckWarning } : {}),
+    hint,
   };
+  if (d.supplies != null) data.supplies = d.supplies;
+  if (d.nearby_entities != null) data.nearby_entities = d.nearby_entities;
+  if (d.hand_vs_inventory) data.hand_vs_inventory = d.hand_vs_inventory;
+  if (d.situation) data.situation = d.situation;
+  if (verbose) {
+    if (d.task_context) data.task_context = d.task_context;
+    if (d.regions_here) data.regions_here = d.regions_here;
+    if (d.lookingAt) data.lookingAt = d.lookingAt;
+    if (d.mounted !== undefined) data.mounted = d.mounted;
+    if (d.unreadChat) data.unreadChat = d.unreadChat;
+    if (d.inventoryCount != null) data.inventoryCount = d.inventoryCount;
+    if (d.deaths != null) data.deaths = d.deaths;
+    if (d.sounds) data.sounds = d.sounds;
+  }
+  return { ok: true, command: 'status', data };
+}
+
+function statusArgvFull(positional) {
+  return positional.some((t) => String(t) === '--full');
 }
 
 /**
@@ -249,25 +257,22 @@ function printOneCommandHelp(hit) {
   console.log('');
 }
 
-function notchFilter(nb) {
-  const want = new Set(['chest', 'crafting_table', 'furnace', 'bed', 'barrel', 'smoker', 'blast_furnace']);
-  return (nb || []).filter((b) => want.has(String(b?.name))).slice(0, 40);
-}
-
-/** Anchors composite (status + GET /marks). */
+/** Anchors composite (position + GET /marks). Chest anchors = marks with chest_snapshot. */
 async function anchorsEnvelope(api, globals) {
   if (globals.dryRun) return { ok: true, command: 'anchors', data: { dryRun: true } };
 
-  const statusResp = await requestHttp(api, `/status`);
+  const statusResp = await requestHttp(api, `/status?lean=true`);
   const marksResp = await requestHttp(api, `/marks`);
+  const marksPayload = marksResp.json?.data ?? marksResp.json ?? {};
+  const marksList = Array.isArray(marksPayload.marks) ? marksPayload.marks : [];
 
   return {
     ok: true,
     command: 'anchors',
     data: {
       position: statusResp.json?.data?.position ?? null,
-      anchors: notchFilter(statusResp.json?.data?.notableBlocks),
-      marks: marksResp.json?.data ?? marksResp.json ?? null,
+      anchors: marksList.filter((m) => m.chest_snapshot != null),
+      marks: marksPayload,
     },
   };
 }
@@ -382,8 +387,10 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
   // Slim `mc status` to a fixed essentials projection. Rich world-state
   // lives under scene/find/map/nearby. This keeps status cheap and fast.
   if (canonicalName === 'status') {
-    const r = await requestHttp(ctx.api, `/status?lean=true`);
-    const env = slimStatusEnvelope(r.json);
+    const full = statusArgvFull(positional);
+    const path = full ? '/status' : '/status?lean=true';
+    const r = await requestHttp(ctx.api, path);
+    const env = slimStatusEnvelope(r.json, { verbose: full });
     return { ok: true, env, render: globals.json ? 'json' : 'human' };
   }
 

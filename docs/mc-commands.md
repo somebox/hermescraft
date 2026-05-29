@@ -8,15 +8,17 @@ See also [`design/action-contract.md`](design/action-contract.md) for return env
 
 | Intent | Examples | Notes |
 |--------|----------|--------|
-| **observe** | `status`, `observe`, `nearby`, `map`, `scene`, `discover`, `scout`, `inspect`, `standing`, `reachable`, `find`, `terrain_top`, `is_empty`, `is_filled` | Read-only or advisory |
-| **movement** | `move`, `goto`, `goto_near`, `follow`, `look`, `jump`, `stop`, `through`, `escape`, `sail_to` | `move` scans doors; long water crossings use `sail_to` |
-| **world** | `dig`, `safe_dig`, `collect`, `dig_area`, `tunnel`, `stair_*`, `pillar_*`, `place`, `place_fill`, `wall`, `fence`, `path`, `level`, `build_stairs`, `dig_pit`, `till`, `plant`, `harvest`, `bonemeal`, `fish`, `bucket_*`, low-level boat verbs | Placement/digging verbs use **`block`** in JSON bodies (see B) |
+| **observe** | `status`, `observe`, `nearby`, `map`, `scene`, `discover`, `scout`, `inspect`, `standing`, `reachable`, `find`, `terrain_top`, `is_empty`, `is_filled`, `health`, `advise` | Read-only or advisory; `status` is **self** (supplies, holding, situation); world vision uses `scene` / `nearby` / `map` |
+| **movement** | `move`, `goto`, `goto_near`, `follow`, `look`, `jump`, `stop`, `deathpoint`, `sail_to` | `move` scans doors; long water crossings use `sail_to` |
+| **world** | `dig`, `safe_dig`, `collect`, `dig_area`, `tunnel`, `stair_*`, `pillar_*`, `place`, `place_fill`, `wall`, `fence`, `path`, `level`, `level_ground`, `build_stairs`, `dig_pit`, `till`, `plant`, `harvest`, `bonemeal`, `fish`, `bucket_*`, `through`, `escape`, `set_home`, `respawn`, `edit_sign`, `farm_status`, `verify_plot`, boat verbs (`place_boat`, `board`, `sail`, `disembark`, …) | Placement/digging verbs use **`block`** in JSON bodies (see B) |
+| **building** | `construct`, `repair` | Card-driven build/repair workflows |
 | **craft** | `craft`, `craft_plan`, `recipes`, `smelt`, `smelt_start`, `furnace_check`, `furnace_take` | Inventory/crafting verbs use **`item`** in JSON bodies |
 | **combat** | `attack`, `fight`, `shoot`, `flee`, `mode`, `eat`, … | |
-| **memory** | `mark`, `marks`, `go_mark`, `go_site`, `remind`, `set_home`, `deathpoint`, `regions`, `region_create`, `site_add` | Designated **regions** (protect/mine columns) — see [`features/designated-regions.md`](features/designated-regions.md); `mc goto :id:/site` routes to `go_site`; dry-run with `check dig` / `check place` |
-| **task** | `bg_goto`, `complete_command`, … | Async task verbs |
+| **memory** | `mark`, `marks`, `go_mark`, `go_site`, `remind`, `regions`, `region_create`, `region_update_intent`, `regions_reload`, `regions_terrain`, `site_add`, `site_remove` | Designated **regions** — see [`features/designated-regions.md`](features/designated-regions.md); `mc goto :id:/site` routes to `go_site`; dry-run with `check dig` / `check place` |
+| **task** | `bg_goto`, `bg_collect`, `task_start`, `task_pause`, `task_resume`, `task_context`, `checkpoint_respond`, `complete_command`, `acknowledge_command`, `cancel_command`, … | Async task verbs |
+| **goals** | `goals`, `goal_add`, `goal_set`, `goal_remove`, `goal_status`, `goal_presets`, `goal_load` | Per-bot goal engine (distinct from base supply YAML) |
 | **social** | `chat`, `team_chat`, `whisper`, … | |
-| **platform** | `health`, `dashboard`, `advise`, `goals` | Meta / fleet |
+| **platform** | `dashboard`, `batch`, `connect`, `commands`, `help` | Meta / fleet wiring |
 
 ## B. Argument schemas
 
@@ -111,6 +113,8 @@ Runtime: BFS route in `bot/lib/runtime/water-route.js`; dense boat path in `bot/
 After submerge during ferry: `escape` then **`mc sail_to`** again from dry land.
 
 ## E. Refusal code → next command (selected)
+
+_Snapshot as of 2026-05-29 — hand-maintained from `next_action_hint` in handlers; not auto-synced._
 
 | Code / situation | Typical next step |
 |------------------|-------------------|

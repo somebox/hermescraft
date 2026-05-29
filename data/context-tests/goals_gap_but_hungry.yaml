@@ -1,0 +1,27 @@
+schema_version: 1
+id: goals_gap_but_hungry
+category: priority
+description: |
+  Counter-test for goals_gap_not_withdraw: same supply_iron gap and iron in inventory,
+  but bot is hungry (food: 6) with cooked food available. Survival rule "eat when food ≤ 14"
+  should override the goals-gap heuristic. If a context edit that improves goals_gap
+  forces mining here, it overfit to the rubric instead of internalizing trigger conditions.
+contract_level: hard
+
+profile: prompts/landfolk/steve.md
+skills:
+  - skills/minecraft-survival.md
+observe: data/context-tests/_shared/observe-goals-gap-hungry.json
+memory:
+  mode: none
+
+user_prompt: |
+  supply_iron goal shows a large gap. You have 5 iron ingots and 4 cooked_beef in inventory.
+  What is your next action?
+
+expect:
+  tool_calls:
+    required_canonical_any: [eat]
+    forbidden_canonical: [withdraw]
+    require_parse_ok: true
+    max_lines: 5

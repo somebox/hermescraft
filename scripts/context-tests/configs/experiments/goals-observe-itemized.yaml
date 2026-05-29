@@ -1,0 +1,9 @@
+inherits: ../default.yaml
+label: goals-observe-itemized
+suite:
+  scenarios:
+    - goals_gap_not_withdraw
+overrides:
+  scenarios:
+    goals_gap_not_withdraw:
+      observe: data/context-tests/_shared/observe-goals-gap-itemized.json

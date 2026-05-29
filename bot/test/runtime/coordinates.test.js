@@ -11,6 +11,7 @@ import {
   blockFromSurface,
   withYBoth,
   parseYInput,
+  normalizeBoxYArgs,
 } from '../../lib/runtime/coordinates.js';
 
 test('surfaceFromBlock: surface is always one above block', () => {
@@ -104,4 +105,16 @@ test('parseYInput: surface_y of 0 is valid (gives block_y = -1)', () => {
 
 test('parseYInput: y of 0 is valid', () => {
   assert.equal(parseYInput({ y: 0 }), 0);
+});
+
+test('normalizeBoxYArgs: surface_y1/surface_y2 override y1/y2', () => {
+  const out = normalizeBoxYArgs({ y1: 99, y2: 100, surface_y1: 65, surface_y2: 66 });
+  assert.equal(out.y1, 64);
+  assert.equal(out.y2, 65);
+});
+
+test('normalizeBoxYArgs: leaves args untouched when aliases are absent/invalid', () => {
+  assert.deepEqual(normalizeBoxYArgs({ y1: 1, y2: 2 }), { y1: 1, y2: 2 });
+  assert.deepEqual(normalizeBoxYArgs({ y1: 1, y2: 2, surface_y1: 'bogus' }), { y1: 1, y2: 2, surface_y1: 'bogus' });
+  assert.equal(normalizeBoxYArgs(null), null);
 });

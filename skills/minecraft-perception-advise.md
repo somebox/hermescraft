@@ -12,7 +12,7 @@ version: 1.0.0
 
 # Perception advise (`mc advise`)
 
-Runs a **slow** (~10–35 s) LLM digest over a bundled snapshot (observe, status, scene, nearby, map). Use **sparingly** — not every round.
+Runs a **slow** (~10–35 s) LLM digest over a bundled snapshot (observe, **status=self**, **scene=world**, nearby, map). Use **sparingly** — not every round.
 
 ## When to call
 

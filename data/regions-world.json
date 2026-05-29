@@ -4,12 +4,12 @@
     {
       "id": "base",
       "profile": "base",
-      "intent": "protect",
-      "status": "unanchored",
+      "intent": "marker",
+      "status": "active",
       "anchor": {
-        "x": 365,
-        "y": 65,
-        "z": -592
+        "x": 258,
+        "y": 64,
+        "z": 63
       },
       "shape": {
         "kind": "column",
@@ -17,14 +17,15 @@
       },
       "sites": {},
       "capabilities": {
-        "allow_ad_hoc_dig": false,
-        "allow_ad_hoc_place": false,
-        "allow_guided_edit": true,
-        "allow_harvest": false,
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": false,
+        "allow_harvest": true,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-24T23:50:12.306Z",
-      "updated": "2026-05-27T00:00:00.000Z"
+      "created": "2026-05-28T20:08:26Z",
+      "updated": "2026-05-28T20:08:26Z",
+      "notes": "Genesis run g-2026-05-28-6 seed -1312751495452676979 — starts as marker (workers can dig/place to build). Phase-poller flips to protect when [GENESIS:P3] completes (Defenses + watch tower done)."
     },
     {
       "id": "hut1",
@@ -32,9 +33,9 @@
       "intent": "protect",
       "status": "unanchored",
       "anchor": {
-        "x": 320,
-        "y": 65,
-        "z": -590
+        "x": 203,
+        "y": 64,
+        "z": 55
       },
       "shape": {
         "kind": "column",
@@ -44,9 +45,9 @@
       },
       "sites": {
         "anchor": {
-          "x": 320,
-          "y": 65,
-          "z": -590
+          "x": 203,
+          "y": 64,
+          "z": 55
         }
       },
       "capabilities": {
@@ -56,21 +57,34 @@
         "allow_harvest": false,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-26T12:00:00.000Z",
-      "updated": "2026-05-27T08:05:01.204Z",
-      "notes": "Placemark :hut1: at pad center. Guard tower 21x21 centered here; plan anchor min 310,65,-600. r=10 => 21-block column."
+      "created": "2026-05-28T20:08:26Z",
+      "updated": "2026-05-28T20:08:26Z",
+      "notes": "Guard tower pad for genesis run g-2026-05-28-6"
     },
     {
-      "id": "mine_dirt_hilltop_pilot",
-      "profile": "mine",
-      "intent": "resource",
-      "status": "active",
-      "anchor": { "x": 395, "y": 57, "z": -540 },
-      "shape": { "kind": "column", "radius": 8 },
-      "resource": { "tier": 1, "blocks": ["dirt", "grass_block", "coarse_dirt"] },
-      "created": "2026-05-27T15:55:00.000Z",
-      "updated": "2026-05-27T15:55:00.000Z",
-      "notes": "D6 PILOT — single mine validating resource-intent region enforcement + worker mark-following. ~60 blocks NE of base center (365,-592), flat dirt patch confirmed via terrain_top. Tear down when pilot complete (see docs/pilots/mine-dirt-hilltop-pilot.md)."
+      "id": "shelter",
+      "profile": "base",
+      "intent": "marker",
+      "status": "unanchored",
+      "anchor": {
+        "x": 258,
+        "y": 64,
+        "z": 63
+      },
+      "shape": {
+        "kind": "column",
+        "radius": 16
+      },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": false,
+        "allow_harvest": true,
+        "overrides_global_denylist": false
+      },
+      "created": "2026-05-28T20:44:54.732Z",
+      "updated": "2026-05-28T20:45:00.064Z"
     }
   ]
 }

@@ -30,10 +30,40 @@ def plans_dir() -> Path:
     return data_dir() / "ops" / "plans"
 
 
-def load_plan(plan_id: str) -> dict:
-    fp = plans_dir() / f"{plan_id}-plan.json"
-    if not fp.is_file():
-        raise SystemExit(f"PLAN_NOT_FOUND: {fp}")
+def resolve_plan_file(plan_ref: str) -> Path:
+    """Accept plan_id slug, *-plan.json filename, or path to a plan JSON file."""
+    ref = plan_ref.strip()
+    slug = ref
+    for suffix in ("-plan.json", ".json"):
+        if slug.endswith(suffix):
+            slug = slug[: -len(suffix)]
+            break
+    if slug.endswith("-plan"):
+        slug = slug[: -len("-plan")]
+    candidates = [
+        Path(ref),
+        Path.cwd() / ref,
+        plans_dir() / ref,
+        plans_dir() / f"{ref}-plan.json" if not ref.endswith(".json") else plans_dir() / ref,
+        plans_dir() / f"{slug}-plan.json",
+    ]
+    seen: set[Path] = set()
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.is_file():
+            return resolved
+    expected = plans_dir() / f"{slug}-plan.json"
+    raise SystemExit(f"PLAN_NOT_FOUND: {ref} (try plan_id `{slug}` or path `{expected}`)")
+
+
+def load_plan(plan_ref: str) -> dict:
+    fp = resolve_plan_file(plan_ref)
     with fp.open() as f:
         plan = json.load(f)
     cells = plan.get("cells") or []
@@ -212,9 +242,7 @@ def cmd_audit(_args: argparse.Namespace) -> None:
 
 
 def cmd_adopt_cell(args: argparse.Namespace) -> None:
-    fp = plans_dir() / f"{args.plan_id}-plan.json"
-    if not fp.is_file():
-        raise SystemExit(f"PLAN_NOT_FOUND: {fp}")
+    fp = resolve_plan_file(args.plan_id)
     with fp.open() as f:
         plan = json.load(f)
     cells = list(plan.get("cells") or [])

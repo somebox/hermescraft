@@ -1175,6 +1175,16 @@ def landfolk_start() -> None:
         raise RuntimeError(f"landfolk start failed: {proc.stderr[:400]}")
 
 
+def landfolk_deploy() -> None:
+    """Sync repo skills/SOULs/config to ~/.hermes profiles and regenerate
+    derived artifacts (mc-cheatsheet, …). Run before `landfolk_start` so a
+    fresh genesis world boots with the current view of skills and the
+    registry-generated cheatsheet."""
+    proc = _run([str(REPO_ROOT / "scripts" / "landfolk"), "deploy"], timeout=180)
+    if proc.returncode != 0:
+        raise RuntimeError(f"landfolk deploy failed: {proc.stderr[:400]}")
+
+
 def capture_snapshot(label: str, run_id: str | None = None) -> Path:
     rid = run_id or active_run_id()
     if not rid:

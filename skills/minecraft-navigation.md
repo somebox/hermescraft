@@ -39,10 +39,10 @@ mc pillar_step [BLK] [N=1] [--force]   # climb up. Omit BLK to dig overhead + ca
 mc pillar_down [N=12]        # descend a pillar by mining the block underfoot
 
 # Survey + look
-mc status                  # current position, biome, dimension, HP, food
+mc status                  # self: position, HP, food, holding, supplies, situation if stuck
+mc scene                   # world: LOS blocks, entities, topology (use for surroundings / blocked)
 mc map [R]                 # compact ASCII map (default R=12, max 16)
 mc nearby [R=32]           # blocks + entities within R
-mc scene                   # visible landmarks + entities in vision range
 mc look_at X Y Z           # face a position (no movement)
 mc find_blocks BLOCK [R]   # locate blocks of TYPE (no mining)
 mc terrain_top X Z [R=0]   # highest non-air, non-fluid Y in column(s)

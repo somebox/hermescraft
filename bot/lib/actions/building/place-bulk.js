@@ -5,25 +5,7 @@ import { shouldSkipPlaceAt, shouldSkipDigAt, createRegionSkipTracker } from '../
 import { fail } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
-import { withYBoth, parseYInput, blockFromSurface } from '../../runtime/coordinates.js';
-
-/**
- * Allow callers to pass surface_y1/surface_y2 (= block_y+1) as alternatives
- * to y1/y2. When present, they win (surface_y semantics — bots walk at Y).
- * Returns a new args object with y1/y2 normalized so the underlying box6
- * helper sees what it expects.
- */
-function normalizeBoxYArgs(args) {
-  if (args == null || typeof args !== 'object') return args;
-  const out = { ...args };
-  if (out.surface_y1 != null && Number.isFinite(Number(out.surface_y1))) {
-    out.y1 = blockFromSurface(Number(out.surface_y1));
-  }
-  if (out.surface_y2 != null && Number.isFinite(Number(out.surface_y2))) {
-    out.y2 = blockFromSurface(Number(out.surface_y2));
-  }
-  return out;
-}
+import { withYBoth, parseYInput, normalizeBoxYArgs } from '../../runtime/coordinates.js';
 
 const { goals } = pathfinderPkg;
 

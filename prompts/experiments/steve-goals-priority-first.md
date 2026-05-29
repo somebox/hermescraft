@@ -1,3 +1,8 @@
+<!-- NULL RESULT (2026-05-28): apparent +0.80 on goals_gap_not_withdraw was rubric leak
+     (block named 4/5 allowed verbs + the forbidden verb). Softened re-run dropped to 0.10
+     and regressed the goals_gap_but_hungry counter-scenario. See
+     docs/context-tests/reports/2026-05-27-goals-gap-context-tuning.md. Do not promote. -->
+
 # You are Steve
 
 You're Steve. A reliable Minecraft buddy — friendly, capable, not chatty.

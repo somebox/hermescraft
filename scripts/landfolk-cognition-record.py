@@ -42,7 +42,7 @@ from hermes_session_lib import (
 
 LOG_DIR = Path(os.environ.get("LOG_DIR", "/tmp/hermescraft"))
 STATE_DIR = LOG_DIR / "state"
-COGNITION_DIR = LOG_DIR / "cognition"
+COGNITION_DIR = Path(os.environ.get("COGNITION_DIR", str(LOG_DIR / "cognition")))
 STATE_FILE = STATE_DIR / "cognition-record.json"
 ROSTER_FILE = Path(
     os.environ.get("ROSTER_FILE", str(LOG_DIR / "active-players"))

@@ -30,8 +30,12 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from blueprint_lib import (
+    anchor_from_marker,
     assert_plan_size,
+    materials_planned_from_cells,
     metadata_footprint,
+    normalize_block_id,
+    placement_block_id,
     slug_from_name,
     tight_footprint_from_cells,
 )
@@ -81,6 +85,10 @@ NAME_TO_BLOCK: dict[str, str] = {
     "red bed": "red_bed",
     "stone slab": "stone_slab",
     "stone slab (double)": "stone_slab",
+    "stone brick slab": "stone_brick_slab",
+    "double stone brick slab": "stone_brick_slab",
+    "stone brick stairs": "stone_brick_stairs",
+    "oak wood": "oak_log",
     "sandstone": "sandstone",
     "oak wood stairs": "oak_stairs",
     "oak wood stair": "oak_stairs",
@@ -89,22 +97,20 @@ NAME_TO_BLOCK: dict[str, str] = {
     "pressure plate": "oak_pressure_plate",
 }
 
-# When --substitute: replace planned block id with something easier at base
+# When --substitute: swap rare GrabCraft ids for base-friendly types (prefer stone brick over cobble).
 EASY_SUBSTITUTIONS: dict[str, str] = {
     "clay": "dirt",
     "terracotta": "dirt",
-    "stone_bricks": "cobblestone",
-    "mossy_stone_bricks": "cobblestone",
-    "bricks": "cobblestone",
+    "mossy_stone_bricks": "stone_bricks",
+    "bricks": "stone_bricks",
     "spruce_planks": "oak_planks",
     "birch_planks": "oak_planks",
     "jungle_planks": "oak_planks",
     "dark_oak_planks": "oak_planks",
     "acacia_planks": "oak_planks",
-    "stone": "cobblestone",
-    "andesite": "cobblestone",
-    "diorite": "cobblestone",
-    "granite": "cobblestone",
+    "andesite": "stone_bricks",
+    "diorite": "stone_bricks",
+    "granite": "stone_bricks",
     "deepslate": "cobbled_deepslate",
     "deepslate_bricks": "cobbled_deepslate",
 }
@@ -176,9 +182,14 @@ def build_plan(
             skipped[block_id] += 1
             continue
         original_id = block_id
-        if substitute and block_id in EASY_SUBSTITUTIONS:
-            block_id = EASY_SUBSTITUTIONS[block_id]
+        sub_key = normalize_block_id(block_id)
+        if substitute and sub_key in EASY_SUBSTITUTIONS:
+            block_id = EASY_SUBSTITUTIONS[sub_key]
             sub_log[f"{original_id}→{block_id}"] += 1
+        placed_id = placement_block_id(block_id)
+        if placed_id != block_id:
+            sub_log[f"{block_id}→{placed_id}"] += 1
+            block_id = placed_id
         parts = key.split(",")
         lx, ly, lz = int(parts[0]), int(parts[1]), int(parts[2])
         planned_cells.append(
@@ -190,7 +201,7 @@ def build_plan(
             }
         )
 
-    mat_counts = Counter(c["block"] for c in planned_cells)
+    mat_pairs = materials_planned_from_cells(planned_cells)
     by_layer: dict[int, int] = Counter()
     for c in planned_cells:
         by_layer[c["local"][1]] += 1
@@ -232,7 +243,11 @@ def build_plan(
             },
         },
         "footprint": footprint,
-        "options": {"substitute_easy_materials": substitute, "simplify_decorative": simplify},
+        "options": {
+            "substitute_easy_materials": substitute,
+            "simplify_decorative": simplify,
+            "simplify_doors": True,
+        },
         "anchor": {"coords": anchor, "site": site},
         "history": [
             {
@@ -244,7 +259,7 @@ def build_plan(
             }
         ],
         "materials_original": materials_orig,
-        "materials_planned": [{"item": k, "count": v} for k, v in mat_counts.most_common()],
+        "materials_planned": [{"item": k, "count": v} for k, v in mat_pairs],
         "stats": {
             "cells_planned": len(planned_cells),
             "cells_skipped_decorative": sum(skipped.values()),
@@ -255,9 +270,10 @@ def build_plan(
         "phases": phases,
         "cells": planned_cells,
         "worker_hints": [
-            "Anchor in world coords: set anchor.coords or site (e.g. :base1:/tower) before mc construct.",
+            "Anchor min-corner Y = foundation (layer 1) world Y; use --marker for placemark-centered XZ.",
             "Use materials_planned for [SUPPLY] cards; cells[] is the placement diff input for future mc construct.",
             "Re-run with --no-substitute for faithful block types.",
+            "Doors: cells use canonical ids (e.g. oak_door); place one door item at the lower block — facing manual.",
         ],
     }
     return plan
@@ -270,7 +286,11 @@ def main() -> int:
     ap.add_argument("--save-blueprint", help="Also write raw GrabCraft JSON here")
     ap.add_argument("--no-substitute", action="store_true", help="Disable easy material swaps")
     ap.add_argument("--no-simplify", action="store_true", help="Keep decorative blocks")
-    ap.add_argument("--anchor", help="World anchor x,y,z (metadata only until worker places)")
+    ap.add_argument("--anchor", help="World anchor min corner x,y,z (layer 1 floor Y = anchor Y)")
+    ap.add_argument(
+        "--marker",
+        help="Placemark center x,y,z; sets anchor from footprint (floor Y = marker Y, XZ centered)",
+    )
     ap.add_argument("--site", help="Region site ref e.g. :base1:/tower")
     ap.add_argument("--plan-id", help="Stable plan slug (default: derived from blueprint name)")
     ap.add_argument(
@@ -283,12 +303,21 @@ def main() -> int:
     args = ap.parse_args()
 
     anchor = None
+    marker = None
     if args.anchor:
         parts = [int(x.strip()) for x in args.anchor.split(",")]
         if len(parts) != 3:
             print("error: --anchor must be x,y,z", file=sys.stderr)
             return 2
         anchor = parts
+    if args.marker:
+        parts = [int(x.strip()) for x in args.marker.split(",")]
+        if len(parts) != 3:
+            print("error: --marker must be x,y,z", file=sys.stderr)
+            return 2
+        marker = parts
+    if not anchor and not marker:
+        anchor = [0, 64, 0]
 
     GrabCraftDownloader = load_downloader()
     dl = GrabCraftDownloader(args.url)
@@ -305,11 +334,16 @@ def main() -> int:
         blueprint,
         substitute=not args.no_substitute,
         simplify=not args.no_simplify,
-        anchor=anchor,
+        anchor=anchor or [0, 64, 0],
         site=args.site,
         plan_id=args.plan_id,
         footprint_mode=args.footprint,
     )
+    if marker:
+        plan["anchor"]["coords"] = anchor_from_marker(marker, plan["footprint"])
+        plan["anchor"]["marker"] = {"coords": marker}
+    elif anchor:
+        plan["anchor"]["coords"] = anchor
 
     indent = None if args.compact else 2
     text = json.dumps(plan, indent=indent, ensure_ascii=False) + "\n"

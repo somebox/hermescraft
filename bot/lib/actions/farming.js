@@ -14,7 +14,7 @@ import { columnTopSolid } from '../runtime/dig-tools.js';
 import { findAdjustedTarget, botFootCell, findLateralStepOff } from './_nav-helpers.js';
 import { AIR_NAMES } from './_block-sets.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
-import { runVerifyPlot, runFarmStatus, MAX_VERIFY_CELLS } from './farming-survey.js';
+import { runVerifyPlot, runFarmStatus, MAX_VERIFY_CELLS } from './_farming-survey.js';
 import { columnsInRect } from '../runtime/regions/terrain-survey.js';
 
 const HOE_NAMES = ['netherite_hoe', 'diamond_hoe', 'iron_hoe', 'stone_hoe', 'golden_hoe', 'wooden_hoe'];
