@@ -125,9 +125,14 @@ def _hermes(*args: str, timeout: int = 30, json_flag: bool = False) -> dict | li
 def _db() -> sqlite3.Connection:
     if not DB_PATH.exists():
         _die(f"kanban DB not found at {DB_PATH} — is the board initialized?")
-    # Open read-only via URI so we never accidentally write through here.
-    uri = f"file:{DB_PATH}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, timeout=5.0)
+    # Plain open (not the `mode=ro` URI form). Read-only is a soft
+    # contract here — none of our queries write — but the URI form
+    # rejects opens with "unable to open database file" when the
+    # WAL/SHM sidecars are mid-transition right after a writer commits.
+    # Observed g-2026-05-29-5 at 01:44:32 (4s after landfolk_start, right
+    # after seed_cards). The plain open path lets SQLite cooperate with
+    # the WAL the normal way and the call succeeds.
+    conn = sqlite3.connect(str(DB_PATH), timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
 
