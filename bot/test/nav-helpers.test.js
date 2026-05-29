@@ -215,10 +215,11 @@ test('findAdjustedTarget: coerces non-int radius safely', () => {
 
 // Mock bot. `at(x,y,z) -> name` describes terrain; default is 'air'.
 // Bot is centered in the cell at (cell.x, cell.y, cell.z).
-function makeStandingMockBot(cell, at = () => 'air') {
+function makeStandingMockBot(cell, at = () => 'air', entities = {}) {
   const AIR_LIKE = new Set(['air', 'cave_air', 'void_air']);
-  return {
+  const self = {
     entity: { position: { x: cell.x + 0.5, y: cell.y, z: cell.z + 0.5 } },
+    entities,
     blockAt(pos) {
       const name = at(pos.x, pos.y, pos.z) || 'air';
       // Anything non-air is treated as a full block for these tests. The
@@ -229,6 +230,7 @@ function makeStandingMockBot(cell, at = () => 'air') {
       return { name, boundingBox: AIR_LIKE.has(name) ? 'empty' : 'block' };
     },
   };
+  return self;
 }
 
 test('standingState: 1-block bump in flat grass → "open", step_down on all 4 sides (not on_pillar)', () => {
@@ -343,6 +345,74 @@ test('standingState: edge classification only for TRUE cliffs (not step_downs)',
   assert.equal(ss.classification, 'edge');
   assert.deepEqual([...ss.cliff_dirs], ['N']);
   assert.deepEqual([...ss.step_down_dirs].sort(), []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// standingState — standing_on awareness (chest/table, lone block, mob).
+// ─────────────────────────────────────────────────────────────────────────
+
+test('standingState: standing on a chest → standing_on significant, interactable', () => {
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'chest';
+    if (y === 64) return 'grass_block';   // surrounding ground at walk level
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.ok(ss.standing_on, 'expected standing_on');
+  assert.equal(ss.standing_on.name, 'chest');
+  assert.equal(ss.standing_on.significant, true);
+  assert.equal(ss.standing_on.reason, 'interactable');
+  assert.deepEqual(ss.standing_on.coord, { x: 5, y: 64, z: 5 });
+});
+
+test('standingState: lone pillar block → standing_on significant, isolated_block', () => {
+  const at = (x, y, z) => (x === 5 && y === 64 && z === 5 ? 'stone' : 'air');
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'on_pillar');
+  assert.equal(ss.standing_on.name, 'stone');
+  assert.equal(ss.standing_on.significant, true);
+  assert.equal(ss.standing_on.reason, 'isolated_block');
+});
+
+test('standingState: plain ground block → standing_on present but not significant', () => {
+  const at = (x, y, z) => {
+    if (x === 5 && y === 64 && z === 5) return 'grass_block';
+    if (y === 64) return 'grass_block';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.standing_on.name, 'grass_block');
+  assert.equal(ss.standing_on.significant, false);
+});
+
+test('standingState: standing on a mob → standing_on is_entity, names the mob', () => {
+  // No supporting block (air below); a pig occupies the bot's column with
+  // its top at the bot's feet.
+  const at = () => 'air';
+  const entities = {
+    pig1: {
+      name: 'pig',
+      type: 'animal',
+      height: 0.9,
+      position: { x: 5.5, y: 64.1, z: 5.5 },
+    },
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at, entities));
+  assert.ok(ss.standing_on, 'expected standing_on');
+  assert.equal(ss.standing_on.is_entity, true);
+  assert.equal(ss.standing_on.entity_name, 'pig');
+  assert.equal(ss.standing_on.significant, true);
+});
+
+test('standingState: dropped item underfoot is NOT treated as standing_on entity', () => {
+  const at = (x, y, z) => (x === 5 && y === 64 && z === 5 ? 'stone' : 'air');
+  const entities = {
+    drop: { name: 'item', type: 'object', height: 0.25, position: { x: 5.5, y: 65.0, z: 5.5 } },
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at, entities));
+  // Should reflect the stone pillar, not the item.
+  assert.equal(ss.standing_on.is_entity, false);
+  assert.equal(ss.standing_on.name, 'stone');
 });
 
 test('standingState: 1-block step-down adjacent to a real cliff is still safe — no "edge"', () => {

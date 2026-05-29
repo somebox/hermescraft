@@ -18,7 +18,13 @@ export function createStandingQueries({ ensureBot }) {
     if (s.error === 'no_bot') {
       return { ok: false, error: { code: 'NO_BOT', message: 'bot not ready', retry_safe: true } };
     }
-    const resultMsg = `${s.classification} at ${s.cell.x},${s.cell.y},${s.cell.z} — blocked: [${s.blocked_dirs.join(',') || '-'}] open: [${s.open_dirs.join(',') || '-'}]${s.cliff_dirs.length ? ` cliff: [${s.cliff_dirs.join(',')}]` : ''}${s.head_blocked ? ' head_blocked' : ''}${s.foot_support === false ? ' no_foot_support' : ''}${s.ceiling_within !== null ? ` ceiling_at_+${s.ceiling_within}` : ''}`;
+    let standingOnNote = '';
+    if (s.standing_on?.significant) {
+      standingOnNote = s.standing_on.is_entity
+        ? ` on_entity:${s.standing_on.entity_name}`
+        : ` on:${s.standing_on.name}@${s.standing_on.coord.x},${s.standing_on.coord.y},${s.standing_on.coord.z}`;
+    }
+    const resultMsg = `${s.classification} at ${s.cell.x},${s.cell.y},${s.cell.z} — blocked: [${s.blocked_dirs.join(',') || '-'}] open: [${s.open_dirs.join(',') || '-'}]${s.cliff_dirs.length ? ` cliff: [${s.cliff_dirs.join(',')}]` : ''}${s.head_blocked ? ' head_blocked' : ''}${s.foot_support === false ? ' no_foot_support' : ''}${s.ceiling_within !== null ? ` ceiling_at_+${s.ceiling_within}` : ''}${standingOnNote}`;
     return { ok: true, data: s, result: resultMsg };
   },
   };

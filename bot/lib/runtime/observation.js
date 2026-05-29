@@ -570,10 +570,12 @@ export function createObservation(deps) {
     }
 
     let situation;
+    let standing_on;
     if (getStandingState) {
       try {
         const st = getStandingState(b);
-        if (isStuckStandingClassification(st.classification) || st.head_blocked) {
+        standing_on = st.standing_on || undefined;
+        if (isStuckStandingClassification(st.classification) || st.head_blocked || st.standing_on?.significant) {
           situation = formatStandingSituation(st);
         }
       } catch { /* ignore */ }
@@ -601,6 +603,7 @@ export function createObservation(deps) {
       holding,
       ...(hand_vs_inventory ? { hand_vs_inventory } : {}),
       ...(situation ? { situation } : {}),
+      ...(standing_on ? { standing_on } : {}),
       // circuit-v16: explicit mounted-state on /status so the agent
       // doesn't lose track of "I'm on a boat" between actions.
       //

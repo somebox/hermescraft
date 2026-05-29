@@ -134,6 +134,17 @@ export function summarizeSceneText({
 export function formatStandingSituation(standing) {
   if (!standing || standing.error) return null;
   const { classification: c, head_blocked: headBlocked, ceiling_within: ceilingWithin } = standing;
+  const so = standing.standing_on;
+  if (so && so.significant) {
+    const at = so.coord ? ` at ${so.coord.x},${so.coord.y},${so.coord.z}` : '';
+    if (so.is_entity) {
+      return `Standing on ${so.entity_name}${at} (an entity, not solid ground) — move off before digging/placing here.`;
+    }
+    if (so.reason === 'isolated_block') {
+      return `Standing on a lone ${so.name}${at} with drops all around — mc pillar_down or dig carefully; don't strand yourself.`;
+    }
+    return `Standing on ${so.name}${at} — digging here destroys it; step aside first (mc inspect ${so.coord.x} ${so.coord.y} ${so.coord.z} to confirm).`;
+  }
   if (headBlocked || c === 'head_blocked') {
     return 'Head-level block is blocking movement — dig or step aside.';
   }

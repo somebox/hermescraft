@@ -20,6 +20,7 @@
  */
 
 import { Vec3 } from 'vec3';
+import { isNonBlockingEntity } from '../shared/entity-blocking.js';
 
 const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
 const TRAVERSABLE_FOOT = new Set([
@@ -29,6 +30,46 @@ const TRAVERSABLE_FOOT = new Set([
   // they count as valid for our purposes.
   'tall_grass', 'short_grass', 'grass', 'fern', 'snow',
 ]);
+
+// Storage / utility / interactable blocks worth flagging when the bot is
+// standing on them — digging or building here risks destroying or burying
+// the fixture. Colored variants (beds, shulker boxes) handled by suffix.
+const NOTABLE_STANDING_BLOCKS = new Set([
+  'chest', 'trapped_chest', 'ender_chest', 'barrel',
+  'crafting_table', 'furnace', 'blast_furnace', 'smoker',
+  'smithing_table', 'cartography_table', 'fletching_table', 'loom',
+  'grindstone', 'stonecutter', 'enchanting_table', 'brewing_stand',
+  'anvil', 'chipped_anvil', 'damaged_anvil', 'beacon', 'lectern', 'bell',
+  'hopper', 'dispenser', 'dropper', 'observer', 'jukebox', 'composter',
+  'lodestone', 'respawn_anchor', 'conduit',
+]);
+
+/** @param {string|null|undefined} name */
+function isNotableStandingBlock(name) {
+  if (!name) return false;
+  if (NOTABLE_STANDING_BLOCKS.has(name)) return true;
+  return /(_bed|_shulker_box)$/.test(name);
+}
+
+/**
+ * Detect a mob/player the bot is standing on (its hitbox top supports the
+ * bot's feet). Skips dropped items / projectiles. Returns the entity or null.
+ * @param {any} b mineflayer bot
+ * @param {number} bx floored bot cell x
+ * @param {number} by floored bot cell y (feet)
+ * @param {number} bz floored bot cell z
+ */
+function entityUnderfoot(b, bx, by, bz) {
+  for (const e of Object.values(b.entities || {})) {
+    if (!e || e === b.entity || !e.position) continue;
+    if (isNonBlockingEntity(e)) continue;
+    if (Math.floor(e.position.x) !== bx || Math.floor(e.position.z) !== bz) continue;
+    const top = e.position.y + (e.height || 1.0);
+    // The bot rests on the entity's top face; allow a small tolerance.
+    if (e.position.y <= by + 0.1 && top >= by - 0.4) return e;
+  }
+  return null;
+}
 
 /**
  * Probe whether the target column appears to be in a loaded chunk.
@@ -572,6 +613,35 @@ export function standingState(b) {
     classification = 'open';
   }
 
+  // What is the bot actually standing on? Report the block name underfoot
+  // (always, for context) plus a `significant` flag when it's an
+  // interactable/storage fixture, a lone pillar block, or a mob/player —
+  // cases the agent should notice before digging/building here. A mob
+  // underfoot also explains an otherwise-misleading `in_air` classification.
+  let standing_on = null;
+  const mob = entityUnderfoot(b, bx, by, bz);
+  if (mob) {
+    standing_on = {
+      is_entity: true,
+      entity_name: mob.username || mob.displayName || mob.name || mob.type || 'entity',
+      name: null,
+      coord: { x: bx, y: by - 1, z: bz },
+      significant: true,
+      reason: 'entity',
+    };
+  } else if (below && !AIR_NAMES.has(below.name) && below.boundingBox === 'block') {
+    const notable = isNotableStandingBlock(below.name);
+    const isolated = classification === 'on_pillar';
+    standing_on = {
+      is_entity: false,
+      entity_name: null,
+      name: below.name,
+      coord: { x: bx, y: by - 1, z: bz },
+      significant: notable || isolated,
+      ...(notable ? { reason: 'interactable' } : isolated ? { reason: 'isolated_block' } : {}),
+    };
+  }
+
   return {
     position: { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100, z: Math.round(p.z * 100) / 100 },
     cell: { x: bx, y: by, z: bz },
@@ -590,6 +660,7 @@ export function standingState(b) {
     foot_in_flowing,
     head_in_water,
     neighbor_status,
+    standing_on,
   };
 }
 
