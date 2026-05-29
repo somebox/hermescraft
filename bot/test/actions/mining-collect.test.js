@@ -564,6 +564,52 @@ test('mining.collect: non-trunk sort follows the bot row before stepping to next
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// 10b. Within-row sweep is MONOTONIC (travel minimization). The old sort
+//      ordered each row by |strip - botStrip|, interleaving the two sides of
+//      the bot (1,-1,2,-2,…) so the bot crossed back over itself on every
+//      block. Over a wide `mc collect stone 64` that back-and-forth exhausted
+//      the wallclock budget. The serpentine sweep must walk the row in one
+//      direction (no reversal) so travel between consecutive blocks is ~1.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: within a row the strip axis is swept monotonically (no zigzag)', async () => {
+  // Bot off the patch (south) so the whole patch is one perp row (z=0) with
+  // no self-block filtering. Candidates span x=-3..3 → stripAxis=x.
+  const positions = [];
+  for (const x of [-3, -2, -1, 0, 1, 2, 3]) positions.push(new Vec3(x, 63, 0));
+
+  const digOrder = [];
+  const deps = makeDeps({
+    findVisible: async (name) => (name === 'dirt' ? positions.map((p) => ({ position: p })) : []),
+    bot: makeStubBot({
+      position: new Vec3(0.5, 64, -2.5),
+      dig: async (block) => {
+        digOrder.push({ x: block.position?.x ?? null, z: block.position?.z ?? null });
+        throw new Error('test_no_dig'); // burn candidate cleanly
+      },
+    }),
+  });
+  deps.ensureBot().blockAt = (pos) => ({ name: 'dirt', position: pos, getProperties: () => ({}) });
+
+  const actions = createMiningActions(deps);
+  await actions.collect({ block: 'dirt', count: 7 });
+
+  const xs = digOrder.slice(0, 7).map((p) => p.x);
+  assert.equal(xs.length, 7, `expected 7 dig attempts, got ${xs.length}: ${JSON.stringify(digOrder)}`);
+  // Monotonic = the strip coordinate only ever moves in ONE direction. Count
+  // sign changes in successive deltas; a zigzag has many, a sweep has none.
+  let reversals = 0;
+  let dir = 0;
+  for (let i = 1; i < xs.length; i++) {
+    const step = Math.sign(xs[i] - xs[i - 1]);
+    if (step === 0) continue;
+    if (dir !== 0 && step !== dir) reversals += 1;
+    dir = step;
+  }
+  assert.equal(reversals, 0, `row sweep must be monotonic (no direction reversals), got x order ${JSON.stringify(xs)}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // Pre-flight tool check + cascade bail. Two layers of defense:
 //   1. NEW pre-flight check at collect entry — refuses BEFORE discovery
 //      when no pickaxe (or axe, etc.) is in inventory. Prevents the
@@ -691,6 +737,78 @@ test('mining.collect: force=true bypasses pre-flight (TOOL_INADEQUATE cascade-ba
     r.error.observed_state.attempted <= 1,
     `expected attempted <= 1, got ${r.error.observed_state.attempted}`,
   );
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tool break mid-collect — when the pickaxe shatters (durability → 0) the
+// hand empties. The bot must NOT keep stabbing stone bare-handed; it must
+// abort with TOOL_INADEQUATE. Pre-fix the per-block equip cache memoized the
+// first candidate's "ok" result and short-circuited the slow-dig guard on
+// every later candidate, so a broken pickaxe went undetected and collect
+// bare-handed the rest of the deposit.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: aborts when the pickaxe breaks mid-collect (no bare-hand mining)', async () => {
+  // One row of stone in easy reach. The pickaxe breaks after the 2nd dig.
+  const positions = [
+    new Vec3(1, 63, 0), new Vec3(2, 63, 0), new Vec3(3, 63, 0),
+    new Vec3(1, 63, 1), new Vec3(2, 63, 1), new Vec3(1, 63, -1),
+  ];
+  const breakAfter = 2;
+  const digOrder = [];
+  let held = { name: 'iron_pickaxe', count: 1 };
+  let pickInInv = true;
+  let digs = 0;
+
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0), isInWater: false },
+    get heldItem() { return held; },
+    inventory: { items: () => (pickInInv ? [{ name: 'iron_pickaxe', count: 1 }] : []) },
+    findBlocks: () => [],
+    blockAt: (pos) => (pos.y >= 64
+      ? { name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}) }
+      : { name: 'stone', position: pos, boundingBox: 'block', hardness: 1.5, type: 1, getProperties: () => ({}) }),
+    dig: async (block) => {
+      digOrder.push({ x: block.position.x, y: block.position.y, z: block.position.z });
+      digs += 1;
+      if (digs >= breakAfter) { held = null; pickInInv = false; } // pickaxe shatters
+    },
+    stopDigging: () => {},
+    pathfinder: { goto: async () => {}, setGoal: () => {}, stop: () => {}, goal: null },
+    clearControlStates: () => {},
+    tool: {
+      itemInHand: () => held,
+      // Fast with a pickaxe (well under the slow-dig cap), unusably slow bare-handed.
+      getDigTime: (_block, h) => (h && /pickaxe/.test(h.name || '') ? 5 : 7500),
+      equipForBlock: async () => {},
+    },
+    equip: async () => {},
+    unequip: async () => {},
+    entities: {},
+  };
+
+  const deps = makeDeps({
+    bot,
+    mcData: {
+      blocksByName: { stone: { id: 1, drops: [4], boundingBox: 'block' } },
+      itemsByName: { cobblestone: { id: 4 } },
+      items: { 1: { name: 'stone' }, 4: { name: 'cobblestone' } },
+    },
+    findVisible: async (name) => (name === 'stone' ? positions.map((p) => ({ position: p })) : []),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'stone', count: 6 });
+
+  const v = validate(r);
+  assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
+  assert.equal(r.ok, false, `expected abort, got: ${JSON.stringify(r)}`);
+  assert.equal(r.error.code, 'TOOL_INADEQUATE', `expected TOOL_INADEQUATE, got ${r.error.code}`);
+  assert.match(r.error.message, /Refusing to dig/);
+  // The crucial assertion: exactly `breakAfter` blocks were dug. Without the
+  // cache-revalidation fix this would be 6 (kept mining bare-handed).
+  assert.equal(digOrder.length, breakAfter,
+    `expected dig to stop at ${breakAfter} (when the pickaxe broke), got ${digOrder.length}: ${JSON.stringify(digOrder)}`);
+  assert.equal(r.error.observed_state.mined_count, breakAfter);
 });
 
 

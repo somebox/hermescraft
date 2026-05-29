@@ -83,7 +83,7 @@ const AIR_ABOVE = new Set(['air', 'cave_air', 'void_air']);
  * @property {number} stallRounds
  * @property {number} startMs
  * @property {number[]} acceptedBlockIds
- * @property {Map<string,string[]>} equipHintsCache
+ * @property {Map<string,{ hints: string[], held: string }>} equipHintsCache
  * @property {{ pickedUpPositions: object[] } | null} sweepResult
  */
 
@@ -214,9 +214,23 @@ function createEquipForDigCached(state) {
   const { b } = state.cctx;
   return async function equipForDigCached(target) {
     const cached = state.equipHintsCache.get(target.name);
-    if (cached) return { hints: cached };
+    // The cache memoizes the advisory HINTS only — it must NOT short-circuit
+    // the equip + slow-dig guard, because a tool can BREAK mid-collect
+    // (durability → 0 empties the hand). Re-running equipForDig every
+    // candidate would be wasteful, so on a cache hit we cheaply confirm the
+    // held item is still what we equipped for this block. If it changed (tool
+    // shattered, or the agent swapped hands), fall through and re-validate:
+    // equipForDig either re-equips a spare from inventory or throws
+    // "Refusing to dig …", which collect treats as a pre-dig refusal and
+    // aborts the whole call instead of stabbing stone bare-handed.
+    if (cached && (b.heldItem?.name || '') === cached.held) {
+      return { hints: cached.hints };
+    }
     const result = await equipForDig(b, target);
-    state.equipHintsCache.set(target.name, result.hints || []);
+    state.equipHintsCache.set(target.name, {
+      hints: result.hints || [],
+      held: b.heldItem?.name || '',
+    });
     return result;
   };
 }

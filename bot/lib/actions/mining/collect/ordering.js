@@ -77,22 +77,65 @@ export function collectOrderingPhase(cctx, { found, isTrunkHarvest }) {
   let initialPerpAnchor = Math.floor(b.entity.position[perpAxis]);
   let perpDirection = 1;
   const initialYAnchor = Math.floor(b.entity.position.y);
+  // Row-ordering: blocks are grouped into rows keyed by (Y-band, perp rank).
+  // Rows are visited Y-layer by Y-layer, and within a layer in perp order
+  // (the bot's own row first, then forward in perpDirection, then the
+  // backward rows). Within each row the strip axis is swept MONOTONICALLY,
+  // and the sweep direction ALTERNATES row-to-row (boustrophedon). That way
+  // the bot finishes one row adjacent to the start of the next instead of
+  // returning toward the anchor every row.
+  //
+  // Why this matters: the previous comparator ordered each row by absolute
+  // strip-distance from the bot (|strip - botStrip|), which interleaves the
+  // two sides of the bot (1, -1, 2, -2, …) and makes the bot cross back over
+  // itself on every block. On a small patch that's a couple of wasted steps;
+  // over a wide `mc collect stone 64` scan it is constant back-and-forth
+  // travel that exhausts the wallclock budget before many blocks are mined.
+  const perpRankOf = (p) => {
+    const raw = (p[perpAxis] - initialPerpAnchor) * perpDirection;
+    // Forward rows (raw >= 0) rank ahead of backward rows; ties broken so the
+    // bot's own row (raw === 0) always comes first.
+    return raw >= 0 ? raw : 1000 - raw;
+  };
   const stripSort = (list) => {
     const botStrip = Math.floor(b.entity.position[stripAxis]);
-    return list.slice().sort((a, c) => {
-      const ay = Math.abs(a.y - initialYAnchor);
-      const cy = Math.abs(c.y - initialYAnchor);
-      if (ay !== cy) return ay - cy;
-      const apRaw = (a[perpAxis] - initialPerpAnchor) * perpDirection;
-      const cpRaw = (c[perpAxis] - initialPerpAnchor) * perpDirection;
-      const ap = apRaw >= 0 ? apRaw : 1000 - apRaw;
-      const cp = cpRaw >= 0 ? cpRaw : 1000 - cpRaw;
-      if (ap !== cp) return ap - cp;
-      const as = Math.abs(a[stripAxis] - botStrip);
-      const cs = Math.abs(c[stripAxis] - botStrip);
-      if (as !== cs) return as - cs;
-      return a.y - c.y;
+    // 1. Bucket candidates into rows.
+    /** @type {Map<string, { yBand: number, perpRank: number, items: any[] }>} */
+    const rowMap = new Map();
+    const rowsInOrder = [];
+    for (const p of list) {
+      const yBand = Math.abs(p.y - initialYAnchor);
+      const perpRank = perpRankOf(p);
+      const key = `${yBand}|${perpRank}`;
+      let row = rowMap.get(key);
+      if (!row) {
+        row = { yBand, perpRank, items: [] };
+        rowMap.set(key, row);
+        rowsInOrder.push(row);
+      }
+      row.items.push(p);
+    }
+    // 2. Visit rows Y-layer first, then perp rank.
+    rowsInOrder.sort((r1, r2) =>
+      r1.yBand !== r2.yBand ? r1.yBand - r2.yBand : r1.perpRank - r2.perpRank);
+    // 3. Sweep each row monotonically; alternate direction row-to-row. The
+    //    first row starts from whichever strip end is nearer the bot so the
+    //    opening hop is short, then the serpentine chains the rest.
+    const out = [];
+    let ascending = true;
+    rowsInOrder.forEach((row, idx) => {
+      row.items.sort((a, c) => (a[stripAxis] - c[stripAxis]) || (a.y - c.y));
+      if (idx === 0) {
+        const lo = row.items[0][stripAxis];
+        const hi = row.items[row.items.length - 1][stripAxis];
+        // Start nearer end: if the bot is closer to the high end, sweep down.
+        ascending = Math.abs(lo - botStrip) <= Math.abs(hi - botStrip);
+      }
+      const ordered = ascending ? row.items : row.items.slice().reverse();
+      for (const p of ordered) out.push(p);
+      ascending = !ascending;
     });
+    return out;
   };
 
   const dryCandidates = safe.filter((pos) => !isFlooded(pos));
