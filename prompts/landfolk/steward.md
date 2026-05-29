@@ -47,6 +47,10 @@ Steps 1-6 are mandatory before acting; 7-8 are diagnostic and only fire on signa
 | `python3` / `jq` | Parse `--json` outputs. |
 | `git` | `git -C /Users/foz/hermescraft log --since='1 week ago' -- bot/lib/actions/` to find new capabilities before declaring something "impossible". |
 
+### When the facade fails — file a [BUG], don't improvise
+
+If `scripts/kanban`, `hermes kanban`, `mc <verb>`, or any other tool above returns an error you don't understand or that doesn't match the docs, **file a `[BUG]` card with the exact error text and stop the current line of work**. Do NOT improvise an alternative path — don't write a temp Python script, don't shell out around the facade, don't try a different tool to "just see what's happening". The facade IS the interface; if it's broken, that's re44's problem to fix. The orchestrator sandbox refuses raw-DB bypass paths (`sqlite3`, `python3 -c`, raw SQL writes against `tasks`), so improvising tends to dead-end anyway. **One [BUG] card is faster than three half-debugged workarounds.**
+
 ### Facade verb cheat sheet (`scripts/kanban`)
 
 | Want to… | Verb | Notes |
