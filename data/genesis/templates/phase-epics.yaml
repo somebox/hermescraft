@@ -29,19 +29,20 @@ epics:
       This is an **[EPIC] decomposition card** — read the done_when checklist, file/track the pre-filed worker children, and mark this epic done yourself when all checks pass. Do NOT reassign this card to flint/mason.
 
       Phase 1 bootstrap at anchor ({anchor_x}, {anchor_y}, {anchor_z}).
-      System chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}) — workers must not withdraw in P1, with ONE exception: the shelter card may withdraw up to 32 cobble for walls/roof (and only the shelter card; do not extend this to other supply work).
+      System chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}) — workers must not withdraw in P1, with ONE exception: the shelter card may withdraw whatever cobble + tool it needs to build the walls and roof (and only the shelter card; don't extend this to other supply work).
+
       Six worker cards are pre-filed with `--for` epic-membership tag (no `--after` edge to this epic — list members with `scripts/kanban epic <P1_id>`):
 
       1. `[SCOUT] Confirm base anchor` — flint validates the anchor + pins base_anchor mark.
-      2. `[SCOUT] Survey resources around base anchor` — flint maps N/E/S/W/intercardinals for `lt_wood_*`, `lt_stone_*`, `lt_water_*`, `lt_sand_*`. Outputs marks for Phase-2 supply gating. Flags `TREE_DROUGHT` if no trees within 60m.
+      2. `[SCOUT] Survey resources around base anchor` — flint maps `lt_wood_*`, `lt_stone_*`, `lt_water_*`, `lt_sand_*` for Phase-2 supply gating. Flags `<RESOURCE>_DROUGHT` if a key category is below typical Phase-2 demand.
       3. `[CONSTRUCT] Place four base chests on the pad` — flint, parallel-safe with shelter.
-      4. `[CONSTRUCT] Build 5x5 cobble shelter on the pad` — mason, withdraws 32 cobble from system_chest (P1 exception).
+      4. `[CONSTRUCT] Build 5x5 cobble shelter on the pad` — mason, withdraws from system_chest (P1 exception).
       5. `[RECONCILE] Promote chest marks` — steward.
       6. `[SITE] Create shelter region marker` — steward.
 
       Verify done_when before closing this epic.
 
-      **Shelter verification (mandatory before close):** after mason finishes the walls + roof, run `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2` to confirm the 5×5×3 enclosure has no perimeter gaps. If WALLS_INCOMPLETE, file a `[FIX] patch shelter` card listing the missing cells before marking P1 done.
+      **Shelter verification (mandatory before close):** re-run the same `mc is_sheltered walls=…` bbox the shelter card recorded in its completion summary. If WALLS_INCOMPLETE, file a `[FIX] patch shelter` card listing the missing cells before marking P1 done.
 
   - phase: P2
     title: "[EPIC] [GENESIS:P2] Sustainable resources"

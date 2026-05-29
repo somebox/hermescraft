@@ -41,106 +41,89 @@ cards:
     assignee: flint
     initial_status: ready
     body: |
-      Walk a roughly square pattern around the base anchor ({anchor_x}, {anchor_y}, {anchor_z}). Sample what's at the surface (and ≤8 blocks down via `mc inspect`) at each cardinal (N/E/S/W) and intercardinal (NE/NW/SE/SW) at 20m, 40m, 60m out. Surface-only — no digging.
+      Walk the surrounding terrain (a few tens of blocks out in each direction is plenty) and find the nearest cluster of each of the resources Phase 2 will need. Surface-only — no digging.
 
-      Record marks for the FIRST hit in each category (closer is better; one mark per direction is enough — don't over-collect):
+      Mark the FIRST viable hit per category with the convention `lt_<resource>_<dir>` (private write; Steward reconciles to shared):
 
-      - `lt_wood_<dir>`   — any oak/birch/spruce ≥4 logs in one cluster
-      - `lt_stone_<dir>`  — exposed stone face ≥8 blocks (cliff, ravine, hill)
-      - `lt_water_<dir>`  — water/lava body within 10m of the survey arc (HAZARD: workers must route around)
+      - `lt_wood_<dir>`   — any tree species, large enough to be worth chopping
+      - `lt_stone_<dir>`  — exposed stone face you could mine from the surface
+      - `lt_water_<dir>`  — water source (HAZARD note if it's a lava lake)
       - `lt_sand_<dir>`   — desert/badlands biome (HAZARD at night)
 
-      **Always include quantities** in the mark note AND in the chat summary — Steward needs the numbers to decide whether a [SUPPLY] card is satisfiable from what you found OR whether the world has a structural shortage. Count the cluster size, not just "trees exist":
+      **Include quantities in each mark note and in your chat summary.** Steward decides whether a [SUPPLY] card is satisfiable from what you found OR whether the world has a structural shortage — she needs numbers, not "trees exist". Count clusters or visible cells; estimate is fine.
 
-      - wood: count distinct trees AND total visible logs (e.g. `2 trees, 11 oak`)
-      - stone: estimate exposed cells (e.g. `~3.2k accessible at Y=62 via 5-step stair`)
-      - water: rough body size (e.g. `large lake ~12m wide`)
+      One closing summary chat line is enough — keep it readable, name the marks and their rough counts.
 
-      Chat findings as a single summary line at the end:
-      `mc chat "survey: wood NNW (249,70,0) 6oak (1 tree) + SE (279,64,75) 5oak (1 tree), stone W (233,58,64) ~3k cells exposed, water ENE (303,62,50) large lake, no sand"`
+      **Resource-shortage flag.** If the total of a key resource is well below what a typical Phase-2 supply card would need, end your summary with a `<RESOURCE>_DROUGHT` token (e.g. `TREE_DROUGHT — local supply 18 logs`). Steward will file a follow-up bootstrap card. Do not plant, sow, or extract during this survey — that's downstream work.
 
-      **Tree-drought variant.** If total visible logs across ALL `lt_wood_*` marks is < 32 (which is roughly one Phase-2 supply card's worth), end your summary with the literal string `TREE_DROUGHT — local supply ${TOTAL} logs, need replanting before bulk extraction`. Steward will file a [GROVE] sapling-bootstrap card. Do not proceed to plant or sow during this survey; that's a follow-up card.
+      Tools allowed: `mc move`, `mc scene`, `mc inspect`, `mc mark`, `mc chat`. Surface only. Do not engage hostiles; `mc flee 16` if HP ≤ 16. Do not dig. Do not place blocks.
 
-      Tools allowed: only `mc move`, `mc scene`, `mc inspect`, `mc mark`, `mc chat`. Surface only. Do not engage hostiles; `mc flee 16` if HP ≤ 16. Do not dig. Do not place blocks.
-
-      **Verification before complete:** `mc marks | grep ^lt_` should show at least three `lt_*` marks (or zero plus TREE_DROUGHT note). Quote that line in your `kanban_complete` summary.
+      **Verification before complete:** `mc marks | grep ^lt_` should show at least three `lt_*` marks (or a documented `<RESOURCE>_DROUGHT` note). Quote that grep line in your `kanban_complete` summary.
 
   - title: "[CONSTRUCT] Place four base chests on the pad"
     assignee: flint
     initial_status: ready
     body: |
-      The genesis 9×9 cobblestone pad is centered on ({anchor_x}, {anchor_y}, {anchor_z}) at floor-y={anchor_y}-1. The shelter (built by mason) is a 5×5×3 box at the pad center — walls at x={anchor_x}±2, z={anchor_z}±2. The system_chest sits on the pad OUTSIDE the shelter footprint.
+      A 9×9 cobblestone pad is centered on ({anchor_x}, {anchor_y}, {anchor_z}); pad surface is y={anchor_y}-1. Mason's shelter occupies a 5×5 footprint at the pad center. The system_chest sits ON the pad OUTSIDE the shelter footprint.
 
-      **Place four base chests on the pad, all OUTSIDE the 5×5 shelter footprint, at y={anchor_y} (chest height = pad+1).** This is the constraint; pick coords that satisfy it. A clean layout: chest_food on east side (x={anchor_x}+3), chest_wood east-adjacent, chest_stone west (x={anchor_x}-3), chest_misc west-adjacent. Each chest at chest_x in {{ {anchor_x}-3, {anchor_x}+3 }} and z in {{ {anchor_z}-1, {anchor_z}, {anchor_z}+1 }} keeps them clear of the shelter wall and inside the pad bounds.
+      **Place four base chests on the pad, all OUTSIDE the 5×5 shelter footprint.** Their layout is your call as long as the constraints hold:
 
-      **Verification:** after placement, `mc inspect <chest_x> {anchor_y} <chest_z>` for each — block must be `chest`. Mark each in private locations (mc mark chest_food, etc.); steward reconcile promotes to shared. Do NOT dig the pad — it's the shelter floor.
+      - On the pad (within ±4 of anchor in x and z).
+      - Outside the 5×5 shelter footprint (not within ±2 of anchor in both x and z).
+      - At pad-surface +1 (the same y the system_chest sits at).
+      - Each chest's column clear of the shelter wall and clear of the system_chest.
+
+      Name them `chest_food`, `chest_wood`, `chest_stone`, `chest_misc`. Which side each lives on is your judgement — pick something tidy.
+
+      **Verification:** after placement, `mc inspect <x> <y> <z>` each — block must be `chest`. Mark each (`mc mark chest_food`, etc.); Steward's reconcile card promotes to shared. Do NOT dig the pad — it's the shelter floor.
 
   - title: "[CONSTRUCT] Build 5x5 cobble shelter on the pad"
     assignee: mason
     initial_status: ready
     body: |
-      Build a small 5×5×3 shelter centered on anchor ({anchor_x}, {anchor_y}, {anchor_z}) on top of the genesis pad. Chests have been placed OUTSIDE the shelter footprint (the previous card handles that), so your wall coords are clear of chest collisions.
+      Build a small 5×5×3 shelter centered on the anchor ({anchor_x}, {anchor_y}, {anchor_z}) on top of the genesis pad. The previous card placed the base chests outside the shelter footprint, so your wall coords are clear of chest collisions.
 
-      ## Geometry
+      ## Geometry (compute the coords yourself)
 
-      - Footprint: 5×5 cells centered on anchor (x={anchor_x}±2, z={anchor_z}±2).
-      - Walls: 2 layers — y={anchor_y} and y={anchor_y}+1. **Each wall layer is the 16 PERIMETER cells only.** The 9 interior cells of each wall layer stay as air; that's where the bot's foot+head fit when standing inside.
-      - Roof: full 5×5 cobblestone at y={anchor_y}+2 (all 25 cells).
-      - Door: replace 2 cells of one perimeter wall (one at y={anchor_y}, one at y={anchor_y}+1, same x,z) with an oak_door bottom and upper half. South side is conventional.
+      - Footprint: 5×5 cells centered on anchor.
+      - Walls: 2 layers (anchor y, anchor y+1). Perimeter cells only — the 9 interior cells of each layer stay as air; that's where the bot's foot+head live when standing inside.
+      - Roof: full 5×5 at anchor y+2.
+      - Door: replace 2 vertically-stacked cells of one perimeter wall with an oak_door bottom and upper half. South side is conventional but any side works.
 
-      ## Build order — door BEFORE sealing
+      ## Build order — never seal an enterable shelter
 
-      **Place the door (or leave its 1-cell gap) BEFORE you fill in the perimeter at the door's column.** Order:
+      **The shelter must remain enterable at every step.** Either the door is installed, or the door's column is still an open gap. Never close all four walls + roof while the door is still off the bot. Pour the 3 non-door wall sides first, then drop the door halves, then close the door's side. The roof comes last.
 
-      1. Place the 3 non-door perimeter sides of layer 1 (y={anchor_y}).
-      2. Place the door's bottom half at the chosen south-wall coord.
-      3. Place the 3 non-door perimeter sides of layer 2 (y={anchor_y}+1).
-      4. Place the door's upper half above the bottom half.
-      5. Place the roof.
+      Failing this rule entombs anyone inside (workers, the read-only Steward who may be observing) and forces a costly dig-out.
 
-      Observed g-2026-05-29-4: Mason finished walls + roof + then stepped away for more cobble to "reposition" the door. Steward (read-only, no pickaxe) was inside doing her orientation and got sealed in for the rest of the run. The shelter must remain enterable AT ALL TIMES during construction — either the door is in place or the door's column is still an open gap.
+      ## Hard rules
 
-      ## Hard rule — walls are perimeter only
+      - **Walls are perimeter only.** Never `mc fill` across the full 5×5 — that puts cobble inside the shelter. Place each wall side as its own 5×1×1 strip (or smaller).
+      - **Whole cobblestone blocks only.** No `cobblestone_slab`, `cobblestone_stairs`, or any half-block variant in walls or roof. Half-blocks fail `mc is_sheltered` — mobs spawn through partial ceilings and light leaks through partial walls. The verification rejects them and you'll have to dig + repair.
+      - **Pad is shelter floor.** The pad (anchor ±4 in x/z, y={anchor_y}-1) is off-limits to `mc dig`.
 
-      **NEVER `mc fill cobblestone <x1> <y> <z1> <x2> <y> <z2>`** across the full 5×5 footprint — that puts cobble inside the shelter where you and the chests live. Walls = the 4 sides of the perimeter, each side a 5×1×1 strip. Place each strip with its own `mc fill` (one per side), not as a slab.
+      ## Cobblestone sourcing — system_chest (P1 EXCEPTION)
 
-      ## Hard rule — whole cobblestone blocks only
+      Phase 1 workers don't withdraw from system_chest. This shelter card is the **one exception**: withdraw enough cobble to cover walls + roof, plus a stone_pickaxe insurance (in case you misplace a block and need to dig your own placement back out — "pencil + eraser"). Compute the count yourself from the geometry; bring a small buffer.
 
-      **Do not place `cobblestone_slab`, `cobblestone_stairs`, or any half-block / partial-block variant** in walls or roof, even if inventory carries them. Half-blocks fail `mc is_sheltered` (mobs spawn through partial ceilings; partial walls give light/eye-line). The verification step at the end of this card runs `mc is_sheltered walls=...` and will reject any partial-block — you'll have to dig + repair, doubling the work. Use `cobblestone` only.
+      System chest is at ({system_chest_x}, {system_chest_y}, {system_chest_z}). Quote the withdrawal in chat: `mc chat "Mason: withdrew <N> cobble + 1 stone_pickaxe from system_chest for shelter — P1 exception"`.
 
-      ## Cobblestone sourcing — withdraw from system_chest (P1 EXCEPTION)
+      **Do NOT pillar-down or improvise a mining excursion for cobble.** Multiple prior runs entombed bots that tried. If system_chest is empty, `kanban_block reason="system_chest_empty: shelter exception cannot be honored"` and stop. The `lt_stone_<dir>` mark from the Site Survey card is for **Phase-2 supply runs**, not for P1 shelter cobble.
 
-      **Bring both cobble AND a pickaxe.** Like a pencil and an eraser: if you're placing cobble in a sealed shelter, you may need to dig your own placement back out (over-patched the door, misjudged a position, etc.). Pickaxes don't deplete from carrying them; not having one when trapped is the failure mode that locked Mason in g-2026-05-28-5 for 27 minutes. Withdraw from system_chest:
+      ## Verification — both must pass before completing
 
-      - **32 cobblestone** (walls 16 + roof 25 minus pad-floor share = ~32; bring an extra 8 buffer if there's slack)
-      - **1 stone_pickaxe** (insurance against sealing yourself in — `mc withdraw stone_pickaxe 1 {system_chest_x} {system_chest_y} {system_chest_z}`)
+      Compute the walls bbox from the geometry: it's the 5×5×3 box from (anchor−2, anchor_y, anchor−2) to (anchor+2, anchor_y+2, anchor+2) — substitute the actual integers for your anchor and pass them to `mc is_sheltered walls=<x1>,<y1>,<z1>,<x2>,<y2>,<z2>`.
 
-      The shelter card is the **only** P1 card allowed to withdraw from system_chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}). Quote both withdrawals in chat: `mc chat "<mason>: withdrew 32 cobble + 1 stone_pickaxe from system_chest for shelter — P1 exception"`.
+      1. **Walls intact.** `mc is_sheltered walls=…` returns `ok: true` with `walls_complete: true`. If WALLS_INCOMPLETE: the response lists missing perimeter cells under `missing_cells` — `mc place cobblestone <x> <y> <z>` each, then re-verify.
 
-      The pad (x={anchor_x}±4, y={anchor_y}-1, z={anchor_z}±4) IS the shelter floor. Off-limits to `mc dig`.
+         **Do NOT run `mc is_sheltered` without the `walls=` argument.** The default form returns the bot's 6 immediate-neighbor cells under `open_neighbors` — those are NOT wall positions, they're the bot's interior-air neighbors. Treating them as gaps and filing a FIX with those coords entombed a bot in a prior run.
 
-      **Do NOT pillar-down to mine cobble adjacent to the pad.** Multiple prior runs entombed bots that improvised this. If system_chest is empty (operator error), `kanban_block reason="system_chest_empty: shelter exception cannot be honored"` — re44 will refill or escalate. Do not improvise a mining excursion.
+      2. **Door usable.** Verify ingress + egress.
+         - Stand outside the door, `mc move {anchor_x} {anchor_y} {anchor_z}` (the anchor, inside).
+         - From inside, `mc move <outside_coord>` (e.g. a couple blocks past the door on the same side).
+         - Both moves must succeed. A shelter you can't enter or leave isn't a shelter — it's a tomb.
 
-      The `lt_stone_<dir>` mark registered by the Site Survey card is for **Phase-2 supply runs**, not for P1 shelter cobble. If you find yourself reading that mark mid-task, you're off-script.
-
-      ## Verification — both must pass before completing this card
-
-      The walls bbox for this shelter is:
-
-          walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2
-
-      **Use that bbox literally in BOTH the verify and the completion summary** — Steward will re-run the same call when she closes the EPIC, so consistency matters.
-
-      1. **Walls intact:** `mc is_sheltered walls={anchor_x}-2,{anchor_y},{anchor_z}-2,{anchor_x}+2,{anchor_y}+2,{anchor_z}+2`. Success = `ok: true` with `walls_complete: true` in the data. If WALLS_INCOMPLETE: the response lists missing perimeter cells under `missing_cells` — those are real perimeter coords. `mc place cobblestone <x> <y> <z>` each, then re-verify.
-
-         **Do NOT run `mc is_sheltered` without the `walls=` argument.** The default form returns the bot's 6 immediate-neighbor cells under `open_neighbors` — those are NOT wall positions, they're the bot's adjacent cells (interior air for a built shelter). Reading them as gaps and filing a FIX card with those coords entombed a bot in g-2026-05-28-5.
-
-      2. **Door usable:** verify ingress + egress.
-         - Stand outside the door, run `mc move {anchor_x} {anchor_y} {anchor_z}` (the anchor inside).
-         - From inside, run `mc move <outside_coord>` (e.g. {anchor_x}, {anchor_y}, {anchor_z}+4 — 2 blocks south of the south wall).
-         - Both moves must succeed. A shelter you can't enter or leave isn't a shelter, it's a tomb.
-
-      Only after BOTH (1) and (2) pass: `mc kanban_complete` with a summary that **quotes the exact walls= bbox** (so Steward can re-run the same call without guessing).
+      Only after BOTH pass: `mc kanban_complete` with a summary that **quotes the exact walls= bbox you used** so Steward can re-run the same call without guessing.
 
   - title: "[RECONCILE] Promote chest marks"
     assignee: steward
@@ -152,15 +135,12 @@ cards:
     assignee: steward
     initial_status: todo
     body: |
-      Anchor a `:shelter:` region centered on the genesis pad at ({anchor_x}, {anchor_y}, {anchor_z}), intent=marker (so ad-hoc place is allowed inside).
+      Anchor a `:shelter:` region around the genesis pad at ({anchor_x}, {anchor_y}, {anchor_z}) with `intent=marker` (ad-hoc place is allowed inside).
 
-      **Step 1 — move to shelter center first.** `mc region_create` uses your CURRENT position as the anchor by default. If you're standing anywhere else when you run it, the region anchors at the wrong spot. Run `mc move {anchor_x} {anchor_y} {anchor_z}` BEFORE region_create. Observed g-2026-05-28-4: Mason had to remove+recreate the region twice because he ran region_create from (259,64,59) instead of (258,64,63).
+      Doctrine:
 
-      **Step 2 — create the region:**
-      `mc region_create :shelter: base --r 5 --y {anchor_y_floor}..{anchor_y_ceil} --intent marker --shape column`
-
-      Where `{anchor_y_floor}` = `{anchor_y}-1` (pad floor) and `{anchor_y_ceil}` = `{anchor_y}+4` (clear of roof).
-
-      **Step 3 — reload regions** so the in-memory cache for every bot picks it up: `mc regions_reload`.
+      1. **Move to the shelter center first.** `mc region_create` uses your current position as the anchor by default. Off-center placement has caused remove-and-recreate cycles in prior runs.
+      2. **Create the region** with `mc region_create :shelter: base --r <radius> --y <pad_floor>..<above_roof> --intent marker --shape column`. Radius covers the 5×5 footprint plus a small apron; the y range spans pad floor (anchor y-1) up to a block clear of the roof (anchor y+3 or so).
+      3. **Reload regions** so every bot's in-memory cache picks up the change: `mc regions_reload`.
 
       **Verify before complete:** `mc regions --at {anchor_x} {anchor_y} {anchor_z}` should list `:shelter:` with intent=marker. Quote that result in your complete summary.
