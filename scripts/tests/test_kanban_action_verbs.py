@@ -242,6 +242,20 @@ def test_add_invalid_size_rejected(env, monkeypatch):
         env.main(["add", "x", "--assignee", "flint", "--size", "huge"])
 
 
+def test_add_triage_passes_flag(env, monkeypatch):
+    rec = _patch_run(monkeypatch, env)
+    rc = env.main(["add", "rough idea", "--assignee", "steward", "--triage"])
+    assert rc == 0
+    assert "--triage" in rec.calls[0]
+
+
+def test_add_without_triage_does_not_pass_flag(env, monkeypatch):
+    rec = _patch_run(monkeypatch, env)
+    rc = env.main(["add", "concrete spec", "--assignee", "flint"])
+    assert rc == 0
+    assert "--triage" not in rec.calls[0]
+
+
 # ─── promote ──────────────────────────────────────────────────────────────
 
 

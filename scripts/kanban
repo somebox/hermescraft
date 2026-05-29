@@ -524,6 +524,8 @@ def cmd_add(args: argparse.Namespace) -> int:
         cmd.extend(["--max-retries", str(args.max_retries)])
     if args.idempotency_key:
         cmd.extend(["--idempotency-key", args.idempotency_key])
+    if args.triage:
+        cmd.append("--triage")
     cmd.append("--json")
     proc = _run(cmd, timeout=30)
     if proc.returncode != 0:
@@ -1518,6 +1520,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--skill", action="append", default=[])
     p.add_argument("--max-retries", type=int)
     p.add_argument("--idempotency-key")
+    p.add_argument("--triage", action="store_true",
+                   help="Park in triage — a specifier fleshes out the spec and promotes to todo")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_add)
 
