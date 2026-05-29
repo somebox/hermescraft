@@ -36,17 +36,18 @@ def test_substitute_unknown_placeholder():
         gl.substitute("{unknown_x}", {"anchor_x": "1"})
 
 
+@patch("genesis_lib._kanban_link")
 @patch("genesis_lib._kanban_create")
-def test_seed_starter_cards_topology(mock_create, tmp_path, monkeypatch):
+def test_seed_starter_cards_topology(mock_create, mock_link, tmp_path, monkeypatch):
     monkeypatch.setattr(gl, "RUNS_ROOT", tmp_path / "runs")
-    calls = []
+    create_calls = []
 
-    def fake(**kw):
-        tid = str(len(calls) + 1)
-        calls.append(kw)
+    def fake_create(**kw):
+        tid = str(len(create_calls) + 1)
+        create_calls.append(kw)
         return tid
 
-    mock_create.side_effect = fake
+    mock_create.side_effect = fake_create
     ctx = gl.build_context(run_id="g-2026-01-01-1", seed=1, anchor={"x": 0, "y": 64, "z": 0})
     meta = gl.seed_starter_cards("g-2026-01-01-1", ctx)
     assert len(meta["epic_ids"]) == 4
@@ -54,16 +55,39 @@ def test_seed_starter_cards_topology(mock_create, tmp_path, monkeypatch):
     # Epic chain uses depends_on as real prerequisite: P2 depends-on P1, P3
     # depends-on P2, P4 depends-on P3. Epic IDs are returned in order, so
     # call[0]=P1, call[1]=P2, etc.
-    assert calls[0].get("depends_on") is None
-    assert calls[1]["depends_on"] == "1"
-    assert calls[2]["depends_on"] == "2"
-    assert calls[3]["depends_on"] == "3"
-    # P1 worker cards: NO depends_on (children of an open epic must promote
-    # immediately) but EVERY card carries `epic_id == P1_id` so the facade
-    # can navigate the membership.
-    for c in calls[4:]:
+    assert create_calls[0].get("depends_on") is None
+    assert create_calls[1]["depends_on"] == "1"
+    assert create_calls[2]["depends_on"] == "2"
+    assert create_calls[3]["depends_on"] == "3"
+    # P1 worker cards: NO depends_on at create-time (children of an open
+    # epic shouldn't dep on the epic itself), but EVERY card carries
+    # `epic_id == P1_id` so the facade can navigate the membership.
+    for c in create_calls[4:]:
         assert c.get("depends_on") is None
         assert c.get("epic_id") == "1"  # P1 epic was the first card created
+
+    # Inter-card prereqs are wired via _kanban_link AFTER create.
+    # YAML topology (data/genesis/templates/phase1-cards.yaml):
+    #   chests   after anchor-confirm
+    #   shelter  after anchor-confirm
+    #   reconcile after chests
+    #   site      after reconcile AND shelter
+    # = 5 link calls.
+    link_calls = [c.kwargs for c in mock_link.call_args_list]
+    assert len(link_calls) == 5
+    # Map call4..call9 card-create order → title:
+    #   call4 = [SCOUT] Confirm base anchor          → id "5"
+    #   call5 = [SCOUT] Survey resources around base → id "6"
+    #   call6 = [CONSTRUCT] Place four base chests    → id "7"
+    #   call7 = [CONSTRUCT] Build 5x5 cobble shelter  → id "8"
+    #   call8 = [RECONCILE] Promote chest marks       → id "9"
+    #   call9 = [SITE] Create shelter region marker   → id "10"
+    edges = {(c["parent_id"], c["child_id"]) for c in link_calls}
+    assert ("5", "7") in edges   # chests after anchor confirm
+    assert ("5", "8") in edges   # shelter after anchor confirm
+    assert ("7", "9") in edges   # reconcile after chests
+    assert ("9", "10") in edges  # site after reconcile
+    assert ("8", "10") in edges  # site after shelter
 
 
 def test_check_phases_empty_state(tmp_path, monkeypatch):

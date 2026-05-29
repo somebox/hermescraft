@@ -976,10 +976,16 @@ def seed_starter_cards(run_id: str, ctx: dict[str, str]) -> dict[str, list[str]]
         prev = eid
         (rendered / f"epic-{epic['phase']}.txt").write_text(f"{title}\n\n{body}\n")
 
-    # P1 worker cards: tagged via epic body trailer (no link). Children of
-    # an open epic must promote immediately; the trailer is for navigation
-    # only, the dispatcher ignores it.
+    # P1 worker cards: tagged via epic body trailer (no link to the epic).
+    # Inter-card prereqs are wired via `after:` lists in the YAML in a
+    # second pass, AFTER all cards exist (we need the freshly-minted ids
+    # to look up parents by title). Inter-card dependencies eliminate the
+    # parallel-race failure modes observed in g-2026-05-29-5: chests
+    # placed in the shelter door's path while shelter was being built;
+    # SITE card ran before RECONCILE so base_anchor wasn't in shared
+    # marks yet.
     p1_ids: list[str] = []
+    title_to_id: dict[str, str] = {}
     for card in cards_data["cards"]:
         title = card["title"]
         body = substitute(card.get("body", ""), ctx)
@@ -992,11 +998,42 @@ def seed_starter_cards(run_id: str, ctx: dict[str, str]) -> dict[str, list[str]]
             epic_id=p1_epic_id,
         )
         p1_ids.append(cid)
+        title_to_id[title] = cid
         (rendered / f"p1-{title[:20]}.txt").write_text(f"{title}\n\n{body}\n")
+
+    # Second pass: wire `after:` lists into task_links edges. Each
+    # `after: [<parent_title>, ...]` becomes one `hermes kanban link
+    # <parent_id> <child_id>` call. The dispatcher's gate-check stops
+    # the child from promoting until every parent reaches `done`.
+    for card in cards_data["cards"]:
+        title = card["title"]
+        afters = card.get("after") or []
+        for parent_title in afters:
+            parent_id = title_to_id.get(parent_title)
+            if not parent_id:
+                raise RuntimeError(
+                    f"phase1-cards.yaml: card {title!r} declares "
+                    f"after: [{parent_title!r}] but no such card exists in the same file"
+                )
+            _kanban_link(parent_id=parent_id, child_id=title_to_id[title])
 
     meta = {"epic_ids": epic_ids, "p1_card_ids": p1_ids}
     (run_dir(run_id) / "kanban-seed.json").write_text(json.dumps(meta, indent=2) + "\n")
     return meta
+
+
+def _kanban_link(*, parent_id: str, child_id: str) -> None:
+    """Wire a `task_links` edge: child waits for parent.done before promote.
+
+    Calls `hermes kanban link <parent> <child>` (parent-first; matches the
+    CLI's verb order). Raises on failure.
+    """
+    cmd = ["hermes", "kanban", "--board", BOARD, "link", parent_id, child_id]
+    proc = _run(cmd, timeout=15)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"kanban link {parent_id} → {child_id} failed: {proc.stderr[:400]}"
+        )
 
 
 def apply_difficulty(phase: str, cfg: dict) -> None:

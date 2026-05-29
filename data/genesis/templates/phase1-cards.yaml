@@ -62,7 +62,9 @@ cards:
 
   - title: "[CONSTRUCT] Place four base chests on the pad"
     assignee: flint
-    initial_status: ready
+    initial_status: todo
+    after:
+      - "[SCOUT] Confirm base anchor"
     body: |
       A 9×9 cobblestone pad is centered on ({anchor_x}, {anchor_y}, {anchor_z}); pad surface is y={anchor_y}-1. Mason's shelter occupies a 5×5 footprint at the pad center. The system_chest sits ON the pad OUTSIDE the shelter footprint.
 
@@ -79,7 +81,9 @@ cards:
 
   - title: "[CONSTRUCT] Build 5x5 cobble shelter on the pad"
     assignee: mason
-    initial_status: ready
+    initial_status: todo
+    after:
+      - "[SCOUT] Confirm base anchor"
     body: |
       Build a small 5×5×3 shelter centered on the anchor ({anchor_x}, {anchor_y}, {anchor_z}) on top of the genesis pad. The previous card placed the base chests outside the shelter footprint, so your wall coords are clear of chest collisions.
 
@@ -127,13 +131,18 @@ cards:
 
   - title: "[RECONCILE] Promote chest marks"
     assignee: steward
-    initial_status: ready
+    initial_status: todo
+    after:
+      - "[CONSTRUCT] Place four base chests on the pad"
     body: |
       Run scripts/reconcile-marks.py --auto to promote the four worker chest marks into data/locations-base.json.
 
   - title: "[SITE] Create shelter region marker"
     assignee: steward
     initial_status: todo
+    after:
+      - "[RECONCILE] Promote chest marks"
+      - "[CONSTRUCT] Build 5x5 cobble shelter on the pad"
     body: |
       Anchor a `:shelter:` region around the genesis pad at ({anchor_x}, {anchor_y}, {anchor_z}) with `intent=marker` (ad-hoc place is allowed inside).
 
