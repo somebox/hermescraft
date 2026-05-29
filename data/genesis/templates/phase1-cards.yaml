@@ -58,7 +58,13 @@ cards:
 
       Tools allowed: `mc move`, `mc scene`, `mc inspect`, `mc mark`, `mc chat`. Surface only. Do not engage hostiles; `mc flee 16` if HP ≤ 16. Do not dig. Do not place blocks.
 
-      **Verification before complete:** `mc marks | grep ^lt_` should show at least three `lt_*` marks (or a documented `<RESOURCE>_DROUGHT` note). Quote that grep line in your `kanban_complete` summary.
+      ## Self-bounded search
+
+      **Don't spend more than ~10 minutes looking.** If after walking the immediate area you haven't found a category, emit the matching `<RESOURCE>_DROUGHT` token and move on; the next phase has follow-up cards for that case. Burning 30+ minutes silently looking for trees that aren't there is worse than emitting `TREE_DROUGHT — searched <area>, 0 logs visible` and closing.
+
+      **Chat a one-line status every ~5 minutes** while you're searching, even if you haven't found anything yet (e.g. `mc chat "<bot>: surveying NW, no wood yet, ~3m in"`). Silence past 5 min reads as stalled and triggers Steward intervention.
+
+      **Verification before complete:** `mc marks | grep ^lt_` should show at least three `lt_*` marks (or one or more documented `<RESOURCE>_DROUGHT` tokens covering the missing categories). Quote that grep line in your `kanban_complete` summary.
 
   - title: "[CONSTRUCT] Place four base chests on the pad"
     assignee: flint
