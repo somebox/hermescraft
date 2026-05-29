@@ -1,9 +1,9 @@
 # Phase 1 worker cards. Each card is tagged with `epic: <P1_id>` in its body
-# trailer so `scripts/kanban epic <P1_id>` lists them and `scripts/kanban list
-# --epic <P1_id>` filters to just P1's children. NO `--depends-on` to the P1
-# epic — that would wedge the children (P1 stays `ready` while orchestrating;
-# children would never promote). See prompts/landfolk/steward.md "Filing epic
-# children" for the rule.
+# trailer (via `scripts/kanban add --for <P1_id>`) so `scripts/kanban epic
+# <P1_id>` lists them. NO `--after <P1_id>` edge — that would wedge the
+# children (P1 stays `ready` while orchestrating; children would never
+# promote). See prompts/landfolk/steward.md "Filing epic children" for the
+# rule. The new `add` verb refuses `--after <epic>` at write time.
 #
 # ──────────────────────────────────────────────────────────────────────────
 # SCAFFOLDING NOTE (added post-g-2026-05-28-5, see reports/genesis/2026-05-28-
@@ -26,7 +26,7 @@
 #   4. Survey 8-direction × 20/40/60m protocol → "explore + record useful resource directions"
 #
 # Keep the verification-shape rules (walls= required, is_sheltered output
-# semantics) and the architectural rules (--epic vs --depends-on, pencil-
+# semantics) and the architectural rules (--for vs --after, pencil-
 # and-eraser) as SOUL doctrine — those generalize.
 # ──────────────────────────────────────────────────────────────────────────
 cards:
@@ -87,6 +87,18 @@ cards:
       - Walls: 2 layers — y={anchor_y} and y={anchor_y}+1. **Each wall layer is the 16 PERIMETER cells only.** The 9 interior cells of each wall layer stay as air; that's where the bot's foot+head fit when standing inside.
       - Roof: full 5×5 cobblestone at y={anchor_y}+2 (all 25 cells).
       - Door: replace 2 cells of one perimeter wall (one at y={anchor_y}, one at y={anchor_y}+1, same x,z) with an oak_door bottom and upper half. South side is conventional.
+
+      ## Build order — door BEFORE sealing
+
+      **Place the door (or leave its 1-cell gap) BEFORE you fill in the perimeter at the door's column.** Order:
+
+      1. Place the 3 non-door perimeter sides of layer 1 (y={anchor_y}).
+      2. Place the door's bottom half at the chosen south-wall coord.
+      3. Place the 3 non-door perimeter sides of layer 2 (y={anchor_y}+1).
+      4. Place the door's upper half above the bottom half.
+      5. Place the roof.
+
+      Observed g-2026-05-29-4: Mason finished walls + roof + then stepped away for more cobble to "reposition" the door. Steward (read-only, no pickaxe) was inside doing her orientation and got sealed in for the rest of the run. The shelter must remain enterable AT ALL TIMES during construction — either the door is in place or the door's column is still an open gap.
 
       ## Hard rule — walls are perimeter only
 

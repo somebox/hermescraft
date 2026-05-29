@@ -1,8 +1,9 @@
-# Four genesis epics chained P1 → P2 → P3 → P4 via `--depends-on` (real
-# prerequisite: each phase truly cannot start until the prior finishes its
-# done_when). Worker children of each epic carry the epic id in their body
-# trailer (see `scripts/kanban create --epic <id>`) — NOT as `--depends-on`,
-# which would wedge them because the epic stays `ready` for the whole phase.
+# Four genesis epics chained P1 → P2 → P3 → P4 via parent-link `--parent`
+# on the upstream `hermes kanban create` call (real prerequisite: each
+# phase truly cannot start until the prior finishes its done_when).
+# Worker children of each epic carry the epic id in their body trailer
+# (see `scripts/kanban add --for <epic_id>`) — NOT via `--after`, which
+# would wedge them because the epic stays `ready` for the whole phase.
 #
 # Titles use double-tag `[EPIC] [GENESIS:Pn]`:
 #  - `[EPIC]` engages the existing kanban-worker / Steward decomposition
@@ -29,7 +30,7 @@ epics:
 
       Phase 1 bootstrap at anchor ({anchor_x}, {anchor_y}, {anchor_z}).
       System chest at ({system_chest_x}, {system_chest_y}, {system_chest_z}) — workers must not withdraw in P1, with ONE exception: the shelter card may withdraw up to 32 cobble for walls/roof (and only the shelter card; do not extend this to other supply work).
-      Six worker cards are pre-filed with `--epic` body tag (no `--depends-on` to this epic — see `scripts/kanban list --epic <P1_id>`):
+      Six worker cards are pre-filed with `--for` epic-membership tag (no `--after` edge to this epic — list members with `scripts/kanban epic <P1_id>`):
 
       1. `[SCOUT] Confirm base anchor` — flint validates the anchor + pins base_anchor mark.
       2. `[SCOUT] Survey resources around base anchor` — flint maps N/E/S/W/intercardinals for `lt_wood_*`, `lt_stone_*`, `lt_water_*`, `lt_sand_*`. Outputs marks for Phase-2 supply gating. Flags `TREE_DROUGHT` if no trees within 60m.

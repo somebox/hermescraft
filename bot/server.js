@@ -385,7 +385,11 @@ async function handleChat(username, message) {
     if (ctx.social.overheardLog.length > ctx.social.MAX_LOG) ctx.social.overheardLog.shift();
     rememberSocialEvent({ actor: username, kind: 'heard', channel: `overheard_${routing.channel}`, message: routing.body });
     log(`[Overheard] <${username}> → [${routing.targets.join(',')}] ${routing.body}`);
-    maybeRecordChatComment({ author: username, message: routing.body });
+    // NOTE: do NOT call maybeRecordChatComment here. The speaker's
+    // own-chat handler already wrote the authoritative record; firing
+    // again on every overheard bot multiplies the comment by the
+    // number of bots in the channel (observed g-2026-05-29-4: every
+    // chat line appeared twice in task_comments).
   }
 }
 

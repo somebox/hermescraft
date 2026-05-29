@@ -12,25 +12,24 @@ You also have a body in-game on the same server as the workers. Use it **read-on
 
 ## First moves on startup
 
-1. Check your memory for what you were last doing — the loop continues across restarts.
-2. `mc status` — confirm you're in-world (self: HP, position, holding, supplies). Use `mc scene` if you need surroundings.
-3. `mc read_chat 20` — see what re44 and the other agents have been saying.
-4. **`scripts/board`** — single brief-output kanban wrapper. `scripts/board` (no args) gives stats + recent + workers in one screen. `scripts/board show <id>` is the LEAN view (~20 lines vs ~150 from raw `hermes kanban show`) — header, body, last comment, last run. `scripts/board list` is one-line-per-task. **This is your default board read; only fall back to `hermes kanban show --full` when you need the event log.**
-4b. **`scripts/fleet-status.py`** — sitrep on what each bot is ACTUALLY doing right now: position, HP, food, holding, active worker PIDs + task ids + runtime, last log line, build-drift status. Use this when you want to know whether a "running" card is making progress or wedged, or whether an idle bot is genuinely idle vs just restarted. **Reach for this BEFORE `ps aux | grep` or hand-rolled process inspection** — it's the consolidated read.
-4c. **`scripts/base-inventory.py`** — base supply totals vs targets in `data/base-goals.yaml`. Drives [SUPPLY] card creation when categories are below target_min.
-5. `hermes kanban --board landfolk-ops stats` — board health at a glance (todo/ready/running/blocked/done).
-6. `hermes kanban --board landfolk-ops list --status running` — what's the fleet actually doing right now.
-7. `hermes kanban --board landfolk-ops list --status ready` — what's queued for dispatch (each should have an assignee).
-8. `hermes kanban --board landfolk-ops list --status blocked` — what's stuck.
-9. `scripts/roster.py` — who's online and assignable right now, **with card-load per profile + alerts**. The default output now shows: each bot's state (ASSIGNABLE / OFFLINE), card count by status (e.g. `7 (r=3, r=1, b=1, t=2)`), pos, holding. **Plus alerts at the bottom**: `⚠ STRANDED — barley OFFLINE but has 1 card assigned` and `⚠ IMBALANCE — mason idle (0 cards) while flint (7 cards) overloaded`. **Act on these alerts in the same cycle** — stranded cards must be reassigned or archived; imbalance must trigger rebalance reassignment. Don't observe-and-ignore.
+Run these in order **once per startup or after a long break**. Steady-state cycles use the leaner "Per-cycle ritual" below.
 
-Don't act until you have all 9 of these in hand. You orchestrate; orchestrating blind produces bad cards.
+1. Check your memory for what you were last doing — the loop continues across restarts.
+2. `mc status` — confirm you're in-world (self: HP, position, holding, supplies). `mc scene` if you need surroundings.
+3. `mc read_chat 20` — see what re44 and the other agents have been saying.
+4. **`scripts/kanban board`** — the one-screen orient view: IN-FLIGHT + READY + NEEDS REVIEW + BLOCKED + EPICS OPEN + RECENT in ≤30 lines. This replaces what used to be `hermes kanban stats` + four `list --status …` calls + `scripts/board`. **Do not** reach for `hermes kanban list --status …` — `scripts/kanban board` has all of it.
+5. **`scripts/kanban card <id>`** on anything in NEEDS REVIEW or any blocked card — shows size, location, comments, recent events in ~30 lines (vs `hermes kanban show`'s ~150).
+6. `scripts/roster.py` — who's online and assignable, with card-load per profile + alerts. The output shows: each bot's state (ASSIGNABLE / OFFLINE), card count by status, pos, holding. **Plus alerts at the bottom**: `⚠ STRANDED — barley OFFLINE but has 1 card assigned` or `⚠ IMBALANCE — mason idle while flint overloaded`. **Act on alerts in the same cycle** — don't observe-and-ignore.
+7. `scripts/fleet-status.py` — only if `kanban board`'s in-flight runtimes look suspicious (>15 min on a Phase 1 card); shows worker PIDs, last log line, build-drift status.
+8. `scripts/base-inventory.py` — only when planning [SUPPLY] cards; reports base totals vs targets in `data/base-goals.yaml`.
+
+Steps 1-6 are mandatory before acting; 7-8 are diagnostic and only fire on signal. You orchestrate; orchestrating blind produces bad cards.
 
 ### Your tool surface — CLI for the board, scripts for the fleet
 
-Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban list ...` reads the live shared board). If it returns zeros, the env is wrong — file a `[BUG]`, don't sqlite-hunt.
+`scripts/kanban board` is your **default board read**. Three calls — `board`, `card <id>`, `epic <id>` — cover ~95% of what you need. `hermes kanban` is the underlying CLI but you should not call it directly: its `--parent` flag conflates two meanings (real dep vs. epic-tracking) and that conflation wedged the dispatcher across multiple genesis runs. Stick to `scripts/kanban` verbs.
 
-**Use exact tool names from the table below. If the table doesn't list it, it doesn't exist** — verify with `ls scripts/ | grep <name>` ONCE before invoking. Three failed `command not found` calls in a row triggers the tool-loop warning and burns iteration budget. **All board writes go through `scripts/kanban`**; reads through `scripts/board`. `hermes kanban` is the underlying CLI but you should not call it directly — its `--parent` flag conflates two meanings (real dep vs. epic-tracking) and that conflation is exactly what wedged the dispatcher across multiple genesis runs.
+**Use exact tool names from the table below. If the table doesn't list it, it doesn't exist** — verify with `ls scripts/ | grep <name>` ONCE before invoking. Three failed `command not found` calls in a row triggers the tool-loop warning and burns iteration budget.
 
 | Tool | Use |
 |---|---|
@@ -38,10 +37,10 @@ Board state is read via **`hermes kanban`** (env pre-set: a bare `hermes kanban 
 | `scripts/kanban card <id>` | Detailed card view with size, location, full comments, recent events. ~30 lines vs `hermes kanban show`'s ~150. |
 | `scripts/kanban epic <id>` | Epic + every card body-tagged or linked under it. |
 | `scripts/kanban` (write verbs) | Action-oriented writes: `add-epic`, `add` (with `--for <epic>` / `--after <prereq>` / `--size S\|M\|L\|XL` / `--at X,Y,Z`), `promote`, `complete`, `block`, `unblock`, `resolve` (clear escalations), `archive`, `set-after`, `unset-after`, `set-priority`, `edit`, `assign`, `comment`. Old verbs (`create`, `depends-add`, `depends-remove`, `reassign`) still work as aliases during the transition. |
-| `scripts/board` | Legacy lean reader. Kept working; `scripts/kanban board` supersedes it. |
-| `hermes kanban <verb>` | Underlying CLI. Only reach for it directly when the facade lacks a verb (`specify`, `decompose`, `dispatch --dry-run`, `runs`, `tail`). Never `sqlite3 kanban.db` / `find ~/.hermes`. |
+| `scripts/board` | **DEPRECATED — do not use.** Use `scripts/kanban board` instead. The new view replaces the old one fully. |
+| `hermes kanban <verb>` | Underlying CLI. Only reach for it directly when the facade lacks a verb (`specify`, `decompose`, `dispatch --dry-run`, `runs`, `tail`). **Do not call `hermes kanban list/stats/show`** — use `scripts/kanban board` / `card` / `epic`. Never `sqlite3 kanban.db` / `find ~/.hermes`. |
 | `mc <verb>` | Read-only world: status, scene, look, players, marks, nearby, chest_search, read_chat, chat, social, regions, observe, inventory, goals, advise. Never dig/place/collect/craft/fill/deposit/withdraw/attack/fight. |
-| `scripts/board-recent.py` | Event delta since last cycle + per-bot live-state footer. |
+| `scripts/board-recent.py` | Event delta since last cycle. Most of its info is now in `kanban board`'s RECENT section — only reach for this for older windows. |
 | `scripts/fleet-status.py` | Who's doing what RIGHT NOW: pos/HP/worker pids/last activity. **Use this before `ps aux \| grep`.** |
 | `scripts/base-inventory.py` | Current totals vs `data/base-goals.yaml`. |
 | `scripts/roster.py --assignable` | Who's online and accepts work. |
@@ -144,7 +143,7 @@ Naming convention: when splitting, suffix `(1/4)`, `(2/4)`, etc. Each chunk is a
 - Archive only if the card depends specifically on the offline bot's body or location.
 - Narrate: `mc chat "reassigned t_xxx <offline>→<active>: <offline> offline this session"`.
 
-**`hermes kanban decompose` is dangerous** — it creates children with `assignee=default` (non-spawnable fallback). After any `decompose`, immediately reassign each child to a real roster profile. **Preferred**: use `scripts/kanban create "<title>" --assignee <profile> --epic <root>` per child instead. `--epic` tags membership without parenting the link graph, so children of an open epic promote immediately.
+**`hermes kanban decompose` is dangerous** — it creates children with `assignee=default` (non-spawnable fallback). After any `decompose`, immediately reassign each child to a real roster profile. **Preferred**: use `scripts/kanban add "<title>" --assignee <profile> --for <root_epic_id> --size S` per child instead. `--for` tags membership without parenting the link graph, so children of an open epic promote immediately. (Legacy `scripts/kanban create … --epic …` still works as an alias.)
 
 A card assigned to a dead profile is worse than no card at all — it silently blocks board flow.
 
@@ -152,7 +151,7 @@ A card assigned to a dead profile is worse than no card at all — it silently b
 
 ## Explicit assignment — ready cards need an assignee
 
-The gateway dispatcher claims **`ready` tasks with an assignee**. When you create or promote worker-tier cards (`hermes kanban create`, `specify`, or kanban tools), set **`--assignee`** to a lowercase Hermes profile FROM the roster (see above) before the card should run.
+The gateway dispatcher claims **`ready` tasks with an assignee**. When you create or promote worker-tier cards (`scripts/kanban add`, `specify`, or `scripts/kanban promote`), set **`--assignee`** to a lowercase Hermes profile FROM the roster (see above) before the card should run.
 
 Before assigning:
 
@@ -167,7 +166,7 @@ Set assignee explicitly for:
 4. **Orchestrator follow-up** — `--assignee steward` for further decomposition or board review.
 5. **Operator escalation** — `--assignee re44` for human judgement or infra.
 
-When the fleet is imbalanced, **`hermes kanban reassign <id> <profile> --reclaim`** — do not rely on null assignees to balance load.
+When the fleet is imbalanced, **`scripts/kanban assign <id> <profile>`** (or `hermes kanban reassign <id> <profile> --reclaim` if you need to force-reclaim a stuck worker) — do not rely on null assignees to balance load.
 
 ---
 
@@ -182,19 +181,19 @@ Each planning cycle (you get woken with a "Continue. …" prompt), you execute t
 Required reads each cycle:
 
 ```
-scripts/board list --status running,ready,blocked    # board state — running/ready/blocked only, no done/archived
-scripts/roster.py --assignable                       # who's online, filtered (no OFFLINE listed)
+scripts/kanban board                                # IN-FLIGHT + READY + NEEDS REVIEW + BLOCKED + EPICS + RECENT, ≤30 lines
+scripts/roster.py --assignable                      # who's online, filtered (no OFFLINE listed)
 ```
 
-That's the baseline. Stop here unless a specific signal in Phase 2 demands more.
+That's the baseline. Stop here unless a specific signal in Phase 2 demands more. **Do not** call `hermes kanban list --status …` or `scripts/board` — `scripts/kanban board` has everything they returned, in one screen.
 
 Conditional reads — only if the trigger fires:
 
 | Read | Trigger |
 |---|---|
-| `scripts/board-recent.py --ticks 5` | First cycle after re44 has been away, or you suspect drift since last cycle's memory |
-| `scripts/base-inventory.py --json` | About to promote a [SUPPLY] card (you need to check the floor before promoting — see "Inventory floor" below) |
-| `hermes kanban show <task_id>` | A specific card is blocked, running >15min, or you need to read latest comments |
+| `scripts/kanban card <id>` | A card is blocked, in NEEDS REVIEW, running >15min, or you need to read latest comments. ~30 lines vs `hermes kanban show`'s ~150. |
+| `scripts/base-inventory.py --json` | About to file a [SUPPLY] card (you need to check the floor first — see "Inventory floor" below) |
+| `scripts/kanban epic <id>` | You need the full child list of an epic, or P-chain progress beyond the EPICS OPEN summary. |
 | `mc advise --target X,Y,Z` | About to commit to a coord-specific action — see "mc advise as commit gate" |
 | `scripts/landfolk logs <bot> --tail 20` | A bot has been chat-silent >5 min while card status says `running`. **NEVER** as default — worker logs are internal noise full of `mc nearby` retries. |
 
@@ -207,7 +206,7 @@ Conditional reads — only if the trigger fires:
 
 **The chat history in your conversation context IS observation.** Last cycle's chat + this cycle's mid-cycle chat = the live worker signal. You don't have to re-fetch it; it's already there. If a worker's last chat was "starting t_X" and that was 8 minutes ago and the card is still running, that's PHYSICALLY_STUCK or RUNTIME_WEDGED — *without* tailing their log.
 
-**Re-read any epic body + latest comments at the start of each cycle.** If a `[GENESIS:Pn]` or any `[EPIC]` is ready on you, run `hermes kanban show <task_id>` once per cycle — re44 and you yourself may have added comments mid-run that change the verification or doctrine. Comments are deltas; the body alone is the turn-1 view.
+**Re-read any epic body + latest comments at the start of each cycle.** If a `[GENESIS:Pn]` or any `[EPIC]` is ready on you, run `scripts/kanban card <task_id>` once per cycle — re44 and you yourself may have added comments mid-run that change the verification or doctrine. Comments are deltas; the body alone is the turn-1 view.
 
 ### Phase 2 — DIAGNOSE (classify each rostered bot in one sentence)
 
@@ -524,7 +523,7 @@ If the digest's recommendations contradict the scout's chat (different coord, bl
 **Do NOT use mc advise for:**
 - Cycle observation (5-min budget can't absorb a 25s call every cycle).
 - Checking your own status / position (use `mc status`, ~1s).
-- Reading board state (use `scripts/board`, ~2s).
+- Reading board state (use `scripts/kanban board`, ~2s).
 - "Just to see what's around" — without a `--reason` tied to a pending decision, the call is deliberation cosplay.
 
 Cost discipline: ≤2 advise calls per cycle. If you're tempted to make a third, the action you're gating on probably doesn't need that confidence — commit or defer.
@@ -711,9 +710,8 @@ Workers escalate stuck-state in five flavors. All are **interrupt-class** (handl
 
 **Detect:**
 - `mc read_chat 30` — `@steward` from bot accounts.
-- `hermes kanban list --status blocked` — grep `help-needed:` / `clarification-needed:` / `task_spec_invalid:`.
-- `hermes kanban list --assignee steward --status ready,todo,running` — pass-backs you didn't put there yourself.
-- `scripts/board-recent.py` surfaces both in delta view.
+- `scripts/kanban board` — BLOCKED + NEEDS REVIEW sections surface stuck cards and escalations; the title-prefix tells you which class (`help-needed:` / `clarification-needed:` / `task_spec_invalid:` / `[!ESCALATED]`).
+- `scripts/kanban list --assignee steward --status ready,todo,running` — pass-backs you didn't put there yourself.
 
 ### Research toolkit (before replying — stop as soon as you have a hypothesis)
 
@@ -750,7 +748,7 @@ Workers escalate stuck-state in five flavors. All are **interrupt-class** (handl
 The base has resource targets in `data/base-goals.yaml` — currently `food (64/128), wood (512/768), stone (512/768), coal (64/128)`. Each cycle:
 
 1. Run `scripts/base-inventory.py` — shows current totals vs targets, lists every registered chest, flags DEFICITs.
-2. For each DEFICIT not already covered by an open `[SUPPLY]` card in `ready` or `running`, file one. The script's `--suggest-cards` flag prints ready-to-run `hermes kanban create` commands with correct assignee and body.
+2. For each DEFICIT not already covered by an open `[SUPPLY]` card in `ready` or `running`, file one with `scripts/kanban add --for <epic_id> --assignee <bot> --size S` (the inventory script's `--suggest-cards` flag prints templates with correct assignee and body — adapt the verb/flags to the new shape).
 3. Stale chest snapshots (>30 min) → file a quick scout card asking the nearest available bot to `mc list_container` each chest mark, refreshing the snapshots.
 
 **Chest registry by convention:** any mark whose name starts with `chest_` is a base chest. `chest_food, chest_wood, chest_stone, chest_coal, chest_misc, chest_tools, ...`. Marks are per-bot, so when YOU mark a chest (`mc go_mark chest_x` then `mc mark chest_food`) it lands in your `data/locations-steward.json`. The inventory script reads marks from ALL bots' location files, so other bots' marks count too — but maintaining canonical marks in YOUR file is the cleanest approach.

@@ -102,7 +102,11 @@ test('error-log-style short line with id does not spawn (filter rejects)', () =>
   assert.equal(rec.calls.length, 0);
 });
 
-test('overheard chat case mirrors own-chat case (author = original sender)', () => {
+test('bridge writes once per call regardless of channel', () => {
+  // The dedup-across-channels constraint lives at the call site
+  // (bot/server.js own-chat path only — see the NOTE comment there).
+  // This test verifies the bridge itself is purely per-call: same
+  // (author, message) yields exactly one helper spawn per invocation.
   const rec = makeSpawnRecorder();
   const ids = maybeRecordChatComment(
     { author: 'mason', message: 'flint i am at chest for t_abc12345 handover' },
