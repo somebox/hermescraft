@@ -38,6 +38,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -m "functional and not integration" -k dig -v
 ./scripts/run-functional-fast.sh    # not slow
 ./scripts/combat-suite.sh           # combat @slow only
+
+# stair egress (stair_down + mc retrace): @slow
+.venv/bin/pytest tests/functional/mining/stairs/ -v -m slow
+
+# long route only (stair + turn + tunnel + return): ~8–12 min
+.venv/bin/pytest tests/functional/mining/stairs/test_long_stair_tunnel_egress.py -v -m slow
 ```
 
 Harness **`mvtp Tester landfolk-test`** + rescue runs automatically; do not use **`stop-bots.sh --all`** mid-suite.

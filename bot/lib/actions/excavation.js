@@ -7,6 +7,7 @@ import { cardinalDelta } from './_directions.js';
 import { box6 } from './_args.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 import { withYBoth, parseYInput, normalizeBoxYArgs } from '../runtime/coordinates.js';
+import { sampleNavTrailCrumb } from '../runtime/nav-trail.js';
 
 const { goals } = pathfinderPkg;
 
@@ -265,6 +266,9 @@ export function createExcavationActions(services) {
       totalDug += Number(res?.dug || 0);
       totalSkipped += Number(res?.skipped || 0);
       totalErrors += Array.isArray(res?.errors) ? res.errors.length : 0;
+      try {
+        sampleNavTrailCrumb(ctx, b, { onGround: true });
+      } catch { /* best-effort tunnel centerline */ }
     }
     if (abortReason) {
       return {
@@ -421,6 +425,15 @@ export function createExcavationActions(services) {
     // and step 2 reported `no_progress_at_step_2 (3 error)` against the
     // unloaded post-reconnect chunks.
     const initialBot = ctx.world.bot;
+    /** @type {Array<{ x: number, y: number, z: number }>} descent-order stand cells for mc retrace */
+    const steps = [{ x: startX, y: startY, z: startZ }];
+    try {
+      await getActions().mark?.({
+        name: 'mine_entrance',
+        note: `stair_down ${key} start`,
+        category: 'trail',
+      });
+    } catch { /* mark optional in tests */ }
 
     for (let i = 1; i <= L; i++) {
       // Mid-flight reconnect check. If the bot we started with is no
@@ -572,6 +585,19 @@ export function createExcavationActions(services) {
         stoppedReason.value = `no_descent_after_step_${i}`;
         break;
       }
+      steps.push({ x: standCell.x, y: standCell.y, z: standCell.z });
+      if (i === 1) {
+        try {
+          await getActions().mark?.({
+            name: 'tunnel_start',
+            x: standCell.x,
+            y: standCell.y,
+            z: standCell.z,
+            note: `stair_down ${key} first tread`,
+            category: 'trail',
+          });
+        } catch { /* optional */ }
+      }
     }
 
     // No exit-ramp dig. The bot at the bottom is in a stone-walled
@@ -597,19 +623,34 @@ export function createExcavationActions(services) {
     const endX = startX + dx * stepsCompleted;
     const endY = startY - stepsCompleted;
     const endZ = startZ + dz * stepsCompleted;
-    return {
-      result: stoppedAtStep
-        ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim()
-        : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim(),
-      dug: totalDug,
-      skipped: totalSkipped,
-      errors: totalErrors,
-      ...regionSkips.dataFields(),
-      ...(errorMsgs.length ? { error_messages: errorMsgs.slice(0, 5) } : {}),
+    const start = withYBoth({ x: startX, y: startY, z: startZ }, startY);
+    const end = withYBoth({ x: endX, y: endY, z: endZ }, endY);
+    const trailPayload = {
+      steps,
+      direction: key,
+      start,
+      end,
+      ts: Date.now(),
+      source: 'stair_down',
       ...(stoppedAtStep ? { stopped_at_step: stoppedAtStep, stopped_reason: stoppedReason.value } : {}),
-      start: withYBoth({ x: startX, y: startY, z: startZ }, startY),
-      end: withYBoth({ x: endX, y: endY, z: endZ }, endY),
     };
+    if (ctx?.runtime && steps.length >= 2) {
+      ctx.runtime.lastDugSteps = trailPayload;
+    }
+    const resultMsg = stoppedAtStep
+      ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim()
+      : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim();
+    return ok({
+      result: resultMsg,
+      data: {
+        dug: totalDug,
+        skipped: totalSkipped,
+        errors: totalErrors,
+        ...regionSkips.dataFields(),
+        ...(errorMsgs.length ? { error_messages: errorMsgs.slice(0, 5) } : {}),
+        ...trailPayload,
+      },
+    });
   },
 
   /**

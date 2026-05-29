@@ -8,7 +8,8 @@ Pathfinding wrappers for coord targets, following, and look/stop/jump. Shared pr
 |------|------|--------|
 | [`goto.js`](./goto.js) | `goto` | Goal block/near + progress watchdog; **`coord3`** entry |
 | [`goto-near.js`](./goto-near.js) | `goto_near` | Stand within `range`; y-adjust + reachability hints |
-| [`move.js`](./move.js) | `move` | Door-chained legs; separate retry counter from `goto` |
+| [`move.js`](./move.js) | `move` | Door-chained legs; detour precheck (`detour-check.js`); upward `dy>3` exempt |
+| [`retrace.js`](./retrace.js) | `retrace` | Reverse `stair_down` `steps[]` / optional mark or nav trail |
 | [`follow.js`](./follow.js) | `follow` | `GoalFollow` on player/entity |
 | [`look.js`](./look.js) | `look` | **`coord3`** + lookAt |
 | [`stop.js`](./stop.js) | `stop` | Clears pathfinder + dig + cancel flag |

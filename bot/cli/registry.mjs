@@ -170,6 +170,15 @@ export const RAW_COMMAND_DEFS = [
       'mc move 50 30 -200 --force   # bypass detour check (long route accepted)',
     ],
   }),
+  g('retrace', 'movement', [], {
+    description:
+      'Walk back up the last mc stair_down trail (reverse recorded stand cells). Use when mc goto or mc move cannot climb a 1-wide staircase (Task #32). Run after stair_down from the bottom of the shaft.',
+    method: 'POST',
+    path: '/action/retrace',
+    usage: 'mc retrace',
+    examples: ['mc retrace', 'mc stair_down north 12', 'mc retrace'],
+    bodyFn: () => JSON.stringify({}),
+  }),
   g('goto', 'movement', ['go', 'g'], {
     description: 'Walk to absolute block coordinates (raw pathfinder; no door handling). Prefer mc move for general navigation — mc goto is for open spaces and power-user cases.',
     method: 'POST',

@@ -77,6 +77,8 @@ export function loadConfig(argv = process.argv) {
       chatMinIntervalMs: numEnv(env.MC_CHAT_MIN_INTERVAL_MS, 2500),
       /** MC_DIG_DROP_SCAN_MS — post-dig drop-detection window (default 300). */
       digDropScanMs: numEnv(env.MC_DIG_DROP_SCAN_MS, 300),
+      /** HERMES_NAV_AUTO_RETRACE=true: one mc retrace on goto/move NAV_NO_PROGRESS when dy>0 and trail exists. */
+      navAutoRetraceOnStall: boolEnv(env.HERMES_NAV_AUTO_RETRACE, false),
       /** REACTIVE=off disables the tactical autopilot tick. */
       reactiveOn: reactiveRaw !== 'off',
       /** COMBAT_SKILL — optional numeric override for reactive combat skill. */

@@ -11,6 +11,7 @@ import { findStandableSameXZ } from '../_nav-helpers.js';
 import { enrichWithStand, computeReachability, Y_GRACE_MAX_DY } from './_preflight.js';
 import { coord3 } from '../_args.js';
 import { ok } from '../../shared/action-contract.js';
+import { maybeAutoRetraceOnStall } from './_nav-autoretrace.js';
 
 /**
  * @param {object} deps
@@ -32,6 +33,9 @@ export function createGoto(deps) {
     goals,
     fmt,
     posObj,
+    ctx,
+    config,
+    ACTIONS,
   } = deps;
 
   return async function goto(args) {
@@ -154,6 +158,19 @@ export function createGoto(deps) {
       if (e instanceof NoProgressError) {
         recordMoveFailure('goto', x, y, z, posObj(), 'no_progress');
         pushStuckCell(e.info?.stalled_position, 'no_progress');
+        const autoRt = await maybeAutoRetraceOnStall({
+          ctx,
+          config,
+          targetY: y,
+          currentY: posObj().y,
+          retrace: () => ACTIONS.retrace({}),
+        });
+        if (autoRt?.ok) {
+          return ok({
+            result: `Auto-retrace after stall: ${autoRt.result || 'ok'}`,
+            data: { auto_retrace: true, retrace: autoRt.data },
+          });
+        }
         const reach = computeReachability(b, { x, y, z }, 144);
         const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
           ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`

@@ -26,6 +26,12 @@ import time
 
 import pytest
 
+from tests._lib.mining_stairs_timeouts import (
+    retrace_timeout,
+    stair_down_timeout,
+    wait_bot_settled,
+)
+
 
 # Surface centered on ORIGIN to match the older mining-test convention
 # (test_mine_collect_grid, test_mine_behind_wall, test_dig_door_support,
@@ -72,13 +78,6 @@ def surface_arena(rcon, arena, config, functional_world):
     ])
     arena.settle_default()
     yield
-
-
-# Task #32: stair walk-back is known-broken; descent assertions still gate regressions.
-_STAIR_TRAVERSAL_XFAIL_REASON = (
-    "Stair walk-back fails on mineflayer 4.35.0/4.37.1 (Task #32). "
-    "Descent checks above still run and fail normally."
-)
 
 
 @pytest.mark.slow
@@ -128,9 +127,10 @@ def test_stair_down_then_walk_back_up(bot, rcon, arena, surface_arena, config, d
     r = bot.post(
         "/action/stair_down",
         {"direction": direction, "length": length},
-        timeout=120.0,
+        timeout=stair_down_timeout(length),
     )
     assert r.get("ok") is True, f"stair_down {direction} {length} failed: {r}"
+    wait_bot_settled(arena, bot, timeout_s=20.0)
 
     # 1. Bot descended roughly the requested length. Allow ±2 for landing
     # slop / the primitive's exact algorithm.
@@ -159,39 +159,19 @@ def test_stair_down_then_walk_back_up(bot, rcon, arena, surface_arena, config, d
         f"after stair_down {direction} {length}"
     )
 
-    # 3–5. Traversability round-trip (xfail only this segment — Task #32).
-    bottom_pos = dict(post_pos)
-    try:
-        r_up = bot.post(
-            "/action/goto",
-            {"x": sx, "y": PLAYER_FEET_Y, "z": sz},
-            timeout=60.0,
-        )
-        final = bot.status_lean().get("position") or {}
-        horiz_dist = abs(final.get("x", 0) - sx) + abs(final.get("z", 0) - sz)
-        assert r_up.get("ok"), f"goto back up failed: {r_up}"
-        assert horiz_dist < 4.0 and final.get("y", 0) >= PLAYER_FEET_Y - 1, (
-            f"bot could not walk back up the staircase: final={final}, "
-            f"target=({sx},{PLAYER_FEET_Y},{sz}); goto-resp={r_up}"
-        )
+    # 3–4. Egress via mc retrace (recorded stair_down steps).
+    r_retrace = bot.post(
+        "/action/retrace",
+        {},
+        timeout=retrace_timeout(length + 2),
+    )
+    assert r_retrace.get("ok"), f"retrace to surface failed: {r_retrace}"
+    wait_bot_settled(arena, bot, timeout_s=30.0)
+    final = bot.status_lean().get("position") or {}
+    horiz_dist = abs(final.get("x", 0) - sx) + abs(final.get("z", 0) - sz)
+    assert horiz_dist < 4.0 and final.get("y", 0) >= PLAYER_FEET_Y - 1, (
+        f"bot did not retrace to stair top: final={final}, target=({sx},{PLAYER_FEET_Y},{sz})"
+    )
 
-        r_down = bot.post(
-            "/action/goto",
-            {"x": bottom_pos.get("x"), "y": bottom_pos.get("y"), "z": bottom_pos.get("z")},
-            timeout=60.0,
-        )
-        final2 = bot.status_lean().get("position") or {}
-        bottom_dist = (
-            abs(final2.get("x", 0) - bottom_pos.get("x", 0))
-            + abs(final2.get("z", 0) - bottom_pos.get("z", 0))
-        )
-        assert r_down.get("ok"), f"goto back down failed: {r_down}"
-        assert bottom_dist < 4.0, (
-            f"bot could not return to bottom: final={final2}, "
-            f"target={bottom_pos}; goto-resp={r_down}"
-        )
-
-        end_hp = bot.status_lean().get("health") or 0
-        assert end_hp >= 18, f"bot took damage on stair round trip: HP={end_hp}"
-    except AssertionError as exc:
-        pytest.xfail(f"{_STAIR_TRAVERSAL_XFAIL_REASON} Detail: {exc}")
+    end_hp = bot.status_lean().get("health") or 0
+    assert end_hp >= 18, f"bot took damage on stair round trip: HP={end_hp}"

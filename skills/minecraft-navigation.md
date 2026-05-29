@@ -33,8 +33,9 @@ mc escape                  # last-resort unstuck (sidestep / pillar / wait by cl
 mc flee [X Y Z]            # combat retreat (see minecraft-combat)
 
 # Vertical
-mc stair_down DIR [LEN=12] [X Y Z] [W=1 H=3]   # dig descending staircase
+mc stair_down DIR [LEN=12] [X Y Z] [W=1 H=3]   # dig descending staircase (records steps[] for retrace)
 mc stair_up DIR [LEN=12] [X Y Z] [W=1 H=3]     # dig ascending, places floor over voids
+mc retrace [--mark NAME] [--use_trail]         # walk back along last stair_down steps (reverse ascent)
 mc pillar_step [BLK] [N=1] [--force]   # climb up. Omit BLK to dig overhead + capture + pillar. See minecraft-mining "Underground pillar escape" for --force semantics.
 mc pillar_down [N=12]        # descend a pillar by mining the block underfoot
 
@@ -73,6 +74,7 @@ mc sleep                   # use a nearby bed (resets respawn point)
 | Target may not be standable (a wall corner, a roof edge) | `mc reachable X Y Z` first → use the returned `best_stand` |
 | Need to clear a path through terrain | `mc tunnel` or `mc dig_area` (see [minecraft-survival](minecraft-survival)) |
 | Stuck (corner / wedge / on-pillar / in water) | `mc escape` |
+| Just dug `mc stair_down` and need to climb back out | `mc retrace` (then `mc goto_near` for side targets) |
 
 ## Water journeys — `mc sail_to`
 

@@ -1,6 +1,7 @@
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { ok, fail } from '../shared/action-contract.js';
+import { clearNavTrail } from '../runtime/nav-trail.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
 
 const { goals } = pathfinderPkg;
@@ -302,6 +303,7 @@ export function createLifecycleActions(services) {
     } catch { /* ignore */ }
     await sleep(2000);
     ctx.world.positionHistory = [];
+    clearNavTrail(ctx, 'respawn');
 
     const newPos = posObj();
     return ok({

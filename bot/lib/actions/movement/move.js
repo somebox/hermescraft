@@ -8,6 +8,7 @@ import {
 } from '../_helpers.js';
 
 import { enrichWithStand } from './_preflight.js';
+import { isDetourAllowed, detourHintForDy } from './detour-check.js';
 import { coord3 } from '../_args.js';
 
 /**
@@ -252,17 +253,9 @@ export function createMove(deps) {
 
         if (pathCheck && pathCheck.status === 'success' && pathCheck.path) {
           const pathLength = pathCheck.path.length;
-          const maxAllowed = Math.max(straightLine * 3.5, straightLine + 25);
-          if (pathLength > maxAllowed) {
+          if (!isDetourAllowed(straightLine, pathLength, dy)) {
             const ratio = pathLength / Math.max(straightLine, 1);
-            let hint;
-            if (dy < -3) {
-              hint = `Target is ${Math.abs(Math.round(dy))} blocks below you — use mc tunnel <X> <Y> <Z> <DIR> or mc stair_down to dig down. mc move can't traverse solid blocks.`;
-            } else if (dy > 3) {
-              hint = `Target is ${Math.round(dy)} blocks above you — use mc stair_up to ascend safely, or move to a known surface route.`;
-            } else {
-              hint = `The direct route is blocked. Pick an intermediate waypoint, or mc tunnel through the obstacle.`;
-            }
+            const hint = detourHintForDy(dy);
             recordMoveFailure('move', target.x, target.y, target.z, posObj(), 'detour_too_long');
             return {
               ok: false,

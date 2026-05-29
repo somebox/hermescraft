@@ -4,6 +4,7 @@
 import { Vec3 } from 'vec3';
 import { isDigProtected } from './dig-tools.js';
 import { setupRegionSignWatcher } from './regions/sign-watcher.js';
+import { sampleNavTrailCrumb, clearNavTrail } from './nav-trail.js';
 
 /** Actions used by stuck watchdog when task.status === 'running'. */
 /** Note: `collect` is excluded — mining often keeps feet within <2m for 10–20s while digging. */
@@ -952,6 +953,7 @@ export function createBotManager(deps) {
           ctx.world.botReady = false;
           ctx.world.mcSessionStartedAt = null;
           ctx.world.positionHistory = [];
+          clearNavTrail(ctx, 'reconnect');
           const skipReconnect = ctx.death.suppressEndReconnect;
           if (ctx.death.suppressEndReconnect) ctx.death.suppressEndReconnect = false;
 
@@ -1026,6 +1028,9 @@ export function createBotManager(deps) {
       if (!ctx.world.bot || !ctx.world.botReady) return;
       const pos = ctx.world.bot.entity.position;
       ctx.world.positionHistory.push({ time: Date.now(), x: pos.x, y: pos.y, z: pos.z });
+      try {
+        sampleNavTrailCrumb(ctx, ctx.world.bot, { onGround: ctx.world.bot.entity.onGround });
+      } catch { /* nav trail is best-effort */ }
       // Retain 20 minutes so /health can compute long-term stuckness (the
       // 60s window was only enough for the local stuck-watchdog's
       // movement-action retry logic below). Agent visibility needs minutes,
@@ -1079,6 +1084,10 @@ export function createBotManager(deps) {
       ]);
       const SYNC_STUCK_IDLE_MS = 8000;
       if (ctx.tasks.syncActionInFlight && SYNC_STUCK_ACTIONS.has(ctx.tasks.syncActionName)) {
+        // mc retrace drives its own short legs + burst; sync-stuck wiggle fights it.
+        if (ctx.tasks.syncActionName === 'retrace') {
+          // skip
+        } else {
         const old = ctx.world.positionHistory.find((p) => Date.now() - p.time > SYNC_STUCK_IDLE_MS);
         if (old) {
           const dxz = Math.hypot(pos.x - old.x, pos.z - old.z);
@@ -1168,6 +1177,7 @@ export function createBotManager(deps) {
             ctx.runtime._lastSyncStuckLogAt = null;
             ctx.runtime._stuckActivations = [];
           }
+        }
         }
       }
 

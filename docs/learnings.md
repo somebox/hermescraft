@@ -49,4 +49,6 @@ It's easy to promt the agent to do the thing you want to do and convince it that
 Don't ask it to "this worked before, fix the last change", instead ask "given the errors that we see now, what do you think could be causing it?" The agent will naturally start to work through the symptoms instead of digging through the lastest changes, which might not actually be responsible. Once you have more evidence, you can lead it toward the next action - it will be more educated and prepared to write good code.
 
 
+## Bus Factor
 
+How would we maintain our AI-built apps if the AI went away? Documentation and repeatable tooling are so important (AI or without)

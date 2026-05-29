@@ -72,6 +72,65 @@ test('excavation.stair_up: dig_area hazard abort propagates', async () => {
   assert.equal(r.error.code, 'HAZARD_LAVA');
 });
 
+test('excavation.stair_down: records descent-order steps[] and lastDugSteps', async () => {
+  const dug = new Set();
+  let gotoTarget = null;
+  const bot = {
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true },
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] },
+    look: async () => {},
+    pathfinder: {
+      goto: async (goal) => {
+        gotoTarget = goal;
+        if (goal?.x != null) {
+          bot.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+        }
+      },
+      setGoal: () => {},
+    },
+    blockAt: (p) => {
+      const k = `${p.x},${p.y},${p.z}`;
+      if (dug.has(k)) return { name: 'air', boundingBox: 'empty', position: p };
+      // Support under any stand cell and solid column in front (north: z-1).
+      if (p.y < 65 && p.x === 0 && p.z <= 0) {
+        return { name: 'stone', boundingBox: 'block', position: p, digTime: 1 };
+      }
+      if (p.x === 0 && p.z === -1 && p.y >= 62 && p.y <= 66) {
+        return { name: 'stone', boundingBox: 'block', position: p, digTime: 1 };
+      }
+      return { name: 'air', boundingBox: 'empty', position: p };
+    },
+    dig: async (blk) => {
+      const k = `${blk.position.x},${blk.position.y},${blk.position.z}`;
+      dug.add(k);
+    },
+    equip: async () => {},
+    stopDigging: () => {},
+    heldItem: { name: 'iron_pickaxe' },
+    tool: { itemInHand: () => ({ name: 'iron_pickaxe' }), getDigTime: () => 20 },
+  };
+  const services = createMockServices({
+    state: {
+      world: { botReady: true, bot, mcData: { blocksByName: { lava: { id: 1 } } } },
+      runtime: {},
+    },
+    ensureBot: () => bot,
+    getActions: () => ({ pickup: async () => ({ ok: true }) }),
+  });
+  const actions = createExcavationActions(services);
+  const r = await actions.stair_down({ direction: 'north', length: 2, pickup: false });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(Array.isArray(r.data?.steps), 'data.steps missing');
+  assert.equal(r.data.steps.length, 3, 'start + 2 stand cells');
+  assert.deepEqual(r.data.steps[0], { x: 0, y: 65, z: 0 });
+  assert.equal(r.data.steps[1].y, 64);
+  assert.equal(r.data.steps[2].y, 63);
+  assert.equal(r.data.steps[2].z, -2);
+  assert.equal(services.state.runtime.lastDugSteps?.source, 'stair_down');
+  assert.equal(services.state.runtime.lastDugSteps.steps.length, 3);
+  assert.ok(gotoTarget != null, 'pathfinder should step into stand cells');
+});
+
 test('excavation.stair_down: invalid direction returns INVALID_VALUE', async () => {
   const bot = {
     entity: { position: new Vec3(0.5, 64, 0.5) },

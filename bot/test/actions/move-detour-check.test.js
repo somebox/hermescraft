@@ -16,14 +16,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-
-// Mirror the threshold formula in move.js.
-// If this changes in source, mirror the change here.
-function isDetourAllowed(straightLine, pathLength) {
-  if (straightLine < 5) return true; // tiny moves skip the check
-  const maxAllowed = Math.max(straightLine * 3.5, straightLine + 25);
-  return pathLength <= maxAllowed;
-}
+import { isDetourAllowed, detourHintForDy } from '../../lib/actions/movement/detour-check.js';
 
 test('tiny moves (< 5 blocks straight) skip the check entirely', () => {
   // Even a 100-block detour for a 2-block straight goal would be allowed —
@@ -45,8 +38,23 @@ test('the observed bug case is refused (12 down + 3 across → 50 path)', () => 
   // max allowed = max(43.3, 37.4) = 43.3
   // 50 > 43.3 → refused ✓
   const straight = Math.sqrt(12 * 12 + 3 * 3);
-  assert.equal(isDetourAllowed(straight, 50), false,
+  assert.equal(isDetourAllowed(straight, 50, -12), false,
     'the smoking-gun case: 12-block underground goal, 50-block surface detour, must refuse');
+});
+
+test('upward climb (dy > 3) allows long detour along dug stairs', () => {
+  const straight = 12;
+  assert.equal(isDetourAllowed(straight, 50, 12), true,
+    'ascending a long stair path must not hit NAV_DETOUR_TOO_LONG');
+});
+
+test('underground downward still refuses huge detour', () => {
+  const straight = Math.sqrt(12 * 12 + 3 * 3);
+  assert.equal(isDetourAllowed(straight, 50, -12), false);
+});
+
+test('detourHintForDy suggests retrace when target is above', () => {
+  assert.match(detourHintForDy(8), /retrace/);
 });
 
 test('medium moves use ratio (3.5x straight-line)', () => {

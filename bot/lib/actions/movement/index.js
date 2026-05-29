@@ -21,11 +21,13 @@ import { createJump } from './jump.js';
 import { createLadder } from './ladder.js';
 import { createStop } from './stop.js';
 import { createGoSite } from './go_site.js';
+import { createRetrace } from './retrace.js';
 
 export { refuseWaterRouteWithoutBoat };
 
 export function createMovementActions({
   ctx,
+  config,
   ensureBot,
   goals,
   fmt,
@@ -85,6 +87,7 @@ export function createMovementActions({
 
   const deps = {
     ctx,
+    config,
     ensureBot,
     goals,
     fmt,
@@ -118,5 +121,6 @@ export function createMovementActions({
     jump: createJump(deps),
     ladder: createLadder(deps),
     move: createMove(deps),
+    retrace: createRetrace(deps),
   };
 }

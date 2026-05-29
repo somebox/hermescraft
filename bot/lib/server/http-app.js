@@ -9,6 +9,7 @@ import { normalizeId } from '../runtime/regions/index.js';
 import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
 import { getBuildInfo } from '../runtime/build-info.js';
 import { sceneToolNeeds } from '../runtime/inventory-hints.js';
+import { clearNavTrail } from '../runtime/nav-trail.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -263,6 +264,8 @@ export function createBotHttpListener(deps) {
           if (ctx.runtime.lastMoveFailed) ctx.runtime.lastMoveFailed = null;
           ctx.runtime.recentEscapes = [];
           ctx.runtime.recentStuckCells = [];
+          clearNavTrail(ctx, 'status');
+          if (ctx.runtime) ctx.runtime.lastDugSteps = null;
         }
         return respond(res, 200, { ok: true, data: getFullState({ lean }) });
       }

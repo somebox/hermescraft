@@ -811,6 +811,46 @@ export function computeReachability(b, target, maxVisit = 96) {
  * elsewhere. With 10-12 candidates this is ~50-300ms total, vs. the
  * 30+ seconds the agent would spend discovering un-reachability live.
  */
+/**
+ * Walk toward target via computeReachability hop suggestions (max 8 legs).
+ * @param {{ bot: any, target: { x: number, y: number, z: number }, gotoNear: (args: object) => Promise<any>, maxHops?: number }} opts
+ */
+export async function navigateViaHops({ bot, target, gotoNear, maxHops = 8 }) {
+  const tx = Math.floor(Number(target.x));
+  const ty = Math.floor(Number(target.y));
+  const tz = Math.floor(Number(target.z));
+  let hops = 0;
+  while (hops < maxHops) {
+    const reach = computeReachability(bot, { x: tx, y: ty, z: tz }, 144);
+    if (reach?.walkable_to_target) {
+      return gotoNear({ x: tx, y: ty, z: tz, range: 1 });
+    }
+    const hop = reach?.next_hop_suggestion;
+    if (!hop) {
+      return {
+        ok: false,
+        error: {
+          code: 'NAV_HOPS_EXHAUSTED',
+          message: `No reachability hop toward ${tx},${ty},${tz} after ${hops} legs.`,
+          observed_state: { hops, reach },
+          retry_safe: false,
+        },
+      };
+    }
+    const leg = await gotoNear({ x: hop.x, y: hop.y, z: hop.z, range: 1 });
+    if (!leg?.ok) return leg;
+    hops++;
+  }
+  return {
+    ok: false,
+    error: {
+      code: 'NAV_HOPS_EXHAUSTED',
+      message: `Hop budget (${maxHops}) exhausted before target.`,
+      retry_safe: false,
+    },
+  };
+}
+
 export function annotateReachability(b, locations, maxVisit = 96) {
   if (!Array.isArray(locations) || locations.length === 0) return locations;
   const enriched = locations.map((loc) => {
