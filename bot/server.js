@@ -334,7 +334,14 @@ async function handleChat(username, message) {
     });
     if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
     log(`[Chat${routing.isBroadcast ? '' : ' @me'}] <${username}> ${routing.body}`);
-    maybeRecordChatComment({ author: username, message: routing.body });
+    // Only the speaker's own bot writes the chat→comment record. `forMe`
+    // is true for every bot that HEARS a broadcast (not just the sender),
+    // so without this guard each broadcast multiplies by the number of
+    // hearing bots (observed g-2026-05-29-5: starting/done comments
+    // appeared exactly twice in task_comments while flint+mason were up).
+    if (username === getMyName()) {
+      maybeRecordChatComment({ author: username, message: routing.body });
+    }
     
     // If directly addressed (Name: msg format), queue as command
     if (!routing.isBroadcast) {
