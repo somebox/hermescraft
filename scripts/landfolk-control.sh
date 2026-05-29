@@ -1123,6 +1123,55 @@ STUB
   # `hermes landfolk gate-check`, `hermes kanban dispatch --dry-run`
   # instead of reading the board + roster.
   if [ "$role" = "orchestrator" ]; then
+    # ── Hermes pre_tool_call hook ──
+    # Replaces the PATH-stub strategy for the patterns it covers (sqlite3,
+    # python3 -c / -m / -i, raw SQL writes against tasks). Hooks fire
+    # inside Hermes before the terminal subprocess spawns, so the env
+    # propagation gap that lets stubs leak (observed g-2026-05-29-5:
+    # Steward's `python3 -c "UPDATE tasks…"` ran with exit 0 despite the
+    # stub) doesn't apply. PATH stubs below stay as belt-and-suspenders.
+    #
+    # See docs/features/sandbox.md for the design + Hermes hooks ref.
+    local hook_src="$SCRIPT_DIR/scripts/hermes-hooks/orchestrator-deny.sh"
+    if [ -f "$hook_src" ]; then
+      mkdir -p "$agent_home/agent-hooks"
+      cp "$hook_src" "$agent_home/agent-hooks/orchestrator-deny.sh"
+      chmod +x "$agent_home/agent-hooks/orchestrator-deny.sh"
+      # Patch $agent_home/config.yaml: install the hook stanza + flip
+      # hooks_auto_accept on. Idempotent — re-running landfolk start is
+      # the dominant code path and must not duplicate entries.
+      python3 - "$agent_home/config.yaml" "$agent_home/agent-hooks/orchestrator-deny.sh" <<'PYEOF' 2>/dev/null || true
+import pathlib, sys, yaml
+cfg_path = pathlib.Path(sys.argv[1])
+hook_path = sys.argv[2]
+cfg = yaml.safe_load(cfg_path.read_text()) or {}
+cfg["hooks"] = {
+    "pre_tool_call": [
+        {"matcher": "terminal", "command": hook_path, "timeout": 5}
+    ]
+}
+cfg["hooks_auto_accept"] = True
+cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+PYEOF
+      # Pre-populate the allowlist so the hook fires on the FIRST tool
+      # call (without it, Hermes prompts for consent — uninteractive in
+      # the bot-loop, so the hook never fires on session 1).
+      python3 - "$agent_home/shell-hooks-allowlist.json" "$agent_home/agent-hooks/orchestrator-deny.sh" <<'PYEOF' 2>/dev/null || true
+import json, os, pathlib, sys, datetime
+allow_path = pathlib.Path(sys.argv[1])
+hook_path = sys.argv[2]
+ts = datetime.datetime.utcnow().isoformat(timespec="microseconds") + "Z"
+mtime = datetime.datetime.utcfromtimestamp(os.path.getmtime(hook_path)).isoformat(timespec="microseconds") + "Z"
+allow = {"approvals": [{
+    "approved_at": ts,
+    "command": hook_path,
+    "event": "pre_tool_call",
+    "script_mtime_at_approval": mtime,
+}]}
+allow_path.write_text(json.dumps(allow, indent=2) + "\n")
+PYEOF
+    fi
+
     # Process inspection / control — operator concern, not orchestrator
     for c in ps pgrep pkill top htop fuser lsof; do
       cat > "$restricted_bin/$c" <<STUB

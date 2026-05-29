@@ -147,6 +147,15 @@ else
   last_err >&2
 fi
 
+step "9. orchestrator-deny hook regression"
+if run_quiet "${REPO_ROOT}/scripts/tests/test_orchestrator_deny_hook.sh"; then
+  ok "orchestrator-deny hook patterns OK"
+else
+  bad "orchestrator-deny hook regression"
+  last_out >&2
+  last_err >&2
+fi
+
 echo
 echo "──────────────────────────────────────"
 echo "  pre-flight: ${PASS} pass · ${FAIL} fail"
