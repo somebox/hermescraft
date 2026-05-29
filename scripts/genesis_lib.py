@@ -1022,6 +1022,50 @@ def seed_starter_cards(run_id: str, ctx: dict[str, str]) -> dict[str, list[str]]
     return meta
 
 
+def skip_p1_phase(meta: dict) -> None:
+    """Fast-forward Phase 1: archive its 6 worker cards and mark the P1
+    epic done.
+
+    Used by `genesis.sh new-run --skip-base` for tight iteration loops
+    on mining/navigation work. The world is otherwise set up identically
+    (5×5 cobble pad, system_chest placed and filled), so Steward sees a
+    minimal-state board with P1 done and P2 ready to decompose.
+
+    P2 promotes automatically because seed_starter_cards wires the epic
+    chain via task_links — once P1 is `done`, the dispatcher's gate
+    check lifts P2 from todo to ready.
+
+    `meta` is the dict returned by seed_starter_cards: {epic_ids, p1_card_ids}.
+    The first epic_id is P1.
+    """
+    if GENESIS_DRY_RUN:
+        return
+    p1_epic_id = meta["epic_ids"][0]
+    p1_card_ids = list(meta.get("p1_card_ids", []))
+    # Archive the 6 worker children first so they don't show up on the
+    # board. archive is idempotent — re-running is fine.
+    for cid in p1_card_ids:
+        proc = _run(
+            ["hermes", "kanban", "--board", BOARD, "archive", cid],
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"skip_p1_phase: archive {cid} failed: {proc.stderr[:200]}"
+            )
+    # Then complete the epic. This trips the depends_on edge for P2 and
+    # the dispatcher promotes P2 to ready on its next tick.
+    proc = _run(
+        ["hermes", "kanban", "--board", BOARD, "complete", p1_epic_id,
+         "--result", "skipped via --skip-base"],
+        timeout=15,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"skip_p1_phase: complete P1 epic failed: {proc.stderr[:200]}"
+        )
+
+
 def _kanban_link(*, parent_id: str, child_id: str) -> None:
     """Wire a `task_links` edge: child waits for parent.done before promote.
 

@@ -12,7 +12,7 @@ usage() {
 usage: $(basename "$0") <command> [options]
 
 commands:
-  new-run       --seed <int> [--anchor X,Y,Z] [--difficulty {peaceful|easy|normal|hard}] [--no-confirm]
+  new-run       --seed <int> [--anchor X,Y,Z] [--difficulty {peaceful|easy|normal|hard}] [--no-confirm] [--skip-base]
   seed-cards    [--run-id <id>]
   render-templates --seed <int> --anchor X,Y,Z [--run-id <id>]
   check-phases  [--json] [--run-id <id>]
@@ -94,6 +94,7 @@ case "$cmd" in
         --difficulty) DIFF="$2"; shift 2 ;;
         --no-confirm) NO_CONFIRM=1; shift ;;
         --keep-world) KEEP_WORLD=1; shift ;;
+        --skip-base) SKIP_BASE=1; shift ;;
         *)
           if [[ -z "$SEED" ]] && _is_seed_token "$1"; then
             SEED="$1"
@@ -126,6 +127,7 @@ print(prev or '')
     [[ -n "$SEED" ]] || { echo "--seed <int> required (negative: --seed=-8675309). Or use --keep-world after a prior run." >&2; exit 1; }
     export GENESIS_SEED="$SEED"
     export GENESIS_KEEP_WORLD="${KEEP_WORLD:-}"
+    export GENESIS_SKIP_BASE="${SKIP_BASE:-}"
     exec "$PY" -c "
 import os
 import sys
@@ -199,7 +201,14 @@ try:
         gl.seed_system_chest_place(cfg)
     ctx = gl.build_context(run_id=run_id, seed=seed, anchor=anchor, started_at=cfg['started_at'])
     with gl.log_step(run_id, 'seed_cards'):
-        gl.seed_starter_cards(run_id, ctx)
+        meta = gl.seed_starter_cards(run_id, ctx)
+    # --skip-base: archive the 6 P1 worker cards and mark P1 epic done so
+    # the existing P2 epic depends_on chain auto-promotes P2 to ready
+    # without paying the ~1h base-build cost. Used for fast iteration on
+    # mining/navigation work; full P1 path remains the end-to-end test.
+    if os.environ.get('GENESIS_SKIP_BASE'):
+        with gl.log_step(run_id, 'skip_p1_workers'):
+            gl.skip_p1_phase(meta)
     pin = diff or 'peaceful'
     with gl.log_step(run_id, 'difficulty_initial'):
         if not cfg.get('difficulty'):
