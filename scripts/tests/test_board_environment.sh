@@ -156,6 +156,24 @@ else
   last_err >&2
 fi
 
+step "10. no mode=ro URI sqlite3.connect in tree"
+# The `file:…?mode=ro` URI form fails transiently with "unable to open
+# database file" right after writers commit (see kanban 7484b31). Active
+# code uses plain opens; this guard catches re-introductions.
+if grep -rn "sqlite3.connect.*mode=ro" "${REPO_ROOT}/scripts" "${REPO_ROOT}/bot" "${REPO_ROOT}/plugins" "${REPO_ROOT}/tests" 2>/dev/null \
+   | grep -v __pycache__ | grep -v node_modules \
+   | grep -v "test_board_environment.sh" > /tmp/preflight-modero.$$ ; then
+  if [ -s /tmp/preflight-modero.$$ ]; then
+    bad "mode=ro URI re-introduced — see fix pattern in scripts/kanban _db()"
+    cat /tmp/preflight-modero.$$ >&2
+  else
+    ok "no mode=ro URI opens in active code"
+  fi
+else
+  ok "no mode=ro URI opens in active code"
+fi
+rm -f /tmp/preflight-modero.$$
+
 echo
 echo "──────────────────────────────────────"
 echo "  pre-flight: ${PASS} pass · ${FAIL} fail"

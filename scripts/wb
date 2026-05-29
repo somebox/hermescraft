@@ -75,7 +75,12 @@ def _active_task_id(cli_value: Optional[str]) -> str:
 def _db() -> sqlite3.Connection:
     if not DB_PATH.exists():
         _die(f"kanban DB not found at {DB_PATH}")
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=5.0)
+    # Plain open (not the `mode=ro` URI form). Read-only is a soft
+    # contract — all our queries are SELECT — but the URI form rejects
+    # opens with "unable to open database file" when the WAL sidecars
+    # are mid-transition right after a writer commits. Same fix pattern
+    # as scripts/kanban (7484b31).
+    conn = sqlite3.connect(str(DB_PATH), timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
 

@@ -95,8 +95,12 @@ def open_db_readonly(board: str) -> sqlite3.Connection:
     path = KANBAN_ROOT / "boards" / board / "kanban.db"
     if not path.is_file():
         sys.exit(f"kanban.db not found at {path}")
-    uri = f"file:{path}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    # Plain open instead of `mode=ro` URI — same fix as scripts/kanban
+    # (7484b31). The URI form fails transiently with "unable to open
+    # database file" when the WAL sidecars are mid-checkpoint right
+    # after a writer commits; plain open cooperates with WAL normally.
+    # Read-only is a soft contract here — all queries are SELECT.
+    conn = sqlite3.connect(str(path), timeout=5.0)
     conn.row_factory = sqlite3.Row
     return conn
 

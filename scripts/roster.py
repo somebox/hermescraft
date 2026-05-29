@@ -62,7 +62,13 @@ def card_load() -> dict:
         _CARD_LOAD_FAILED = True
         return {}
     try:
-        con = sqlite3.connect(f"file:{KANBAN_DB}?mode=ro", uri=True)
+        # Plain open instead of `mode=ro` URI — same fix as scripts/kanban
+        # (7484b31). The URI form fails transiently with "unable to open
+        # database file" when the WAL sidecars are mid-transition right
+        # after a writer commits. Read-only is a soft contract here —
+        # all queries are SELECT. Steward called roster.py 38× on
+        # 2026-05-29 and saw the URI failure repeatedly.
+        con = sqlite3.connect(str(KANBAN_DB), timeout=5.0)
         con.row_factory = sqlite3.Row
         rows = con.execute(
             "SELECT assignee, status, COUNT(*) AS n FROM tasks "
