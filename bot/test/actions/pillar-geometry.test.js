@@ -35,6 +35,7 @@ import {
   nextPillarDownCell,
   reachedSurface,
   isPartialBlockShape,
+  isGenuinelyStuckAt,
   feetCellY,
   blockUnderFeetCellY,
 } from '../../lib/actions/building/pillar-geometry.js';
@@ -335,6 +336,37 @@ test('pillar geom: reachedSurface false when a cardinal floor exists but the fee
 // pillar_down property: N digs from foot Y should land bot N blocks lower
 // (assuming each dug cell has another block below it / floor settles).
 // ─────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────
+// isGenuinelyStuckAt — gates pillar_up auto bare-hand ceiling dig (autoSlowDig)
+// ─────────────────────────────────────────────────────────────────────────
+
+test('pillar geom: isGenuinelyStuckAt true when 4 walls at head and ceiling within 2', () => {
+  const blockAt = (x, y, z) => {
+    if (y >= 67) return { boundingBox: 'block', name: 'stone' };
+    if (x !== 0 || z !== 0) return { boundingBox: 'block', name: 'stone' };
+    return { boundingBox: 'empty', name: 'air' };
+  };
+  assert.equal(isGenuinelyStuckAt(blockAt, 0, 65, 0), true);
+});
+
+test('pillar geom: isGenuinelyStuckAt false when one cardinal at head is open', () => {
+  const blockAt = (x, y, z) => {
+    if (y >= 67) return { boundingBox: 'block', name: 'stone' };
+    if (x === 1 && z === 0) return { boundingBox: 'empty', name: 'air' };
+    return { boundingBox: 'block', name: 'stone' };
+  };
+  assert.equal(isGenuinelyStuckAt(blockAt, 0, 65, 0), false);
+});
+
+test('pillar geom: isGenuinelyStuckAt false when ceiling is open (walls only)', () => {
+  const blockAt = (x, y, z) => {
+    if (y >= 66) return { boundingBox: 'empty', name: 'air' };
+    if (x !== 0 || z !== 0) return { boundingBox: 'block', name: 'stone' };
+    return { boundingBox: 'empty', name: 'air' };
+  };
+  assert.equal(isGenuinelyStuckAt(blockAt, 0, 65, 0), false);
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // isPartialBlockShape — used by pillar_step's PILLAR_FROM_PARTIAL_BLOCK guard

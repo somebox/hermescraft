@@ -13,6 +13,7 @@ import { canSeeBlockFaces } from '../_los.js';
 import { ok, fail } from '../../shared/action-contract.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
 import { createDigFailureTracker } from '../../runtime/dig-failure-ring.js';
+import { egressTreadCells, isEgressProtectedCell, clearEgressTrail } from '../../runtime/egress-guard.js';
 
 // Plug-block selection for water/lava breach next-action hints. Sand/gravel
 // are excluded because they fall through a fluid column instead of plugging
@@ -111,6 +112,30 @@ export function createDigHandlers(deps) {
           retry_safe: false,
         },
       );
+    }
+
+    // Protect the bot's own staircase egress (stair_down treads). Removing a
+    // tread support turns the staircase into an un-climbable shaft and mc
+    // retrace can no longer get the bot out. Force overrides (and invalidates
+    // the trail afterward, in dig()).
+    if (!force) {
+      const egress = egressTreadCells(ctx);
+      if (egress && isEgressProtectedCell(egress, x, y, z)) {
+        tracker.record('STAIRCASE_EGRESS');
+        return fail(
+          'STAIRCASE_EGRESS',
+          `Refusing to dig ${target.name} at (${x}, ${y}, ${z}) — it's a tread of the staircase you dug with mc stair_down (your way back up). Digging it would strand you below. Re-run with --force to remove it anyway (this invalidates the retrace trail — build a new way up first).`,
+          {
+            observed_state: {
+              block_at_target: target.name,
+              requested_coord: { x, y, z },
+              trail_source: egress.trail?.source || 'stair_down',
+            },
+            next_action_hint: `mc retrace   # walk back up your stairs, OR mc dig ${x} ${y} ${z} --force to remove this tread`,
+            retry_safe: false,
+          },
+        );
+      }
     }
 
     // circuit-v8 + v11 self-dig safety: refuse to dig the block directly
@@ -386,6 +411,8 @@ export function createDigHandlers(deps) {
     const target = b.blockAt(new Vec3(x, y, z));
     const cell = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) };
     const tracker = createDigFailureTracker(ctx, cell, () => target?.name);
+    // Was this a stair_down tread? (Only reachable past the guard when forced.)
+    const forcedThroughEgress = !!force && isEgressProtectedCell(egressTreadCells(ctx), x, y, z);
 
     // 1) Repeat-fail short-circuit — stop hammering a genuinely-stuck cell.
     const prior = tracker.priorRepeat();
@@ -447,6 +474,8 @@ export function createDigHandlers(deps) {
     // (~30 ticks/cell) but face-adjacent lava still flows in within window.
     const breach = await detectPostDigBreach(b, { x, y, z }, { settleMs: 0 });
     tracker.clearForCell();
+    // Forced through our own staircase: the retrace trail is now broken.
+    if (forcedThroughEgress) clearEgressTrail(ctx, 'dig_force_through_tread');
 
     return buildSuccessEnvelope(b, target, x, y, z, dropped, breach, new Set(equipResult.hints));
   }

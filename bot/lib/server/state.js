@@ -91,6 +91,8 @@ export function createRuntimeState() {
     lastMoveFailed: /** @type {{ ts: number, intended_target: {x:number,y:number,z:number}, actual_pos: {x:number,y:number,z:number}, reason: string, verb: string } | null} */ (
       null
     ),
+    /** Survives position-drift clear of lastMoveFailed — for escape do_not_retry_goto. */
+    lastFailedGotoTarget: /** @type {{ x: number, y: number, z: number } | null} */ (null),
     /** F53.2: Recent failed placement attempts. Capped at 8 entries. */
     recentPlaceFailures: /** @type {Array<{ts:number, target:{x:number,y:number,z:number}, block:string, error_code:string}>} */ (
       []

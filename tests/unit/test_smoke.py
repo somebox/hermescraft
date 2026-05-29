@@ -89,17 +89,21 @@ def test_extract_error_handles_dict_string_and_missing():
 
 @pytest.mark.unit
 def test_bot_inventory_flattens_to_count_map(config):
-    """BotClient.inventory() turns the /status item list into {name: count}."""
+    """BotClient.inventory() flattens the /inventory categories into {name: count}."""
     b = BotClient(config)
     b.get = MagicMock(return_value={
         "ok": True,
         "data": {
-            "inventory": [
-                {"name": "cobblestone", "count": 5, "slot": 0},
-                {"name": "stone_pickaxe", "count": 1, "slot": 1},
-                {"name": "cobblestone", "count": 3, "slot": 2},  # duplicate name → summed
-                {"name": None, "count": 0},                       # malformed → skipped
-            ],
+            "categories": {
+                "blocks": [
+                    {"name": "cobblestone", "count": 5},
+                    {"name": "cobblestone", "count": 3},  # duplicate name → summed
+                ],
+                "tools": [
+                    {"name": "stone_pickaxe", "count": 1},
+                    {"name": None, "count": 0},            # malformed → skipped
+                ],
+            },
         },
     })
     inv = b.inventory()

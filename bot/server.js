@@ -292,7 +292,30 @@ async function handleChat(username, message) {
   // `Server` or `server`, some plugins prefix with `[Server]`. Drop them all
   // — a player character has no reason to react to operator broadcasts.
   const u = String(username || '').toLowerCase();
-  if (u === 'rcon' || u === 'server' || u === '[server]' || u === '') {
+  const isServerIdentity = u === 'rcon' || u === 'server' || u === '[server]' || u === '';
+  if (isServerIdentity) {
+    // Functional tests inject coordination via `execute … say @tester …`.
+    // Normally we drop Server/rcon chat so operator broadcasts don't pollute
+    // agent context; when acceptServerChatForTests is on (Tester harness),
+    // only @-mentions of this bot are admitted.
+    if (config.behaviors.acceptServerChatForTests) {
+      const myName = String(getMyName() || '').toLowerCase();
+      const msg = String(message || '').toLowerCase();
+      const mentioned = myName && (
+        msg.includes(`@${myName}`) || msg.includes(`${myName}:`) || msg.includes(`${myName},`)
+      );
+      if (mentioned) {
+        ctx.social.chatLog.push({
+          time: Date.now(),
+          from: username || 'Server',
+          message,
+          whisper: false,
+          server_broadcast: true,
+        });
+        if (ctx.social.chatLog.length > ctx.social.MAX_LOG) ctx.social.chatLog.shift();
+        rememberSocialEvent({ actor: username || 'Server', kind: 'heard', channel: 'server_say', message });
+      }
+    }
     return;
   }
 
@@ -682,6 +705,7 @@ const httpServer = http.createServer(
     renewLease,
     createBot,
     viewerPort: viewerPortOpt,
+    handleChat,
   }),
 );
 

@@ -44,6 +44,7 @@ sleep 1
 echo "── starting Tester bot on :$API_PORT (viewer :$VIEWER_PORT) → $MC_HOST:$MC_PORT ──"
 cd "$SCRIPT_DIR/bot"
 MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="Tester" \
+  BOT_ACCEPT_SERVER_CHAT=true \
   API_PORT="$API_PORT" VIEWER_PORT="$VIEWER_PORT" \
   nohup node server.js > "$LOG_DIR/bot-tester.log" 2>&1 &
 disown

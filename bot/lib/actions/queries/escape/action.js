@@ -65,7 +65,9 @@ export function createEscapeQueries({ ctx, ensureBot, getActions, utils, goals }
     const cutoff = Date.now() - ESCAPE_LOOP_WINDOW_MS;
     const recent = recentEscapes.filter(e => e.ts > cutoff);
     if (cls !== 'open' && cls !== 'alley' && recent.length >= 2) {
-      const lastFailed = ctx?.runtime?.lastMoveFailed?.intended_target || null;
+      const lastFailed = ctx?.runtime?.lastFailedGotoTarget
+        || ctx?.runtime?.lastMoveFailed?.intended_target
+        || null;
       const ages = recent.map(e => Math.round((Date.now() - e.ts) / 100) / 10);
       return fail(
         'ESCAPE_RECURRING_LOOP',
@@ -116,7 +118,9 @@ export function createEscapeQueries({ ctx, ensureBot, getActions, utils, goals }
       }
       // Surface do_not_retry_goto on success too — telling the brain to
       // plan a fresh approach instead of re-firing the failed coord.
-      const lastFailed = ctx?.runtime?.lastMoveFailed?.intended_target || null;
+      const lastFailed = ctx?.runtime?.lastFailedGotoTarget
+        || ctx?.runtime?.lastMoveFailed?.intended_target
+        || null;
       if (lastFailed && resp?.data && typeof resp.data === 'object') {
         resp.data.do_not_retry_goto = lastFailed;
       }

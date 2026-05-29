@@ -55,6 +55,31 @@ export function computeDoorSides(doorPos, target) {
 }
 
 /**
+ * Build the success-message + `moved` flag for a completed move.
+ *
+ * Distinguishes "actually walked to the target" from "was already within the
+ * arrival tolerance and never moved". The pathfinder returns immediately when
+ * the (possibly y-/target-adjusted) goal is already within 2 blocks of the
+ * bot, so without this the bot would claim "Arrived at <target>" while sitting
+ * still — hiding from the agent that no travel happened and pointing it at the
+ * requested coords rather than where it actually is.
+ *
+ * @param {{ startPos: {x:number,y:number,z:number}, finalPos: {x:number,y:number,z:number}, target: {x:number,y:number,z:number}, doorsUsed?: number, fmt?: (n:number)=>string, suffix?: string }} args
+ * @returns {{ moved: boolean, text: string }}
+ */
+export function describeMoveOutcome({ startPos, finalPos, target, doorsUsed = 0, fmt = (n) => String(Math.round(Number(n))), suffix = '' }) {
+  const moved =
+    Math.floor(startPos.x) !== Math.floor(finalPos.x)
+    || Math.floor(startPos.y) !== Math.floor(finalPos.y)
+    || Math.floor(startPos.z) !== Math.floor(finalPos.z);
+  const doorsNote = doorsUsed ? ` via ${doorsUsed} door${doorsUsed > 1 ? 's' : ''}` : '';
+  const text = moved
+    ? `Arrived at ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)}${doorsNote}${suffix}`
+    : `Already within range of ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)} — did not move (still at ${fmt(finalPos.x)}, ${fmt(finalPos.y)}, ${fmt(finalPos.z)})${doorsNote}${suffix}`;
+  return { moved, text };
+}
+
+/**
  * @param {object} deps
  */
 export function createMove(deps) {
@@ -80,6 +105,10 @@ export function createMove(deps) {
     if (!c.ok) return c.response;
     let { x, y, z } = c;
     const b = ensureBot();
+    // Snapshot where the command started so the success message can tell
+    // "actually walked there" apart from "was already in range, never moved"
+    // — the latter must not claim "Arrived at <target>" while sitting still.
+    const startPos = posObj();
     const max_doors = args.max_doors;
     const door = args.door;
     const moveRetryKey = gotoRetryKey('move', x, y, z);
@@ -326,17 +355,27 @@ export function createMove(deps) {
         const escapeNote = autoEscape
           ? ` (auto-escaped from water to ${finalPos.x.toFixed(1)},${finalPos.y.toFixed(1)},${finalPos.z.toFixed(1)})`
           : '';
+        const { moved: movedCells, text: result } = describeMoveOutcome({
+          startPos,
+          finalPos,
+          target,
+          doorsUsed: doors_used.length,
+          fmt,
+          suffix: `${yAdjNote}${escapeNote}`,
+        });
         return {
           ok: true,
           data: {
             doors_used,
             legs: leg,
             end_position: finalPos,
+            start_position: startPos,
+            moved: movedCells,
             ...(yAdjusted ? { y_adjusted: yAdjusted } : {}),
             ...(targetAdjusted ? { target_adjusted: targetAdjusted } : {}),
             ...(autoEscape ? { auto_escape: autoEscape, adjusted_target: { x: Math.floor(finalPos.x), y: Math.floor(finalPos.y), z: Math.floor(finalPos.z), original: { x: target.x, y: target.y, z: target.z } } } : {}),
           },
-          result: `Arrived at ${fmt(target.x)}, ${fmt(target.y)}, ${fmt(target.z)}${doors_used.length ? ` via ${doors_used.length} door${doors_used.length > 1 ? 's' : ''}` : ''}${yAdjNote}${escapeNote}`,
+          result,
         };
       }
 

@@ -62,6 +62,7 @@ export function createBotHttpListener(deps) {
     renewLease,
     createBot,
     viewerPort = null,
+    handleChat,
   } = deps;
 
   // Services proxy: dispatchAction expects a services-shaped container
@@ -262,6 +263,7 @@ export function createBotHttpListener(deps) {
         const preserve = url.searchParams.get('preserve') === 'true';
         if (!preserve) {
           if (ctx.runtime.lastMoveFailed) ctx.runtime.lastMoveFailed = null;
+          if (ctx.runtime.lastFailedGotoTarget) ctx.runtime.lastFailedGotoTarget = null;
           ctx.runtime.recentEscapes = [];
           ctx.runtime.recentStuckCells = [];
           clearNavTrail(ctx, 'status');
@@ -714,6 +716,19 @@ export function createBotHttpListener(deps) {
     if (req.method === 'POST') {
       const body = await parseBody(req);
 
+      // Functional-test only: inject incoming chat (rcon `say` does not fire mineflayer `chat`).
+      if (path === '/test/simulate-chat' && config?.behaviors?.acceptServerChatForTests) {
+        const from = String(body?.from || 'Server').trim() || 'Server';
+        const message = String(body?.message || '').trim();
+        if (!message) {
+          return respond(res, 400, { ok: false, error: 'message required' });
+        }
+        if (typeof handleChat === 'function') {
+          await handleChat(from, message);
+        }
+        return respond(res, 200, { ok: true, data: { injected: true, from, message } });
+      }
+
       // Cancel current task
       if (path === '/task/cancel') {
         const b = ensureBot();
@@ -914,6 +929,7 @@ export function createBotHttpListener(deps) {
       // escapes against it for the next 90s.
       if (actionName === 'status') {
         if (ctx.runtime.lastMoveFailed) ctx.runtime.lastMoveFailed = null;
+        if (ctx.runtime.lastFailedGotoTarget) ctx.runtime.lastFailedGotoTarget = null;
         ctx.runtime.recentEscapes = [];
         ctx.runtime.recentStuckCells = [];
       }

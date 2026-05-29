@@ -82,6 +82,7 @@ Once the entry is chosen, mining follows a fixed three-phase shape:
 - **Cap exposed shafts.** If a worker has to abandon mid-stair (deaths, reclaim), the next worker assigned to that mine site must `mc place dirt` over the exposed entrance pit before doing anything else.
 - **No diagonal/spiral shafts.** Stick to cardinal directions. Diagonal stair_down has a 22% higher kick rate (NaN-cascade tracking, 2026-05-25 investigation).
 - **Don't expose lava to the surface.** If `mc tunnel` returns `HAZARD_LAVA`, do NOT widen the breach by trying again with `--force`. Place dirt to seal it, comment the coords on your card, and `kanban_block reason=hazard:lava_at_X_Y_Z` for operator review.
+- **Don't tunnel away your own staircase.** `mc tunnel`, `mc dig_area`, and single `mc dig` now automatically **preserve the treads of the `mc stair_down` staircase you came down** (your `mc retrace` route to the surface). If a dig would cut through them you'll see `Preserved N staircase tread(s)` (bulk) or a `STAIRCASE_EGRESS` refusal (single dig) — the staircase stays intact and the rest of the dig still runs. Only pass `--force` if you genuinely want to remove the stairs; that invalidates the retrace trail, so build a new way up (`mc stair_up` / `mc pillar_up`) first.
 
 ### When to clean up vs. abandon
 
@@ -332,21 +333,22 @@ The right primitive depends on what's around you and whether you already have a 
 | Situation | Primitive | Why |
 |---|---|---|
 | You dug a `mc stair_down` on the way in | **`mc stair_up <opposite_dir> <length>`** | Cleanest exit — auto floor-block placement over voids, walkable + reversible. Mirror the direction you came down with. |
-| In open cave / no staircase, blocks in hand | **`mc pillar_step cobblestone 30`** | Vertical pillaring up to 30 blocks in one call. Far faster than manual `mc place + mc jump`. Iterates dig+place through ceilings. |
-| Buried under thick ceiling, no blocks in hand | **`mc pillar_step 20`** (no block arg) | Primitive bare-hand digs the cell overhead, picks up the drop, and pillars with that. Self-sustains as long as the ceiling material drops (dirt/sand/gravel: yes; stone bare-hand: no — needs a pickaxe OR `--force`). |
+| In open cave / no staircase, blocks in hand | **`mc pillar_up cobblestone 30`** | Vertical pillaring up to 30 blocks in one call. Far faster than manual `mc place + mc jump`. Iterates dig+place through ceilings, stops at a sky-open surface. |
+| Buried under thick ceiling, no blocks in hand | **`mc pillar_up 20`** (no block arg) | Bare-hand digs the cell overhead, picks up the drop, and pillars with that. Self-sustains as long as the ceiling material drops (dirt/sand/gravel: yes; stone bare-hand: no — needs a pickaxe OR `--force`). When truly trapped (4 walls + ceiling) it auto bare-hand digs the ceiling without `--force`. |
 | Stuck on top of a 1×1 column (over-pillared) | **`mc pillar_down`** | Mines underfoot block, drops 1, repeats until you reach proper surface. |
 | You marked `mc mark return_to_surface` at entry | **`mc go_mark return_to_surface`** | One-shot return — pathfinder routes via known-walkable path back. |
 | In water | **`mc surface`** | Swims you up to air. No-op on dry land. |
 
-**Anti-pattern: hand-rolling `mc place cobblestone X Y Z` + `mc jump`** one block at a time. That's slow (4× the rounds vs `pillar_step`), eats iteration budget, and is error-prone (your bounding box and the new block fight each tick). Use `mc pillar_step <block> <count>` instead — it handles the place-then-jump-then-rise cycle internally.
+**Anti-pattern: hand-rolling `mc place cobblestone X Y Z` + `mc jump`** one block at a time. That's slow (4× the rounds vs `pillar_up`), eats iteration budget, and is error-prone (your bounding box and the new block fight each tick). Use `mc pillar_up <block> <count>` instead — it handles the place-then-jump-then-rise cycle internally.
 
 ### Underground pillar escape (ceiling breakthrough)
 
 When you're stuck underground with a ceiling overhead:
 
-- **Default**: `mc pillar_step 20` (no block argument). The primitive itself will dig the cell directly above your head, wait for the drop to enter inventory, then pillar up using that captured block.
-- **Drop-timing caveat** (current implementation): the dirt drop from the ceiling dig sometimes arrives in inventory *after* one pillar_step call returns (Paper item_spawn packet vs. magnet-collect race). If you call once and get `PILLAR_FAILED` with `capture-from-ceiling failed: cell above head at … is air`, your inventory likely has 1 captured block now — **call `mc pillar_step` a second time** and it'll use the captured block normally. Iterating this 2-call pattern is the reliable self-rescue today.
-- **`ESCAPE_NO_DROP` returned**: the ceiling dug but dropped nothing — you bare-hand dug stone (no cobblestone unless you have a pickaxe), or the block was a non-collectible like a slab. Get a pickaxe (`mc craft wooden_pickaxe`) or extract pillar material from the walls/floor first (`mc dig <wall_coord>` → `mc pickup`), then retry `mc pillar_step 20 --force`.
+- **Default**: `mc pillar_up 20` (no block argument). The primitive itself will dig the cell directly above your head, wait for the drop to enter inventory, then pillar up using that captured block. When you're genuinely trapped (4 walls + ceiling) it auto bare-hand digs the ceiling — no `--force` needed for that.
+- **Read the result, don't guess.** `pillar_up` reports `placed/requested` and *why* it stopped. If it stopped early on a stone ceiling with no pickaxe, the `next_action_hint` will say so and point at `--force` (or crafting a pickaxe). Don't assume "lateral exit" — the message tells you.
+- **Drop-timing caveat** (current implementation): the dirt drop from the ceiling dig sometimes arrives in inventory *after* one pillar_up call returns (Paper item_spawn packet vs. magnet-collect race). If you call once and get `PILLAR_FAILED` with `capture-from-ceiling failed: cell above head at … is air`, your inventory likely has 1 captured block now — **call `mc pillar_up` a second time** and it'll use the captured block normally. Iterating this 2-call pattern is the reliable self-rescue today.
+- **`ESCAPE_NO_DROP` returned**: the ceiling dug but dropped nothing — you bare-hand dug stone (no cobblestone unless you have a pickaxe), or the block was a non-collectible like a slab. Get a pickaxe (`mc craft wooden_pickaxe`) or extract pillar material from the walls/floor first (`mc dig <wall_coord>` → `mc pickup`), then retry `mc pillar_up 20 --force`.
 - **`PILLAR_FAILED` with `--force` already used**: you're genuinely unrescuable from the bot's perspective — no tool, no diggable material that drops. File a `[RESCUE_REQUEST]` card with your coords; do NOT loop.
 - **`POLICY_DENY` (region refusal)**: you're inside a protected region. Pass `--force` and the primitive will bypass region/global denylists for the escape dig **only when** you're verifiably stuck (4 cardinal walls + ceiling overhead). Otherwise file a rescue card; do not retry without `--force`.
 
@@ -358,22 +360,22 @@ Never pass `--force` during normal navigation — it's an escape hatch for "trap
 
 ### Returning from the pillar — use `mc pillar_down`
 
-`mc pillar_step` is ONE-WAY without help. Once you've pillared up out of a shaft and re-anchored on a 1×1 column at the surface, **you cannot just walk off** — there's no ground around you, only the pillar you placed. The inverse primitive is:
+`mc pillar_up` is ONE-WAY without help. Once you've pillared up out of a shaft and re-anchored on a 1×1 column at the surface, **you cannot just walk off** — there's no ground around you, only the pillar you placed. The inverse primitive is:
 
 ```
 mc pillar_down [N=12]      # descend by mining the block underfoot, drop one cell, repeat
 ```
 
-**The pair `pillar_step` → `pillar_down` is the round trip.** Every time you pillar up to escape, plan on pillar-down (or `mc dig` the column laterally, or `mc move` to an adjacent solid block — but only if one exists) to return to ground-level pathfinding. Sitting on a pillar burns iteration budget without making progress.
+**The pair `pillar_up` → `pillar_down` is the round trip.** Every time you pillar up to escape, plan on pillar-down (or `mc dig` the column laterally, or `mc move` to an adjacent solid block — but only if one exists) to return to ground-level pathfinding. Sitting on a pillar burns iteration budget without making progress.
 
-**Anti-pattern: do NOT use `mc pillar_step` for scouting / "seeing farther".** Your training data may suggest this — it's a real Minecraft tactic for human players. For our bots it's a trap:
+**Anti-pattern: do NOT use `mc pillar_up` for scouting / "seeing farther".** Your training data may suggest this — it's a real Minecraft tactic for human players. For our bots it's a trap:
 
 - `mc map [R]` gives a compact ASCII overhead view without moving (R ≤ 16)
 - `mc nearby 32` lists blocks + entities within 32 blocks
 - `mc scene --reason="<what you're looking for>"` gives an LLM-digested perception bundle
 - `mc advise --reason="..." --target X,Y,Z` recommends a direction based on world state
 
-All of these surface terrain intelligence without committing to a vertical excursion. Save `pillar_step` for escape situations only.
+All of these surface terrain intelligence without committing to a vertical excursion. Save `pillar_up` for escape situations only.
 
 ## Iteration budget reminder
 

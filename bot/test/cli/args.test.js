@@ -270,9 +270,11 @@ describe('cli args', () => {
     // Find the canonical command definitions from the registry. Keeping
     // schema in one place means a schema regression here surfaces
     // immediately, not in a duplicated local copy that drifts.
-    const pillarStep = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_step');
+    // Renamed primary verb is `pillar_up` (pillar_step kept as an alias).
+    const pillarStep = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_up');
     const pillarDown = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_down');
-    assert.ok(pillarStep, 'pillar_step must be in RAW_COMMAND_DEFS');
+    assert.ok(pillarStep, 'pillar_up must be in RAW_COMMAND_DEFS');
+    assert.ok(pillarStep.aliases?.includes('pillar_step'), 'pillar_step must remain an alias of pillar_up');
     assert.ok(pillarDown, 'pillar_down must be in RAW_COMMAND_DEFS');
     const stepSchema = pillarStep.argSchema;
     const stepBodyFn = pillarStep.bodyFn;
@@ -505,8 +507,8 @@ describe('cli args', () => {
       // `mc pillar_step 5` had its own bodyFn-level shorthand before this
       // change. Verify it still works (swap rescue is a no-op for single
       // positionals) AND that the bodyFn rewrite to count fires.
-      const pillarStep = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_step');
-      const params = positionalToParams('pillar_step', pillarStep.argSchema, ['5']);
+      const pillarStep = RAW_COMMAND_DEFS.find((d) => d.name === 'pillar_up');
+      const params = positionalToParams('pillar_up', pillarStep.argSchema, ['5']);
       const body = JSON.parse(pillarStep.bodyFn(params));
       assert.equal(body.count, 5);
       assert.equal(body.block, undefined);

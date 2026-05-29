@@ -85,7 +85,11 @@ export function createLifecycleActions(services) {
         const m = log[i];
         if (!m) continue;
         if (typeof m.time === 'number' && m.time < start) break;
-        if (m.from === b.username || m.from === 'Server') continue;
+        if (m.from === b.username) continue;
+        const fromLower = String(m.from || '').toLowerCase();
+        if (fromLower === 'server' || fromLower === 'rcon' || fromLower === '[server]') {
+          if (!m.server_broadcast && !m.test_inject) continue;
+        }
         const msg = String(m.message || '').toLowerCase();
         const isMention = wantMention && myName && (msg.includes(`@${myName}`) || msg.includes(`${myName}:`) || msg.includes(`${myName},`));
         const isDirect = wantDirect && (m.private === true || m.whisper === true);

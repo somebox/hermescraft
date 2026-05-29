@@ -27,7 +27,7 @@ export async function escapeStrategyInAir({ b, standingState, fail, recordEscape
   }
   return fail(
     'ESCAPE_FAILED_AIRBORNE',
-    `mc escape waited 600ms but bot is still in_air at ${after.cell.x},${after.cell.y},${after.cell.z} — wait for landing or use mc pillar_step with a block if over void.`,
+    `mc escape waited 600ms but bot is still in_air at ${after.cell.x},${after.cell.y},${after.cell.z} — wait for landing or use mc pillar_up with a block if over void.`,
     {
       observed_state: {
         classification_before: cls,

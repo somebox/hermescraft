@@ -5,6 +5,8 @@ import { shouldSkipDigAt } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
 import { cascadeFor } from '../../runtime/materials.js';
 import { findStandingBlockCell, isPartialBlockShape } from './pillar-geometry.js';
+import { describePillarOutcome, isCellSkyExposed } from './pillar-outcome.js';
+import { isGenuinelyStuckAt } from './pillar-geometry.js';
 
 /**
  * @param {{ ctx: any, ensureBot: () => any, sleep: (ms: number) => Promise<void>,
@@ -163,15 +165,12 @@ export function createBuildingPillarPart(deps) {
         const cx = Math.floor(b.entity.position.x);
         const cz = Math.floor(b.entity.position.z);
         const headY = Math.floor(b.entity.position.y + 0.001) + 1;
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const wall = b.blockAt(new Vec3(cx + dx, headY, cz + dz));
-          if (!wall || wall.boundingBox !== 'block') return false;
-        }
-        for (let dy = 1; dy <= 2; dy++) {
-          const above = b.blockAt(new Vec3(cx, headY + dy, cz));
-          if (above && above.boundingBox === 'block') return true;
-        }
-        return false;
+        return isGenuinelyStuckAt(
+          (x, y, z) => b.blockAt(new Vec3(x, y, z)),
+          cx,
+          headY,
+          cz,
+        );
       };
 
       // Dig overhead block(s) so the bot has clearance to jump and place.
@@ -182,6 +181,13 @@ export function createBuildingPillarPart(deps) {
         let attempted = 0;
         let succeeded = 0;
         let lastError = null;
+        // Auto-escape: when genuinely trapped (4 walls + ceiling), allow the
+        // slow bare-hand dig that clears the headroom WITHOUT requiring an
+        // explicit --force. The region/global denylist bypass (forceEscape
+        // below) still demands explicit force — auto only relaxes the
+        // slow-dig refusal so a tool-less bot can self-rescue through its own
+        // ceiling and keep climbing with the blocks it already carries.
+        const autoSlowDig = isGenuinelyStuck();
         for (const y of [baseFy + 1, baseFy + 2]) {
           const blk = b.blockAt(new Vec3(ix, y, iz));
           if (!blk || isAirLike(blk) || blk.boundingBox !== 'block') continue;
@@ -198,7 +204,7 @@ export function createBuildingPillarPart(deps) {
           }
           attempted++;
           try {
-            await equipForDig(b, blk, { force });
+            await equipForDig(b, blk, { force: force || autoSlowDig });
             await b.dig(blk, true);
             await sleep(80);
             const after = b.blockAt(new Vec3(ix, y, iz));
@@ -229,6 +235,9 @@ export function createBuildingPillarPart(deps) {
         if (!target || isAirLike(target) || target.boundingBox !== 'block') {
           return { captured: null, reason: `cell above head at (${cx},${targetY},${cz}) is air — nothing to capture` };
         }
+        // See ensureHeadroom: auto-allow the slow bare-hand dig when genuinely
+        // trapped; region/global bypass still needs explicit force.
+        const autoSlowDig = isGenuinelyStuck();
         const policy = shouldSkipDigAt(
           ctx, null, target.name, cx, targetY, cz, isDigProtected,
           { forceEscape: force && isGenuinelyStuck() },
@@ -240,7 +249,7 @@ export function createBuildingPillarPart(deps) {
           forceBypasses.push({ x: cx, y: targetY, z: cz, block: target.name, source: policy.forceEscapeBypassed });
         }
         try {
-          await equipForDig(b, target, { force });
+          await equipForDig(b, target, { force: force || autoSlowDig });
         } catch (e) {
           return { captured: null, reason: `equip refused: ${e?.message || e}. Retry with force=true to slow-dig.` };
         }
@@ -443,8 +452,16 @@ export function createBuildingPillarPart(deps) {
       }
 
       const startY = Math.floor(b.entity.position.y);
+      const worldTop = typeof b.game?.height === 'number' && typeof b.game?.minY === 'number'
+        ? b.game.minY + b.game.height - 1
+        : 319;
       let placed = 0;
+      // `lateralExit` is only set when the opening is the REAL surface
+      // (sky-open above). `sideExit` records the best non-surface walkable
+      // neighbor we passed, offered as a fallback in the result hint.
       let lateralExit = null;
+      let sideExit = null;
+      let brokeOnFailure = false;
       let consecutiveFails = 0;
       const failReasons = [];
 
@@ -454,19 +471,36 @@ export function createBuildingPillarPart(deps) {
         if (step > 0) {
           await waitForOnGround(400);
           const exit = canStepLaterally();
-          if (exit) { lateralExit = exit; break; }
+          if (exit) {
+            sideExit = exit;
+            // Only STOP for an opening that is actually the surface (open to
+            // the sky). Intermediate cave/tunnel mouths at each Y are NOT a
+            // reason to abandon a requested multi-block climb — the caller
+            // asked to reach a height, so keep going. (2026-05-29: bots were
+            // stopping after 1 block at every lateral hole and burning rounds
+            // re-issuing the command.) A single-step call has no climb intent
+            // beyond 1, so any opening still counts as "done".
+            const skyOpen = isCellSkyExposed((p) => b.blockAt(p), exit.x, exit.y, exit.z, worldTop);
+            if (skyOpen || maxSteps <= 1) { lateralExit = exit; break; }
+          }
         }
 
         if (!wantJump) {
           // Sneak-place underfoot variant — fall through to the same logic but
           // skip the jump (rare path; supported for compatibility).
           const standing = findStandingBlock();
-          if (!standing) { consecutiveFails++; if (consecutiveFails >= 2) break; continue; }
+          if (!standing) {
+            failReasons.push('no standing block beneath feet');
+            consecutiveFails++;
+            if (consecutiveFails >= 2) { brokeOnFailure = true; break; }
+            continue;
+          }
           try {
             const eq = await equipBuildingBlock();
             if (!eq) {
+              failReasons.push('no pillar block in inventory (sneak-place variant)');
               consecutiveFails++;
-              if (consecutiveFails >= 2) break;
+              if (consecutiveFails >= 2) { brokeOnFailure = true; break; }
               continue;
             }
             await b.placeBlock(standing, new Vec3(0, 1, 0));
@@ -478,9 +512,10 @@ export function createBuildingPillarPart(deps) {
             const placedCell = { x: standing.position.x, y: standing.position.y + 1, z: standing.position.z };
             const placedBlk = b.blockAt(new Vec3(placedCell.x, placedCell.y, placedCell.z));
             recordRecentPlace(ctx, placedCell, placedBlk?.name || 'unknown');
-          } catch {
+          } catch (e) {
+            failReasons.push(`sneak-place failed: ${e?.message || e}`);
             consecutiveFails++;
-            if (consecutiveFails >= 2) break;
+            if (consecutiveFails >= 2) { brokeOnFailure = true; break; }
           }
           continue;
         }
@@ -507,9 +542,10 @@ export function createBuildingPillarPart(deps) {
           // (e.g. the first capture-from-ceiling needs an extra moment for
           // the dropped item to enter inventory). Three consecutive failures
           // with identical reasons is the new break condition.
-          if (consecutiveFails >= 3) break;
+          if (consecutiveFails >= 3) { brokeOnFailure = true; break; }
           if (consecutiveFails >= 2 && failReasons.length >= 2
               && failReasons.at(-1) === failReasons.at(-2)) {
+            brokeOnFailure = true;
             break;
           }
         }
@@ -526,34 +562,22 @@ export function createBuildingPillarPart(deps) {
       await waitForOnGround(400);
       const endY = Math.floor(b.entity.position.y);
       const pos = b.entity.position;
-
-      if (placed === 0 && !lateralExit) {
-        return fail(
-          'PILLAR_FAILED',
-          `pillar_step could not place any blocks. Y=${startY}, pos=(${Math.floor(pos.x)},${endY},${Math.floor(pos.z)}). ${failReasons.length ? `Reasons: ${failReasons.slice(0, 3).join(' | ')}. ` : ''}Headroom may be blocked, inventory empty with no diggable ceiling, or region policy refused (try force=true if genuinely stuck).`,
-          {
-            observed_state: { start_y: startY, end_y: endY, x: Math.floor(pos.x), z: Math.floor(pos.z), fail_reasons: failReasons.slice(0, 5) },
-            retry_safe: true,
-            ...(forceBypasses.length ? { force_escape_bypassed: forceBypasses } : {}),
-          },
-        );
-      }
+      const ix2 = Math.floor(pos.x);
+      const iz2 = Math.floor(pos.z);
 
       // #93: post-pillar shaft detection. If the bot finished pillaring
       // with no lateral exit AND all 4 cardinal neighbors at head height
       // are solid, the bot is trapped in a 1×1 vertical shaft. Surface a
-      // shaft_trap flag + hint so the agent picks a recovery strategy
-      // (pillar further, dig a wall, mc escape) instead of looping.
+      // shaft_trap flag so the agent picks a recovery strategy (pillar
+      // further, dig a wall, mc escape) instead of looping.
       let shaftTrap = null;
       if (!lateralExit && placed > 0) {
-        const cx = Math.floor(pos.x);
-        const cz = Math.floor(pos.z);
         const headY = endY + 1;
         const cardinals = [[1, 0], [-1, 0], [0, 1], [0, -1]];
         const wallSides = [];
         let allSolid = true;
         for (const [dx, dz] of cardinals) {
-          const neighbor = b.blockAt(new Vec3(cx + dx, headY, cz + dz));
+          const neighbor = b.blockAt(new Vec3(ix2 + dx, headY, iz2 + dz));
           if (!neighbor || neighbor.boundingBox !== 'block') {
             allSolid = false;
             break;
@@ -561,46 +585,72 @@ export function createBuildingPillarPart(deps) {
           wallSides.push({ dir: dx === 1 ? 'east' : dx === -1 ? 'west' : dz === 1 ? 'south' : 'north', block: neighbor.name });
         }
         if (allSolid) {
-          // Also check the cell directly above the bot's head — if open,
-          // pillaring further is viable. If blocked, dig is the only way out.
-          const above = b.blockAt(new Vec3(cx, headY + 1, cz));
+          const above = b.blockAt(new Vec3(ix2, headY + 1, iz2));
           const canPillarFurther = !above || above.boundingBox !== 'block';
-          const hint = canPillarFurther
-            ? `In a 1×1 shaft at (${cx},${endY},${cz}). Call mc pillar_step again with a higher count — primitive will dig the ceiling and pillar with the captured drop. Pass force=true if the ceiling is stone and you're bare-handed.`
-            : `In a 1×1 shaft at (${cx},${endY},${cz}) with ceiling overhead. Call mc pillar_step again — the primitive will try to bare-hand dig the ceiling cell and pillar with the drop. If the ceiling is stone, pass force=true to allow slow bare-hand digs.`;
-          shaftTrap = { walls: wallSides, can_pillar_further: canPillarFurther, hint };
+          shaftTrap = { walls: wallSides, can_pillar_further: canPillarFurther };
         }
       }
 
-      const exitSuffix = lateralExit
-        ? `. Lateral exit at ${lateralExit.x},${lateralExit.y},${lateralExit.z} (floor ${lateralExit.floor}) — caller should: mc goto_near ${lateralExit.x} ${lateralExit.y} ${lateralExit.z} 1.`
-        : shaftTrap
-          ? `. ⚠ ${shaftTrap.hint}`
-          : '';
-      const forceSuffix = forceBypasses.length
-        ? ` force=true bypassed ${forceBypasses.length} protected dig${forceBypasses.length === 1 ? '' : 's'}.`
-        : '';
+      // Classify how the climb ended so the message tells the agent exactly
+      // what to do next (the core 2026-05-29 fix: a partial climb that hit a
+      // stone ceiling bare-handed used to return a bare "climbed N" success).
+      const stopReason = (placed === 0 && !lateralExit)
+        ? 'failed'
+        : lateralExit
+          ? 'surface'
+          : brokeOnFailure
+            ? 'obstruction'
+            : 'count';
+      const onPillar = stopReason === 'count' && !lateralExit && placed > 0;
 
-      // Cleanup hint — fires when the bot climbed but has no lateral exit.
-      // From 2026-05-27 live evidence: workers were oscillating
-      // pillar_step → mc move → BOT_ON_PILLAR → partial pillar_down →
-      // pillar_step again, each cycle leaving 1-2 orphan blocks. The
-      // hint nudges the caller toward immediate cleanup OR explicit
-      // sideways escape via mc dig of a wall.
-      const cleanupHint = (!lateralExit && placed > 0)
-        ? `mc pillar_down ${placed}`
-        : null;
-      const cleanupSuffix = cleanupHint
-        ? ` ⚠ Pathfinding from a 1×1 column will refuse with BOT_ON_PILLAR. Cleanup options: \`${cleanupHint}\` to come back down, OR \`mc dig\` an adjacent wall block to step off sideways.`
-        : '';
+      const outcome = describePillarOutcome({
+        verb: 'pillar_up',
+        placed,
+        requested: maxSteps,
+        startY,
+        endY,
+        x: ix2,
+        z: iz2,
+        stopReason,
+        failReasons,
+        lateralExit,
+        sideExit: lateralExit ? null : sideExit,
+        shaftTrap,
+        onPillar,
+        forced: force,
+        forceBypassCount: forceBypasses.length,
+      });
+
+      if (stopReason === 'failed') {
+        return fail(
+          'PILLAR_FAILED',
+          outcome.message,
+          {
+            observed_state: { start_y: startY, end_y: endY, x: ix2, z: iz2, fail_reasons: failReasons.slice(0, 5), blocker: outcome.blocker },
+            ...(outcome.nextHint ? { next_action_hint: outcome.nextHint } : {}),
+            retry_safe: true,
+            ...(sideExit ? { side_exit: sideExit } : {}),
+            ...(forceBypasses.length ? { force_escape_bypassed: forceBypasses } : {}),
+          },
+        );
+      }
+
+      // Cleanup hint — fires when the bot climbed the count but ended on a
+      // 1×1 column (no walkable surface). Kept as a structured field for
+      // consumers; the human-facing guidance is in outcome.message.
+      const cleanupHint = onPillar ? `mc pillar_down ${placed}` : null;
 
       return {
-        result: `pillar_step climbed ${placed} block${placed !== 1 ? 's' : ''}: Y ${startY} → ${endY} (pos ${Math.floor(pos.x)},${endY},${Math.floor(pos.z)})${exitSuffix}${forceSuffix}${cleanupSuffix}`,
+        result: outcome.message,
         placed,
         startY,
         endY,
-        position: { x: Math.floor(pos.x), y: endY, z: Math.floor(pos.z) },
+        position: { x: ix2, y: endY, z: iz2 },
+        stop_reason: stopReason,
+        ...(outcome.stoppedEarly ? { stopped_early: true, blocker: outcome.blocker } : {}),
+        ...(outcome.nextHint ? { next_action_hint: outcome.nextHint } : {}),
         ...(lateralExit ? { lateral_exit: lateralExit } : {}),
+        ...(!lateralExit && sideExit ? { side_exit: sideExit } : {}),
         ...(shaftTrap ? { shaft_trap: shaftTrap } : {}),
         ...(cleanupHint ? { cleanup_hint: cleanupHint } : {}),
         ...(forceBypasses.length ? { force_escape_bypassed: forceBypasses } : {}),

@@ -24,11 +24,15 @@ def chat_bot(tester_bot):
     return tester_bot
 
 
-def _delayed_say(rcon, world: str, delay: float, msg: str) -> threading.Thread:
-    """rcon-impersonate a chat message after `delay` seconds."""
+def _delayed_chat_inject(bot, delay: float, msg: str, from_name: str = "Server") -> threading.Thread:
+    """Inject into the bot chat log after `delay` (mineflayer does not see rcon `say`)."""
     def _do():
         time.sleep(delay)
-        rcon.run(f"execute in {world} run say {msg}")
+        bot.post(
+            "/test/simulate-chat",
+            {"from": from_name, "message": msg},
+            timeout=5.0,
+        )
     t = threading.Thread(target=_do, daemon=True)
     t.start()
     return t
@@ -49,7 +53,7 @@ def test_wait_no_chat_runs_full_duration(chat_bot):
 @pytest.mark.functional
 def test_wait_interrupts_on_at_mention(rcon, chat_bot, config):
     """B: @tester mention at 2s → wait returns ~2s, interrupted=true, reason=mention."""
-    _delayed_say(rcon, config["mc"]["world"], 2.0, "@tester hi there")
+    _delayed_chat_inject(chat_bot, 2.0, "@tester hi there")
     t0 = time.time()
     r = chat_bot.post("/action/wait", {"seconds": 10}, timeout=15)
     elapsed = time.time() - t0
@@ -63,7 +67,7 @@ def test_wait_interrupts_on_at_mention(rcon, chat_bot, config):
 @pytest.mark.functional
 def test_wait_with_no_interrupt_ignores_mention(rcon, chat_bot, config):
     """C: same mention but interrupt=false → full duration (opt-out honored)."""
-    _delayed_say(rcon, config["mc"]["world"], 2.0, "@tester anybody home")
+    _delayed_chat_inject(chat_bot, 2.0, "@tester anybody home")
     t0 = time.time()
     r = chat_bot.post("/action/wait", {"seconds": 10, "interrupt": False}, timeout=15)
     elapsed = time.time() - t0
@@ -76,7 +80,7 @@ def test_wait_with_no_interrupt_ignores_mention(rcon, chat_bot, config):
 @pytest.mark.functional
 def test_wait_ignores_generic_broadcast(rcon, chat_bot, config):
     """D: non-mention chat at 2s → wait runs full duration."""
-    _delayed_say(rcon, config["mc"]["world"], 2.0, "anyone want to chat about cats")
+    _delayed_chat_inject(chat_bot, 2.0, "anyone want to chat about cats")
     t0 = time.time()
     r = chat_bot.post("/action/wait", {"seconds": 10}, timeout=15)
     elapsed = time.time() - t0

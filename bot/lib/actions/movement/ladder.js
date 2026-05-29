@@ -262,7 +262,8 @@ export function createLadder({ ensureBot, posObj }) {
     // top ladder block (so the bot lands on whatever's above the column);
     // exit=none caps at topY itself (hold the top ladder cell).
     let targetY;
-    if (to !== undefined && to !== null && to !== '') {
+    const explicitToY = to !== undefined && to !== null && to !== '';
+    if (explicitToY) {
       targetY = parseFloat(String(to));
       if (!Number.isFinite(targetY)) {
         return fail('INVALID_ARG', `ladder --to must be a number, got "${to}"`, { retry_safe: false });
@@ -313,7 +314,7 @@ export function createLadder({ ensureBot, posObj }) {
     let lastY = startPos.y;
     let lastChangeTs = Date.now();
     const POLL_MS = 200;
-    const STALL_MS = 2400; // 12 polls
+    const STALL_MS = 5200; // ~26 polls — mid-shaft --to stops need headroom on laggy servers
     let reachedTarget = false;
     let stalled = false;
 
@@ -328,23 +329,33 @@ export function createLadder({ ensureBot, posObj }) {
         // look() before the loop is enough — yaw doesn't drift on its
         // own.
 
-        if (direction === 'up' && py >= targetY - 0.05) { reachedTarget = true; break; }
+        const upTol = (explicitToY && exitMode === 'none') ? 0.5 : 0.05;
+        if (direction === 'up' && py >= targetY - upTol) { reachedTarget = true; break; }
         if (direction === 'down' && py <= targetY + 0.05) { reachedTarget = true; break; }
 
         if (Math.abs(py - lastY) > 0.02) {
           lastY = py;
           lastChangeTs = Date.now();
-        } else if (Date.now() - lastChangeTs > STALL_MS) {
-          stalled = true;
-          break;
+        } else {
+          const nearToStop = direction === 'up' && exitMode === 'none'
+            && Number.isFinite(targetY) && (targetY - py) <= 2.5 && (targetY - py) > 0.05;
+          const stallCap = nearToStop ? STALL_MS * 2 : STALL_MS;
+          if (Date.now() - lastChangeTs > stallCap) {
+            stalled = true;
+            break;
+          }
         }
       }
     } finally {
-      // For exit=none, kill all controls (caller holds on ladder).
-      // For exit=auto on dir=up, KEEP forward pressed for the exit
-      // phase below — bot needs forward pressure to translate off the
-      // ladder onto the landing block.
-      if (!(direction === 'up' && exitMode === 'auto')) {
+      // exit=auto on dir=up: keep forward for the step-off phase below.
+      // exit=none after reaching --to: keep forward into the wall so the
+      // bot stays on the ladder (clearing controls made it slide down
+      // before we sampled end position — test_ladder_up_to_specific_y).
+      if (direction === 'up' && exitMode === 'auto') {
+        /* forward held for exit translation */
+      } else if (direction === 'up' && exitMode === 'none' && reachedTarget) {
+        try { b.setControlState('forward', true); } catch {}
+      } else {
         clearAllControls(b);
       }
     }
@@ -389,13 +400,13 @@ export function createLadder({ ensureBot, posObj }) {
       } finally {
         clearAllControls(b);
       }
-    } else {
+    } else if (!(direction === 'up' && exitMode === 'none' && reachedTarget)) {
       clearAllControls(b);
     }
 
-    // After releasing controls, give physics ~600ms to settle (the
-    // bot may be airborne at exit, falling onto the landing block).
-    await sleep(600);
+    // After releasing controls, give physics time to settle (the bot may
+    // be airborne at exit). exit=none holds forward — short settle only.
+    await sleep(direction === 'up' && exitMode === 'none' && reachedTarget ? 200 : 600);
 
     const endPos = b.entity.position.clone();
     const dy = Math.round((endPos.y - startPos.y) * 10) / 10;

@@ -36,7 +36,7 @@ mc flee [X Y Z]            # combat retreat (see minecraft-combat)
 mc stair_down DIR [LEN=12] [X Y Z] [W=1 H=3]   # dig descending staircase (records steps[] for retrace)
 mc stair_up DIR [LEN=12] [X Y Z] [W=1 H=3]     # dig ascending, places floor over voids
 mc retrace [--mark NAME] [--use_trail]         # walk back along last stair_down steps (reverse ascent)
-mc pillar_step [BLK] [N=1] [--force]   # climb up. Omit BLK to dig overhead + capture + pillar. See minecraft-mining "Underground pillar escape" for --force semantics.
+mc pillar_up [BLK] [N=1] [--force]   # climb N blocks (multi-block, not 1). Stops at a sky-open surface. Omit BLK to dig overhead + capture + pillar. Auto bare-hand digs the ceiling when truly trapped; --force also slow-digs stone + breaks protected blocks. Alias: pillar_step.
 mc pillar_down [N=12]        # descend a pillar by mining the block underfoot
 
 # Survey + look
@@ -141,26 +141,26 @@ Vertical mining is dangerous (lava, deep caves, suffocation). Use staircases for
 |---|---|
 | Surface → mining depth | `mc stair_down DIR LEN` (default LEN=12) |
 | Deep mine → surface | `mc stair_up DIR LEN` (places floor over voids) |
-| Climb 1–8 blocks to reach something high | `mc pillar_step dirt 5` (dirt is cheap to re-dig) |
-| Trapped underground with ceiling overhead | `mc pillar_step 20` (no block arg — primitive digs ceiling, captures drop, pillars). Add `--force` if ceiling is stone and you're bare-handed. Full playbook in **minecraft-mining → Underground pillar escape**. |
+| Climb 1–8 blocks to reach something high | `mc pillar_up dirt 5` (dirt is cheap to re-dig) |
+| Trapped underground with ceiling overhead | `mc pillar_up 20` (no block arg — digs ceiling, captures drop, pillars; auto bare-hand digs when truly trapped). Add `--force` to slow-dig stone faster / break protected blocks. Full playbook in **minecraft-mining → Underground pillar escape**. |
 | Stuck on top of a 1×1 pillar with no walkable neighbours | `mc pillar_down` — mines block-underfoot, drops 1, repeats |
 
 `mc move` refuses to plan from a 1×1 pillar — it surfaces `BOT_ON_PILLAR` with `mc pillar_down N` as the next-action hint. Always descend the pillar BEFORE trying to navigate from it.
 
-### Pillar-step is for climbing only — not for navigation
+### Pillar_up is for climbing only — not for navigation
 
-If your goal is to **move to a horizontal coordinate**, `pillar_step` is the wrong primitive. Pillaring up just to "see" or "reach over" a wall traps you on a 1-block column from which `mc move` refuses to plan, forcing a `pillar_down` cleanup of every block you just placed. Live evidence (2026-05-27 session): 286 pillar_step calls vs 130 pillar_down by Mason, 390 vs **13** by Flint — workers oscillated for hours and left a trail of orphan columns across the map.
+If your goal is to **move to a horizontal coordinate**, `pillar_up` is the wrong primitive. Pillaring up just to "see" or "reach over" a wall traps you on a 1-block column from which `mc move` refuses to plan, forcing a `pillar_down` cleanup of every block you just placed. Live evidence (2026-05-27 session): 286 pillar calls vs 130 pillar_down by Mason, 390 vs **13** by Flint — workers oscillated for hours and left a trail of orphan columns across the map.
 
-Use pillar_step when:
+Use pillar_up when:
 - you need actual height to break overhead ceiling, place something elevated, or escape a pit you've fallen into
 - the bot is genuinely trapped (sealed cave, 4-wall+ceiling enclosure)
 
-Don't use pillar_step to:
+Don't use pillar_up to:
 - get over a wall — `mc dig` through it, or walk around
 - scout/survey — `mc map`, `mc nearby`, `mc scene` work without climbing
 - reach a destination — `mc move`, `mc stair_up`, `mc bridge`/`mc place` to bridge a gap
 
-Every successful `pillar_step` response now includes a `cleanup_hint` field (`"mc pillar_down N"`) and a warning in the result string. **Always call the cleanup before doing anything else** unless you have a specific reason to remain elevated. Placed pillar blocks are tracked in `recentPlaces` so the bot is permitted to mine its own pillars on cleanup (no `PROTECTED_BLOCK` refusal).
+`pillar_up` climbs the full count you ask for (e.g. `mc pillar_up 9` climbs up to 9), stopping early only when it reaches a sky-open surface or hits an obstruction it can't clear. When it does stop, read the result: it reports `placed/requested`, why it stopped, and a `next_action_hint` (often `--force` if the ceiling is stone and you're bare-handed). A climb that ends on a 1×1 column includes a `cleanup_hint` (`"mc pillar_down N"`) — descend before navigating. Placed pillar blocks are tracked in `recentPlaces`, so the bot may mine its own pillars on cleanup (no `PROTECTED_BLOCK` refusal).
 
 ## Surface cleanup — fill-from-edge doctrine
 

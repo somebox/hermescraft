@@ -46,13 +46,17 @@ export function createMovementActions({
 
   const recordMoveFailure = (verb, x, y, z, actualPos, reason) => {
     if (!ctx) return;
+    const intended = { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) };
     ctx.runtime.lastMoveFailed = {
       ts: Date.now(),
-      intended_target: { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) },
+      intended_target: intended,
       actual_pos: actualPos ? { x: Math.round(actualPos.x * 10) / 10, y: Math.round(actualPos.y * 10) / 10, z: Math.round(actualPos.z * 10) / 10 } : null,
       reason,
       verb,
     };
+    if (verb === 'goto' || verb === 'goto_near') {
+      ctx.runtime.lastFailedGotoTarget = intended;
+    }
     if (reason && reason !== 'NAV_RETRY_LOOP') {
       const k = gotoRetryKey(verb, x, y, z);
       const prior = gotoRetryCounts.get(k) || { count: 0, lastReason: null };
@@ -67,6 +71,7 @@ export function createMovementActions({
   const clearMoveFailure = () => {
     if (!ctx) return;
     ctx.runtime.lastMoveFailed = null;
+    ctx.runtime.lastFailedGotoTarget = null;
     if (!Array.isArray(ctx.runtime.recentStuckCells) || ctx.runtime.recentStuckCells.length === 0) return;
     try {
       const p = ctx.world.bot?.entity?.position;

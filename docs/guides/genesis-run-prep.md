@@ -96,6 +96,13 @@ correctly. If `members<6`, `seed_starter_cards` had a problem.
 | Bots spawn but don't take cards | Dispatcher gate-check or sandbox issue | `tail /tmp/hermescraft/dispatcher.log` |
 | `mc advise` fails with yaml import | PyYAML missing in bot's Python | Should be handled by `tests/_lib/config.py` fallback (commit `6b80c06`); if it bypasses, `pip install pyyaml` |
 
+### Data snapshots in git
+
+If you commit `data/locations-base.json` or retune `data/base-goals.yaml` for a
+genesis benchmark, say so in the commit message (run id + intent). Those files
+pick up reconciler timestamps and will conflict on the next run unless you treat
+them as deliberate seeds with an agreed refresh cadence.
+
 ## When the checklist is wrong, fix the checklist
 
 This doc is a record of pre-run setup learnings — when a new failure mode

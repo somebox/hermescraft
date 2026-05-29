@@ -385,7 +385,7 @@ Required `mc chat` lines per card:
 |---|---|---|
 | First or second tool call | `mc chat "starting <tid>: <verb + target>"` | `"starting t_6f58ca52: mining 3 iron at Y-15"` |
 | Every 3-5 min during work | `mc chat "<bot>: <progress>"` | `"<flint>: 2/3 iron mined, smelting next"` |
-| Stuck (2-fail mark, before mc advise) | `mc chat "<bot>: stuck at (X,Y,Z), trying <variant>"` | `"<flint>: stuck at (418,48,-621), trying pillar_step --force"` |
+| Stuck (2-fail mark, before mc advise) | `mc chat "<bot>: stuck at (X,Y,Z), trying <variant>"` | `"<flint>: stuck at (418,48,-621), trying pillar_up --force"` |
 | Before `kanban_complete` | `mc chat "done <tid>: <result>"` | `"done t_6f58ca52: bucket crafted, deposited"` |
 | Before `kanban_block` | `mc chat "blocked <tid>: <prefix>: <reason>"` | `"blocked t_6f58ca52: help-needed: 4× collect failed"` |
 
@@ -426,13 +426,13 @@ If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profile
 
 **First-touch escape verbs (in order):**
 
-1. **`mc pillar_step <N>`** — climb up N blocks (max 64). With NO block argument the primitive bare-hand-digs the cell overhead, captures the drop, and pillars with it. This is the canonical 1×1-shaft self-rescue. **`pillar_step` is ONE-WAY without help — always plan the descent (see #2 below).**
-   - `mc pillar_step 8` — climb 8, use captured drops (works for dirt/sand/gravel ceilings).
-   - `mc pillar_step 8 --force` — same, but bypasses region/global denylists for the escape dig **only when the 4-walls+ceiling stuck-predicate is verified**. Use when the ceiling is stone and you're bare-handed, OR you're inside a protected region.
-   - Drop-timing race: if you get `PILLAR_FAILED` with "capture-from-ceiling failed: cell above head is air", the drop arrived AFTER the call returned. **Call `mc pillar_step` a second time** — it'll use the captured block. Two-call pattern is reliable.
-   - **NEVER pillar_step to "see farther" or scout.** That's a Minecraft-human tactic that doesn't apply here. Use `mc map`, `mc nearby`, `mc scene`, or `mc advise` — they give you terrain intelligence without an excursion you then have to undo.
+1. **`mc pillar_up <N>`** — climb up N blocks (max 64; this is a multi-block climb). With NO block argument the primitive bare-hand-digs the cell overhead, captures the drop, and pillars with it. This is the canonical 1×1-shaft self-rescue. It stops at a sky-open surface; if it stops early it reports `placed/requested` + a `next_action_hint`. **`pillar_up` is ONE-WAY without help — always plan the descent (see #2 below).**
+   - `mc pillar_up 8` — climb 8, use captured drops (works for dirt/sand/gravel ceilings). When truly trapped (4 walls + ceiling) it auto bare-hand digs a stone ceiling without `--force`.
+   - `mc pillar_up 8 --force` — also slow-digs stone faster and bypasses region/global denylists for the escape dig **only when the 4-walls+ceiling stuck-predicate is verified**. Use when the early-stop hint tells you to (stone ceiling + bare hands), OR you're inside a protected region.
+   - Drop-timing race: if you get `PILLAR_FAILED` with "capture-from-ceiling failed: cell above head is air", the drop arrived AFTER the call returned. **Call `mc pillar_up` a second time** — it'll use the captured block. Two-call pattern is reliable.
+   - **NEVER pillar_up to "see farther" or scout.** That's a Minecraft-human tactic that doesn't apply here. Use `mc map`, `mc nearby`, `mc scene`, or `mc advise` — they give you terrain intelligence without an excursion you then have to undo.
 
-2. **`mc pillar_down [N=12]`** — descend back from a pillar by mining underfoot, dropping one cell, repeating. **You'll need this every time you `pillar_step` up.** Sitting on the column after climbing IS stuck — the surface around you is air, you can't `mc move` off without falling. Once you're back at ground level via `pillar_down`, normal pathfinding works again.
+2. **`mc pillar_down [N=12]`** — descend back from a pillar by mining underfoot, dropping one cell, repeating. **You'll need this every time you `pillar_up`.** Sitting on the column after climbing IS stuck — the surface around you is air, you can't `mc move` off without falling. Once you're back at ground level via `pillar_down`, normal pathfinding works again.
 
 3. **`mc escape`** — last-resort general unstuck (classifies your situation: sidestep / pillar / wait / break-out by surrounding terrain).
 
@@ -440,12 +440,12 @@ If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profile
 
 **Don't:**
 - Don't `mc dig` straight up in a 1×1 shaft (you'll be in the same shaft, one block higher).
-- Don't hand-roll `mc place + mc jump + mc place` loops to climb. That's what `mc pillar_step` does, faster and correctly.
+- Don't hand-roll `mc place + mc jump + mc place` loops to climb. That's what `mc pillar_up` does, faster and correctly.
 - Don't immediately `kanban_block(reason="stuck")`. Try the four verbs above first.
 
 **Deeper playbook:** `skill_view minecraft-mining` → "Underground pillar escape" + "Escape protocol" sections. Load it on demand if the above doesn't resolve.
 
-**Only after the escape verbs fail** (and you've tried the two-call pillar pattern + `--force` if appropriate + `mc advise`), proceed to Failure escalation below. A worker who blocks "stuck" without trying `mc pillar_step` is the anti-pattern this section exists to prevent.
+**Only after the escape verbs fail** (and you've tried the two-call pillar pattern + `--force` if appropriate + `mc advise`), proceed to Failure escalation below. A worker who blocks "stuck" without trying `mc pillar_up` is the anti-pattern this section exists to prevent.
 
 ## Failure escalation — when to ask for help instead of trying harder
 

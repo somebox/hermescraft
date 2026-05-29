@@ -38,7 +38,7 @@ mc goto X Y Z          # raw pathfinder (open spaces only)
 mc goto_near X Y Z     # pathfind near position
 mc stair_down DIR LEN  # safely descend by digging stairs (see minecraft-navigation)
 mc stair_up DIR LEN    # safely ascend; places floor over voids
-mc pillar_step [BLK] [N] [--force]  # climb up. Omit BLK to dig overhead + capture + pillar. --force only when genuinely stuck (4 walls + ceiling).
+mc pillar_up [BLK] [N] [--force]  # climb N blocks (multi-block). Omit BLK to dig overhead + capture + pillar. Auto bare-hand digs the ceiling when truly trapped; --force slow-digs stone faster + breaks protected blocks. Alias: pillar_step.
 mc follow PLAYER       # follow a player
 mc attack [target]     # attack nearest hostile (or specific mob)
 mc eat                 # eat best food in inventory
@@ -543,6 +543,6 @@ always sufficient.
 - Same action fails 3× → try something different.
 - `collect` fails → `mc find BLOCK` for nearest source (inventory + chests + visible), then `mc goto_near`.
 - Navigation fails → `mc stop`, then `mc escape` (handles wedges/pillars/water).
-- Fell in a hole → `mc pillar_step dirt 4` or `mc stair_up north 6`.
+- Fell in a hole → `mc pillar_up dirt 4` or `mc stair_up north 6`.
 - Craft fails → `mc recipes ITEM` or `mc craft_plan ITEM` for a dependency tree.
 - Container screen stuck open → `mc close`.

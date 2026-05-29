@@ -29,7 +29,7 @@ const CAPS = [
   ['cancel_command', 'index', { min: 0, max: 100 }],
   ['hunt', 'count', { min: 1, max: 64 }],
   ['bg_collect', 'count', { min: 1, max: 256 }],
-  ['pillar_step', 'count', { min: 1, max: 32 }],
+  ['pillar_up', 'count', { min: 1, max: 32 }],
   ['pillar_down', 'count', { min: 1, max: 32 }],
   ['toss', 'count', { min: 1, max: 64 }],
   ['deposit', 'count', { min: 1, max: 64 }],

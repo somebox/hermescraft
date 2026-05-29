@@ -58,6 +58,8 @@ export function loadConfig(argv = process.argv) {
       fairPlay: env.FAIR_PLAY !== 'false',
       /** BOT_HEAR_ALL=true bypasses proximity filter for multi-bot tests. */
       hearAll: boolEnv(env.BOT_HEAR_ALL, false),
+      /** BOT_ACCEPT_SERVER_CHAT=true lets rcon `say @Bot …` reach wait/unread (Tester only). */
+      acceptServerChatForTests: boolEnv(env.BOT_ACCEPT_SERVER_CHAT, false),
       /** BOT_ALLOW_PARKOUR=true enables pathfinder parkour (default off — slower/looser). */
       allowParkour: boolEnv(env.BOT_ALLOW_PARKOUR, false),
       /** BOT_ALLOW_DIG_INFRASTRUCTURE=true relaxes PROTECTED_DIG_BLOCKS to ALWAYS_PROTECTED only. */

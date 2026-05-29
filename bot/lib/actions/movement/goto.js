@@ -120,7 +120,16 @@ export function createGoto(deps) {
         recordMoveFailure('goto', x, y, z, pos, 'pathfinder_gave_up');
         return navBlockedError(b, pos, x, y, z, dist);
       }
-      clearMoveFailure();
+      const reachAfter = computeReachability(b, { x: tx, y: ty, z: tz }, 96);
+      const atTargetCell = reachAfter?.walkable_to_target && reachAfter.arrived_cell
+        && Math.abs(reachAfter.arrived_cell.x - tx) <= 1
+        && Math.abs(reachAfter.arrived_cell.y - ty) <= 1
+        && Math.abs(reachAfter.arrived_cell.z - tz) <= 1;
+      if (atTargetCell) {
+        clearMoveFailure();
+      } else {
+        recordMoveFailure('goto', x, y, z, pos, reachAfter?.walkable_to_target ? 'near_target_not_at_cell' : 'arrived_near_but_not_walkable');
+      }
       clearGotoRetry('goto', x, y, z);
       // Post-action position + fall detection — mirrors goto_near. Server
       // physics can drop the bot after pathfinder reports "arrived" if

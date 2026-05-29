@@ -113,7 +113,37 @@ export async function collectDiscoveryPhase(cctx) {
           if (!above) return true;
           return AIR_NAMES.has(above.name);
         });
-        if (surface.length > 0) found = surface;
+        if (surface.length > 0) {
+          found = surface;
+        } else {
+          const isFloodedVis = (pos) => {
+            for (const [dx, dy, dz] of [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]) {
+              const nb = b.blockAt(pos.offset(dx, dy, dz));
+              if (nb && (nb.name === 'water' || nb.name === 'flowing_water')) return true;
+            }
+            return false;
+          };
+          if (found.every((p) => isFloodedVis(p))) {
+            return {
+              terminal: true,
+              response: fail(
+                'TARGET_IN_WATER',
+                `All ${found.length} ${blockName} candidates are in/under water — bot would drown trying to mine them. Drain the pond first, approach from a dry side, or look for a drier deposit.`,
+                {
+                  observed_state: {
+                    requested_block: blockName,
+                    requested_count: count,
+                    mined_count: 0,
+                    candidates_dry: 0,
+                    candidates_flooded: found.length,
+                    suggested_dry_search_radius: 32,
+                  },
+                  retry_safe: false,
+                },
+              ),
+            };
+          }
+        }
       }
     }
     if (found.length === 0 && isNonSolidPlant) {
@@ -146,6 +176,38 @@ export async function collectDiscoveryPhase(cctx) {
         if (!above) return true;
         return AIR_NAMES.has(above.name);
       });
+      if (scout.length === 0 && scoutRaw.length > 0) {
+        const isFlooded = (pos) => {
+          const above = b.blockAt(pos.offset(0, 1, 0));
+          if (above && (above.name === 'water' || above.name === 'flowing_water')) return true;
+          for (const [dx, dy, dz] of [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]) {
+            const nb = b.blockAt(pos.offset(dx, dy, dz));
+            if (nb && (nb.name === 'water' || nb.name === 'flowing_water')) return true;
+          }
+          return false;
+        };
+        const flooded = scoutRaw.filter((p) => isFlooded(p));
+        if (flooded.length === scoutRaw.length) {
+          return {
+            terminal: true,
+            response: fail(
+              'TARGET_IN_WATER',
+              `All ${flooded.length} ${blockName} candidates are in/under water — bot would drown trying to mine them. Drain the pond first, approach from a dry side, or look for a drier deposit.`,
+              {
+                observed_state: {
+                  requested_block: blockName,
+                  requested_count: count,
+                  mined_count: 0,
+                  candidates_dry: 0,
+                  candidates_flooded: flooded.length,
+                  suggested_dry_search_radius: 32,
+                },
+                retry_safe: false,
+              },
+            ),
+          };
+        }
+      }
       if (scout.length > 0) {
         const nearest = scout.sort(
           (a, c) => b.entity.position.distanceTo(a) - b.entity.position.distanceTo(c),
@@ -264,6 +326,40 @@ export async function collectDiscoveryPhase(cctx) {
         // of options now. Avoid stacking multiple alt types so the
         // pool doesn't blow past its sort/sweep budget.
         break;
+      }
+    }
+  }
+
+  if (found.length === 0 && ctx.reactive.fairPlayMode && !isNonSolidPlant) {
+    const scoutRaw = b.findBlocks({
+      matching: blockType.id,
+      maxDistance: 16,
+      count: Math.max(batchSize * 2, 8),
+    });
+    if (scoutRaw.length > 0) {
+      const underwater = scoutRaw.filter((pos) => {
+        const above = b.blockAt(pos.offset(0, 1, 0));
+        return above && (above.name === 'water' || above.name === 'flowing_water');
+      });
+      if (underwater.length === scoutRaw.length) {
+        return {
+          terminal: true,
+          response: fail(
+            'TARGET_IN_WATER',
+            `All ${underwater.length} ${blockName} candidates are in/under water — bot would drown trying to mine them. Drain the pond first, approach from a dry side, or look for a drier deposit.`,
+            {
+              observed_state: {
+                requested_block: blockName,
+                requested_count: count,
+                mined_count: 0,
+                candidates_dry: 0,
+                candidates_flooded: underwater.length,
+                suggested_dry_search_radius: 32,
+              },
+              retry_safe: false,
+            },
+          ),
+        };
       }
     }
   }

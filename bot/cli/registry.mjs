@@ -271,7 +271,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc collect BLOCK [COUNT]',
   }),
   g('dig', 'world', ['d'], {
-    description: 'Break the block at X Y Z (single block, raw — no hazard checks). Refuses (SUPPORT_BLOCK) if a door or fence_gate sits directly above. Pass --force to override that guard AND to bypass the slow-dig refusal (bare-hand stone/cobble dig — slow but legal in MC, useful for trapped-bot escape when no pickaxe). Prefer mc safe_dig for general use.',
+    description: 'Break the block at X Y Z (single block, raw — no hazard checks). Refuses (SUPPORT_BLOCK) if a door or fence_gate sits directly above, or (STAIRCASE_EGRESS) if the block is a tread of your own mc stair_down staircase. Pass --force to override those guards AND to bypass the slow-dig refusal (bare-hand stone/cobble dig — slow but legal in MC, useful for trapped-bot escape when no pickaxe). Prefer mc safe_dig for general use.',
     method: 'POST',
     path: '/action/dig',
     customParse: true,
@@ -339,10 +339,10 @@ export const RAW_COMMAND_DEFS = [
       'mc safe_dig 0 64 5 --force',
     ],
   }),
-  g('pillar_step', 'world', ['tower', 'pillar'], {
+  g('pillar_up', 'world', ['pillar_step', 'tower', 'pillar'], {
     method: 'POST',
     path: '/action/pillar_step',
-    description: 'Climb upward by placing blocks underfoot. Use count to climb multiple blocks in one call (max 64). If inventory has no pillar block, the primitive bare-hand digs the cell overhead, collects the drop, and pillars with that. Pass --force when genuinely stuck (4 walls + ceiling) to bypass slow-dig refusal and protected-region denylists for the escape dig.',
+    description: 'Climb upward N blocks by jumping and placing a block underfoot each step (count = how many blocks to climb, max 64 — this is a multi-block climb, not a single step). Stops when it reaches a sky-open surface beside you. If genuinely trapped (4 walls + ceiling) it auto bare-hand digs the ceiling to keep going. With no pillar block in inventory it digs+captures the overhead block. Pass --force to also bare-hand slow-dig stone faster and to break protected/region blocks for the escape. Alias: pillar_step.',
     argSchema: [
       { key: 'block', type: 'string' },
       { key: 'count', type: 'number', description: 'blocks to climb (default 1, max 64)' , min: 1, max: 32},
@@ -360,7 +360,7 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => {
       // If the first positional looked like a number, the parser put it in
       // `block` ("5"). Re-route numeric `block` to `count` so users can write
-      // `mc pillar_step 5` as a shorthand for `mc pillar_step cobblestone 5`.
+      // `mc pillar_up 5` as a shorthand for `mc pillar_up cobblestone 5`.
       let block = p.block;
       let count = p.count;
       if (block !== undefined && count === undefined && /^\d+$/.test(`${block}`)) {
@@ -383,17 +383,17 @@ export const RAW_COMMAND_DEFS = [
       });
     },
     examples: [
-      `mc pillar_step`,
-      `mc pillar_step 5`,
-      `mc pillar_step cobblestone 10`,
-      `mc pillar_step dirt 20`,
-      `mc pillar_step 10 --force   # stuck underground, bare-hand dig + capture + pillar`,
+      `mc pillar_up 8`,
+      `mc pillar_up cobblestone 10`,
+      `mc pillar_up dirt 20`,
+      `mc pillar_up 10 --force   # stuck underground: bare-hand dig through stone + pillar to surface`,
+      `mc pillar_up   # single step (default count 1)`,
     ],
   }),
   g('pillar_down', 'world', ['descend', 'pillardown'], {
     method: 'POST',
     path: '/action/pillar_down',
-    description: 'Descend a vertical pillar — mine the block directly underfoot, drop 1, repeat. Stops on bedrock, lava, or when surface is reached (multiple solid floor cells around the bot at the new level). Use when stuck on top of a 1×1 column you climbed with mc pillar_step.',
+    description: 'Descend a vertical pillar — mine the block directly underfoot, drop 1, repeat. Stops on bedrock, lava, or when surface is reached (multiple solid floor cells around the bot at the new level). Use when stuck on top of a 1×1 column you climbed with mc pillar_up.',
     argSchema: [
       { key: 'count', type: 'number', description: 'max blocks to descend (default 12, max 64)' , min: 1, max: 32},
       { key: 'pickup', type: 'boolean', description: 'pickup drops as you go (default true). Pass pickup=false to skip.' },
@@ -794,7 +794,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('level_ground', 'world', ['level-ground'], {
-    description: 'Survey + flatten "lumpy" terrain to a single Y. Scans each column\'s top-solid, picks a target Y (median by default, --mode min|max alt), categorizes columns as hole/level/pillar, and reports a plan. Pass execute=true to do the work (delegates to mc level with up_range=max-pillar-height+1). Defaults to dry-run so you can review the plan before acting. Use to clean up scattered pillars + holes left by pillar_step churn or interrupted leveling sessions. Max 256 columns.',
+    description: 'Survey + flatten "lumpy" terrain to a single Y. Scans each column\'s top-solid, picks a target Y (median by default, --mode min|max alt), categorizes columns as hole/level/pillar, and reports a plan. Pass execute=true to do the work (delegates to mc level with up_range=max-pillar-height+1). Defaults to dry-run so you can review the plan before acting. Use to clean up scattered pillars + holes left by pillar_up churn or interrupted leveling sessions. Max 256 columns.',
     method: 'POST',
     path: '/action/level_ground',
     bodyFn: (p) =>
@@ -935,8 +935,8 @@ export const RAW_COMMAND_DEFS = [
     method: 'POST',
     path: '/action/dig_area',
     description:
-      'Mine diggable blocks in an axis-aligned box (high Y first; optional stand-block nudge per layer). Max 500 blocks.',
-    usage: 'mc dig_area X1 Y1 Z1 X2 Y2 Z2',
+      'Mine diggable blocks in an axis-aligned box (high Y first; optional stand-block nudge per layer). Max 32 blocks. Preserves your own mc stair_down staircase treads (skips them with a warning); pass --force to dig through (invalidates the retrace trail).',
+    usage: 'mc dig_area X1 Y1 Z1 X2 Y2 Z2 [--force]',
     examples: ['mc dig_area 100 64 -200 102 61 -198', 'mc dig_area \'{"x1":10,"y1":70,"z1":0,"x2":10,"y2":67,"z2":0,"pickup":true}\''],
     argSchema: [
       { key: 'x1', type: 'number', required: true },
@@ -948,6 +948,7 @@ export const RAW_COMMAND_DEFS = [
       { key: 'pickup', type: 'boolean', default: true },
       { key: 'abort_on_fail', type: 'boolean', default: false },
       { key: 'clear_stand', type: 'boolean', default: true },
+      { key: 'force', type: 'boolean', default: false, description: 'dig through your own stair_down staircase treads (invalidates retrace trail)' },
     ],
     bodyFn: (p) =>
       JSON.stringify({
@@ -960,14 +961,15 @@ export const RAW_COMMAND_DEFS = [
         pickup: p.pickup !== false,
         abort_on_fail: p.abort_on_fail === true,
         clear_stand: p.clear_stand !== false,
+        ...(p.force ? { force: true } : {}),
       }),
   }),
   g('tunnel', 'world', ['mine_tunnel'], {
     method: 'POST',
     path: '/action/tunnel',
     description:
-      'Dig a straight tunnel using repeated dig_area slices (industrial corridor primitive).',
-    usage: 'mc tunnel X Y Z DIR LENGTH [WIDTH] [HEIGHT]',
+      'Dig a straight tunnel using repeated dig_area slices (industrial corridor primitive). Preserves your own mc stair_down staircase treads (skips them with a warning) so you don\'t tunnel away your way back up; pass --force to dig through (invalidates the retrace trail).',
+    usage: 'mc tunnel X Y Z DIR LENGTH [WIDTH] [HEIGHT] [--force]',
     examples: ['mc tunnel 367 53 -593 north 16 2 3', 'mc tunnel \'{"direction":"east","length":12}\''],
     argSchema: [
       { key: 'x', type: 'number', default: null },
@@ -978,6 +980,7 @@ export const RAW_COMMAND_DEFS = [
       { key: 'width', type: 'number', default: 2 , min: 1, max: 5},
       { key: 'height', type: 'number', default: 3 , min: 1, max: 5},
       { key: 'pickup', type: 'boolean', default: true },
+      { key: 'force', type: 'boolean', default: false, description: 'tunnel through your own stair_down staircase treads (invalidates retrace trail)' },
     ],
     bodyFn: (p) =>
       JSON.stringify({
@@ -989,6 +992,7 @@ export const RAW_COMMAND_DEFS = [
         width: Number(p.width ?? 2),
         height: Number(p.height ?? 3),
         pickup: p.pickup !== false,
+        ...(p.force ? { force: true } : {}),
       }),
   }),
   g('stair_down', 'world', ['mine_stairs', 'stairs_down'], {

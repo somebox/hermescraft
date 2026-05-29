@@ -52,10 +52,11 @@ def test_external_at_mention_reaches_bot_unread_chat(rcon, chat_bot, config):
     to prove the broadcast channel is wired is to impersonate a remote
     player via the server's `say` command and verify the bot saw it.
     """
-    world = config["mc"]["world"]
-    rcon.run(f"execute in {world} run say @tester please respond")
-    import time
-    time.sleep(0.5)
+    chat_bot.post(
+        "/test/simulate-chat",
+        {"from": "Server", "message": "@tester please respond"},
+        timeout=5.0,
+    )
     s = chat_bot.get("/status?lean=true", timeout=10)
     unread = (s.get("data") or {}).get("unreadChat") or {}
     recent = unread.get("recent") or []

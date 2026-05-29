@@ -8,7 +8,7 @@ Place blocks, bulk fills, pillars, and terrain shaping. Placement protection and
 |--------|--------|------|
 | [`place-single.js`](./place-single.js) | `place` | One cell: reach, LOS, entity blocking, equip verify; **`coord3`** + **`itemName`** |
 | [`place-bulk.js`](./place-bulk.js) | `place_fill`, `wall`, `fence` | Clustered standpoints + fill; **`box6`** / **`itemName`** on `place_fill` |
-| [`pillar.js`](./pillar.js) | `pillar_step` | Jump-place vertical stack; shaft-trap hints |
+| [`pillar.js`](./pillar.js) | `pillar_up` (alias `pillar_step`) | Jump-place vertical stack; sky-open surface stop, auto bare-hand escape, shaft-trap hints |
 | [`terrain.js`](./terrain.js) | `path`, `dig_pit`, `level`, `build_stairs` | Paths, pits, leveling, stairs; uses **`cardinalDelta`** from [`../_directions.js`](../_directions.js) |
 
 [`index.js`](./index.js) merges the four parts into **`createBuildingActions`**.

@@ -216,6 +216,7 @@ export function createGotoNear(deps) {
       return ok({
         result: `${fellWarning}Arrived near ${fmt(x)}, ${fmt(y)}, ${fmt(z)}${yAdjNote}${reachNote}`,
         data: obs,
+        observed_state: obs,
       });
     } catch (e) {
       try { b.pathfinder.setGoal(null); } catch {}

@@ -31,8 +31,19 @@ def reachability_arena(rcon, arena, config, functional_world):
 
 
 def _observed_state(response: dict) -> dict:
-    """F73 puts observed_state at top-level on success, inside data on others."""
-    return response.get("observed_state") or (response.get("data") or {}).get("observed_state") or {}
+    """F73 reachability fields may live in observed_state and/or data (ok() spreads both)."""
+    obs = dict(response.get("observed_state") or (response.get("data") or {}).get("observed_state") or {})
+    data = response.get("data") or {}
+    for key in (
+        "walkable_to_target",
+        "next_hop_suggestion",
+        "distance_from_target",
+        "arrived_cell",
+        "end_position",
+    ):
+        if key in data and key not in obs:
+            obs[key] = data[key]
+    return obs
 
 
 @pytest.mark.functional

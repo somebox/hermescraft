@@ -163,6 +163,29 @@ export function isPartialBlockShape(blockName) {
 }
 
 /**
+ * True when the bot is in a shaft trap: solid walls on all four cardinals at
+ * head height and a solid ceiling within 2 cells above head. Gates pillar_up
+ * auto bare-hand ceiling dig (`equipForDig` with force) without requiring
+ * explicit `--force`; region bypass still needs `force &&` this predicate.
+ *
+ * @param {(x: number, y: number, z: number) => { boundingBox?: string } | null} blockAt
+ * @param {number} cx  Floor X of bot cell
+ * @param {number} headY  Head block Y (feet cell + 1)
+ * @param {number} cz  Floor Z of bot cell
+ */
+export function isGenuinelyStuckAt(blockAt, cx, headY, cz) {
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const wall = blockAt(cx + dx, headY, cz + dz);
+    if (!wall || wall.boundingBox !== 'block') return false;
+  }
+  for (let dy = 1; dy <= 2; dy++) {
+    const above = blockAt(cx, headY + dy, cz);
+    if (above && above.boundingBox === 'block') return true;
+  }
+  return false;
+}
+
+/**
  * pillar_down's "reached surface" predicate. After a dig, if 3+ of the 4
  * cardinal neighbours at the bot's new foot level have a solid floor AND
  * the foot cell itself is air, the bot has landed on real ground.

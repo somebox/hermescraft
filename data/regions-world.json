@@ -6,50 +6,47 @@
       "profile": "base",
       "intent": "marker",
       "status": "active",
-      "anchor": {
-        "x": 258,
-        "y": 64,
-        "z": 63
-      },
-      "shape": {
-        "kind": "column",
-        "radius": 16
-      },
+      "anchor": { "x": -456, "y": 74, "z": 596 },
+      "shape": { "kind": "column", "radius": 16 },
       "sites": {},
       "capabilities": {
         "allow_ad_hoc_dig": true,
         "allow_ad_hoc_place": true,
-        "allow_guided_edit": false,
+        "allow_guided_edit": true,
         "allow_harvest": true,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-28T20:08:26Z",
-      "updated": "2026-05-28T20:08:26Z",
-      "notes": "Genesis run g-2026-05-28-6 seed -1312751495452676979 — starts as marker (workers can dig/place to build). Phase-poller flips to protect when [GENESIS:P3] completes (Defenses + watch tower done)."
+      "created": "2026-05-29T19:54:58Z",
+      "updated": "2026-05-29T19:54:58Z",
+      "notes": "Genesis run g-2026-05-29-8 seed -3899835130120818196 — starts as marker (workers can dig/place to build). Phase-poller flips to protect when [GENESIS:P3] completes (Defenses + watch tower done)."
+    },
+    {
+      "id": "shelter",
+      "profile": "base",
+      "intent": "marker",
+      "status": "unanchored",
+      "anchor": { "x": -456, "y": 74, "z": 596 },
+      "shape": { "kind": "column", "radius": 8 },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": false,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": true,
+        "allow_harvest": false,
+        "overrides_global_denylist": false
+      },
+      "created": "2026-05-29T19:54:58Z",
+      "updated": "2026-05-29T19:54:58Z",
+      "notes": "P1 shelter footprint marker — steward refines bounds after build"
     },
     {
       "id": "hut1",
       "profile": "base",
       "intent": "protect",
       "status": "unanchored",
-      "anchor": {
-        "x": 203,
-        "y": 64,
-        "z": 55
-      },
-      "shape": {
-        "kind": "column",
-        "radius": 10,
-        "y_min": 59,
-        "y_max": 94
-      },
-      "sites": {
-        "anchor": {
-          "x": 203,
-          "y": 64,
-          "z": 55
-        }
-      },
+      "anchor": { "x": -511, "y": 74, "z": 588 },
+      "shape": { "kind": "column", "radius": 10, "y_min": 59, "y_max": 94 },
+      "sites": { "anchor": { "x": -511, "y": 74, "z": 588 } },
       "capabilities": {
         "allow_ad_hoc_dig": false,
         "allow_ad_hoc_place": false,
@@ -57,34 +54,9 @@
         "allow_harvest": false,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-28T20:08:26Z",
-      "updated": "2026-05-28T20:08:26Z",
-      "notes": "Guard tower pad for genesis run g-2026-05-28-6"
-    },
-    {
-      "id": "shelter",
-      "profile": "base",
-      "intent": "marker",
-      "status": "unanchored",
-      "anchor": {
-        "x": 258,
-        "y": 64,
-        "z": 63
-      },
-      "shape": {
-        "kind": "column",
-        "radius": 16
-      },
-      "sites": {},
-      "capabilities": {
-        "allow_ad_hoc_dig": true,
-        "allow_ad_hoc_place": true,
-        "allow_guided_edit": false,
-        "allow_harvest": true,
-        "overrides_global_denylist": false
-      },
-      "created": "2026-05-28T20:44:54.732Z",
-      "updated": "2026-05-28T20:45:00.064Z"
+      "created": "2026-05-29T19:54:58Z",
+      "updated": "2026-05-29T19:54:58Z",
+      "notes": "Guard tower pad for genesis run g-2026-05-29-8"
     }
   ]
 }

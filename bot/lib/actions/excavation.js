@@ -2,6 +2,7 @@ import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { equipForDig, DIG_PASSABLE_NAMES, nudgeOffStandPillar, detectDigHazards, isDigProtected } from '../runtime/dig-tools.js';
 import { shouldSkipDigAt, createRegionSkipTracker } from '../runtime/regions/policy-guard.js';
+import { createEgressTracker, clearEgressTrail } from '../runtime/egress-guard.js';
 import { ok, fail } from '../shared/action-contract.js';
 import { cardinalDelta } from './_directions.js';
 import { box6 } from './_args.js';
@@ -58,6 +59,13 @@ export function createExcavationActions(services) {
     };
   };
   return {
+  /**
+   * Bulk-dig an axis-aligned box (max 32 blocks per call).
+   *
+   * Internal-only args (not in CLI argSchema):
+   * @param {boolean} [args._bypassEgress] — Skip stair_down tread protection (stair_up).
+   * @param {boolean} [args._internalEgress] — Tunnel slice: do not own egress trail clear.
+   */
   async dig_area(args) {
     // Y inputs: y1/y2 (= block_y, legacy) or surface_y1/surface_y2 (= the
     // Y a bot stands on, = block_y + 1). See docs/conventions/coordinates.md.
@@ -72,6 +80,14 @@ export function createExcavationActions(services) {
     const abortOnFail = abort_on_fail === true || abort_on_fail === 'true';
     const clearStand = clear_stand !== false && clear_stand !== 'false';
     const safeDig = safe !== false && safe !== 'false';
+    const force = args.force === true || args.force === 'true';
+    // Egress protection: don't carve through the bot's own stair_down treads
+    // unless forced. Internal callers (stair_up) opt out via _bypassEgress;
+    // tunnel slices own the trail invalidation via _internalEgress so the
+    // count isn't truncated by a mid-tunnel clear.
+    const egress = args._bypassEgress
+      ? { shouldSkip: () => false, finalize: () => {}, suffix: () => '', dataFields: () => ({}), active: false }
+      : createEgressTracker(ctx, { force, ownsTrail: !args._internalEgress });
 
     const b = ensureBot();
     const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
@@ -149,6 +165,12 @@ export function createExcavationActions(services) {
           continue;
         }
 
+        // Protect the bot's own staircase egress (stair_down treads) unless forced.
+        if (egress.shouldSkip(pos.x, pos.y, pos.z)) {
+          skipped++;
+          continue;
+        }
+
         // Hazard pre-check — abort the whole op if a hazard cell is encountered.
         // Caller opts out with safe: false.
         if (safeDig) {
@@ -200,13 +222,16 @@ export function createExcavationActions(services) {
       }
     }
 
+    egress.finalize();
+
     const digHints = [...digHintSet];
     const tipsSuffix = digHints.length ? ` Tips: ${digHints.join(' | ')}` : '';
     return {
-      result: `Dug ${dug} blocks (${skipped} skipped).${pickupResult}${regionSkips.suffix()}${tipsSuffix}${errors.length ? ` Errors: ${errors.slice(0, 3).join('; ')}` : ''}`,
+      result: `Dug ${dug} blocks (${skipped} skipped).${pickupResult}${regionSkips.suffix()}${egress.suffix()}${tipsSuffix}${errors.length ? ` Errors: ${errors.slice(0, 3).join('; ')}` : ''}`,
       dug,
       skipped,
       ...regionSkips.dataFields(),
+      ...egress.dataFields(),
       ...(digHints.length ? { hints: digHints } : {}),
       ...(errors.length ? { errors: errors.slice(0, 20) } : {}),
     };
@@ -215,6 +240,9 @@ export function createExcavationActions(services) {
   /**
    * Dig a straight tunnel segment at feet-level Y using dig_area slices.
    * Intended for industrial mining corridors.
+   *
+   * Each slice passes `_internalEgress: true` into dig_area so tunnel owns
+   * a single `clearEgressTrail` at the end (see dig_area internal flags).
    */
   async tunnel({
     x,
@@ -226,8 +254,10 @@ export function createExcavationActions(services) {
     width = 2,
     height = 3,
     pickup: doPickup = true,
+    force = false,
   }) {
     const b = ensureBot();
+    const forceDig = force === true || force === 'true';
     const startX = Number.isFinite(Number(x)) ? Math.floor(Number(x)) : Math.floor(b.entity.position.x);
     // Y input: y (= block_y, legacy) or surface_y (= block_y + 1). Tunnels
     // are dug at feet-level Y so the bot can walk through them.
@@ -244,6 +274,8 @@ export function createExcavationActions(services) {
     let totalDug = 0;
     let totalSkipped = 0;
     let totalErrors = 0;
+    let totalEgressProtected = 0;
+    let totalEgressRemoved = 0;
 
     let abortReason = null;
     for (let i = 1; i <= L; i++) {
@@ -255,6 +287,10 @@ export function createExcavationActions(services) {
         pickup: false,
         abort_on_fail: false,
         clear_stand: true,
+        force: forceDig,
+        // Tunnel owns trail invalidation so the egress count isn't truncated
+        // by a per-slice clear once the first tread is forced through.
+        _internalEgress: true,
       });
       // Propagate a hazard abort from dig_area instead of silently continuing.
       if (res && res.ok === false) {
@@ -266,10 +302,13 @@ export function createExcavationActions(services) {
       totalDug += Number(res?.dug || 0);
       totalSkipped += Number(res?.skipped || 0);
       totalErrors += Array.isArray(res?.errors) ? res.errors.length : 0;
+      totalEgressProtected += Number(res?.egress_protected || 0);
+      totalEgressRemoved += Number(res?.egress_removed || 0);
       try {
         sampleNavTrailCrumb(ctx, b, { onGround: true });
       } catch { /* best-effort tunnel centerline */ }
     }
+    if (totalEgressRemoved > 0) clearEgressTrail(ctx, 'tunnel_dug_through_with_force');
     if (abortReason) {
       return {
         ok: false,
@@ -298,11 +337,19 @@ export function createExcavationActions(services) {
       }
     }
 
+    const egressSuffix = totalEgressProtected > 0
+      ? ` ⚠ Preserved ${totalEgressProtected} staircase tread${totalEgressProtected === 1 ? '' : 's'} (your stair_down egress) — tunnelling through them would strand you below. Pass force=true to dig through (invalidates the retrace trail; build a new way up first).`
+      : totalEgressRemoved > 0
+        ? ` ⚠ Removed ${totalEgressRemoved} staircase tread${totalEgressRemoved === 1 ? '' : 's'} (force) — retrace trail invalidated. Build a new way up (mc stair_up / mc pillar_up) before you need it.`
+        : '';
+
     return {
-      result: `Tunnel ${key} length ${L} width ${W} height ${H}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}`.trim(),
+      result: `Tunnel ${key} length ${L} width ${W} height ${H}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${egressSuffix}`.trim(),
       dug: totalDug,
       skipped: totalSkipped,
       errors: totalErrors,
+      ...(totalEgressProtected > 0 ? { egress_protected: totalEgressProtected } : {}),
+      ...(totalEgressRemoved > 0 ? { egress_removed: totalEgressRemoved } : {}),
       start: withYBoth({ x: startX, y: startY, z: startZ }, startY),
       end: withYBoth({ x: startX + dx * L, y: startY, z: startZ + dz * L }, startY),
     };
@@ -725,6 +772,9 @@ export function createExcavationActions(services) {
         pickup: false,
         abort_on_fail: false,
         clear_stand: true,
+        // stair_up builds a fresh egress route; never let an older descending
+        // stair_down trail block it from carving the ascending path.
+        _bypassEgress: true,
       });
       if (res && res.ok === false) {
         return res;

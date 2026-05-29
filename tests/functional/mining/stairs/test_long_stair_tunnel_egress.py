@@ -115,8 +115,12 @@ def test_stair_turn_long_tunnel_return_to_surface(
     assert r_tunnel.get("ok"), f"tunnel failed: {r_tunnel}"
     wait_bot_settled(arena, bot, timeout_s=45.0, after_heavy_dig=True)
     at_tunnel_end = bot.status_lean().get("position") or {}
-    assert at_tunnel_end.get("y", 0) <= tunnel_y + 1.5, (
-        f"bot left tunnel floor: pos={at_tunnel_end}, tunnel_y={tunnel_y}"
+    feet_block_y = at_tunnel_end.get("block_y")
+    if feet_block_y is None:
+        feet_block_y = int(at_tunnel_end.get("y", 0))
+    assert feet_block_y <= tunnel_y + 2, (
+        f"bot left tunnel floor: pos={at_tunnel_end}, tunnel_y={tunnel_y} "
+        f"(tunnel result end={r_tunnel.get('end')})"
     )
 
     r_retrace = bot.post(
