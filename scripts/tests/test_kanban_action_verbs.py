@@ -40,16 +40,18 @@ def _seed_board(tmp_path: Path) -> Path:
     conn.executescript(
         """
         CREATE TABLE tasks (
-            id           TEXT PRIMARY KEY,
-            title        TEXT NOT NULL,
-            body         TEXT,
-            assignee     TEXT,
-            status       TEXT NOT NULL,
-            priority     INTEGER DEFAULT 0,
-            created_at   INTEGER NOT NULL,
-            started_at   INTEGER,
-            completed_at INTEGER,
-            claim_lock   TEXT
+            id                    TEXT PRIMARY KEY,
+            title                 TEXT NOT NULL,
+            body                  TEXT,
+            assignee              TEXT,
+            status                TEXT NOT NULL,
+            priority              INTEGER DEFAULT 0,
+            created_at            INTEGER NOT NULL,
+            started_at            INTEGER,
+            completed_at          INTEGER,
+            claim_lock            TEXT,
+            consecutive_failures  INTEGER NOT NULL DEFAULT 0,
+            last_failure_error    TEXT
         );
         CREATE TABLE task_links (
             parent_id TEXT NOT NULL,
@@ -304,6 +306,73 @@ def test_resolve_unblocks_and_comments(env, monkeypatch):
     assert rec.calls[1][4] == "comment"
     assert rec.calls[1][6].startswith("[RESOLVED] ")
     assert "reassigned to mason" in rec.calls[1][6]
+
+
+# ─── retry ────────────────────────────────────────────────────────────────
+
+
+def test_retry_resets_failures_and_lifts_status(env):
+    _insert_task(env, id="t_card0001", title="x", status="blocked")
+    with sqlite3.connect(str(env.DB_PATH)) as conn:
+        # Schema adds consecutive_failures; we simulate the dispatcher's
+        # failure tracking by writing directly. This is the state the
+        # retry verb is meant to reset.
+        conn.execute(
+            "UPDATE tasks SET consecutive_failures = 3, "
+            "last_failure_error = 'crashed' WHERE id = ?",
+            ("t_card0001",),
+        )
+    rc = env.main(["retry", "t_card0001", "--reason", "process crash, not card bug"])
+    assert rc == 0
+    row = _row(env, "t_card0001")
+    assert row["status"] == "ready"
+    assert row["consecutive_failures"] == 0
+    assert row["last_failure_error"] is None
+    with sqlite3.connect(str(env.DB_PATH)) as conn:
+        ev = conn.execute(
+            "SELECT payload FROM task_events WHERE task_id = ? AND kind = 'retried'",
+            ("t_card0001",)
+        ).fetchone()
+    payload = json.loads(ev[0])
+    assert payload["from_failures"] == 3
+    assert payload["from_status"] == "blocked"
+    assert payload["to_status"] == "ready"
+    assert payload["reason"] == "process crash, not card bug"
+
+
+def test_retry_refuses_healthy_card(env):
+    _insert_task(env, id="t_card0001", title="x", status="ready")
+    with pytest.raises(SystemExit):
+        env.main(["retry", "t_card0001"])
+    # Untouched.
+    assert _row(env, "t_card0001")["status"] == "ready"
+
+
+def test_retry_force_override_on_healthy_card(env):
+    _insert_task(env, id="t_card0001", title="x", status="ready")
+    rc = env.main(["retry", "t_card0001", "--force"])
+    assert rc == 0
+    assert _row(env, "t_card0001")["consecutive_failures"] == 0
+
+
+def test_retry_leaves_running_card_alone(env):
+    """Card in 'running' state with failures (a stuck retry-able run) gets
+    its counter cleared but keeps status=running — the dispatcher decides
+    whether to reclaim, not us."""
+    _insert_task(env, id="t_card0001", title="x", status="running")
+    with sqlite3.connect(str(env.DB_PATH)) as conn:
+        conn.execute("UPDATE tasks SET consecutive_failures = 2 WHERE id = ?",
+                     ("t_card0001",))
+    rc = env.main(["retry", "t_card0001", "--force"])
+    assert rc == 0
+    row = _row(env, "t_card0001")
+    assert row["status"] == "running"  # not lifted
+    assert row["consecutive_failures"] == 0
+
+
+def test_retry_on_unknown_card_fails(env):
+    with pytest.raises(SystemExit):
+        env.main(["retry", "t_doesnotexist"])
 
 
 # ─── set-priority ─────────────────────────────────────────────────────────

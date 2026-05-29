@@ -1354,6 +1354,60 @@ def cmd_promote(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_retry(args: argparse.Namespace) -> int:
+    """Reset a card's failure counter and re-queue it for the dispatcher.
+
+    Sanctioned path for "the dispatcher gave up on this card but the
+    failure was a process issue, not a card-logic issue — reset and
+    re-dispatch". Without this verb the only path was a raw SQL UPDATE
+    against tasks.consecutive_failures (observed g-2026-05-29 Steward
+    after Flint crashed on t_6fcbec8b), which the sandbox now refuses.
+
+    Resets ``consecutive_failures`` to 0 and lifts ``status`` back to
+    ``ready`` when the card is in a terminal-failure state. Writes a
+    ``retried`` task_event so the dashboard and watchers see the
+    transition; the optional ``--reason`` is captured in the payload.
+    """
+    with _db_rw() as conn:
+        row = conn.execute(
+            "SELECT id, status, consecutive_failures, last_failure_error "
+            "FROM tasks WHERE id = ?",
+            (args.task_id,),
+        ).fetchone()
+        if row is None:
+            _die(f"no task {args.task_id}")
+        old_failures = row["consecutive_failures"] or 0
+        old_status = row["status"]
+        # Only reset when there's actually something to reset. Catches
+        # accidental retries on a healthy card; explicit `--force` overrides.
+        if old_failures == 0 and old_status not in ("blocked",) and not args.force:
+            _die(
+                f"retry: {args.task_id} has 0 failures and status={old_status} — "
+                f"nothing to reset. Re-run with --force to retry anyway."
+            )
+        new_status = "ready" if old_status in ("blocked", "todo", "triage") else old_status
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "UPDATE tasks SET consecutive_failures = 0, "
+                "last_failure_error = NULL, status = ? WHERE id = ?",
+                (new_status, args.task_id),
+            )
+            _write_event(conn, args.task_id, "retried",
+                         {"from_failures": old_failures,
+                          "from_status": old_status,
+                          "to_status": new_status,
+                          "reason": args.reason})
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+    note = f": {args.reason}" if args.reason else ""
+    print(f"# retried {args.task_id}: failures {old_failures}→0, "
+          f"status {old_status}→{new_status}{note}")
+    return 0
+
+
 def cmd_resolve(args: argparse.Namespace) -> int:
     """Clear an escalation: unblock + record a [RESOLVED] comment.
 
@@ -1627,6 +1681,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("task_id")
     p.add_argument("note", nargs="?")
     p.set_defaults(func=cmd_resolve)
+
+    p = sub.add_parser("retry",
+                       help="Reset failures + re-queue a card the dispatcher gave up on")
+    p.add_argument("task_id")
+    p.add_argument("--reason",
+                   help="Short note recorded on the `retried` event")
+    p.add_argument("--force", action="store_true",
+                   help="Retry even when the card has 0 failures already")
+    p.set_defaults(func=cmd_retry)
 
     p = sub.add_parser("set-priority", help="Change a card's priority")
     p.add_argument("task_id")
