@@ -6,6 +6,7 @@ import { REPLACEABLE } from '../_block-sets.js';
 import { coord3, itemName } from '../_args.js';
 import { canSeeBlockFaces, standardBlockFacePoints } from '../_los.js';
 import { fail, ok } from '../../shared/action-contract.js';
+import { entitiesAtBlockingCell } from '../../shared/entity-blocking.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
 
 const { goals } = pathfinderPkg;
@@ -147,23 +148,21 @@ export function createBuildingPlaceSinglePart(deps) {
       // sit for 5s on placeBlock's timeout with no useful feedback. Detect
       // it pre-flight and tell the agent exactly who is in the way so they
       // can ask via chat — critical for multi-bot coordination (G21).
-      // Entities occupy their foot block AND the block above (height ~1.8).
-      const blockingEntity = Object.values(b.entities || {}).find((e) => {
-        if (!e || !e.position || e === b.entity) return false;
-        const ex = Math.floor(e.position.x);
-        const ey = Math.floor(e.position.y);
-        const ez = Math.floor(e.position.z);
-        if (ex !== x || ez !== z) return false;
-        // The cell is occupied if it matches the entity's feet OR head cell.
-        return ey === y || ey + 1 === y;
-      });
+      //
+      // entitiesAtBlockingCell (shared/entity-blocking.js) handles the
+      // foot+head occupancy math and skips negligible-hitbox entities (dropped
+      // items, xp orbs, arrows, etc.) that the server places blocks straight
+      // through — excluding them prevents false TARGET_ENTITY_OCCUPIED rejects
+      // and nonsense hints like `mc attack item`.
+      const blockingEntity = entitiesAtBlockingCell(b.entities, x, y, z, { exclude: b.entity })[0];
       if (blockingEntity) {
         const isPlayer = blockingEntity.type === 'player';
-        const who = blockingEntity.username || blockingEntity.name || blockingEntity.displayName || blockingEntity.type || 'entity';
+        const who = blockingEntity.username || blockingEntity.displayName || blockingEntity.name || blockingEntity.type || 'entity';
         const kind = isPlayer ? 'player' : (blockingEntity.name || blockingEntity.type || 'entity');
+        const attackTarget = blockingEntity.username || blockingEntity.displayName || blockingEntity.name;
         const hintTo = isPlayer
           ? `mc chat_to ${who} "please step aside, I need to place at ${x},${y},${z}"`
-          : `mc attack ${who}`;
+          : (attackTarget ? `mc attack ${attackTarget}` : `mc goto_near ${x} ${y} ${z}`);
         return {
           ok: false,
           error: {

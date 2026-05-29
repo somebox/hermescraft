@@ -10,6 +10,11 @@ import {
   summarizeSceneText,
   formatStandingSituation,
 } from '../shared/perception.js';
+import { filterPlacementBlockingEntities } from '../shared/entity-blocking.js';
+import {
+  nearbyPlacementBlockersFromHits,
+  placementInsightForBlock,
+} from '../shared/placement-insight.js';
 
 /**
  * Fair-play LOS / scanning / sound bookkeeping wired to a mutable BotContext.
@@ -297,11 +302,11 @@ export function createFairPlaySuite(deps) {
           yawPans: 4,
         });
     const pos = b.entity.position;
-    const visibleEntities = filterEntitiesFairPlay(
+    const visibleEntities = filterPlacementBlockingEntities(filterEntitiesFairPlay(
       Object.values(b.entities).filter(
         (entity) => entity !== b.entity && entity.position.distanceTo(pos) <= Math.min(range + 8, 24),
       ),
-    )
+    ))
       .sort((a, c) => a.position.distanceTo(pos) - c.position.distanceTo(pos))
       .slice(0, 8)
       .map((entity) => ({
@@ -311,7 +316,19 @@ export function createFairPlaySuite(deps) {
         kind: entity.type || (entity.username ? 'player' : 'mob'),
         health: entity.health ?? undefined,
       }));
-    const lookingAt = b.blockAtCursor?.(5);
+    const lookingAtBlock = b.blockAtCursor?.(5);
+    const lookingAtInsight = lookingAtBlock
+      ? placementInsightForBlock(lookingAtBlock, ctx)
+      : null;
+    const lookingAt = lookingAtBlock
+      ? {
+        ...(lookingAtInsight || { name: lookingAtBlock.name }),
+        position: posObj(lookingAtBlock.position),
+      }
+      : null;
+    const nearby_placement_blockers = nearbyPlacementBlockersFromHits(visibleBlocks, ctx, {
+      excludeCoord: lookingAt?.blocks_placement ? lookingAt.coord : null,
+    });
     const hazards = detectHazardsFromVisibleBlocks(visibleBlocks);
     let topology = null;
     let standingLine = null;
@@ -322,12 +339,13 @@ export function createFairPlaySuite(deps) {
       } catch { /* never break scene */ }
     }
     let summary = summarizeSceneText({
-      lookingAt: lookingAt ? { name: lookingAt.name, position: posObj(lookingAt.position) } : null,
+      lookingAt,
       visibleBlocks,
       visibleEntities,
       hazards,
       sounds: ctx.runtime.soundEvents.slice(-5),
       memoryHints: getMemoryHints(),
+      nearbyPlacementBlockers: nearby_placement_blockers,
     });
     if (standingLine) summary = `${standingLine} ${summary}`;
 
@@ -338,7 +356,8 @@ export function createFairPlaySuite(deps) {
       visible_block_hits: visibleBlocks,
       visible_entities: visibleEntities,
       hazards,
-      looking_at: lookingAt ? { name: lookingAt.name, position: posObj(lookingAt.position) } : null,
+      looking_at: lookingAt,
+      nearby_placement_blockers,
       sounds: ctx.runtime.soundEvents.slice(-5),
       memory_hints: getMemoryHints(),
       fair_play: ctx.reactive.fairPlayMode,

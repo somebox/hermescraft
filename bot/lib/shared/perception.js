@@ -63,10 +63,23 @@ export function summarizeVisibleBlocks(blocks, limit = 8) {
     }));
 }
 
-export function summarizeSceneText({ lookingAt, visibleBlocks = [], visibleEntities = [], hazards = [], sounds = [], memoryHints = [] }) {
+export function summarizeSceneText({
+  lookingAt,
+  visibleBlocks = [],
+  visibleEntities = [],
+  hazards = [],
+  sounds = [],
+  memoryHints = [],
+  nearbyPlacementBlockers = [],
+}) {
   const parts = [];
 
-  if (lookingAt?.name) {
+  if (lookingAt?.blocks_placement && lookingAt.placement_hint) {
+    const at = lookingAt.coord
+      ? ` at ${lookingAt.coord.x},${lookingAt.coord.y},${lookingAt.coord.z}`
+      : '';
+    parts.push(`Looking at ${lookingAt.name}${at} — ${lookingAt.placement_hint}.`);
+  } else if (lookingAt?.name) {
     parts.push(`Looking at ${lookingAt.name}.`);
   }
 
@@ -86,6 +99,18 @@ export function summarizeSceneText({ lookingAt, visibleBlocks = [], visibleEntit
       .map((entity) => `${entity.type} ${entity.distance}m ${entity.bearing}`)
       .join(', ');
     parts.push(`Visible entities: ${entText}.`);
+  }
+
+  if (nearbyPlacementBlockers.length > 0) {
+    const line = nearbyPlacementBlockers
+      .slice(0, 4)
+      .map((b) => {
+        const d = b.distance != null ? ` ${b.distance}m` : '';
+        const sec = b.sector ? ` ${b.sector}` : '';
+        return `${b.name} @ ${b.coord.x},${b.coord.y},${b.coord.z}${d}${sec}`;
+      })
+      .join('; ');
+    parts.push(`Nearby blocks that block placement: ${line}. Use mc inspect on a target cell before mc place.`);
   }
 
   if (hazards.length > 0) {

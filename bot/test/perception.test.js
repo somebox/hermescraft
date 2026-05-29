@@ -67,3 +67,29 @@ test('summarizeSceneText mentions uncertainty and notable cues', () => {
   assert.match(text, /Hazards: lava right 5m/);
   assert.match(text, /Unknown areas remain hidden/);
 });
+
+test('summarizeSceneText: chest in view blocks placement', () => {
+  const text = summarizeSceneText({
+    lookingAt: {
+      name: 'chest',
+      coord: { x: 1, y: 64, z: 2 },
+      blocks_placement: true,
+      placement_hint: 'blocks mc place — mc dig 1 64 2 then mc place chest at a new cell',
+    },
+    nearbyPlacementBlockers: [{
+      name: 'chest',
+      coord: { x: 1, y: 64, z: 2 },
+      distance: 2.5,
+      sector: 'center',
+      blocks_placement: true,
+      placement_hint: 'blocks mc place — mc dig 1 64 2 then mc place chest at a new cell',
+    }],
+    visibleBlocks: [],
+    visibleEntities: [],
+    hazards: [],
+    sounds: [],
+    memoryHints: [],
+  });
+  assert.match(text, /Looking at chest at 1,64,2 — blocks mc place/);
+  assert.match(text, /Nearby blocks that block placement: chest @ 1,64,2/);
+});

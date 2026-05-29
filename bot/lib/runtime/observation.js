@@ -5,6 +5,8 @@ import { refreshLeaseCheckpoint, taskToApi } from '../goals/tasks.js';
 import { summarizeSocialGraph, selectRecentChat } from '../shared/chat.js';
 import { formatStandingSituation, isStuckStandingClassification } from '../shared/perception.js';
 import { buildActionStats, classifyIdleReason } from '../server/diagnostics.js';
+import { filterPlacementBlockingEntities } from '../shared/entity-blocking.js';
+import { placementInsightForBlock } from '../shared/placement-insight.js';
 
 /** Remaining durability for tools/weapons/armor (F54.3 damage model). */
 function durabilityRemaining(item) {
@@ -453,7 +455,7 @@ export function createObservation(deps) {
     // Nearby entities (fair-play filtered)
     const rawEntities = Object.values(b.entities)
       .filter(e => e !== b.entity && e.position.distanceTo(pos) < (ctx.reactive.fairPlayMode ? FAIR_PLAY.LOS_ENTITY_RANGE : 24));
-    const visibleEntities = filterEntitiesFairPlay(rawEntities);
+    const visibleEntities = filterPlacementBlockingEntities(filterEntitiesFairPlay(rawEntities));
     const entities = visibleEntities
       .sort((a, c) => a.position.distanceTo(pos) - c.position.distanceTo(pos))
       .slice(0, 15)
@@ -476,7 +478,11 @@ export function createObservation(deps) {
     }
 
     const target = b.blockAtCursor?.(5);
-    const lookingAt = target ? { name: target.name, position: posObj(target.position) } : null;
+    let lookingAt = target ? { name: target.name, position: posObj(target.position) } : null;
+    if (target) {
+      const insight = placementInsightForBlock(target, ctx);
+      if (insight) lookingAt = { ...lookingAt, ...insight };
+    }
 
     const biome = b.blockAt(pos)?.biome?.name || 'unknown';
 

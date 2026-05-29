@@ -73,6 +73,22 @@ test('combat.combat_skill: non-numeric → INVALID_VALUE', async () => {
   assertFailure(r, { code: 'INVALID_VALUE', messageIncludes: 'combat_skill', retrySafe: false });
 });
 
+test('combat.attack: target item with only drop entity → NO_TARGET', async () => {
+  const deps = combatDeps({
+    entities: {
+      drop: {
+        name: 'item',
+        type: 'object',
+        position: { x: 1, y: 64, z: 0, distanceTo: () => 1 },
+        height: 0.25,
+      },
+    },
+  });
+  const combat = createCombatActions(deps);
+  const r = await combat.attack({ target: 'item' });
+  assertFailure(r, { code: 'NO_TARGET', messageIncludes: 'item', retrySafe: false });
+});
+
 test('combat.fight: no hostile nearby → informal refusal result', async () => {
   const combat = createCombatActions(combatDeps());
   const r = await combat.fight({});

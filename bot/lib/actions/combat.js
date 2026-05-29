@@ -5,12 +5,18 @@
  * plus reactive layer mode selection (mc mode normal|guard|hold).
  */
 import { ok, fail } from '../shared/action-contract.js';
+import { isNonBlockingEntity } from '../shared/entity-blocking.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
 
 const VALID_MODES = ['normal', 'guard', 'hold'];
 
 export function createCombatActions(deps) {
   const { ctx, ensureBot, goals, fmt, posObj, sleep, filterEntitiesFairPlay, reactionDelay, loadLocations, rememberSocialEvent, getMyName, ACTIONS, hasLineOfSight, eyePosition } = deps;
+
+  /** Players and mobs only — not dropped items / projectiles. */
+  function attackableEntities(b) {
+    return Object.values(b.entities).filter((e) => e !== b.entity && !isNonBlockingEntity(e));
+  }
 
   function losBlockedForAttack(entity) {
     if (!hasLineOfSight || !eyePosition) return null;
@@ -114,8 +120,7 @@ export function createCombatActions(deps) {
       await reactionDelay();
       const hostiles = ['zombie', 'skeleton', 'creeper', 'spider', 'enderman', 'witch', 'drowned', 'phantom', 'blaze', 'ghast', 'wither_skeleton', 'piglin_brute', 'cave_spider'];
 
-      const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
-      const visible = filterEntitiesFairPlay(rawEnts);
+      const visible = filterEntitiesFairPlay(attackableEntities(b));
       let entity;
       if (target) {
         entity = visible.find(e => (e.name || '').toLowerCase().includes(target.toLowerCase()));
@@ -274,13 +279,8 @@ export function createCombatActions(deps) {
       }
       await reactionDelay();
 
-      const rawEnts = Object.values(b.entities).filter(
-        (e) =>
-          e &&
-          e !== b.entity &&
-          e.position &&
-          e.type !== 'player' &&
-          (e.name || '').toLowerCase() !== 'item',
+      const rawEnts = attackableEntities(b).filter(
+        (e) => e?.position && e.type !== 'player',
       );
       const visible = filterEntitiesFairPlay(rawEnts);
       const needle = t.toLowerCase();
@@ -325,7 +325,7 @@ export function createCombatActions(deps) {
       const hostiles = ['zombie','skeleton','spider','creeper','enderman','witch',
                         'drowned','husk','stray','phantom','pillager','vindicator','blaze',
                         'wither_skeleton','ghast','piglin_brute','hoglin'];
-      const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+      const rawEnts = attackableEntities(b);
       const visible = filterEntitiesFairPlay(rawEnts);
       let entity;
       if (target) {
@@ -409,7 +409,7 @@ export function createCombatActions(deps) {
       let threat;
       let threatReason;
       if (!markTo) {
-        const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+        const rawEnts = attackableEntities(b);
         const visible = filterEntitiesFairPlay(rawEnts);
         if (from) {
           // Explicit target: any entity (mob or player) whose name/username
@@ -549,7 +549,7 @@ export function createCombatActions(deps) {
 
       let entity;
       if (target) {
-        const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+        const rawEnts = attackableEntities(b);
         const visible = filterEntitiesFairPlay(rawEnts);
         entity = visible.find(e =>
           (e.name || '').toLowerCase().includes(target.toLowerCase()) ||
@@ -557,8 +557,8 @@ export function createCombatActions(deps) {
         );
       } else {
         const hostiles = ['zombie','skeleton','spider','creeper','enderman','witch','drowned','blaze','ghast','wither_skeleton','player'];
-        const rawEnts = Object.values(b.entities).filter(e =>
-          e !== b.entity && hostiles.some(h => (e.name || '').includes(h)));
+        const rawEnts = attackableEntities(b).filter((e) =>
+          hostiles.some((h) => (e.name || '').includes(h)));
         const visible = filterEntitiesFairPlay(rawEnts);
         entity = visible.sort((a, c) => a.position.distanceTo(b.entity.position) - c.position.distanceTo(b.entity.position))[0];
       }
@@ -594,7 +594,7 @@ export function createCombatActions(deps) {
         if (item) { await b.equip(item, 'hand'); break; }
       }
 
-      const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+      const rawEnts = attackableEntities(b);
       const visible = filterEntitiesFairPlay(rawEnts);
       const entity = target
         ? visible.find(e => (e.name || '').toLowerCase().includes(target.toLowerCase()) || (e.username || '').toLowerCase().includes(target.toLowerCase()))
@@ -628,7 +628,7 @@ export function createCombatActions(deps) {
         if (item) { await b.equip(item, 'hand'); break; }
       }
 
-      const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+      const rawEnts = attackableEntities(b);
       const visible = filterEntitiesFairPlay(rawEnts);
       const entity = target
         ? visible.find(e => (e.name || '').toLowerCase().includes(target.toLowerCase()) || (e.username || '').toLowerCase().includes(target.toLowerCase()))
@@ -661,7 +661,7 @@ export function createCombatActions(deps) {
         if (item) { await b.equip(item, 'hand'); break; }
       }
 
-      const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+      const rawEnts = attackableEntities(b);
       const visible = filterEntitiesFairPlay(rawEnts);
       const entity = target
         ? visible.find(e => (e.name || '').toLowerCase().includes(target.toLowerCase()) || (e.username || '').toLowerCase().includes(target.toLowerCase()))
@@ -704,7 +704,7 @@ export function createCombatActions(deps) {
     async combo({ target, style = 'aggressive' }) {
       const b = ensureBot();
 
-      const rawEnts = Object.values(b.entities).filter(e => e !== b.entity);
+      const rawEnts = attackableEntities(b);
       const visible = filterEntitiesFairPlay(rawEnts);
       const entity = target
         ? visible.find(e => (e.name || '').toLowerCase().includes(target.toLowerCase()) || (e.username || '').toLowerCase().includes(target.toLowerCase()))

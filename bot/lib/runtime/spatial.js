@@ -1,4 +1,5 @@
 import { Vec3 } from 'vec3';
+import { isNonBlockingEntity } from '../shared/entity-blocking.js';
 
 /**
  * ASCII map + verbal surroundings using Mineflayer `bot.blockAt` / entities.
@@ -92,7 +93,7 @@ export function createSpatial(deps) {
 
     const entityMarkers = {};
     Object.values(b.entities).forEach((e) => {
-      if (e === b.entity) return;
+      if (e === b.entity || isNonBlockingEntity(e)) return;
       const dx = Math.round((e.position.x - pos.x) / step);
       const dz = Math.round((e.position.z - pos.z) / step);
       if (Math.abs(dx) <= gridR && Math.abs(dz) <= gridR) {
@@ -146,7 +147,7 @@ export function createSpatial(deps) {
 
     const entityLabels = [];
     Object.values(b.entities).forEach((e) => {
-      if (e === b.entity) return;
+      if (e === b.entity || isNonBlockingEntity(e)) return;
       const dist = e.position.distanceTo(pos);
       if (dist > mapSize) return;
       const dx = e.position.x - pos.x;
