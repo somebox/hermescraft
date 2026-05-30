@@ -66,6 +66,11 @@ function slimStatusEnvelope(raw, { verbose = false } = {}) {
   if (d.nearby_entities != null) data.nearby_entities = d.nearby_entities;
   if (d.hand_vs_inventory) data.hand_vs_inventory = d.hand_vs_inventory;
   if (d.situation) data.situation = d.situation;
+  // #50: nav_header rides on /status now (open|confined classification +
+  // signals). It's small enough to keep in the slim projection — without
+  // this the brief reaches /status's response but slimStatusEnvelope drops
+  // it before the CLI renderer ever sees it.
+  if (d.nav_header) data.nav_header = d.nav_header;
   if (verbose) {
     if (d.task_context) data.task_context = d.task_context;
     if (d.regions_here) data.regions_here = d.regions_here;
