@@ -730,6 +730,8 @@ const httpServer = http.createServer(
     createBot,
     viewerPort: viewerPortOpt,
     handleChat,
+    loadLocations,
+    getStandingState: (bot) => standingState(bot),
   }),
 );
 

@@ -632,12 +632,24 @@ export function createObservation(deps) {
       } catch { /* ignore */ }
     }
 
+    // #50: surface the nav_header on /status so the brief reaches workers
+    // even when they don't call mc observe. Cheap — buildNavFrame is local
+    // (standing classification + breadcrumb count + mark proximity), no
+    // pathfinder. Workers favor mc status/scene/nearby over mc observe, so
+    // riding the header on their existing verbs is the cheapest path to
+    // visibility. The full brief text stays exclusive to mc observe.
+    let navHeader;
+    try {
+      navHeader = buildNavFrame(ctx, { loadLocations, getStandingState })?.header;
+    } catch { /* never let a status read break on a nav classifier hiccup */ }
+
     return {
       health: fmt(b.health),
       ...(lean ? {} : { maxHealth: 20 }),
       food: b.food,
       saturation: fmt(b.foodSaturation),
       position: posObj(),
+      ...(navHeader ? { nav_header: navHeader } : {}),
       ...stuckBlock,
       ...(ctx.runtime.regions
         ? (() => {

@@ -10,6 +10,7 @@ import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
 import { getBuildInfo } from '../runtime/build-info.js';
 import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 import { clearNavTrail } from '../runtime/nav-trail.js';
+import { buildNavFrame } from '../runtime/nav-brief.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -63,6 +64,8 @@ export function createBotHttpListener(deps) {
     createBot,
     viewerPort = null,
     handleChat,
+    loadLocations,
+    getStandingState,
   } = deps;
 
   // Services proxy: dispatchAction expects a services-shaped container
@@ -522,6 +525,15 @@ export function createBotHttpListener(deps) {
         const range = parseInt(url.searchParams.get('range') || '16');
         const lean = url.searchParams.get('lean') === 'true';
         const data = buildSceneSummary({ range: Math.min(range, 24) });
+        // #50: surface the compact nav_header on mc scene so the nav-brief
+        // reaches workers who favor scene over mc observe. Cheap — local
+        // standing classification + mark proximity, no pathfinder hit.
+        if (data && typeof loadLocations === 'function' && typeof getStandingState === 'function') {
+          try {
+            const header = buildNavFrame(ctx, { loadLocations, getStandingState })?.header;
+            if (header) data.nav_header = header;
+          } catch { /* nav classifier hiccup must not break scene */ }
+        }
         // Pre-emptive tool-readiness across visible blocks. `tools_missing`
         // names categories the agent needs but doesn't carry — actionable
         // signal that mc scene used to surface only after the bot walked

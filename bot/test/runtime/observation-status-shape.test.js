@@ -51,6 +51,22 @@ function makeGetFullState(overrides = {}) {
   return getFullState;
 }
 
+test('getFullState: surfaces nav_header so workers see the brief on mc status (#50)', () => {
+  // Workers strongly prefer mc status / scene / nearby over mc observe.
+  // The nav-brief was previously gated behind mc observe; this test guards
+  // that the compact header rides on status now (open|confined classification
+  // + position + signals). Verified live in g-2026-05-30-3 (zero observe
+  // calls across 259 worker messages).
+  const getFullState = makeGetFullState({
+    getStandingState: () => ({ classification: 'open', open_dirs: ['N', 'E', 'S', 'W'] }),
+  });
+  const state = getFullState({});
+  assert.ok(state.nav_header, 'nav_header must be present on /status responses');
+  assert.equal(state.nav_header.nav_mode, 'open');
+  assert.ok(state.nav_header.pos, 'header carries position snapshot');
+  assert.equal(state.nav_header.situation, 'Surface');
+});
+
 test('getFullState lean: self-only shape (no world-scan keys)', () => {
   const getFullState = makeGetFullState({
     invItems: [{ name: 'oak_log', count: 4 }, { name: 'cobblestone', count: 32 }],
