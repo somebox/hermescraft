@@ -502,6 +502,11 @@ export function computeNavBrief(ctx, deps = {}) {
         const result = probePathTo(ctx, bot, goal, {
           profile: prof,
           timeoutMs: GET_PATH_TIMEOUT_MS,
+          // Marks are landmarks (chests, anchors, scout pins) — "reachable"
+          // means we can stand within 2 cells, not on the literal block.
+          // Without this every chest mark renders ⚠ blocked (see g-2026-05-30-2
+          // postmortem: Steward at base saw all 5 chests as blocked).
+          radius: 2,
         }, deps);
         if (pathSucceeded(result)) {
           reachable = true;

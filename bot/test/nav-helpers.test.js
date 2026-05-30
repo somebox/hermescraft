@@ -415,6 +415,53 @@ test('standingState: dropped item underfoot is NOT treated as standing_on entity
   assert.equal(ss.standing_on.name, 'stone');
 });
 
+test('standingState: pit with isolated overhang above is NOT sealed (#39)', () => {
+  // Bot at the bottom of a 3-wide pit, walls 2 cells out so blocked_dirs=0
+  // and the classifier reaches the enclosure_inside branch (it only fires
+  // when max_wall_distance > 1, otherwise blocked_dirs takes over). A
+  // single overhanging block (tree leaf, lone stalactite) sits 3 above
+  // the bot but no walls flank it. Pre-fix: classification fired as
+  // enclosure_inside ("Sealed: walls and ceiling — dig out") — wrong
+  // advice; pillar_up would work. Post-fix: the bare ceiling check is
+  // gated on at least one cardinal-adjacent cell being solid AT the
+  // ceiling's altitude, so the isolated leaf does not count.
+  const at = (x, y, z) => {
+    if (y === 64) return 'grass_block';
+    // Pit walls 2 cells out from bot at (5,*,5): a 5×5 ring at x=3,7 or z=3,7.
+    const isPitWall =
+      (x === 3 || x === 7 || z === 3 || z === 7) && x >= 3 && x <= 7 && z >= 3 && z <= 7;
+    if (isPitWall && (y === 65 || y === 66)) return 'stone';
+    // Lone leaf directly overhead — nothing solid flanks it at by+3.
+    if (x === 5 && y === 68 && z === 5) return 'oak_leaves';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.ceiling_within, 3, 'leaf at by+3 is still detected as a ceiling block');
+  assert.notEqual(
+    ss.classification,
+    'enclosure_inside',
+    'isolated overhang should not trigger sealed classification',
+  );
+});
+
+test('standingState: real sealed room (walls flank the ceiling) → enclosure_inside (#39 control)', () => {
+  // Control case: a real built room, walls 2 out from the bot at all heights,
+  // ceiling at by+2 spanning the whole footprint. Walls flank the ceiling at
+  // its own altitude → classification must remain enclosure_inside.
+  const at = (x, y, z) => {
+    if (y === 64) return 'stone'; // floor
+    if (y === 67 && x >= 3 && x <= 7 && z >= 3 && z <= 7) return 'stone'; // ceiling slab
+    // Wall ring 2 out from bot at (5,*,5), full height (y=65..66).
+    const isWall =
+      (x === 3 || x === 7 || z === 3 || z === 7) && x >= 3 && x <= 7 && z >= 3 && z <= 7;
+    if (isWall && (y === 65 || y === 66)) return 'stone';
+    return 'air';
+  };
+  const ss = standingState(makeStandingMockBot({ x: 5, y: 65, z: 5 }, at));
+  assert.equal(ss.classification, 'enclosure_inside');
+  assert.equal(ss.ceiling_within, 2);
+});
+
 test('standingState: 1-block step-down adjacent to a real cliff is still safe — no "edge"', () => {
   // Bot on grass at y=64 (cell 5,65,5). To N a 1-block drop: (5,64,4)
   // is air, landing at (5,63,4)=grass. To E a true cliff: column

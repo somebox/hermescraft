@@ -57,6 +57,47 @@ def test_seed_base_pad_zero_cells_raises(monkeypatch):
         gl.seed_base_pad(cfg)
 
 
+def test_seed_base_pad_partial_then_full_on_retry(monkeypatch, tmp_path):
+    """#33: a single retry was leaving the pad at 80/81 every run (g-2026-05-30-2).
+    Paper reports the probe as ready before all neighbour chunks finish their
+    save/light tick, so the bulk fill races. With the retry-backoff fix
+    (2s → 4s → 8s), a transient short-fill on the first bulk attempt should
+    converge to the full count by the time we reach the 4s retry."""
+    monkeypatch.setattr(gl, "GENESIS_DRY_RUN", False)
+    monkeypatch.setattr(gl, "REPO_ROOT", tmp_path)
+    (tmp_path / "data" / "genesis-runs" / "test").mkdir(parents=True)
+
+    bulk_fill_attempts = {"n": 0}
+
+    def fake_rcon(command: str, *, quiet: bool = False) -> str:
+        if command.startswith("forceload"):
+            return ""
+        if command.startswith("fill") and "minecraft:cobblestone" in command:
+            # Distinguish probe (1×1 — same coord twice) from bulk fill.
+            parts = command.split()
+            # `fill x1 y z1 x2 y z2 minecraft:cobblestone replace`
+            is_probe = parts[1] == parts[4] and parts[3] == parts[6]
+            if is_probe:
+                return "Successfully filled 1 block(s)"
+            bulk_fill_attempts["n"] += 1
+            if bulk_fill_attempts["n"] == 1:
+                return "Successfully filled 79 block(s)"
+            return "Successfully filled 81 block(s)"
+        return ""
+
+    monkeypatch.setattr(gl, "rcon", fake_rcon)
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+
+    cfg = {"run_id": "test", "base_anchor": {"x": 0, "y": 64, "z": 0}}
+    gl.seed_base_pad(cfg)
+
+    # We should NOT have logged a partial-warn: the retry caught up.
+    run_log = tmp_path / "data" / "genesis-runs" / "test" / "run.log"
+    log_text = run_log.read_text() if run_log.exists() else ""
+    assert "seed_base_pad_warn" not in log_text, "retry should have reached full fill — no warn expected"
+    assert bulk_fill_attempts["n"] >= 2, "should have retried after the partial first attempt"
+
+
 def test_seed_base_pad_partial_fill_logs_warn(monkeypatch, tmp_path):
     """Partial fill (e.g. 80/81 — chunk boundary edge case observed g-2026-05-28-3)
     should NOT raise — it's tolerable. Just warn-log."""

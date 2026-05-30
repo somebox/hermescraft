@@ -590,10 +590,20 @@ const observation = createObservation({
   getStandingState: (bot) => standingState(bot),
   getPathTo: (_ctx, bot, goal, opts = {}) => {
     if (!bot?.pathfinder?.movements) return null;
-    const goalVec = goal instanceof Vec3 ? goal : new Vec3(goal.x, goal.y, goal.z);
+    // For nav-brief mark reachability we want "can I get NEAR this point",
+    // not "can I stand on this exact cell". Chests/furnaces/etc. are solid
+    // so GoalBlock(chest_cell) always fails — every mark renders ⚠ blocked.
+    // When opts.radius is set the caller is asking GoalNear semantics; the
+    // pathfinder then accepts any cell within `radius` of the target.
+    const radius = Number(opts.radius);
+    const pfGoal = goal instanceof Vec3
+      ? goal
+      : Number.isFinite(radius) && radius > 0
+        ? new goals.GoalNear(Math.floor(goal.x), Math.floor(goal.y), Math.floor(goal.z), radius)
+        : new Vec3(goal.x, goal.y, goal.z);
     const timeoutMs = opts.timeoutMs ?? 1200;
     try {
-      return bot.pathfinder.getPathTo(bot.pathfinder.movements, goalVec, timeoutMs);
+      return bot.pathfinder.getPathTo(bot.pathfinder.movements, pfGoal, timeoutMs);
     } catch {
       return null;
     }

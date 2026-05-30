@@ -555,7 +555,22 @@ export function standingState(b) {
     }
     if (wallAt > max_wall_distance) max_wall_distance = wallAt;
   }
-  const enclosure_inside = enclosed && ceiling_within !== null;
+  // #39: a bare ceiling check produced false-positive "Sealed" classifications
+  // in pits with an overhanging block above (tree leaves, lone stalactite, a
+  // single floating block left over from terrain gen). Bot was actually in an
+  // open-air pit but the brief said "dig out before moving" — wrong advice
+  // when `mc pillar_up` would solve it. Real enclosures (rooms, tunnels) have
+  // a ceiling that is *flanked by solid walls at the same altitude*; an
+  // isolated overhead block does not. Require at least one cardinal-adjacent
+  // cell at the ceiling's altitude to also be solid before calling it sealed.
+  let ceiling_walls_solid = 0;
+  if (ceiling_within !== null) {
+    for (const d of DIRS) {
+      const wall = b.blockAt(new Vec3(bx + d.dx, by + ceiling_within, bz + d.dz));
+      if (wall && wall.boundingBox === 'block') ceiling_walls_solid++;
+    }
+  }
+  const enclosure_inside = enclosed && ceiling_within !== null && ceiling_walls_solid >= 1;
 
   // Classify by priority order
   let classification;

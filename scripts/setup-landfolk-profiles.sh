@@ -221,6 +221,42 @@ for e in extra:
         base.append(e)
 inner = ", ".join(base)
 text = path.read_text()
+
+# Cleanup pass: scrub orphan block-sequence items inside the `terminal:`
+# block. Older profile configs stored env_passthrough as a multi-line list:
+#   terminal:
+#     env_passthrough:
+#       - MC_API_URL
+#       - MC_USERNAME
+# When the regex below converted env_passthrough to flow-array form, the
+# `- MC_API_URL` / `- MC_USERNAME` lines became orphan siblings of the
+# terminal: mapping keys — yaml.safe_load then fails with
+#   "expected <block end>, but found '-'"
+# and Hermes silently falls back to a default config with no model set,
+# crash-looping the agent (observed in g-2026-05-30-2, mason). Remove
+# any `  - VAR` line that sits inside the terminal block.
+def strip_terminal_orphans(s):
+    lines = s.split('\n')
+    out = []
+    in_terminal = False
+    for line in lines:
+        if re.match(r'^terminal:\s*$', line):
+            in_terminal = True
+            out.append(line)
+            continue
+        if in_terminal:
+            # Leaving the terminal block: any non-indented line that isn't
+            # blank terminates it.
+            if line and not line.startswith(' '):
+                in_terminal = False
+            # Within the block, drop orphan sequence items at 2-space indent.
+            elif re.match(r'^  - \S', line) and not re.match(r'^  - {2,}', line):
+                continue
+        out.append(line)
+    return '\n'.join(out)
+
+text = strip_terminal_orphans(text)
+
 # Same idempotency pattern as patch_max_turns / patch_context_length: decide
 # replace-vs-insert via re.search FIRST, otherwise a no-op replace (key
 # present with identical value) falls through to the insert branch and

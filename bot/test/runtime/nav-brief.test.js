@@ -177,3 +177,22 @@ test('computeNavBrief applies reconcile before rank', () => {
   const result = computeNavBrief(ctx, deps);
   assert.ok(!result.brief.paths.some((p) => p.label === 'chest_food'));
 });
+
+test('computeNavBrief passes radius=2 to getPathTo (GoalNear semantics for marks)', () => {
+  // Regression guard: container marks like chests are solid blocks. Without
+  // GoalNear semantics, getPathTo({x,y,z}) treats it as GoalBlock and every
+  // chest mark renders ⚠ blocked. Observed live in g-2026-05-30-2: Steward
+  // at base saw all 5 chests as blocked despite being 3m away. The fix
+  // threads `radius: 2` through opts so server.js wraps in goals.GoalNear.
+  const { ctx } = makeForestCtx();
+  const capturedOpts = [];
+  const deps = makeForestDeps((_ctx, _bot, _goal, opts) => {
+    capturedOpts.push(opts);
+    return { status: 'success', path: [] };
+  });
+  computeNavBrief(ctx, deps);
+  assert.ok(capturedOpts.length > 0, 'getPathTo should be called at least once');
+  for (const opts of capturedOpts) {
+    assert.equal(opts.radius, 2, 'radius must be 2 so marks are reachable from nearby cells');
+  }
+});

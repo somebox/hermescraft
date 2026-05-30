@@ -821,11 +821,19 @@ def seed_base_pad(cfg: dict, *, half: int = 4, pad_block: str = "cobblestone") -
         )
 
     filled = _fill_pad()
+    # #33: a single retry was leaving 1-3 cells short consistently (g-2026-05-30-2
+    # logged 80/81 every run). Paper appears to report "Successfully filled" on
+    # the probe before every neighbour chunk has finished its lighting/save
+    # tick, so the bulk fill races. Retry with longer waits so the laggards
+    # catch up before workers see a grass anchor.
     if filled < expected_cells:
-        # One retry — chunks may have needed a moment more.
-        time.sleep(1.5)
-        filled2 = _fill_pad()
-        filled = max(filled, filled2)
+        for backoff in (2.0, 4.0, 8.0):
+            time.sleep(backoff)
+            attempt = _fill_pad()
+            if attempt > filled:
+                filled = attempt
+            if filled >= expected_cells:
+                break
     if filled == 0:
         # Zero is hard failure — workers cannot patch a missing pad without
         # the lt_stone marks the Site Survey produces (chicken-and-egg), so
