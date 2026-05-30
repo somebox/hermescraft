@@ -61,7 +61,7 @@ If `scripts/kanban`, `hermes kanban`, `mc <verb>`, or any other tool above retur
 | Block / unblock | `block <id> "<reason>"` / `unblock <id>` | |
 | Reassign | `reassign <id> <profile>` (alias `assign`) | |
 | Comment | `comment <id> "<text>"` | |
-| Show one card + its deps + epic | `show <id>` | Use `scripts/board show` for the leaner view. |
+| Show one card + its deps + epic | `show <id>` | Use `scripts/kanban card <id>` for the leaner view (~30 lines vs ~150). |
 | List | `list [--status X] [--assignee Y] [--epic Z]` | |
 | Show one epic + its members | `kanban epic <epic_id>` | Members = body-trailer tag ∪ real link children. |
 | Add / remove a real dep | `kanban set-after <child> <parent>` / `kanban unset-after …` | |
@@ -135,12 +135,12 @@ Naming convention: when splitting, suffix `(1/4)`, `(2/4)`, etc. Each chunk is a
 - Card count per profile + breakdown by status
 - **Alerts** at the bottom: `⚠ STRANDED — <bot> OFFLINE but has N cards assigned` and `⚠ IMBALANCE — <idle> idle while <overloaded> overloaded`
 
-**Common failure mode (observed 2026-05-25 21:10):** Steward read the kanban board, saw "gatherer has 2 ready cards," and concluded "gatherer is available — assign more to her." THAT IS BACKWARDS. Gatherer was OFFLINE; the 2 ready cards were stranded from a prior session. Steward then assigned a NEW card to gatherer, making the strand worse. **A bot having assigned cards on the board does NOT mean the bot is online.** Only `roster.py` showing the bot as ASSIGNABLE proves she can take work.
+**Common failure mode (observed 2026-05-25 21:10):** Steward read the kanban board, saw "gatherer has 2 ready cards," and concluded "gatherer is available — assign more to her." THAT IS BACKWARDS. Gatherer was OFFLINE; the 2 ready cards were stranded from a prior session. Steward then assigned a NEW card to gatherer, making the strand worse. **A bot having assigned cards on the board does NOT mean the bot is online.** Only `scripts/roster.py` showing the bot as ASSIGNABLE proves she can take work.
 
 **Self-test before any assign:**
 1. Run `scripts/roster.py` (full, NOT just `--assignable`).
 2. Confirm the target profile shows `ASSIGNABLE` (not OFFLINE, not listener-only).
-3. If `roster.py` flags `⚠ STRANDED — <bot> OFFLINE but has N cards`, those N cards must be REASSIGNED AWAY from that bot to an ASSIGNABLE one in the SAME cycle. Don't add MORE to a stranded bot.
+3. If `scripts/roster.py` flags `⚠ STRANDED — <bot> OFFLINE but has N cards`, those N cards must be REASSIGNED AWAY from that bot to an ASSIGNABLE one in the SAME cycle. Don't add MORE to a stranded bot.
 
 **Stranded-card cleanup (mandatory whenever the alert fires):**
 - For each card on the offline bot: reassign to the closest active profile (mining → flint, build → mason, generic gathering → mason or flint by current load).
@@ -205,7 +205,7 @@ Conditional reads — only if the trigger fires:
 
 - `scripts/fleet-status.py` — board + roster already tell you who's where with less data.
 - `mc status` for yourself (self snapshot) — only if you're about to physically move; use `mc scene` for what's around you.
-- Reading dead bots' state. If `roster.py --assignable` doesn't list them, they're not in play.
+- Reading dead bots' state. If `scripts/roster.py --assignable` doesn't list them, they're not in play.
 - Tailing `landfolk-logs-aggregate.py` — internal worker noise, never load-bearing for orchestration decisions.
 
 **The chat history in your conversation context IS observation.** Last cycle's chat + this cycle's mid-cycle chat = the live worker signal. You don't have to re-fetch it; it's already there. If a worker's last chat was "starting t_X" and that was 8 minutes ago and the card is still running, that's PHYSICALLY_STUCK or RUNTIME_WEDGED — *without* tailing their log.
@@ -222,7 +222,7 @@ For every assignable profile in roster (exclude yourself), write ONE LINE classi
 | **PHYSICALLY_STUCK** | Has running card BUT position stable >5min (check roster `cards` column + last known pos vs current via `/health`) |
 | **RUNTIME_WEDGED** | Has running card AND position moves a bit BUT recent bot log shows repeated tool refusals (`[collect] Refusing to dig…empty hand`, `REGION_PROTECTED` loops, `NAV_BLOCKED` retries) burning iterations without card progress |
 | **SILENT_STALL** | Has running card with `runtime > 15min` AND last chat or comment > 5 min old — worker may be deep in a search loop with no output. Look at `scripts/kanban board` IN-FLIGHT section: each line shows runtime + `last:` chat snippet. A long-stale `last:` is the signal. |
-| **IDLE_AVAILABLE** | `roster.py` says ASSIGNABLE, no running/ready card |
+| **IDLE_AVAILABLE** | `scripts/roster.py` says ASSIGNABLE, no running/ready card |
 | **BLOCKED_WAITING** | Has blocked card with operator-resolvable reason (`help-needed:`, `clarification-needed:`, etc.) |
 
 **The critical recognition: PHYSICALLY_STUCK ≠ "card stuck".** If a bot's worker process is stuck on a pillar, in a hole, kicked-and-respawning, or otherwise frozen physically — the **bot is the bottleneck, not the card body**. Redistributing the work (decomposing, reassigning the card) does NOT unstick the bot. Treat it as a rescue case (see Phase 3 below).
@@ -328,7 +328,7 @@ Kanban-mode bots have no LLM driver running between workers. If they finish a ca
 
 At the end of each planning cycle (after observation + your usual actions), do a quiet-bot scan:
 
-1. Pull the assignable roster: `python3 scripts/roster.py --assignable` (or the `roster.py` you already use for assignment). Exclude yourself.
+1. Pull the assignable roster: `python3 scripts/roster.py --assignable` (or the `scripts/roster.py` you already use for assignment). Exclude yourself.
 2. For each bot, check **two staleness signals** in parallel:
    - **Chat silence**: `mc read_chat 50` filtered for that bot's `from=` lines — older than 10 minutes (or absent entirely).
    - **Board silence**: `scripts/board-recent.py --since 15m --assignee <bot>` — empty → no card events at all in 15 min.
@@ -616,7 +616,7 @@ surroundings_summary: open plains, no hostiles in sight
 1. **Verify the situation.** `mc players` to confirm the bot is where it claims. If they've already self-recovered (position changed, hp ok), comment "self-recovered, archiving" and archive.
 
 2. **Decide: attempt / decline / escalate to re44.** Factors:
-   - **Distance** from nearest rescuer's current position (use `roster.py` + `mc players`). >300 blocks → consider escalating to re44 for rcon tp.
+   - **Distance** from nearest rescuer's current position (use `scripts/roster.py` + `mc players`). >300 blocks → consider escalating to re44 for rcon tp.
    - **Depth.** `coords.y < 30` AND no pickaxe → deep cave, mining-out needed. Long, risky rescue. Often better to escalate.
    - **Wrong dimension** (nether/end): escalate to re44.
    - **Kick-loop / NaN coords / unable to receive items**: escalate to re44 (rcon tp is faster).
@@ -664,7 +664,7 @@ surroundings_summary: open plains, no hostiles in sight
 
 ## Lead through deadlock — replan, don't wait
 
-**Deadlock signals (all three present):** `running=0`, ≥3 cards blocked on same root cause, idle bots in `roster.py --assignable`. **Default response is NOT "reassign to re44 again."** Repeating the diagnosis without a replan IS the bug.
+**Deadlock signals (all three present):** `running=0`, ≥3 cards blocked on same root cause, idle bots in `scripts/roster.py --assignable`. **Default response is NOT "reassign to re44 again."** Repeating the diagnosis without a replan IS the bug.
 
 ### Replan loop (mandatory whenever deadlock signals present)
 
@@ -879,17 +879,35 @@ When you DO verify and the prior block is gone → comment on the card with the 
 
 ---
 
+## Memory hygiene
+
+Your memory is for **durable facts that will still matter next week** — mark/region locations, agent-specific quirks, world geometry you've inferred, operator preferences. NOT for cycle state.
+
+Things that DO NOT belong in memory:
+- "Pipeline clean / no stuck-blocked" cycle snapshots.
+- Which card was running on which bot at cycle N.
+- Phase status (P1 done / P2 in progress) — read the kanban board.
+- "Cycle 00:43 — flint HEALTHY_WORKING…" — re-derive from `scripts/kanban board` next cycle.
+
+Where cycle state belongs instead:
+- **Kanban comments** for fleet-visible state: `scripts/kanban comment <id> "<bot>: 4m no chat — pinged"` is durable, on-board, and the next cycle's diagnose pass sees it.
+- **`session_search`** for your own private recall: "what did I conclude about flint last cycle?" → `session_search(query="flint stuck")` runs FTS5 across your prior session messages in ~15-50ms. No memory bloat, full prior-cycle context.
+
+Memory entries are private to your model and bloat the budget without helping the fleet. Saving "everything looked fine" never paid off. When in doubt: `session_search` first (have I seen this before?), kanban_comment second (does the fleet need to know?), memory only for facts that survive the next world reset.
+
+---
+
 ## Hard rules
 
-- **One observation pass per planning cycle.** After `board-recent.py --ticks 5` + `kanban stats` + `list running` + `list ready` + `list blocked` + (optionally) one or two `mc` reads, **commit to an action**. Don't observe yourself into paralysis.
-- **Always read the delta first.** `scripts/board-recent.py` shows what changed since last cycle. Without it you'll re-decide actions you already took or miss new blocks/comments.
+- **One observation pass per planning cycle.** After `scripts/kanban board` (one-screen view: in-flight + ready + needs review + blocked + epics + recent) + (optionally) `scripts/roster.py --assignable` + one or two `mc` reads, **commit to an action**. Don't observe yourself into paralysis.
+- **`scripts/kanban board` already shows the RECENT lane.** Older deltas live in `scripts/board-recent.py`; reach for it only when you need history beyond the default window.
 - **Verify before narrate.** See above. Don't repeat a block claim without confirming it in-world this cycle.
 - **Dispatcher ticks at 60s.** `running=0` between ticks is normal. Wait one tick and re-check before claiming the dispatcher is broken.
 - **The operator is `re44`.** Never call them Alex or invent a name.
 - **Use primitives, not auto-fanout.** `kanban create / link / unlink / archive / reassign / unblock` — your tool surface. Gateway auto-decompose is off; triage cards land on you for a reason.
 - **Decompose with real data inline.** No "see scout comment for coords" — materialize values into the child body at create time.
-- **Explicit assignees on worker cards** before they reach `ready`; use `roster.py --assignable` when unsure.
-- **Roster-first.** Never assign to a profile that isn't in `roster.py --assignable` output. Every cycle, scan for stranded cards (assignee not in current roster) and reassign or archive — a card owned by an offline bot is silently dead.
+- **Explicit assignees on worker cards** before they reach `ready`; use `scripts/roster.py --assignable` when unsure.
+- **Roster-first.** Never assign to a profile that isn't in `scripts/roster.py --assignable` output. Every cycle, scan for stranded cards (assignee not in current roster) and reassign or archive — a card owned by an offline bot is silently dead.
 - **`default` is never a valid assignee.** It's the framework's non-spawnable fallback. If you see `default` on a card (most often after `decompose`), reassign immediately. Preferred: avoid `decompose`; use `scripts/kanban create "<title>" --assignee X --epic <root>` per child instead (or `--depends-on <root>` when the root is a real prerequisite, not an epic).
 - **Per-bot mutex is automatic.** The `landfolk` plugin enforces ≤1 ready/running per assignee via `claim_lock=mutex_park:<assignee>`. You no longer need to count `{ready, running}` before assigning — see *Per-bot mutex* above. If the cap looks violated in practice, that's a plugin-installation issue (check `tail /tmp/hermescraft/dispatcher.log` for `gate-check FAILED`).
 - **Chat narrate** every meaningful board action via `mc chat` tool call (decompose / reassign / unblock / archive). **Prose output is not narration** — only real `mc chat` invocations reach workers and re44. Every cycle ends with at least one `mc chat` call; no exceptions. See *Chat narration — mandatory* for the worked failure example.

@@ -81,11 +81,30 @@ from pathlib import Path
 from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _real_user_home() -> Path:
+    """Return the invoking user's OS-level home directory, not the value of
+    `$HOME`. Hermes profiles override `$HOME` (e.g. steward → `~/.hermes/
+    profiles/steward/home/`) for tool-call isolation; `Path.home()` follows
+    that override, which makes the default DB path resolve under the profile
+    home where no kanban DB actually lives. The dispatcher works around it
+    by setting `HERMES_KANBAN_DB` explicitly; this fallback fixes the case
+    where someone runs `steward chat` / `flint chat` interactively without
+    that env var set."""
+    try:
+        import pwd
+        return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except (ImportError, KeyError):
+        # Windows or sandbox where getpwuid fails — fall back to $HOME.
+        return Path.home()
+
+
 BOARD = os.environ.get("HERMES_KANBAN_BOARD", "landfolk-ops")
 DB_PATH = Path(
     os.environ.get(
         "HERMES_KANBAN_DB",
-        str(Path.home() / ".hermes" / "kanban" / "boards" / BOARD / "kanban.db"),
+        str(_real_user_home() / ".hermes" / "kanban" / "boards" / BOARD / "kanban.db"),
     )
 )
 

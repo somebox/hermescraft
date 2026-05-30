@@ -1,0 +1,1 @@
+mc goal_load miner, mc observe, mc goals, mc read_chat.

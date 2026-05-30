@@ -80,9 +80,16 @@ import pathlib, re, sys
 path = pathlib.Path(sys.argv[1])
 turns = sys.argv[2]
 text = path.read_text()
-new = re.sub(r'^(\s*max_turns:\s*)\d+', r'\g<1>' + turns, text, count=1, flags=re.M)
-if new == text:
-    # No agent.max_turns key — append under agent: block if present, else top-level.
+# Decide first whether the key exists at all. If it does, replace the value
+# (which may be a no-op); if not, fall through to the insert path. The
+# previous logic conflated "key exists with correct value" (where the
+# in-place re.sub leaves `new == text`) with "key absent" and re-inserted
+# every deploy, producing duplicate lines.
+pattern = re.compile(r'^(\s*max_turns:\s*)\d+', re.M)
+m = pattern.search(text)
+if m:
+    new = pattern.sub(r'\g<1>' + turns, text, count=1)
+else:
     if re.search(r'^agent:\s*$', text, re.M):
         new = re.sub(r'^(agent:\s*\n)', r'\1  max_turns: ' + turns + '\n', text, count=1, flags=re.M)
     else:
@@ -92,6 +99,82 @@ if new != text:
     print(f"  max_turns: set to {turns}")
 else:
     print(f"  max_turns: already {turns}")
+PYEOF
+}
+
+patch_context_length() {
+  # Cap the context-budget Hermes thinks it has so compression fires earlier
+  # and per-cycle input cost stays bounded. Without this, OpenRouter
+  # auto-detects deepseek-v4-flash at 500K-1M and compression at the 0.50
+  # default threshold doesn't trigger until 250K-500K of conversation. With
+  # a 250K cap, compression fires at ~125K — well-bounded per-bot cost.
+  # Lives at top-level `model.context_length:` (NOT under agent:).
+  local config="$1"
+  local ctx="${2:-250000}"
+  if [ "$DRY_RUN" = true ]; then
+    echo "  model.context_length: would set to $ctx"
+    return 0
+  fi
+  python3 - "$config" "$ctx" <<'PYEOF'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+ctx = sys.argv[2]
+text = path.read_text()
+# Check whether the key exists before deciding insert vs replace — see the
+# patch_max_turns note for why the no-op-in-place case was duplicating lines.
+pattern = re.compile(
+    r'^(model:\s*\n(?:  [^\n]*\n)*?  context_length:\s*)\d+',
+    re.M,
+)
+m = pattern.search(text)
+if m:
+    new = pattern.sub(r'\g<1>' + ctx, text, count=1)
+else:
+    # No context_length under model: — insert at top of model: block.
+    new = re.sub(
+        r'^(model:\s*\n)',
+        r'\1  context_length: ' + ctx + '\n',
+        text, count=1, flags=re.M)
+if new != text:
+    path.write_text(new)
+    print(f"  model.context_length: set to {ctx}")
+else:
+    print(f"  model.context_length: already {ctx}")
+PYEOF
+}
+
+patch_compression_model() {
+  # Pin the auxiliary compression model. Default empty → Hermes auto-picks
+  # google/gemini-3-flash-preview via OpenRouter. Pinning to a known cheap
+  # fast model (google/gemini-2.5-flash) gives predictable per-compression
+  # cost — fires every ~125K-250K tokens after the context_length cap above.
+  # Lives at top-level `auxiliary.compression.model:`.
+  local config="$1"
+  local model="$2"
+  if [ "$DRY_RUN" = true ]; then
+    echo "  auxiliary.compression.model: would set to $model"
+    return 0
+  fi
+  python3 - "$config" "$model" <<'PYEOF'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+model = sys.argv[2]
+text = path.read_text()
+pattern = re.compile(
+    r'^(auxiliary:\s*\n(?:  [^\n]*\n)*?  compression:\s*\n(?:    [^\n]*\n)*?    model:\s*)["\']?[^"\'\n]*["\']?',
+    re.M,
+)
+m = pattern.search(text)
+if m:
+    new = pattern.sub(r'\g<1>"' + model + '"', text, count=1)
+else:
+    # No auxiliary.compression.model key — append the whole subtree at end-of-file.
+    new = text.rstrip() + f'\nauxiliary:\n  compression:\n    provider: "openrouter"\n    model: "{model}"\n'
+if new != text:
+    path.write_text(new)
+    print(f"  auxiliary.compression.model: set to {model}")
+else:
+    print(f"  auxiliary.compression.model: already {model}")
 PYEOF
 }
 
@@ -138,14 +221,17 @@ for e in extra:
         base.append(e)
 inner = ", ".join(base)
 text = path.read_text()
-new = re.sub(
+# Same idempotency pattern as patch_max_turns / patch_context_length: decide
+# replace-vs-insert via re.search FIRST, otherwise a no-op replace (key
+# present with identical value) falls through to the insert branch and
+# duplicates the line on every deploy.
+in_place_re = re.compile(
     r'(^terminal:.*?\n(?:  [^\n]*\n)*?  env_passthrough:)\s*\[[^\]]*\]',
-    rf'\1 [{inner}]',
-    text,
-    count=1,
-    flags=re.MULTILINE,
+    re.MULTILINE,
 )
-if new == text:
+if in_place_re.search(text):
+    new = in_place_re.sub(rf'\1 [{inner}]', text, count=1)
+else:
     new = re.sub(
         r'^(terminal:\n)',
         rf'\1  env_passthrough: [{inner}]\n',
@@ -153,7 +239,8 @@ if new == text:
         count=1,
         flags=re.MULTILINE,
     )
-path.write_text(new)
+if new != text:
+    path.write_text(new)
 PYEOF
 }
 
@@ -529,6 +616,8 @@ setup_worker() {
 
   patch_env_passthrough "$dir/config.yaml" ""
   patch_max_turns "$dir/config.yaml" 150
+  patch_context_length "$dir/config.yaml" 250000
+  patch_compression_model "$dir/config.yaml" "google/gemini-2.5-flash"
 
   if [ -f "$dir/SOUL.md" ] && ! diff -q <(soul_for_worker "$name") "$dir/SOUL.md" >/dev/null 2>&1; then
     if [ "$DRY_RUN" = false ]; then
@@ -565,6 +654,8 @@ setup_steward() {
 
   patch_env_passthrough "$dir/config.yaml" "HERMES_KANBAN_BOARD"
   patch_steward_toolsets "$dir/config.yaml"
+  patch_context_length "$dir/config.yaml" 250000
+  patch_compression_model "$dir/config.yaml" "google/gemini-2.5-flash"
   ensure_steward_env
 
   write_file "$dir/SOUL.md" "$(soul_for_steward)"

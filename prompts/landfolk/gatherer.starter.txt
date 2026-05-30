@@ -1,0 +1,1 @@
+mc goal_load gatherer, mc observe, mc goals, mc read_chat.

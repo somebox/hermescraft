@@ -72,9 +72,9 @@ The skill files (this one, minecraft-mining, minecraft-navigation, minecraft-sur
 
 Use the `kanban_show()` tool to read your card. It's the OpenAI-tool form and gives you the same data your worker SOUL's lifecycle expects (body + comments + runs[]).
 
-When you need a cheap re-read mid-session (e.g. recheck after a comment landed), prefer `scripts/board show $HERMES_KANBAN_TASK` — it's ~20 lines vs ~150 from raw `hermes kanban show`. Same data, 80% fewer tokens. Use the `--full` flag only when you genuinely need the event log (incident forensics).
+When you need a cheap re-read mid-session (e.g. recheck after a comment landed), prefer `scripts/kanban card $HERMES_KANBAN_TASK` — it's ~30 lines (header, body, last comment, last run) vs ~150 from raw `hermes kanban show`. Same data, 80% fewer tokens. Reach for `hermes kanban show $HERMES_KANBAN_TASK` only when you genuinely need the full event log (incident forensics).
 
-**Re-read body + latest comments at the START of every reasoning round.** Comments are how Steward and re44 inject mid-flight corrections (geometry fixes, doctrine clarifications, "this is wrong, try X"). If you keep operating from your turn-1 mental model, you miss those updates. Cheap re-read: `scripts/board show $HERMES_KANBAN_TASK | tail -40` — surfaces the body + newest comments without the full event log. Do it on round 1 (read), round 2 (re-read for comments), every round thereafter. Don't skip just because "the body hasn't changed" — comments are deltas, not body edits.
+**Re-read body + latest comments at the START of every reasoning round.** Comments are how Steward and re44 inject mid-flight corrections (geometry fixes, doctrine clarifications, "this is wrong, try X"). If you keep operating from your turn-1 mental model, you miss those updates. Cheap re-read: `scripts/kanban card $HERMES_KANBAN_TASK` — surfaces the body + newest comments without the full event log. Do it on round 1 (read), round 2 (re-read for comments), every round thereafter. Don't skip just because "the body hasn't changed" — comments are deltas, not body edits.
 
 ## Your task source is the kanban card — `top_goal` is advisory only
 

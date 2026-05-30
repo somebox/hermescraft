@@ -1005,28 +1005,24 @@ Hard limits: 5 minutes total rescue time. If you can't deliver in 5 min, kanban_
     Steward) role="orchestrator" ;;
     *)       role="worker" ;;
   esac
-  case "$name" in
-    Flint)
-      starter_cmds="mc goal_load miner, mc observe, mc goals, mc read_chat."
-      ;;
-    Mason)
-      starter_cmds="mc goal_load builder, mc observe, mc goals, mc read_chat."
-      ;;
-    Gatherer)
-      starter_cmds="mc goal_load gatherer, mc observe, mc goals, mc read_chat."
-      ;;
-    Barley)
-      starter_cmds="mc observe, mc goals, mc read_chat."
-      ;;
-    Steward)
-      # Orchestrator starter: kanban observation first, then in-world state
-      # (read-only for situational awareness only — Steward never mines).
-      starter_cmds="hermes kanban --board landfolk-ops stats, hermes kanban --board landfolk-ops list --status running, hermes kanban --board landfolk-ops list --status ready, hermes kanban --board landfolk-ops list --status blocked, scripts/roster.py, mc status, mc read_chat."
-      ;;
-    *)
-      starter_cmds="mc observe, mc goals, mc read_chat."
-      ;;
-  esac
+  # Starter commands run on agent boot. Sourced from
+  # prompts/landfolk/<name_lower>.starter.txt (per-role) with a fallback to
+  # worker.starter.txt. Keeping the strings in files lets prompt edits land
+  # without a shell-script change and lets the prompts-sync test catch any
+  # mc/scripts token that has drifted out of the canonical surface.
+  local _name_lower
+  _name_lower="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
+  local _starter_path="$PROMPT_DIR/${_name_lower}.starter.txt"
+  if [ ! -f "$_starter_path" ]; then
+    _starter_path="$PROMPT_DIR/worker.starter.txt"
+  fi
+  if [ -f "$_starter_path" ]; then
+    # Strip a trailing newline so it composes cleanly into the inline prompt.
+    starter_cmds="$(cat "$_starter_path")"
+  else
+    echo "[$ts_boot] WARN: no starter file for $name (expected $PROMPT_DIR/${_name_lower}.starter.txt or worker.starter.txt) — using fallback" >> "$agent_log"
+    starter_cmds="mc observe, mc goals, mc read_chat."
+  fi
   prompt="$(cat "$prompt_file")
 
 ${shared_rules}
@@ -1057,15 +1053,40 @@ Start with: ${starter_cmds}"
 
 $shared_rules"
     # Minimal prompt is a fallback used only when the full prompt is too
-    # large for the model's context window. Keep it tight + actionable.
-    continue_prompt_minimal="Continue (orchestrator). Read board (board-recent.py --ticks 5 + scripts/board + roster.py), DIAGNOSE each bot (HEALTHY_WORKING/PHYSICALLY_STUCK/IDLE_AVAILABLE/BLOCKED_WAITING), RANK top 3 issues (stuck bots first, then blocked cards, then idle, then imbalance), EXECUTE up to 3 actions one-per-issue, COMMIT and don't reverse. PHYSICALLY_STUCK bots get rescue (whisper escape primitive / file [RESCUE] for re44 / reassign card to another bot) — never decompose work to unstick a bot. End with mc chat \"<summary>\". Stay at base; never mine/place. NEVER reassign to 'default'. If unsure of an assignee, run scripts/roster.py --assignable first."
+    # large for the model's context window. Loaded from
+    # prompts/landfolk/steward.wake-minimal.md so prose edits (tool names,
+    # ritual) don't live in shell. Re-read each round via cat — edits land
+    # on the NEXT round without a restart.
+    local _steward_wake_min=""
+    if [ -f "$PROMPT_DIR/steward.wake-minimal.md" ]; then
+      _steward_wake_min="$(cat "$PROMPT_DIR/steward.wake-minimal.md")"
+    else
+      echo "[$ts_boot] WARN: $PROMPT_DIR/steward.wake-minimal.md missing — using terse fallback" >> "$agent_log"
+    fi
+    continue_prompt_minimal="${_steward_wake_min:-Continue (orchestrator). Run \`scripts/kanban board\`, diagnose each bot, execute up to 3 actions, end with \`mc chat\` summary. Never mine/place.}"
   else
-    continue_prompt_full="Continue in Minecraft. Run mc status, mc read_chat, mc goals.
-$shared_rules
-Execute the top-urgency goal: one focused subtask (3-8 mc commands), then report one short progress line."
-    continue_prompt_minimal="Continue. Run: mc status, mc read_chat, mc goals.
-Pick the top-urgency goal, execute one focused subtask (3-8 mc commands), report one progress line.
-Only use mc commands. If blocked twice, mc help (or skill_view minecraft-<topic>) and switch goals."
+    # Worker wake prompts: loaded from prompts/landfolk/worker.wake-*.md so
+    # prose lives in markdown, not shell. The full variant gets $shared_rules
+    # spliced in at deploy-time below; the minimal variant is the file as-is.
+    local _worker_wake_full=""
+    local _worker_wake_min=""
+    if [ -f "$PROMPT_DIR/worker.wake-full.md" ]; then
+      _worker_wake_full="$(cat "$PROMPT_DIR/worker.wake-full.md")"
+    else
+      echo "[$ts_boot] WARN: $PROMPT_DIR/worker.wake-full.md missing — using terse fallback" >> "$agent_log"
+      _worker_wake_full="Continue in Minecraft. Run mc status, mc read_chat, mc goals. Execute the top-urgency goal."
+    fi
+    if [ -f "$PROMPT_DIR/worker.wake-minimal.md" ]; then
+      _worker_wake_min="$(cat "$PROMPT_DIR/worker.wake-minimal.md")"
+    else
+      echo "[$ts_boot] WARN: $PROMPT_DIR/worker.wake-minimal.md missing — using terse fallback" >> "$agent_log"
+      _worker_wake_min="Continue. mc status, mc read_chat, mc goals — then execute one focused subtask."
+    fi
+    # Splice the body around $shared_rules in the spot the original prompt had it.
+    continue_prompt_full="$_worker_wake_full
+
+$shared_rules"
+    continue_prompt_minimal="$_worker_wake_min"
   fi
   continue_prompt="$continue_prompt_full"
 

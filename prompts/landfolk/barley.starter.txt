@@ -1,0 +1,1 @@
+mc observe, mc goals, mc read_chat.
