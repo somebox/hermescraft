@@ -267,8 +267,17 @@ function customParse(canonicalName, positional) {
           const dx = Number(q.shift()), dy = Number(q.shift()), dz = Number(q.shift());
           if (![dx, dy, dz].every(Number.isFinite)) throw new Error('invalid:--door requires 3 numeric coords');
           out.door = { x: dx, y: dy, z: dz };
-        } else if (t === '--force') { q.shift(); out.force = true; }
+        }         else if (t === '--force') { q.shift(); out.force = true; }
+        else if (t === '--raw') { q.shift(); out.raw = true; }
+        else if (t === '--near' || t === '-n') { q.shift(); out.near = Number(q.shift()); }
         else { positionals.push(q.shift()); }
+      }
+      if (positionals.length === 1) {
+        const p0 = String(positionals[0]);
+        if (p0.startsWith('@') || !/^-?\d/.test(p0)) {
+          out.mark = p0.replace(/^@/, '');
+          return out;
+        }
       }
       if (positionals.length < 3) throw new Error('missing:coords');
       out.x = Number(positionals[0]);

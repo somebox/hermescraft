@@ -9,6 +9,7 @@ import { box6 } from './_args.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 import { withYBoth, parseYInput, normalizeBoxYArgs } from '../runtime/coordinates.js';
 import { sampleNavTrailCrumb } from '../runtime/nav-trail.js';
+import { markBriefRefreshRequired } from '../runtime/nav-brief.js';
 
 const { goals } = pathfinderPkg;
 
@@ -684,6 +685,9 @@ export function createExcavationActions(services) {
     if (ctx?.runtime && steps.length >= 2) {
       ctx.runtime.lastDugSteps = trailPayload;
     }
+    markBriefRefreshRequired(ctx, {
+      cells: steps.slice(-4).map((s) => ({ x: s.x, y: s.y, z: s.z })),
+    });
     const resultMsg = stoppedAtStep
       ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim()
       : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim();
@@ -838,6 +842,13 @@ export function createExcavationActions(services) {
     }
 
     const endY = startY + L;
+    markBriefRefreshRequired(ctx, {
+      cells: [{
+        x: Math.floor(b.entity.position.x),
+        y: Math.floor(b.entity.position.y),
+        z: Math.floor(b.entity.position.z),
+      }],
+    });
     return {
       result: `Stair up ${key} length ${L} width ${W} height ${H}: dug ${totalDug}, placed ${totalPlaced} floor blocks, skipped ${totalSkipped}, errors ${totalErrors}. Y ${startY} → ${endY}.${pickupSuffix}`.trim(),
       dug: totalDug,

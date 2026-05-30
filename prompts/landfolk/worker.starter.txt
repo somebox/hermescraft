@@ -1,1 +1,1 @@
-mc observe, mc goals, mc read_chat.
+mc observe, mc goals, mc read_chat. CLI command groups: `mc commands --category perceive` (world vision: scene, map, nearby).

@@ -2,7 +2,7 @@
 
 const CAT = [
   'platform',
-  'observe',
+  'perceive',
   'movement',
   'world',
   'building',
@@ -25,7 +25,7 @@ const empty = '{}';
 export const RAW_COMMAND_DEFS = [
   g(
     'status',
-    'observe',
+    'perceive',
     ['state', 's'],
     {
       method: 'GET',
@@ -35,7 +35,7 @@ export const RAW_COMMAND_DEFS = [
       examples: ['mc status', 'mc status --full', 'mc status --json'],
     },
   ),
-  g('observe', 'observe', ['snapshot'], {
+  g('observe', 'perceive', ['snapshot'], {
     method: 'GET',
     // Default lean — trims full goal objects to {id, urgency, satisfied, gap},
     // last 5 recent_actions, drops plan_hints/dashboard_signals/action_stats.
@@ -45,8 +45,8 @@ export const RAW_COMMAND_DEFS = [
     description: 'Goals + task + alerts snapshot (lean by default; --full for everything)',
     examples: ['mc observe', 'mc observe --full'],
   }),
-  g('alerts', 'observe', [], { method: 'GET', path: '/alerts', description: 'Typed alerts', examples: ['mc alerts'] }),
-  g('discover', 'observe', ['disc'], {
+  g('alerts', 'perceive', [], { method: 'GET', path: '/alerts', description: 'Typed alerts', examples: ['mc alerts'] }),
+  g('discover', 'perceive', ['disc'], {
     method: 'POST',
     path: '/action/discover',
     argSchema: [
@@ -58,7 +58,7 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc discover CATEGORY [RADIUS]',
     examples: [`mc discover logs 48`, `mc discover '{"category":"food","radius":32}'`],
   }),
-  g('craft_plan', 'observe', ['cp'], {
+  g('craft_plan', 'craft', ['cp'], {
     method: 'POST',
     path: '/action/craft_plan',
     argSchema: [
@@ -70,24 +70,24 @@ export const RAW_COMMAND_DEFS = [
     usage: 'mc craft_plan ITEM [COUNT]',
     examples: ['mc craft_plan oak_planks 4'],
   }),
-  g('logistics', 'observe', ['log'], { method: 'GET', path: '/logistics', description: 'Logistics rollup', examples: ['mc logistics'] }),
-  g('inventory', 'observe', ['inv', 'i'], { description: 'List items in bot inventory', method: 'GET', path: '/inventory', examples: ['mc inventory'] }),
-  g('nearby', 'observe', ['n'], {
+  g('logistics', 'perceive', ['log'], { method: 'GET', path: '/logistics', description: 'Logistics rollup', examples: ['mc logistics'] }),
+  g('inventory', 'perceive', ['inv', 'i'], { description: 'List items in bot inventory', method: 'GET', path: '/inventory', examples: ['mc inventory'] }),
+  g('nearby', 'perceive', ['n'], {
     description: 'List nearby blocks/entities within radius',
     method: 'GET',
     pathFn: (p) => `/nearby?radius=${encodeURIComponent(Number(p.radius) || 32)}`,
     argSchema: [{ key: 'radius', type: 'number', default: 32 , min: 1, max: 64}],
     examples: ['mc nearby 48'],
   }),
-  g('map', 'observe', ['m'], {
+  g('map', 'perceive', ['m'], {
     description: 'Compact ASCII map of nearby terrain (radius default 12, max 16; larger values clamped).',
     method: 'GET',
     pathFn: (p) => `/map?radius=${encodeURIComponent(Number(p.radius) || 12)}`,
     argSchema: [{ key: 'radius', type: 'number', default: 12 , min: 1, max: 16}],
     examples: ['mc map', 'mc map 12'],
   }),
-  g('look', 'observe', ['survey'], { description: 'What the bot is currently facing', method: 'GET', path: '/look', examples: ['mc look'] }),
-  g('scene', 'observe', ['perceive', 'vision'], {
+  g('look', 'perceive', ['survey'], { description: 'What the bot is currently facing', method: 'GET', path: '/look', examples: ['mc look'] }),
+  g('scene', 'perceive', ['vision'], {
     description: 'Visible entities + landmarks in vision range. Lean by default (drops raw block-hit array). Use `mc scene --full` for ray-level detail.',
     method: 'GET',
     pathFn: (p) => {
@@ -100,7 +100,7 @@ export const RAW_COMMAND_DEFS = [
     ],
     examples: ['mc scene 16', 'mc scene --full'],
   }),
-  g('advise', 'observe', [], {
+  g('advise', 'perceive', [], {
     customParse: true,
     description:
       'Slow (~10–35s) intent-biased perception digest. Use when stuck, starting a new gather sub-goal, or locating something — not every tick. Requires --reason. Optional --target X,Y,Z attaches a route_preview (terrain probe along bot→target).',
@@ -112,7 +112,7 @@ export const RAW_COMMAND_DEFS = [
       'mc advise --dry-run --reason="test"',
     ],
   }),
-  g('screenshot_meta', 'observe', ['ss_meta'], {
+  g('screenshot_meta', 'perceive', ['ss_meta'], {
     method: 'GET',
     path: '/health',
     description:
@@ -155,29 +155,48 @@ export const RAW_COMMAND_DEFS = [
     customParse: true,
     bodyFn: (p) =>
       JSON.stringify({
-        x: Number(p.x),
-        y: Number(p.y),
-        z: Number(p.z),
+        ...(p.mark ? { mark: String(p.mark).replace(/^@/, '') } : {}),
+        ...(p.x !== undefined ? { x: Number(p.x) } : {}),
+        ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+        ...(p.z !== undefined ? { z: Number(p.z) } : {}),
+        ...(p.near !== undefined ? { near: Number(p.near) } : {}),
+        ...(p.raw ? { raw: true } : {}),
         ...(p.max_doors !== undefined ? { max_doors: Number(p.max_doors) } : {}),
         ...(p.door ? { door: p.door } : {}),
         ...(p.force ? { force: true } : {}),
       }),
-    usage: 'mc move X Y Z [--max-doors N] [--door GX GY GZ] [--force]',
+    usage: 'mc move X Y Z | @mark | mark_name | :region:[/site] [--near N] [--raw] [--max-doors N] [--door GX GY GZ] [--force]',
     examples: [
       'mc move 100 64 -200',
+      'mc move @base_anchor',
       'mc move 0 65 6 --max-doors 3',
       'mc move 0 65 6 --door 0 65 2',
       'mc move 50 30 -200 --force   # bypass detour check (long route accepted)',
+      'mc move 100 64 -200 --raw    # raw pathfinder, no detour guard (water-refusal still applies)',
+      'mc move :base1:              # region refs route through go_site (--raw is ignored here)',
     ],
   }),
   g('retrace', 'movement', [], {
     description:
-      'Walk back up the last mc stair_down trail (reverse recorded stand cells). Use when mc goto or mc move cannot climb a 1-wide staircase (Task #32). Run after stair_down from the bottom of the shaft.',
+      'Walk back along a recorded trail (reverse stand cells). Default: last mc stair_down trail. Pass --trail to prefer navigation breadcrumbs (falls back to stair_down when fewer than 2 crumbs).',
     method: 'POST',
     path: '/action/retrace',
-    usage: 'mc retrace',
-    examples: ['mc retrace', 'mc stair_down north 12', 'mc retrace'],
-    bodyFn: () => JSON.stringify({}),
+    usage: 'mc retrace [--trail]',
+    examples: ['mc retrace', 'mc retrace --trail', 'mc stair_down north 12', 'mc retrace'],
+    argSchema: [
+      {
+        key: 'trail',
+        type: 'boolean',
+        default: false,
+        description: 'walk nav-trail crumbs (use_trail); falls back to stair_down trail when thin',
+      },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        ...(p.trail === true || `${p.trail}`.toLowerCase() === 'true' || `${p.trail}` === '1'
+          ? { use_trail: true }
+          : {}),
+      }),
   }),
   g('goto', 'movement', ['go', 'g'], {
     description: 'Walk to absolute block coordinates (raw pathfinder; no door handling). Prefer mc move for general navigation — mc goto is for open spaces and power-user cases.',
@@ -294,7 +313,7 @@ export const RAW_COMMAND_DEFS = [
       'mc dig 0 64 5 --force',
     ],
   }),
-  g('scout', 'observe', [], {
+  g('scout', 'perceive', [], {
     description: 'Hazard + (optional) target-block survey in a radius. Read-only. Always reports lava, water, falling-block columns, bedrock, and hostile mobs. When --block BLOCK is set, also counts exposed/buried/under-liquid candidates of that block, gives a centroid, and a verdict (mine_here|move_to|not_enough|unsafe). Use before mining at depth or to decide whether to relocate.',
     method: 'POST',
     path: '/action/scout',
@@ -1582,7 +1601,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /* death / respawn */
-  g('deaths', 'observe', [], {
+  g('deaths', 'perceive', [], {
     examples: ["mc deaths"],
  description: 'Recent death events', method: 'GET', path: '/deaths' }),
   g('deathpoint', 'movement', [], {
@@ -1790,14 +1809,14 @@ export const RAW_COMMAND_DEFS = [
     path: '/action/site_remove',
     customParse: true,
   }),
-  g('check', 'observe', [], {
+  g('check', 'building', [], {
     description: 'Dry-run region policy for dig/place',
     examples: ["mc check"],
     method: 'POST',
     path: '/action/check',
     customParse: true,
   }),
-  g('blueprint', 'observe', [], {
+  g('blueprint', 'building', [], {
     description: 'Blueprint library: show, cell, layer, materials, verify, adopt, capture',
     usage:
       'mc blueprint show|cell|layer|materials|verify|adopt|capture <target> [flags]',
@@ -2151,7 +2170,7 @@ export const RAW_COMMAND_DEFS = [
     ],
     bodyFn: (p) => JSON.stringify({ x: p.x, y: p.y, z: p.z }),
   }),
-  g('furnaces', 'observe', [], {
+  g('furnaces', 'perceive', [], {
     examples: ["mc furnaces"],
  description: 'List known furnace marks + smelt status', method: 'GET', path: '/furnaces' }),
 
@@ -2203,13 +2222,13 @@ export const RAW_COMMAND_DEFS = [
       }),
   }),
 
-  g('sounds', 'observe', [], {
+  g('sounds', 'perceive', [], {
     examples: ["mc sounds"],
  description: 'Recent footstep / mob sounds', method: 'GET', path: '/sounds' }),
-  g('stats', 'observe', [], {
+  g('stats', 'perceive', [], {
     examples: ["mc stats"],
  description: 'Bot session stats (uptime, errors, etc.)', method: 'GET', path: '/stats' }),
-  g('fair_play', 'observe', [], {
+  g('fair_play', 'platform', [], {
     description: 'Toggle reaction-delay preamble (fair-play vs instant)',
     examples: ["mc fair_play"],
     method: 'POST',
@@ -2221,10 +2240,10 @@ export const RAW_COMMAND_DEFS = [
     argSchema: [{ key: 'enabled', type: 'string', default: 'true' }],
   }),
 
-  g('connect', 'observe', ['reconnect'], {
+  g('connect', 'platform', ['reconnect'], {
     examples: ["mc connect"],
  description: 'Reconnect bot to server', method: 'POST', path: '/connect', bodyFn: () => empty }),
-  g('health', 'observe', ['h'], {
+  g('health', 'perceive', ['h'], {
     examples: ["mc health"],
  description: 'HP/food/effects summary', method: 'GET', path: '/health' }),
 
@@ -2293,9 +2312,9 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /** Replaced bash helpers — composites implemented in dispatcher */
-  g('anchors', 'observe', [], {
+  g('anchors', 'perceive', [], {
     examples: ["mc anchors"],
- description: 'Known anchor marks', customParse: true, category: 'observe', aliases: [], method: 'GET', path: '/__anchors__' }),
+ description: 'Known anchor marks', customParse: true, category: 'perceive', aliases: [], method: 'GET', path: '/__anchors__' }),
 
   // ── Reminders ──
   g('remind', 'task', [], {

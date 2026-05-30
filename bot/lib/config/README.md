@@ -39,6 +39,16 @@ a `config` in scope.
 | `REACTIVE` | `on` | `off` disables tactical autopilot tick |
 | `COMBAT_SKILL` | *(unset)* | Optional numeric override for reactive combat skill |
 
+### Navigation refactor rollout (`config.behaviors`)
+| Env | Default | Purpose |
+|---|---|---|
+| `HERMES_RETRACE_TRAIL` | `false` | Junction promotion + collinear nav-trail merge (Phase 0a) |
+| `HERMES_MOVE_RESOLVE` | `false` | Route `go_site` / `go_mark` / CLI `move` through `navigateToTarget` |
+| `HERMES_NAV_BRIEF` | `off` | `shadow` logs `nav_brief_shadow` JSON; `1` surfaces brief on `mc observe` |
+| `HERMES_NAV_AUTO_RETRACE` | `false` | One-shot `retrace` on goto/move stall when climbing (stair_down trail) |
+
+Canary: enable `HERMES_NAV_BRIEF=shadow` fleet-wide first; calibrate SLO from shadow `compute_ms` vs `slo_ms` in logs; then `HERMES_NAV_BRIEF=1` on one worker profile (e.g. gatherer-test). Review with `scripts/analyze-mc-failures.py` and `scripts/mc-call-survey.py` before full fleet.
+
 ### PaperMCP plugin (`config.papermcp`) — optional WebSocket bridge
 | Env | Default | Purpose |
 |---|---|---|

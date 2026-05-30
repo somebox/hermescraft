@@ -44,6 +44,9 @@ High-level references for working on HermesCraft.
 | [features/sign-anchored-placemarks.md](features/sign-anchored-placemarks.md) | Sign-based placemark design |
 | [features/blueprints.md](features/blueprints.md) | GrabCraft JSON + future `mc construct` sketch |
 | [features/landfolk-plugin.md](features/landfolk-plugin.md) | Hermes plugin for landfolk: kanban per-assignee concurrency, future home for mc-tools / compressor / memory / chat-adapter subsystems |
+| [features/observation-verbs-redesign.md](features/observation-verbs-redesign.md) | Perception verb grammar + typed-noun response shapes (four-lane model) |
+| [features/agent-scripting-layer.md](features/agent-scripting-layer.md) | Region selectors + query/actuation language (read/`call()` split) |
+| [features/route-precompute-context.md](features/route-precompute-context.md) | Navigation & planning refactor: move path-reasoning from prompt to primitives — `move`-canonical DSL, string-laying breadcrumbs, per-round route brief (code-verified) |
 
 ## Planning (logs and scratch)
 

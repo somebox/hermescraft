@@ -7,6 +7,14 @@ import { formatStandingSituation, isStuckStandingClassification } from '../share
 import { buildActionStats, classifyIdleReason } from '../server/diagnostics.js';
 import { filterPlacementBlockingEntities } from '../shared/entity-blocking.js';
 import { placementInsightForBlock } from '../shared/placement-insight.js';
+import { getConfig } from '../config/index.js';
+import {
+  buildNavFrame,
+  computeNavBrief,
+  renderNavBrief,
+  isNavBriefStale,
+  logNavBriefShadow,
+} from './nav-brief.js';
 
 /** Remaining durability for tools/weapons/armor (F54.3 damage model). */
 function durabilityRemaining(item) {
@@ -33,7 +41,7 @@ function buildSuppliesDict(inv, limit = 12) {
 export function createObservation(deps) {
   const {
     ctx, ensureBot, fmt, posObj, loadLocations, filterEntitiesFairPlay, buildSceneSummary,
-    fireDueReminders, FAIR_PLAY, itemStr, getStandingState,
+    fireDueReminders, FAIR_PLAY, itemStr, getStandingState, getPathTo,
   } = deps;
 
   function taskContextBrief() {
@@ -419,6 +427,49 @@ export function createObservation(deps) {
       idle_reason: classifyIdleReason(ctx),
     };
     if (dueReminders.length) payload.reminders_due = dueReminders;
+
+    const navFrame = buildNavFrame(ctx, { loadLocations, getStandingState });
+    payload.nav_frame = navFrame;
+    payload.nav_mode = navFrame.nav_mode;
+    payload.nav_header = navFrame.header;
+    payload.journey = navFrame.journey;
+
+    const navBriefMode = getConfig().behaviors.navBriefMode;
+    if (navBriefMode === 'shadow' || navBriefMode === '1') {
+      const refreshHook = ctx.runtime?.briefRefreshRequired;
+      const navResult = computeNavBrief(ctx, {
+        loadLocations,
+        getStandingState,
+        getPathTo,
+        computeReachability: deps.computeReachability,
+        isDigProtected: deps.isDigProtected,
+        confirmK1Repair: deps.confirmK1Repair,
+        shouldSkipDigAt: deps.shouldSkipDigAt,
+      });
+      if (refreshHook) {
+        payload.brief_refresh_required = true;
+        delete ctx.runtime.briefRefreshRequired;
+      }
+      if (navBriefMode === 'shadow') {
+        logNavBriefShadow(ctx, navResult, nearbyMarks);
+      } else {
+        let navStatus = navResult.status;
+        if (navResult.brief && isNavBriefStale(ctx, navResult.brief)) {
+          navStatus = 'STALE_BRIEF';
+        }
+        payload.payload_version = 2;
+        payload.nav_brief = navResult.brief ?? null;
+        payload.nav_brief_text = navResult.brief
+          ? renderNavBrief(navResult.brief, {
+              nav_brief_status: navStatus,
+              brief_refresh_required: payload.brief_refresh_required === true,
+            })
+          : undefined;
+        if (navStatus) payload.nav_brief_status = navStatus;
+        delete payload.nearby_marks;
+      }
+    }
+
     return payload;
   }
 

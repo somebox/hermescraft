@@ -26,6 +26,37 @@ function fmtPos(p) {
   return `${p.x},${p.y},${p.z}`;
 }
 
+/** Compact nav frame line (Phase 0c) when full brief text is not enabled. */
+function formatNavFrameLine(d) {
+  const h = d.nav_header;
+  const pos = h?.pos || d.nav_frame?.pos_snapshot;
+  const posStr = pos ? fmtPos(pos) : '?, ?, ?';
+  const sit = h?.situation || (d.nav_mode === 'confined' ? 'Underground' : 'Surface');
+  const mode = h?.nav_mode || d.nav_mode || 'open';
+  const sig = h?.signals?.text || d.nav_frame?.nav_mode_signals?.text || '';
+  const sigPart = sig ? ` (${sig})` : '';
+  return `${sit} at ${posStr} — ${mode}${sigPart}`;
+}
+
+/** Goals/task/alerts one-liners after nav text so human observe is not JSON-only. */
+function projectObserveTail(d) {
+  if (d.task && typeof d.task === 'object' && d.task.kind) {
+    console.log(`  task: ${d.task.kind}${d.task.status ? ` (${d.task.status})` : ''}`);
+  }
+  if (Array.isArray(d.alerts) && d.alerts.length) {
+    for (const a of d.alerts.slice(0, 4)) {
+      const kind = a.kind || a.type || 'alert';
+      console.log(`  alert: ${kind}${a.message ? ` — ${a.message}` : ''}`);
+    }
+  }
+  if (Array.isArray(d.goals) && d.goals.length) {
+    const open = d.goals.filter((g) => g && !g.satisfied).slice(0, 3);
+    if (open.length) {
+      console.log(`  goals: ${open.map((g) => g.id || g.metric || '?').join(', ')}`);
+    }
+  }
+}
+
 /** @param {unknown} env */
 export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
   if (!envelope || typeof envelope !== 'object') return String(envelope);
@@ -94,6 +125,19 @@ export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
   }
 
   if (d && typeof d === 'object') {
+    // D2: navigation brief is rendered text; typed struct stays in JSON (--json) only.
+    if (typeof d.nav_brief_text === 'string' && d.nav_brief_text.trim()) {
+      console.log(d.nav_brief_text.trim());
+      if (d.nav_brief_status) console.log(`  nav_brief_status: ${d.nav_brief_status}`);
+      projectObserveTail(d);
+      return '';
+    }
+    if (d.nav_header && typeof d.nav_header === 'object' && e.command === 'observe') {
+      console.log(formatNavFrameLine(d));
+      if (d.journey?.line) console.log(`journey: ${d.journey.line}`);
+      projectObserveTail(d);
+      return '';
+    }
     if (d.map && typeof d.map === 'string') {
       console.log(d.map);
       if (d.legend) console.log(d.legend);

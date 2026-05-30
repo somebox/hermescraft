@@ -245,4 +245,12 @@ describe('cli dispatch', () => {
     assert.equal(body.worksite, 'wheat1');
     assert.equal(body.expect_y, 65);
   });
+
+  it('retrace --trail sets use_trail in POST body', () => {
+    const def = defOf('retrace');
+    const built = buildHttpRequest(def, 'retrace', ['--trail']);
+    assert.equal(built.path, '/action/retrace');
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.use_trail, true);
+  });
 });

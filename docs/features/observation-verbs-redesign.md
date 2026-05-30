@@ -1,6 +1,6 @@
 # Observation verbs — grammar, naming, and response shapes
 
-Status: draft / planning. Package 1 (May 2026) implemented the **status = self / scene = world** split in code; see below.
+Status: draft / planning. Package 1 (May 2026) implemented the **status = self / scene = world** split in code; see below. CLI registry (2026-05): the former **`observe` command group** is renamed **`perceive`** in `mc commands --category perceive`; the verb **`mc observe`** is unchanged (orchestration snapshot).
 
 ## Package 1 shipped (status = self, scene = world)
 

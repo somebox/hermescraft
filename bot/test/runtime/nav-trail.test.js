@@ -5,7 +5,9 @@ import {
   sampleNavTrailCrumb,
   navTrailCrumbsNewestFirst,
   floorCellFromPos,
+  mergeCollinearNavTrailCrumbs,
 } from '../../lib/runtime/nav-trail.js';
+import { loadConfig } from '../../lib/config/index.js';
 
 test('floorCellFromPos floors entity coords', () => {
   assert.deepEqual(floorCellFromPos({ x: 1.7, y: 65.2, z: -2.1 }), { x: 1, y: 65, z: -3 });
@@ -50,6 +52,24 @@ test('navTrailCrumbsNewestFirst reverses order', () => {
   const rev = navTrailCrumbsNewestFirst(ctx);
   assert.equal(rev[0].x, 3);
   assert.equal(rev[1].x, 0);
+});
+
+test('mergeCollinearNavTrailCrumbs drops middle collinear crumb', () => {
+  process.env.HERMES_RETRACE_TRAIL = 'true';
+  loadConfig([]);
+  const ctx = {
+    runtime: {
+      navTrail: {
+        crumbs: [
+          { x: 0, y: 65, z: 0, ts: Date.now() },
+          { x: 1, y: 65, z: 0, ts: Date.now() },
+          { x: 2, y: 65, z: 0, ts: Date.now() },
+        ],
+      },
+    },
+  };
+  mergeCollinearNavTrailCrumbs(ctx);
+  assert.equal(ctx.runtime.navTrail.crumbs.length, 2);
 });
 
 test('sampleNavTrailCrumb clears trail on large teleport', () => {

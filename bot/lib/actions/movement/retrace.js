@@ -100,9 +100,21 @@ export function resolveRetraceTrail(ctx, loadLocations, args = {}) {
     if (crumbs.length >= 2) {
       return { steps: crumbs, source: 'nav_trail', ts: Date.now() };
     }
+    const last = ctx?.runtime?.lastDugSteps;
+    if (last?.steps?.length >= 2) {
+      return {
+        steps: last.steps,
+        source: 'stair_down',
+        requested_trail: 'nav_trail',
+        fallback: true,
+      };
+    }
+    return null;
   }
   const last = ctx?.runtime?.lastDugSteps;
-  if (last?.steps?.length >= 2) return last;
+  if (last?.steps?.length >= 2) {
+    return { steps: last.steps, source: 'stair_down' };
+  }
   return null;
 }
 
@@ -115,9 +127,13 @@ export function createRetrace(deps) {
     const trail = resolveRetraceTrail(ctx, loadLocations, args);
     const steps = trail?.steps;
     if (!trail || !Array.isArray(steps) || steps.length < 2) {
-      return fail('RETRACE_NO_TRAIL', 'No stair_down trail to retrace. Run mc stair_down first (at least 2 stand cells).', {
-        observed_state: { has_trail: !!trail, step_count: steps?.length ?? 0 },
-        next_action_hint: 'mc stair_down north 8',
+      const wantedCrumbs = args.use_trail === true || args.use_trail === 'true';
+      const message = wantedCrumbs
+        ? 'No trail to retrace: nav-trail crumbs < 2 AND no stair_down trail available. Walk somewhere (mc move) to lay crumbs, or mc stair_down to record a descent first.'
+        : 'No stair_down trail to retrace. Run mc stair_down first (at least 2 stand cells), or mc retrace --trail to walk back over nav-trail crumbs.';
+      return fail('RETRACE_NO_TRAIL', message, {
+        observed_state: { has_trail: !!trail, step_count: steps?.length ?? 0, requested_trail: wantedCrumbs ? 'nav_trail' : 'stair_down' },
+        next_action_hint: wantedCrumbs ? 'mc move <coords> # lays crumbs' : 'mc stair_down north 8',
         retry_safe: false,
       });
     }
@@ -244,6 +260,8 @@ export function createRetrace(deps) {
         to: endPos,
         top,
         attempts,
+        trail_source: trail.source,
+        ...(trail.fallback ? { trail_fallback: true, requested_trail: trail.requested_trail } : {}),
       },
     });
   };

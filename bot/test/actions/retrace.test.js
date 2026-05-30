@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   validateRetraceStepCell,
   ascentTargetsFromSteps,
+  resolveRetraceTrail,
 } from '../../lib/actions/movement/retrace.js';
+import { navTrailCrumbsNewestFirst } from '../../lib/runtime/nav-trail.js';
 
 function mockBot(blocks) {
   return {
@@ -62,4 +64,32 @@ test('validateRetraceStepCell: obstruction at feet', () => {
   const r = validateRetraceStepCell(b, { x: 0, y: 63, z: -2 });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'obstruction');
+});
+
+test('resolveRetraceTrail: use_trail with crumbs', () => {
+  const ctx = {
+    runtime: {
+      navTrail: {
+        crumbs: [
+          { x: 0, y: 65, z: 0, ts: Date.now() },
+          { x: 3, y: 65, z: 0, ts: Date.now() },
+        ],
+      },
+    },
+  };
+  const trail = resolveRetraceTrail(ctx, () => ({}), { use_trail: true });
+  assert.equal(trail.source, 'nav_trail');
+  assert.ok(trail.steps.length >= 2);
+});
+
+test('resolveRetraceTrail: use_trail falls back to stair_down', () => {
+  const ctx = {
+    runtime: {
+      navTrail: { crumbs: [{ x: 0, y: 65, z: 0, ts: Date.now() }] },
+      lastDugSteps: { steps: [{ x: 0, y: 64, z: 0 }, { x: 0, y: 65, z: 0 }] },
+    },
+  };
+  const trail = resolveRetraceTrail(ctx, () => ({}), { use_trail: true });
+  assert.equal(trail.source, 'stair_down');
+  assert.equal(trail.fallback, true);
 });

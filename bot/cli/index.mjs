@@ -227,7 +227,7 @@ function printHelp(aliasMap) {
     for (const n of groups[cat]) console.log(`  mc ${n}`);
   }
 
-  console.log('\nAlso: mc help <command>, mc commands [--category <observe|...>]');
+  console.log('\nAlso: mc help <command>, mc commands [--category <perceive|...>]');
   console.log('Flags anywhere: --json, --dry-run, --limit N, --fields a,b,c');
   console.log(`Registry: ~${Object.keys(aliasMap).length} tokens.\n`);
 }

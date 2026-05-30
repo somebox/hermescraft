@@ -1,3 +1,5 @@
+import { getConfig } from '../config/index.js';
+
 /**
  * Volatile navigation crumbs derived from positionHistory (Phase 2).
  * Single-writer: only this module mutates ctx.runtime.navTrail.
@@ -67,6 +69,59 @@ export function sampleNavTrailCrumb(ctx, bot, opts = {}) {
   crumbs.push({ ...cell, ts: now });
   while (crumbs.length > TRAIL_CAP) crumbs.shift();
   trail.ts = now;
+  if (getConfig().behaviors.navRetraceTrailShape) {
+    mergeCollinearNavTrailCrumbs(ctx);
+  }
+}
+
+/**
+ * Tag the latest crumb (or current cell) as a named junction.
+ * @param {Record<string, any>} ctx
+ * @param {any} bot
+ * @param {string} [label]
+ */
+export function promoteNavTrailJunction(ctx, bot, label = 'last_dig_site') {
+  if (!ctx?.runtime || !bot?.entity?.position) return;
+  sampleNavTrailCrumb(ctx, bot, { onGround: bot.entity.onGround ?? true });
+  const crumbs = ctx.runtime.navTrail?.crumbs;
+  if (!Array.isArray(crumbs) || crumbs.length === 0) return;
+  const last = crumbs[crumbs.length - 1];
+  last.junction = label;
+  last.junction_ts = Date.now();
+}
+
+/**
+ * Drop middle crumbs that are collinear between neighbors (same Y, on segment).
+ * @param {Record<string, any>} ctx
+ */
+export function mergeCollinearNavTrailCrumbs(ctx) {
+  const crumbs = ctx?.runtime?.navTrail?.crumbs;
+  if (!Array.isArray(crumbs) || crumbs.length < 3) return;
+  let changed = true;
+  while (changed && crumbs.length >= 3) {
+    changed = false;
+    for (let i = 1; i < crumbs.length - 1; i++) {
+      const a = crumbs[i - 1];
+      const b = crumbs[i];
+      const c = crumbs[i + 1];
+      if (a.y !== b.y || b.y !== c.y) continue;
+      const cross = (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+      if (Math.abs(cross) > 0.01) continue;
+      const minX = Math.min(a.x, c.x);
+      const maxX = Math.max(a.x, c.x);
+      const minZ = Math.min(a.z, c.z);
+      const maxZ = Math.max(a.z, c.z);
+      if (b.x >= minX && b.x <= maxX && b.z >= minZ && b.z <= maxZ) {
+        if (b.junction) {
+          c.junction = c.junction || b.junction;
+          c.junction_ts = c.junction_ts || b.junction_ts;
+        }
+        crumbs.splice(i, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
 }
 
 /**

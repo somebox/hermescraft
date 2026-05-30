@@ -72,3 +72,37 @@ test('go_site INVALID_REF for :bogus:', async () => {
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'INVALID_REF');
 });
+
+test('go_site uses navigateToTarget when navMoveResolve is on', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hc-go-site-nav-'));
+  const store = createRegionStore({ dataDir: dir, world: 'w' });
+  store.upsert({
+    id: 'base1',
+    profile: 'base',
+    anchor: { x: 0, y: 64, z: 0 },
+    shape: { kind: 'column', radius: 8 },
+    sites: { tower: { x: 10, y: 80, z: 5 } },
+  });
+  const gotoCalls = [];
+  const facadeCalls = [];
+  const goto = async (args) => {
+    gotoCalls.push(args);
+    return ok({ result: 'nav', data: { x: args.x, y: args.y, z: args.z } });
+  };
+  const navigateToTarget = async (args) => {
+    facadeCalls.push(args);
+    return ok({ result: 'facade', data: { x: args.x, y: args.y, z: args.z } });
+  };
+  const go_site = createGoSite({
+    ctx: { runtime: { regions: store } },
+    loadLocations: () => ({}),
+    goto,
+    navigateToTarget,
+    config: { behaviors: { navMoveResolve: true } },
+  });
+  const r = await go_site({ ref: ':base1:/tower' });
+  assert.equal(r.ok, true);
+  assert.equal(facadeCalls.length, 1);
+  assert.deepEqual(facadeCalls[0], { x: 10, y: 80, z: 5 });
+  assert.equal(gotoCalls.length, 0);
+});

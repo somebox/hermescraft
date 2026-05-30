@@ -6,6 +6,7 @@ import { fail } from '../../shared/action-contract.js';
 import { cascadeFor } from '../../runtime/materials.js';
 import { findStandingBlockCell, isPartialBlockShape } from './pillar-geometry.js';
 import { describePillarOutcome, isCellSkyExposed } from './pillar-outcome.js';
+import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
 import { isGenuinelyStuckAt } from './pillar-geometry.js';
 
 /**
@@ -533,6 +534,7 @@ export function createBuildingPillarPart(deps) {
           // (they looked like protected infrastructure).
           if (result.cell) {
             recordRecentPlace(ctx, result.cell, result.blockName || 'unknown');
+            markBriefRefreshRequired(ctx, { cells: [result.cell] });
           }
         } else {
           failReasons.push(result.failReason);

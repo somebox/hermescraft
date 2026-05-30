@@ -22,6 +22,7 @@ import { createLadder } from './ladder.js';
 import { createStop } from './stop.js';
 import { createGoSite } from './go_site.js';
 import { createRetrace } from './retrace.js';
+import { createNavigateToTarget } from './navigate-to-target.js';
 
 export { refuseWaterRouteWithoutBoat };
 
@@ -115,17 +116,26 @@ export function createMovementActions({
   };
 
   const gotoFn = createGoto(deps);
+  const gotoNearFn = createGotoNear(deps);
+  const moveFn = createMove(deps);
+  const navigateToTarget = createNavigateToTarget({
+    ...deps,
+    move: moveFn,
+    goto: gotoFn,
+    goto_near: gotoNearFn,
+  });
 
   return {
     goto: gotoFn,
-    goto_near: createGotoNear(deps),
-    go_site: createGoSite({ ...deps, goto: gotoFn }),
+    goto_near: gotoNearFn,
+    go_site: createGoSite({ ...deps, goto: gotoFn, navigateToTarget, config }),
     follow: createFollow(deps),
     look: createLook(deps),
     stop: createStop(deps),
     jump: createJump(deps),
     ladder: createLadder(deps),
-    move: createMove(deps),
+    move: moveFn,
+    navigateToTarget,
     retrace: createRetrace(deps),
   };
 }

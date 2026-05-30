@@ -8,7 +8,7 @@ const { goals } = pathfinderPkg;
  * createMarksActions — extracted from former lib/actions/containers.js (Phase 5 split).
  */
 export function createMarksActions(deps) {
-  const { ctx, config, ensureBot, goals, fmt, posObj, sleep, log, loadLocations, saveLocations, flagMarkStale, clearMarkStale, resolveMarkPlaceFromBody, resolveContainerCoords, normalizeDepositWithdrawItems, buildMarksListApi, isContainerBlock, findNearbyContainer, snapshotChestAtPosition, rememberSocialEvent, saveReminders, getMyName } = deps;
+  const { ctx, config, ensureBot, goals, fmt, posObj, sleep, log, loadLocations, saveLocations, flagMarkStale, clearMarkStale, resolveMarkPlaceFromBody, resolveContainerCoords, normalizeDepositWithdrawItems, buildMarksListApi, isContainerBlock, findNearbyContainer, snapshotChestAtPosition, rememberSocialEvent, saveReminders, getMyName, services } = deps;
   return {
     async mark(body) {
       ensureBot();
@@ -90,6 +90,18 @@ export function createMarksActions(deps) {
       if (!locs[name]) return ok({ result: `No location '${name}'` });
       const l = locs[name];
       const b = ensureBot();
+      const navigateToTarget = services?.getActions?.()?.navigateToTarget;
+      if (config?.behaviors?.navMoveResolve === true && typeof navigateToTarget === 'function') {
+        const nav = await navigateToTarget({ x: l.x, y: l.y, z: l.z, near: 2, mark: name });
+        if (!nav?.ok) return nav;
+        l.last_visited = new Date().toISOString();
+        l.visit_count = (l.visit_count || 0) + 1;
+        saveLocations(locs);
+        return ok({
+          result: `Arrived at '${name}' (${l.x},${l.y},${l.z})`,
+          data: { mark: locs[name], via: 'navigateToTarget' },
+        });
+      }
       try {
         await pathfindGotoNear(b, goals, l.x, l.y, l.z, 2, { opName: 'go_mark', capMs: ACTION_CAPS_MS.go_mark });
       } catch (err) {

@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { recordRecentPlace, equipForDig, isDigProtected } from '../../runtime/dig-tools.js';
+import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
 import { shouldSkipPlaceAt, shouldSkipDigAt, createRegionSkipTracker } from '../../runtime/regions/policy-guard.js';
 import { fail } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from '../_helpers.js';
@@ -285,6 +286,7 @@ export function createBuildingPlaceBulkPart(deps) {
               try {
                 await b.placeBlock(ref, new Vec3(-dx, -dy, -dz));
                 recordRecentPlace(ctx, pos, blockName);
+                markBriefRefreshRequired(ctx, { cells: [{ x: pos.x, y: pos.y, z: pos.z }] });
                 placed++;
                 placedThis = true;
               } catch (e) {

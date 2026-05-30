@@ -1,10 +1,4 @@
 # Genesis benchmark supply targets (not production 512/768).
-#
-# Schema (target_min, target_ok, assignee, designated_site): see
-# bot/lib/runtime/base-goals.js and prompts/landfolk/steward.md.
-# Re-snapshot this file after a genesis run if you intentionally change
-# benchmark levels; locations marks belong in data/locations-base.json with
-# an explicit cadence (docs/guides/genesis-run-prep.md).
 food:
   items: [bread, cooked_beef, cooked_chicken, cooked_porkchop, cooked_mutton, cooked_rabbit, baked_potato, apple, golden_apple, melon_slice]
   target_min: 64

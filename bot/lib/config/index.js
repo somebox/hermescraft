@@ -81,6 +81,12 @@ export function loadConfig(argv = process.argv) {
       digDropScanMs: numEnv(env.MC_DIG_DROP_SCAN_MS, 300),
       /** HERMES_NAV_AUTO_RETRACE=true: one mc retrace on goto/move NAV_NO_PROGRESS when dy>0 and trail exists. */
       navAutoRetraceOnStall: boolEnv(env.HERMES_NAV_AUTO_RETRACE, false),
+      /** HERMES_RETRACE_TRAIL=true: junction promotion + collinear nav-trail merge (Phase 0a). */
+      navRetraceTrailShape: boolEnv(env.HERMES_RETRACE_TRAIL, false),
+      /** HERMES_MOVE_RESOLVE=true: go_site/go_mark/move use navigateToTarget facade. */
+      navMoveResolve: boolEnv(env.HERMES_MOVE_RESOLVE, false),
+      /** HERMES_NAV_BRIEF=shadow|1: compute nav brief (shadow logs only; 1 surfaces to agent). */
+      navBriefMode: (env.HERMES_NAV_BRIEF || '').trim().toLowerCase() || 'off',
       /** REACTIVE=off disables the tactical autopilot tick. */
       reactiveOn: reactiveRaw !== 'off',
       /** COMBAT_SKILL — optional numeric override for reactive combat skill. */

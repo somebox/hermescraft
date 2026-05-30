@@ -239,7 +239,7 @@ export const FIELD_SLICE_MAP = Object.freeze({
   world:     ['bot', 'mcData', 'botReady', 'connectPromise', 'positionHistory', 'bootTime', 'mcSessionStartedAt'],
   social:    ['chatLog', 'overheardLog', 'commandQueue', 'socialGraph', 'socialEvents', 'lastChatTs', 'lastChatBriefedTime', 'MAX_LOG', 'MAX_QUEUE'],
   tasks:     ['currentTask', 'taskHistory', 'syncActionInFlight', 'syncActionName', 'syncActionStartedAt', 'cancelRequested', 'actionHistory', 'actionCounters', 'lastApiError', 'MAX_ACTION_HISTORY', 'MAX_TASK_HISTORY'],
-  runtime:   ['lastMoveFailed', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentDigFailures', 'regions', 'taskContext', 'recentPickups', 'recentPlaces', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
+  runtime:   ['lastMoveFailed', 'lastFailedGotoTarget', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentDigFailures', 'regions', 'taskContext', 'recentPickups', 'recentPlaces', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
   goals:     ['goalsStore', 'chestSnapshots'],
   team:      ['teamConfig', 'combatStats', 'recentDamagers', 'activeFurnaces', 'isSneaking'],
   reminders: ['reminders', 'remindersNextId'],

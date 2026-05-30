@@ -34,6 +34,7 @@ import { loader as autoEatLoader } from 'mineflayer-auto-eat';
 import collectBlockPkg from 'mineflayer-collectblock';
 const collectBlock = collectBlockPkg.plugin;
 import minecraftData from 'minecraft-data';
+import { Vec3 } from 'vec3';
 import {
   CURRENT_CAST,
   buildKnownNames,
@@ -69,7 +70,8 @@ import { createServices } from './lib/server/services.js';
 import { resolveInventoryItem, resolveCraftTarget, resolveBlockQuery } from './lib/shared/resolver.js';
 import { FAIR_PLAY } from './lib/runtime/fair-play-constants.js';
 import { createFairPlaySuite } from './lib/runtime/fair-play.js';
-import { standingState } from './lib/actions/_nav-helpers.js';
+import { standingState, computeReachability } from './lib/actions/_nav-helpers.js';
+import { createObservation } from './lib/runtime/observation.js';
 import { createSpatial } from './lib/runtime/spatial.js';
 import { createActionRegistry } from './lib/server/action-registry.js';
 import { createBotHttpListener } from './lib/server/http-app.js';
@@ -78,7 +80,7 @@ import { createReactive } from './lib/runtime/reactive.js';
 import { createLocationsStore, isContainerBlock, findNearbyContainer } from './lib/runtime/locations.js';
 import { createRegionStore } from './lib/runtime/regions/index.js';
 import { createAllActions } from './lib/actions/index.js';
-import { createObservation } from './lib/runtime/observation.js';
+import { isDigProtected } from './lib/runtime/dig-tools.js';
 import { maybeRecordChatComment } from './lib/server/chat-card-comment.js';
 
 // Per-bot locations file to prevent race conditions in multi-agent mode
@@ -586,6 +588,18 @@ const observation = createObservation({
   FAIR_PLAY,
   itemStr,
   getStandingState: (bot) => standingState(bot),
+  getPathTo: (_ctx, bot, goal, opts = {}) => {
+    if (!bot?.pathfinder?.movements) return null;
+    const goalVec = goal instanceof Vec3 ? goal : new Vec3(goal.x, goal.y, goal.z);
+    const timeoutMs = opts.timeoutMs ?? 1200;
+    try {
+      return bot.pathfinder.getPathTo(bot.pathfinder.movements, goalVec, timeoutMs);
+    } catch {
+      return null;
+    }
+  },
+  computeReachability,
+  isDigProtected,
 });
 const {
   briefState,

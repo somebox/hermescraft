@@ -10,6 +10,13 @@ import {
 import { enrichWithStand } from './_preflight.js';
 import { isDetourAllowed, detourHintForDy } from './detour-check.js';
 import { coord3 } from '../_args.js';
+import { recordNavBriefNegativeLeg, navBriefLineKey } from '../../runtime/nav-brief.js';
+
+function noteBriefMoveFailure(ctx, markName) {
+  const name = markName ? String(markName).replace(/^@/, '').trim() : '';
+  if (!name || !ctx) return;
+  recordNavBriefNegativeLeg(ctx, navBriefLineKey({ verb: 'move', args: name }));
+}
 
 /**
  * Compute the {near_side, far_side} cells used by `mc through` when
@@ -98,9 +105,38 @@ export function createMove(deps) {
     preNudgeIfSticky,
     fmt,
     posObj,
+    loadLocations,
+    config,
+    services,
   } = deps;
 
   return async function move(args) {
+    if (args?.mark && typeof loadLocations === 'function') {
+      const name = String(args.mark).replace(/^@/, '').trim();
+      const loc = loadLocations()[name];
+      if (!loc || !Number.isFinite(loc.x)) {
+        return {
+          ok: false,
+          error: { code: 'MARK_NOT_FOUND', message: `No location '${name}'`, retry_safe: false },
+        };
+      }
+      args = { ...args, x: loc.x, y: loc.y, z: loc.z, mark: name };
+    }
+    if (args?.raw === true && config?.behaviors?.navMoveResolve === true) {
+      const { services } = deps;
+      const nav = services?.getActions?.()?.navigateToTarget;
+      if (typeof nav === 'function') {
+        return nav({
+          x: args.x,
+          y: args.y,
+          z: args.z,
+          near: args.near,
+          raw: true,
+          force: args.force,
+          mark: args.mark,
+        });
+      }
+    }
     const c = coord3(args);
     if (!c.ok) return c.response;
     let { x, y, z } = c;
@@ -403,6 +439,7 @@ export function createMove(deps) {
 
       if (!chosen) {
         recordMoveFailure('move', target.x, target.y, target.z, pos, lastPathfinderError || 'no_door');
+        noteBriefMoveFailure(ctx, args.mark);
         const doorList = (() => {
           const near = nearbyDoorList(32);
           return near.length > 0 ? near : nearbyDoorList(64);
@@ -447,6 +484,7 @@ export function createMove(deps) {
       });
     }
 
+    noteBriefMoveFailure(ctx, args.mark);
     return {
       ok: false,
       error: {

@@ -14,6 +14,8 @@ import { ok, fail } from '../../shared/action-contract.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
 import { createDigFailureTracker } from '../../runtime/dig-failure-ring.js';
 import { egressTreadCells, isEgressProtectedCell, clearEgressTrail } from '../../runtime/egress-guard.js';
+import { promoteNavTrailJunction } from '../../runtime/nav-trail.js';
+import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
 
 // Plug-block selection for water/lava breach next-action hints. Sand/gravel
 // are excluded because they fall through a fluid column instead of plugging
@@ -477,6 +479,12 @@ export function createDigHandlers(deps) {
     // Forced through our own staircase: the retrace trail is now broken.
     if (forcedThroughEgress) clearEgressTrail(ctx, 'dig_force_through_tread');
 
+    try {
+      if (config.behaviors.navRetraceTrailShape) {
+        promoteNavTrailJunction(ctx, b, 'last_dig_site');
+      }
+    } catch { /* trail junction is best-effort */ }
+    markBriefRefreshRequired(ctx, { cells: [cell] });
     return buildSuccessEnvelope(b, target, x, y, z, dropped, breach, new Set(equipResult.hints));
   }
 

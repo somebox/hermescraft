@@ -8,6 +8,7 @@ import { canSeeBlockFaces, standardBlockFacePoints } from '../_los.js';
 import { fail, ok } from '../../shared/action-contract.js';
 import { entitiesAtBlockingCell } from '../../shared/entity-blocking.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
+import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
 
 const { goals } = pathfinderPkg;
 
@@ -347,6 +348,7 @@ export function createBuildingPlaceSinglePart(deps) {
           }
 
           recordRecentPlace(ctx, { x, y, z }, blockName);
+          markBriefRefreshRequired(ctx, { cells: [{ x, y, z }] });
           // #100: auto-mark a freshly-placed crafting_table so future
           // mc craft calls find it via the marks fallback (the existing
           // /craft/i regex match in crafting.js).

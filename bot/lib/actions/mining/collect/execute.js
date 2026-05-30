@@ -1,4 +1,5 @@
 import { equipForDig, isDigProtected } from '../../../runtime/dig-tools.js';
+import { markBriefRefreshRequired } from '../../../runtime/nav-brief.js';
 import {
   shouldSkipDigAt,
   createRegionSkipTracker,
@@ -402,6 +403,7 @@ async function processCandidate(state, pos, equipForDigCached, instantFailState)
       clearTimeout(digTimer);
     }
     state.collected++;
+    markBriefRefreshRequired(cctx.ctx, { cells: [{ x: pos.x, y: pos.y, z: pos.z }] });
     state.triedKeys.add(k);
     instantFailState.consec = 0;
     await sleep(COLLECT_TUNING.postDigSleepMs);

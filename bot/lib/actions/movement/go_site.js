@@ -6,7 +6,18 @@ import { normalizeId } from '../../runtime/regions/index.js';
  * @param {object} deps
  */
 export function createGoSite(deps) {
-  const { ctx, loadLocations, goto } = deps;
+  const { ctx, loadLocations, goto, navigateToTarget, config } = deps;
+
+  async function navToCoords(x, y, z, meta) {
+    const useFacade = config?.behaviors?.navMoveResolve === true && typeof navigateToTarget === 'function';
+    const nav = useFacade
+      ? await navigateToTarget({ x, y, z })
+      : await goto({ x, y, z });
+    if (nav?.ok && nav.data && meta) {
+      Object.assign(nav.data, meta);
+    }
+    return nav;
+  }
 
   return async function go_site(body) {
     const ref = String(body?.ref ?? '').trim();
@@ -38,12 +49,7 @@ export function createGoSite(deps) {
         });
       }
       const { x, y, z } = decision.resolved;
-      const nav = await goto({ x, y, z });
-      if (nav?.ok && nav.data) {
-        nav.data.resolved_ref = ref;
-        nav.data.resolved_from = 'site';
-      }
-      return nav;
+      return navToCoords(x, y, z, { resolved_ref: ref, resolved_from: 'site' });
     }
 
     const bare = ref.match(/^:([a-z0-9]{2,12}):$/i);
@@ -53,22 +59,12 @@ export function createGoSite(deps) {
       const region = store?.get(id);
       if (region?.anchor) {
         const { x, y, z } = region.anchor;
-        const nav = await goto({ x, y, z });
-        if (nav?.ok && nav.data) {
-          nav.data.resolved_ref = ref;
-          nav.data.resolved_from = 'region_anchor';
-        }
-        return nav;
+        return navToCoords(x, y, z, { resolved_ref: ref, resolved_from: 'region_anchor' });
       }
       const locs = loadLocations();
       if (locs[id]) {
         const l = locs[id];
-        const nav = await goto({ x: l.x, y: l.y, z: l.z });
-        if (nav?.ok && nav.data) {
-          nav.data.resolved_ref = ref;
-          nav.data.resolved_from = 'placemark';
-        }
-        return nav;
+        return navToCoords(l.x, l.y, l.z, { resolved_ref: ref, resolved_from: 'placemark' });
       }
       return fail('INVALID_REF', `Unknown region or placemark ${ref}`, {
         retry_safe: false,
