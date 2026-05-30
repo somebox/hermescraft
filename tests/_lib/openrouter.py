@@ -16,8 +16,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DIGEST_MODEL = "deepseek/deepseek-v4-flash"
 
 
+_OPENROUTER_KEY_RE = re.compile(
+    r'^\s*openrouter_api_key\s*:\s*["\']?([^"\'\s#]+)["\']?\s*(?:#.*)?$',
+    re.MULTILINE,
+)
+
+
 def resolve_openrouter_api_key() -> str | None:
-    """OPENROUTER_API_KEY env, else secrets.yaml openrouter_api_key."""
+    """OPENROUTER_API_KEY env, else secrets.yaml openrouter_api_key.
+
+    Bot worker Python envs may not carry PyYAML. We only need one top-level
+    scalar from secrets.yaml, so parse it with a regex instead of importing
+    yaml — eliminates the soft-failure path where advise crashed silently
+    when pyyaml was missing (#40).
+    """
     key = os.environ.get("OPENROUTER_API_KEY")
     if key:
         return key
@@ -25,13 +37,11 @@ def resolve_openrouter_api_key() -> str | None:
     if not secrets_path.is_file():
         return None
     try:
-        import yaml  # lazy: only needed when reading secrets.yaml; the
-                    # OPENROUTER_API_KEY env var short-circuits this path.
-        data = yaml.safe_load(secrets_path.read_text(encoding="utf-8")) or {}
-    except Exception:
+        text = secrets_path.read_text(encoding="utf-8")
+    except OSError:
         return None
-    v = data.get("openrouter_api_key")
-    return str(v).strip() if v else None
+    m = _OPENROUTER_KEY_RE.search(text)
+    return m.group(1).strip() if m else None
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 _SYSTEM_PROMPT = """You summarize a Minecraft bot's perception for a given player intent.
