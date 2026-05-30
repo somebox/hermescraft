@@ -91,6 +91,7 @@ export function describeMoveOutcome({ startPos, finalPos, target, doorsUsed = 0,
  */
 export function createMove(deps) {
   const {
+    ctx,
     ensureBot,
     goals,
     gotoRetryKey,
