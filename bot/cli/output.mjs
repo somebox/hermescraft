@@ -138,6 +138,18 @@ export function renderHuman(envelope, /** @type {any} */ _opts = {}) {
       projectObserveTail(d);
       return '';
     }
+    // #50 follow-up: surface the compact nav line on scene + status too —
+    // workers favor those over observe, and the server now ships nav_header
+    // on their envelopes. Without this, the header arrives in the JSON but
+    // never reaches the agent's rendered output. Print as a prefix line and
+    // fall through to the verb's normal rendering (summary, blocks, etc.).
+    if (
+      d.nav_header &&
+      typeof d.nav_header === 'object' &&
+      (e.command === 'scene' || e.command === 'status')
+    ) {
+      console.log(formatNavFrameLine(d));
+    }
     if (d.map && typeof d.map === 'string') {
       console.log(d.map);
       if (d.legend) console.log(d.legend);

@@ -40,6 +40,65 @@ describe('cli output', () => {
     assert.ok(!joined.includes('"nav_brief_text"'));
   });
 
+  it('renderHuman prefixes mc scene with nav_header line (#50 follow-up)', () => {
+    // Server now ships nav_header on /scene and /status envelopes so the
+    // brief reaches workers who favor those verbs. The CLI human renderer
+    // must surface the compact line as a prefix; otherwise the header
+    // arrives in the JSON but is invisible to the agent's terminal output.
+    const logs = [];
+    const orig = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+    try {
+      renderHuman({
+        ok: true,
+        command: 'scene',
+        data: {
+          nav_header: {
+            situation: 'Surface',
+            pos: { x: -469, y: 64, z: 597 },
+            nav_mode: 'open',
+            signals: { exit_count: 3, text: '3 exits' },
+          },
+          summary: 'Visible blocks: grass_block 2m center.',
+          visible_blocks: [],
+        },
+      });
+    } finally {
+      console.log = orig;
+    }
+    const joined = logs.join('\n');
+    assert.ok(joined.includes('Surface at -469,64,597'), 'nav_header line missing');
+    assert.ok(joined.includes('open'), 'nav_mode missing from header line');
+    assert.ok(joined.includes('Visible blocks'), 'scene summary still rendered');
+  });
+
+  it('renderHuman prefixes mc status with nav_header line (#50 follow-up)', () => {
+    const logs = [];
+    const orig = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+    try {
+      renderHuman({
+        ok: true,
+        command: 'status',
+        data: {
+          nav_header: {
+            situation: 'Surface',
+            pos: { x: 5, y: 64, z: 5 },
+            nav_mode: 'open',
+            signals: { exit_count: 4, text: '4 exits' },
+          },
+          health: 20,
+          food: 18,
+          position: { x: 5, y: 64, z: 5 },
+        },
+      });
+    } finally {
+      console.log = orig;
+    }
+    const joined = logs.join('\n');
+    assert.ok(joined.includes('Surface at 5,64,5'), 'nav_header line missing on status');
+  });
+
   it('renderHuman prints nav frame line for observe without brief mode', () => {
     const logs = [];
     const orig = console.log;
