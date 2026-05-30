@@ -394,6 +394,27 @@ Deliverable:
 - ✅ **MC server restart authority**: genesis.sh `ssh ubuntu-host "sudo docker compose -f /opt/stacks/minecraft/docker-compose.yml restart"` is in-scope. The script handles full destructive ops including container restart. (Operator confirms via interactive prompt before each `new-run`; `--no-confirm` skips for scripting.)
 - ✅ **Run-id format**: `g-YYYY-MM-DD-N` — human-readable, sorts chronologically, includes today's nth run for quick disambiguation (`g-2026-05-27-1`, `g-2026-05-27-2`, …).
 
+## Reference seeds + anchors
+
+For A/B comparisons across runs (e.g. before/after a nav-stack change), pin
+the anchor explicitly so the post-reset biome probe doesn't reroll the
+spawn and pollute the comparison.
+
+| Purpose | Seed | Anchor | Notes |
+|---|---|---|---|
+| Nav-stack A/B benchmark | `-3899835130120818196` | `-456, 74, 596` | Stable starting point used from `g-2026-05-29-8` onward. Surface biome at y=74 with mining context within ~30 blocks. Used for `--skip-base` mining-first iteration loops while validating the route-precompute nav refactor (see `docs/features/route-precompute-context.md`). |
+| Above-ground dungeon | `6833329508037519212` | — | (anchor TBD on probe) |
+| Generally good flat build | `-1312751495452676979` | — | |
+| Nice all-around map | `2701938` | — | |
+
+Launch example (clean A/B run):
+
+```
+scripts/genesis.sh new-run \
+  --seed=-3899835130120818196 --anchor -456,74,596 \
+  --skip-base --no-confirm
+```
+
 ## Notes
 
 - This plan **does not depend on** stale `chest_food` / `base_chest` conflicts — reset per run clears them.
