@@ -1,0 +1,94 @@
+# W6-T4 — 3×3 dual-deck tower: 4 corner pillars (11 high), two full platforms 5 layers apart.
+# Reach/scaffold discipline. Alias: tower-scaffold-2x2 → this file (stress.sh).
+#
+#   scripts/stress.sh tower-scaffold-3x3 --arm prose-skilled
+
+agent_test_id: tower_scaffold_3x3
+includes_dir: tower-scaffold
+kanban_task_default: t_agent_test_scaffold
+world: landfolk-test
+inventory_reset:
+  - minecraft:cobblestone
+  - minecraft:dirt
+  - minecraft:bread
+model: deepseek/deepseek-v4-flash:exacto
+max_turns: 75
+timeout_seconds: 600
+
+default_arm: prose-skilled
+
+x-footprint_x: &fx [110, 111, 112]
+x-footprint_z: &fz [80, 81, 82]
+x-corner_x: &cx [110, 112]
+x-corner_z: &cz [80, 82]
+x-work_bbox: &work_bbox { x1: 107, y1: 65, z1: 79, x2: 114, y2: 76, z2: 84 }
+
+prompt_prefix: |
+  You are Flint on kanban task {{TASK_ID}} in landfolk-test.
+  Use `mc` in-world; **`scripts/kanban`** for board ops only.
+
+  Card body:
+
+  {{CARD_BODY}}
+
+  Success: 3×3 cobble at y=65 and y=71; corner pillars y=66..70 and y=72..75; interior y=66..70 is air;
+  **no dirt** in work box; you at (107,65,83).
+  On success: mc chat done, kanban complete.
+
+arms:
+  prose-skilled:
+    card_body_file: includes/tower-scaffold/body-prose-skilled.txt
+    skills: [kanban-worker, minecraft-building, minecraft-navigation]
+  playbook-coarse:
+    card_body_file: includes/tower-scaffold/body-playbook-coarse.txt
+    max_turns: 80
+    skills:
+      - kanban-worker
+      - minecraft-building
+      - minecraft-navigation
+      - playbook-build-tower-vertical
+      - playbook-pillar-up-safe
+    expect_extra:
+      mc_verbs_include_any: [playbook, pillar_up, place, dig]
+
+expect:
+  bot_at: { x: 107, y: 65, z: 83, range: 3 }
+  structure_manifest:
+    block: cobblestone
+    platform_layers:
+      - { y: 65, x: *fx, z: *fz }
+      - { y: 71, x: *fx, z: *fz }
+    corner_columns:
+      x: *cx
+      z: *cz
+      y_ranges: [[66, 70], [72, 75]]
+  world_bbox_block_count:
+    - { block: dirt, bbox: *work_bbox, max_count: 0 }
+    - { block: cobblestone, bbox: *work_bbox, count: 54 }
+  mc_cli_invocations_max: 150
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 105 64 77 116 80 86 minecraft:air"
+  - "execute in landfolk-test run fill 105 64 77 116 64 86 minecraft:grass_block"
+  - "execute in landfolk-test run setworldspawn 107 65 83"
+  - "execute in landfolk-test run give Flint minecraft:cobblestone 64"
+  - "execute in landfolk-test run give Flint minecraft:dirt 48"
+  - "execute in landfolk-test run give Flint minecraft:bread 4"
+  - "gamemode creative Flint"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 107 65 83"
+  - "execute in landfolk-test run gamemode survival Flint"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "gamemode creative Flint"
+  - "execute in landfolk-test run fill 105 65 77 116 80 86 minecraft:air"
+  - "execute in landfolk-test run tp Flint 107 65 83"
+  - "execute in landfolk-test run gamemode survival Flint"

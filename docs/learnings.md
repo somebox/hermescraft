@@ -54,3 +54,11 @@ Don't ask it to "this worked before, fix the last change", instead ask "given th
 ## Bus Factor
 
 How would we maintain our AI-built apps if the AI went away? Documentation and repeatable tooling are so important (AI or without)
+
+## Playbook improvement pass (closed 2026-05-31)
+
+Summary: [`docs/features/playbook-improvement-pass-closure.md`](features/playbook-improvement-pass-closure.md).
+
+- Prose-skilled and structured playbooks are both valid; pick by task shape (preflight, resume, closeout complexity), not a single global default.
+- Mechanism shipped (honest verbs, JSONL, agent-test). Broad playbook catalog and bot-side engine deferred.
+- Successor bench: procedural test worlds + skills, primitives, and Steward/worker collaboration patterns.

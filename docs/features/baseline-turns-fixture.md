@@ -1,10 +1,13 @@
 # Baseline turns — playbook pass (fixture A1)
 
-Per-run genesis output still lands under `data/genesis-runs/<run_id>/findings/baseline-turns.md` via `nav-telemetry.py --baseline-turns`. This file tracks **fixture A1** medians for Stage 4.
+**Pass status:** Closed — see
+[`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
+Fixture numbers below are **frozen reference** for A1/A4/W6. Per-run genesis
+output still lands under `data/genesis-runs/<run_id>/findings/baseline-turns.md`
+via `nav-telemetry.py --baseline-turns`.
 
-Stage 4 A1 **% improvement target: N/A** (A1 falsified n=5, 2026-05-31). Wave 6
-tower lab tracks hard-task granularity separately — see
-[`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
+Stage 4 A1 **% improvement target: N/A** (A1 falsified n=5). Wave 6 granularity
+lab **closed** — see [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
 
 ## Genesis aggregate (g-2026-05-30-3)
 
@@ -88,7 +91,7 @@ See [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md) § Results (Option 
 scripts/stress.sh tower-platform-3x3 --arm prose-skilled
 ```
 
-Medians: `wave-6-granularity-lab.md` § W6-T3 Results (pending).
+Medians: [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md) § W6-T3 Results (complete).
 
 ## Follow-ups (not blocking regression)
 

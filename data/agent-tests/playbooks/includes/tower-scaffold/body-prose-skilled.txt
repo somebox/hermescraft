@@ -1,0 +1,5 @@
+{{GOAL}}
+
+Use `skill_view('minecraft-building')` and `skill_view('minecraft-navigation')`.
+Doctrine: dirt = disposable scaffold; cobble = deliverable only inside the 3×3 footprint.
+Choose sectional or level-by-level scaffolding (building skill); end with no dirt in the work box.

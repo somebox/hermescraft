@@ -12,9 +12,12 @@ case "$SCENARIO" in
   advise-on-stuck|recipe-bed-variant|craft-post-56-blue-wool)
     exec "$ROOT/scripts/agent-test.py" "$ROOT/data/agent-tests/playbooks/${SCENARIO}.yaml" "$@"
     ;;
-  chop-prose-vs-playbook|chop-preflight-refusal|chop-checkpoint-resume|chop-composition|craft-subcard-file|craft-subcard-unblock|craft-blue_wool-sub-cards|long-range-nav|tower-reuses-pillar-up-safe|tower-mini-pillar|tower-platform-3x3)
+  chop-prose-vs-playbook|chop-preflight-refusal|chop-checkpoint-resume|chop-composition|craft-subcard-file|craft-subcard-unblock|craft-blue_wool-sub-cards|long-range-nav|tower-reuses-pillar-up-safe|tower-mini-pillar|tower-platform-3x3|tower-scaffold-3x3|tower-scaffold-2x2)
     if [[ "$SCENARIO" == "tower-mini-pillar" ]]; then
       SCENARIO=tower-reuses-pillar-up-safe
+    fi
+    if [[ "$SCENARIO" == "tower-scaffold-2x2" ]]; then
+      SCENARIO=tower-scaffold-3x3
     fi
     exec "$ROOT/scripts/agent-test.py" "$ROOT/data/agent-tests/playbooks/${SCENARIO}.yaml" "$@"
     ;;

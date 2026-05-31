@@ -7,6 +7,9 @@ agent_test_id: tower_platform_3x3
 includes_dir: platform-tower
 kanban_task_default: t_agent_test_platform
 world: landfolk-test
+inventory_reset:
+  - minecraft:cobblestone
+  - minecraft:bread
 model: deepseek/deepseek-v4-flash:exacto
 max_turns: 55
 timeout_seconds: 480

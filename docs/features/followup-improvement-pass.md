@@ -1,6 +1,13 @@
 # Followup improvement pass: playbook adoption + envelope honesty
 
-Status: **Wave 5 closed; Wave 6 in progress** (W6-T1 complete, W6-T3 harness ready). Successor
+> **Closed 2026-05-31.** Summary, preserved artifacts, and successor direction:
+> [`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
+> This file is the **historical plan and worklog**; do not treat open “next steps”
+> below as active work unless revived explicitly.
+
+Status: **closed** (Wave 5 + Wave 6 complete; Stage 3 catalog expansion
+withdrawn; Stage 4 genesis gate deferred). Successor: procedural test worlds +
+skills/primitives/collaboration iteration — see closure doc.
 to [`route-precompute-context.md`](route-precompute-context.md) and
 [`observation-verbs-redesign.md`](observation-verbs-redesign.md). The
 playbook orchestration spec is in
@@ -56,18 +63,19 @@ turn waste**. Stage 2's A1–A3 tests are how that bet pays out or doesn't.
 ### Mental model
 
 ```
-Stage 0–1:  Make verbs honest + measurable (DIRECTLY supported by run)
-Stage 2a:   Playbook MECHANISM — flat A1 falsified at Flash; A2/A3 pass
-Stage 2b:   Composition A4 — telemetry OK; Flash completion weak (see Wave-5)
-Stage 3:    PAUSED broad catalog — Wave 6 one vertical slice first (build/mine lab)
-Stage 4:    Genesis A/B; A1 % target N/A for flat chop
-Wave 6:     Granularity lab — docs/features/wave-6-granularity-lab.md
-Later:      agent-scripting-layer when turn data demands it (deferred)
+Stage 0–1:  Make verbs honest + measurable (shipped)
+Stage 2a:   Playbook MECHANISM — A1 falsified; A2/A3 pass
+Stage 2b:   A4 — sub-play telemetry OK; Flash completion weak
+Stage 3:    Broad catalog withdrawn (pass closed)
+Stage 4:    Genesis A/B deferred as pass gate
+Wave 6:     Granularity lab complete — closure.md
+Next:       Procedural test worlds + skills/collaboration library
+Later:      agent-scripting-layer Part 1 (regions) when bench demands it
 ```
 
-The 25-id survival catalog fits Stage 3+; **after Wave 6** we add at most one
-build vertical slice (`build.tower_vertical`) and optional shallow mine — not
-the full catalog until granularity results land.
+The 25-id survival catalog was **withdrawn** with pass closure. Registry
+entries remain for agent-tests and optional templates — see
+[`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
 
 ### Enforcement is LLM discipline this round, not a server gate
 
@@ -510,7 +518,7 @@ impossible" failure mode at a different cost layer.
 | 2a Flat + A1–A3 | A2/A3 pass; **A1 falsified** — prose-skilled for simple chop | **Measured** |
 | 2b Composition | A4 telemetry OK; Flash completion weak | Medium |
 | 3 Library | **Paused**; W6 one slice before catalog | High effort |
-| 6 Granularity lab | W6-T1 **done** (Option C); W6-T3 **prepared** | Medium |
+| 6 Granularity lab | W6-T1/T3/T4 **complete**; pass **closed** | Measured |
 | 4 Genesis | Noisy; content track (#57, P3) often gates before playbook metrics | Medium |
 
 If any metric is missed, the corresponding stage is reopened with a
@@ -594,27 +602,20 @@ prose-skilled-style prose, not `playbook:` headers. Reserve `playbook:` for
 cards that genuinely need structure: resume (A3-class), composition (A4-class),
 or honor-system preflight (A2-class).
 
-## Wave 6 — Granularity lab (next execution)
+## Wave 6 — Granularity lab (complete)
 
-**Goal:** Learn phase count and turn budget for **hard** cards on
-**deepseek-v4-flash**, without reopening flat A1.
+**Status:** Closed. Full results:
+[`wave-6-granularity-lab.md`](wave-6-granularity-lab.md). Pass closure:
+[`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
 
 | Track | Scenario | Status |
 |-------|----------|--------|
-| **W6-T1** | `tower-reuses-pillar-up-safe` — single column | **Complete** — Option C; see [wave-6-granularity-lab.md](wave-6-granularity-lab.md) § Results |
-| **W6-T3** | `tower-platform-3x3` — 3×3 platform + resume arm | **Prepared** — run matrix (n≥3 per arm) |
-| **W6-T2** | Shallow mine / `mine.underground_target` | **Stub** — after W6-T3 |
+| **W6-T1** | `tower-reuses-pillar-up-safe` | **Complete** — Option C (prose default) |
+| **W6-T3** | `tower-platform-3x3` | **Complete** — resume 3/3; coarse 0/3 |
+| **W6-T4** | `tower-scaffold-3x3` | **Complete** — coarse 2/3; closeout axis |
+| **W6-T2** | Shallow mine | **Not run** — superseded by procedural-world testing |
 
-Full runbook: [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
-
-**W6-T3 arms:** `prose-skilled`, `playbook-coarse`, `prose-skilled-resume` (no medium arm).
-**Default model:** `deepseek/deepseek-v4-flash:exacto`. **Pro:** only if W6-T3 binds Flash.
-
-**Harness (2026-05-31):** `world_block_at` rcon probe; `entity_in_bbox` scoreboard count; arm `prep_extra`.
-
-**Stage 3 revision:** Broad catalog expansion stays **paused**. Allowed before
-genesis-only needs: A2/A3 regression, craft-subcard chain if P2 blocks, and
-**one** registry playbook from W6 (`build.tower_vertical`) — not the 25-id list.
+No further Wave 6 matrices planned under this pass.
 
 ## Out of scope (deliberately deferred)
 
@@ -675,7 +676,8 @@ wall-clock, exercising one failure mode. P4-compatible
 | `chop-composition` (A4) | 2b | agent-test: `ascend` invokes `pillar_up_safe` | sub-play JSONL OK; Flash completion optional gate |
 | `chop-steward-authored` | 3 | Steward picks `wood.chop_tall_tree` for tall oak | **Deferred** — simple chop stays prose-skilled |
 | `tower-reuses-pillar-up-safe` | **6 (W6-T1)** | agent-test: 6 cobble column; prose vs coarse vs medium | **Done** — Option C; prose default for simple build |
-| `tower-platform-3x3` | **6 (W6-T3)** | 3×3 platform; prose / coarse / resume | 4 pillar tops + center floor; n≥3 Flash pending |
+| `tower-platform-3x3` | **6 (W6-T3)** | 3×3 platform; prose / coarse / resume | **Done** — resume 3/3; see wave-6 doc |
+| `tower-scaffold-3x3` | **6 (W6-T4)** | dual-deck scaffold; strict bbox | **Done** — closeout axis; see wave-6 doc |
 | `craft-blue_wool-sub-cards` | 3 | agent-test: empty inv; full chain | three sub-cards; parent closes (after subcard-file + subcard-unblock pass) |
 | `craft-subcard-file` | 3 | agent-test: worker files one `[SUPPLY]` sub-card | kanban accepts; namespace valid |
 | `craft-subcard-unblock` | 3 | agent-test: parent `--after` child | parent unblocks when child closes |

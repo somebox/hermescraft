@@ -363,5 +363,6 @@ registry already in this design.
 - Verb-usage survey: `scripts/mc-call-survey.py`.
 - Registry audit and cheatsheet cadence:
   [`docs/mc-command-audit-2026-05-29.md`](../mc-command-audit-2026-05-29.md).
-- Wave 5 falsification + Wave 6 granularity lab (when to defer Layer B runtime):
+- Playbook pass closure (defer Layer B runtime; prose vs structured by task):
+  [`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md),
   [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).

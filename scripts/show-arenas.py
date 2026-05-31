@@ -59,6 +59,11 @@ cmds = [
     "execute in landfolk-test run fill 96 64 66 104 64 74 minecraft:grass_block",
     "execute in landfolk-test run setblock 97 65 66 minecraft:oak_sign[rotation=0]{Text1:'{\"text\":\"W6-T3: platform-3x3\"}'}",
 
+    # W6-T4 — scaffold tower (x=106..116, z=78..86)
+    "execute in landfolk-test run fill 106 64 78 116 80 86 minecraft:air",
+    "execute in landfolk-test run fill 106 64 78 116 64 86 minecraft:grass_block",
+    "execute in landfolk-test run setblock 107 65 78 minecraft:oak_sign[rotation=0]{Text1:'{\"text\":\"W6-T4: scaffold-3x3\"}'}",
+
     # Park Flint where he can see all three arenas in one glance,
     # facing east. Stand a few blocks north (z=42) at y=66 looking
     # south-east toward the arenas.

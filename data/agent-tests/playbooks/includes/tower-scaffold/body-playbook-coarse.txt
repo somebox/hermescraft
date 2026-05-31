@@ -1,0 +1,16 @@
+{{GOAL}}
+
+playbook: build.tower_vertical
+mode: scaffold_3x3_dual
+footprint: 3×3 at x=110..112, z=80..82
+platforms: y=65, y=71
+corner_pillars: 11 blocks high at four corners; open interior y=66..70
+scaffold_block: dirt
+structure_block: cobblestone
+
+Phases: preflight → scaffold_and_raise → verify → closeout.
+Use `pillar_up_safe` only on **dirt scaffold** cells (not on deliverable cobble footprint).
+Preflight: inventory has ≥40 cobble, ≥16 dirt.
+Verify phase: scene confirms full footprint + **no dirt** in work box before phase clear.
+At most two `[run_state]` comments.
+`skill_view('playbook-build-tower-vertical')`, `playbook-pillar-up-safe`.

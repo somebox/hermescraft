@@ -1,12 +1,13 @@
 # Agent playbooks: composable orchestration over existing primitives
 
-Status: **design** (2026-05-31, current direction). Orchestration spec
-on top of the existing `mc` verb registry. Companion to
-[`agent-scripting-layer.md`](agent-scripting-layer.md) (the eventual
-runtime substrate) and
-[`followup-improvement-pass.md`](followup-improvement-pass.md) (the
-delivery vehicle). Evidence base: g-2026-05-30-3
-(`data/genesis-runs/g-2026-05-30-3/findings/`).
+Status: **design reference** (2026-05-31). The improvement **pass is closed** —
+see [`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
+Playbooks remain orchestration spec + test harness; production cards favor
+prose + skills unless closeout/preflight/resume patterns require structure.
+Orchestration spec on top of the existing `mc` verb registry. Companion to
+[`agent-scripting-layer.md`](agent-scripting-layer.md) (eventual runtime substrate)
+and [`followup-improvement-pass.md`](followup-improvement-pass.md) (historical plan).
+Evidence base: g-2026-05-30-3 (`data/genesis-runs/g-2026-05-30-3/findings/`).
 
 ## Delivered v1 vs design ambition
 

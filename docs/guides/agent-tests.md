@@ -2,6 +2,8 @@
 
 Spec-driven end-to-end tests that drive a real Hermes LLM agent through Minecraft scenarios and grade the result against deterministic predicates. Sister to the L0–L6 capability fixtures (which test the *bot action layer* in isolation) — these test the *agent + bot together*.
 
+Playbook-pass matrices (chop, tower, scaffold) are **closed**; harness and YAMLs remain for regression. See [`../features/playbook-improvement-pass-closure.md`](../features/playbook-improvement-pass-closure.md).
+
 Shipped in Sprint A (`docs/design/phase-2/sprints.md`).
 
 ## Quick start
@@ -76,6 +78,8 @@ max_turns: 12                  # passed to hermes --max-turns
 timeout_seconds: 240           # hard wall-clock cap (subprocess.run timeout)
 stall_seconds: 75              # OPTIONAL; kill hermes if session file
                                #   stops growing for this long. Default 75.
+inventory_reset:             # OPTIONAL; cleared on every run before cleanup
+  - minecraft:cobblestone
 settle_seconds: 6              # OPTIONAL; wait for chunk packets after prep.
                                #   Default 6.
 
@@ -101,9 +105,19 @@ cleanup:                       # batched rcon commands; run AFTER hermes
 
 `prep` and `cleanup` are both batched into single `ssh ubuntu-host docker exec -i minecraft rcon-cli` invocations via stdin, so a 20-command prep is ~200ms instead of ~10s.
 
-### Pre-prep
+### Pre-prep and run cycle
 
-Before `prep` runs, the runner teleports Flint to `(52, 65, 52)` (safe-home) and runs the spec's `cleanup` commands. This wipes any leftover state from a prior interrupted test before the arena is rebuilt — critical for reliability.
+Each run executes in order:
+
+1. **Pre-prep** — reset Flint (fire, effects, health); optional `inventory_reset` item clears; then the spec's **`cleanup`** (wipes the prior arena and parks at the spec's spawn).
+2. **`prep`** — rebuild arena and give starter items.
+3. **`settle_seconds`** (default 6) — wait for chunk/block cache on the bot.
+4. Optional **`verify_after_prep`** — abort if the arena is wrong before Hermes starts.
+5. **Hermes** — `HERMES_KANBAN_TASK` matches the same id substituted into `{{TASK_ID}}` in the prompt.
+6. **Predicates** — evaluated **before** post-run `cleanup` (rcon block probes are batched for large bboxes).
+7. **`cleanup`** — also runs on interrupt (Ctrl+C).
+
+Do not rely on a global teleport to the chop park; each spec's `cleanup`/`prep` ends with the correct `tp` for that arena.
 
 ## Predicates
 
@@ -122,9 +136,7 @@ Before `prep` runs, the runner teleports Flint to `(52, 65, 52)` (safe-home) and
 | `mc_verbs_include_any` | `[verb, …]` | at least one of these verbs appears in `mc <verb> …` calls |
 | `mc_cli_invocations_max` | `int` | total mc CLI calls ≤ cap (catches loops/chattiness) |
 
-### How `world_block_at` works
-
-For each probe, the runner runs `execute in landfolk-test if block X Y Z minecraft:<block> run say MATCH_<tag>` via rcon. If the block matches, the server emits a `MATCH_…` message which the bot receives in its chat log. The predicate polls `/observe` and checks `state.new_chat` for the tag. Sequential (1.5s sleep + read per probe) so each MATCH is in the most-recent-3 broadcast window.
+For each probe, the runner runs `execute in landfolk-test if block X Y Z minecraft:<block>` via rcon (batched with other probes). Paper prints `Test passed` / `Test failed` on stdout; the runner parses that line.
 
 ### How `world_no_entity_of_type` works
 

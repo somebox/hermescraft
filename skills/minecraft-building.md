@@ -94,6 +94,40 @@ Fix mismatches with `mc place`, `mc dig`, and bulk verbs; re-verify before marki
 6. **Mark the site** — `mc mark cabin_site` so you can `mc move @cabin_site` after gathering.
 7. **Clear + level** — `mc dig` trees / tall grass, then `mc level X1 Z1 X2 Z2 Y` over the footprint.
 
+## Vertical builds (structure vs scaffold)
+
+When the deliverable is **taller than you can reach from the ground**, use **dirt only** for temporary scaffold — **outside** the structure footprint. Never put scaffold dirt inside deliverable cells. Cobble (or other deliverable) goes only on the planned footprint.
+
+Before kanban complete: **`mc pillar_down`** any scaffold you climbed, then **`mc dig` every dirt block you placed**. W6-T4-class cards fail if any dirt remains in the work zone.
+
+Two valid strategies (pick based on footprint and reach; both must end with **zero scaffold dirt**):
+
+### A — Sectional (access per zone)
+
+Use when the footprint is **wider than one reach arc** (e.g. 2×2) or you want to finish one column/row before moving scaffold.
+
+1. Pick a scaffold column **off footprint** (e.g. x=109 while structure is x=110..111).
+2. **`mc pillar_up dirt N`** only on that column until you can **`place`** the cells you need at that height.
+3. **`mc pillar_down`** on that scaffold until feet are on ground or a safe stand.
+4. **Move scaffold site** if needed (new dirt column at x=112, etc.) and repeat for other cells/heights.
+5. **`mc dig`** all dirt from every sectional column when done.
+
+Pros: fewer blocks in the air at once; easier to reason about one corner at a time. Cons: more up/down cycles; easy to forget a remote dirt column — **`mc scene`** before closeout.
+
+### B — Level-by-level (scaffold rises with the work)
+
+Use when you can **`place` the whole footprint for one Y** from a single scaffold position each layer.
+
+1. Scaffold column off footprint. From ground, place **all deliverable blocks at y=65** (or first layer) that you can reach.
+2. **`mc pillar_up dirt 1`** (or one step via `pillar_up_safe`) on the **scaffold column only** — one dirt block per layer, not on the structure.
+3. Place **all footprint cells at the next y**. Repeat: one dirt step up on scaffold → place full layer.
+4. When the top layer is placed, **`mc pillar_down`** the full scaffold height in one column.
+5. **`mc dig`** any remaining dirt (should be none if you descended cleanly and mined the column).
+
+Pros: structure “grows” evenly; one primary scaffold column. Cons: must not place dirt on footprint; if you pillar on structure by mistake you fail strict site checks.
+
+**Do not** leave orphan columns for “later.” **Do not** use `pillar_up` to scout — use `mc scene` / `mc reachable X Y Z`. Escape and BOT_ON_PILLAR: **`minecraft-navigation`**.
+
 ## Golden rules
 
 - **Build on the ground.** Not in trees. Not floating. On solid flat ground.

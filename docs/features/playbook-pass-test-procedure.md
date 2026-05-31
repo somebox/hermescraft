@@ -1,7 +1,11 @@
 # Playbook pass — test procedure
 
-Companion to [followup-improvement-pass.md](followup-improvement-pass.md) and the IDE execution plan.  
-**Gates** must pass before the next wave. **Stubs** are listed explicitly — a failed stub run is not a product regression.
+> **Pass closed 2026-05-31.** Active summary:
+> [`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
+> Commands below remain valid for **regression** and historical reproduction.
+
+Companion to [followup-improvement-pass.md](followup-improvement-pass.md) (historical plan).
+**Gates** applied during the pass; new work uses procedural worlds + scenario iteration.
 
 ---
 
@@ -167,9 +171,10 @@ After playbook doc edits: `scripts/regenerate-artifacts.sh` (hub mirror).
 
 ---
 
-## Wave 6 — Granularity lab
+## Wave 6 — Granularity lab (complete — historical)
 
-Primary spec: [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
+Primary spec: [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md) (results frozen).
+Pass closed: [`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
 
 ### W6-T1 (complete)
 
@@ -177,11 +182,11 @@ Primary spec: [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
 |----------|---------|
 | Tower mini | `scripts/stress.sh tower-reuses-pillar-up-safe --arm prose-skilled` |
 
-**Verdict:** Option C — prose-skilled default for simple vertical build; playbook medium/coarse not for Steward templates on column task.
+**Verdict:** Option C — prose-skilled default for simple vertical build.
 
-### W6-T3 (platform — run next)
+### W6-T3 / W6-T4 (complete)
 
-**Before matrix:** A2 + A3 regression:
+Regression before reproducing matrices:
 
 ```bash
 scripts/stress.sh chop-preflight-refusal
@@ -190,18 +195,12 @@ scripts/stress.sh chop-checkpoint-resume
 
 | Scenario | Command |
 |----------|---------|
-| Platform (one arm) | `scripts/stress.sh tower-platform-3x3 --arm prose-skilled` |
-| Matrix | `prose-skilled`, `playbook-coarse`, `prose-skilled-resume` × n≥3 |
+| Platform | `scripts/stress.sh tower-platform-3x3 --arm prose-skilled` |
+| Scaffold | `scripts/stress.sh tower-scaffold-3x3 --arm prose-skilled` |
 
-Requires live bot (Flint `:3001`), Hermes, OpenRouter. Model: `deepseek/deepseek-v4-flash:exacto`.
+Results recorded in `wave-6-granularity-lab.md` § W6-T3 / W6-T4 Results.
 
-```bash
-scripts/regenerate-artifacts.sh
-```
-
-Record results in `wave-6-granularity-lab.md` § W6-T3 Results.
-
-**Visual:** `scripts/show-arenas.py` includes W6-T1/T3 slabs (east of chop row).
+**Visual:** `scripts/show-arenas.py` includes W6 slabs (east of chop row).
 
 ---
 
@@ -216,6 +215,6 @@ scripts/regenerate-artifacts.sh
 
 ---
 
-## Stage 4 genesis (blocked)
+## Stage 4 genesis (out of scope for this pass)
 
-See [data/genesis-runs/STAGE4-RUNBOOK.md](../../data/genesis-runs/STAGE4-RUNBOOK.md) and [CONTENT-TRACK.md](../../data/genesis-runs/CONTENT-TRACK.md). Requires Wave 5 + content sign-off.
+See [data/genesis-runs/STAGE4-RUNBOOK.md](../../data/genesis-runs/STAGE4-RUNBOOK.md) and [CONTENT-TRACK.md](../../data/genesis-runs/CONTENT-TRACK.md). Not gated on Wave 6 completion; worker benching moves to procedural test worlds per [playbook-improvement-pass-closure.md](playbook-improvement-pass-closure.md).

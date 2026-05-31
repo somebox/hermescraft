@@ -15,6 +15,7 @@ Registry + doc remain for agent-tests and future ritual-cost experiments.
 |------|------|------------|
 | `column` | One anchor, `count` blocks up | `tower-reuses-pillar-up-safe` |
 | `platform_coarse` | Four corner pillars + 3×3 floor | `tower-platform-3x3` (coarse arm) |
+| `scaffold_3x3_dual` | 3×3 dual deck, 4×11 corner pillars, open mid gap | `tower-scaffold-3x3` |
 
 ## Phases (registry)
 
@@ -30,6 +31,8 @@ Registry + doc remain for agent-tests and future ritual-cost experiments.
 (use closeout + agent-test predicates only).
 
 **Platform coarse (W6-T3):** preflight → **build** (four corners via sub-play, then floor) → closeout.
+
+**Scaffold 3×3 dual (W6-T4):** lower + upper full 3×3 decks (y=65, y=71); corner-only cobble y=66..70 and y=72..75; interior y=66..70 air; dirt scaffold off x=109/x=113; verify zero dirt + 54 cobble in work bbox.
 
 **Sub-play invocation (raise / per corner):**
 

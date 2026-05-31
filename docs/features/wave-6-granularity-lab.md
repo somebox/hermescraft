@@ -1,6 +1,8 @@
 # Wave 6 — Granularity lab (hard task, phase batch size)
 
-Status: **W6-T1 complete (Option C)** · **W6-T3 prepared** (platform matrix pending).
+**Status: closed** (2026-05-31). Results preserved below; pass summary:
+[`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md).
+No further matrices under this pass — successor testing uses procedural worlds.
 
 ## Question
 
@@ -115,11 +117,57 @@ done
 
 ### W6-T3 Results
 
-| Arm | n | mc median | pass | Notes |
-|-----|---|-----------|------|-------|
-| prose-skilled | 0 | — | — | |
-| playbook-coarse | 0 | — | — | |
-| prose-skilled-resume | 0 | — | — | |
+**2026-05-31 (n=3 per arm, `deepseek/deepseek-v4-flash:exacto`).**
+
+| Arm | n | mc median (range) | mean | full pass | pillars 4/4 | center floor | playbook/run | ok:false |
+|-----|---|--------------------|------|:---:|:---:|:---:|---:|---:|
+| prose-skilled         | 3 | **46** (42–68) | 52.0 | **2/3** | 3/3 | 2/3 | 0   | 0 |
+| playbook-coarse       | 3 | 55 (10–62)     | 42.3 | **0/3** | 0/3 | 0/3 | 1.3 | 0 |
+| **prose-skilled-resume** | 3 | **43** (22–54) | 39.7 | **3/3** ⭐ | 3/3 | 3/3 | 0 | 0 |
+
+**Verdict:** playbook-coarse 0/3 even with low ritual call count (1.3 avg) —
+2 timeouts + 1 give-up at 10 mc. The arm isn't slowed by ritual; it doesn't
+get far enough for ritual to matter. **Flash binds on multi-anchor work.**
+
+prose-skilled-resume wins both axes: 3/3 complete, lowest median mc. The
+partial-world prep + `[run_state]` hint lets the agent skip orientation
+and go straight to finishing — same structural benefit A3
+(`chop-checkpoint-resume`) showed on chop, now confirmed on build. **This
+is where structure pays off** on Flash, not in playbook ritual.
+
+| Hypothesis W6-T3 tested | Result |
+|---|---|
+| "Playbook ritual amortizes on harder spatial tasks" | **Falsified.** Coarse 0/3. |
+| "A3-class partial-world resume translates to build verticals" | **Supported.** Resume 3/3 ⭐. |
+| "Flash binds on multi-anchor work" | **Confirmed.** Coarse timed out twice; prose-skilled lost 1/3 to running out of turns. |
+
+### Pro escalation — withdrawn
+
+Earlier gating rule said "if Flash binds, run Pro to see if the
+architecture amortizes." That conflates the architecture question with a
+model-swap question. **Design constraint (2026-05-31): v4-flash is the
+worker model; v4-pro is reserved for challenging planning (e.g. Steward),
+not for rescuing falsified worker arms.** A Pro escalation that lifts
+playbook-coarse from 0/3 to 3/3 doesn't help — production workers run
+v4-flash. The architecture must make v4-flash succeed.
+
+Read the W6-T3 result as: **at the design model, partial-world resume
+(prose-skilled-resume, 3/3) is the structure that pays off; playbook
+ritual (coarse, 0/3) does not.** Pro is off the table as a falsification
+rescue. Per-model performance differences may be noted in passing
+(e.g. A2 regression under v4-flash vs `google/gemini-2.5-flash` below)
+but are not the experimental axis.
+
+### Regression check (this matrix)
+
+- **A3 `chop-checkpoint-resume`**: ✅ PASS at 24 mc.
+- **A2 `chop-preflight-refusal`**: ❌ **FAIL** — agent issued
+  `task_context` + `playbook` × 3 calls and stopped without checking
+  inventory or blocking the card. Previous A2 runs under
+  `google/gemini-2.5-flash` passed at 5 mc consistently. The YAML pins
+  gemini-2.5-flash; if this run used a different model via override,
+  the result is model-conditional. Flag for follow-up; not fixed in
+  this batch.
 
 ### W6-T3 prep sketch (implemented)
 
@@ -128,15 +176,137 @@ done
 - No pre-placed cobble — inventory only.
 - `max_turns`: 55 prose, 60 coarse; `mc_cli_invocations_max`: 90.
 
-## Escalation — Pro on W6-T1
+## W6-T4 — 3×3 dual-deck tower (zero dirt, 54 cobble)
 
-**Recommendation: skip** for decision-making. All Flash arms **3/3** with prose at
-median **10** mc — the task was not binding. Pro vs Flash on W6-T1 only answers
-“does a stronger model pay ritual tax on a trivial pillar,” not whether playbooks
-help on work that actually stresses the worker.
+**Stress id:** `tower-scaffold-3x3` (alias: `tower-scaffold-2x2`)
 
-Re-run Pro when **W6-T3** (or W6-T2) shows Flash **<2/3** completion on prose-skilled
-or medians **>40** mc with partial failures — compare Pro prose vs coarse **n=2** there.
+**Spec:** `data/agent-tests/playbooks/tower-scaffold-3x3.yaml`
+
+**Status:** Harness ready — run after W6-T3 (or parallel).
+
+**What gets built** (footprint **x=110..112, z=80..82**):
+
+```
+Side (corner column):
+
+  y=75 ─ corner cobble
+  y=72-74 ─ corner only (upper pillar extension)
+  y=71 ─── full 3×3 upper platform
+  y=66-70 ─ corners only (4 cells/layer); interior AIR (5-layer gap)
+  y=65 ─── full 3×3 lower platform
+```
+
+- **Four corner pillars** **11 blocks** tall at each corner (y=65..75 along corner cells).
+- **Two platforms** **5 layers apart** (lower y=65, upper y=71; open bay y=66..70).
+- **54 cobble** total in work bbox — filling the mid bay solid **fails** (count > 54).
+
+**Scaffold:** dirt only at **x=109 or x=113** (outside 3×3). Sectional or level-by-level OK (`minecraft-building`).
+
+**Machine pass:**
+
+| Check | Rule |
+|--------|------|
+| Structure | `structure_manifest` — platform layers + corner column ranges (54 cells) |
+| Zero dirt | dirt **max 0** in work bbox (107..114, y=65..76, z=79..84) |
+| Exact cobble | cobble **count == 54** in work bbox |
+| Grounded | `bot_at` (107, 65, 83) ±3 |
+| Budget | `mc_cli_invocations_max`: 150 |
+
+**Prep:** 64 cobble, 48 dirt.
+
+```bash
+scripts/stress.sh tower-scaffold-3x3 --arm prose-skilled
+for arm in prose-skilled playbook-coarse; do
+  for i in 1 2 3; do
+    scripts/stress.sh tower-scaffold-3x3 --arm "$arm"
+  done
+done
+```
+
+### W6-T4 Results
+
+**2026-05-31 (n=3 per arm, `deepseek/deepseek-v4-flash:exacto`).**
+After the pre-prep cycle fix, `inventory_reset`, env-var alignment to
+`spec["_kanban_task_id"]`, and rcon-batched predicates. **Predicate phase
+median ~3s** (range 2.8–3.1s) across all runs — the batching fix dropped
+this from ~3min before. No Flint deaths. All bots ended inside the work
+bbox.
+
+| Arm | n | mc median (range) | mean | full pass | bot_at | structure | dirt≤0 | cobble==54 | pred phase |
+|-----|---|--------------------|------|:---:|:---:|:---:|:---:|:---:|---:|
+| **playbook-coarse** | 3 | **82** (70–87) | 79.7 | **2/3** ⭐ | 2/3 | 2/3 | 2/3 | 2/3 | ~3s |
+| prose-skilled | 3 | 103 (72–121) | 98.7 | **0/3** | 0/3 | 2/3 | **0/3** | 1/3 | ~3s |
+
+**Verdict — first reversal at v4-flash.** Playbook-coarse beats
+prose-skilled on the full-predicate pass rate (2/3 vs 0/3) **and** on mc
+median (82 vs 103). Prose-skilled failures are uniformly
+"structure-mostly-built, dirt scaffold left behind, didn't return": run
+3 hit 54/54 cobble but kept 13 dirt and ended 9.2 blocks from target.
+**The closeout ritual is what pays off** — coarse's 3-phase
+preflight → build → closeout pattern forces the agent to walk a closeout
+phase that includes both dirt cleanup and the distance return, two
+things prose-skilled agents drop under turn pressure.
+
+This refines the Wave-5 falsification: **playbook ritual is not
+universally beaten by prose-skilled at v4-flash** — it loses on tasks
+with trivial closeout (A1 chop, W6-T1 single column, W6-T3 platform
+with "stand on center" closeout) but wins on tasks where closeout is
+multiple distinct verbs (W6-T4 dirt cleanup + return). The taxonomy is
+**closeout complexity**, not raw task difficulty.
+
+**Caveats (n=3, one fixture):**
+
+- **Structure rate tied (2/3 both arms).** Coarse’s lift is on dirt, cobble
+  count, and `bot_at` — not on manifest completion alone. That supports
+  “closeout / teardown,” not “playbook builds better.”
+- **Confounded card.** Coarse loads playbook skills plus an explicit
+  **verify** line (“no dirt in work box before phase clear”); prose mentions
+  teardown once in doctrine. Part of the win may be **checklist placement**,
+  not `mc playbook phase set` overhead — untested until a
+  `prose-skilled-closeout` arm (same verify bullets, zero playbook verbs).
+- **Missing arm:** W6-T3’s winner was **`prose-skilled-resume` (3/3)**, not
+  coarse. T4 never tested resume + strict bbox; coarse 2/3 does not retire
+  resume for scaffold work.
+- **Runner label vs world:** `verdict=TIMEOUT` when all predicates pass
+  (coarse run 2) is a harness quirk — score matrices on predicates, not
+  exit code alone.
+
+### W6-T4 paths of interest
+
+- **PASS path** — `tower_scaffold_3x3_playbook_coarse-2026-05-31T16-58-*` (run 2)
+  and `…-16-58-*` (run 3): 87 / 82 mc, all four predicates pass, dirt=0,
+  bot 0.7 blocks from target. Run 2's `verdict` is `TIMEOUT` (hermes hit
+  max_turns) but **all world predicates pass** — the world signal is
+  what counts; the timeout label is a meta-runner artifact.
+- **Telling FAIL** — `tower_scaffold_3x3_prose_skilled-2026-05-31T16-39-*` (run 3):
+  121 mc, **structure 54/54 built ✓**, but **dirt=13 ✗** and bot at
+  (112.7, 72, 81.5) — 9.2 blocks from target, ended on top of the
+  upper deck. Agent did the build, forgot the closeout. Exactly the
+  failure mode the coarse ritual prevents.
+
+## Model policy (design constraint)
+
+**Workers run `deepseek/deepseek-v4-flash` (or `:exacto`).** `v4-pro` is
+reserved for *challenging planning* (Steward author turns), not for
+escalating worker arms. A Pro vs Flash comparison is not a falsification
+rescue — even if Pro lifts a falsified worker arm, production workers
+won't get Pro. **The architecture must make v4-flash succeed.**
+
+Per-model performance differences (e.g. A2 preflight passing under
+`google/gemini-2.5-flash` but failing under `v4-flash:exacto`) may be
+noted as side observations but are not the experimental axis.
+
+If a fixture binds at v4-flash, the move is to **change the architecture
+or the card pattern**, not the model:
+
+- Did partial-world prep + `[run_state]` flip the arm (A3-class resume)?
+- Did `allowed_verbs` widen to include observation verbs the agent needs?
+- Did the prep over-constrain (e.g. tp onto a chest cell)?
+- Is the budget honest for the task (max_turns reasonable)?
+
+When all of those are tuned and the arm still binds at v4-flash, the
+fixture is *too hard for a worker* and should move to Steward author
+scope, not to a stronger model.
 
 ## Ritual policy (playbook arms)
 
@@ -217,23 +387,32 @@ Worth a quick audit pass on any other agent-test predicate that reads via
 bot-side state. **2026-05-31:** `entity_in_bbox` migrated to scoreboard count
 (same fix family).
 
-## Decisions after W6-T1
+## Decisions after W6-T1 (updated post W6-T3 / W6-T4)
 
-- **Option C confirmed.** Steward templates for `[BUILD] vertical tower` should
-  be **prose-skilled bodies** (`minecraft-building + minecraft-navigation` skill
-  stack), not `playbook: build.tower_vertical`. `build.tower_vertical` stays as
-  test harness, not Steward template.
-- **Stage 3 broad catalog: stays paused.** No 25-id expansion until either (a)
-  ritual cost is reduced or (b) a stronger model reverses the result.
-- **Playbooks remain in scope for:** A2 (preflight discipline), A3 (resume),
-  A4 (composition + sub-play telemetry — both still verified). These are
-  scenarios where prose can't easily express the discipline; not "harder tasks."
+- **Simple vertical (single column, W6-T1): Option C.** Prose-skilled +
+  building/navigation skills; not `build.tower_vertical` in Steward templates.
+- **Multi-anchor platform (W6-T3): Resume, not ritual.** Default partial-world
+  + `[run_state]` pattern for handoffs; playbook-coarse 0/3 at Flash.
+- **Scaffold dual-deck with strict teardown (W6-T4):** At Flash, **coarse
+  playbook (2/3) beat prose-skilled (0/3)** on full predicates when closeout
+  is dirt removal + return to ground anchor. Steward-facing default is **not**
+  decided on n=3 — prefer either coarse playbook **or** prose with an explicit
+  closeout checklist (and test resume) before cataloging `scaffold_3x3_dual`.
+- **Stage 3 broad catalog: stays paused** until closeout pattern is chosen
+  and validated with a fourth arm if needed.
+- **Playbooks remain in scope for:** A2 preflight, A3 resume, A4 composition,
+  and **T4-class closeout** where ritual/checklist prevents forgotten teardown.
 
 ## Next steps
 
-1. **Run W6-T3 matrix** — record § W6-T3 Results; Pro n=2 only if Flash binds (<2/3 pass or mc median >40).
-2. **W6-T2 mine** — after T3 pass rates.
-3. **Predicate audit** — `entity_in_bbox` fixed; scan remaining `expect` for chat bridges.
+**Superseded.** See [`playbook-improvement-pass-closure.md`](playbook-improvement-pass-closure.md)
+§ Successor direction (procedural worlds, skills, collaboration patterns).
+
+Historical regression only:
+
+1. A2/A3 spot-checks before reproducing any Wave 6 arm.
+2. Optional T4 confound arms (`prose-skilled-closeout`, resume on T4) — only if
+   revisiting closeout science; not required for pass closure.
 
 ## Related docs
 

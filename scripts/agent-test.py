@@ -24,7 +24,9 @@ Spec format (YAML, extends fixture format):
       agent_chat_does_not_contain: ["error", "I don't see"]
       bot_at: { x: 0, y: 65, z: 6, range: 2 }
       bot_inventory: { stone_pickaxe: 1, cobblestone: ">=3" }
-      world_block_at: [{ x: 0, y: 65, z: 2, block: "oak_door[open=false]" }]
+      world_block_at: [{ x: 0, y: 65, z: 2, block: cobblestone }]
+      structure_manifest: { block: cobblestone, footprint: { x: [0], z: [0], y_min: 65, y_max: 70 } }
+      world_bbox_block_count: [{ block: dirt, bbox: { x1: 0, y1: 65, z1: 0, x2: 2, y2: 70, z2: 2 }, max_count: 0 }]
       chest_item_count_at: [{ x: 96, y: 65, z: 53, item: oak_log, min_count: 8 }]
     prep:    [...]   # standard fixture prep
     cleanup: [...]   # standard fixture cleanup
@@ -119,6 +121,7 @@ def resolve_agent_test_spec(spec_path: Path, spec: dict, arm: str | None) -> dic
 
     task_default = spec.get("kanban_task_default") or "t_agent_test_chop"
     task_id = os.environ.get("HERMES_KANBAN_TASK", task_default)
+    spec["_kanban_task_id"] = task_id
     prefix = (spec.get("prompt_prefix") or "").strip()
     if prefix:
         card_body = spec.get("_card_body") or ""
@@ -168,21 +171,35 @@ def mirror_to_chat(text: str, prefix: str = "Flint") -> None:
         pass
 
 
-def run_rcon_batch(cmds: list[str]) -> str:
+def run_rcon_batch(cmds: list[str], timeout_s: float | None = None) -> str:
     """Run many rcon commands via a single ssh+rcon-cli invocation.
     Drastically faster than per-command (one TCP/ssh round-trip vs N).
     Returns combined stdout."""
     if not cmds:
         return ""
-    # rcon-cli accepts multiple commands via stdin, one per line.
+    if timeout_s is None:
+        timeout_s = max(60.0, min(600.0, len(cmds) * 0.25))
     batch = "\n".join(cmds) + "\n"
     full = ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"]
-    result = subprocess.run(full, input=batch, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(full, input=batch, capture_output=True, text=True, timeout=timeout_s)
     if os.environ.get("AGENT_TEST_RCON_DEBUG"):
         out_lines = (result.stdout or "").splitlines()
         for i, (cmd, out) in enumerate(zip(cmds, out_lines + [""] * max(0, len(cmds) - len(out_lines)))):
             print(f"  [rcon {i:02d}] {cmd}  → {out}", file=sys.stderr)
     return result.stdout
+
+
+def _player_reset_rcon_cmds(spec: dict) -> list[str]:
+    """Reset Flint between runs (fire, effects, optional inventory clears)."""
+    cmds = [
+        "execute in landfolk-test run data merge entity @e[type=player,name=Flint,limit=1] {Fire:0s,HurtTime:0s,DeathTime:0s}",
+        "execute in landfolk-test run effect clear Flint",
+        "execute in landfolk-test run effect give Flint minecraft:instant_health 1 4",
+    ]
+    for item in spec.get("inventory_reset") or []:
+        name = str(item).replace("minecraft:", "")
+        cmds.append(f"execute in landfolk-test run clear Flint minecraft:{name}")
+    return cmds
 
 
 def fixture_run(spec: dict, mode: str) -> str:
@@ -271,6 +288,101 @@ def _summarize_msg(m: dict, max_len: int = 220) -> str:
     if len(text) > max_len:
         text = text[:max_len - 1] + "…"
     return text
+
+
+def _line_indicates_block_match(line: str) -> bool:
+    line = line or ""
+    return ("Test passed" in line) or ("matches" in line) or ("passed" in line.lower())
+
+
+def _rcon_blocks_match_batch(cells: list[tuple[int, int, int]], block: str) -> list[bool]:
+    """Batch `execute if block` probes; one ssh round-trip per chunk."""
+    if not cells:
+        return []
+    block_id = str(block).replace("minecraft:", "")
+    cmds = [
+        f"execute in landfolk-test if block {x} {y} {z} minecraft:{block_id}"
+        for x, y, z in cells
+    ]
+    hits: list[bool] = []
+    chunk_size = 80
+    for i in range(0, len(cmds), chunk_size):
+        chunk = cmds[i : i + chunk_size]
+        out = run_rcon_batch(chunk)
+        lines = (out or "").splitlines()
+        # Paper prints one result line per command; pad if short.
+        for j in range(len(chunk)):
+            line = lines[j] if j < len(lines) else ""
+            hits.append(_line_indicates_block_match(line))
+    return hits
+
+
+def _rcon_block_is(x: int, y: int, z: int, block: str) -> bool:
+    hits = _rcon_blocks_match_batch([(x, y, z)], block)
+    return hits[0] if hits else False
+
+
+def _structure_manifest_cells(spec: dict) -> list[tuple[int, int, int]]:
+    """Expand structure_manifest: cells, solid footprint, or platform_layers + corner_columns."""
+    if spec.get("cells"):
+        out = []
+        for c in spec["cells"]:
+            if isinstance(c, dict):
+                out.append((int(c["x"]), int(c["y"]), int(c["z"])))
+            else:
+                out.append((int(c[0]), int(c[1]), int(c[2])))
+        return out
+
+    cells: list[tuple[int, int, int]] = []
+
+    for layer in spec.get("platform_layers") or []:
+        y = int(layer["y"])
+        for x in layer.get("x") or []:
+            for z in layer.get("z") or []:
+                cells.append((int(x), y, int(z)))
+
+    cc = spec.get("corner_columns") or {}
+    cx = cc.get("x") or []
+    cz = cc.get("z") or []
+    for y_lo, y_hi in cc.get("y_ranges") or []:
+        y_lo, y_hi = int(y_lo), int(y_hi)
+        for x in cx:
+            for z in cz:
+                for y in range(y_lo, y_hi + 1):
+                    cells.append((int(x), y, int(z)))
+
+    if cells:
+        # dedupe while preserving order
+        seen = set()
+        uniq = []
+        for c in cells:
+            if c not in seen:
+                seen.add(c)
+                uniq.append(c)
+        return uniq
+
+    fp = spec.get("footprint") or {}
+    xs = fp.get("x") or []
+    zs = fp.get("z") or []
+    y_min, y_max = int(fp["y_min"]), int(fp["y_max"])
+    for x in xs:
+        for z in zs:
+            for y in range(y_min, y_max + 1):
+                cells.append((int(x), int(y), int(z)))
+    return cells
+
+
+def _count_block_in_bbox(block: str, bb: dict) -> int:
+    x1, y1, z1 = int(bb["x1"]), int(bb["y1"]), int(bb["z1"])
+    x2, y2, z2 = int(bb["x2"]), int(bb["y2"]), int(bb["z2"])
+    cells = [
+        (x, y, z)
+        for x in range(x1, x2 + 1)
+        for y in range(y1, y2 + 1)
+        for z in range(z1, z2 + 1)
+    ]
+    hits = _rcon_blocks_match_batch(cells, block)
+    return sum(1 for h in hits if h)
 
 
 def _parse_scoreboard_count(rcon_out: str, holder: str = "#probe") -> int | None:
@@ -481,13 +593,52 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
             x, y, z = probe["x"], probe["y"], probe["z"]
             block = probe["block"]
             # Use rcon's own stdout from `execute if block` — Paper prints
-            # "Test passed" on match and "Test failed" otherwise. Earlier
-            # `say MATCH` → bot new_chat path was unreliable because rcon
-            # `say` doesn't always reach the bot's chat buffer.
-            out = run_rcon(f'execute in landfolk-test if block {x} {y} {z} minecraft:{block}')
-            hit = ("Test passed" in (out or "")) or ("matches" in (out or "")) or ("passed" in (out or "").lower())
+            # "Test passed" on match and "Test failed" otherwise.
+            hit = _rcon_block_is(x, y, z, block)
             results.append({"kind": f"block@{x},{y},{z}=={block}", "pass": hit,
-                             "detail": (out or "").strip()[:80]})
+                             "detail": "match" if hit else "no match"})
+
+    if "structure_manifest" in expect:
+        sm = expect["structure_manifest"] or {}
+        block = str(sm.get("block", "cobblestone")).replace("minecraft:", "")
+        cells = _structure_manifest_cells(sm)
+        hits = _rcon_blocks_match_batch(cells, block)
+        missing = [f"{cells[i][0]},{cells[i][1]},{cells[i][2]}" for i, ok in enumerate(hits) if not ok]
+        ok = len(missing) == 0
+        results.append({
+            "kind": f"structure_manifest:{block}x{len(cells)}",
+            "pass": ok,
+            "detail": f"missing={len(missing)}" + (f" e.g. {missing[0]}" if missing else ""),
+        })
+
+    if "world_bbox_block_count" in expect:
+        for rule in expect["world_bbox_block_count"] or []:
+            block = str(rule["block"]).replace("minecraft:", "")
+            bb = rule["bbox"]
+            have = _count_block_in_bbox(block, bb)
+            want = rule.get("count")
+            max_c = rule.get("max_count")
+            min_c = rule.get("min_count")
+            if want is not None:
+                ok = have == int(want)
+                bound = f"=={want}"
+            elif max_c is not None and min_c is not None:
+                ok = int(min_c) <= have <= int(max_c)
+                bound = f"[{min_c},{max_c}]"
+            elif max_c is not None:
+                ok = have <= int(max_c)
+                bound = f"<={max_c}"
+            elif min_c is not None:
+                ok = have >= int(min_c)
+                bound = f">={min_c}"
+            else:
+                ok = have == 0
+                bound = "==0"
+            results.append({
+                "kind": f"bbox_{block}{bound}",
+                "pass": ok,
+                "detail": f"have={have} bbox=({bb['x1']},{bb['y1']},{bb['z1']})..({bb['x2']},{bb['y2']},{bb['z2']})",
+            })
 
     if "chest_item_count_at" in expect:
         for probe in expect["chest_item_count_at"] or []:
@@ -587,29 +738,15 @@ def main():
     if skills:
         print(f"  skills: {','.join(skills)}")
 
-    # Pre-prep: tp Flint to safe-home AND run the spec's cleanup commands
-    # so leftover state from a prior interrupted test can't leak in. Then
-    # run prep. All three steps go through the batched rcon path so the
-    # arena flickers for a fraction of a second instead of ~10s.
+    # Pre-prep: player reset + spec cleanup (clears prior arena), then prep + settle.
     stage_times = {}
     overall_t0 = time.time()
 
-    print(f"  pre-prep tp + clean...", end="", flush=True)
+    # Cycle: player reset → spec cleanup (clear prior arena) → prep → settle.
+    # Do not hardcode A1 park here; each spec's cleanup+prep ends with tp spawn.
+    print(f"  pre-prep reset + clean...", end="", flush=True)
     _t = time.time()
-    pre_cmds = [
-        # Reset Flint state between runs: extinguish fire, clear ALL effects,
-        # restore full health + saturation. Without these, lingering fire
-        # damage / curse effects / low HP from prior tests pollute the run.
-        # `data merge entity Fire:0s` is the only reliable way to put out
-        # active burning — `effect clear` doesn't touch the Fire tag.
-        "execute in landfolk-test run data merge entity @e[type=player,name=Flint,limit=1] {Fire:0s,HurtTime:0s,DeathTime:0s}",
-        "execute in landfolk-test run effect clear Flint",
-        "execute in landfolk-test run effect give Flint minecraft:instant_health 1 4",
-        # Park at (52,65,51) — one cell north of A1 chest. tp'ing onto
-        # the chest (z=52) blocks setblock during the spec's own prep and
-        # surprises observers ("why is Flint on a chest").
-        "execute in landfolk-test run tp Flint 52 65 51",
-    ]
+    pre_cmds = _player_reset_rcon_cmds(spec)
     pre_cmds.extend(spec.get("cleanup") or [])
     run_rcon_batch(pre_cmds)
     time.sleep(0.5)
@@ -707,6 +844,12 @@ def main():
     env = os.environ.copy()
     env["MC_API_URL"] = args.bot_url
     env["MC_USERNAME"] = "Flint"
+    # Propagate the synthetic task ID used in the prompt so agents that read
+    # `scripts/kanban card $HERMES_KANBAN_TASK` get the same id we templated
+    # into {{TASK_ID}}. Otherwise the var expands to empty in the hermes
+    # subprocess and the agent burns turns on a CLI usage error before
+    # falling back to the prompt body.
+    env["HERMES_KANBAN_TASK"] = spec.get("_kanban_task_id") or spec.get("kanban_task_default") or "t_agent_test_chop"
 
     _t = time.time()
     stage_times["verify"] = _t - (overall_t0 + sum(stage_times.values()))
@@ -998,7 +1141,11 @@ def main():
     # Predicates MUST run before cleanup: rcon chest probes and post.observe
     # inventory reflect end-of-hermes state. Cleanup (fill air, tp, etc.) runs
     # only after verdict is computed.
+    print(f"  predicates...", end="", flush=True)
+    _t = time.time()
     preds = predicate_results(spec, agent_stdout, post, mc_verbs_used, pre_deaths)
+    stage_times["predicates"] = time.time() - _t
+    print(f" ok ({stage_times['predicates']:.1f}s)")
     all_pass = all(r["pass"] for r in preds) if preds else False
     verdict = "PASS" if all_pass and not timed_out else ("TIMEOUT" if timed_out else "FAIL")
 

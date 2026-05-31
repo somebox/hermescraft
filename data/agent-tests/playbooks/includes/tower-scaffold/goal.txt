@@ -1,0 +1,9 @@
+Build a **3×3** cobble frame at x=110..112, z=80..82:
+
+- **Lower platform:** full 3×3 cobble at **y=65**.
+- **Upper platform:** full 3×3 cobble at **y=71** (five empty layers y=66..70 between platform surfaces — interior must stay **air**, only **four corner** cells have cobble in that gap).
+- **Corner pillars:** cobble at the four corners (110/112 × 80/82) for **y=66..70** and **y=72..75** (11 blocks tall at each corner including platform cells).
+
+You cannot reach the upper deck from the ground with place alone. Use **dirt scaffold only** off-footprint (x=109 or x=113). Sectional or level-by-level scaffolding (minecraft-building) both OK.
+
+**Zero dirt** in the work box when done. Return to **(107, 65, 83)**. Exactly **54** cobble in the structure — no solid fill between decks, no orphan columns.
