@@ -127,7 +127,15 @@ Checklist: [docs/features/2a-S-checklist.md](2a-S-checklist.md).
 
 2. **JSONL profile + tmp dir** — Rows must land in `nav-<config.mc.username>.jsonl` under `HERMESCRAFT_TMP` (not `nav-unknown.jsonl`). Requires `servicesProxy` to include `config` on the HTTP app and per-call `logDir()` in `metrics.js` (shipped in `c82e882` and later).
 
-3. **JSONL read vs act verbs** — Sync POST actions always log. GET perceive verbs (`inventory`, `status`, `scene`, `nearby`, `observe`) log **only while** `task_context.card_id` or `playbook_context` is set (playbook-card work). A2 `--compliance` preflight-before-act uses timestamp order: a registry preflight read must appear in JSONL **before** the first non-preflight act in each phase span. A1 medians from agent-test JSON reports use `mc_cli_invocations`; do not use raw JSONL row totals as observation-rate unless GET logging is on.
+3. **Playbook skills in Hermes hub** — Agent tests pass `--skills playbook-wood-chop-tall-tree`, which Hermes resolves under `~/.hermes/skills/gaming/<name>/SKILL.md`, not the repo `skills/` tree. After editing playbook docs, run:
+
+   ```bash
+   scripts/regenerate-artifacts.sh
+   ```
+
+   That syncs registry docs → `skills/playbook-*.md` and mirrors each `playbook-*.md` into the hub when `~/.hermes/skills/` exists. `landfolk deploy` runs the same script before profile sync.
+
+4. **JSONL read vs act verbs** — Sync POST actions always log. GET perceive verbs (`inventory`, `status`, `scene`, `nearby`, `observe`) log **only while** `task_context.card_id` or `playbook_context` is set (playbook-card work). A2 `--compliance` preflight-before-act uses timestamp order: a registry preflight read must appear in JSONL **before** the first non-preflight act in each phase span. A1 medians from agent-test JSON reports use `mc_cli_invocations`; do not use raw JSONL row totals as observation-rate unless GET logging is on.
 
 ---
 

@@ -45,8 +45,12 @@ expect:
     oak_log: ">=0"
   mc_cli_invocations_max: 45
 
-verify_after_prep:
-  - { block: oak_log, min_count: 8 }
+# verify_after_prep disabled: arena is rcon-verified at prep time (setblocks return
+# "Changed the block at ..."), but bot's mineflayer view stays stale on the
+# spawn chunk until the agent moves and triggers chunk-load packets. Re-enable
+# when arena verify moves to a server-side rcon probe instead of /nearby.
+# verify_after_prep:
+#   - { block: oak_log, min_count: 8, radius: 64 }
 
 prep: &chop_oak_prep
   - "execute in landfolk-test run difficulty peaceful"
@@ -66,10 +70,13 @@ prep: &chop_oak_prep
   - "execute in landfolk-test run setblock 40 72 0 minecraft:oak_log"
   - "execute in landfolk-test run setblock 52 65 52 minecraft:chest"
   - "execute in landfolk-test run data merge block 52 65 52 {Items:[{Slot:0b,id:\"minecraft:oak_log\",Count:1b}]}"
+  - "execute in landfolk-test run setworldspawn 52 65 52"
   - "execute in landfolk-test run give Flint minecraft:wooden_axe 1"
   - "execute in landfolk-test run give Flint minecraft:bread 8"
+  - "gamemode creative Flint"
   - "mvtp Flint landfolk-test"
   - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run gamemode survival Flint"
   - "effect clear Flint"
   - "effect give Flint minecraft:saturation 600 1"
 

@@ -15,6 +15,8 @@
 #     on this host) — emits a warning and exits 0 so the caller can keep
 #     going. Failures inside a generator (syntax error, etc.) DO propagate.
 #   - Stable when nothing changed: re-running back-to-back is a no-op.
+#   - Playbook skills: docs → repo skills/playbook-*.md, then (if present)
+#     ~/.hermes/skills/gaming/<name>/SKILL.md for agent-test / Hermes --skills.
 
 set -euo pipefail
 
@@ -84,4 +86,32 @@ PY
   log "playbook docs synced to skills/ (when registry docs exist)"
 }
 
+mirror_playbooks_to_hermes_hub() {
+  local hub="${HERMES_SKILLS_GAMING:-${HOME}/.hermes/skills/gaming}"
+  local parent
+  parent="$(dirname "$hub")"
+  if [[ ! -d "$parent" ]]; then
+    log "no ${parent} — skipping playbook mirror to Hermes hub"
+    return 0
+  fi
+  mkdir -p "$hub"
+  local n=0
+  local src sk dst
+  for src in "$ROOT/skills"/playbook-*.md; do
+    [[ -f "$src" ]] || continue
+    sk="$(basename "$src" .md)"
+    dst="$hub/$sk/SKILL.md"
+    mkdir -p "$hub/$sk"
+    cp "$src" "$dst"
+    log "  hermes hub: $sk → $dst"
+    n=$((n + 1))
+  done
+  if [ "$n" -eq 0 ]; then
+    log "no skills/playbook-*.md to mirror (run playbook doc sync first)"
+  else
+    log "mirrored $n playbook skill(s) under $hub"
+  fi
+}
+
 sync_playbooks_to_skills
+mirror_playbooks_to_hermes_hub

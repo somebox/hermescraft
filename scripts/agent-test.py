@@ -166,6 +166,10 @@ def run_rcon_batch(cmds: list[str]) -> str:
     batch = "\n".join(cmds) + "\n"
     full = ["ssh", "ubuntu-host", "sudo", "docker", "exec", "-i", "minecraft", "rcon-cli"]
     result = subprocess.run(full, input=batch, capture_output=True, text=True, timeout=60)
+    if os.environ.get("AGENT_TEST_RCON_DEBUG"):
+        out_lines = (result.stdout or "").splitlines()
+        for i, (cmd, out) in enumerate(zip(cmds, out_lines + [""] * max(0, len(cmds) - len(out_lines)))):
+            print(f"  [rcon {i:02d}] {cmd}  → {out}", file=sys.stderr)
     return result.stdout
 
 
@@ -573,10 +577,13 @@ def main():
     verify_items = spec.get("verify_after_prep") or []
     if verify_items:
         nearby = observe(args.bot_url)
-        # /observe doesn't include block counts; use /nearby separately
+        # /observe doesn't include block counts; use /nearby separately.
+        # Radius is the max of any item's `radius` field (default 16) so
+        # arenas with prep beyond Flint's tp can opt in to a wider scan.
         import urllib.request
+        scan_radius = max(int(item.get("radius", 16)) for item in verify_items)
         try:
-            with urllib.request.urlopen(f"{args.bot_url}/nearby?radius=16", timeout=10) as resp:
+            with urllib.request.urlopen(f"{args.bot_url}/nearby?radius={scan_radius}", timeout=10) as resp:
                 near = json.loads(resp.read().decode())
         except Exception as e:
             print(f"  VERIFY: nearby query failed: {e}")
