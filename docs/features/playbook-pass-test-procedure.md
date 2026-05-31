@@ -113,19 +113,23 @@ scripts/kanban create "x" --assignee flint --body $'playbook: not.real\n'
 # → rejected at facade
 ```
 
-Checklist: [data/genesis-runs/findings/2a-S-checklist.md](../../data/genesis-runs/findings/2a-S-checklist.md).
+Checklist: [docs/features/2a-S-checklist.md](2a-S-checklist.md).
 
 ---
 
-## Wave 5 — 2a-V A1 / A2 / A3 (blocked)
+## Wave 5 — 2a-V A1 / A2 / A3 (gate after matrix)
 
-**Do not run as a gate yet.** Placeholder agent-test YAMLs and missing `includes/chop-oak-8/` bodies mean runs produce no meaningful signal.
+Specs and shared card bodies: `data/agent-tests/playbooks/includes/chop-oak-8/`.
 
-When 2a-V lands:
+| Scenario | Command |
+|----------|---------|
+| A1 (one arm) | `scripts/stress.sh chop-prose-vs-playbook --arm playbook` (also `prose-minimal`, `prose-skilled`) |
+| A2 | `scripts/stress.sh chop-preflight-refusal` |
+| A3 | `scripts/stress.sh chop-checkpoint-resume` |
 
-- `scripts/stress.sh chop-prose-vs-playbook` (and A2/A3 scenarios)
-- Fill `findings/baseline-turns.md` § fixture medians
-- Then treat Wave 5 as gate before genesis.
+A1 pass criterion: ≥5 runs per arm; playbook medians ≤ both prose arms on **mc CLI calls** and **ok:false** (see [baseline-turns-fixture.md](baseline-turns-fixture.md)). Requires live bot + Hermes + OpenRouter.
+
+Until the A1 matrix is run and medians recorded, treat Wave 5 as **soft gate** (specs must exist; numbers TBD).
 
 ---
 

@@ -293,6 +293,26 @@ Per-assignee concurrency is handled by the `landfolk` plugin's gate-check. Just 
 
 Exception: `[CHAT_REQUEST]` cards (operator whispers) are exempt from the cap. They run alongside the bot's current task by design.
 
+## Playbook cards (`playbook:` in the kanban body)
+
+When the card body includes `playbook: <registry_id>` (Stage 2a+), routing lives in `skills/playbook-*.md`; procedure stays in the referenced domain skill (`references_skill:` in the playbook doc).
+
+**Turn-1 ritual (before approach / dig / collect):**
+
+1. `kanban_show` — read body inputs (`tree`, `target_logs`, `deposit_to`, …) and any `[run_state]` comment (most recent wins).
+2. `mc task_context set <worksite> --card $HERMES_KANBAN_TASK` — bind `card_id` **before** `mc playbook phase set` (required for JSONL + compliance).
+3. `skill_view('playbook-<slug>')` — phase table + allowed verbs for this playbook.
+4. `mc playbook phase set <registry_id> <phase>` — start at `preflight` unless `[run_state]` names a resume phase.
+5. Run preflight read-only verbs (`inventory`, `craft_plan`, `equip`, `chest_search`, …) per the playbook table.
+
+**Preflight failure (A2 discipline):** missing axe, scaffold, or other `prep_required` items → `kanban_block(reason="prep_required_unmet:<item>")` and `mc playbook phase clear`. Do **not** burn a `move`/`goto` toward the worksite first — approach is the next phase only after preflight passes.
+
+**Phase boundaries:** after each completed phase, `kanban_comment` with a structured `[run_state]` block (`playbook`, `phase` = next phase to enter, `completed`, `context` with counts like `chopped: 4/8`). Fresh workers on the same card read that comment and call `phase set` for the resume phase.
+
+**Exit:** `mc playbook phase clear` → `mc task_context clear` → `kanban_complete` or `kanban_block`.
+
+**Pass-back:** if the playbook id is wrong or inputs are missing from the body, use the structured pass-back comment pattern (numbered unblock options) + `kanban_reassign steward` — don't improvise a different playbook id.
+
 ## First-turn spec review — judge clarity before working
 
 When you claim a card, your **first turn** is a spec review. Before doing any in-game work:

@@ -24,6 +24,8 @@
 #   2. walls= bbox literal → "derive from 5x5 perimeter centered on anchor"
 #   3. SITE step-by-step mc move/create/reload → "anchor a region around the shelter"
 #   4. Survey 8-direction × 20/40/60m protocol → "explore + record useful resource directions"
+#   5. Wood [SUPPLY] after scout: prefer `playbook: wood.chop_tall_tree` + inputs
+#      (tree, target_logs, deposit_to) over long step-by-step chop prose in the body.
 #
 # Keep the verification-shape rules (walls= required, is_sheltered output
 # semantics) and the architectural rules (--for vs --after, pencil-

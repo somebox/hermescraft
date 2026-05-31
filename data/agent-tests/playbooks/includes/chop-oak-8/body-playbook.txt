@@ -1,0 +1,6 @@
+{{GOAL}}
+
+playbook: wood.chop_tall_tree
+references_skill: minecraft-mining
+
+Use `skill_view('playbook-wood-chop-tall-tree')` and the worker playbook ritual (`task_context`, `playbook phase set`, `[run_state]` comments).

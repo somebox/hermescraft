@@ -8,11 +8,19 @@ You control your body via the `mc` command. $MC_API_URL points at your bot's HTT
 
 0. **FIRST action of every session: `skill_view('kanban-worker')`.** The `--skills kanban-worker` launch flag only registers the skill in your catalog — it does NOT load the body into your prompt. You MUST call `skill_view` on turn 1 to load the actual rules (validate-task, failure-escalation, escape-primitives, pass-back, state-continuity, mc-verb syntax). Without it you'll fumble verb arguments and miss the escalation thresholds. After that, also `skill_view('minecraft-mining')` and `skill_view('minecraft-navigation')` if your card involves digging/movement — these have verb syntax tables, Y-level cheat sheets, and the underground-escape playbook.
 1. `kanban_show` (or `hermes kanban show $HERMES_KANBAN_TASK`) to read the card body, action_sequence, and success_predicate.
-2. If the card body includes `worksite: <id>` (bare region id, e.g. `hut3`), run `mc task_context set <id>` once before any dig/place inside that protect region. `mc observe` shows the active worksite while the grant is valid.
-3. Run prep if it isn't already done by an upstream step (capability_test fixtures usually have prep/cleanup; the human-as-steward runs them via `scripts/run-fixture.sh` before claiming the card).
-4. Execute the action_sequence one command at a time. Watch each `mc` response: if `ok=false`, stop and capture the error code + observed_state.
-5. Evaluate the success_predicate against `mc observe` (or the response data, depending on `kind`).
-6. `kanban_complete` (or `hermes kanban complete $HERMES_KANBAN_TASK --result PASS|FAIL --summary "<one-line>"`) with metadata for any inventory_delta / chest_delta / observed errors. Run `mc task_context clear` on complete or block so the worksite grant does not leak to the next card.
+2. **Playbook cards** — if the body has a top-level `playbook: <id>` (registry id, e.g. `wood.chop_tall_tree`):
+   - Read the latest `[run_state]` comment first; resume at its `phase` + `context` when reclaiming the same card (checkpoint protocol in `docs/features/agent-playbooks.md`).
+   - `mc task_context set <worksite> --card $HERMES_KANBAN_TASK` **before any mutating `mc` call** when the body names `worksite:` (or use `--card` alone when there is no worksite). JSONL compliance requires a bound card id before `mc playbook phase set`.
+   - `skill_view('playbook-<slug>')` matching the playbook doc (e.g. `playbook-wood-chop-tall-tree` for `wood.chop_tall_tree`).
+   - `mc playbook phase set <id> <phase>` for the phase you are entering (`preflight` on a fresh card unless `[run_state]` says otherwise).
+   - After each completed phase (or hard preflight failure), append a `kanban_comment` with a `[run_state]` YAML block (`playbook`, `phase`, `completed`, `context`).
+   - On `kanban_complete` / `kanban_block`: `mc playbook phase clear`, then `mc task_context clear`.
+   - **Preflight before approach:** if tools are missing (e.g. no axe), `kanban_block reason="prep_required_unmet:axe"` — do **not** `move`/`goto` toward the tree first.
+3. If the card body includes `worksite: <id>` (bare region id, e.g. `hut3`) and it is **not** already set in step 2, run `mc task_context set <id> --card $HERMES_KANBAN_TASK` once before any dig/place inside that protect region. `mc observe` shows the active worksite while the grant is valid.
+4. Run prep if it isn't already done by an upstream step (capability_test fixtures usually have prep/cleanup; the human-as-steward runs them via `scripts/run-fixture.sh` before claiming the card).
+5. Execute the action_sequence one command at a time (playbook cards: follow the playbook phase table instead when the body is playbook-driven). Watch each `mc` response: if `ok=false`, stop and capture the error code + observed_state.
+6. Evaluate the success_predicate against `mc observe` (or the response data, depending on `kind`).
+7. `kanban_complete` (or `hermes kanban complete $HERMES_KANBAN_TASK --result PASS|FAIL --summary "<one-line>"`) with metadata for any inventory_delta / chest_delta / observed errors. Run `mc task_context clear` on complete or block so the worksite grant does not leak to the next card (playbook cards: `mc playbook phase clear` first — step 2).
 
 ## Ops cards ([SUPPLY] / [STORE] / [PATROL] on board landfolk-ops)
 

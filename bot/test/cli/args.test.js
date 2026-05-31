@@ -476,6 +476,13 @@ describe('cli args', () => {
       assert.equal(p.count, 1);
     });
 
+    it('mc collect oak_log 99 → count max hints batching', () => {
+      assert.throws(
+        () => positionalToParams('collect', COLLECT_SCHEMA, ['oak_log', '99']),
+        /collect:count:max:64 — split into multiple mc collect/,
+      );
+    });
+
     it('mc collect 5 6 → no swap (BOTH numeric-looking; ambiguous)', () => {
       // The rescue only fires when the second token is NON-numeric.
       // "5 6" stays as-is: block="5" (string), count=6.

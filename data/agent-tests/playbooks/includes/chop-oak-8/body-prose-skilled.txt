@@ -1,0 +1,3 @@
+{{GOAL}}
+
+Follow `skills/minecraft-mining.md` § "Surface strip / wood SUPPLY" and § "Production workflow" for preflight, approach, collect, deposit.

@@ -13,4 +13,18 @@ Procedure lives in `references_skill: minecraft-mining`. This doc is routing + v
 | chop_loop | Fill quota | — | log count in inv/chest | dig, collect, pillar_down, move, place |
 | closeout | Deposit + close | — | chest snapshot | move, deposit, list_container, status |
 
-Run ritual: `mc task_context set …` → `mc playbook phase set wood.chop_tall_tree preflight` → walk phases → `mc playbook phase clear` on complete/block.
+Run ritual: `mc task_context set … --card $HERMES_KANBAN_TASK` → `mc playbook phase set wood.chop_tall_tree preflight` → walk phases → `[run_state]` comment at each phase boundary → `mc playbook phase clear` on complete/block.
+
+Checkpoint example (append via `kanban_comment`):
+
+```yaml
+[run_state]
+playbook: wood.chop_tall_tree
+phase: chop_loop
+completed: [preflight, approach]
+context:
+  chopped: 4
+  target_logs: 8
+  tree: { x: 40, y: 65, z: 0 }
+```
+

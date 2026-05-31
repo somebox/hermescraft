@@ -196,7 +196,14 @@ export function coerceValue(spec, raw) {
     const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
     if (Number.isNaN(n)) throw new Error(`not_number`);
     if (spec.min != null && n < spec.min) throw new Error(`min:${spec.min}`);
-    if (spec.max != null && n > spec.max) throw new Error(`max:${spec.max}`);
+    if (spec.max != null && n > spec.max) {
+      if (spec.key === 'count' && spec.max === 64) {
+        throw new Error(
+          `max:${spec.max} — split into multiple mc collect calls (≤64 per invocation)`,
+        );
+      }
+      throw new Error(`max:${spec.max}`);
+    }
     return n;
   }
 

@@ -79,6 +79,48 @@ def parse_yaml(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def resolve_agent_test_spec(spec_path: Path, spec: dict, arm: str | None) -> dict:
+    """Expand A1 arms + shared chop-oak-8 includes into a runnable spec."""
+    spec = dict(spec)
+    goal_path = spec_path.parent / "includes/chop-oak-8/goal.txt"
+    goal_text = goal_path.read_text(encoding="utf-8") if goal_path.exists() else ""
+
+    if spec.get("arms"):
+        arm_key = arm or spec.get("default_arm")
+        if not arm_key or arm_key not in spec["arms"]:
+            keys = ", ".join(sorted(spec["arms"]))
+            print(f"ERROR: --arm required (one of: {keys})", file=sys.stderr)
+            sys.exit(2)
+        overlay = spec["arms"][arm_key]
+        if overlay.get("skills"):
+            spec["skills"] = overlay["skills"]
+        if overlay.get("card_body_file"):
+            body_path = spec_path.parent / overlay["card_body_file"]
+            body = body_path.read_text(encoding="utf-8").replace("{{GOAL}}", goal_text.strip())
+            spec["_card_body"] = body
+        extra = overlay.get("expect_extra") or {}
+        if extra:
+            merged = dict(spec.get("expect") or {})
+            merged.update(extra)
+            spec["expect"] = merged
+        base_id = spec.get("agent_test_id") or spec_path.stem
+        spec["agent_test_id"] = f"{base_id}_{arm_key.replace('-', '_')}"
+
+    task_id = os.environ.get("HERMES_KANBAN_TASK", "t_agent_test_chop")
+    prefix = (spec.get("prompt_prefix") or "").strip()
+    if prefix:
+        card_body = spec.get("_card_body") or ""
+        spec["prompt"] = (
+            prefix.replace("{{TASK_ID}}", task_id).replace("{{CARD_BODY}}", card_body)
+        ).strip()
+    elif spec.get("prompt"):
+        spec["prompt"] = str(spec["prompt"]).replace("{{TASK_ID}}", task_id)
+    elif spec.get("_card_body"):
+        spec["prompt"] = spec["_card_body"]
+
+    return spec
+
+
 def run_rcon(cmd: str) -> str:
     """Run a single rcon command via ssh+stdin. Stdin avoids docker's CLI
     parser interpreting leading dashes (e.g. -2 coordinates) as flags."""
@@ -459,6 +501,10 @@ def main():
     p.add_argument("--model", help="override model (e.g. openrouter/google/gemini-flash-latest)")
     p.add_argument("--max-turns", type=int, help="override max_turns")
     p.add_argument("--bot-url", default=DEFAULT_BOT_URL)
+    p.add_argument(
+        "--arm",
+        help="A1 card-body arm for specs with arms: (prose-minimal, prose-skilled, playbook)",
+    )
     args = p.parse_args()
 
     spec_path = Path(args.spec)
@@ -466,7 +512,7 @@ def main():
         print(f"ERROR: spec not found: {spec_path}", file=sys.stderr)
         sys.exit(2)
 
-    spec = parse_yaml(spec_path)
+    spec = resolve_agent_test_spec(spec_path, parse_yaml(spec_path), args.arm)
     test_id = spec.get("agent_test_id") or spec_path.stem
     timeout_s = int(spec.get("timeout_seconds", DEFAULT_TIMEOUT_S))
     max_turns = args.max_turns or int(spec.get("max_turns", DEFAULT_MAX_TURNS))
