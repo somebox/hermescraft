@@ -76,50 +76,6 @@ DEFAULT_MAX_TURNS = 8
 DEFAULT_TIMEOUT_S = 180
 
 
-def _apply_procedural_env_if_present(spec: dict, spec_path: Path) -> dict:
-    """Expand procedural_env block (procedural-arena POC) into world/prep/cleanup."""
-    if not spec.get("procedural_env"):
-        return spec
-    arena_root = ROOT / "procedural-arena"
-    if not arena_root.is_dir():
-        print("ERROR: procedural_env spec but procedural-arena/ missing", file=sys.stderr)
-        sys.exit(2)
-    sys.path.insert(0, str(arena_root))
-    try:
-        from lib.procedural_env import cleanup_commands_from_report, resolve_procedural_env
-    except ImportError as e:
-        print(f"ERROR: procedural_env import failed: {e}", file=sys.stderr)
-        sys.exit(2)
-    pe = spec["procedural_env"]
-    report_path = pe.get("report_path")
-    if report_path and not Path(report_path).is_absolute():
-        for base in (arena_root, ROOT, spec_path.parent):
-            cand = base / report_path
-            if cand.exists():
-                pe = {**pe, "report_path": str(cand)}
-                break
-    spec = dict(spec)
-    spec["procedural_env"] = pe
-    resolved = resolve_procedural_env(spec, arena_root)
-    spec["world"] = resolved["world"]
-    spec["_procedural_fingerprint"] = resolved.get("fingerprint")
-    spawn = resolved.get("spawn_feet") or {"x": 0, "y": 65, "z": 0}
-    world = resolved["world"]
-    sx, sy, sz = int(spawn["x"]), int(spawn["y"]), int(spawn["z"])
-    prep = list(spec.get("prep") or [])
-    prep.extend(
-        [
-            f"mvtp Flint {world}",
-            f"execute in {world} run tp Flint {sx} {sy} {sz}",
-            f"execute in {world} run effect give Flint minecraft:saturation 600 1",
-        ]
-    )
-    spec["prep"] = prep
-    if spec.get("cleanup") == "auto" and resolved.get("report"):
-        spec["cleanup"] = cleanup_commands_from_report(resolved["report"])
-    return spec
-
-
 def parse_yaml(path: Path) -> dict:
     """Very small YAML parser using PyYAML if available, else error."""
     try:
@@ -770,7 +726,6 @@ def main():
         sys.exit(2)
 
     spec = resolve_agent_test_spec(spec_path, parse_yaml(spec_path), args.arm)
-    spec = _apply_procedural_env_if_present(spec, spec_path)
     test_id = spec.get("agent_test_id") or spec_path.stem
     timeout_s = int(spec.get("timeout_seconds", DEFAULT_TIMEOUT_S))
     max_turns = args.max_turns or int(spec.get("max_turns", DEFAULT_MAX_TURNS))
@@ -1223,10 +1178,6 @@ def main():
         "new_actions": new_actions,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    if spec.get("_procedural_fingerprint"):
-        report["procedural_fingerprint"] = spec["_procedural_fingerprint"]
-    if spec.get("procedural_env"):
-        report["procedural_env"] = spec.get("procedural_env")
 
     stage_times["post"] = time.time() - _t
 

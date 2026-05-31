@@ -1,7 +1,0 @@
-score_weights:
-  prep.largest_flat_area: 3.0
-  prep.grass_pct: 2.0
-  work.chicken_count: 2.0
-  transit.water_pct: 1.0
-  transit.terrain_difficulty: 1.0
-scenario_shape: prep

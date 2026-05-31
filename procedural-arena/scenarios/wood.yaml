@@ -1,5 +1,0 @@
-score_weights:
-  survey.unique_biome_count: 1.0
-  prep.grass_pct: 1.0
-  work.chicken_count: 0.0
-scenario_shape: work

@@ -1,1 +1,0 @@
-"""Procedural-arena POC library."""

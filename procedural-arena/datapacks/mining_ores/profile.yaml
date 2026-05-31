@@ -1,5 +1,0 @@
-id: mining_ores
-description: Placeholder profile — stamp copies vanilla until templates wired
-params:
-  iron_count_multiplier: { default: 1.0, min: 0.5, max: 3.0 }
-  carvers_enabled: { default: true, type: bool }

@@ -1,5 +1,0 @@
-score_weights:
-  survey.unique_biome_count: 2.0
-  work.coal_ore_samples: 0.5
-  prep.grass_pct: 1.0
-scenario_shape: survey
