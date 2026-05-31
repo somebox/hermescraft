@@ -4,6 +4,8 @@
 
 After changing `bot/cli/registry.mjs`, run `npm run cheatsheet` from `bot/` (or `node scripts/gen-mc-cheatsheet.mjs`) and commit `docs/mc-cheatsheet.md` — `test/cheatsheet-sync.test.js` fails on drift. For a broader surface check, see `docs/mc-command-audit-2026-05-29.md` and re-run its grep-based coverage steps when adding verbs.
 
+**Navigation / perception docs:** agent-facing movement doctrine lives in `skills/minecraft-navigation.md` (synced to profiles via `scripts/sync-skills.sh`). Canonical intent tables: `docs/mc-commands.md`; design depth: `docs/features/route-precompute-context.md`. CLI category for world reads is **`perceive`**, not `observe`.
+
 ## Memory
 
 "Groundhog day" effect: the agent is stuck in a loop because it's not learning from its mistakes. The memory is important as agents can disconnect or handoff and need context, otherwise they will have to start over to assess the situation, tools, goals, etc.

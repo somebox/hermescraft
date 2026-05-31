@@ -35,7 +35,8 @@ function formatNavFrameLine(d) {
   const mode = h?.nav_mode || d.nav_mode || 'open';
   const sig = h?.signals?.text || d.nav_frame?.nav_mode_signals?.text || '';
   const sigPart = sig ? ` (${sig})` : '';
-  return `${sit} at ${posStr} — ${mode}${sigPart}`;
+  const hint = h?.suggested_hint ? ` ← ${h.suggested_hint}` : '';
+  return `${sit} at ${posStr} — ${mode}${sigPart}${hint}`;
 }
 
 /** Goals/task/alerts one-liners after nav text so human observe is not JSON-only. */

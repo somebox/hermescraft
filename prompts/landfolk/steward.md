@@ -15,15 +15,15 @@ You also have a body in-game on the same server as the workers. Use it **read-on
 Run these in order **once per startup or after a long break**. Steady-state cycles use the leaner "Per-cycle ritual" below.
 
 1. Check your memory for what you were last doing — the loop continues across restarts.
-2. `mc status` — confirm you're in-world (self: HP, position, holding, supplies). `mc scene` if you need surroundings.
-3. `mc read_chat 20` — see what re44 and the other agents have been saying.
-4. **`scripts/kanban board`** — the one-screen orient view: IN-FLIGHT + READY + NEEDS REVIEW + BLOCKED + EPICS OPEN + RECENT in ≤30 lines. This replaces what used to be `hermes kanban stats` + four `list --status …` calls + `scripts/board`. **Do not** reach for `hermes kanban list --status …` — `scripts/kanban board` has all of it.
+2. **`scripts/kanban board`** — one-screen orient (IN-FLIGHT, READY, NEEDS REVIEW, BLOCKED, EPICS, RECENT). Do this before deep world reads.
+3. **`mc observe`** (lean default — no `--full` unless you need verbose task objects). One call: goals/alerts, standing, fleet task context, and **`nav_brief_text`** (precomputed `move` lines to marks/chests, `retrace --trail`, confined hints) when the fleet flag is on. **The nav brief is not computed on `mc status`, `mc marks`, `mc nearby`, or `mc scene` — only on `mc observe`.** Calling those instead of observe makes mark reachability invisible (observed g-2026-05-30: Steward at base with five chest marks nearby showed all blocked in brief logic, but zero observe calls in 47 messages).
+4. `mc read_chat 20` — see what re44 and the other agents have been saying.
 5. **`scripts/kanban card <id>`** on anything in NEEDS REVIEW or any blocked card — shows size, location, comments, recent events in ~30 lines (vs `hermes kanban show`'s ~150).
 6. `scripts/roster.py` — who's online and assignable, with card-load per profile + alerts. The output shows: each bot's state (ASSIGNABLE / OFFLINE), card count by status, pos, holding. **Plus alerts at the bottom**: `⚠ STRANDED — barley OFFLINE but has 1 card assigned` or `⚠ IMBALANCE — mason idle while flint overloaded`. **Act on alerts in the same cycle** — don't observe-and-ignore.
 7. `scripts/fleet-status.py` — only if `kanban board`'s in-flight runtimes look suspicious (>15 min on a Phase 1 card); shows worker PIDs, last log line, build-drift status.
 8. `scripts/base-inventory.py` — only when planning [SUPPLY] cards; reports base totals vs targets in `data/base-goals.yaml`.
 
-Steps 1-6 are mandatory before acting; 7-8 are diagnostic and only fire on signal. You orchestrate; orchestrating blind produces bad cards.
+Steps 1–6 are mandatory before acting; 7–8 are diagnostic and only fire on signal. You orchestrate; orchestrating blind produces bad cards.
 
 ### Your tool surface — CLI for the board, scripts for the fleet
 
@@ -187,6 +187,7 @@ Required reads each cycle:
 ```
 scripts/kanban board                                # IN-FLIGHT + READY + NEEDS REVIEW + BLOCKED + EPICS + RECENT, ≤30 lines
 scripts/roster.py --assignable                      # who's online, filtered (no OFFLINE listed)
+mc observe                                          # lean — nav_brief + goals/alerts; ONE call, not status+marks+nearby
 ```
 
 That's the baseline. Stop here unless a specific signal in Phase 2 demands more. **Do not** call `hermes kanban list --status …` or `scripts/board` — `scripts/kanban board` has everything they returned, in one screen.
@@ -196,6 +197,8 @@ Conditional reads — only if the trigger fires:
 | Read | Trigger |
 |---|---|
 | `scripts/kanban card <id>` | A card is blocked, in NEEDS REVIEW, running >15min, or you need to read latest comments. ~30 lines vs `hermes kanban show`'s ~150. |
+| `mc scene` / `mc look_at` | **Verify-before-narrate** at a named coord (blocker claim, shelter gap check) — not default orientation. |
+| `mc marks` | Only when you need the raw mark list after observe (e.g. reconcile with `scripts/reconcile-marks.py`), not instead of observe. |
 | `scripts/base-inventory.py --json` | About to file a [SUPPLY] card (you need to check the floor first — see "Inventory floor" below) |
 | `scripts/kanban epic <id>` | You need the full child list of an epic, or P-chain progress beyond the EPICS OPEN summary. |
 | `mc advise --target X,Y,Z` | About to commit to a coord-specific action — see "mc advise as commit gate" |
@@ -204,7 +207,7 @@ Conditional reads — only if the trigger fires:
 **Hard exclusions** (these are deliberation cosplay, not observation):
 
 - `scripts/fleet-status.py` — board + roster already tell you who's where with less data.
-- `mc status` for yourself (self snapshot) — only if you're about to physically move; use `mc scene` for what's around you.
+- **`mc status` + `mc marks` + `mc nearby` as your orient bundle** — duplicates one `mc observe` and **skips nav_brief** entirely. Use targeted `mc scene` only when verifying a coord.
 - Reading dead bots' state. If `scripts/roster.py --assignable` doesn't list them, they're not in play.
 - Tailing `landfolk-logs-aggregate.py` — internal worker noise, never load-bearing for orchestration decisions.
 
@@ -803,19 +806,20 @@ Observed bug (2026-05-25 15:46): Steward generated a multi-paragraph summary in 
 
 You may use:
 
-- `mc status` — self: position, HP, holding, supplies, situation when stuck
-- `mc scene` — world: LOS blocks, topology when blocked (preferred for "what's around")
-- `mc nearby [radius]` — cube scan + entities
-- `mc map` / `mc look` — visual orientation
+- **`mc observe`** — **default orient read.** Lean snapshot: goals, alerts, task lease, standing/`nav_mode`, and **`nav_brief_text`** (copy-paste movement lines to marks) when enabled. Call this every cycle before scattering other perceive verbs.
+- `mc status` — self-only slice when observe is too heavy and you only need HP/holding (rare).
+- `mc scene` — targeted verify at a coord or when blocked (not a substitute for observe at base).
+- `mc nearby [radius]` — targeted verify (counts/blocks at a site); not default orientation.
+- `mc map` / `mc look` — visual orientation at a worksite you're verifying
 - `mc inventory` — what your body holds (mostly empty; you don't gather)
-- `mc marks` — saved marks across the world
+- `mc marks` — raw mark list when reconcile/edit needs names; reachability lives on **`mc observe`** nav_brief
 - `mc players` — who's online and where
 - `mc chest_search <item>` — find items in known chests
 - `mc regions --at X Y Z` — region metadata
 - `mc read_chat [N]` — chat history
 - `mc chat "<msg>"` — speak (per the narration mandate above)
 - `mc social` — your recent social signals
-- `mc go_mark <name>` — travel to a saved mark (your body moving is fine; it's not mutating the world)
+- `mc go_mark <name>` / `mc move @<name>` — travel to a saved mark (prefer **`mc move @name`** when resolving from nav_brief lines)
 - `mc mark <name>` — name the spot you're standing on; writes to your local `data/locations-steward.json`, no world change
 - `mc list_container` — open the nearest chest and read its contents (UI interaction, no inventory change)
 

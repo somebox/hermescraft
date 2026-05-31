@@ -12,20 +12,29 @@ triggers:
   - strip mine
   - lost underground
   - find structure
-version: 4.0.0
+version: 4.1.0
 ---
 
 # Minecraft Navigation
 
-Canonical command syntax, argument keys, and refusal → next-command matrix: [`docs/mc-commands.md`](../docs/mc-commands.md) (especially Section D–E for water and `BOAT_REQUIRED`).
+Canonical command syntax, argument keys, and refusal → next-command matrix: [`docs/mc-commands.md`](../docs/mc-commands.md) (especially Section D–E for water and `BOAT_REQUIRED`). Navigation refactor (move-canonical DSL, per-round brief, breadcrumbs): [`docs/features/route-precompute-context.md`](../docs/features/route-precompute-context.md).
+
+## Per-round route brief (`mc observe`)
+
+When the fleet runs with **`HERMES_NAV_BRIEF=1`**, `mc observe` includes a **`nav_brief`** block (and human **`nav_brief_text`**) instead of a flat `nearby_marks` list. Each line is a copy-paste movement primitive — marks as `move <name>`, recovery as `retrace --trail`, body verbs as `pillar_up`, `dig`, etc. Tags such as `← suggested`, `⚠ blocked`, and `k=1` repair hints are computed by the bot, not guessed in the prompt.
+
+**Doctrine:** read the brief, pick a line (usually the one with `← suggested`), run it. If that line fails, do not retry the same destination blindly — re-run `mc observe` or use `mc scene` / `mc standing` to see what changed. In **confined** mode (pit, sealed room), long strategic `move` rows may show `⚠ blocked (confined)`; use DO primitives (`pillar_up`, `stair_up`, `dig`) from the same brief instead of reasoning a path from `mc map`.
+
+Shadow rollout (`HERMES_NAV_BRIEF=shadow`) logs the brief without showing it to the agent — ops only.
 
 ## Commands
 
 ```
-# Walking
-mc move X Y Z              # smart non-destructive nav (handles doors/gates)
-mc goto X Y Z              # raw pathfinder — open spaces only, no door handling
-mc goto_near X Y Z [r]     # pathfind near position (default range: 2)
+# Walking (canonical target grammar on mc move)
+mc move X Y Z [--near N] [--raw] [--force] [--door GX GY GZ] [--max-doors N]
+mc move @MARK | mark_name | :region:[/site]   # same flags; region refs route like go_site
+mc goto X Y Z              # raw pathfinder — prefer mc move --raw for the same behavior
+mc goto_near X Y Z [r]     # legacy; prefer mc move X Y Z --near N (default N=2 for marks)
 mc through GX GY GZ        # explicit door/gate: opens, walks, closes behind
 mc follow PLAYER           # follow a player continuously
 mc stop                    # stop movement
@@ -35,12 +44,13 @@ mc flee [X Y Z]            # combat retreat (see minecraft-combat)
 # Vertical
 mc stair_down DIR [LEN=12] [X Y Z] [W=1 H=3]   # dig descending staircase (records steps[] for retrace)
 mc stair_up DIR [LEN=12] [X Y Z] [W=1 H=3]     # dig ascending, places floor over voids
-mc retrace [--mark NAME] [--use_trail]         # walk back along last stair_down steps (reverse ascent)
+mc retrace [--trail]       # back: default last stair_down trail; --trail prefers nav breadcrumbs (falls back if thin)
 mc pillar_up [BLK] [N=1] [--force]   # climb N blocks (multi-block, not 1). Stops at a sky-open surface. Omit BLK to dig overhead + capture + pillar. Auto bare-hand digs the ceiling when truly trapped; --force also slow-digs stone + breaks protected blocks. Alias: pillar_step.
 mc pillar_down [N=12]        # descend a pillar by mining the block underfoot
 
-# Survey + look
+# Survey + look (CLI category: perceive — mc commands --category perceive)
 mc status                  # self: position, HP, food, holding, supplies, situation if stuck
+mc observe [--full]        # orchestration snapshot; may include nav_brief when enabled
 mc scene                   # world: LOS blocks, entities, topology (use for surroundings / blocked)
 mc map [R]                 # compact ASCII map (default R=12, max 16)
 mc nearby [R=32]           # blocks + entities within R
@@ -53,28 +63,33 @@ mc scout [--block BLOCK]   # hazard survey: lava, falling columns, hostiles in r
 # Marks (your in-bot waypoint memory)
 mc mark NAME [NOTE]        # save current position as a named mark
 mc marks                   # list all marks
-mc go_mark NAME            # walk to a saved mark
+mc move @NAME              # preferred walk to mark (door-aware when HERMES_MOVE_RESOLVE=1)
+mc go_mark NAME            # still works; same destination, legacy verb name
+mc go_site :region:[/site] # region/site refs; also mc move :region:[/site]
 mc unmark NAME             # delete a mark
 
 # Recovery
-mc deathpoint              # walk to most recent death location
+mc deathpoint              # walk to most recent death location (near reach, not GoalBlock-on-mark)
 mc sleep                   # use a nearby bed (resets respawn point)
 ```
 
 ## Picking the right movement verb
 
-**Default: `mc move`.** It handles doors automatically, never destroys infrastructure, and surfaces a structured `NAV_BLOCKED` with the reason if it fails.
+**Default: `mc move`.** It handles doors automatically, never destroys infrastructure, and surfaces a structured `NAV_BLOCKED` with the reason if it fails. Resolve marks and region sites on `move` when your profile has **`HERMES_MOVE_RESOLVE=1`** (fleet rollout flag).
 
 | Situation | Use |
 |---|---|
-| General navigation (might pass a door, may not) | `mc move X Y Z` |
-| Open terrain, no buildings | `mc goto X Y Z` (slightly faster, no door scan) |
+| General navigation (might pass a door, may not) | `mc move X Y Z` or `mc move @mark` |
+| Saved mark or chest anchor | `mc move @NAME` (or `mc go_mark NAME` during migration) |
+| Region / site from kanban card | `mc move :region_id:` or `mc move :region_id:/site` |
+| Open terrain, explicit raw pathfinder | `mc move X Y Z --raw` (alias-era: `mc goto X Y Z`) |
+| Stand near a block (chest, mark cell) | `mc move X Y Z --near 2` (alias-era: `mc goto_near … 2`) |
 | **Water in the way (BOAT_REQUIRED)** | **`mc sail_to X Y Z`** — ferry service, see "Water journeys" below |
-| You know the door coords and want a single explicit pass | `mc through GX GY GZ` |
-| Target may not be standable (a wall corner, a roof edge) | `mc reachable X Y Z` first → use the returned `best_stand` |
+| You know the door coords and want a single explicit pass | `mc through GX GY GZ` or `mc move … --door GX GY GZ` |
+| Target may not be standable (a wall corner, a roof edge) | `mc reachable X Y Z` first → use the returned `best_stand` with `mc move … --near 2` |
 | Need to clear a path through terrain | `mc tunnel` or `mc dig_area` (see [minecraft-survival](minecraft-survival)) |
 | Stuck (corner / wedge / on-pillar / in water) | `mc escape` |
-| Just dug `mc stair_down` and need to climb back out | `mc retrace` (then `mc goto_near` for side targets) |
+| Just dug `mc stair_down` and need to climb back out | `mc retrace` (surface path: `mc retrace --trail` when breadcrumbs exist) |
 
 ## Water journeys — `mc sail_to`
 
@@ -128,7 +143,7 @@ Before a long walk to an exotic coord (top of a tree, edge of a cliff, corner of
 mc reachable 120 75 -45
 # → { target_standable: false, target_reason: "head_blocked",
 #     best_stand: { x: 120, y: 75, z: -44, distance: 1.0 } }
-mc goto_near 120 75 -44
+mc move 120 75 -44 --near 2
 ```
 
 `mc reachable` is geometry-only — it doesn't verify a path exists, just that the destination is a place a bot can occupy.
@@ -265,7 +280,7 @@ Structures don't have search commands, but strategies:
 ```
 mc status                      # current position
 mc map 16                      # see terrain + landmarks ±16
-mc goto X Y Z                  # move ~30 blocks in the chosen direction
+mc move X Y Z                  # move ~30 blocks in the chosen direction
 mc map 16                      # re-check
 # repeat until you spot the feature
 ```
@@ -298,7 +313,8 @@ The bot has built-in waypoint memory. Use it instead of remembering coords.
 mc mark home "base camp"       # save current position
 mc mark mine_entrance          # bare mark
 mc marks                       # list everything you've marked
-mc go_mark home                # walk back
+mc move @home                  # walk back (preferred)
+mc go_mark home                # same destination, legacy verb
 mc unmark old_camp             # remove an outdated one
 ```
 

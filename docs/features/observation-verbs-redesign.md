@@ -10,6 +10,10 @@ Status: draft / planning. Package 1 (May 2026) implemented the **status = self /
 - **`mc anchors`** uses marks with `chest_snapshot` on `GET /marks`, not a world block scan on status.
 - Deferred after genesis validation: `status --goal`, `status --near_mark`, equipped armor on status, resolver semantic aliases.
 
+**Post–package 1 usage (May 2026):** Re-run `scripts/mc-call-survey.py --minutes 10080` after the cheatsheet/registry audit ([`docs/mc-command-audit-2026-05-29.md`](../mc-command-audit-2026-05-29.md)): **752** sessions, **38,397** `mc` calls, **181** registry commands. Traffic still concentrates on ~30 verbs; `inventory` (1,416) remains heavy beside `status` (1,988) — doctrine says self-only, habits lag. `inspect` (2,126) + `terrain_top` (1,020) rival `scene` (1,276) for “what’s here?” **`advise`** 55 calls in 7d (rare escape hatch, not per-turn). **38 commands had zero fleet use** in that window (combat advanced verbs, `construct`/`repair`, `bg_combo`/`bg_fight`/`bg_strafe`, `fish`, boat low-level except `sail_to` 24, `regions_reload`/`regions_terrain`, etc.) — treat as **exposure gap**, not failed design, until genesis/cards assign them.
+
+**Route brief on observe (nav refactor, 2026-05):** when `HERMES_NAV_BRIEF=1`, `mc observe` includes **`nav_brief`** / **`nav_brief_text`** — precomputed movement lines for the current cell (replaces `nearby_marks`). Agents should prefer copying a brief line over rebuilding routes from `scene`/`map`. See [`route-precompute-context.md`](route-precompute-context.md) and skill [`skills/minecraft-navigation.md`](../../skills/minecraft-navigation.md).
+
 Scope: the `mc` observation/perception verbs — how an agent *asks* about the world (verbs, naming, flag grammar) and what *comes back* (response shapes). The deeper "let agents write code against primitives" direction lives in its companion, `agent-scripting-layer.md`; this document stays at the verb-and-shape level.
 
 ## Problem
@@ -18,7 +22,7 @@ The observation verbs grew one at a time, each solving a real moment, but they n
 
 Three concrete symptoms:
 
-- **`status` is overloaded yet still feels incomplete.** It embeds a mini-scene (raycast), a block-count cube, and entities, yet goals and task history live on `observe`. Held item *is* in the payload, but success-path CLI output strips it, so in practice the model re-asks. "My card is wood — how much wood do I already have?" is rarely answered in one read.
+- **`status` is overloaded yet still feels incomplete.** Package 1 removed the embedded world-scan from lean `status`, but agents still pair `status` with `inventory` / `inspect` / `terrain_top` for one mental question. Goals and task history remain on `mc observe` (orchestration snapshot). `status --goal` is still deferred, so “how much wood for this card?” is not one read yet.
 - **Three verbs for one question.** `find` (inventory + chests + visible), `find_blocks` (x-ray coords), and `discover` (category scout) answer "where is X" at different resolutions with different response shapes, and none of them offers "I don't have it — where do I go, or what substitutes?"
 - **Three verbs for "what's around me."** `nearby` (cube scan), `map` (2D surface), and `scene` (LOS rays) overlap. `map` describes the horizontal plane well and the vertical axis poorly. `scene` is what agents reach for when blocked or aligning, but its output is a flat list of block names, not a picture of topology.
 
@@ -43,6 +47,8 @@ Two repo tools quantify the problem.
 | discover | 19 | 0.05% | category scout (near-dead) |
 
 Read-outs: `find_blocks` beats `find` + `discover` combined because it returns coordinates; `discover` is effectively dead; `observe` is a Steward (orchestration) verb, workers live on `status`; `advise` is a rare escape hatch, not a per-turn tool.
+
+**May 2026 rerun (same tool, 7d / 38k calls):** Rank order unchanged in spirit — `move` ~12.6%, then `inspect` / `dig` / `status` / `find_blocks` / `inventory` / `goto_near` / `scene`. Discovery cluster ≈ **2,745** calls (`find_blocks` + `find` + `chest_search` + `discover`). World-vision cluster ≈ **6.5k** (`scene`, `nearby`, `map`, `look`, `look_at`, `inspect`, `terrain_top`, `standing`, `reachable`, `scout`). Regenerate this table after major doctrine or registry changes.
 
 **Failure distribution** — `scripts/analyze-mc-failures.py` over the cognition logs: of 3,438 recognized `mc <verb> <material>` calls, **1,519 failed (44%)**. The category histogram:
 
@@ -198,6 +204,44 @@ This is a behavior change to a token-sensitive, agent-facing surface, so validat
 - **Phase 3 — live A/B.** Run the same genesis card twice (new doctrine vs current verbs) and compare with `scripts/mc-call-survey.py` (does `search` absorb find/find_blocks/discover; does "which verb?" thrash drop), `scripts/analyze-mc-failures.py` (do view_blocked / no_visible_blocks rates fall after `scene` topology), and `scripts/agent-context.py` (does slimmer `status` + one-call `status --goal` cut per-turn context). Pre-register success criteria (fewer observation calls per completed card, lower spatial-failure rate, no completion regression). Treat any single run as signal, not proof — the same caution as the goals-gap context reports (`docs/context-tests/reports/`).
 - **Phase 4 — migrate and deprecate.** Point skills/SOULs at the four-lane model; alias old verbs (`find`→`search`, `discover`→`search --category`, `look`→`scene --cardinals`) for one release; update `KEY_PRIMITIVES` in `mc-call-survey.py` so adoption is tracked. Keep HTTP paths (`/status`, `/scene`, `/map`) stable and route new CLI names to existing endpoints internally to limit blast radius.
 
+## Registry scale vs intent taxonomy (May 2026)
+
+Two different groupings exist; they are **not fully aligned**:
+
+| Source | What it groups | Purpose |
+|--------|----------------|---------|
+| `bot/cli/registry.mjs` → `docs/mc-cheatsheet.md` | **11 categories** (`observe` 24, `world` 68, `task` 19, …) | `mc help`, generated inventory |
+| `docs/mc-commands.md` §A | **Intent** (observe / movement / world / building / …) | Agent grammar, chains, argument vocabulary |
+
+**Revelation:** Cheatsheet length (**181** lines) is an **implementation catalog**; fleet behavior follows a **~30-verb core**. Zero-use commands are often **newly exposed** (registry + examples backfill landed before cards/skills taught them).
+
+**Intent mismatches to resolve** (pick registry category *or* doc intent, then test/sync):
+
+| Command | Registry / cheatsheet section | `mc-commands.md` intent |
+|---------|------------------------------|-------------------------|
+| `escape`, `through` | world | movement |
+| `deathpoint` | movement | (memory / marks narrative) |
+| `set_home` | world | world (memory-adjacent) |
+| `check`, `blueprint`, `craft_plan` | observe | observe (behaviorally world/build) |
+| `construct`, `repair` | building | building ✓ |
+
+**Overlap clusters** (same question, many verbs): perception self (`status`, `inventory`, `observe`, `health`); perception world (`scene`, `nearby`, `map`, `look`, `inspect`, `terrain_top`); discovery (`find`, `find_blocks`, `discover`, `chest_search`); predicates (`check`, `verify_plot`, `is_empty`, `is_filled`, `is_sheltered`, `farm_status`, `blueprint verify`); navigation (`move`, `goto`, `goto_near`, `through`, `escape`, boat stack).
+
+## Simplification candidates (next steps)
+
+These are **design options**, not committed API. Prefer HTTP-stable aliases and skills-first doctrine before deleting registry entries.
+
+1. **Core cheatsheet for skills** — Inject a “Core ~40” list (survey percentiles + package-1 lanes) in worker SOULs; full list via `mc help` / `mc commands`. Reduces recall load without removing handlers.
+2. **`mc search` facade** — One verb with flags (`--blocks`, `--category`, chests) over `find` / `find_blocks` / `discover`; aligns with four-lane model and Layer A in `agent-scripting-layer.md`.
+3. **`mc verify <sub>`** — Noun-style subcommands: `shelter`, `plot`, `empty`, `filled`, `farm-status`, `region` (maps `is_sheltered`, `verify_plot`, `is_*`, `check`, blueprint verify). Low volume (~tens–low hundreds/week) but high card value; easier recall than four predicate verb names.
+4. **`mc build <sub>`** — Namespace for `place`, `wall`, `fence`, `stairs`, `level`, `level_ground`, `path`, `fill`, plus card orchestration `construct` / `repair`. Cheatsheet today splits “building” (2 cmds) vs “world” (68).
+5. **`mc survey`** (optional) — Read-only `scout`, `terrain_top` under one name; distinct from `verify`.
+6. **Registry `intent` field** — Mirror `mc-commands.md` §A on each `CmdDef`; CI asserts `intent` ∈ known set (like `category` ∈ `CATEGORY_ORDER`). Stops help sections and doctrine from drifting.
+7. **Profile-scoped help** — `mc help --profile mason` filters categories/verbs (future).
+8. **Re-survey after genesis cards** that assign `construct`, `regions_terrain`, combat verbs — compare zero-use list; update `KEY_PRIMITIVES` in `mc-call-survey.py`.
+
+**Relation to nav refactor:** [`route-precompute-context.md`](route-precompute-context.md) LOOK/GO/DO collapses *movement + observation loop*; this doc collapses *perception + discovery + predicates*. Both can proceed in parallel with shared `mc-call-survey` metrics.
+
 ## Open questions
 
 - **A.** `status @base` with no marks in the store — omit the anchor block silently?
@@ -206,9 +250,12 @@ This is a behavior change to a token-sensitive, agent-facing surface, so validat
 - **D.** Does `terrain_top` become `map height`, or stay separate given ~2.4% live usage?
 - **E.** How much topology can `scene` compute before it stops being low-medium cost? Measure latency in Phase 0, don't guess.
 - **F.** Scalar vs collection results when a verb's region matches many cells — one shape that varies by receiver, or two?
+- **G.** Should `mc-commands.md` §A become the canonical `intent` and registry `category` become help-only, or should both stay and sync via tests?
+- **H.** Pilot `mc verify` / `mc build` subcommands as CLI-only aliases first, or wait for `search` / four-lane migration?
 
 ## Related work
 
+- Route brief / move-canonical DSL: [`route-precompute-context.md`](route-precompute-context.md), [`skills/minecraft-navigation.md`](../../skills/minecraft-navigation.md).
 - Scripting / region selectors / query-actuation language: `agent-scripting-layer.md` (companion).
 - Perception modes and their differing semantics: `docs/archive/experiments/phase-2-sprint-log.md` (§F11).
 - Perception digest / `mc advise`: `docs/archive/perception-digest-experiment.md`, `skills/minecraft-perception-advise.md`.
@@ -216,3 +263,4 @@ This is a behavior change to a token-sensitive, agent-facing surface, so validat
 - Coordinate convention: `docs/conventions/coordinates.md`.
 - Live failure analysis: `scripts/analyze-mc-failures.py`, `reports/genesis/2026-05-28-mc-failure-analysis.md`.
 - Verb-usage survey: `scripts/mc-call-survey.py`.
+- Command registry audit (cheatsheet sync, examples, schema caps, guardrail tests): [`docs/mc-command-audit-2026-05-29.md`](../mc-command-audit-2026-05-29.md); cadence note in [`docs/learnings.md`](../learnings.md).

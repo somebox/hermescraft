@@ -1863,6 +1863,47 @@ export const RAW_COMMAND_DEFS = [
         source: 'cli',
       }),
   }),
+  g('playbook_phase_set', 'task', ['playbook-phase-set'], {
+    description: 'Bind playbook_id + phase on server ctx.runtime for JSONL telemetry (requires task_context card)',
+    usage: 'mc playbook phase set <playbook_id> <phase> [--sub-playbook ID] [--sub-phase NAME]',
+    examples: [
+      'mc playbook phase set wood.chop_tall_tree preflight',
+      'mc playbook phase set wood.chop_tall_tree chop_loop',
+    ],
+    method: 'POST',
+    path: '/action/playbook_phase_set',
+    customParse: true,
+    bodyFn: (p) =>
+      JSON.stringify({
+        playbook_id: p.playbook_id,
+        phase: p.phase,
+        ...(p.sub_playbook_id ? { sub_playbook_id: p.sub_playbook_id } : {}),
+        ...(p.sub_phase ? { sub_phase: p.sub_phase } : {}),
+      }),
+  }),
+  g('playbook_phase_clear', 'task', ['playbook-phase-clear'], {
+    description: 'Clear playbook phase context after card complete/block',
+    usage: 'mc playbook phase clear',
+    examples: ['mc playbook phase clear'],
+    method: 'POST',
+    path: '/action/playbook_phase_clear',
+    customParse: true,
+    bodyFn: () => JSON.stringify({}),
+  }),
+  g('playbook', 'task', [], {
+    description: 'Alias: mc playbook phase set|clear …',
+    customParse: true,
+    method: 'POST',
+    path: '/action/playbook_phase_set',
+    examples: ['mc playbook phase set wood.chop_tall_tree preflight', 'mc playbook phase clear'],
+    bodyFn: (p) =>
+      JSON.stringify({
+        playbook_id: p.playbook_id,
+        phase: p.phase,
+        ...(p.sub_playbook_id ? { sub_playbook_id: p.sub_playbook_id } : {}),
+        ...(p.sub_phase ? { sub_phase: p.sub_phase } : {}),
+      }),
+  }),
   g('mark_update', 'memory', ['mark-up', 'mu'], {
     description: 'Move existing MARK to current position',
     examples: ["mc mark_update"],
@@ -1887,6 +1928,15 @@ export const RAW_COMMAND_DEFS = [
     argSchema: [{ key: 'name', type: 'string', required: true }],
     bodyFn: (p) => JSON.stringify({ name: p.name }),
     usage: 'mc go_mark NAME',
+  }),
+  g('reach', 'movement', [], {
+    description: 'Short-hop router: move → goto → goto_near for playbook act rows',
+    usage: 'mc reach X Y Z | mc reach @mark',
+    examples: ['mc reach 100 64 200', 'mc reach @base_chest'],
+    method: 'POST',
+    path: '/action/reach',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify(p),
   }),
   g('go_site', 'memory', [], {
     description: 'Walk to a region anchor (:base1:) or named site (:base1:/tower). mc goto accepts the same ref syntax.',

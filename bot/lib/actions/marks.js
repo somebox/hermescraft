@@ -1,6 +1,7 @@
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, ACTION_CAPS_MS, pathfindGotoNear } from './_helpers.js';
 import { ok, fail } from '../shared/action-contract.js';
+import { recordNavBriefFailureForMark } from '../runtime/nav-brief.js';
 
 const { goals } = pathfinderPkg;
 
@@ -107,6 +108,7 @@ export function createMarksActions(deps) {
       } catch (err) {
         try { b.pathfinder.setGoal(null); } catch { /* ignore */ }
         if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
+          recordNavBriefFailureForMark(ctx, name);
           return timeoutError('go_mark', ACTION_CAPS_MS.go_mark, {
             mark: name,
             target: { x: l.x, y: l.y, z: l.z },
@@ -114,6 +116,7 @@ export function createMarksActions(deps) {
           }, `Could not reach mark '${name}'. Path may be blocked.`);
         }
         if (err instanceof NoProgressError || err.code === 'NAV_NO_PROGRESS') {
+          recordNavBriefFailureForMark(ctx, name);
           return fail('NAV_NO_PROGRESS', `Stalled while heading to mark '${name}' — bot stopped moving for ${err.info?.no_progress_for_ms || '?'}ms. Path likely blocked by a 1-block lip, wedge, or sealed route.`, {
             observed_state: {
               mark: name,

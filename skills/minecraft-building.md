@@ -51,8 +51,8 @@ mc find_blocks BLOCK [R]          # locate material sources
 mc mark NAME [NOTE]               # save the build site (e.g. mc mark cabin_site)
 
 # Navigation around the build site
-mc move X Y Z                     # smart non-destructive nav (handles doors)
-mc goto_near X Y Z [r]            # pathfind near a position
+mc move X Y Z [--near N]          # smart non-destructive nav (handles doors)
+mc move @mark                     # return to a saved site mark
 ```
 
 ## Prefer the bulk-placement verbs
@@ -91,7 +91,7 @@ Fix mismatches with `mc place`, `mc dig`, and bulk verbs; re-verify before marki
 3. **Find flat ground** — `mc map 16` for an overview; `mc terrain_top X Z 8` to compare column heights over a small radius.
 4. **Verify standability** at the corners — `mc reachable X Y Z` returns `best_stand` if a corner is buried/blocked.
 5. **Plan it out** — tell the player your plan in chat before placing blocks.
-6. **Mark the site** — `mc mark cabin_site` so you can `mc go_mark cabin_site` after gathering.
+6. **Mark the site** — `mc mark cabin_site` so you can `mc move @cabin_site` after gathering.
 7. **Clear + level** — `mc dig` trees / tall grass, then `mc level X1 Z1 X2 Z2 Y` over the footprint.
 
 ## Golden rules

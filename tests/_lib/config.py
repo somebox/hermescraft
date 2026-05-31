@@ -13,12 +13,38 @@ Resolution order for the $overrides block:
 from __future__ import annotations
 
 import os
+import re
 import socket
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "config" / "hermescraft.yaml"
+
+_DEFAULT_API_URL_RE = re.compile(
+    r"^\s*default_api_url\s*:\s*[\"']?([^\"'\s#]+)[\"']?\s*(?:#.*)?$",
+    re.MULTILINE,
+)
+_HEALTH_POLL_RE = re.compile(
+    r"^\s*health_poll_timeout_s\s*:\s*(\d+(?:\.\d+)?)\s*(?:#.*)?$",
+    re.MULTILINE,
+)
+
+
+def _load_config_regex(config_path: Path) -> dict[str, Any]:
+    """Subset of hermescraft.yaml without PyYAML (#54)."""
+    out = {k: dict(v) if isinstance(v, dict) else v for k, v in _DEFAULTS_WITHOUT_YAML.items()}
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    m = _DEFAULT_API_URL_RE.search(text)
+    if m:
+        out["bot"]["default_api_url"] = m.group(1).strip()
+    m = _HEALTH_POLL_RE.search(text)
+    if m:
+        out["bot"]["health_poll_timeout_s"] = float(m.group(1))
+    return out
 
 
 # Defaults used when PyYAML isn't installed (e.g. bot worker Python envs
@@ -69,20 +95,9 @@ def load_config(path: Path | None = None, profile: str | None = None) -> dict[st
     try:
         import yaml  # lazy: bot worker Python envs may not have PyYAML.
     except ImportError:
-        # Bot workers (mc advise et al.) don't always carry PyYAML. Fall back
-        # to minimal defaults so the advise/digest path works with just
-        # MC_API_URL env var. Observed g-2026-05-28-5: Flint hit
-        # "advise is broken (missing yaml module)" while trying to dig out
-        # mason mid-rescue — a real loss-of-tool moment. Returning defaults
-        # is correct because every config key we use here also has an
-        # env-var override layer above.
-        import warnings
-        warnings.warn(
-            "PyYAML not installed — using built-in config defaults. "
-            "Install pyyaml for full config/hermescraft.yaml support.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+        config_path = path or CONFIG_PATH
+        if config_path.exists():
+            return _load_config_regex(config_path)
         return {k: dict(v) if isinstance(v, dict) else v for k, v in _DEFAULTS_WITHOUT_YAML.items()}
 
     config_path = path or CONFIG_PATH

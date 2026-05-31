@@ -2,14 +2,14 @@
 
 Hand-maintained specification for agents and developers. The generated inventory lives in [`mc-cheatsheet.md`](mc-cheatsheet.md) (from `bot/cli/registry.mjs`). When they disagree on **syntax**, trust the registry; when they disagree on **intent, chains, or argument vocabulary**, trust this document.
 
-See also [`design/action-contract.md`](design/action-contract.md) for return envelopes.
+See also [`design/action-contract.md`](design/action-contract.md) for return envelopes. Navigation DSL, breadcrumbs, and per-round brief: [`features/route-precompute-context.md`](features/route-precompute-context.md).
 
 ## A. Command taxonomy (by intent)
 
 | Intent | Examples | Notes |
 |--------|----------|--------|
-| **observe** | `status`, `observe`, `nearby`, `map`, `scene`, `discover`, `scout`, `inspect`, `standing`, `reachable`, `find`, `terrain_top`, `is_empty`, `is_filled`, `health`, `advise` | Read-only or advisory; `status` is **self** (supplies, holding, situation); world vision uses `scene` / `nearby` / `map` |
-| **movement** | `move`, `goto`, `goto_near`, `follow`, `look`, `jump`, `stop`, `deathpoint`, `sail_to` | `move` scans doors; long water crossings use `sail_to` |
+| **perceive** | `status`, `observe`, `nearby`, `map`, `scene`, `discover`, `scout`, `inspect`, `standing`, `reachable`, `find`, `terrain_top`, `is_empty`, `is_filled`, `health`, `advise`, `inventory`, … | CLI category **`perceive`** (`mc commands --category perceive`). The verb **`mc observe`** is unchanged — orchestration snapshot; may include **`nav_brief`** when `HERMES_NAV_BRIEF=1`. Read-only or advisory; `status` is **self**; world vision uses `scene` / `nearby` / `map`. |
+| **movement** | `move`, `goto`, `goto_near`, `follow`, `look`, `jump`, `stop`, `deathpoint`, `sail_to`, `retrace` | **`move`** is canonical: `@mark`, bare mark name, `:region:[/site]`, `--near N`, `--raw`, `--force`. `goto` / `goto_near` remain during migration. `retrace --trail` prefers nav breadcrumbs. Long water crossings use `sail_to`. |
 | **world** | `dig`, `safe_dig`, `collect`, `dig_area`, `tunnel`, `stair_*`, `pillar_*`, `place`, `place_fill`, `wall`, `fence`, `path`, `level`, `level_ground`, `build_stairs`, `dig_pit`, `till`, `plant`, `harvest`, `bonemeal`, `fish`, `bucket_*`, `through`, `escape`, `set_home`, `respawn`, `edit_sign`, `farm_status`, `verify_plot`, boat verbs (`place_boat`, `board`, `sail`, `disembark`, …) | Placement/digging verbs use **`block`** in JSON bodies (see B) |
 | **building** | `construct`, `repair` | Card-driven build/repair workflows |
 | **craft** | `craft`, `craft_plan`, `recipes`, `smelt`, `smelt_start`, `furnace_check`, `furnace_take` | Inventory/crafting verbs use **`item`** in JSON bodies |
@@ -109,8 +109,24 @@ Runtime: BFS route in `bot/lib/runtime/water-route.js`; dense boat path in `bot/
 
 ### Stuck / submerged
 
-`standing` / `escape` → `move` or `goto_near` → `inspect`  
+`standing` / `escape` → `move` or `move … --near 2` → `inspect`  
 After submerge during ferry: `escape` then **`mc sail_to`** again from dry land.
+
+### Mark / region navigation (canonical)
+
+```
+mc move @chest_food
+mc move base_anchor          # bare mark name
+mc move :base1:/tower
+mc move 100 64 -200 --near 2
+mc move 100 64 -200 --raw    # raw pathfinder (legacy: mc goto …)
+```
+
+Legacy verbs `go_mark`, `go_site`, `goto_near` remain; prefer `move` forms for new prompts and skills. Fleet flag **`HERMES_MOVE_RESOLVE=1`** routes `go_mark` / `go_site` through the same stack as `move`.
+
+### Route brief (observe)
+
+When **`HERMES_NAV_BRIEF=1`**, `mc observe` returns **`nav_brief`** / **`nav_brief_text`**: precomputed movement lines for this standing cell. Pick a line; do not re-derive paths from `scene`/`map` unless the brief is stale or missing (`nav_brief_status`). Shadow mode: `HERMES_NAV_BRIEF=shadow` (log only).
 
 ## E. Refusal code → next command (selected)
 

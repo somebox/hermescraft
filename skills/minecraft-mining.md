@@ -239,7 +239,7 @@ If ore is found within ~8 blocks but **off the corridor axis** (i.e. behind a wa
 ```
 mc tunnel <ore_x> <ore_y> <ore_z> <dir_toward> 6    # branch off
 mc collect iron_ore 16                              # pathfinder + pickup
-mc go_mark mine_entrance                            # or current main corridor end
+mc move @mine_entrance                         # or mc go_mark mine_entrance
 ```
 
 If ore is found IN the corridor: `mc collect <ore> 16` and continue the main tunnel.
@@ -250,8 +250,8 @@ After the main tunnel reaches 50 blocks total, **stop**. Don't keep extending �
 
 When you have the deficit met (check `mc inventory` against the card's `Deficit:` field):
 
-1. `mc go_mark mine_entrance` (back to staircase top — your bot will use the staircase).
-2. `mc go_mark base` (surface base).
+1. `mc move @mine_entrance` (or `mc go_mark mine_entrance`) — back to staircase top.
+2. `mc move @base` (or `mc go_mark base`) — surface base.
 3. `mc deposit <ore_name>` at the matching chest (per card body — usually `materials_chest` for cobble, `ore_chest` for iron).
 4. `kanban_complete summary:"deposited <N> <ore> at <chest>; tunnel left open at (<X>,<Y>,<Z>) <dir> for follow-up"`.
 
@@ -336,7 +336,7 @@ The right primitive depends on what's around you and whether you already have a 
 | In open cave / no staircase, blocks in hand | **`mc pillar_up cobblestone 30`** | Vertical pillaring up to 30 blocks in one call. Far faster than manual `mc place + mc jump`. Iterates dig+place through ceilings, stops at a sky-open surface. |
 | Buried under thick ceiling, no blocks in hand | **`mc pillar_up 20`** (no block arg) | Bare-hand digs the cell overhead, picks up the drop, and pillars with that. Self-sustains as long as the ceiling material drops (dirt/sand/gravel: yes; stone bare-hand: no — needs a pickaxe OR `--force`). When truly trapped (4 walls + ceiling) it auto bare-hand digs the ceiling without `--force`. |
 | Stuck on top of a 1×1 column (over-pillared) | **`mc pillar_down`** | Mines underfoot block, drops 1, repeats until you reach proper surface. |
-| You marked `mc mark return_to_surface` at entry | **`mc go_mark return_to_surface`** | One-shot return — pathfinder routes via known-walkable path back. |
+| You marked `mc mark return_to_surface` at entry | **`mc move @return_to_surface`** (or `mc go_mark …`) | One-shot return — pathfinder routes via known-walkable path back. |
 | In water | **`mc surface`** | Swims you up to air. No-op on dry land. |
 
 **Anti-pattern: hand-rolling `mc place cobblestone X Y Z` + `mc jump`** one block at a time. That's slow (4× the rounds vs `pillar_up`), eats iteration budget, and is error-prone (your bounding box and the new block fight each tick). Use `mc pillar_up <block> <count>` instead — it handles the place-then-jump-then-rise cycle internally.

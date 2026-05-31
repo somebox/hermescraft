@@ -348,6 +348,13 @@ def cmd_create(args: argparse.Namespace) -> int:
     --depends-on (real prerequisite gate)."""
 
     body = args.body or ""
+    if body:
+        if str(REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPO_ROOT))
+        from scripts.lib.playbook_registry import validate_card_body_playbook
+        pb_err = validate_card_body_playbook(body)
+        if pb_err:
+            _die(pb_err)
     if args.epic:
         # Validate epic exists before tagging — silent typos are the
         # opposite of the cognitive clarity this facade is trying to buy.

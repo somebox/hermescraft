@@ -48,6 +48,8 @@ Env-overridable caps (shared JS + Python): `BLUEPRINT_MAX_CELLS` (50k), `BLUEPRI
 
 `mc construct` and blueprint-aware `mc repair` depend on designated-regions **Phase 2c** (guided edit, worksite grants). Current builds use `mc blueprint layer`, existing `mc fill` / `mc wall` / `mc place`, and phase-scoped `mc blueprint verify`. Stubs return `NOT_IMPLEMENTED` until Phase 2c lands.
 
+**May 2026:** Both verbs appear in the generated cheatsheet (`building` category) but had **zero** 7-day fleet calls — agents are not routed to them yet. When 2c ships, teach via genesis mason cards and re-run `scripts/mc-call-survey.py`; consider grouping placement + construct under a `mc build` help namespace ([`observation-verbs-redesign.md`](./observation-verbs-redesign.md) simplification list).
+
 ## GrabCraft downloader
 
 Script: [`grabcraft_downloader.py`](./grabcraft_downloader.py) (run from repo root or pass the full path).

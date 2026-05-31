@@ -118,6 +118,14 @@ export function createRuntimeState() {
     taskContext: /** @type {{ card_id: string, worksite_region: string|null, expires_at: number, source: string } | null} */ (
       null
     ),
+    /** Playbook phase telemetry (set by mc playbook phase set). */
+    playbook_context: /** @type {{
+      playbook_id: string,
+      phase: string,
+      card_id?: string,
+      sub_playbook_id?: string,
+      sub_phase?: string,
+    } | null} */ (null),
     /** F72: Items auto-picked-up from recent mc dig calls; 30s decay window. */
     recentPickups: /** @type {Array<{ts:number, item:string, count:number, source:string}>} */ (
       []
@@ -239,7 +247,7 @@ export const FIELD_SLICE_MAP = Object.freeze({
   world:     ['bot', 'mcData', 'botReady', 'connectPromise', 'positionHistory', 'bootTime', 'mcSessionStartedAt'],
   social:    ['chatLog', 'overheardLog', 'commandQueue', 'socialGraph', 'socialEvents', 'lastChatTs', 'lastChatBriefedTime', 'MAX_LOG', 'MAX_QUEUE'],
   tasks:     ['currentTask', 'taskHistory', 'syncActionInFlight', 'syncActionName', 'syncActionStartedAt', 'cancelRequested', 'actionHistory', 'actionCounters', 'lastApiError', 'MAX_ACTION_HISTORY', 'MAX_TASK_HISTORY'],
-  runtime:   ['lastMoveFailed', 'lastFailedGotoTarget', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentDigFailures', 'regions', 'taskContext', 'recentPickups', 'recentPlaces', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
+  runtime:   ['lastMoveFailed', 'lastFailedGotoTarget', 'recentPlaceFailures', 'recentEscapes', 'recentStuckCells', 'recentDigFailures', 'regions', 'taskContext', 'playbook_context', 'recentPickups', 'recentPlaces', 'soundEvents', '_stuckActivations', '_lastSyncStuckLogAt'],
   goals:     ['goalsStore', 'chestSnapshots'],
   team:      ['teamConfig', 'combatStats', 'recentDamagers', 'activeFurnaces', 'isSneaking'],
   reminders: ['reminders', 'remindersNextId'],

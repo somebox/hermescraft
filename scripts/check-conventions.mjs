@@ -256,6 +256,35 @@ async function checkMockServicesParity() {
   return violations;
 }
 
+function checkFixtureStressYaml() {
+  const violations = [];
+  const stressDir = join(ROOT, 'data/test-fixtures/stress');
+  try {
+    for (const name of readdirSync(stressDir)) {
+      if (!name.endsWith('.yaml')) continue;
+      const text = readFileSync(join(stressDir, name), 'utf8');
+      if (!/^world:\s/m.test(text)) {
+        violations.push({ file: `data/test-fixtures/stress/${name}`, line: null, message: 'stress fixture must declare world:' });
+      }
+    }
+  } catch {
+    /* no stress dir yet */
+  }
+  const agentDir = join(ROOT, 'data/agent-tests/playbooks');
+  try {
+    for (const name of readdirSync(agentDir)) {
+      if (!name.endsWith('.yaml')) continue;
+      const text = readFileSync(join(agentDir, name), 'utf8');
+      if (!/world:\s/.test(text)) {
+        violations.push({ file: `data/agent-tests/playbooks/${name}`, line: null, message: 'agent-test playbook scenario should declare world:' });
+      }
+    }
+  } catch {
+    /* optional until scenarios land */
+  }
+  return violations;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Run all checks.
 // ─────────────────────────────────────────────────────────────────────
@@ -263,6 +292,7 @@ const CHECKS = [
   { name: 'P3: registry descriptions', fn: checkRegistryDescriptions },
   { name: 'P4: fixture safe-home cleanup', fn: checkFixtureSafeHome },
   { name: 'P4: fixture world declaration', fn: checkFixtureWorld },
+  { name: 'stress/agent-test playbook YAML world', fn: checkFixtureStressYaml },
   { name: 'P4: combat fixture target tags', fn: checkCombatTargetTags },
   { name: 'functional pytest legacy arena patterns', fn: checkFunctionalPytestLegacy },
   { name: 'P16: module size budget ≤500 LOC', fn: checkModuleSizeBudget },

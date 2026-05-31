@@ -51,6 +51,8 @@ import {
   recipeIngredientMap as _recipeIngredientMap,
   bestRecipeForInventory as _bestRecipeForInventory,
   buildCraftPlanFromRecipes,
+  pickRecipeFromRecipes as _pickRecipeFromRecipes,
+  pickRecipeForCraft as _pickRecipeForCraft,
 } from './lib/shared/recipe-ingredients.js';
 import {
   goalsFileForUser,
@@ -235,6 +237,14 @@ function recipeIngredientMap(recipe) {
 
 function bestRecipeForInventory(recipes, b, wantCount) {
   return _bestRecipeForInventory(recipes, b.inventory.items(), wantCount, ctx.world.mcData);
+}
+
+function pickRecipeFromRecipes(recipes, invItems, count) {
+  return _pickRecipeFromRecipes(recipes, invItems, count, ctx.world.mcData);
+}
+
+function pickRecipeForCraft(b, itemName, count) {
+  return _pickRecipeForCraft(b, itemName, count, ctx.world.mcData);
 }
 
 function buildCraftPlan(b, itemName, wantCount = 1) {
@@ -516,6 +526,8 @@ const services = createServices({
     resolveCraftItemName,
     buildCraftPlan,
     bestRecipeForInventory,
+    pickRecipeFromRecipes,
+    pickRecipeForCraft,
   },
   fairPlay: fairPlayApi,
   spatial,

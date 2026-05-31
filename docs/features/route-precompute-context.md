@@ -2,7 +2,7 @@
 
 > File: `docs/features/route-precompute-context.md` (kept for link stability; the route-precompute brief is Pillar 3 of this broader navigation refactor).
 
-Status: **in progress (2026-05-30)** — Phase 0a–1 shipped in code (`retrace --trail`, `navigateToTarget`, `HERMES_NAV_BRIEF`, CLI observe text projection). Phase 2: refresh hooks, negative-leg reconcile, k=1 repair composite, pit/hut confined fixtures. Phase 3: CLI category **`perceive`** (was `observe` group), evicted `connect`/`fair_play`/`blueprint`/`check`/`craft_plan` to platform/building/craft. Flags: `HERMES_RETRACE_TRAIL`, `HERMES_MOVE_RESOLVE`, `HERMES_NAV_BRIEF=shadow|1`. See `bot/lib/runtime/nav-brief.js`.
+Status: **shipped in code (2026-05-30)** — Phases 0a–3 implemented behind flags (`HERMES_RETRACE_TRAIL`, `HERMES_MOVE_RESOLVE`, `HERMES_NAV_BRIEF=shadow|1`). Rollout: shadow → SLO calibration → single-profile canary → fleet. See `bot/lib/config/README.md` and `bot/lib/runtime/nav-brief.js`.
 
 ## Thesis
 
@@ -16,7 +16,7 @@ The LLM's job shifts from *deriving* paths to *selecting* among precomputed, hon
 
 ### Evidence this is the right cut
 
-From `docs/features/observation-verbs-redesign.md` (data from `scripts/mc-call-survey.py` / `scripts/analyze-mc-failures.py`): of 3,438 recognized `mc <verb> <material>` calls, **1,519 (44%) failed**, dominated by `pathfind_failed` / `view_blocked` / `no_solid_neighbor` / `nav_blocked` — "I reasoned about geometry and guessed wrong." Material naming failed **0.5%**. Separately, the visual/assessment cluster (`scene`, `map`, `nearby`, `find_blocks`, `status`) is **~24%** of all `mc` calls. The failure mode and the token load are both in prompt-side geometry reasoning — exactly what moves to primitives here.
+From `docs/features/observation-verbs-redesign.md` (data from `scripts/mc-call-survey.py` / `scripts/analyze-mc-failures.py`): of 3,438 recognized `mc <verb> <material>` calls, **1,519 (44%) failed**, dominated by `pathfind_failed` / `view_blocked` / `no_solid_neighbor` / `nav_blocked` — "I reasoned about geometry and guessed wrong." Material naming failed **0.5%**. Separately, the visual/assessment cluster (`scene`, `map`, `nearby`, `find_blocks`, `status`) is **~24%** of all `mc` calls (May 2026 rerun: ~38k calls / 752 sessions; world-vision cluster larger if `inspect` + `terrain_top` included — see observation doc). The failure mode and the token load are both in prompt-side geometry reasoning — exactly what moves to primitives here. **Parallel work:** shrinking the 181-verb cheatsheet (core list, `verify`/`build` namespaces) is independent of nav brief rollout; both should be re-measured with `mc-call-survey` after genesis cards expose new verbs.
 
 ## The three pillars
 
@@ -88,11 +88,11 @@ Keep every old verb as a registry alias; `prompts-sync.test.js` catches deprecat
 Theseus' thread: as the bot moves it **lays string** — records standable cells — so the path back is never re-derived. The laying half **already exists and runs** (`nav-trail.js`: `sampleNavTrailCrumb` is called every ~5s by the stuck watchdog in `manager.js` when on ground, and by `excavation.js`; teleport clears it). The following-back half is **only partly built**, and the refactor must finish it:
 
 - **Lay (exists)** — crumb sampled when on the ground and moved ≥ `MIN_SPACING` (2); cap `TRAIL_CAP` (64); `TRAIL_TTL_MS` (30 min) decay; clear on teleport (`jump > 8`). Single-writer (the module).
-- **Promote (new)** — tag a subset — the cell before each `dig`/`place`/`move`/descent — as labeled junctions (`last_dig_site`, `trail_junction`). Not implemented today.
-- **Follow back (partly built — must expose in CLI).** `mc retrace` today defaults to the `stair_down` `lastDugSteps` trail; it only follows general crumbs when called with `use_trail:true`, **which the CLI registry does not expose**. So "backtrack comes free" is *not* true yet. Build item: add a CLI surface (`mc retrace --trail` → `use_trail:true`) — or a dedicated `backtrack` verb reading `navTrailCrumbsNewestFirst` — and keep plain `retrace` for the stair-egress case. The brief's `back:` line emits **`retrace --trail`** (or a crumb `move x,y,z`), never bare `retrace`.
-  - **Fallback behavior to preserve:** `resolveRetraceTrail` falls through to `lastDugSteps` when `use_trail` is set but the TTL-filtered crumb list is `< 2` (`navTrailCrumbsNewestFirst` applies the 30-min cutoff). `--trail` therefore is not a hard guarantee of crumb-walk; the brief's `back:` line should not promise crumb fidelity when the trail is thin.
-  - **Existing server-only surface:** `resolveRetraceTrail` also accepts `args.mark` (synthesises a two-point start→mark trail), unused by the CLI. Decide whether `--trail` / `backtrack` reuses this or stays crumbs-only (folds into open question T).
-- **Simplify (new)** — collinear merge (drop crumb B when A→C is directly walkable) keeps the string short. Not implemented today. Note `refreshNavTrailFromHistory` (`nav-trail.js`) is a **dead stub**: it has no callers and its body references a bare `positionHistory` (not `ctx.world.positionHistory`), so it would throw if invoked. It is *intended* to rebuild crumbs from `positionHistory` — fix-before-use and reconcile with junction promotion if the refactor adopts it; don't treat it as a live second writer today.
+- **Promote (shipped)** — junction crumbs (`last_dig_site`, etc.) on dig/place/move/descent hooks.
+- **Follow back (shipped).** `mc retrace --trail` → `use_trail:true`; plain `mc retrace` still defaults to `stair_down` `lastDugSteps`. The brief's `back:` line emits **`retrace --trail`** (or a crumb `move x,y,z`) when breadcrumbs exist.
+  - **Fallback behavior:** `resolveRetraceTrail` falls through to `lastDugSteps` when `use_trail` is set but the TTL-filtered crumb list is `< 2` (`navTrailCrumbsNewestFirst` applies the 30-min cutoff). `--trail` therefore is not a hard guarantee of crumb-walk; the brief's `back:` line should not promise crumb fidelity when the trail is thin.
+  - **Server-only:** `resolveRetraceTrail` also accepts `args.mark` (synthesises a two-point start→mark trail), unused by the CLI.
+- **Simplify (shipped)** — collinear merge in `nav-trail.js`. Note `refreshNavTrailFromHistory` remains a **dead stub** (no callers).
 
 The string is **volatile traversal memory**, distinct from durable **destinations** (marks). It is single-writer (the bot, via `sampleNavTrailCrumb`), self-pruning, and never persisted across cycles. `clearNavTrail` fires on teleport (`nav-trail.js`), respawn (`lifecycle.js`), reconnect (`manager.js`), and the `status` path (`http-app.js`) — so the string drops on death/reconnect (consistent with "volatile"), but a *natural* death only clears it on the respawn action, not at the moment of death. The journey line must tolerate a crumb string that survives until respawn.
 
@@ -348,25 +348,25 @@ Snapshot of existing-vs-greenfield from a read of `registry.mjs`, `dispatch.mjs`
 | Capability | Status | Evidence / note |
 |------------|--------|-----------------|
 | String **laying** | ✅ exists, runs | `sampleNavTrailCrumb` called ~5s by stuck watchdog (`manager.js`) + on dig (`excavation.js`); teleport clears |
-| String **follow** (crumbs) | ⚠ partial, CLI-invisible | `resolveRetraceTrail` supports `use_trail:true`, but registry exposes only bare `mc retrace` (defaults to `stair_down` `lastDugSteps`) |
-| `:region:` ref routing | ⚠ partial | `dispatch.mjs` rewrites region refs to `go_site` for `goto`/`goto_near`/`move`; mark/bare-name resolution into `move` is new |
-| Mark/region nav safety | ⚠ uses raw `goto` | `go_site.js` calls `goto({x,y,z})` (no doors/detour); `go_mark` uses `pathfindGotoNear` + visit bookkeeping |
-| `move` detour refusal | ✅ exists | `isDetourAllowed` / `detour-check.js`; **only on `move`, not raw `goto`** |
-| `move` target grammar (`--near`/`--raw`/`@mark`/bare) | ❌ greenfield | `dispatch.mjs` `case 'move'` requires 3 coords (`missing:coords`); region refs only work via the action-rewrite to `go_site` |
-| `goto` mark-in-body | ✅ exists | `goto` `bodyFn` passes `mark` when present — partial precedent, not on `move` |
+| String **follow** (crumbs) | ✅ shipped | `mc retrace --trail` → `use_trail`; fallback + `source` field |
+| `:region:` ref routing | ✅ on `move` | `dispatch.mjs` rewrites region refs to `go_site` for `goto`/`goto_near`/`move` |
+| Mark/region nav safety | ✅ with flag | `HERMES_MOVE_RESOLVE=1`: `go_site`/`go_mark` via `navigateToTarget`; legacy path without flag unchanged |
+| `move` detour refusal | ✅ exists | `isDetourAllowed` / `detour-check.js`; **only on `move`, not raw `goto`/`--raw`** |
+| `move` target grammar (`--near`/`--raw`/`@mark`/bare) | ✅ shipped | `dispatch.mjs` + `move.js` mark resolution; `--raw`/`--near`/`--force` in registry |
+| `goto` mark-in-body | ✅ exists | `goto` `bodyFn` passes `mark`; facade records negative legs on marked failures |
 | `deathpoint` nav | ⚠ own stack | `lifecycle.js` uses `pathfindGotoNear` (range 3), not `goto`/`move` |
-| `retrace --trail` fallback | ⚠ note | `use_trail` falls back to `lastDugSteps` when TTL-filtered crumbs `< 2`; `args.mark` synth-trail exists server-side, not in CLI |
+| `retrace --trail` fallback | ✅ shipped | CLI `--trail` → `use_trail`; falls back to `lastDugSteps` when crumbs `< 2`; result reports `source` |
 | Second trail writer | ❌ dead stub | `refreshNavTrailFromHistory` — no callers, refs bare `positionHistory` (would throw); fix-before-use if adopted |
 | `mc reachable` proves a path? | ❌ no | geometry-only (foot/head/ground); does not verify a path from the bot |
 | `pillar_up` self-terminating | ✅ exists | registry: "stops when it reaches a sky-open surface" |
 | `go` name free? | ❌ taken | `goto` owns `go`/`g`; `buildAliasMap` throws on duplicates → **`move` canonical** |
-| `perceive` name free? | ❌ taken | `scene` owns alias `perceive` — collides with a `perceive` *category* rename (Phase 3) |
+| `perceive` category | ✅ shipped | CLI group **`perceive`**; `scene` alias `perceive` removed |
 | BFS == Movements? | ❌ no | `computeReachability` is standability BFS, no doors/dig/scaffold |
 | `annotateReachability` precedent | ✅ exists | `queries/find.js` (`mc find`) + `mining/scout.js` (powers `find_blocks`, **not** the `mc scout` hazard verb); reachable-first + `approach_cell`; copy for the brief, not observe |
-| `nearby_marks` consumers | ✅ single emitter | only `buildObservePayload`, **straight-line dist, no reachability** — low-risk to replace, still version payload |
-| Per-round brief / `mc brief` | ❌ greenfield | no handler or landfolk plugin code |
-| Within-round invalidation hook | ❌ greenfield | nothing marks a brief stale after dig/place |
-| Reconciliation / negative legs | ❌ greenfield | not implemented |
+| `nearby_marks` consumers | ✅ replaced when brief on | `HERMES_NAV_BRIEF=1` drops `nearby_marks`; GoalNear radius=2 for mark reachability |
+| Per-round brief / `mc brief` | ✅ in `observe` | `nav-brief.js` + flags; dedicated `mc brief` verb still deferred |
+| Within-round invalidation hook | ✅ shipped | `markBriefRefreshRequired` + reconcile on observe |
+| Reconciliation / negative legs | ✅ shipped | negative legs + k=1 repair; recording via `move` / `navigateToTarget` |
 | `HERMES_NAV_AUTO_RETRACE` | ✅ exists | `_nav-autoretrace.js`: auto `retrace` on `goto`/`move` `NAV_NO_PROGRESS` when dy>0 **and `lastDugSteps` ≥2** (stair trail, not crumbs) — don't double-fire with Pillar 2 |
 | `route_preview` precedent | ✅ exists | `move` water-refusal emits one — align the brief's shape with it |
 
@@ -386,11 +386,11 @@ File paths are relative to `bot/lib/actions/` unless they carry an explicit pref
 | Shelter | `is_sheltered`, `neighbor_*` | `queries/region.js` |
 | Standable approach cell | `mc reachable` | `queries/region.js` |
 | String lay (runs) | `sampleNavTrailCrumb`, watchdog caller | `runtime/nav-trail.js`, `runtime/manager.js` |
-| String follow (partial) | `resolveRetraceTrail` (`use_trail` not in CLI) | `movement/retrace.js` |
+| String follow (partial) | `resolveRetraceTrail`, `mc retrace --trail` | `movement/retrace.js`, `cli/registry.mjs` |
 | Ref routing (partial) | `:region:` rewrite to `go_site` | `cli/dispatch.mjs`, `movement/go_site.js` |
-| Mark nav (own stack) | `go_mark` (`pathfindGotoNear`) | `marks.js` |
+| Mark nav (facade) | `navigateToTarget`, `go_mark` | `movement/navigate-to-target.js`, `marks.js` |
 | Alias map (collision guard) | `buildAliasMap` (throws on dup) | `cli/registry.mjs` |
-| Brief injection | `buildObservePayload` (`nearby_marks`) | `runtime/observation.js` |
+| Brief injection | `computeNavBrief`, `buildObservePayload` | `runtime/nav-brief.js`, `runtime/observation.js` |
 | Heavy cousins | `mc scout`, `mc advise --target` | registry |
 | `route_preview` shape precedent | water-refusal emitter | `movement/water-refusal.js` |
 | Marks | fleet JSON | `data/locations-base.json` |
@@ -402,7 +402,7 @@ File paths are relative to `bot/lib/actions/` unless they carry an explicit pref
 
 - **Pathfinder can lie** — attach Part D metadata; no raw path-node dumps.
 - **Probing cost** — cap marks, R_local, k edits, timeouts; skip if the bot barely moved.
-- **Staleness** — across-round staleness is moot (recompute each cycle). Within-round staleness is real: until the Phase 2 `brief_refresh_required` hook lands, the only mitigations are self-terminating verbs (prefer `pillar_up` over `pillar_up 26`) and act-time re-reads (`scene`/`standing`); the brief is not auto-invalidated after a self-mutation. See *Mutable world — Within-round staleness*.
+- **Staleness** — across-round staleness is moot (recompute each cycle). Within-round: `brief_refresh_required` after mutations and negative legs after live nav failures; still prefer act-time `scene`/`standing` when the brief disagrees with what you just dug.
 - **Fair-play** — `seen` vs `inferred`; repair only in loaded chunks.
 - **Token budget** — brief + journey line must beat the `scene`/`map` loop it displaces (measure in Phase 3); must not duplicate `nearby_marks`.
 - **Scope guard** — the architectural commitments here are deliberately small: the four-piece seam, the `nav_brief/1` envelope, typed degraded modes, one ranking-policy object, and flag-based rollout. **Explicitly out of scope for v1:** a generic perception/event bus, a persistent edge graph, cross-round caching, and splitting this doc into separate architecture/CLI/rollout specs (revisit only if the implementation outgrows one file). Add machinery when a measured need appears, not ahead of it.
@@ -435,13 +435,14 @@ Reuse the existing `HERMES_*` env-flag pattern (`config/index.js`) — no new in
 - **Per-phase flags** — e.g. `HERMES_NAV_BRIEF` (Phase 1), `HERMES_MOVE_RESOLVE` (0b), `HERMES_RETRACE_TRAIL` (0a). Default off; flip per environment.
 - **Shadow mode for Phase 1** — compute `nav_brief` and **log it without surfacing to the agent**; diff against current `nearby_marks` + the live `move`/`goto` failure classes (`analyze-mc-failures.py`) before any agent reads it. Catches bad routes without risking a live bot.
 - **Canary by role** — enable on **one worker profile** (e.g. gatherer-test) for a session before fleet-wide; Steward stays orchestration-only.
+- **Agent visibility** — `nav_brief` is attached to **`mc observe` only**, not to `status` / `marks` / `nearby` / `scene`. Workers already start with `mc observe` in `*.starter.txt`. **Steward historically oriented with scattered perceive verbs and zero observe calls** — brief visibility stays at zero until `steward.md` / `steward.starter.txt` lead with `mc observe` each cycle (2026-05-30 genesis note).
 - **Latency budget (SLO)** — the round-start precompute must fit the per-turn read; cap total `getPathTo` work (marks × profiles × timeout) and **degrade to `PARTIAL_BRIEF`** rather than blow the budget. The Phase 1 latency measure already gates whether a cross-round cache is ever needed.
 
 This is rollout hygiene, not new architecture — flags + a log diff + one canary profile.
 
 **CI gates touched:** new `retrace` body fields (0a) and a `brief` action (1) must keep `cli-action-sync.test.js` (every CLI POST action has a server handler) and `actions-manifest.test.js` (factory naming) green, on top of the cheatsheet/prompts gates already noted. `docs/mc-commands.md` is a **hand-maintained** summary and already drifts from the registry — do **not** sync it as a source of truth; the registry + generated `docs/mc-cheatsheet.md` are canonical.
 
-**Test reality check (2026-05-30):** the only existing coverage on these surfaces is `nav-trail.test.js` (spacing/cap/teleport), `retrace.test.js` (cell validation only), `move-detour-check.test.js`, `cli/dispatch.test.js` (goto→go_site), `go-site.test.js`, `movement-water-refusal.test.js`, `nav-helpers.test.js` (`standingState`), and the CI gates. Everything brief/observe/`nav_mode`/`brief_refresh_required` is greenfield test work. No test should be *removed* — `go-site.test.js` and the dispatch test are *adapted* (mock target changes), the egress/retrace-invalidation and detour tests stay as-is.
+**Test reality check (2026-05-30):** nav-brief, retrace `--trail`, observe payload, and negative-leg tests exist under `bot/test/runtime/` and `bot/test/actions/`. Steward prompt alignment for `mc observe` is separate from code gates — track via genesis postmortems / `mc-call-survey.py` observe call counts.
 
 ---
 

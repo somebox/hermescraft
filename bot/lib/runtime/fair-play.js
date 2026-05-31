@@ -128,8 +128,14 @@ export function createFairPlaySuite(deps) {
   // and click through them just fine. Treat open ones as passable so
   // mc chest / mc place / mc attack don't false-positive on a door
   // between the bot and its target.
+  //
+  // Foliage / plants / leaves: same list as trunk harvest LOS — mc collect
+  // discovery used hasHarvestLineOfSightToWoodBlock (leaves ok) but dig and
+  // collect execute used this helper without foliage → "can't see log" with
+  // only leaves in the way (boundingBox='block' on many leaf types).
   function isPassableForLOS(block) {
     if (!block) return true;
+    if (isHarvestLosTransparentBlock(block, '')) return true;
     if (block.boundingBox !== 'block') return true;
     const name = block.name || '';
     if (!/(_door|_fence_gate|_trapdoor)$/.test(name)) return false;

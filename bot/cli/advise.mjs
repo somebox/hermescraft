@@ -39,6 +39,7 @@ export function buildAdviseArgs(opts) {
 export function runAdviseCli(opts) {
   const { kind } = opts;
   const args = buildAdviseArgs(opts);
+  const timeoutMs = (kind || 'advise') === 'advise' ? 25_000 : 90_000;
 
   return new Promise((resolve, reject) => {
     const py = process.env.MC_ADVISE_PYTHON || 'python3';
@@ -49,14 +50,34 @@ export function runAdviseCli(opts) {
     });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      resolve({
+        ok: false,
+        command: kind || 'advise',
+        error: `ADVISE_TIMEOUT after ${timeoutMs / 1000}s (shell cap)`,
+        error_type: 'timeout',
+      });
+    }, timeoutMs);
     child.stdout.on('data', (c) => {
       stdout += c;
     });
     child.stderr.on('data', (c) => {
       stderr += c;
     });
-    child.on('error', reject);
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       const trimmed = stdout.trim();
       if (trimmed) {
         try {

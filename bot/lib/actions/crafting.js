@@ -164,7 +164,12 @@ export function createCraftingActions(services) {
         recipes = b.recipesAll(itemType.id, null, 1);
       }
 
-      const recipe = bestRecipeForInventory ? bestRecipeForInventory(recipes, b, count) : recipes[0];
+      const mcData = ctx.world.mcData;
+      const invItems = b.inventory.items();
+      const picked = craft.pickRecipeFromRecipes
+        ? craft.pickRecipeFromRecipes(recipes, invItems, count, mcData)
+        : null;
+      const recipe = picked?.recipe ?? (bestRecipeForInventory ? bestRecipeForInventory(recipes, b, count) : recipes[0]);
       const requiresBench = recipe.requiresTable !== false;
 
       // Convert "I want N items" → "how many times to run the recipe".
@@ -177,7 +182,7 @@ export function createCraftingActions(services) {
       // (1 log → 4 planks), `craft 5 planks` runs twice (2 logs → 8),
       // and so on. The user gets AT LEAST what they asked for.
       const resultPerCraft = recipe.result?.count || 1;
-      const invocations = Math.max(1, Math.ceil(count / resultPerCraft));
+      const invocations = picked?.invocations ?? Math.max(1, Math.ceil(count / resultPerCraft));
 
       // ── TABLE_REQUIRED ──
       if (requiresBench && !table) {

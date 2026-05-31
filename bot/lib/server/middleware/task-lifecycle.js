@@ -22,6 +22,7 @@
  */
 
 import { validate } from '../../shared/action-contract.js';
+import { logNavEvent } from '../../runtime/metrics.js';
 import { syncPreMiddleware, syncPostMiddleware } from './pipeline.js';
 
 /** Extract a short (≤80 char) one-liner from an action result for the dashboard. */
@@ -86,6 +87,26 @@ function runDevValidator(actionName, result) {
     // eslint-disable-next-line no-console
     console.warn(`[HERMES_VALIDATE] ${actionName} returned non-conformant: ${v.issues.join('; ')}`);
   }
+}
+
+/** Sync POST chokepoint — JSONL nav telemetry (async bg_* omitted v1). */
+function emitSyncNavTelemetry(services, actionName, result) {
+  const ctx = services.state;
+  const profile = String(services.config?.mc?.username || 'unknown').toLowerCase();
+  const pc = ctx.runtime?.playbook_context;
+  const tc = ctx.runtime?.taskContext;
+  const softFailure = result && typeof result === 'object' && result.ok === false;
+  logNavEvent({
+    profile,
+    actionName,
+    ok: !softFailure,
+    ...(softFailure && result.error?.code ? { error_code: String(result.error.code) } : {}),
+    ...(pc?.playbook_id ? { playbook_id: pc.playbook_id } : {}),
+    ...(pc?.phase ? { phase: pc.phase } : {}),
+    ...(pc?.sub_playbook_id ? { sub_playbook_id: pc.sub_playbook_id } : {}),
+    ...(pc?.sub_phase ? { sub_phase: pc.sub_phase } : {}),
+    ...(pc?.card_id || tc?.card_id ? { card_id: pc?.card_id || tc?.card_id } : {}),
+  });
 }
 
 /**
@@ -247,6 +268,7 @@ export async function dispatchAction(services, actionName, body, opts) {
 
     pushAction(ctx, actionName, status, startedAt, result, errorMsg, reason);
     recordActionOutcome(ctx, actionName, status, errorMsg);
+    emitSyncNavTelemetry(services, actionName, result);
     runDevValidator(actionName, result);
 
     return {

@@ -204,6 +204,13 @@ export function recordNavBriefNegativeLeg(ctx, lineKey, detail = {}) {
   ctx.runtime.navBriefNegativeLegs[lineKey] = { ts: Date.now(), ...detail };
 }
 
+/** Round-scoped suppression after a live nav failure to a named mark. */
+export function recordNavBriefFailureForMark(ctx, markName, verb = 'move') {
+  const name = markName ? String(markName).replace(/^@/, '').trim() : '';
+  if (!name || !ctx) return;
+  recordNavBriefNegativeLeg(ctx, navBriefLineKey({ verb, args: name }));
+}
+
 /**
  * Drop path rows suppressed by volatile negative legs this round.
  * @param {Record<string, any>} ctx
@@ -336,6 +343,22 @@ function headerSituationLabel(standing, navMode) {
  * @param {Record<string, any>} ctx
  * @param {{ getStandingState?: (bot: any) => any, now?: () => number }} deps
  */
+function cheapSuggestedHint(standing, ctx, deps) {
+  if (standing?.open_dirs?.length === 1) {
+    return `mc move one step ${standing.open_dirs[0]}`;
+  }
+  if (deps.loadLocations && ctx?.world?.bot?.entity?.position) {
+    const locs = collectKeyLocations(ctx, deps, 1);
+    if (locs[0]?.name) {
+      return `mc go_mark ${locs[0].name}  # ${locs[0].straight_m}m`;
+    }
+  }
+  if (Array.isArray(standing?.open_dirs) && standing.open_dirs.length) {
+    return `open_dirs: ${standing.open_dirs.slice(0, 3).join(', ')}`;
+  }
+  return undefined;
+}
+
 export function buildNavFrame(ctx, deps = {}) {
   const bot = ctx?.world?.bot;
   const getStanding = deps.getStandingState ?? (() => null);
@@ -345,6 +368,7 @@ export function buildNavFrame(ctx, deps = {}) {
   const journey = buildJourney(ctx);
   const situation = headerSituationLabel(standing, nav_mode);
   const computed_at = deps.now?.() ?? Date.now();
+  const suggested_hint = cheapSuggestedHint(standing, ctx, deps);
   return {
     standing,
     nav_mode,
@@ -357,6 +381,7 @@ export function buildNavFrame(ctx, deps = {}) {
       nav_mode,
       signals: nav_mode_signals,
       computed_at,
+      ...(suggested_hint ? { suggested_hint } : {}),
     },
   };
 }

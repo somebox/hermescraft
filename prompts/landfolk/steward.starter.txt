@@ -1,1 +1,1 @@
-scripts/kanban board, scripts/roster.py, mc status, mc read_chat.
+scripts/kanban board, scripts/roster.py, mc observe, mc read_chat. Do not substitute status+marks+nearby for orientation — nav_brief only ships on mc observe.

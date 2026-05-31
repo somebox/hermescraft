@@ -1,0 +1,5 @@
+# Placeholder — run via scripts/stress.sh advise-on-stuck (requires live bot + OpenRouter).
+world: landfolk-test
+prep: []
+cleanup:
+  - "execute in landfolk-test run tp Flint 52 65 52"

@@ -7,11 +7,25 @@ import {
   collectKeyLocations,
   KEY_LOCATION_CAP,
   NAV_BRIEF_SCHEMA,
+  GET_PATH_TIMEOUT_MS,
+  NAV_BRIEF_SLO_MS,
   markBriefRefreshRequired,
   reconcileNavBriefPaths,
   recordNavBriefNegativeLeg,
+  recordNavBriefFailureForMark,
   navBriefLineKey,
 } from '../../lib/runtime/nav-brief.js';
+
+test('nav-brief exports timing guard constants', () => {
+  assert.ok(Number.isFinite(GET_PATH_TIMEOUT_MS) && GET_PATH_TIMEOUT_MS > 0);
+  assert.ok(Number.isFinite(NAV_BRIEF_SLO_MS) && NAV_BRIEF_SLO_MS > 0);
+});
+
+test('recordNavBriefFailureForMark writes move:<mark> key', () => {
+  const ctx = { runtime: { navBriefNegativeLegs: {} } };
+  recordNavBriefFailureForMark(ctx, '@chest_food');
+  assert.ok(ctx.runtime.navBriefNegativeLegs['move:chest_food']);
+});
 
 /** Forest-edge mock: open surface, trail from base through forest_edge. */
 function makeForestCtx(overrides = {}) {

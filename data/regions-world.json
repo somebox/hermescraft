@@ -16,9 +16,9 @@
         "allow_harvest": true,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-29T19:54:58Z",
-      "updated": "2026-05-29T19:54:58Z",
-      "notes": "Genesis run g-2026-05-29-8 seed -3899835130120818196 — starts as marker (workers can dig/place to build). Phase-poller flips to protect when [GENESIS:P3] completes (Defenses + watch tower done)."
+      "created": "2026-05-30T16:53:44Z",
+      "updated": "2026-05-30T16:53:44Z",
+      "notes": "Genesis run g-2026-05-30-3 seed -3899835130120818196 — starts as marker (workers can dig/place to build). Phase-poller flips to protect when [GENESIS:P3] completes (Defenses + watch tower done)."
     },
     {
       "id": "shelter",
@@ -35,8 +35,8 @@
         "allow_harvest": false,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-29T19:54:58Z",
-      "updated": "2026-05-29T19:54:58Z",
+      "created": "2026-05-30T16:53:44Z",
+      "updated": "2026-05-30T16:53:44Z",
       "notes": "P1 shelter footprint marker — steward refines bounds after build"
     },
     {
@@ -54,9 +54,9 @@
         "allow_harvest": false,
         "overrides_global_denylist": false
       },
-      "created": "2026-05-29T19:54:58Z",
-      "updated": "2026-05-29T19:54:58Z",
-      "notes": "Guard tower pad for genesis run g-2026-05-29-8"
+      "created": "2026-05-30T16:53:44Z",
+      "updated": "2026-05-30T16:53:44Z",
+      "notes": "Guard tower pad for genesis run g-2026-05-30-3"
     }
   ]
 }

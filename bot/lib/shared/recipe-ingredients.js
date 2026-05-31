@@ -144,6 +144,68 @@ export function bestRecipeForInventory(recipes, invItems, wantCount, mcData) {
   return best;
 }
 
+export function pickRecipeFromRecipes(recipes, invItems, count, mcData) {
+  if (!recipes?.length) {
+    return { recipe: null, invocations: 0 };
+  }
+  let best = recipes[0];
+  let bestScore = -Infinity;
+  for (const r of recipes) {
+    const yieldEach = r.result?.count || 1;
+    const invocations = Math.max(1, Math.ceil(count / yieldEach));
+    const ings = recipeIngredientMap(r, mcData);
+    let score = 0;
+    for (const [name, perCraft] of Object.entries(ings)) {
+      const need = perCraft * invocations;
+      const have = countSatisfying(name, invItems);
+      score += Math.min(have, need);
+      if (have >= need) score += 1000;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = r;
+    } else if (score === bestScore) {
+      const canon = Object.keys(recipeIngredientMap(best, mcData))[0];
+      const alt = Object.keys(ings)[0];
+      const held = new Set(invItems.map((i) => i.name));
+      if (alt && held.has(alt) && canon && !held.has(canon)) {
+        best = r;
+      }
+    }
+  }
+  const resultPerCraft = best.result?.count || 1;
+  const invocations = Math.max(1, Math.ceil(count / resultPerCraft));
+  return { recipe: best, invocations };
+}
+
+/**
+ * Shared craft recipe pick: scores variants using recipe invocations for `count` items.
+ * @param {import('mineflayer').Bot} b
+ * @param {string} itemName resolved item id
+ * @param {number} count desired item count
+ * @param {object} mcData
+ * @returns {{ recipe: object|null, invocations: number, plan: null }}
+ */
+export function pickRecipeForCraft(b, itemName, count, mcData) {
+  const itemType = mcData.itemsByName[itemName];
+  if (!itemType) {
+    return { recipe: null, invocations: 0, plan: null };
+  }
+  let recipes = b.recipesFor(itemType.id, null, 1, null);
+  if (!recipes?.length) {
+    try {
+      recipes = b.recipesAll(itemType.id, null, 1);
+    } catch {
+      recipes = [];
+    }
+  }
+  if (!recipes?.length) {
+    return { recipe: null, invocations: 0, plan: null };
+  }
+  const picked = pickRecipeFromRecipes(recipes, b.inventory.items(), count, mcData);
+  return { ...picked, plan: null };
+}
+
 /**
  * Build a craft plan: check which ingredients are available, which are missing,
  * and what's in known chests.

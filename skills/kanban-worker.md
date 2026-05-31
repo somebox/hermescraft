@@ -55,8 +55,8 @@ Your training data has Minecraft commands from other contexts; not all of them e
 
 **Rule: if you're not 100% sure a verb exists from your skill memory, run `mc help` first.** It's one cheap call, lists every real verb organized by category, and prevents the 3-call hallucination chain. Specifically:
 
-- `mc help` — top-level list of all categories (platform, observe, movement, mining, building, …) and the verbs in each.
-- `mc help <category>` — focused listing for one area (e.g. `mc help observe` shows status / map / nearby / scene / find / advise / etc.).
+- `mc help` — top-level list of all categories (platform, **perceive**, movement, mining, building, …) and the verbs in each.
+- `mc help perceive` — world vision + orchestration reads (`status`, `scene`, `map`, `nearby`, `observe`, `scout`, …). Legacy: `mc help observe` may still appear in older notes; the registry category is **`perceive`**.
 
 Audit baseline 2026-05-26: workers made **zero `mc help` calls in 30 minutes across 278 tool invocations.** Every "unknown command" error in the same window was a verb that could have been confirmed with one `mc help` first.
 

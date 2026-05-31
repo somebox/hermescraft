@@ -217,7 +217,7 @@ forested than you found it).
 **How:**
 ```
 mc find_blocks grass_block 16   # find open ground nearby
-mc go_mark home                 # don't plant too far from base
+mc move @home                 # don't plant too far from base
 # pick a coord with clear sky:
 mc plant oak_sapling X Y Z      # Y = grass_block_y + 1 (one cell above ground)
 ```

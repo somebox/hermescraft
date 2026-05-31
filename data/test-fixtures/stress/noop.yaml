@@ -1,0 +1,6 @@
+# stress/noop — Stage 0 harness smoke (prep+cleanup only, no bot HTTP assertions).
+world: landfolk-test
+
+prep: []
+cleanup:
+  - "execute in landfolk-test run tp Flint 52 65 52"

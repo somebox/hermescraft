@@ -70,6 +70,8 @@ function defaultCraft() {
     resolveCraftItemName: (raw) => { throw new Error(`mock resolveCraftItemName: ${raw}`); },
     buildCraftPlan: () => ({ ok: false, error: 'mock buildCraftPlan' }),
     bestRecipeForInventory: (recipes) => (recipes && recipes[0]) || null,
+    pickRecipeFromRecipes: (recipes) => ({ recipe: recipes?.[0] || null, invocations: 1 }),
+    pickRecipeForCraft: () => ({ recipe: null, invocations: 0, plan: null }),
   };
 }
 

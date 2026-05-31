@@ -30,6 +30,7 @@ import * as positionGuard from './position-guard.js';
 import * as placeRepeatGuard from './place-repeat-guard.js';
 import * as announce from './announce.js';
 import * as chatBanner from './chat-banner.js';
+import * as hintInjector from './hint-injector.js';
 
 /** Each entry must expose `check(services, body, actionName, meta)`. */
 export const syncPreMiddleware = Object.freeze([
@@ -50,5 +51,6 @@ export const syncPostMiddleware = Object.freeze([
     },
   },
   announce,
+  hintInjector,
   chatBanner,
 ]);

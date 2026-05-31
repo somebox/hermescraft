@@ -1,6 +1,6 @@
 Continue (orchestrator cycle).
 
-OBSERVE: run your orient pass per AGENTS.md (the project-level canonical surface in your system prompt).
+OBSERVE: `scripts/kanban board` + `scripts/roster.py --assignable` + **`mc observe`** (lean — nav_brief/mark reachability only on this verb; do not chain status+marks+nearby instead). Then diagnose per steward.md.
 DIAGNOSE each bot: HEALTHY_WORKING / PHYSICALLY_STUCK / IDLE_AVAILABLE / BLOCKED_WAITING.
 RANK the top 3 issues (stuck bots → blocked cards → idle → imbalance).
 EXECUTE up to 3 actions — one per issue. COMMIT, don't reverse.

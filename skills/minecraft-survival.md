@@ -33,9 +33,10 @@ mc collect BLOCK N     # find and mine N blocks (e.g. mc collect oak_log 5)
 mc craft ITEM [N]      # craft item (need crafting table nearby for 3x3)
 mc recipes ITEM        # look up crafting recipe ingredients
 mc smelt INPUT         # smelt in nearby furnace
-mc move X Y Z          # smart non-destructive nav (handles doors) — preferred
-mc goto X Y Z          # raw pathfinder (open spaces only)
-mc goto_near X Y Z     # pathfind near position
+mc move X Y Z [--near N]     # smart nav (doors, detour guard) — preferred
+mc move @mark | mark_name    # walk to saved mark when HERMES_MOVE_RESOLVE=1
+mc goto X Y Z              # raw pathfinder; prefer mc move … --raw
+mc goto_near X Y Z         # legacy; prefer mc move X Y Z --near 2
 mc stair_down DIR LEN  # safely descend by digging stairs (see minecraft-navigation)
 mc stair_up DIR LEN    # safely ascend; places floor over voids
 mc pillar_up [BLK] [N] [--force]  # climb N blocks (multi-block). Omit BLK to dig overhead + capture + pillar. Auto bare-hand digs the ceiling when truly trapped; --force slow-digs stone faster + breaks protected blocks. Alias: pillar_step.
@@ -528,20 +529,22 @@ answers what you actually need:
 | What's in front of me? | `mc map 16` | ~1.7 KB |
 | Counts of nearby blocks? | `mc nearby 16` | ~0.4 KB |
 | Quick game state + goals? | `mc status` (lean default) | ~1-2 KB |
-| Same + recent_actions? | `mc observe` (lean default) | ~2 KB |
+| Same + recent_actions (+ route brief when enabled)? | `mc observe` (lean default) | ~2 KB |
 | Full goal objects + plan hints? | `mc observe --full` | ~7-10 KB |
 | Every visible block's coords? | `mc scene` | ~10 KB (heavy!) |
 
 `mc status` and `mc observe` default to **lean** mode — they cap nearby
 entities/blocks, trim goals to {id, urgency, satisfied, gap}, and drop
-plan_hints/dashboard_signals/action_stats. Add `--full` if you genuinely
+plan_hints/dashboard_signals/action_stats. When **`HERMES_NAV_BRIEF=1`**, observe also
+includes **`nav_brief_text`** (precomputed movement lines — see [minecraft-navigation](minecraft-navigation)).
+Add `--full` if you genuinely
 need the verbose view. The lean default is 60-80% smaller and almost
 always sufficient.
 
 ## When stuck
 
 - Same action fails 3× → try something different.
-- `collect` fails → `mc find BLOCK` for nearest source (inventory + chests + visible), then `mc goto_near`.
+- `collect` fails → `mc find BLOCK` for nearest source (inventory + chests + visible), then `mc move … --near 2` or `mc move @mark`.
 - Navigation fails → `mc stop`, then `mc escape` (handles wedges/pillars/water).
 - Fell in a hole → `mc pillar_up dirt 4` or `mc stair_up north 6`.
 - Craft fails → `mc recipes ITEM` or `mc craft_plan ITEM` for a dependency tree.

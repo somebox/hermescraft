@@ -319,6 +319,145 @@ def write_summary(events: list[dict], out_path: Path, run_id: str) -> None:
             f.write(f"- slo_exceeded: {len(exceeded)} ({100*len(exceeded)/len(cms):.1f}%)\n\n")
 
 
+# ─── live JSONL + compliance ───────────────────────────────────────────
+
+
+def _live_jsonl_dir() -> Path:
+    return Path(os.environ.get("HERMESCRAFT_TMP", "/tmp/hermescraft"))
+
+
+def read_live_nav_rows() -> list[dict]:
+    rows: list[dict] = []
+    d = _live_jsonl_dir()
+    if not d.is_dir():
+        return rows
+    for path in sorted(d.glob("nav-*.jsonl")):
+        profile = path.stem.replace("nav-", "", 1)
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                row.setdefault("profile", profile)
+                rows.append(row)
+        except (OSError, json.JSONDecodeError):
+            continue
+    return rows
+
+
+def load_registry_phases() -> dict[str, list[dict]]:
+    reg_path = REPO_ROOT / "data" / "playbooks" / "registry.yaml"
+    if not reg_path.is_file():
+        return {}
+    try:
+        import yaml
+    except ImportError:
+        return {}
+    raw = yaml.safe_load(reg_path.read_text(encoding="utf-8")) or {}
+    out: dict[str, list[dict]] = {}
+    for entry in raw.get("playbooks") or []:
+        if isinstance(entry, dict) and entry.get("id"):
+            out[str(entry["id"])] = list(entry.get("phases") or [])
+    return out
+
+
+def compliance_checks(rows: list[dict]) -> dict[str, float]:
+    """Three post-checks; returns fractions in 0..1."""
+    sync = [r for r in rows if r.get("actionName")]
+    if not sync:
+        return {"preflight_before_act": 0.0, "whitelist": 0.0, "null_playbook_context": 1.0}
+    null_ctx = sum(1 for r in sync if not r.get("playbook_id")) / len(sync)
+    phases_by_pb = load_registry_phases()
+    whitelist_ok = 0
+    whitelist_n = 0
+    preflight_ok = 0
+    preflight_n = 0
+    spans: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for r in sync:
+        pid = r.get("playbook_id")
+        ph = r.get("phase")
+        if pid and ph:
+            spans[(pid, ph)].append(r)
+    for (pid, ph), evts in spans.items():
+        phase_defs = {p["id"]: p for p in phases_by_pb.get(pid, []) if isinstance(p, dict)}
+        pdef = phase_defs.get(ph)
+        if not pdef:
+            continue
+        allowed = set(pdef.get("allowed_verbs") or [])
+        preflight = set(pdef.get("preflight_verbs") or [])
+        mutating = [e for e in evts if e.get("actionName") not in ("playbook_phase_set", "playbook_phase_clear", "status", "observe")]
+        if mutating:
+            preflight_n += 1
+            first = mutating[0]
+            if first.get("actionName") in preflight or not preflight:
+                preflight_ok += 1
+        for e in evts:
+            act = e.get("actionName")
+            if not act or act.startswith("playbook_phase"):
+                continue
+            if allowed:
+                whitelist_n += 1
+                if act in allowed:
+                    whitelist_ok += 1
+    return {
+        "preflight_before_act": (preflight_ok / preflight_n) if preflight_n else 1.0,
+        "whitelist": (whitelist_ok / whitelist_n) if whitelist_n else 1.0,
+        "null_playbook_context": null_ctx,
+    }
+
+
+def live_main(args: argparse.Namespace) -> int:
+    rows = read_live_nav_rows()
+    if args.stdout:
+        for r in rows:
+            sys.stdout.write(json.dumps(r, sort_keys=True) + "\n")
+        return 0
+    if args.compliance or args.playbooks:
+        by_pb: Counter[str] = Counter()
+        for r in rows:
+            pid = r.get("playbook_id") or "(null)"
+            by_pb[pid] += 1
+        print(f"live rows: {len(rows)}", file=sys.stderr)
+        if len(rows) == 0:
+            print(
+                "  (no nav-*.jsonl rows yet — expected before playbook phase set; not an error)",
+                file=sys.stderr,
+            )
+        for pid, n in by_pb.most_common():
+            print(f"  {pid}: {n}", file=sys.stderr)
+    if args.compliance:
+        c = compliance_checks(rows)
+        print("compliance:", json.dumps(c, indent=2))
+    return 0
+
+
+def baseline_turns_main(run_id: str) -> int:
+    run_dir = RUNS_ROOT / run_id
+    findings = run_dir / "findings"
+    findings.mkdir(parents=True, exist_ok=True)
+    out = findings / "baseline-turns.md"
+    text = f"""# Baseline turns — {run_id}
+
+## Genesis aggregate (from postmortem g-2026-05-30-3)
+
+Populate via `scripts/nav-telemetry.py {run_id}` session mining.
+
+## Fixture A1 medians (after 2a-V)
+
+| Arm | median tool calls | median turns |
+|---|---|---|
+| prose-skilled | TBD | TBD |
+| playbook-flat | TBD | TBD |
+| playbook+skill ref | TBD | TBD |
+
+Stage 4 A1 % target: **TBD** until fixture section filled.
+"""
+    out.write_text(text, encoding="utf-8")
+    print(f"wrote {out}", file=sys.stderr)
+    return 0
+
+
 # ─── main ──────────────────────────────────────────────────────────────
 
 
@@ -327,7 +466,16 @@ def main() -> int:
     ap.add_argument("run_id", nargs="?", help="Run id under data/genesis-runs/; default: most recent.")
     ap.add_argument("--stdout", action="store_true", help="Stream JSONL to stdout instead of writing files")
     ap.add_argument("--jsonl-only", action="store_true", help="Skip the markdown summary")
+    ap.add_argument("--live", action="store_true", help="Read live nav-*.jsonl from HERMESCRAFT_TMP")
+    ap.add_argument("--playbooks", action="store_true", help="With --live: aggregate playbook_id/phase counts")
+    ap.add_argument("--compliance", action="store_true", help="With --live: preflight/whitelist/NULL context checks")
+    ap.add_argument("--baseline-turns", metavar="RUN_ID", help="Write findings/baseline-turns.md for a genesis run")
     args = ap.parse_args()
+
+    if args.live:
+        return live_main(args)
+    if args.baseline_turns:
+        return baseline_turns_main(args.baseline_turns)
 
     run_id = args.run_id
     if not run_id:

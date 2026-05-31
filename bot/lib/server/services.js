@@ -90,7 +90,7 @@ export const SERVICES_KEYS = Object.freeze([
  *  on nested objects. State slice keys are handled separately (Phase 3). */
 export const SERVICE_BUNDLE_KEYS = Object.freeze({
   resolver: ['resolveInventoryItem', 'resolveCraftTarget', 'resolveBlockQuery'],
-  craft: ['resolveCraftItemName', 'buildCraftPlan', 'bestRecipeForInventory'],
+  craft: ['resolveCraftItemName', 'buildCraftPlan', 'bestRecipeForInventory', 'pickRecipeFromRecipes', 'pickRecipeForCraft'],
   social: ['rememberSocialEvent', 'getMyName', 'getNearbyPlayerNames'],
   utils: ['fmt', 'posObj', 'sleep', 'log', 'itemStr'],
 });

@@ -1,0 +1,59 @@
+# Playbook id registry — machine source for compliance (nav-telemetry --compliance).
+playbooks:
+  - id: wood.chop_tall_tree
+    doc: docs/features/playbooks/wood-chop-tall-tree.md
+    summary: "Flat Stage 2a chop loop with references_skill."
+    inputs:
+      required: [tree, target_logs, scaffold_block, deposit_to]
+      optional: [keep_min]
+    phases:
+      - id: preflight
+        preflight_verbs: [inventory, craft_plan, equip, chest_search]
+        allowed_verbs: [inventory, craft_plan, equip, chest_search, status, playbook_phase_set]
+      - id: approach
+        preflight_verbs: [status]
+        allowed_verbs: [move, status, scene, inspect, goto, goto_near, playbook_phase_set]
+      - id: chop_loop
+        allowed_verbs: [dig, nearby, find_blocks, inspect, pillar_down, pillar_up, move, place, collect, playbook_phase_set]
+      - id: closeout
+        allowed_verbs: [move, deposit, list_container, status, go_mark, playbook_phase_set, playbook_phase_clear]
+
+  - id: scout.resource
+    doc: docs/features/playbooks/scout-resource.md
+    summary: "Find and mark a surface resource patch."
+    inputs:
+      required: [resource, search_hint]
+      optional: [radius, deposit_mark]
+    phases:
+      - id: survey
+        preflight_verbs: [status, inventory]
+        allowed_verbs: [move, scene, nearby, find_blocks, inspect, mark, marks, playbook_phase_set]
+      - id: confirm
+        allowed_verbs: [inspect, mark, go_mark, status, playbook_phase_set, playbook_phase_clear]
+
+  - id: pillar_up_safe
+    doc: docs/features/playbooks/pillar-up-safe.md
+    summary: "Sub-play safe pillar ascent."
+    inputs:
+      required: [count, block]
+      optional: [side_check]
+
+  - id: craft.from_inputs
+    doc: docs/features/playbooks/craft-from-inputs.md
+    summary: "Craft from inventory/chest with sub-card dispatch."
+    inputs:
+      required: [item, count, ingredients]
+      optional: [table_mark, deposit_to]
+
+  - id: recover.stuck
+    doc: docs/features/playbooks/recover-stuck.md
+    summary: "Named recovery when nav/dig traps the bot."
+    inputs:
+      required: [last_error]
+      optional: [resume_playbook, resume_phase]
+
+worker_allowed_prefixes:
+  - supply.
+  - craft.
+  - scout.
+  - recover.

@@ -204,10 +204,12 @@ def run_advise(
         }
 
     digest_t0 = time.perf_counter()
+    advise_timeout = 25.0 if (cmd or "advise") == "advise" else 90.0
     result = digest(
         bundle,
         reason,
         model=model or os.environ.get("DIGEST_MODEL"),
+        timeout_s=advise_timeout,
     )
     digest_ms = round((time.perf_counter() - digest_t0) * 1000, 1)
     total_ms = round((time.perf_counter() - t0) * 1000, 1)

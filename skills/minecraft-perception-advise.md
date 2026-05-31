@@ -44,7 +44,7 @@ The tool returns JSON with:
 - `caveats[]`
 - `nothing_actionable`
 
-Follow the recommendations with normal `mc` commands (`goto`, `dig`, `collect`, etc.). Only cite blocks/entities that appear in the digest.
+Follow the recommendations with normal `mc` commands (`move`, `dig`, `collect`, etc.). Only cite blocks/entities that appear in the digest.
 
 ## Logging
 

@@ -20,7 +20,9 @@ If a legacy `[SUPERVISE]` card appears (from an optional supervisor daemon), tre
 
 ## Read-only observation
 
-`MC_API_URL` points at a bot body for queries only. Allowed: status, observe, logistics, marks, chest_search, players, nearby.
+`MC_API_URL` points at a bot body for queries only. **Default world read: `mc observe`** (lean) — goals, alerts, standing, and **`nav_brief`** / mark reachability when enabled. Do not substitute a scatter of `mc status` + `mc marks` + `mc nearby` for orientation; the route brief is computed only on `observe`.
+
+Other allowed reads: logistics, marks (when you need the raw list after observe), chest_search, players, scene (targeted verify at a coord), nearby (targeted verify).
 
 ## Hard rules
 

@@ -59,3 +59,29 @@ regen_cheatsheet() {
 }
 
 regen_cheatsheet
+
+sync_playbooks_to_skills() {
+  local reg="$ROOT/data/playbooks/registry.yaml"
+  local skills="$ROOT/skills"
+  if [[ ! -f "$reg" ]]; then
+    warn "no registry.yaml — skipping playbook skill sync"
+    return 0
+  fi
+  python3 - "$reg" "$skills" <<'PY'
+import re, sys, shutil
+from pathlib import Path
+reg_path, skills_dir = Path(sys.argv[1]), Path(sys.argv[2])
+text = reg_path.read_text(encoding="utf-8")
+repo = reg_path.parents[2]
+for m in re.finditer(r"doc:\s*(docs/features/playbooks/[^\s#]+)", text):
+    doc = repo / m.group(1)
+    if not doc.is_file():
+        continue
+    dest = skills_dir / f"playbook-{doc.stem}.md"
+    shutil.copy2(doc, dest)
+    print(f"  playbook skill: {dest.name}")
+PY
+  log "playbook docs synced to skills/ (when registry docs exist)"
+}
+
+sync_playbooks_to_skills
