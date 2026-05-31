@@ -1,0 +1,86 @@
+# W6-T3 — 3×3 cobble platform (multi-anchor build). See docs/features/wave-6-granularity-lab.md
+#
+#   scripts/stress.sh tower-platform-3x3 --arm prose-skilled
+# Matrix: prose-skilled, playbook-coarse, prose-skilled-resume (n≥3 each)
+
+agent_test_id: tower_platform_3x3
+includes_dir: platform-tower
+kanban_task_default: t_agent_test_platform
+world: landfolk-test
+model: deepseek/deepseek-v4-flash:exacto
+max_turns: 55
+timeout_seconds: 480
+
+default_arm: prose-skilled
+
+prompt_prefix: |
+  You are Flint, a Minecraft worker on kanban task {{TASK_ID}}.
+  Use `mc` for all in-world actions. For kanban use **`scripts/kanban`** only.
+  MC_API_URL and MC_USERNAME are set. landfolk-test only.
+
+  Your card body:
+
+  {{CARD_BODY}}
+
+  Success: full 3×3 cobble floor at y=69, four 4-block corner pillars, you on center (101, 70, 71).
+  On success: mc chat done line, kanban complete with summary.
+
+arms:
+  prose-skilled:
+    card_body_file: includes/platform-tower/body-prose-skilled.txt
+    skills: [kanban-worker, minecraft-building, minecraft-navigation]
+  playbook-coarse:
+    card_body_file: includes/platform-tower/body-playbook-coarse.txt
+    max_turns: 60
+    skills:
+      - kanban-worker
+      - minecraft-building
+      - minecraft-navigation
+      - playbook-build-tower-vertical
+      - playbook-pillar-up-safe
+    expect_extra:
+      mc_verbs_include_any: [playbook, pillar_up, place]
+  prose-skilled-resume:
+    card_body_file: includes/platform-tower/body-prose-skilled-resume.txt
+    max_turns: 45
+    skills: [kanban-worker, minecraft-building, minecraft-navigation]
+    prep_extra:
+      - "execute in landfolk-test run fill 100 65 70 100 68 70 minecraft:cobblestone"
+      - "execute in landfolk-test run fill 102 65 70 102 68 70 minecraft:cobblestone"
+      - "execute in landfolk-test run clear Flint minecraft:cobblestone"
+      - "execute in landfolk-test run give Flint minecraft:cobblestone 32"
+
+expect:
+  bot_y_at_least: 70
+  world_block_at:
+    - { x: 100, y: 68, z: 70, block: cobblestone }
+    - { x: 102, y: 68, z: 70, block: cobblestone }
+    - { x: 100, y: 68, z: 72, block: cobblestone }
+    - { x: 102, y: 68, z: 72, block: cobblestone }
+    - { x: 101, y: 69, z: 71, block: cobblestone }
+  mc_cli_invocations_max: 90
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 96 64 66 104 80 74 minecraft:air"
+  - "execute in landfolk-test run fill 96 64 66 104 64 74 minecraft:grass_block"
+  - "execute in landfolk-test run setworldspawn 98 65 71"
+  - "execute in landfolk-test run give Flint minecraft:cobblestone 40"
+  - "execute in landfolk-test run give Flint minecraft:bread 4"
+  - "gamemode creative Flint"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 98 65 71"
+  - "execute in landfolk-test run gamemode survival Flint"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "gamemode creative Flint"
+  - "execute in landfolk-test run fill 96 65 66 104 80 74 minecraft:air"
+  - "execute in landfolk-test run tp Flint 98 65 71"
+  - "execute in landfolk-test run gamemode survival Flint"

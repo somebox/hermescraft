@@ -1,0 +1,12 @@
+{{GOAL}}
+
+playbook: build.tower_vertical
+mode: coarse
+anchor: (84, 65, 58)
+count: 6
+block: cobblestone
+
+Three phases only: preflight → raise → closeout.
+In **raise**, use sub-play **pillar_up_safe** once (`mc playbook phase set build.tower_vertical raise --sub-playbook pillar_up_safe --sub-phase check_lateral`, run sub phases, clear sub when done).
+At most **two** `[run_state]` kanban comments for the whole run.
+Use `skill_view('playbook-build-tower-vertical')` and `playbook-pillar-up-safe`.

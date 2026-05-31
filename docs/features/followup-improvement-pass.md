@@ -1,6 +1,6 @@
 # Followup improvement pass: playbook adoption + envelope honesty
 
-Status: **planning** (2026-05-31, eng-reviewed, playbook pivot). Successor
+Status: **Wave 5 closed; Wave 6 in progress** (W6-T1 complete, W6-T3 harness ready). Successor
 to [`route-precompute-context.md`](route-precompute-context.md) and
 [`observation-verbs-redesign.md`](observation-verbs-redesign.md). The
 playbook orchestration spec is in
@@ -57,17 +57,17 @@ turn waste**. Stage 2's A1–A3 tests are how that bet pays out or doesn't.
 
 ```
 Stage 0–1:  Make verbs honest + measurable (DIRECTLY supported by run)
-Stage 2a:   Prove playbook MECHANISM — flat playbook, A1–A3 (BET on structure)
-Stage 2b:   Add composition + A4 only if 2a wins
-Stage 3:    Scale catalog + Steward author + reach + sub-card craft chain
-Stage 4:    Genesis A/B; separate content track (#57 + P3 achievability)
-Later:      agent-scripting-layer executes the same phase tables via call()
+Stage 2a:   Playbook MECHANISM — flat A1 falsified at Flash; A2/A3 pass
+Stage 2b:   Composition A4 — telemetry OK; Flash completion weak (see Wave-5)
+Stage 3:    PAUSED broad catalog — Wave 6 one vertical slice first (build/mine lab)
+Stage 4:    Genesis A/B; A1 % target N/A for flat chop
+Wave 6:     Granularity lab — docs/features/wave-6-granularity-lab.md
+Later:      agent-scripting-layer when turn data demands it (deferred)
 ```
 
-The 25-id survival catalog fits Stage 3+; Stage 2a ships *one* flat
-vertical slice (wood, using existing mining/wood skills as procedure)
-to prove the routing layer; composition (sub-plays + A4) is gated to
-2b on 2a's win.
+The 25-id survival catalog fits Stage 3+; **after Wave 6** we add at most one
+build vertical slice (`build.tower_vertical`) and optional shallow mine — not
+the full catalog until granularity results land.
 
 ### Enforcement is LLM discipline this round, not a server gate
 
@@ -389,6 +389,11 @@ Expand only after v0 proves the gate reduces compliance gaps.
 
 ### Stage 3 — Steward as playbook author + playbook library expansion
 
+**Status (post Wave-5):** Broad expansion **paused**. Execute
+[`wave-6-granularity-lab.md`](wave-6-granularity-lab.md) W6-T1 first; ship
+`build.tower_vertical` only as the lab playbook until results land. Steward
+playbook-author SOUL remains deferred except for prose-skilled supply templates.
+
 Goal: Steward stops emitting prose card bodies for patterns covered by
 playbooks. **Stage 3.0 (gate):** run **`craft-subcard-file`** and
 **`craft-subcard-unblock`** before expanding the catalog — if worker
@@ -424,7 +429,7 @@ sub-plays when A4 passes. Broader catalog (~25 ids) is **Stage 4+**.
   it end-to-end. Pass: card closes done; turns-per-card ≤ Stage 2
   baseline × 0.9 (proving Steward's input-fill quality is not the
   bottleneck on v4-pro).
-- `tower-reuses-pillar-up-safe`: **after A4 passes** — defer if 2b not shipped
+- `tower-reuses-pillar-up-safe`: **Wave 6 W6-T1** — three arms (prose / coarse / medium); see [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md). Stage gate moved from “after A4 pass” to granularity lab.
 - **`craft-post-56-blue-wool`:** Stage **1** gate (postmortem inventory);
   may repeat in Stage 3 with playbook card body — see Stage 1.
 - **Sub-card chain (Stage 3, in order):** `craft-subcard-file` →
@@ -502,13 +507,114 @@ impossible" failure mode at a different cost layer.
 |---|---|---|
 | 0 Foundation | baseline-turns.md (via nav-telemetry) + JSONL; compliance flags with 2a-S | High |
 | 1 Stop the lies | #54/#56/#58 + hint injector | High |
-| 2a Flat + A1–A3 | A2/A3 likely on fixture; A1 ~60/40 vs prose-skilled | Medium |
-| 2b Composition | A4 ~40/60; `--after` fallback if fail | Medium-low |
-| 3 Library | Substantial branch-table work; calendar > "days" | High effort |
+| 2a Flat + A1–A3 | A2/A3 pass; **A1 falsified** — prose-skilled for simple chop | **Measured** |
+| 2b Composition | A4 telemetry OK; Flash completion weak | Medium |
+| 3 Library | **Paused**; W6 one slice before catalog | High effort |
+| 6 Granularity lab | W6-T1 **done** (Option C); W6-T3 **prepared** | Medium |
 | 4 Genesis | Noisy; content track (#57, P3) often gates before playbook metrics | Medium |
 
 If any metric is missed, the corresponding stage is reopened with a
 targeted scenario — not the next genesis.
+
+## Wave-5 outcomes (2026-05-31)
+
+Honest A1/A4 predicate runs (gemini-2.5-flash, post-NBT-parser-fix). Numbers in
+[`baseline-turns-fixture.md`](baseline-turns-fixture.md).
+
+### A1 — falsified (Flash + chop-oak-8 flat)
+
+Matrix n=5 per arm:
+
+| Arm | mc median | chest ≥8 | inv_excl clean | playbook verb |
+|-----|-----------|----------|----------------|---------------|
+| prose-minimal | 29 | 3/5 | 4/5 | 0/5 |
+| **prose-skilled** | **18** | **4/5** | **5/5** | 0/5 |
+| playbook | 35 | **0/5** | 5/5 | 4/5 (23 calls) |
+
+Playbook arm: ~2× the mc calls of prose-skilled, **0/5** chest deposits (every
+run ended at chest=1, the prep starter log untouched). Ritual cost (`mc playbook
+phase set` × 4–8 per run + `[run_state]` kanban comments) consumed enough of the
+30-turn budget that no playbook agent reached deposit. A1 hypothesis
+*"playbook ≤ prose on tool calls/errors"* fails on **both** axes.
+
+### A4 — playbook telemetry works, completion does not (Flash, 10-log + pillar)
+
+n=3:
+
+| Run | mc | chest oak_log | inv_excl | sub_play |
+|-----|----|---|----|----------|
+| 1 | 27 | 5 (partial: 4 deposited) | clean | `pillar_up_safe` fires (4 JSONL rows) |
+| 2 | 62 (over budget) | 0 | clean | playbook verbs used |
+| 3 | 36 | 0 | **agent held 9 oak_log, didn't deposit** | pillar_up + playbook used |
+
+Sub-play telemetry (`sub_playbook_id: pillar_up_safe`, `sub_phase:
+check_lateral`/`place_then_step`) propagates correctly through phase set and
+downstream actions. **Falsification is broader than "A1 was too easy"**: even
+the hard composition fixture doesn't push playbook into a completion win at
+gemini-2.5-flash. The 10-log + pillar task fails for the same Flash-budget
+reason as A1.
+
+### A2/A3 — playbooks earn their keep on discipline + resume
+
+- **A2 chop-preflight-refusal**: 5 mc, ✅ — `prep_required_unmet:axe` block before any approach move.
+- **A3 chop-checkpoint-resume**: 7 mc, ✅ — fresh worker reads `[run_state]` (chopped: 4), collects 4 more, deposits 8. This is where playbook structure pays off; A1's prose-skilled wouldn't know to resume.
+
+### Compliance (preliminary, mixed-arm JSONL)
+
+```
+preflight_before_act: 0.67
+whitelist:            0.43   ← well below the 80% threshold for 2c
+null_playbook_context: 0.08
+```
+
+The whitelist number says agents call verbs outside `wood.chop_tall_tree.allowed_verbs`
+~57% of the time when phase is set — not because the playbook is broken, but
+because agents reach for `inspect`/`status`/`scene`/`equip`/`find_blocks` which
+aren't in the per-phase allowed_verbs lists. **The whitelist may be too
+restrictive** for realistic worker behavior, OR the playbook author should
+expand `allowed_verbs` for chop_loop to include observation verbs.
+
+### Updated direction
+
+| Item | Status |
+|---|---|
+| **Stage 2a A1**, Flash + chop-oak-8 flat | **Falsified n=5**; Stage 4 %-improvement target for A1 → **N/A**. Treat **prose-skilled** as the production baseline for simple [SUPPLY] chop cards. |
+| **Default worker pattern for simple chop cards** | Card body without `playbook:` (i.e. prose-skilled shape). Steward should NOT author `playbook: wood.chop_tall_tree` for "fetch 8 logs from one tree" until ritual cost is reduced. |
+| **Playbooks remain in scope for** | A2 (preflight discipline), A3 (resume/checkpoint), A4 (composition + sub-play telemetry — telemetry verified, completion gated on model). |
+| **Stage 2c server gate** | **Skip for now**. Compliance whitelist=0.43 looks "broken" but A2 still passes; suggests `allowed_verbs` is too tight, not that workers need server-side gating. Revisit if a real card gets through that shouldn't. |
+| **Stage 3 catalog expansion** | **Pause broad expansion**. Keep A2/A3 + optional craft-subcard if genesis needs it. No new playbooks until ritual cost work lands or we test on a stronger model. |
+| **Cheaper rituals** | Track in docs first (batch phase set, fewer `[run_state]` boundaries on flat path, "lite mode" in playbook skill). No bot-side engine. Worth revisiting before deciding whether to pause Stage 3. |
+| **Stronger model on A1** | Defer — only if cheaper rituals don't unlock A1, and only as a cost/quality comparison vs prose-skilled. Don't re-run the matrix at Flash to chase a falsified result. |
+| **agent-scripting-layer runtime substrate** | Defer indefinitely — both A4 telemetry and A3 resume succeed via worker hand-call; no engine needed. |
+
+### Production note (today, no code)
+
+Steward's kanban-author skill should template simple supply cards as
+prose-skilled-style prose, not `playbook:` headers. Reserve `playbook:` for
+cards that genuinely need structure: resume (A3-class), composition (A4-class),
+or honor-system preflight (A2-class).
+
+## Wave 6 — Granularity lab (next execution)
+
+**Goal:** Learn phase count and turn budget for **hard** cards on
+**deepseek-v4-flash**, without reopening flat A1.
+
+| Track | Scenario | Status |
+|-------|----------|--------|
+| **W6-T1** | `tower-reuses-pillar-up-safe` — single column | **Complete** — Option C; see [wave-6-granularity-lab.md](wave-6-granularity-lab.md) § Results |
+| **W6-T3** | `tower-platform-3x3` — 3×3 platform + resume arm | **Prepared** — run matrix (n≥3 per arm) |
+| **W6-T2** | Shallow mine / `mine.underground_target` | **Stub** — after W6-T3 |
+
+Full runbook: [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
+
+**W6-T3 arms:** `prose-skilled`, `playbook-coarse`, `prose-skilled-resume` (no medium arm).
+**Default model:** `deepseek/deepseek-v4-flash:exacto`. **Pro:** only if W6-T3 binds Flash.
+
+**Harness (2026-05-31):** `world_block_at` rcon probe; `entity_in_bbox` scoreboard count; arm `prep_extra`.
+
+**Stage 3 revision:** Broad catalog expansion stays **paused**. Allowed before
+genesis-only needs: A2/A3 regression, craft-subcard chain if P2 blocks, and
+**one** registry playbook from W6 (`build.tower_vertical`) — not the 25-id list.
 
 ## Out of scope (deliberately deferred)
 
@@ -563,12 +669,13 @@ wall-clock, exercising one failure mode. P4-compatible
 | `advise-on-stuck` | 1 | agent-test: `prep` traps bot; agent calls `mc advise` | response ≤ 25 s; no PyYAML on stderr |
 | `recipe-bed-variant` | 1 | bot/L3: `white_wool` + planks at table; craft `blue_bed` | craft succeeds ≤ 2 calls; no wrong wool in error |
 | `craft-post-56-blue-wool` | 1 | bot/L3: postmortem inv; craft `blue_wool` ×8 | ≤ 2 craft calls; correct variant (#56) |
-| `chop-prose-vs-playbook` (A1) | 2a | agent-test: same goal — **three** card forms (prose-minimal, prose-skilled, playbook); ≥5× each | playbook ≤ both baselines on **tool calls** and errors |
+| `chop-prose-vs-playbook` (A1) | 2a | agent-test: three card forms; ≥5× each | **Closed — falsified** at Flash; prose-skilled default for simple chop |
 | `chop-preflight-refuses` (A2) | 2a | agent-test: fixture removes axe before card claim | phase 0 `kanban_block: prep_required_unmet:axe`; no approach `move` before preflight |
 | `chop-checkpoint-resume` (A3) | 2a | agent-test: kill worker after `chopped: 4/8`; respawn on same card | resume at iter 5 with `chopped: 4` |
-| `chop-composition` (A4) | 2b | agent-test: `ascend` invokes `pillar_up_safe`; fixture injects `BOT_ON_PILLAR` | sub-play recovers; JSONL parent + sub ids |
-| `chop-steward-authored` | 3 | Steward sees a tall oak at known coords, picks `wood.chop_tall_tree`, fills inputs | card closes done; Steward's input-fill quality on v4-pro doesn't bottleneck |
-| `tower-reuses-pillar-up-safe` | 3 | `playbook: build.tower_vertical` with `mode: pillar` against a flat fixture | sub-play resolves; tower reaches target Y; sub-play attribution clean in telemetry |
+| `chop-composition` (A4) | 2b | agent-test: `ascend` invokes `pillar_up_safe` | sub-play JSONL OK; Flash completion optional gate |
+| `chop-steward-authored` | 3 | Steward picks `wood.chop_tall_tree` for tall oak | **Deferred** — simple chop stays prose-skilled |
+| `tower-reuses-pillar-up-safe` | **6 (W6-T1)** | agent-test: 6 cobble column; prose vs coarse vs medium | **Done** — Option C; prose default for simple build |
+| `tower-platform-3x3` | **6 (W6-T3)** | 3×3 platform; prose / coarse / resume | 4 pillar tops + center floor; n≥3 Flash pending |
 | `craft-blue_wool-sub-cards` | 3 | agent-test: empty inv; full chain | three sub-cards; parent closes (after subcard-file + subcard-unblock pass) |
 | `craft-subcard-file` | 3 | agent-test: worker files one `[SUPPLY]` sub-card | kanban accepts; namespace valid |
 | `craft-subcard-unblock` | 3 | agent-test: parent `--after` child | parent unblocks when child closes |

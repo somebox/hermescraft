@@ -152,23 +152,60 @@ Specs and shared card bodies: `data/agent-tests/playbooks/includes/chop-oak-8/`.
 
 **Visual layout (no test run):** `scripts/show-arenas.py` — builds A1–A4 side-by-side arenas + signs, parks Flint at overlook `(67, 70, 40)`.
 
-### Wave 5 status (2026-05-31 pilot)
+### Wave 5 status (2026-05-31)
 
 | Scenario | Regression gate | A1 hypothesis gate |
 |----------|-----------------|-------------------|
 | A2 preflight-refusal | **PASS** (n=1) | — |
 | A3 checkpoint-resume | **PASS** (n=1) | — |
-| A1 three arms | Runnable | **Open** — need n≥5 medians in [baseline-turns-fixture.md](baseline-turns-fixture.md); n=1 did not separate |
+| A1 three arms | Runnable | **Closed — falsified** n=5; see [baseline-turns-fixture.md](baseline-turns-fixture.md) |
+| A4 composition | Runnable | **Telemetry OK; Flash completion weak** (n=3, 0/3 chest ≥8) |
 
-After playbook doc edits: `scripts/regenerate-artifacts.sh` (hub mirror). Re-run playbook arm after kanban/scene doc fixes to measure overhead without tool thrashing.
+Production default for simple chop: **prose-skilled** card body (no `playbook:`). Do not re-run A1 matrix at Flash.
 
-A1 pass criterion: ≥5 runs per arm; playbook medians ≤ both prose arms on **mc CLI calls** and **ok:false** (see [baseline-turns-fixture.md](baseline-turns-fixture.md)). Requires live bot + Hermes + OpenRouter.
-
-Until the A1 matrix is run and medians recorded, treat Wave 5 **A2/A3** as soft gate; **A1 matrix** as open.
+After playbook doc edits: `scripts/regenerate-artifacts.sh` (hub mirror).
 
 ---
 
-## Wave 6 — Regression spot-checks
+## Wave 6 — Granularity lab
+
+Primary spec: [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
+
+### W6-T1 (complete)
+
+| Scenario | Command |
+|----------|---------|
+| Tower mini | `scripts/stress.sh tower-reuses-pillar-up-safe --arm prose-skilled` |
+
+**Verdict:** Option C — prose-skilled default for simple vertical build; playbook medium/coarse not for Steward templates on column task.
+
+### W6-T3 (platform — run next)
+
+**Before matrix:** A2 + A3 regression:
+
+```bash
+scripts/stress.sh chop-preflight-refusal
+scripts/stress.sh chop-checkpoint-resume
+```
+
+| Scenario | Command |
+|----------|---------|
+| Platform (one arm) | `scripts/stress.sh tower-platform-3x3 --arm prose-skilled` |
+| Matrix | `prose-skilled`, `playbook-coarse`, `prose-skilled-resume` × n≥3 |
+
+Requires live bot (Flint `:3001`), Hermes, OpenRouter. Model: `deepseek/deepseek-v4-flash:exacto`.
+
+```bash
+scripts/regenerate-artifacts.sh
+```
+
+Record results in `wave-6-granularity-lab.md` § W6-T3 Results.
+
+**Visual:** `scripts/show-arenas.py` includes W6-T1/T3 slabs (east of chop row).
+
+---
+
+## Wave 6b — Regression spot-checks
 
 Same as Wave 1 targeted `node --test` list, plus after doc edits:
 

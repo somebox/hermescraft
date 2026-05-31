@@ -2,7 +2,9 @@
 
 Per-run genesis output still lands under `data/genesis-runs/<run_id>/findings/baseline-turns.md` via `nav-telemetry.py --baseline-turns`. This file tracks **fixture A1** medians for Stage 4.
 
-Stage 4 A1 **% improvement target: TBD** until **n≥5 per arm** medians exist below.
+Stage 4 A1 **% improvement target: N/A** (A1 falsified n=5, 2026-05-31). Wave 6
+tower lab tracks hard-task granularity separately — see
+[`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
 
 ## Genesis aggregate (g-2026-05-30-3)
 
@@ -44,15 +46,19 @@ Infrastructure fixes in this window: JSONL `HERMESCRAFT_TMP` + profile tag, Herm
 
 ### Medians (fill after n≥5)
 
-**2026-05-31 matrix (15 runs, pre-parser-fix):** mc-call spread matches pilot noise; **`chest_item_count_at` reported `have=0` on every run** — SNBT parser bug (Paper `id: "minecraft:…"`, `count:` before `id`). **Do not use chest pass/fail from those JSONs.** Re-run matrix after `tests/_lib/chest_nbt.py` fix. Behavioral notes from that batch: deposit attempted 10/15 runs; end-state `oak_log` ≥8 in inv 2/15; playbook ritual 2/5.
+**2026-05-31 matrix #1 (15 runs, pre-parser-fix):** SNBT parser bug — chest pass/fail invalid; numbers discarded.
 
-| Arm | mc CLI calls (median) | ok:false (median) | chest ≥8 (valid runs only) |
-|-----|----------------------|-------------------|----------------------------|
-| prose-minimal | TBD | TBD | TBD |
-| prose-skilled | TBD | TBD | TBD |
-| playbook | TBD | TBD | TBD |
+**2026-05-31 matrix #2 (15 runs, post-parser-fix 211bb5b/1e5b221):** gemini-2.5-flash, 16 dirt + park-@-(52,65,51), honest chest predicate. Chest median includes the 1 starter log placed by prep — a true deposit shows chest ≥ 9.
 
-**Pass (A1):** playbook medians ≤ both prose arms on tool calls and errors; each run must pass **`chest_item_count_at`** (≥8 `oak_log` @ chest 52,65,52) and **`bot_inventory_excludes`** (not holding ≥8 logs at end). Prep parks Flint @ (52,65,51), not on the chest cell.
+| Arm | n | mc median (range) | mc mean | chest ≥8 pass | chest median | inv_excl clean | playbook verb |
+|-----|---|--------------------|---------|---------------|--------------|----------------|---------------|
+| prose-minimal | 5 | **29** (8–33) | 24.8 | **3/5** | 9 | 4/5 | 0/5 |
+| prose-skilled | 5 | **18** (12–35) | 19.6 | **4/5** | 9 | 5/5 | 0/5 |
+| playbook | 5 | **35** (22–55) | 35.6 | **0/5** | **1** | 5/5 | 4/5 (23 calls) |
+
+**Verdict:** A1 hypothesis (*playbook ≤ both prose arms on tool calls/errors*) is **falsified at n=5** on this fixture. Playbook arm has ~2× the median mc calls of prose-skilled (35 vs 18) **and** 0/5 deposit completion vs 4/5 for prose-skilled. Every playbook run ended with `chest=1` (the starter log untouched). The ~5–8 mc calls per run spent on `mc playbook phase set` ritual + `[run_state]` kanban comments consumed enough of the 30-turn budget that no playbook agent finished chopping, let alone depositing.
+
+**Pass (A1, original):** playbook medians ≤ both prose arms on tool calls and errors + chest ≥8 + inv_excludes clean. **Not met.**
 
 ## Fixture A4 — chop-composition (Stage 2b)
 
@@ -66,7 +72,23 @@ scripts/show-arenas.py            # optional: A1–A4 FPV layout
 
 | Run | mc calls | sub_playbook in JSONL | chest ≥8 | Notes |
 |-----|----------|------------------------|----------|-------|
-| TBD | TBD | TBD | TBD | Tall trunk @ (93,65,50); chest @ (96,65,53) |
+| 1 | 27 | yes (`pillar_up_safe`) | 5 partial | deposited 4 |
+| 2 | 62 | yes | 0 | over mc budget |
+| 3 | 36 | yes | 0 | 9 oak_log left in inv |
+
+Flash n=3: **0/3** full chest pass; sub-play telemetry verified. Not a regression gate for A2/A3.
+
+## Fixture W6-T1 — tower mini pillar
+
+See [`wave-6-granularity-lab.md`](wave-6-granularity-lab.md) § Results (Option C, n=3 Flash).
+
+## Fixture W6-T3 — platform 3×3
+
+```bash
+scripts/stress.sh tower-platform-3x3 --arm prose-skilled
+```
+
+Medians: `wave-6-granularity-lab.md` § W6-T3 Results (pending).
 
 ## Follow-ups (not blocking regression)
 

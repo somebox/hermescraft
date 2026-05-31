@@ -1,0 +1,2 @@
+Raise a 6-block cobblestone column at anchor (84, 65, 58) — blocks occupy y=65 through y=70.
+Stand on top at y=71 when done. You start on grass at (82, 65, 58) with cobble in inventory.

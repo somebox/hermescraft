@@ -546,6 +546,20 @@ composition test:
 That's three phases — enough to validate composition with telemetry
 attribution.
 
+## Adoption after Wave 5 (2026-05-31)
+
+Flat A1 at Flash **falsified**; **W6-T1** confirmed Option C (prose-skilled ~2–3× cheaper, all arms 3/3).
+Next measurement: **W6-T3** platform — see
+[`wave-6-granularity-lab.md`](wave-6-granularity-lab.md).
+
+| Tier | When Steward uses `playbook:` on worker cards |
+|------|-----------------------------------------------|
+| **A — prose-skilled default** | Simple [SUPPLY] one-site gather/deposit (e.g. chop-oak-8 class) |
+| **B — playbook** | Preflight gates (A2), `[run_state]` resume (A3), multi-step composition with sub-plays (A4) |
+| **C — lab / TBD** | Multi-anchor platform (`tower-platform-3x3`); playbook id for coarse arm only |
+
+Do not treat Stage 4 A1 % improvement on flat chop as a live KPI.
+
 ## Validation strategy
 
 - **Schema lint on every commit.** `scripts/check-conventions.mjs`

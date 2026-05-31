@@ -1,0 +1,9 @@
+Build a 3×3 cobble platform at y=69 on the grass pad east of spawn.
+
+Corner pillars (4 blocks tall, y=65..68):
+  SW (100, 65, 70)   SE (102, 65, 70)
+  NW (100, 65, 72)   NE (102, 65, 72)
+
+Floor: cobble on all nine cells at y=69 for x=100..102, z=70..72.
+
+Finish standing on the center (101, 70, 71). You need 25 cobble total (16 in pillars + 9 floor).

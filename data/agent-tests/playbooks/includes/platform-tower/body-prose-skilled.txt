@@ -1,0 +1,5 @@
+{{GOAL}}
+
+Use `skill_view('minecraft-building')` and `minecraft-navigation`.
+Work corner-by-corner: pillar or place each 4-block column, then fill the y=69 floor.
+No playbook header.

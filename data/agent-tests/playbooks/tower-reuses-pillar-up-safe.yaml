@@ -1,0 +1,85 @@
+# W6-T1 — mini vertical tower; prose vs coarse vs medium playbook (granularity lab).
+# See docs/features/wave-6-granularity-lab.md
+#
+#   scripts/stress.sh tower-reuses-pillar-up-safe --arm prose-skilled
+#   scripts/stress.sh tower-mini-pillar --arm playbook-coarse   # same file
+
+agent_test_id: tower_reuses_pillar_up_safe
+includes_dir: tower-mini
+kanban_task_default: t_agent_test_tower
+world: landfolk-test
+model: deepseek/deepseek-v4-flash:exacto
+max_turns: 45
+timeout_seconds: 420
+
+default_arm: prose-skilled
+
+prompt_prefix: |
+  You are Flint, a Minecraft worker on kanban task {{TASK_ID}}.
+  Use `mc` for all in-world actions. For kanban use **`scripts/kanban`** only.
+  MC_API_URL and MC_USERNAME are set. landfolk-test only.
+
+  Your card body:
+
+  {{CARD_BODY}}
+
+  Success: 6 cobble blocks stacked at (84,65,58) through (84,70,58); you stand on y≥71.
+  On success: mc chat done line, kanban complete with summary.
+
+arms:
+  prose-skilled:
+    card_body_file: includes/tower-mini/body-prose-skilled.txt
+    skills: [kanban-worker, minecraft-building, minecraft-navigation]
+  playbook-coarse:
+    card_body_file: includes/tower-mini/body-playbook-coarse.txt
+    max_turns: 45
+    skills:
+      - kanban-worker
+      - minecraft-building
+      - minecraft-navigation
+      - playbook-build-tower-vertical
+      - playbook-pillar-up-safe
+    expect_extra:
+      mc_verbs_include_any: [playbook, pillar_up]
+  playbook-medium:
+    card_body_file: includes/tower-mini/body-playbook-medium.txt
+    max_turns: 55
+    skills:
+      - kanban-worker
+      - minecraft-building
+      - minecraft-navigation
+      - playbook-build-tower-vertical
+      - playbook-pillar-up-safe
+    expect_extra:
+      mc_verbs_include_any: [playbook, pillar_up]
+
+expect:
+  bot_y_at_least: 71
+  world_block_at:
+    - { x: 84, y: 70, z: 58, block: cobblestone }
+  mc_cli_invocations_max: 65
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 80 64 55 88 80 62 minecraft:air"
+  - "execute in landfolk-test run fill 80 64 55 88 64 62 minecraft:grass_block"
+  - "execute in landfolk-test run setworldspawn 82 65 58"
+  - "execute in landfolk-test run give Flint minecraft:cobblestone 20"
+  - "execute in landfolk-test run give Flint minecraft:bread 4"
+  - "gamemode creative Flint"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 82 65 58"
+  - "execute in landfolk-test run gamemode survival Flint"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "gamemode creative Flint"
+  - "execute in landfolk-test run fill 80 65 55 88 80 62 minecraft:air"
+  - "execute in landfolk-test run tp Flint 82 65 58"
+  - "execute in landfolk-test run gamemode survival Flint"

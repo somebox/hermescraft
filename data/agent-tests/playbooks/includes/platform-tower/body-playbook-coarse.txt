@@ -1,0 +1,11 @@
+{{GOAL}}
+
+playbook: build.tower_vertical
+mode: platform_coarse
+pillars: 4 corners (see goal), pillar_height: 4
+floor_y: 69
+
+Three macro phases: preflight → build → closeout.
+Use `pillar_up_safe` sub-play per corner during build (count=4, block=cobblestone).
+At most two `[run_state]` kanban comments total.
+`skill_view('playbook-build-tower-vertical')` and `playbook-pillar-up-safe`.

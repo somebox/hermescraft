@@ -86,9 +86,10 @@ def parse_yaml(path: Path) -> dict:
 
 
 def resolve_agent_test_spec(spec_path: Path, spec: dict, arm: str | None) -> dict:
-    """Expand A1 arms + shared chop-oak-8 includes into a runnable spec."""
+    """Expand multi-arm specs + optional includes/<dir>/goal.txt into a runnable spec."""
     spec = dict(spec)
-    goal_path = spec_path.parent / "includes/chop-oak-8/goal.txt"
+    includes_dir = spec.get("includes_dir") or "chop-oak-8"
+    goal_path = spec_path.parent / "includes" / includes_dir / "goal.txt"
     goal_text = goal_path.read_text(encoding="utf-8") if goal_path.exists() else ""
 
     if spec.get("arms"):
@@ -100,10 +101,14 @@ def resolve_agent_test_spec(spec_path: Path, spec: dict, arm: str | None) -> dic
         overlay = spec["arms"][arm_key]
         if overlay.get("skills"):
             spec["skills"] = overlay["skills"]
+        if overlay.get("max_turns") is not None:
+            spec["max_turns"] = overlay["max_turns"]
         if overlay.get("card_body_file"):
             body_path = spec_path.parent / overlay["card_body_file"]
             body = body_path.read_text(encoding="utf-8").replace("{{GOAL}}", goal_text.strip())
             spec["_card_body"] = body
+        if overlay.get("prep_extra"):
+            spec["prep"] = list(spec.get("prep") or []) + list(overlay["prep_extra"])
         extra = overlay.get("expect_extra") or {}
         if extra:
             merged = dict(spec.get("expect") or {})
@@ -112,7 +117,8 @@ def resolve_agent_test_spec(spec_path: Path, spec: dict, arm: str | None) -> dic
         base_id = spec.get("agent_test_id") or spec_path.stem
         spec["agent_test_id"] = f"{base_id}_{arm_key.replace('-', '_')}"
 
-    task_id = os.environ.get("HERMES_KANBAN_TASK", "t_agent_test_chop")
+    task_default = spec.get("kanban_task_default") or "t_agent_test_chop"
+    task_id = os.environ.get("HERMES_KANBAN_TASK", task_default)
     prefix = (spec.get("prompt_prefix") or "").strip()
     if prefix:
         card_body = spec.get("_card_body") or ""
@@ -265,6 +271,39 @@ def _summarize_msg(m: dict, max_len: int = 220) -> str:
     if len(text) > max_len:
         text = text[:max_len - 1] + "…"
     return text
+
+
+def _parse_scoreboard_count(rcon_out: str, holder: str = "#probe") -> int | None:
+    """Parse `scoreboard players get` stdout: ``#probe has 3 [obj]``."""
+    for line in (rcon_out or "").splitlines():
+        if holder not in line or " has " not in line:
+            continue
+        try:
+            mid = line.split(" has ", 1)[1]
+            return int(mid.split()[0])
+        except (IndexError, ValueError):
+            continue
+    return None
+
+
+def _count_entities_in_bbox(ent_type: str, x1: int, y1: int, z1: int, x2: int, y2: int, z2: int) -> int:
+    """Count entities of ``ent_type`` in an inclusive axis-aligned box (rcon/scoreboard)."""
+    dx = max(0, int(x2) - int(x1))
+    dy = max(0, int(y2) - int(y1))
+    dz = max(0, int(z2) - int(z1))
+    cmds = [
+        "scoreboard objectives add agenttest_ent dummy",
+        "execute in landfolk-test run scoreboard players set #probe agenttest_ent 0",
+        (
+            f"execute in landfolk-test run execute as "
+            f"@e[type={ent_type},x={x1},y={y1},z={z1},dx={dx},dy={dy},dz={dz}] "
+            f"run scoreboard players add #probe agenttest_ent 1"
+        ),
+        "scoreboard players get #probe agenttest_ent",
+    ]
+    out = run_rcon_batch(cmds)
+    n = _parse_scoreboard_count(out or "")
+    return n if n is not None else 0
 
 
 def predicate_results(spec: dict, agent_chat: str, end_state: dict,
@@ -441,14 +480,14 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         for probe in expect["world_block_at"]:
             x, y, z = probe["x"], probe["y"], probe["z"]
             block = probe["block"]
-            tag = f"chk_{x}_{y}_{z}".replace("-", "n")
-            run_rcon(f'execute in landfolk-test if block {x} {y} {z} minecraft:{block} run say MATCH_{tag}')
-            time.sleep(1.5)
-            obs = observe(DEFAULT_BOT_URL)
-            chat = (obs.get("state") or {}).get("new_chat") or []
-            hit = any(f"MATCH_{tag}" in (m.get("message") or "") for m in chat)
+            # Use rcon's own stdout from `execute if block` — Paper prints
+            # "Test passed" on match and "Test failed" otherwise. Earlier
+            # `say MATCH` → bot new_chat path was unreliable because rcon
+            # `say` doesn't always reach the bot's chat buffer.
+            out = run_rcon(f'execute in landfolk-test if block {x} {y} {z} minecraft:{block}')
+            hit = ("Test passed" in (out or "")) or ("matches" in (out or "")) or ("passed" in (out or "").lower())
             results.append({"kind": f"block@{x},{y},{z}=={block}", "pass": hit,
-                             "detail": ""})
+                             "detail": (out or "").strip()[:80]})
 
     if "chest_item_count_at" in expect:
         for probe in expect["chest_item_count_at"] or []:
@@ -484,12 +523,7 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
             dy = y2 - y1
             dz = z2 - z1
             sel = f"@e[type={t},x={x1},y={y1},z={z1},dx={dx},dy={dy},dz={dz}]"
-            tag = f"cnt_{t}_{x1}_{y1}_{z1}".replace("-", "n").replace(":", "_")
-            run_rcon(f'execute in landfolk-test as {sel} run say MATCH_{tag}')
-            time.sleep(1.5)
-            obs = observe(DEFAULT_BOT_URL)
-            chat = (obs.get("state") or {}).get("new_chat") or []
-            count = sum(1 for m in chat if f"MATCH_{tag}" in (m.get("message") or ""))
+            count = _count_entities_in_bbox(t, x1, y1, z1, x2, y2, z2)
             ok = count >= min_count and (max_count is None or count <= max_count)
             bounds = f">={min_count}" + (f",<={max_count}" if max_count is not None else "")
             results.append({

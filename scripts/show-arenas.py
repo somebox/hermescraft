@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lay out all three Wave-5 chop arenas side by side at landfolk-test
+"""Lay out Wave-5 chop arenas (x=50..98) and Wave-6 tower slabs (W6-T1/T3)
 without running tests, then tp Flint to a viewing position.
 
 The arenas live at x=50..84, z=45..55 — visible from a single FPV
@@ -48,6 +48,16 @@ cmds = [
     *(f"execute in landfolk-test run setblock 93 {y} 50 minecraft:oak_log" for y in range(65, 75)),
     "execute in landfolk-test run setblock 96 65 53 minecraft:chest",
     "execute in landfolk-test run setblock 89 65 45 minecraft:oak_sign[rotation=0]{Text1:'{\"text\":\"A4: composition\"}'}",
+
+    # W6-T1 — tower mini (x=80..88, z=55..62)
+    "execute in landfolk-test run fill 80 64 55 88 80 62 minecraft:air",
+    "execute in landfolk-test run fill 80 64 55 88 64 62 minecraft:grass_block",
+    "execute in landfolk-test run setblock 81 65 55 minecraft:oak_sign[rotation=0]{Text1:'{\"text\":\"W6-T1: tower-mini\"}'}",
+
+    # W6-T3 — platform (x=96..104, z=66..74)
+    "execute in landfolk-test run fill 96 64 66 104 80 74 minecraft:air",
+    "execute in landfolk-test run fill 96 64 66 104 64 74 minecraft:grass_block",
+    "execute in landfolk-test run setblock 97 65 66 minecraft:oak_sign[rotation=0]{Text1:'{\"text\":\"W6-T3: platform-3x3\"}'}",
 
     # Park Flint where he can see all three arenas in one glance,
     # facing east. Stand a few blocks north (z=42) at y=66 looking

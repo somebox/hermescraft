@@ -1,0 +1,5 @@
+{{GOAL}}
+
+Use `skill_view('minecraft-building')` and `minecraft-navigation` as needed.
+Goto the anchor base, place or pillar cobble until the column is 6 blocks tall, step on top.
+No kanban playbook header — execute as a normal worker card.

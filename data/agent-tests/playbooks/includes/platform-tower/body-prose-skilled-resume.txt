@@ -1,0 +1,16 @@
+{{GOAL}}
+
+Prior worker left this checkpoint (resume from here):
+
+[run_state]
+playbook: (none — prose card)
+phase: build
+context:
+  pillars_done: 2
+  pillars_total: 4
+  completed_corners: [SW, SE]
+  floor_blocks_done: 0
+  floor_blocks_total: 9
+  notes: NW and NE corners still need 4-block pillars; then lay all y=69 floor cobble.
+
+SW and SE pillars are already built in the world. Finish NW, NE, the floor, stand on center.

@@ -65,8 +65,31 @@ playbooks:
       required: [last_error]
       optional: [resume_playbook, resume_phase]
 
+  - id: build.tower_vertical
+    doc: docs/features/playbooks/build-tower-vertical.md
+    summary: "Wave 6 lab — vertical column via pillar_up_safe sub-play."
+    inputs:
+      required: [anchor, count, block]
+      optional: [verify_y]
+    phases:
+      - id: preflight
+        preflight_verbs: [inventory]
+        allowed_verbs: [inventory, equip, status, playbook_phase_set]
+      - id: approach
+        preflight_verbs: [status]
+        allowed_verbs: [move, goto, goto_near, status, scene, playbook_phase_set]
+      - id: raise
+        preflight_verbs: [scene]
+        allowed_verbs: [pillar_up, place, scene, inspect, status, playbook_phase_set]
+      - id: verify
+        preflight_verbs: [scene]
+        allowed_verbs: [scene, inspect, status, playbook_phase_set]
+      - id: closeout
+        allowed_verbs: [status, playbook_phase_set, playbook_phase_clear]
+
 worker_allowed_prefixes:
   - supply.
   - craft.
   - scout.
   - recover.
+  - build.

@@ -1,0 +1,12 @@
+{{GOAL}}
+
+playbook: build.tower_vertical
+mode: medium
+anchor: (84, 65, 58)
+count: 6
+block: cobblestone
+
+Walk all five registry phases: preflight → approach → raise → verify → closeout.
+In **raise**, sub-play **pillar_up_safe** (same CLI flags as coarse doc).
+Up to **four** `[run_state]` comments at phase boundaries.
+Use `skill_view('playbook-build-tower-vertical')` and `playbook-pillar-up-safe`.
