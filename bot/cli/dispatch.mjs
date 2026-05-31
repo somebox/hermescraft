@@ -70,6 +70,12 @@ export function buildHttpRequest(def, canonicalName, positional) {
   if (def.customParse) {
     const p = customParse(canonicalName, positional);
     normalizeMark(p);
+    if (p._redirect) {
+      const redir = resolveCommand(p._redirect, CLI_ALIAS_MAP);
+      if (!redir) throw new Error(`missing:${p._redirect}`);
+      delete p._redirect;
+      return finalize(redir.def, redir.canonicalName, p);
+    }
     return finalize(def, canonicalName, p);
   }
 
@@ -528,13 +534,24 @@ function customParse(canonicalName, positional) {
       if (sub === 'set') {
         let card = process.env.HERMES_KANBAN_TASK || '';
         let expiresMin = null;
-        while (q.length && String(q[0]).startsWith('--')) {
-          const f = String(q.shift());
-          if (f === '--card') card = String(q.shift() || '').trim();
-          else if (f === '--expires-min') expiresMin = Number(q.shift());
-          else throw new Error(`unknown_flag:${f}`);
+        /** @type {string[]} */
+        const positionals = [];
+        while (q.length) {
+          const t = String(q[0]);
+          if (t === '--card') {
+            q.shift();
+            card = String(q.shift() || '').trim();
+            continue;
+          }
+          if (t === '--expires-min') {
+            q.shift();
+            expiresMin = Number(q.shift());
+            continue;
+          }
+          if (t.startsWith('--')) throw new Error(`unknown_flag:${t}`);
+          positionals.push(String(q.shift()));
         }
-        const worksite = q.shift();
+        const worksite = positionals[0];
         if (!worksite) {
           throw new Error('missing_worksite: usage mc task_context set <worksite> [--card ID] [--expires-min N]');
         }
@@ -557,6 +574,53 @@ function customParse(canonicalName, positional) {
         };
       }
       throw new Error('task_context_subcommand: use set|clear|show');
+    }
+    case 'playbook_phase_clear': {
+      return {};
+    }
+    case 'playbook':
+    case 'playbook_phase_set':
+    case 'playbook_phase_clear': {
+      const q = positional.slice();
+      if (canonicalName === 'playbook_phase_clear' || (q[0] === 'phase' && q[1] === 'clear')) {
+        return { _redirect: 'playbook_phase_clear' };
+      }
+      if (q[0] === 'phase') q.shift();
+      const sub = String(q.shift() || '').toLowerCase();
+      if (sub === 'clear') {
+        return { _redirect: 'playbook_phase_clear' };
+      }
+      if (sub !== 'set') {
+        throw new Error('playbook_subcommand: use "phase set <playbook_id> <phase>" or "phase clear"');
+      }
+      let subPlaybook = '';
+      let subPhase = '';
+      while (q.length && String(q[0]).startsWith('--')) {
+        const f = String(q.shift());
+        if (f === '--sub-playbook') subPlaybook = String(q.shift() || '').trim();
+        else if (f === '--sub-phase') subPhase = String(q.shift() || '').trim();
+        else throw new Error(`unknown_flag:${f}`);
+      }
+      const playbook_id = q.shift();
+      const phase = q.shift();
+      if (!playbook_id || !phase) {
+        throw new Error('missing_playbook_phase: mc playbook phase set <playbook_id> <phase>');
+      }
+      if (q.length) throw new Error(`extra_arguments:playbook`);
+      return {
+        playbook_id,
+        phase,
+        ...(subPlaybook ? { sub_playbook_id: subPlaybook } : {}),
+        ...(subPhase ? { sub_phase: subPhase } : {}),
+      };
+    }
+    case 'reach': {
+      const q = positional.slice();
+      if (q[0]?.startsWith('@')) {
+        return { mark: q[0].slice(1) };
+      }
+      if (q.length < 3) throw new Error('missing_coords: mc reach X Y Z | mc reach @mark');
+      return { x: Number(q[0]), y: Number(q[1]), z: Number(q[2]) };
     }
     case 'check': {
       const verb = String(positional[0] || '').toLowerCase();

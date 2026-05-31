@@ -11,6 +11,7 @@ import { getBuildInfo } from '../runtime/build-info.js';
 import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 import { clearNavTrail } from '../runtime/nav-trail.js';
 import { buildNavFrame } from '../runtime/nav-brief.js';
+import { autoClearPlaybookOnCardChange } from '../runtime/playbook-context.js';
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -71,7 +72,7 @@ export function createBotHttpListener(deps) {
   // Services proxy: dispatchAction expects a services-shaped container
   // (.state, .ensureBot, …). Until http-app itself moves to services-only,
   // we synthesize one from the legacy deps bag.
-  const servicesProxy = { state: ctx, ensureBot };
+  const servicesProxy = { state: ctx, config, ensureBot };
 
   return async function botHttpListener(req, res) {
 
@@ -138,6 +139,7 @@ export function createBotHttpListener(deps) {
           worksiteRaw != null && String(worksiteRaw).trim() !== ''
             ? normalizeId(worksiteRaw)
             : null;
+        autoClearPlaybookOnCardChange(ctx, cardId);
         ctx.runtime.taskContext = {
           card_id: cardId,
           worksite_region,

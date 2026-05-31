@@ -218,6 +218,30 @@ describe('cli dispatch', () => {
     }
   });
 
+  it('task_context set: worksite before --card (registry example order)', () => {
+    const prev = process.env.HERMES_KANBAN_TASK;
+    delete process.env.HERMES_KANBAN_TASK;
+    try {
+      const def = defOf('task_context');
+      const built = buildHttpRequest(def, 'task_context', ['set', 'hut1', '--card', 't_test']);
+      const body = JSON.parse(built.body || '{}');
+      assert.equal(body.card_id, 't_test');
+      assert.equal(body.worksite_region, 'hut1');
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_KANBAN_TASK;
+      else process.env.HERMES_KANBAN_TASK = prev;
+    }
+  });
+
+  it('task_context set: flags before worksite still works', () => {
+    delete process.env.HERMES_KANBAN_TASK;
+    const def = defOf('task_context');
+    const built = buildHttpRequest(def, 'task_context', ['set', '--card', 't_test', 'hut1']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.card_id, 't_test');
+    assert.equal(body.worksite_region, 'hut1');
+  });
+
   it('task_context set fails without card id', () => {
     const prev = process.env.HERMES_KANBAN_TASK;
     delete process.env.HERMES_KANBAN_TASK;

@@ -14,16 +14,28 @@
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-const LOG_DIR = process.env.HERMESCRAFT_TMP || '/tmp/hermescraft';
-const EQUIP_RECOVERY_LOG = join(LOG_DIR, 'mc-equip-recovery.jsonl');
+function logDir() {
+  return process.env.HERMESCRAFT_TMP || '/tmp/hermescraft';
+}
 
-let dirEnsured = false;
+function equipRecoveryLogPath() {
+  return join(logDir(), 'mc-equip-recovery.jsonl');
+}
+
+/** @param {string} profile */
+function navEventLogPath(profile) {
+  const safe = String(profile || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+  return join(logDir(), `nav-${safe}.jsonl`);
+}
+
+const ensuredDirs = new Set();
 
 async function ensureDir(path) {
-  if (dirEnsured) return;
+  const d = dirname(path);
+  if (ensuredDirs.has(d)) return;
   try {
-    await mkdir(dirname(path), { recursive: true });
-    dirEnsured = true;
+    await mkdir(d, { recursive: true });
+    ensuredDirs.add(d);
   } catch {
     /* ignore — appendFile will surface a clearer error if dir truly missing */
   }
@@ -54,7 +66,37 @@ async function ensureDir(path) {
 export function logEquipRecovery(record) {
   const line = JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n';
   // Fire-and-forget; ensure dir is best-effort.
-  ensureDir(EQUIP_RECOVERY_LOG)
-    .then(() => appendFile(EQUIP_RECOVERY_LOG, line))
+  const path = equipRecoveryLogPath();
+  ensureDir(path)
+    .then(() => appendFile(path, line))
     .catch(() => { /* never block the dig path on logging */ });
 }
+
+/**
+ * Append one sync-action nav telemetry row (v1 schema).
+ *
+ * @param {object} record
+ * @param {string} record.profile
+ * @param {string} record.actionName
+ * @param {boolean} record.ok
+ * @param {string} [record.error_code]
+ * @param {string} [record.playbook_id]
+ * @param {string} [record.phase]
+ * @param {string} [record.sub_playbook_id]
+ * @param {string} [record.sub_phase]
+ * @param {string} [record.card_id]
+ */
+export function logNavEvent(record) {
+  const line =
+    JSON.stringify({
+      schema_version: 1,
+      ts: new Date().toISOString(),
+      ...record,
+    }) + '\n';
+  const path = navEventLogPath(record.profile);
+  ensureDir(path)
+    .then(() => appendFile(path, line))
+    .catch(() => { /* never block action path on logging */ });
+}
+
+export { navEventLogPath };
