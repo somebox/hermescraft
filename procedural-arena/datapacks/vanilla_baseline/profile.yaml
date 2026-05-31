@@ -1,0 +1,3 @@
+id: vanilla_baseline
+description: No worldgen JSON overrides; seed and MV generator only
+params: {}

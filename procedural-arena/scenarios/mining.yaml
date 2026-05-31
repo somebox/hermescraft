@@ -1,0 +1,6 @@
+score_weights:
+  work.iron_ore_samples: 3.0
+  work.coal_ore_samples: 2.0
+  transit.terrain_difficulty: 1.0
+  prep.largest_flat_area: 1.0
+scenario_shape: work

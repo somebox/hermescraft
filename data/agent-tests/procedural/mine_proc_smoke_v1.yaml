@@ -1,0 +1,27 @@
+agent_test_id: mine_proc_smoke_v1
+procedural_env:
+  fixture_id: flat_sparse_iron_plains
+  seed_mode: from_report
+  report_path: procedural-arena/reports/proc-lab-latest.json
+  mc_version: "1.21.4"
+  fingerprint:
+    include: [fixture_id, seed, mc_version, map.border_radius, spawn]
+  spawn: from_report.spawn_feet
+  muster_mark: from_report.muster
+  work_zones: from_report
+
+prompt: |
+  You are Flint, a Minecraft worker. Use the mc CLI on PATH.
+  Goal: find and mine at least one iron ore near your starting position,
+  then stand on the muster mark when done. Do not assume fixed coordinates.
+
+skills: [minecraft-mining, minecraft-navigation]
+max_turns: 20
+timeout_seconds: 300
+
+expect:
+  bot_inventory:
+    iron_ore: ">=1"
+
+prep: []
+cleanup: auto

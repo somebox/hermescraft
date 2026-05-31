@@ -1,0 +1,6 @@
+# Curated matrix rows (not full cartesian product)
+include_ids:
+  - flat_sparse_iron_plains
+  - hilly_dense_resources_caves
+  - wood_single_forest
+  - scouting_stripe_tri
