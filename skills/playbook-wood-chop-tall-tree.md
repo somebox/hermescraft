@@ -15,7 +15,15 @@ Skip **tree_survey** and **ascend** when the trunk is reachable from the ground 
 | preflight | Tools + plan | inventory, craft_plan, equip, chest_search | axe + scaffold ready | read-only prep verbs |
 | approach | Reach trunk base | status | at tree footprint | move, status, scene, inspect |
 | chop_loop | Fill quota | — | log count in inv/chest | dig, collect, pillar_down, move, place |
-| closeout | Deposit + close | — | chest snapshot | move, deposit, list_container, status |
+| closeout | Deposit + close | — | chest snapshot | goto_near, deposit, list_container, status |
+
+**Closeout — deposit at a chest block (not on it):** A chest occupies its block; pathfinding will refuse `mc move` / `mc goto` **to** the chest XYZ. Stand on an adjacent grass/air cell (often one block north/south/east/west at the same Y), then deposit by chest coordinates:
+
+1. `mc goto_near <cx> <cy> <cz> 2` where `(cx,cy,cz)` is the chest from `deposit_to` / card body — pick a stand cell **beside** the chest, not the chest cell itself.
+2. `mc deposit <item> <count> <cx> <cy> <cz>` (or `mc deposit <item> <count> <mark>` when the mark resolves to that chest).
+3. `mc list_container <cx> <cy> <cz>` to verify the delta before `playbook phase clear` / `kanban_complete`.
+
+Allowed verbs in closeout include **goto_near** (not only move).
 
 ## Composition path (Stage 2b — A4+)
 
@@ -28,7 +36,9 @@ When `inputs.tree` height exceeds reach from ground, run **tree_survey** then **
 | tree_survey | Measure trunk | — | scene, find_blocks, inspect column | `trunk_logs_seen`, `scaffold_side` |
 | ascend | Reach canopy | scaffold in inv | **`use_playbook: pillar_up_safe`** `{ count, block, side_check: every_block }` | Y high enough to dig top logs; not standing on trunk |
 | chop_loop | Collect quota | — | dig/collect top-down | count ≥ target |
-| closeout | Deposit | — | move, deposit | chest delta |
+| closeout | Deposit | — | goto_near, deposit | chest delta |
+
+**Closeout — deposit at a chest block (not on it):** Same as flat path — `mc goto_near` to a cell adjacent to the chest, then `mc deposit … <cx> <cy> <cz>`. Never path onto the chest block itself.
 
 **Ascend act row (documentation — worker interprets):**
 

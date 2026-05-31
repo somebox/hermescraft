@@ -4,4 +4,4 @@ tree: (55, 65, 50)
 target_logs: 8
 deposit_to: chest_wood_test at (52, 65, 52)
 
-Success: ≥8 oak_log deposited at chest_wood_test (or in inventory with deposit attempted).
+Success: ≥8 oak_log in chest_wood_test at (52, 65, 52). Stand adjacent (e.g. 52,65,51), then mc deposit — not on the chest block.

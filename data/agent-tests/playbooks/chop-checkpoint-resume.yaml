@@ -65,5 +65,5 @@ cleanup:
   # Fill from y=65 (preserve grass floor). Park Flint at A1 spawn coord.
   - "gamemode creative Flint"
   - "execute in landfolk-test run fill 74 65 45 86 80 55 minecraft:air"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Flint 52 65 51"
   - "execute in landfolk-test run gamemode survival Flint"

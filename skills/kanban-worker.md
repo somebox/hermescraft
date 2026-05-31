@@ -185,6 +185,8 @@ The base chests are the fleet's shared working stock. Other workers (peer bot, S
 
 **Deposit surplus on completion.** Before `kanban_complete`, if you have leftover materials that came from a base chest — fill blocks, food, planks, ingots — walk back and `mc deposit` them. Mention the deposit in your "done" chat line. A worker who consistently returns surplus is what makes the next card cheap; a worker who hoards forces the next bot to re-mine.
 
+**Depositing into a chest block:** Chests are solid blocks — you cannot stand on `(cx,cy,cz)` where the chest sits. Path to an **adjacent** standable cell (`mc goto_near cx cy cz 2` is usually enough), then `mc deposit ITEM COUNT cx cy cz` (or `COUNT MARK` / `COUNT MARK cx cy cz`). Using `mc move` or `mc goto` with the chest's own coordinates often yields NAV_TARGET_UNSTANDABLE; that is expected, not a broken chest.
+
 If you find a chest at floor stock (fewer items than a single card typically needs), don't fully drain it. Take what you need to finish, leave a note in chat (`"chest_<name> low — used last N <item>, next worker needs restock"`) so Steward can promote a [SUPPLY] card.
 
 ## Felling trees — cut the whole thing AND plant a sapling
@@ -309,7 +311,7 @@ When the card body includes `playbook: <registry_id>` (Stage 2a+), routing lives
 
 **Phase boundaries:** after each completed phase, append a `[run_state]` block via `kanban_comment` (production) or **`scripts/kanban comment $HERMES_KANBAN_TASK "…"`** (agent-test / terminal-only Hermes — there is no `kanban_comment` tool in that toolset). Fresh workers on the same card read that comment and call `phase set` for the resume phase.
 
-**Exit:** `mc playbook phase clear` → `mc task_context clear` → `kanban_complete` or `kanban_block` (or `scripts/kanban complete` / `scripts/kanban block` in agent-test).
+**Exit:** `mc playbook phase clear` → `mc task_context clear` → `kanban_complete` or `kanban_block` (or `scripts/kanban complete` / `scripts/kanban block` in agent-test). On **closeout** phases that deposit to a chest, use **goto_near + deposit** (see Shared-chest etiquette) — not move onto the chest cell.
 
 **Pass-back:** if the playbook id is wrong or inputs are missing from the body, use the structured pass-back comment pattern (numbered unblock options) + `kanban_reassign steward` — don't improvise a different playbook id.
 

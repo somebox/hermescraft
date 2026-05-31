@@ -23,7 +23,8 @@ prompt_prefix: |
 
   {{CARD_BODY}}
 
-  Execute the card to completion: ≥8 oak_log at chest_wood_test (52, 65, 52).
+  Execute the card to completion: ≥8 oak_log in chest_wood_test at (52, 65, 52).
+  Closeout: the chest block is not standable — `mc goto_near 52 65 51 2` (or another grass cell adjacent to the chest), then `mc deposit oak_log 8 52 65 52`. Do not `mc move` onto (52, 65, 52).
   On success: mc chat done line, kanban_complete with summary.
 
 arms:
@@ -40,8 +41,10 @@ arms:
       mc_verbs_include_any: [playbook]
 
 expect:
-  bot_inventory:
-    oak_log: ">=0"
+  chest_item_count_at:
+    - { x: 52, y: 65, z: 52, item: oak_log, min_count: 8 }
+  bot_inventory_excludes:
+    oak_log: ">=8"
   mc_cli_invocations_max: 45
 
 # verify_after_prep disabled: arena is rcon-verified at prep time (setblocks return
@@ -75,12 +78,12 @@ prep: &chop_oak_prep
   - "execute in landfolk-test run setblock 55 72 50 minecraft:oak_log"
   - "execute in landfolk-test run setblock 52 65 52 minecraft:chest"
   - "execute in landfolk-test run data merge block 52 65 52 {Items:[{Slot:0b,id:\"minecraft:oak_log\",Count:1b}]}"
-  - "execute in landfolk-test run setworldspawn 52 65 52"
+  - "execute in landfolk-test run setworldspawn 52 65 51"
   - "execute in landfolk-test run give Flint minecraft:wooden_axe 1"
   - "execute in landfolk-test run give Flint minecraft:bread 8"
   - "gamemode creative Flint"
   - "mvtp Flint landfolk-test"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Flint 52 65 51"
   - "execute in landfolk-test run gamemode survival Flint"
   - "effect clear Flint"
   - "effect give Flint minecraft:saturation 600 1"
@@ -93,5 +96,5 @@ cleanup: &chop_oak_cleanup
   - "execute in landfolk-test run kill @e[type=!player]"
   - "gamemode creative Flint"
   - "execute in landfolk-test run fill 50 65 45 60 80 55 minecraft:air"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Flint 52 65 51"
   - "execute in landfolk-test run gamemode survival Flint"

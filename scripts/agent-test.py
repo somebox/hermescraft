@@ -25,6 +25,7 @@ Spec format (YAML, extends fixture format):
       bot_at: { x: 0, y: 65, z: 6, range: 2 }
       bot_inventory: { stone_pickaxe: 1, cobblestone: ">=3" }
       world_block_at: [{ x: 0, y: 65, z: 2, block: "oak_door[open=false]" }]
+      chest_item_count_at: [{ x: 96, y: 65, z: 53, item: oak_log, min_count: 8 }]
     prep:    [...]   # standard fixture prep
     cleanup: [...]   # standard fixture cleanup
 
@@ -261,6 +262,19 @@ def _summarize_msg(m: dict, max_len: int = 220) -> str:
     return text
 
 
+def _sum_chest_item_from_nbt(nbt_text: str, item: str) -> int:
+    """Sum stack counts for minecraft:<item> from `data get block … Items` output."""
+    needle = f"minecraft:{item}"
+    total = 0
+    for m in re.finditer(
+        rf'id:"{re.escape(needle)}"[^}}]*?(?:count|Count):(\d+)',
+        nbt_text,
+        re.IGNORECASE,
+    ):
+        total += int(m.group(1))
+    return total
+
+
 def predicate_results(spec: dict, agent_chat: str, end_state: dict,
                        mc_verbs: list = None, pre_deaths: int = 0) -> list:
     """Evaluate each predicate, return list of {kind, pass, detail}."""
@@ -444,6 +458,24 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
             results.append({"kind": f"block@{x},{y},{z}=={block}", "pass": hit,
                              "detail": ""})
 
+    if "chest_item_count_at" in expect:
+        for probe in expect["chest_item_count_at"] or []:
+            x, y, z = probe["x"], probe["y"], probe["z"]
+            item = str(probe["item"]).replace("minecraft:", "")
+            want_min = int(probe.get("min_count", 1))
+            want_max = probe.get("max_count")
+            out = run_rcon(f"execute in landfolk-test run data get block {x} {y} {z} Items")
+            have = _sum_chest_item_from_nbt(out or "", item)
+            ok_min = have >= want_min
+            ok_max = want_max is None or have <= int(want_max)
+            ok = ok_min and ok_max
+            bound = f">={want_min}" + (f",<={want_max}" if want_max is not None else "")
+            results.append({
+                "kind": f"chest@{x},{y},{z}:{item}{bound}",
+                "pass": ok,
+                "detail": f"have={have}",
+            })
+
     if "entity_in_bbox" in expect:
         # List of {type, bbox: {x1,y1,z1,x2,y2,z2}, min_count?, max_count?}.
         # Counts entities of that type inside the inclusive AABB; passes when
@@ -547,7 +579,10 @@ def main():
         "execute in landfolk-test run data merge entity @e[type=player,name=Flint,limit=1] {Fire:0s,HurtTime:0s,DeathTime:0s}",
         "execute in landfolk-test run effect clear Flint",
         "execute in landfolk-test run effect give Flint minecraft:instant_health 1 4",
-        "execute in landfolk-test run tp Flint 52 65 52",
+        # Park at (52,65,51) — one cell north of A1 chest. tp'ing onto
+        # the chest (z=52) blocks setblock during the spec's own prep and
+        # surprises observers ("why is Flint on a chest").
+        "execute in landfolk-test run tp Flint 52 65 51",
     ]
     pre_cmds.extend(spec.get("cleanup") or [])
     run_rcon_batch(pre_cmds)
@@ -934,6 +969,9 @@ def main():
     for v in mc_verbs_used:
         verb_counts[v] = verb_counts.get(v, 0) + 1
 
+    # Predicates MUST run before cleanup: rcon chest probes and post.observe
+    # inventory reflect end-of-hermes state. Cleanup (fill air, tp, etc.) runs
+    # only after verdict is computed.
     preds = predicate_results(spec, agent_stdout, post, mc_verbs_used, pre_deaths)
     all_pass = all(r["pass"] for r in preds) if preds else False
     verdict = "PASS" if all_pass and not timed_out else ("TIMEOUT" if timed_out else "FAIL")

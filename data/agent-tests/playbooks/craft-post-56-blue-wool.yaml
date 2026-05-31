@@ -1,4 +1,4 @@
 world: landfolk-test
 prep: []
 cleanup:
-  - "execute in landfolk-test run tp Mason 52 65 52"
+  - "execute in landfolk-test run tp Mason 52 65 51"

@@ -20,12 +20,15 @@ prompt: |
   trunk_logs_seen: 10
   target_logs: 8
   scaffold_block: dirt
-  deposit_to: chest at (96, 65, 52)
+  deposit_to: chest at (96, 65, 53)
 
   The trunk is 10 logs tall (y=65..74). You cannot collect all logs from the ground.
   Follow Stage 2b phases: preflight → approach → tree_survey → **ascend** via sub-play
   **pillar_up_safe** (use `mc playbook phase set wood.chop_tall_tree ascend --sub-playbook pillar_up_safe --sub-phase …`
   while inside the sub-play), then chop_loop from the top down, closeout deposit.
+
+  Deposit: stand on grass **adjacent** to the chest (e.g. `mc goto_near 95 65 53 2`), then
+  `mc deposit oak_log 8 96 65 53` — do not `mc move` onto the chest block itself.
 
   Use `scripts/kanban` for comments/blocks/complete. If you get BOT_ON_PILLAR during
   sub-play, lateral step per playbook-pillar-up-safe doc then retry pillar_up.
@@ -35,6 +38,10 @@ prompt: |
 expect:
   mc_verbs_include_any: [pillar_up, playbook]
   mc_cli_invocations_max: 55
+  chest_item_count_at:
+    - { x: 96, y: 65, z: 53, item: oak_log, min_count: 8 }
+  bot_inventory_excludes:
+    oak_log: ">=8"
 
 prep:
   - "execute in landfolk-test run difficulty peaceful"
@@ -44,7 +51,7 @@ prep:
   # A4 composition arena (x=88..98, z=45..55)
   - "execute in landfolk-test run fill 88 64 45 98 80 55 minecraft:air"
   - "execute in landfolk-test run fill 88 64 45 98 64 55 minecraft:grass_block"
-  - "execute in landfolk-test run setblock 96 65 52 minecraft:chest"
+  - "execute in landfolk-test run setblock 96 65 53 minecraft:chest"
   - "execute in landfolk-test run setblock 93 65 50 minecraft:oak_log"
   - "execute in landfolk-test run setblock 93 66 50 minecraft:oak_log"
   - "execute in landfolk-test run setblock 93 67 50 minecraft:oak_log"
@@ -69,5 +76,5 @@ prep:
 cleanup:
   - "gamemode creative Flint"
   - "execute in landfolk-test run fill 88 65 45 98 80 55 minecraft:air"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Flint 52 65 51"
   - "execute in landfolk-test run gamemode survival Flint"

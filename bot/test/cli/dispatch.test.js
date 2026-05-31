@@ -151,6 +151,18 @@ describe('cli dispatch', () => {
     assert.equal(body.mark, undefined);
   });
 
+  it('deposit ITEM COUNT MARK X Y Z parses mark before coords', () => {
+    const def = defOf('deposit');
+    const built = buildHttpRequest(def, 'deposit', ['oak_log', '8', 'chest_wood_test', '96', '65', '53']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.item, 'oak_log');
+    assert.equal(body.count, 8);
+    assert.equal(body.mark, 'chest_wood_test');
+    assert.equal(body.x, 96);
+    assert.equal(body.y, 65);
+    assert.equal(body.z, 53);
+  });
+
   it('withdraw ITEM COUNT X Y Z parses correctly', () => {
     const def = defOf('withdraw');
     const built = buildHttpRequest(def, 'withdraw', ['iron_ingot', '5', '100', '64', '-200']);

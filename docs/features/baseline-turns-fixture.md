@@ -50,7 +50,7 @@ Infrastructure fixes in this window: JSONL `HERMESCRAFT_TMP` + profile tag, Herm
 | prose-skilled | TBD | TBD | TBD |
 | playbook | TBD | TBD | TBD |
 
-**Pass (A1):** playbook medians ≤ both prose arms on tool calls and errors.
+**Pass (A1):** playbook medians ≤ both prose arms on tool calls and errors; each run must pass **`chest_item_count_at`** (≥8 `oak_log` @ chest 52,65,52) and **`bot_inventory_excludes`** (not holding ≥8 logs at end). Prep parks Flint @ (52,65,51), not on the chest cell.
 
 ## Fixture A4 — chop-composition (Stage 2b)
 
@@ -60,11 +60,11 @@ scripts/stress.sh chop-composition
 scripts/show-arenas.py            # optional: A1–A4 FPV layout
 ```
 
-**Pass (A4):** sub-play completes; parent resumes; JSONL rows include `playbook_id` + `sub_playbook_id` during ascend; `pillar_up` used. Record n≥1 in agent-test JSON under `data/agent-tests/runs/`.
+**Pass (A4):** sub-play JSONL during ascend; `pillar_up`/`playbook`; **≥8 `oak_log` in chest @ (96,65,53)** via `chest_item_count_at`; bot inventory not holding ≥8 logs at end. Chest sits on standable grass south of tree — use `goto_near` adjacent cell, not `move` onto chest.
 
-| Run | mc calls | sub_playbook in JSONL | Notes |
-|-----|----------|------------------------|-------|
-| TBD | TBD | TBD | Tall trunk arena x=88..98 |
+| Run | mc calls | sub_playbook in JSONL | chest ≥8 | Notes |
+|-----|----------|------------------------|----------|-------|
+| TBD | TBD | TBD | TBD | Tall trunk @ (93,65,50); chest @ (96,65,53) |
 
 ## Follow-ups (not blocking regression)
 

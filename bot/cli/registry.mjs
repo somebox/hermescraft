@@ -1659,8 +1659,8 @@ export const RAW_COMMAND_DEFS = [
         ...(p.x !== undefined ? { x: p.x, y: p.y, z: p.z } : {}),
       }),
     description: 'Deposit items into a chest (count=0 means all).',
-    usage: 'mc deposit ITEM COUNT X Y Z  OR  mc deposit ITEM COUNT MARK  OR  mc deposit ITEM @MARK',
-    examples: ['mc deposit oak_log 16 364 65 -597', 'mc deposit oak_log 0 materials_chest', 'mc deposit oak_log @materials_chest'],
+    usage: 'mc deposit ITEM COUNT X Y Z  OR  mc deposit ITEM COUNT MARK  OR  mc deposit ITEM COUNT MARK X Y Z  OR  mc deposit ITEM @MARK',
+    examples: ['mc deposit oak_log 16 364 65 -597', 'mc deposit oak_log 8 chest_wood_test 96 65 53', 'mc deposit oak_log 0 materials_chest', 'mc deposit oak_log @materials_chest'],
   }),
   g('withdraw', 'world', [], {
     method: 'POST',
@@ -1682,7 +1682,7 @@ export const RAW_COMMAND_DEFS = [
         ...(p.x !== undefined ? { x: p.x, y: p.y, z: p.z } : {}),
       }),
     description: 'Withdraw items from a chest (count=0 means all).',
-    usage: 'mc withdraw ITEM COUNT X Y Z  OR  mc withdraw ITEM COUNT MARK  OR  mc withdraw ITEM @MARK',
+    usage: 'mc withdraw ITEM COUNT X Y Z  OR  mc withdraw ITEM COUNT MARK  OR  mc withdraw ITEM COUNT MARK X Y Z  OR  mc withdraw ITEM @MARK',
     examples: ['mc withdraw iron_ingot 5 100 64 -200', 'mc withdraw iron_ingot 0 materials_chest'],
   }),
   g('chest_search', 'world', ['cs', 'find_in_chests'], {

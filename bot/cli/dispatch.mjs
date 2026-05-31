@@ -113,6 +113,82 @@ function finalize(def, canonicalName, params) {
   return { method, path, body, params };
 }
 
+/** @param {string} t */
+function isNumericCliToken(t) {
+  if (t == null || t === '') return false;
+  const s = String(t).trim();
+  return /^-?\d+(\.\d+)?$/.test(s);
+}
+
+/**
+ * mc deposit|withdraw ITEM [COUNT] [MARK|X Y Z] — mark may sit between count and coords.
+ * @param {string[]} positional
+ */
+function parseDepositWithdrawPositional(positional) {
+  if (positional[0]?.startsWith('{')) return JSON.parse(positional[0]);
+  const item = positional[0];
+  if (!item) throw new Error('missing_item');
+
+  if (positional[1]?.startsWith('@')) {
+    return {
+      item,
+      mark: positional[1].slice(1),
+      count: positional[2] != null ? Number(positional[2]) : 0,
+    };
+  }
+
+  if (positional.length === 1) {
+    return { item, count: 0 };
+  }
+
+  const rest = positional.slice(1);
+  if (rest.length === 1 && isNumericCliToken(rest[0])) {
+    return { item, count: Number(rest[0]) };
+  }
+
+  if (!isNumericCliToken(rest[0])) {
+    throw new Error('missing_count: use mc deposit ITEM COUNT …');
+  }
+  const count = Number(rest[0]);
+  const tail = rest.slice(1);
+  if (tail.length === 0) {
+    return { item, count };
+  }
+  if (tail.length === 1 && !isNumericCliToken(tail[0])) {
+    return {
+      item,
+      count,
+      mark: String(tail[0]).replace(/^@/, ''),
+    };
+  }
+  if (tail.length === 3 && tail.every(isNumericCliToken)) {
+    return {
+      item,
+      count,
+      x: Number(tail[0]),
+      y: Number(tail[1]),
+      z: Number(tail[2]),
+    };
+  }
+  if (
+    tail.length === 4
+    && !isNumericCliToken(tail[0])
+    && isNumericCliToken(tail[1])
+    && isNumericCliToken(tail[2])
+    && isNumericCliToken(tail[3])
+  ) {
+    return {
+      item,
+      count,
+      mark: String(tail[0]).replace(/^@/, ''),
+      x: Number(tail[1]),
+      y: Number(tail[2]),
+      z: Number(tail[3]),
+    };
+  }
+  throw new Error('deposit_withdraw_args: expected COUNT, optional MARK, optional X Y Z');
+}
+
 /**
  * @param {CmdDef} def
  * @param {string} canonicalName
@@ -708,44 +784,7 @@ function customParse(canonicalName, positional) {
       return { x: Number(positional[0]), y: Number(positional[1]), z: Number(positional[2]) };
     case 'deposit':
     case 'withdraw':
-      if (positional[0]?.startsWith('{')) return JSON.parse(positional[0]);
-      if (positional[1]?.startsWith('@')) {
-        return {
-          item: positional[0],
-          mark: positional[1].slice(1),
-          count: positional[2] != null ? Number(positional[2]) : 0,
-        };
-      }
-      // mc deposit ITEM COUNT MARK (mark without @)
-      if (positional.length === 3 && isNaN(Number(positional[2]))) {
-        return {
-          item: positional[0],
-          count: positional[1] != null ? Number(positional[1]) : 0,
-          mark: String(positional[2]).replace(/^@/, ''),
-        };
-      }
-      // mc deposit ITEM COUNT X Y Z
-      if (positional.length >= 5) {
-        return {
-          item: positional[0],
-          count: positional[1] != null ? Number(positional[1]) : 0,
-          x: Number(positional[2]),
-          y: Number(positional[3]),
-          z: Number(positional[4]),
-        };
-      }
-      // mc deposit ITEM COUNT (no location — server will use nearest chest)
-      if (positional.length === 2 && !isNaN(Number(positional[1]))) {
-        return {
-          item: positional[0],
-          count: Number(positional[1]),
-        };
-      }
-      // mc deposit ITEM (deposit all of item to nearest chest)
-      return {
-        item: positional[0],
-        count: 0,
-      };
+      return parseDepositWithdrawPositional(positional);
     case 'verify_plot': {
       const q = positional.slice();
       const out = {};

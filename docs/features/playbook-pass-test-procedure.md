@@ -148,7 +148,7 @@ Specs and shared card bodies: `data/agent-tests/playbooks/includes/chop-oak-8/`.
 | A1 (one arm) | `scripts/stress.sh chop-prose-vs-playbook --arm playbook` (also `prose-minimal`, `prose-skilled`) |
 | A2 | `scripts/stress.sh chop-preflight-refusal` |
 | A3 | `scripts/stress.sh chop-checkpoint-resume` |
-| **A4 (2b)** | `scripts/stress.sh chop-composition` — tall trunk + `pillar_up_safe` sub-play; JSONL `sub_playbook_id` |
+| **A4 (2b)** | `scripts/stress.sh chop-composition` — tall trunk + `pillar_up_safe` sub-play; JSONL `sub_playbook_id`; **≥8 oak_log in chest (96,65,53)** |
 
 **Visual layout (no test run):** `scripts/show-arenas.py` — builds A1–A4 side-by-side arenas + signs, parks Flint at overlook `(67, 70, 40)`.
 

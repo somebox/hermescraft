@@ -46,7 +46,7 @@ cmds = [
     "execute in landfolk-test run fill 88 64 45 98 80 55 minecraft:air",
     "execute in landfolk-test run fill 88 64 45 98 64 55 minecraft:grass_block",
     *(f"execute in landfolk-test run setblock 93 {y} 50 minecraft:oak_log" for y in range(65, 75)),
-    "execute in landfolk-test run setblock 96 65 52 minecraft:chest",
+    "execute in landfolk-test run setblock 96 65 53 minecraft:chest",
     "execute in landfolk-test run setblock 89 65 45 minecraft:oak_sign[rotation=0]{Text1:'{\"text\":\"A4: composition\"}'}",
 
     # Park Flint where he can see all three arenas in one glance,
