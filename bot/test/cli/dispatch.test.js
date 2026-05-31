@@ -242,6 +242,15 @@ describe('cli dispatch', () => {
     assert.equal(body.worksite_region, 'hut1');
   });
 
+  it('task_context set: card only (--card without worksite)', () => {
+    delete process.env.HERMES_KANBAN_TASK;
+    const def = defOf('task_context');
+    const built = buildHttpRequest(def, 'task_context', ['set', '--card', 't_test']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.card_id, 't_test');
+    assert.equal(body.worksite_region, undefined);
+  });
+
   it('task_context set fails without card id', () => {
     const prev = process.env.HERMES_KANBAN_TASK;
     delete process.env.HERMES_KANBAN_TASK;

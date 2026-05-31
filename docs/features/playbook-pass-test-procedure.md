@@ -55,7 +55,7 @@ tail -10 "${HERMESCRAFT_TMP:-/tmp/hermescraft}/nav-<profile>.jsonl" | jq -e 'sel
 
 Every line must include **`schema_version: 1`**, **`actionName`**, and **`ok`** as a boolean (`true` for successful sync actions, `false` when the handler returned `ok: false`). A success row missing `ok: true` would silently skew A2 counterfactual math — fix the chokepoint before proceeding.
 
-**Scope:** JSONL is emitted only for **sync POST** actions routed through `dispatchAction` (`move`, `craft`, `playbook_phase_set`, etc.). **GET fast-paths** (`status`, `observe`, `inventory`, `nearby`, …) bypass the chokepoint by design. That matches A2 (preflight verbs are read-class; act verbs are POST). Do not expect a complete action trace in JSONL.
+**Scope:** JSONL is emitted for **sync POST** actions routed through `dispatchAction` (`move`, `craft`, `playbook_phase_set`, etc.). **GET fast-paths** (`status`, `observe`, `inventory`, …) also append rows **during playbook/card-bound work** via `logReadNavTelemetry` so A2 preflight reads count in `--compliance`. Outside playbook spans, GET handlers stay silent in JSONL (idle polling does not inflate logs).
 
 **Profile tag:** rows land in `nav-<config.mc.username>.jsonl` (lowercased). If you see `nav-unknown.jsonl`, the HTTP `servicesProxy` is missing `config` — a live-only failure mode.
 
@@ -114,6 +114,20 @@ scripts/kanban create "x" --assignee flint --body $'playbook: not.real\n'
 ```
 
 Checklist: [docs/features/2a-S-checklist.md](2a-S-checklist.md).
+
+---
+
+## Wave 5 prerequisites (before A1 matrix)
+
+1. **`mc task_context set` token order** — All of these must parse (see `bot/test/cli/dispatch.test.js`):
+   - `mc task_context set hut1 --card t_test` (worksite first, registry example)
+   - `mc task_context set --card t_test hut1` (flags first)
+   - `mc task_context set --card t_test` (card bind only; landfolk-test chop fixtures)
+   A parse failure (`missing_card_id` / `missing_worksite`) looks like a preflight discipline failure in agent logs — fix CLI before blaming the model.
+
+2. **JSONL profile + tmp dir** — Rows must land in `nav-<config.mc.username>.jsonl` under `HERMESCRAFT_TMP` (not `nav-unknown.jsonl`). Requires `servicesProxy` to include `config` on the HTTP app and per-call `logDir()` in `metrics.js` (shipped in `c82e882` and later).
+
+3. **JSONL read vs act verbs** — Sync POST actions always log. GET perceive verbs (`inventory`, `status`, `scene`, `nearby`, `observe`) log **only while** `task_context.card_id` or `playbook_context` is set (playbook-card work). A2 `--compliance` preflight-before-act uses timestamp order: a registry preflight read must appear in JSONL **before** the first non-preflight act in each phase span. A1 medians from agent-test JSON reports use `mc_cli_invocations`; do not use raw JSONL row totals as observation-rate unless GET logging is on.
 
 ---
 

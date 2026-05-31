@@ -551,9 +551,11 @@ function customParse(canonicalName, positional) {
           if (t.startsWith('--')) throw new Error(`unknown_flag:${t}`);
           positionals.push(String(q.shift()));
         }
-        const worksite = positionals[0];
-        if (!worksite) {
-          throw new Error('missing_worksite: usage mc task_context set <worksite> [--card ID] [--expires-min N]');
+        const worksite = positionals[0] || '';
+        if (!worksite && !card) {
+          throw new Error(
+            'missing_card_or_worksite: usage mc task_context set [<worksite>] --card ID | set <worksite> [--card ID] (or HERMES_KANBAN_TASK + worksite)',
+          );
         }
         if (!card) {
           throw new Error('missing_card_id: set HERMES_KANBAN_TASK or pass --card');
@@ -569,7 +571,7 @@ function customParse(canonicalName, positional) {
           subcommand: 'set',
           _httpMethod: 'POST',
           card_id: card,
-          worksite_region: String(worksite),
+          ...(worksite ? { worksite_region: String(worksite) } : {}),
           expires_at_ms,
         };
       }

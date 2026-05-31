@@ -1846,10 +1846,12 @@ export const RAW_COMMAND_DEFS = [
   }),
   g('task_context', 'task', ['task-context'], {
     description: 'Bind kanban card worksite grant for protect-region construction (set/clear/show)',
-    usage: 'mc task_context set <worksite> [--card ID] [--expires-min N] | clear | show',
+    usage: 'mc task_context set [<worksite>] [--card ID] [--expires-min N] | clear | show',
     examples: [
       'mc task_context set hut3                    # uses HERMES_KANBAN_TASK for card_id',
       'mc task_context set hut3 --card t_abc123 --expires-min 45',
+      'mc task_context set --card t_abc123         # card bind only (no protect worksite)',
+      'mc task_context set --card t_abc123 hut3    # flags before worksite also accepted',
       'mc task_context show',
       'mc task_context clear',
     ],

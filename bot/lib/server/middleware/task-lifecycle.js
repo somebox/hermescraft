@@ -110,6 +110,18 @@ function emitSyncNavTelemetry(services, actionName, result) {
 }
 
 /**
+ * GET read-path telemetry during playbook/card work only (keeps JSONL volume down
+ * on idle polling). Same v1 row shape as sync POST chokepoint.
+ */
+export function logReadNavTelemetry(services, actionName) {
+  const ctx = services.state;
+  const onPlaybookCard =
+    ctx.runtime?.playbook_context?.playbook_id || ctx.runtime?.taskContext?.card_id;
+  if (!onPlaybookCard) return;
+  emitSyncNavTelemetry(services, actionName, { ok: true });
+}
+
+/**
  * @param {Record<string, any>} services  services container (has .state, .ensureBot, .utils, …)
  * @param {string} actionName
  * @param {Record<string, any>} body

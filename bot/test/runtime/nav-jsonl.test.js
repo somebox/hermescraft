@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { logNavEvent, navEventLogPath } from '../../lib/runtime/metrics.js';
+import { logReadNavTelemetry } from '../../lib/server/middleware/task-lifecycle.js';
 
 describe('logNavEvent', () => {
   /** @type {string} */
@@ -56,5 +57,34 @@ describe('logNavEvent', () => {
     const row = JSON.parse(raw.trim().split('\n').pop());
     assert.equal(row.ok, true);
     assert.equal(row.actionName, 'status');
+  });
+
+  it('logReadNavTelemetry writes inventory when task_context is bound', async () => {
+    const services = {
+      state: {
+        runtime: {
+          taskContext: { card_id: 't_test' },
+          playbook_context: null,
+        },
+      },
+      config: { mc: { username: 'Tester' } },
+    };
+    logReadNavTelemetry(services, 'inventory');
+    await new Promise((r) => setTimeout(r, 80));
+    const raw = await readFile(navEventLogPath('Tester'), 'utf8');
+    const row = JSON.parse(raw.trim().split('\n').pop());
+    assert.equal(row.actionName, 'inventory');
+    assert.equal(row.ok, true);
+    assert.equal(row.card_id, 't_test');
+  });
+
+  it('logReadNavTelemetry is a no-op without card/playbook bind', async () => {
+    const services = {
+      state: { runtime: {} },
+      config: { mc: { username: 'NoBind' } },
+    };
+    logReadNavTelemetry(services, 'inventory');
+    await new Promise((r) => setTimeout(r, 50));
+    await assert.rejects(readFile(navEventLogPath('NoBind'), 'utf8'), /ENOENT/);
   });
 });

@@ -2,7 +2,7 @@
 /**
  * Mineflayer bot HTTP listener factory — extracted from server.js for readability and testing.
  */
-import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError } from './middleware/task-lifecycle.js';
+import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError, logReadNavTelemetry } from './middleware/task-lifecycle.js';
 import { probeRouteAlongLine, probeRouteCorridor } from './route-probe.js';
 import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/water-route.js';
 import { normalizeId } from '../runtime/regions/index.js';
@@ -274,6 +274,7 @@ export function createBotHttpListener(deps) {
           clearNavTrail(ctx, 'status');
           if (ctx.runtime) ctx.runtime.lastDugSteps = null;
         }
+        logReadNavTelemetry(servicesProxy, 'status');
         return respond(res, 200, { ok: true, data: getFullState({ lean }) });
       }
 
@@ -315,6 +316,7 @@ export function createBotHttpListener(deps) {
       }
 
       if (path === '/inventory') {
+        logReadNavTelemetry(servicesProxy, 'inventory');
         return respond(res, 200, { ok: true, data: getInventory() });
       }
 
@@ -322,6 +324,7 @@ export function createBotHttpListener(deps) {
         const radius = parseInt(url.searchParams.get('radius') || '32', 10);
         const fairPlay = url.searchParams.get('fair_play') !== 'false';
         const entityLimit = parseInt(url.searchParams.get('entity_limit') || '20', 10);
+        logReadNavTelemetry(servicesProxy, 'nearby');
         return respond(res, 200, {
           ok: true,
           data: getNearby(radius, { fairPlay, entityLimit }),
@@ -556,8 +559,10 @@ export function createBotHttpListener(deps) {
           // looking_at, and short entity preview.
           const { visible_block_hits, visible_entities, ...rest } = data;
           rest.visible_entities = (visible_entities || []).slice(0, 4);
+          logReadNavTelemetry(servicesProxy, 'scene');
           return respond(res, 200, { ok: true, data: rest });
         }
+        logReadNavTelemetry(servicesProxy, 'scene');
         return respond(res, 200, { ok: true, data });
       }
 
@@ -708,6 +713,7 @@ export function createBotHttpListener(deps) {
       if (path === '/observe') {
         ensureBot();
         const lean = url.searchParams.get('lean') === 'true';
+        logReadNavTelemetry(servicesProxy, 'observe');
         return respond(res, 200, buildObservePayload({ lean }));
       }
 

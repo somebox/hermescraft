@@ -386,11 +386,25 @@ def compliance_checks(rows: list[dict]) -> dict[str, float]:
             continue
         allowed = set(pdef.get("allowed_verbs") or [])
         preflight = set(pdef.get("preflight_verbs") or [])
-        mutating = [e for e in evts if e.get("actionName") not in ("playbook_phase_set", "playbook_phase_clear", "status", "observe")]
-        if mutating:
+        phase_set = {"playbook_phase_set", "playbook_phase_clear"}
+        ordered = sorted(evts, key=lambda e: e.get("ts") or "")
+        read_hits = [e for e in ordered if e.get("actionName") in preflight]
+        act_hits = [
+            e
+            for e in ordered
+            if e.get("actionName")
+            and e.get("actionName") not in phase_set
+            and e.get("actionName") not in preflight
+        ]
+        if act_hits:
             preflight_n += 1
-            first = mutating[0]
-            if first.get("actionName") in preflight or not preflight:
+            first_act = act_hits[0]
+            first_act_ts = first_act.get("ts") or ""
+            if not preflight:
+                preflight_ok += 1
+            elif read_hits and (read_hits[0].get("ts") or "") <= first_act_ts:
+                preflight_ok += 1
+            elif first_act.get("actionName") in preflight:
                 preflight_ok += 1
         for e in evts:
             act = e.get("actionName")
