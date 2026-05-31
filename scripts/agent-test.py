@@ -54,6 +54,11 @@ except Exception:
     pass
 
 ROOT = Path(__file__).parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tests._lib.chest_nbt import sum_chest_item_from_nbt as _sum_chest_item_from_nbt
+
 DEFAULT_BOT_URL = "http://localhost:3001"
 DEFAULT_MODEL = "google/gemini-2.5-flash"  # baseline for terminal-tool agent tests.
 # 2026-05 model findings (agent-test context, not direct-API/benchmark):
@@ -260,19 +265,6 @@ def _summarize_msg(m: dict, max_len: int = 220) -> str:
     if len(text) > max_len:
         text = text[:max_len - 1] + "…"
     return text
-
-
-def _sum_chest_item_from_nbt(nbt_text: str, item: str) -> int:
-    """Sum stack counts for minecraft:<item> from `data get block … Items` output."""
-    needle = f"minecraft:{item}"
-    total = 0
-    for m in re.finditer(
-        rf'id:"{re.escape(needle)}"[^}}]*?(?:count|Count):(\d+)',
-        nbt_text,
-        re.IGNORECASE,
-    ):
-        total += int(m.group(1))
-    return total
 
 
 def predicate_results(spec: dict, agent_chat: str, end_state: dict,

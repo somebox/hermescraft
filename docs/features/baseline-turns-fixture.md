@@ -44,8 +44,10 @@ Infrastructure fixes in this window: JSONL `HERMESCRAFT_TMP` + profile tag, Herm
 
 ### Medians (fill after n≥5)
 
-| Arm | mc CLI calls (median) | ok:false (median) | turns (median) |
-|-----|----------------------|-------------------|----------------|
+**2026-05-31 matrix (15 runs, pre-parser-fix):** mc-call spread matches pilot noise; **`chest_item_count_at` reported `have=0` on every run** — SNBT parser bug (Paper `id: "minecraft:…"`, `count:` before `id`). **Do not use chest pass/fail from those JSONs.** Re-run matrix after `tests/_lib/chest_nbt.py` fix. Behavioral notes from that batch: deposit attempted 10/15 runs; end-state `oak_log` ≥8 in inv 2/15; playbook ritual 2/5.
+
+| Arm | mc CLI calls (median) | ok:false (median) | chest ≥8 (valid runs only) |
+|-----|----------------------|-------------------|----------------------------|
 | prose-minimal | TBD | TBD | TBD |
 | prose-skilled | TBD | TBD | TBD |
 | playbook | TBD | TBD | TBD |

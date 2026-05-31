@@ -81,6 +81,11 @@ prep: &chop_oak_prep
   - "execute in landfolk-test run setworldspawn 52 65 51"
   - "execute in landfolk-test run give Flint minecraft:wooden_axe 1"
   - "execute in landfolk-test run give Flint minecraft:bread 8"
+  # 16 dirt for pillar material on the 8-tall trunk. Without this, agents
+  # sometimes mine the grass platform itself for pillar blocks — clever
+  # under-provisioning improv that polluted the first matrix-attempt
+  # medians. A4 (composition) provisions dirt the same way.
+  - "execute in landfolk-test run give Flint minecraft:dirt 16"
   - "gamemode creative Flint"
   - "mvtp Flint landfolk-test"
   - "execute in landfolk-test run tp Flint 52 65 51"
