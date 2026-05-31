@@ -13,10 +13,13 @@ def sum_chest_item_from_nbt(nbt_text: str, item: str) -> int:
     total = 0
     id_pat = rf'id:\s*["\'](?:minecraft:)?{re.escape(item)}["\']'
     for m in re.finditer(id_pat, nbt_text, re.IGNORECASE):
-        start = max(0, m.start() - 100)
-        end = min(len(nbt_text), m.end() + 100)
-        window = nbt_text[start:end]
-        cm = re.search(r"count:\s*(\d+)", window, re.IGNORECASE)
+        left = nbt_text.rfind("{", 0, m.start())
+        right = nbt_text.find("}", m.end())
+        if left >= 0 and right > left:
+            chunk = nbt_text[left : right + 1]
+        else:
+            chunk = nbt_text[max(0, m.start() - 100) : m.end() + 100]
+        cm = re.search(r"count:\s*(\d+)", chunk, re.IGNORECASE)
         if cm:
             total += int(cm.group(1))
     for m in re.finditer(
