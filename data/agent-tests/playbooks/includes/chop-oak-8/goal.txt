@@ -1,6 +1,6 @@
 [SUPPLY] 8 oak_log from test tree
 
-tree: (40, 65, 0)
+tree: (55, 65, 50)
 target_logs: 8
 deposit_to: chest_wood_test at (52, 65, 52)
 

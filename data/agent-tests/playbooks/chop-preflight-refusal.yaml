@@ -15,7 +15,7 @@ prompt: |
   Card body:
 
   playbook: wood.chop_tall_tree
-  tree: (40, 65, 0)
+  tree: (67, 65, 50)
   target_logs: 8
   deposit_to: chest_wood_test at (52, 65, 52)
 
@@ -23,7 +23,7 @@ prompt: |
   inventory / equip checks, then block with `prep_required_unmet:axe` if the axe is missing.
   Do NOT move toward the tree before preflight completes.
 
-  Use task_context + playbook phase set as in worker SOUL. Exit after kanban_block.
+  Use task_context + playbook phase set as in worker SOUL. Block with `scripts/kanban block {{TASK_ID}} "prep_required_unmet:axe"` (or equivalent). Exit after block — no approach move.
 
 expect:
   agent_chat_contains_any: [prep_required_unmet, prep_required]
@@ -35,17 +35,23 @@ prep:
   - "execute in landfolk-test run gamerule doMobSpawning false"
   - "execute in landfolk-test run time set day"
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill 35 64 -5 45 80 5 minecraft:air"
-  - "execute in landfolk-test run fill 35 64 -5 45 64 5 minecraft:grass_block"
-  - "execute in landfolk-test run setblock 40 65 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 66 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 67 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 68 0 minecraft:oak_log"
+  # A2 arena lives east of A1 (x=62..72) — three arenas side by side at z=45..55.
+  - "execute in landfolk-test run fill 62 64 45 72 80 55 minecraft:air"
+  - "execute in landfolk-test run fill 62 64 45 72 64 55 minecraft:grass_block"
+  - "execute in landfolk-test run setblock 67 65 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 67 66 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 67 67 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 67 68 50 minecraft:oak_log"
   - "clear Flint"
   - "execute in landfolk-test run give Flint minecraft:bread 4"
+  - "gamemode creative Flint"
   - "mvtp Flint landfolk-test"
-  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run tp Flint 67 65 52"
+  - "execute in landfolk-test run gamemode survival Flint"
 
 cleanup:
-  - "execute in landfolk-test run fill 35 64 -5 45 80 5 minecraft:air"
+  # Fill from y=65 (preserve grass floor). Park Flint at A1 spawn coord.
+  - "gamemode creative Flint"
+  - "execute in landfolk-test run fill 62 65 45 72 80 55 minecraft:air"
   - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run gamemode survival Flint"

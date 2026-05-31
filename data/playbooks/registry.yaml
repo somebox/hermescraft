@@ -13,6 +13,11 @@ playbooks:
       - id: approach
         preflight_verbs: [status]
         allowed_verbs: [move, status, scene, inspect, goto, goto_near, playbook_phase_set]
+      - id: tree_survey
+        preflight_verbs: [scene]
+        allowed_verbs: [scene, find_blocks, inspect, nearby, status, playbook_phase_set]
+      - id: ascend
+        allowed_verbs: [pillar_up, place, scene, inspect, move, status, playbook_phase_set]
       - id: chop_loop
         allowed_verbs: [dig, nearby, find_blocks, inspect, pillar_down, pillar_up, move, place, collect, playbook_phase_set]
       - id: closeout
@@ -36,7 +41,15 @@ playbooks:
     summary: "Sub-play safe pillar ascent."
     inputs:
       required: [count, block]
-      optional: [side_check]
+      optional: [side_check, max_lateral_retries]
+    phases:
+      - id: check_lateral
+        preflight_verbs: [scene]
+        allowed_verbs: [scene, inspect, nearby, status, playbook_phase_set]
+      - id: place_then_step
+        allowed_verbs: [pillar_up, place, scene, inspect, playbook_phase_set]
+      - id: loop_until_target
+        allowed_verbs: [pillar_up, place, scene, inspect, status, playbook_phase_set, playbook_phase_clear]
 
   - id: craft.from_inputs
     doc: docs/features/playbooks/craft-from-inputs.md

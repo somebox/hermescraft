@@ -148,10 +148,23 @@ Specs and shared card bodies: `data/agent-tests/playbooks/includes/chop-oak-8/`.
 | A1 (one arm) | `scripts/stress.sh chop-prose-vs-playbook --arm playbook` (also `prose-minimal`, `prose-skilled`) |
 | A2 | `scripts/stress.sh chop-preflight-refusal` |
 | A3 | `scripts/stress.sh chop-checkpoint-resume` |
+| **A4 (2b)** | `scripts/stress.sh chop-composition` — tall trunk + `pillar_up_safe` sub-play; JSONL `sub_playbook_id` |
+
+**Visual layout (no test run):** `scripts/show-arenas.py` — builds A1–A4 side-by-side arenas + signs, parks Flint at overlook `(67, 70, 40)`.
+
+### Wave 5 status (2026-05-31 pilot)
+
+| Scenario | Regression gate | A1 hypothesis gate |
+|----------|-----------------|-------------------|
+| A2 preflight-refusal | **PASS** (n=1) | — |
+| A3 checkpoint-resume | **PASS** (n=1) | — |
+| A1 three arms | Runnable | **Open** — need n≥5 medians in [baseline-turns-fixture.md](baseline-turns-fixture.md); n=1 did not separate |
+
+After playbook doc edits: `scripts/regenerate-artifacts.sh` (hub mirror). Re-run playbook arm after kanban/scene doc fixes to measure overhead without tool thrashing.
 
 A1 pass criterion: ≥5 runs per arm; playbook medians ≤ both prose arms on **mc CLI calls** and **ok:false** (see [baseline-turns-fixture.md](baseline-turns-fixture.md)). Requires live bot + Hermes + OpenRouter.
 
-Until the A1 matrix is run and medians recorded, treat Wave 5 as **soft gate** (specs must exist; numbers TBD).
+Until the A1 matrix is run and medians recorded, treat Wave 5 **A2/A3** as soft gate; **A1 matrix** as open.
 
 ---
 

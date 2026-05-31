@@ -595,13 +595,25 @@ function customParse(canonicalName, positional) {
       if (sub !== 'set') {
         throw new Error('playbook_subcommand: use "phase set <playbook_id> <phase>" or "phase clear"');
       }
+      // Flags may appear before OR after the positionals — scan the whole
+      // queue and pull them out in place. Earlier "leading flags only"
+      // form rejected the documented `phase set <id> <phase> --sub-playbook X`
+      // order with `extra_arguments:playbook`.
       let subPlaybook = '';
       let subPhase = '';
-      while (q.length && String(q[0]).startsWith('--')) {
-        const f = String(q.shift());
-        if (f === '--sub-playbook') subPlaybook = String(q.shift() || '').trim();
-        else if (f === '--sub-phase') subPhase = String(q.shift() || '').trim();
-        else throw new Error(`unknown_flag:${f}`);
+      for (let i = 0; i < q.length; ) {
+        const tok = String(q[i]);
+        if (tok === '--sub-playbook') {
+          subPlaybook = String(q[i + 1] || '').trim();
+          q.splice(i, 2);
+        } else if (tok === '--sub-phase') {
+          subPhase = String(q[i + 1] || '').trim();
+          q.splice(i, 2);
+        } else if (tok.startsWith('--')) {
+          throw new Error(`unknown_flag:${tok}`);
+        } else {
+          i += 1;
+        }
       }
       const playbook_id = q.shift();
       const phase = q.shift();

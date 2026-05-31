@@ -17,8 +17,7 @@ default_arm: playbook
 
 prompt_prefix: |
   You are Flint, a Minecraft worker on kanban task {{TASK_ID}}.
-  Use `mc` for all in-world actions and `kanban_*` tools for the board.
-  MC_API_URL and MC_USERNAME are set. landfolk-test only.
+  Use `mc` for all in-world actions. For the kanban board in this session use **`scripts/kanban`** (comment, block, complete, card) — not `kanban_*` Python tools (those are unavailable here). MC_API_URL and MC_USERNAME are set. landfolk-test only.
 
   Your card body (exact spec):
 
@@ -58,16 +57,22 @@ prep: &chop_oak_prep
   - "execute in landfolk-test run gamerule doMobSpawning false"
   - "execute in landfolk-test run time set day"
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill 35 64 -5 45 80 5 minecraft:air"
-  - "execute in landfolk-test run fill 35 64 -5 45 64 5 minecraft:grass_block"
-  - "execute in landfolk-test run setblock 40 65 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 66 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 67 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 68 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 69 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 70 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 71 0 minecraft:oak_log"
-  - "execute in landfolk-test run setblock 40 72 0 minecraft:oak_log"
+  # Arena bounding box (50..60 x, 64..80 y, 45..55 z) — wide enough that the
+  # tree column at (55,*,50) and the chest at (52,65,52) are both inside one
+  # contiguous grass slab with no missing-floor gaps. Earlier layout put the
+  # tree at (40,*,0) ~53 blocks from the chest with a void gap between — the
+  # agent burned 30+ nav calls bridging dirt across it, drowning the
+  # playbook-discipline signal A1 is trying to measure.
+  - "execute in landfolk-test run fill 50 64 45 60 80 55 minecraft:air"
+  - "execute in landfolk-test run fill 50 64 45 60 64 55 minecraft:grass_block"
+  - "execute in landfolk-test run setblock 55 65 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 55 66 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 55 67 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 55 68 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 55 69 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 55 70 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 55 71 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 55 72 50 minecraft:oak_log"
   - "execute in landfolk-test run setblock 52 65 52 minecraft:chest"
   - "execute in landfolk-test run data merge block 52 65 52 {Items:[{Slot:0b,id:\"minecraft:oak_log\",Count:1b}]}"
   - "execute in landfolk-test run setworldspawn 52 65 52"
@@ -81,6 +86,12 @@ prep: &chop_oak_prep
   - "effect give Flint minecraft:saturation 600 1"
 
 cleanup: &chop_oak_cleanup
+  # Fill range starts at y=65 to preserve the y=64 grass floor — earlier
+  # y=64..80 wipe removed the block under Flint's tp landing and the
+  # respawn-loop killed mineflayer's position cache. Creative bracket adds
+  # a second safety net.
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill 35 64 -5 45 80 5 minecraft:air"
+  - "gamemode creative Flint"
+  - "execute in landfolk-test run fill 50 65 45 60 80 55 minecraft:air"
   - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run gamemode survival Flint"

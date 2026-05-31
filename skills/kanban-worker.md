@@ -307,11 +307,17 @@ When the card body includes `playbook: <registry_id>` (Stage 2a+), routing lives
 
 **Preflight failure (A2 discipline):** missing axe, scaffold, or other `prep_required` items → `kanban_block(reason="prep_required_unmet:<item>")` and `mc playbook phase clear`. Do **not** burn a `move`/`goto` toward the worksite first — approach is the next phase only after preflight passes.
 
-**Phase boundaries:** after each completed phase, `kanban_comment` with a structured `[run_state]` block (`playbook`, `phase` = next phase to enter, `completed`, `context` with counts like `chopped: 4/8`). Fresh workers on the same card read that comment and call `phase set` for the resume phase.
+**Phase boundaries:** after each completed phase, append a `[run_state]` block via `kanban_comment` (production) or **`scripts/kanban comment $HERMES_KANBAN_TASK "…"`** (agent-test / terminal-only Hermes — there is no `kanban_comment` tool in that toolset). Fresh workers on the same card read that comment and call `phase set` for the resume phase.
 
-**Exit:** `mc playbook phase clear` → `mc task_context clear` → `kanban_complete` or `kanban_block`.
+**Exit:** `mc playbook phase clear` → `mc task_context clear` → `kanban_complete` or `kanban_block` (or `scripts/kanban complete` / `scripts/kanban block` in agent-test).
 
 **Pass-back:** if the playbook id is wrong or inputs are missing from the body, use the structured pass-back comment pattern (numbered unblock options) + `kanban_reassign steward` — don't improvise a different playbook id.
+
+**Sub-play (Stage 2b):** When a parent phase row says `use_playbook: pillar_up_safe`, enter the sub-play and set telemetry:
+
+`mc playbook phase set <parent_id> <parent_phase> --sub-playbook pillar_up_safe --sub-phase check_lateral`
+
+Write nested `sub:` under `[run_state]` (see `docs/features/agent-playbooks.md`). Clear `--sub-*` when exiting the sub-play back to the parent phase.
 
 ## First-turn spec review — judge clarity before working
 

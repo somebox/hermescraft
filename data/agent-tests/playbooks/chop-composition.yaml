@@ -1,0 +1,73 @@
+# A4 — parent ascend invokes pillar_up_safe (Stage 2b composition).
+# Tall trunk: bot must scaffold with dirt via sub-play before top logs are reachable.
+
+agent_test_id: chop_composition
+world: landfolk-test
+model: google/gemini-2.5-flash
+max_turns: 35
+timeout_seconds: 420
+
+skills: [kanban-worker, minecraft-mining, minecraft-navigation, playbook-wood-chop-tall-tree, playbook-pillar-up-safe]
+
+prompt: |
+  You are Flint on kanban task {{TASK_ID}} in landfolk-test.
+
+  Card body:
+
+  playbook: wood.chop_tall_tree
+  mode: composition
+  tree: (93, 65, 50)
+  trunk_logs_seen: 10
+  target_logs: 8
+  scaffold_block: dirt
+  deposit_to: chest at (96, 65, 52)
+
+  The trunk is 10 logs tall (y=65..74). You cannot collect all logs from the ground.
+  Follow Stage 2b phases: preflight → approach → tree_survey → **ascend** via sub-play
+  **pillar_up_safe** (use `mc playbook phase set wood.chop_tall_tree ascend --sub-playbook pillar_up_safe --sub-phase …`
+  while inside the sub-play), then chop_loop from the top down, closeout deposit.
+
+  Use `scripts/kanban` for comments/blocks/complete. If you get BOT_ON_PILLAR during
+  sub-play, lateral step per playbook-pillar-up-safe doc then retry pillar_up.
+
+  Success: ≥8 oak_log deposited at the chest; playbook phase clear at end.
+
+expect:
+  mc_verbs_include_any: [pillar_up, playbook]
+  mc_cli_invocations_max: 55
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # A4 composition arena (x=88..98, z=45..55)
+  - "execute in landfolk-test run fill 88 64 45 98 80 55 minecraft:air"
+  - "execute in landfolk-test run fill 88 64 45 98 64 55 minecraft:grass_block"
+  - "execute in landfolk-test run setblock 96 65 52 minecraft:chest"
+  - "execute in landfolk-test run setblock 93 65 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 66 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 67 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 68 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 69 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 70 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 71 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 72 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 73 50 minecraft:oak_log"
+  - "execute in landfolk-test run setblock 93 74 50 minecraft:oak_log"
+  - "clear Flint"
+  - "execute in landfolk-test run give Flint minecraft:wooden_axe 1"
+  - "execute in landfolk-test run give Flint minecraft:dirt 16"
+  - "execute in landfolk-test run give Flint minecraft:bread 8"
+  - "execute in landfolk-test run setworldspawn 92 65 52"
+  - "gamemode creative Flint"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 92 65 51"
+  - "execute in landfolk-test run gamemode survival Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+
+cleanup:
+  - "gamemode creative Flint"
+  - "execute in landfolk-test run fill 88 65 45 98 80 55 minecraft:air"
+  - "execute in landfolk-test run tp Flint 52 65 52"
+  - "execute in landfolk-test run gamemode survival Flint"

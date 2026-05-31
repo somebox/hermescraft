@@ -266,6 +266,26 @@ describe('cli dispatch', () => {
     }
   });
 
+  it('playbook phase set with --sub-playbook and --sub-phase', () => {
+    const def = defOf('playbook');
+    const built = buildHttpRequest(def, 'playbook', [
+      'phase',
+      'set',
+      '--sub-playbook',
+      'pillar_up_safe',
+      '--sub-phase',
+      'place_then_step',
+      'wood.chop_tall_tree',
+      'ascend',
+    ]);
+    assert.equal(built.method, 'POST');
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.playbook_id, 'wood.chop_tall_tree');
+    assert.equal(body.phase, 'ascend');
+    assert.equal(body.sub_playbook_id, 'pillar_up_safe');
+    assert.equal(body.sub_phase, 'place_then_step');
+  });
+
   it('verify_plot parses rect, worksite, expect-y', () => {
     const def = defOf('verify_plot');
     const built = buildHttpRequest(def, 'verify_plot', [

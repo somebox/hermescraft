@@ -7,10 +7,25 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const REGISTRY = path.join(ROOT, 'data/playbooks/registry.yaml');
 
-test('registry.yaml lists wood.chop_tall_tree with four phases', () => {
+test('registry.yaml lists wood.chop_tall_tree with 2a core + 2b composition phases', () => {
   const text = fs.readFileSync(REGISTRY, 'utf8');
   assert.match(text, /wood\.chop_tall_tree/);
-  for (const phase of ['preflight', 'approach', 'chop_loop', 'closeout']) {
+  for (const phase of [
+    'preflight',
+    'approach',
+    'tree_survey',
+    'ascend',
+    'chop_loop',
+    'closeout',
+  ]) {
+    assert.match(text, new RegExp(`id: ${phase}`));
+  }
+});
+
+test('registry.yaml lists pillar_up_safe sub-play phases', () => {
+  const text = fs.readFileSync(REGISTRY, 'utf8');
+  assert.match(text, /pillar_up_safe/);
+  for (const phase of ['check_lateral', 'place_then_step', 'loop_until_target']) {
     assert.match(text, new RegExp(`id: ${phase}`));
   }
 });

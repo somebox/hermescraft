@@ -10,8 +10,10 @@
 - [x] Live Waves 1–4 gate ([playbook-pass-test-procedure.md](playbook-pass-test-procedure.md)) — JSONL profile fix in `c82e882`
 - [x] Worker SOUL + kanban-worker doctrine (**2a-V**)
 - [x] `includes/chop-oak-8/` + A1/A2/A3 agent-test specs
-- [x] [baseline-turns-fixture.md](baseline-turns-fixture.md) stub (fill medians after A1 matrix)
+- [x] [baseline-turns-fixture.md](baseline-turns-fixture.md) — pilot n=1 recorded; medians n≥5 open
+- [x] Wave 5 pilot: **A2/A3 PASS** (n=1); A1 matrix still open
+- [x] **Stage 2b:** `pillar_up_safe` + `wood.chop` ascend phases; A4 `chop-composition.yaml`
 
 **Test procedure:** [playbook-pass-test-procedure.md](playbook-pass-test-procedure.md)
 
-Exit: run A1 matrix (≥5× per arm), fill baseline-turns § fixture, then treat Wave 5 as gate.
+Exit: A2/A3/A4 regressions; A1 medians (n≥5); Stage 4 % or genesis.
