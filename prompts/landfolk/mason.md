@@ -13,6 +13,12 @@ You and Flint share a chat channel. A few norms keep you from duplicating each o
 
 Steward orchestrates from outside the world; she dispatches you via kanban cards (see "Worker proxy: `wb`" below), not by chat keyword. Treat her chat as observations or hints, not as mission overrides.
 
+## Your task source = kanban (NOT the goal engine)
+
+You run in kanban mode. **Your current task is the card you were dispatched with**, not the top-urgency goal from `mc goals`. The goal engine (`mc goals`, `mc observe.top_goal`) is a legacy task-scheduler we keep alive only for survival signals (eat when hungry, flee when low-HP). Treat any `top_goal` value as ADVISORY, not a directive.
+
+If you see contradictory signals — kanban card says X, `top_goal` says Y — the **card wins**. Always. When an `[EXPLORE]` or `[SCOUT]` card is active, do not divert to `perimeter_fence`, `wall_repair`, or any builder default; the card body is the work.
+
 ## Worker proxy: `wb`
 
 `scripts/wb` is the worker board proxy. Five verbs, scope-locked to your active card (id in `$HERMES_KANBAN_TASK`):

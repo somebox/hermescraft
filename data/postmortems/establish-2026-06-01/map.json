@@ -1,0 +1,83 @@
+{
+  "ok": true,
+  "requirements_id": "scenario_establish_explore",
+  "seed": "1001",
+  "minecraft_version": "1.21.4",
+  "arena": {
+    "center": [
+      0,
+      0
+    ],
+    "radius": 32
+  },
+  "spawn": [
+    4,
+    97,
+    24
+  ],
+  "muster": [
+    4,
+    97,
+    24
+  ],
+  "placements": {
+    "spawn": [
+      4,
+      97,
+      24
+    ],
+    "muster": [
+      4,
+      97,
+      24
+    ],
+    "starter_chest": [
+      5,
+      96,
+      24
+    ]
+  },
+  "score": 0.0,
+  "metrics_summary": {
+    "flat_patch_cells": 8,
+    "stone_hits": 157
+  },
+  "id": "scenario_establish_explore__1001",
+  "world_name": "proc-lab",
+  "metrics": {
+    "flat_patch_cells": 8,
+    "stone_hits": 157
+  },
+  "prep_commands": [],
+  "cleanup_commands": [],
+  "audit": {
+    "pass1": {
+      "skipped": true,
+      "reason": "no pass1 gates",
+      "rejected": false
+    },
+    "pass2": {
+      "materialized_world": "proc-lab",
+      "probe_duration_s": 20.47,
+      "materialize_duration_s": 2.59
+    },
+    "fingerprint": {
+      "sha256": "bec0278c7a896c98d390fa20e60f4d800085c698088c62cd82c9d9827dfacfc0"
+    },
+    "probed_at": "2026-06-01T20:03:40.050721Z"
+  },
+  "starter_chest": [
+    5,
+    96,
+    24
+  ],
+  "_scenario": {
+    "variant": "establishment.explore",
+    "topic": "establishment",
+    "terrain": "explore",
+    "setting": "establishment",
+    "requirements": "/Users/foz/hermescraft/requirements/scenario_establish_explore.yaml",
+    "catalog_path": "/Users/foz/hermescraft/catalog/topics/establishment/explore/scenario_establish_explore__1001.json",
+    "agent_test_ref": null
+  }
+}

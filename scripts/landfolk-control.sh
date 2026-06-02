@@ -1555,6 +1555,23 @@ print(json.dumps({k:v for k,v in out.items() if v is not None},separators=(',','
       echo "[$ts] top_goal=$top_goal_hint" >> "$agent_log"
       printf '%s\n' "$progress_json" >> "$progress_log"
       echo "[$ts] Plan: focus=$top_goal_hint | task=$task_summary | recent=$recent_summary" >> "$hermes_log"
+      # --- Kanban dual-control guard (added 2026-06-01).
+      # NOTE (2026-06-02): This guard is dead code for default operation.
+      # It lives in the agent-loop body, which only spawns when mode=continuous.
+      # Per role logic at ~line 1005, only Steward (orchestrator role) runs
+      # continuous; all workers default to kanban mode and never spawn an
+      # agent-loop. The competing-control source we observed in the 2026-06-01
+      # postmortem was actually the dispatcher claiming two cards in parallel
+      # for one assignee (filed: t_dbd98222), worked around with set-after.
+      # Keeping the guard for the rare worker-in-continuous case.
+      if [ -n "${kanban_db:-}" ] && [ -f "$kanban_db" ]; then
+        if sqlite3 "$kanban_db" "SELECT 1 FROM tasks WHERE LOWER(assignee)=LOWER('$name') AND status='running' LIMIT 1;" 2>/dev/null | grep -q '^1$'; then
+          echo "[$ts] kanban_held: round=$round skipped (active kanban task — sleeping ${LANDFOLK_AGENT_LOOP_HELD_SLEEP_S:-60}s)" >> "$agent_log"
+          echo "[$ts] kanban_held: round=$round skipped" >> "$hermes_log"
+          sleep "${LANDFOLK_AGENT_LOOP_HELD_SLEEP_S:-60}"
+          continue
+        fi
+      fi
       if [ "$round" -eq 1 ]; then
         if "${hermes_timeout_prefix[@]}" env MODEL= PROVIDER= HERMES_MODEL= HERMES_PROVIDER= PATH="$hermes_runtime_path" BASH_ENV="$bash_env_file" HERMES_HOME="$agent_home" HERMES_KANBAN_DB="$kanban_db" HERMES_KANBAN_BOARD="$kanban_board" HERMES_KANBAN_WORKSPACES_ROOT="$kanban_workspaces" MC_API_URL="http://localhost:${port}" _MC_API_URL_LOCKED="http://localhost:${port}" MC_USERNAME="$name" "${mc_debug_env[@]}" \
           hermes chat --yolo --max-turns 500 -m "$agent_model" --provider "$agent_provider" "${hermes_chat_flags[@]}" \

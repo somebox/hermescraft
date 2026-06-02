@@ -2,6 +2,9 @@
 /**
  * Mineflayer bot HTTP listener factory — extracted from server.js for readability and testing.
  */
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import os from 'node:os';
 import { dispatchAction, pushAction, recordActionOutcome, recordLastApiError, logReadNavTelemetry } from './middleware/task-lifecycle.js';
 import { probeRouteAlongLine, probeRouteCorridor } from './route-probe.js';
 import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/water-route.js';
@@ -12,6 +15,47 @@ import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 import { clearNavTrail } from '../runtime/nav-trail.js';
 import { buildNavFrame } from '../runtime/nav-brief.js';
 import { autoClearPlaybookOnCardChange } from '../runtime/playbook-context.js';
+
+// A2 (Phase 1 / item 1.3, 2026-06-02): Check whether a kanban worker has
+// claimed this bot. When true, `mc goals` returns an empty list so the
+// continuous agent-loop's "pick top-urgency goal" prompt yields nothing —
+// the dispatched kanban worker (with KANBAN_GUIDANCE + worker.md / SOUL)
+// becomes the only voice. Surfaced on /status too so the agent-loop sees
+// the held state without an extra DB hit.
+//
+// Hobby-scope tradeoff: shells out via execFileSync (no shell, no
+// injection); cached for CLAIM_CHECK_TTL_MS to keep /goals + /status cheap.
+// Username is validated with a strict regex before interpolation into SQL.
+const CLAIM_CHECK_TTL_MS = 3000;
+/** @type {Map<string, { until: number, active: boolean }>} */
+const _claimCache = new Map();
+export function kanbanClaimActive(username) {
+  const name = String(username || '').trim();
+  if (!name || !/^[A-Za-z0-9_-]{1,32}$/.test(name)) return false;
+  const now = Date.now();
+  const key = name.toLowerCase();
+  const cached = _claimCache.get(key);
+  if (cached && now < cached.until) return cached.active;
+  const dbPath = process.env.HERMES_KANBAN_DB
+    || path.join(os.homedir(), '.hermes/kanban/boards/landfolk-ops/kanban.db');
+  let active = false;
+  try {
+    const sql = `SELECT 1 FROM tasks WHERE LOWER(assignee)=LOWER('${name}') AND status='running' LIMIT 1;`;
+    const out = execFileSync('sqlite3', [dbPath, sql], {
+      timeout: 800,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    active = out === '1';
+  } catch {
+    // sqlite3 missing, DB unreachable, or any other failure → default to
+    // false. Letting goals through is safer than silently breaking the
+    // agent-loop in development.
+    active = false;
+  }
+  _claimCache.set(key, { until: now + CLAIM_CHECK_TTL_MS, active });
+  return active;
+}
 
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
@@ -275,7 +319,16 @@ export function createBotHttpListener(deps) {
           if (ctx.runtime) ctx.runtime.lastDugSteps = null;
         }
         logReadNavTelemetry(servicesProxy, 'status');
-        return respond(res, 200, { ok: true, data: getFullState({ lean }) });
+        const fullState = getFullState({ lean });
+        // A2 / 1.3: surface the kanban-claim flag so `mc status` (used by
+        // the continuous agent-loop's wake prompt) shows the agent the
+        // bot is currently owned by a dispatched kanban worker. The
+        // wake-doc instruction "exit immediately if mc status shows an
+        // in-flight kanban claim" reads this field.
+        if (kanbanClaimActive(config.mc.username)) {
+          fullState.kanban_claim_active = true;
+        }
+        return respond(res, 200, { ok: true, data: fullState });
       }
 
       if (path === '/marks') {
@@ -666,6 +719,25 @@ export function createBotHttpListener(deps) {
 
       if (path === '/goals') {
         ensureBot();
+        // A2 / 1.3: if a kanban worker has claimed this bot, return no
+        // goals so the continuous agent-loop's "pick top urgency" cannot
+        // pull the bot away from card-driven work. The dispatched kanban
+        // worker, with HERMES_KANBAN_TASK set + KANBAN_GUIDANCE injected,
+        // is the only voice that should be acting.
+        if (kanbanClaimActive(config.mc.username)) {
+          logReadNavTelemetry(servicesProxy, 'goals');
+          return respond(res, 200, {
+            ok: true,
+            data: {
+              goals: [],
+              context: {
+                kanban_claim_active: true,
+                suppressed_by_kanban_claim: true,
+                hint: 'A kanban worker has claimed this bot. The card body is your task — read it with `kanban_show $HERMES_KANBAN_TASK` (or check $HERMES_KANBAN_TASK). Goal engine suppressed until the card closes.',
+              },
+            },
+          });
+        }
         const { scored, context } = getGoalsScoreboard();
         persistGoalsToDisk();
         // #103 context-trim: lean by default — drop verbose fields the
