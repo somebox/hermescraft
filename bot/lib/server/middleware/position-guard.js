@@ -78,6 +78,17 @@ export function check(services, body, actionName) {
   if (state.runtime.lastMoveFailed && (Date.now() - state.runtime.lastMoveFailed.ts) > FAILURE_TTL_MS) {
     state.runtime.lastMoveFailed = null;
   }
+  // A9 (Phase 2 / item 2.4, 2026-06-02): auto-clear the move-failed flag
+  // when `mc dig` is invoked. Rationale: dig is the canonical escape verb
+  // from a true trap (Mason postmortem: looped 6+× on move→fail→dig→"run
+  // mc status first"→status→move→fail). The flag's purpose is to alert
+  // the agent that their position model may be stale for nav-dependent
+  // verbs; dig targets a specific coord and the action's own reach check
+  // catches stale positions independently. /status already clears the
+  // flag (same intent); this lets the agent skip the indirection.
+  if (actionName === 'dig' && state.runtime.lastMoveFailed) {
+    state.runtime.lastMoveFailed = null;
+  }
   // Position-drift decay: if the bot has physically moved since the
   // failure was recorded, the lmf record is describing a position the
   // bot is no longer at. Defensive against ensureBot throwing — if we

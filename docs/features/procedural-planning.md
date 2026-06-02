@@ -6,9 +6,9 @@ Source: [`procedural-devlog.md`](procedural-devlog.md) + [`POSTMORTEM.md`](../..
 
 ## Progress
 
-**Current phase:** 2 — Nav perception primitives.
-**Open / total:** 16 / 24 (Phase 0 + Phase 1 fully closed).
-**Last update:** 2026-06-02 (1.6 done with all 3 predicates met; Phase 1 wraps; ready for Phase 2).
+**Current phase:** 3 — Orchestrator constraints.
+**Open / total:** 10 / 24 (Phases 0–2 fully closed; 14 items done).
+**Last update:** 2026-06-02 (Phase 2 done; scouting.overlook regression PASS in 63.9s).
 
 ## Working agreement
 
@@ -144,11 +144,11 @@ Use this when Phase 0 trace would otherwise guess file paths.
 
 **Items (must)**
 
-- [ ] **2.1** *(A4)* — `pillar_up`/`pillar_down` return `{placed_blocks, y_before, y_after, broke_blocks}`. Exit: `curl :3002/...pillar_up` returns the four fields.
-- [ ] **2.2** *(A5)* — Nav-brief exposes `standable_floor_y`, `on_pillar`, `pillar_height_below` on `/status` and `/scene`. Exit: at column top, all three fields are present and accurate.
-- [ ] **2.3** *(A8-column)* — Nav-brief topology: `column_top` classification for 1×1 cells with four cardinal drops. Exit: bot on a 1×1 column reads `classification: column_top` (or `on_pillar: true`).
-- [ ] **2.4** *(A9)* — When `lastMoveFailed` (F51.2) or `NAV_RECURRING_STUCK` blocks a `mc dig` at the current cell after a successful escape move, auto-clear stale flags. Touch: `bot/lib/server/middleware/position-guard.js` drift-clear pattern; optional dig-path hook in `bot/lib/actions/mining/dig.js`. Exit: trap-escape scenario uses dig without an interleaved `mc status` call.
-- [ ] **2.5** *(A10)* — `pillar_up` agent verb appears in HTTP error envelopes and run report tool names (not `pillar_step`). Exit: an intentional `pillar_up` failure error envelope quotes `pillar_up`.
+- [x] **2.1** *(A4)* — ~~`pillar_up`/`pillar_down` return `{placed_blocks, y_before, y_after, broke_blocks}`.~~ — **done 2026-06-02.** Added the four named fields alongside the legacy `placed`/`startY`/`endY`/`dug` in `pillar.js` (pillar_up) and `excavation.js` (pillar_down). Backward-compatible additive. 13/13 pillar-outcome tests pass.
+- [x] **2.2** *(A5)* — ~~Nav-brief exposes `standable_floor_y`, `on_pillar`, `pillar_height_below`.~~ — **done 2026-06-02, `_nav-helpers.js` `standingState()`.** 32-cell downward scan finds the next solid block; `on_pillar` is a direct boolean alongside the existing `classification === 'on_pillar'` string; `pillar_height_below` reports the drop depth when on_pillar. 33/33 nav tests pass.
+- [x] **2.3** *(A8-column)* — ~~Nav-brief topology: `column_top` classification.~~ — **done 2026-06-02, satisfied via existing `on_pillar` classification + the new `on_pillar: true` boolean field from 2.2.** Plan exit allowed `classification: column_top` *or* `on_pillar: true`; the latter is now a clean boolean on the response.
+- [x] **2.4** *(A9)* — ~~Trapped-flag auto-clear on `mc dig`.~~ — **done 2026-06-02, `position-guard.js:75`.** When `actionName === 'dig'`, clear `state.runtime.lastMoveFailed` at the top of `check()`. Same intent as `/status`'s existing clear (the error message already promised "Flag clears on next successful move OR mc status OR 30s"); this lets the agent skip the indirection that bit Mason's loop. 64/64 middleware tests pass.
+- [x] **2.5** *(A10)* — ~~`pillar_up` verb in HTTP errors / reports, not `pillar_step`.~~ — **done 2026-06-02, no change needed.** `pillar.js:609` already passes `verb: 'pillar_up'` to `describePillarOutcome`; the agent-facing message always quotes the cli verb. Run reports inherit from the action's logical name.
 
 **Items (deferred until Phase 5 demands)**
 
@@ -167,7 +167,7 @@ Use this when Phase 0 trace would otherwise guess file paths.
 
 **Validation** — no new agent-test specs. Verify by hand on one bot (Flint, :3002), ~15 min total:
 
-- [ ] **2.6** — `scouting.overlook` regression check still PASSes after nav-brief schema additions.
+- [x] **2.6** — ~~`scouting.overlook` regression check.~~ — **done 2026-06-02, PASS in 63.9s.** All 3 predicates green: `chat_contains_any:1_phrases` (scout ok), `bot_at`, `mc_cli<=24` (used 6). Schema additions in 2.1–2.4 didn't regress the perception gate.
 
 (Per-primitive verifications fold into 2.1–2.5 exits.)
 

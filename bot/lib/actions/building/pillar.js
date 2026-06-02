@@ -647,6 +647,14 @@ export function createBuildingPillarPart(deps) {
         placed,
         startY,
         endY,
+        // A4 (Phase 2 / item 2.1): named deltas alongside the legacy fields
+        // so callers can read y_before/y_after without inferring from prose.
+        // broke_blocks counts force-escape bypasses (ceiling digs that let
+        // the climb continue). Backward-compatible — added, nothing renamed.
+        placed_blocks: placed,
+        y_before: startY,
+        y_after: endY,
+        broke_blocks: forceBypasses.length,
         position: { x: ix2, y: endY, z: iz2 },
         stop_reason: stopReason,
         ...(outcome.stoppedEarly ? { stopped_early: true, blocker: outcome.blocker } : {}),

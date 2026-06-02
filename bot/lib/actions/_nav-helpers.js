@@ -657,6 +657,29 @@ export function standingState(b) {
     };
   }
 
+  // A5 (Phase 2 / items 2.2 + 2.3): "where would I land?" answer.
+  // Scan downward from the immediate support block (by-1) looking for the
+  // next solid block. Capped at 32 cells for cost; returns null when no
+  // floor found in that window. For a bot on flat ground, standable_floor_y
+  // == by-1 (the floor underfoot). For a bot on a 1×1 column above a cave,
+  // standable_floor_y points at the cave floor — the actual landing Y if
+  // pillar_down removes the column. Pillar-saga prevention.
+  let standable_floor_y = null;
+  const SCAN_DEPTH = 32;
+  for (let dy = 1; dy <= SCAN_DEPTH; dy++) {
+    const probe = b.blockAt(new Vec3(bx, by - dy, bz));
+    if (!probe) break;                       // unloaded chunk; conservative
+    if (probe.boundingBox === 'block' && !AIR_NAMES.has(probe.name)) {
+      standable_floor_y = by - dy;
+      break;
+    }
+  }
+
+  const on_pillar = classification === 'on_pillar';
+  const pillar_height_below = on_pillar && standable_floor_y !== null
+    ? Math.max(0, by - standable_floor_y - 1)
+    : 0;
+
   return {
     position: { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100, z: Math.round(p.z * 100) / 100 },
     cell: { x: bx, y: by, z: bz },
@@ -676,6 +699,12 @@ export function standingState(b) {
     head_in_water,
     neighbor_status,
     standing_on,
+    // A5 + A8-column: dedicated boolean + drop fields. classification is
+    // 'on_pillar' for the legacy/string consumer; the new fields make the
+    // pillar geometry queryable without string-matching.
+    standable_floor_y,
+    on_pillar,
+    pillar_height_below,
   };
 }
 

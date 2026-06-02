@@ -1010,6 +1010,13 @@ export function createExcavationActions(services) {
       end_block_y: endY,
       start_surface_y: startY + 1,
       end_surface_y: endY + 1,
+      // A4 (Phase 2 / item 2.1): named deltas alongside the legacy fields.
+      // pillar_down digs blocks below to descend — placed_blocks is always
+      // 0, broke_blocks = dugCount. Symmetric with pillar_up's response.
+      placed_blocks: 0,
+      y_before: startY,
+      y_after: endY,
+      broke_blocks: dugCount,
       stop_reason: stopReason,
       last_block: lastDugBlock,
       position: withYBoth({ x: endX, y: endY, z: endZ }, endY),
