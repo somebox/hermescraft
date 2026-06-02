@@ -907,6 +907,35 @@ def cmd_list_epics(args: argparse.Namespace) -> int:
 
 
 def cmd_complete(args: argparse.Namespace) -> int:
+    # A12-lite (Phase 3 / item 3.2, 2026-06-02): caller-vs-assignee check.
+    # Steward shouldn't close worker-assigned cards without the worker's
+    # own kanban_complete — the postmortem showed her synthesizing summaries
+    # for cards the worker never actually executed. Workers should close
+    # their own cards; Steward orchestrates via comments instead.
+    #
+    # Trigger: HERMES_PROFILE=steward AND the task's assignee != steward.
+    # Override: KANBAN_ALLOW_STEWARD_COMPLETE=1 for explicit operator rescue
+    # (e.g., closing a worker-stuck card after RESCUE_DISPATCH).
+    caller = (os.environ.get("HERMES_PROFILE") or "").strip().lower()
+    if caller == "steward" and os.environ.get("KANBAN_ALLOW_STEWARD_COMPLETE") != "1":
+        try:
+            conn = _db()
+            row = conn.execute(
+                "SELECT assignee FROM tasks WHERE id = ?", (args.task_id,)
+            ).fetchone()
+            assignee = (row[0] if row else None) or ""
+            if assignee.strip().lower() != "steward":
+                sys.stderr.write(
+                    f"refused: caller=steward but assignee={assignee or '(none)'} for {args.task_id}.\n"
+                    "Workers close their own cards. Orchestrator path: scripts/kanban comment <id> '<update>'.\n"
+                    "If you must override (e.g. RESCUE_DISPATCH closeout), re-run with KANBAN_ALLOW_STEWARD_COMPLETE=1.\n"
+                )
+                return 2
+        except sqlite3.Error:
+            # If the DB read fails, fall through to the underlying hermes
+            # call; the worker-evidence audit isn't worth blocking on a
+            # transient DB hiccup (default-allow keeps the facade usable).
+            pass
     cmd_args = ["complete", args.task_id]
     if args.result:
         cmd_args.extend(["--result", args.result])

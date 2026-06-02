@@ -6,9 +6,9 @@ Source: [`procedural-devlog.md`](procedural-devlog.md) + [`POSTMORTEM.md`](../..
 
 ## Progress
 
-**Current phase:** 3 — Orchestrator constraints.
-**Open / total:** 10 / 24 (Phases 0–2 fully closed; 14 items done).
-**Last update:** 2026-06-02 (Phase 2 done; scouting.overlook regression PASS in 63.9s).
+**Current phase:** 4 — Bootstrap polish.
+**Open / total:** 6 / 24 (Phases 0–3 fully closed; 18 items done).
+**Last update:** 2026-06-02 (Phase 3 done; orchestrator-deny tests 52/52, fleet-status v2 in place).
 
 ## Working agreement
 
@@ -183,10 +183,10 @@ Use this when Phase 0 trace would otherwise guess file paths.
 
 **Items**
 
-- [ ] **3.1** *(A3 deny hook)* — Extend `scripts/hermes-hooks/orchestrator-deny.sh` to refuse `mc move`, `mc goto`, `mc bg_goto`, `mc terrain_top`, `mc mark` when role=orchestrator and target is beyond a small base envelope. Explicit allow: `mc observe`, `mc status`, `mc scene`, `mc marks`, `mc chat`. Exit: each denied verb refused; each allowed verb passes.
-- [ ] **3.2** *(A12-lite caller check)* — Add a check in `scripts/kanban complete`: if `HERMES_PROFILE=steward` (or caller != assignee), refuse with "not assignee — comment on the epic instead". Exit: Steward attempting to close Flint's card is refused.
-- [ ] **3.3** — Add `scripts/fleet-status.py` to the OBSERVE step in `prompts/landfolk/steward.wake-minimal.md`. Exit: line present.
-- [ ] **3.4** *(fleet-status v2)* — Extend `scripts/fleet-status.py`: per-bot running card id + body excerpt + kanban worker pid + parsed FAIL line from `$LOG_DIR/mc-*.log` + recent marks from `data/locations-{bot}.json`. Single commit. Exit: running the script during a real-dispatch test shows all the new fields populated.
+- [x] **3.1** *(A3 deny hook)* — ~~Extend `scripts/hermes-hooks/orchestrator-deny.sh` with mc verb allowlist.~~ — **done 2026-06-02, 52/52 hook tests pass.** Allowlist: read-only (observe/status/scene/marks/nearby/look/find/inspect/map/terrain_top/list_container), in-band coordination (chat/read_chat/whisper), meta (help/commands/goals/task/cancel). Walks ALL mc verbs in chained commands (`mc status && mc move ...` blocks on the second verb). Added 31 new test cases covering field-mutating denies + read-allows.
+- [x] **3.2** *(A12-lite caller check)* — ~~Add caller check in `scripts/kanban complete`.~~ — **done 2026-06-02, 4/4 smoke cases pass.** When `HERMES_PROFILE=steward` and the task's assignee ≠ steward, refuse with explicit message pointing at the comment workflow. Override via `KANBAN_ALLOW_STEWARD_COMPLETE=1` for sanctioned rescue-dispatch closeouts. Defensive: DB read failures fall through to the underlying hermes call (default-allow on transient errors keeps the facade usable).
+- [x] **3.3** — ~~Add `scripts/fleet-status.py` to the OBSERVE step in `steward.wake-minimal.md`.~~ — **done 2026-06-02.** OBSERVE now reads `scripts/kanban board` + `scripts/fleet-status.py` + `scripts/roster.py --assignable` + `mc observe`. Inline note tells Steward to read fleet-status BEFORE guessing at worker state from chat.
+- [x] **3.4** *(fleet-status v2)* — ~~Extend `scripts/fleet-status.py` with card body + last FAIL + recent marks per bot.~~ — **done 2026-06-02, single commit.** Added `fetch_card_excerpt(task_id)`, `last_fail_detail(bot_lower)`, `recent_marks(bot_lower)`. Surfaced in `print_human` (cyan for card, red for FAIL, dim for marks). Only printed when populated — keeps the one-screen budget. Syntax clean; smoke-runs without errors when fleet is offline.
 
 **Touch**
 

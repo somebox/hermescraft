@@ -56,5 +56,31 @@ if printf '%s' "$cmd" | grep -qiE 'UPDATE[[:space:]]+tasks|INSERT[[:space:]]+INT
   block "Direct SQL writes against the tasks table are blocked. Use scripts/kanban (assign / unblock / set-priority / edit / promote / resolve)."
 fi
 
+# A3 (Phase 3 / item 3.1, 2026-06-02): mc verb allowlist for the
+# orchestrator role. Steward observes (read-only mc) and orchestrates
+# via chat; field actions belong to dispatched kanban workers, not the
+# orchestrator profile. Allowlist is explicit, deny-by-default. Catches
+# `mc` at start of line OR after a shell separator so chained commands
+# (e.g. `mc status && mc move ...`) are all checked — any denied verb
+# anywhere in the chain blocks the whole command.
+while IFS= read -r mc_match; do
+  [ -z "$mc_match" ] && continue
+  verb="$(printf '%s' "$mc_match" | grep -oE 'mc[[:space:]]+[a-z_]+' | awk '{print $2}')"
+  case "$verb" in
+    # Read-only orientation + observation
+    observe|status|scene|marks|nearby|look|find|inspect|map|terrain_top|list_container)
+      ;;
+    # In-band coordination
+    chat|read_chat|whisper)
+      ;;
+    # Meta/cli surface (no world side-effects)
+    help|commands|goals|task|cancel)
+      ;;
+    *)
+      block "mc $verb is denied for the orchestrator role. Steward observes (mc observe/status/scene/marks/nearby/look/find/inspect/map/terrain_top/list_container) and coordinates via chat (mc chat/read_chat/whisper) — field actions (move/goto/mark/dig/place/collect/craft/...) belong to the assigned kanban worker. If you need this verb to do orchestration, comment on the relevant card instead."
+      ;;
+  esac
+done < <(printf '%s' "$cmd" | grep -oE '(^|[;&|<>(])[[:space:]]*mc[[:space:]]+[a-z_]+')
+
 # Default: allow.
 printf '{}\n'

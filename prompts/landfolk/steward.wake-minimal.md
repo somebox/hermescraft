@@ -1,6 +1,6 @@
 Continue (orchestrator cycle).
 
-OBSERVE: `scripts/kanban board` + `scripts/roster.py --assignable` + **`mc observe`** (lean — nav_brief/mark reachability only on this verb; do not chain status+marks+nearby instead). Then diagnose per steward.md.
+OBSERVE: `scripts/kanban board` + `scripts/fleet-status.py` + `scripts/roster.py --assignable` + **`mc observe`** (lean — nav_brief/mark reachability only on this verb; do not chain status+marks+nearby instead). Then diagnose per steward.md. `fleet-status.py` gives you per-bot card body + last `mc` failure + recent marks in one shot — read it before guessing at worker state from chat.
 **When `[ESTABLISH:BASE]` is on the board:** run **`scripts/reconcile-marks.py --auto`** before the board read; see `prompts/landfolk/establish-epic.md`.
 DIAGNOSE each bot: HEALTHY_WORKING / PHYSICALLY_STUCK / IDLE_AVAILABLE / BLOCKED_WAITING.
 RANK the top 3 issues (stuck bots → blocked cards → idle → imbalance).

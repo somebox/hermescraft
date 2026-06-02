@@ -63,6 +63,44 @@ check allow "wb context (worker proxy)" "wb context"
 check allow "mc status"                 "mc status"
 check allow "mc read_chat"              "mc read_chat 20"
 
+# ── A3 (2026-06-02): mc verb allowlist for orchestrator ──
+# Read-only observation: allowed
+check allow "mc observe"                "mc observe"
+check allow "mc scene"                  "mc scene"
+check allow "mc marks"                  "mc marks"
+check allow "mc nearby"                 "mc nearby 16"
+check allow "mc look"                   "mc look"
+check allow "mc find"                   "mc find oak_log"
+check allow "mc inspect"                "mc inspect 1 2 3"
+check allow "mc map"                    "mc map"
+check allow "mc terrain_top"            "mc terrain_top 1 2"
+check allow "mc list_container"         "mc list_container"
+# In-band coordination: allowed
+check allow "mc chat"                   "mc chat 'hello workers'"
+check allow "mc whisper"                "mc whisper flint 'check NE'"
+# Meta/cli: allowed
+check allow "mc help"                   "mc help"
+check allow "mc goals"                  "mc goals"
+check allow "mc task"                   "mc task"
+
+# Field-mutating verbs: denied
+check block "mc move denied"            "mc move 5 65 3"
+check block "mc goto denied"            "mc goto 10 65 5"
+check block "mc goto_near denied"       "mc goto_near 10 65 5 2"
+check block "mc bg_goto denied"         "mc bg_goto 10 65 5"
+check block "mc go_mark denied"         "mc go_mark base"
+check block "mc mark denied"            "mc mark candidate_pad_ne"
+check block "mc dig denied"             "mc dig 1 2 3"
+check block "mc dig_area denied"        "mc dig_area 0 0 0 5 5 5"
+check block "mc place denied"           "mc place cobblestone 1 2 3"
+check block "mc collect denied"         "mc collect oak_log 8"
+check block "mc deposit denied"         "mc deposit oak_log 8 1 2 3"
+check block "mc craft denied"           "mc craft wooden_pickaxe"
+check block "mc pillar_up denied"       "mc pillar_up 3"
+check block "mc pillar_down denied"     "mc pillar_down 1"
+# Chained: deny still fires when the bad verb is downstream
+check block "mc status && mc move"      "mc status && mc move 1 2 3"
+
 # ── allow: legitimate python helpers ──
 check allow "python3 scripts/roster.py" "python3 scripts/roster.py --assignable"
 check allow "python3 reconcile"         "python3 scripts/reconcile-marks.py --auto"

@@ -217,6 +217,80 @@ def classify(connected, continuous_pid, worker_pids, last_mc_age_s):
     return "IDLE", "yellow"
 
 
+# A12 / task #36 (Phase 3 / item 3.4, 2026-06-02): v2 helpers.
+# Per-bot card body excerpt, last FAIL_DETAIL line, and recent marks —
+# what Steward needs in one shot so she stops guessing at worker state
+# from chat scrollback.
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def fetch_card_excerpt(task_id, max_chars=160):
+    """Read the task body from HERMES_KANBAN_DB. Returns None if unreachable."""
+    if not task_id:
+        return None
+    db_path = (
+        os.environ.get("HERMES_KANBAN_DB")
+        or os.path.expanduser("~/.hermes/kanban/boards/landfolk-ops/kanban.db")
+    )
+    try:
+        import sqlite3
+        conn = sqlite3.connect(db_path, timeout=2.0)
+        row = conn.execute(
+            "SELECT title, body FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None
+        title, body = row[0] or "", row[1] or ""
+        snippet = " ".join((body or title).split())[:max_chars]
+        return snippet
+    except Exception:
+        return None
+
+
+def last_fail_detail(bot_lower):
+    """Most recent FAIL_DETAIL line from mc-<bot>.log. None if none seen."""
+    path = LOG_DIR / f"mc-{bot_lower}.log"
+    if not path.is_file():
+        return None
+    try:
+        # Read last ~16KB; FAIL_DETAILs aren't that frequent so this is enough
+        with path.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 16384))
+            chunk = f.read().decode("utf-8", errors="replace")
+        fail_lines = [ln for ln in chunk.splitlines() if "FAIL_DETAIL" in ln]
+        if not fail_lines:
+            return None
+        last = fail_lines[-1]
+        # Trim: "[ts] FAIL_DETAIL <verb> | http=... | error=... | ..."
+        return last.split("error=", 1)[-1].split(" | ", 1)[0][:180].strip()
+    except Exception:
+        return None
+
+
+def recent_marks(bot_lower, n=3):
+    """Return [(name, x, y, z, when_iso), ...] for the most-recently-updated marks."""
+    path = os.path.join(_REPO_ROOT, "data", f"locations-{bot_lower}.json")
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return []
+    rows = []
+    for name, m in (d or {}).items():
+        if not isinstance(m, dict):
+            continue
+        when = m.get("updated") or m.get("saved") or ""
+        rows.append((name, m.get("x"), m.get("y"), m.get("z"), when))
+    rows.sort(key=lambda r: r[4], reverse=True)
+    return rows[:n]
+
+
 def gather_one(bot_lower, port, role):
     health = http_get_json(f"http://127.0.0.1:{port}/health")
     connected = bool(health and health.get("connected"))
@@ -229,6 +303,13 @@ def gather_one(bot_lower, port, role):
     label, color = classify(connected, continuous_pid, [w["pid"] for w in workers], last_mc_age)
 
     pos = health.get("position") if health else None
+    # v2 enrichment: card body (when a worker has an active task), last
+    # FAIL line, recent marks. Cheap — only runs once per snapshot.
+    card_excerpt = None
+    if workers:
+        card_excerpt = fetch_card_excerpt(workers[0].get("task_id"))
+    fail_line = last_fail_detail(bot_lower)
+    marks = recent_marks(bot_lower)
     return {
         "bot": bot_lower,
         "role": role,
@@ -244,6 +325,10 @@ def gather_one(bot_lower, port, role):
         "workers": workers,
         "last_mc": mc_tail,
         "last_log": bot_tail,
+        # v2 (3.4): orchestrator's signal-extraction
+        "card_excerpt": card_excerpt,
+        "last_fail": fail_line,
+        "recent_marks": marks,
     }
 
 
@@ -301,6 +386,18 @@ def print_human(snapshots):
             # Strip ANSI from log lines if any leaked through
             clean = re.sub(r"\033\[[0-9;]*m", "", s["last_log"])
             print(f"            last log: {c(clean[:90], 'dim')}")
+        # v2 (3.4): card body + last FAIL + recent marks. Surface only when
+        # there's something to say; suppressing empty rows keeps the
+        # one-screen budget intact.
+        if s.get("card_excerpt"):
+            print(f"            card:     {c(s['card_excerpt'][:90], 'cyan')}")
+        if s.get("last_fail"):
+            print(f"            last FAIL: {c(s['last_fail'][:120], 'red')}")
+        if s.get("recent_marks"):
+            marks_str = ", ".join(
+                f"{name}({x},{y},{z})" for name, x, y, z, _ in s["recent_marks"][:3]
+            )
+            print(f"            marks:    {c(marks_str[:120], 'dim')}")
         print()
 
     # Action hints
