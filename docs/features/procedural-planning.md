@@ -6,9 +6,9 @@ Source: [`procedural-devlog.md`](procedural-devlog.md) + [`POSTMORTEM.md`](../..
 
 ## Progress
 
-**Current phase:** 4 — Bootstrap polish.
-**Open / total:** 6 / 24 (Phases 0–3 fully closed; 18 items done).
-**Last update:** 2026-06-02 (Phase 3 done; orchestrator-deny tests 52/52, fleet-status v2 in place).
+**Current phase:** 5 — Multi-bot re-run with attribution metrics.
+**Open / total:** 4 / 24 (Phases 0–4 fully closed; 20 items done).
+**Last update:** 2026-06-02 (Phase 4 done; biome cue real names, muster random_safe).
 
 ## Working agreement
 
@@ -207,8 +207,8 @@ Use this when Phase 0 trace would otherwise guess file paths.
 
 **Items**
 
-- [ ] **4.1** — Switch `scene-landscape.js` biome cue to `bot.world.getBiome(pos)` so it stops reading `unknown`. Exit: `scouting.overlook` transcript shows a real biome name.
-- [ ] **4.2** — Change `muster` in `requirements/scenario_establish_explore.yaml` to `random_safe` (or `near spawn within N`). Keep `establish-scenario.sh` auto-patch as belt-and-suspenders. Exit: `python -m mapcatalog scenario lint --only establishment.explore` passes; a fresh-seed bootstrap doesn't trigger the muster-position re-tp.
+- [x] **4.1** — ~~Switch `scene-landscape.js` biome cue to `bot.world.getBiome(pos)`.~~ — **done 2026-06-02.** `biomeAtFeet` now reads the biome ID via `bot.world.sync.getBiome(cell)` then maps it through `bot.registry.biomes` to get the name. Falls back to the legacy `block.biome.name` path on any error. 3/3 scene-landscape unit tests pass.
+- [x] **4.2** — ~~Change `muster` placement to `random_safe`.~~ — **done 2026-06-02.** `requirements/scenario_establish_explore.yaml`: muster + starter_chest both switched from `offset_from` to `random_safe radius 8 attempts 32` (the placement engine doesn't validate `offset_from` landings; `random_safe` does). Lint passes; stale catalog snapshot cleared so the next bootstrap does a fresh find with the new placements. `establish-scenario.sh` auto-patch kept as belt-and-suspenders.
 
 **Deferred**
 

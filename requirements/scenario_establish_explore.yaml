@@ -1,0 +1,39 @@
+# Establishment explore — varied proc-lab disc; spawn/muster only (workers explore, Steward decides base).
+id: scenario_establish_explore
+extends: profiles/worksite
+
+arena:
+  center: [0, 0]
+  radius: 32
+
+gates:
+  - flat patch >= 8 cells
+  - block stone hits >= 4 in y 80..100 step 6
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  # Phase 4 / item 4.2 (2026-06-02): muster used to be `offset_from spawn
+  # [6, 0, 0]` but offset_from doesn't validate the landing — on the
+  # 2026-06-01 run the spawn landed on a peak (mountainous variation
+  # forced by the stone-band gate), the +6E offset buried muster in
+  # terrain, and all four workers tp'd inside solid blocks. Switching
+  # muster + starter_chest to random_safe near the disc origin gives the
+  # placement engine validated landings within an 8-block radius.
+  # The establish-scenario.sh map auto-patch is now redundant on a
+  # fresh seed but kept as belt-and-suspenders.
+  muster: random_safe radius 8 attempts 32
+  # starter_chest can't use `near mark` (only `near block` / `near gate`
+  # are supported placement forms). A small-radius random_safe keeps it
+  # near the disc origin where the workers tp; the bootstrap's chest
+  # setblock command places it at the resolved coord.
+  starter_chest: random_safe radius 8 attempts 32
+
+find:
+  solutions: 1
+  max_seeds: 40
+  seed_candidates: ["1001", "20240601", "3141592"]
+
+pass1:
+  verify_live: false
+
+server: ./server.local.yaml
