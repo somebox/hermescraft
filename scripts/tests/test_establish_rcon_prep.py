@@ -155,6 +155,86 @@ class PrepCommandsOverrideTest(unittest.TestCase):
         self.assertIn(" 65 ", grass, msg=f"grass floor should include Y=65; got {grass}")
 
 
+# ── apply_spawn_y_override (map JSON patch) ───────────────────────────
+
+
+class ApplySpawnYOverrideTest(unittest.TestCase):
+    """When the surface probe substitutes spawn Y, the map JSON on disk
+    must be patched so seed-cards / tp_workers / bash all see the same
+    coords. Run-8 evidence: probe shifted spawn 96→79 but kanban cards
+    still encoded muster (4,96,24); workers fell 17 blocks on TP."""
+
+    def _card(self, sy: int = 96) -> dict:
+        return {
+            "placements": {
+                "spawn": [4, sy, 24],
+                "muster": [4, sy, 24],
+                "starter_chest": [5, sy - 1, 24],
+            },
+            "spawn": [4, sy, 24],
+            "muster": [4, sy, 24],
+            "starter_chest": [5, sy - 1, 24],
+        }
+
+    def test_spawn_y_patched_both_shapes(self):
+        card = self._card(sy=96)
+        erp.apply_spawn_y_override(card, 79)
+        self.assertEqual(card["spawn"], [4, 79, 24])
+        self.assertEqual(card["placements"]["spawn"], [4, 79, 24])
+
+    def test_muster_re_collapsed_to_resolved_spawn(self):
+        card = self._card(sy=96)
+        erp.apply_spawn_y_override(card, 79)
+        self.assertEqual(card["muster"], [4, 79, 24])
+        self.assertEqual(card["placements"]["muster"], [4, 79, 24])
+
+    def test_chest_shifts_by_same_delta(self):
+        # Catalog chest at Y=95 (spawn 96 − 1); override to 79 → chest 78.
+        card = self._card(sy=96)
+        erp.apply_spawn_y_override(card, 79)
+        self.assertEqual(card["starter_chest"], [5, 78, 24])
+        self.assertEqual(card["placements"]["starter_chest"], [5, 78, 24])
+
+    def test_chest_minus_one_relation_preserved(self):
+        for catalog_sy, resolved_sy in [(96, 79), (96, 64), (64, 96)]:
+            card = self._card(sy=catalog_sy)
+            erp.apply_spawn_y_override(card, resolved_sy)
+            self.assertEqual(card["starter_chest"][1], resolved_sy - 1,
+                msg=f"catalog={catalog_sy} resolved={resolved_sy}: "
+                    f"chest_y should be {resolved_sy-1}; "
+                    f"got {card['starter_chest'][1]}")
+
+    def test_x_z_coords_untouched(self):
+        card = self._card(sy=96)
+        erp.apply_spawn_y_override(card, 79)
+        # The probe is column-local — X/Z must not move.
+        self.assertEqual(card["spawn"][0], 4)
+        self.assertEqual(card["spawn"][2], 24)
+        self.assertEqual(card["starter_chest"][0], 5)
+        self.assertEqual(card["starter_chest"][2], 24)
+
+    def test_roundtrip_via_json(self):
+        # Simulates the full file-write/read path that establish-scenario.sh
+        # uses between rcon-prep --mode world and seed-cards.
+        card = self._card(sy=96)
+        erp.apply_spawn_y_override(card, 79)
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
+            json.dump(card, f, indent=2)
+            path = Path(f.name)
+        try:
+            roundtrip = json.loads(path.read_text())
+            # _triple reads top-level first, falls back to placements —
+            # both shapes must be coherent.
+            sx, sy, sz = erp._triple(roundtrip, "spawn")
+            mx, my, mz = erp._triple(roundtrip, "muster")
+            cx, cy, cz = erp._triple(roundtrip, "starter_chest")
+            self.assertEqual((sx, sy, sz), (4, 79, 24))
+            self.assertEqual((mx, my, mz), (4, 79, 24))
+            self.assertEqual((cx, cy, cz), (5, 78, 24))
+        finally:
+            path.unlink()
+
+
 # ── _read_rcon_config (fallback path) ──────────────────────────────────
 
 

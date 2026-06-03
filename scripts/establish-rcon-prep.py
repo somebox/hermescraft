@@ -131,6 +131,38 @@ def _triple(card: dict, key: str) -> tuple[int, int, int]:
     return int(raw[0]), int(raw[1]), int(raw[2])
 
 
+def apply_spawn_y_override(card: dict, resolved_sy: int) -> None:
+    """Mutate `card` so spawn / muster / starter_chest reflect resolved Y.
+
+    Run-8 evidence: the surface probe correctly shifted spawn 96 → 79, but
+    `establish-seed-cards.py` read the catalog Y from the map JSON, so the
+    EPIC body said `Spawn: 4,96,24` and NE/NW EXPLORE cards referenced
+    `muster (4,96,24)`. Workers fell ~17 blocks on first TP (Flint took 13
+    damage at 14:17). Steward had to manually fix three cards mid-flight.
+
+    Mirrors `prep_commands`'s chest-shift policy: chest_y moves by the same
+    delta as spawn_y so the catalog's chest_y = spawn_y − 1 relationship
+    survives. Writes both top-level and `placements.*` mirrors because
+    downstream readers (`_triple`, the bash `placements.spawn` echo) check
+    both shapes.
+    """
+    placements = card.setdefault("placements", {})
+    sx, catalog_sy, sz = _triple(card, "spawn")
+    delta = resolved_sy - catalog_sy
+    new_spawn = [sx, resolved_sy, sz]
+    placements["spawn"] = list(new_spawn)
+    card["spawn"] = list(new_spawn)
+    # Re-collapse muster onto spawn (establish-scenario.sh already does this
+    # at catalog Y; we re-apply at resolved Y so any subsequent reader that
+    # trusts a non-collapsed muster still gets a coherent value).
+    placements["muster"] = list(new_spawn)
+    card["muster"] = list(new_spawn)
+    cx, catalog_cy, cz = _triple(card, "starter_chest")
+    new_chest = [cx, catalog_cy + delta, cz]
+    placements["starter_chest"] = list(new_chest)
+    card["starter_chest"] = list(new_chest)
+
+
 def prep_commands(card: dict, *, world: str = "proc-lab",
                    spawn_y_override: Optional[int] = None) -> list[str]:
     """Build the rcon command batch. `spawn_y_override` (when provided)
@@ -257,6 +289,16 @@ def main() -> int:
                 print(f"  ⚠ spawn Y substituted: catalog {sy} → probed {resolved} "
                       f"(delta {abs(resolved - sy)} > {SURFACE_PROBE_DELTA_TOLERANCE})")
                 spawn_y_override = resolved
+                # Patch the map JSON so downstream readers (seed-cards,
+                # tp_workers, the bash placements.spawn echo) see the same
+                # resolved coords. Without this, kanban cards still encode
+                # the stale catalog Y and workers fall on first TP.
+                apply_spawn_y_override(card, resolved)
+                args.map.write_text(json.dumps(card, indent=2) + "\n",
+                                    encoding="utf-8")
+                print(f"  patched {args.map.name}: spawn={card['placements']['spawn']} "
+                      f"muster={card['placements']['muster']} "
+                      f"chest={card['placements']['starter_chest']}")
         cmds = prep_commands(card, world=args.world, spawn_y_override=spawn_y_override)
         label = "rcon prep"
     else:
