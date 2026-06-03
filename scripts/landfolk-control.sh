@@ -620,6 +620,16 @@ start_watchdog() {
   local name_lower="${name,,}"
   local wd_log="$LOG_DIR/watchdog-${name_lower}.log"
 
+  # Run-7 PR-S — kanban context for AUTO_STUCK detection. Mirrors
+  # start_agent's computation so the watchdog reads the same board as
+  # the dispatcher. The watchdog is the lifecycle owner for AUTO_STUCK
+  # because it runs for every bot regardless of mode (--no-agent kanban
+  # workers had no progress JSONL before this).
+  local kanban_board="${KANBAN_BOARD:-landfolk-ops}"
+  local kanban_db_root="${HERMES_KANBAN_ROOT:-$HOME/.hermes/kanban}"
+  local kanban_db="$kanban_db_root/boards/$kanban_board/kanban.db"
+  local progress_log="$LOG_DIR/progress-${name_lower}.log"
+
   if [ -f "$pidf" ] && is_pid_alive "$(cat "$pidf")"; then
     echo "[watchdog] $name already running (pid $(cat "$pidf"))"
     return 0
@@ -634,6 +644,14 @@ start_watchdog() {
     export WATCHDOG_CONNECT_ONLY="${WATCHDOG_CONNECT_ONLY:-}"
     export DANGER_AUTOREACT_ENABLED DANGER_CHAT_COOLDOWN_SEC DANGER_ACTION_COOLDOWN_SEC DANGER_FLEE_HEALTH
     export DANGER_AUTOREACT_BROADCAST_CHAT="${DANGER_AUTOREACT_BROADCAST_CHAT:-true}"
+    # Run-7 PR-S: AUTO_STUCK env. WATCHDOG_AUTO_STUCK_ENABLED=0 disables
+    # the per-tick probe (escape hatch for ops debugging).
+    export LANDFOLK_LOG_DIR="$LOG_DIR"
+    export LANDFOLK_SCRIPT_DIR="$SCRIPT_DIR"
+    export LANDFOLK_KANBAN_DB="$kanban_db"
+    export LANDFOLK_KANBAN_BOARD="$kanban_board"
+    export LANDFOLK_PROGRESS_LOG="$progress_log"
+    export WATCHDOG_AUTO_STUCK_ENABLED="${WATCHDOG_AUTO_STUCK_ENABLED:-1}"
     exec -a "landfolk:watchdog:$name" bash /dev/stdin "$name" "$port" "$wd_log" <<'WATCHDOG_LOOP_BODY'
 set -uo pipefail
 name="$1"; port="$2"; wd_log="$3"
@@ -708,6 +726,57 @@ except Exception:
         fi
         sleep "$WATCHDOG_INTERVAL_S"
         continue
+      fi
+
+      # Run-7 Step 2 (PR-S) — AUTO_STUCK probe. Runs BEFORE the
+      # CONNECT_ONLY short-circuit so kanban workers (which have no agent
+      # loop emitting progress JSONL) still get stuck detection. The
+      # watchdog is the lifecycle owner here — runs per-bot regardless of
+      # mode, already has health/connect signals, doesn't POST /task/cancel
+      # (the CONNECT_ONLY branch below skips that). Body shape mirrors the
+      # agent-loop emitter at L~1525 so auto-stuck-check.py reads the same
+      # fields (recent, pos). WATCHDOG_AUTO_STUCK_ENABLED=0 disables.
+      if [ "${WATCHDOG_AUTO_STUCK_ENABLED:-1}" = "1" ] && [ -n "${LANDFOLK_PROGRESS_LOG:-}" ]; then
+        observe_json="$(curl -sf "http://localhost:${port}/observe?lean=true" 2>/dev/null || echo '{}')"
+        progress_json="$(printf '%s' "$observe_json" | python3 -c "
+import sys, json, time
+try:
+  d = json.load(sys.stdin)
+  ra = d.get('recent_actions') or []
+  recent = [f\"{a.get('action','?')}:{a.get('status','?')}\" for a in ra[-4:]]
+  pos_raw = d.get('position') or d.get('pos') or {}
+  pos = None
+  if pos_raw:
+    pos = {k: int(pos_raw[k]) for k in ('x','y','z') if k in pos_raw and pos_raw[k] is not None}
+    if not pos: pos = None
+  out = {
+    'ts': time.strftime('%Y-%m-%dT%H:%M:%S'),
+    'agent': '$name',
+    'recent': recent,
+    'pos': pos,
+  }
+  print(json.dumps(out, separators=(',', ':')))
+except Exception:
+  pass
+" 2>/dev/null || echo '')"
+        if [ -n "$progress_json" ]; then
+          printf '%s\n' "$progress_json" >> "$LANDFOLK_PROGRESS_LOG"
+          # Find this bot's active running task; if any, run auto-stuck-check.
+          # Empty result → no card claimed → nothing to comment on.
+          if [ -n "${LANDFOLK_KANBAN_DB:-}" ] && [ -f "$LANDFOLK_KANBAN_DB" ]; then
+            active_task="$(sqlite3 "$LANDFOLK_KANBAN_DB" \
+              "SELECT id FROM tasks WHERE LOWER(assignee)=LOWER('$name') AND status='running' LIMIT 1;" \
+              2>/dev/null || true)"
+            if [ -n "$active_task" ]; then
+              python3 "$LANDFOLK_SCRIPT_DIR/scripts/auto-stuck-check.py" \
+                --progress-log "$LANDFOLK_PROGRESS_LOG" \
+                --task-id "$active_task" \
+                --kanban-db "$LANDFOLK_KANBAN_DB" \
+                --board "${LANDFOLK_KANBAN_BOARD:-landfolk-ops}" \
+                >> "$wd_log" 2>&1 || true
+            fi
+          fi
+        fi
       fi
 
       # F-NEW: WATCHDOG_CONNECT_ONLY mode — run ONLY the connect-keepalive

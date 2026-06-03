@@ -18,10 +18,12 @@ runtime; the CLI wrapper handles state-file lookup + comment emission.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sqlite3
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
@@ -37,6 +39,26 @@ DEFAULT_ROUNDS = 4
 # `pos` is already int-floored in the progress emitter; threshold 0 means
 # strictly identical cells, 1 allows one-block drift.
 DEFAULT_POS_TOLERANCE = 0
+
+# Run-7 Step 2 (PR-S) — escalation cadence. The watchdog ticks every 8s
+# and detect_auto_stuck requires 4 identical entries (~32s window). Once
+# we comment, we wait at least DEBOUNCE before escalating so the prior
+# action has time to take effect (a reclaim spawns a fresh worker which
+# needs >~10s to come up + start a new card pose). 45s default.
+DEFAULT_DEBOUNCE_SECONDS = 45
+
+# Comment-body prefixes that encode escalation stage. Recovering state
+# from these comments alone (no schema change to task_events) keeps the
+# escalation policy idempotent across watchdog restarts.
+_PFX_COMMENT = "[AUTO_STUCK]"
+_PFX_RECLAIM = "[AUTO_STUCK_RECLAIM]"
+_PFX_BLOCK = "[AUTO_STUCK_BLOCK]"
+
+# Stage strings used by decide_action / tests.
+STAGE_COMMENT = "comment"
+STAGE_RECLAIM = "reclaim"
+STAGE_BLOCK = "block"
+STAGE_NOOP = "noop"
 
 
 @dataclass(frozen=True)
@@ -132,54 +154,157 @@ def read_progress_tail(path: Path, n: int) -> list[dict]:
     return out
 
 
-def auto_stuck_already_signaled(
-    db_path: Path, task_id: str, lookback_rounds: int = 6
-) -> bool:
-    """Idempotency check: was AUTO_STUCK already commented in the last
-    few task events for this card? Skip re-emission to avoid spamming
-    Steward when a stuck condition persists across rounds.
+def stuck_fingerprint(signal: StuckSignal) -> str:
+    """Compact, stable fingerprint of a stuck episode. Same position +
+    same recent[] tuple → same fp across watchdog ticks, so the
+    escalation history is keyed correctly even when the bot has multiple
+    successive stuck episodes (rare but possible: stuck → reclaim →
+    different stuck → fresh comment cycle)."""
+    blob = json.dumps(
+        {"pos": signal.position, "recent": signal.recent_tuple},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
+
+
+def latest_action_for_fingerprint(
+    db_path: Path, task_id: str, fingerprint: str
+) -> tuple[Optional[str], Optional[float]]:
+    """Read task_comments for the most recent AUTO_STUCK-tagged entry
+    matching this fingerprint. Returns (stage, age_seconds) where
+    stage is one of STAGE_COMMENT / STAGE_RECLAIM / STAGE_BLOCK / None.
+
+    The stage prefix determines what action was last taken; the
+    `age_seconds` is used to debounce repeated escalations within one
+    detection window.
     """
     if not db_path.is_file():
-        return False
+        return None, None
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        rows = conn.execute(
-            "SELECT body FROM task_comments WHERE task_id = ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            (task_id, lookback_rounds),
-        ).fetchall()
+        row = conn.execute(
+            "SELECT body, created_at FROM task_comments "
+            "WHERE task_id = ? AND body LIKE ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (task_id, f"%fp={fingerprint}%"),
+        ).fetchone()
         conn.close()
     except sqlite3.Error:
-        return False
-    return any(r[0] and "AUTO_STUCK" in r[0] for r in rows)
+        return None, None
+    if row is None:
+        return None, None
+    body, created_at = row
+    if not isinstance(body, str):
+        return None, None
+    if body.startswith(_PFX_BLOCK):
+        stage = STAGE_BLOCK
+    elif body.startswith(_PFX_RECLAIM):
+        stage = STAGE_RECLAIM
+    elif body.startswith(_PFX_COMMENT):
+        stage = STAGE_COMMENT
+    else:
+        return None, None
+    age = time.time() - created_at if created_at else None
+    return stage, age
 
 
-def format_comment_body(signal: StuckSignal) -> str:
+def decide_action(
+    prior_stage: Optional[str], age_seconds: Optional[float], debounce: float
+) -> str:
+    """Step-change escalation policy. The watchdog calls this every tick
+    that detect_auto_stuck() fires; this function decides what to do.
+
+    States: None → comment → reclaim → block → noop (terminal).
+    Debounce prevents back-to-back escalations within one detection
+    window (the prior action needs time to land).
+    """
+    if prior_stage == STAGE_BLOCK:
+        return STAGE_NOOP
+    if prior_stage is None:
+        return STAGE_COMMENT
+    if age_seconds is not None and age_seconds < debounce:
+        return STAGE_NOOP
+    if prior_stage == STAGE_COMMENT:
+        return STAGE_RECLAIM
+    if prior_stage == STAGE_RECLAIM:
+        return STAGE_BLOCK
+    return STAGE_NOOP
+
+
+def format_comment_body(signal: StuckSignal, fingerprint: str) -> str:
     pos = signal.position
     return (
-        f"AUTO_STUCK: identical recent[] for {signal.rounds} rounds at "
-        f"({pos.get('x')},{pos.get('y')},{pos.get('z')}). "
+        f"{_PFX_COMMENT} fp={fingerprint}: identical recent[] for "
+        f"{signal.rounds} rounds at ({pos.get('x')},{pos.get('y')},{pos.get('z')}). "
         f"recent_tuple={json.dumps(signal.recent_tuple)} "
         f"first_round={signal.first_round} last_round={signal.last_round}. "
-        f"Steward: this worker is wedged. Consider kanban_reassign / "
-        f"kanban_reclaim / `[RESCUE]` card. Whispering via mc chat won't "
-        f"unstick — the worker's loop is the same identical tuple. "
-        f"Phase 10 PR-S signal."
+        f"Steward: kanban_comment a diagnosis + reclaim/reassign. mc chat "
+        f"whispers don't enter the worker's decision loop — comments do. "
+        f"If this fp recurs after reclaim, the watchdog will auto-block."
     )
 
 
-def emit_comment(task_id: str, body: str, board: Optional[str] = None) -> bool:
-    """Shell out to `hermes kanban comment` for cascade-correctness.
-    Returns True on success."""
-    cmd = ["hermes", "kanban"]
-    if board:
-        cmd.extend(["--board", board])
-    cmd.extend(["comment", task_id, body])
+def format_reclaim_explainer(signal: StuckSignal, fingerprint: str) -> str:
+    return (
+        f"{_PFX_RECLAIM} fp={fingerprint}: prior {_PFX_COMMENT} did not "
+        f"unstick the worker (same recent[] for {signal.rounds}+ rounds). "
+        f"Auto-reclaim now; if the new worker hits the same fp, the next "
+        f"escalation is block. Steward: while the new worker spawns, "
+        f"consider editing the card body — same fp after reclaim usually "
+        f"means the card spec is the problem, not the runtime."
+    )
+
+
+def format_block_reason(signal: StuckSignal, fingerprint: str) -> str:
+    return (
+        f"{_PFX_BLOCK} fp={fingerprint}: identical recent[] persisted "
+        f"across an auto-reclaim — card spec is broken or the env "
+        f"reproducibly traps the worker. Steward: edit the body, "
+        f"reassign, or file a [RESCUE]. Pose: ({signal.position.get('x')},"
+        f"{signal.position.get('y')},{signal.position.get('z')})."
+    )
+
+
+def _hermes_kanban(args: list[str], timeout: int = 15) -> bool:
+    """Shell out to `hermes kanban …`. Returns True on success."""
+    cmd = ["hermes", "kanban"] + args
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
     return proc.returncode == 0
+
+
+def emit_comment(task_id: str, body: str, board: Optional[str] = None) -> bool:
+    head: list[str] = []
+    if board:
+        head = ["--board", board]
+    return _hermes_kanban(head + ["comment", task_id, body])
+
+
+def emit_reclaim(task_id: str, signal: StuckSignal, fingerprint: str,
+                 board: Optional[str] = None) -> bool:
+    """Step-change escalation: comment an explainer, then trigger
+    `hermes kanban reclaim`. The explainer lands in task_comments so the
+    fingerprint history is recoverable across watchdog restarts."""
+    if not emit_comment(task_id, format_reclaim_explainer(signal, fingerprint), board=board):
+        # Don't reclaim if we couldn't tag the history — the next tick
+        # would think we're still at stage=comment and re-escalate.
+        return False
+    head: list[str] = []
+    if board:
+        head = ["--board", board]
+    return _hermes_kanban(head + ["reclaim", task_id])
+
+
+def emit_block(task_id: str, signal: StuckSignal, fingerprint: str,
+               board: Optional[str] = None) -> bool:
+    reason = format_block_reason(signal, fingerprint)
+    head: list[str] = []
+    if board:
+        head = ["--board", board]
+    return _hermes_kanban(head + ["block", task_id, reason])
 
 
 def main() -> int:
@@ -194,22 +319,46 @@ def main() -> int:
                     help="Kanban board name passed to `hermes kanban`")
     ap.add_argument("--rounds", type=int, default=DEFAULT_ROUNDS)
     ap.add_argument("--pos-tolerance", type=int, default=DEFAULT_POS_TOLERANCE)
+    ap.add_argument("--debounce-seconds", type=float, default=DEFAULT_DEBOUNCE_SECONDS,
+                    help="Minimum seconds between escalation stages for a given fingerprint")
     ap.add_argument("--dry-run", action="store_true",
-                    help="Print the comment body to stdout instead of shelling out")
+                    help="Print the next action + body to stdout instead of shelling out")
     args = ap.parse_args()
 
     entries = read_progress_tail(args.progress_log, args.rounds)
     signal = detect_auto_stuck(entries, args.rounds, args.pos_tolerance)
     if signal is None:
         return 0
-    if args.kanban_db and auto_stuck_already_signaled(args.kanban_db, args.task_id):
-        # Already commented — skip to avoid spam.
+
+    fp = stuck_fingerprint(signal)
+    prior_stage, age = (None, None)
+    if args.kanban_db:
+        prior_stage, age = latest_action_for_fingerprint(args.kanban_db, args.task_id, fp)
+    action = decide_action(prior_stage, age, args.debounce_seconds)
+
+    if action == STAGE_NOOP:
         return 0
-    body = format_comment_body(signal)
+
+    if action == STAGE_COMMENT:
+        body = format_comment_body(signal, fp)
+    elif action == STAGE_RECLAIM:
+        body = format_reclaim_explainer(signal, fp)
+    elif action == STAGE_BLOCK:
+        body = format_block_reason(signal, fp)
+    else:  # defensive
+        return 0
+
     if args.dry_run:
+        print(f"action={action} fp={fp}")
         print(body)
         return 0
-    ok = emit_comment(args.task_id, body, board=args.board)
+
+    if action == STAGE_COMMENT:
+        ok = emit_comment(args.task_id, body, board=args.board)
+    elif action == STAGE_RECLAIM:
+        ok = emit_reclaim(args.task_id, signal, fp, board=args.board)
+    else:  # STAGE_BLOCK
+        ok = emit_block(args.task_id, signal, fp, board=args.board)
     return 0 if ok else 1
 
 
