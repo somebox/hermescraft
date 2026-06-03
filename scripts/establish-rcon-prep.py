@@ -1,13 +1,36 @@
 #!/usr/bin/env python3
-"""RCON world prep for establishment explore runs (peaceful hub + starter chest)."""
+"""RCON world prep for establishment explore runs (peaceful hub + starter chest).
+
+Run-7 Step 4 (PR-H): before issuing the spawn-area /fill, this script
+probes the live world's natural surface Y at the spawn (x,z) and uses
+the probed value when it differs from the catalog spawn Y by >2. Without
+this, the run-7 launch fired /fill at the stale catalog Y=96 on a fresh
+seed=1001 disc where the natural surface was ~Y66, building a 25×25
+floating slab over the forest canopy.
+
+Probe strategy: `mapcatalog.metrics.find_surface_heights` via the
+existing SshDockerRcon client (ssh ubuntu-host → docker exec minecraft
+→ rcon-cli). Fails closed: if the probe returns None, prep refuses to
+issue any /fill rather than building a slab at a stale Y.
+"""
 from __future__ import annotations
 
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Run-7 PR-H — when |catalog spawn Y - probed surface Y| ≤ this, the
+# catalog value is trusted as-is (no log spam). Above this, the probe
+# wins and the substitution is logged loudly.
+SURFACE_PROBE_DELTA_TOLERANCE = 2
+
+# Default rcon config when server.local.yaml is unreadable.
+_DEFAULT_SSH_HOST = "ubuntu-host"
+_DEFAULT_CONTAINER = "minecraft"
 
 
 def _agent_test():
@@ -22,6 +45,84 @@ def _agent_test():
     return mod
 
 
+def _read_rcon_config(server_yaml: Path) -> tuple[str, str]:
+    """Pull (ssh_host, container) from server.local.yaml; fall back to
+    the agent-test.py hardcoded values when unavailable."""
+    if not server_yaml.is_file():
+        return _DEFAULT_SSH_HOST, _DEFAULT_CONTAINER
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        # Coarse extraction — find lines like `ssh_host: …` / `container: …`.
+        text = server_yaml.read_text(encoding="utf-8")
+        ssh = _DEFAULT_SSH_HOST
+        con = _DEFAULT_CONTAINER
+        for line in text.splitlines():
+            s = line.strip()
+            if s.startswith("ssh_host:"):
+                ssh = s.split(":", 1)[1].strip().strip("\"'")
+            elif s.startswith("container:"):
+                con = s.split(":", 1)[1].strip().strip("\"'")
+        return ssh, con
+    try:
+        cfg = yaml.safe_load(server_yaml.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return _DEFAULT_SSH_HOST, _DEFAULT_CONTAINER
+    rcon = (cfg.get("rcon") or {})
+    return (
+        rcon.get("ssh_host", _DEFAULT_SSH_HOST),
+        rcon.get("container", _DEFAULT_CONTAINER),
+    )
+
+
+def probe_surface_y(*, world: str, sx: int, sz: int,
+                    ssh_host: str, container: str,
+                    y_hi: int = 200, y_lo: int = 48) -> Optional[int]:
+    """Run a top-down air-vs-solid scan at (sx, sz) via SshDockerRcon
+    and return the feet Y (one above the first solid block), or None
+    if the scan exhausted without finding anything.
+
+    Imports mapcatalog at call time — keeps the script importable in
+    environments where mapcatalog isn't on sys.path (test fixtures).
+    """
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from mapcatalog.rcon_client import SshDockerRcon
+    from mapcatalog.metrics import find_surface_heights
+
+    client = SshDockerRcon(ssh_host=ssh_host, container=container)
+    heights = find_surface_heights(
+        client, world, [(sx, sz)], y_lo=y_lo, y_hi=y_hi,
+    )
+    return heights.get((sx, sz))
+
+
+def resolve_spawn_y(catalog_sy: int, probed_sy: Optional[int],
+                    *, tolerance: int = SURFACE_PROBE_DELTA_TOLERANCE,
+                    strict: bool = True) -> int:
+    """Decide which Y to use for the spawn-area fill.
+
+    Pure function — testable without rcon.
+
+    - probed_sy is None: strict path raises SystemExit (fail closed);
+      non-strict path falls back to catalog (used by --dry-run only).
+    - |catalog - probed| ≤ tolerance: use catalog (no behaviour change).
+    - |catalog - probed| > tolerance: use probed (loud substitution).
+    """
+    if probed_sy is None:
+        if strict:
+            raise SystemExit(
+                "rcon surface probe failed — refusing to /fill at the catalog Y "
+                "(would risk a floating-slab platform like run-7). Re-run with "
+                "--skip-surface-probe to bypass at your own risk."
+            )
+        return catalog_sy
+    delta = abs(catalog_sy - probed_sy)
+    if delta <= tolerance:
+        return catalog_sy
+    return probed_sy
+
+
 def _triple(card: dict, key: str) -> tuple[int, int, int]:
     placements = card.get("placements") or {}
     raw = card.get(key) or placements.get(key)
@@ -30,8 +131,16 @@ def _triple(card: dict, key: str) -> tuple[int, int, int]:
     return int(raw[0]), int(raw[1]), int(raw[2])
 
 
-def prep_commands(card: dict, *, world: str = "proc-lab") -> list[str]:
+def prep_commands(card: dict, *, world: str = "proc-lab",
+                   spawn_y_override: Optional[int] = None) -> list[str]:
+    """Build the rcon command batch. `spawn_y_override` (when provided)
+    replaces the catalog spawn Y for fill/setworldspawn but leaves chest
+    coords as the catalog says — the chest is placed at its own Y, then
+    setworldspawn uses the resolved spawn Y so the bot lands on the
+    grass floor we just laid."""
     sx, sy, sz = _triple(card, "spawn")
+    if spawn_y_override is not None:
+        sy = spawn_y_override
     cx, cy, cz = _triple(card, "starter_chest")
     items_nbt = (
         "{Items:["
@@ -109,11 +218,36 @@ def main() -> int:
     ap.add_argument("--workers", default="",
                     help="comma list of player names (required when --mode tp_workers)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--skip-surface-probe", action="store_true",
+                    help="Run-7 PR-H escape hatch — skip the rcon surface probe "
+                         "and use the catalog spawn Y verbatim. Risks a floating "
+                         "slab on a fresh disc; only use when the probe is broken.")
+    ap.add_argument("--server-yaml", type=Path, default=ROOT / "server.local.yaml",
+                    help="Path to server.local.yaml for rcon ssh_host/container.")
     args = ap.parse_args()
 
     card = json.loads(args.map.read_text(encoding="utf-8"))
     if args.mode == "world":
-        cmds = prep_commands(card, world=args.world)
+        # Run-7 PR-H: probe the live surface BEFORE issuing any /fill.
+        # Doing it after the fill would read the just-laid grass slab
+        # (validated by armor-stand probe during run-7 pause).
+        spawn_y_override: Optional[int] = None
+        if not args.skip_surface_probe and not args.dry_run:
+            sx, sy, sz = _triple(card, "spawn")
+            ssh_host, container = _read_rcon_config(args.server_yaml)
+            print(f"  probing surface Y at ({sx},{sz}) on {args.world}…",
+                  end=" ", flush=True)
+            probed = probe_surface_y(
+                world=args.world, sx=sx, sz=sz,
+                ssh_host=ssh_host, container=container,
+            )
+            print(f"got {probed} (catalog says {sy})")
+            resolved = resolve_spawn_y(sy, probed, strict=True)
+            if resolved != sy:
+                print(f"  ⚠ spawn Y substituted: catalog {sy} → probed {resolved} "
+                      f"(delta {abs(resolved - sy)} > {SURFACE_PROBE_DELTA_TOLERANCE})")
+                spawn_y_override = resolved
+        cmds = prep_commands(card, world=args.world, spawn_y_override=spawn_y_override)
         label = "rcon prep"
     else:
         names = [w.strip() for w in args.workers.split(",") if w.strip()]
