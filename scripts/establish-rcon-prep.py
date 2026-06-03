@@ -134,14 +134,24 @@ def _triple(card: dict, key: str) -> tuple[int, int, int]:
 def prep_commands(card: dict, *, world: str = "proc-lab",
                    spawn_y_override: Optional[int] = None) -> list[str]:
     """Build the rcon command batch. `spawn_y_override` (when provided)
-    replaces the catalog spawn Y for fill/setworldspawn but leaves chest
-    coords as the catalog says — the chest is placed at its own Y, then
-    setworldspawn uses the resolved spawn Y so the bot lands on the
-    grass floor we just laid."""
-    sx, sy, sz = _triple(card, "spawn")
+    replaces the catalog spawn Y for fill, setworldspawn AND chest
+    placement — the chest's relationship to spawn (chest_y = spawn_y - 1
+    by catalog construction) is preserved by shifting chest_y by the
+    same delta as spawn_y. Run-8 evidence: the first cut preserved
+    catalog chest_y=95 while resolved spawn_y dropped to 79, leaving the
+    chest floating 16 blocks above the new grass floor."""
+    sx, catalog_sy, sz = _triple(card, "spawn")
+    cx, catalog_cy, cz = _triple(card, "starter_chest")
     if spawn_y_override is not None:
         sy = spawn_y_override
-    cx, cy, cz = _triple(card, "starter_chest")
+        # Apply the same delta to chest so the spawn↔chest vertical
+        # relationship from the catalog (typically -1: chest is the block
+        # below the bot's feet) carries over. Without this, the chest
+        # floats at the catalog Y while bots stand 17+ blocks lower.
+        cy = catalog_cy + (sy - catalog_sy)
+    else:
+        sy = catalog_sy
+        cy = catalog_cy
     items_nbt = (
         "{Items:["
         '{Slot:0b,id:"minecraft:iron_pickaxe",Count:1b},'

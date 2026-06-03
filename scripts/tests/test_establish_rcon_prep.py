@@ -110,14 +110,36 @@ class PrepCommandsOverrideTest(unittest.TestCase):
         self.assertIn("4 66 24", spawn_cmd,
                       msg=f"setworldspawn must use resolved Y; got {spawn_cmd}")
 
-    def test_chest_coords_preserved_under_override(self):
-        # Catalog chest at (5, 95, 24) stays put — only spawn Y shifts.
-        # (If we re-derived chest Y from the override, the chest would
-        # land below the grass floor.)
+    def test_chest_shifts_by_same_delta_as_spawn(self):
+        # Run-8 evidence: the first cut of pr-h-surface-probe preserved
+        # catalog chest_y while resolved spawn_y shifted by 17 — chest
+        # ended up floating 16 blocks above the new grass floor. The
+        # catalog's chest_y = spawn_y - 1 relationship MUST carry over.
+        # Spawn 96 → 66 = delta -30. Chest 95 → 65 (preserving the -1
+        # offset from spawn).
         cmds = erp.prep_commands(self._card(sy=96), spawn_y_override=66)
-        chest_cmd = next(c for c in cmds if "setblock" in c and "chest" in c)
-        self.assertIn("5 95 24", chest_cmd,
-                      msg=f"chest coord must use catalog (5,95,24); got {chest_cmd}")
+        chest_setblock = next(c for c in cmds if "setblock" in c and "chest" in c)
+        self.assertIn("5 65 24", chest_setblock,
+                      msg=f"chest should shift with spawn (delta -30); got {chest_setblock}")
+        # data merge block must also point at the resolved chest coord.
+        data_merge = next(c for c in cmds if "data merge block" in c)
+        self.assertIn("5 65 24", data_merge,
+                      msg=f"data merge must reference resolved chest coord; got {data_merge}")
+
+    def test_chest_chest_y_minus_one_relation_preserved(self):
+        # The catalog always uses chest_y = spawn_y - 1 (chest below the
+        # bot's feet). Any spawn_y_override must preserve that delta.
+        for catalog_sy, override_sy in [(96, 79), (96, 64), (64, 96)]:
+            card = {
+                "spawn": [4, catalog_sy, 24],
+                "starter_chest": [5, catalog_sy - 1, 24],
+            }
+            cmds = erp.prep_commands(card, spawn_y_override=override_sy)
+            expected_chest_y = override_sy - 1
+            chest_cmd = next(c for c in cmds if "setblock" in c and "chest" in c)
+            self.assertIn(f"5 {expected_chest_y} 24", chest_cmd,
+                msg=f"catalog_sy={catalog_sy} override={override_sy}: "
+                    f"chest should be at Y={expected_chest_y}; got {chest_cmd}")
 
     def test_run7_regression_scenario(self):
         # Run-7: catalog Y=96 (stale), natural surface ~Y66, slab at 96.
