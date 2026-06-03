@@ -192,6 +192,86 @@ whispers). Fix takes effect on run-9.
 
 ---
 
+## Investigation 1 — "Workers idle, Steward digging dirt" (operator report)
+
+**Symptom (operator, ~17:00).** In-game: Steward's body mining dirt;
+Flint/Gatherer bodies appear to stand still; Flint/Gatherer logs show
+mc-command activity but no visible movement. Suspected wiring crossover
+(agent → wrong port).
+
+**Diagnosis sequence + correction.**
+
+1. **First hypothesis (wrong): "workers spawned but did 0 work."**
+   I queried `~/.hermes/profiles/<bot>/state.db` at 17:00 and saw
+   `message_count=0, tool_call_count=0` for the most recent worker
+   sessions. Concluded workers were silently failing.
+
+2. **Re-query at 17:04 corrected the picture.** State.db WAL had not
+   flushed when I queried at 17:00. After the fleet was stopped
+   (forcing WAL checkpoint), the same sessions show full activity:
+   - Mason `20260603_164344_fc0f87` (t_9d5c92b0 — clear pad): 152
+     messages, 97 tool calls
+   - Flint `20260603_165655_64ac48` (t_fee02ec2 — supply cobble): 69
+     messages, 40 tool calls
+   - Gatherer `20260603_164445_f8dd1e` (t_b74b7645 — coal): 171
+     messages, 91 tool calls
+
+3. **Wiring verified correct.** lsof on TCP ports 3001/3002/3003/3005
+   maps each port to a distinct mineflayer node process. /status
+   nearby_entities at each port lists OTHER bots by IGN (port 3001 sees
+   Flint+Steward = port 3001 is Gatherer; etc.), matching the
+   WORKER_PORTS mapping in establish-scenario.sh. agent-{bot}.log
+   headers confirm each agent uses its own api=http://localhost:300X.
+
+**What the operator actually saw.**
+
+- **"Steward digging dirt"** — TRUE bug. `bot-steward.log` recorded
+  `[collect] No dirt visible; mining grass_block as source (drops
+  dirt)`. Steward's continuous-loop agent called `mc tunnel`, `mc
+  level`, `mc collect`, `mc dig`, `mc move` — all mutating verbs
+  forbidden by her read-only role.
+
+- **"Flint/Gatherer logs show activity but bodies idle"** — the
+  worker hermes sessions WERE generating tool calls; the
+  "standing-still" snapshots correspond to reasoning gaps between tool
+  calls (the LLM thinks for 5-15s between actions, and bots that just
+  finished a `dig` look stationary).
+
+- **Mason's body far from target** — his session shows him trapped at
+  (-3, 68, 53), 18 blocks west and 9 below base_anchor (15, 77, 56).
+  Sequence: `mc goto_near 15 77 55 range=2 → BOT_TRAPPED at -3,68,53`,
+  then `mc escape` partially succeeded (`pillar_up Y 68 → 71`) but the
+  navigator couldn't rejoin the anchor. Pattern A (vertical-traversal
+  NAV_BLOCKED, issue #38a) at full force.
+
+**Confirmed bugs to fix.**
+
+1. **Steward's read-only role isn't enforced.** SOUL prose
+   ("read-only mc observation") + her own self-description ("Never
+   start bot bodies for yourself or other profiles") didn't prevent
+   her from calling `mc tunnel`, `mc level`, etc. Per operator
+   decision (run-8 audit): keep prose-only enforcement, don't add
+   server-side deny — Steward's drift is treated as a prompt-quality
+   issue, not an API guard issue. **Action**: harden Steward's SOUL
+   to explicitly forbid the verbs she invoked this run.
+
+2. **Worker dig→trap cascade.** When a card asks Mason to clear a pad
+   at a Y=77 anchor on a Y=79 surface (the anchor is 2 below
+   surface), the navigator tunnels down → traps the bot at the dug
+   floor → escape pillars up but loses position. **Action**: track as
+   #38a follow-up; not in scope for the run-9 bootstrap.
+
+**My misdiagnosis (notable, for future loop discipline).** I claimed
+"workers spawned but did 0 work" based on a state.db query at 17:00
+that showed message_count=0. **A WAL-flush check (`PRAGMA
+wal_checkpoint(PASSIVE)` or stopping the live writer) before drawing
+inferences from a hot DB would have surfaced the real data.** Adding
+to operational notes: queries against a live hermes state.db lag by
+the WAL flush interval — always cross-check with the hermes session
+JSON dumps or wait for fleet stop.
+
+---
+
 ## Open — terrain.kind="unknown" fleet-wide
 
 **Symptom.** Every worker's `/status` returns
