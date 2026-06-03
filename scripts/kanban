@@ -1468,6 +1468,42 @@ def cmd_promote(args: argparse.Namespace) -> int:
     return 0
 
 
+def _failure_signature(failure_text: str | None) -> str:
+    """Phase 10 PR-N — normalize a failure error string for repeat-retry
+    detection. Strips PIDs, raw epoch timestamps, and trailing whitespace
+    so two crashes with the same root cause produce the same signature.
+    """
+    if not failure_text:
+        return ""
+    norm = re.sub(r"\bpid\s*\d+\b", "pid N", failure_text, flags=re.I)
+    norm = re.sub(r"\b\d{10,}\b", "TIMESTAMP", norm)  # epoch ts
+    norm = re.sub(r"\s+", " ", norm).strip()
+    return norm[:120]
+
+
+def _prior_retry_signature(conn, task_id: str) -> dict | None:
+    """Return the most recent retried event's normalized signature + reason,
+    or None if no prior retry exists. Used to detect Pattern G — Steward
+    retrying with identical reason after identical crash."""
+    row = conn.execute(
+        "SELECT payload, created_at FROM task_events "
+        "WHERE task_id = ? AND kind = 'retried' "
+        "ORDER BY created_at DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        payload = json.loads(row["payload"] or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return {
+        "signature": payload.get("failure_signature", "") or "",
+        "reason": (payload.get("reason") or "").strip(),
+        "created_at": row["created_at"],
+    }
+
+
 def cmd_retry(args: argparse.Namespace) -> int:
     """Reset a card's failure counter and re-queue it for the dispatcher.
 
@@ -1481,6 +1517,14 @@ def cmd_retry(args: argparse.Namespace) -> int:
     ``ready`` when the card is in a terminal-failure state. Writes a
     ``retried`` task_event so the dashboard and watchers see the
     transition; the optional ``--reason`` is captured in the payload.
+
+    Phase 10 PR-N — repeat-retry guard. Run-6 evidence: Steward retried
+    t_1d175784 four times with the same "fresh spawn" reason after four
+    identical ``pid not alive`` crashes (Pattern G). Refuse a retry that
+    has the same (failure_signature, reason) as the most recent prior
+    retry unless ``--force`` or ``--changed-hypothesis "<text>"`` is set.
+    The hypothesis text is captured in the event payload so the audit
+    trail shows what was new each round.
     """
     with _db_rw() as conn:
         row = conn.execute(
@@ -1499,6 +1543,34 @@ def cmd_retry(args: argparse.Namespace) -> int:
                 f"retry: {args.task_id} has 0 failures and status={old_status} — "
                 f"nothing to reset. Re-run with --force to retry anyway."
             )
+
+        # PR-N repeat-retry guard.
+        current_signature = _failure_signature(row["last_failure_error"])
+        current_reason = (args.reason or "").strip()
+        changed_hypothesis = (getattr(args, "changed_hypothesis", "") or "").strip()
+        if not args.force and not changed_hypothesis:
+            prior = _prior_retry_signature(conn, args.task_id)
+            if prior and prior["signature"] == current_signature and prior["reason"] == current_reason:
+                from datetime import datetime as _dt
+                prior_when = (
+                    _dt.fromtimestamp(prior["created_at"]).isoformat(timespec="seconds")
+                    if isinstance(prior["created_at"], (int, float))
+                    else str(prior["created_at"])
+                )
+                _die(
+                    f"retry refused: {args.task_id} would repeat the prior retry "
+                    f"(same failure signature + same reason).\n"
+                    f"  Prior retry at {prior_when} with reason {prior['reason']!r}.\n"
+                    f"  Same `last_failure_error` shape ({current_signature!r}).\n"
+                    f"  Phase 10 PR-N: identical retries indicate the diagnosis didn't "
+                    f"change. Either:\n"
+                    f"    - pass --changed-hypothesis \"<what's different this time>\" "
+                    f"to cite a new diagnosis (recorded in the event payload)\n"
+                    f"    - pass --force to override the guard\n"
+                    f"    - edit the card body (kanban edit) and retry — a body change "
+                    f"clears the guard implicitly via a new signature."
+                )
+
         new_status = "ready" if old_status in ("blocked", "todo", "triage") else old_status
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -1507,11 +1579,18 @@ def cmd_retry(args: argparse.Namespace) -> int:
                 "last_failure_error = NULL, status = ? WHERE id = ?",
                 (new_status, args.task_id),
             )
-            _write_event(conn, args.task_id, "retried",
-                         {"from_failures": old_failures,
-                          "from_status": old_status,
-                          "to_status": new_status,
-                          "reason": args.reason})
+            event_payload = {
+                "from_failures": old_failures,
+                "from_status": old_status,
+                "to_status": new_status,
+                "reason": args.reason,
+                "failure_signature": current_signature,
+            }
+            if changed_hypothesis:
+                event_payload["changed_hypothesis"] = changed_hypothesis
+            if args.force:
+                event_payload["forced"] = True
+            _write_event(conn, args.task_id, "retried", event_payload)
         except Exception:
             conn.execute("ROLLBACK")
             raise
@@ -1816,7 +1895,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason",
                    help="Short note recorded on the `retried` event")
     p.add_argument("--force", action="store_true",
-                   help="Retry even when the card has 0 failures already")
+                   help="Retry even when the card has 0 failures already, or when "
+                        "the prior retry had the same (failure_signature, reason)")
+    p.add_argument("--changed-hypothesis", dest="changed_hypothesis", default="",
+                   help="Phase 10 PR-N — bypass the repeat-retry guard by citing "
+                        "what's different about this attempt. Captured in the "
+                        "`retried` event payload as audit trail.")
     p.set_defaults(func=cmd_retry)
 
     p = sub.add_parser("set-priority", help="Change a card's priority")
