@@ -15,6 +15,22 @@ _TERM_RE = re.compile(
 )
 _MC_IN_FRAGMENT = re.compile(r"\bmc\s+([a-z_][a-z_0-9]*)", re.I)
 
+# Phase 10 PR-V — extract target X Y Z from `mc move ...` invocations.
+# Matches "mc move 14 102 8", "mc move 14 102 8 --raw", "mc move 14 102 8 --near 2".
+_MOVE_TARGET_RE = re.compile(r"\bmc\s+move\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\b")
+
+# Known residual hazard coords from run-5/6 postmortems (Pattern D + Gatherer
+# crash trap). A `mc move` target within DOOR_RADIUS blocks counts as
+# door-adjacent. Operator may extend via --hazard-coord CLI repeats.
+KNOWN_HAZARD_COORDS = [
+    (16, 102, 54),   # oak_door tar-pit (run-5/6 Pattern D, ~16 hits in run-6)
+    (13, 101, 62),   # cobble shelter trap (run-6 Gatherer crash loop)
+    (34, 99, 62),    # secondary oak_door (run-6, 3 hits)
+    (17, 83, 80),    # deep oak_door (run-6, 1 hit)
+]
+DOOR_RADIUS = 3
+STUCK_ON_TARGET_THRESHOLD = 3
+
 
 def _split_shell_commands(cmd: str) -> list[str]:
     parts = [p.strip() for p in cmd.split("&&")]
@@ -96,6 +112,110 @@ def analyze_paths(paths: list[Path]) -> dict:
         "errors_by_verb": dict(totals_errors),
         "per_card": per_card,
     }
+
+
+def parse_move_target(mc_cmd: str) -> tuple[int, int, int] | None:
+    """Return (X, Y, Z) parsed from a `mc move ...` shell fragment, or None."""
+    m = _MOVE_TARGET_RE.search(mc_cmd)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+
+def _is_door_adjacent(target: tuple[int, int, int], hazards: list[tuple[int, int, int]]) -> tuple[int, int, int] | None:
+    """Return the matching hazard coord if the target is within DOOR_RADIUS,
+    else None. Manhattan distance (cheap; sufficient for hazard buckets)."""
+    tx, ty, tz = target
+    for hx, hy, hz in hazards:
+        if abs(tx - hx) + abs(ty - hy) + abs(tz - hz) <= DOOR_RADIUS:
+            return (hx, hy, hz)
+    return None
+
+
+def analyze_move_errors(text: str, hazards: list[tuple[int, int, int]] | None = None) -> dict:
+    """Phase 10 PR-V — split mc move errors by repeated-target and
+    door-adjacency. Lets the run-7 postmortem distinguish "the worker
+    keeps trying the same wedged coord" from "scattered single-shot
+    failures across the map" without manual coord-by-coord triage.
+
+    Note: caller position isn't in the terminal-log format, so the
+    distance and vertical-axis buckets from the original plan are
+    deferred to a Phase 11 enhancement (would require pairing each
+    move with the preceding mc status / mc observe pose).
+    """
+    hazards = hazards if hazards is not None else KNOWN_HAZARD_COORDS
+    total_moves = 0
+    error_moves = 0
+    targets_seen: Counter[tuple[int, int, int]] = Counter()
+    targets_errored: Counter[tuple[int, int, int]] = Counter()
+    door_adjacent_errors: list[dict] = []
+
+    for line in text.splitlines():
+        m = _TERM_RE.match(line)
+        if not m:
+            continue
+        cmd, _dur = m.group(1).strip(), m.group(2)
+        is_error = "[error]" in line
+        for fragment in _split_shell_commands(cmd):
+            for verb, mc_cmd in _mc_segments(fragment):
+                if verb != "move":
+                    continue
+                target = parse_move_target(mc_cmd)
+                if target is None:
+                    continue
+                total_moves += 1
+                targets_seen[target] += 1
+                if is_error:
+                    error_moves += 1
+                    targets_errored[target] += 1
+                    near = _is_door_adjacent(target, hazards)
+                    if near is not None:
+                        door_adjacent_errors.append(
+                            {"target": list(target), "near_hazard": list(near)}
+                        )
+
+    stuck_on_target = [
+        {"target": list(t), "error_count": c}
+        for t, c in targets_errored.most_common()
+        if c >= STUCK_ON_TARGET_THRESHOLD
+    ]
+
+    return {
+        "total_move_invocations": total_moves,
+        "total_move_errors": error_moves,
+        "unique_targets": len(targets_seen),
+        "stuck_on_target": stuck_on_target,
+        "door_adjacent_error_count": len(door_adjacent_errors),
+        "door_adjacent_samples": door_adjacent_errors[:10],
+    }
+
+
+def _render_move_split_text(split: dict, label: str = "") -> str:
+    lines = []
+    head = f" — {label}" if label else ""
+    lines.append(f"mc move split{head}")
+    lines.append(
+        f"  total: {split['total_move_invocations']} invocations, "
+        f"{split['total_move_errors']} errors "
+        f"({split['unique_targets']} unique targets)"
+    )
+    if split["stuck_on_target"]:
+        lines.append(f"  stuck-on-target (≥{STUCK_ON_TARGET_THRESHOLD} errors on same coord):")
+        for row in split["stuck_on_target"][:10]:
+            t = row["target"]
+            lines.append(f"    ({t[0]},{t[1]},{t[2]}): {row['error_count']} errors")
+    else:
+        lines.append("  stuck-on-target: none")
+    lines.append(
+        f"  door-adjacent errors: {split['door_adjacent_error_count']}"
+        f" (within {DOOR_RADIUS} blocks of a known hazard)"
+    )
+    if split["door_adjacent_samples"]:
+        for row in split["door_adjacent_samples"][:5]:
+            t = row["target"]
+            h = row["near_hazard"]
+            lines.append(f"    target=({t[0]},{t[1]},{t[2]})  near=({h[0]},{h[1]},{h[2]})")
+    return "\n".join(lines)
 
 
 def _gather_logs(paths: list[Path]) -> list[Path]:
@@ -188,6 +308,22 @@ def main() -> int:
         help="Phase 9 PR-I: emit a delta vs the baseline log set. Outputs verb-level "
              "invocation+error deltas; tier-2 error.code parsing deferred to Phase 10.",
     )
+    ap.add_argument(
+        "--split-move",
+        action="store_true",
+        help="Phase 10 PR-V: bucket mc move:error invocations by repeated-target "
+             "(≥3 errors on same coord = stuck) and door-adjacency (within "
+             f"{DOOR_RADIUS} blocks of a known hazard). Informs whether #41 "
+             "long-range pathfinder issue is one bug or several.",
+    )
+    ap.add_argument(
+        "--hazard-coord",
+        action="append",
+        default=[],
+        metavar="X,Y,Z",
+        help="Extend the known-hazard coord list for --split-move (repeatable). "
+             "Defaults seeded from run-5/6 postmortem evidence.",
+    )
     args = ap.parse_args()
 
     log_files = _gather_logs(args.paths)
@@ -195,7 +331,29 @@ def main() -> int:
         ap.error("no t_*.log files found")
         return 2
 
+    extra_hazards: list[tuple[int, int, int]] = []
+    for h in args.hazard_coord:
+        try:
+            parts = [int(x.strip()) for x in h.split(",")]
+            if len(parts) == 3:
+                extra_hazards.append(tuple(parts))  # type: ignore[arg-type]
+        except ValueError:
+            print(f"# WARN: ignoring malformed --hazard-coord {h!r}", file=sys.stderr)
+    hazards = KNOWN_HAZARD_COORDS + extra_hazards
+
     summary = analyze_paths(log_files)
+
+    if args.split_move:
+        # Aggregate text across all loaded logs into a single move-split
+        # analysis. Per-card splits are available via per_card[i] if the
+        # caller wants finer granularity.
+        all_text = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in log_files)
+        split = analyze_move_errors(all_text, hazards=hazards)
+        if args.json:
+            print(json.dumps({"summary": summary, "move_split": split, "hazards": [list(h) for h in hazards]}, indent=2))
+        else:
+            print(_render_move_split_text(split, label=f"{summary['cards']} cards"))
+        return 0
 
     if args.compare_with:
         base_files = _gather_logs([args.compare_with])
