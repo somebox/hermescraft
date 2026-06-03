@@ -344,6 +344,13 @@ def _render_context(ctx: dict) -> str:
 def cmd_context(args: argparse.Namespace) -> int:
     task_id = _active_task_id(args.task)
     ctx = _build_context(task_id)
+    # Phase 10 PR-K: side-effect the card-body-coord stash on every
+    # context call so workers don't have to remember to run a second
+    # command. Best-effort; never fails the context output.
+    try:
+        _stash_card_coord_side_effect(task_id, ctx)
+    except Exception:
+        pass
     if args.json:
         print(json.dumps(ctx, default=str))
     else:
@@ -367,6 +374,8 @@ def cmd_close(args: argparse.Namespace) -> int:
     if args.result:
         argv.extend(["--result", args.result])
     _hermes(*argv, timeout=20)
+    # Phase 10 PR-K: clear the stash so the next card's coord doesn't leak.
+    _clear_card_coord_stash()
     print(f"# closed {task_id}")
     return 0
 
@@ -374,6 +383,7 @@ def cmd_close(args: argparse.Namespace) -> int:
 def cmd_block(args: argparse.Namespace) -> int:
     task_id = _active_task_id(args.task)
     _hermes("block", task_id, args.reason, timeout=15)
+    _clear_card_coord_stash()
     print(f"# blocked {task_id}: {args.reason}")
     return 0
 
@@ -384,6 +394,7 @@ def cmd_escalate(args: argparse.Namespace) -> int:
     task_id = _active_task_id(args.task)
     reason = f"{ESCALATE_PREFIX}{args.reason}"
     _hermes("block", task_id, reason, timeout=15)
+    _clear_card_coord_stash()
     print(f"# escalated {task_id}: {args.reason}")
     return 0
 
@@ -451,9 +462,72 @@ def extract_card_body_coord(body: Optional[str]) -> Optional[dict]:
     return None
 
 
+# Card kinds that should stash a coord. EXPLORE/SCOUT cards are intentionally
+# prose-led and don't have a single build target; skip them to avoid stashing
+# noise that would false-positive on later structure marks.
+_STASH_KIND_RE = re.compile(r"^\s*\[(CONSTRUCT|MINE|TILL|SUPPLY|SURVEY)\]", re.I)
+
+
+def _card_should_stash(title: str | None) -> bool:
+    if not title:
+        return False
+    return bool(_STASH_KIND_RE.match(title))
+
+
+def _stash_path() -> Path | None:
+    home = os.environ.get("HERMES_HOME")
+    return Path(home) / "task-body-coord.json" if home else None
+
+
+def _clear_card_coord_stash() -> None:
+    """Best-effort delete of the stash file. Called from close/block/escalate
+    so the next card's coord doesn't leak. Never raises."""
+    p = _stash_path()
+    if not p:
+        return
+    try:
+        p.unlink()
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+
+def _stash_card_coord_side_effect(task_id: str, ctx: dict) -> dict | None:
+    """Phase 10 PR-K — called from `cmd_context` to side-effect the stash
+    file. Skips silently when:
+      - HERMES_HOME unset (running outside a worker shell)
+      - card kind isn't a stash-worthy kind (EXPLORE/SCOUT bodies are prose)
+      - body has no extractable coord (verb-first lines or prose fallback)
+    Returns the coord dict written, or None if no write happened.
+    """
+    out_path = _stash_path()
+    if not out_path:
+        return None
+    card = ctx.get("card") or {}
+    if not _card_should_stash(card.get("title")):
+        # Not a stash kind — leave the prior stash alone. The next CONSTRUCT/
+        # SUPPLY/etc. claim will overwrite or close/block/escalate will clear.
+        return None
+    body = card.get("body") or ""
+    coord = extract_card_body_coord(body)
+    if coord is None:
+        # Stash-worthy kind but body has no extractable coord. Clear any
+        # stale prior stash so drift detection doesn't fire on the wrong card.
+        try:
+            out_path.unlink()
+        except FileNotFoundError:
+            pass
+        return None
+    payload = {"task_id": task_id, "coord": coord}
+    out_path.write_text(json.dumps(payload), encoding="utf-8")
+    return coord
+
+
 def cmd_stash_coord(args: argparse.Namespace) -> int:
-    """Extract the active card's primary build coord and stash it at
-    $HERMES_HOME/task-body-coord.json for the bot's mark action to read."""
+    """Explicit fallback for the side effect in `cmd_context`. Kept so
+    operators or pre-existing SOULs that call `wb stash-coord` still work.
+    """
     home = os.environ.get("HERMES_HOME")
     if not home:
         _die("HERMES_HOME not set — cannot stash coord (worker dispatcher injects this)")
@@ -463,8 +537,6 @@ def cmd_stash_coord(args: argparse.Namespace) -> int:
     coord = extract_card_body_coord(body)
     out_path = Path(home) / "task-body-coord.json"
     if coord is None:
-        # Clear any stale stash from a prior card so drift detection doesn't
-        # fire against the previous card's target.
         try:
             out_path.unlink()
         except FileNotFoundError:

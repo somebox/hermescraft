@@ -640,13 +640,17 @@ export function renderNavBrief(brief, statusContext = {}) {
   // doctrine ("treat missing rows as unknown, not blocked") can't fire.
   const status = statusContext.nav_brief_status || null;
   const refreshed = statusContext.brief_refresh_required === true;
-  // Phase 9 PR-E: render terrain when it's actionable. 'flat' and 'unknown'
-  // are the SOUL-trusted default cases; surfacing them adds noise without
-  // signal. Other labels (slope_X, depression_1, mound_1, on_structure,
-  // underground, cliff_*) are worth showing so Steward and workers can read
-  // them in nav_header without an extra mc scene call.
+  // Phase 10 PR-J: render terrain whenever the classifier returned a
+  // label. Phase 9 dispositive evidence: Flint narrated "I'm at Y=96
+  // which is underground in this world" while standing on the freshly
+  // cleaned spawn floor (agent-flint.log:432, run-6). The classifier
+  // correctly returned `flat` for her, but the renderer skipped the
+  // label as "low signal" — workers without explicit terrain in
+  // nav_header fall back to raw-Y inference and confabulate
+  // "underground" from memory. Skipping flat costs more than it saves;
+  // surface it so SOUL can act on a positive signal.
   const terrain = brief.header?.terrain;
-  const terrainText = terrain && terrain.kind && terrain.kind !== 'flat' && terrain.kind !== 'unknown'
+  const terrainText = terrain && terrain.kind
     ? `terrain=${terrain.kind} (feet_vs_local_ground=${terrain.feet_vs_local_ground})`
     : null;
   const lines = [
