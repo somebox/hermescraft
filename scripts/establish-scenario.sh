@@ -42,6 +42,15 @@ if pgrep -f "node server.js\|hermes.*kanban task\|landfolk-dispatcher" >/dev/nul
 fi
 
 # --- Memory wipe: clear marks + recent sessions for the worker profiles.
+# Run-8 evidence (2026-06-03): Gatherer's hermes MEMORY.md carried
+# "muster (4,96,24)" across 4 entries from prior runs; her current-run
+# reasoning anchored on that stale Y even though the new world's spawn
+# was at Y=79. Mason inherited a "cabin on 9x9 pad (Y97-99)" from a
+# different world that didn't exist on the fresh disc. These per-bot
+# `memories/MEMORY.md` files are auto-injected into every system
+# prompt, so leaving them in place leaks coords/marks/task summaries
+# across runs.
+WIPE_TS=$(date +%Y%m%d-%H%M%S)
 if [[ "$SKIP_MEM_WIPE" != "1" ]]; then
   echo "== wipe per-bot memory ($WORKERS) =="
   IFS=',' read -ra _WK <<< "$WORKERS"
@@ -59,6 +68,18 @@ if [[ "$SKIP_MEM_WIPE" != "1" ]]; then
         find "$prof" -maxdepth 1 -type f -name "*.json" -delete 2>/dev/null || true
       fi
     fi
+    # Hermes per-profile MEMORY.md (auto-injected into system prompt).
+    # Archive — don't delete — so postmortems can review what the bot
+    # remembered from prior runs. USER.md (user identity, ~100 bytes)
+    # is untouched. MEMORY.md.lock is hermes-managed; don't touch.
+    for mem_home in "$HOME/.hermes/profiles/${wk}/memories" \
+                    "$HOME/.hermes-landfolk-${wk}/memories"; do
+      mem="$mem_home/MEMORY.md"
+      if [[ -f "$mem" ]]; then
+        echo "  memory: archiving $mem → MEMORY.md.bak-$WIPE_TS"
+        mv "$mem" "$mem.bak-$WIPE_TS"
+      fi
+    done
   done
   # Also clear the catch-all locations file used by some bot startup paths.
   rm -f "$ROOT/data/locations-base.json"

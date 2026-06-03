@@ -123,6 +123,75 @@ ssh ubuntu-host sudo docker exec -i minecraft rcon-cli \
 
 ---
 
+## Fix 3 — Per-bot hermes MEMORY.md leaked stale coords across runs
+
+**Symptom.** Workers reasoned about coordinates that don't exist on the
+current world disc. Gatherer's current-run reasoning anchored on
+`muster (4,96,24)` even though `mc status` would have told her the
+muster is at Y=79. Mason mentioned `cabin on 9x9 pad — cobble walls 3
+tall (Y97-99)` — a structure from a prior run that doesn't exist on
+the fresh seed=1001 disc.
+
+**Root cause.** Hermes per-profile `MEMORY.md` files at
+`~/.hermes/profiles/<bot>/memories/MEMORY.md` and
+`~/.hermes-landfolk-<bot>/memories/MEMORY.md` are auto-injected into
+every system prompt (visible as a `MEMORY (your personal notes)`
+section at ~2.2K char budget). These files accumulate per-task
+summaries the agent writes between cycles — useful within a run, but
+the `establish-scenario.sh` wipe only cleared `data/locations-*.json`
+(marks) and legacy session JSONs, NOT the memories. Each new bootstrap
+inherited the prior run's mark coords, task summaries, and base
+structure references.
+
+**Live evidence.** Reading
+`~/.hermes/profiles/gatherer/memories/MEMORY.md` (2141 bytes, modified
+16:40) shows 4 entries, all referencing `muster (4,96,24)` and marks
+from prior worlds (`candidate_pad_se_1@(19,99,43)`, `lt_coal_sw at
+(-30,86,51)`, etc.) — Y values from prior seeds that don't match the
+current seed=1001 surface at Y≈79. Mason's memory (2158 bytes) has an
+entry: `cabin on 9x9 pad — cobble walls 3 tall (Y97-99)` from yet
+another world. Flint's (2179 bytes) references `base anchor
+(-238,65,561)` from a third world's coords. Each bot has TWO memory
+files (kanban-worker home + landfolk-loop home), both leaking.
+
+**Sessions are NOT chained.** `parent_session_id` is NULL on all new
+sessions (verified via `SELECT id, parent_session_id FROM sessions
+ORDER BY started_at DESC LIMIT 3` per bot). The cross-run leak channel
+is only `MEMORY.md`, not the messages table.
+
+**Fix (applied this run).** Extended the per-bot memory wipe in
+`establish-scenario.sh:44-79` to archive `MEMORY.md` from both
+candidate locations:
+
+```
+$HOME/.hermes/profiles/${wk}/memories/MEMORY.md
+$HOME/.hermes-landfolk-${wk}/memories/MEMORY.md
+```
+
+Each file moved to `MEMORY.md.bak-<YYYYMMDD-HHMMSS>` (archive, not
+delete — postmortems can review what the bot remembered from prior
+runs). `USER.md` (user identity, ~100 bytes) and `MEMORY.md.lock`
+(hermes-managed lockfile) are untouched.
+
+**Next-run predicate.** After `bash scripts/establish-scenario.sh`:
+```bash
+for bot in steward gatherer flint mason; do
+  for h in ~/.hermes/profiles/$bot/memories ~/.hermes-landfolk-$bot/memories; do
+    [ -d "$h" ] || continue
+    echo "$bot @ $h: $(ls $h/MEMORY.md 2>&1 | head -1) | bak: $(ls $h/MEMORY.md.bak-* 2>/dev/null | tail -1)"
+  done
+done
+```
+Expect: `MEMORY.md` either absent (will be created fresh by the bot
+runtime on first session) or empty; at least one `MEMORY.md.bak-*`
+archive per location.
+
+**Status.** Bash patch in working tree. Active run-8b is unaffected
+(memories already polluted; Steward routed around it via in-game chat
+whispers). Fix takes effect on run-9.
+
+---
+
 ## Open — terrain.kind="unknown" fleet-wide
 
 **Symptom.** Every worker's `/status` returns
