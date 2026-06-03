@@ -302,7 +302,7 @@ For each ranked issue, pick **one** action. **Commit and execute. No reversal.**
 
 | Issue | Allowed actions |
 |---|---|
-| PHYSICALLY_STUCK | (a) whisper the bot the escape primitive (`mc chat "<bot>: stuck at (X,Y,Z)? try mc pillar_up force=true OR kanban_block stuck:need-rcon-tp"`), OR (b) file a `[RESCUE]` card assigned to re44 with coords + cause, OR (c) reassign their current card to another assignable bot if the work can be done elsewhere. **NEVER**: decompose the work as if it would unstick them. |
+| PHYSICALLY_STUCK | **(a) `kanban_comment` on the active card with diagnosis + concrete next action** (the worker's loop reads comments; `mc chat` whispers do not — run-6 Flint evidence). **(b) `hermes kanban reclaim <id>`** to force-respawn the worker so the new round reads your fresh comment as part of its `wb context`. **(c) `kanban_reassign`** if the work can be done by another assignable bot. **(d) `[RESCUE]` card to re44** for human intervention only after (a)-(c) failed. `mc chat` whispers are OPTIONAL narration for human-watchable runs; never the primary signal. **NEVER**: decompose the work as if it would unstick them. |
 | RUNTIME_WEDGED | (a) `kanban_comment` on the running card with the diagnosed root cause + concrete next-action (`"empty hand pattern at 06:09,06:15,06:24 — run mc equip stone_pickaxe before next collect"`), OR (b) `hermes kanban reclaim <id>` to force-respawn the worker if the in-flight one is unrecoverable, OR (c) reassign the card to a different bot if this one keeps hitting the same env-specific bug. **Don't just whisper and hope** — the worker's reading loop is already wedged. |
 | GAVE_UP / CRASHED | The dispatcher hit the consecutive-failure limit and stopped re-spawning. When the failure is a process issue (crash, env hiccup) and the card spec is fine, **`scripts/kanban retry <id> --reason "<one-line>"`** resets the failure counter + lifts status back to `ready` so the next dispatcher tick picks it up. If the failure is the card spec itself, `kanban edit` the body first, THEN retry. Don't manipulate consecutive_failures with raw SQL — the sandbox refuses that path. |
 | SILENT_STALL | (a) `kanban_comment` on the card asking for a status one-liner (`"<bot>: 18m no chat — quick status?"`) — if a reply lands by next cycle, downgrade to HEALTHY_WORKING; (b) if STILL no reply next cycle, `hermes kanban reclaim <id>` so the next worker spawn gets a fresh attempt at the same card body. Observed g-2026-05-29-5: [SCOUT] survey ran 41 min with no chat or comment after `starting` — worker was deep in a search loop with no output. The new survey body bounds itself with a 10-min budget + 5-min status pings, but legacy/free-form cards still need this watchdog. |
@@ -339,6 +339,25 @@ Whisper behaviour by label:
 **Anti-evidence (run-5):** Mason at (15, 92, 52) self-sourcing during the prose pad card was classified `underground` — but local egress (cardinal +4) was available. PR-E's classifier rules out `underground` when any cardinal egress is within ±2; treat anything else as "needs a different intervention than pillar". This is the case where reassign or `[RESCUE]` beats whisper.
 
 The general rule: **whisper a relative action (`pillar_up <delta>`), not an absolute coord (`pillar_up 105`)** — the latter conflates "go up by N" with "go to Y=N" and workers obey the literal number.
+
+### `AUTO_STUCK` comments — the durable stuck-worker signal (Phase 10 PR-S/T)
+
+The runtime emits a structured `kanban_comment` on a worker's active card when the bot's `recent[]` action tuple AND position are identical for 4 consecutive rounds. Comment body shape:
+
+```
+AUTO_STUCK: identical recent[] for 4 rounds at (X,Y,Z). recent_tuple=[…] first_round=N last_round=M. …
+```
+
+This is the **canonical stuck signal** for your diagnostics cycle. It fires deterministically (no LLM judgment) and lands in the channel your loop actually reads (`hermes kanban diagnostics` surfaces it; comments enter the worker's next `wb context` too).
+
+**When you see an `AUTO_STUCK` comment:**
+
+1. **Skip the chat whisper entirely.** Run-6 evidence: Flint sat at (14.5,102,7.6) for 70 min with 3+ chat rescues from you that never entered her decision loop. `mc chat` reaches the human watcher; AUTO_STUCK reaches the worker's next prompt.
+2. **Pick a board action from the PHYSICALLY_STUCK row (a-c).** The comment itself becomes part of the worker's next `wb context` if you reclaim — frame your follow-up comment as a concrete next move (`"Try mc dig 14 102 6 to open egress west"`) and reclaim. The respawn reads both comments and acts.
+3. **If AUTO_STUCK persists across a reclaim** (i.e., the new worker also gets stuck identically), the card spec is the problem, not the worker. Edit the body or reassign.
+4. **Idempotency:** the runtime won't re-emit AUTO_STUCK if a recent comment on the card already mentions it. Don't expect spam; if you see one, treat it as load-bearing.
+
+`mc chat` whispers remain useful for human-watchable runs (operator narration, multi-bot coordination chatter), but they are NEVER the primary stuck-recovery channel.
 
 ### Phase 5 — ADMINISTRATIVE (only if action budget remains)
 

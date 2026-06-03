@@ -1534,6 +1534,10 @@ recent=[f\"{a.get('action','?')}:{a.get('status','?')}\" for a in ra[-4:]]
 err=d.get('last_api_error') or {}
 em=err.get('message','')[:140] if err.get('message') else ''
 top_errs=st.get('top_errors') or []
+# Phase 10 PR-S: pos snapshot powers AUTO_STUCK detection downstream.
+# Cheap field add — observe payload already carries position.
+pos_raw=d.get('position') or d.get('pos') or {}
+pos={k:int(pos_raw[k]) for k in ('x','y','z') if k in pos_raw} if pos_raw else None
 out={
   'ts':time.strftime('%Y-%m-%dT%H:%M:%S'),
   'round':${round},
@@ -1544,6 +1548,7 @@ out={
   'idle_reason':idle,
   'stats_5m':{'total':st.get('total',0),'done':st.get('done',0),'failed':st.get('failed',0),'err_pct':st.get('error_rate_pct',0),'done_per_min':st.get('done_per_min',0)},
   'recent':recent,
+  'pos':pos,
   'last_error':em or None,
   'top_errors':[e.get('msg','')[:80] for e in top_errs[:3]] if top_errs else None,
 }
@@ -1555,6 +1560,25 @@ print(json.dumps({k:v for k,v in out.items() if v is not None},separators=(',','
       echo "[$ts] top_goal=$top_goal_hint" >> "$agent_log"
       printf '%s\n' "$progress_json" >> "$progress_log"
       echo "[$ts] Plan: focus=$top_goal_hint | task=$task_summary | recent=$recent_summary" >> "$hermes_log"
+      # Phase 10 PR-S — AUTO_STUCK detection. When the worker has an
+      # active kanban task and the last 4 progress entries have identical
+      # (recent[], pos), emit a structured kanban_comment on the card so
+      # Steward's diagnostics cycle sees it. Whispers via mc chat don't
+      # enter the worker's decision loop (run-6 Flint evidence). Comments
+      # are her durable control plane.
+      if [ -n "${kanban_db:-}" ] && [ -f "$kanban_db" ]; then
+        active_task="$(sqlite3 "$kanban_db" \
+          "SELECT id FROM tasks WHERE LOWER(assignee)=LOWER('$name') AND status='running' LIMIT 1;" \
+          2>/dev/null || true)"
+        if [ -n "$active_task" ]; then
+          python3 "$SCRIPT_DIR/scripts/auto-stuck-check.py" \
+            --progress-log "$progress_log" \
+            --task-id "$active_task" \
+            --kanban-db "$kanban_db" \
+            --board "${HERMES_KANBAN_BOARD:-landfolk-ops}" \
+            >/dev/null 2>&1 || true
+        fi
+      fi
       # --- Kanban dual-control guard (added 2026-06-01).
       # NOTE (2026-06-02): This guard is dead code for default operation.
       # It lives in the agent-loop body, which only spawns when mode=continuous.
