@@ -543,7 +543,9 @@ Needs 81+ cobblestone. Level the area first, then fill 9x9 with cobble.
 
 **Mark-naming convention (paired with the drift check above):** when the card body says "mark as X", use a **structure prefix** for X: `base_foundation`, `pad_<n>`, `wall_<face>`, `roof_<n>`, `chest_<role>`. The worker's mark-drift warning is keyed on these prefixes; an `lt_*` mark name won't trigger it (intentional — `lt_*` is for resource locations, not structures).
 
-**When NOT to verb-first:** EXPLORE / SCOUT / SURVEY cards are intentionally prose-led (the worker improvises). The verb-first rule applies to the four card kinds where the worker would otherwise loop on manual `mc dig` / `mc place`.
+**When NOT to verb-first:** EXPLORE and single-objective SCOUT cards are intentionally prose-led (the worker improvises). All other "do work" kinds — CONSTRUCT, MINE, TILL, SUPPLY, SURVEY, and multi-coordinate SCOUT (≥3 coord targets) — require at least one literal `mc <verb>` line. Phase 9 evidence: Mason abandoned a prose SURVEY mid-task because the body didn't tell her HOW to evaluate each candidate; Gatherer crash-looped on a prose multi-coord SCOUT for the same reason.
+
+**Dispatch-time validation (Phase 10 PR-R).** A linter runs on every `scripts/kanban create|add` call. If you write a verb-required card body without a literal `mc` line, the create refuses with an error citing the rule. Fix the body and retry; do NOT pass `--allow-prose` unless the body is intentionally an objective spec (rare). Ad-hoc check: `scripts/kanban lint --title "[CONSTRUCT] Pad" --body "..."` returns 0/1 + a JSON report. Note: `kanban_create` (tool) does NOT yet run the linter — until that lands, use `scripts/kanban add` for CONSTRUCT/SUPPLY/MINE/TILL/SURVEY so you get validation; reserve `kanban_create` (tool) for cases where you need `parents=[…]` and `idempotency_key`.
 
 ## Resource-gathering protocol — scout, register, agree, extract
 

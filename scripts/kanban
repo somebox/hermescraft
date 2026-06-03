@@ -343,6 +343,29 @@ def _scan_epic_children(conn: sqlite3.Connection, epic_id: str) -> list[sqlite3.
 # ─── command: create ────────────────────────────────────────────────────────
 
 
+def cmd_lint(args: argparse.Namespace) -> int:
+    """Phase 10 PR-R — ad-hoc card-body lint. Lets Steward (or an
+    operator) validate a body BEFORE invoking `kanban_create` or any
+    other write path. Exits 0 on pass, 1 on lint error."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.lib.card_body_linter import lint_card_body
+    body = args.body
+    if args.body_file:
+        body = args.body_file.read_text(encoding="utf-8")
+    result = lint_card_body(kind=args.kind, title=args.title, body=body)
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        status = "ok" if result["ok"] else "FAIL"
+        print(f"lint {status}: kind={result['kind']!r} verb_count={result['verb_count']} coord_count={result['coord_count']}")
+        for err in result["errors"]:
+            print(f"  ERROR: {err}")
+        for w in result["warnings"]:
+            print(f"  warn: {w}")
+    return 0 if result["ok"] else 1
+
+
 def cmd_create(args: argparse.Namespace) -> int:
     """Create a new card. NO --parent flag — use --epic (no gate) or
     --depends-on (real prerequisite gate)."""
@@ -355,6 +378,24 @@ def cmd_create(args: argparse.Namespace) -> int:
         pb_err = validate_card_body_playbook(body)
         if pb_err:
             _die(pb_err)
+    # Phase 10 PR-R — dispatch-time card-body linter. Reject malformed
+    # CONSTRUCT/MINE/TILL/SUPPLY/SURVEY cards before they enter `ready`.
+    # Phase 9 evidence: workers' prose-card-escalate (PR-B) got 0
+    # invocations because the worker decision loop can't reliably
+    # distinguish "I should escalate" from "I should try harder". Move
+    # the check upstream so workers never see the malformed card.
+    if not getattr(args, "allow_prose", False):
+        if str(REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPO_ROOT))
+        from scripts.lib.card_body_linter import lint_card_body
+        lint = lint_card_body(kind=None, title=args.title, body=body)
+        if not lint["ok"]:
+            msg = "; ".join(lint["errors"])
+            _die(
+                f"card body lint failed: {msg}\n"
+                f"  Pass --allow-prose if you intentionally want a prose-only card "
+                f"(rare — usually means the body needs a literal mc verb line)."
+            )
     if args.epic:
         # Validate epic exists before tagging — silent typos are the
         # opposite of the cognitive clarity this facade is trying to buy.
@@ -540,6 +581,24 @@ def cmd_add(args: argparse.Namespace) -> int:
                         f"Use --for {parent_id} for epic membership; "
                         f"--after is for per-card prereqs that actually reach done."
                     )
+
+    # Phase 10 PR-R — dispatch-time card-body linter (same call as
+    # cmd_create's). Reject malformed CONSTRUCT/MINE/TILL/SUPPLY/SURVEY
+    # cards before they enter `ready`. --triage cards skip the check
+    # because the spec is intentionally a stub at that stage.
+    if not getattr(args, "allow_prose", False) and not args.triage:
+        if str(REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPO_ROOT))
+        from scripts.lib.card_body_linter import lint_card_body
+        lint = lint_card_body(kind=None, title=args.title, body=body)
+        if not lint["ok"]:
+            msg = "; ".join(lint["errors"])
+            _die(
+                f"card body lint failed: {msg}\n"
+                f"  Pass --allow-prose if you intentionally want a prose-only "
+                f"card (rare — usually means the body needs a literal mc verb "
+                f"line). Or pass --triage to defer the spec to a specifier."
+            )
 
     cmd: list[str] = [
         "hermes", "kanban", "--board", BOARD, "create", args.title,
@@ -1610,6 +1669,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--triage", action="store_true")
     p.add_argument("--max-retries", type=int)
     p.add_argument("--idempotency-key")
+    p.add_argument("--allow-prose", action="store_true",
+                   help="Skip Phase 10 PR-R card-body lint. Rare — usually means the body should have a literal mc verb line.")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_create)
 
@@ -1642,8 +1703,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--idempotency-key")
     p.add_argument("--triage", action="store_true",
                    help="Park in triage — a specifier fleshes out the spec and promotes to todo")
+    p.add_argument("--allow-prose", action="store_true",
+                   help="Skip Phase 10 PR-R card-body lint. Rare — usually means the body should have a literal mc verb line.")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_add)
+
+    # lint (Phase 10 PR-R — standalone hook for ad-hoc validation)
+    p = sub.add_parser("lint",
+                       help="Lint a card body without writing to the board (Phase 10 PR-R).")
+    p.add_argument("--title", default="", help="Card title (used to infer [KIND] if --kind absent)")
+    p.add_argument("--kind", default=None, help="Explicit kind override (CONSTRUCT, SUPPLY, etc.)")
+    p.add_argument("--body", default="", help="Card body text to validate")
+    p.add_argument("--body-file", type=Path, default=None, help="Read body from a file instead of --body")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_lint)
 
     # list
     p = sub.add_parser("list", help="List cards (optionally filtered)")
