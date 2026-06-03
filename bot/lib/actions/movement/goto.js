@@ -12,6 +12,7 @@ import { enrichWithStand, computeReachability, Y_GRACE_MAX_DY } from './_preflig
 import { coord3 } from '../_args.js';
 import { ok } from '../../shared/action-contract.js';
 import { maybeAutoRetraceOnStall } from './_nav-autoretrace.js';
+import { navBlockedNextActionHint, withNavRetryWarning } from './nav-hints.js';
 
 /**
  * @param {object} deps
@@ -64,7 +65,7 @@ export function createGoto(deps) {
     const pre = preflightNav(b, x, y, z, 1);
     if (pre && (pre.error || pre.ok === false)) {
       recordMoveFailure('goto', x, y, z, posObj(), pre.error?.code || 'preflight');
-      return pre;
+      return withNavRetryWarning(pre, retryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
     }
     let yAdjusted = null;
     if (pre && pre.y_adjusted) {
@@ -118,7 +119,12 @@ export function createGoto(deps) {
       const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
       if (dist > 2) {
         recordMoveFailure('goto', x, y, z, pos, 'pathfinder_gave_up');
-        return navBlockedError(b, pos, x, y, z, dist);
+        return withNavRetryWarning(
+          navBlockedError(b, pos, x, y, z, dist),
+          retryKey,
+          gotoRetryCounts,
+          GOTO_RETRY_LIMIT,
+        );
       }
       const reachAfter = computeReachability(b, { x: tx, y: ty, z: tz }, 96);
       const atTargetCell = reachAfter?.walkable_to_target && reachAfter.arrived_cell
@@ -186,15 +192,17 @@ export function createGoto(deps) {
           : ' Try mc escape, mc dig at the blocker, or pick a different target.';
         const obs = enrichWithStand(b, { target: { x, y, z }, current: posObj(), ...e.info }, x, y, z);
         if (reach) Object.assign(obs, reach);
-        return {
+        const stallFail = {
           ok: false,
           error: {
             code: 'NAV_NO_PROGRESS',
             message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)}. Often means a 1-block lip, a wedged corner, or a sealed route.${hopNote}`,
             observed_state: obs,
+            next_action_hint: navBlockedNextActionHint(b, { x, y, z }, posObj()),
             retry_safe: false,
           },
         };
+        return withNavRetryWarning(stallFail, retryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
       }
       if (e instanceof OperationTimeoutError) {
         recordMoveFailure('goto', x, y, z, posObj(), 'wallclock_timeout');
@@ -204,7 +212,12 @@ export function createGoto(deps) {
       }
       const pos = posObj();
       recordMoveFailure('goto', x, y, z, pos, 'pathfinder_error');
-      return navFailureError(b, pos, x, y, z, e?.message || String(e));
+      return withNavRetryWarning(
+        navFailureError(b, pos, x, y, z, e?.message || String(e)),
+        retryKey,
+        gotoRetryCounts,
+        GOTO_RETRY_LIMIT,
+      );
     }
   };
 }

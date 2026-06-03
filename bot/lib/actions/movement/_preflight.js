@@ -13,6 +13,7 @@ import {
   targetChunkLoaded,
 } from '../_nav-helpers.js';
 import { DIR_VEC_4 as DIR_VEC } from '../_directions.js';
+import { navBlockedNextActionHint } from './nav-hints.js';
 
 // Y-grace: when an agent calls mc move / goto / goto_near with the right
 // XZ but a wrong Y (target inside a hill, floating in air), we rescue by
@@ -98,12 +99,14 @@ export function createNavErrors(fmt, enrich) {
       : ' Try mc through GX GY GZ for a door/gate, or mc tunnel / mc dig_area to clear terrain explicitly.';
     const obs = enrich(b, { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)) }, x, y, z);
     if (reach) Object.assign(obs, reach);
+    const hint = navBlockedNextActionHint(b, { x, y, z }, pos, { inWater: !!b.entity?.isInWater });
     return {
       ok: false,
       error: {
         code: 'NAV_BLOCKED',
         message: `Pathfinder gave up at ${pos.x},${pos.y},${pos.z} — ${dist.toFixed(1)} blocks from target ${fmt(x)},${fmt(y)},${fmt(z)}. The path is blocked.${hopNote}`,
         observed_state: obs,
+        next_action_hint: hint,
         retry_safe: false,
       },
     };
@@ -128,12 +131,14 @@ export function createNavErrors(fmt, enrich) {
         : ' Pathfinder is non-destructive — if a door blocks the path use mc through GX GY GZ; if terrain blocks it use mc tunnel or mc dig_area to clear it explicitly.';
       const obs = enrich(b, { current: pos, target: { x, y, z } }, x, y, z);
       if (reach) Object.assign(obs, reach);
+      const hint = navBlockedNextActionHint(b, { x, y, z }, pos, { inWater: !!b.entity?.isInWater });
       return {
         ok: false,
         error: {
           code: 'NAV_BLOCKED',
           message: `No path to ${fmt(x)},${fmt(y)},${fmt(z)} from ${pos.x},${pos.y},${pos.z}.${hopNote}`,
           observed_state: obs,
+          next_action_hint: hint,
           retry_safe: false,
         },
       };

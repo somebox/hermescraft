@@ -1,0 +1,1493 @@
+{
+  "cards": 9,
+  "invocations": 982,
+  "error_invocations": 231,
+  "verbs": {
+    "status": 38,
+    "chat": 28,
+    "map": 38,
+    "move": 204,
+    "terrain_top": 65,
+    "through": 7,
+    "scene": 62,
+    "pillar_up": 29,
+    "inventory": 20,
+    "dig": 93,
+    "nearby": 27,
+    "position": 1,
+    "pillar_down": 10,
+    "marks": 7,
+    "goto_near": 50,
+    "go_mark": 16,
+    "reachable": 5,
+    "inspect": 130,
+    "chest_search": 7,
+    "stair_down": 11,
+    "collect": 8,
+    "find_blocks": 46,
+    "escape": 10,
+    "advise": 3,
+    "chest_show": 1,
+    "help": 4,
+    "chest": 2,
+    "pickup": 13,
+    "retrace": 2,
+    "chat_to": 1,
+    "regions": 1,
+    "goto": 5,
+    "withdraw": 2,
+    "equip": 3,
+    "mark": 21,
+    "read_chat": 1,
+    "place": 4,
+    "tunnel": 1,
+    "stair_up": 1,
+    "scout": 2,
+    "interact": 1,
+    "unmark": 2
+  },
+  "errors_by_verb": {
+    "move": 108,
+    "through": 6,
+    "pillar_up": 10,
+    "dig": 45,
+    "position": 1,
+    "goto_near": 25,
+    "go_mark": 6,
+    "collect": 6,
+    "advise": 3,
+    "chest_search": 2,
+    "chest_show": 1,
+    "help": 2,
+    "chest": 1,
+    "escape": 7,
+    "withdraw": 1,
+    "equip": 1,
+    "place": 1,
+    "goto": 1,
+    "pillar_down": 1,
+    "find_blocks": 3
+  },
+  "per_card": [
+    {
+      "card_id": "t_0d628450",
+      "invocations": 37,
+      "error_invocations": 14,
+      "verbs": {
+        "status": 2,
+        "chat": 1,
+        "map": 6,
+        "move": 11,
+        "terrain_top": 1,
+        "through": 1,
+        "scene": 2,
+        "pillar_up": 2,
+        "inventory": 1,
+        "dig": 6,
+        "nearby": 2,
+        "position": 1,
+        "pillar_down": 1
+      },
+      "errors_by_verb": {
+        "move": 5,
+        "through": 1,
+        "pillar_up": 1,
+        "dig": 6,
+        "position": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc map 16",
+          "count": 4
+        }
+      ],
+      "samples": [
+        {
+          "verb": "move",
+          "cmd": "mc move 20 96 40 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 20 106 40 --near 2",
+          "error": true
+        },
+        {
+          "verb": "through",
+          "cmd": "mc through 4 97 28",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 10",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 9 93 27",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 14 92 30 --near 2",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 9 93 27",
+          "error": true
+        },
+        {
+          "verb": "position",
+          "cmd": "mc position",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 9 94 27",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 9 95 27",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 9 96 27",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 8 100 27",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 30 --near 1",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 30 103 58 --near 2",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_628f0e9e",
+      "invocations": 336,
+      "error_invocations": 76,
+      "verbs": {
+        "status": 12,
+        "inventory": 16,
+        "marks": 3,
+        "move": 41,
+        "scene": 17,
+        "map": 5,
+        "goto_near": 10,
+        "go_mark": 16,
+        "terrain_top": 17,
+        "reachable": 2,
+        "nearby": 5,
+        "pillar_up": 4,
+        "chat": 6,
+        "inspect": 50,
+        "chest_search": 7,
+        "stair_down": 11,
+        "collect": 6,
+        "find_blocks": 9,
+        "dig": 67,
+        "escape": 2,
+        "advise": 1,
+        "chest_show": 1,
+        "help": 4,
+        "chest": 2,
+        "pickup": 12,
+        "retrace": 2,
+        "chat_to": 1,
+        "regions": 1,
+        "goto": 4,
+        "withdraw": 2
+      },
+      "errors_by_verb": {
+        "move": 26,
+        "goto_near": 5,
+        "go_mark": 6,
+        "pillar_up": 1,
+        "collect": 4,
+        "dig": 25,
+        "advise": 1,
+        "chest_search": 2,
+        "chest_show": 1,
+        "help": 2,
+        "chest": 1,
+        "escape": 1,
+        "withdraw": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc scene",
+          "count": 17
+        },
+        {
+          "cmd": "mc inventory",
+          "count": 16
+        },
+        {
+          "cmd": "mc status",
+          "count": 12
+        },
+        {
+          "cmd": "mc pickup",
+          "count": 12
+        },
+        {
+          "cmd": "mc go_mark lt_stone_ne",
+          "count": 11
+        },
+        {
+          "cmd": "mc find_blocks stone 16",
+          "count": 5
+        },
+        {
+          "cmd": "mc move @base_anchor",
+          "count": 4
+        },
+        {
+          "cmd": "mc marks",
+          "count": 3
+        },
+        {
+          "cmd": "mc move 17 103 5 --near 3",
+          "count": 3
+        },
+        {
+          "cmd": "mc map 16",
+          "count": 3
+        },
+        {
+          "cmd": "mc inspect 13 103 1",
+          "count": 3
+        },
+        {
+          "cmd": "mc move 5 96 24 --near 3",
+          "count": 3
+        },
+        {
+          "cmd": "mc collect cobblestone 64",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "verb": "move",
+          "cmd": "mc move 17 103 5 --near 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 17 103 5 --near 3",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 13 103 1 range=2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 15 103 3 --near 3",
+          "error": true
+        },
+        {
+          "verb": "go_mark",
+          "cmd": "mc go_mark lt_stone_ne",
+          "error": true
+        },
+        {
+          "verb": "go_mark",
+          "cmd": "mc go_mark lt_stone_ne",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 10 103 5 --near 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 17 108 5 --near 4",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 13 101 5 --near 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 0 94 20 --near 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 5 95 24 --near 3",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 5 95 24 range=2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -5 94 30 --near 3",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 20",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 5 96 24 --near 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 5 96 24 --near 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 17 103 5 --near 3",
+          "error": true
+        },
+        {
+          "verb": "collect",
+          "cmd": "mc collect cobblestone 64",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 16 102 5",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 17 103 5 --near 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 17 103 5 1",
+          "error": true
+        },
+        {
+          "verb": "go_mark",
+          "cmd": "mc go_mark lt_stone_ne",
+          "error": true
+        },
+        {
+          "verb": "go_mark",
+          "cmd": "mc go_mark lt_stone_ne",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 5 96 24 --near 3",
+          "error": true
+        },
+        {
+          "verb": "go_mark",
+          "cmd": "mc go_mark lt_stone_ne",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 0 94 27 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 0 95 27 --near 2",
+          "error": true
+        },
+        {
+          "verb": "advise",
+          "cmd": "mc advise --reason=\"need path to build site (17,103,5) \u2014 pathfinder keeps timing out or bouncing me\" --target 17,103,5",
+          "error": true
+        },
+        {
+          "verb": "go_mark",
+          "cmd": "mc go_mark lt_stone_ne",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 5 95 24 --near 3",
+          "error": true
+        },
+        {
+          "verb": "chest_search",
+          "cmd": "mc chest_search cobblestone --near 16 --fresh",
+          "error": true
+        },
+        {
+          "verb": "chest_show",
+          "cmd": "mc chest_show 20 105 2",
+          "error": true
+        },
+        {
+          "verb": "help",
+          "cmd": "mc help containers",
+          "error": true
+        },
+        {
+          "verb": "chest",
+          "cmd": "mc chest help",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 15 94 9",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 14 95 12",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 15 95 10 --near 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 15 96 9 1",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 16 95 7",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 16 95 6",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_81fea1a0",
+      "invocations": 50,
+      "error_invocations": 14,
+      "verbs": {
+        "status": 3,
+        "inventory": 1,
+        "scene": 6,
+        "pillar_up": 4,
+        "escape": 2,
+        "move": 7,
+        "map": 1,
+        "find_blocks": 3,
+        "chat": 3,
+        "equip": 2,
+        "collect": 2,
+        "goto_near": 3,
+        "dig": 6,
+        "pickup": 1,
+        "inspect": 4,
+        "terrain_top": 2
+      },
+      "errors_by_verb": {
+        "pillar_up": 2,
+        "move": 5,
+        "collect": 2,
+        "goto_near": 1,
+        "dig": 3,
+        "escape": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc scene",
+          "count": 6
+        },
+        {
+          "cmd": "mc status",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 15",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 17 103 5",
+          "error": true
+        },
+        {
+          "verb": "collect",
+          "cmd": "mc collect oak_log 64",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 7 96 27",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 9 94 27 1",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 9 93 27 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 94 27 --near 0",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 12",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 4 95 23",
+          "error": true
+        },
+        {
+          "verb": "escape",
+          "cmd": "mc escape",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 4 94 24",
+          "error": true
+        },
+        {
+          "verb": "collect",
+          "cmd": "mc collect oak_log 42",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 6 98 27",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 17 103 5 --near 2",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_86147d49",
+      "invocations": 35,
+      "error_invocations": 16,
+      "verbs": {
+        "status": 3,
+        "inventory": 1,
+        "chat": 1,
+        "marks": 1,
+        "map": 1,
+        "move": 11,
+        "escape": 1,
+        "scene": 4,
+        "pillar_up": 1,
+        "dig": 2,
+        "advise": 1,
+        "through": 4,
+        "inspect": 3,
+        "equip": 1
+      },
+      "errors_by_verb": {
+        "move": 7,
+        "escape": 1,
+        "dig": 2,
+        "advise": 1,
+        "through": 4,
+        "equip": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc status",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "verb": "move",
+          "cmd": "mc move -10 96 35",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -5 96 30",
+          "error": true
+        },
+        {
+          "verb": "escape",
+          "cmd": "mc escape",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 2 97 27",
+          "error": true
+        },
+        {
+          "verb": "advise",
+          "cmd": "mc advise --reason=\"stuck 5.2min: fell underground near muster while trying to go SW, trying to reorient and head SW\" --target 2,95,26",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -5 96 30 --raw",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 0 96 24 --raw",
+          "error": true
+        },
+        {
+          "verb": "through",
+          "cmd": "mc through 4 97 28",
+          "error": true
+        },
+        {
+          "verb": "through",
+          "cmd": "mc through 4 97 28 10 96 30",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -3 97 32 --raw",
+          "error": true
+        },
+        {
+          "verb": "through",
+          "cmd": "mc through 4 97 28 6 97 28",
+          "error": true
+        },
+        {
+          "verb": "equip",
+          "cmd": "mc equip iron_pickaxe",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 5 97 28",
+          "error": true
+        },
+        {
+          "verb": "through",
+          "cmd": "mc through 4 96 28 6 96 28",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -5 96 35 --raw",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 96 30 --raw",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_8f2a59b5",
+      "invocations": 120,
+      "error_invocations": 28,
+      "verbs": {
+        "chat": 4,
+        "move": 25,
+        "scene": 8,
+        "pillar_up": 6,
+        "status": 2,
+        "map": 5,
+        "goto_near": 24,
+        "nearby": 6,
+        "dig": 5,
+        "inspect": 19,
+        "escape": 1,
+        "pillar_down": 1,
+        "mark": 5,
+        "find_blocks": 6,
+        "terrain_top": 2,
+        "read_chat": 1
+      },
+      "errors_by_verb": {
+        "move": 11,
+        "pillar_up": 1,
+        "goto_near": 12,
+        "dig": 3,
+        "escape": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc map 16",
+          "count": 5
+        },
+        {
+          "cmd": "mc nearby 8",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "verb": "move",
+          "cmd": "mc move 4.5 96 24 --near 2",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 15",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -2 84 20 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -5 84 15 --near 3",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 5 84 24 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 0 84 20 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 0 84 25 --raw",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 4 84 22 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 84 30",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 4 84 28",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -8 97 15",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 97 22 --near 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 7 97 27 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 97 20 --near 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 12 97 27 4",
+          "error": true
+        },
+        {
+          "verb": "escape",
+          "cmd": "mc escape",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 15 96 25 --raw",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 6 96 30 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 4 96 20 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 0 96 25 --near 3",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 5 96 32 3",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 0 96 27 --near 3",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 0 96 20 3",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near -1 95 23 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 0 96 22 2",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 0 96 24",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 0 96 22",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near -1 96 24 1",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_9b3ca15a",
+      "invocations": 49,
+      "error_invocations": 13,
+      "verbs": {
+        "status": 4,
+        "chat": 2,
+        "move": 11,
+        "scene": 4,
+        "pillar_up": 5,
+        "inspect": 12,
+        "pillar_down": 1,
+        "escape": 1,
+        "place": 1,
+        "dig": 2,
+        "goto_near": 2,
+        "map": 1,
+        "goto": 1,
+        "nearby": 1,
+        "through": 1
+      },
+      "errors_by_verb": {
+        "move": 6,
+        "pillar_up": 3,
+        "escape": 1,
+        "place": 1,
+        "dig": 1,
+        "goto": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc status",
+          "count": 4
+        },
+        {
+          "cmd": "mc scene",
+          "count": 4
+        }
+      ],
+      "samples": [
+        {
+          "verb": "move",
+          "cmd": "mc move 10 96 30 --near 2",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 6 --force",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 6 --force",
+          "error": true
+        },
+        {
+          "verb": "escape",
+          "cmd": "mc escape",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 3 --force",
+          "error": true
+        },
+        {
+          "verb": "place",
+          "cmd": "mc place dirt 8 99 27",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 7 97 27 --raw",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 8 97 27",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 15 96 35 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 12 96 25 --raw",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 12 96 27 --near 2",
+          "error": true
+        },
+        {
+          "verb": "goto",
+          "cmd": "mc goto 15 96 35",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 95 30 --near 2",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_ab46a48d",
+      "invocations": 182,
+      "error_invocations": 26,
+      "verbs": {
+        "status": 8,
+        "chat": 5,
+        "move": 27,
+        "map": 11,
+        "scene": 9,
+        "find_blocks": 10,
+        "pillar_up": 6,
+        "terrain_top": 25,
+        "nearby": 7,
+        "inspect": 38,
+        "goto_near": 9,
+        "pillar_down": 6,
+        "dig": 4,
+        "inventory": 1,
+        "place": 3,
+        "tunnel": 1,
+        "stair_up": 1,
+        "escape": 1,
+        "mark": 6,
+        "scout": 2,
+        "interact": 1,
+        "marks": 1
+      },
+      "errors_by_verb": {
+        "move": 13,
+        "pillar_up": 2,
+        "dig": 4,
+        "pillar_down": 1,
+        "goto_near": 5,
+        "escape": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc scene",
+          "count": 9
+        },
+        {
+          "cmd": "mc status",
+          "count": 8
+        },
+        {
+          "cmd": "mc map 16",
+          "count": 8
+        },
+        {
+          "cmd": "mc pillar_down 5",
+          "count": 4
+        },
+        {
+          "cmd": "mc move 4 96 24",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 24",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 12",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 10 84 28",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 0 84 28",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 84 24",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 4 89 28",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 4 89 29",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 4 88 29",
+          "error": true
+        },
+        {
+          "verb": "pillar_down",
+          "cmd": "mc pillar_down 1 --force",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 4 88 28 0",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 5 83 29",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 83 29 --raw",
+          "error": true
+        },
+        {
+          "verb": "pillar_up",
+          "cmd": "mc pillar_up 12",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 14 96 34",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 15 102 35 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 25 100 45 --near 2",
+          "error": true
+        },
+        {
+          "verb": "escape",
+          "cmd": "mc escape",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 9 101 30 1",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 10 103 31 1",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 20 103 27 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 24",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 15 96 35 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 10 96 24 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 20 96 38 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 24 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 103 24 --near 2",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_ae1ecb6e",
+      "invocations": 46,
+      "error_invocations": 3,
+      "verbs": {
+        "status": 1,
+        "chat": 3,
+        "move": 12,
+        "nearby": 4,
+        "map": 3,
+        "mark": 7,
+        "find_blocks": 12,
+        "unmark": 2,
+        "scene": 1,
+        "marks": 1
+      },
+      "errors_by_verb": {
+        "find_blocks": 3
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc nearby 20",
+          "count": 4
+        },
+        {
+          "cmd": "mc find_blocks oak_log 30",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "verb": "find_blocks",
+          "cmd": "mc find_blocks oak_log 30 --near -10 95 30",
+          "error": true
+        },
+        {
+          "verb": "find_blocks",
+          "cmd": "mc find_blocks oak_log 30 --near 0 96 20",
+          "error": true
+        },
+        {
+          "verb": "find_blocks",
+          "cmd": "mc find_blocks oak_log 20 --near -28 90 50",
+          "error": true
+        }
+      ]
+    },
+    {
+      "card_id": "t_eb4bb1fd",
+      "invocations": 127,
+      "error_invocations": 41,
+      "verbs": {
+        "status": 3,
+        "chat": 3,
+        "move": 59,
+        "scene": 11,
+        "map": 5,
+        "reachable": 3,
+        "terrain_top": 18,
+        "nearby": 2,
+        "advise": 1,
+        "escape": 2,
+        "goto_near": 2,
+        "through": 1,
+        "pillar_up": 1,
+        "dig": 1,
+        "inspect": 4,
+        "pillar_down": 1,
+        "find_blocks": 6,
+        "mark": 3,
+        "marks": 1
+      },
+      "errors_by_verb": {
+        "move": 35,
+        "advise": 1,
+        "escape": 1,
+        "goto_near": 2,
+        "through": 1,
+        "dig": 1
+      },
+      "repeated_commands": [
+        {
+          "cmd": "mc status",
+          "count": 3
+        },
+        {
+          "cmd": "mc scene",
+          "count": 3
+        },
+        {
+          "cmd": "mc move 3 96 23 --near 2",
+          "count": 3
+        }
+      ],
+      "samples": [
+        {
+          "verb": "move",
+          "cmd": "mc move 9 96 18",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 103 19 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 12 95 24",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 100 24 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 95 30",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -5 95 24 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 96 18 --near 2",
+          "error": true
+        },
+        {
+          "verb": "advise",
+          "cmd": "mc advise --reason=\"stuck inside base at muster (4,96,24) \u2014 can't find exit to NE; tried move in several directions, all NAV_BLOCKED\" --target 3,95,24",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 14 95 24 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 95 22",
+          "error": true
+        },
+        {
+          "verb": "escape",
+          "cmd": "mc escape",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 96 18 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 14 96 22 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 10 96 22 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 6 100 22 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 16 96 20",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 2 96 22",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 10 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 28 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 5 97 32 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 35 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 97 28 --near 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 4 96 10 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 97 18 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 6 97 20 --near 2",
+          "error": true
+        },
+        {
+          "verb": "through",
+          "cmd": "mc through 16 102 54",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 96 19 --near 2",
+          "error": true
+        },
+        {
+          "verb": "goto_near",
+          "cmd": "mc goto_near 4 96 15 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 18 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 97 18 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 10 96 22 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -2 96 23 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 2 96 32 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 96 19",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 3 96 19",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 4 97 18 --near 2",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 5 96 20",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move 8 96 28",
+          "error": true
+        },
+        {
+          "verb": "dig",
+          "cmd": "mc dig 6 98 26",
+          "error": true
+        },
+        {
+          "verb": "move",
+          "cmd": "mc move -2 96 19 --near 2",
+          "error": true
+        }
+      ]
+    }
+  ]
+}

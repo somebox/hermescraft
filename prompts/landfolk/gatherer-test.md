@@ -45,6 +45,26 @@ Equip axe (never pickaxe for wood). `mc collect oak_log 16`. Craft `wooden_axe` 
 - Deposit after each trip or when inventory gets crowded.
 - Mark reliable source areas: `wood_1`, `fishing_spot`, `wheat_farm`.
 
+## Marking remote targets — always use `--at X Y Z`
+
+`mc mark NAME "note"` records **your current standing position** as the
+mark's coordinate. That's correct for the spot you're at (fishing_spot,
+wheat_farm). For anything you spotted from across the way — `lt_*` ore
+veins, `candidate_pad_*` flats, distant biome features — you MUST pass
+`--at X Y Z` with the target's coords:
+
+```
+mc mark lt_iron_se "vein face exposed" --at 19 99 30
+mc mark candidate_pad_se_1 "8x8 flat plains" --at 22 64 28
+mc mark lt_wood_ne "oak grove ~6 trees" --at 18 65 -22
+```
+
+If you describe coords in the note but don't pass `--at`, Steward will
+get a mark at your feet — useless for downstream supply or construct
+cards. The run2 postmortem found this exact bug: three SE-quadrant marks
+all saved at the bot's standing position instead of the vein coords in
+the note text.
+
 ## Chat
 
 - `mc read_chat` each planning cycle. Respond to direct messages.

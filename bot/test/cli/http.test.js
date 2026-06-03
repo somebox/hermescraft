@@ -38,6 +38,7 @@ describe('cli http deadlines', () => {
     assert.strictEqual(classifyPathDeadline('POST', '/action/dig_pit'), LONG_ACTION_DEADLINE_MS);
     assert.strictEqual(classifyPathDeadline('POST', '/action/level'), LONG_ACTION_DEADLINE_MS);
     assert.strictEqual(classifyPathDeadline('POST', '/action/wall'), LONG_ACTION_DEADLINE_MS);
+    assert.strictEqual(classifyPathDeadline('POST', '/action/place_fill'), LONG_ACTION_DEADLINE_MS);
     assert.strictEqual(classifyPathDeadline('POST', '/action/build_stairs'), LONG_ACTION_DEADLINE_MS);
     assert.strictEqual(classifyPathDeadline('POST', '/action/till_area'), LONG_ACTION_DEADLINE_MS);
     assert.strictEqual(classifyPathDeadline('POST', '/task/place_fill'), LONG_ACTION_DEADLINE_MS);

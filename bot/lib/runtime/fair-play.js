@@ -10,6 +10,7 @@ import {
   summarizeSceneText,
   formatStandingSituation,
 } from '../shared/perception.js';
+import { buildLandscapeContext } from '../shared/scene-landscape.js';
 import { filterPlacementBlockingEntities } from '../shared/entity-blocking.js';
 import {
   nearbyPlacementBlockersFromHits,
@@ -336,6 +337,10 @@ export function createFairPlaySuite(deps) {
       excludeCoord: lookingAt?.blocks_placement ? lookingAt.coord : null,
     });
     const hazards = detectHazardsFromVisibleBlocks(visibleBlocks);
+    let landscape = null;
+    try {
+      landscape = buildLandscapeContext(b);
+    } catch { /* never break scene */ }
     let topology = null;
     let standingLine = null;
     if (getStandingState) {
@@ -354,9 +359,11 @@ export function createFairPlaySuite(deps) {
       nearbyPlacementBlockers: nearby_placement_blockers,
     });
     if (standingLine) summary = `${standingLine} ${summary}`;
+    if (landscape?.clause) summary = `${landscape.clause} — ${summary}`;
 
     return {
       summary,
+      ...(landscape ? { landscape } : {}),
       ...(topology ? { topology } : {}),
       visible_blocks: summarizeVisibleBlocks(visibleBlocks),
       visible_block_hits: visibleBlocks,

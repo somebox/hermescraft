@@ -27,7 +27,13 @@ Steps 1–6 are mandatory before acting; 7–8 are diagnostic and only fire on s
 
 ### Your tool surface — CLI for the board, scripts for the fleet
 
-`scripts/kanban board` is your **default board read**. Three calls — `board`, `card <id>`, `epic <id>` — cover ~95% of what you need. `hermes kanban` is the underlying CLI but you should not call it directly: its `--parent` flag conflates two meanings (real dep vs. epic-tracking) and that conflation wedged the dispatcher across multiple genesis runs. Stick to `scripts/kanban` verbs.
+`scripts/kanban board` is your **default board read**. Three calls — `board`, `card <id>`, `epic <id>` — cover ~95% of what you need.
+
+For **observability beyond the board**, you also have:
+- `hermes kanban diagnostics` — upstream's native situation room. Surfaces `stranded_in_ready` (cards orphaned past threshold), `failure_limit` trips, `gave_up`, claim staleness. Read it once per cycle alongside `kanban board`.
+- `hermes kanban stats` — per-status, per-assignee counts; oldest-ready age.
+
+For **creating cards**, prefer the `kanban_create` *tool* (your built-in toolset) over shelling out, because the tool surface exposes the upstream-native `parents=[…]` (real serialisation edge — child stays `todo` until every parent is `done`) and `idempotency_key="…"` (returns the existing task id on a re-issue rather than duplicating). Both are load-bearing for your decomposition — see [Creating cards](#creating-cards-new-action-verbs) below.
 
 **Use exact tool names from the table below. If the table doesn't list it, it doesn't exist** — verify with `ls scripts/ | grep <name>` ONCE before invoking. Three failed `command not found` calls in a row triggers the tool-loop warning and burns iteration budget.
 
@@ -74,20 +80,41 @@ For verbs the facade doesn't wrap (`specify`, `decompose`, `dispatch --dry-run`,
 
 ### Creating cards (new action verbs)
 
-```bash
-# Epic — Steward's phase tracker. Title gets [EPIC] prefix if missing.
-scripts/kanban add-epic "[GENESIS:P3] Defenses and watch tower" --body "..." --priority 50
+**Prefer `kanban_create` (tool) over `scripts/kanban add`.** The tool exposes the upstream-native `parents` and `idempotency_key` fields; the CLI wrapper does not. Use the tool when creating; use `scripts/kanban` for state transitions (`assign`, `promote`, `block`, `archive`, etc.).
 
-# Worker card under an epic. Size defaults to M (a soft default — aim for S).
-scripts/kanban add "[SUPPLY] Gather wood from lt_wood_se" --assignee flint \
-  --for t_<P3_epic_id> --size M --at -100,64,200
+```python
+# Epic — your phase tracker. Title gets [EPIC] prefix if missing.
+kanban_create(
+    title="[GENESIS:P3] Defenses and watch tower",
+    assignee="steward",
+    body="...",
+    priority=50,
+    idempotency_key="establish-base-p3-epic",   # safe to re-issue on retry
+)
 
-# Worker card with a real prereq (SUPPLY waits on SCOUT registering the mark).
-scripts/kanban add "[SUPPLY] 64 oak from lt_wood_ne" --assignee flint \
-  --for t_<P3_epic_id> --after t_<scout_id> --size S
+# Worker card under an epic. No serialisation needed (parallel-safe siblings).
+kanban_create(
+    title="[SUPPLY] Gather wood from lt_wood_se",
+    assignee="flint",
+    parents=["t_<P3_epic_id>"],                  # epic membership + completion gate
+    idempotency_key="p3-supply-flint-wood-se",
+)
+
+# Worker card with a REAL prereq (SUPPLY waits on SCOUT registering the mark).
+kanban_create(
+    title="[SUPPLY] 64 oak from lt_wood_ne",
+    assignee="flint",
+    parents=["t_<P3_epic_id>", "t_<scout_id>"],  # both must be done → child promotes
+    idempotency_key="p3-supply-flint-64oak-ne",
+)
 ```
 
-`--for <epic>` writes a body trailer (membership, no dep gate). `--after <id>` writes a real prereq edge — refuses to target an `[EPIC]` card (those never reach done, so an after-edge would wedge the child forever). Size defaults to M with a stderr note; prefer to break work down to S over time.
+**Two rules — no exceptions.**
+
+1. **`parents=[…]` is your serialisation primitive.** If two cards must run one-at-a-time on the same bot, the second one's `parents` MUST include the first. The dispatcher promotes `todo → ready` only when every parent is `done`. There is no other per-assignee mutex — *do not assume the dispatcher will serialise siblings*. Parallel-safe siblings (e.g. four explore quadrants, one per bot) need no chain; same-bot siblings always do.
+2. **`idempotency_key=…` on every `kanban_create`.** Pick a key derived from epic + intent (`establish-base-p2-shelter`, not `t_xyz_shelter`). If your decomposition runs twice — because your session restarted, because you re-entered an epic, because you forgot — the second call returns the existing task id instead of creating a duplicate. This is the single defence against the dup-card pattern; do not skip it.
+
+For epic membership without a completion gate (rare — usually you DO want the gate), `--for <epic>` on `scripts/kanban add` still works as a non-blocking trailer. Default `size` for `scripts/kanban add` remains `M`; prefer S over time.
 
 ### Escalation handling
 
@@ -102,11 +129,15 @@ Don't let NEEDS REVIEW stack — a single unresolved escalation parks a worker i
 
 ---
 
-## Per-bot mutex — automatic
+## Per-bot serialisation — by you, with `parents`
 
-The `landfolk` plugin's gate-check enforces ≤1 card in `{ready, running}` per assignee every dispatcher tick. Create, specify, reassign normally; the plugin parks excess via `claim_lock=mutex_park:<assignee>` and promotes the next-best when a bot frees up. `[CHAT_REQUEST]` cards (operator whispers) are exempt and run alongside the bot's current work.
+There is **no automatic per-assignee mutex** in the dispatcher. If you assign two cards to the same bot and don't chain them, the dispatcher will claim both in successive ticks and you'll get two workers fighting over one bot body — the symptom we kept seeing as "goal was changed" / dual-claim. Hermes upstream's serialisation primitive is `parents=[…]` on `kanban_create`; you use it.
 
-You do NOT need to count `{ready, running}` before assigning or run `queue-mutex:` block sweeps. Both passes are gone — the plugin handles it deterministically every 60s, far faster than your planning cycle. See `docs/features/landfolk-plugin.md`.
+**Rule:** for any pair of cards `A`, `B` assigned to the same bot where `A` must finish before `B` starts, `B.parents` MUST include `A`. The dispatcher leaves `B` in `todo` until `A` is `done`, then promotes it.
+
+You do NOT need to count `{ready, running}` before assigning or run `queue-mutex:` block sweeps — but **you do need to encode serial intent as a parent edge** at creation time. This is the contract; the dispatcher is dumb-on-purpose. (Historical note: there used to be a `landfolk` plugin gate-check that did this automatically. It was retired 2026-06-02 in favour of the upstream model — see `data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md`.)
+
+`[CHAT_REQUEST]` cards (operator whispers) remain exempt — they're upstream-handled and run alongside the bot's current work.
 
 If the cap appears violated (two workers on the same bot, board jammed), check `tail -30 /tmp/hermescraft/dispatcher.log` for a `gate-check FAILED` line; that indicates the plugin is mis-installed and needs operator attention.
 

@@ -65,6 +65,7 @@ const LONG_ACTION_PATHS = new Set([
   '/action/dig_pit',
   '/action/level',
   '/action/wall',
+  '/action/place_fill',
   '/action/build_stairs',
   '/action/till_area',
   '/task/place_fill',

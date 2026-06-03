@@ -15,6 +15,7 @@ import {
 } from './_preflight.js';
 import { coord3 } from '../_args.js';
 import { ok } from '../../shared/action-contract.js';
+import { navBlockedNextActionHint, withNavRetryWarning } from './nav-hints.js';
 
 /**
  * @param {object} deps
@@ -33,6 +34,9 @@ export function createGotoNear(deps) {
     preNudgeIfSticky,
     navBlockedError,
     navFailureError,
+    gotoRetryKey,
+    gotoRetryCounts,
+    GOTO_RETRY_LIMIT,
   } = deps;
 
   return async function goto_near(args) {
@@ -42,10 +46,11 @@ export function createGotoNear(deps) {
     const range = args.range ?? 2;
     const los = args.los;
     const b = ensureBot();
+    const retryKey = gotoRetryKey('goto_near', x, y, z);
     const pre = preflightNav(b, x, y, z, range);
     if (pre && (pre.error || pre.ok === false)) {
       recordMoveFailure('goto_near', x, y, z, posObj(), pre.error?.code || 'preflight');
-      return pre;
+      return withNavRetryWarning(pre, retryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
     }
     let yAdjusted = null;
     if (pre && pre.y_adjusted) {
@@ -110,7 +115,12 @@ export function createGotoNear(deps) {
       const dist = Math.hypot(pos.x - x, pos.y - y, pos.z - z);
       if (dist > range + 1.5) {
         recordMoveFailure('goto_near', x, y, z, pos, 'pathfinder_gave_up');
-        return navBlockedError(b, pos, x, y, z, dist);
+        return withNavRetryWarning(
+          navBlockedError(b, pos, x, y, z, dist),
+          retryKey,
+          gotoRetryCounts,
+          GOTO_RETRY_LIMIT,
+        );
       }
       clearMoveFailure();
       // Post-action position read (used by every success path below).
@@ -229,15 +239,17 @@ export function createGotoNear(deps) {
           : ' Try mc escape, mc dig at the blocker, or use mc goto_near with different coords.';
         const obs = enrichWithStand(b, { target: { x, y, z }, range, current: posObj(), ...e.info }, x, y, z);
         if (reach) Object.assign(obs, reach);
-        return {
+        const stallFail = {
           ok: false,
           error: {
             code: 'NAV_NO_PROGRESS',
             message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)} (range ${range}). Likely a 1-block lip, wedge, or sealed route.${hopNote}`,
             observed_state: obs,
+            next_action_hint: navBlockedNextActionHint(b, { x, y, z }, posObj()),
             retry_safe: false,
           },
         };
+        return withNavRetryWarning(stallFail, retryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
       }
       if (e instanceof OperationTimeoutError) {
         recordMoveFailure('goto_near', x, y, z, posObj(), 'wallclock_timeout');
@@ -247,7 +259,12 @@ export function createGotoNear(deps) {
       }
       const pos = posObj();
       recordMoveFailure('goto_near', x, y, z, pos, 'pathfinder_error');
-      return navFailureError(b, pos, x, y, z, e?.message || String(e));
+      return withNavRetryWarning(
+        navFailureError(b, pos, x, y, z, e?.message || String(e)),
+        retryKey,
+        gotoRetryCounts,
+        GOTO_RETRY_LIMIT,
+      );
     }
   };
 }

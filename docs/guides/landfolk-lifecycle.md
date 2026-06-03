@@ -25,7 +25,9 @@ In order:
    - `start_agent` (continuous mode only) — backgrounded subshell tagged `landfolk:agent-loop:<Name>`. Runs the per-round Hermes chat loop.
 3. **Starts the listener daemon** — `scripts/steward-chat-listener.py` (in-game chat → kanban triage cards).
 4. **Ensures the gateway is running** — `hermes gateway run --replace` (idempotent; skips if already up).
-5. **Ensures the standalone dispatcher is running** — `scripts/landfolk-dispatcher.sh` (out-of-process kanban worker dispatcher; the gateway-embedded one is disabled via `kanban.dispatch_in_gateway: false` because it wedges).
+5. **Ensures the standalone dispatcher is running** — `scripts/landfolk-dispatcher.sh` (out-of-process kanban worker dispatcher).
+
+   > **Note (2026-06-02 — under deprecation).** This was historically used because the gateway-embedded dispatcher (`kanban.dispatch_in_gateway: true`) wedged in early releases. **Current upstream calls the embedded path the supported default** and explicitly flags running both as unsupported (claim races). The 2026-06-02 establish postmortem ([`data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md`](../../data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md)) verified the embedded dispatcher works against the current install. Migrating off this script and back to the embedded dispatcher is [procedural-planning.md Phase 6](../features/procedural-planning.md#phase-6--upstream-alignment). Treat this step as legacy until Phase 6 lands.
 
 After step 5, status renders.
 
@@ -109,7 +111,9 @@ kill -TERM $zombie    # the bot-loop's while-loop will respawn within 5s
 
 ### Gateway wedge (process alive, dispatcher loop silent)
 
-**Cause:** Used to happen with `kanban.dispatch_in_gateway: true`. We disabled that — dispatcher is now out-of-process (`landfolk-dispatcher.sh`). If the gateway's *own* process wedges (no logs in `~/.hermes/logs/gateway.log` for >5 min), restart it: `scripts/landfolk start --restart-gateway`. The dispatcher keeps running independently.
+**Historical cause:** Happened on older Hermes releases with `kanban.dispatch_in_gateway: true`. The workaround was to disable the embedded dispatcher and run `landfolk-dispatcher.sh` out-of-process.
+
+**Status (2026-06-02):** Verified against current upstream — the embedded dispatcher works. We're migrating back to it (see [procedural-planning.md Phase 6](../features/procedural-planning.md#phase-6--upstream-alignment)). If the gateway's *own* process wedges (no logs in `~/.hermes/logs/gateway.log` for >5 min), restart it: `scripts/landfolk start --restart-gateway`.
 
 ### Multiple `landfolk-control.sh enable …` shells per bot
 

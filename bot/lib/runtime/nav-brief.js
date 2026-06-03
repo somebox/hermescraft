@@ -3,6 +3,7 @@
  */
 
 import { formatStandingSituation } from '../shared/perception.js';
+import { buildLandscapeContext } from '../shared/scene-landscape.js';
 import { floorCellFromPos } from './nav-trail.js';
 import { getConfig } from '../config/index.js';
 import { shouldSkipDigAt } from './regions/policy-guard.js';
@@ -346,6 +347,16 @@ function headerSituationLabel(standing, navMode) {
 function cheapSuggestedHint(standing, ctx, deps) {
   if (standing?.open_dirs?.length === 1) {
     return `mc move one step ${standing.open_dirs[0]}`;
+  }
+  const bot = ctx?.world?.bot;
+  if (bot?.entity?.position) {
+    try {
+      const land = buildLandscapeContext(bot);
+      const card = land.suggested_cardinal;
+      if (card && (standing?.open_dirs?.length ?? 0) > 1) {
+        return `suggested: ${card} (${land.clause.split(' — ')[0]})`;
+      }
+    } catch { /* ignore */ }
   }
   if (deps.loadLocations && ctx?.world?.bot?.entity?.position) {
     const locs = collectKeyLocations(ctx, deps, 1);

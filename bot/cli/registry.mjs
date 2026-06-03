@@ -1705,8 +1705,12 @@ export const RAW_COMMAND_DEFS = [
 
   /* marks */
   g('mark', 'memory', [], {
-    description: 'Save current position as named mark',
-    examples: ["mc mark NAME [NOTE]"],
+    description:
+      'Save a named mark. Default is bot foot position; use --at X Y Z (or --at @other_mark) for vein/pad/target coords.',
+    examples: [
+      'mc mark lt_iron_ne "iron vein" --at 12 64 30',
+      'mc mark scout_pin "vantage only"',
+    ],
     method: 'POST',
     path: '/action/mark',
     customParse: true,
@@ -1721,7 +1725,7 @@ export const RAW_COMMAND_DEFS = [
         ...(p.at && typeof p.at === 'object' ? { at: p.at } : {}),
         ...(p.at_mark ? { at_mark: p.at_mark } : {}),
       }),
-    usage: 'mc mark NAME [NOTE]',
+    usage: 'mc mark NAME [NOTE] [--at X Y Z | --at @MARK]',
   }),
   g('marks', 'memory', [], {
     examples: ["mc marks"],

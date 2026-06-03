@@ -73,6 +73,29 @@ A loop of `mc place` calls is slower, error-prone, and harder to debug.
 | Stairs out of a foundation pit | `mc build_stairs cobblestone east 4` |
 | Torches / decoration / single blocks | `mc place BLOCK X Y Z` |
 
+### Recovering from `FILL_PARTIAL` — don't sweep the grid
+
+`mc fill` and the other bulk verbs are **retry-safe**. When a fill returns
+`ok: false, code: FILL_PARTIAL, retry_safe: true`, the envelope's
+`observed_state.remaining_cells` (capped at 32) lists the exact cells that
+still need the target block, and `remaining_count` is the total.
+
+The wrong move is a full grid inspection: looping `mc inspect` over every
+cell in the box to figure out what's missing. The right move is:
+
+1. **Read `remaining_cells` first** — it tells you exactly what's left.
+2. **At most 1-2 targeted `mc inspect` calls** on specific cells if you need
+   to identify a blocker (entity, wrong block, container).
+3. **Retry `mc fill` over the same box.** Already-placed cells become
+   `skipped_already` no-ops; only the remaining cells get a fresh attempt.
+4. **If a blocker is a player/entity**, ask them (`mc whisper`) to step off
+   the cell before retrying; if it's a furniture block (crafting_table,
+   furnace, chest) inside your footprint, `mc dig` it then retry.
+
+A 9×9 pad needs at most three fill attempts — initial, post-blocker-clear,
+and final verify. If you find yourself running more than ten `mc inspect`
+calls on one fill failure, stop and re-read `remaining_cells`.
+
 ## Building from a blueprint
 
 When a construct card includes `plan_id` and a bound region (`plan=` on the sign), use the blueprint library instead of guessing block lists:
@@ -139,6 +162,7 @@ Pros: structure “grows” evenly; one primary scaffold column. Cons: must not 
 - **Light it up** — `mc place torch X Y Z` inside AND outside (every ~6 blocks) to prevent mob spawns at night.
 - **Clear obstacles first** — trees, tall grass, uneven ground.
 - **Right-size it** — a 5×5 box looks empty; a 20×20 mansion you can't furnish looks abandoned. Aim ~8–12 blocks per side for a starter house.
+- **Fences need gates — always.** A fence enclosure with no gate traps anyone inside; fences are impassable and `mc dig_area` won't clear them cleanly (axe + single `mc dig` per panel). Use `mc fence … --gate <dir>` for bulk fences, or substitute one cell with `fence_gate` when placing manually. Two gates on opposite sides for any enclosure you might approach from different directions.
 
 ## Log Cabin Style
 

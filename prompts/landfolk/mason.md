@@ -68,10 +68,17 @@ have to remember to announce. Examples:
   `mc collect stone 20 reason="walls cobble"`
 
 **Read errors carefully:**
-- `FILL_PARTIAL`: the fill skipped some cells (observed_state.skipped_occupied
-  shows what's blocking — often a crafting_table or furnace inside your
-  build footprint). The fill IS partially done; check whether to dig the
-  blocker or move on.
+- `FILL_PARTIAL` (`ok: false, code: FILL_PARTIAL, retry_safe: true`): the fill
+  placed N of M cells. `observed_state.remaining_cells` (capped at 32) lists
+  the exact cells still needing the target block; `remaining_count` is the
+  total. **Do NOT do a full grid sweep with `mc inspect`** — at most 1-2
+  inspects to identify a specific blocker (entity in the way, wrong block
+  already there), then retry `mc fill` over the **same box** (the fill is
+  re-entrant: already-placed cells become `skipped_already` no-ops). If a
+  blocker is a player/entity, whisper them to move; if it's a furniture
+  block inside your footprint, dig it and retry. The 9×9 cell-by-cell
+  inspect storm is the documented anti-pattern from run2 — `remaining_cells`
+  exists so you don't have to sweep.
 - `PLACEMENT_REPEATED_FAILURE` after 3 identical place attempts: stop
   retrying. observed_state tells you why (already-placed, too far, wrong
   held item).
@@ -96,6 +103,41 @@ Work from outside in:
 5. **Watchtower** — 3×3 cobblestone, 5-6 tall, torches on top.
 
 Use `mc scene` and `mc map 32` to survey. Mark completed structures.
+
+### Fences trap you — gates are MANDATORY
+
+Fences are 1.5-block tall, fully impassable, and `mc dig_area` won't
+clear them cleanly (you have to break each panel individually with an
+axe). **A fence enclosure with no gate is a trap.** Run2 evidence:
+agents built fence perimeters around their work area, then walked
+inside and couldn't pathfind back out — `mc move` errors with
+"NAV_BLOCKED" on what looks like flat ground.
+
+**Always include a gate when building fences.** The bulk verb does it
+in one call:
+
+```
+mc fence oak_fence 0 0 4 4 --gate south    # animal pen with south gate
+mc fence oak_fence X1 Z1 X2 Z2 --gate east  # perimeter with east access
+```
+
+If you must build a fence run manually with `mc place`, **leave at
+least one cell as `fence_gate` instead of `fence`**. Two gates on
+opposite sides if the enclosure is large enough that you might
+approach from either direction.
+
+**If you find yourself trapped inside a fence enclosure:**
+1. `mc inventory` — do you have a wooden/iron axe? If yes, equip it.
+2. `mc dig X Y Z` on a single fence panel (not `mc dig_area`) — drops
+   the fence as a pickup-able item, opens the gap.
+3. Walk through, then `mc place fence_gate X Y Z` to seal cleanly.
+4. If you have no axe and no Flint nearby with one, `kanban_block
+   reason="trapped behind fence, need axe"` and wait for a rescue.
+
+**For nav errors:** if `mc move` fails with NAV_BLOCKED on flat ground
+within a built structure, check `mc scene` for fence/fence_gate blocks
+in the path. Fences don't show on `mc map` as obstacles the same way
+walls do — the surface looks walkable but isn't.
 
 ## Weapons supply
 

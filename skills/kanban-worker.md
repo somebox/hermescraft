@@ -287,6 +287,62 @@ kanban_complete(
 
 Shape `metadata` so downstream parsers (reviewers, aggregators, schedulers) can use it without re-reading your prose.
 
+### Minecraft worker handoff template
+
+For in-world cards (SCOUT / CONSTRUCT / SUPPLY / GATHER / EXPLORE), the
+downstream consumer is another bot — usually the next builder or supplier
+— not a human reviewer. They need three things from your close-out:
+**what you established, what's left, and the coords / counts they need to
+pick up where you stopped.** Plain prose forces them to re-read the whole
+card; a structured shape lets them act in their first turn.
+
+A worker who produced the run2 SCOUT gold-standard handoff (1555-char
+table for `t_c7609d99`) wrote: corners, obstacles, flatness, marks,
+confidence. Mirror that shape per card kind.
+
+**SCOUT** — `mc chat` final line + `kanban_comment` body before `kanban_complete`:
+
+```
+SCOUT done @ <region>:
+  corners:   NW (x,z), NE (x,z), SW (x,z), SE (x,z)  — Y range a..b
+  flatness:  N cells level / M total  (worst delta ±N at (x,y,z))
+  obstacles: <tree/rock/pit/fence/entity list with coords>
+  marks:     <names placed, with coords if --at was used>
+  confidence: low | medium | high
+  next_step_hint: <one sentence for the next bot — e.g. "dig 2 cells E side before laying pad">
+```
+
+**CONSTRUCT** — same shape, different fields:
+
+```
+CONSTRUCT done @ <region>:
+  bounds:    X1,Y1,Z1 → X2,Y2,Z2 (W×D×H)
+  placed:    N of M cells (target block: <name>)
+  remaining: 0 | <list of cells still needing target block> (if partial)
+  material:  used N cobble / N planks; <chest|inventory> stock left
+  marks:     <site marks placed>
+  blockers_resolved: <player moved | furniture dug | nothing>
+```
+
+**SUPPLY** — three lines is enough:
+
+```
+SUPPLY done:
+  source:    <vein coords | chest name | crafted from N planks>
+  delivered: <count> <item> → <chest name or coords>
+  evidence:  mc inspect on chest shows <slot, item, count>
+```
+
+**Why structured?** The next worker's first turn is `kanban_show` — they
+read your summary and your most recent comment. If they can extract corner
+coords, remaining cells, or chest stock in one read, they save 5-10 turns
+of orientation. Run2 evidence: the SCOUT handoff above let Mason claim
+`t_eaac11e7` cabin shell directly without re-surveying. The terse handoffs
+on other cards cost ~5 minutes per pickup.
+
+Keep the headers literal (lowercase, colon-terminated) so a downstream
+analyzer can grep them.
+
 ## Creating cards: per-assignee concurrency is automatic
 
 Per-assignee concurrency is handled by the `landfolk` plugin's gate-check. Just `kanban_create` normally with the right assignee; if that assignee is busy, the plugin parks the new card via `claim_lock=mutex_park:<assignee>` until the bot frees up, then auto-promotes. **No `--parent` chaining required for mutex.**

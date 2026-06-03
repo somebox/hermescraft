@@ -99,6 +99,24 @@ Run `mc set_home` at base first. Carry: 2 pickaxes, 8+ food, 16 torches, 32 cobb
   back to either side. If `:base1:` exists, `mc go_site :base1:/mine_entrance`
   routes via the region's declared site — prefer it over a private mark.
 
+## Marking remote targets — always use `--at X Y Z`
+
+`mc mark NAME "note"` records **your standing position**. That's correct
+for `home`, `mine_entrance`, `mine_chest` (you're at them when you mark).
+For anything you spotted from the surface or from a tunnel branch — `lt_*`
+ore veins, `candidate_pad_*` flats from explore work — you MUST pass
+`--at X Y Z` with the target's coords:
+
+```
+mc mark lt_iron_ne "exposed face at -45 elev" --at 22 47 -28
+mc mark candidate_pad_ne_1 "flat 6x6 oak edge" --at 24 64 -32
+```
+
+If you describe coords in the note but don't pass `--at`, downstream
+SUPPLY / CONSTRUCT cards get the wrong coordinate. Run2 postmortem
+documented this — the dispatched worker can't `mc go_mark` to a vein
+that's saved as your tunnel position.
+
 ## Mining workflow
 
 Build tunnels — ore appears in walls. Don't wander caves chasing blocks.

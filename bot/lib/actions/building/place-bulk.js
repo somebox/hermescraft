@@ -3,7 +3,7 @@ import pathfinderPkg from 'mineflayer-pathfinder';
 import { recordRecentPlace, equipForDig, isDigProtected } from '../../runtime/dig-tools.js';
 import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
 import { shouldSkipPlaceAt, shouldSkipDigAt, createRegionSkipTracker } from '../../runtime/regions/policy-guard.js';
-import { fail } from '../../shared/action-contract.js';
+import { fail, ok } from '../../shared/action-contract.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
 import { withYBoth, parseYInput, normalizeBoxYArgs } from '../../runtime/coordinates.js';
@@ -342,42 +342,65 @@ export function createBuildingPlaceBulkPart(deps) {
         resultMsg = `FILL_PARTIAL: ${parts.join('; ')}.${selfNote} Check observed_state.skipped_occupied to see what's blocking.`;
       }
       resultMsg += regionSkips.suffix();
-      return {
-        result: resultMsg,
-        data: {
-          placed,
-          skipped_already,
-          skipped_occupied,
-          place_failures,
-          occupied_by_counts,
-          total: positions.length,
-          partial: skipped_total > 0,
-          bounds: {
-            x1: minX, x2: maxX,
-            z1: minZ, z2: maxZ,
-            // Y range — both perspectives:
-            block_y1: minY, block_y2: maxY,
-            surface_y1: minY + 1, surface_y2: maxY + 1,
-            // Legacy aliases:
-            y1: minY, y2: maxY,
+
+      const bounds = {
+        x1: minX, x2: maxX,
+        z1: minZ, z2: maxZ,
+        block_y1: minY, block_y2: maxY,
+        surface_y1: minY + 1, surface_y2: maxY + 1,
+        y1: minY, y2: maxY,
+      };
+      const sharedData = {
+        placed,
+        skipped_already,
+        skipped_occupied,
+        place_failures,
+        occupied_by_counts,
+        total: positions.length,
+        bounds,
+        ...regionSkips.dataFields(),
+        ...(autoDisplaced ? { auto_displaced: autoDisplaced } : {}),
+        ...(dugForOverwrite.length || overwriteSkipped.length ? {
+          overwrite_summary: {
+            dug: dugForOverwrite.length,
+            dug_cells: dugForOverwrite.slice(0, 10),
+            skipped: overwriteSkipped.length,
+            skipped_cells: overwriteSkipped.slice(0, 5),
           },
-          ...regionSkips.dataFields(),
-          ...(autoDisplaced ? { auto_displaced: autoDisplaced } : {}),
+        } : {}),
+      };
+
+      if (skipped_total === 0) {
+        return ok({
+          result: resultMsg,
+          data: { ...sharedData, partial: false },
+        });
+      }
+
+      const remaining_cells = [
+        ...skipped_occupied.map((c) => ({ x: c.x, y: c.y, z: c.z, kind: 'occupied', by: c.by })),
+        ...place_failures.map((c) => ({ x: c.x, y: c.y, z: c.z, kind: 'place_failed', reason: c.reason })),
+      ].slice(0, 32);
+      const fillHint = botWasInsideRegion
+        ? `mc goto_near ${minX} ${minY} ${minZ} range=3 (step outside box), then mc fill ${blockName} ${x1} ${y1} ${z1} ${x2} ${y2} ${z2}`
+        : (skipped_occupied.length > 0 && !overwrite)
+          ? `mc dig_area or mc fill … overwrite=true for blockers, then re-run same fill box`
+          : `Re-run mc fill ${blockName} ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} for remaining cells (no inspect grid needed)`;
+
+      return fail('FILL_PARTIAL', resultMsg, {
+        observed_state: {
+          ...sharedData,
+          partial: true,
+          remaining_count: skipped_total,
+          remaining_cells,
           ...(botWasInsideRegion ? {
             bot_was_inside_region: true,
             bot_blocked_cells: botBlockedCells,
-            next_action_hint: `Move outside the region (mc goto_near <outside coord>), then mc fill ${blockName} ${x1} ${y1} ${z1} ${x2} ${y2} ${z2}`,
-          } : {}),
-          ...(dugForOverwrite.length || overwriteSkipped.length ? {
-            overwrite_summary: {
-              dug: dugForOverwrite.length,
-              dug_cells: dugForOverwrite.slice(0, 10),
-              skipped: overwriteSkipped.length,
-              skipped_cells: overwriteSkipped.slice(0, 5),
-            },
           } : {}),
         },
-      };
+        next_action_hint: fillHint,
+        retry_safe: true,
+      });
     },
 
     /**

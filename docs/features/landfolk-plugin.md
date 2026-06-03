@@ -1,6 +1,14 @@
 # landfolk Hermes plugin — kanban orchestration cleanup
 
-**Status:** Shipped 2026-05-27 (commit `73ab8cf`). Phases A–C complete; Phase D (cleanup + soak) in progress. Supersedes `kanban-flow-cleanup.md` (deleted).
+> ## ⚠ Status update — 2026-06-02: under deprecation
+>
+> This plugin is being retired in favour of upstream-native Hermes capabilities (`kanban_create(parents=[…])` for serialisation, `--idempotency-key` for dedup, gateway-embedded dispatcher for spawning). See [`data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md`](../../data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md) for what we verified and [procedural-planning.md Phase 6](procedural-planning.md#phase-6--upstream-alignment) for the migration plan.
+>
+> **Key finding:** the plugin's `post_tool_call` hooks were never registered with Hermes (`ctx.register_hook(...)` is missing — compare disk-cleanup or langfuse plugins). The only enforcement path was `hermes landfolk gate-check`, which only fires when `scripts/landfolk-dispatcher.sh` calls it once per tick. That script was not running during the 2026-06-02 establish run, so the plugin's mutex code was dormant. Workers got spawned by the gateway-embedded dispatcher (despite the `dispatch_in_gateway: false` config) with no per-assignee guard. The dual-claim symptom we kept seeing is the documented failure mode when these layers fight.
+>
+> The historical content below is preserved as a record of *why* we did what we did. Don't extend it; if you find yourself reaching for it, check the migration plan first.
+
+**Status:** Phase 1 orchestrator **complete** (2026-05-31). Shipped 2026-05-27 (`73ab8cf`); Phases A–D closed without a dedicated 6h lab soak — production evidence from genesis `g-2026-05-30-3` (6h 21m) substituted (see [Phase D verification](#phase-d-verification-2026-05-31)). Supersedes `kanban-flow-cleanup.md` (deleted). Next plugin work: [Plan A — mark-drift](#plan-a--mark-drift-detector), [Plan B — kanban_yield](#plan-b--kanban_yield).
 **Owner:** re44 + steward
 **Companion docs:**
 - [steward-out-of-game.md](../archive/steward-out-of-game.md) — future Steward runtime model (webhook-driven, no in-game body). Orthogonal; not blocked by this plan.
@@ -402,19 +410,29 @@ The kill switches let us disable the plugin's enforcement without uninstalling �
 
 **Gate to Phase D:** soak with 3-4 active bots over a full afternoon shows no per-assignee race, no reassignment-stranded cards, iteration-budget block events trending down.
 
-### Phase D — Documentation and cleanup
+### Phase D — Documentation and cleanup (closed 2026-05-31)
 
-- Append 2026-05-27 entry to `docs/planning/devlog.md` pointing at this doc + commit refs.
-- Delete `docs/features/kanban-flow-cleanup.md` (done as part of this commit).
-- Audit `task_links` for legacy mutex artifacts:
-  ```sql
-  SELECT count(*) FROM task_links l
-  JOIN tasks p ON p.id=l.parent_id JOIN tasks c ON c.id=l.child_id
-  WHERE lower(p.assignee)=lower(c.assignee)
-    AND p.status NOT IN ('done','archived');
-  ```
-  Spot-check survivors; `hermes kanban unlink` confirmed mutex artifacts.
-- 6-hour live soak gate.
+- Append devlog entry pointing at this doc + commit refs — see `docs/planning/devlog.md` (2026-05-27 PM + 2026-05-31 closeout).
+- Delete `docs/features/kanban-flow-cleanup.md` — **done** (`62a500d`, file absent from tree).
+- **`task_links` mutex-artifact audit** — **not run as a recorded repo step.** Optional one-shot on live `landfolk-ops` DB when convenient (SQL in acceptance criteria below). Plugin no longer creates same-assignee mutex edges; survivors are historical only.
+- **6-hour soak gate** — **not re-run in lab.** Substituted by genesis `g-2026-05-30-3` postmortem (`data/genesis-runs/g-2026-05-30-3/findings/`): 6h 21m, **0** cards in `blocked`, no `queue-mutex:` block pattern, Mason self-recovered nav without reassignment-strand class recurrence.
+
+## Phase D verification (2026-05-31)
+
+Evidence reviewed from git history and devlog (no new long soak executed).
+
+| Acceptance item | Evidence |
+|---|---|
+| Plugin + `orchestrator/` + tests | `73ab8cf`, `plugins/landfolk/tests/` (`test_gate.py`, `test_hooks.py`, `test_promote.py`) |
+| Dispatcher uses gate-check only | `scripts/landfolk-dispatcher.sh` ~140 lines; **no** `enforce_assignee_mutex` / inline mutex Python |
+| SOUL/skill mutex retired | `prompts/landfolk/steward.md`, `skills/kanban-worker.md` — plugin `mutex_park` / automation notes; first-turn spec review + in-place resolution present |
+| `kanban-flow-cleanup.md` removed | Deleted; content folded into this doc per devlog 2026-05-27 |
+| Docs shipped | `62a500d` (plugin shipped, steward-out-of-game archived), `006237b` (fleet-prefix marks + chat adapter categories) |
+| Production soak substitute | `g-2026-05-30-3` findings: gate-check + hooks in use; blocked column empty for recipe stall (card stayed `ready`, not `blocked`) |
+| **`task_links` audit** | **Open optional** — no commit/log of SQL audit; run manually if board predates plugin |
+| **`hermes update` survival** | Not re-verified on 2026-05-31; symlink + enable in `setup-landfolk-profiles.sh` remains the post-upgrade step |
+
+**D9 gate (build `kanban_yield`):** mutex model treated as verified for planning purposes — proceed with [Plan B](#plan-b--kanban_yield).
 
 ## Test strategy
 
@@ -543,7 +561,77 @@ kanban_yield(
 
 Worker exits cleanly. Card status stays `ready` (so the dispatcher respawns next tick) or moves to a new `paused` status (TBD — adds to VALID_STATUSES, may need framework change). Run history records the yield. Next worker reads the progress and continues.
 
-Designed here; built when the mutex-demote model is verified in production and we can isolate iteration-budget signals from other failure modes.
+Designed here; **ready to build** after Phase D closeout (D9). See [Plan B](#plan-b--kanban_yield).
+
+---
+
+## Plan A — mark-drift detector
+
+**Goal:** Surface fleet-prefix mark coord drift across bots and route Steward to reconcile into `data/locations-base.json` — without LLM cost.
+
+**Existing code to reuse**
+
+| Piece | Location | Role |
+|---|---|---|
+| Prefix list + merge rules | `bot/lib/runtime/locations.js` (`FLEET_MARK_PREFIXES`, `mergeMarks`) | Must stay in sync with detector |
+| Manual reconciler | `scripts/reconcile-marks.py` | `scan_private_marks()`, `load_shared()`, conflict grouping by name → coord → owners |
+| Chest mark aggregation | `scripts/base-inventory.py` `load_chest_marks()` | Shared-wins + `(shadowed)` reporting pattern for private vs `locations-base.json` |
+| Steward workflow | This doc glossary *Fleet-prefix mark*; genesis `[RECONCILE]` + `reconcile-marks.py --auto` in `docs/features/genesis-boot.md` | Operator/Steward writes canonical shared file |
+
+**Gap:** `mark-drift.py` and `hermes landfolk detect <name>` are **specified** (backlog § `detectors/`) but **not implemented**. No file under `plugins/landfolk/landfolk/detectors/`.
+
+**Proposed implementation (incremental)**
+
+1. **`scripts/mark-drift.py`** (repo script first, plugin CLI later)
+   - Import or duplicate `scan_private_marks` / `is_fleet_mark` / `coord_of` from `reconcile-marks.py` (extract shared module `scripts/lib/locations_fleet.py` if both scripts need it).
+   - For each fleet mark name:
+     - If **missing from shared** and ≥2 bots agree on one coord → emit `info: consensus candidate` (reconcile can promote with `--auto`).
+     - If **missing from shared** and **multiple coords** among privates → `drift: conflict`.
+     - If **present in shared** and any private coord **≠ shared** → `drift: shadowed mismatch` (informational; shared already wins at read).
+   - Output modes: `--json` for cron, `--file-card` → `scripts/kanban add "[HEALTH] reconcile lt_foo" ...` (or print suggested command for human).
+2. **Tests:** `scripts/tests/test_mark_drift.py` with temp `data/locations-*.json` fixtures (mirror reconcile tests if any; add if missing).
+3. **Plugin slice (optional second PR):** `plugins/landfolk/landfolk/detectors/mark_drift.py` + extend `cli.py` with `hermes landfolk detect mark-drift --dry-run` calling the same library; Hermes `cron --no-agent` entry documented in plugin README.
+4. **Do not auto-write `locations-base.json` from the detector** — keep Steward/human/`reconcile-marks.py` as writers (authority pattern unchanged).
+
+**Success criteria:** Running detector on a tree copy of `g-2026-05-30-3` mark files produces zero false conflicts on `chest_system` / shared `lt_*`, and flags duplicate `craft_table_*` only if we extend scope (out of scope for v1 — fleet prefixes only).
+
+---
+
+## Plan B — `kanban_yield`
+
+**Goal:** Let workers exit at iteration budget with **partial progress** without using `kanban_block` (which reads as “human triage”) or `kanban_complete` (which closes the card and fires dependents).
+
+**Problem evidence:** ~31% of historical blocks were iteration-budget exhaustion (`landfolk-plugin.md` § Problem 3). Smaller-card discipline (Steward SOUL) reduces frequency but does not replace a **continue** terminal.
+
+**Existing surfaces**
+
+| Surface | Location | Behavior today |
+|---|---|---|
+| Worker proxy | `scripts/wb` | `wb close` → `hermes kanban complete`; `wb block` / `wb escalate` → `hermes kanban block` |
+| Facade | `scripts/kanban` | `complete` / `block` shell out to `hermes kanban` |
+| Plugin hooks | `plugins/landfolk/landfolk/orchestrator/hooks.py` | `_PROMOTE_TRIGGERS = {kanban_complete, kanban_block}` → promote next todo / release mutex park |
+| Card body trailers | `scripts/kanban` `_append_trailer` / worker-board-proxy meta cols | Progress could live in body trailer or `task_events.payload` |
+
+**Design choices (locked for planning)**
+
+1. **Worker-facing verb:** `wb yield "<summary>" --delivered N --target M` (and optional `--next "..."`) before a Hermes-native tool exists. Workers already use `wb` per Commit A (`docs/features/worker-board-proxy.md`).
+2. **Kanban semantics (prefer no Hermes fork):**
+   - **Option B1 (recommended):** `kanban_comment` with structured trailer `yield: {"delivered":60,"target":120,...}` + `kanban_reassign` same assignee OR leave card **`running`** and exit session — requires dispatcher/session to end worker without `complete`. Investigate whether Hermes worker exit on max-turns already leaves card `running` (then yield = comment + clean exit only).
+   - **Option B2:** New Hermes status `paused` — needs upstream `VALID_STATUSES` change; heavier.
+   - **Option B3:** Plugin `register_tool('kanban_yield', ...)` that writes `task_events(kind='yielded')`, updates body trailer, sets status **`ready`** with progress comment, releases worker — hook treats `kanban_yield` like `kanban_block` for **promote** (assignee free) but Steward board filters `yielded` events separately from `blocked`.
+3. **Plugin hook:** Add `kanban_yield` to `_PROMOTE_TRIGGERS` (same as complete/block) so the next chunk/card promotes. Do **not** add to block reason taxonomy for stale-block detector.
+4. **Next worker:** `wb context` / first-turn spec review reads latest `yield:` trailer or `task_events` payload and continues from `next_action`.
+5. **Skill doc:** `skills/kanban-worker.md` — “At max turns with partial delivery, `wb yield ...` not `wb block iteration exhausted`.”
+
+**Investigation tasks before coding**
+
+- Confirm Hermes behavior when a worker session hits `--max-turns` without terminal verb (status of active card).
+- Read `hermes_cli/kanban_db.py` `block_task` / `complete_task` for whether a third event kind can be added from plugin SQL only.
+- Prototype `wb yield` as comment + structured trailer + `hermes kanban` subprocess; measure whether gate-check respawns same card on next tick (desired for chunk cards).
+
+**Success criteria:** Synthetic card with target 128, worker yields at 64 → card not in `blocked`, Steward board shows progress, next spawn continues same card body without duplicate SUPPLY card.
+
+---
 
 ## Acceptance criteria
 
@@ -553,9 +641,10 @@ Designed here; built when the mutex-demote model is verified in production and w
 - ✅ `landfolk-dispatcher.sh` no longer contains `enforce_assignee_mutex` (or `prune_cross_assignee_chain_edges`, or related Python). Line count net-reduced by ~260.
 - ✅ `prompts/landfolk/steward.md` no longer contains a "Per-bot mutex" section.
 - ✅ `skills/kanban-worker.md` no longer contains a `--parent` rule section; has new "First-turn spec review" and "In-place blocker resolution" sections.
-- ✅ Functional test passes: 4 rapid-fire create-for-flint → 1 ready / 3 todo after one tick.
-- ✅ 6-hour soak: zero `queue-mutex:` blocks created; no card stranded `ready` > 2 ticks; no new reassignment-stranded cards.
-- ✅ `docs/features/kanban-flow-cleanup.md` deleted; `docs/README.md` index updated; devlog entry appended.
+- ✅ Functional test passes: 4 rapid-fire create-for-flint → 1 ready / 3 todo after one tick. *(Not re-run 2026-05-31; last verified at Phase B gate.)*
+- ✅ 6-hour soak: zero `queue-mutex:` blocks; no stranded ready; no reassignment-strand class. *(Substituted by `g-2026-05-30-3` findings — not a dedicated lab soak.)*
+- ✅ `docs/features/kanban-flow-cleanup.md` deleted; `docs/README.md` index points at this doc; devlog entries through 2026-05-31.
+- ☐ Optional: `task_links` same-assignee active-edge audit on live DB (SQL in Phase D section above).
 - ✅ `hermes update` (when next run) does not break landfolk operations — plugin survives upgrade; only post-update step is re-symlink if `~/.hermes/plugins/` was overwritten.
 
 ## Critical file references
