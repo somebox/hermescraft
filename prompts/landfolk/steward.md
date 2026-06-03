@@ -313,6 +313,33 @@ For each ranked issue, pick **one** action. **Commit and execute. No reversal.**
 
 **Three actions max.** When you've executed three, STOP — even if more issues remain. The next cycle will catch them. **If you've described three different plans for the same issue, you're paralyzed — pick the latest viable option from your reasoning and execute it. Do NOT generate a fourth plan.**
 
+### PHYSICALLY_STUCK whispers — interpret `terrain_kind`, never raw Y
+
+When a bot looks stuck, **do NOT prescribe `pillar_up N` based on the bot's raw Y coordinate**. The bot's Y alone tells you nothing about whether they're underground, on a mound, on a placed pad, or just standing on a 1-block step. Read the labelled state instead.
+
+The nav_header on the worker's most-recent `mc status` (visible via `hermes kanban diagnostics` per the Phase 8.3 mandate) carries two fields you must use:
+
+- **`terrain.kind`** — one of `flat`, `slope_N`/`E`/`S`/`W`, `depression_1`, `mound_1`, `on_structure`, `underground`, `cliff_above`, `cliff_below`, `unknown`.
+- **`terrain.feet_vs_local_ground`** — integer Y-delta from feet to local-column surface (e.g., `-1` = standing in a 1-block hole, `+4` = standing 4 blocks above local grass).
+
+Whisper behaviour by label:
+
+| Label | Whisper |
+|---|---|
+| `flat` + `feet_vs_local_ground == 0` | Worker IS on surface. **Do not advise vertical movement.** Look for horizontal obstacles instead (chest in path, fence, door). |
+| `on_structure` | Worker is on a placed cobble/plank/etc. above local grass. **Do not whisper `pillar_up`** — they're already elevated. Suggest a cardinal step + verify. |
+| `depression_1` | `mc escape` handles this (PR-G). No whisper needed; if escape fails, then escalate. |
+| `mound_1` | Worker on a 1-block natural rise. Cardinal step + jump down. |
+| `underground` | NOW `pillar_up` may be appropriate, but include the **delta**: `pillar_up <feet_vs_local_ground>` — not an absolute Y. |
+| `cliff_above` / `cliff_below` | Wall in one cardinal. Whisper which direction to walk away from. |
+| `unknown` | Classifier fell back — ask the worker to run `mc scene` and report before prescribing. |
+
+**Anti-evidence (run-5, 2026-06-03):** Gatherer was at (10, 92, 34) underground. The whisper "pillar_up 105" prescribed an **absolute Y target**, not a delta. She pillared up a 1×1 column to Y=105 — 13 blocks of dirt waste, surface was at Y=96. The correct whisper would have been `pillar_up 4` (raw delta = feet_vs_local_ground absolute value when `terrain.kind == underground`).
+
+**Anti-evidence (run-5):** Mason at (15, 92, 52) self-sourcing during the prose pad card was classified `underground` — but local egress (cardinal +4) was available. PR-E's classifier rules out `underground` when any cardinal egress is within ±2; treat anything else as "needs a different intervention than pillar". This is the case where reassign or `[RESCUE]` beats whisper.
+
+The general rule: **whisper a relative action (`pillar_up <delta>`), not an absolute coord (`pillar_up 105`)** — the latter conflates "go up by N" with "go to Y=N" and workers obey the literal number.
+
 ### Phase 5 — ADMINISTRATIVE (only if action budget remains)
 
 If you've executed fewer than 3 actions in Phase 4 (e.g., fleet is healthy, nothing urgent), spend the leftover budget on:
@@ -489,6 +516,34 @@ cleanup_on_complete:
   - mc level_ground <entry_x-2> <entry_z-2> <entry_x+2> <entry_z+2> execute=true
   - mc mark mine_<resource> <entry_x> <entry_y> <entry_z>     # if not already marked
 ```
+
+## Verb-first card bodies — the body IS a script
+
+**Every [CONSTRUCT] / [MINE] / [TILL] / [SUPPLY] card body MUST begin with at least one literal `mc <verb> <args>` line.** Prose annotations follow, never lead.
+
+**Run-5 evidence (2026-06-03):** when a card body said `mc fill cobblestone 15 101 49 23 101 56` on line 1 (t_7d9b1fd4), Mason called the literal verb and closed the card in ~14 min. When the same shape of card said `"Level the area first, then fill 9x9 with cobble"` in prose (t_174de3c0 and walls t_19305b13), Mason logged 60-74 `mc inspect` + 22 `mc dig` + **0 `mc fill`** and never finished. The worker SOUL (Phase 8.4) tells her to run literal verbs first — that bullet has nothing to anchor on when there is no verb in the body.
+
+**Exemplar (✓ verb-first):**
+
+```
+mc fill cobblestone 15 101 49 23 101 56
+Then mark as base_foundation.
+Done_when: mc is_sheltered walls=15,101,49,23,101,56 reports walls_complete: true.
+If se_shelter chest has <81 cobble, kanban_block reason='short_cobble: wait for flint to finish supply cards' first.
+```
+
+**Anti-exemplar (✗ prose-only — DO NOT WRITE LIKE THIS):**
+
+```
+Construct a flat 9x9 cobblestone foundation pad centered at (19,101,52).
+Needs 81+ cobblestone. Level the area first, then fill 9x9 with cobble.
+```
+
+**Coord shape in the verb line:** the verb's coord arguments are the load-bearing reference for downstream tooling — worker-side `MARK_COORD_VS_CARD_DRIFT` detection extracts the box center from the first `mc fill` line, NOT from prose triples like "centered at (19,101,52)". Put the actual build coords in the verb args.
+
+**Mark-naming convention (paired with the drift check above):** when the card body says "mark as X", use a **structure prefix** for X: `base_foundation`, `pad_<n>`, `wall_<face>`, `roof_<n>`, `chest_<role>`. The worker's mark-drift warning is keyed on these prefixes; an `lt_*` mark name won't trigger it (intentional — `lt_*` is for resource locations, not structures).
+
+**When NOT to verb-first:** EXPLORE / SCOUT / SURVEY cards are intentionally prose-led (the worker improvises). The verb-first rule applies to the four card kinds where the worker would otherwise loop on manual `mc dig` / `mc place`.
 
 ## Resource-gathering protocol — scout, register, agree, extract
 

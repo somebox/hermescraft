@@ -1,9 +1,46 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, NoProgressError, ACTION_CAPS_MS, pathfindGotoNear } from './_helpers.js';
 import { ok, fail } from '../shared/action-contract.js';
 import { recordNavBriefFailureForMark } from '../runtime/nav-brief.js';
 
 const { goals } = pathfinderPkg;
+
+/**
+ * Phase 9 PR-D — structure-mark name prefix: marks for built objects
+ * (foundations, walls, roofs, chests, pads). Resource marks (`lt_iron`,
+ * `mine_*`, `fishing_spot`) are intentionally excluded — they're vantage
+ * points, not target structures.
+ */
+const STRUCTURE_MARK_RE = /^(base_|pad_|wall_|roof_|chest_|foundation_)/;
+
+/**
+ * Phase 9 PR-D — read the active card's body coord stash. `scripts/wb
+ * stash-coord` writes this on claim by extracting the first `mc fill`,
+ * `mc place`, `mc goto`, or `mc move` coord from the card body. Returns
+ * null on missing/unparseable file — drift check is best-effort and never
+ * blocks a mark.
+ *
+ * Path resolution: `$HERMES_HOME/task-body-coord.json` (per-bot, since
+ * each landfolk worker has its own $HERMES_HOME).
+ */
+export function readCardBodyCoord({ env = process.env, readFile = fs.readFileSync } = {}) {
+  const home = env.HERMES_HOME;
+  if (!home) return null;
+  const filePath = path.join(home, 'task-body-coord.json');
+  try {
+    const raw = readFile(filePath, 'utf8');
+    const data = JSON.parse(raw);
+    const c = data?.coord;
+    if (!c || typeof c.x !== 'number' || typeof c.y !== 'number' || typeof c.z !== 'number') {
+      return null;
+    }
+    return { x: c.x, y: c.y, z: c.z };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Detect a coord-shaped substring inside mark-note text, e.g. "iron at
@@ -61,24 +98,50 @@ export function createMarksActions(deps) {
       // Phase 8 Change A: warn when the note text references coords but
       // the caller didn't pass --at. Mark IS still saved (soft warning);
       // the structured warning gives the agent a machine-readable hint.
-      let warnings = null;
+      const warnings = [];
       if (body.at == null && body.at_mark == null && noteRaw) {
         const m = noteRaw.match(MARK_NOTE_COORD_REGEX);
         if (m) {
           const [, hx, hy, hz] = m;
-          warnings = [{
+          warnings.push({
             code: 'MARK_NO_AT_COORD_IN_NOTE',
             message: `note text references coords (${hx},${hy},${hz}) but --at was not provided. Saved at bot position (${l.x},${l.y},${l.z}); downstream mc go_mark / mc move resolve here, NOT the described coord. Retry with: mc mark ${name} "${noteRaw}" --at ${hx} ${hy} ${hz}`,
             note_coords: { x: Number(hx), y: Number(hy), z: Number(hz) },
             saved_at: { x: l.x, y: l.y, z: l.z },
-          }];
+          });
+        }
+      }
+
+      // Phase 9 PR-D: warn when a STRUCTURE mark (`base_*`, `pad_*`, etc.)
+      // is being saved far from the active card body's coord. Run-5 evidence:
+      // Mason placed `base_foundation` while standing 38 blocks from the
+      // pad target coord; Steward caught it 22 min later via manual review.
+      // Drift detection runs only when wb stash-coord has written
+      // $HERMES_HOME/task-body-coord.json (on card claim).
+      if (STRUCTURE_MARK_RE.test(name)) {
+        const cardCoord = (deps.readCardBodyCoord ?? readCardBodyCoord)();
+        if (cardCoord) {
+          const dx = l.x - cardCoord.x;
+          const dy = l.y - cardCoord.y;
+          const dz = l.z - cardCoord.z;
+          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          if (distance > 3) {
+            warnings.push({
+              code: 'MARK_COORD_VS_CARD_DRIFT',
+              message: `mark '${name}' saved at (${l.x},${l.y},${l.z}) but the active card-body target is (${cardCoord.x},${cardCoord.y},${cardCoord.z}) — distance ${distance.toFixed(1)} blocks. Either the bot drifted from the build site or the mark name doesn't match this card's structure. Re-place near the card coord or rename to a non-structure prefix (e.g. lt_*).`,
+              mark_name: name,
+              mark_pos: { x: l.x, y: l.y, z: l.z },
+              card_coord: cardCoord,
+              distance: Math.round(distance * 10) / 10,
+            });
+          }
         }
       }
 
       return ok({
         result: `Saved '${name}' at ${l.x}, ${l.y}, ${l.z}`,
         data: { mark: l },
-        ...(warnings ? { observed_state: { warnings } } : {}),
+        ...(warnings.length ? { observed_state: { warnings } } : {}),
       });
     },
 

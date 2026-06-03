@@ -19,6 +19,18 @@ You run in kanban mode. **Your current task is the card you were dispatched with
 
 If you see contradictory signals — kanban card says X, `top_goal` says Y — the **card wins**. Always.
 
+### Prose-only `[CONSTRUCT]` / `[MINE]` / `[TILL]` / `[SUPPLY]` cards: escalate, don't grind
+
+On claim, scan the card body for an executable verb line: any line matching `^\s*mc\s+[a-z_]` outside of fenced code blocks. `Done_when: mc ...` does NOT count — that's a completion check, not the work.
+
+If the card kind is CONSTRUCT / MINE / TILL / SUPPLY **and there is no executable `mc <verb>` line in the body, run `wb escalate "prose_card_no_verb"` immediately** — do not start a manual loop. Steward will re-decompose with a verb-first body.
+
+**Run-5 evidence (2026-06-03):** the prose pad card had no verb. The grind to manually level + place burned 22 min before Steward noticed the stall. An escalate at claim turns 22 min of wasted budget into a 1-min noisy block.
+
+Escalate is intentionally noisy — `[!ESCALATED]` cards surface on Steward's board. That's the point. You're flagging a spec bug, not a runtime bug.
+
+This only applies to the four card kinds above; EXPLORE and SCOUT bodies are prose-led by design.
+
 ## Worker proxy: `wb`
 
 `scripts/wb` is the worker board proxy. Five verbs, scope-locked to your active card (id in `$HERMES_KANBAN_TASK`):
@@ -28,6 +40,7 @@ If you see contradictory signals — kanban card says X, `top_goal` says Y — t
 - `wb close [--result "..."]` — mark your card done.
 - `wb block "<reason>"` — park your card with a structured reason (use the prefixes from the kanban-worker SKILL: `region_blocked:…`, `task_spec_invalid:…`, etc.).
 - `wb escalate "<reason>"` — **needs-Steward decision.** Records a block event with `[!ESCALATED]` so Steward's board surfaces it in a NEEDS REVIEW lane. Use this when the card is mis-specified, the world doesn't match the body (bedrock under the build pad, no oak trees in the named site), or you're asking Steward to reassign / re-decompose. Prefer `wb escalate` over a plain `wb block` when you want fast human attention.
+- `wb stash-coord` — **run once on claim before any other `mc` action.** Extracts the active card's primary build coord (from the first `mc fill`/`mc place`/`mc goto`/`mc move` line) and stashes it locally. Powers `MARK_COORD_VS_CARD_DRIFT` warnings on structure marks (`base_*`, `pad_*`, `wall_*`, `roof_*`, `chest_*`, `foundation_*`) more than 3 blocks from the card target.
 
 `wb` cannot create cards, edit titles, change priorities, or wire dependencies — that's Steward's surface, not yours.
 

@@ -19,6 +19,18 @@ You run in kanban mode. **Your current task is the card you were dispatched with
 
 If you see contradictory signals — kanban card says X, `top_goal` says Y — the **card wins**. Always. When an `[EXPLORE]` or `[SCOUT]` card is active, do not divert to `perimeter_fence`, `wall_repair`, or any builder default; the card body is the work.
 
+### Prose-only `[CONSTRUCT]` / `[MINE]` / `[TILL]` / `[SUPPLY]` cards: escalate, don't grind
+
+On claim, scan the card body for an executable verb line: any line matching `^\s*mc\s+[a-z_]` outside of fenced code blocks. `Done_when: mc ...` clauses do NOT count — that's a completion check, not the work.
+
+If the card kind is CONSTRUCT / MINE / TILL / SUPPLY **and there is no executable `mc <verb>` line in the body, run `wb escalate "prose_card_no_verb"` immediately** — do not start a manual loop. Steward will re-decompose with a verb-first body.
+
+**Run-5 evidence (2026-06-03):** the prose pad card (`Construct a flat 9x9 cobblestone foundation pad ... Level the area first, then fill 9x9 with cobble`) had no verb. The grind to manually level + place burned 22 min before Steward noticed the stall and reclaimed. An escalate at claim-time turns 22 min of wasted budget into a 1-min noisy block.
+
+Escalate is intentionally noisy — `[!ESCALATED]` cards surface on Steward's board. That's the point. You're flagging a spec bug, not a runtime bug.
+
+This only applies to the four card kinds above; EXPLORE and SCOUT bodies are prose-led by design.
+
 ### Card-body `mc` verb lines are REQUIRED instructions, not flavor text
 
 When a card body contains a literal `mc <verb> <args>` line — e.g. `mc fill cobblestone 13 103 1 21 103 9` on a [CONSTRUCT] pad card, or `mc dig_area 12 92 0 18 92 6` on a mining card — **attempt that exact verb FIRST**, before any manual `mc place` / `mc dig` loop. The Steward (or the card spec) put it there because it's the cheapest correct path; reverting to manual is a Pattern-from-run-4 budget killer.
@@ -42,6 +54,7 @@ If the card body verb returns a contract error you can't address (`code: REGION_
 - `wb close [--result "..."]` — mark your card done.
 - `wb block "<reason>"` — park your card. Use the structured reason prefixes from the kanban-worker SKILL.
 - `wb escalate "<reason>"` — **needs-Steward decision.** Records a block event with `[!ESCALATED]` so Steward's board surfaces it under NEEDS REVIEW. Use for: mis-specified card, world doesn't match the body (build pad on bedrock, missing trees), asking for reassign / re-decompose.
+- `wb stash-coord` — **run once on claim before any other `mc` action.** Extracts the active card's primary build coord (from the first `mc fill`/`mc place`/`mc goto`/`mc move` line) and stashes it locally. Powers the `MARK_COORD_VS_CARD_DRIFT` warning: if you place a structure mark (`base_*`, `pad_*`, `wall_*`, `roof_*`, `chest_*`, `foundation_*`) more than 3 blocks from the card target, the `mc mark` response will carry a warning telling you to relocate or rename.
 
 `wb` cannot create cards, edit titles, or wire dependencies — that's Steward's surface. Prefer `wb escalate` over plain `wb block` when you want fast human attention on a mis-spec.
 

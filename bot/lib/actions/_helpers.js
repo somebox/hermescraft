@@ -275,7 +275,7 @@ export function pathfindWithProgressWatchdog(cfg) {
 export const ACTION_CAPS_MS = Object.freeze({
   place: 8000,
   goto: 300000,
-  goto_near: 8000,
+  goto_near: 15000,
   go_mark: 15000,
   move: 30000,
   collect: 40000,

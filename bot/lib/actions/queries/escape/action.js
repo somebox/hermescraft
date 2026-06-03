@@ -243,6 +243,19 @@ export function createEscapeQueries({ ctx, ensureBot, getActions, utils, goals }
     // explicitly — which handles the multi-step loop, auto-stops when a
     // lateral step becomes walkable, and uses the cascade of placeable
     // blocks (preferring re-mineable dirt/sand over cobblestone/stone).
+    //
+    // Phase 9 PR-G precedence guard: even in the trapped branch, if the
+    // classifier reports cardinal step-up options, route to the step-up
+    // strategy FIRST. Cheap egress beats panic-pillar. The classifier
+    // normally distinguishes step_up_only from trapped, but this guards
+    // against future classifier regressions or edge cases where both
+    // signals fire — Pattern C (panic-pillar) was the Run-4/Run-5 budget
+    // killer; never re-introduce it via a missing case.
+    if (cls === 'trapped' && Array.isArray(before.step_up_dirs) && before.step_up_dirs.length > 0) {
+      return escapeStrategyStepUpOnly({
+        b, before, cell, fromPos, cls, standingState, recordEscapeSuccess, goals,
+      });
+    }
     if (cls === 'trapped') {
       if (before.ceiling_within !== null && before.ceiling_within <= 2) {
                 return fail('ESCAPE_CEILING_BLOCKED', `Trapped with ceiling at +${before.ceiling_within}. Cannot pillar up — mc dig the ceiling or a wall first.`, {

@@ -380,6 +380,19 @@ export function buildNavFrame(ctx, deps = {}) {
   const situation = headerSituationLabel(standing, nav_mode);
   const computed_at = deps.now?.() ?? Date.now();
   const suggested_hint = cheapSuggestedHint(standing, ctx, deps);
+  // Phase 9 PR-E: surface terrain_kind + feet_vs_local_ground on the header
+  // so Steward SOUL (PR-F) can read labelled state instead of re-deriving
+  // 'underground' from raw Y.
+  let terrain = null;
+  if (bot?.entity?.position) {
+    try {
+      const land = buildLandscapeContext(bot);
+      terrain = {
+        kind: land.terrain_kind,
+        feet_vs_local_ground: land.feet_vs_local_ground,
+      };
+    } catch { /* ignore — terrain is best-effort */ }
+  }
   return {
     standing,
     nav_mode,
@@ -392,6 +405,7 @@ export function buildNavFrame(ctx, deps = {}) {
       nav_mode,
       signals: nav_mode_signals,
       computed_at,
+      ...(terrain ? { terrain } : {}),
       ...(suggested_hint ? { suggested_hint } : {}),
     },
   };
@@ -626,9 +640,19 @@ export function renderNavBrief(brief, statusContext = {}) {
   // doctrine ("treat missing rows as unknown, not blocked") can't fire.
   const status = statusContext.nav_brief_status || null;
   const refreshed = statusContext.brief_refresh_required === true;
+  // Phase 9 PR-E: render terrain when it's actionable. 'flat' and 'unknown'
+  // are the SOUL-trusted default cases; surfacing them adds noise without
+  // signal. Other labels (slope_X, depression_1, mound_1, on_structure,
+  // underground, cliff_*) are worth showing so Steward and workers can read
+  // them in nav_header without an extra mc scene call.
+  const terrain = brief.header?.terrain;
+  const terrainText = terrain && terrain.kind && terrain.kind !== 'flat' && terrain.kind !== 'unknown'
+    ? `terrain=${terrain.kind} (feet_vs_local_ground=${terrain.feet_vs_local_ground})`
+    : null;
   const lines = [
     `${sit} at ${posStr} — ${brief.nav_mode} (${sig})   ${asOf}`.trimEnd(),
   ];
+  if (terrainText) lines.push(terrainText);
   if (status === 'PARTIAL_BRIEF') {
     lines.push('⚠ PARTIAL_BRIEF: some destinations not probed within budget — treat missing rows as unknown, not blocked');
   } else if (status === 'STALE_BRIEF') {

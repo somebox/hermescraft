@@ -98,6 +98,80 @@ def analyze_paths(paths: list[Path]) -> dict:
     }
 
 
+def _gather_logs(paths: list[Path]) -> list[Path]:
+    out: list[Path] = []
+    for p in paths:
+        if p.is_dir():
+            out.extend(sorted(p.glob("t_*.log")))
+        elif p.is_file():
+            out.append(p)
+    return out
+
+
+def _compute_delta(current: dict, baseline: dict) -> dict:
+    """Side-by-side delta of two `analyze_paths` summaries.
+
+    Phase 9 PR-I: enables postmortem authors to quantify run-to-run change
+    without manual log diffing. The current parser counts terminal
+    `[error]` markers + verb names (not structured error.code envelopes —
+    that's a Phase 10 enrichment). So the delta is verb-level: total
+    invocations, errors-by-verb, and the per-verb invocation delta.
+    """
+    cur_verbs = current.get("verbs", {})
+    base_verbs = baseline.get("verbs", {})
+    cur_errs = current.get("errors_by_verb", {})
+    base_errs = baseline.get("errors_by_verb", {})
+    all_verbs = sorted(set(cur_verbs) | set(base_verbs))
+    rows = []
+    for v in all_verbs:
+        ci, bi = cur_verbs.get(v, 0), base_verbs.get(v, 0)
+        ce, be = cur_errs.get(v, 0), base_errs.get(v, 0)
+        rows.append({
+            "verb": v,
+            "invocations_current": ci,
+            "invocations_baseline": bi,
+            "invocations_delta": ci - bi,
+            "errors_current": ce,
+            "errors_baseline": be,
+            "errors_delta": ce - be,
+        })
+    rows.sort(key=lambda r: -abs(r["invocations_delta"]))
+    return {
+        "totals": {
+            "cards_current": current.get("cards", 0),
+            "cards_baseline": baseline.get("cards", 0),
+            "invocations_current": current.get("invocations", 0),
+            "invocations_baseline": baseline.get("invocations", 0),
+            "invocations_delta": current.get("invocations", 0) - baseline.get("invocations", 0),
+            "errors_current": current.get("error_invocations", 0),
+            "errors_baseline": baseline.get("error_invocations", 0),
+            "errors_delta": current.get("error_invocations", 0) - baseline.get("error_invocations", 0),
+        },
+        "verbs": rows,
+    }
+
+
+def _render_delta_text(delta: dict) -> str:
+    t = delta["totals"]
+    out = [
+        f"cards: {t['cards_current']} vs {t['cards_baseline']} (Δ {t['cards_current'] - t['cards_baseline']:+d})",
+        f"invocations: {t['invocations_current']} vs {t['invocations_baseline']} (Δ {t['invocations_delta']:+d})",
+        f"errors: {t['errors_current']} vs {t['errors_baseline']} (Δ {t['errors_delta']:+d})",
+        "",
+        f"{'verb':<20} {'inv_cur':>8} {'inv_base':>9} {'Δinv':>8} {'err_cur':>8} {'err_base':>9} {'Δerr':>8}",
+        "─" * 76,
+    ]
+    for r in delta["verbs"]:
+        if r["invocations_current"] == 0 and r["invocations_baseline"] == 0:
+            continue
+        out.append(
+            f"{r['verb']:<20} {r['invocations_current']:>8} {r['invocations_baseline']:>9} "
+            f"{r['invocations_delta']:>+8} {r['errors_current']:>8} {r['errors_baseline']:>9} "
+            f"{r['errors_delta']:>+8}"
+        )
+    return "\n".join(out)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
@@ -107,20 +181,35 @@ def main() -> int:
         help="t_*.log files or directories containing them",
     )
     ap.add_argument("--json", action="store_true", help="Print JSON summary")
+    ap.add_argument(
+        "--compare-with",
+        type=Path,
+        metavar="BASELINE_DIR",
+        help="Phase 9 PR-I: emit a delta vs the baseline log set. Outputs verb-level "
+             "invocation+error deltas; tier-2 error.code parsing deferred to Phase 10.",
+    )
     args = ap.parse_args()
 
-    log_files: list[Path] = []
-    for p in args.paths:
-        if p.is_dir():
-            log_files.extend(sorted(p.glob("t_*.log")))
-        elif p.is_file():
-            log_files.append(p)
-
+    log_files = _gather_logs(args.paths)
     if not log_files:
         ap.error("no t_*.log files found")
         return 2
 
     summary = analyze_paths(log_files)
+
+    if args.compare_with:
+        base_files = _gather_logs([args.compare_with])
+        if not base_files:
+            ap.error(f"no t_*.log files in baseline {args.compare_with}")
+            return 2
+        baseline = analyze_paths(base_files)
+        delta = _compute_delta(summary, baseline)
+        if args.json:
+            print(json.dumps({"current": summary, "baseline": baseline, "delta": delta}, indent=2))
+        else:
+            print(_render_delta_text(delta))
+        return 0
+
     if args.json:
         print(json.dumps(summary, indent=2))
     else:

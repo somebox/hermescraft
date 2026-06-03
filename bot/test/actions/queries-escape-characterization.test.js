@@ -195,6 +195,38 @@ test('queries.escape # characterization: step_up_only failure → ESCAPE_STEP_UP
   assert.equal(r.error.code, 'ESCAPE_STEP_UP_FAILED');
 });
 
+// Phase 9 PR-G — lock in the "step-up preferred over panic-pillar" invariant.
+// Run-4 + Run-5 evidence: Pattern C (panic-pillar) cost ~10-13 dirt/cobble
+// pillars left in the world per replay. The classifier already routes
+// step_up_only away from pillar; this regression test names the case so
+// future refactors don't re-introduce the cascade.
+test('queries.escape # PR-G: 1-block depression with cardinal egress → step-up, NOT pillar', async () => {
+  const bot = makeStepUpOnlyBot({ moveOnGoto: true });
+  const actions = createQueriesActions(escapeServices(bot));
+  const r = await actions.escape();
+  assertContract(r);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.classification_before, 'step_up_only');
+  assert.match(r.data.action_taken, /^step_up_/, 'first action must be step-up, not pillar');
+  assert.doesNotMatch(r.data.action_taken, /pillar/, 'must NOT cascade to pillar when cardinal egress exists');
+});
+
+test('queries.escape # PR-G: step_up failure does NOT cascade to pillar_up', async () => {
+  // When the cheap step-up egress fails, escape returns ESCAPE_STEP_UP_FAILED
+  // with retry_safe: true so the agent picks a different verb (mc dig, mc move
+  // to a different cell). Cascading to pillar_up from this state was the
+  // run-4/run-5 anti-pattern: 22-min grinds of pillar attempts on bad poses.
+  const bot = makeStepUpOnlyBot({ moveOnGoto: false });
+  const actions = createQueriesActions(escapeServices(bot));
+  const r = await actions.escape();
+  assertContract(r);
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'ESCAPE_STEP_UP_FAILED');
+  // The error envelope must NOT mention pillar — that would signal the
+  // fallback we explicitly prevent.
+  assert.doesNotMatch(r.error.message || '', /pillar/i, 'failure path must not suggest pillar');
+});
+
 test('queries.escape # characterization: trapped refuses when no pillar block', async () => {
   const pos = new Vec3(0.5, 64, 0.5);
   const inWall = (x, y, z) => {

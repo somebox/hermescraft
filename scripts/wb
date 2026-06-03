@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -387,6 +388,95 @@ def cmd_escalate(args: argparse.Namespace) -> int:
     return 0
 
 
+# ─── Phase 9 PR-D — card-body coord stash ────────────────────────────────
+#
+# `wb stash-coord` extracts the active card's primary build coord and writes
+# it to $HERMES_HOME/task-body-coord.json. The bot's `mc mark` action reads
+# this file at mark-action time to detect structure-mark drift (e.g. Mason
+# placing `base_foundation` 38 blocks from the pad target — run-5 evidence).
+#
+# Extraction priority — coord MUST come from a literal `mc <verb>` line,
+# NOT from prose like "centered at (X,Y,Z)". The prose-vs-verb-args
+# distinction matters because Steward's verb-first card body uses corner
+# coords ("mc fill ... 15 101 49 23 101 56") while the prose annotation
+# uses the center ("centered at (19,101,52)"). Drift detection keys on the
+# verb args; mixing the two would false-positive on every good mark.
+
+_FILL_LINE = re.compile(r"^\s*mc\s+fill\b\s+\S+\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\b")
+_PLACE_LINE = re.compile(r"^\s*mc\s+place\b\s+\S+\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\b")
+_GOTO_MOVE_LINE = re.compile(r"^\s*mc\s+(?:goto|move)\b\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\b")
+_FENCED = re.compile(r"^\s*```")
+
+
+def extract_card_body_coord(body: Optional[str]) -> Optional[dict]:
+    """Pull the first build coord from a card body.
+
+    Returns {"x": int, "y": int, "z": int} or None. Skips fenced code
+    blocks (they're examples, not instructions). Falls back to a generic
+    coord triple on non-prose lines if no `mc` verb is present, so prose
+    cards still get *some* coord for drift detection during the Phase 9
+    transition window before PR-A's verb-first rule is universally adopted.
+    """
+    if not body:
+        return None
+    in_fence = False
+    fallback: Optional[tuple[int, int, int]] = None
+    for raw in body.splitlines():
+        if _FENCED.match(raw):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _FILL_LINE.match(raw)
+        if m:
+            x1, y1, z1, x2, y2, z2 = (int(g) for g in m.groups())
+            return {"x": (x1 + x2) // 2, "y": (y1 + y2) // 2, "z": (z1 + z2) // 2}
+        m = _PLACE_LINE.match(raw)
+        if m:
+            return {"x": int(m.group(1)), "y": int(m.group(2)), "z": int(m.group(3))}
+        m = _GOTO_MOVE_LINE.match(raw)
+        if m:
+            return {"x": int(m.group(1)), "y": int(m.group(2)), "z": int(m.group(3))}
+        if fallback is None:
+            # Prose-fallback triple: require three integers on a non-mc-verb
+            # line that doesn't look like a range expression ("Y94-100").
+            stripped = raw.strip()
+            if stripped and not stripped.startswith("#") and "-" not in stripped[:1]:
+                gm = re.search(r"\(?\s*(-?\d+)\s*[,\s]\s*(-?\d+)\s*[,\s]\s*(-?\d+)\s*\)?", stripped)
+                if gm and "-" not in stripped[max(0, gm.start() - 2):gm.start()]:
+                    fallback = (int(gm.group(1)), int(gm.group(2)), int(gm.group(3)))
+    if fallback is not None:
+        x, y, z = fallback
+        return {"x": x, "y": y, "z": z}
+    return None
+
+
+def cmd_stash_coord(args: argparse.Namespace) -> int:
+    """Extract the active card's primary build coord and stash it at
+    $HERMES_HOME/task-body-coord.json for the bot's mark action to read."""
+    home = os.environ.get("HERMES_HOME")
+    if not home:
+        _die("HERMES_HOME not set — cannot stash coord (worker dispatcher injects this)")
+    task_id = _active_task_id(args.task)
+    ctx = _build_context(task_id)
+    body = ctx.get("card", {}).get("body") or ""
+    coord = extract_card_body_coord(body)
+    out_path = Path(home) / "task-body-coord.json"
+    if coord is None:
+        # Clear any stale stash from a prior card so drift detection doesn't
+        # fire against the previous card's target.
+        try:
+            out_path.unlink()
+        except FileNotFoundError:
+            pass
+        print(f"# no extractable coord in card {task_id} body — cleared stash")
+        return 0
+    payload = {"task_id": task_id, "coord": coord}
+    out_path.write_text(json.dumps(payload), encoding="utf-8")
+    print(f"# stashed {task_id} coord ({coord['x']},{coord['y']},{coord['z']}) → {out_path}")
+    return 0
+
+
 # ─── dispatch ────────────────────────────────────────────────────────────
 
 
@@ -426,6 +516,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("reason")
     p.set_defaults(func=cmd_escalate)
 
+    p = sub.add_parser(
+        "stash-coord",
+        help="Extract the card body's primary build coord to $HERMES_HOME/task-body-coord.json (Phase 9 PR-D)",
+    )
+    p.set_defaults(func=cmd_stash_coord)
+
     return ap
 
 
@@ -436,6 +532,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.cmd in {"comment", "close", "block", "escalate"} and not shutil.which("hermes"):
         _die("`hermes` not on PATH — write verbs need it for event/lock cascades")
     return args.func(args) or 0
+
+
+# ─── re-exports for tests (keep at bottom so they shadow nothing) ────────
+__all__ = ["extract_card_body_coord", "cmd_stash_coord", "main"]
 
 
 if __name__ == "__main__":

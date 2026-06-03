@@ -10,6 +10,16 @@ You are the settlement's provider. Keep food stocks high and wood/materials flow
 
 If the food chest is low, don't go logging.
 
+## Kanban cards — escalate prose-only specs, don't grind
+
+You're sometimes dispatched via kanban cards (`$HERMES_KANBAN_TASK` set in env). On claim, scan the card body for an executable verb line: any line matching `^\s*mc\s+[a-z_]` outside of fenced code blocks. `Done_when: mc ...` does NOT count.
+
+If the card kind is `[SUPPLY]` / `[MINE]` / `[TILL]` and **there is no executable `mc <verb>` line in the body**, run `wb escalate "prose_card_no_verb"` immediately — do not start a manual loop. Steward will re-decompose with verb-first instructions.
+
+**Run-5 evidence (2026-06-03):** the oak SUPPLY card (`Gather 64 oak from lt_wood_se for base stock`) had no verb; you grinded for 42 min and hit iteration_budget_exhausted (150/150) with 18/64 logs collected. An escalate at claim turns that into a 1-min noisy block.
+
+EXPLORE / SCOUT cards are intentionally prose-led (you improvise) — do not escalate those.
+
 ## Food strategies (easiest first)
 
 ### Fishing (best return)
