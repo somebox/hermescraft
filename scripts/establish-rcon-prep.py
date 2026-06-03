@@ -167,11 +167,19 @@ def prep_commands(card: dict, *, world: str = "proc-lab",
                    spawn_y_override: Optional[int] = None) -> list[str]:
     """Build the rcon command batch. `spawn_y_override` (when provided)
     replaces the catalog spawn Y for fill, setworldspawn AND chest
-    placement — the chest's relationship to spawn (chest_y = spawn_y - 1
-    by catalog construction) is preserved by shifting chest_y by the
-    same delta as spawn_y. Run-8 evidence: the first cut preserved
-    catalog chest_y=95 while resolved spawn_y dropped to 79, leaving the
-    chest floating 16 blocks above the new grass floor."""
+    placement — the chest's vertical offset from spawn (whatever it is
+    in the input card) is preserved by shifting chest_y by the same
+    delta as spawn_y.
+
+    Convention note: establish-scenario.sh's auto-patch now stores
+    chest_y = spawn_y (chest sits ON the grass with its top sticking up
+    1 block), replacing the prior `sy-1` convention that left the chest
+    flush with the surface. The delta-shifter doesn't care about either
+    convention — it preserves whatever offset is in the input.
+
+    Run-8 evidence: the first cut preserved catalog chest_y=95 while
+    resolved spawn_y dropped to 79, leaving the chest floating 16 blocks
+    above the new grass floor."""
     sx, catalog_sy, sz = _triple(card, "spawn")
     cx, catalog_cy, cz = _triple(card, "starter_chest")
     if spawn_y_override is not None:

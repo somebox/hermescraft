@@ -127,8 +127,12 @@ class PrepCommandsOverrideTest(unittest.TestCase):
                       msg=f"data merge must reference resolved chest coord; got {data_merge}")
 
     def test_chest_chest_y_minus_one_relation_preserved(self):
-        # The catalog always uses chest_y = spawn_y - 1 (chest below the
-        # bot's feet). Any spawn_y_override must preserve that delta.
+        # Legacy catalog convention: chest_y = spawn_y - 1. Any
+        # spawn_y_override must preserve that delta even after the
+        # establish-scenario.sh patch changed the live convention to
+        # chest_y = spawn_y — the delta-shifter must remain
+        # convention-agnostic so a stale or alternate catalog still
+        # produces a coherent chest placement.
         for catalog_sy, override_sy in [(96, 79), (96, 64), (64, 96)]:
             card = {
                 "spawn": [4, catalog_sy, 24],
@@ -140,6 +144,24 @@ class PrepCommandsOverrideTest(unittest.TestCase):
             self.assertIn(f"5 {expected_chest_y} 24", chest_cmd,
                 msg=f"catalog_sy={catalog_sy} override={override_sy}: "
                     f"chest should be at Y={expected_chest_y}; got {chest_cmd}")
+
+    def test_chest_at_spawn_level_convention_preserved(self):
+        # Post-patch convention from establish-scenario.sh: chest_y =
+        # spawn_y (chest BLOCK sits on the grass with its top sticking
+        # up one block — a normal placed chest). The delta-shifter must
+        # preserve this end-to-end so the override lands the chest at
+        # exactly resolved_sy (no off-by-one drift).
+        for catalog_sy, override_sy in [(96, 79), (96, 64), (64, 96)]:
+            card = {
+                "spawn": [4, catalog_sy, 24],
+                "starter_chest": [5, catalog_sy, 24],  # chest at spawn-feet level
+            }
+            cmds = erp.prep_commands(card, spawn_y_override=override_sy)
+            chest_cmd = next(c for c in cmds if "setblock" in c and "chest" in c)
+            self.assertIn(f"5 {override_sy} 24", chest_cmd,
+                msg=f"new convention (chest_y=spawn_y): catalog_sy={catalog_sy} "
+                    f"override={override_sy}: chest should be at Y={override_sy}; "
+                    f"got {chest_cmd}")
 
     def test_run7_regression_scenario(self):
         # Run-7: catalog Y=96 (stale), natural surface ~Y66, slab at 96.

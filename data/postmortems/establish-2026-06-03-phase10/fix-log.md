@@ -76,6 +76,53 @@ on run-9.
 
 ---
 
+## Fix 2 — Starter chest flush with grass instead of sitting on it
+
+**Symptom.** Live run-8 observation: chest is "positioned in the ground
+Y-1" — accessible but visually sunk. Standing at spawn (Y=79), bot sees
+the chest one block east at the SAME Y level as their feet, its top
+flush with the grass surface. A standard placed chest should sit ON
+the grass with its top sticking up one block above the bot's feet.
+
+**Root cause.** `establish-scenario.sh` auto-patch line 106 (pre-fix)
+wrote `starter_chest = [sx+1, sy-1, sz]`. Comment said "surface-y
+(sy-1)" — author conflated "Y of the surface BLOCK" with "Y at which a
+player stands on the surface." Setblock at `cy = sy-1` places the
+chest BLOCK in the same row as the grass slab the prep just laid; the
+chest visually replaces one grass block instead of sitting on top.
+
+**Live evidence.**
+- World prep at Y=79: `fill ... 78 ... grass_block`, `setblock 5 78 24 chest`
+- Bot feet at Y=79, chest block occupies Y=78→79
+- Chest top at Y=79 = bot feet level → flush, not raised
+
+**Fix (applied this run).** Auto-patch now writes
+`starter_chest = [sx+1, sy, sz]` (chest sits AT spawn-feet level —
+block bottom at Y=sy, top at Y=sy+1, sticking up one block above the
+grass). `prep_commands` and `apply_spawn_y_override` are
+convention-agnostic — they preserve whatever spawn↔chest delta is in
+the input — so existing legacy-convention test cases stay valid.
+
+Test `test_chest_at_spawn_level_convention_preserved` covers the new
+convention end-to-end: card with `chest_y = catalog_sy`, override to
+resolved_sy → chest setblock at Y=resolved_sy (no off-by-one drift).
+**21/21 tests green** (up from 20).
+
+**Next-run predicate.** Bot at spawn looking east sees a chest with
+its top sticking up one block above the grass plane (not flush). Quick
+rcon probe:
+```bash
+ssh ubuntu-host sudo docker exec -i minecraft rcon-cli \
+  'execute in proc-lab if block 5 79 24 minecraft:chest'   # expect: Test passed
+ssh ubuntu-host sudo docker exec -i minecraft rcon-cli \
+  'execute in proc-lab if block 5 78 24 minecraft:grass_block'  # expect: Test passed
+```
+
+**Status.** Code + tests committed. Active run-8b chest stays at Y=78
+(no in-flight world re-prep); the fix takes effect on run-9.
+
+---
+
 ## Open — terrain.kind="unknown" fleet-wide
 
 **Symptom.** Every worker's `/status` returns
