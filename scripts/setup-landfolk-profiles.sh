@@ -103,11 +103,10 @@ PYEOF
 }
 
 patch_context_length() {
-  # Cap the context-budget Hermes thinks it has so compression fires earlier
-  # and per-cycle input cost stays bounded. Without this, OpenRouter
-  # auto-detects deepseek-v4-flash at 500K-1M and compression at the 0.50
-  # default threshold doesn't trigger until 250K-500K of conversation. With
-  # a 250K cap, compression fires at ~125K — well-bounded per-bot cost.
+  # Cap the context-budget Hermes uses (deepseek-v4-flash advertises ~1M via
+  # OpenRouter). Without this, compression.threshold applies to the full 1M
+  # window. With 250K cap + threshold 0.2 (see apply_landfolk_compression_policy),
+  # summarization runs at ~50K tokens.
   # Lives at top-level `model.context_length:` (NOT under agent:).
   local config="$1"
   local ctx="${2:-250000}"
@@ -143,12 +142,22 @@ else:
 PYEOF
 }
 
+apply_landfolk_compression_policy() {
+  # Cap context + aggressive compression.threshold (see patch-landfolk-compression-config.py).
+  local config="$1"
+  local py="$ROOT/scripts/patch-landfolk-compression-config.py"
+  if [ "$DRY_RUN" = true ]; then
+    echo "  compression policy: would run $py"
+    return 0
+  fi
+  python3 "$py" "$config"
+}
+
 patch_compression_model() {
-  # Pin the auxiliary compression model. Default empty → Hermes auto-picks
-  # google/gemini-3-flash-preview via OpenRouter. Pinning to a known cheap
-  # fast model (google/gemini-2.5-flash) gives predictable per-compression
-  # cost — fires every ~125K-250K tokens after the context_length cap above.
-  # Lives at top-level `auxiliary.compression.model:`.
+  # Legacy: pins auxiliary.compression.model directly. New callers should let
+  # apply_landfolk_compression_policy do it via patch-landfolk-compression-config.py,
+  # which reads the canonical model from data/agent-models.json. Kept for
+  # back-compat with ad-hoc invocations.
   local config="$1"
   local model="$2"
   if [ "$DRY_RUN" = true ]; then
@@ -653,7 +662,9 @@ setup_worker() {
   patch_env_passthrough "$dir/config.yaml" ""
   patch_max_turns "$dir/config.yaml" 150
   patch_context_length "$dir/config.yaml" 250000
-  patch_compression_model "$dir/config.yaml" "google/gemini-2.5-flash"
+  # apply_landfolk_compression_policy reads the aux model from
+  # data/agent-models.json (auxiliary.compression) — single source of truth.
+  apply_landfolk_compression_policy "$dir/config.yaml"
 
   if [ -f "$dir/SOUL.md" ] && ! diff -q <(soul_for_worker "$name") "$dir/SOUL.md" >/dev/null 2>&1; then
     if [ "$DRY_RUN" = false ]; then
@@ -691,7 +702,9 @@ setup_steward() {
   patch_env_passthrough "$dir/config.yaml" "HERMES_KANBAN_BOARD"
   patch_steward_toolsets "$dir/config.yaml"
   patch_context_length "$dir/config.yaml" 250000
-  patch_compression_model "$dir/config.yaml" "google/gemini-2.5-flash"
+  # apply_landfolk_compression_policy reads the aux model from
+  # data/agent-models.json (auxiliary.compression) — single source of truth.
+  apply_landfolk_compression_policy "$dir/config.yaml"
   ensure_steward_env
 
   write_file "$dir/SOUL.md" "$(soul_for_steward)"

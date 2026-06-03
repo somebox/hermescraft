@@ -18,6 +18,15 @@
 
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ALLOWLIST_JSON="${REPO_ROOT}/config/orchestrator-mc-allowlist.json"
+
+orchestrator_mc_allowed() {
+  local verb="$1"
+  jq -e --arg v "$verb" '.allowed_verbs | index($v) != null' "$ALLOWLIST_JSON" >/dev/null 2>&1
+}
+
 payload="$(cat -)"
 cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 
@@ -66,20 +75,10 @@ fi
 while IFS= read -r mc_match; do
   [ -z "$mc_match" ] && continue
   verb="$(printf '%s' "$mc_match" | grep -oE 'mc[[:space:]]+[a-z_]+' | awk '{print $2}')"
-  case "$verb" in
-    # Read-only orientation + observation
-    observe|status|scene|marks|nearby|look|find|inspect|map|terrain_top|list_container)
-      ;;
-    # In-band coordination
-    chat|read_chat|whisper)
-      ;;
-    # Meta/cli surface (no world side-effects)
-    help|commands|goals|task|cancel)
-      ;;
-    *)
-      block "mc $verb is denied for the orchestrator role. Steward observes (mc observe/status/scene/marks/nearby/look/find/inspect/map/terrain_top/list_container) and coordinates via chat (mc chat/read_chat/whisper) — field actions (move/goto/mark/dig/place/collect/craft/...) belong to the assigned kanban worker. If you need this verb to do orchestration, comment on the relevant card instead."
-      ;;
-  esac
+  if orchestrator_mc_allowed "$verb"; then
+    continue
+  fi
+  block "mc $verb is denied for the orchestrator (Steward) role. See prompts/landfolk/steward.md."
 done < <(printf '%s' "$cmd" | grep -oE '(^|[;&|<>(])[[:space:]]*mc[[:space:]]+[a-z_]+')
 
 # Default: allow.

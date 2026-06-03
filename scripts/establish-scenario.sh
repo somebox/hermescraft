@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 # Bootstrap exploration-first base establishment on proc-lab + landfolk fleet.
+# Requires bash 5+ (macOS /bin/bash is 3.2).
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 5 ]]; then
+  for _b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    if [[ -x "$_b" ]]; then
+      exec "$_b" "$0" "$@"
+    fi
+  done
+  echo "establish-scenario.sh: bash 5+ required" >&2
+  exit 1
+fi
 #
 # Idempotent: stops any running landfolk session first, wipes per-bot memory
 # (marks + recent hermes sessions), patches map JSON to align muster with
@@ -85,6 +95,15 @@ if [[ "$SKIP_MEM_WIPE" != "1" ]]; then
   rm -f "$ROOT/data/locations-base.json"
 fi
 
+# Optional full runtime wipe (establish-run.sh sets FULL_RUNTIME_WIPE=1).
+if [[ "${FULL_RUNTIME_WIPE:-0}" == "1" ]]; then
+  echo "== runtime metadata wipe =="
+  rm -f "$ROOT"/data/goals-*.json "$ROOT"/data/chest-snapshots-*.json 2>/dev/null || true
+  rm -f "$HOME/.hermes/kanban/boards/${HERMES_KANBAN_BOARD}/kanban.db-wal" \
+        "$HOME/.hermes/kanban/boards/${HERMES_KANBAN_BOARD}/kanban.db-shm" 2>/dev/null || true
+  rm -f "$HOME"/.hermes-landfolk-*/task-body-coord.json 2>/dev/null || true
+fi
+
 "$PY" -m mapcatalog scenario lint --only "$VARIANT"
 
 CATALOG_DIR="$("$PY" -c "
@@ -161,11 +180,11 @@ echo "== rcon prep (peaceful + starter chest) =="
 
 WORKERS="${WORKERS:-steward,gatherer,flint,mason}"
 
-# Phase 6 (2026-06-02): the gateway hosts the kanban dispatcher
-# (config: kanban.dispatch_in_gateway=true). Start it before the workers
-# so ready cards get picked up immediately. `run --replace` is idempotent
-# — kills any prior gateway and starts a fresh one.
-# See docs/features/procedural-planning.md Phase 6.
+# Gateway kanban dispatcher (kanban.dispatch_in_gateway=true in ~/.hermes/config.yaml).
+# Start gateway before workers so ready cards dispatch. Do not also start
+# scripts/landfolk-dispatcher.sh when embedded dispatch is enabled — Hermes
+# documents claim races if both run against the same kanban.db.
+# Override: FORCE_STANDALONE_DISPATCHER=1 or dispatch_in_gateway: false.
 echo "== hermes gateway run (idempotent) =="
 nohup hermes gateway run --replace >/dev/null 2>&1 &
 disown 2>/dev/null || true
@@ -240,15 +259,56 @@ gl.reinit_kanban_board()
 echo "== seed kanban epic + explore cards =="
 "$PY" scripts/establish-seed-cards.py --map "$MAP_JSON"
 
+LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
+mkdir -p "$LOG_DIR"
+
+_dispatch_embedded=1
+if [[ -f "${HOME}/.hermes/config.yaml" ]]; then
+  _dispatch_embedded="$("$PY" -c "
+import yaml
+from pathlib import Path
+p = Path.home() / '.hermes' / 'config.yaml'
+try:
+    c = yaml.safe_load(p.read_text()) or {}
+    k = (c.get('kanban') or {}).get('dispatch_in_gateway')
+    print(1 if k in (True, 'true', 1, '1', 'yes', 'on') else 0)
+except Exception:
+    print(1)
+" 2>/dev/null || echo 1)"
+fi
+if [[ "${SKIP_DISPATCHER:-0}" != "1" ]]; then
+  if [[ "${FORCE_STANDALONE_DISPATCHER:-0}" == "1" || "${_dispatch_embedded}" == "0" ]]; then
+    echo "== landfolk dispatcher (standalone loop) =="
+    if pgrep -f 'scripts/landfolk-dispatcher.sh' >/dev/null 2>&1; then
+      echo "  dispatcher already running"
+    else
+      nohup bash "$ROOT/scripts/landfolk-dispatcher.sh" >>"$LOG_DIR/dispatcher.log" 2>&1 &
+      disown 2>/dev/null || true
+      sleep 1
+      echo "  log: $LOG_DIR/dispatcher.log"
+    fi
+  else
+    echo "== dispatcher: gateway-embedded (skip standalone landfolk-dispatcher.sh) =="
+    echo "  verify: grep 'kanban dispatcher' ~/.hermes/logs/gateway.log"
+    pkill -f 'scripts/landfolk-dispatcher.sh' 2>/dev/null || true
+  fi
+fi
+
+if [[ "${SKIP_BOOTSTRAP_VERIFY:-0}" != "1" ]]; then
+  echo "== bootstrap verify (terrain at muster) =="
+  "$PY" scripts/establish-bootstrap-verify.py || true
+fi
+
 cat <<EOF
 
 Bootstrap complete.
-  Board:  scripts/kanban board
-  Grade:  scripts/establish-check.py
-  Logs:   tail -F logs/landfolk-*/steward.log logs/landfolk-*/gatherer.log
-  Stop:   scripts/landfolk stop
+  Board:      scripts/kanban board
+  Verify:     scripts/establish-launch-verify.sh
+  Grade:      scripts/establish-check.py
+  Logs:       scripts/landfolk logs agents --profiles steward,flint,mason
+  Dispatcher: gateway ~/.hermes/logs/gateway.log (embedded) or tail -F $LOG_DIR/dispatcher.log (standalone)
+  Stop:       scripts/landfolk stop
 
-PR-1 scene bench (manual):
-  BOT_URL=http://localhost:3002 scripts/proc-lab-ops.sh agent-only
+One-shot next time:  scripts/establish-run.sh [--fresh-disc SEED]
 
 EOF

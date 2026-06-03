@@ -10,11 +10,41 @@ Single checklist for **exploration-first base establishment** on **proc-lab** wi
 
 ---
 
+## One command (recommended)
+
+From repo root (uses Homebrew `bash`/`python` when needed):
+
+```bash
+# Full path: tests + deploy + cleanup + bootstrap + verify
+scripts/establish-run.sh --min-credits-usd 5
+
+# Fresh proc-lab disc + clean log dir
+RUN_ID=phase12 scripts/establish-run.sh --fresh-disc 1001 --archive-logs
+
+# Re-bootstrap only (code already deployed, tests green)
+scripts/establish-run.sh --skip-preflight
+```
+
+| Step | Script (if run piecemeal) |
+|------|---------------------------|
+| Preflight | `scripts/establish-preflight.sh [--min-credits-usd N]` (tests + deploy; **no** live diagnostics by default) |
+| Stop + kill orphans | `scripts/establish-fleet-cleanup.sh` |
+| Bootstrap | `scripts/establish-scenario.sh` (bash 5+, gateway + kanban dispatch) |
+| Launch gate | `scripts/establish-launch-verify.sh` |
+| Stop + archive | `establish-fleet-cleanup.sh` snapshots logs first; or `landfolk stop` then `scripts/snapshot-fleet-logs.sh <pm-dir>` |
+| Grade | `scripts/establish-check.py` |
+
+---
+
 ## 1. Script index
 
 | Script | Role |
 |--------|------|
-| `scripts/establish-scenario.sh` | **One-shot bootstrap** (stop fleet, wipe memory, map, materialize, RCON prep, gateway, start bots, TP, kanban reset, seed cards) |
+| `scripts/establish-run.sh` | **Operator entry** — preflight → cleanup → optional fresh disc → scenario → launch verify |
+| `scripts/establish-preflight.sh` | Tests, deploy, toolchain, optional OpenRouter balance; diagnostics only with `--with-diagnostics` (advisory) |
+| `scripts/establish-fleet-cleanup.sh` | `landfolk stop` + `pkill landfolk:` + free bot HTTP ports |
+| `scripts/establish-launch-verify.sh` | Post-bootstrap: terrain, progress `pos`, steward 403, dispatcher |
+| `scripts/establish-scenario.sh` | Bootstrap (memory, map, materialize, RCON, gateway, bots, kanban, terrain verify) |
 | `scripts/establish-check.py` | Post-run **process grade** (pad cobble, explores, epic) |
 | `scripts/establish-rcon-prep.py` | Peaceful world + starter chest + `tp_workers` (called by bootstrap) |
 | `scripts/establish-materialize.py` | `mapcatalog try` for chosen map JSON |
@@ -28,6 +58,7 @@ Single checklist for **exploration-first base establishment** on **proc-lab** wi
 | `scripts/genesis_lib.py` | `archive_run_state` + `reinit_kanban_board` (used inside bootstrap) |
 | `scripts/reconcile-marks.py` | Merge fleet marks into `data/locations-base.json` |
 | `scripts/snapshot-fleet-logs.sh` | Copy `/tmp/hermescraft` → postmortem dir at fleet stop |
+| `scripts/patch-landfolk-compression-config.py` | Cap context + aggressive compression on Hermes `config.yaml` (deploy + each agent start) |
 | `scripts/auto-stuck-check.py` | PR-S stuck detection (invoked from watchdog) |
 | `scripts/fleet-status.py` | Optional one-screen fleet snapshot |
 | `server.local.yaml` | Mapcatalog profile: world name, SSH/RCON, `reuse_seed`, evac list |
@@ -93,32 +124,7 @@ Server must load **proc-lab** (or your configured MV world) and accept bot accou
 
 ## 3. Hermetic gate (run before bootstrap)
 
-Do not start a long replay until these pass (~2–5 minutes).
-
-```bash
-cd bot && HERMES_VALIDATE=1 npm test -- \
-  test/runtime/nav-brief-render.test.js \
-  test/cli/output.test.js \
-  test/runtime/observation-status-shape.test.js \
-  test/actions/goto-near-timeout-contract.test.js \
-  test/scene-canopy-window.test.js \
-  test/server/orchestrator-mc-gate.test.js \
-  test/server/orchestrator-mc-gate-http.test.js
-
-python3 -m unittest \
-  scripts.tests.test_auto_stuck_check \
-  scripts.tests.test_watchdog_progress_emit \
-  scripts.tests.test_watchdog_progress_e2e \
-  scripts.tests.test_wb_stash_side_effect \
-  scripts.tests.test_orchestrator_allowlist_sync \
-  scripts.tests.test_kanban_worker_wb_context \
-  scripts.tests.test_card_body_linter \
-  scripts.tests.test_kanban_retry_policy \
-  scripts.tests.test_establish_rcon_prep \
-  scripts.tests.test_reset_proc_lab
-
-bash scripts/tests/test_orchestrator_deny_hook.sh
-```
+Wrapped by `scripts/establish-preflight.sh` (or `establish-run.sh`). Skip with `--skip-preflight` only when you already ran preflight this session.
 
 ---
 
@@ -163,176 +169,55 @@ python3 scripts/establish-bootstrap-verify.py
 
 ---
 
-## 6. Reset runtime state (order matters)
+## 6. Reset runtime state
 
-### 6.1 Stop fleet
+**Automated:** `establish-run.sh` runs `establish-fleet-cleanup.sh` then `establish-scenario.sh`.
 
-```bash
-scripts/landfolk status          # all DOWN before a clean bootstrap
-scripts/landfolk stop            # optional: --players flint,mason,…
-
-# bash 3.2 fallout (§12 known friction): the stop script kills the
-# dispatcher cleanly but leaves bot-loop + watchdog children behind.
-# Always follow with a hard cleanup before re-bootstrapping:
-pkill -9 -f 'landfolk:' 2>/dev/null
-for p in 3001 3002 3003 3005; do
-  pid=$(lsof -nP -iTCP:$p -sTCP:LISTEN -t 2>/dev/null | head -1)
-  [ -n "$pid" ] && kill -9 "$pid"
-done
-# Verify quiet:
-pgrep -fl 'landfolk:' || echo "  clean"
-for p in 3001 3002 3003 3005; do
-  curl -s -o /dev/null -w " :$p %{http_code}\n" -m 1 "http://localhost:$p/status"
-done
-# Expect: all 000
-```
-
-Stray `node server.js` / Hermes tasks cause wrong env (Steward sandbox PATH broke dispatcher gate-check in past runs).
-
-### 6.2 Logs and lockfiles (optional archive)
-
-Bootstrap does **not** truncate old `/tmp/hermescraft` logs. For a clean audit trail:
-
-```bash
-RUN_ID=phase11-$(date +%Y%m%d)
-ARCHIVE="/tmp/hermescraft-pre-$RUN_ID"
-mv /tmp/hermescraft "$ARCHIVE" 2>/dev/null || true
-mkdir -p /tmp/hermescraft
-```
-
-Or snapshot after the run (see §10).
-
-Remove stale kanban DB journals if bootstrap crashed mid-flight:
-
-```bash
-rm -f ~/.hermes/kanban/boards/landfolk-ops/kanban.db-wal \
-      ~/.hermes/kanban/boards/landfolk-ops/kanban.db-shm
-```
-
-### 6.3 Kanban board
-
-`establish-scenario.sh` always:
-
-1. `archive_run_state(<run-id>)` — copies live `kanban.db` + `data/locations-*.json` into `data/postmortems/…/archived/` (via genesis_lib layout).
-2. Deletes live kanban DB + WAL/SHM.
-3. `reinit_kanban_board()` — empty `landfolk-ops`.
-4. `establish-seed-cards.py` — epic + four explores.
-
-Manual equivalent:
-
-```bash
-python3 -c "
-import sys; sys.path.insert(0,'scripts')
-import genesis_lib as gl
-rid = 'establish-manual-$(date +%Y%m%dT%H%M%S)'
-gl.archive_run_state(rid)
-gl.reinit_kanban_board()
-print('archived as', rid)
-"
-```
+| Concern | Handled by |
+|---------|------------|
+| Stop + orphan bot loops / ports | `establish-fleet-cleanup.sh` |
+| Marks, sessions, MEMORY archive | `establish-scenario.sh` (unless `SKIP_MEM_WIPE=1`) |
+| Kanban archive + reinit + seed | `establish-scenario.sh` |
+| Goals, chest snapshots, kanban WAL, stash | `FULL_RUNTIME_WIPE=1` (default in `establish-run.sh`) |
+| Log dir archive | `establish-run.sh --archive-logs` or manual `mv /tmp/hermescraft` |
+| Fresh proc-lab disc | `establish-run.sh --fresh-disc SEED` or `reset-proc-lab.py` then `MATERIALIZE=0` |
 
 Board slug: `HERMES_KANBAN_BOARD` (default `landfolk-ops`).
-
-### 6.4 Marks and agent memory (bootstrap default)
-
-Unless `SKIP_MEM_WIPE=1`:
-
-| What | Action |
-|------|--------|
-| Per-bot marks | Delete `data/locations-{steward,gatherer,flint,mason}.json` |
-| Shared marks | Delete `data/locations-base.json` |
-| Hermes sessions | Delete `~/.hermes/profiles/<wk>/sessions/*.json` |
-| MEMORY.md | Archive to `MEMORY.md.bak-<timestamp>` under profile + `~/.hermes-landfolk-<wk>/memories` |
-| Stash side-effect | `rm -f ~/.hermes-landfolk-*/task-body-coord.json` |
-
-Stale MEMORY caused wrong muster Y and cabin coords across runs (run-8 evidence).
-
-### 6.5 Goals and chest metadata
-
-| Artifact | Location | Reset |
-|----------|----------|--------|
-| Base goals thresholds | `data/base-goals.yaml` | Restored from genesis template only on **genesis** runs; establish uses existing file unless you copy template manually |
-| Per-bot reactive goals | `data/goals-<profile>.json` | Remove if you need zero goal state: `rm -f data/goals-*.json` (not done by bootstrap) |
-| Chest snapshots (bot server) | `data/chest-snapshots-<mc_username>.json` | `rm -f data/chest-snapshots-*.json` before bot restart |
-| Regions / plans | `data/regions-world.json`, `data/ops/plans/*` | Archived with `archive_run_state`; delete live copies only if you understand downstream deps |
-
-Restart bots after deleting chest snapshot files so in-memory caches reload.
-
-### 6.6 Evac and rebuild world (when needed)
-
-Use when the disc has shelters, doors, or wrong surface from prior runs:
-
-```bash
-scripts/landfolk stop
-python3 scripts/reset-proc-lab.py --seed 1001   # or your catalog seed
-AUTO_REUSE=1 MATERIALIZE=0 scripts/establish-scenario.sh
-```
-
-`MATERIALIZE=0` is safe after reset: disc is already the target seed; bootstrap still patches map JSON and runs RCON/kanban.
 
 ---
 
 ## 7. Deploy prompts, SOULs, skills, artifacts
 
-**Required** after any edit to `prompts/landfolk/*.md`, `skills/*.md`, or `bot/` code that affects runtime:
+Included in `establish-preflight.sh` / `establish-run.sh` (`scripts/landfolk deploy`; diagnostics skipped until fleet is up). Deploy patches `model.context_length: 250000`, `compression.threshold: 0.7` / `target_ratio: 0.3` (~75K headroom between compressions; lower values caused 40+ compresses in 11 min per worker on noisy mc-scene streams — run-12 evidence), and the aux compression model. Each `landfolk start` re-applies via `patch-landfolk-compression-config.py` on `~/.hermes-landfolk-*/config.yaml`.
+
+**Model source of truth:** `data/agent-models.json`. Per-agent main models live under `agents.<Name>.model`; the aux compression model lives under `auxiliary.compression.{model, provider}`. Both the agent-round resolver (`scripts/resolve-agent-model.py`, re-read each round) and the compression patch (`scripts/patch-landfolk-compression-config.py`) read from this file — edit once, then run `scripts/landfolk deploy` (or just re-run the patch script per config) to propagate.
+
+Re-run after SOUL/skill edits without a full establish:
 
 ```bash
-scripts/landfolk deploy              # SOULs/skills → ~/.hermes/profiles/<bot>/
-# includes scripts/regenerate-artifacts.sh (mc-cheatsheet, …)
-
-scripts/landfolk diagnostics         # deploy + gateway + dispatcher + daemons smoke
-```
-
-Commit tree ≠ runtime until **deploy** and **bot processes restart**.
-
-Confirm dispatcher Hermes binding (genesis-run-prep):
-
-```bash
-grep 'HERMES_BIN=' scripts/landfolk-dispatcher.sh
+scripts/landfolk deploy && scripts/landfolk restart all
 ```
 
 ---
 
 ## 8. Start fleet and verify placement
 
-### 8.1 One-shot (recommended)
+### 8.1 Bootstrap + dispatcher
+
+`establish-scenario.sh` (re-execs bash 5 on macOS) starts gateway (embedded kanban dispatcher when `kanban.dispatch_in_gateway: true`), workers, TP, kanban, seeds cards, and runs `establish-bootstrap-verify.py` unless `SKIP_BOOTSTRAP_VERIFY=1`. Standalone `landfolk-dispatcher.sh` only when embedded dispatch is off or `FORCE_STANDALONE_DISPATCHER=1`.
+
+Cards seed with `assignee=orchestrator-tracker` so Steward assigns patrols.
+
+### 8.2 Launch verify
 
 ```bash
-# From repo root; optional env:
-#   VARIANT=establishment.explore
-#   WORKERS=steward,gatherer,flint,mason
-#   AUTO_REUSE=1  MATERIALIZE=1
-#   SKIP_MEM_WIPE=0  SKIP_MAP_PATCH=0
-# Run with bash 5+ explicitly (macOS default /bin/bash is 3.2 and crashes
-# at line 182's `declare -A WORKER_PORTS`):
-/opt/homebrew/bin/bash scripts/establish-scenario.sh
+scripts/establish-launch-verify.sh
+scripts/landfolk diagnostics    # full report once gateway + bots are up
 ```
 
-Starts **hermes gateway**, then workers, waits for HTTP `/status`, TPs to muster, resets kanban, seeds cards. Cards are seeded with `assignee=orchestrator-tracker` (a non-spawnable parking lane) so Steward decides who patrols where.
+Checks: all bot ports (via `establish-bootstrap-verify.py`), progress `pos`, steward `POST /action/tunnel` → 403, steward `mc observe` CLI line, dispatcher log/process. Preflight skips diagnostics by default; run them here (or `establish-preflight.sh --with-diagnostics`).
 
-### 8.1a Dispatcher start (separate process — easy to miss)
-
-The standalone kanban dispatcher loop is **NOT** auto-started by the gateway. Without it, even after Steward reassigns cards to real workers, the cards sit `ready` forever — no spawn ticks fire.
-
-Run-11 evidence: gateway up, bots up, Steward reading the board — but `dispatcher.log` last entry was from the prior session's stop; cards stayed `ready` until the dispatcher was launched manually.
-
-Always launch after bootstrap (idempotent — `landfolk stop` kills any prior):
-
-```bash
-/opt/homebrew/bin/bash scripts/landfolk-dispatcher.sh > /tmp/hermescraft/dispatcher.log 2>&1 &
-```
-
-Verify it's ticking every 60s (interval is configurable):
-
-```bash
-tail -F /tmp/hermescraft/dispatcher.log
-# Expect: [HH:MM:SS] dispatcher starting: board=landfolk-ops interval=60s max=3
-#         [HH:MM:SS] tick: idle (no spawns / reclaims / promotions; ...)
-```
-
-A single line like `dispatcher stopping (SIGTERM)` followed by silence means the dispatcher is dead even if the gateway is alive.
-
-### 8.2 Manual start (debugging)
+### 8.3 Manual start (debugging)
 
 ```bash
 scripts/landfolk deploy
@@ -348,41 +233,21 @@ for p in 3001 3002 3003 3005; do
 done
 ```
 
-### 8.3 Live contracts (run-11 launch gate)
+### 8.4 Steward mc deny vs “observe denied” (reasoning vs gate)
 
-**Progress `pos` (PR-S):**
+`establish-launch-verify.sh` runs `BOT_URL=http://localhost:3005 node bot/cli/index.mjs observe`. Hermes terminal uses `orchestrator-deny.sh`; `mc observe` is allowed. Read-only verbs on the allowlist include `inventory`, `chest_search`, and `social` (not `mc players` — use `mc social` / `mc nearby`).
 
-```bash
-tail -3 /tmp/hermescraft/progress-mason.log
-# Expect "pos":{"x":…,"y":…,"z":…} — not null after 18:14-class emitter fix
-```
+If Steward reports "observe denied" after a different verb failed, she may be reading a stale belief from an earlier round's deny — the deny message itself was reworded post-phase-12 (no longer names allowed verbs in prose, so it can't be misparsed as a global deny). If you see this in a fresh run, check the actual mc audit log — the gate is functionally correct.
 
-**Steward HTTP deny (P0-5):**
+**`hermes kanban reassign` semantics (changed post-phase-12):** reassign now atomically reclaims any active claim (SIGTERM/SIGKILL the prior host-local worker PID, clear `claim_lock`, change `assignee` in one tx). The `--reclaim` flag is deprecated and accepted as a no-op. Steward's playbook (`prompts/landfolk/steward.md` L235, L336) was updated accordingly.
 
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST -d '{}' http://127.0.0.1:3005/action/tunnel
-# Expect 403
+**Dispatcher `max_spawn` (changed post-phase-12):** `~/.hermes/config.yaml` now sets `kanban.max_spawn: 5` (workers + 1 slack), up from 3. A single stuck worker holding a slot no longer starves the ready queue.
 
-curl -s -o /dev/null -w '%{http_code}\n' -X POST -d '{}' http://127.0.0.1:3001/action/tunnel
-# Expect not 403 (worker)
-```
+**Steward `exit=142`:** round wall-clock timeout (`ORCHESTRATOR_ROUND_TIMEOUT_S`, default 600s), not SIGPIPE. Raise the env var or shorten OBSERVE work. After changing `data/agent-models.json`, restart agents so each round picks up `-m` from `resolve-agent-model.py` (re-read every round).
 
-**Terrain on CLI (PR-J):**
+**Dispatcher:** With `kanban.dispatch_in_gateway: true`, `establish-scenario.sh` does **not** start `landfolk-dispatcher.sh` (avoids dual-dispatcher claim races). Use `FORCE_STANDALONE_DISPATCHER=1` only when embedded dispatch is off.
 
-```bash
-BOT_URL=http://localhost:3002 mc status | grep -E 'terrain='
-```
-
-**Steward read-only mc via Hermes** uses `orchestrator-deny.sh` on **terminal** — allowlisted verbs include `observe`, `status`, `scene`, `chat`, `read_chat`, `whisper`. Direct HTTP still hits bot-server gate on `/action/*` and `/task/*`.
-
-**Endpoint shape — easy LLM misread**: `mc observe` and `mc read_chat` map to top-level `GET /observe` and `GET /chat` — **not** to `/action/<verb>`. The bot-server gate (`/action/*`) does not see them at all; they always pass. If Steward reports "mc observe is denied", she's mis-attributing a 400 "Unknown action" from `POST /action/observe` (which is correctly not a registered action). Live-verify with the CLI before believing her:
-
-```bash
-BOT_URL=http://localhost:3005 node bot/cli/index.mjs observe | head -3
-# Expect: Surface at X,Y,Z — ... — terrain=<kind> (feet_vs_local_ground=<N>)
-```
-
-If that returns a real nav header, the denial is in her reasoning, not the gate.
+**Logs:** `establish-fleet-cleanup.sh` runs `snapshot-fleet-logs.sh` before stop. `mc-*.log` still truncates on bot respawn — snapshot preserves pre-restart CLI traces.
 
 ---
 
@@ -450,7 +315,7 @@ Run 2–3 rounds; confirm workers could pick a base from `mc scene` one-liner (b
 | Chunk visibility | Partial sector coverage on explore cards |
 | `goto_near` timeout | Message should cite **15000ms** cap (contract test); traps often dominate over timeout |
 | `level_ground` / `level` column cap | Split rectangles (≤16 columns per call) |
-| Dispatcher idle | `dispatcher.log` not updating; even if gateway is up, the standalone dispatcher loop must be launched separately (§8.1a) |
+| Dispatcher idle | Check `grep 'kanban dispatcher' ~/.hermes/logs/gateway.log`; if `dispatch_in_gateway: false`, run `scripts/landfolk-dispatcher.sh` or `FORCE_STANDALONE_DISPATCHER=1 establish-scenario.sh` |
 | `mc-*.log` gap | Listener respawn freezes the file at pre-restart timestamp; afternoon failures live in `agent-*.log` / `nav-*.jsonl` / `state.db` only |
 | **Bash 3.2 stop-script** | `scripts/landfolk stop` (which invokes `landfolk-control.sh stop`) uses `${name,,}` lowercasing on lines ~321/426 — fails silently on macOS default `/bin/bash`. Kills the dispatcher cleanly but leaves bot-loop + watchdog children orphaned. Workaround: `pkill -f 'landfolk:'` and `lsof -ti :3001 -i :3002 -i :3003 -i :3005 | xargs kill -9` after `landfolk stop`. |
 | **Bootstrap halts at `declare -A`** | `establish-scenario.sh:182` fails on bash 3.2 (`steward: unbound variable`). Bots end up in the landfolk-test hub world, never TP'd to proc-lab. Re-run with `/opt/homebrew/bin/bash`. |
@@ -464,37 +329,11 @@ Record card id, error code, and coordinates for postmortems.
 ## Quick path (copy-paste)
 
 ```bash
-# Toolchain (§2): use bash 5+ and python 3.11+ explicitly.
-export PATH=/opt/homebrew/bin:$PATH    # bash 5, python 3.x
-bash --version | head -1               # expect 5.x
-python3 --version                      # expect 3.11+
-
-# 0. Credits + tests + deploy
-# (sections 2.1, 3, 7)
-
-# Stop + hard cleanup (§6.1 bash 3.2 fallout)
-scripts/landfolk stop
-pkill -9 -f 'landfolk:' 2>/dev/null
-for p in 3001 3002 3003 3005; do
-  pid=$(lsof -nP -iTCP:$p -sTCP:LISTEN -t 2>/dev/null | head -1); [ -n "$pid" ] && kill -9 "$pid"
-done
-
-# Optional fresh disc
-python3 scripts/reset-proc-lab.py --seed 1001
-
-# Bootstrap with bash 5+ explicitly
-/opt/homebrew/bin/bash scripts/establish-scenario.sh
-
-# Dispatcher must be launched separately (§8.1a)
-/opt/homebrew/bin/bash scripts/landfolk-dispatcher.sh > /tmp/hermescraft/dispatcher.log 2>&1 &
-
-# Verify
+export PATH=/opt/homebrew/bin:$PATH
+scripts/establish-run.sh --min-credits-usd 5 --archive-logs
 scripts/kanban board
-tail -F /tmp/hermescraft/dispatcher.log    # expect ticks every 60s
 scripts/landfolk logs agents --profiles steward,flint,mason -q --tail 20 --no-follow
-
-# During run: progress pos + steward 403 smoke (section 8.3)
-
+# … run …
 scripts/landfolk stop
 scripts/snapshot-fleet-logs.sh data/postmortems/establish-$(date +%Y-%m-%d)-phaseN
 scripts/establish-check.py

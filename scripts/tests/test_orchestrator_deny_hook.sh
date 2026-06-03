@@ -75,6 +75,9 @@ check allow "mc inspect"                "mc inspect 1 2 3"
 check allow "mc map"                    "mc map"
 check allow "mc terrain_top"            "mc terrain_top 1 2"
 check allow "mc list_container"         "mc list_container"
+check allow "mc inventory"              "mc inventory"
+check allow "mc chest_search"           "mc chest_search iron_ingot"
+check allow "mc social"                 "mc social"
 # In-band coordination: allowed
 check allow "mc chat"                   "mc chat 'hello workers'"
 check allow "mc whisper"                "mc whisper flint 'check NE'"
@@ -84,6 +87,8 @@ check allow "mc goals"                  "mc goals"
 check allow "mc task"                   "mc task"
 
 # Field-mutating verbs: denied
+check block "mc tunnel denied"          "mc tunnel 1 2 3 4 5 6"
+check block "mc level denied"           "mc level 0 64 0 8 8 cobblestone"
 check block "mc move denied"            "mc move 5 65 3"
 check block "mc goto denied"            "mc goto 10 65 5"
 check block "mc goto_near denied"       "mc goto_near 10 65 5 2"

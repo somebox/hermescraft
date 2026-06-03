@@ -1,0 +1,27 @@
+{
+  "profile": "steward",
+  "allowed_verbs": [
+    "observe",
+    "status",
+    "scene",
+    "marks",
+    "nearby",
+    "look",
+    "find",
+    "inspect",
+    "map",
+    "terrain_top",
+    "inventory",
+    "list_container",
+    "chest_search",
+    "social",
+    "chat",
+    "read_chat",
+    "whisper",
+    "help",
+    "commands",
+    "goals",
+    "task",
+    "cancel"
+  ]
+}

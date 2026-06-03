@@ -30,6 +30,8 @@ WATCHDOG_MAX_STUCK_EVENTS="${WATCHDOG_MAX_STUCK_EVENTS:-2}"
 WATCHDOG_COLLECT_ELAPSED_S="${WATCHDOG_COLLECT_ELAPSED_S:-45}"
 WATCHDOG_CONNECT_COOLDOWN_SEC="${WATCHDOG_CONNECT_COOLDOWN_SEC:-45}"
 AGENT_ROUND_TIMEOUT_S="${AGENT_ROUND_TIMEOUT_S:-300}"
+# Steward OBSERVE rounds run board + diagnostics; default 300s exits with SIGALRM (142).
+ORCHESTRATOR_ROUND_TIMEOUT_S="${ORCHESTRATOR_ROUND_TIMEOUT_S:-600}"
 DANGER_AUTOREACT_ENABLED="${DANGER_AUTOREACT_ENABLED:-true}"
 DANGER_AUTOREACT_NIGHT_ONLY="${DANGER_AUTOREACT_NIGHT_ONLY:-true}"
 DANGER_SCAN_RADIUS="${DANGER_SCAN_RADIUS:-32}"
@@ -113,6 +115,7 @@ Environment:
   WATCHDOG_COLLECT_ELAPSED_S (default 45)
   WATCHDOG_CONNECT_COOLDOWN_SEC (default 45) — min seconds between watchdog POST /connect retries when disconnected
   AGENT_ROUND_TIMEOUT_S (default 300) — kill stalled Hermes round and continue next loop
+  ORCHESTRATOR_ROUND_TIMEOUT_S (default 600) — Steward-only round cap (exit 142 = SIGALRM)
   DANGER_AUTOREACT_ENABLED=true|false (default true) — watchdog auto danger response
   DANGER_AUTOREACT_NIGHT_ONLY=true|false (default true) — react only at night unless distress chat
   DANGER_SCAN_RADIUS (default 32), DANGER_HELP_RADIUS (default 24)
@@ -744,7 +747,8 @@ try:
   d = json.load(sys.stdin)
   ra = d.get('recent_actions') or []
   recent = [f\"{a.get('action','?')}:{a.get('status','?')}\" for a in ra[-4:]]
-  pos_raw = d.get('position') or d.get('pos') or {}
+  state = d.get('state') or {}
+  pos_raw = state.get('position') or d.get('position') or d.get('pos') or {}
   pos = None
   if pos_raw:
     pos = {k: int(pos_raw[k]) for k in ('x','y','z') if k in pos_raw and pos_raw[k] is not None}
@@ -1014,6 +1018,9 @@ start_agent() {
       's/user_profile_enabled: false/user_profile_enabled: true/'; do
       sed -i '' "$sedcmd" "$agent_home/config.yaml" 2>/dev/null || sed -i "$sedcmd" "$agent_home/config.yaml" 2>/dev/null || true
     done
+    if [ -f "$SCRIPT_DIR/scripts/patch-landfolk-compression-config.py" ]; then
+      python3 "$SCRIPT_DIR/scripts/patch-landfolk-compression-config.py" "$agent_home/config.yaml" >/dev/null 2>&1 || true
+    fi
   fi
   for f in .env auth.json auth.lock; do
     [ -f "$HOME/.hermes/$f" ] && ln -sf "$HOME/.hermes/$f" "$agent_home/$f" 2>/dev/null || true
@@ -1186,12 +1193,52 @@ $shared_rules"
   # Observed 2026-05-25: Steward couldn't run roster.py for hours because of
   # leftover stubs from a May 24 worker-mode launch.
   rm -f "$restricted_bin"/* 2>/dev/null || true
-  if [ "${AGENT_ROUND_TIMEOUT_S:-0}" -gt 0 ]; then
-    hermes_timeout_prefix=(perl -e 'alarm shift; exec @ARGV' "${AGENT_ROUND_TIMEOUT_S}")
+  local effective_round_timeout="${AGENT_ROUND_TIMEOUT_S}"
+  if [ "$role" = "orchestrator" ]; then
+    effective_round_timeout="${ORCHESTRATOR_ROUND_TIMEOUT_S}"
+  fi
+  if [ "${effective_round_timeout:-0}" -gt 0 ]; then
+    hermes_timeout_prefix=(perl -e 'alarm shift; exec @ARGV' "${effective_round_timeout}")
   fi
   # Block diagnostic/system commands for worker agents only. Orchestrator needs
   # python3 (roster.py, blueprint-plan.py) and broader terminal for hermes kanban.
   if [ "$role" = "worker" ]; then
+    local worker_hook_src="$SCRIPT_DIR/scripts/hermes-hooks/worker-kanban-deny.sh"
+    if [ -f "$worker_hook_src" ]; then
+      mkdir -p "$agent_home/agent-hooks"
+      cp "$worker_hook_src" "$agent_home/agent-hooks/worker-kanban-deny.sh"
+      chmod +x "$agent_home/agent-hooks/worker-kanban-deny.sh"
+      python3 - "$agent_home/config.yaml" "$agent_home/agent-hooks/worker-kanban-deny.sh" <<'PYEOF' 2>/dev/null || true
+import pathlib, sys, yaml
+cfg_path = pathlib.Path(sys.argv[1])
+hook_path = sys.argv[2]
+cfg = yaml.safe_load(cfg_path.read_text()) or {}
+hooks = cfg.get("hooks") or {}
+pre = hooks.get("pre_tool_call") or []
+if not any(h.get("command") == hook_path for h in pre if isinstance(h, dict)):
+    pre.append({"matcher": "terminal", "command": hook_path, "timeout": 5})
+hooks["pre_tool_call"] = pre
+cfg["hooks"] = hooks
+cfg["hooks_auto_accept"] = True
+cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+PYEOF
+      python3 - "$agent_home/shell-hooks-allowlist.json" "$agent_home/agent-hooks/worker-kanban-deny.sh" <<'PYEOF' 2>/dev/null || true
+import json, os, pathlib, sys, datetime
+allow_path = pathlib.Path(sys.argv[1])
+hook_path = sys.argv[2]
+allow = json.loads(allow_path.read_text()) if allow_path.is_file() else {"approvals": []}
+ts = datetime.datetime.utcnow().isoformat(timespec="microseconds") + "Z"
+mtime = datetime.datetime.utcfromtimestamp(os.path.getmtime(hook_path)).isoformat(timespec="microseconds") + "Z"
+if not any(a.get("command") == hook_path for a in allow.get("approvals") or []):
+    allow.setdefault("approvals", []).append({
+        "approved_at": ts,
+        "command": hook_path,
+        "event": "pre_tool_call",
+        "script_mtime_at_approval": mtime,
+    })
+allow_path.write_text(json.dumps(allow, indent=2) + "\n")
+PYEOF
+    fi
     for blocked_cmd in curl lsof netstat ss kill pkill grep awk sed cat file which \
       npm npx python python3 perl ruby \
       ls find head tail pwd \
@@ -1562,6 +1609,7 @@ AGENTENV
       "$hermes_runtime_path" "$prompt" \
       "$continue_prompt_full" "$continue_prompt_minimal" "$role" \
       "$agent_model" "$agent_provider" \
+      "$RESOLVE_AGENT_MODEL_PY" "$AGENT_MODELS_JSON" \
       "$(declare -p hermes_timeout_prefix)" \
       "$(declare -p mc_debug_env)" \
       "$(declare -p hermes_chat_flags)" <<'AGENT_LOOP_BODY'
@@ -1573,9 +1621,10 @@ kanban_db="${11}"; kanban_board="${12}"; kanban_workspaces="${13}"
 hermes_runtime_path="${14}"; prompt="${15}"
 continue_prompt_full="${16}"; continue_prompt_minimal="${17}"; role="${18}"
 agent_model="${19}"; agent_provider="${20}"
-eval "${21}"  # restore hermes_timeout_prefix
-eval "${22}"  # restore mc_debug_env
-eval "${23}"  # restore hermes_chat_flags
+resolve_agent_model_py="${21}"; agent_models_json="${22}"
+eval "${23}"  # restore hermes_timeout_prefix
+eval "${24}"  # restore mc_debug_env
+eval "${25}"  # restore hermes_chat_flags
     while ! curl -sf "http://localhost:${port}/health" >/dev/null 2>&1; do
       sleep 1
     done
@@ -1583,10 +1632,10 @@ eval "${23}"  # restore hermes_chat_flags
     cmd_ec=0
     while true; do
       round=$((round + 1))
-      # NOTE: agent_model/agent_provider come from the parent script's
-      # model_for_name/provider_for_name lookups (passed as args $19/$20).
-      # We don't re-resolve per-round because model_for_name is a parent
-      # function not available in the re-exec'd shell.
+      if [ -n "${resolve_agent_model_py:-}" ] && [ -f "${resolve_agent_model_py}" ] && [ -n "${agent_models_json:-}" ]; then
+        agent_model="$(python3 "$resolve_agent_model_py" "$name" model "$agent_models_json" 2>/dev/null || echo "$agent_model")"
+        agent_provider="$(python3 "$resolve_agent_model_py" "$name" provider "$agent_models_json" 2>/dev/null || echo "$agent_provider")"
+      fi
       ts="$(date '+%Y-%m-%d %H:%M:%S')"
       health_json="$(curl -sf "http://localhost:${port}/health" 2>/dev/null || echo '{"ok":false,"connected":false}')"
       observe_json="$(curl -sf "http://localhost:${port}/observe" 2>/dev/null || echo '{}')"
@@ -1604,9 +1653,11 @@ err=d.get('last_api_error') or {}
 em=err.get('message','')[:140] if err.get('message') else ''
 top_errs=st.get('top_errors') or []
 # Phase 10 PR-S: pos snapshot powers AUTO_STUCK detection downstream.
-# Cheap field add — observe payload already carries position.
-pos_raw=d.get('position') or d.get('pos') or {}
-pos={k:int(pos_raw[k]) for k in ('x','y','z') if k in pos_raw} if pos_raw else None
+# /observe nests position under state (briefState), not top-level.
+state=d.get('state') or {}
+pos_raw=state.get('position') or d.get('position') or d.get('pos') or {}
+pos={k:int(pos_raw[k]) for k in ('x','y','z') if k in pos_raw and pos_raw[k] is not None} if pos_raw else None
+if pos is not None and not pos: pos=None
 out={
   'ts':time.strftime('%Y-%m-%dT%H:%M:%S'),
   'round':${round},
@@ -1724,6 +1775,9 @@ print(json.dumps({k:v for k,v in out.items() if v is not None},separators=(',','
       echo "[$ts_end] round=$round exit_code=$cmd_ec" >> "$agent_log"
       if [ "$cmd_ec" -ne 0 ]; then
         echo "[$ts_end] round=$round failed; check $agent_err_log and $mc_debug_log" >> "$agent_log"
+        if [ "$cmd_ec" -eq 142 ] && [ "$role" = "orchestrator" ]; then
+          echo "[$ts_end] hint: exit 142 = round wall-clock timeout (SIGALRM); raise ORCHESTRATOR_ROUND_TIMEOUT_S or shorten OBSERVE work" >> "$agent_log"
+        fi
         echo "[$ts_end] Update: round=$round failed (exit=$cmd_ec)." >> "$hermes_log"
       else
         echo "[$ts_end] Update: round=$round complete (exit=0)." >> "$hermes_log"

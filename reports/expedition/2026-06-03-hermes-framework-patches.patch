@@ -1,0 +1,329 @@
+diff --git a/hermes_cli/kanban.py b/hermes_cli/kanban.py
+index edaee42f8..869485cf6 100644
+--- a/hermes_cli/kanban.py
++++ b/hermes_cli/kanban.py
+@@ -331,7 +331,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
+ 
+     p_reassign = sub.add_parser(
+         "reassign",
+-        help="Reassign a task to a different profile, optionally reclaiming first",
++        help="Reassign a task to a different profile (always atomically reclaims any active claim)",
+     )
+     p_reassign.add_argument("task_id")
+     p_reassign.add_argument(
+@@ -340,7 +340,7 @@ def build_parser(parent_subparsers: argparse._SubParsersAction) -> argparse.Argu
+     )
+     p_reassign.add_argument(
+         "--reclaim", action="store_true",
+-        help="Release any active claim before reassigning (required if task is running)",
++        help="DEPRECATED: reassign always reclaims now. Flag is accepted but ignored.",
+     )
+     p_reassign.add_argument(
+         "--reason", default=None,
+@@ -1370,21 +1370,16 @@ def _cmd_reassign(args: argparse.Namespace) -> int:
+     with kb.connect() as conn:
+         ok = kb.reassign_task(
+             conn, args.task_id, profile,
+-            reclaim_first=bool(getattr(args, "reclaim", False)),
+             reason=getattr(args, "reason", None),
+         )
+     if not ok:
+         print(
+             f"cannot reassign {args.task_id} "
+-            f"(unknown id, or still running — pass --reclaim to release first)",
++            f"(unknown id, or claim held by a remote-host worker)",
+             file=sys.stderr,
+         )
+         return 1
+-    print(
+-        f"Reassigned {args.task_id} to "
+-        f"{profile or '(unassigned)'}"
+-        + (" (claim reclaimed)" if getattr(args, "reclaim", False) else "")
+-    )
++    print(f"Reassigned {args.task_id} to {profile or '(unassigned)'}")
+     return 0
+ 
+ 
+diff --git a/hermes_cli/kanban_db.py b/hermes_cli/kanban_db.py
+index 5c2d03240..5084ae3ea 100644
+--- a/hermes_cli/kanban_db.py
++++ b/hermes_cli/kanban_db.py
+@@ -2191,29 +2191,46 @@ def reassign_task(
+     task_id: str,
+     profile: Optional[str],
+     *,
+-    reclaim_first: bool = False,
++    reclaim_first: bool = True,
+     reason: Optional[str] = None,
++    signal_fn=None,
+ ) -> bool:
+-    """Reassign a task, optionally reclaiming a stuck running worker first.
++    """Reassign a task, atomically reclaiming any active claim first.
++
++    Reassign always reclaims. If the task has a ``claim_lock`` or live
++    ``worker_pid``, the prior worker is SIGTERM/SIGKILL'd (host-local
++    only) and the lock is cleared before the assignee changes. This is
++    the recovery path for "this profile's worker is wedged".
+ 
+-    This is the recovery path for "this profile's model is broken, try
+-    a different one". If ``reclaim_first`` is True, any active claim is
+-    released (via :func:`reclaim_task`) before the reassign happens;
+-    otherwise the function refuses to reassign a currently-running task
+-    and returns False (caller can retry with ``reclaim_first=True``).
++    The ``reclaim_first`` parameter is **deprecated** (kept for
++    back-compat); reclaim now happens unconditionally when the task has
++    an active claim signal. Passing ``reclaim_first=False`` is a no-op.
++
++    Phase-12 evidence (2026-06-03): the prior contract allowed
++    reassign-without-reclaim, which left a zombie worker holding the
++    mutex. The dispatcher had auto-flipped status back to ``ready``
++    while the lock was still held, so ``assign_task``'s guard
++    (``claim_lock IS NOT NULL AND status='running'``) passed and the
++    assignee changed but the dispatcher kept skipping the card.
+ 
+     Returns True if the reassign landed. ``profile`` may be ``None`` to
+     unassign entirely.
+     """
+-    if reclaim_first:
+-        # Safe to call even if nothing to reclaim.
+-        reclaim_task(conn, task_id, reason=reason or "reassign")
+-    # assign_task handles its own txn + the still-running guard.
++    del reclaim_first  # accepted-but-ignored deprecated parameter
++    row = conn.execute(
++        "SELECT claim_lock, worker_pid FROM tasks WHERE id = ?",
++        (task_id,),
++    ).fetchone()
++    if row and (row["claim_lock"] is not None or row["worker_pid"] is not None):
++        # Safe to call even if nothing to reclaim — reclaim_task
++        # returns False if the row isn't reclaimable.
++        reclaim_task(conn, task_id, reason=reason or "reassign", signal_fn=signal_fn)
++    # assign_task handles its own txn. After reclaim the still-running
++    # guard cannot trip; the try/except guards remote-host locks where
++    # _terminate_reclaimed_worker no-ops and the prior lock may survive.
+     try:
+         return assign_task(conn, task_id, profile)
+     except RuntimeError:
+-        # Task is still running and reclaim_first was False; caller
+-        # needs to decide whether to retry with reclaim.
+         return False
+ 
+ 
+@@ -4237,6 +4254,21 @@ def _default_spawn(
+     prompt = f"work kanban task {task.id}"
+     env = dict(os.environ)
+ 
++    # Scrub profile-specific MC routing env vars before profile dotenv
++    # re-establishes them. Phase-12 evidence (2026-06-03): the gateway-
++    # embedded dispatcher inherits the operator-shell env, including
++    # `_MC_API_URL_LOCKED=http://localhost:3005` set by Steward's
++    # landfolk-control session. Profile `.env` overrides `MC_API_URL` but
++    # never sets `_MC_API_URL_LOCKED`, so the mc CLI (which prefers
++    # `_MC_API_URL_LOCKED` over `MC_API_URL`) routes every worker call
++    # to whichever bot's port the operator's session was pinned to.
++    # Manifested as gatherer's worker hitting Steward's port 3005 and
++    # getting correctly 403'd by the orchestrator deny gate. The fix:
++    # drop these three vars so the worker's `_apply_profile_override` +
++    # dotenv path is the single source of truth.
++    for _leaked_key in ("_MC_API_URL_LOCKED", "MC_API_URL", "MC_USERNAME"):
++        env.pop(_leaked_key, None)
++
+     # Inject HERMES_HOME so the worker reads the profile-scoped config.yaml
+     # (fallback_providers, toolsets, agent settings, etc.) instead of the root
+     # config.  Without this, `env = dict(os.environ)` copies only the parent's
+diff --git a/tests/hermes_cli/test_kanban_core_functionality.py b/tests/hermes_cli/test_kanban_core_functionality.py
+index f9e05f99b..b3217b985 100644
+--- a/tests/hermes_cli/test_kanban_core_functionality.py
++++ b/tests/hermes_cli/test_kanban_core_functionality.py
+@@ -2706,6 +2706,54 @@ def test_default_spawn_auto_loads_kanban_worker_skill(kanban_home, monkeypatch):
+     assert env.get("HERMES_PROFILE") == "some-profile"
+ 
+ 
++def test_default_spawn_scrubs_leaked_mc_routing_env_vars(kanban_home, monkeypatch):
++    """Phase-12 regression: the gateway-embedded dispatcher inherits the
++    operator-shell env, including `_MC_API_URL_LOCKED` set by Steward's
++    landfolk-control session. If the spawn env carries this through, the
++    mc CLI in the worker routes to the wrong bot port. Confirm
++    `_MC_API_URL_LOCKED`, `MC_API_URL`, and `MC_USERNAME` are scrubbed
++    from the child env before Popen.
++    """
++    captured = {}
++
++    class FakeProc:
++        def __init__(self):
++            self.pid = 99999
++
++    def fake_popen(cmd, **kwargs):
++        captured["env"] = kwargs.get("env", {})
++        return FakeProc()
++
++    monkeypatch.setattr("subprocess.Popen", fake_popen)
++    # Simulate the operator-session leak: Steward's launch state sets
++    # these in the gateway's parent env, which Popen would otherwise
++    # propagate verbatim to the worker.
++    monkeypatch.setenv("_MC_API_URL_LOCKED", "http://localhost:3005")
++    monkeypatch.setenv("MC_API_URL", "http://localhost:3005")
++    monkeypatch.setenv("MC_USERNAME", "Steward")
++
++    conn = kb.connect()
++    try:
++        tid = kb.create_task(conn, title="env scrub test",
++                             assignee="gatherer")
++        task = kb.get_task(conn, tid)
++        workspace = kb.resolve_workspace(task)
++        kb._default_spawn(task, str(workspace))
++    finally:
++        conn.close()
++
++    env = captured["env"]
++    assert "_MC_API_URL_LOCKED" not in env, (
++        "_MC_API_URL_LOCKED leaked to worker env — would route to wrong port"
++    )
++    assert "MC_API_URL" not in env, (
++        "MC_API_URL leaked to worker env — profile .env can't override"
++    )
++    assert "MC_USERNAME" not in env, (
++        "MC_USERNAME leaked to worker env — would mis-attribute chat"
++    )
++
++
+ def test_default_spawn_raises_terminal_timeout_to_task_runtime(kanban_home, monkeypatch):
+     """A task runtime cap should raise the worker's terminal default.
+ 
+@@ -3889,24 +3937,128 @@ def test_reclaim_task_returns_false_for_already_ready(kanban_home):
+         conn.close()
+ 
+ 
+-def test_reassign_task_refuses_running_without_reclaim_first(kanban_home):
+-    """Without ``reclaim_first=True``, reassigning a running task is a
+-    no-op returning False (matches assign_task's RuntimeError via
+-    internal catch)."""
++def test_reassign_task_atomically_reclaims_running_lock(kanban_home):
++    """Phase-12 regression: reassign atomically reclaims any active claim
++    even without an explicit ``reclaim_first`` flag. Previously this
++    test asserted the OLD behavior (refuse without reclaim_first); the
++    new contract makes reclaim implicit."""
+     conn = kb.connect()
+     try:
+         t = kb.create_task(conn, title="running", assignee="orig")
++        # Use a host-local lock prefix so _terminate_reclaimed_worker
++        # treats it as host-local (no real kill attempted — worker_pid is
++        # None, so termination is a no-op anyway).
++        import socket
++        host = socket.gethostname()
+         conn.execute(
+             "UPDATE tasks SET status='running', claim_lock=? WHERE id=?",
+-            ("live", t),
++            (f"{host}:deadbeef", t),
++        )
++        conn.commit()
++        assert kb.reassign_task(conn, t, "new") is True
++        row = conn.execute(
++            "SELECT assignee, status, claim_lock FROM tasks WHERE id=?", (t,),
++        ).fetchone()
++        assert row["assignee"] == "new"
++        assert row["status"] == "ready"
++        assert row["claim_lock"] is None
++    finally:
++        conn.close()
++
++
++def test_reassign_running_with_live_lock_kills_host_local_worker(kanban_home):
++    """Phase-12 Mason race: status='ready' (or 'running') + lock present +
++    worker_pid alive. Reassign must SIGTERM the local PID and clear the
++    lock atomically — otherwise the dispatcher keeps skipping the card."""
++    import time
++    import secrets
++    import socket
++    conn = kb.connect()
++    killed = []
++    def fake_signal(pid, sig):
++        killed.append((pid, sig))
++    try:
++        host = socket.gethostname()
++        t = kb.create_task(conn, title="zombie", assignee="orig")
++        lock = f"{host}:{secrets.token_hex(8)}"
++        future = int(time.time()) + 3600
++        # The Mason case: dispatcher auto-flipped to 'ready' but the lock
++        # and worker_pid are still set (the worker process didn't exit).
++        conn.execute(
++            "UPDATE tasks SET status='ready', claim_lock=?, claim_expires=?, "
++            "worker_pid=? WHERE id=?",
++            (lock, future, 99999, t),
+         )
++        conn.execute(
++            "INSERT INTO task_runs (task_id, status, claim_lock, claim_expires, "
++            "worker_pid, started_at) VALUES (?, 'running', ?, ?, ?, ?)",
++            (t, lock, future, 99999, int(time.time())),
++        )
++        run_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
++        conn.execute("UPDATE tasks SET current_run_id=? WHERE id=?", (run_id, t))
+         conn.commit()
+-        assert kb.reassign_task(conn, t, "new") is False
+-        # Assignee unchanged.
++
++        assert kb.reassign_task(
++            conn, t, "rescuer", reason="phase-12 rescue", signal_fn=fake_signal,
++        ) is True
++
+         row = conn.execute(
+-            "SELECT assignee FROM tasks WHERE id=?", (t,),
++            "SELECT assignee, status, claim_lock, worker_pid FROM tasks WHERE id=?",
++            (t,),
+         ).fetchone()
+-        assert row["assignee"] == "orig"
++        assert row["assignee"] == "rescuer"
++        assert row["status"] == "ready"
++        assert row["claim_lock"] is None
++        assert row["worker_pid"] is None
++        # SIGTERM was sent to the host-local worker PID.
++        import signal as _signal
++        assert (99999, _signal.SIGTERM) in killed
++    finally:
++        conn.close()
++
++
++def test_reassign_remote_host_lock_clears_db_but_skips_kill(kanban_home):
++    """A claim_lock owned by another host (different hostname prefix) must
++    NOT trigger a local kill, but the DB row must still be cleared and the
++    reassign must land. Validates the host-prefix gate in
++    _terminate_reclaimed_worker."""
++    import time
++    import secrets
++    conn = kb.connect()
++    killed = []
++    def fake_signal(pid, sig):
++        killed.append((pid, sig))
++    try:
++        t = kb.create_task(conn, title="remote-zombie", assignee="orig")
++        # Non-matching hostname prefix → no kill.
++        lock = f"some-other-host:{secrets.token_hex(8)}"
++        future = int(time.time()) + 3600
++        conn.execute(
++            "UPDATE tasks SET status='running', claim_lock=?, claim_expires=?, "
++            "worker_pid=? WHERE id=?",
++            (lock, future, 99999, t),
++        )
++        conn.execute(
++            "INSERT INTO task_runs (task_id, status, claim_lock, claim_expires, "
++            "worker_pid, started_at) VALUES (?, 'running', ?, ?, ?, ?)",
++            (t, lock, future, 99999, int(time.time())),
++        )
++        run_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
++        conn.execute("UPDATE tasks SET current_run_id=? WHERE id=?", (run_id, t))
++        conn.commit()
++
++        assert kb.reassign_task(
++            conn, t, "rescuer", signal_fn=fake_signal,
++        ) is True
++
++        row = conn.execute(
++            "SELECT assignee, status, claim_lock FROM tasks WHERE id=?", (t,),
++        ).fetchone()
++        assert row["assignee"] == "rescuer"
++        assert row["status"] == "ready"
++        assert row["claim_lock"] is None
++        # Remote-host lock — no signal sent locally.
++        assert killed == []
+     finally:
+         conn.close()
+ 
