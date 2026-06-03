@@ -6,9 +6,9 @@ Source: [`procedural-devlog.md`](procedural-devlog.md) + [`POSTMORTEM.md`](../..
 
 ## Progress
 
-**Current phase:** 7 — Worker friction triage (corrected run2 evidence). Phase 6 substantially done; Phase 7 plan in [`.cursor/plans/run2_worker_friction_triage_6b269a59.plan.md`](../../.cursor/plans/run2_worker_friction_triage_6b269a59.plan.md).
-**Open / total:** 5 / 32 (Phases 0–4 closed; Phase 5: 5.1/5.3 done, 5.2 closed-into-Phase-6, 5.4 partial; Phase 6: 6.1–6.4 + 6.7 done, 6.5 revised, 6.6 + 6.8 partial).
-**Last update:** 2026-06-03 (Phase 5/6 status reconciled, Phase 7 stub added — see [`SUMMARY.md`](../../data/postmortems/establish-2026-06-02-phase6-run2/SUMMARY.md) + run2 worker-friction analysis).
+**Current phase:** 8 — Postmortem-driven friction reduction. Phase 7 substantially done (Tier 1+2 code + Tier 3 SOULs shipped); Phase 8 Tier 1 (mc mark soft-warn + mc move lenient long-range) shipped 2026-06-03.
+**Open / total:** 7 / 38 (Phases 0–4 closed; Phase 5: 5.1/5.3 done, 5.2 closed-into-Phase-6, 5.4 partial; Phase 6: 6.1–6.4 + 6.7 done, 6.5 revised, 6.6 + 6.8 partial; Phase 7: 7.0–7.5 done, 7.6 partial, 7.7 deferred; Phase 8: 8.1+8.2 done, 8.3–8.8 next-round candidates).
+**Last update:** 2026-06-03 (Phase 7 closure committed `3d36b31`; Phase 8 Tier 1 committed `41c314a`; postmortem at [`data/postmortems/establish-2026-06-03-phase7/THOROUGH-POSTMORTEM.md`](../../data/postmortems/establish-2026-06-03-phase7/THOROUGH-POSTMORTEM.md)).
 
 ## Working agreement
 
@@ -341,9 +341,9 @@ Findings doc: [`data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md`]
 - [x] **7.1** — Trace analyzer (`scripts/analyze-worker-trace.py`) + `scripts/tests/test_analyze_worker_trace.py`; corpus regression on five run2 high-friction cards (**190** `[error]` mc invocations, **92** `move` — chained `cd … && mc …` lines; older manual **154 / 80** undercounted workspace prefixes). JSON via `--json`.
 - [x] **7.2** — `nav-hints.js` + `next_action_hint` on `NAV_BLOCKED` / `NAV_DETOUR_TOO_LONG` / stall paths; `withNavRetryWarning` at 3rd consecutive failure (`bot/test/actions/nav-hints.test.js`). SOUL/skill copy still Tier 3.
 - [x] **7.3b** — `place_fill` partial → `fail('FILL_PARTIAL', …, { retry_safe: true, remaining_cells capped 32 })`; full success → `ok()`. `/action/place_fill` long deadline landed in Tier 1. Building-skill guidance still Tier 3.
-- [ ] **7.4** — Mark target coordinates, not bot feet. `mc mark --at X Y Z` is already implemented end-to-end — fix is in docs/SOULs (`gatherer-test.md` is the runtime file, not `gatherer.md` — `landfolk-control.sh:491`).
-- [ ] **7.5** — Structured worker handoffs. Promote Gatherer's run2 SCOUT comment pattern (1555-char structured markdown table) to a shared template in `skills/kanban-worker.md`. Make it automatically testable through final `mc chat` / agent utterance headers unless `agent-test.py` is extended.
-- [ ] **7.6** — Focused regression gates: bot unit tests + at most two proc-lab agent-tests (`short-move-obstacle` and combined `pad-mark-handoff`) + analyzer post-processing. Full establish replay only if these gates disagree or expose ambiguity.
+- [x] **7.4** — ~~Mark target coordinates, not bot feet.~~ — **done 2026-06-03, three layers landed.** Runtime SOULs updated in `gatherer-test.md` + `flint.md` (Phase 7 Tier 3). `bot/test/actions/mark-at.test.js` regression-locks the `body.at` contract (Phase 7.4b). Phase 8 Tier 1 Change A (`mc mark` soft-warn — `MARK_NO_AT_COORD_IN_NOTE` in `observed_state.warnings` when note text contains coord-shaped substring but no `--at`) closes the enforcement gap: run-4 found 0/12 marks used `--at` despite SOUL bullets. The Phase 8 warning makes the failure visible to the next agent turn.
+- [x] **7.5** — ~~Structured worker handoffs.~~ — **done 2026-06-03, template shipped, adoption pending validation.** Added "Minecraft worker handoff template" subsection to `skills/kanban-worker.md` (SCOUT/CONSTRUCT/SUPPLY headers, modeled on Gatherer's run2 1555-char SCOUT close-out). Run-4 evidence: 0 adoption — even Gatherer reverted to her run2 ad-hoc narrative. Template is shipped; agent-side discipline didn't penetrate. Either needs explicit per-worker SOUL bullets pointing at the template OR runtime enforcement (agent-test `mc_chat_contains_any:corners,obstacles,flatness`). Carrying as **partial-shipped, adoption-deferred**; revisit alongside Phase 8 Tier 2 SOUL work.
+- [~] **7.6** — ~~Focused regression gates~~ — **bot tests done, proc-lab agent-tests deferred.** Bot/script unit gates from the cursor plan all land: `bot/test/actions/nav-hints.test.js` (7.2), `bot/test/cli/http.test.js` (7.3a), `bot/test/actions/building-contract.test.js` (7.3b), `bot/test/actions/mark-at.test.js` (7.4b), `scripts/tests/test_establish_seed_cards.py` (7.0b), `scripts/tests/test_analyze_worker_trace.py` (7.1). Proc-lab `short-move-obstacle.yaml` + `pad-mark-handoff.yaml` topics NOT built — agent-test runner couldn't assert `kanban_comment` shape so the test design was deferred. Live establish replay (run-4 2026-06-03) substituted as the integration gate; run-4 evidence + analyzer + per-bot subagent reports captured in `data/postmortems/establish-2026-06-03-phase7/`.
 - [ ] **7.7** — Deferred (do not pursue without fresh evidence): `goto_near` cap (#42), `goal was changed` (zero in run2), Steward forbidden-verb work (clean in run2), turn-budget meter, entity-on-pad mitigation beyond 7.3.
 
 **Executability constraints:** reduce handoffs by folding 7.0b into 7.0; make every code change unit-testable; use the trace analyzer as the common measurement tool for postmortems and new agent-test transcripts; avoid manual session JSON review as an exit criterion; keep proc-lab coverage to two realistic micro-scenarios before considering an establish replay.
@@ -353,6 +353,59 @@ Findings doc: [`data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md`]
 **Time estimate:** ~half a focused day for 7.0–7.4 surgical items if tests stay local; two proc-lab micro-scenarios add ~1–2 hours; full replay (if needed) ~50 min run + analyze. Hobby-scope: keep to one cycle.
 
 **Risk:** the seeder change (7.0) leaves explore cards `assignee=orchestrator-tracker` until Steward's continuous loop reassigns. If her loop runs too slowly on a fresh start, cards sit non-dispatched. Mitigation in 7.0 exit criterion: validate Steward reassigns within 10 min.
+
+---
+
+## Phase 8 — Postmortem-driven friction reduction (run-4 evidence)
+
+**Why.** Phase 7 run-4 (2026-06-03) [thorough postmortem](../../data/postmortems/establish-2026-06-03-phase7/THOROUGH-POSTMORTEM.md) closed with **3 of 10 predicates held**. The Phase 7 code/SOUL changes worked structurally but most failed to penetrate worker behaviour in a live run. Two findings dominate:
+
+- **0 of ~12 explore-phase marks used `--at`** despite the Phase 7.4 SOUL bullet. Marks saved at bot standing position; downstream `mc go_mark` resolved to wrong cells → Pattern A (mark-then-can't-return) nav failures.
+- **`mc move` strict cell-match dominates friction** (108/231 errors, ~47%). Operator's verb-level observation: *"`bg_goto` and `goto_mark` seem to be actually useful"* — those verbs are lenient by default; `mc move` was the outlier.
+
+Three additional patterns surfaced (B self-trap-by-digging, C panic-pillar, E terrain blindness) that need structural fixes — see the postmortem's Tier 1–4 candidate list.
+
+Plan location: [`~/.claude/plans/investigate-the-open-points-wondrous-karp.md`](../../../.claude/plans/investigate-the-open-points-wondrous-karp.md). Companion postmortem: [`THOROUGH-POSTMORTEM.md`](../../data/postmortems/establish-2026-06-03-phase7/THOROUGH-POSTMORTEM.md) + [`FRICTION-NOTES-LIVE.md`](../../data/postmortems/establish-2026-06-03-phase7/FRICTION-NOTES-LIVE.md).
+
+**Items**
+
+- [x] **8.1** *(Tier 1 A — mc mark soft-warn)* — ~~Enforce `mc mark --at` when note text contains coord-shaped substring.~~ — **done 2026-06-03, commit `41c314a`.** `bot/lib/actions/marks.js` detects `\d+,\d+,\d+` patterns in note text; emits `observed_state.warnings: [{ code: 'MARK_NO_AT_COORD_IN_NOTE', message, note_coords, saved_at }]` when no `--at` provided. Mark IS still saved (soft warning). 8 new tests in `bot/test/actions/mark-soft-warn.test.js` covering positive cases, false-positive guards (two-number sequences, single-axis labels), and `--at` / `at_mark` suppression.
+
+- [x] **8.2** *(Tier 1 B — mc move lenient long-range default)* — ~~Distance > 20 blocks defaults to `near=2` (was strict GoalBlock).~~ — **done 2026-06-03, commit `41c314a`.** `bot/lib/actions/movement/move.js` computes `effectiveNear` before preflight: when distance > 20 AND `args.near == null` AND `args.strict !== true`, sets `effectiveNear = 2` and uses `GoalNear` for the pathfind goal (was `GoalBlock`). 7 new tests in `bot/test/actions/move-lenient-default.test.js` + 12 existing move tests still green.
+
+- [ ] **8.3** *(Tier 1 #3 — Steward `hermes kanban diagnostics` mandate)* — Update `steward.md` OBSERVE step to mandate `hermes kanban diagnostics` when any IN-FLIGHT card has runtime > 15 min. Run-4 evidence: 0 diagnostics calls across 20 OBSERVE cycles despite the SOUL mentioning it; she missed the 41-min Mason pad stall that would have been flagged at ~T+20 min by the upstream `stranded_in_ready` signal. Prose-only.
+  - Exit: live run shows Steward calls `hermes kanban diagnostics` during any cycle where IN-FLIGHT card runtime exceeds threshold.
+
+- [ ] **8.4** *(Tier 2 #6 — Card-body verb extraction)* — Update worker SOUL (mason.md primarily; flint.md by symmetry) to treat verbatim `mc <verb> ...` lines in card bodies as REQUIRED instructions, not flavor text. Run-4 evidence: Mason's pad task body said `mc fill cobblestone 13 103 1 21 103 9` but she dug + placed manually, hit iteration_budget_exhausted (150/150) without ever calling `mc fill`. The Phase 7.3b FILL_PARTIAL contract migration was correct but unexercised. Prose-only SOUL update first; a card-body precheck in `skills/kanban-worker.md` could ship as a Tier 2 follow-up.
+  - Exit: replay shows Mason calls the literal `mc fill` from her card body before any manual mining loop.
+
+- [ ] **8.5** *(Tier 1 #2 + #5 — `terrain_kind` + `feet_vs_local_ground` nav-brief fields)* — Add structured terrain characterization so agents read labelled state instead of re-deriving from raw deltas. Reuse `cardinalReliefDeltas` and `surfaceYAt` already in `bot/lib/shared/scene-landscape.js`. Surface in `mc status` nav_header + `mc scene` summary. After the field ships, update Steward SOUL to interpret it (no more "you're underground at Y=96, pillar_up 15" telling workers to over-climb their local surface). Largest single-change leverage in the postmortem's Tier 1 list; designs Pattern E and B+C mitigation.
+  - Exit: nav-brief returns `terrain_kind: 'gentle_slope_S' | 'flat' | 'depression' | ...` and `feet_vs_local_ground: int` on every `mc scene` / `mc status`.
+
+- [ ] **8.6** *(Tier 2 #7 — `mc escape` recognizes 1-block depression)* — When `feet_vs_local_ground == -1` and a standable cell exists at `+1 Y` in any cardinal, the escape primitive's first action is `mc jump`, not `pillar_up`. Depends on 8.5. Kills Pattern B's panic-pillar-out-of-1-block-hole pattern from run-4 evidence (Mason's 4 pillar_ups, Gatherer's 5, Flint's 4 — 13 dirt/oak/cobble pillars left in the world this run).
+  - Exit: bot test exercises 1-block depression + asserts no `pillar_up` call.
+
+- [ ] **8.7** *(Tier 2 #8 — `mc fence` + `--gate` advisory)* — When the bulk `mc fence` verb is invoked without `--gate`, return a structured `observed_state.warnings` advisory. Catches the fence-trap pattern early. Pure additive; no breaking change.
+  - Exit: bot test for `mc fence` without `--gate` returns the warning; with `--gate` no warning.
+
+- [ ] **8.8** — Next establish replay. Compare against run-4 baseline using `scripts/analyze-worker-trace.py`:
+  - `mc move` errors materially below 108 (target ≤80)
+  - "No standable cell" errors approach zero on long-range moves
+  - Marks in `locations-base.json` have coords matching note text
+  - `mc pillar_up` count materially below 13 (panic-pillar)
+  - At least one Mason `mc fill` call when the card body specifies one
+  - Steward called `hermes kanban diagnostics` ≥1 time per ~20-min IN-FLIGHT card
+
+**Dependencies:** 8.1+8.2 done. 8.3+8.4 are prose-only and independent. 8.5 unlocks 8.6 (a small follow-on once the new fields exist). 8.7 is independent. 8.8 needs 8.3–8.7 landed.
+
+**Time estimate:** 8.3+8.4 ~30 min combined (prose). 8.5 ~2-3 hours (single bot PR with thresholded classifier + ≥3 new tests). 8.6+8.7 ~1 hour each. 8.8 = 50-min replay + ~half day analysis.
+
+**Risk:** 8.5 `terrain_kind` classifier needs threshold tuning across biomes — a too-strict definition of `flat` would make every legitimate slope look like a problem. Mitigation: start with conservative thresholds, validate via the analyzer + replay before SOUL changes (8.5 is the architectural change, not the SOUL bullet).
+
+**Out of scope (Tier 3+ from postmortem, deferred):**
+- `AUTO_REUSE=0 MATERIALIZE=1` bootstrap fix — operator/infra.
+- Spawn-area cleanup in `establish-rcon-prep.py` — operator/infra.
+- Server-side classification thesis (broader than `terrain_kind`) — design follow-up.
 
 ---
 
@@ -368,13 +421,15 @@ Findings doc: [`data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md`]
 | 5 | Multi-bot re-run (baseline) | establishment.explore | ~50 min run + ~half day analyze | — |
 | 6 | Upstream alignment (gateway dispatcher + parents + idempotency_key) | scratch board + 1 establish run | ~half day impl + 50 min run + ~half day analyze | **Yes** for the next establish |
 | 7 | Worker friction triage (mc move + fill partial + mark --at + handoffs) | bot tests + proc-lab agent-tests + optional short replay | ~1 focused day | Recommended for next establish |
+| 8 | Postmortem-driven friction reduction (mc mark soft-warn, lenient long-range move, terrain_kind, escape-via-jump) | bot tests + 1 replay against run-4 baseline | ~half day Tier 1+2 SOULs + ~1 day terrain_kind PR + 50-min replay | Recommended before next establish |
 
-**Time estimate:** ~2 focused days end-to-end through Phase 5; add ~1 day for Phase 6; add ~1 day for Phase 7. If a phase blows past its slot, cut deeper inside the phase before extending. Watch for:
+**Time estimate:** ~2 focused days end-to-end through Phase 5; add ~1 day each for Phase 6, 7, 8. If a phase blows past its slot, cut deeper inside the phase before extending. Watch for:
 - Phase 1 dispatch injection — if it turns out to need upstream Hermes config, swap to `worker.md` ritual line + A2 suppression only, accept slightly weaker enforcement.
 - Phase 3 fleet-status v2 — keep to one commit; resist adding fields beyond the minimum Steward needs to stop guessing.
 - Phase 5 attribution requires Phase 3's A12-lite caller check to be honest about worker-vs-Steward closures.
 - Phase 6 6.4 (auto_decompose decision) — if you defer it, the dup-decomposition risk stays. Decide before 6.7.
 - Phase 7 7.0 seeder change — verify Steward continuous-loop reassign cadence on first replay; if her OBSERVE interval (~5–6 min) lets cards sit too long, add an `assignee=orchestrator-tracker` poll to her wake.
+- Phase 8 8.5 `terrain_kind` threshold tuning — start conservative, validate via analyzer/replay before SOUL changes. The labelled-state thesis can grow beyond `terrain_kind` (Tier 4 design follow-up) — don't expand 8.5's surface mid-flight.
 
 ---
 

@@ -228,6 +228,7 @@ Conditional reads — only if the trigger fires:
 | Read | Trigger |
 |---|---|
 | `scripts/kanban card <id>` | A card is blocked, in NEEDS REVIEW, running >15min, or you need to read latest comments. ~30 lines vs `hermes kanban show`'s ~150. |
+| **`hermes kanban diagnostics`** | **MANDATORY when ANY IN-FLIGHT card has runtime > 15 min.** Upstream's native situation room: surfaces `stranded_in_ready` (cards orphaned past threshold), `failure_limit` trips, `gave_up`, claim staleness. The `kanban board` runtime column tells you the elapsed time; cross-check with `diagnostics` to catch a stalled worker before the dispatcher's 41-min auto-block fires. **Run-4 evidence:** Steward made 0 `diagnostics` calls across 20 OBSERVE cycles; missed the Mason pad stall at T+20 min that would have been flagged by `stranded_in_ready`. The dispatcher auto-reassigned at T+41 — Steward could have done it at T+20 if she'd checked. |
 | `mc scene` / `mc look_at` | **Verify-before-narrate** at a named coord (blocker claim, shelter gap check) — not default orientation. |
 | `mc marks` | Only when you need the raw mark list after observe (e.g. reconcile with `scripts/reconcile-marks.py`), not instead of observe. |
 | `scripts/base-inventory.py --json` | About to file a [SUPPLY] card (you need to check the floor first — see "Inventory floor" below) |

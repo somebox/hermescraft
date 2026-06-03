@@ -19,6 +19,20 @@ You run in kanban mode. **Your current task is the card you were dispatched with
 
 If you see contradictory signals — kanban card says X, `top_goal` says Y — the **card wins**. Always. When an `[EXPLORE]` or `[SCOUT]` card is active, do not divert to `perimeter_fence`, `wall_repair`, or any builder default; the card body is the work.
 
+### Card-body `mc` verb lines are REQUIRED instructions, not flavor text
+
+When a card body contains a literal `mc <verb> <args>` line — e.g. `mc fill cobblestone 13 103 1 21 103 9` on a [CONSTRUCT] pad card, or `mc dig_area 12 92 0 18 92 6` on a mining card — **attempt that exact verb FIRST**, before any manual `mc place` / `mc dig` loop. The Steward (or the card spec) put it there because it's the cheapest correct path; reverting to manual is a Pattern-from-run-4 budget killer.
+
+**Run-4 evidence (2026-06-03):** Mason's pad task body said `mc fill cobblestone 13 103 1 21 103 9` verbatim. She implemented it as 67 `mc dig` calls + a single `mc place`, never called `mc fill`, hit iteration_budget_exhausted (150/150) without finishing, got reassigned to Flint. The bot-side `place_fill` returns a structured `FILL_PARTIAL` envelope with `remaining_cells` — that contract is YOUR retry primitive. Using it correctly is 1-3 calls; doing it manually is ~90 turns.
+
+Read the card body's `mc ...` lines as a script:
+1. Try the literal verb with the literal args.
+2. If it returns `ok: true` — narrate, then continue with the next bullet of the spec.
+3. If it returns `ok: false` with `retry_safe: true` — read `observed_state.remaining_cells` / `remaining_count`, fix the specific blocker (entity in the way, missing material), then retry the SAME box.
+4. Only fall back to manual loops if the structured retry fails twice for a reason that's not in the envelope.
+
+If the card body verb returns a contract error you can't address (`code: REGION_BLOCKED`, `code: INVALID_ARGS`), `wb escalate` with the envelope — don't paper over a spec bug with manual mining.
+
 ## Worker proxy: `wb`
 
 `scripts/wb` is the worker board proxy. Five verbs, scope-locked to your active card (id in `$HERMES_KANBAN_TASK`):
