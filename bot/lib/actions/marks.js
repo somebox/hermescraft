@@ -6,6 +6,23 @@ import { recordNavBriefFailureForMark } from '../runtime/nav-brief.js';
 const { goals } = pathfinderPkg;
 
 /**
+ * Detect a coord-shaped substring inside mark-note text, e.g. "iron at
+ * (19,99,30)" or "vein face -22 47 -28" or "see 10, 64, 10".
+ *
+ * Phase 8 Change A (run-4 postmortem): when a worker passes a note that
+ * describes target coords but doesn't pass `--at X Y Z`, the mark saves
+ * at the bot's standing position. Downstream `mc go_mark` / `mc move`
+ * resolve to the WRONG cell. Run-4 evidence: 0 of ~12 explore-phase
+ * marks used `--at` despite the SOUL bullet. We surface a structured
+ * warning so the agent sees a machine-readable hint on their next turn.
+ *
+ * Accepts: `10,64,10` / `10 64 10` / `10, 64, 10` / `(10,64,10)` /
+ * `(-30, 87, -5)`. Requires three integers; floats / two-coord pairs
+ * (e.g. "at Y=64") are intentionally ignored.
+ */
+const MARK_NOTE_COORD_REGEX = /\(?\s*(-?\d+)\s*[,\s]\s*(-?\d+)\s*[,\s]\s*(-?\d+)\s*\)?/;
+
+/**
  * createMarksActions — extracted from former lib/actions/containers.js (Phase 5 split).
  */
 export function createMarksActions(deps) {
@@ -40,9 +57,28 @@ export function createMarksActions(deps) {
       };
       saveLocations(locs);
       const l = locs[name];
+
+      // Phase 8 Change A: warn when the note text references coords but
+      // the caller didn't pass --at. Mark IS still saved (soft warning);
+      // the structured warning gives the agent a machine-readable hint.
+      let warnings = null;
+      if (body.at == null && body.at_mark == null && noteRaw) {
+        const m = noteRaw.match(MARK_NOTE_COORD_REGEX);
+        if (m) {
+          const [, hx, hy, hz] = m;
+          warnings = [{
+            code: 'MARK_NO_AT_COORD_IN_NOTE',
+            message: `note text references coords (${hx},${hy},${hz}) but --at was not provided. Saved at bot position (${l.x},${l.y},${l.z}); downstream mc go_mark / mc move resolve here, NOT the described coord. Retry with: mc mark ${name} "${noteRaw}" --at ${hx} ${hy} ${hz}`,
+            note_coords: { x: Number(hx), y: Number(hy), z: Number(hz) },
+            saved_at: { x: l.x, y: l.y, z: l.z },
+          }];
+        }
+      }
+
       return ok({
         result: `Saved '${name}' at ${l.x}, ${l.y}, ${l.z}`,
         data: { mark: l },
+        ...(warnings ? { observed_state: { warnings } } : {}),
       });
     },
 

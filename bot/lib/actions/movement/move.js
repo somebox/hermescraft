@@ -9,6 +9,7 @@ import {
 
 import { enrichWithStand } from './_preflight.js';
 import { isDetourAllowed, detourHintForDy } from './detour-check.js';
+import { navBlockedNextActionHint, withNavRetryWarning } from './nav-hints.js';
 import { coord3 } from '../_args.js';
 import { recordNavBriefFailureForMark } from '../../runtime/nav-brief.js';
 
@@ -160,10 +161,32 @@ export function createMove(deps) {
         },
       };
     }
-    const pre = preflightNav(b, x, y, z, 1);
+    // Phase 8 Change B: default to lenient arrival on long-range moves.
+    // Run-4 postmortem: `mc move` strict cell-match dominates friction
+    // (108/231 errors, ~47%). Operator's direct observation: bg_goto +
+    // goto_mark "seem to be actually useful" — those verbs are lenient
+    // by default; mc move was the outlier. When the target is >20 blocks
+    // away AND the caller didn't pass `near` AND didn't opt into strict,
+    // default to a 2-block arrival tolerance. Matches the existing
+    // success check at `if (dist <= 2)` further down. The same `near` is
+    // passed to preflight so the standable-cell search uses the lenient
+    // radius, and the goal type switches to GoalNear at the pathfind
+    // call below.
+    let effectiveNear = args.near != null ? Number(args.near) : null;
+    if (effectiveNear == null && args.strict !== true) {
+      const dx = startPos.x - Number(x);
+      const dy = startPos.y - Number(y);
+      const dz = startPos.z - Number(z);
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (distance > 20) {
+        effectiveNear = 2;
+      }
+    }
+    const preRadius = effectiveNear != null && effectiveNear > 0 ? effectiveNear : 1;
+    const pre = preflightNav(b, x, y, z, preRadius);
     if (pre && (pre.error || pre.ok === false)) {
       recordMoveFailure('move', x, y, z, posObj(), pre.error?.code || 'preflight');
-      return pre;
+      return withNavRetryWarning(pre, moveRetryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
     }
     let yAdjusted = null;
     if (pre && pre.y_adjusted) {
@@ -317,7 +340,7 @@ export function createMove(deps) {
             const ratio = pathLength / Math.max(straightLine, 1);
             const hint = detourHintForDy(dy);
             recordMoveFailure('move', target.x, target.y, target.z, posObj(), 'detour_too_long');
-            return {
+            return withNavRetryWarning({
               ok: false,
               error: {
                 code: 'NAV_DETOUR_TOO_LONG',
@@ -334,14 +357,22 @@ export function createMove(deps) {
                 next_action_hint: hint,
                 retry_safe: false,
               },
-            };
+            }, moveRetryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
           }
         }
       }
     }
 
     for (let leg = 1; leg <= maxDoors + 1; leg++) {
-      const goal = new goals.GoalBlock(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z));
+      // Phase 8 Change B: use GoalNear when effectiveNear > 0 so the
+      // pathfinder accepts arrival within the lenient radius. GoalBlock
+      // is strict (must reach the exact cell) which fails when the
+      // target cell is solid — exactly the Pattern A scenario we're
+      // fixing (mark at chest coord → mc move to that coord → "No
+      // standable cell" because the cell IS the chest).
+      const goal = effectiveNear != null && effectiveNear > 0
+        ? new goals.GoalNear(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z), effectiveNear)
+        : new goals.GoalBlock(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z));
       try {
         await pathfindWithProgressWatchdog({
           bot: b,
@@ -444,15 +475,17 @@ export function createMove(deps) {
         if (botInWater) {
           extraHint = ' You are in water — call `mc escape` to swim to the nearest shore before retrying navigation.';
         }
-        return {
+        const blocked = {
           ok: false,
           error: {
             code: 'NAV_BLOCKED',
             message: `No path to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} from ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} and no door/gate between to use.${extraHint}`,
             observed_state: enrichWithStand(b, { current: pos, target, doors_used, nearby_doors: doorList, pathfinder_error: lastPathfinderError, in_water: botInWater }, target.x, target.y, target.z),
+            next_action_hint: navBlockedNextActionHint(b, target, pos, { inWater: botInWater, nearbyDoors: doorList }),
             retry_safe: false,
           },
         };
+        return withNavRetryWarning(blocked, moveRetryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
       }
 
       const through = await ACTIONS.through({
@@ -461,15 +494,19 @@ export function createMove(deps) {
       });
 
       if (!through.ok) {
-        return {
+        const posNow = posObj();
+        const doorFail = {
           ok: false,
           error: {
             code: 'NAV_BLOCKED',
             message: `Could not traverse ${chosen.block} at ${chosen.pos.x},${chosen.pos.y},${chosen.pos.z}: ${through.error?.message || 'through failed'}`,
-            observed_state: enrichWithStand(b, { current: posObj(), target, doors_used, failed_door: { x: chosen.pos.x, y: chosen.pos.y, z: chosen.pos.z, block: chosen.block }, through_error: through.error }, target.x, target.y, target.z),
+            observed_state: enrichWithStand(b, { current: posNow, target, doors_used, failed_door: { x: chosen.pos.x, y: chosen.pos.y, z: chosen.pos.z, block: chosen.block }, through_error: through.error }, target.x, target.y, target.z),
+            next_action_hint: `mc through ${chosen.pos.x} ${chosen.pos.y} ${chosen.pos.z} (retry after mc goto_near door approach cell)`,
             retry_safe: through.error?.retry_safe ?? false,
           },
         };
+        recordMoveFailure('move', target.x, target.y, target.z, posNow, 'through_failed');
+        return withNavRetryWarning(doorFail, moveRetryKey, gotoRetryCounts, GOTO_RETRY_LIMIT);
       }
 
       doors_used.push({
