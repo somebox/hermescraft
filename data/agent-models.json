@@ -32,7 +32,7 @@
       "api_port": 3004
     },
     "Steward": {
-      "model": "deepseek/deepseek-v4-flash:exacto",
+      "model": "deepseek/deepseek-v4-pro",
       "provider": "openrouter",
       "role": "orchestrator",
       "api_port": 3005

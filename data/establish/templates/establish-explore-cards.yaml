@@ -1,0 +1,41 @@
+# Worker explore cards — seeded unassigned so Steward decides who patrols where.
+# Bootstrap pre-files these via establish-seed-cards.py --explore-cards (no assignee).
+# Steward's first wake on [ESTABLISH:BASE] runs `kanban assign <card_id> <bot>` per
+# fleet state (load, position, role). Cards stay in `triage` until assigned.
+cards:
+  - title: "[EXPLORE] NE quadrant from muster"
+    skills: [minecraft-navigation]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Patrol **NE** from muster (~bearing 045°), max radius **50** blocks, budget **10 min**, surface only.
+
+      Loop: `mc move` / bearing steps → `mc look` → `mc scene` → mark discoveries.
+      Mark `lt_*` for wood/stone/water/animals; `candidate_pad_<name>` on flats worth a base (note defense + biome in mark body).
+      Chat status every ~5 min with position + scene cues.
+      Complete summary: `mc marks` lines for lt_* and candidate_pad_*; SITE_SCORE 1-5 for best pad found.
+
+      Radius bumped 30 → 50 (run-8 evidence): at 30 blocks quadrants overlap
+      near the diagonal axes, so workers from adjacent quadrants cross-detect
+      the same features. 50 blocks per quadrant gives ~100-block-wide
+      non-overlap and richer site differentiation across the disc.
+
+  - title: "[EXPLORE] NW quadrant from muster"
+    skills: [minecraft-navigation, minecraft-mining]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Patrol **NW** (~315°), max radius **50**, budget **10 min**, surface only.
+      Same mark/report protocol as NE explore card.
+
+  - title: "[EXPLORE] SE quadrant from muster"
+    skills: [minecraft-navigation, minecraft-building]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Patrol **SE** (~135°), max radius **50**, budget **10 min**, surface only.
+      Same mark/report protocol as NE explore card.
+
+  - title: "[EXPLORE] SW quadrant from muster"
+    skills: [minecraft-navigation]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Patrol **SW** (~225°), max radius **50**, budget **10 min**, surface only.
+      Same mark/report protocol as NE explore card.
