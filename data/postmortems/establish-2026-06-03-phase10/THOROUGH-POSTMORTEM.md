@@ -57,16 +57,27 @@ the orchestrator failure dominated.**
   anchor. Mason started tunnelling down.
 
 ### Pad-clearing phase (14:48–16:55)
-- Mason claimed `t_9d5c92b0` (clear pad). Card body said body assumed
-  surface flat-grade.
-- Mason ran `mc goto_near 15 77 55 range=2` → `BOT_TRAPPED at
-  -3,68,53`. He was 18 blocks west and 9 below the anchor.
-- `mc escape` partially succeeded — pillar_up climbed Y 68 → 71 — but
-  the navigator lost the anchor and Mason wandered.
+- Mason claimed `t_9d5c92b0` (clear pad). Card body assumed surface
+  flat-grade at the anchor.
 - During this period, **Steward** (continuous loop) decided the workers
   were too slow and started executing Mason's, Flint's, and Gatherer's
   cards herself. Her body collected wood, mined cobble, dug pits,
-  tunnelled, levelled.
+  tunnelled, levelled. Verb counts on `mc-steward.log` 14:00–17:00:
+  `goto_near` 24, `move` 22, `collect` 11, `level` 10, `dig` 7, `tunnel`
+  7 (per the run-8 log-analysis plan).
+- **Steward got trapped at (-3,68,53)** at `15:03:55` (`mc-steward.log:14438`,
+  `FAIL_DETAIL goto_near | ...trapped at -3,68,53`). She then tried `mc
+  collect coal_ore` while still trapped (line 14446, `behind_wall` hint).
+- **Mason later trapped at the same coord (-3,68,53)** when his
+  pad-clearing card ran `mc goto_near 15 77 55 range=2`. Recoverable
+  only from `~/.hermes/profiles/mason/state.db` session
+  `20260603_164344_fc0f87` because `mc-mason.log` ends at 10:24:34 (the
+  log-continuity gap G4 in the run-8 plan). Mason's `mc escape`
+  partially succeeded (pillar_up Y 68 → 71) but the navigator lost the
+  anchor and Mason wandered.
+- Both bodies took the same wrong path to the same dead-end coord ~2
+  hours apart, evidence that the pad anchor at Y=77 (2 below surface
+  Y=79) was geographically misleading independent of operator.
 
 ### Operator diagnosis (~16:55)
 - Operator observed in-game Steward digging dirt while Flint and
@@ -97,9 +108,9 @@ the orchestrator failure dominated.**
 | **PR-L chest sits on grass** (not flush) | ✗ DEFERRED (fix `49c8391` lands for run-9) | Operator observed chest at Y-1 (flush with grass instead of sticking up). |
 | **PR-M MEMORY.md wipe** | ✗ DEFERRED (fix `ddd38de` lands for run-9) | Gatherer carried `muster (4,96,24)` from prior runs; Mason carried `cabin on 9x9 pad Y97-99`; Flint carried `base anchor (-238,65,561)` from prior worlds. |
 | **PR-J terrain= reaches CLI** | ✓ HELD | Live verify: `Surface at 20,79,40 — open (2 exits) — terrain=unknown (feet_vs_local_ground=-9)` emitted on `mc status`. |
-| **PR-S AUTO_STUCK watchdog** | ✓ ARMED, 0 fires | No worker got stuck enough to trigger identical recent[]. Watchdog wiring verified via heartbeat files in `/tmp/hermescraft`. |
+| **PR-S AUTO_STUCK watchdog** | ✗ ARMED but DEAD-WIRED | Watchdog ran; 0 fires. Root cause: progress emitter at `landfolk-control.sh` reads `d.get('position')` from `/observe?lean=true` but lean observe nests position under `state.position`, so `pos:null` got written 374-378× per bot (36-59% of progress lines). `auto-stuck-check.py:119-123` requires non-null pos → never fires. The plan correction landing today is a one-line emitter change (read `state.position`). See run-8 log-failure plan G2 for full evidence. |
 | **PR-F pillar guards** | ✓ ARMED, 0 fires | No `PILLAR_COUNT_OVER_CAP` / `PILLAR_ABSOLUTE_Y_LOOKS_LIKE` hits. |
-| **Steward stays read-only** | ✗ FAILED | `mc-steward.log` records `mc tunnel`, `mc level`, `mc collect`, `mc dig`, `mc move`. SOUL prose said "you don't mine, place, gather, fight"; she did all four. |
+| **Steward stays read-only** | ✗ FAILED (multi-layer) | `mc-steward.log` records `mc tunnel`, `mc level`, `mc collect`, `mc dig`, `mc move`. SOUL prose AND the existing [`scripts/hermes-hooks/orchestrator-deny.sh`](../../../scripts/hermes-hooks/orchestrator-deny.sh) tool-boundary hook (allowlist enforcement on the `mc` verb word + sqlite3/python3 blocklist) failed to stop her. The hook's `pre_tool_call` matcher is `terminal` only; Steward's mc CLI calls reach the bot HTTP API directly and bypass the hook. The run-11 plan moves enforcement to bot-server middleware (HTTP 403 on `/action/<verb>` outside allowlist) — covers CLI, dashboard, raw curl, and any future tooling with one source of truth. |
 | **terrain.kind populated as bots move** | ✓ HELD | 10-min: all unknown. 30-min: `cliff_above`, `mound_1` varied across bots. Classifier works once bots leave the spawn-prep rect. |
 
 ## Per-bot snapshot (lightweight)
