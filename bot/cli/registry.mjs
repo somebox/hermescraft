@@ -361,10 +361,16 @@ export const RAW_COMMAND_DEFS = [
   g('pillar_up', 'world', ['pillar_step', 'tower', 'pillar'], {
     method: 'POST',
     path: '/action/pillar_step',
-    description: 'Climb upward N blocks by jumping and placing a block underfoot each step (count = how many blocks to climb, max 64 — this is a multi-block climb, not a single step). Stops when it reaches a sky-open surface beside you. If genuinely trapped (4 walls + ceiling) it auto bare-hand digs the ceiling to keep going. With no pillar block in inventory it digs+captures the overhead block. Pass --force to also bare-hand slow-dig stone faster and to break protected/region blocks for the escape. Alias: pillar_step.',
+    description: 'Climb upward N blocks by jumping and placing a block underfoot each step (count = how many blocks to climb, max 32 — this is a multi-block climb, not a single step). Stops when it reaches a sky-open surface beside you. If genuinely trapped (4 walls + ceiling) it auto bare-hand digs the ceiling to keep going. With no pillar block in inventory it digs+captures the overhead block. Pass --force to also bare-hand slow-dig stone faster and to break protected/region blocks for the escape. Alias: pillar_step.',
     argSchema: [
       { key: 'block', type: 'string' },
-      { key: 'count', type: 'number', description: 'blocks to climb (default 1, max 64)' , min: 1, max: 32},
+      // Run-7 Step 3 (PR-F): cap aligned with the description and with
+      // the heuristic at the action layer. Run-6/7 evidence: Steward
+      // whispered `pillar_up to Y=105` (interpreted by the worker as
+      // count=105), which previously walked through the schema's higher
+      // cap. The action layer additionally rejects N that "looks like
+      // an absolute Y" (`N > 16 AND N > feet_y + 32`).
+      { key: 'count', type: 'number', description: 'blocks to climb (default 1, max 32)' , min: 1, max: 32},
       {
         key: 'jump',
         type: 'boolean',

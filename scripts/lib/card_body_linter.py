@@ -41,14 +41,14 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-# Kinds that REQUIRE a verb line by default.
-VERB_REQUIRED_KINDS = frozenset({"CONSTRUCT", "MINE", "TILL", "SUPPLY", "SURVEY"})
-
-# SCOUT becomes verb-required when the body has ≥ this many coord triples.
-SCOUT_MULTI_COORD_THRESHOLD = 3
-
-# Match `[KIND]` at the start of a title.
-_TITLE_KIND_RE = re.compile(r"^\s*\[([A-Z]+)\]")
+# Run-7 Step 3 (pr-k-kinds-unify): VERB_REQUIRED_KINDS, the SCOUT multi-
+# coord threshold, and `parse_kind_from_title` all live in card_kinds.py.
+# Re-exported here for backwards-compat with existing callers.
+from scripts.lib.card_kinds import (
+    VERB_REQUIRED_KINDS,
+    SCOUT_MULTI_COORD_THRESHOLD,
+    parse_kind_from_title,
+)
 
 # Executable verb line: `mc <verb>` at line start (allowing leading whitespace).
 # Verbs are [a-z_][a-z_0-9]*. We don't enumerate the verb registry — any
@@ -64,14 +64,6 @@ _COORD_TRIPLE_RE = re.compile(r"\(?\s*(-?\d+)\s*[,\s]\s*(-?\d+)\s*[,\s]\s*(-?\d+
 
 # Fenced code block delimiter.
 _FENCE_RE = re.compile(r"^\s*```")
-
-
-def parse_kind_from_title(title: Optional[str]) -> Optional[str]:
-    """Pull `[KIND]` out of a title; return uppercase or None."""
-    if not title:
-        return None
-    m = _TITLE_KIND_RE.match(title)
-    return m.group(1).upper() if m else None
 
 
 def _iter_non_fenced_lines(body: str):

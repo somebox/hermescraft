@@ -40,7 +40,7 @@ This only applies to the four card kinds above; EXPLORE and SCOUT bodies are pro
 - `wb close [--result "..."]` — mark your card done.
 - `wb block "<reason>"` — park your card with a structured reason (use the prefixes from the kanban-worker SKILL: `region_blocked:…`, `task_spec_invalid:…`, etc.).
 - `wb escalate "<reason>"` — **needs-Steward decision.** Records a block event with `[!ESCALATED]` so Steward's board surfaces it in a NEEDS REVIEW lane. Use this when the card is mis-specified, the world doesn't match the body (bedrock under the build pad, no oak trees in the named site), or you're asking Steward to reassign / re-decompose. Prefer `wb escalate` over a plain `wb block` when you want fast human attention.
-- `wb stash-coord` — **run once on claim before any other `mc` action.** Extracts the active card's primary build coord (from the first `mc fill`/`mc place`/`mc goto`/`mc move` line) and stashes it locally. Powers `MARK_COORD_VS_CARD_DRIFT` warnings on structure marks (`base_*`, `pad_*`, `wall_*`, `roof_*`, `chest_*`, `foundation_*`) more than 3 blocks from the card target.
+- `wb context` (above) **side-effects** `$HERMES_HOME/task-body-coord.json` on every CONSTRUCT/SUPPLY/MINE/TILL/SURVEY claim — the orient call you already make is sufficient. Powers `MARK_COORD_VS_CARD_DRIFT` warnings on structure marks (`base_*`, `pad_*`, `wall_*`, `roof_*`, `chest_*`, `foundation_*`) more than 3 blocks from the card target. No separate `wb stash-coord` call needed; an explicit fallback exists for operator use but is a no-op on EXPLORE/SCOUT cards.
 
 `wb` cannot create cards, edit titles, change priorities, or wire dependencies — that's Steward's surface, not yours.
 

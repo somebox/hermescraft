@@ -203,6 +203,90 @@ class ClearStashTest(unittest.TestCase):
             wb._clear_card_coord_stash()  # silent no-op
 
 
+class CmdStashCoordKindGuardTest(unittest.TestCase):
+    """Run-7 Step 3 (PR-K) — cmd_stash_coord now mirrors the side-effect
+    path's kind guard. Without this, the explicit path happily stashed
+    an EXPLORE coord during run-7 (mason hit the legacy SOUL bullet and
+    invoked `wb stash-coord` against the NW EXPLORE card)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self._tmp.name)
+        self._env_patch = patch.dict(os.environ, {"HERMES_HOME": str(self.home)})
+        self._env_patch.start()
+
+    def tearDown(self):
+        self._env_patch.stop()
+        self._tmp.cleanup()
+
+    def _stash_file(self) -> Path:
+        return self.home / "task-body-coord.json"
+
+    def _run_cmd(self, title: str, body: str, task_id: str = "t_test") -> int:
+        ctx = {
+            "card": {
+                "id": task_id, "title": title, "status": "running",
+                "assignee": "mason", "priority": 0, "size": None,
+                "location": None, "body": body,
+            },
+            "epic": None, "siblings": [], "comments": [],
+            "bot_pose": None, "board": "landfolk-ops",
+        }
+        with patch.object(wb, "_build_context", return_value=ctx):
+            with patch.object(wb, "_active_task_id", return_value=task_id):
+                import argparse
+                from io import StringIO
+                from contextlib import redirect_stdout
+                args = argparse.Namespace(task=None)
+                with redirect_stdout(StringIO()):
+                    return wb.cmd_stash_coord(args)
+
+    def test_construct_card_stashes_explicitly(self):
+        rc = self._run_cmd(
+            "[CONSTRUCT] Pad 9x9 cobble",
+            "mc fill cobblestone 15 101 49 23 101 56",
+        )
+        self.assertEqual(rc, 0)
+        self.assertTrue(self._stash_file().exists())
+        payload = json.loads(self._stash_file().read_text())
+        self.assertEqual(payload["coord"], {"x": 19, "y": 101, "z": 52})
+
+    def test_explore_card_no_stash_via_explicit_path(self):
+        # The run-7 regression: an EXPLORE body mentions muster (4,96,24)
+        # which the prose-fallback extractor would happily grab. The
+        # guard refuses upstream, regardless of body content.
+        rc = self._run_cmd(
+            "[EXPLORE] NW quadrant from muster",
+            "Patrol the NW quadrant starting from muster (4,96,24).",
+        )
+        self.assertEqual(rc, 0)
+        self.assertFalse(self._stash_file().exists(),
+            "EXPLORE card must NOT stash via the explicit cmd_stash_coord path")
+
+    def test_scout_card_no_stash_via_explicit_path(self):
+        rc = self._run_cmd(
+            "[SCOUT] Scout candidate pad sites in NE",
+            "Scout the NE quadrant for candidate pads and mark them lt_*.",
+        )
+        self.assertEqual(rc, 0)
+        self.assertFalse(self._stash_file().exists())
+
+    def test_explore_explicit_call_does_NOT_clear_prior_stash(self):
+        # If a CONSTRUCT card is active with a stash file, then someone
+        # runs `wb stash-coord` against an EXPLORE card (e.g. wrong env,
+        # ad-hoc operator), the EXPLORE call must not destroy the
+        # CONSTRUCT stash. Close/block/escalate are the explicit clear
+        # channels (per side-effect path's contract — same here).
+        self._stash_file().write_text(
+            json.dumps({"task_id": "t_construct", "coord": {"x": 19, "y": 101, "z": 52}})
+        )
+        rc = self._run_cmd("[EXPLORE] NW", "Patrol NW.")
+        self.assertEqual(rc, 0)
+        self.assertTrue(self._stash_file().exists())
+        payload = json.loads(self._stash_file().read_text())
+        self.assertEqual(payload["task_id"], "t_construct")
+
+
 class CmdContextSideEffectTest(unittest.TestCase):
     """`cmd_context` integrates the side effect — the high-level invariant
     that workers will actually exercise on every claim."""

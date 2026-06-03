@@ -32,7 +32,53 @@ export function createBuildingPillarPart(deps) {
       // 4-wall+ceiling predicate before honouring it.
       const b = ensureBot();
       const wantJump = doJump !== false && doJump !== 'false';
-      const maxSteps = Math.min(Math.max(parseInt(rawCount, 10) || 1, 1), 64);
+      // Run-7 Step 3 (PR-F) — count cap aligned with the CLI argSchema
+      // (32). The registry's argSchema cap kicks in first; this is
+      // defense-in-depth for callers that hit /action/pillar_step
+      // directly (skipping the CLI parser).
+      const rawCountNum = parseInt(rawCount, 10) || 1;
+      if (rawCountNum > 32) {
+        return fail(
+          'PILLAR_COUNT_OVER_CAP',
+          `Refusing pillar_step with count=${rawCountNum}: max is 32. ` +
+          `Run-7 evidence: Steward whispered "pillar_up to Y=105" (an absolute Y) ` +
+          `and the worker interpreted the literal number as climb count, silently ` +
+          `truncated to 64, then wasted ~64 attempts. If you need to climb >32, ` +
+          `chain successive pillar_step calls instead of passing a large delta.`,
+          {
+            observed_state: {
+              requested_count: rawCountNum,
+              cap: 32,
+            },
+            retry_safe: false,
+          },
+        );
+      }
+      // Heuristic: any count > 16 that is also > feet_y + 32 looks more
+      // like an absolute Y target than a relative delta. Defensive even
+      // though the cap above catches most cases — fires when the bot is
+      // at low Y (deep underground) and a model still produces an
+      // absolute-Y-looking N within the cap.
+      const feetYBefore = Math.floor(b.entity.position.y);
+      if (rawCountNum > 16 && rawCountNum > feetYBefore + 32) {
+        return fail(
+          'PILLAR_ABSOLUTE_Y_LOOKS_LIKE',
+          `Refusing pillar_step with count=${rawCountNum}: looks like a target ` +
+          `Y, not a relative delta. Bot feet at Y=${feetYBefore}; this count ` +
+          `would imply ending Y=${feetYBefore + rawCountNum}. Use a relative ` +
+          `delta (e.g. mc pillar_up ${Math.max(1, Math.min(rawCountNum - feetYBefore, 32))}) ` +
+          `or chain successive calls if you really want a multi-stage climb.`,
+          {
+            observed_state: {
+              requested_count: rawCountNum,
+              feet_y: feetYBefore,
+              feet_y_plus_threshold: feetYBefore + 32,
+            },
+            retry_safe: false,
+          },
+        );
+      }
+      const maxSteps = Math.min(Math.max(rawCountNum, 1), 32);
       const force = rawForce === true || rawForce === 'true' || rawForce === '1';
 
       // Pre-flight: refuse pillar_step from a partial-height block (slab,

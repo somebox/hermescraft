@@ -164,3 +164,121 @@ test('pillar_step: full-block start (no slab) skips the guard', async () => {
       `full-block start must not trigger the partial-block guard; got ${r.error.code}`);
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Run-7 Step 3 (PR-F): pillar_step rejects counts that look like an
+// absolute target Y rather than a relative climb delta.
+//
+// Run-6/7 evidence: Steward whispered `pillar_up to Y=105` and the
+// worker interpreted the literal `105` as the climb count. The OLD
+// code silently truncated to 64 (the prior cap) and burned ~64 attempts
+// before the model gave up. PR-F caps at 32 AND adds a second heuristic
+// for low-feet_y poses where the cap alone wouldn't trigger.
+// ─────────────────────────────────────────────────────────────────────────
+
+function _makeStubBot(feetY = 64) {
+  const grass = { name: 'grass_block', position: { x: 0, y: feetY - 1, z: 0 },
+                  boundingBox: 'block', getProperties: () => ({}) };
+  return {
+    entity: { position: { x: 0.5, y: feetY, z: 0.5 }, isInWater: false, onGround: true },
+    inventory: { items: () => [{ name: 'cobblestone', count: 64 }] },
+    blockAt: (pos) => {
+      if (pos.x === 0 && pos.y === feetY - 1 && pos.z === 0) return grass;
+      return { name: 'air', position: pos, boundingBox: 'empty' };
+    },
+    placeBlock: async () => {},
+    setControlState: () => {},
+    clearControlStates: () => {},
+    equip: async () => {},
+    heldItem: null,
+  };
+}
+
+test('pillar_step: rejects count=105 (run-7 regression — Y=105 whisper)', async () => {
+  const bot = _makeStubBot(96);  // Gatherer-ish pose
+  const ctx = { runtime: { recentPlaces: [] } };
+  const part = createBuildingPillarPart({
+    ctx, ensureBot: () => bot, sleep: async () => {}, getActions: () => ({}),
+  });
+  const r = await part.pillar_step({ count: 105 });
+  assert.equal(r.ok, false, 'expected refusal envelope');
+  assert.equal(r.error.code, 'PILLAR_COUNT_OVER_CAP');
+  assert.match(r.error.message, /max is 32|run-7|Y=105/i);
+  assert.equal(r.error.observed_state.requested_count, 105);
+  assert.equal(r.error.observed_state.cap, 32);
+});
+
+test('pillar_step: rejects count=33 (boundary above cap)', async () => {
+  const bot = _makeStubBot(64);
+  const part = createBuildingPillarPart({
+    ctx: { runtime: { recentPlaces: [] } },
+    ensureBot: () => bot, sleep: async () => {}, getActions: () => ({}),
+  });
+  const r = await part.pillar_step({ count: 33 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'PILLAR_COUNT_OVER_CAP');
+});
+
+test('pillar_step: count=32 passes the cap (boundary at cap)', async () => {
+  // Use force=true so we don't trip the slab guard or other pre-flights.
+  // Beyond the PR-F guards the action will fail for other reasons (stub
+  // bot lacks pathfinder etc.) — we ONLY assert it's not a PR-F error.
+  const bot = _makeStubBot(64);
+  const part = createBuildingPillarPart({
+    ctx: { runtime: { recentPlaces: [] } },
+    ensureBot: () => bot, sleep: async () => {}, getActions: () => ({}),
+  });
+  const r = await part.pillar_step({ count: 32 });
+  if (r.ok === false) {
+    assert.notEqual(r.error.code, 'PILLAR_COUNT_OVER_CAP',
+      `count=32 must clear the cap guard; got ${r.error.code}`);
+    assert.notEqual(r.error.code, 'PILLAR_ABSOLUTE_Y_LOOKS_LIKE',
+      `count=32 at feet_y=64 must not look like absolute Y; got ${r.error.code}`);
+  }
+});
+
+test('pillar_step: heuristic rejects count > 16 AND count > feet_y + 32', async () => {
+  // Deep-underground / low-feet_y pose: feet_y=-20 (Nether-ish).
+  // count=20 → 20 > 16 ✓ AND 20 > -20+32=12 ✓ → heuristic fires.
+  const bot = _makeStubBot(-20);
+  const part = createBuildingPillarPart({
+    ctx: { runtime: { recentPlaces: [] } },
+    ensureBot: () => bot, sleep: async () => {}, getActions: () => ({}),
+  });
+  const r = await part.pillar_step({ count: 20 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'PILLAR_ABSOLUTE_Y_LOOKS_LIKE');
+  assert.match(r.error.message, /target Y|relative delta/i);
+  assert.equal(r.error.observed_state.requested_count, 20);
+  assert.equal(r.error.observed_state.feet_y, -20);
+});
+
+test('pillar_step: heuristic does NOT fire on count ≤ 16 (small climb)', async () => {
+  // count=16 → 16 > 16 ✗ → heuristic doesn't fire even at low feet_y.
+  const bot = _makeStubBot(-20);
+  const part = createBuildingPillarPart({
+    ctx: { runtime: { recentPlaces: [] } },
+    ensureBot: () => bot, sleep: async () => {}, getActions: () => ({}),
+  });
+  const r = await part.pillar_step({ count: 16 });
+  if (r.ok === false) {
+    assert.notEqual(r.error.code, 'PILLAR_ABSOLUTE_Y_LOOKS_LIKE');
+    assert.notEqual(r.error.code, 'PILLAR_COUNT_OVER_CAP');
+  }
+});
+
+test('pillar_step: heuristic does NOT fire when feet_y is high (normal surface)', async () => {
+  // feet_y=70 (surface), count=25. 25 > 16 ✓ BUT 25 > 70+32=102 ✗ →
+  // heuristic doesn't fire; the user is asking for a reasonable 25-block
+  // climb from a normal surface, not an absolute Y target.
+  const bot = _makeStubBot(70);
+  const part = createBuildingPillarPart({
+    ctx: { runtime: { recentPlaces: [] } },
+    ensureBot: () => bot, sleep: async () => {}, getActions: () => ({}),
+  });
+  const r = await part.pillar_step({ count: 25 });
+  if (r.ok === false) {
+    assert.notEqual(r.error.code, 'PILLAR_ABSOLUTE_Y_LOOKS_LIKE');
+    assert.notEqual(r.error.code, 'PILLAR_COUNT_OVER_CAP');
+  }
+});

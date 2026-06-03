@@ -465,13 +465,31 @@ def extract_card_body_coord(body: Optional[str]) -> Optional[dict]:
 # Card kinds that should stash a coord. EXPLORE/SCOUT cards are intentionally
 # prose-led and don't have a single build target; skip them to avoid stashing
 # noise that would false-positive on later structure marks.
-_STASH_KIND_RE = re.compile(r"^\s*\[(CONSTRUCT|MINE|TILL|SUPPLY|SURVEY)\]", re.I)
+#
+# Run-7 Step 3 (pr-k-kinds-unify): the kind set lives in
+# `scripts/lib/card_kinds.py` so the wb stash filter and the
+# `card_body_linter`'s verb-required check can't drift.
+try:
+    # Normal path when wb is invoked from a checkout root.
+    from scripts.lib.card_kinds import VERB_REQUIRED_KINDS as _STASH_KINDS, title_kind_in as _kind_in
+except ImportError:
+    # Defensive fallback: wb may be on PATH in an isolated worker shell
+    # where `scripts` isn't on sys.path. Re-import via the file path the
+    # rest of the script computes (`REPO_ROOT`).
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location(
+        "card_kinds_fallback",
+        str((Path(__file__).resolve().parent / "lib" / "card_kinds.py")),
+    )
+    _mod = _ilu.module_from_spec(_spec)
+    assert _spec.loader
+    _spec.loader.exec_module(_mod)
+    _STASH_KINDS = _mod.VERB_REQUIRED_KINDS
+    _kind_in = _mod.title_kind_in
 
 
 def _card_should_stash(title: str | None) -> bool:
-    if not title:
-        return False
-    return bool(_STASH_KIND_RE.match(title))
+    return _kind_in(title, _STASH_KINDS)
 
 
 def _stash_path() -> Path | None:
@@ -527,13 +545,30 @@ def _stash_card_coord_side_effect(task_id: str, ctx: dict) -> dict | None:
 def cmd_stash_coord(args: argparse.Namespace) -> int:
     """Explicit fallback for the side effect in `cmd_context`. Kept so
     operators or pre-existing SOULs that call `wb stash-coord` still work.
+
+    Run-7 Step 3 (PR-K) — mirrors the kind guard in
+    `_stash_card_coord_side_effect`. Without this, the explicit path
+    happily wrote an EXPLORE coord during run-7 (mason hit the legacy
+    SOUL bullet on claim, ran `wb stash-coord` against the NW EXPLORE
+    card, the prose-fallback extractor picked up the muster coord, and
+    a downstream structure-mark drift warning would have false-fired
+    against an EXPLORE-card-derived target).
     """
     home = os.environ.get("HERMES_HOME")
     if not home:
         _die("HERMES_HOME not set — cannot stash coord (worker dispatcher injects this)")
     task_id = _active_task_id(args.task)
     ctx = _build_context(task_id)
-    body = ctx.get("card", {}).get("body") or ""
+    card = ctx.get("card") or {}
+    title = card.get("title") or ""
+    if not _card_should_stash(title):
+        # EXPLORE / SCOUT / un-kinded cards: explicit stash is a no-op so
+        # the explicit path can't false-positive while the side-effect
+        # path already silently skips. Don't clear a prior stash here —
+        # close/block/escalate are the explicit clear channels.
+        print(f"# {task_id} ({title!r}) is not a stash-worthy kind — skipping")
+        return 0
+    body = card.get("body") or ""
     coord = extract_card_body_coord(body)
     out_path = Path(home) / "task-body-coord.json"
     if coord is None:
