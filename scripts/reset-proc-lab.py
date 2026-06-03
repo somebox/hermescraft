@@ -35,6 +35,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -49,6 +50,40 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BOTS = ["Gatherer", "Flint", "Mason", "Steward"]
 
 
+def build_evac_commands(*, hub: str, bots: list[str]) -> list[str]:
+    """Phase 1 of the reset: evac all known bots to the hub. Offline bots
+    are no-ops via Multiverse. Run before the player check so the resulting
+    `list` reads accurately."""
+    return [f"mvtp {bot} {hub}" for bot in bots]
+
+
+def build_delete_commands(world: str) -> list[str]:
+    """Phase 2: unload + request delete. The response will contain an
+    OTP number we capture out-of-band and send via `build_confirm_command`.
+
+    Multiverse's `mv delete` is two-stage by design:
+      1. `mv delete <world>` returns "Are you sure? Run /mv confirm <N>"
+      2. `mv confirm <N>` within 30s actually wipes the disc
+    Without #2, NOTHING happens — and `mv list` shows the world still
+    present, which is the failure mode that bit Phase 10 run-7 launch.
+    See ~/.claude/projects/-Users-foz-hermescraft/memory/
+    reference_mv_delete_requires_otp.md.
+    """
+    return [f"mv unload {world}", f"mv delete {world}"]
+
+
+def build_confirm_command(otp: int) -> str:
+    return f"mv confirm {otp}"
+
+
+def build_create_commands(*, world: str, seed: str, generator: str = "NORMAL") -> list[str]:
+    """Phase 3: create the fresh disc + read-back verify."""
+    return [
+        f"mv create {world} {generator} -s {seed}",
+        "mv list",
+    ]
+
+
 def build_reset_commands(
     *,
     world: str,
@@ -57,31 +92,52 @@ def build_reset_commands(
     bots: list[str],
     generator: str = "NORMAL",
 ) -> list[str]:
-    """Phase 10 PR-U command sequence builder. Pure function — testable
-    without the rcon transport.
-
-    Returns the rcon command list in execution order:
-      1. evac each bot to the hub (`mvtp` is the safe-tp form)
-      2. mv unload world (gentle release before delete)
-      3. mv delete world (wipes disc)
-      4. mv create world with seed
-      5. mv tp probe — sanity-check world exists by reading its list entry
-    """
+    """Legacy single-batch sequence (no OTP handling). Used by --dry-run
+    for documentation purposes. The live path uses the staged builders
+    above so the OTP can be captured between batches."""
     cmds: list[str] = []
-    # 1. Evac. Multiverse `mvtp <player> <world>` requires the player be
-    # online; offline players are no-ops with a warning we swallow.
-    for bot in bots:
-        cmds.append(f"mvtp {bot} {hub}")
-    # 2. Unload — flush chunks, releases file handles cleanly.
-    cmds.append(f"mv unload {world}")
-    # 3. Delete — wipes the world disc files.
-    cmds.append(f"mv delete {world}")
-    # 4. Create fresh disc.
-    cmds.append(f"mv create {world} {generator} -s {seed}")
-    # 5. Read-back: `mv list` includes the new world entry if creation
-    # succeeded. The caller greps for the world name in the stdout.
-    cmds.append("mv list")
+    cmds.extend(build_evac_commands(hub=hub, bots=bots))
+    cmds.extend(build_delete_commands(world))
+    cmds.extend(build_create_commands(world=world, seed=seed, generator=generator))
     return cmds
+
+
+# OTP from `mv delete <world>` response.
+_OTP_RE = re.compile(r"/mv confirm (\d+)", re.I)
+
+
+def parse_delete_otp(stdout: str) -> int | None:
+    """Extract the numeric OTP from a `mv delete` response. Returns None
+    when not found (rare — either the command failed or MV version differs)."""
+    m = _OTP_RE.search(stdout or "")
+    return int(m.group(1)) if m else None
+
+
+# Player line from rcon `list`:
+#   "There are 1 of a max of 10 players online: re44"
+_LIST_PLAYERS_RE = re.compile(
+    r"There are \d+ of a max of \d+ players online:\s*(.*)",
+    re.I,
+)
+
+
+def parse_online_players(stdout: str) -> list[str]:
+    """Return the bare-name list of online players from rcon `list` stdout.
+    Empty list if the line wasn't found (e.g. rcon transport injected
+    other text)."""
+    m = _LIST_PLAYERS_RE.search(stdout or "")
+    if not m:
+        return []
+    raw = m.group(1).strip()
+    if not raw:
+        return []
+    # Filter rcon prompt artifacts (`>`) and empty names. Minecraft player
+    # names are alphanumeric + underscore (3-16 chars); anything not
+    # starting with that pattern is transport noise.
+    return [
+        p.strip() for p in raw.split(",")
+        if p.strip() and p.strip()[0].isalnum()
+    ]
 
 
 def _agent_test_module():
@@ -137,54 +193,119 @@ def main() -> int:
                     help="Print the rcon command sequence without executing")
     ap.add_argument("--no-verify", action="store_true",
                     help="Skip the post-create `mv list` read-back")
+    ap.add_argument("--strict", action="store_true",
+                    help="Refuse to proceed if any human player is online. "
+                         "Default for test areas like proc-lab is to evac "
+                         "humans to the hub via mvtp before delete; pass "
+                         "--strict when targeting a non-test world.")
     args = ap.parse_args()
 
     bots = [b.strip() for b in args.bots.split(",") if b.strip()]
-    cmds = build_reset_commands(
-        world=args.world,
-        seed=args.seed,
-        hub=args.hub,
-        bots=bots,
-        generator=args.generator,
-    )
-    if args.no_verify:
-        # Drop the `mv list` read-back.
-        cmds = [c for c in cmds if c != "mv list"]
 
     if args.dry_run:
-        print("# Phase 10 PR-U reset (dry-run)")
+        cmds = build_reset_commands(
+            world=args.world,
+            seed=args.seed,
+            hub=args.hub,
+            bots=bots,
+            generator=args.generator,
+        )
+        print("# Phase 10 PR-U reset (dry-run; live path stages these for OTP)")
         print(f"# world={args.world} seed={args.seed} hub={args.hub} generator={args.generator}")
         print(f"# bots={','.join(bots)}")
         for c in cmds:
             print(c)
+        print("# (live path inserts `mv confirm <OTP>` between delete and create)")
         return 0
 
     print(f"== reset-proc-lab world={args.world} seed={args.seed} hub={args.hub} ==")
-    print(f"  evac bots: {', '.join(bots)}")
-    print(f"  rcon commands: {len(cmds)}")
+    rcon = _agent_test_module().run_rcon_batch
 
-    t0 = time.time()
+    # Stage 1: pre-flight player check. `mv delete` silently refuses when
+    # players are in the world. proc-lab is a test area — operator policy
+    # is to evac any online players to the hub automatically. --strict
+    # opts into refusal for use against non-test worlds.
+    print("  pre-flight player check…", end=" ", flush=True)
     try:
-        out = _agent_test_module().run_rcon_batch(cmds, timeout_s=120.0)
+        list_out = rcon(["list"], timeout_s=15.0)
     except subprocess.TimeoutExpired:
-        print("  ! rcon batch timed out after 120s — check ssh_docker connectivity", file=sys.stderr)
+        print("FAIL")
+        print("  ! rcon `list` timed out — check ssh_docker connectivity", file=sys.stderr)
         return 2
-    elapsed = time.time() - t0
-    print(f"  rcon batch ok ({elapsed:.1f}s)")
+    players = parse_online_players(list_out)
+    if players and args.strict:
+        print("REFUSED (strict)")
+        print(f"  ! players online: {', '.join(players)}", file=sys.stderr)
+        print(
+            f"  Run `/mv tp {args.hub}` in-game to leave {args.world}, "
+            "then re-run.\n  Or drop --strict to evac automatically.",
+            file=sys.stderr,
+        )
+        return 4
+    print("ok" if not players else f"online: {', '.join(players)}")
 
-    if not args.no_verify:
-        # Parse the final `mv list` output for our world name.
-        out_lines = (out or "").splitlines()
-        # Multiverse output format: `&aproc-lab &b- NORMAL ...` (with color codes
-        # stripped or kept depending on the rcon-cli wrapper). Be lenient: just
-        # check for the world name in any line.
-        if not any(args.world in line for line in out_lines):
-            print(f"  ! mv list did not report {args.world}; create may have failed", file=sys.stderr)
-            print(f"  raw output:\n{out}", file=sys.stderr)
-            return 3
-        print(f"  ✓ {args.world} present in mv list — fresh world ready")
+    # Stage 2: evac bots + any online humans (test-area default).
+    targets = list(bots)
+    if players and not args.strict:
+        targets.extend(players)
+    if targets:
+        print(f"  evac → {args.hub}: {', '.join(targets)}")
+        rcon(build_evac_commands(hub=args.hub, bots=targets), timeout_s=30.0)
+        time.sleep(1.5)  # let the tp settle before delete
 
-    print(f"Next: bash scripts/establish-scenario.sh   # bootstrap against fresh disc")
+    # Stage 3: unload + delete (captures OTP).
+    print(f"  mv unload + delete {args.world}…", end=" ", flush=True)
+    try:
+        del_out = rcon(build_delete_commands(args.world), timeout_s=30.0)
+    except subprocess.TimeoutExpired:
+        print("TIMEOUT")
+        print("  ! rcon delete-batch timed out", file=sys.stderr)
+        return 2
+    otp = parse_delete_otp(del_out)
+    if otp is None:
+        print("FAIL")
+        print("  ! couldn't parse OTP from `mv delete` response:", file=sys.stderr)
+        print(f"  raw stdout:\n{del_out}", file=sys.stderr)
+        return 5
+    print(f"OTP={otp}")
+
+    # Stage 4: confirm. Must be within 30s — single rcon shot, no
+    # cross-session round-trip.
+    print(f"  mv confirm {otp}…", end=" ", flush=True)
+    try:
+        rcon([build_confirm_command(otp)], timeout_s=15.0)
+    except subprocess.TimeoutExpired:
+        print("TIMEOUT")
+        print("  ! OTP confirm timed out — world likely not deleted", file=sys.stderr)
+        return 2
+    time.sleep(1.0)
+    print("ok")
+
+    # Stage 5: verify the world was actually deleted by re-listing.
+    # We expect proc-lab to be MISSING here — the delete just wiped it.
+    verify_out = rcon(["mv list"], timeout_s=15.0)
+    if args.world in verify_out:
+        print(f"  ! {args.world} still in mv list after confirm — delete failed silently", file=sys.stderr)
+        print(f"  raw output:\n{verify_out}", file=sys.stderr)
+        return 6
+
+    # Stage 6: create fresh disc.
+    print(f"  mv create {args.world} {args.generator} -s {args.seed}…", end=" ", flush=True)
+    try:
+        create_out = rcon(build_create_commands(world=args.world, seed=args.seed, generator=args.generator), timeout_s=60.0)
+    except subprocess.TimeoutExpired:
+        print("TIMEOUT")
+        print(f"  ! rcon create timed out — {args.world} may be in an inconsistent state", file=sys.stderr)
+        return 2
+    print("ok")
+    if args.world not in create_out:
+        print(f"  ! mv list post-create did not report {args.world}", file=sys.stderr)
+        print(f"  raw output:\n{create_out}", file=sys.stderr)
+        return 7
+    print(f"  ✓ {args.world} freshly created (seed={args.seed})")
+
+    print()
+    print("Next: bash scripts/establish-scenario.sh   # bootstrap against fresh disc")
     return 0
 
 

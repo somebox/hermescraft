@@ -124,5 +124,97 @@ class BuildResetCommandsTest(unittest.TestCase):
         self.assertIn("mv create lab-alt NORMAL -s 1001", cmds)
 
 
+# ── OTP parsing — Phase 10 run-7 launch bug ────────────────────────────
+
+
+class ParseDeleteOTPTest(unittest.TestCase):
+    """Multiverse `mv delete <world>` returns an OTP that must be sent
+    back via `/mv confirm <N>` within 30s. The run-7 launch on 2026-06-03
+    hit this — the original script fired `mv confirm` with no number,
+    got `Invalid OTP number '0'`, and reported false success because
+    `mv list` post-failed-delete looks identical to "world untouched"."""
+
+    def test_basic_otp(self):
+        stdout = "Are you sure you want to delete world 'proc-lab'?\nRun /mv confirm 953 to continue. This will expire in 30 seconds."
+        self.assertEqual(rp.parse_delete_otp(stdout), 953)
+
+    def test_otp_with_color_codes(self):
+        # Multiverse output often has color codes intermixed.
+        stdout = "[34mAre you sure you want to delete world 'proc-lab'?\n[0mRun [32m/mv confirm 171 [37mto continue."
+        self.assertEqual(rp.parse_delete_otp(stdout), 171)
+
+    def test_no_otp_returns_none(self):
+        # World doesn't exist, or some other failure mode.
+        stdout = "Could not find world 'proc-lab'"
+        self.assertIsNone(rp.parse_delete_otp(stdout))
+
+    def test_empty_returns_none(self):
+        self.assertIsNone(rp.parse_delete_otp(""))
+        self.assertIsNone(rp.parse_delete_otp(None))
+
+
+# ── Player list parsing — pre-flight safety ────────────────────────────
+
+
+class ParseOnlinePlayersTest(unittest.TestCase):
+    def test_empty_server(self):
+        stdout = "There are 0 of a max of 10 players online:"
+        self.assertEqual(rp.parse_online_players(stdout), [])
+
+    def test_single_player(self):
+        stdout = "There are 1 of a max of 10 players online: re44"
+        self.assertEqual(rp.parse_online_players(stdout), ["re44"])
+
+    def test_multiple_players(self):
+        stdout = "There are 3 of a max of 10 players online: re44, Steward, Mason"
+        self.assertEqual(rp.parse_online_players(stdout), ["re44", "Steward", "Mason"])
+
+    def test_missing_list_line(self):
+        # If the rcon transport didn't surface the right line, return [].
+        stdout = "some unrelated output"
+        self.assertEqual(rp.parse_online_players(stdout), [])
+
+    def test_none_input(self):
+        self.assertEqual(rp.parse_online_players(None), [])
+
+    def test_rcon_prompt_artifact_filtered(self):
+        # Live run-7 attempt 2026-06-03 observed `> ` prompt appearing
+        # after the player-list line; the parser previously captured it
+        # as a player name and tried to mvtp `>`.
+        stdout = "There are 1 of a max of 10 players online: re44\n>"
+        self.assertEqual(rp.parse_online_players(stdout), ["re44"])
+
+    def test_only_prompt_no_players(self):
+        stdout = "There are 0 of a max of 10 players online:\n>"
+        self.assertEqual(rp.parse_online_players(stdout), [])
+
+
+# ── Staged command builders ────────────────────────────────────────────
+
+
+class StagedBuildersTest(unittest.TestCase):
+    """The live path stages commands across multiple rcon batches so the
+    OTP captured from `mv delete` can be sent within the 30s window
+    (without racing cross-session ssh round-trips). Pin the shape."""
+
+    def test_evac_commands_one_per_bot(self):
+        cmds = rp.build_evac_commands(hub="hub", bots=["A", "B", "C"])
+        self.assertEqual(cmds, ["mvtp A hub", "mvtp B hub", "mvtp C hub"])
+
+    def test_evac_empty_bots(self):
+        self.assertEqual(rp.build_evac_commands(hub="hub", bots=[]), [])
+
+    def test_delete_unloads_first(self):
+        cmds = rp.build_delete_commands("proc-lab")
+        self.assertEqual(cmds, ["mv unload proc-lab", "mv delete proc-lab"])
+
+    def test_confirm_includes_otp(self):
+        self.assertEqual(rp.build_confirm_command(953), "mv confirm 953")
+
+    def test_create_includes_seed_and_verify(self):
+        cmds = rp.build_create_commands(world="proc-lab", seed="1001")
+        self.assertEqual(cmds, ["mv create proc-lab NORMAL -s 1001", "mv list"])
+
+
 if __name__ == "__main__":
     unittest.main()
