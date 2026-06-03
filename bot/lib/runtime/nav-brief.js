@@ -624,39 +624,75 @@ export function computeNavBrief(ctx, deps = {}) {
 }
 
 /**
+ * Phase 10 → run-7 PR-J: shared compact nav header line used by both
+ * `renderNavBrief` (observe / nav_brief_text) and CLI `formatNavFrameLine`
+ * (mc status, mc scene). Run-7 dispositive evidence: PR-J's hermetic test
+ * passed against `renderNavBrief` but workers favour `mc status`, whose
+ * separate `formatNavFrameLine` discarded `header.terrain` — so terrain
+ * never reached the agent prompt. One shared renderer closes that gap.
+ *
+ * Shape: `${sit} at ${pos} — ${mode}${sigPart}${terrainPart}${hintPart}${asOfPart}`
+ *
+ * Defensive: skip terrain entirely when either `kind` or
+ * `feet_vs_local_ground` is missing (chunk-loading mid-flight, just-spawned
+ * bot). Never emit `terrain=undefined`.
+ *
+ * @param {object|null|undefined} header — `brief.header` or `d.nav_header`
+ * @param {object} [opts]
+ * @param {string} [opts.fallbackNavMode]
+ * @param {object} [opts.fallbackPos]
+ * @param {string} [opts.fallbackSigText]
+ * @param {boolean} [opts.includeAsOf] — only `renderNavBrief` opts in; CLI
+ *   status/scene never carried `as_of` historically and parsers don't expect it.
+ * @param {number} [opts.computedAt] — fallback timestamp when header.computed_at is missing
+ */
+export function formatNavHeaderLine(header, opts = {}) {
+  const h = header || {};
+  const pos = h.pos || opts.fallbackPos;
+  const posStr = pos ? `${pos.x},${pos.y},${pos.z}` : '?, ?, ?';
+  const navMode = h.nav_mode || opts.fallbackNavMode || 'open';
+  const sit = h.situation || (navMode === 'confined' ? 'Underground' : 'Surface');
+  const sigText = h.signals?.text || opts.fallbackSigText || '';
+  const sigPart = sigText ? ` (${sigText})` : '';
+  const t = h.terrain;
+  const terrainPart =
+    t && typeof t.kind === 'string' && t.kind && typeof t.feet_vs_local_ground === 'number'
+      ? ` — terrain=${t.kind} (feet_vs_local_ground=${t.feet_vs_local_ground})`
+      : '';
+  const hintPart = h.suggested_hint ? ` ← ${h.suggested_hint}` : '';
+  let asOfPart = '';
+  if (opts.includeAsOf) {
+    const ts = Number.isFinite(h.computed_at) ? h.computed_at
+      : Number.isFinite(opts.computedAt) ? opts.computedAt : null;
+    if (ts != null) asOfPart = `   as_of=${ts}`;
+  }
+  return `${sit} at ${posStr} — ${navMode}${sigPart}${terrainPart}${hintPart}${asOfPart}`;
+}
+
+/**
  * Deterministic text projection of a typed brief.
  * @param {Record<string, any>|null|undefined} brief
  */
 export function renderNavBrief(brief, statusContext = {}) {
   if (!brief) return '';
-  const p = brief.pos_snapshot;
-  const posStr = p ? `${p.x},${p.y},${p.z}` : '?, ?, ?';
-  const sit = brief.header?.situation || (brief.nav_mode === 'confined' ? 'Underground' : 'Surface');
-  const sig = brief.nav_mode_signals?.text || '';
-  const asOf = brief.computed_at != null ? `as_of=${brief.computed_at}` : '';
   // Surface degraded modes to the agent in the prose — per D2, the
   // renderer is the agent-facing source of truth, so PARTIAL_BRIEF/
   // STALE_BRIEF/brief_refresh_required must show up in text or the
   // doctrine ("treat missing rows as unknown, not blocked") can't fire.
   const status = statusContext.nav_brief_status || null;
   const refreshed = statusContext.brief_refresh_required === true;
-  // Phase 10 PR-J: render terrain whenever the classifier returned a
-  // label. Phase 9 dispositive evidence: Flint narrated "I'm at Y=96
-  // which is underground in this world" while standing on the freshly
-  // cleaned spawn floor (agent-flint.log:432, run-6). The classifier
-  // correctly returned `flat` for her, but the renderer skipped the
-  // label as "low signal" — workers without explicit terrain in
-  // nav_header fall back to raw-Y inference and confabulate
-  // "underground" from memory. Skipping flat costs more than it saves;
-  // surface it so SOUL can act on a positive signal.
-  const terrain = brief.header?.terrain;
-  const terrainText = terrain && terrain.kind
-    ? `terrain=${terrain.kind} (feet_vs_local_ground=${terrain.feet_vs_local_ground})`
-    : null;
-  const lines = [
-    `${sit} at ${posStr} — ${brief.nav_mode} (${sig})   ${asOf}`.trimEnd(),
-  ];
-  if (terrainText) lines.push(terrainText);
+  // Run-7 PR-J: emit the shared compact header (terrain on same line)
+  // instead of the previous two-line `header\nterrain=…` shape. Workers'
+  // SOULs read the first line; folding terrain in keeps the single-line
+  // grep heuristic intact across renderers.
+  const headerLine = formatNavHeaderLine(brief.header, {
+    fallbackNavMode: brief.nav_mode,
+    fallbackPos: brief.pos_snapshot,
+    fallbackSigText: brief.nav_mode_signals?.text,
+    includeAsOf: true,
+    computedAt: brief.computed_at,
+  });
+  const lines = [headerLine];
   if (status === 'PARTIAL_BRIEF') {
     lines.push('⚠ PARTIAL_BRIEF: some destinations not probed within budget — treat missing rows as unknown, not blocked');
   } else if (status === 'STALE_BRIEF') {

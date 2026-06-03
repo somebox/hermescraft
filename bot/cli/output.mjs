@@ -21,22 +21,30 @@ export function fmtHumanErrOneLine(e) {
   return line.length > 1800 ? `${line.slice(0, 1797)}...` : line;
 }
 
+import { formatNavHeaderLine } from '../lib/runtime/nav-brief.js';
+
 function fmtPos(p) {
   if (!p || typeof p !== 'object') return String(p);
   return `${p.x},${p.y},${p.z}`;
 }
 
-/** Compact nav frame line (Phase 0c) when full brief text is not enabled. */
+/**
+ * Compact nav frame line for `mc status` / `mc scene` (Phase 0c).
+ * Run-7 PR-J: delegates to the shared `formatNavHeaderLine` so terrain
+ * lands on the same line as situation/mode and reaches the agent prompt.
+ * Previously, this function discarded `header.terrain` while
+ * `renderNavBrief` (used only by `observe`) emitted it — workers favour
+ * status, so the terrain label never made it to the prompt.
+ */
 function formatNavFrameLine(d) {
-  const h = d.nav_header;
-  const pos = h?.pos || d.nav_frame?.pos_snapshot;
-  const posStr = pos ? fmtPos(pos) : '?, ?, ?';
-  const sit = h?.situation || (d.nav_mode === 'confined' ? 'Underground' : 'Surface');
-  const mode = h?.nav_mode || d.nav_mode || 'open';
-  const sig = h?.signals?.text || d.nav_frame?.nav_mode_signals?.text || '';
-  const sigPart = sig ? ` (${sig})` : '';
-  const hint = h?.suggested_hint ? ` ← ${h.suggested_hint}` : '';
-  return `${sit} at ${posStr} — ${mode}${sigPart}${hint}`;
+  return formatNavHeaderLine(d.nav_header, {
+    fallbackNavMode: d.nav_mode,
+    fallbackPos: d.nav_frame?.pos_snapshot,
+    fallbackSigText: d.nav_frame?.nav_mode_signals?.text,
+    // Status/scene historically did not carry `as_of` — keep that contract
+    // so existing parsers don't shift.
+    includeAsOf: false,
+  });
 }
 
 /** Goals/task/alerts one-liners after nav text so human observe is not JSON-only. */

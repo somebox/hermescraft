@@ -99,6 +99,106 @@ describe('cli output', () => {
     assert.ok(joined.includes('Surface at 5,64,5'), 'nav_header line missing on status');
   });
 
+  // Run-7 PR-J end-to-end contract: terrain reaches `mc status` stdout.
+  // The hermetic `renderNavBrief` test passed because it tested a function
+  // workers don't see — `formatNavFrameLine` is the actual status/scene
+  // path. Bench A asserts the agent-visible output, not the isolated helper.
+  it('renderHuman includes terrain= on mc status when nav_header.terrain is set', () => {
+    const logs = [];
+    const orig = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+    try {
+      renderHuman({
+        ok: true,
+        command: 'status',
+        data: {
+          nav_header: {
+            situation: 'Surface',
+            pos: { x: 4, y: 96, z: 24 },
+            nav_mode: 'open',
+            signals: { text: '4 exits' },
+            terrain: { kind: 'flat', feet_vs_local_ground: 0 },
+          },
+          health: 20,
+          food: 20,
+        },
+      });
+    } finally {
+      console.log = orig;
+    }
+    const joined = logs.join('\n');
+    assert.ok(
+      /terrain=flat \(feet_vs_local_ground=0\)/.test(joined),
+      `expected terrain=flat in stdout; got:\n${joined}`,
+    );
+    // Same-line contract: terrain rides on the situation/mode line so
+    // worker SOULs that grep `^Surface at` still see it.
+    const headerLine = joined.split('\n').find((l) => l.startsWith('Surface at'));
+    assert.ok(headerLine, 'nav header line missing');
+    assert.ok(
+      /terrain=flat/.test(headerLine),
+      `terrain should be on the same line as "Surface at"; line was:\n${headerLine}`,
+    );
+  });
+
+  it('renderHuman includes terrain= on mc scene when nav_header.terrain is set', () => {
+    const logs = [];
+    const orig = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+    try {
+      renderHuman({
+        ok: true,
+        command: 'scene',
+        data: {
+          nav_header: {
+            situation: 'Underground',
+            pos: { x: 0, y: 84, z: 0 },
+            nav_mode: 'confined',
+            signals: { text: '0 exits' },
+            terrain: { kind: 'underground', feet_vs_local_ground: -12 },
+          },
+          summary: 'Visible blocks: stone everywhere.',
+          visible_blocks: [],
+        },
+      });
+    } finally {
+      console.log = orig;
+    }
+    const joined = logs.join('\n');
+    assert.ok(/terrain=underground \(feet_vs_local_ground=-12\)/.test(joined));
+  });
+
+  it('renderHuman omits terrain= when nav_header.terrain is partial / unset', () => {
+    // Defensive: never emit `terrain=undefined` or `terrain=null
+    // (feet_vs_local_ground=undefined)` when the classifier hasn't filled
+    // in fields (chunk-loading mid-flight, just-spawned bot).
+    const fixtures = [
+      // No terrain at all.
+      { situation: 'Surface', pos: { x: 0, y: 64, z: 0 }, nav_mode: 'open', signals: { text: '4 exits' } },
+      // terrain present but kind missing.
+      { situation: 'Surface', pos: { x: 0, y: 64, z: 0 }, nav_mode: 'open', signals: { text: '4 exits' },
+        terrain: { feet_vs_local_ground: 0 } },
+      // terrain present but feet_vs_local_ground missing.
+      { situation: 'Surface', pos: { x: 0, y: 64, z: 0 }, nav_mode: 'open', signals: { text: '4 exits' },
+        terrain: { kind: 'flat' } },
+    ];
+    for (const nav_header of fixtures) {
+      const logs = [];
+      const orig = console.log;
+      console.log = (...args) => logs.push(args.join(' '));
+      try {
+        renderHuman({ ok: true, command: 'status', data: { nav_header, health: 20, food: 20 } });
+      } finally {
+        console.log = orig;
+      }
+      const joined = logs.join('\n');
+      assert.ok(!/terrain=undefined/.test(joined), `terrain=undefined leaked: ${joined}`);
+      assert.ok(!/terrain=null/.test(joined), `terrain=null leaked: ${joined}`);
+      assert.ok(!/feet_vs_local_ground=undefined/.test(joined),
+        `feet_vs_local_ground=undefined leaked: ${joined}`);
+    }
+  });
+
   it('renderHuman prints nav frame line for observe without brief mode', () => {
     const logs = [];
     const orig = console.log;
