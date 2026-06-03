@@ -1,0 +1,50 @@
+cards: 9 vs 9 (Δ +0)
+invocations: 946 vs 982 (Δ -36)
+errors: 200 vs 231 (Δ -31)
+
+verb                  inv_cur  inv_base     Δinv  err_cur  err_base     Δerr
+────────────────────────────────────────────────────────────────────────────
+terrain_top               348        65     +283        0         0       +0
+inspect                     7       130     -123        0         0       +0
+dig                         4        93      -89        4        45      -41
+goto_near                  13        50      -37        8        25      -17
+status                     56        38      +18        0         0       +0
+find_blocks                30        46      -16        7         3       +4
+go_mark                     3        16      -13        1         6       -5
+pickup                      0        13      -13        0         0       +0
+scene                      50        62      -12        0         0       +0
+through                    19         7      +12       17         6      +11
+goto                       16         5      +11        6         1       +5
+inventory                  10        20      -10        0         0       +0
+stair_down                  2        11       -9        0         0       +0
+collect                     0         8       -8        0         6       -6
+chest_search                0         7       -7        0         2       -2
+chat                       34        28       +6        0         0       +0
+escape                      5        10       -5        3         7       -4
+pillar_up                  24        29       -5        9        10       -1
+reachable                   0         5       -5        0         0       +0
+move                      200       204       -4      135       108      +27
+scout                       6         2       +4        2         0       +2
+nearby                     30        27       +3        0         0       +0
+pillar_down                 7        10       -3        1         1       +0
+stair_up                    4         1       +3        2         0       +2
+chest                       0         2       -2        0         1       -1
+equip                       1         3       -2        0         1       -1
+help                        2         4       -2        1         2       -1
+map                        36        38       -2        0         0       +0
+mark                       23        21       +2        0         0       +0
+place                       2         4       -2        2         1       +1
+withdraw                    0         2       -2        0         1       -1
+advise                      2         3       -1        2         3       -1
+chat_to                     0         1       -1        0         0       +0
+chest_show                  0         1       -1        0         1       -1
+craft                       1         0       +1        0         0       +0
+interact                    0         1       -1        0         0       +0
+position                    0         1       -1        0         1       -1
+read_chat                   0         1       -1        0         0       +0
+regions                     0         1       -1        0         0       +0
+tunnel                      0         1       -1        0         0       +0
+unmark                      1         2       -1        0         0       +0
+wait                        1         0       +1        0         0       +0
+marks                       7         7       +0        0         0       +0
+retrace                     2         2       +0        0         0       +0
