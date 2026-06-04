@@ -19,8 +19,9 @@ tools/cubiome_scan/proc_biome_scan --seed <SEED> --center 0,0 --radius 64 --step
 
 | Seed | Distinct biomes | Notes |
 |------|----------------:|-------|
-| `-266683266992121625`  | 5 | Best of the first batch — high variety |
-| `-32456789431833`      | 4 | Snowy taiga + variants |
+| `-266683266992121625`  | 5 | Best of the first batch — high variety (Phase D dry-run — rejected at neighborhood-land check; cliff at spawn) |
+| `-32456789431833`      | 4 | Snowy taiga + variants — Phase E run-1 (this seed, 2026-06-04) |
+| `300886438233796193`   | 3 (r=32) | **Phase E run-2 (2026-06-04)** — beach + forest + river; warm temperate; flat (Y delta 18) |
 | `-2488795730217298217` | 2 | Borderline; meets relaxed `>= 2` gate |
 
 ## Saved for later

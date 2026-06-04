@@ -1,0 +1,28 @@
+landfolk-ops ─ 2026-06-04 10:55
+────────────────────────────────────────────────────────────
+IN-FLIGHT (0)
+  (none)
+
+READY (2)
+  t_313ad608  mason      size S   [MAP-PATH] muster → E (82,64,-32)              prereqs ✓
+  t_b3654f6b  gatherer   size S   [MAP-CONNECT] connect muster → lake isle with  prereqs ✓
+
+NEEDS REVIEW (0)
+  (none)
+
+EPICS OPEN (1)
+  t_6d86f0f3  [EPIC] [MAP:ARENA] Map this disc — torch-lit paths  2/4 done · 2 ready
+
+RECENT (last 15m, 12)
+  10:54  gatherer   reclaimed t_b3654f6b  [MAP-CONNECT] connect muster → lake 
+  10:54  mason      reclaimed t_313ad608  [MAP-PATH] muster → E (82,64,-32)
+  10:54  gatherer   claimed  t_b3654f6b  [MAP-CONNECT] connect muster → lake 
+  10:54  gatherer   spawned  t_b3654f6b  [MAP-CONNECT] connect muster → lake 
+  10:53  gatherer   reclaimed t_b3654f6b  [MAP-CONNECT] connect muster → lake 
+  10:53  mason      claimed  t_313ad608  [MAP-PATH] muster → E (82,64,-32)
+  10:53  mason      spawned  t_313ad608  [MAP-PATH] muster → E (82,64,-32)
+  10:53  mason      reclaimed t_313ad608  [MAP-PATH] muster → E (82,64,-32)
+  10:53  flint      commented t_7ca38e37  [MAP-CONNECT] connect muster → north
+  10:53  gatherer   commented t_b3654f6b  [MAP-CONNECT] connect muster → lake 
+  10:53  mason      commented t_313ad608  [MAP-PATH] muster → E (82,64,-32)
+  10:52  flint      closed   t_7ca38e37  [MAP-CONNECT] connect muster → north

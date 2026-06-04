@@ -1,0 +1,234 @@
+{
+  "nodes": [
+    {
+      "name": "lake_isle",
+      "x": 30,
+      "y": 63,
+      "z": 33,
+      "anchor": {
+        "x": 31,
+        "y": 63,
+        "z": 32
+      },
+      "kind": "landmark",
+      "named": true,
+      "owner": "Gatherer"
+    },
+    {
+      "name": "muster",
+      "x": 33,
+      "y": 64,
+      "z": -33,
+      "anchor": {
+        "x": 31,
+        "y": 64,
+        "z": -32
+      },
+      "kind": "landmark",
+      "named": true,
+      "owner": "Flint"
+    },
+    {
+      "name": "north_grove",
+      "x": 35,
+      "y": 65,
+      "z": -80,
+      "anchor": {
+        "x": 32,
+        "y": 65,
+        "z": -82
+      },
+      "kind": "landmark",
+      "named": true,
+      "owner": "Flint"
+    },
+    {
+      "name": "wp_e_1",
+      "x": 35,
+      "y": 64,
+      "z": -29,
+      "anchor": {
+        "x": 47,
+        "y": 64,
+        "z": -32
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Mason"
+    },
+    {
+      "name": "wp_n_1",
+      "x": 33,
+      "y": 66,
+      "z": -59,
+      "anchor": {
+        "x": 33,
+        "y": 66,
+        "z": -60
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Flint"
+    },
+    {
+      "name": "wp_n_2",
+      "x": 34,
+      "y": 65,
+      "z": -81,
+      "anchor": {
+        "x": 33,
+        "y": 65,
+        "z": -81
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Flint"
+    },
+    {
+      "name": "wp_n_3",
+      "x": 36,
+      "y": 64,
+      "z": -31,
+      "anchor": {
+        "x": 33,
+        "y": 64,
+        "z": -33
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Flint"
+    },
+    {
+      "name": "wp_n_4",
+      "x": 34,
+      "y": 64,
+      "z": -43,
+      "anchor": {
+        "x": 33,
+        "y": 64,
+        "z": -43
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Flint"
+    }
+  ],
+  "edges": [
+    {
+      "from": "muster",
+      "to": "wp_e_1",
+      "length": 16.0
+    },
+    {
+      "from": "muster",
+      "to": "wp_n_1",
+      "length": 28.1
+    },
+    {
+      "from": "muster",
+      "to": "wp_n_3",
+      "length": 2.2
+    },
+    {
+      "from": "muster",
+      "to": "wp_n_4",
+      "length": 11.2
+    },
+    {
+      "from": "north_grove",
+      "to": "wp_n_1",
+      "length": 22.0
+    },
+    {
+      "from": "north_grove",
+      "to": "wp_n_2",
+      "length": 1.4
+    },
+    {
+      "from": "wp_e_1",
+      "to": "wp_n_3",
+      "length": 14.0
+    },
+    {
+      "from": "wp_e_1",
+      "to": "wp_n_4",
+      "length": 17.8
+    },
+    {
+      "from": "wp_n_1",
+      "to": "wp_n_2",
+      "length": 21.0
+    },
+    {
+      "from": "wp_n_1",
+      "to": "wp_n_3",
+      "length": 27.1
+    },
+    {
+      "from": "wp_n_1",
+      "to": "wp_n_4",
+      "length": 17.1
+    },
+    {
+      "from": "wp_n_3",
+      "to": "wp_n_4",
+      "length": 10.0
+    }
+  ],
+  "connected_components": [
+    [
+      "lake_isle"
+    ],
+    [
+      "muster",
+      "north_grove",
+      "wp_e_1",
+      "wp_n_1",
+      "wp_n_2",
+      "wp_n_3",
+      "wp_n_4"
+    ]
+  ],
+  "quadrants_covered": [
+    [
+      "SW"
+    ],
+    [
+      "NE",
+      "SE",
+      "SW"
+    ]
+  ],
+  "longest_path": [
+    "wp_n_3",
+    "wp_n_4",
+    "wp_e_1",
+    "muster",
+    "wp_n_1",
+    "north_grove",
+    "wp_n_2"
+  ],
+  "longest_path_len": 95.3,
+  "frontier_nodes": [
+    "lake_isle"
+  ],
+  "named_frontier": [
+    "lake_isle"
+  ],
+  "summary": {
+    "node_count": 8,
+    "named_count": 3,
+    "waypoint_count": 5,
+    "edge_count": 12,
+    "component_count": 2,
+    "frontier_count": 1,
+    "named_frontier_count": 1,
+    "longest_path_len": 95.3,
+    "max_edge_step": 30.0,
+    "muster": [
+      32,
+      64,
+      -32
+    ]
+  }
+}
