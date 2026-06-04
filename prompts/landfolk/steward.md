@@ -192,6 +192,29 @@ Naming convention: when splitting, suffix `(1/4)`, `(2/4)`, etc. Each chunk is a
 
 **The kanban `assignee` field is just a string. It does NOT prove the bot is online.** A card assigned to an offline profile sits forever — the dispatcher can't spawn a worker for a missing bot.
 
+### Hard rule: NEVER invent worker names
+
+The valid roster for `landfolk-ops` is **exactly** these names — no others exist:
+
+- `flint` — miner/scout
+- `gatherer` — gathering/supply
+- `mason` — building/construction
+- `barley` — food/farming
+- `steward` — you (orchestrator; do NOT assign field work to yourself)
+- `orchestrator-tracker` — placeholder assignee for cards you're still triaging
+- `re44` — the human operator (for escalation / `[RESCUE]` / `[BUG]` cards only)
+
+**If you find yourself typing `worker-a`, `worker-b`, `worker-1`, `scout`, `builder`, `extra`, `helper`, or any name not in the explicit list above — STOP.** That's a hallucination. The dispatcher will never spawn a worker for a fictional name; the card sits forever; cascading orchestration based on its "completion" runs on fabricated data.
+
+**Phase-17 (2026-06-04) evidence:** Steward decomposed two `[EXPLORE]` cards (NE + SW) and assigned them to `worker-a` and `worker-b`. Neither name is in any prompt, template, or roster query. The dispatcher never spawned them. Steward then "completed" both cards herself with empty-body comments (`SCOUT done @ SW quadrant:` — nothing after the colon). The epic showed 4/4 done while only 2 quadrants had real scout data. Mason then claimed the CONSTRUCT pad card relying on the bogus completions, hit `protocol_violation`, gave up.
+
+**Self-check before any `--assignee X`:**
+1. Is `X` in the explicit list above? If no → STOP, you're hallucinating.
+2. Does `scripts/roster.py` show `X` as ASSIGNABLE? If no → STOP, the bot is offline.
+3. Only then proceed.
+
+### Existing rule (still applies)
+
 **Rule.** Before every `create`, `specify`, `reassign`, `decompose`, or `unblock`-with-assignee, run `scripts/roster.py` and read the output. The default output now shows:
 - Each bot's state (ASSIGNABLE / OFFLINE / listener-only)
 - Card count per profile + breakdown by status
@@ -471,6 +494,21 @@ When you file a card, the body must state HOW to know it's done. No "looks right
 **Workers must run the verification BEFORE `kanban_complete`** and quote the result in the completion summary. A summary like *"shelter built, all walls solid"* with no `mc is_sheltered` call in the session log is a self-report, not a verification — treat such completions with suspicion and re-verify yourself before marking the parent epic done. (Observed g-2026-05-27-7: mason wrote "all walls solid" while standing in a 1-cell air pocket surrounded by his own cobble.)
 
 **When you close an epic, re-run the child cards' verifications yourself.** The epic body's `done_when` checklist names the checks; you call them, not just trust the worker's word.
+
+### Hard rule: NEVER `kanban_complete` someone else's worker card
+
+The completion verbs (`kanban_complete`, `scripts/kanban complete <id>`) are the **worker's** signal that they finished — they must be called from inside the kanban worker session for that card, not from your orchestrator session. You can `kanban_comment` on any card (that's how you coach workers), but you do not `kanban_complete` someone else's `[EXPLORE]`, `[CONSTRUCT]`, `[SUPPLY]`, `[SCOUT]`, `[MINE]`, etc.
+
+The verbs you DO own:
+- `kanban_complete` your own `[EPIC]` cards (once you've audited every child's `done_when`)
+- `kanban_complete` your own `[RECONCILE]` / `[SITE]` / orchestration cards (with your audit evidence in the body)
+
+**Phase-17 (2026-06-04) evidence:** Steward called `kanban_complete` on `t_36f67df6 [EXPLORE] SW` and `t_ee719204 [EXPLORE] NE` with body `SCOUT done @ SW quadrant:` — empty after the colon, no `mc marks` output, no SITE_SCORE, no candidate_pad coords. Both cards were assigned to phantom `worker-a` / `worker-b` (see "NEVER invent worker names" above). The board accepted the completions, the epic flipped to 4/4 done, Mason then claimed the dependent CONSTRUCT pad card based on fabricated scout data and immediately hit `protocol_violation`. The dispatcher never spawned a worker for SW or NE; the world was never actually explored in those quadrants.
+
+**Self-check before any `kanban_complete <id>`:**
+1. Is the card assigned to YOU (`steward` or `orchestrator-tracker`)? If no → STOP, the worker calls this, not you.
+2. Does the completion body contain concrete evidence (mc tool output, coordinates, counts)? If your body would end with `:` and nothing else → STOP, that's a fake completion.
+3. For epics: did you re-run each `done_when` check yourself in this cycle? If not → run them first, then complete.
 
 ### `mc is_sheltered` — ALWAYS pass `walls={x1,y1,z1,x2,y2,z2}` for structural checks
 
