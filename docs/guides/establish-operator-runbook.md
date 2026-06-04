@@ -1,10 +1,13 @@
 # Establish operator runbook
 
-Single checklist for **exploration-first base establishment** on **proc-lab** with the landfolk fleet. Use this before and during long establish replays (run-8/11-class fixes, Phase 10 predicates).
+Single checklist for **proc-lab establishment runs** with the landfolk fleet. Covers two missions on the same bootstrap pipeline:
 
-**Outcome:** Steward decomposes `[ESTABLISH:BASE]` on kanban; workers patrol with `mc scene`; Mason builds a 9×9 cobble pad at `base_anchor`. Process grade: `scripts/establish-check.py`. Site quality: judge in-game.
+- **`establishment.explore`** (default) — fleet patrols, Steward picks a base, Mason builds a 9×9 cobble pad. Process grade: `scripts/establish-check.py`.
+- **`establishment.mapping`** — fleet ranges a 64-block arena, names landmarks with in-world signs, drops POIs at internal nav waypoints. Steward judges coverage. Process grade: `scripts/establish-mapping-check.py`.
 
-**Related:** [procedural-testing-model.md](../features/procedural-testing-model.md), [procedural-bench-ops.md](procedural-bench-ops.md), [architecture-audit.md](../../data/postmortems/establish-2026-06-03-phase10/architecture-audit.md), `prompts/landfolk/establish-epic.md`.
+`VARIANT=establishment.<terrain>` is the single source of truth — `MISSION` is derived from the suffix (`explore` or `mapping`) and threaded through `establish-scenario.sh` → `establish-rcon-prep.py` → `establish-seed-cards.py`. Don't set `MISSION=` directly; the override path is gone (it used to allow `MISSION=mapping VARIANT=establishment.explore` mismatches).
+
+**Related:** [procedural-testing-model.md](../features/procedural-testing-model.md), [procedural-bench-ops.md](procedural-bench-ops.md), [architecture-audit.md](../../data/postmortems/establish-2026-06-03-phase10/architecture-audit.md), `prompts/landfolk/establish-epic.md`, `skills/minecraft-mapping.md`.
 
 **Do not mix** `scripts/genesis.sh` (campaign world + genesis kanban) with this proc-lab loop unless you intend to.
 
@@ -15,7 +18,7 @@ Single checklist for **exploration-first base establishment** on **proc-lab** wi
 From repo root (uses Homebrew `bash`/`python` when needed):
 
 ```bash
-# Full path: tests + deploy + cleanup + bootstrap + verify
+# Full path: tests + deploy + cleanup + bootstrap + verify (explore mission, default)
 scripts/establish-run.sh --min-credits-usd 5
 
 # Fresh proc-lab disc + clean log dir
@@ -23,6 +26,9 @@ RUN_ID=phase12 scripts/establish-run.sh --fresh-disc 1001 --archive-logs
 
 # Re-bootstrap only (code already deployed, tests green)
 scripts/establish-run.sh --skip-preflight
+
+# Mapping mission instead (signs + POIs + dusk lighting, 64-block arena)
+VARIANT=establishment.mapping scripts/establish-run.sh --fresh-disc 1001 --archive-logs
 ```
 
 | Step | Script (if run piecemeal) |
@@ -45,10 +51,12 @@ scripts/establish-run.sh --skip-preflight
 | `scripts/establish-fleet-cleanup.sh` | `landfolk stop` + `pkill landfolk:` + free bot HTTP ports |
 | `scripts/establish-launch-verify.sh` | Post-bootstrap: terrain, progress `pos`, steward 403, dispatcher |
 | `scripts/establish-scenario.sh` | Bootstrap (memory, map, materialize, RCON, gateway, bots, kanban, terrain verify) |
-| `scripts/establish-check.py` | Post-run **process grade** (pad cobble, explores, epic) |
-| `scripts/establish-rcon-prep.py` | Peaceful world + starter chest + `tp_workers` (called by bootstrap) |
+| `scripts/establish-check.py` | Post-run **process grade** for explore mission (pad cobble, explores, epic) |
+| `scripts/establish-mapping-check.py` | Post-run **process grade** for mapping mission (POI count, sign count, coverage radius, quadrant coverage, `[MAP:ARENA]` epic state) |
+| `scripts/reconcile-pois.py` | Merge per-bot `personal-pois-<bot>.json` into `personal-pois-shared.json` (mapping mission; tie-break by most-recent `last_seen`) |
+| `scripts/establish-rcon-prep.py` | Peaceful world + starter chest + `tp_workers` (called by bootstrap). `--mission mapping` swaps chest NBT (16 signs + 64 torches + 32 coal), starter kit (4 signs + 16 torches), and lighting (dusk: `time set 13000` + `gamerule doDaylightCycle true`). |
 | `scripts/establish-materialize.py` | `mapcatalog try` for chosen map JSON |
-| `scripts/establish-seed-cards.py` | Kanban epic + four `[EXPLORE]` cards from map |
+| `scripts/establish-seed-cards.py` | Kanban epic + four worker cards from map. `--mission explore` (default): `[ESTABLISH:BASE]` epic + four `[EXPLORE]` cards. `--mission mapping`: `[MAP:ARENA]` epic + four `[MAP]` quadrant cards. |
 | `scripts/establish-bootstrap-verify.py` | Optional: fail bad `terrain=unknown` at muster (ports from `data/agent-models.json`) |
 | `scripts/reset-proc-lab.py` | Evac bots, delete/recreate **proc-lab** MV world (clean disc) |
 | `scripts/scenario-pools.sh` | `lint` / `list` / `refresh` / `map <variant>` for catalog |
@@ -126,6 +134,8 @@ Server must load **proc-lab** (or your configured MV world) and accept bot accou
 
 Wrapped by `scripts/establish-preflight.sh` (or `establish-run.sh`). Skip with `--skip-preflight` only when you already ran preflight this session.
 
+Default preflight runs **bot** tests (nav brief, goto_near timeout contract, scene canopy, orchestrator mc gate) and **python** unittest modules (`test_auto_stuck_check`, establish RCON/reset, orchestrator allowlist/deny hooks, kanban worker context, compression patch), then `scripts/landfolk deploy`. It does **not** run the full `npm test` suite.
+
 ---
 
 ## 4. Choose world, seed, and map
@@ -133,7 +143,7 @@ Wrapped by `scripts/establish-preflight.sh` (or `establish-run.sh`). Skip with `
 | Decision | How |
 |----------|-----|
 | **World** | **`proc-lab`** only for this runbook (MV scratch world). Campaign worlds (`landfolk-test`, `world`) are not deleted by mapcatalog. |
-| **Variant** | `establishment.explore` (registry id; override with `VARIANT=…`) |
+| **Variant** | `establishment.explore` (default) or `establishment.mapping`. Set with `VARIANT=…`; `MISSION` derives from the suffix and is threaded through bootstrap. Mapping uses a 64-block arena (4× explore) with biome-count / height-jitter / surface-grass gates replacing the explore stone-band gate. |
 | **Seed** | Picked by catalog: `scripts/scenario-pools.sh map establishment.explore` writes JSON with `seed`, `spawn`, `muster`, `starter_chest`. |
 | **Pin seed** | `TRY_SEED=<n>` on materialize paths, or `python3 scripts/reset-proc-lab.py --seed <n>` then bootstrap with matching catalog entry. |
 | **Reuse loaded seed** | `AUTO_REUSE=1` (default): skip `mapcatalog try` if `data/runtime/proc-lab-state.json` matches. |
@@ -157,8 +167,10 @@ Handled inside bootstrap unless you run steps manually:
 
 1. **Materialize** — `establish-materialize.py` / `mapcatalog try` (evac humans/bots per `server.local.yaml`, recreate proc-lab if needed).
 2. **Map patch** (default) — collapse **muster** onto validated **spawn**; **starter_chest** one block east at spawn feet Y (normal placed chest, not buried).
-3. **RCON `world` mode** — peaceful, day, starter chest fill (iron tools + bread) via `establish-rcon-prep.py`.
-4. **TP workers** — `establish-rcon-prep.py --mode tp_workers` after bots listen; re-TP if `nav_header.situation` is Underground/Pit.
+3. **RCON `world` mode** — peaceful + starter chest via `establish-rcon-prep.py`. Branches on `--mission`:
+   - **explore (default):** time set day, `doDaylightCycle false`, chest = 3 iron tools + 4 bread.
+   - **mapping:** time set 13000 (dusk), `doDaylightCycle true`, chest = 3 iron tools + 16 bread + **16 oak_sign + 64 torches + 32 coal**. Mob spawning stays disabled so dusk is visual-only.
+4. **TP workers** — `establish-rcon-prep.py --mode tp_workers --mission <mission>` after bots listen; re-TP if `nav_header.situation` is Underground/Pit. Mapping starter kit adds **4 oak_sign + 16 torches** so the first round of naming can start before returning to base.
 
 Optional verification:
 
@@ -177,6 +189,7 @@ python3 scripts/establish-bootstrap-verify.py
 |---------|------------|
 | Stop + orphan bot loops / ports | `establish-fleet-cleanup.sh` |
 | Marks, sessions, MEMORY archive | `establish-scenario.sh` (unless `SKIP_MEM_WIPE=1`) |
+| Personal POIs (`personal-pois-<bot>.json` + `personal-pois-shared.json`) | `establish-scenario.sh` per-worker wipe (Phase A6); same loop as `locations-*.json`. Shared overlay is recreated lazily on next `reconcile-pois.py`. |
 | Kanban archive + reinit + seed | `establish-scenario.sh` |
 | Goals, chest snapshots, kanban WAL, stash | `FULL_RUNTIME_WIPE=1` (default in `establish-run.sh`) |
 | Log dir archive | `establish-run.sh --archive-logs` or manual `mv /tmp/hermescraft` |
@@ -206,7 +219,13 @@ scripts/landfolk deploy && scripts/landfolk restart all
 
 `establish-scenario.sh` (re-execs bash 5 on macOS) starts gateway (embedded kanban dispatcher when `kanban.dispatch_in_gateway: true`), workers, TP, kanban, seeds cards, and runs `establish-bootstrap-verify.py` unless `SKIP_BOOTSTRAP_VERIFY=1`. Standalone `landfolk-dispatcher.sh` only when embedded dispatch is off or `FORCE_STANDALONE_DISPATCHER=1`.
 
-Cards seed with `assignee=orchestrator-tracker` so Steward assigns patrols.
+Cards seed with `assignee=orchestrator-tracker` so Steward assigns patrols. Mapping-mission seed yields a single `[MAP:ARENA]` epic plus four `[MAP] <quadrant>` cards — same dispatcher-skip-lane pattern as explore's `[ESTABLISH:BASE]`. Steward identifies the mapping mission by the literal `[MAP:ARENA]` token in the epic title (not by assignee), per `prompts/landfolk/steward.md`.
+
+### 8.1b Dashboard map (proc-lab)
+
+- In the Command Center world dropdown, select **proc-lab** (not `world`) while the establish fleet is in that MV world — or start the dashboard with `./start-dashboard.sh --world proc-lab`.
+- **Ops** map tab: lightweight XZ view (agents, marks, spawn/muster/arena from `data/runtime/last-establish-map.json`) — use this when Squaremap still shows an old disc.
+- **Terrain** tab: Squaremap iframe. After `reset-proc-lab` or `--fresh-disc`, stale tiles are normal until the server re-renders. On the MC host (RCON/console): `/squaremap fullrender proc-lab` (or the plugin’s world key, e.g. `minecraft_proc-lab` — match `hermesToTileWorld` in `data/agent-registry.json`). The dashboard appends `hc_rev=` from `data/runtime/proc-lab-state.json` / establish map seed so the browser reloads the iframe when the seed changes; it does not replace Squaremap’s on-disk tile cache.
 
 ### 8.2 Launch verify
 
@@ -235,17 +254,19 @@ done
 
 ### 8.4 Steward mc deny vs “observe denied” (reasoning vs gate)
 
-`establish-launch-verify.sh` runs `BOT_URL=http://localhost:3005 node bot/cli/index.mjs observe`. Hermes terminal uses `orchestrator-deny.sh`; `mc observe` is allowed. Read-only verbs on the allowlist include `inventory`, `chest_search`, and `social` (not `mc players` — use `mc social` / `mc nearby`).
+`establish-launch-verify.sh` runs `BOT_URL=http://localhost:3005 node bot/cli/index.mjs observe`. Hermes terminal uses `orchestrator-deny.sh`; `mc observe` is allowed. Read-only verbs on the allowlist include `inventory`, `chest_search`, and `social` (not `mc players` — use `mc social` / `mc nearby`). Bot HTTP gate copy is minimal: `mc <verb> is denied for the orchestrator (Steward) role. See prompts/landfolk/steward.md.` (see `bot/lib/server/middleware/orchestrator-mc-allowlist.js`).
 
-If Steward reports "observe denied" after a different verb failed, she may be reading a stale belief from an earlier round's deny — the deny message itself was reworded post-phase-12 (no longer names allowed verbs in prose, so it can't be misparsed as a global deny). If you see this in a fresh run, check the actual mc audit log — the gate is functionally correct.
+If Steward reports "observe denied" after a different verb failed, treat it as **stale reasoning** until you verify the audit trail: one forbidden field verb → 403 on that verb only; `mc observe` / `mc status` / `mc scene` should still return 200 on port 3005. Do not file a global role-gate [BUG] from the deny text alone.
 
-**`hermes kanban reassign` semantics (changed post-phase-12):** reassign now atomically reclaims any active claim (SIGTERM/SIGKILL the prior host-local worker PID, clear `claim_lock`, change `assignee` in one tx). The `--reclaim` flag is deprecated and accepted as a no-op. Steward's playbook (`prompts/landfolk/steward.md` L235, L336) was updated accordingly.
+**`hermes kanban reassign` semantics (post-phase-12):** reassign should atomically reclaim any active claim (SIGTERM the prior host-local worker PID, clear `claim_lock`, change `assignee` in one tx). `--reclaim` on CLI is deprecated/no-op when reclaim is built in. Steward's playbook (`prompts/landfolk/steward.md`) documents single-step reassign for PHYSICALLY_STUCK rescue.
 
-**Dispatcher `max_spawn` (changed post-phase-12):** `~/.hermes/config.yaml` now sets `kanban.max_spawn: 5` (workers + 1 slack), up from 3. A single stuck worker holding a slot no longer starves the ready queue.
+**Dispatcher `max_spawn` (operator config, post-phase-12):** on the operator rig, set `kanban.max_spawn: 5` in `~/.hermes/config.yaml` (workers + 1 slack), up from 3. This is **not** pinned in the hermescraft repo — confirm on gateway boot: `grep 'kanban dispatcher' ~/.hermes/logs/gateway.log | tail -1`.
 
 **Steward `exit=142`:** round wall-clock timeout (`ORCHESTRATOR_ROUND_TIMEOUT_S`, default 600s), not SIGPIPE. Raise the env var or shorten OBSERVE work. After changing `data/agent-models.json`, restart agents so each round picks up `-m` from `resolve-agent-model.py` (re-read every round).
 
-**Dispatcher:** With `kanban.dispatch_in_gateway: true`, `establish-scenario.sh` does **not** start `landfolk-dispatcher.sh` (avoids dual-dispatcher claim races). Use `FORCE_STANDALONE_DISPATCHER=1` only when embedded dispatch is off.
+**Dispatcher:** With `kanban.dispatch_in_gateway: true`, `establish-scenario.sh` and `scripts/landfolk start` do **not** start `landfolk-dispatcher.sh` (avoids dual-dispatcher claim races). Use `FORCE_STANDALONE_DISPATCHER=1` only when embedded dispatch is off. After changing MC routing fixes, run `scripts/setup-landfolk-profiles.sh --apply-config` and restart gateway (`scripts/landfolk restart gateway` or stop/start).
+
+**Worker MC routing (post phase-16):** Root leak was **`BASH_ENV`** inheriting Steward's `agent-bashenv.sh` into gateway-spawned workers (terminal bash re-exported `:3005` before the first `mc`). Profile `.env` must set `MC_API_URL`, `MC_USERNAME`, and `_MC_API_URL_LOCKED` to the assignee port (`setup-landfolk-profiles.sh`). `scripts/landfolk` / dispatcher / `_default_spawn` unset MC vars **and `BASH_ENV`**. `landfolk restart gateway` scrubs too. Spawn audit: `/tmp/worker-env-debug.log` (2MB rotate; `HERMES_KANBAN_WORKER_ENV_DEBUG=0` to disable).
 
 **Logs:** `establish-fleet-cleanup.sh` runs `snapshot-fleet-logs.sh` before stop. `mc-*.log` still truncates on bot respawn — snapshot preserves pre-restart CLI traces.
 
@@ -260,7 +281,7 @@ If Steward reports "observe denied" after a different verb failed, she may be re
 | Per-bot raw log | `scripts/landfolk logs mason --tail 50` |
 | Follow | `scripts/landfolk logs flint -f` |
 | Gateway / dispatcher | `scripts/landfolk logs gateway -f` ; `tail -F /tmp/hermescraft/dispatcher.log` |
-| Progress / stuck | `tail -F /tmp/hermescraft/progress-*.log` ; `grep AUTO_STUCK` on kanban comments |
+| Progress / stuck | `tail -F /tmp/hermescraft/progress-*.log` ; kanban comments with `[AUTO_STUCK]` (worker line mandates `read_chat` + `reachable` before retry) |
 | Nav errors | `tail -F /tmp/hermescraft/nav-Mason.jsonl` |
 | Pause dispatch | Stop gateway or `landfolk stop` (keeps policy: use `--keep gateway` only if you know why) |
 | Stop fleet | `scripts/landfolk stop` |
@@ -274,18 +295,43 @@ scripts/snapshot-fleet-logs.sh data/postmortems/establish-2026-06-04-phase11
 # or: RUN_ID=phase11 scripts/snapshot-fleet-logs.sh
 ```
 
-Steward should run `scripts/reconcile-marks.py --auto` each cycle (see `steward.wake-minimal.md`).
+Steward should run `scripts/reconcile-marks.py --auto` each cycle (see `steward.wake-minimal.md`). For the **mapping mission**, Steward also runs `scripts/reconcile-pois.py --auto` when she notices new per-bot POIs that haven't reached the shared overlay — but **not every cycle by default** (the grader reads the shared file directly, and the dashboard reads per-bot files via the dedupe path in `dashboard/lib/personal-pois.js`).
+
+**Mapping mission live checks:**
+
+```bash
+# Coverage so far (offline; doesn't hit the kanban DB)
+python3 scripts/establish-mapping-check.py --skip-epic
+
+# Per-bot POI summary
+for f in data/personal-pois-*.json; do
+  echo "$f"; jq 'to_entries[] | "  \(.key)  (\(.value.x),\(.value.y),\(.value.z))  sign=\(.value.sign_at|tojson)"' "$f" 2>/dev/null
+done
+
+# Dashboard overlay (after starting it with --world proc-lab)
+curl -s http://localhost:9080/api/personal-pois | jq '.pois | length'
+```
+
+Workers checking their own context use `mc pois`, `mc nearby_signs 32`, and `mc marks` — note `mc observe` strips those lists under `HERMES_NAV_BRIEF=1`.
 
 ---
 
 ## 10. Grade and rerun semantics
 
 ```bash
+# Explore mission grader
 scripts/establish-check.py
 # Offline: scripts/establish-check.py --skip-rcon
+
+# Mapping mission grader (use instead when VARIANT=establishment.mapping)
+python3 scripts/establish-mapping-check.py
+# Offline (skip the [MAP:ARENA] epic-status check):
+python3 scripts/establish-mapping-check.py --skip-epic
 ```
 
-Checks: `base_anchor` mark, ≥80/81 cobble on 9×9 pad, four explores done, epic done. **Does not** judge scenic quality.
+**Explore checks:** `base_anchor` mark, ≥80/81 cobble on 9×9 pad, four explores done, epic done. **Does not** judge scenic quality.
+
+**Mapping checks:** `personal-pois-shared.json` must contain ≥ 8 POIs with ≥ 4 having non-null `sign_at`, coverage_radius (max horizontal distance from muster) ≥ 40, ≥ 3 of 4 quadrants populated, and the `[MAP:ARENA]` epic must be `done`. Tune thresholds with `--poi-min / --sign-min / --coverage-min / --quadrant-min`. Quadrant axis: `-z = N`, `+x = E`; origin tie-breaks to SE. The grader reads ONLY the shared overlay — per-bot files don't count until reconciled.
 
 | Rerun | Behavior |
 |-------|----------|
@@ -311,7 +357,7 @@ Run 2–3 rounds; confirm workers could pick a base from `mc scene` one-liner (b
 
 | Issue | Signal |
 |-------|--------|
-| NAV lip / blocked move | `NAV_BLOCKED` in nav jsonl; `move:error` in progress |
+| NAV lip / blocked move | `NAV_BLOCKED` in nav jsonl; `move:error` in progress; read `next_action_hint` (`reachable`, lip `dig`, `build_stairs`) — see [route-sculpt-navigation.md](../features/route-sculpt-navigation.md) |
 | Chunk visibility | Partial sector coverage on explore cards |
 | `goto_near` timeout | Message should cite **15000ms** cap (contract test); traps often dominate over timeout |
 | `level_ground` / `level` column cap | Split rectangles (≤16 columns per call) |
@@ -319,14 +365,21 @@ Run 2–3 rounds; confirm workers could pick a base from `mc scene` one-liner (b
 | `mc-*.log` gap | Listener respawn freezes the file at pre-restart timestamp; afternoon failures live in `agent-*.log` / `nav-*.jsonl` / `state.db` only |
 | **Bash 3.2 stop-script** | `scripts/landfolk stop` (which invokes `landfolk-control.sh stop`) uses `${name,,}` lowercasing on lines ~321/426 — fails silently on macOS default `/bin/bash`. Kills the dispatcher cleanly but leaves bot-loop + watchdog children orphaned. Workaround: `pkill -f 'landfolk:'` and `lsof -ti :3001 -i :3002 -i :3003 -i :3005 | xargs kill -9` after `landfolk stop`. |
 | **Bootstrap halts at `declare -A`** | `establish-scenario.sh:182` fails on bash 3.2 (`steward: unbound variable`). Bots end up in the landfolk-test hub world, never TP'd to proc-lab. Re-run with `/opt/homebrew/bin/bash`. |
-| **Steward "observe denied" hallucination** | Steward calls one forbidden verb, gets the structured deny message that LISTS allowed verbs, then misreads it as "everything is denied including observe". Live-verify with `mc observe` via CLI (§8.3) before trusting her judgement. |
+| **Steward "observe denied" hallucination** | Usually stale belief after one field-verb 403 — not a global gate failure. Live-verify `mc observe` on 3005 (§8.4 / launch verify) before trusting her summary. |
+| **Worker ignores operator whisper** | Whispers do not enter the loop until `mc read_chat`; same for Steward comments vs `mc chat`. Mandated in `skills/kanban-worker.md` + `[AUTO_STUCK]` comment text. |
+| **Wrong bot port / Steward deny on workers** | Bare `mc` hits :3005 while `echo $MC_API_URL` shows assignee port — leaked `_MC_API_URL_LOCKED` in terminal env. Fix: `landfolk deploy` / `setup-landfolk-profiles.sh --apply-config`, restart gateway, check `/tmp/worker-env-debug.log` after next spawn. |
 | Anchor below surface | Pad-clear cards at `anchor_y < surface_y` tunnel workers into traps (run-8 Mason at (-3,68,53)). Watch for `BOT_TRAPPED` followed by `mc escape` partial pillar; recovery often loses the original anchor. |
+| **Mapping: phantom worker names** | Same root cause as run-12: Steward dispatching `worker-a` / `worker-b` (`[MAP] cards` not picked up). `prompts/landfolk/steward.md` now hard-rules against it for both missions — verify by running `python3 scripts/roster.py --assignable` and grepping the board for non-roster assignees on `[MAP]` cards. |
+| **Mapping: empty-evidence completion** | `[MAP]` card cards mandate literal `mc marks` / `mc pois` / `mc nearby_signs 32` output in the completion body (phase-17 rule extended). Completion bodies with `pois:` followed by nothing are rejected; re-comment with the missing-evidence callout and leave the card open. |
+| **Mapping: `_MC_API_URL_LOCKED` env leak** | Same defense-in-depth as explore — `BASH_ENV` leak from Steward's `agent-bashenv.sh` would point workers' `mc` at port 3005. Verify after spawn: `tail -F /tmp/worker-env-debug.log`. |
 
 Record card id, error code, and coordinates for postmortems.
 
 ---
 
 ## Quick path (copy-paste)
+
+### Explore mission (default)
 
 ```bash
 export PATH=/opt/homebrew/bin:$PATH
@@ -337,4 +390,24 @@ scripts/landfolk logs agents --profiles steward,flint,mason -q --tail 20 --no-fo
 scripts/landfolk stop
 scripts/snapshot-fleet-logs.sh data/postmortems/establish-$(date +%Y-%m-%d)-phaseN
 scripts/establish-check.py
+```
+
+### Mapping mission
+
+```bash
+export PATH=/opt/homebrew/bin:$PATH
+VARIANT=establishment.mapping scripts/establish-run.sh --min-credits-usd 5 --archive-logs
+scripts/kanban board                     # confirm [MAP:ARENA] epic + 4 [MAP] cards
+scripts/landfolk logs agents --profiles steward,flint,mason -q --tail 20 --no-follow
+
+# Mid-run coverage check (offline)
+python3 scripts/establish-mapping-check.py --skip-epic
+
+# Steward chats "wrap up — coverage sufficient" → stop fleet
+scripts/landfolk stop
+scripts/snapshot-fleet-logs.sh data/postmortems/establish-$(date +%Y-%m-%d)-mappingN
+
+# Final grade (full, with kanban epic-status)
+python3 scripts/reconcile-pois.py --auto
+python3 scripts/establish-mapping-check.py
 ```

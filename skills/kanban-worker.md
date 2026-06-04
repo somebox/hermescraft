@@ -84,18 +84,33 @@ If your tool results include a `top_goal: {id, urgency, satisfied}` field (e.g. 
 
 If you genuinely need to break from the card to handle a survival emergency (HP < 8, no food in inventory, hostile mob in your face), narrate it in chat (`mc chat "<bot>: breaking from t_xxx — HP critical, eating then resuming"`) and resume the card afterward. Do NOT silently switch tasks based on goal-engine urgency.
 
-## `stuck_warning` in mc status — ESCALATE, don't retry
+## `stuck_warning` in mc status — probe first, then escalate by threshold
 
 `mc status` is **self** (supplies, holding, `situation` when boxed in). World layout: `mc scene` / `mc nearby`.
 
-If a `mc status` (or any `mc observe`-family) response includes `stuck_warning`, you have been within a 5-block radius of the same position for 5+ minutes. Local iteration has failed — retrying the same approach a sixth time is wasted budget. **Your NEXT action MUST be one of:**
+If a `mc status` (or any `mc observe`-family) response includes `stuck_warning`, you have been within a 5-block radius of the same position for 5+ minutes. Treat this as **bounded recovery mode**:
 
-1. **`mc advise --reason="stuck Nmin: <one-line of what you tried>" --target X,Y,Z`** — get strategic guidance from the perception digester. The advise output names what you're missing and points at a concrete next step.
-2. **`kanban_comment("blocked: <what I need>, tried: <last 3 things>")`** + **`kanban_block reason="stuck:<short>"`** — escalate to re44 / Steward. Name what you need (a tool delivered, an rcon teleport, a card body clarification, a follow-up subtask) so the operator can unblock you quickly.
+1. **Probe + explore alternatives first** (mandatory probes below, then a different tactic from `next_action_hint`).
+2. If still failing, **ask for suggestions/help** with **`mc advise --reason="stuck Nmin: <one-line>" --target X,Y,Z`**.
+3. Only after threshold breach (same-class failures / turn budget), **rescue/escalate** via `kanban_block(help-needed:...)` or pass-back to Steward.
 
-**Do NOT silently retry.** The `stuck_warning` text already names the choice — see it, pick #1 or #2, execute. If you're already mid-attempt when the warning appears, finish the current tool call cleanly, then escalate on the NEXT one.
+**Do NOT silently retry the same line.** `stuck_warning` means "change strategy now," not "spam attempts."
 
-The warning also includes the suggested `mc advise` command pre-filled with your coords — you can run it almost verbatim. Don't paraphrase or skip the `--target` flag; the digester uses target coords to weight its scene bundle.
+The warning includes a suggested `mc advise` command pre-filled with your coords — run it verbatim when you enter step 2. Keep `--target`; the digester uses it to weight scene context.
+
+## Mandatory probes before repeating a failed move (physical stuck)
+
+**Triggers** (run this block before you retry the same `mc move` / `mc goto` / `mc goto_near` line): `stuck_warning` in status; `pillar_step:error`; two or more rounds with the **same** `recent[]` tuple; a card comment tagged `[AUTO_STUCK]`.
+
+**Required order** (cheap — do all three before any retry):
+
+1. **`mc read_chat 20`** — operator guidance and Steward comments land in chat; whispers and `mc chat` from other bots are invisible until you read.
+2. **`mc reachable <target_x> <target_y> <target_z>`** (use `surface_y` when the card gives surface coords).
+3. If the target cell is **not** standable and the response includes **`best_stand`**: **`mc goto_near <best.x> <best.y> <best.z> range=1`**, then re-run `mc reachable` on the original target. **Do not** repeat the prior failed verb until these probes complete.
+
+After probes, run **one changed tactic** (e.g. lip dig, short stairs, intermediate waypoint, different adjacent approach) instead of repeating the same command unchanged.
+
+On **horizontal** outdoor moves, check `terrain_kind` from `mc scene` / NAV errors (`slope_*`, `cliff_above`). Prefer `next_action_hint` (lip dig, `mc build_stairs`, waypoint `goto_near`) over `mc pillar_up` for scouting or crossing slopes. `pillar_up` stays for true shafts and last-resort vertical escape (see physical-stuck section below).
 
 ## Validate the task before starting
 
@@ -381,7 +396,7 @@ Write nested `sub:` under `[run_state]` (see `docs/features/agent-playbooks.md`)
 
 When you claim a card, your **first turn** is a spec review. Before doing any in-game work:
 
-1. `kanban_show` and read the body fully.
+1. `wb context` (preferred — also side-effects task-body-coord stash on CONSTRUCT/MINE/TILL/SUPPLY/SURVEY cards) or `kanban_show` and read the body fully.
 2. Judge: are inputs named (coords, marks, chest ids, quantities)? Are acceptance criteria specific? Does the bot have a fit (right tools, right location)?
 3. If the card is clearly underspec'd, **bounce it back** without burning iteration budget:
    ```python
@@ -499,6 +514,8 @@ If you open the task and `kanban_show` returns `runs: [...]` with one or more cl
 
 If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profiles) and your symptoms look physical-stuckness (NOT spec confusion or missing materials), there are dedicated `mc` verbs that resolve most cases without `kanban_block`. Try them FIRST — they often work and they're cheap.
 
+**Before the escape verbs below:** run the **Mandatory probes** section (`read_chat`, `reachable`, `goto_near` to `best_stand` when needed). NAV failures often include a concrete `next_action_hint` — follow it instead of repeating the same move.
+
 **Symptoms that mean "you're physically stuck":**
 
 - 3 failed `mc dig` / `mc move` / `mc goto_near` at the same spot.
@@ -510,7 +527,7 @@ If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profile
 
 **First-touch escape verbs (in order):**
 
-1. **`mc pillar_up <N>`** — climb up N blocks (max 64; this is a multi-block climb). With NO block argument the primitive bare-hand-digs the cell overhead, captures the drop, and pillars with it. This is the canonical 1×1-shaft self-rescue. It stops at a sky-open surface; if it stops early it reports `placed/requested` + a `next_action_hint`. **`pillar_up` is ONE-WAY without help — always plan the descent (see #2 below).**
+1. **`mc pillar_up <N>`** — climb up N blocks (max **32** — matches `pillar.js` `maxSteps` / `PILLAR_COUNT_OVER_CAP`; this is a multi-block climb). With NO block argument the primitive bare-hand-digs the cell overhead, captures the drop, and pillars with it. This is the canonical 1×1-shaft self-rescue. It stops at a sky-open surface; if it stops early it reports `placed/requested` + a `next_action_hint`. **`pillar_up` is ONE-WAY without help — always plan the descent (see #2 below).**
    - `mc pillar_up 8` — climb 8, use captured drops (works for dirt/sand/gravel ceilings). When truly trapped (4 walls + ceiling) it auto bare-hand digs a stone ceiling without `--force`.
    - `mc pillar_up 8 --force` — also slow-digs stone faster and bypasses region/global denylists for the escape dig **only when the 4-walls+ceiling stuck-predicate is verified**. Use when the early-stop hint tells you to (stone ceiling + bare hands), OR you're inside a protected region.
    - Drop-timing race: if you get `PILLAR_FAILED` with "capture-from-ceiling failed: cell above head is air", the drop arrived AFTER the call returned. **Call `mc pillar_up` a second time** — it'll use the captured block. Two-call pattern is reliable.
@@ -659,6 +676,65 @@ After reassign, **exit cleanly** with no further action on the card. Don't `kanb
 **Don't rely on the CLI when the guidance is available.** The `kanban_*` tools work across all terminal backends (Docker, Modal, SSH). `hermes kanban <verb>` from your terminal tool will fail in containerized backends because the CLI isn't installed there. When in doubt, use the tool.
 
 ## CLI fallback (for scripting)
+
+## `[MAP]` cards — the mapping mission protocol
+
+A `[MAP]` card under a `[MAP:ARENA]` epic is a *mapping mission* — you range to a quadrant, name landmarks with in-world signs, mark internal nav waypoints with torches + personal POIs, and return with the evidence. Different from `[EXPLORE]`: no resource hunt, no candidate-pad survey. Load **`minecraft-mapping`** for the full vocabulary + sign / torch / POI protocol; this section covers the kanban-specific contract.
+
+**Range.** The card body gives a quadrant (NE / NW / SE / SW) and a target radius (typically `{quadrant_radius}` ≈ 50 blocks on a 64-radius arena). Get out at least that far before naming. Picking landmarks 10 blocks from muster is inadmissible — Steward's coverage_radius metric needs you to actually range.
+
+**Landmark protocol (per name).**
+
+```
+mc nearby_signs 32                         # SCAN FIRST — don't re-name an existing place
+mc place_named_sign X Y Z "creative-name\noptional context lines"
+mc poi_add creative_name --sign X Y Z --kind landmark
+```
+
+A POI without an anchor (no `sign_at` or `torch_at`) doesn't show up to other agents — always pair the placement with the `poi_add`. Use creative free-form names; no mandatory prefixes.
+
+**Waypoint protocol (per internal nav marker).**
+
+```
+mc place_torch X Y Z                       # auto floor vs wall_torch
+mc poi_add waypoint_name --torch X Y Z [--sign Sx Sy Sz] --kind waypoint
+```
+
+**Observe is lossy for sign / POI / mark info under nav-brief.** When `HERMES_NAV_BRIEF=1`, `mc observe` strips `nearby_marks` AND `nearby_signs` AND `nearby_missing_torches`. To see the full lists explicitly:
+
+```
+mc marks            # fleet marks (locations-base + private)
+mc pois             # personal POIs (private + shared overlay)
+mc nearby_signs 32  # signs in range
+```
+
+Don't assume `mc observe` shows it. Call the explicit verb when you need the full picture.
+
+**Completion evidence — literal output required.** Before `kanban_complete` on a `[MAP]` card, run these three verbs and paste the **literal output** into your completion body:
+
+```
+mc marks
+mc pois
+mc nearby_signs 32
+```
+
+Not a summary. Not "see attached". The literal command output. Steward rejects empty-after-colon stubs (`pois:` followed by nothing); if you found zero of something, say so in a sentence (`"no fleet marks placed this card; 2 landmark POIs added: …"`).
+
+**Quadrant scope = your epic's coverage tile.** Don't stray into another worker's quadrant unless your own has nothing worth naming AND chat says so. Steward dispatches one worker per quadrant per cycle; collisions waste coverage credit.
+
+**Inventory expectations.** Starter kit is 4 signs + 16 torches; chest holds 16 signs + 64 torches + 32 coal. If you run out:
+
+- Signs: `mc go_mark starter_chest` → `mc withdraw oak_sign 8`. Or craft (1 plank + 1 stick → 1 sign).
+- Torches: `mc craft torch 8` (1 coal + 1 stick → 4 torches).
+
+Don't return to base for a single sign — batch 2+ POIs first.
+
+**Missing-torch decision.** `mc observe` may surface `nearby_missing_torches[]` (under full mode) for POIs whose torch_at no longer reads as a torch. Decide:
+
+- You remember placing it → `mc place_torch X Y Z` to re-place, then `mc poi_check_torch <name>` to clear the flag.
+- You don't remember (another agent placed it) → `mc chat "<you>: torch missing at <name> (X Y Z)"` to escalate. Don't silently re-place a torch you never owned.
+
+---
 
 Every tool has a CLI equivalent for human operators and out-of-agent scripts. **From a SOUL action use the `kanban_*` tools, not the CLI** — the tools work across all terminal backends (Docker, Modal, SSH); the CLI only works locally.
 

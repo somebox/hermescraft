@@ -1177,6 +1177,45 @@ These ride on you, not on flint/mason. They look like work but they are orchestr
 
 ---
 
+## Mission: mapping (`[MAP:ARENA]` epic)
+
+When the board carries an open epic whose title contains the literal token `[MAP:ARENA]`, you are running the **mapping mission** — not establishment. The shape is different from `[ESTABLISH:BASE]`: there is **no "decide" gate**, no cobble pad, no base anchor. The fleet ranges to cover the arena, names landmarks, and drops POIs; you dispatch to whichever quadrant is currently weakest. Detect the mission by the tag, not by the title or by your assignment — the epic's `assignee` is `orchestrator-tracker` (dispatcher-skip lane), the same as the establish epic.
+
+### Continuous-dispatch loop (replaces the explore "decide" gate)
+
+Every cycle while the `[MAP:ARENA]` epic is open:
+
+1. **Read shared POIs** — `cat data/personal-pois-shared.json | jq '. | length'` for a count, or `python3 scripts/establish-mapping-check.py --skip-epic` for the full coverage report (quadrant_coverage, coverage_radius, sign_count, poi_count). Treat the JSON as authoritative — workers may have added POIs you don't see in chat.
+2. **Reconcile when stale** — if no worker has called `mc chat` about a fresh POI in the last cycle, run `python3 scripts/reconcile-pois.py --auto` to merge new per-bot files into the shared overlay. Do **not** run reconcile every cycle by default — it's not free and the file is read directly by the grader.
+3. **Identify the weakest quadrant** — the one with the fewest POIs. Ties → pick the one with the smallest max-distance-from-muster (least-explored).
+4. **Dispatch** — find the most idle assignable worker (`python3 scripts/roster.py --assignable` for the live list; the worker whose last chat or kanban activity is oldest). Create a new `[MAP] <quadrant> — <focused goal>` card and assign it to that worker. Card body: which quadrant, target range, what they should look for (a kind of landmark you're missing), and the standard verb checklist (`mc nearby_signs 32` before each sign, `mc poi_add` after each placement).
+5. **Track in memory** — keep a running tally: POIs per quadrant + max distance + chat-named places. The grader will compute this from disk later; *your* tally is what lets you decide where to dispatch.
+
+### Coverage rubric (Steward-judged)
+
+You decide when coverage is sufficient. The default bar — matching `scripts/establish-mapping-check.py` thresholds — is:
+
+- ≥ 8 POIs in `personal-pois-shared.json`
+- ≥ 4 POIs have non-null `sign_at` (= signs placed in-world)
+- coverage_radius ≥ 40 blocks (max horizontal distance from muster)
+- ≥ 3 of 4 quadrants have ≥ 1 POI
+
+When all four hold AND no worker is mid-quadrant on a `[MAP]` card, chat once: `mc chat "wrap up — coverage sufficient"`. Then `kanban_complete` the `[MAP:ARENA]` epic (your own epic per the existing rule). The operator stops the fleet.
+
+You may raise the bar (more POIs / wider radius / signs in all 4 quadrants) if the disc clearly warrants it — chat the new target so workers know why their last cards weren't accepted as the closer.
+
+### Existing rules still apply
+
+- **No phantom worker names** (`worker-a`, `worker-b`, `default`). Every assignee on a mapping card must come from `python3 scripts/roster.py --assignable`. The dispatcher will silently skip unknown assignees and your tally will diverge from disk.
+- **No completing other workers' cards.** Only the assigned worker (or a deliberate Steward override with a comment explaining why) marks a `[MAP]` card done. Empty-body-after-colon completions are still rejected by the worker contract.
+- **Completion-evidence rule.** `[MAP]` card bodies require literal `mc marks` / `mc pois` / `mc nearby_signs` output in the completion body. When you spot a completion that lacks the literal lines, comment with the missing-evidence callout and leave the card open — don't auto-pass it.
+
+### Mapping vs establish — what to do when both epics are open
+
+Don't run both missions in parallel on the same fleet. If the board carries both `[ESTABLISH:BASE]` and `[MAP:ARENA]` open at the same time, that's a bootstrap mistake — chat the inconsistency (`mc chat "two epics open: …"`) and archive whichever one the operator clarifies is stale.
+
+---
+
 ## When you hit something weird
 
 - Workers are silently failing on the same card → file `[BUG]` to re44 with `mc` repro steps, archive or reassign the failing card.
