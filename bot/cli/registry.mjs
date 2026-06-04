@@ -1968,6 +1968,142 @@ export const RAW_COMMAND_DEFS = [
     bodyFn: (p) => JSON.stringify({ name: p.name }),
   }),
 
+  /* Personal POIs (Phase A4) — per-bot waypoints distinct from fleet marks. */
+  g('poi_add', 'memory', [], {
+    description:
+      'Declare a personal POI. Default position is bot foot; use --at X Y Z for a landmark. Optional --sign X Y Z and --torch X Y Z link in-world anchor blocks placed by mc place_named_sign / mc place_torch.',
+    examples: [
+      'mc poi_add spider_hill --at 100 70 50 --kind hill',
+      'mc poi_add cairn_n --torch 50 76 100',
+      'mc poi_add balder_ruins --at -40 68 80 --sign -40 69 80 --kind ruin "old stones"',
+    ],
+    method: 'POST',
+    path: '/action/poi_add',
+    customParse: true,
+    bodyFn: (p) =>
+      JSON.stringify({
+        name: p.name,
+        note: p.note ?? '',
+        ...(p.kind !== undefined ? { kind: p.kind } : {}),
+        ...(p.at && typeof p.at === 'object' ? { at: p.at } : {}),
+        ...(p.sign && typeof p.sign === 'object' ? { sign_at: p.sign } : {}),
+        ...(p.torch && typeof p.torch === 'object' ? { torch_at: p.torch } : {}),
+      }),
+    usage: 'mc poi_add NAME [NOTE] [--at X Y Z] [--sign X Y Z] [--torch X Y Z] [--kind KIND]',
+  }),
+  g('poi_update', 'memory', ['poi-up'], {
+    description: 'Patch POI metadata (kind, note, sign_at, torch_at) without moving the POI',
+    examples: [
+      'mc poi_update spider_hill --note "great view of valley"',
+      'mc poi_update cairn_n --sign 50 75 100',
+    ],
+    method: 'POST',
+    path: '/action/poi_update',
+    customParse: true,
+    bodyFn: (p) =>
+      JSON.stringify({
+        name: p.name,
+        ...(p.note !== undefined && p.note !== '' ? { note: p.note } : {}),
+        ...(p.kind !== undefined ? { kind: p.kind } : {}),
+        ...(p.sign !== undefined ? { sign_at: p.sign } : {}),
+        ...(p.torch !== undefined ? { torch_at: p.torch } : {}),
+      }),
+  }),
+  g('pois', 'memory', [], {
+    description: 'List all personal POIs (per-bot waypoints; see mc marks for fleet marks)',
+    examples: ['mc pois'],
+    method: 'POST',
+    path: '/action/pois',
+    bodyFn: () => empty,
+  }),
+  g('go_poi', 'memory', [], {
+    description: 'Walk to a saved personal POI',
+    examples: ['mc go_poi NAME'],
+    method: 'POST',
+    path: '/action/go_poi',
+    argSchema: [{ key: 'name', type: 'string', required: true }],
+    bodyFn: (p) => JSON.stringify({ name: p.name }),
+    usage: 'mc go_poi NAME',
+  }),
+  g('unpoi', 'memory', [], {
+    description: 'Delete a personal POI by name',
+    examples: ['mc unpoi NAME'],
+    method: 'POST',
+    path: '/action/unpoi',
+    argSchema: [{ key: 'name', type: 'string', required: true }],
+    bodyFn: (p) => JSON.stringify({ name: p.name }),
+  }),
+  g('place_named_sign', 'building', ['place_sign'], {
+    description:
+      'Place a sign at X Y Z and write text in one call. Default variant oak_sign; use --variant <wood>_sign for other woods. --back writes back face (1.20+). Read-back verifies; SIGN_WAX_PROTECTED if the server rejects (waxed sign). Pair with mc poi_add --sign X Y Z.',
+    examples: [
+      'mc place_named_sign 0 64 0 "spider hill"',
+      'mc place_named_sign 5 65 -10 "balder ruins\\ngreat view" --variant birch_sign',
+    ],
+    method: 'POST',
+    path: '/action/place_named_sign',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+      { key: 'text', type: 'string', required: true },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        text: p.text,
+        ...(p.variant ? { variant: p.variant } : {}),
+        ...(p.back !== undefined ? { back: p.back } : {}),
+      }),
+    usage: 'mc place_named_sign X Y Z "TEXT" [--variant oak_sign] [--back]',
+  }),
+  g('place_torch', 'building', [], {
+    description:
+      'Place a torch at X Y Z, auto-picking floor (minecraft:torch) vs wall (minecraft:wall_torch) based on adjacent solid faces. --prefer floor|wall|auto (default auto). Pairs with mc poi_add for marking nav waypoints.',
+    examples: [
+      'mc place_torch 100 65 50',
+      'mc place_torch 100 65 50 --prefer wall',
+    ],
+    method: 'POST',
+    path: '/action/place_torch',
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        ...(p.prefer ? { prefer: p.prefer } : {}),
+      }),
+    usage: 'mc place_torch X Y Z [--prefer floor|wall|auto]',
+  }),
+
+  g('poi_check_torch', 'memory', ['poi-check', 'check_torch'], {
+    description:
+      'Check whether the linked torch_at block for a POI is still a torch. Flags torch_missing_since if absent; clears it if present. Use when revisiting a POI to detect a removed/decayed torch.',
+    examples: ['mc poi_check_torch cairn_n'],
+    method: 'POST',
+    path: '/action/poi_check_torch',
+    argSchema: [{ key: 'name', type: 'string', required: true }],
+    bodyFn: (p) => JSON.stringify({ name: p.name }),
+  }),
+
+  g('nearby_signs', 'world', ['signs'], {
+    description:
+      'List signs within RADIUS blocks (default 32, max 64) with their text and distance. Signs anchoring a known personal POI are flagged with owner_poi=NAME. Use when scouting for existing named places before placing a duplicate sign.',
+    examples: ['mc nearby_signs', 'mc nearby_signs 16'],
+    method: 'POST',
+    path: '/action/nearby_signs',
+    argSchema: [{ key: 'radius', type: 'number', default: 32, min: 4, max: 64 }],
+    bodyFn: (p) => JSON.stringify({ radius: Number(p.radius) || 32 }),
+    usage: 'mc nearby_signs [RADIUS]',
+  }),
+
   /* Goals */
   g('goals', 'goals', [], {
     examples: ["mc goals"],

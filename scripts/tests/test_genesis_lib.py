@@ -90,6 +90,48 @@ def test_seed_starter_cards_topology(mock_create, mock_link, tmp_path, monkeypat
     assert ("8", "10") in edges  # site after shelter
 
 
+def test_archive_run_state_personal_pois(tmp_path, monkeypatch):
+    """Phase A6: archive_run_state must snapshot then wipe personal-pois-*.json
+    alongside locations-*.json. Establish reruns rely on this so prior-run
+    POIs don't leak into a fresh disc.
+    """
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    runs_root = tmp_path / "runs"
+    fake_db_dir = tmp_path / "kanban"
+    fake_db_dir.mkdir()
+    fake_db = fake_db_dir / "kanban.db"
+    fake_db.write_text("sqlite-stub")
+
+    monkeypatch.setattr(gl, "DATA_DIR", data_dir)
+    monkeypatch.setattr(gl, "RUNS_ROOT", runs_root)
+    monkeypatch.setattr(gl, "KANBAN_DB", fake_db)
+
+    (data_dir / "locations-flint.json").write_text('{"home": {"x": 0, "y": 64, "z": 0}}')
+    (data_dir / "locations-base.json").write_text('{"chest_a": {"x": 1, "y": 64, "z": 0}}')
+    (data_dir / "personal-pois-flint.json").write_text(
+        '{"spider_hill": {"name": "spider_hill", "x": 3, "y": 64, "z": 4}}'
+    )
+    (data_dir / "personal-pois-shared.json").write_text(
+        '{"cairn_n": {"name": "cairn_n", "x": 0, "y": 64, "z": 10}}'
+    )
+
+    gl.archive_run_state("g-2026-06-04-1")
+
+    arch = runs_root / "g-2026-06-04-1" / "archived"
+    assert (arch / "personal-pois-flint.json").exists(), "per-bot POIs must be archived"
+    assert (arch / "personal-pois-shared.json").exists(), "shared POI overlay must be archived"
+    assert (arch / "locations-flint.json").exists(), "regression: locations still archived"
+
+    # Live data dir must be wiped so the fresh world starts clean.
+    assert not (data_dir / "personal-pois-flint.json").exists(), \
+        "per-bot POIs must be removed from live data dir"
+    assert not (data_dir / "personal-pois-shared.json").exists(), \
+        "shared POI overlay must be removed from live data dir"
+    assert not (data_dir / "locations-flint.json").exists(), \
+        "regression: locations still wiped"
+
+
 def test_check_phases_empty_state(tmp_path, monkeypatch):
     monkeypatch.setattr(gl, "DATA_DIR", tmp_path / "data")
     (tmp_path / "data").mkdir()

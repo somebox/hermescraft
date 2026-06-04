@@ -70,6 +70,13 @@ if [[ "$SKIP_MEM_WIPE" != "1" ]]; then
       echo "  marks: $locs"
       rm -f "$locs"
     fi
+    # Phase A6: per-bot personal POIs (mapping mission private waypoints)
+    # are runtime artifacts that must not bleed into a new run.
+    pois="$ROOT/data/personal-pois-${wk}.json"
+    if [[ -f "$pois" ]]; then
+      echo "  pois: $pois"
+      rm -f "$pois"
+    fi
     prof="$HOME/.hermes/profiles/${wk}/sessions"
     if [[ -d "$prof" ]]; then
       count=$(find "$prof" -maxdepth 1 -type f -name "*.json" 2>/dev/null | wc -l | tr -d ' ')
@@ -93,6 +100,9 @@ if [[ "$SKIP_MEM_WIPE" != "1" ]]; then
   done
   # Also clear the catch-all locations file used by some bot startup paths.
   rm -f "$ROOT/data/locations-base.json"
+  # Phase A6: shared reconciled POI overlay (lazily rebuilt by
+  # scripts/reconcile-pois.py after first round of poi_adds).
+  rm -f "$ROOT/data/personal-pois-shared.json"
 fi
 
 # Optional full runtime wipe (establish-run.sh sets FULL_RUNTIME_WIPE=1).

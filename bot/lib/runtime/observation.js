@@ -40,8 +40,8 @@ function buildSuppliesDict(inv, limit = 12) {
 
 export function createObservation(deps) {
   const {
-    ctx, ensureBot, fmt, posObj, loadLocations, filterEntitiesFairPlay, buildSceneSummary,
-    fireDueReminders, FAIR_PLAY, itemStr, getStandingState, getPathTo,
+    ctx, ensureBot, fmt, posObj, loadLocations, loadPersonalPois, filterEntitiesFairPlay,
+    buildSceneSummary, fireDueReminders, FAIR_PLAY, itemStr, getStandingState, getPathTo,
   } = deps;
 
   function taskContextBrief() {
@@ -395,6 +395,83 @@ export function createObservation(deps) {
       }
     } catch { /* ignore */ }
 
+    // Phase A5: known POI signs visible within 32 blocks + POIs whose
+    // linked torch_at has gone missing within 16 blocks. Both arrays
+    // are intentionally lightweight (no block-scanning beyond a single
+    // blockAt per POI) so observe stays fast. Workers run the broader
+    // `mc nearby_signs` for arbitrary sign discovery.
+    let nearbySigns;
+    let nearbyMissingTorches;
+    try {
+      const pois = typeof loadPersonalPois === 'function' ? loadPersonalPois() : null;
+      const bot = ctx.world.bot && ctx.world.botReady ? ctx.world.bot : null;
+      const botPos = bot?.entity?.position;
+      if (pois && botPos) {
+        const signEntries = [];
+        const missingTorchEntries = [];
+        for (const [name, p] of Object.entries(pois)) {
+          if (p.sign_at) {
+            const sd = Math.round(Math.sqrt(
+              (botPos.x - p.sign_at.x) ** 2 +
+              (botPos.y - p.sign_at.y) ** 2 +
+              (botPos.z - p.sign_at.z) ** 2,
+            ));
+            if (sd <= 32) {
+              const block = bot.blockAt(new Vec3(p.sign_at.x, p.sign_at.y, p.sign_at.z));
+              const isSign = block && typeof block.name === 'string' && block.name.includes('sign');
+              const entry = {
+                name,
+                x: p.sign_at.x, y: p.sign_at.y, z: p.sign_at.z,
+                dist: sd,
+                kind: p.kind || undefined,
+                block_present: isSign,
+              };
+              if (!lean && isSign) {
+                // Surface the sign text in full mode. Lean omits text to
+                // stay terse; agents can call `mc nearby_signs` for it.
+                const sigText = block.signText
+                  || block._signEntity?.text
+                  || block.signEntity?.text
+                  || null;
+                if (Array.isArray(sigText)) {
+                  entry.lines = sigText.map((s) => String(s ?? ''));
+                } else if (sigText != null) {
+                  entry.lines = String(sigText).split('\n');
+                }
+              }
+              signEntries.push(entry);
+            }
+          }
+          if (p.torch_at) {
+            const td = Math.round(Math.sqrt(
+              (botPos.x - p.torch_at.x) ** 2 +
+              (botPos.y - p.torch_at.y) ** 2 +
+              (botPos.z - p.torch_at.z) ** 2,
+            ));
+            if (td <= 16) {
+              const block = bot.blockAt(new Vec3(p.torch_at.x, p.torch_at.y, p.torch_at.z));
+              const present = block && (block.name === 'torch' || block.name === 'wall_torch');
+              if (!present) {
+                missingTorchEntries.push({
+                  name,
+                  x: p.torch_at.x, y: p.torch_at.y, z: p.torch_at.z,
+                  dist: td,
+                  observed_block: block?.name ?? null,
+                  torch_missing_since: p.torch_missing_since || null,
+                });
+              }
+            }
+          }
+        }
+        nearbySigns = signEntries
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, lean ? 5 : 10);
+        nearbyMissingTorches = missingTorchEntries
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, lean ? 3 : 8);
+      }
+    } catch { /* ignore */ }
+
     // Lean goals: just id/urgency/satisfied/gap, top 5. Full goals are
     // ~300B each with strategies/constraints/metadata — most calls don't
     // need that detail.
@@ -417,6 +494,8 @@ export function createObservation(deps) {
       alerts,
       ...(lean ? {} : { inventory_summary: invSummary, chest_snapshots: ctx.goals.chestSnapshots }),
       nearby_marks: nearbyMarks?.length ? nearbyMarks : undefined,
+      nearby_signs: nearbySigns?.length ? nearbySigns : undefined,
+      nearby_missing_torches: nearbyMissingTorches?.length ? nearbyMissingTorches : undefined,
       ...(lean ? {} : { dashboard_signals: buildDashboardSignals() }),
       last_api_error: ctx.tasks.lastApiError,
       recent_actions: lean
@@ -467,6 +546,11 @@ export function createObservation(deps) {
           : undefined;
         if (navStatus) payload.nav_brief_status = navStatus;
         delete payload.nearby_marks;
+        // Phase A5: nav-brief mode owns the "what's nearby" channel.
+        // Workers must call mc marks / mc pois / mc nearby_signs
+        // explicitly; otherwise nav_brief and these arrays compete.
+        delete payload.nearby_signs;
+        delete payload.nearby_missing_torches;
       }
     }
 

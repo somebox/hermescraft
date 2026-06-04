@@ -15,6 +15,7 @@ import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 import { clearNavTrail } from '../runtime/nav-trail.js';
 import { buildNavFrame } from '../runtime/nav-brief.js';
 import { autoClearPlaybookOnCardChange } from '../runtime/playbook-context.js';
+import { gateOrchestratorMcAction } from './middleware/orchestrator-mc-gate.js';
 
 // A2 (Phase 1 / item 1.3, 2026-06-02): Check whether a kanban worker has
 // claimed this bot. When true, `mc goals` returns an empty list so the
@@ -89,6 +90,7 @@ export function createBotHttpListener(deps) {
     briefState,
     getFullState,
     buildMarksListApi,
+    buildPersonalPoisListApi,
     getInventory,
     getNearby,
     buildSceneSummary,
@@ -117,6 +119,12 @@ export function createBotHttpListener(deps) {
   // (.state, .ensureBot, …). Until http-app itself moves to services-only,
   // we synthesize one from the legacy deps bag.
   const servicesProxy = { state: ctx, config, ensureBot };
+
+  function orchestratorActionBlocked(actionName) {
+    const gate = gateOrchestratorMcAction(config, actionName);
+    if (!gate) return null;
+    return gate;
+  }
 
   return async function botHttpListener(req, res) {
 
@@ -334,6 +342,11 @@ export function createBotHttpListener(deps) {
       if (path === '/marks') {
         ensureBot();
         return respond(res, 200, { ok: true, data: { marks: buildMarksListApi() } });
+      }
+
+      if (path === '/personal-pois') {
+        ensureBot();
+        return respond(res, 200, { ok: true, data: { pois: buildPersonalPoisListApi() } });
       }
 
       if (path === '/regions') {
@@ -843,6 +856,8 @@ export function createBotHttpListener(deps) {
             error: `Unknown or missing action. Available: ${available}`,
           });
         }
+        const orchBlock = orchestratorActionBlocked(actionName);
+        if (orchBlock) return respond(res, orchBlock.status, { ok: false, error: orchBlock.error, state: briefState() });
         const r = await dispatchAction(servicesProxy, actionName, body, {
           mode: 'task',
           actionRegistry, briefState, createTaskRecord, pushTaskHistoryRecord,
@@ -969,6 +984,8 @@ export function createBotHttpListener(deps) {
       const taskMatch = path.match(/^\/task\/(\w+)$/);
       if (taskMatch) {
         const actionName = taskMatch[1];
+        const orchBlock = orchestratorActionBlocked(actionName);
+        if (orchBlock) return respond(res, orchBlock.status, { ok: false, error: orchBlock.error, state: briefState() });
         // task #20: stamp "agent is driving" so the reactive layer
         // doesn't fall into the idle-CPU loop observed in circuit-v4.
         try { ctx.reactive._touchAgent?.(); } catch { /* defensive */ }
@@ -1014,6 +1031,9 @@ export function createBotHttpListener(deps) {
       }
 
       const actionName = actionMatch[1];
+
+      const orchBlock = orchestratorActionBlocked(actionName);
+      if (orchBlock) return respond(res, orchBlock.status, { ok: false, error: orchBlock.error, state: briefState() });
 
       // F58: mc status is an explicit "I'm rethinking" — clear F51.2 flag,
       // F57.1 escape-loop counter, and F57.2 stuck-cell registry. Brain has

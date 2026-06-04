@@ -17,6 +17,7 @@ import { createLifecycleActions } from './lifecycle.js';
 import { createQueriesActions } from './queries.js';
 import { createContainerActions } from './containers.js';
 import { createMarksActions } from './marks.js';
+import { createPersonalPoiActions } from './personal-pois.js';
 import { createFurnaceActions } from './furnace.js';
 import { createTeamActions } from './team.js';
 import { createRemindersActions } from './reminders.js';
@@ -61,6 +62,7 @@ export function createAllActions(deps) {
     ...createMiningActions(deps),
     ...createContainerActions(deps),
     ...createMarksActions(deps),
+    ...createPersonalPoiActions(deps),
     ...createFurnaceActions(deps),
     ...createRegionsObserveActions(deps),
     ...createRegionsMutateActions(deps),

@@ -118,6 +118,22 @@ function defaultLocations() {
   };
 }
 
+function defaultPersonalPois() {
+  const store = {};
+  return {
+    load: () => store,
+    save: (next) => { Object.keys(store).forEach((k) => delete store[k]); Object.assign(store, next); },
+    loadPrivate: () => store,
+    loadShared: () => ({}),
+    addPoi: noop,
+    flagStale: noop,
+    clearStale: noop,
+    flagTorchMissing: noop,
+    clearTorchMissing: noop,
+    buildPoisList: () => [],
+  };
+}
+
 function defaultBaseServices() {
   const config = defaultMockConfig();
   return {
@@ -129,6 +145,7 @@ function defaultBaseServices() {
     fairPlay: defaultFairPlay(),
     spatial: defaultSpatial(),
     locations: defaultLocations(),
+    personalPois: defaultPersonalPois(),
     social: defaultSocial(),
     utils: defaultUtils(),
     getActions: () => ({}),

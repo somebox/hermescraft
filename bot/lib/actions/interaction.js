@@ -7,6 +7,46 @@ import { canSeeBlockFaces } from './_los.js';
 const { goals } = pathfinderPkg;
 
 /**
+ * Read the 4 lines of text from a sign block. Mineflayer exposes the
+ * data via different shapes across protocol versions:
+ *   - `block.signText`  — array of 4 line strings (1.20+ packet path)
+ *   - `block.signEntity.text` / `block._signEntity.text` — legacy NBT
+ *     parsed by older paths; may be a string (JSON-stringified) or array.
+ * Returns a length-4 array (padding with '' when needed) for diff'ing.
+ */
+export function readSignTextLines(block) {
+  if (!block) return ['', '', '', ''];
+  // Modern path: blocks.js sets `block.signText` directly.
+  if (Array.isArray(block.signText)) {
+    return [0, 1, 2, 3].map((i) => String(block.signText[i] ?? ''));
+  }
+  const signEntity = block._signEntity || block.signEntity;
+  if (signEntity?.text != null) {
+    if (Array.isArray(signEntity.text)) {
+      return [0, 1, 2, 3].map((i) => String(signEntity.text[i] ?? ''));
+    }
+    const split = String(signEntity.text).split('\n');
+    return [0, 1, 2, 3].map((i) => split[i] ?? '');
+  }
+  return ['', '', '', ''];
+}
+
+/**
+ * Strict line-by-line compare for sign read-back verification. Pads the
+ * shorter array with '' so a 2-line write against a freshly-placed
+ * sign (4 lines of '') still matches.
+ */
+export function linesMatch(observed, expected) {
+  const o = Array.isArray(observed) ? observed : [];
+  const e = Array.isArray(expected) ? expected : [];
+  const max = Math.max(o.length, e.length, 4);
+  for (let i = 0; i < max; i += 1) {
+    if (String(o[i] ?? '') !== String(e[i] ?? '')) return false;
+  }
+  return true;
+}
+
+/**
  * createInteractionActions — extracted from former lib/actions/world.js (Phase 4 split).
  */
 export function createInteractionActions(services) {
@@ -451,6 +491,280 @@ export function createInteractionActions(services) {
         side: back ? 'back' : 'front',
         line_count: lines.length,
         lines,
+      },
+    });
+  },
+
+  /**
+   * place_named_sign — place a sign and write its text in one call.
+   *
+   * Single-shot wrapper over `mc place` + `mc edit_sign` with a server-
+   * side read-back verification. Pair with `mc poi_add --sign X Y Z` so
+   * the resulting POI knows where its anchor sign lives.
+   *
+   * Read-back is the wax detection mechanism: Mineflayer's `updateSign`
+   * sends the packet whether the sign is waxed or not, and the server
+   * silently drops the update on waxed signs. We sleep ~200ms
+   * (env `SIGN_READBACK_MS`, default 200) then re-read
+   * `block.signText` / `block.signEntity.text`. If the lines don't
+   * match what we sent, we return `SIGN_WAX_PROTECTED` with the
+   * observed text so the agent can chat-escalate or relocate.
+   *
+   * Phase A2.
+   *
+   * Args:
+   *   x, y, z  — target cell
+   *   text     — full text; newline-separated up to 4 lines, max 45
+   *              chars per line (mirrors edit_sign limits)
+   *   variant  — sign item id ('oak_sign' default; any *_sign works)
+   *   back     — write to back face on 1.20+ (default false)
+   */
+  async place_named_sign({ x, y, z, text, variant = 'oak_sign', back = false }) {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      return fail('MISSING_ARGS', 'place_named_sign requires finite x,y,z', {
+        observed_state: { received: { x, y, z } },
+        retry_safe: false,
+      });
+    }
+    if (typeof text !== 'string' || text.length === 0) {
+      return fail('MISSING_ARGS', 'place_named_sign requires non-empty `text` (newline-separated up to 4 lines)', {
+        observed_state: { received_text_type: typeof text },
+        retry_safe: false,
+      });
+    }
+    const lines = text.split('\n');
+    if (lines.length > 4) {
+      return fail('TOO_MANY_LINES', `Got ${lines.length} lines; signs have max 4 lines.`, {
+        observed_state: { line_count: lines.length, max: 4 },
+        retry_safe: false,
+      });
+    }
+    const over = lines.findIndex((l) => l.length > 45);
+    if (over >= 0) {
+      return fail('LINE_TOO_LONG', `Line ${over + 1} has ${lines[over].length} chars; sign lines cap at 45.`, {
+        observed_state: {
+          offending_line: over + 1,
+          length: lines[over].length,
+          max: 45,
+          content_preview: lines[over].slice(0, 50),
+        },
+        retry_safe: false,
+      });
+    }
+    if (typeof variant !== 'string' || !variant.endsWith('_sign')) {
+      return fail('MISSING_ARGS', `variant must be a *_sign item id (got "${variant}").`, {
+        observed_state: { received_variant: variant },
+        retry_safe: false,
+      });
+    }
+
+    const b = ensureBot();
+
+    // ── Delegate placement to mc place ──
+    // `place` validates inventory, reach, region policy, entity blocking,
+    // and post-place verification — all the failure modes we'd otherwise
+    // have to duplicate.
+    const place = getActions?.()?.place;
+    if (typeof place !== 'function') {
+      return fail('PLACE_NOT_AVAILABLE', 'mc place action is not registered; cannot delegate.', {
+        retry_safe: true,
+      });
+    }
+    const placeResult = await place({ block: variant, x, y, z });
+    if (!placeResult.ok) return placeResult;
+
+    // ── Wait for the sign block to register ──
+    // mineflayer's blockAt cache updates lazily on blockUpdate packets.
+    // Poll briefly so the subsequent updateSign hits a real sign block.
+    let signBlock = null;
+    for (let i = 0; i < 10; i += 1) {
+      const blk = b.blockAt(new Vec3(x, y, z));
+      if (blk && String(blk.name || '').includes('sign')) {
+        signBlock = blk;
+        break;
+      }
+      await sleep(50);
+    }
+    if (!signBlock) {
+      const observed = b.blockAt(new Vec3(x, y, z));
+      return fail('SIGN_BLOCK_NOT_FOUND', `Placed ${variant} at ${x},${y},${z} but blockAt didn't return a sign within 500ms. Observed: ${observed?.name ?? 'null'}.`, {
+        observed_state: { observed_block: observed?.name ?? null, requested_variant: variant },
+        retry_safe: true,
+      });
+    }
+
+    // ── Reach precheck (mirror edit_sign) ──
+    const reach = await ensureWithinReach({ bot: b, goals }, { x, y, z }, {
+      range: 4.5,
+      observed: { block_at_target: signBlock.name },
+    });
+    if (!reach.ok) return reach;
+
+    // ── Write the text ──
+    try {
+      await b.updateSign(signBlock, text, !!back);
+    } catch (e) {
+      return fail('UPDATE_SIGN_FAILED', `bot.updateSign rejected: ${e?.message || String(e)}`, {
+        observed_state: { block_name: signBlock.name, requested_coord: { x, y, z }, back: !!back },
+        retry_safe: false,
+      });
+    }
+
+    // ── Read-back verification (wax detection) ──
+    const readbackMs = Number(process.env.SIGN_READBACK_MS) || 200;
+    await sleep(readbackMs);
+    const verifyBlock = b.blockAt(new Vec3(x, y, z));
+    const observed = readSignTextLines(verifyBlock);
+    if (!linesMatch(observed, lines)) {
+      return fail('SIGN_WAX_PROTECTED', `Sign at ${x},${y},${z} did not accept the new text (likely waxed or server-side rejection).`, {
+        observed_state: {
+          requested_lines: lines,
+          observed_lines: observed,
+          block_name: verifyBlock?.name ?? null,
+          readback_ms: readbackMs,
+        },
+        next_action_hint: `mc chat "<bot>: sign at ${x},${y},${z} is waxed — naming '${lines[0]}' rejected"`,
+        retry_safe: false,
+      });
+    }
+
+    return ok({
+      result: `Placed ${variant} at ${x},${y},${z} and wrote ${lines.length} line(s) on ${back ? 'back' : 'front'}.`,
+      data: {
+        coord: { x, y, z },
+        variant,
+        side: back ? 'back' : 'front',
+        line_count: lines.length,
+        lines,
+      },
+    });
+  },
+
+  /**
+   * place_torch — place a torch at (x,y,z), auto-picking floor vs wall
+   * variant based on adjacent solid faces.
+   *
+   * Minecraft has only one torch item ID (`minecraft:torch`); the server
+   * decides whether to place a floor torch (`torch` block) or a wall
+   * torch (`wall_torch` block) based on the placement face. We classify
+   * adjacency client-side so we can return a precise NO_SOLID_FACE
+   * error before mineflayer's 5s placeBlock timeout fires.
+   *
+   * Delegates to the existing `place` action for the heavy lifting
+   * (equip, reach, pathfind, region policy, entity-blocking, post-place
+   * verify), then reads back the placed block to confirm the variant.
+   *
+   * Phase A1.
+   *
+   * Args:
+   *   x, y, z  — target cell
+   *   prefer   — 'auto' (default) | 'floor' | 'wall'. 'auto' picks floor
+   *              when block below is solid, else wall.
+   */
+  async place_torch({ x, y, z, prefer = 'auto' }) {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      return fail('MISSING_ARGS', 'place_torch requires finite x,y,z', {
+        observed_state: { received: { x, y, z } },
+        retry_safe: false,
+      });
+    }
+
+    const b = ensureBot();
+
+    // ── NO_TORCH_IN_INVENTORY ──
+    const torchItem = b.inventory.items().find((i) => i.name === 'torch');
+    if (!torchItem) {
+      return fail('NO_TORCH_IN_INVENTORY', `No torch in inventory. Pick up or craft torches (mc craft torch) first.`, {
+        observed_state: {
+          requested_coord: { x, y, z },
+          inventory_summary: b.inventory.items().reduce((acc, it) => {
+            acc[it.name] = (acc[it.name] || 0) + it.count;
+            return acc;
+          }, /** @type {Record<string, number>} */ ({})),
+        },
+        retry_safe: false,
+      });
+    }
+
+    // ── Adjacency probe — what surfaces support a torch here? ──
+    const isSolid = (blk) => blk && blk.boundingBox === 'block';
+    const belowBlock = b.blockAt(new Vec3(x, y - 1, z));
+    const hasFloorSupport = isSolid(belowBlock);
+    const sides = [
+      { dir: 'east',  d: [1, 0, 0] },
+      { dir: 'west',  d: [-1, 0, 0] },
+      { dir: 'south', d: [0, 0, 1] },
+      { dir: 'north', d: [0, 0, -1] },
+    ];
+    const wallSides = sides.filter(({ d }) => isSolid(b.blockAt(new Vec3(x + d[0], y, z + d[2]))));
+    const hasWallSupport = wallSides.length > 0;
+
+    // ── Pick variant per prefer flag ──
+    let useFloor;
+    const preferStr = String(prefer || 'auto').toLowerCase();
+    if (preferStr === 'floor') useFloor = true;
+    else if (preferStr === 'wall') useFloor = false;
+    else useFloor = hasFloorSupport;  // auto: floor first, fall back to wall
+
+    if (useFloor && !hasFloorSupport && hasWallSupport) {
+      // Auto downgrade — caller said 'auto' but floor isn't supported.
+      useFloor = false;
+    }
+
+    if (useFloor && !hasFloorSupport) {
+      return fail('NO_SOLID_FACE', `Cannot place floor torch at ${x},${y},${z}: block below is not solid (got ${belowBlock?.name ?? 'air/null'}). Try --prefer wall or move to a cell with solid ground beneath.`, {
+        observed_state: {
+          block_below: belowBlock?.name ?? null,
+          wall_sides_available: wallSides.map((s) => s.dir),
+          prefer: preferStr,
+        },
+        retry_safe: false,
+      });
+    }
+    if (!useFloor && !hasWallSupport) {
+      return fail('NO_SOLID_FACE', `Cannot place wall torch at ${x},${y},${z}: no adjacent solid wall face found. Try --prefer floor or move to a cell next to a wall.`, {
+        observed_state: {
+          block_below: belowBlock?.name ?? null,
+          prefer: preferStr,
+        },
+        retry_safe: false,
+      });
+    }
+
+    // ── Look at the target so the placeBlock face direction is sane ──
+    // Server resolves which face the torch attaches to based on the
+    // line-of-sight crosshair; without lookAt, mineflayer can pick the
+    // wrong face and place a wall torch where the caller wanted floor.
+    try {
+      await b.lookAt(new Vec3(x + 0.5, y + 0.5, z + 0.5), true);
+    } catch {
+      /* lookAt is best-effort; if it throws, place may still succeed. */
+    }
+
+    // ── Delegate to mc place ──
+    // The existing place action handles equip, reach, pathfind, region
+    // policy, entity blocking, and post-place verification. We just
+    // call it and re-shape the response.
+    const place = getActions?.()?.place;
+    if (typeof place !== 'function') {
+      return fail('PLACE_NOT_AVAILABLE', 'mc place action is not registered; cannot delegate.', {
+        retry_safe: true,
+      });
+    }
+    const result = await place({ block: 'torch', x, y, z });
+    if (!result.ok) return result;
+
+    // ── Read back the placed block to report the actual variant ──
+    const placed = b.blockAt(new Vec3(x, y, z));
+    const variant = placed?.name === 'wall_torch' ? 'wall_torch' : 'torch';
+    return ok({
+      result: `Placed ${variant} at ${x},${y},${z}`,
+      data: {
+        coord: { x, y, z },
+        variant,
+        prefer: preferStr,
+        floor_supported: hasFloorSupport,
+        wall_sides_available: wallSides.map((s) => s.dir),
       },
     });
   },

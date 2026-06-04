@@ -435,6 +435,11 @@ def archive_run_state(run_id: str) -> None:
         shutil.copy2(KANBAN_DB, arch / "kanban.db")
     for p in DATA_DIR.glob("locations-*.json"):
         shutil.copy2(p, arch / p.name)
+    # Phase A6: personal POIs (per-bot waypoints + shared reconciled overlay).
+    # Treated identically to locations-*.json — runtime artifact, meaningless
+    # in a fresh world, archived for postmortem then wiped.
+    for p in DATA_DIR.glob("personal-pois-*.json"):
+        shutil.copy2(p, arch / p.name)
     for name in ("base-goals.yaml", "regions-world.json"):
         p = DATA_DIR / name
         if p.exists():
@@ -447,10 +452,24 @@ def archive_run_state(run_id: str) -> None:
     # only recovery path.
     if KANBAN_DB.exists():
         KANBAN_DB.unlink()
+    # Phase 5 fix (2026-06-02): sqlite WAL/SHM journals left by a crashed
+    # prior bootstrap make `hermes kanban init` fail with "disk I/O
+    # error". Remove them alongside the main DB so the next init starts
+    # with a truly clean slate. Safe to unlink even when the DB is up
+    # because we just removed the .db file above.
+    for journal in (KANBAN_DB.parent / f"{KANBAN_DB.name}-shm",
+                    KANBAN_DB.parent / f"{KANBAN_DB.name}-wal"):
+        if journal.exists():
+            journal.unlink()
     for p in DATA_DIR.glob("locations-*.json"):
         # Keep the template (data/locations.json without per-bot suffix) but
         # remove all per-bot + shared (locations-base.json) so the fresh
         # world starts with zero marks.
+        p.unlink()
+    # Phase A6: same wipe semantics for personal POIs (per-bot +
+    # shared overlay). No template to preserve — the store is created
+    # lazily on first poi_add.
+    for p in DATA_DIR.glob("personal-pois-*.json"):
         p.unlink()
 
 
@@ -482,6 +501,19 @@ def reinit_kanban_board() -> None:
             raise RuntimeError(
                 f"kanban board create failed: {proc.stderr[:400]}"
             )
+    # Phase 5 fix (2026-06-02): `boards create` registers the slug but
+    # doesn't populate the schema — observed during the Phase 5 run.
+    # Without `init`, the migration step below fails with `no such table:
+    # tasks` because the DB file exists but is empty. `init` is
+    # idempotent and creates the missing schema.
+    init_proc = _run(
+        ["hermes", "kanban", "--board", BOARD, "init"],
+        timeout=30,
+    )
+    if init_proc.returncode != 0:
+        raise RuntimeError(
+            f"kanban init failed: {init_proc.stderr[:400]}"
+        )
     _apply_landfolk_migrations()
 
 

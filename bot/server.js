@@ -80,6 +80,7 @@ import { createBotHttpListener } from './lib/server/http-app.js';
 import { createBotManager } from './lib/runtime/manager.js';
 import { createReactive } from './lib/runtime/reactive.js';
 import { createLocationsStore, isContainerBlock, findNearbyContainer } from './lib/runtime/locations.js';
+import { createPersonalPoiStore } from './lib/runtime/personal-pois.js';
 import { createRegionStore } from './lib/runtime/regions/index.js';
 import { createAllActions } from './lib/actions/index.js';
 import { isDigProtected } from './lib/runtime/dig-tools.js';
@@ -90,6 +91,8 @@ const DATA_DIR = path.join(path.dirname(new URL(import.meta.url).pathname), '..'
 
 // Locations store — initialized after config is loaded (below)
 let locations;
+// Personal POI store (Phase A3 — separate from fleet marks).
+let personalPois;
 
 function loadLocations() { return locations.load(); }
 function saveLocations(locs) { locations.save(locs); }
@@ -99,10 +102,22 @@ function resolveMarkPlaceFromBody(body, locsPreload) { return locations.resolveP
 function normalizeDepositWithdrawItems(body) { return locations.normalizeDepositWithdrawItems(body); }
 function resolveContainerCoords(body) { return locations.resolveContainerCoords(body); }
 
+function loadPersonalPois() { return personalPois.load(); }
+function savePersonalPois(pois) { personalPois.save(pois); }
+function addPersonalPoi(spec) { return personalPois.addPoi(spec); }
+function flagPoiTorchMissing(name) { personalPois.flagTorchMissing(name); }
+function clearPoiTorchMissing(name) { personalPois.clearTorchMissing(name); }
+
 function buildMarksListApi() {
   const b = ctx.world.bot && ctx.world.botReady ? ctx.world.bot : null;
   const pos = b ? b.entity.position : null;
   return locations.buildMarksList({ botPos: pos, chestSnapshots: ctx.goals.chestSnapshots });
+}
+
+function buildPersonalPoisListApi() {
+  const b = ctx.world.bot && ctx.world.botReady ? ctx.world.bot : null;
+  const pos = b ? b.entity.position : null;
+  return personalPois.buildPoisList({ botPos: pos });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -111,6 +126,7 @@ function buildMarksListApi() {
 
 const config = loadConfig(process.argv);
 locations = createLocationsStore({ dataDir: DATA_DIR, username: config.mc.username });
+personalPois = createPersonalPoiStore({ dataDir: DATA_DIR, username: config.mc.username });
 const ctx = createBotState(config);
 ctx.runtime.regions = createRegionStore({ dataDir: DATA_DIR, world: config.behaviors.regionsWorld });
 ctx.runtime.dataDir = DATA_DIR;
@@ -532,6 +548,7 @@ const services = createServices({
   fairPlay: fairPlayApi,
   spatial,
   locations,
+  personalPois,
   social: { rememberSocialEvent, getMyName, getNearbyPlayerNames },
   utils: { fmt, posObj, sleep, log, itemStr },
   getActions: () => actionsRef.value,
@@ -594,6 +611,7 @@ const observation = createObservation({
   fmt,
   posObj,
   loadLocations,
+  loadPersonalPois,
   filterEntitiesFairPlay,
   buildSceneSummary,
   fireDueReminders,
@@ -673,6 +691,13 @@ const ACTIONS = createAllActions({
   resolveContainerCoords,
   normalizeDepositWithdrawItems,
   buildMarksListApi,
+  // Phase A3/A4: personal POI store + helpers (createPersonalPoiActions reads these).
+  loadPersonalPois,
+  savePersonalPois,
+  addPersonalPoi,
+  flagPoiTorchMissing,
+  clearPoiTorchMissing,
+  buildPersonalPoisListApi,
   isContainerBlock,
   findNearbyContainer,
   snapshotChestAtPosition,
@@ -722,6 +747,7 @@ const httpServer = http.createServer(
     briefState,
     getFullState,
     buildMarksListApi,
+    buildPersonalPoisListApi,
     getInventory,
     getNearby,
     buildSceneSummary,

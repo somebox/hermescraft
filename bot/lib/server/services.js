@@ -18,6 +18,7 @@
  *   fairPlay     — line-of-sight + sound + perception suite
  *   spatial      — map + look-around generators
  *   locations    — marks store (load/save/flagStale/...)
+ *   personalPois — per-bot POI store (load/save/addPoi/flagTorchMissing/...)
  *   social       — { rememberSocialEvent, getMyName, getNearbyPlayerNames }
  *   utils        — { fmt, posObj, sleep, log, itemStr }
  *   getActions   — late-bound ACTIONS lookup; returns {} until createAllActions
@@ -51,6 +52,7 @@ export function createServices(parts) {
     fairPlay,
     spatial,
     locations,
+    personalPois,
     social,
     utils,
     getActions = () => ({}),
@@ -64,6 +66,7 @@ export function createServices(parts) {
     fairPlay,
     spatial,
     locations,
+    personalPois,
     social,
     utils,
     getActions,
@@ -81,6 +84,7 @@ export const SERVICES_KEYS = Object.freeze([
   'fairPlay',
   'spatial',
   'locations',
+  'personalPois',
   'social',
   'utils',
   'getActions',
