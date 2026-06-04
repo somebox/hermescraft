@@ -1,0 +1,147 @@
+{
+  "wp_e_1": {
+    "name": "wp_e_1",
+    "x": 50,
+    "y": 67,
+    "z": 1,
+    "kind": "waypoint",
+    "sign_at": null,
+    "torch_at": {
+      "x": 14,
+      "y": 67,
+      "z": -2
+    },
+    "note": "",
+    "agent_owner": "Mason",
+    "added_at": "2026-06-04T06:43:05.318Z",
+    "last_seen": "2026-06-04T06:43:05.318Z",
+    "last_torch_check": null,
+    "torch_missing_since": null
+  },
+  "wp_e_2": {
+    "name": "wp_e_2",
+    "x": 50,
+    "y": 67,
+    "z": 1,
+    "kind": "waypoint",
+    "sign_at": null,
+    "torch_at": {
+      "x": 38,
+      "y": 65,
+      "z": 5
+    },
+    "note": "",
+    "agent_owner": "Mason",
+    "added_at": "2026-06-04T06:43:11.421Z",
+    "last_seen": "2026-06-04T06:43:11.421Z",
+    "last_torch_check": null,
+    "torch_missing_since": null
+  },
+  "frozen_north": {
+    "added_at": "2026-06-04T06:49:03.041Z",
+    "agent_owner": "Gatherer",
+    "kind": "landmark",
+    "last_seen": "2026-06-04T06:49:03.041Z",
+    "last_torch_check": null,
+    "name": "frozen_north",
+    "note": "",
+    "reconciled_at": "2026-06-04T06:54:14.624479Z",
+    "reconciled_from": [
+      "gatherer"
+    ],
+    "sign_at": {
+      "x": -1,
+      "y": 63,
+      "z": -45
+    },
+    "torch_at": null,
+    "torch_missing_since": null,
+    "x": 4,
+    "y": 63,
+    "z": -43
+  },
+  "wp_n_1": {
+    "added_at": "2026-06-04T06:45:34.210Z",
+    "agent_owner": "Gatherer",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T06:45:34.210Z",
+    "last_torch_check": null,
+    "name": "wp_n_1",
+    "note": "",
+    "reconciled_at": "2026-06-04T06:54:14.624479Z",
+    "reconciled_from": [
+      "gatherer"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 1,
+      "y": 63,
+      "z": -45
+    },
+    "torch_missing_since": null,
+    "x": 1,
+    "y": 63,
+    "z": -45
+  },
+  "spruce-gate": {
+    "name": "spruce-gate",
+    "x": 56,
+    "y": 63,
+    "z": 1,
+    "kind": "landmark",
+    "sign_at": {
+      "x": 56,
+      "y": 63,
+      "z": 0
+    },
+    "torch_at": null,
+    "note": "",
+    "agent_owner": "Mason",
+    "added_at": "2026-06-04T06:56:05.789Z",
+    "last_seen": "2026-06-04T06:56:05.789Z",
+    "last_torch_check": null,
+    "torch_missing_since": null
+  },
+  "wp_e_3": {
+    "added_at": "2026-06-04T07:06:41.343Z",
+    "agent_owner": "Flint",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T07:06:41.343Z",
+    "last_torch_check": null,
+    "name": "wp_e_3",
+    "note": "",
+    "reconciled_at": "2026-06-04T07:09:16.341082Z",
+    "reconciled_from": [
+      "flint"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 76,
+      "y": 63,
+      "z": 2
+    },
+    "torch_missing_since": null,
+    "x": 76,
+    "y": 63,
+    "z": 2
+  },
+  "wp_s_1": {
+    "name": "wp_s_1",
+    "x": -1,
+    "y": 70,
+    "z": 24,
+    "kind": "waypoint",
+    "sign_at": null,
+    "torch_at": {
+      "x": 0,
+      "y": 70,
+      "z": 25
+    },
+    "note": "",
+    "agent_owner": "Mason",
+    "added_at": "2026-06-04T07:09:42.653Z",
+    "last_seen": "2026-06-04T07:09:42.653Z",
+    "last_torch_check": null,
+    "torch_missing_since": null
+  }
+}

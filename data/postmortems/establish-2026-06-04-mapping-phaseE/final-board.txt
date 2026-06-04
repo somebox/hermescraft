@@ -1,0 +1,29 @@
+landfolk-ops ─ 2026-06-04 09:14
+────────────────────────────────────────────────────────────
+IN-FLIGHT (3)
+  gatherer   t_22d42edf  size S   runtime 20m   [MAP-PATH] muster W (-50,65,0) · last: "[RESCUE] gatherer: you're at (-11,65,3). Terrain b"
+  mason      t_00f0d79c  size S   runtime 15m   [MAP-PATH] muster S (0,65,50) · last: "[RESOLVED] resolved by steward"
+  flint      t_07135ec9  size S   runtime 4m    [MAP-PATH] east_ice_rim → SE (80,65,50) · last: "[RESCUE] flint: dig through spruce logs blocking y"
+
+READY (0)
+  (none)
+
+NEEDS REVIEW (0)
+  (none)
+
+EPICS OPEN (1)
+  t_0b952c34  [EPIC] [MAP:ARENA] Map this disc — torch-lit paths  3/4 done · 1 in-flight
+
+RECENT (last 15m, 12)
+  09:14  mason      claimed  t_00f0d79c  [MAP-PATH] muster S (0,65,50)
+  09:14  mason      spawned  t_00f0d79c  [MAP-PATH] muster S (0,65,50)
+  09:14  flint      claimed  t_07135ec9  [MAP-PATH] east_ice_rim → SE (80,65,
+  09:14  flint      spawned  t_07135ec9  [MAP-PATH] east_ice_rim → SE (80,65,
+  09:14  gatherer   claimed  t_22d42edf  [MAP-PATH] muster W (-50,65,0)
+  09:14  gatherer   spawned  t_22d42edf  [MAP-PATH] muster W (-50,65,0)
+  09:14  flint      reclaimed t_07135ec9  [MAP-PATH] east_ice_rim → SE (80,65,
+  09:14  mason      commented t_00f0d79c  [MAP-PATH] muster S (0,65,50)
+  09:14  gatherer   reclaimed t_22d42edf  [MAP-PATH] muster W (-50,65,0)
+  09:14  mason      unblocked t_00f0d79c  [MAP-PATH] muster S (0,65,50)
+  09:14  flint      commented t_07135ec9  [MAP-PATH] east_ice_rim → SE (80,65,
+  09:14  mason      commented t_00f0d79c  [MAP-PATH] muster S (0,65,50)

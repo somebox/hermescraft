@@ -1,0 +1,67 @@
+{
+  "ok": true,
+  "requirements_id": "scenario_establish_mapping",
+  "seed": "-32456789431833",
+  "minecraft_version": "1.21.4",
+  "arena": {
+    "center": [
+      0,
+      0
+    ],
+    "radius": 64
+  },
+  "spawn": [
+    0,
+    65,
+    0
+  ],
+  "muster": [
+    0,
+    65,
+    0
+  ],
+  "starter_chest": [
+    1,
+    65,
+    0
+  ],
+  "placements": {
+    "spawn": [
+      0,
+      65,
+      0
+    ],
+    "muster": [
+      0,
+      65,
+      0
+    ],
+    "starter_chest": [
+      1,
+      65,
+      0
+    ]
+  },
+  "metrics": {
+    "biomes_distinct_r16": 2,
+    "biomes_at_r16": [
+      "snowy_taiga",
+      "taiga"
+    ],
+    "y_range_r16": [
+      53,
+      65
+    ],
+    "y_delta_r16": 13
+  },
+  "notes": "Hand-crafted catalog entry. Spawn Y=65 is a cubiomes estimate; establish-rcon-prep.py probes the live surface and patches the JSON. Y delta 13 at r=16 (significantly flatter than the rejected seed -266683266992121625).",
+  "_scenario": {
+    "variant": "establishment.mapping",
+    "topic": "establishment",
+    "terrain": "mapping",
+    "setting": "establishment",
+    "requirements": "/Users/foz/hermescraft/requirements/scenario_establish_mapping.yaml",
+    "catalog_path": "/Users/foz/hermescraft/catalog/topics/establishment/mapping/scenario_establish_mapping__-32456789431833.json",
+    "agent_test_ref": null
+  }
+}

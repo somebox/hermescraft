@@ -1,0 +1,185 @@
+{
+  "nodes": [
+    {
+      "name": "frozen_north",
+      "x": 4,
+      "y": 63,
+      "z": -43,
+      "anchor": {
+        "x": -1,
+        "y": 63,
+        "z": -45
+      },
+      "kind": "landmark",
+      "named": true,
+      "owner": "Gatherer"
+    },
+    {
+      "name": "spruce-gate",
+      "x": 56,
+      "y": 63,
+      "z": 1,
+      "anchor": {
+        "x": 56,
+        "y": 63,
+        "z": 0
+      },
+      "kind": "landmark",
+      "named": true,
+      "owner": "Mason"
+    },
+    {
+      "name": "wp_e_1",
+      "x": 50,
+      "y": 67,
+      "z": 1,
+      "anchor": {
+        "x": 14,
+        "y": 67,
+        "z": -2
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Mason"
+    },
+    {
+      "name": "wp_e_2",
+      "x": 50,
+      "y": 67,
+      "z": 1,
+      "anchor": {
+        "x": 38,
+        "y": 65,
+        "z": 5
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Mason"
+    },
+    {
+      "name": "wp_e_3",
+      "x": 76,
+      "y": 63,
+      "z": 2,
+      "anchor": {
+        "x": 76,
+        "y": 63,
+        "z": 2
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Flint"
+    },
+    {
+      "name": "wp_n_1",
+      "x": 1,
+      "y": 63,
+      "z": -45,
+      "anchor": {
+        "x": 1,
+        "y": 63,
+        "z": -45
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Gatherer"
+    },
+    {
+      "name": "wp_s_1",
+      "x": -1,
+      "y": 70,
+      "z": 24,
+      "anchor": {
+        "x": 0,
+        "y": 70,
+        "z": 25
+      },
+      "kind": "waypoint",
+      "named": false,
+      "owner": "Mason"
+    }
+  ],
+  "edges": [
+    {
+      "from": "frozen_north",
+      "to": "wp_n_1",
+      "length": 2.0
+    },
+    {
+      "from": "spruce-gate",
+      "to": "wp_e_2",
+      "length": 18.8
+    },
+    {
+      "from": "spruce-gate",
+      "to": "wp_e_3",
+      "length": 20.1
+    },
+    {
+      "from": "wp_e_1",
+      "to": "wp_e_2",
+      "length": 25.1
+    }
+  ],
+  "connected_components": [
+    [
+      "frozen_north",
+      "wp_n_1"
+    ],
+    [
+      "spruce-gate",
+      "wp_e_1",
+      "wp_e_2",
+      "wp_e_3"
+    ],
+    [
+      "wp_s_1"
+    ]
+  ],
+  "quadrants_covered": [
+    [
+      "NE",
+      "NW"
+    ],
+    [
+      "NE",
+      "SE"
+    ],
+    [
+      "SE"
+    ]
+  ],
+  "longest_path": [
+    "wp_e_1",
+    "wp_e_2",
+    "spruce-gate",
+    "wp_e_3"
+  ],
+  "longest_path_len": 64.0,
+  "frontier_nodes": [
+    "frozen_north",
+    "wp_e_1",
+    "wp_e_3",
+    "wp_n_1",
+    "wp_s_1"
+  ],
+  "named_frontier": [
+    "frozen_north"
+  ],
+  "summary": {
+    "node_count": 7,
+    "named_count": 2,
+    "waypoint_count": 5,
+    "edge_count": 4,
+    "component_count": 3,
+    "frontier_count": 5,
+    "named_frontier_count": 1,
+    "longest_path_len": 64.0,
+    "max_edge_step": 30.0,
+    "muster": [
+      0,
+      65,
+      0
+    ]
+  }
+}
