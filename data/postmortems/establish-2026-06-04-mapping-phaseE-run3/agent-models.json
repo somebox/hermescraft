@@ -1,0 +1,47 @@
+{
+  "defaults": {
+    "model": "deepseek/deepseek-v4-flash:exacto",
+    "provider": "openrouter"
+  },
+  "landfolk": {
+    "base_api_port": 3001
+  },
+  "auxiliary": {
+    "compression": {
+      "model": "google/gemini-2.5-flash-lite-preview-09-2025",
+      "provider": "openrouter"
+    }
+  },
+  "agents": {
+    "Gatherer": {
+      "model": "xiaomi/mimo-v2.5",
+      "provider": "openrouter",
+      "role": "gatherer",
+      "api_port": 3001
+    },
+    "Flint": {
+      "model": "xiaomi/mimo-v2.5",
+      "provider": "openrouter",
+      "role": "stone",
+      "api_port": 3002
+    },
+    "Mason": {
+      "model": "xiaomi/mimo-v2.5",
+      "provider": "openrouter",
+      "role": "builder",
+      "api_port": 3003
+    },
+    "Barley": {
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "provider": "openrouter",
+      "role": "food",
+      "api_port": 3004
+    },
+    "Steward": {
+      "model": "deepseek/deepseek-v4-flash:exacto",
+      "provider": "openrouter",
+      "role": "orchestrator",
+      "api_port": 3005
+    }
+  }
+}

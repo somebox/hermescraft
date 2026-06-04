@@ -1,0 +1,28 @@
+landfolk-ops ─ 2026-06-04 12:08
+────────────────────────────────────────────────────────────
+IN-FLIGHT (2)
+  mason      t_e43e5b4b  size S   runtime 1m    [MAP-PATH] edge_east → SE (60, 64, 20) · last: "[AUTO_STUCK] fp=0f9568e70daf: identical recent[] f"
+  gatherer   t_8c2a930d  size S   runtime 1m    [MAP-PATH] muster → S (15, 64, 35) lake landmark
+
+READY (0)
+  (none)
+
+NEEDS REVIEW (0)
+  (none)
+
+EPICS OPEN (0)
+  (none)
+
+RECENT (last 15m, 12)
+  12:07  gatherer   claimed  t_8c2a930d  [MAP-PATH] muster → S (15, 64, 35) l
+  12:07  gatherer   spawned  t_8c2a930d  [MAP-PATH] muster → S (15, 64, 35) l
+  12:07  mason      claimed  t_e43e5b4b  [MAP-PATH] edge_east → SE (60, 64, 2
+  12:07  mason      spawned  t_e43e5b4b  [MAP-PATH] edge_east → SE (60, 64, 2
+  12:07  gatherer   reclaimed t_8c2a930d  [MAP-PATH] muster → S (15, 64, 35) l
+  12:07  mason      reclaimed t_e43e5b4b  [MAP-PATH] edge_east → SE (60, 64, 2
+  12:07  mason      commented t_e43e5b4b  [MAP-PATH] edge_east → SE (60, 64, 2
+  12:07  flint      commented t_ba32d0c6  [RESCUE] gatherer pathfinder stuck a
+  12:06  gatherer   claimed  t_8c2a930d  [MAP-PATH] muster → S (15, 64, 35) l
+  12:06  gatherer   spawned  t_8c2a930d  [MAP-PATH] muster → S (15, 64, 35) l
+  12:06  mason      claimed  t_e43e5b4b  [MAP-PATH] edge_east → SE (60, 64, 2
+  12:06  mason      spawned  t_e43e5b4b  [MAP-PATH] edge_east → SE (60, 64, 2

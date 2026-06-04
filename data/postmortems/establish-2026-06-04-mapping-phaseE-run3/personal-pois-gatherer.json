@@ -1,0 +1,21 @@
+{
+  "lake_isle": {
+    "name": "lake_isle",
+    "x": 23,
+    "y": 63,
+    "z": 39,
+    "kind": "landmark",
+    "sign_at": {
+      "x": 30,
+      "y": 63,
+      "z": 32
+    },
+    "torch_at": null,
+    "note": "",
+    "agent_owner": "Gatherer",
+    "added_at": "2026-06-04T09:24:30.938Z",
+    "last_seen": "2026-06-04T09:24:30.938Z",
+    "last_torch_check": null,
+    "torch_missing_since": null
+  }
+}
