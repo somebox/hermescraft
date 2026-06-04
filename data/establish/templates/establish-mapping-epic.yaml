@@ -1,0 +1,41 @@
+# Rendered into [MAP:ARENA] epic body by scripts/establish-seed-cards.py.
+# Mapping mission counterpart to establish-epic.yaml.
+title: "[EPIC] [MAP:ARENA] Map this disc — name places, drop signs, mark POIs"
+assignee: steward
+initial_status: ready
+body: |
+  **Epic — mapping mission on proc-lab.** Fleet ranges to a {arena_radius}-block radius from muster, names landmarks, drops in-world signs at named places, and adds personal POIs at internal nav waypoints. You decompose / track / dispatch; do not mine or place.
+
+  Spawn: {spawn_x},{spawn_y},{spawn_z}
+  Muster: {muster_x},{muster_y},{muster_z}
+  Starter chest: {chest_x},{chest_y},{chest_z}
+  Arena radius: {arena_radius} blocks
+
+  **Tag:** this epic is identified by the literal `[MAP:ARENA]` token in the title — match on the tag, not the title.
+
+  **First cycle:** check `scripts/kanban board`. Four `[MAP]` quadrant cards seed unassigned; assign one per assignable worker (`scripts/roster.py --assignable`).
+
+  **Dispatch loop** (continuous, no "decide" gate):
+  1. Read `data/personal-pois-shared.json` (run `scripts/reconcile-pois.py --auto` if stale).
+  2. Identify the quadrant with the fewest POIs.
+  3. Dispatch the most idle worker to that quadrant via a new `[MAP] <quadrant>` card.
+  4. Track coverage in your memory: POIs per quadrant + max distance + chat-named places.
+
+  **Worker protocol** (in card body):
+   - `mc place_named_sign X Y Z "name\noptional 3 more lines"` at named landmarks (oak_sign + 15 spare per worker).
+   - `mc place_torch X Y Z` + `mc poi_add NAME --sign Sx Sy Sz --torch Tx Ty Tz` at internal waypoints (torch + 16 spare).
+   - `mc nearby_signs 32` BEFORE naming — don't re-name an existing sign.
+   - **Observe limitation:** `mc observe` only surfaces signs / POIs near you. Workers must call `mc marks`, `mc pois`, `mc nearby_signs` explicitly.
+
+  **Wrap-up (Steward judges):** when ≥{poi_target} POIs across ≥3 quadrants AND ≥{sign_target} named signs AND coverage_radius ≥{coverage_min}, chat "wrap up — coverage sufficient" and `kanban_complete` this epic. Operator stops fleet.
+
+  Mark / POI vocabulary:
+    Personal POI (per-bot, private by default):  creative free-form names ("spider hill", "balder ruins").
+    Fleet mark (shared via locations-base.json):  base_, lt_, chest_ — reserved for the explore mission; do not use for mapping POIs.
+
+  done_when:
+    - >= {poi_target} POIs in personal-pois-shared.json
+    - >= {sign_target} POIs have non-null sign_at
+    - >= 3 of 4 quadrants have ≥1 POI
+    - coverage_radius (max horizontal distance from muster) >= {coverage_min}
+    - Steward chat marker "wrap up — coverage sufficient" present

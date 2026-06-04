@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Seed [ESTABLISH:BASE] epic and optional [EXPLORE] worker cards from a map JSON."""
+"""Seed [ESTABLISH:BASE] epic and [EXPLORE] cards (default mission), or the
+[MAP:ARENA] epic and [MAP] cards (--mission mapping) from a map JSON."""
 from __future__ import annotations
 
 import argparse
@@ -25,11 +26,11 @@ def _triple(card: dict, key: str) -> tuple[int, int, int]:
     return int(raw[0]), int(raw[1]), int(raw[2])
 
 
-def context_from_map(card: dict) -> dict[str, str]:
+def context_from_map(card: dict, mission: str = "explore") -> dict[str, str]:
     sx, sy, sz = _triple(card, "spawn")
     mx, my, mz = _triple(card, "muster")
     cx, cy, cz = _triple(card, "starter_chest")
-    return {
+    ctx = {
         "spawn_x": str(sx),
         "spawn_y": str(sy),
         "spawn_z": str(sz),
@@ -40,6 +41,20 @@ def context_from_map(card: dict) -> dict[str, str]:
         "chest_y": str(cy),
         "chest_z": str(cz),
     }
+    if mission == "mapping":
+        # Arena radius surfaced for the [MAP:ARENA] epic body; pulled from
+        # the map JSON when present, otherwise default to the mapping
+        # scenario YAML's 64-block radius.
+        arena = card.get("arena") or {}
+        arena_radius = arena.get("radius", 64)
+        ctx.update({
+            "arena_radius": str(int(arena_radius)),
+            "quadrant_radius": str(int(arena_radius) - 14),  # ~50 of 64 for quadrant patrol
+            "poi_target": "8",
+            "sign_target": "4",
+            "coverage_min": "40",
+        })
+    return ctx
 
 
 def _run_kanban(args: list[str]) -> dict:
@@ -59,21 +74,43 @@ def _run_kanban(args: list[str]) -> dict:
     return {}
 
 
+_MISSION_FILES = {
+    "explore": {
+        "epic": "establish-epic.yaml",
+        "cards": "establish-explore-cards.yaml",
+        "card_key": "explore_card_ids",
+    },
+    "mapping": {
+        "epic": "establish-mapping-epic.yaml",
+        "cards": "establish-mapping-cards.yaml",
+        "card_key": "mapping_card_ids",
+    },
+}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--map", type=Path, required=True, help="Catalog map JSON")
     ap.add_argument(
+        "--mission",
+        choices=sorted(_MISSION_FILES),
+        default="explore",
+        help="Pick which epic + cards template set to seed (default: explore).",
+    )
+    ap.add_argument(
         "--explore-cards",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Pre-file four [EXPLORE] cards under the epic (default: on)",
+        help="Pre-file the worker cards under the epic (default: on). Despite the historical "
+             "name, this flag controls card seeding for whichever --mission is selected.",
     )
     args = ap.parse_args()
 
+    paths = _MISSION_FILES[args.mission]
     card = json.loads(args.map.read_text(encoding="utf-8"))
-    ctx = context_from_map(card)
+    ctx = context_from_map(card, mission=args.mission)
 
-    epic_tpl = gl.parse_yaml_simple(TEMPLATES / "establish-epic.yaml")
+    epic_tpl = gl.parse_yaml_simple(TEMPLATES / paths["epic"])
     title = epic_tpl["title"]
     body = gl.substitute(epic_tpl.get("body", ""), ctx)
 
@@ -88,11 +125,13 @@ def main() -> int:
     # them (kanban-worker-lanes.md "registered non-spawnable identifier").
     # Steward's continuous loop still finds the epic by tag — she doesn't
     # need to be its assignee to comment, create children, or mark it done.
+    # Mapping epic uses the same dispatcher-skip semantics — driven by the
+    # [MAP:ARENA] tag in the title.
     _run_kanban(["reassign", epic_id, "orchestrator-tracker"])
 
-    explore_ids: list[str] = []
+    card_ids: list[str] = []
     if args.explore_cards:
-        cards_doc = gl.parse_yaml_simple(TEMPLATES / "establish-explore-cards.yaml")
+        cards_doc = gl.parse_yaml_simple(TEMPLATES / paths["cards"])
         for entry in cards_doc.get("cards") or []:
             ctitle = entry["title"]
             cbody = gl.substitute(entry.get("body", ""), ctx)
@@ -117,9 +156,14 @@ def main() -> int:
             cid = str(created.get("id") or "")
             if not cid:
                 raise SystemExit(f"could not parse card id for {ctitle!r}")
-            explore_ids.append(cid)
+            card_ids.append(cid)
 
-    out = {"epic_id": epic_id, "explore_card_ids": explore_ids, "seed": card.get("seed")}
+    out = {
+        "epic_id": epic_id,
+        "mission": args.mission,
+        paths["card_key"]: card_ids,
+        "seed": card.get("seed"),
+    }
     print(json.dumps(out, indent=2))
     return 0
 

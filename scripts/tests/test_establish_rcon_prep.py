@@ -177,6 +177,85 @@ class PrepCommandsOverrideTest(unittest.TestCase):
         self.assertIn(" 65 ", grass, msg=f"grass floor should include Y=65; got {grass}")
 
 
+# ── mission branches (Phase B5) ───────────────────────────────────────
+
+
+class MappingMissionBranchesTest(unittest.TestCase):
+    """prep_commands + tp_worker_commands switch chest NBT, starter kit, and
+    lighting based on the --mission flag. Default `explore` must stay byte-
+    identical to the pre-Phase-B output; `mapping` adds signs / torches /
+    coal + dusk lighting (time 13000, dayCycle true)."""
+
+    def _card(self) -> dict:
+        return {
+            "spawn": [4, 96, 24],
+            "muster": [4, 96, 24],
+            "starter_chest": [5, 95, 24],
+        }
+
+    # ── prep_commands lighting ──
+
+    def test_explore_default_keeps_day_lighting(self):
+        cmds = erp.prep_commands(self._card())
+        joined = "\n".join(cmds)
+        self.assertIn("time set day", joined)
+        self.assertIn("gamerule doDaylightCycle false", joined)
+        self.assertNotIn("time set 13000", joined)
+
+    def test_mapping_switches_to_dusk_with_cycle(self):
+        cmds = erp.prep_commands(self._card(), mission="mapping")
+        joined = "\n".join(cmds)
+        self.assertIn("time set 13000", joined,
+                      msg="mapping should set time to dusk (13000)")
+        self.assertIn("gamerule doDaylightCycle true", joined,
+                      msg="mapping should re-enable the daylight cycle so dusk progresses")
+        self.assertNotIn("time set day", joined)
+
+    # ── prep_commands chest NBT ──
+
+    def test_explore_chest_keeps_basic_kit(self):
+        cmds = erp.prep_commands(self._card())
+        merge = next(c for c in cmds if "data merge" in c)
+        # Explore chest: 3 iron tools + 4 bread, no signs/torches/coal.
+        self.assertIn("iron_pickaxe", merge)
+        self.assertIn("bread", merge)
+        self.assertNotIn("oak_sign", merge)
+        self.assertNotIn("torch", merge)
+        self.assertNotIn("coal", merge)
+
+    def test_mapping_chest_adds_signs_torches_coal(self):
+        cmds = erp.prep_commands(self._card(), mission="mapping")
+        merge = next(c for c in cmds if "data merge" in c)
+        self.assertIn('id:"minecraft:oak_sign",Count:16b', merge,
+                      msg="mapping chest should hold 16 oak_sign")
+        self.assertIn('id:"minecraft:torch",Count:64b', merge,
+                      msg="mapping chest should hold 64 torches")
+        self.assertIn('id:"minecraft:coal",Count:32b', merge,
+                      msg="mapping chest should hold 32 coal for torch crafting")
+        # Bread bumped from 4 to 16 for the longer ranging budget.
+        self.assertIn('id:"minecraft:bread",Count:16b', merge)
+
+    # ── tp_worker_commands starter kit ──
+
+    def test_explore_starter_kit_unchanged(self):
+        cmds = erp.tp_worker_commands(self._card(), ["Flint"])
+        # Joined view for substring assertions.
+        joined = "\n".join(cmds)
+        self.assertIn("minecraft:iron_pickaxe", joined)
+        self.assertIn("minecraft:crafting_table", joined)
+        # No signs/torches in explore worker starter kit.
+        self.assertNotIn("minecraft:oak_sign", joined)
+        self.assertNotIn("minecraft:torch", joined)
+
+    def test_mapping_starter_kit_adds_4_signs_16_torches(self):
+        cmds = erp.tp_worker_commands(self._card(), ["Flint"], mission="mapping")
+        joined = "\n".join(cmds)
+        self.assertIn("minecraft:oak_sign 4", joined,
+                      msg="mapping starter kit should give 4 oak_sign")
+        self.assertIn("minecraft:torch 16", joined,
+                      msg="mapping starter kit should give 16 torches")
+
+
 # ── apply_spawn_y_override (map JSON patch) ───────────────────────────
 
 
@@ -279,6 +358,252 @@ class ReadRconConfigTest(unittest.TestCase):
             self.assertEqual(con, "mc-test")
         finally:
             path.unlink()
+
+
+# ── check_surface_safe (phase-14 fix: refuse water/lava spawns) ────────
+
+
+class _FakeRconClient:
+    """Test double that returns canned "Test passed/failed" responses
+    keyed on the (x,y,z,block_id) tuple in the `execute if block` cmd."""
+
+    def __init__(self, matches=None):
+        # matches: iterable of (x, y, z, block_id) — those return "Test passed",
+        # everything else returns "Test failed".
+        self.matches = set(matches or [])
+        self.calls = []
+
+    def run(self, cmd: str) -> str:
+        self.calls.append(cmd)
+        # Parse the trailing "<x> <y> <z> <block_id>" from
+        # `execute in <world> if block <x> <y> <z> <block_id>`.
+        parts = cmd.split()
+        try:
+            x, y, z = int(parts[-4]), int(parts[-3]), int(parts[-2])
+            block_id = parts[-1]
+        except (ValueError, IndexError):
+            return "Test failed"
+        if (x, y, z, block_id) in self.matches:
+            return "Test passed"
+        return "Test failed"
+
+
+class CheckSurfaceSafeTest(unittest.TestCase):
+    """Phase-14 (2026-06-03): the surface probe alone can't tell water
+    from land — `find_surface_heights` stops at any non-air block. On
+    seed-1001 islands the probe returned feet Y at the water surface;
+    bots TP'd into the sea and drowned. The post-resolve safety check
+    runs `execute if block` predicates against water + lava on the
+    standing-on cell (sy-1) AND the feet cell (sy). Anything matching
+    causes a descriptive string to be returned; clean land returns None."""
+
+    def test_clean_land_returns_none(self):
+        client = _FakeRconClient()  # no matches → all "Test failed"
+        result = erp.check_surface_safe(
+            client, world="proc-lab", sx=4, sy=80, sz=24,
+        )
+        self.assertIsNone(result)
+        # Check we actually ran the right predicates: y-1 + y, water + lava.
+        self.assertEqual(len(client.calls), 4)
+
+    def test_water_on_standing_cell_is_reported(self):
+        # Standing-on at y-1: water
+        client = _FakeRconClient(matches={(4, 79, 24, "minecraft:water")})
+        result = erp.check_surface_safe(
+            client, world="proc-lab", sx=4, sy=80, sz=24,
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("water", result)
+        self.assertIn("standing-on", result)
+        self.assertIn("(4,79,24)", result)
+
+    def test_water_on_feet_cell_is_reported(self):
+        # Feet at y: water — the seed-1001 case where probe stopped at
+        # the water surface.
+        client = _FakeRconClient(matches={(4, 64, 24, "minecraft:water")})
+        result = erp.check_surface_safe(
+            client, world="proc-lab", sx=4, sy=64, sz=24,
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("water", result)
+        self.assertIn("feet-cell", result)
+        self.assertIn("(4,64,24)", result)
+
+    def test_lava_is_also_caught(self):
+        client = _FakeRconClient(matches={(0, 50, 0, "minecraft:lava")})
+        result = erp.check_surface_safe(
+            client, world="proc-lab", sx=0, sy=51, sz=0,
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("lava", result)
+
+    def test_short_circuit_on_first_match(self):
+        # Standing-on water + feet lava: first match wins (standing-on water).
+        client = _FakeRconClient(matches={
+            (4, 79, 24, "minecraft:water"),
+            (4, 80, 24, "minecraft:lava"),
+        })
+        result = erp.check_surface_safe(
+            client, world="proc-lab", sx=4, sy=80, sz=24,
+        )
+        self.assertIn("water", result)
+        self.assertIn("standing-on", result)
+
+
+# ── scan_neighborhood_safety (phase-15: 1-cell check missed an island) ──
+
+
+def _land_heights_fn(land_y):
+    """Stub `find_surface_heights` returning the same Y for every column."""
+
+    def fn(client, world, columns, **_kwargs):
+        return {(x, z): land_y for (x, z) in columns}
+
+    return fn
+
+
+def _mixed_heights_fn(water_cells, *, land_y, water_y=63):
+    """Stub returning ``water_y`` for cells in ``water_cells``, else ``land_y``."""
+    water_set = set(water_cells)
+
+    def fn(client, world, columns, **_kwargs):
+        return {
+            (x, z): (water_y if (x, z) in water_set else land_y)
+            for (x, z) in columns
+        }
+
+    return fn
+
+
+def _none_heights_fn(none_cells, *, land_y):
+    none_set = set(none_cells)
+
+    def fn(client, world, columns, **_kwargs):
+        return {
+            (x, z): (None if (x, z) in none_set else land_y) for (x, z) in columns
+        }
+
+    return fn
+
+
+class ScanNeighborhoodSafetyTest(unittest.TestCase):
+    """Phase-15 (2026-06-03): the 1-cell ``check_surface_safe`` passed at
+    Y=201 because a single tall stone column wasn't water — but the
+    surrounding terrain was open ocean and bots fell 138 blocks. The
+    neighborhood scan probes a (2*radius+1)² grid and classifies each
+    column as land/water/lava/cliff/air."""
+
+    def test_all_land_returns_100_pct(self):
+        client = _FakeRconClient()  # everything Test failed → no water/lava
+        scan = erp.scan_neighborhood_safety(
+            client, world="proc-lab", sx=0, sy=80, sz=0, radius=2,
+            heights_fn=_land_heights_fn(80),
+        )
+        self.assertEqual(scan["columns"], 25)
+        self.assertEqual(scan["land"], 25)
+        self.assertEqual(scan["water"], 0)
+        self.assertEqual(scan["land_pct"], 100.0)
+
+    def test_water_cells_classified(self):
+        # 5 cells along the edge are water; rest land. Water is detected
+        # at block_y = surface_y - 1, e.g. 79 here.
+        water_cells = [(2, -2), (2, -1), (2, 0), (2, 1), (2, 2)]
+        client = _FakeRconClient(matches={
+            (x, 79, z, "minecraft:water") for (x, z) in water_cells
+        })
+        scan = erp.scan_neighborhood_safety(
+            client, world="proc-lab", sx=0, sy=80, sz=0, radius=2,
+            heights_fn=_land_heights_fn(80),
+        )
+        self.assertEqual(scan["water"], 5)
+        self.assertEqual(scan["land"], 20)
+        self.assertAlmostEqual(scan["land_pct"], 80.0)
+
+    def test_cliff_cells_flagged_when_y_outside_window(self):
+        # One cell sits 30 blocks below the centre — that's a cliff edge,
+        # not a viable spawn neighbour.
+        cliff_cells = [(2, 2)]
+        client = _FakeRconClient()
+        scan = erp.scan_neighborhood_safety(
+            client, world="proc-lab", sx=0, sy=80, sz=0, radius=2,
+            heights_fn=_mixed_heights_fn(cliff_cells, land_y=80, water_y=50),
+        )
+        self.assertEqual(scan["cliff"], 1)
+        self.assertEqual(scan["land"], 24)
+        self.assertEqual(scan["water"], 0)
+
+    def test_air_columns_counted(self):
+        # find_surface_heights returns None for OOB / unloaded columns.
+        none_cells = [(-2, -2), (-2, -1), (-2, 0)]
+        client = _FakeRconClient()
+        scan = erp.scan_neighborhood_safety(
+            client, world="proc-lab", sx=0, sy=80, sz=0, radius=2,
+            heights_fn=_none_heights_fn(none_cells, land_y=80),
+        )
+        self.assertEqual(scan["air"], 3)
+        self.assertEqual(scan["land"], 22)
+
+    def test_phase_15_stone_column_in_ocean_is_rejected(self):
+        # The phase-15 case: only the centre column is solid; all 24
+        # neighbours are water at sea level.
+        non_centre = [(x, z) for x in range(-2, 3) for z in range(-2, 3) if (x, z) != (0, 0)]
+        client = _FakeRconClient(matches={
+            (x, 62, z, "minecraft:water") for (x, z) in non_centre
+        })
+        scan = erp.scan_neighborhood_safety(
+            client, world="proc-lab", sx=0, sy=201, sz=0, radius=2,
+            heights_fn=_mixed_heights_fn(non_centre, land_y=201, water_y=63),
+        )
+        # Centre is land at Y=201; 24 neighbours have water_y=63 which
+        # is >12 blocks below 201 → they're flagged as cliff first
+        # (cliff classification short-circuits the water check). Either
+        # way the patch is hostile and assert_neighborhood_land should
+        # reject it.
+        self.assertEqual(scan["land"], 1)
+        self.assertEqual(scan["cliff"], 24)
+        self.assertEqual(scan["land_pct"], 4.0)
+
+
+class AssertNeighborhoodLandTest(unittest.TestCase):
+    """The high-level gate ``assert_neighborhood_land`` returns None for
+    safe sites and a one-line string for hostile ones."""
+
+    def test_all_land_passes(self):
+        client = _FakeRconClient()
+        result = erp.assert_neighborhood_land(
+            client, world="proc-lab", sx=0, sy=80, sz=0,
+            radius=2, min_land_pct=80.0,
+            heights_fn=_land_heights_fn(80),
+        )
+        self.assertIsNone(result)
+
+    def test_at_threshold_passes(self):
+        # Exactly 80% land → at threshold → passes.
+        water_cells = [(2, z) for z in range(-2, 3)]  # 5 cells = 20%
+        client = _FakeRconClient(matches={
+            (x, 79, z, "minecraft:water") for (x, z) in water_cells
+        })
+        result = erp.assert_neighborhood_land(
+            client, world="proc-lab", sx=0, sy=80, sz=0,
+            radius=2, min_land_pct=80.0,
+            heights_fn=_land_heights_fn(80),
+        )
+        self.assertIsNone(result)
+
+    def test_below_threshold_fails_with_descriptive_string(self):
+        # 6/25 = 24% water; 76% land < 80% threshold → reject.
+        water_cells = [(2, z) for z in range(-2, 3)] + [(1, 2)]
+        client = _FakeRconClient(matches={
+            (x, 79, z, "minecraft:water") for (x, z) in water_cells
+        })
+        result = erp.assert_neighborhood_land(
+            client, world="proc-lab", sx=0, sy=80, sz=0,
+            radius=2, min_land_pct=80.0,
+            heights_fn=_land_heights_fn(80),
+        )
+        self.assertIsNotNone(result)
+        self.assertIn("water=6", result)
+        self.assertIn("land=19", result)
 
 
 if __name__ == "__main__":

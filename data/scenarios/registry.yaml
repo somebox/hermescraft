@@ -1,0 +1,137 @@
+# Scenario registry v2 — topics, terrain profiles, maps (catalog JSON).
+#
+# Terminology: docs/features/procedural-testing-model.md
+#
+# Refresh:  scripts/scenario-pools.sh refresh --only mining.plains_iron
+# Smoke:    scripts/scenario-pools.sh refresh --only smoke
+# Pick map: scripts/scenario-pools.sh map <topic>.<terrain>
+
+version: 2
+
+defaults:
+  server: ./server.local.yaml
+  find:
+    solutions: 3
+    max_seeds: 80
+
+smoke:
+  id: smoke
+  description: Map engine loop check (thin gates, fast find)
+  requirements: requirements/scenario_homestead_smoke.yaml
+  catalog: catalog/smoke/map_engine
+  find: { solutions: 1, max_seeds: 15 }
+  tags: [smoke, ci]
+  legacy_variant_id: scenario_homestead_smoke
+
+topics:
+  mining:
+    description: Ore, caves, surface mining, chop/scout
+    playbooks: [wood.chop_tall_tree, scout.resource]
+    skills: [minecraft-mining]
+    anchors: [spawn, muster, iron_view]
+    terrains:
+      - id: plains_iron
+        requirements: requirements/scenario_resource_plains_iron.yaml
+        catalog: catalog/topics/mining/plains_iron
+        find: { solutions: 5, max_seeds: 120 }
+        legacy_variant_id: scenario_resource_plains_iron
+      - id: forest_edge
+        requirements: requirements/scenario_resource_forest_edge.yaml
+        catalog: catalog/topics/mining/forest_edge
+        legacy_variant_id: scenario_resource_forest_edge
+      - id: cave_heavy
+        requirements: requirements/scenario_resource_cave_heavy.yaml
+        catalog: catalog/topics/mining/cave_heavy
+        legacy_variant_id: scenario_resource_cave_heavy
+
+  farming:
+    description: Crops, pens, passive mobs
+    playbooks: [farm.passive_mob_chicken]
+    skills: [minecraft-farming]
+    anchors: [spawn, muster, farm_patch, pen_corner]
+    terrains:
+      - id: open
+        requirements: requirements/scenario_homestead_open.yaml
+        catalog: catalog/topics/farming/open
+        legacy_variant_id: scenario_homestead_open
+      - id: forest_clearing
+        requirements: requirements/scenario_homestead_forest.yaml
+        catalog: catalog/topics/farming/forest_clearing
+        legacy_variant_id: scenario_homestead_forest
+
+  fishing:
+    description: Shore fishing, water access
+    playbooks: []
+    skills: [minecraft-survival]
+    anchors: [spawn, muster, shore_cast]
+    terrains:
+      - id: river_shore
+        requirements: requirements/scenario_homestead_river.yaml
+        catalog: catalog/topics/fishing/river_shore
+        legacy_variant_id: scenario_homestead_river
+
+  building:
+    description: Towers, platforms on natural flat pads
+    playbooks: [build.tower_vertical]
+    skills: [minecraft-building]
+    anchors: [spawn, muster, build_pad, watch_post]
+    terrains:
+      - id: flat_pad
+        requirements: requirements/scenario_worksite_flat.yaml
+        catalog: catalog/topics/building/flat_pad
+        agent_test_ref: data/agent-tests/topics/building/flat-pad-watch-post.yaml
+        migration_note: legacy tower-platform-3x3 still on landfolk-test; use flat-pad-watch-post on proc-lab
+        legacy_variant_id: scenario_worksite_flat
+      - id: gentle_hill
+        requirements: requirements/scenario_worksite_hill.yaml
+        catalog: catalog/topics/building/gentle_hill
+        legacy_variant_id: scenario_worksite_hill
+
+  scouting:
+    description: Perception drills — climb to a vantage point, name what's visible
+    playbooks: []
+    skills: [minecraft-navigation, minecraft-mining]
+    anchors: [spawn, muster, overlook, return_post]
+    terrains:
+      - id: overlook
+        requirements: requirements/scenario_scout_overlook.yaml
+        catalog: catalog/topics/scouting/overlook
+        agent_test_ref: data/agent-tests/topics/scouting/overlook-survey.yaml
+        find: { solutions: 1, max_seeds: 30 }
+
+  establishment:
+    description: Explore unknown terrain; Steward picks base + builds, OR fleet maps the disc
+    playbooks: []
+    # minecraft-mapping is mapping-terrain-specific. Explore agents will
+    # silently ignore it. Per-terrain skill overrides land if registry
+    # lint ever rejects topic-level union.
+    skills: [minecraft-scouting-site, minecraft-navigation, minecraft-building, minecraft-mapping]
+    anchors: [spawn, muster, starter_chest]
+    terrains:
+      - id: explore
+        requirements: requirements/scenario_establish_explore.yaml
+        catalog: catalog/topics/establishment/explore
+        find: { solutions: 1, max_seeds: 40 }
+      - id: mapping
+        requirements: requirements/scenario_establish_mapping.yaml
+        catalog: catalog/topics/establishment/mapping
+        find: { solutions: 1, max_seeds: 40 }
+
+  defense:
+    description: Base defense drills (harness mobs until P4)
+    playbooks: []
+    skills: [minecraft-combat]
+    anchors: [spawn, muster, build_pad, breach_point]
+    terrains:
+      - id: flat_ring
+        requirements: requirements/scenario_worksite_defense.yaml
+        catalog: catalog/topics/defense/flat_ring
+        prep_notes: |
+          Harness: partial wall at build_pad, summons at breach_point, sword at muster.
+        legacy_variant_id: scenario_worksite_defense
+
+# Future agent-test block (MC-T9):
+# procedural_map:
+#   topic: mining
+#   terrain: plains_iron
+#   pick: random

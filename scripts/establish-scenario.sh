@@ -28,6 +28,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 VARIANT="${VARIANT:-establishment.explore}"
+# MISSION is derived from the VARIANT suffix — single source of truth.
+# `establishment.explore` → "explore"; `establishment.mapping` → "mapping".
+# Don't accept a standalone MISSION= env override; that path used to allow
+# accidental MISSION=mapping VARIANT=establishment.explore mismatches.
+MISSION="${VARIANT##*.}"
 SERVER="${SERVER:-server.local.yaml}"
 AUTO_REUSE="${AUTO_REUSE:-1}"
 MATERIALIZE="${MATERIALIZE:-1}"
@@ -186,7 +191,7 @@ sys.exit(0 if seed_matches_loaded(cfg.world_name, sys.argv[1]) else 1)
 fi
 
 echo "== rcon prep (peaceful + starter chest) =="
-"$PY" scripts/establish-rcon-prep.py --map "$MAP_JSON" --mode world
+"$PY" scripts/establish-rcon-prep.py --map "$MAP_JSON" --mode world --mission "$MISSION"
 
 WORKERS="${WORKERS:-steward,gatherer,flint,mason}"
 
@@ -223,7 +228,7 @@ for wk in "${_WK[@]}"; do
 done
 
 echo "== tp workers into proc-lab @ muster + starter inventory =="
-"$PY" scripts/establish-rcon-prep.py --map "$MAP_JSON" --mode tp_workers --workers "$WORKERS"
+"$PY" scripts/establish-rcon-prep.py --map "$MAP_JSON" --mode tp_workers --workers "$WORKERS" --mission "$MISSION"
 
 # Settle so positions/inventories propagate to the bot HTTP layer.
 sleep 4
@@ -266,8 +271,8 @@ gl.archive_run_state(rid)
 gl.reinit_kanban_board()
 " "$RUN_ID"
 
-echo "== seed kanban epic + explore cards =="
-"$PY" scripts/establish-seed-cards.py --map "$MAP_JSON"
+echo "== seed kanban epic + worker cards (mission=$MISSION) =="
+"$PY" scripts/establish-seed-cards.py --map "$MAP_JSON" --mission "$MISSION"
 
 LOG_DIR="${LOG_DIR:-/tmp/hermescraft}"
 mkdir -p "$LOG_DIR"

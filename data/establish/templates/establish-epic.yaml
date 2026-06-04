@@ -1,0 +1,30 @@
+# Rendered into [ESTABLISH:BASE] epic body by scripts/establish-seed-cards.py
+title: "[EPIC] [ESTABLISH:BASE] Establish home base"
+assignee: steward
+initial_status: ready
+body: |
+  **Epic — exploration-first base on proc-lab.** You decompose/track worker cards; do not mine or place.
+
+  Spawn: {spawn_x},{spawn_y},{spawn_z}
+  Muster: {muster_x},{muster_y},{muster_z}
+  Starter chest: {chest_x},{chest_y},{chest_z}
+
+  Mission: fleet explores the disc (unknown terrain), you pick a defensible flat site, Mason builds a 9×9 cobble pad.
+
+  **First cycle:** run `scripts/reconcile-marks.py --auto`, then `scripts/kanban board`. If explore cards are not yet `ready`, file them from `data/establish/templates/establish-explore-cards.yaml` (four sectors, `--for` this epic only — never `--after` this epic).
+
+  **Decide:** when explore cards complete, comment on this epic with `base_anchor: X,Y,Z` + rationale; pin `base_anchor` mark; `scripts/kanban add` `[CONSTRUCT] Pad 9x9 cobble` for mason with `--at` and coords **in the card body**.
+
+  Mark vocabulary:
+    lt_<resource>_<dir>     resources (lt_wood_ne, …)
+    candidate_pad_<name>    candidate flats (note defense + biome)
+    base_anchor             final site (Steward pins after decide)
+
+  done_when:
+    - >=4 [EXPLORE] cards done
+    - >=2 candidate_pad_* marks OR comment "coverage sufficient, sparse"
+    - base_anchor pinned (shared after reconcile)
+    - [CONSTRUCT] cobble pad card done
+    - 9×9 cobble pad at base_anchor (>=80 cells)
+
+  Criteria for base site: flat/level, defensible (height/choke), central to lt_* resources found.

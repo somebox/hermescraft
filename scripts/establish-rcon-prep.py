@@ -28,6 +28,18 @@ ROOT = Path(__file__).resolve().parents[1]
 # wins and the substitution is logged loudly.
 SURFACE_PROBE_DELTA_TOLERANCE = 2
 
+# Phase-14 fix (2026-06-03): the probe at find_surface_heights stops at
+# the first non-air block — water counts as non-air, so an oceanic seed
+# returns feet Y at the water surface, bots TP into the sea and drown.
+# After resolve we explicitly verify the standing-on cell + feet cell
+# aren't water/lava, and refuse to /fill if they are. Seed 1001 phase-14
+# evidence: all four workers tp'd to (4,64,24), Flint trapped underwater
+# at (-3,63,20) taking drowning damage before the operator intervened.
+_UNSAFE_SURFACE_BLOCKS = (
+    "minecraft:water",
+    "minecraft:lava",
+)
+
 # Default rcon config when server.local.yaml is unreadable.
 _DEFAULT_SSH_HOST = "ubuntu-host"
 _DEFAULT_CONTAINER = "minecraft"
@@ -123,6 +135,148 @@ def resolve_spawn_y(catalog_sy: int, probed_sy: Optional[int],
     return probed_sy
 
 
+def check_surface_safe(client, *, world: str,
+                        sx: int, sy: int, sz: int) -> Optional[str]:
+    """Verify (sx, sy, sz) is a safe land spawn cell after surface probe.
+
+    Pure-ish: takes an rcon client (real or mock) and runs `execute if
+    block` predicates. Returns None on safe, else a string describing
+    the offending block + cell. The check covers two cells:
+
+      - (sx, sy-1, sz) — the standing-on block. Water here drowns the
+        bot on TP (feet at sy submerged); lava burns it.
+      - (sx, sy,   sz) — the feet cell. Water here means the resolved
+        Y was the water surface, not a true land surface.
+
+    Both are inspected against `_UNSAFE_SURFACE_BLOCKS`. Each predicate
+    that matches returns "Test passed" from Paper's command bridge.
+    """
+    for cy in (sy - 1, sy):
+        for block_id in _UNSAFE_SURFACE_BLOCKS:
+            result = client.run(
+                f"execute in {world} if block {sx} {cy} {sz} {block_id}"
+            )
+            if "Test passed" in result:
+                kind = "standing-on" if cy == sy - 1 else "feet-cell"
+                short_id = block_id.split(":", 1)[-1]
+                return f"{short_id} at {kind} cell ({sx},{cy},{sz})"
+    return None
+
+
+def scan_neighborhood_safety(client, *, world: str,
+                              sx: int, sy: int, sz: int,
+                              radius: int = 2,
+                              heights_fn=None) -> dict:
+    """Probe a (2*radius+1)² grid around (sx, sz) and classify each column.
+
+    Phase-15 (2026-06-03) evidence: probe at (4,24) returned Y=201 (a
+    single tall stone column) but the SURROUNDING terrain was open
+    ocean. The 1-cell `check_surface_safe` passed; bots fell 138 blocks
+    to the seafloor and ended up Z+50 looking for land. The 1-cell
+    check needs a neighborhood scan to refuse "spawn on a stone pillar
+    surrounded by sea" cases.
+
+    For each column (sx+dx, sz+dz) in the patch:
+      - probe surface Y via mapcatalog.find_surface_heights
+      - inspect the surface block (probed_y - 1) for water/lava
+      - classify as: land | water | lava | air (probe returned None)
+
+    Returns a dict with counts + land_pct + a per-column classification
+    map (only present cells, keyed by (x, z)). A column whose probed Y
+    differs from the centre by more than 12 is also flagged as
+    `cliff` to surface "spawn at a peak surrounded by drops" cases.
+    """
+    if heights_fn is None:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from mapcatalog.metrics import find_surface_heights as heights_fn
+
+    columns = [
+        (sx + dx, sz + dz)
+        for dx in range(-radius, radius + 1)
+        for dz in range(-radius, radius + 1)
+    ]
+    # Match probe_surface_y's window (y_hi=200, y_lo=48) so the scan
+    # sees ground, not tree canopies. find_surface_heights' default
+    # y_hi=319 catches leaves as the "surface" and classifies every
+    # column as a cliff edge against the ground-level sy from the
+    # original probe. Stubs in tests accept **kwargs and ignore these.
+    heights = heights_fn(client, world, columns, y_hi=200, y_lo=48)
+
+    classification: dict[tuple[int, int], str] = {}
+    counts = {"land": 0, "water": 0, "lava": 0, "air": 0, "cliff": 0}
+    for (x, z), feet_y in heights.items():
+        if feet_y is None:
+            classification[(x, z)] = "air"
+            counts["air"] += 1
+            continue
+        # Cliff classification: any column whose feet_y is more than
+        # 12 blocks above or below the centre is unstable to spawn
+        # near — workers fall when they step off the pillar.
+        if abs(feet_y - sy) > 12:
+            classification[(x, z)] = "cliff"
+            counts["cliff"] += 1
+            continue
+        # Surface block sits at feet_y - 1 (the cell the bot stands on).
+        block_y = feet_y - 1
+        is_water = "Test passed" in client.run(
+            f"execute in {world} if block {x} {block_y} {z} minecraft:water"
+        )
+        if is_water:
+            classification[(x, z)] = "water"
+            counts["water"] += 1
+            continue
+        is_lava = "Test passed" in client.run(
+            f"execute in {world} if block {x} {block_y} {z} minecraft:lava"
+        )
+        if is_lava:
+            classification[(x, z)] = "lava"
+            counts["lava"] += 1
+            continue
+        classification[(x, z)] = "land"
+        counts["land"] += 1
+
+    total = sum(counts.values())
+    land_pct = (counts["land"] / total * 100.0) if total else 0.0
+    return {
+        "columns": total,
+        "radius": radius,
+        "land": counts["land"],
+        "water": counts["water"],
+        "lava": counts["lava"],
+        "air": counts["air"],
+        "cliff": counts["cliff"],
+        "land_pct": land_pct,
+        "heights": heights,
+        "classification": classification,
+    }
+
+
+def assert_neighborhood_land(client, *, world: str,
+                              sx: int, sy: int, sz: int,
+                              radius: int = 2,
+                              min_land_pct: float = 80.0,
+                              heights_fn=None) -> Optional[str]:
+    """High-level gate using ``scan_neighborhood_safety``.
+
+    Returns None if the neighborhood has at least ``min_land_pct``
+    land columns, else a one-line string suitable for SystemExit.
+    """
+    scan = scan_neighborhood_safety(
+        client, world=world, sx=sx, sy=sy, sz=sz, radius=radius,
+        heights_fn=heights_fn,
+    )
+    if scan["land_pct"] < min_land_pct:
+        return (
+            f"neighborhood scan failed: only {scan['land']}/{scan['columns']} "
+            f"columns are land ({scan['land_pct']:.0f}%; need ≥{min_land_pct:.0f}%) "
+            f"in a {2*radius+1}x{2*radius+1} patch around ({sx},{sz}). "
+            f"Distribution: land={scan['land']} water={scan['water']} "
+            f"lava={scan['lava']} air={scan['air']} cliff={scan['cliff']}."
+        )
+    return None
+
+
 def _triple(card: dict, key: str) -> tuple[int, int, int]:
     placements = card.get("placements") or {}
     raw = card.get(key) or placements.get(key)
@@ -164,7 +318,8 @@ def apply_spawn_y_override(card: dict, resolved_sy: int) -> None:
 
 
 def prep_commands(card: dict, *, world: str = "proc-lab",
-                   spawn_y_override: Optional[int] = None) -> list[str]:
+                   spawn_y_override: Optional[int] = None,
+                   mission: str = "explore") -> list[str]:
     """Build the rcon command batch. `spawn_y_override` (when provided)
     replaces the catalog spawn Y for fill, setworldspawn AND chest
     placement — the chest's vertical offset from spawn (whatever it is
@@ -192,19 +347,49 @@ def prep_commands(card: dict, *, world: str = "proc-lab",
     else:
         sy = catalog_sy
         cy = catalog_cy
-    items_nbt = (
-        "{Items:["
-        '{Slot:0b,id:"minecraft:iron_pickaxe",Count:1b},'
-        '{Slot:1b,id:"minecraft:iron_axe",Count:1b},'
-        '{Slot:2b,id:"minecraft:iron_shovel",Count:1b},'
-        '{Slot:3b,id:"minecraft:bread",Count:4b}'
-        "]}"
-    )
+    if mission == "mapping":
+        # Mapping mission: bulk signs + torches in the shared chest so the
+        # fleet can equip without returning to base after the first round.
+        # Coal blocks let workers craft replacement torches mid-run.
+        items_nbt = (
+            "{Items:["
+            '{Slot:0b,id:"minecraft:iron_pickaxe",Count:1b},'
+            '{Slot:1b,id:"minecraft:iron_axe",Count:1b},'
+            '{Slot:2b,id:"minecraft:iron_shovel",Count:1b},'
+            '{Slot:3b,id:"minecraft:bread",Count:16b},'
+            '{Slot:4b,id:"minecraft:oak_sign",Count:16b},'
+            '{Slot:5b,id:"minecraft:torch",Count:64b},'
+            '{Slot:6b,id:"minecraft:coal",Count:32b}'
+            "]}"
+        )
+    else:
+        items_nbt = (
+            "{Items:["
+            '{Slot:0b,id:"minecraft:iron_pickaxe",Count:1b},'
+            '{Slot:1b,id:"minecraft:iron_axe",Count:1b},'
+            '{Slot:2b,id:"minecraft:iron_shovel",Count:1b},'
+            '{Slot:3b,id:"minecraft:bread",Count:4b}'
+            "]}"
+        )
+    # Lighting: explore stays full-day (peaceful + day, dayCycle off).
+    # Mapping wants dusk — `time set 13000` is right at sunset, and we let
+    # the cycle run so workers see the dim shift. Mob spawning is still
+    # off, so dusk just provides the visual + lighting context without
+    # hostiles.
+    if mission == "mapping":
+        lighting_cmds = [
+            f"execute in {world} run gamerule doDaylightCycle true",
+            f"execute in {world} run time set 13000",
+        ]
+    else:
+        lighting_cmds = [
+            f"execute in {world} run gamerule doDaylightCycle false",
+            f"execute in {world} run time set day",
+        ]
     return [
         f"execute in {world} run difficulty peaceful",
         f"execute in {world} run gamerule doMobSpawning false",
-        f"execute in {world} run gamerule doDaylightCycle false",
-        f"execute in {world} run time set day",
+        *lighting_cmds,
         f"execute in {world} run kill @e[type=!player]",
         # Spawn-area cleanup (Phase 9 PR-H): clears residual pits in a
         # 25×25 surface around spawn and re-floors with grass. Run-5 evidence:
@@ -221,7 +406,8 @@ def prep_commands(card: dict, *, world: str = "proc-lab",
     ]
 
 
-def tp_worker_commands(card: dict, workers: list[str], *, world: str = "proc-lab") -> list[str]:
+def tp_worker_commands(card: dict, workers: list[str], *, world: str = "proc-lab",
+                        mission: str = "explore") -> list[str]:
     """Move each worker into the proc-lab disc and seed starter inventory.
 
     Order matters: clear → tp → give. Each worker lands at muster with the
@@ -236,14 +422,29 @@ def tp_worker_commands(card: dict, workers: list[str], *, world: str = "proc-lab
     # SW-quadrant fan: spawn, S, W, SW — relief at the spawn neighborhood
     # rises N+/E+, drops S-/W-, so stay in the downhill half.
     offsets = [(0, 0), (0, 1), (-1, 0), (-1, 1), (0, 2), (-2, 0)]
-    starter_kit = [
-        ("minecraft:iron_pickaxe", 1),
-        ("minecraft:iron_axe", 1),
-        ("minecraft:iron_shovel", 1),
-        ("minecraft:bread", 16),
-        ("minecraft:oak_log", 8),
-        ("minecraft:crafting_table", 1),
-    ]
+    if mission == "mapping":
+        # Workers carry 4 signs + 16 torches at spawn so the first round of
+        # naming can start immediately. The shared chest holds the bulk
+        # restock (16 signs + 64 torches) when they return.
+        starter_kit = [
+            ("minecraft:iron_pickaxe", 1),
+            ("minecraft:iron_axe", 1),
+            ("minecraft:iron_shovel", 1),
+            ("minecraft:bread", 16),
+            ("minecraft:oak_log", 8),
+            ("minecraft:crafting_table", 1),
+            ("minecraft:oak_sign", 4),
+            ("minecraft:torch", 16),
+        ]
+    else:
+        starter_kit = [
+            ("minecraft:iron_pickaxe", 1),
+            ("minecraft:iron_axe", 1),
+            ("minecraft:iron_shovel", 1),
+            ("minecraft:bread", 16),
+            ("minecraft:oak_log", 8),
+            ("minecraft:crafting_table", 1),
+        ]
     out: list[str] = []
     # One-shot clear so the give below produces a deterministic inventory.
     out.append(f"execute in {world} run clear @a")
@@ -265,6 +466,10 @@ def main() -> int:
     ap.add_argument("--world", default="proc-lab")
     ap.add_argument("--mode", choices=["world", "tp_workers"], default="world",
                     help="world: peaceful + chest + worldspawn. tp_workers: mvtp + tp to muster.")
+    ap.add_argument("--mission", choices=["explore", "mapping"], default="explore",
+                    help="explore (default): full-day, basic chest, basic starter kit. "
+                         "mapping: dusk, chest with signs+torches+coal, starter kit with "
+                         "signs+torches for the mapping scenario.")
     ap.add_argument("--workers", default="",
                     help="comma list of player names (required when --mode tp_workers)")
     ap.add_argument("--dry-run", action="store_true")
@@ -293,6 +498,36 @@ def main() -> int:
             )
             print(f"got {probed} (catalog says {sy})")
             resolved = resolve_spawn_y(sy, probed, strict=True)
+            # Phase-14: verify resolved spawn isn't water/lava BEFORE the
+            # /fill. Without this, oceanic seeds (1001 islands) pass the
+            # probe — feet Y is the water surface — and bots drown on TP.
+            # Phase-15: extended to a 5x5 neighborhood scan because a
+            # single stone column passed the 1-cell check at Y=201 while
+            # the surrounding terrain was open ocean — bots fell 138 blocks.
+            from mapcatalog.rcon_client import SshDockerRcon
+            safety_client = SshDockerRcon(ssh_host=ssh_host, container=container)
+            unsafe = check_surface_safe(
+                safety_client, world=args.world,
+                sx=sx, sy=resolved, sz=sz,
+            )
+            if unsafe is not None:
+                raise SystemExit(
+                    f"  ✗ refusing to /fill at unsafe spawn cell: {unsafe}\n"
+                    f"    Seed {card.get('seed', '?')} dropped spawn on water/lava.\n"
+                    f"    Re-run with `--fresh-disc <different-seed>` (or pick from\n"
+                    f"    `seed_candidates` in requirements/scenario_establish_explore.yaml)."
+                )
+            neighborhood_fail = assert_neighborhood_land(
+                safety_client, world=args.world,
+                sx=sx, sy=resolved, sz=sz,
+                radius=2, min_land_pct=80.0,
+            )
+            if neighborhood_fail is not None:
+                raise SystemExit(
+                    f"  ✗ refusing to /fill at hostile neighborhood: {neighborhood_fail}\n"
+                    f"    Seed {card.get('seed', '?')} dropped spawn on an island / cliff / sea.\n"
+                    f"    Re-run with a different seed via `scripts/seed-scout.py` to pick one."
+                )
             if resolved != sy:
                 print(f"  ⚠ spawn Y substituted: catalog {sy} → probed {resolved} "
                       f"(delta {abs(resolved - sy)} > {SURFACE_PROBE_DELTA_TOLERANCE})")
@@ -307,14 +542,16 @@ def main() -> int:
                 print(f"  patched {args.map.name}: spawn={card['placements']['spawn']} "
                       f"muster={card['placements']['muster']} "
                       f"chest={card['placements']['starter_chest']}")
-        cmds = prep_commands(card, world=args.world, spawn_y_override=spawn_y_override)
-        label = "rcon prep"
+        cmds = prep_commands(card, world=args.world,
+                             spawn_y_override=spawn_y_override,
+                             mission=args.mission)
+        label = f"rcon prep (mission={args.mission})"
     else:
         names = [w.strip() for w in args.workers.split(",") if w.strip()]
         if not names:
             raise SystemExit("--mode tp_workers requires --workers comma-list")
-        cmds = tp_worker_commands(card, names, world=args.world)
-        label = f"rcon tp_workers ({','.join(names)})"
+        cmds = tp_worker_commands(card, names, world=args.world, mission=args.mission)
+        label = f"rcon tp_workers ({','.join(names)}, mission={args.mission})"
     if args.dry_run:
         for c in cmds:
             print(c)

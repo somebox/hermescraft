@@ -1,0 +1,47 @@
+# Mapping worker cards — seeded unassigned so Steward dispatches per quadrant.
+# Mirrors the 4-card explore pattern; protocol body uses POI + sign verbs.
+cards:
+  - title: "[MAP] NE quadrant — name 2+ places, drop signs + POIs"
+    skills: [minecraft-navigation, minecraft-mapping]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Range **NE** from muster (bearing ~045°), aim for **{quadrant_radius}+ blocks**, surface only.
+
+      Loop: `mc move` / bearing steps → `mc look` → `mc scene` → decide.
+       - At a landmark worth naming (peak, ruin, distinctive feature):
+           1. `mc nearby_signs 32` — don't re-name an existing sign.
+           2. `mc place_named_sign X Y Z "creative-name\noptional 3 more lines"` (oak_sign).
+           3. `mc poi_add creative_name --sign X Y Z --kind landmark`.
+       - At an internal nav waypoint (cave mouth, junction, riverside):
+           1. `mc place_torch X Y Z` (auto-picks floor vs wall_torch).
+           2. `mc poi_add waypoint_name --torch X Y Z [--sign Sx Sy Sz] --kind waypoint`.
+       - Use creative free-form names ("spider hill", "balder ruins"). No mandatory prefixes.
+
+      Periodic chat (~5 min): position + 1-line scene cue + recent POI names.
+
+      **Completion body MUST include** the literal output of:
+       - `mc marks`
+       - `mc pois`
+       - `mc nearby_signs 32`
+      Empty-after-colon stubs are rejected (phase-17 evidence rule).
+
+  - title: "[MAP] NW quadrant — name 2+ places, drop signs + POIs"
+    skills: [minecraft-navigation, minecraft-mapping]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Range **NW** (~315°), aim for **{quadrant_radius}+ blocks**, surface only.
+      Same protocol as NE mapping card (signs at landmarks, torches+POIs at waypoints; completion body must include mc marks / mc pois / mc nearby_signs output).
+
+  - title: "[MAP] SE quadrant — name 2+ places, drop signs + POIs"
+    skills: [minecraft-navigation, minecraft-mapping]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Range **SE** (~135°), aim for **{quadrant_radius}+ blocks**, surface only.
+      Same protocol as NE mapping card (signs at landmarks, torches+POIs at waypoints; completion body must include mc marks / mc pois / mc nearby_signs output).
+
+  - title: "[MAP] SW quadrant — name 2+ places, drop signs + POIs"
+    skills: [minecraft-navigation, minecraft-mapping]
+    body: |
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Range **SW** (~225°), aim for **{quadrant_radius}+ blocks**, surface only.
+      Same protocol as NE mapping card (signs at landmarks, torches+POIs at waypoints; completion body must include mc marks / mc pois / mc nearby_signs output).
