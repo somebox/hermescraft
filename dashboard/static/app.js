@@ -22,8 +22,10 @@ import {
 import { patchAgentLiveStrip } from './agent-live-strip.js';
 import { pickAgentKanbanTask } from './kanban-agent.js';
 import { appendMindTurn, ensureMindSessionHeader, renderMindEmpty } from './cognition-view.js';
+import { drawSchematicMap } from './schematic-map.js';
 
 const LS_WORLD = 'hc_dashboard_world';
+const LS_MAP_SUB = 'hc_dashboard_map_sub';
 const LS_SEL = 'hc_dashboard_selection';
 const LS_TAB = 'hc_dashboard_tab';
 const LS_CHAT_SUB = 'hc_dashboard_chat_sub';
@@ -34,6 +36,7 @@ const LANES = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archive
 let worlds = [];
 let fleet = null;
 let pois = [];
+let personalPois = [];  // Phase A4.1: per-bot waypoints (data/personal-pois-*.json)
 let regions = [];
 let kanbanData = { tasks: [], grouped: null, ok: false };
 
@@ -42,12 +45,20 @@ let fpvLoadedUrl = '';
 
 /** Last terrain map iframe URL (same stability as FPV). */
 let terrainLoadedUrl = '';
+/** Rounded map center used in iframe URL (avoid reload every fleet poll). */
+let terrainMapCenterKey = '';
 
 /** Squaremap player names for current world (merged into Players sidebar). */
 let mapPlayersForWorld = [];
 
 /** From GET /api/map/config — null when disabled. */
 let worldMapConfig = null;
+
+/** From GET /api/map/context for selected world (establish anchors). */
+let mapEstablishContext = null;
+
+/** Schematic map click targets (last draw). */
+let schematicHits = [];
 
 /** Last detail panel selection key — same player: update inner block only so radar iframe is not recreated every poll. */
 let prevDetailKey = null;
@@ -88,6 +99,7 @@ let state = {
   world: loadJson(LS_WORLD, null) || 'world',
   selection: loadJson(LS_SEL, null),
   centerTab: loadJson(LS_TAB, 'map') || 'map',
+  mapSub: loadJson(LS_MAP_SUB, 'terrain') || 'terrain',
   chatSub: loadJson(LS_CHAT_SUB, 'ingame') || 'ingame',
   kanbanBoard: loadJson(LS_KANBAN_BOARD, null),
 };
@@ -122,7 +134,27 @@ function setTab(name) {
     p.hidden = !on;
   });
   if (name === 'fpv') requestAnimationFrame(() => refreshFpv());
-  if (name === 'map') requestAnimationFrame(() => refreshTerrainMap());
+  if (name === 'map') requestAnimationFrame(() => refreshMapPanels());
+}
+
+function setMapSub(name) {
+  state.mapSub = name === 'ops' ? 'ops' : 'terrain';
+  saveJson(LS_MAP_SUB, state.mapSub);
+  document.querySelectorAll('.map-subtab').forEach((b) => {
+    const on = b.dataset.mapSub === state.mapSub;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const terrain = document.getElementById('mapPanelTerrain');
+  const ops = document.getElementById('mapPanelOps');
+  if (terrain) terrain.hidden = state.mapSub !== 'terrain';
+  if (ops) ops.hidden = state.mapSub !== 'ops';
+  refreshMapPanels();
+}
+
+function refreshMapPanels() {
+  if (state.mapSub === 'ops') refreshSchematicMap();
+  else refreshTerrainMap();
 }
 
 function resolveMapZoom(cfg, hermesWorld) {
@@ -145,6 +177,16 @@ function patchTerrainZoomHint(hermesWorld) {
   el.textContent = `Squaremap zoom: default ${lim.def}, max ${lim.max} (+${lim.extra} extra). Closer view: raise zoom.maximum / zoom.extra in Squaremap on the MC server, then re-render tiles.`;
 }
 
+function mapCenterFromFleet(hermesWorld) {
+  const pts = (fleet?.agents || [])
+    .filter((a) => a.online && a.world === hermesWorld && a.position)
+    .map((a) => a.position);
+  if (!pts.length) return null;
+  const x = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+  const z = pts.reduce((s, p) => s + p.z, 0) / pts.length;
+  return { x: Math.round(x), z: Math.round(z) };
+}
+
 function buildTerrainIframeUrl(cfg, hermesWorld) {
   const tileWorld = cfg.hermesToTileWorld?.[hermesWorld];
   if (!tileWorld) return null;
@@ -152,7 +194,62 @@ function buildTerrainIframeUrl(cfg, hermesWorld) {
   const u = new URL('/', cfg.baseUrl);
   u.searchParams.set('world', tileWorld);
   u.searchParams.set('zoom', String(zoom));
+  const center = mapCenterFromFleet(hermesWorld);
+  if (center) {
+    u.searchParams.set('x', String(center.x));
+    u.searchParams.set('z', String(center.z));
+  }
+  const rev = cfg.tileRevision;
+  if (rev) u.searchParams.set('hc_rev', String(rev).slice(0, 120));
   return u.toString();
+}
+
+function patchTerrainStaleHint(hermesWorld) {
+  const el = document.getElementById('terrainStaleHint');
+  if (!el) return;
+  if (hermesWorld !== 'proc-lab') {
+    el.hidden = true;
+    el.textContent = '';
+    return;
+  }
+  const seed = mapEstablishContext?.establish?.seed ?? mapEstablishContext?.proc_lab?.seed;
+  el.hidden = false;
+  el.textContent = seed
+    ? `proc-lab seed ${seed}: if Terrain looks like an old run, run Squaremap fullrender for minecraft_proc-lab on the server (or use Ops map).`
+    : 'proc-lab: after reset-proc-lab / fresh disc, re-render Squaremap tiles or use Ops map.';
+}
+
+function renderMapFleetOverlay() {
+  const host = document.getElementById('mapFleetOverlay');
+  if (!host) return;
+  const list = agentsInWorld();
+  host.replaceChildren();
+  if (!list.length) {
+    host.appendChild(
+      el(
+        'p',
+        'muted map-fleet-empty',
+        'No online agents in this world — pick the world the bots are in (proc-lab vs world). Squaremap player icons may be off even when agents show here.',
+      ),
+    );
+    return;
+  }
+  for (const a of list) {
+    const p = a.position;
+    const pos = p ? `${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}` : '—';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'map-fleet-chip';
+    btn.textContent = `${a.name} @ ${pos}`;
+    btn.addEventListener('click', () => {
+      state.selection = { kind: 'player', id: a.name };
+      saveJson(LS_SEL, state.selection);
+      renderAgentList();
+      renderDetail();
+      refreshTerrainMap();
+    });
+    host.appendChild(btn);
+  }
 }
 
 function applyWorldMapUi() {
@@ -168,6 +265,10 @@ function refreshTerrainMap() {
   const frame = document.getElementById('terrainFrame');
   const link = document.getElementById('terrainOpenLink');
   if (!frame || !worldMapConfig?.enabled) return;
+  const center = mapCenterFromFleet(state.world);
+  const centerKey = center
+    ? `${state.world}|${Math.round(center.x / 32) * 32}|${Math.round(center.z / 32) * 32}`
+    : `${state.world}|—`;
   const next = buildTerrainIframeUrl(worldMapConfig, state.world);
   if (link) {
     if (next) {
@@ -180,25 +281,98 @@ function refreshTerrainMap() {
   }
   if (!next) {
     terrainLoadedUrl = '';
+    terrainMapCenterKey = '';
     frame.removeAttribute('src');
+    renderMapFleetOverlay();
     return;
   }
-  if (terrainLoadedUrl !== next) {
+  const reload = terrainLoadedUrl !== next || terrainMapCenterKey !== centerKey;
+  if (reload) {
     terrainLoadedUrl = next;
+    terrainMapCenterKey = centerKey;
     frame.src = next;
   }
   patchTerrainZoomHint(state.world);
+  patchTerrainStaleHint(state.world);
+  renderMapFleetOverlay();
+}
+
+async function fetchMapContext() {
+  try {
+    const r = await fetch(`/api/map/context?world=${encodeURIComponent(state.world)}`);
+    const j = await r.json();
+    mapEstablishContext = j.ok ? j : null;
+  } catch {
+    mapEstablishContext = null;
+  }
 }
 
 async function fetchMapConfig() {
   try {
-    const r = await fetch('/api/map/config');
+    const r = await fetch(`/api/map/config?world=${encodeURIComponent(state.world)}`);
     const j = await r.json();
     worldMapConfig = j.enabled ? j : null;
+    if (worldMapConfig) worldMapConfig.tileRevision = j.tileRevision ?? null;
   } catch {
     worldMapConfig = null;
   }
+  await fetchMapContext();
   applyWorldMapUi();
+}
+
+function refreshSchematicMap() {
+  const canvas = document.getElementById('schematicMapCanvas');
+  if (!canvas) return;
+  const agents = agentsInWorld();
+  const humans = humansInWorld();
+  const { hits } = drawSchematicMap({
+    canvas,
+    agents,
+    humans,
+    pois,
+    personalPois,
+    regions,
+    establish: mapEstablishContext?.establish ?? null,
+  });
+  schematicHits = hits;
+  const hint = document.getElementById('schematicMapHint');
+  if (hint) {
+    const seed = mapEstablishContext?.establish?.seed;
+    const n = agents.length + pois.length + personalPois.length;
+    hint.textContent = seed
+      ? `Ops map · seed ${seed} · ${n} tracked points in ${state.world}. Click a dot to open details.`
+      : `Ops map · ${n} tracked points in ${state.world}. Click a dot to open details.`;
+  }
+}
+
+function bindSchematicMapClick() {
+  const canvas = document.getElementById('schematicMapCanvas');
+  if (!canvas || canvas.dataset.bound) return;
+  canvas.dataset.bound = '1';
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    for (let i = schematicHits.length - 1; i >= 0; i--) {
+      const h = schematicHits[i];
+      const dx = x - h.cx;
+      const dy = y - h.cy;
+      if (dx * dx + dy * dy <= h.r * h.r) {
+        if (h.kind === 'player') {
+          state.selection = { kind: 'player', id: h.id };
+        } else if (h.kind === 'poi') {
+          const p = pois.find((x) => poiKey(x) === h.id);
+          if (p) state.selection = { kind: 'poi', id: poiKey(p) };
+        } else if (h.kind === 'human') {
+          state.selection = { kind: 'player', id: h.id };
+        }
+        saveJson(LS_SEL, state.selection);
+        renderAgentList();
+        renderDetail();
+        break;
+      }
+    }
+  });
 }
 
 async function refreshMapPlayerNames() {
@@ -223,12 +397,29 @@ function humansInWorld() {
   return fleet.humans.filter((h) => h.world === state.world);
 }
 
+function worldFromUrl() {
+  const w = new URLSearchParams(window.location.search).get('world');
+  return w && String(w).trim() ? String(w).trim() : null;
+}
+
+function pickInitialWorld(api) {
+  const names = new Set((api.worlds || []).map((w) => w.name));
+  const urlW = worldFromUrl();
+  if (urlW && names.has(urlW)) return urlW;
+  if (api.startupWorld && names.has(api.startupWorld)) return api.startupWorld;
+  if (state.world && names.has(state.world)) return state.world;
+  if (api.defaultWorld && names.has(api.defaultWorld)) return api.defaultWorld;
+  return api.worlds?.[0]?.name || 'world';
+}
+
 async function fetchWorlds() {
   const r = await fetch('/api/worlds');
   const j = await r.json();
   worlds = j.worlds || [];
   kanbanBoardIdsByWorld = j.kanbanBoardIdsByWorld || {};
   defaultKanbanBoardId = j.defaultKanbanBoardId || null;
+  state.world = pickInitialWorld(j);
+  saveJson(LS_WORLD, state.world);
   const sel = $('worldSelect');
   sel.replaceChildren();
   for (const w of worlds) {
@@ -236,9 +427,6 @@ async function fetchWorlds() {
     o.value = w.name;
     o.textContent = w.name;
     sel.appendChild(o);
-  }
-  if (!worlds.some((w) => w.name === state.world)) {
-    state.world = worlds[0]?.name || 'world';
   }
   sel.value = state.world;
   syncKanbanBoardSelect();
@@ -343,7 +531,7 @@ async function fetchFleet() {
   renderDetail();
   if (state.chatSub === 'mind') syncMindPanel();
   else renderChat();
-  if (state.centerTab === 'map') refreshTerrainMap();
+  if (state.centerTab === 'map') refreshMapPanels();
   if (state.centerTab === 'fpv') refreshFpv();
   await refreshMapPlayerNames();
   renderHumanList();
@@ -351,14 +539,18 @@ async function fetchFleet() {
 
 async function fetchPoi() {
   const worldQ = encodeURIComponent(state.world);
-  const [poiRes, regRes] = await Promise.all([
+  const [poiRes, personalPoiRes, regRes] = await Promise.all([
     fetch(`/api/poi?world=${worldQ}`),
+    fetch(`/api/personal-pois?world=${worldQ}`),
     fetch(`/api/regions?world=${worldQ}`),
   ]);
   const j = await poiRes.json();
   pois = j.pois || [];
+  const pp = await personalPoiRes.json().catch(() => ({}));
+  personalPois = pp.pois || [];
   const rj = await regRes.json().catch(() => ({}));
   regions = rj.regions || [];
+  if (state.centerTab === 'map' && state.mapSub === 'ops') refreshSchematicMap();
 }
 
 function renderHeader() {
@@ -960,7 +1152,8 @@ function refreshMindFeed(force) {
         renderMindEmpty(mind, j.error === 'no_session' ? 'No Hermes session yet for this agent.' : 'Mind feed unavailable.');
         return;
       }
-      const contentKey = `${agentName}|${j.session || ''}|${j.home_label || ''}|${JSON.stringify(j.turns || [])}`;
+      const lastTurn = j.turns?.length ? j.turns[j.turns.length - 1] : null;
+      const contentKey = `${agentName}|${j.session || ''}|${j.home_label || ''}|${j.totalMessages ?? ''}|${lastTurn?.turnKey ?? ''}|${lastTurn?.text?.length ?? 0}`;
       if (!force && mind.dataset.mindKey === contentKey) return;
       mind.dataset.mindKey = contentKey;
       mind.replaceChildren();
@@ -1017,6 +1210,7 @@ function bindCenterUpperResize() {
   if (!upper || typeof ResizeObserver === 'undefined') return;
   const ro = new ResizeObserver(() => {
     if (state.centerTab === 'fpv') refreshFpv();
+    if (state.centerTab === 'map' && state.mapSub === 'ops') refreshSchematicMap();
   });
   ro.observe(upper);
 }
@@ -1092,7 +1286,7 @@ function bindUi() {
     renderDetail();
     fetchPoi();
     refreshMapPlayerNames().then(() => renderHumanList());
-    if (state.centerTab === 'map') refreshTerrainMap();
+    if (state.centerTab === 'map') refreshMapPanels();
     if (state.centerTab === 'kanban') fetchKanban();
   });
 
@@ -1100,9 +1294,15 @@ function bindUi() {
     btn.addEventListener('click', () => {
       setTab(btn.dataset.tab);
       if (btn.dataset.tab === 'kanban') fetchKanban();
-      if (btn.dataset.tab === 'map') refreshTerrainMap();
+      if (btn.dataset.tab === 'map') refreshMapPanels();
     });
   });
+
+  document.querySelectorAll('.map-subtab').forEach((btn) => {
+    btn.addEventListener('click', () => setMapSub(btn.dataset.mapSub));
+  });
+  setMapSub(state.mapSub);
+  bindSchematicMapClick();
 
   document.querySelectorAll('.chat-subtab').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1135,9 +1335,9 @@ function bindUi() {
 async function main() {
   bindUi();
   bindCenterUpperResize();
+  await fetchWorlds();
   await fetchMapConfig();
   await refreshMapPlayerNames();
-  await fetchWorlds();
   await loadKanbanBoardsList();
   await fetchFleet();
   await fetchPoi();
@@ -1149,6 +1349,7 @@ async function main() {
   }, 8000);
   window.addEventListener('resize', () => {
     if (state.centerTab === 'fpv') refreshFpv();
+    if (state.centerTab === 'map' && state.mapSub === 'ops') refreshSchematicMap();
   });
 }
 

@@ -2,7 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'os';
 import path from 'path';
-import { defaultHermesHome, resolveHermesHome } from '../lib/agent-paths.js';
+import {
+  agentTestGlobalHome,
+  defaultHermesHome,
+  hermesHomeCandidates,
+  resolveHermesHome,
+} from '../lib/agent-paths.js';
 
 describe('agent-paths', () => {
   it('defaultHermesHome uses landfolk pattern', () => {
@@ -18,5 +23,10 @@ describe('agent-paths', () => {
   it('resolveHermesHome expands tilde', () => {
     const p = resolveHermesHome({ name: 'X', hermes_home: '~/custom-hermes' });
     assert.equal(p, path.join(os.homedir(), 'custom-hermes'));
+  });
+
+  it('hermesHomeCandidates includes agent-test global home', () => {
+    const homes = hermesHomeCandidates({ name: 'Flint' });
+    assert.ok(homes.includes(agentTestGlobalHome()));
   });
 });

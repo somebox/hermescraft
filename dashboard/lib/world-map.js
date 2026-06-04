@@ -8,6 +8,7 @@
 const DEFAULT_HERMES_TO_TILE = {
   world: 'minecraft_overworld',
   'landfolk-test': 'minecraft_landfolk-test',
+  'proc-lab': 'minecraft_proc-lab',
   testflat: 'minecraft_testflat',
   world_nether: 'minecraft_the_nether',
   world_the_end: 'minecraft_the_end',

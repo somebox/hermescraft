@@ -40,12 +40,24 @@
           <div class="center-upper">
             <div class="tab-panels">
               <div id="panel-map" class="tab-panel active" role="tabpanel">
+                <nav class="map-subtabs" role="tablist" aria-label="Map layer">
+                  <button type="button" class="map-subtab active" data-map-sub="terrain" role="tab" aria-selected="true">Terrain</button>
+                  <button type="button" class="map-subtab" data-map-sub="ops" role="tab" aria-selected="false">Ops</button>
+                </nav>
                 <div id="mapPanelTerrain" class="map-panel-terrain">
                   <iframe id="terrainFrame" class="terrain-frame" title="World terrain map"></iframe>
+                  <div id="mapFleetOverlay" class="map-fleet-overlay" aria-label="Online agents in this world"></div>
                   <p class="muted terrain-map-hint">
                     <a id="terrainOpenLink" href="#" target="_blank" rel="noopener">Open map in new tab</a>
                     · follows world selector
+                    <span id="terrainStaleHint" class="terrain-zoom-hint" hidden></span>
                     <span id="terrainZoomHint" class="terrain-zoom-hint" hidden></span>
+                  </p>
+                </div>
+                <div id="mapPanelOps" class="map-panel-tactical map-wrap" hidden>
+                  <canvas id="schematicMapCanvas" width="400" height="280" aria-label="Schematic world map"></canvas>
+                  <p id="schematicMapHint" class="muted terrain-map-hint">
+                    Agents, marks, regions, establish spawn/muster/arena — no Squaremap tiles.
                   </p>
                 </div>
                 <p id="mapUnavailable" class="map-unavailable muted" hidden>

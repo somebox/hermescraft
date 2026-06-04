@@ -26,8 +26,11 @@ import {
   mergePollTargets,
 } from './lib/bot-discovery.js';
 import { hermesHomeCandidates, hermesHomeLabel } from './lib/agent-paths.js';
+import { fetchLiveWorldFromBot, mergeAgentWorld } from './lib/live-world.js';
+import { dedupePersonalPois } from './lib/personal-pois.js';
 import { loadCognitionFromHomes } from './lib/cognition.js';
 import { runHermesCli } from './lib/hermes-cli.js';
+import { loadMapContext } from './lib/map-context.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, '..');
@@ -35,6 +38,8 @@ const REPO_ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.DASHBOARD_PORT || 3000);
 const BOT_HOST = process.env.BOT_HOST || '127.0.0.1';
 const HERMES_KANBAN_BASE = process.env.HERMES_KANBAN_BASE || 'http://127.0.0.1:27124';
+/** Initial world selector value (from start-dashboard.sh --world or DASHBOARD_WORLD). */
+const STARTUP_WORLD = (process.env.DASHBOARD_WORLD || '').trim() || null;
 
 const registry = loadRegistry(REPO_ROOT);
 if (!registry) {
@@ -265,7 +270,16 @@ async function pollAllAgents() {
   );
   const discoveredHits = await probeHermesBotsOnPorts(scanPorts);
   const targets = mergePollTargets(registry, discoveredHits);
-  return Promise.all(targets.map((a) => pollAgent(a)));
+  const rows = await Promise.all(targets.map((a) => pollAgent(a)));
+  await Promise.all(
+    rows.map(async (row, i) => {
+      const reg = targets[i];
+      if (!row.online) return;
+      const live = await fetchLiveWorldFromBot(botUrl, reg.api_port);
+      row.world = mergeAgentWorld(live, reg.world, registry.defaultWorld);
+    }),
+  );
+  return rows;
 }
 
 function resolveAgentRecord(name) {
@@ -305,12 +319,10 @@ async function fetchRegions(agent) {
 }
 
 async function buildRegionsForWorld(world) {
-  // The region registry is shared per world; every bot in `world` reports
-  // the same rows. Dedup by id so the dashboard doesn't render N copies of
-  // each disc.
   const byId = new Map();
   const tasks = registry.agents.map(async (agent) => {
-    const w = agent.world || registry.defaultWorld;
+    const live = await fetchLiveWorldFromBot(botUrl, agent.api_port);
+    const w = mergeAgentWorld(live, agent.world, registry.defaultWorld);
     if (w !== world) return;
     const regions = await fetchRegions(agent);
     for (const reg of regions) {
@@ -329,6 +341,15 @@ async function fetchMarks(agent) {
   const j = await r.json().catch(() => null);
   const marks = j?.data?.marks;
   return Array.isArray(marks) ? marks : [];
+}
+
+async function fetchPersonalPois(agent) {
+  const url = botUrl(agent.api_port, '/personal-pois');
+  const r = await fetchWithTimeout(url, { timeout: 8000 }).catch(() => null);
+  if (!r || !r.ok) return [];
+  const j = await r.json().catch(() => null);
+  const pois = j?.data?.pois;
+  return Array.isArray(pois) ? pois : [];
 }
 
 async function fetchInventory(agent) {
@@ -390,6 +411,10 @@ function dedupePoi(list) {
   }
   return out;
 }
+
+// dedupePersonalPois lives in ./lib/personal-pois.js so dashboard/test
+// can import it without spinning up the HTTP server. The route below
+// uses the imported function directly.
 
 async function buildFleetSnapshot() {
   tick += 1;
@@ -508,7 +533,8 @@ setInterval(refreshFleetLoop, 2000);
 async function buildPoiForWorld(world) {
   const rows = [];
   const tasks = registry.agents.map(async (agent) => {
-    const w = agent.world || registry.defaultWorld;
+    const live = await fetchLiveWorldFromBot(botUrl, agent.api_port);
+    const w = mergeAgentWorld(live, agent.world, registry.defaultWorld);
     if (w !== world) return;
     const marks = await fetchMarks(agent);
     for (const m of marks) {
@@ -525,6 +551,44 @@ async function buildPoiForWorld(world) {
   });
   await Promise.all(tasks);
   return dedupePoi(rows);
+}
+
+/**
+ * Aggregate personal POIs across all assignable agents in `world`. Each
+ * bot has its own per-bot file; we fetch `GET /personal-pois` from every
+ * agent, tag with the discovering bot, and dedupe by name keeping the
+ * freshest `last_seen`. The result is the dashboard's Ops-map overlay
+ * for personal POIs (a parallel layer to /api/poi for fleet marks).
+ */
+async function buildPersonalPoisForWorld(world) {
+  const rows = [];
+  const tasks = registry.agents.map(async (agent) => {
+    const live = await fetchLiveWorldFromBot(botUrl, agent.api_port);
+    const w = mergeAgentWorld(live, agent.world, registry.defaultWorld);
+    if (w !== world) return;
+    const pois = await fetchPersonalPois(agent);
+    for (const p of pois) {
+      rows.push({
+        world: w,
+        name: p.name,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        kind: p.kind || null,
+        sign_at: p.sign_at || null,
+        torch_at: p.torch_at || null,
+        torch_missing_since: p.torch_missing_since || null,
+        note: p.note || '',
+        agent_owner: p.agent_owner || agent.name,
+        last_seen: p.last_seen || null,
+        added_at: p.added_at || null,
+        source: p.source || null,
+        observed_by: agent.name,
+      });
+    }
+  });
+  await Promise.all(tasks);
+  return dedupePersonalPois(rows);
 }
 
 function sendJson(res, code, obj) {
@@ -570,10 +634,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/worlds') {
+    const names = (registry.worlds || []).map((w) => w.name);
+    const startupWorld =
+      STARTUP_WORLD && names.includes(STARTUP_WORLD) ? STARTUP_WORLD : null;
     return sendJson(res, 200, {
       worlds: registry.worlds || [],
       kanbanBoardIdsByWorld: registry.kanbanBoardIdsByWorld || {},
       defaultKanbanBoardId: registry.defaultKanbanBoardId || null,
+      defaultWorld: registry.defaultWorld || null,
+      startupWorld,
     });
   }
 
@@ -582,6 +651,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: false, enabled: false });
     }
     const worldZoomByHermes = await fetchSquaremapZoomByHermesWorld();
+    const hermesWorld = url.searchParams.get('world') || registry.defaultWorld;
+    const mapContext = loadMapContext(REPO_ROOT, hermesWorld);
     return sendJson(res, 200, {
       ok: true,
       enabled: true,
@@ -590,7 +661,15 @@ const server = http.createServer(async (req, res) => {
       iframeDefaults: worldMapConfig.iframeDefaults,
       tile: worldMapConfig.tile,
       worldZoomByHermes,
+      tileRevision: mapContext.tile_revision ?? null,
+      procLab: mapContext.proc_lab ?? null,
     });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/map/context') {
+    const hermesWorld = url.searchParams.get('world') || registry.defaultWorld;
+    const mapContext = loadMapContext(REPO_ROOT, hermesWorld);
+    return sendJson(res, 200, { ok: true, ...mapContext });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/map/settings') {
@@ -634,6 +713,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/poi') {
     const world = url.searchParams.get('world') || registry.defaultWorld;
     const pois = await buildPoiForWorld(world);
+    return sendJson(res, 200, { world, pois });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/personal-pois') {
+    const world = url.searchParams.get('world') || registry.defaultWorld;
+    const pois = await buildPersonalPoisForWorld(world);
     return sendJson(res, 200, { world, pois });
   }
 
@@ -748,8 +833,19 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`HermesCraft dashboard http://127.0.0.1:${PORT}`);
+  const worldQ = STARTUP_WORLD ? `?world=${encodeURIComponent(STARTUP_WORLD)}` : '';
+  console.log(`HermesCraft dashboard http://127.0.0.1:${PORT}${worldQ}`);
   console.log(`BOT_HOST=${BOT_HOST}  HERMES_KANBAN_BASE=${HERMES_KANBAN_BASE}`);
+  if (STARTUP_WORLD) {
+    const names = (registry.worlds || []).map((w) => w.name);
+    if (names.includes(STARTUP_WORLD)) {
+      console.log(`DASHBOARD_WORLD=${STARTUP_WORLD} (initial selector)`);
+    } else {
+      console.warn(
+        `DASHBOARD_WORLD=${STARTUP_WORLD} not in agent-registry.json worlds — ignored`,
+      );
+    }
+  }
   if (worldMapConfig) {
     console.log(`WORLD_MAP=${worldMapConfig.baseUrl}`);
   }

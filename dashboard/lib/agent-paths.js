@@ -20,6 +20,11 @@ export function kanbanProfileHome(agentName) {
   return path.join(os.homedir(), '.hermes', 'profiles', lower);
 }
 
+/** Default `hermes chat` / agent-test.py session dir (~/.hermes/sessions). */
+export function agentTestGlobalHome() {
+  return path.join(os.homedir(), '.hermes');
+}
+
 /**
  * @param {{ name: string, hermes_home?: string | null }} registryAgent
  */
@@ -41,10 +46,11 @@ export function resolveHermesHome(registryAgent) {
 export function hermesHomeCandidates(registryAgent) {
   const primary = resolveHermesHome(registryAgent);
   const profile = kanbanProfileHome(registryAgent?.name || '');
+  const global = agentTestGlobalHome();
   const seen = new Set();
   /** @type {string[]} */
   const out = [];
-  for (const h of [primary, profile]) {
+  for (const h of [primary, profile, global]) {
     const key = path.resolve(h);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -63,6 +69,9 @@ export function hermesHomeLabel(home) {
   if (base.startsWith('.hermes-landfolk-')) {
     const part = base.slice('.hermes-landfolk-'.length);
     return part ? part.charAt(0).toUpperCase() + part.slice(1) : 'Agent';
+  }
+  if (home === agentTestGlobalHome() || base === '.hermes') {
+    return 'Agent-test (global)';
   }
   return base || 'Agent';
 }
