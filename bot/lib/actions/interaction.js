@@ -611,17 +611,36 @@ export function createInteractionActions(services) {
     }
 
     // ── Read-back verification (wax detection) ──
-    const readbackMs = Number(process.env.SIGN_READBACK_MS) || 200;
-    await sleep(readbackMs);
-    const verifyBlock = b.blockAt(new Vec3(x, y, z));
-    const observed = readSignTextLines(verifyBlock);
-    if (!linesMatch(observed, lines)) {
+    // Phase D evidence: a single 200ms readback was firing before the
+    // tile_entity_data packet round-tripped from the server, producing
+    // false SIGN_WAX_PROTECTED on every placement against the homelab
+    // MC instance. Poll instead — every 50ms up to a max budget
+    // (env SIGN_READBACK_MS, default 1500ms = 30 polls). First match
+    // wins. Wax-protected signs never match, so they still surface
+    // after the full budget.
+    const readbackMaxMs = Number(process.env.SIGN_READBACK_MS) || 1500;
+    const pollMs = 50;
+    let observed = ['', '', '', ''];
+    let verifyBlock = null;
+    let elapsed = 0;
+    let matched = false;
+    while (elapsed < readbackMaxMs) {
+      await sleep(pollMs);
+      elapsed += pollMs;
+      verifyBlock = b.blockAt(new Vec3(x, y, z));
+      observed = readSignTextLines(verifyBlock);
+      if (linesMatch(observed, lines)) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
       return fail('SIGN_WAX_PROTECTED', `Sign at ${x},${y},${z} did not accept the new text (likely waxed or server-side rejection).`, {
         observed_state: {
           requested_lines: lines,
           observed_lines: observed,
           block_name: verifyBlock?.name ?? null,
-          readback_ms: readbackMs,
+          readback_ms: elapsed,
         },
         next_action_hint: `mc chat "<bot>: sign at ${x},${y},${z} is waxed — naming '${lines[0]}' rejected"`,
         retry_safe: false,
