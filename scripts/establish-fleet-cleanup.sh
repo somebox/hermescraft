@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 PORTS="${ESTABLISH_PORTS:-3001 3002 3003 3005}"
+DASHBOARD_PORT="${DASHBOARD_PORT:-3000}"
 
 echo "== establish fleet cleanup =="
 LOG_SRC="${HERMESCRAFT_LOG_DIR:-/tmp/hermescraft}"
@@ -14,6 +15,28 @@ if [[ -d "$LOG_SRC" ]] && [[ -x scripts/snapshot-fleet-logs.sh ]]; then
   echo "== snapshot fleet logs (before stop) =="
   scripts/snapshot-fleet-logs.sh || echo "WARN: snapshot-fleet-logs failed (continuing)" >&2
 fi
+
+# Stop the dashboard before the bots so any in-flight poll quiesces
+# cleanly. PID file is written by establish-run.sh; if it's missing,
+# fall back to a port-based kill so a manually-started dashboard still
+# gets cleaned up.
+DASH_PID_FILE="$LOG_SRC/dashboard.pid"
+if [[ -f "$DASH_PID_FILE" ]]; then
+  dash_pid="$(cat "$DASH_PID_FILE" 2>/dev/null || true)"
+  if [[ -n "$dash_pid" ]] && kill -0 "$dash_pid" 2>/dev/null; then
+    echo "  stop dashboard (pid $dash_pid)"
+    kill "$dash_pid" 2>/dev/null || true
+    sleep 1
+    kill -9 "$dash_pid" 2>/dev/null || true
+  fi
+  rm -f "$DASH_PID_FILE"
+fi
+dash_listener="$(lsof -nP -iTCP:"$DASHBOARD_PORT" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+if [[ -n "$dash_listener" ]]; then
+  echo "  kill dashboard listener on :$DASHBOARD_PORT (pid $dash_listener)"
+  kill -9 "$dash_listener" 2>/dev/null || true
+fi
+
 if [[ -x scripts/landfolk ]]; then
   scripts/landfolk stop 2>/dev/null || true
 fi

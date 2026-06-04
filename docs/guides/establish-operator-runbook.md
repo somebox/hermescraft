@@ -34,11 +34,12 @@ VARIANT=establishment.mapping scripts/establish-run.sh --fresh-disc 1001 --archi
 | Step | Script (if run piecemeal) |
 |------|---------------------------|
 | Preflight | `scripts/establish-preflight.sh [--min-credits-usd N]` (tests + deploy; **no** live diagnostics by default) |
-| Stop + kill orphans | `scripts/establish-fleet-cleanup.sh` |
+| Stop + kill orphans | `scripts/establish-fleet-cleanup.sh` (also stops the dashboard if it was auto-started) |
 | Bootstrap | `scripts/establish-scenario.sh` (bash 5+, gateway + kanban dispatch) |
 | Launch gate | `scripts/establish-launch-verify.sh` |
-| Stop + archive | `establish-fleet-cleanup.sh` snapshots logs first; or `landfolk stop` then `scripts/snapshot-fleet-logs.sh <pm-dir>` |
-| Grade | `scripts/establish-check.py` |
+| Dashboard | Auto-started by `establish-run.sh` after launch-verify (skip with `--no-dashboard` or `SKIP_DASHBOARD=1`). Manual: `./start-dashboard.sh --world proc-lab`. PID at `/tmp/hermescraft/dashboard.pid`; log at `/tmp/hermescraft/dashboard.log`. |
+| Stop + archive | `establish-fleet-cleanup.sh` stops dashboard then fleet and snapshots logs first; or `landfolk stop` then `scripts/snapshot-fleet-logs.sh <pm-dir>` |
+| Grade | `scripts/establish-check.py` (explore) or `scripts/establish-mapping-check.py` (mapping) |
 
 ---
 
@@ -223,7 +224,9 @@ Cards seed with `assignee=orchestrator-tracker` so Steward assigns patrols. Mapp
 
 ### 8.1b Dashboard map (proc-lab)
 
-- In the Command Center world dropdown, select **proc-lab** (not `world`) while the establish fleet is in that MV world — or start the dashboard with `./start-dashboard.sh --world proc-lab`.
+- `establish-run.sh` **auto-starts the dashboard** after `establish-launch-verify.sh` (skip with `--no-dashboard` or `SKIP_DASHBOARD=1`). It writes the PID to `/tmp/hermescraft/dashboard.pid` and the log to `/tmp/hermescraft/dashboard.log`, then the cleanup script tears it down at fleet stop. If a dashboard is already running on the target port the auto-start step is a no-op (operator-started instances stay live).
+- Manual: `./start-dashboard.sh --world proc-lab`. Override port with `DASHBOARD_PORT=…`, world with `DASHBOARD_WORLD=…` (env-var equivalent of the flag).
+- In the Command Center world dropdown, select **proc-lab** (not `world`) while the establish fleet is in that MV world.
 - **Ops** map (Command Center **Overview**): lightweight XZ view (agents, marks, personal POIs, spawn/muster/arena from `data/runtime/last-establish-map.json`) — use this when Squaremap still shows an old disc.
 - **Terrain** tab: Squaremap iframe. After `reset-proc-lab` or `--fresh-disc`, stale tiles are normal until the server re-renders. On the MC host (RCON/console): `/squaremap fullrender proc-lab` (or the plugin’s world key, e.g. `minecraft_proc-lab` — match `hermesToTileWorld` in `data/agent-registry.json`). The dashboard appends `hc_rev=` from `data/runtime/proc-lab-state.json` / establish map seed so the browser reloads the iframe when the seed changes; it does not replace Squaremap’s on-disk tile cache.
 
@@ -277,6 +280,8 @@ If Steward reports "observe denied" after a different verb failed, treat it as *
 | Action | Command |
 |--------|---------|
 | Board | `scripts/kanban board` |
+| Dashboard | `open http://127.0.0.1:3000` (auto-started by `establish-run.sh`; manual: `./start-dashboard.sh --world proc-lab`) |
+| Dashboard log | `tail -F /tmp/hermescraft/dashboard.log` |
 | Aggregated agent logs | `scripts/landfolk logs agents --profiles steward,flint,mason,gatherer` |
 | Per-bot raw log | `scripts/landfolk logs mason --tail 50` |
 | Follow | `scripts/landfolk logs flint -f` |
@@ -284,7 +289,7 @@ If Steward reports "observe denied" after a different verb failed, treat it as *
 | Progress / stuck | `tail -F /tmp/hermescraft/progress-*.log` ; kanban comments with `[AUTO_STUCK]` (worker line mandates `read_chat` + `reachable` before retry) |
 | Nav errors | `tail -F /tmp/hermescraft/nav-Mason.jsonl` |
 | Pause dispatch | Stop gateway or `landfolk stop` (keeps policy: use `--keep gateway` only if you know why) |
-| Stop fleet | `scripts/landfolk stop` |
+| Stop fleet + dashboard | `scripts/establish-fleet-cleanup.sh` (or `scripts/landfolk stop` then `kill $(cat /tmp/hermescraft/dashboard.pid)`) |
 | Restart one bot | `scripts/landfolk restart mason` |
 | Restart all | `scripts/landfolk restart all` or `stop` then `establish-scenario.sh` |
 
@@ -384,10 +389,11 @@ Record card id, error code, and coordinates for postmortems.
 ```bash
 export PATH=/opt/homebrew/bin:$PATH
 scripts/establish-run.sh --min-credits-usd 5 --archive-logs
+# Dashboard auto-starts → http://127.0.0.1:3000
 scripts/kanban board
 scripts/landfolk logs agents --profiles steward,flint,mason -q --tail 20 --no-follow
 # … run …
-scripts/landfolk stop
+scripts/establish-fleet-cleanup.sh        # stops dashboard + fleet, snapshots logs
 scripts/snapshot-fleet-logs.sh data/postmortems/establish-$(date +%Y-%m-%d)-phaseN
 scripts/establish-check.py
 ```
@@ -398,14 +404,15 @@ scripts/establish-check.py
 bash scripts/establish-mapping-phase-d-prep.sh   # catalog ensure + offline grader hint
 export PATH=/opt/homebrew/bin:$PATH
 VARIANT=establishment.mapping scripts/establish-run.sh --min-credits-usd 5 --archive-logs
+# Dashboard auto-starts → http://127.0.0.1:3000 (Ops tab shows personal POIs)
 scripts/kanban board                     # confirm [MAP:ARENA] epic + 4 [MAP] cards
 scripts/landfolk logs agents --profiles steward,flint,mason -q --tail 20 --no-follow
 
 # Mid-run coverage check (offline)
 python3 scripts/establish-mapping-check.py --skip-epic
 
-# Steward chats "wrap up — coverage sufficient" → stop fleet
-scripts/landfolk stop
+# Steward chats "wrap up — coverage sufficient" → stop fleet + dashboard
+scripts/establish-fleet-cleanup.sh
 scripts/snapshot-fleet-logs.sh data/postmortems/establish-$(date +%Y-%m-%d)-mappingN
 
 # Final grade (full, with kanban epic-status)
