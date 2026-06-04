@@ -500,6 +500,46 @@ function customParse(canonicalName, positional) {
       if (!name) throw new Error('missing_name');
       return { name, note, ...flags };
     }
+    case 'poi_add':
+    case 'poi_update': {
+      // Phase A4 + Phase E (the Phase A4 ship missed this case so every
+      // call returned `unhandled_custom_parse:poi_add`).
+      //
+      // Grammar: mc poi_add NAME [NOTE] [--at X Y Z] [--sign X Y Z]
+      //                          [--torch X Y Z] [--kind KIND]
+      //
+      // The registry bodyFn looks for `p.at / p.sign / p.torch` as
+      // {x,y,z} objects; we build those here from the 3-arg flag values.
+      const q = positional.slice();
+      const out = /** @type {Record<string, unknown>} */ ({});
+      const positionals = [];
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--at' || t === '--sign' || t === '--torch') {
+          q.shift();
+          const x = Number(q.shift());
+          const y = Number(q.shift());
+          const z = Number(q.shift());
+          if (![x, y, z].every(Number.isFinite)) {
+            throw new Error(`bad_coord:${t} expects three numeric args (X Y Z)`);
+          }
+          // 'at' / 'sign' / 'torch' on the request body
+          const key = t.slice(2);
+          out[key] = { x, y, z };
+        } else if (t === '--kind') {
+          q.shift();
+          out.kind = String(q.shift() ?? '');
+        } else if (t.startsWith('--')) {
+          throw new Error(`unknown_flag:${t}`);
+        } else {
+          positionals.push(q.shift());
+        }
+      }
+      const name = positionals.shift();
+      if (!name) throw new Error('missing_name');
+      const note = positionals.join(' ') || '';
+      return { name, note, ...out };
+    }
     case 'regions': {
       const q = positional.slice();
       /** @type {Record<string, unknown>} */
