@@ -8,6 +8,7 @@ import {
   buildInventoryFull,
   buildKanbanDetail,
   buildPoiDetail,
+  buildPersonalPoiDetail,
   collapsibleRaw,
   detailSection,
   motionSummary,
@@ -28,6 +29,9 @@ const LS_WORLD = 'hc_dashboard_world';
 const LS_MAP_SUB = 'hc_dashboard_map_sub';
 const LS_SEL = 'hc_dashboard_selection';
 const LS_TAB = 'hc_dashboard_tab';
+const LS_VIEW_MODE = 'hc_dashboard_view_mode';
+const LS_POI_SOURCE = 'hc_dashboard_poi_source';
+const LS_SHOW_TRAILS = 'hc_dashboard_show_trails';
 const LS_CHAT_SUB = 'hc_dashboard_chat_sub';
 const LS_KANBAN_BOARD = 'hc_dashboard_kanban_board';
 
@@ -59,6 +63,12 @@ let mapEstablishContext = null;
 
 /** Schematic map click targets (last draw). */
 let schematicHits = [];
+
+/** Agent nav trails for Ops map (volatile, from GET /api/agent/:name/trail). */
+let agentTrails = [];
+
+/** Last mapping grader snapshot from GET /api/mapping-grade. */
+let mappingGrade = null;
 
 /** Last detail panel selection key — same player: update inner block only so radar iframe is not recreated every poll. */
 let prevDetailKey = null;
@@ -95,17 +105,24 @@ let defaultKanbanBoardId = null;
 /** @type {{ id?: string, title?: string, name?: string, slug?: string, path?: string }[]} */
 let kanbanBoardsList = [];
 
+function migrateViewMode() {
+  const saved = loadJson(LS_VIEW_MODE, null);
+  if (saved === 'overview' || saved === 'agent') return saved;
+  const oldTab = loadJson(LS_TAB, 'map');
+  if (oldTab === 'fpv') return 'agent';
+  return 'overview';
+}
+
 let state = {
   world: loadJson(LS_WORLD, null) || 'world',
   selection: loadJson(LS_SEL, null),
-  centerTab: loadJson(LS_TAB, 'map') || 'map',
+  viewMode: migrateViewMode(),
   mapSub: loadJson(LS_MAP_SUB, 'terrain') || 'terrain',
   chatSub: loadJson(LS_CHAT_SUB, 'ingame') || 'ingame',
   kanbanBoard: loadJson(LS_KANBAN_BOARD, null),
+  poiSource: loadJson(LS_POI_SOURCE, 'merge') || 'merge',
+  showTrails: loadJson(LS_SHOW_TRAILS, false) === true,
 };
-
-const CENTER_TABS = new Set(['map', 'fpv', 'kanban']);
-if (!CENTER_TABS.has(state.centerTab)) state.centerTab = 'map';
 
 function $(id) {
   const el = document.getElementById(id);
@@ -120,21 +137,33 @@ function el(tag, cls, text) {
   return n;
 }
 
-function setTab(name) {
-  state.centerTab = name;
-  saveJson(LS_TAB, name);
-  document.querySelectorAll('.tab').forEach((b) => {
-    const on = b.dataset.tab === name;
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  document.querySelectorAll('.tab-panel').forEach((p) => {
-    const on = p.id === `panel-${name}`;
-    p.classList.toggle('active', on);
-    p.hidden = !on;
-  });
-  if (name === 'fpv') requestAnimationFrame(() => refreshFpv());
-  if (name === 'map') requestAnimationFrame(() => refreshMapPanels());
+function setViewMode(mode) {
+  state.viewMode = mode === 'agent' ? 'agent' : 'overview';
+  saveJson(LS_VIEW_MODE, state.viewMode);
+  const ov = document.getElementById('panelOverview');
+  const ag = document.getElementById('panelAgent');
+  const ro = document.getElementById('panelRightOverview');
+  const ra = document.getElementById('panelRightAgent');
+  const nav = document.getElementById('navOverview');
+  if (ov) ov.hidden = state.viewMode !== 'overview';
+  if (ag) ag.hidden = state.viewMode !== 'agent';
+  if (ro) ro.hidden = state.viewMode !== 'overview';
+  if (ra) ra.hidden = state.viewMode !== 'agent';
+  if (nav) {
+    nav.classList.toggle('active', state.viewMode === 'overview');
+    nav.setAttribute('aria-pressed', state.viewMode === 'overview' ? 'true' : 'false');
+  }
+  if (state.viewMode === 'agent') {
+    requestAnimationFrame(() => refreshFpv());
+    if (state.chatSub === 'mind') startMindPoll();
+  } else {
+    stopMindPoll();
+    requestAnimationFrame(() => refreshMapPanels());
+    renderFleetChat();
+    fetchMappingGrade();
+    updateCoverageStrip();
+  }
+  renderDetail();
 }
 
 function setMapSub(name) {
@@ -244,6 +273,7 @@ function renderMapFleetOverlay() {
     btn.addEventListener('click', () => {
       state.selection = { kind: 'player', id: a.name };
       saveJson(LS_SEL, state.selection);
+      setViewMode('agent');
       renderAgentList();
       renderDetail();
       refreshTerrainMap();
@@ -258,7 +288,7 @@ function applyWorldMapUi() {
   const enabled = Boolean(worldMapConfig?.enabled);
   if (terrain) terrain.hidden = !enabled;
   if (unavailable) unavailable.hidden = enabled;
-  if (enabled && state.centerTab === 'map') refreshTerrainMap();
+  if (enabled && state.viewMode === 'overview') refreshTerrainMap();
 }
 
 function refreshTerrainMap() {
@@ -333,6 +363,7 @@ function refreshSchematicMap() {
     personalPois,
     regions,
     establish: mapEstablishContext?.establish ?? null,
+    trails: state.showTrails ? agentTrails : [],
   });
   schematicHits = hits;
   const hint = document.getElementById('schematicMapHint');
@@ -360,11 +391,15 @@ function bindSchematicMapClick() {
       if (dx * dx + dy * dy <= h.r * h.r) {
         if (h.kind === 'player') {
           state.selection = { kind: 'player', id: h.id };
+          setViewMode('agent');
         } else if (h.kind === 'poi') {
           const p = pois.find((x) => poiKey(x) === h.id);
           if (p) state.selection = { kind: 'poi', id: poiKey(p) };
         } else if (h.kind === 'human') {
           state.selection = { kind: 'player', id: h.id };
+          setViewMode('agent');
+        } else if (h.kind === 'personal_poi') {
+          state.selection = { kind: 'personal_poi', id: h.id };
         }
         saveJson(LS_SEL, state.selection);
         renderAgentList();
@@ -529,19 +564,24 @@ async function fetchFleet() {
   renderAgentList();
   renderHumanList();
   renderDetail();
-  if (state.chatSub === 'mind') syncMindPanel();
-  else renderChat();
-  if (state.centerTab === 'map') refreshMapPanels();
-  if (state.centerTab === 'fpv') refreshFpv();
+  if (state.viewMode === 'agent') {
+    if (state.chatSub === 'mind') syncMindPanel();
+    else renderChat();
+    refreshFpv();
+  } else {
+    renderFleetChat();
+    refreshMapPanels();
+  }
   await refreshMapPlayerNames();
   renderHumanList();
 }
 
 async function fetchPoi() {
   const worldQ = encodeURIComponent(state.world);
+  const src = encodeURIComponent(state.poiSource || 'merge');
   const [poiRes, personalPoiRes, regRes] = await Promise.all([
     fetch(`/api/poi?world=${worldQ}`),
-    fetch(`/api/personal-pois?world=${worldQ}`),
+    fetch(`/api/personal-pois?world=${worldQ}&source=${src}`),
     fetch(`/api/regions?world=${worldQ}`),
   ]);
   const j = await poiRes.json();
@@ -550,7 +590,130 @@ async function fetchPoi() {
   personalPois = pp.pois || [];
   const rj = await regRes.json().catch(() => ({}));
   regions = rj.regions || [];
-  if (state.centerTab === 'map' && state.mapSub === 'ops') refreshSchematicMap();
+  if (state.viewMode === 'overview' && state.mapSub === 'ops') {
+    if (state.showTrails) await fetchAgentTrails();
+    refreshSchematicMap();
+    updateCoverageStrip();
+  }
+}
+
+async function fetchAgentTrails() {
+  const agents = agentsInWorld();
+  const rows = await Promise.all(
+    agents.map(async (a) => {
+      try {
+        const r = await fetch(`/api/agent/${encodeURIComponent(a.name)}/trail`);
+        const j = await r.json();
+        return { name: a.name, crumbs: j.crumbs || [] };
+      } catch {
+        return { name: a.name, crumbs: [] };
+      }
+    }),
+  );
+  agentTrails = rows;
+}
+
+async function fetchMappingGrade() {
+  try {
+    const r = await fetch('/api/mapping-grade');
+    const j = await r.json();
+    mappingGrade = j.grade || null;
+  } catch {
+    mappingGrade = null;
+  }
+  const badge = document.getElementById('mappingGradeBadge');
+  if (!badge) return;
+  const mission = mapEstablishContext?.establish?.mission;
+  if (mission !== 'mapping' || !mappingGrade) {
+    badge.hidden = true;
+    return;
+  }
+  badge.hidden = false;
+  const ok = mappingGrade.ok ? 'ok' : 'warn';
+  badge.className = `badge ${ok}`;
+  badge.textContent = mappingGrade.ok
+    ? `MAP ok ${mappingGrade.poi_count}/${mappingGrade.sign_count} signs`
+    : `MAP ${mappingGrade.poi_count} poi`;
+}
+
+function updateCoverageStrip() {
+  const strip = document.getElementById('mapCoverageStrip');
+  if (!strip) return;
+  const mission = mapEstablishContext?.establish?.mission;
+  if (mission !== 'mapping') {
+    strip.hidden = true;
+    return;
+  }
+  strip.hidden = false;
+  const n = personalPois.length;
+  const signs = personalPois.filter((p) => p.sign_at).length;
+  const g = mappingGrade;
+  const gradeLine = g
+    ? g.ok
+      ? ' · grader ok'
+      : ` · grader: ${(g.failures || []).slice(0, 2).join('; ')}`
+    : '';
+  strip.textContent = `POIs ${n} (signs ${signs}) · targets ≥8 poi, ≥4 signs, ≥40m radius, 3/4 quadrants${gradeLine}`;
+}
+
+function renderFleetChat() {
+  const host = document.getElementById('fleetChatBody');
+  if (!host || state.viewMode !== 'overview') return;
+  const lines = fleet?.chat || [];
+  host.replaceChildren();
+  if (!lines.length) {
+    host.appendChild(el('p', 'muted', 'No recent fleet chat.'));
+    return;
+  }
+  for (const row of lines) {
+    const line = el('div', 'chat-line', null);
+    const who = row.agent ? `${row.agent}: ` : '';
+    line.appendChild(document.createTextNode(`${who}${row.text || row.message || ''}`));
+    host.appendChild(line);
+  }
+  host.scrollTop = host.scrollHeight;
+}
+
+function renderOverviewSelection() {
+  const slot = document.getElementById('overviewSelectionSlot');
+  const back = document.getElementById('overviewBackToChat');
+  if (!slot) return;
+  const sel = state.selection;
+  if (!sel || sel.kind === 'player') {
+    slot.hidden = true;
+    slot.replaceChildren();
+    if (back) back.hidden = true;
+    return;
+  }
+  slot.hidden = false;
+  if (back) back.hidden = false;
+  slot.replaceChildren();
+  if (mapEstablishContext?.establish?.mission === 'mapping' && mappingGrade) {
+    const g = mappingGrade;
+    slot.appendChild(
+      el(
+        'p',
+        'muted',
+        g.ok
+          ? `Mapping grade: ok (${g.poi_count} poi, ${g.sign_count} signs)`
+          : `Mapping grade: ${(g.failures || []).join(' · ') || 'pending'}`,
+      ),
+    );
+  }
+  if (sel.kind === 'poi') {
+    const p = pois.find((x) => poiKey(x) === sel.id);
+    if (p) slot.appendChild(buildPoiDetail(p));
+    return;
+  }
+  if (sel.kind === 'personal_poi') {
+    const p = personalPois.find((x) => `${x.world}|${x.name}` === sel.id);
+    if (p) slot.appendChild(buildPersonalPoiDetail(p));
+    return;
+  }
+  if (sel.kind === 'task') {
+    const t = (kanbanData.tasks || []).find((x) => x.id === sel.id);
+    if (t) slot.appendChild(buildKanbanDetail(t));
+  }
 }
 
 function renderHeader() {
@@ -631,10 +794,10 @@ function renderAgentList() {
     btn.addEventListener('click', () => {
       state.selection = { kind: 'player', id: a.name };
       saveJson(LS_SEL, state.selection);
+      setViewMode('agent');
       renderAgentList();
       renderHumanList();
       renderDetail();
-      if (state.centerTab === 'fpv') refreshFpv();
     });
     host.appendChild(btn);
   }
@@ -717,6 +880,10 @@ function renderAgentLiveStrip() {
 
 async function renderDetail() {
   renderAgentLiveStrip();
+  if (state.viewMode === 'overview') {
+    renderOverviewSelection();
+    return;
+  }
   const panel = $('detailPanel');
   const sel = state.selection;
   const key = sel ? `${sel.kind}:${sel.id}` : '';
@@ -800,7 +967,7 @@ async function renderDetail() {
         onOpen: (t) => {
           state.selection = { kind: 'task', id: t.id };
           saveJson(LS_SEL, state.selection);
-          setTab('kanban');
+          setViewMode('overview');
           fetchKanban();
           renderAgentList();
           renderHumanList();
@@ -1205,14 +1372,14 @@ function renderKanban() {
   }
 }
 
-function bindCenterUpperResize() {
-  const upper = document.querySelector('.center-upper');
-  if (!upper || typeof ResizeObserver === 'undefined') return;
+function bindCenterResize() {
+  const center = document.querySelector('.pane-center');
+  if (!center || typeof ResizeObserver === 'undefined') return;
   const ro = new ResizeObserver(() => {
-    if (state.centerTab === 'fpv') refreshFpv();
-    if (state.centerTab === 'map' && state.mapSub === 'ops') refreshSchematicMap();
+    if (state.viewMode === 'agent') refreshFpv();
+    if (state.viewMode === 'overview' && state.mapSub === 'ops') refreshSchematicMap();
   });
-  ro.observe(upper);
+  ro.observe(center);
 }
 
 function resolveFpvPort(ag) {
@@ -1285,18 +1452,55 @@ function bindUi() {
     renderHumanList();
     renderDetail();
     fetchPoi();
+    fetchMapContext().then(() => {
+      fetchMappingGrade();
+      updateCoverageStrip();
+    });
     refreshMapPlayerNames().then(() => renderHumanList());
-    if (state.centerTab === 'map') refreshMapPanels();
-    if (state.centerTab === 'kanban') fetchKanban();
+    if (state.viewMode === 'overview') refreshMapPanels();
+    fetchKanban();
   });
 
-  document.querySelectorAll('.tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      setTab(btn.dataset.tab);
-      if (btn.dataset.tab === 'kanban') fetchKanban();
-      if (btn.dataset.tab === 'map') refreshMapPanels();
+  const navOv = document.getElementById('navOverview');
+  if (navOv) {
+    navOv.addEventListener('click', () => {
+      state.selection = null;
+      saveJson(LS_SEL, null);
+      setViewMode('overview');
+      renderAgentList();
+      renderHumanList();
     });
-  });
+  }
+  const backChat = document.getElementById('overviewBackToChat');
+  if (backChat) {
+    backChat.addEventListener('click', () => {
+      state.selection = null;
+      saveJson(LS_SEL, null);
+      renderOverviewSelection();
+    });
+  }
+  const poiSrc = document.getElementById('poiSourceSelect');
+  if (poiSrc) {
+    poiSrc.value = state.poiSource;
+    poiSrc.addEventListener('change', () => {
+      state.poiSource = poiSrc.value || 'merge';
+      saveJson(LS_POI_SOURCE, state.poiSource);
+      fetchPoi();
+    });
+  }
+  const trailTog = document.getElementById('showTrailsToggle');
+  if (trailTog) {
+    trailTog.checked = state.showTrails;
+    trailTog.addEventListener('change', () => {
+      state.showTrails = trailTog.checked;
+      saveJson(LS_SHOW_TRAILS, state.showTrails);
+      if (state.showTrails) fetchAgentTrails().then(() => refreshSchematicMap());
+      else {
+        agentTrails = [];
+        refreshSchematicMap();
+      }
+    });
+  }
 
   document.querySelectorAll('.map-subtab').forEach((btn) => {
     btn.addEventListener('click', () => setMapSub(btn.dataset.mapSub));
@@ -1328,13 +1532,13 @@ function bindUi() {
   if (kanbanDispatch) kanbanDispatch.addEventListener('click', () => nudgeKanbanDispatch());
 
   setChatSubTab(state.chatSub);
-  if (state.chatSub === 'mind') startMindPoll();
-  setTab(state.centerTab);
+  if (state.chatSub === 'mind' && state.viewMode === 'agent') startMindPoll();
+  setViewMode(state.viewMode);
 }
 
 async function main() {
   bindUi();
-  bindCenterUpperResize();
+  bindCenterResize();
   await fetchWorlds();
   await fetchMapConfig();
   await refreshMapPlayerNames();
@@ -1348,8 +1552,8 @@ async function main() {
     fetchKanban();
   }, 8000);
   window.addEventListener('resize', () => {
-    if (state.centerTab === 'fpv') refreshFpv();
-    if (state.centerTab === 'map' && state.mapSub === 'ops') refreshSchematicMap();
+    if (state.viewMode === 'agent') refreshFpv();
+    if (state.viewMode === 'overview' && state.mapSub === 'ops') refreshSchematicMap();
   });
 }
 

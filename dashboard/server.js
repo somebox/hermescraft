@@ -27,7 +27,12 @@ import {
 } from './lib/bot-discovery.js';
 import { hermesHomeCandidates, hermesHomeLabel } from './lib/agent-paths.js';
 import { fetchLiveWorldFromBot, mergeAgentWorld } from './lib/live-world.js';
-import { dedupePersonalPois } from './lib/personal-pois.js';
+import {
+  dedupePersonalPois,
+  loadSharedPersonalPois,
+  personalPoisForSource,
+} from './lib/personal-pois.js';
+import { loadLastMappingGrade } from './lib/mapping-grade.js';
 import { loadCognitionFromHomes } from './lib/cognition.js';
 import { runHermesCli } from './lib/hermes-cli.js';
 import { loadMapContext } from './lib/map-context.js';
@@ -352,6 +357,15 @@ async function fetchPersonalPois(agent) {
   return Array.isArray(pois) ? pois : [];
 }
 
+async function fetchNavTrail(agent) {
+  const url = botUrl(agent.api_port, '/nav-trail');
+  const r = await fetchWithTimeout(url, { timeout: 5000 }).catch(() => null);
+  if (!r || !r.ok) return [];
+  const j = await r.json().catch(() => null);
+  const crumbs = j?.data?.crumbs;
+  return Array.isArray(crumbs) ? crumbs : [];
+}
+
 async function fetchInventory(agent) {
   const url = botUrl(agent.api_port, '/inventory');
   const r = await fetchWithTimeout(url, { timeout: 8000 }).catch(() => null);
@@ -560,7 +574,7 @@ async function buildPoiForWorld(world) {
  * freshest `last_seen`. The result is the dashboard's Ops-map overlay
  * for personal POIs (a parallel layer to /api/poi for fleet marks).
  */
-async function buildPersonalPoisForWorld(world) {
+async function buildPersonalPoisLive(world) {
   const rows = [];
   const tasks = registry.agents.map(async (agent) => {
     const live = await fetchLiveWorldFromBot(botUrl, agent.api_port);
@@ -589,6 +603,18 @@ async function buildPersonalPoisForWorld(world) {
   });
   await Promise.all(tasks);
   return dedupePersonalPois(rows);
+}
+
+/**
+ * @param {string} world
+ * @param {'live'|'shared'|'merge'} source
+ */
+async function buildPersonalPoisForWorld(world, source = 'merge') {
+  const mode = source === 'live' || source === 'shared' ? source : 'merge';
+  const live = await buildPersonalPoisLive(world);
+  const shared = loadSharedPersonalPois(REPO_ROOT, world);
+  const pois = personalPoisForSource(live, shared, mode);
+  return { pois, source: mode, live_count: live.length, shared_count: shared.length };
 }
 
 function sendJson(res, code, obj) {
@@ -718,8 +744,17 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/personal-pois') {
     const world = url.searchParams.get('world') || registry.defaultWorld;
-    const pois = await buildPersonalPoisForWorld(world);
-    return sendJson(res, 200, { world, pois });
+    const srcParam = url.searchParams.get('source') || 'merge';
+    const { pois, source, live_count, shared_count } = await buildPersonalPoisForWorld(
+      world,
+      srcParam,
+    );
+    return sendJson(res, 200, { world, pois, source, live_count, shared_count });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/mapping-grade') {
+    const grade = loadLastMappingGrade(REPO_ROOT);
+    return sendJson(res, 200, { ok: true, grade });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/regions') {
@@ -770,7 +805,9 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  const agentRoute = url.pathname.match(/^\/api\/agent\/([^/]+)\/(inventory|goals|cognition)$/);
+  const agentRoute = url.pathname.match(
+    /^\/api\/agent\/([^/]+)\/(inventory|goals|cognition|trail)$/,
+  );
   if (req.method === 'GET' && agentRoute) {
     const name = decodeURIComponent(agentRoute[1]);
     const sub = agentRoute[2];
@@ -809,6 +846,10 @@ const server = http.createServer(async (req, res) => {
         home_label: home ? hermesHomeLabel(home) : null,
         ...cog,
       });
+    }
+    if (sub === 'trail') {
+      const crumbs = await fetchNavTrail(agent);
+      return sendJson(res, 200, { ok: true, agent: name, crumbs });
     }
   }
 

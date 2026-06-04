@@ -1540,3 +1540,127 @@ html {
   border-radius: 8px;
   margin-top: 0.5rem;
 }
+
+/* D0: Overview vs Agent view modes */
+.nav-overview-btn {
+  width: 100%;
+  margin-bottom: 0.65rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--accent-dim);
+  color: var(--text);
+  cursor: pointer;
+}
+.nav-overview-btn.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #0d1117;
+}
+
+.view-panel-overview,
+.view-panel-agent {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.view-panel-overview {
+  gap: 0.5rem;
+}
+
+.overview-map {
+  flex: 1 1 58%;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.overview-kanban {
+  flex: 1 1 38%;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+}
+
+.view-panel-agent .fpv-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.view-panel-agent .fpv-frame.visible {
+  flex: 1;
+  min-height: 0;
+}
+
+.pane-right .view-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fleet-chat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.overview-selection-slot {
+  flex: 0 0 auto;
+  max-height: 42%;
+  overflow: auto;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.map-coverage-strip {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.35rem;
+}
+
+.poi-source-label,
+.trail-toggle-label {
+  margin-left: auto;
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.map-subtabs {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.overview-map .map-panel-terrain,
+.overview-map .map-panel-tactical {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.overview-map .map-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-map .map-wrap canvas {
+  flex: 1;
+  min-height: 120px;
+}

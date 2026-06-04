@@ -18,11 +18,13 @@
       <span id="openrouterBal" class="badge muted" title="OpenRouter credits">$ —</span>
       <span id="openrouterUse" class="badge muted" title="OpenRouter total usage">use —</span>
       <span id="liveCount" class="badge ok">live 0/0</span>
+      <span id="mappingGradeBadge" class="badge muted" hidden title="Last mapping grader">MAP —</span>
     </div>
   </header>
 
   <main class="layout">
-    <section class="pane pane-left" aria-label="Agents">
+    <section class="pane pane-left" aria-label="Navigation">
+      <button type="button" id="navOverview" class="nav-overview-btn active" aria-pressed="true">Overview</button>
       <h2 class="pane-title">Agents</h2>
       <div id="agentList" class="agent-list"></div>
       <h2 class="pane-title pane-subtitle">Players</h2>
@@ -30,84 +32,91 @@
     </section>
 
     <section class="pane pane-center" aria-label="Center">
-      <div class="center-stack">
-        <nav class="tabs center-main-tabs" role="tablist" aria-label="Main view">
-          <button type="button" class="tab active" data-tab="map" role="tab" aria-selected="true">Map</button>
-          <button type="button" class="tab" data-tab="fpv" role="tab" aria-selected="false">FPV</button>
-          <button type="button" class="tab" data-tab="kanban" role="tab" aria-selected="false">Kanban</button>
-        </nav>
-        <div class="center-split">
-          <div class="center-upper">
-            <div class="tab-panels">
-              <div id="panel-map" class="tab-panel active" role="tabpanel">
-                <nav class="map-subtabs" role="tablist" aria-label="Map layer">
-                  <button type="button" class="map-subtab active" data-map-sub="terrain" role="tab" aria-selected="true">Terrain</button>
-                  <button type="button" class="map-subtab" data-map-sub="ops" role="tab" aria-selected="false">Ops</button>
-                </nav>
-                <div id="mapPanelTerrain" class="map-panel-terrain">
-                  <iframe id="terrainFrame" class="terrain-frame" title="World terrain map"></iframe>
-                  <div id="mapFleetOverlay" class="map-fleet-overlay" aria-label="Online agents in this world"></div>
-                  <p class="muted terrain-map-hint">
-                    <a id="terrainOpenLink" href="#" target="_blank" rel="noopener">Open map in new tab</a>
-                    · follows world selector
-                    <span id="terrainStaleHint" class="terrain-zoom-hint" hidden></span>
-                    <span id="terrainZoomHint" class="terrain-zoom-hint" hidden></span>
-                  </p>
-                </div>
-                <div id="mapPanelOps" class="map-panel-tactical map-wrap" hidden>
-                  <canvas id="schematicMapCanvas" width="400" height="280" aria-label="Schematic world map"></canvas>
-                  <p id="schematicMapHint" class="muted terrain-map-hint">
-                    Agents, marks, regions, establish spawn/muster/arena — no Squaremap tiles.
-                  </p>
-                </div>
-                <p id="mapUnavailable" class="map-unavailable muted" hidden>
-                  World map not configured — set <code>worldMap</code> in agent-registry.json.
-                </p>
-              </div>
-              <div id="panel-fpv" class="tab-panel" role="tabpanel" hidden>
-                <div class="fpv-wrap">
-                  <div id="fpvPlaceholder" class="fpv-placeholder muted">Select an online agent with a viewer port.</div>
-                  <iframe id="fpvFrame" class="fpv-frame" title="First-person view"></iframe>
-                  <a id="fpvOpenLink" class="fpv-open-link muted" href="#" target="_blank" rel="noopener" hidden>Open FPV in new tab</a>
-                </div>
-              </div>
-              <div id="panel-kanban" class="tab-panel" role="tabpanel" hidden>
-                <div class="kanban-toolbar">
-                  <div class="kanban-toolbar-row">
-                    <label class="kanban-board-label">
-                      <span class="muted">Board</span>
-                      <select id="kanbanBoardSelect" aria-label="Kanban board"></select>
-                    </label>
-                    <button type="button" id="kanbanRefresh" class="kanban-btn">Refresh</button>
-                    <button type="button" id="kanbanDispatch" class="kanban-btn" title="Runs hermes kanban dispatch once">Dispatch</button>
-                  </div>
-                </div>
-                <div id="kanbanBoard" class="kanban-board"></div>
-                <p id="kanbanStatus" class="muted kanban-status"></p>
-              </div>
+      <div id="panelOverview" class="view-panel view-panel-overview">
+        <div class="overview-map">
+          <nav class="map-subtabs" role="tablist" aria-label="Map layer">
+            <button type="button" class="map-subtab active" data-map-sub="terrain" role="tab" aria-selected="true">Terrain</button>
+            <button type="button" class="map-subtab" data-map-sub="ops" role="tab" aria-selected="false">Ops</button>
+            <label class="poi-source-label muted">
+              POIs
+              <select id="poiSourceSelect" aria-label="Personal POI source">
+                <option value="merge">merge</option>
+                <option value="live">live</option>
+                <option value="shared">shared</option>
+              </select>
+            </label>
+            <label class="trail-toggle-label muted">
+              <input type="checkbox" id="showTrailsToggle" /> trails
+            </label>
+          </nav>
+          <div id="mapCoverageStrip" class="map-coverage-strip muted" hidden></div>
+          <div id="mapPanelTerrain" class="map-panel-terrain">
+            <iframe id="terrainFrame" class="terrain-frame" title="World terrain map"></iframe>
+            <div id="mapFleetOverlay" class="map-fleet-overlay" aria-label="Online agents in this world"></div>
+            <p class="muted terrain-map-hint">
+              <a id="terrainOpenLink" href="#" target="_blank" rel="noopener">Open map in new tab</a>
+              · follows world selector
+              <span id="terrainStaleHint" class="terrain-zoom-hint" hidden></span>
+              <span id="terrainZoomHint" class="terrain-zoom-hint" hidden></span>
+            </p>
+          </div>
+          <div id="mapPanelOps" class="map-panel-tactical map-wrap" hidden>
+            <canvas id="schematicMapCanvas" width="400" height="280" aria-label="Schematic world map"></canvas>
+            <p id="schematicMapHint" class="muted terrain-map-hint">
+              Agents, marks, regions, establish spawn/muster/arena — no Squaremap tiles.
+            </p>
+          </div>
+          <p id="mapUnavailable" class="map-unavailable muted" hidden>
+            World map not configured — set <code>worldMap</code> in agent-registry.json.
+          </p>
+        </div>
+        <div class="overview-kanban">
+          <div class="kanban-toolbar">
+            <div class="kanban-toolbar-row">
+              <label class="kanban-board-label">
+                <span class="muted">Board</span>
+                <select id="kanbanBoardSelect" aria-label="Kanban board"></select>
+              </label>
+              <button type="button" id="kanbanRefresh" class="kanban-btn">Refresh</button>
+              <button type="button" id="kanbanDispatch" class="kanban-btn" title="Runs hermes kanban dispatch once">Dispatch</button>
             </div>
           </div>
-          <div class="center-lower" aria-label="Agent log">
-            <div id="agentLiveStrip" class="agent-live-strip muted" aria-live="polite">
-              Select an agent to see live status.
-            </div>
-            <div class="center-log-head">
-              <h2 class="center-log-title">Log</h2>
-              <nav id="chatSubtabs" class="chat-subtabs" role="tablist" aria-label="Log source">
-                <button type="button" class="chat-subtab active" data-chat-sub="ingame" role="tab" aria-selected="true">In-game</button>
-                <button type="button" class="chat-subtab" data-chat-sub="mind" role="tab" aria-selected="false">Mind</button>
-              </nav>
-            </div>
-            <div id="chatBody" class="chat-body log-scroll"></div>
-            <div id="mindBody" class="mind-body log-scroll" hidden></div>
-          </div>
+          <div id="kanbanBoard" class="kanban-board"></div>
+          <p id="kanbanStatus" class="muted kanban-status"></p>
+        </div>
+      </div>
+
+      <div id="panelAgent" class="view-panel view-panel-agent" hidden>
+        <div id="agentLiveStrip" class="agent-live-strip muted" aria-live="polite">
+          Select an agent to see live status.
+        </div>
+        <div class="fpv-wrap">
+          <div id="fpvPlaceholder" class="fpv-placeholder muted">Select an online agent with a viewer port.</div>
+          <iframe id="fpvFrame" class="fpv-frame" title="First-person view"></iframe>
+          <a id="fpvOpenLink" class="fpv-open-link muted" href="#" target="_blank" rel="noopener" hidden>Open FPV in new tab</a>
         </div>
       </div>
     </section>
 
-    <section class="pane pane-right" aria-label="Details">
-      <h2 class="pane-title">Details</h2>
-      <div id="detailPanel" class="detail-panel muted">Select an agent or map item.</div>
+    <section class="pane pane-right" aria-label="Side panel">
+      <div id="panelRightOverview" class="view-panel view-panel-right-overview">
+        <div id="overviewSelectionSlot" class="overview-selection-slot" hidden></div>
+        <h2 class="pane-title">Fleet chat</h2>
+        <div id="fleetChatBody" class="chat-body log-scroll fleet-chat-body"></div>
+        <button type="button" id="overviewBackToChat" class="kanban-btn" hidden>Back to chat</button>
+      </div>
+      <div id="panelRightAgent" class="view-panel view-panel-right-agent" hidden>
+        <h2 class="pane-title">Details</h2>
+        <div id="detailPanel" class="detail-panel muted">Select an agent or map item.</div>
+        <div class="center-log-head">
+          <nav id="chatSubtabs" class="chat-subtabs" role="tablist" aria-label="Log source">
+            <button type="button" class="chat-subtab active" data-chat-sub="ingame" role="tab" aria-selected="true">In-game</button>
+            <button type="button" class="chat-subtab" data-chat-sub="mind" role="tab" aria-selected="false">Mind</button>
+          </nav>
+        </div>
+        <div id="chatBody" class="chat-body log-scroll"></div>
+        <div id="mindBody" class="mind-body log-scroll" hidden></div>
+      </div>
     </section>
   </main>
 

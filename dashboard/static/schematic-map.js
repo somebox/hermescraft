@@ -64,6 +64,7 @@ function drawGrid(ctx, b, w, h) {
  * @param {object[]} [opts.personalPois]  Phase A4.1: per-bot waypoints (diamond glyph)
  * @param {object[]} opts.regions
  * @param {object | null} opts.establish
+ * @param {{ name: string, crumbs: { x: number, y?: number, z: number }[] }[]} [opts.trails]
  */
 export function drawSchematicMap(opts) {
   const {
@@ -74,6 +75,7 @@ export function drawSchematicMap(opts) {
     personalPois = [],
     regions = [],
     establish = null,
+    trails = [],
   } = opts;
   const parent = canvas.parentElement;
   const w = Math.max(200, parent?.clientWidth || 400);
@@ -119,6 +121,48 @@ export function drawSchematicMap(opts) {
 
   const bounds = boundsXZ(points, 32, 0.25);
   drawGrid(ctx, bounds, w, h);
+
+  const muster =
+    establish?.muster ||
+    establish?.placements?.muster ||
+    (Array.isArray(establish?.spawn) ? establish.spawn : null);
+  if (muster && muster.length >= 3 && establish?.mission === 'mapping') {
+    const mx = muster[0];
+    const mz = muster[2] ?? muster[1];
+    const { cx: cx0, cy: cy0 } = worldToCanvas(mx, mz, bounds, w, h);
+    const { cx: cx1 } = worldToCanvas(mx + 80, mz, bounds, w, h);
+    const { cy: cy1 } = worldToCanvas(mx, mz + 80, bounds, w, h);
+    ctx.strokeStyle = 'rgba(139, 148, 158, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(cx0, 0);
+    ctx.lineTo(cx0, h);
+    ctx.moveTo(0, cy0);
+    ctx.lineTo(w, cy0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(139, 148, 158, 0.5)';
+    ctx.font = '10px system-ui';
+    ctx.fillText('N', cx0 + 4, 10);
+    ctx.fillText('E', cx1 - 10, cy0 - 4);
+  }
+
+  for (const tr of trails) {
+    const crumbs = tr.crumbs || [];
+    if (crumbs.length < 2) continue;
+    ctx.strokeStyle = 'rgba(247, 201, 72, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = crumbs.length - 1; i >= 0; i--) {
+      const c = crumbs[i];
+      if (!Number.isFinite(c.x) || !Number.isFinite(c.z)) continue;
+      const { cx, cy } = worldToCanvas(c.x, c.z, bounds, w, h);
+      if (i === crumbs.length - 1) ctx.moveTo(cx, cy);
+      else ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+  }
 
   if (establish?.arena?.center) {
     const [cx, cz] = establish.arena.center;
@@ -205,7 +249,10 @@ export function drawSchematicMap(opts) {
     if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
     const id = `${p.world}|${p.name}`;
     const color = p.torch_missing_since ? COLORS.personalPoiMissing : COLORS.personalPoi;
-    const label = p.kind ? `${p.name} (${p.kind})` : p.name;
+    const bits = [];
+    if (p.sign_at) bits.push('S');
+    if (p.torch_at) bits.push('T');
+    const label = `${p.name}${bits.length ? ` ${bits.join('')}` : ''}${p.kind ? ` (${p.kind})` : ''}`;
     diamond(p.x, p.z, color, 'personal_poi', id, label, 5);
   }
   for (const h of humans) {

@@ -11,9 +11,17 @@ From repo root:
 ```bash
 chmod +x start-dashboard.sh   # once
 ./start-dashboard.sh
+./start-dashboard.sh --world proc-lab   # establish / bench (initial world selector)
 ```
 
-Open `http://127.0.0.1:3000`.
+Open `http://127.0.0.1:3000` (or the URL printed on startup, including `?world=` when `--world` is set).
+
+| Variable / flag | Purpose |
+|-----------------|--------|
+| `DASHBOARD_WORLD` | Same as `--world` — initial Hermes world in the header dropdown (overrides browser localStorage for that session’s first load). |
+| `--world <name>` | Must match a `worlds[].name` entry in `data/agent-registry.json`. |
+
+You can also pass `?world=proc-lab` in the browser URL; that wins over `DASHBOARD_WORLD` when the name is valid.
 
 ## Environment
 
@@ -60,9 +68,27 @@ Nothing special on the MC side beyond normal **offline/online** access for the b
 - **Roster:** `data/agent-registry.json` — agents (Steve companion + Landfolk workers), default world, world list.
 - Tune `world` per agent when using Multiverse; the dashboard filters the left list to **online** agents in the selected world.
 
-### Map tab (terrain iframe)
+### Overview vs Agent
 
-The center tabs are **Map**, **FPV**, and **Kanban**. **Map** embeds the Squaremap / Dynmap-style web UI in an iframe when `worldMap` is configured (e.g. `http://192.168.1.202:8123/?world=minecraft_overworld&zoom=4`). The world selector drives the iframe `world` query param via `worldMap.hermesToTileWorld` in the registry (Hermes world name → plugin key such as `minecraft_overworld`). Pan/zoom inside the iframe are not readable by the dashboard (one-way control).
+| Mode | Center | Right column |
+|------|--------|----------------|
+| **Overview** (default) | **Terrain / Ops** map (top) + **Kanban** board (bottom) | **Fleet chat** (merged in-game lines from `/api/fleet`) and a selection slot for map POIs / kanban cards / mapping grade |
+| **Agent** | **FPV** for the selected online agent | Goals, inventory, **In-game / Mind** log |
+
+Click **Overview** in the left rail to return to world coverage. Click an **agent** row (or a map agent dot) to open **Agent** mode and FPV.
+
+### Map (Terrain + Ops) — Overview only
+
+| Sub-tab | Purpose |
+|---------|---------|
+| **Terrain** | Squaremap / Dynmap iframe when `worldMap` is configured. World selector → `hermesToTileWorld` (e.g. `proc-lab` → `minecraft_proc-lab`). After proc-lab disc reset, tiles may be stale until `/squaremap fullrender` on the server; `hc_rev=` on the iframe URL reloads when `data/runtime/proc-lab-state.json` / establish map seed changes. |
+| **Ops** | Hermes schematic canvas: online agents, fleet marks (`/api/poi`), personal POIs (`/api/personal-pois?source=merge|live|shared`), optional nav **trails** (`GET /api/agent/<name>/trail` → bot `GET /nav-trail`), regions, establish spawn/muster/arena from `GET /api/map/context` (`establish.mission` is `mapping` or `explore`). Mapping runs show quadrant guides and a coverage strip when `mission=mapping`. |
+
+For **establish / mapping**, select world **proc-lab** (`./start-dashboard.sh --world proc-lab`). Fleet poll uses live MV from `GET /regions` (`data.world`). Terrain shows a proc-lab stale-tile hint when applicable.
+
+Pan/zoom inside the Terrain iframe are not readable by the dashboard (one-way control). Ops map supports click-to-select agents, fleet marks, and personal POIs.
+
+**Mapping grade:** `GET /api/mapping-grade` reads `data/runtime/last-mapping-grade.json` (written by `scripts/establish-mapping-check.py`). Header badge and coverage strip update when `establish.mission=mapping`.
 
 Configure in `data/agent-registry.json`:
 
@@ -165,7 +191,8 @@ curl -s 'http://127.0.0.1:3000/api/agent/Steve/goals' | jq '.ok, (.goals | lengt
 - Reasoning, tools, and prompts are **not** on the bot API; they live in Hermes session JSON under `HERMES_HOME/sessions/session_*.json`.
 - The dashboard picks the active home like `scripts/watch-agent.py --auto`: newest session between `~/.hermes-landfolk-<name>` and `~/.hermes/profiles/<name>` (kanban workers). Override landfolk home with `hermes_home` in `data/agent-registry.json`.
 - `GET /api/agent/<name>/cognition?tail=1&limit=24` returns the last turns: **USER**, reasoning (**·**), **AGENT** text, **⚙** tool calls, **← / ✗** tool output (same parsing as `watch-agent.py`).
-- Chat strip: **In-game** — chat heard by the **selected online agent** (`new_chat` from observe) plus world lines from that bot. **Mind** — Hermes tail; empty when no agent selected or agent offline. Poll every **5s** on the Mind tab.
+- Session homes checked (newest active session wins): `hermes_home` in registry if set, else `~/.hermes-landfolk-<name>`, `~/.hermes/profiles/<name>` (kanban), and `~/.hermes` (global — used by `scripts/agent-test.py`).
+- Chat strip: **In-game** — chat heard by the **selected online agent** (`new_chat` from observe) plus world lines from that bot. **Mind** — Hermes tail; empty when no agent selected or agent offline. Poll every **5s** on the Mind tab; open the **Mind** sub-tab under Log (not In-game).
 
 Compare with CLI:
 

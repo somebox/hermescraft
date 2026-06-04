@@ -37,9 +37,16 @@ export function loadMapContext(repoRoot, hermesWorld) {
     const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
     if (map && typeof map === 'object') {
       const arena = map.arena;
+      const reqId = map.requirements_id ?? null;
+      let mission = null;
+      if (reqId === 'scenario_establish_mapping') mission = 'mapping';
+      else if (reqId === 'scenario_establish_explore' || reqId?.includes?.('establish')) {
+        mission = 'explore';
+      }
       out.establish = {
         seed: map.seed != null ? String(map.seed) : null,
-        requirements_id: map.requirements_id ?? null,
+        requirements_id: reqId,
+        mission,
         spawn: Array.isArray(map.spawn) ? map.spawn : map.placements?.spawn ?? null,
         muster: Array.isArray(map.muster) ? map.muster : map.placements?.muster ?? null,
         starter_chest: map.placements?.starter_chest ?? map.starter_chest ?? null,

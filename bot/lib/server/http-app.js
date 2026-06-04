@@ -12,7 +12,7 @@ import { normalizeId } from '../runtime/regions/index.js';
 import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
 import { getBuildInfo } from '../runtime/build-info.js';
 import { sceneToolNeeds } from '../runtime/inventory-hints.js';
-import { clearNavTrail } from '../runtime/nav-trail.js';
+import { clearNavTrail, navTrailCrumbsNewestFirst } from '../runtime/nav-trail.js';
 import { buildNavFrame } from '../runtime/nav-brief.js';
 import { autoClearPlaybookOnCardChange } from '../runtime/playbook-context.js';
 import { gateOrchestratorMcAction } from './middleware/orchestrator-mc-gate.js';
@@ -347,6 +347,17 @@ export function createBotHttpListener(deps) {
       if (path === '/personal-pois') {
         ensureBot();
         return respond(res, 200, { ok: true, data: { pois: buildPersonalPoisListApi() } });
+      }
+
+      if (path === '/nav-trail') {
+        ensureBot();
+        const crumbs = navTrailCrumbsNewestFirst(ctx).map((c) => ({
+          x: c.x,
+          y: c.y,
+          z: c.z,
+          ts: c.ts ?? null,
+        }));
+        return respond(res, 200, { ok: true, data: { crumbs } });
       }
 
       if (path === '/regions') {

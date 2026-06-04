@@ -58,6 +58,7 @@ export function buildDetailHero(name, opts = {}) {
   const hero = el('div', 'detail-hero');
   const h = el('h2', 'detail-hero-name', name);
   hero.appendChild(h);
+  if (opts.subtitle) hero.appendChild(el('p', 'detail-muted', opts.subtitle));
   const row = el('div', 'detail-hero-badges');
   if (opts.online === true) row.appendChild(badge('Online', 'ok'));
   else if (opts.online === false) row.appendChild(badge('Offline', 'off'));
@@ -678,6 +679,29 @@ export function buildPoiDetail(p) {
   add('Position', `${p.x}, ${p.y}, ${p.z}`);
   if (p.note) add('Note', p.note);
   add('Last visited', p.last_visited_by || '—');
+  frag.appendChild(dl);
+  return frag;
+}
+
+/** Personal POI row from /api/personal-pois (mapping mission). */
+export function buildPersonalPoiDetail(p) {
+  const frag = document.createDocumentFragment();
+  const sub = [p.kind, p.source || p.observed_by].filter(Boolean).join(' · ');
+  frag.appendChild(buildDetailHero(p.name, { world: p.world, subtitle: sub || null }));
+  const dl = el('dl', 'detail-meta-dl');
+  const add = (dt, dd) => {
+    dl.appendChild(el('dt', null, dt));
+    dl.appendChild(el('dd', null, dd));
+  };
+  add('Position', `${p.x}, ${p.y}, ${p.z}`);
+  if (p.kind) add('Kind', p.kind);
+  if (p.agent_owner) add('Owner', p.agent_owner);
+  if (p.sign_at) add('Sign', `${p.sign_at.x}, ${p.sign_at.y}, ${p.sign_at.z}`);
+  else add('Sign', '—');
+  if (p.torch_at) add('Torch', `${p.torch_at.x}, ${p.torch_at.y}, ${p.torch_at.z}`);
+  if (p.torch_missing_since) add('Torch missing since', p.torch_missing_since);
+  if (p.note) add('Note', p.note);
+  if (p.last_seen) add('Last seen', p.last_seen);
   frag.appendChild(dl);
   return frag;
 }

@@ -33,6 +33,7 @@ import math
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -203,6 +204,14 @@ def main() -> int:
         quadrant_min=args.quadrant_min,
         epic_status=epic_status,
     )
+    runtime_dir = DATA / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    grade_path = runtime_dir / "last-mapping-grade.json"
+    payload = {
+        **report,
+        "graded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    grade_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
     return 0 if report["ok"] else 1
 

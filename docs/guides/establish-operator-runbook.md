@@ -224,7 +224,7 @@ Cards seed with `assignee=orchestrator-tracker` so Steward assigns patrols. Mapp
 ### 8.1b Dashboard map (proc-lab)
 
 - In the Command Center world dropdown, select **proc-lab** (not `world`) while the establish fleet is in that MV world — or start the dashboard with `./start-dashboard.sh --world proc-lab`.
-- **Ops** map tab: lightweight XZ view (agents, marks, spawn/muster/arena from `data/runtime/last-establish-map.json`) — use this when Squaremap still shows an old disc.
+- **Ops** map (Command Center **Overview**): lightweight XZ view (agents, marks, personal POIs, spawn/muster/arena from `data/runtime/last-establish-map.json`) — use this when Squaremap still shows an old disc.
 - **Terrain** tab: Squaremap iframe. After `reset-proc-lab` or `--fresh-disc`, stale tiles are normal until the server re-renders. On the MC host (RCON/console): `/squaremap fullrender proc-lab` (or the plugin’s world key, e.g. `minecraft_proc-lab` — match `hermesToTileWorld` in `data/agent-registry.json`). The dashboard appends `hc_rev=` from `data/runtime/proc-lab-state.json` / establish map seed so the browser reloads the iframe when the seed changes; it does not replace Squaremap’s on-disk tile cache.
 
 ### 8.2 Launch verify
@@ -309,7 +309,7 @@ for f in data/personal-pois-*.json; do
 done
 
 # Dashboard overlay (after starting it with --world proc-lab)
-curl -s http://localhost:9080/api/personal-pois | jq '.pois | length'
+curl -s "http://127.0.0.1:${DASHBOARD_PORT:-3000}/api/personal-pois" | jq '.pois | length'
 ```
 
 Workers checking their own context use `mc pois`, `mc nearby_signs 32`, and `mc marks` — note `mc observe` strips those lists under `HERMES_NAV_BRIEF=1`.
@@ -395,6 +395,7 @@ scripts/establish-check.py
 ### Mapping mission
 
 ```bash
+bash scripts/establish-mapping-phase-d-prep.sh   # catalog ensure + offline grader hint
 export PATH=/opt/homebrew/bin:$PATH
 VARIANT=establishment.mapping scripts/establish-run.sh --min-credits-usd 5 --archive-logs
 scripts/kanban board                     # confirm [MAP:ARENA] epic + 4 [MAP] cards
