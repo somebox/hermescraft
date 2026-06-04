@@ -14,16 +14,45 @@ const { goals } = pathfinderPkg;
  *     parsed by older paths; may be a string (JSON-stringified) or array.
  * Returns a length-4 array (padding with '' when needed) for diff'ing.
  */
+/** Decode one MC 1.20.5+ sign-line value — Mineflayer surfaces these as
+ *  JSON-component objects (e.g. {text:"smoke"}) OR JSON strings
+ *  (e.g. '"smoke"') OR plain strings, depending on the parser path. */
+function _decodeSignLine(raw) {
+  if (raw == null) return '';
+  if (typeof raw === 'string') {
+    // Often '"smoke"' — JSON-encoded string. Strip the quotes if present.
+    if (raw.length >= 2 && raw[0] === '"' && raw[raw.length - 1] === '"') {
+      try { return String(JSON.parse(raw) ?? ''); } catch { /* fall through */ }
+    }
+    return raw;
+  }
+  if (typeof raw === 'object') {
+    if (typeof raw.text === 'string') return raw.text;
+    if (Array.isArray(raw.extra)) {
+      return raw.extra.map(_decodeSignLine).join('');
+    }
+  }
+  return String(raw);
+}
+
 export function readSignTextLines(block) {
   if (!block) return ['', '', '', ''];
-  // Modern path: blocks.js sets `block.signText` directly.
+  // Modern Mineflayer path (MC 1.20.5+): front_text/back_text containers
+  // each holding a `messages` array of JSON components. Workers always
+  // write to the front by default; back path is for `--back`.
+  const front = block.frontText || block.front_text;
+  if (front?.messages && Array.isArray(front.messages)) {
+    return [0, 1, 2, 3].map((i) => _decodeSignLine(front.messages[i]));
+  }
+  // Older Mineflayer path: block.signText array of plain strings.
   if (Array.isArray(block.signText)) {
     return [0, 1, 2, 3].map((i) => String(block.signText[i] ?? ''));
   }
+  // Oldest path: tile-entity blob with `text` (string or array).
   const signEntity = block._signEntity || block.signEntity;
   if (signEntity?.text != null) {
     if (Array.isArray(signEntity.text)) {
-      return [0, 1, 2, 3].map((i) => String(signEntity.text[i] ?? ''));
+      return [0, 1, 2, 3].map((i) => _decodeSignLine(signEntity.text[i]));
     }
     const split = String(signEntity.text).split('\n');
     return [0, 1, 2, 3].map((i) => split[i] ?? '');
@@ -611,40 +640,54 @@ export function createInteractionActions(services) {
     }
 
     // ── Read-back verification (wax detection) ──
-    // Phase D evidence: a single 200ms readback was firing before the
-    // tile_entity_data packet round-tripped from the server, producing
-    // false SIGN_WAX_PROTECTED on every placement against the homelab
-    // MC instance. Poll instead — every 50ms up to a max budget
-    // (env SIGN_READBACK_MS, default 1500ms = 30 polls). First match
-    // wins. Wax-protected signs never match, so they still surface
-    // after the full budget.
-    const readbackMaxMs = Number(process.env.SIGN_READBACK_MS) || 1500;
-    const pollMs = 50;
-    let observed = ['', '', '', ''];
-    let verifyBlock = null;
-    let elapsed = 0;
-    let matched = false;
-    while (elapsed < readbackMaxMs) {
-      await sleep(pollMs);
-      elapsed += pollMs;
-      verifyBlock = b.blockAt(new Vec3(x, y, z));
-      observed = readSignTextLines(verifyBlock);
-      if (linesMatch(observed, lines)) {
-        matched = true;
-        break;
+    // Phase E evidence (2026-06-04): Mineflayer's local block cache
+    // doesn't reliably pick up sign text after `bot.updateSign`. The
+    // server stores the text correctly (verified via RCON `data get
+    // block`), but `bot.blockAt(pos)` returns a Block whose
+    // `signText` / `frontText.messages` / `signEntity.text` paths all
+    // come back empty for the polled duration. This produces a 100%
+    // false-positive SIGN_WAX_PROTECTED rate on this MC version.
+    //
+    // Until we figure out the right Mineflayer accessor for 1.20.5+
+    // sign data, the read-back check is opt-in. Default: skip.
+    //
+    //   SIGN_READBACK_VERIFY=1   re-enable the readback poll
+    //   SIGN_READBACK_MS         poll budget in ms (default 1500)
+    //
+    // Workers trust `bot.updateSign` succeeded if no exception was
+    // thrown. They lose automatic wax detection — a waxed sign will
+    // appear to succeed even though the world rejected the write. That
+    // trade is worth it to unblock the mapping mission.
+    const verifyEnabled = process.env.SIGN_READBACK_VERIFY === '1';
+    if (verifyEnabled) {
+      const readbackMaxMs = Number(process.env.SIGN_READBACK_MS) || 1500;
+      const pollMs = 50;
+      let observed = ['', '', '', ''];
+      let verifyBlock = null;
+      let elapsed = 0;
+      let matched = false;
+      while (elapsed < readbackMaxMs) {
+        await sleep(pollMs);
+        elapsed += pollMs;
+        verifyBlock = b.blockAt(new Vec3(x, y, z));
+        observed = readSignTextLines(verifyBlock);
+        if (linesMatch(observed, lines)) {
+          matched = true;
+          break;
+        }
       }
-    }
-    if (!matched) {
-      return fail('SIGN_WAX_PROTECTED', `Sign at ${x},${y},${z} did not accept the new text (likely waxed or server-side rejection).`, {
-        observed_state: {
-          requested_lines: lines,
-          observed_lines: observed,
-          block_name: verifyBlock?.name ?? null,
-          readback_ms: elapsed,
-        },
-        next_action_hint: `mc chat "<bot>: sign at ${x},${y},${z} is waxed — naming '${lines[0]}' rejected"`,
-        retry_safe: false,
-      });
+      if (!matched) {
+        return fail('SIGN_WAX_PROTECTED', `Sign at ${x},${y},${z} did not accept the new text (likely waxed or server-side rejection).`, {
+          observed_state: {
+            requested_lines: lines,
+            observed_lines: observed,
+            block_name: verifyBlock?.name ?? null,
+            readback_ms: elapsed,
+          },
+          next_action_hint: `mc chat "<bot>: sign at ${x},${y},${z} is waxed — naming '${lines[0]}' rejected"`,
+          retry_safe: false,
+        });
+      }
     }
 
     return ok({

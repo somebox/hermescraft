@@ -187,26 +187,57 @@ test('place_named_sign: happy path — write succeeds, readback matches', async 
   assert.equal(harness.bot.inventory.items().length >= 0, true);  // sanity
 });
 
-test('place_named_sign: waxed sign — write silently dropped → SIGN_WAX_PROTECTED', async () => {
-  const harness = makeStubBot({ simulateWax: true });
-  const services = servicesWith(harness.bot, async () => {
-    harness.markPlaced();
-    return { ok: true };
-  });
-  const actions = createInteractionActions(services);
-  const r = await actions.place_named_sign({
-    x: 0, y: 64, z: 0,
-    text: 'spider hill\ngreat view',
-  });
-  assertFailure(r, {
-    code: 'SIGN_WAX_PROTECTED',
-    observedKeys: ['requested_lines', 'observed_lines', 'block_name', 'readback_ms'],
-    retrySafe: false,
-  });
-  // The observed lines are the pre-write empty array — confirms the
-  // verification surface (not just the rejection code) actually fires.
-  assert.deepEqual(r.error.observed_state.observed_lines, ['', '', '', '']);
-  assert.deepEqual(r.error.observed_state.requested_lines, ['spider hill', 'great view']);
+test('place_named_sign: waxed sign — readback verify is opt-in via SIGN_READBACK_VERIFY=1', async () => {
+  // Phase E (2026-06-04): the readback path is now opt-in because
+  // Mineflayer's local block cache doesn't reliably update with the
+  // server's sign text on the homelab MC instance — producing a 100%
+  // false-positive rate. The verify path still works when the env var
+  // is set; this test exercises that branch explicitly.
+  const prev = process.env.SIGN_READBACK_VERIFY;
+  process.env.SIGN_READBACK_VERIFY = '1';
+  try {
+    const harness = makeStubBot({ simulateWax: true });
+    const services = servicesWith(harness.bot, async () => {
+      harness.markPlaced();
+      return { ok: true };
+    });
+    const actions = createInteractionActions(services);
+    const r = await actions.place_named_sign({
+      x: 0, y: 64, z: 0,
+      text: 'spider hill\ngreat view',
+    });
+    assertFailure(r, {
+      code: 'SIGN_WAX_PROTECTED',
+      observedKeys: ['requested_lines', 'observed_lines', 'block_name', 'readback_ms'],
+      retrySafe: false,
+    });
+    assert.deepEqual(r.error.observed_state.observed_lines, ['', '', '', '']);
+    assert.deepEqual(r.error.observed_state.requested_lines, ['spider hill', 'great view']);
+  } finally {
+    if (prev === undefined) delete process.env.SIGN_READBACK_VERIFY;
+    else process.env.SIGN_READBACK_VERIFY = prev;
+  }
+});
+
+test('place_named_sign: by default, waxed-style readback failure does NOT block placement (verify is opt-in)', async () => {
+  const prev = process.env.SIGN_READBACK_VERIFY;
+  delete process.env.SIGN_READBACK_VERIFY;
+  try {
+    const harness = makeStubBot({ simulateWax: true });
+    const services = servicesWith(harness.bot, async () => {
+      harness.markPlaced();
+      return { ok: true };
+    });
+    const actions = createInteractionActions(services);
+    const r = await actions.place_named_sign({
+      x: 0, y: 64, z: 0,
+      text: 'spider hill\ngreat view',
+    });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.data.lines, ['spider hill', 'great view']);
+  } finally {
+    if (prev !== undefined) process.env.SIGN_READBACK_VERIFY = prev;
+  }
 });
 
 test('place_named_sign: sign block never registers → SIGN_BLOCK_NOT_FOUND', async () => {
