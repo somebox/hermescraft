@@ -232,7 +232,16 @@ def quadrants_per_component(
             n = by_name.get(name)
             if not n:
                 continue
-            quads.add(_quadrant(int(n["x"]), int(n["z"]), mx, mz))
+            # Use the anchor coord (where the sign/torch is actually
+            # placed in-world), not the POI's own x/z which defaults to
+            # the bot's foot position at registration time. Live evidence
+            # (2026-06-04): Gatherer's frozen_north had bot pos (4,-43)
+            # but sign_at (-1,-45) — the bot was 1 block east of the
+            # sign when she ran poi_add. NW landmark was being classified
+            # as NE because of the foot offset.
+            ax = n.get("anchor", {}).get("x", n["x"])
+            az = n.get("anchor", {}).get("z", n["z"])
+            quads.add(_quadrant(int(ax), int(az), mx, mz))
         out.append(sorted(quads))
     return out
 
