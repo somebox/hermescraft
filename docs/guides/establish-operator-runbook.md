@@ -53,7 +53,8 @@ VARIANT=establishment.mapping scripts/establish-run.sh --fresh-disc 1001 --archi
 | `scripts/establish-launch-verify.sh` | Post-bootstrap: terrain, progress `pos`, steward 403, dispatcher |
 | `scripts/establish-scenario.sh` | Bootstrap (memory, map, materialize, RCON, gateway, bots, kanban, terrain verify) |
 | `scripts/establish-check.py` | Post-run **process grade** for explore mission (pad cobble, explores, epic) |
-| `scripts/establish-mapping-check.py` | Post-run **process grade** for mapping mission (POI count, sign count, coverage radius, quadrant coverage, `[MAP:ARENA]` epic state) |
+| `scripts/establish-mapping-check.py` | Post-run **process grade** for mapping mission. Phase E: builds the POI graph and asserts `named_count ≥ 6`, `longest_path_len ≥ 80`, all 4 quadrants covered, `named_frontier_count ≤ 3`, `[MAP:ARENA]` epic done. |
+| `scripts/poi-graph.py` | Build a graph from `personal-pois-shared.json`. Steward calls each cycle to pick frontier nodes for the next `[MAP-PATH]` card. Operator can run with `--pretty` to inspect the current map. |
 | `scripts/reconcile-pois.py` | Merge per-bot `personal-pois-<bot>.json` into `personal-pois-shared.json` (mapping mission; tie-break by most-recent `last_seen`) |
 | `scripts/establish-rcon-prep.py` | Peaceful world + starter chest + `tp_workers` (called by bootstrap). `--mission mapping` swaps chest NBT (16 signs + 64 torches + 32 coal), starter kit (4 signs + 16 torches), and lighting (dusk: `time set 13000` + `gamerule doDaylightCycle true`). |
 | `scripts/establish-materialize.py` | `mapcatalog try` for chosen map JSON |
@@ -220,7 +221,9 @@ scripts/landfolk deploy && scripts/landfolk restart all
 
 `establish-scenario.sh` (re-execs bash 5 on macOS) starts gateway (embedded kanban dispatcher when `kanban.dispatch_in_gateway: true`), workers, TP, kanban, seeds cards, and runs `establish-bootstrap-verify.py` unless `SKIP_BOOTSTRAP_VERIFY=1`. Standalone `landfolk-dispatcher.sh` only when embedded dispatch is off or `FORCE_STANDALONE_DISPATCHER=1`.
 
-Cards seed with `assignee=orchestrator-tracker` so Steward assigns patrols. Mapping-mission seed yields a single `[MAP:ARENA]` epic plus four `[MAP] <quadrant>` cards — same dispatcher-skip-lane pattern as explore's `[ESTABLISH:BASE]`. Steward identifies the mapping mission by the literal `[MAP:ARENA]` token in the epic title (not by assignee), per `prompts/landfolk/steward.md`.
+Cards seed with `assignee=orchestrator-tracker` so Steward assigns patrols.
+
+**Phase E mapping seed:** one `[MAP:ARENA]` epic plus a single `[MAP-PATH] muster → first landmark` root card. Steward grows the graph from there — each cycle she runs `scripts/poi-graph.py`, picks a frontier node, generates a new `[MAP-PATH] <start> → (target coord)` card, and dispatches to the most-idle worker. She also reviews `SIGN_PROPOSAL` comments from workers (kanban_comment on their own card) and replies `APPROVED` / `REJECTED` / `SUGGEST`. Detect mode by the literal `[MAP:ARENA]` token in the epic title.
 
 ### 8.1b Dashboard map (proc-lab)
 
@@ -336,7 +339,9 @@ python3 scripts/establish-mapping-check.py --skip-epic
 
 **Explore checks:** `base_anchor` mark, ≥80/81 cobble on 9×9 pad, four explores done, epic done. **Does not** judge scenic quality.
 
-**Mapping checks:** `personal-pois-shared.json` must contain ≥ 8 POIs with ≥ 4 having non-null `sign_at`, coverage_radius (max horizontal distance from muster) ≥ 40, ≥ 3 of 4 quadrants populated, and the `[MAP:ARENA]` epic must be `done`. Tune thresholds with `--poi-min / --sign-min / --coverage-min / --quadrant-min`. Quadrant axis: `-z = N`, `+x = E`; origin tie-breaks to SE. The grader reads ONLY the shared overlay — per-bot files don't count until reconciled.
+**Mapping checks (Phase E, graph-based):** `personal-pois-shared.json` must yield a POI graph with `named_count ≥ 6` (landmark POIs with `sign_at`), `longest_path_len ≥ 80` (the longest torch-lit trail through the graph, in blocks), all 4 quadrants covered across the union of connected components, `named_frontier_count ≤ 3` (most landmarks are connected, not stranded), and the `[MAP:ARENA]` epic must be `done`. Tune with `--poi-min / --sign-min / --coverage-min / --quadrant-min / --frontier-max / --max-edge-step`. The grader reads ONLY the shared overlay — per-bot files don't count until reconciled.
+
+Inspect the live graph any time: `scripts/poi-graph.py --pretty | jq '.summary, .longest_path, .named_frontier'`.
 
 | Rerun | Behavior |
 |-------|----------|

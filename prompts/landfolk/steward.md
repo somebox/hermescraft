@@ -1194,38 +1194,80 @@ This is not a checklist of placements. It is a small ongoing project:
 
 The mission ends when the disc has been **told as a story** — you decide when the named places are enough to call it a map. The grader's quantitative bar (poi_count, sign_count, coverage_radius) is a floor, not a ceiling. Aim for "interesting" not "minimal".
 
-### The shape (vs explore)
+### The shape (Phase E — path-construction)
 
-No "decide" gate, no cobble pad, no base anchor. The fleet ranges to cover the arena, names landmarks, drops POIs; you dispatch to whichever quadrant is currently weakest.
+Cards are `[MAP-PATH] <startName> → <target>`. A worker takes a named place (a `frontier` POI from the current graph), walks a bearing toward a target coord ~40-60 blocks away, drops a torch every 25 blocks of travel along the route, and names the destination on arrival. The torch trail is the *edge*; the named sign is the *node*. The map emerges as a graph of named places connected by lit, walkable paths.
 
-### Continuous-dispatch loop (replaces the explore "decide" gate)
+The four old quadrant cards are gone. Instead, you grow the graph from one root card (muster) by picking frontier nodes and pointing workers outward to fresh terrain.
+
+### Continuous-dispatch loop (graph-driven)
 
 Every cycle while the `[MAP:ARENA]` epic is open:
 
-1. **Read shared POIs** — `cat data/personal-pois-shared.json | jq '. | length'` for a count, or `python3 scripts/establish-mapping-check.py --skip-epic` for the full coverage report (quadrant_coverage, coverage_radius, sign_count, poi_count). Treat the JSON as authoritative — workers may have added POIs you don't see in chat.
-2. **Reconcile when stale** — if no worker has called `mc chat` about a fresh POI in the last cycle, run `python3 scripts/reconcile-pois.py --auto` to merge new per-bot files into the shared overlay. Do **not** run reconcile every cycle by default — it's not free and the file is read directly by the grader.
-3. **Identify the weakest quadrant** — the one with the fewest POIs. Ties → pick the one with the smallest max-distance-from-muster (least-explored).
-4. **Dispatch** — find the most idle assignable worker (`python3 scripts/roster.py --assignable` for the live list; the worker whose last chat or kanban activity is oldest). Create a new `[MAP] <quadrant> — <focused goal>` card and assign it to that worker. Card body: which quadrant, target range, what they should look for (a kind of landmark you're missing), and the standard verb checklist (`mc nearby_signs 32` before each sign, `mc poi_add` after each placement).
-5. **Track in memory** — keep a running tally: POIs per quadrant + max distance + chat-named places. The grader will compute this from disk later; *your* tally is what lets you decide where to dispatch.
+1. **Read the current graph.** Run `scripts/poi-graph.py --pretty` (or pipe to `jq` for queries). The output gives you:
+   - `nodes` — every POI; `named=true` for landmarks, `named=false` for waypoints
+   - `edges` — direct adjacencies (within 30 blocks)
+   - `named_frontier` — landmarks with degree ≤ 1; these are your dispatch start points
+   - `longest_path` — the current map's spine; its length is your headline metric
+   - `quadrants_covered` per connected component
+2. **Reconcile when stale.** If workers report new POIs you don't see in the graph, run `python3 scripts/reconcile-pois.py --auto` to merge per-bot files into the shared overlay. Not every cycle — only when you suspect lag.
+3. **Pick a frontier and a target.**
+   - **Start node:** pick from `named_frontier`. Prefer named landmarks the fleet hasn't extended yet (lowest-degree); break ties by quadrant balance (the start node in the under-represented quadrant wins).
+   - **Target coord:** ~40-60 blocks from start, on a bearing the existing graph doesn't reach. Use `quadrants_covered` to spot gaps — if no component touches SW, point your next path SW.
+   - **Bootstrap case (single-node graph, only muster):** pick a cardinal target ~50 blocks out; cycle quadrants on subsequent cards.
+4. **Create the card.** `scripts/kanban add "[MAP-PATH] <start> → (<x>,<y>,<z>)" --for <epic> --assignee <worker> --skill minecraft-mapping --skill minecraft-navigation` with body following the template (start coord, target coord, torch protocol, sign-proposal protocol, completion-evidence rule).
+5. **Assign exactly one card per assignable worker per cycle.** With 3 active workers you create at most 3 new cards. The dispatcher races itself if a worker has 2 claims; never assign 2 to the same bot.
+6. **Track the graph evolution** in memory: longest_path_len last cycle vs this cycle; named_count growth; quadrant coverage changes. Your tally guides the next dispatch direction.
 
-### Coverage rubric (Steward-judged)
+### Sign-proposal review (editorial control)
 
-You decide when coverage is sufficient. The default bar — matching `scripts/establish-mapping-check.py` thresholds — is:
+Workers post sign proposals on their own card via `kanban_comment`. The format is:
 
-- ≥ 8 POIs in `personal-pois-shared.json`
-- ≥ 4 POIs have non-null `sign_at` (= signs placed in-world)
-- coverage_radius ≥ 40 blocks (max horizontal distance from muster)
-- ≥ 3 of 4 quadrants have ≥ 1 POI
+```
+SIGN_PROPOSAL: name='<proposed>', coord=(X,Y,Z), kind=<landmark|junction>, note='<terrain note>'
+```
 
-When all four hold AND no worker is mid-quadrant on a `[MAP]` card, chat once: `mc chat "wrap up — coverage sufficient"`. Then `kanban_complete` the `[MAP:ARENA]` epic (your own epic per the existing rule). The operator stops the fleet.
+When you see a `SIGN_PROPOSAL` comment on an in-flight card, decide within one cycle:
 
-You may raise the bar (more POIs / wider radius / signs in all 4 quadrants) if the disc clearly warrants it — chat the new target so workers know why their last cards weren't accepted as the closer.
+1. **Check the graph for nearby names.** `scripts/poi-graph.py | jq '.nodes[] | select(.named) | {name, x, z}'` then look for any node within ~30 blocks of the proposed coord.
+2. **Decide and reply via `kanban_comment`** on the same card:
+   - **All clear, name fits**: `APPROVED: <name> at (X,Y,Z)`
+   - **Name collides with an existing sign nearby**: `REJECTED: this is already '<existing>' — use it (mc poi_add <existing> --sign <coord>)`
+   - **Proposed name is taken by a different place elsewhere**: `REJECTED: name '<x>' is taken; try '<y>' or your own variant`
+   - **Coord is too close to a different named sign** (< 30 blocks): `REJECTED: too close to <existing>; try 30m <bearing>`
+   - **Name is generic / uninteresting**: `SUGGEST: '<better name>' — accept or send your own counter`
+3. **If you don't reply within 90s**, the worker proceeds with their own proposal. You can override later with `mc edit_sign` if needed.
+
+You are the editor. Reject lazy names ("stone formation 1"), redundant placements (3 hills named the same), and trails that crash into existing ones. Approve evocative names, encourage variety across components, lean into the storytelling brief.
+
+### Coverage rubric (Steward-judged, graph-aware)
+
+The grader's quantitative bar (`scripts/establish-mapping-check.py`) is a floor:
+
+- `named_count ≥ 6` (≥ 6 landmark POIs)
+- `longest_path_len ≥ 80` (the spine is at least 80 blocks long)
+- `quadrants_covered` includes all 4 of NE/NW/SE/SW across the union of components
+- `named_frontier_count ≤ 3` (most landmarks are connected, not stranded)
+- `[MAP:ARENA]` epic status is `done`
+
+But the *interesting* bar is higher: aim for a coherent graph the operator could walk through and recognise places by name. The mission ends when you can read the named-place list aloud and it feels like a small atlas.
+
+When the floor is met AND no worker is mid-card, comment on the epic: `coverage sufficient — wrap up`, then `kanban_complete` the `[MAP:ARENA]` epic. Operator stops the fleet.
+
+### Don't escalate mapping `PHYSICALLY_STUCK` to RESCUE
+
+When a worker reports `PHYSICALLY_STUCK` in a `[MAP-PATH]` card, they almost always just abandoned a `goto` target. They aren't trapped — they're standing still. Instead of creating a `[RESCUE]` card:
+
+1. Read the worker's last reported position.
+2. Comment on their card: `@<worker>: place a sign at your current position and pick a different bearing. The goto failed; you can still move and place. Suggested new target: (X,Y,Z).`
+3. Only escalate to `[RESCUE]` if the worker reports falling into lava, drowning, or being walled off underground with no `pillar_up` recovery — true blockers, not pathfinder hiccups.
 
 ### Existing rules still apply
 
-- **No phantom worker names** (`worker-a`, `worker-b`, `default`). Every assignee on a mapping card must come from `python3 scripts/roster.py --assignable`. The dispatcher will silently skip unknown assignees and your tally will diverge from disk.
-- **No completing other workers' cards.** Only the assigned worker (or a deliberate Steward override with a comment explaining why) marks a `[MAP]` card done. Empty-body-after-colon completions are still rejected by the worker contract.
-- **Completion-evidence rule.** `[MAP]` card bodies require literal `mc marks` / `mc pois` / `mc nearby_signs` output in the completion body. When you spot a completion that lacks the literal lines, comment with the missing-evidence callout and leave the card open — don't auto-pass it.
+- **No phantom worker names** (`worker-a`, `worker-b`, `default`). Every assignee comes from `python3 scripts/roster.py --assignable`.
+- **One card per worker per cycle.** Never assign two `[MAP-PATH]` cards to the same bot in the same cycle; the dispatcher spawns parallel hermes processes and they fight the pathfinder.
+- **No completing other workers' cards.** Only the assigned worker (or a deliberate Steward override with a comment) marks a `[MAP-PATH]` done.
+- **Completion-evidence rule.** Card bodies require literal `mc marks` / `mc pois` / `mc nearby_signs 32` output in the completion body. Reject empty-after-colon stubs; comment the missing-evidence callout and leave the card open.
 
 ### Mapping vs establish — what to do when both epics are open
 

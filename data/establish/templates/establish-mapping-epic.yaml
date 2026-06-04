@@ -1,41 +1,65 @@
-# Rendered into [MAP:ARENA] epic body by scripts/establish-seed-cards.py.
-# Mapping mission counterpart to establish-epic.yaml.
-title: "[EPIC] [MAP:ARENA] Map this disc — name places, drop signs, mark POIs"
+# Phase E [MAP:ARENA] epic. Single root card seeds via
+# establish-mapping-cards.yaml; Steward grows the graph from there.
+title: "[EPIC] [MAP:ARENA] Map this disc — torch-lit paths between named places"
 assignee: steward
 initial_status: ready
 body: |
-  **Epic — mapping mission on proc-lab.** Fleet ranges to a {arena_radius}-block radius from muster, names landmarks, drops in-world signs at named places, and adds personal POIs at internal nav waypoints. You decompose / track / dispatch; do not mine or place.
+  **Epic — mapping mission on proc-lab.** The fleet is collaboratively
+  building a *torch-lit map of named places* on this {arena_radius}-block
+  disc. Workers build paths; Steward dispatches them to frontier nodes
+  and edits proposed sign names.
 
   Spawn: {spawn_x},{spawn_y},{spawn_z}
   Muster: {muster_x},{muster_y},{muster_z}
   Starter chest: {chest_x},{chest_y},{chest_z}
   Arena radius: {arena_radius} blocks
 
-  **Tag:** this epic is identified by the literal `[MAP:ARENA]` token in the title — match on the tag, not the title.
+  **Tag:** identified by the literal `[MAP:ARENA]` token in the title.
+  Steward detects on the tag, not by assignment.
 
-  **First cycle:** check `scripts/kanban board`. Four `[MAP]` quadrant cards seed unassigned; assign one per assignable worker (`scripts/roster.py --assignable`).
+  ## Mission shape
 
-  **Dispatch loop** (continuous, no "decide" gate):
-  1. Read `data/personal-pois-shared.json` (run `scripts/reconcile-pois.py --auto` if stale).
-  2. Identify the quadrant with the fewest POIs.
-  3. Dispatch the most idle worker to that quadrant via a new `[MAP] <quadrant>` card.
-  4. Track coverage in your memory: POIs per quadrant + max distance + chat-named places.
+  - Cards are `[MAP-PATH] <startName> → (target coord)`.
+  - Each card has a worker build a torch-lit path from a known node to a
+    target coord (~40-60 blocks), name the endpoint, and return.
+  - The map emerges as a graph: nodes = named POIs (`sign_at`), edges =
+    torch-anchored POI chains within 30 blocks (`torch_at`).
+  - Steward grows the graph each cycle by dispatching workers to frontier
+    nodes (degree ≤ 1) toward fresh terrain.
 
-  **Worker protocol** (in card body):
-   - `mc place_named_sign X Y Z "name\noptional 3 more lines"` at named landmarks (oak_sign + 15 spare per worker).
-   - `mc place_torch X Y Z` + `mc poi_add NAME --sign Sx Sy Sz --torch Tx Ty Tz` at internal waypoints (torch + 16 spare).
-   - `mc nearby_signs 32` BEFORE naming — don't re-name an existing sign.
-   - **Observe limitation:** `mc observe` only surfaces signs / POIs near you. Workers must call `mc marks`, `mc pois`, `mc nearby_signs` explicitly.
+  ## Steward's loop (each cycle)
 
-  **Wrap-up (Steward judges):** when ≥{poi_target} POIs across ≥3 quadrants AND ≥{sign_target} named signs AND coverage_radius ≥{coverage_min}, chat "wrap up — coverage sufficient" and `kanban_complete` this epic. Operator stops fleet.
+  1. `scripts/poi-graph.py --pretty` → read the current graph
+  2. If stale, `scripts/reconcile-pois.py --auto` to merge per-bot files
+  3. Pick a frontier node + a target ~40-60 blocks away in an unexplored
+     direction. Bias toward under-represented quadrants.
+  4. Create one `[MAP-PATH]` card per assignable worker (max 1 per worker
+     per cycle). Body cites start coord, target coord, and the protocol.
+  5. Review any new `SIGN_PROPOSAL` comments on in-flight cards; reply
+     with `APPROVED`, `REJECTED`, or `SUGGEST` per the rubric.
 
-  Mark / POI vocabulary:
-    Personal POI (per-bot, private by default):  creative free-form names ("spider hill", "balder ruins").
-    Fleet mark (shared via locations-base.json):  base_, lt_, chest_ — reserved for the explore mission; do not use for mapping POIs.
+  ## Worker protocol
 
-  done_when:
-    - >= {poi_target} POIs in personal-pois-shared.json
-    - >= {sign_target} POIs have non-null sign_at
-    - >= 3 of 4 quadrants have ≥1 POI
-    - coverage_radius (max horizontal distance from muster) >= {coverage_min}
-    - Steward chat marker "wrap up — coverage sufficient" present
+   - `mc go_poi <start>` (or `mc move` to start coord)
+   - Walk toward target; every 25 blocks: `mc reachable` lookahead →
+     clear obstacles → `mc place_torch` → `mc poi_add wp_<n> --torch <coord>`
+   - At target: `mc nearby_signs 32`; propose name via `kanban_comment`;
+     wait ≤90s for Steward; place + `poi_add` with the approved name
+   - Return via torch trail
+   - Completion body MUST include literal output of `mc marks`, `mc pois`,
+     `mc nearby_signs 32`
+
+  ## Done when
+
+  - `named_count ≥ {poi_target}` landmark POIs in `personal-pois-shared.json`
+  - `longest_path_len ≥ {coverage_min}` blocks (the map's spine)
+  - `quadrants_covered` includes all 4 of NE/NW/SE/SW across the graph
+  - `named_frontier_count ≤ 3` (most landmarks are connected, not isolated)
+  - Steward chats `coverage sufficient — wrap up` and closes this epic
+
+  ## Vocabulary
+
+   - **Personal POI** (per-bot, then reconciled): `mc poi_add`, `mc pois`,
+     `mc go_poi`. Free-form creative names.
+   - **Fleet mark** (shared, prefixed): `mc mark lt_*` / `chest_*` / `base_*`.
+     **Reserved for the establish mission; do NOT use for mapping POIs.**

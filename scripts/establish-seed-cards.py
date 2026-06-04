@@ -42,17 +42,17 @@ def context_from_map(card: dict, mission: str = "explore") -> dict[str, str]:
         "chest_z": str(cz),
     }
     if mission == "mapping":
-        # Arena radius surfaced for the [MAP:ARENA] epic body; pulled from
-        # the map JSON when present, otherwise default to the mapping
-        # scenario YAML's 64-block radius.
+        # Phase E context for the [MAP:ARENA] epic + the single root
+        # [MAP-PATH] card. Steward grows the graph from there.
         arena = card.get("arena") or {}
         arena_radius = arena.get("radius", 64)
         ctx.update({
             "arena_radius": str(int(arena_radius)),
-            "quadrant_radius": str(int(arena_radius) - 14),  # ~50 of 64 for quadrant patrol
-            "poi_target": "8",
-            "sign_target": "4",
-            "coverage_min": "40",
+            # Phase E grader thresholds (match establish-mapping-check.py
+            # default flags):
+            "poi_target": "6",           # named POI count
+            "sign_target": "6",           # same as named_count in Phase E
+            "coverage_min": "80",         # longest_path_len in blocks
         })
     return ctx
 

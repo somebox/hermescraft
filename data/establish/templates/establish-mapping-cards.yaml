@@ -1,47 +1,51 @@
-# Mapping worker cards — seeded unassigned so Steward dispatches per quadrant.
-# Mirrors the 4-card explore pattern; protocol body uses POI + sign verbs.
+# Phase E mapping seed: a single root card. Steward grows the graph from
+# here by picking frontier nodes and generating [MAP-PATH] cards each
+# cycle. No quadrant-patrol scaffolding — paths emerge organically.
 cards:
-  - title: "[MAP] NE quadrant — name 2+ places, drop signs + POIs"
+  - title: "[MAP-PATH] muster → first landmark"
     skills: [minecraft-navigation, minecraft-mapping]
     body: |
-      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
-      Range **NE** from muster (bearing ~045°), aim for **{quadrant_radius}+ blocks**, surface only.
+      World: proc-lab. Mission: build the first torch-lit path of the run.
+      Hub: muster ({muster_x},{muster_y},{muster_z}).
 
-      Loop: `mc move` / bearing steps → `mc look` → `mc scene` → decide.
-       - At a landmark worth naming (peak, ruin, distinctive feature):
-           1. `mc nearby_signs 32` — don't re-name an existing sign.
-           2. `mc place_named_sign X Y Z "creative-name\noptional 3 more lines"` (oak_sign).
-           3. `mc poi_add creative_name --sign X Y Z --kind landmark`.
-       - At an internal nav waypoint (cave mouth, junction, riverside):
-           1. `mc place_torch X Y Z` (auto-picks floor vs wall_torch).
-           2. `mc poi_add waypoint_name --torch X Y Z [--sign Sx Sy Sz] --kind waypoint`.
-       - Use creative free-form names ("spider hill", "balder ruins"). No mandatory prefixes.
+      Your job: walk a 40-50 block bearing from muster (cardinal direction
+      of your choice — N/E/S/W) and name what you find at the endpoint.
+      The torch trail you light becomes the first edge of the map graph;
+      the endpoint sign becomes the first non-muster node.
 
-      Periodic chat (~5 min): position + 1-line scene cue + recent POI names.
+      **Protocol:**
 
-      **Completion body MUST include** the literal output of:
+      1. `mc poi_add muster --sign {muster_x} {muster_y} {muster_z} --kind hub`
+         (claim muster as a named node — without this the graph has no root)
+      2. `mc place_named_sign {muster_x} {muster_y} {muster_z} "muster"`
+         (propose 'muster' to Steward via comment if she's online; otherwise
+         place. This is the root sign — 15 char limit applies.)
+      3. Set a bearing — N (-z), E (+x), S (+z), or W (-x).
+      4. LOOP every ~25 blocks of travel:
+           `mc reachable` next 5 cells; clear obstacles
+             (`mc dig` lips, `mc build_stairs cobblestone <dir> 4` jumps)
+           `mc place_torch X Y Z`
+           `mc poi_add wp_<dir>_<n> --torch X Y Z --kind waypoint`
+      5. At ~40-50 blocks from muster, stop. Scan: `mc nearby_signs 32`.
+      6. Propose a name via kanban_comment:
+           `SIGN_PROPOSAL: name='<your-name>', coord=(X,Y,Z), kind=landmark, note='<terrain>'`
+      7. Wait up to 90s for Steward (`mc read_chat` + `kanban_show`).
+         No response → proceed with your proposal.
+      8. `mc place_named_sign X Y Z "<approved-name>"`
+         `mc poi_add <approved-name> --sign X Y Z --kind landmark`
+      9. Return via your torch trail: `mc go_poi wp_<dir>_<n-1>`, etc., back to muster.
+
+      **Completion body MUST include the literal output of:**
        - `mc marks`
        - `mc pois`
        - `mc nearby_signs 32`
-      Empty-after-colon stubs are rejected (phase-17 evidence rule).
 
-  - title: "[MAP] NW quadrant — name 2+ places, drop signs + POIs"
-    skills: [minecraft-navigation, minecraft-mapping]
-    body: |
-      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
-      Range **NW** (~315°), aim for **{quadrant_radius}+ blocks**, surface only.
-      Same protocol as NE mapping card (signs at landmarks, torches+POIs at waypoints; completion body must include mc marks / mc pois / mc nearby_signs output).
+      Empty-after-colon stubs are rejected.
 
-  - title: "[MAP] SE quadrant — name 2+ places, drop signs + POIs"
-    skills: [minecraft-navigation, minecraft-mapping]
-    body: |
-      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
-      Range **SE** (~135°), aim for **{quadrant_radius}+ blocks**, surface only.
-      Same protocol as NE mapping card (signs at landmarks, torches+POIs at waypoints; completion body must include mc marks / mc pois / mc nearby_signs output).
+      **Don't:**
+       - Place signs where you stand (`TARGET_SELF_OCCUPIED`); offset 1-2 blocks.
+       - Write sign lines > 15 chars (`LINE_TOO_LONG`).
+       - Name the muster sign with anything weird; 'muster' is fine.
+       - Torch a path you couldn't return on.
 
-  - title: "[MAP] SW quadrant — name 2+ places, drop signs + POIs"
-    skills: [minecraft-navigation, minecraft-mapping]
-    body: |
-      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
-      Range **SW** (~225°), aim for **{quadrant_radius}+ blocks**, surface only.
-      Same protocol as NE mapping card (signs at landmarks, torches+POIs at waypoints; completion body must include mc marks / mc pois / mc nearby_signs output).
+      Load skill `minecraft-mapping` for the full protocol details.
