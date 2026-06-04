@@ -43,6 +43,13 @@ fi
 
 pkill -9 -f 'landfolk:' 2>/dev/null || true
 
+# Phase E follow-up (Phase D postmortem #5): `landfolk stop` and the
+# `landfolk:` pkill above don't reach the hermes kanban-task processes
+# launched per-card by the gateway dispatcher. Orphans persist into the
+# next run and create a pathfinder race (two hermes drive the same bot).
+# Kill them by command signature.
+pkill -9 -f 'hermes -p .* kanban task' 2>/dev/null || true
+
 for p in $PORTS; do
   pid="$(lsof -nP -iTCP:"$p" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
   if [[ -n "$pid" ]]; then
