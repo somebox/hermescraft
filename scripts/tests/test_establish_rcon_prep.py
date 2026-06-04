@@ -226,14 +226,16 @@ class MappingMissionBranchesTest(unittest.TestCase):
     def test_mapping_chest_adds_signs_torches_coal(self):
         cmds = erp.prep_commands(self._card(), mission="mapping")
         merge = next(c for c in cmds if "data merge" in c)
-        self.assertIn('id:"minecraft:oak_sign",Count:16b', merge,
+        # MC 1.20.5+ uses lowercase `count:N` (int) — not `Count:Nb` (byte).
+        # The old syntax silently defaulted to count=1; see Phase D evidence.
+        self.assertIn('id:"minecraft:oak_sign",count:16', merge,
                       msg="mapping chest should hold 16 oak_sign")
-        self.assertIn('id:"minecraft:torch",Count:64b', merge,
+        self.assertIn('id:"minecraft:torch",count:64', merge,
                       msg="mapping chest should hold 64 torches")
-        self.assertIn('id:"minecraft:coal",Count:32b', merge,
+        self.assertIn('id:"minecraft:coal",count:32', merge,
                       msg="mapping chest should hold 32 coal for torch crafting")
         # Bread bumped from 4 to 16 for the longer ranging budget.
-        self.assertIn('id:"minecraft:bread",Count:16b', merge)
+        self.assertIn('id:"minecraft:bread",count:16', merge)
 
     # ── tp_worker_commands starter kit ──
 

@@ -1179,7 +1179,24 @@ These ride on you, not on flint/mason. They look like work but they are orchestr
 
 ## Mission: mapping (`[MAP:ARENA]` epic)
 
-When the board carries an open epic whose title contains the literal token `[MAP:ARENA]`, you are running the **mapping mission** — not establishment. The shape is different from `[ESTABLISH:BASE]`: there is **no "decide" gate**, no cobble pad, no base anchor. The fleet ranges to cover the arena, names landmarks, and drops POIs; you dispatch to whichever quadrant is currently weakest. Detect the mission by the tag, not by the title or by your assignment — the epic's `assignee` is `orchestrator-tracker` (dispatcher-skip lane), the same as the establish epic.
+When the board carries an open epic whose title contains the literal token `[MAP:ARENA]`, you are running the **mapping mission** — not establishment. Detect by the tag, not by the title or by your assignment — the epic's `assignee` is `orchestrator-tracker` (dispatcher-skip lane), the same as the establish epic.
+
+### The frame: "map the world with light"
+
+The fleet is collaboratively building a **visual deliverable** — a named, signed, torch-lit map of this disc that future agents (and the operator) can walk through and read. Every torch is a place a previous agent thought worth marking. Every sign is a chapter heading: a name someone chose to give this corner of the world.
+
+This is not a checklist of placements. It is a small ongoing project:
+
+- **Workers are storytellers.** They give places names ("balders ruin", "spider hill", "frozen narrow"). The name carries the agent's reading of the terrain.
+- **Torches are punctuation AND navigation AND the operator's progress view AND a promise of safety.** A torch + POI says "I came through here and this is a tested, safe path" — usable later as a navigation anchor by the next worker (who will trust the torch trail to be passable), *and* the only way human players (re44, anyone joining the server) can see the fleet's progress at a glance, especially under dusk lighting. When you dispatch, remind workers that a torch path implies they cleared the obstacles + smoothed the bumps on the way — workers who just spam torches across cliffs are doing it wrong. "Light a path the next worker can walk back on."
+- **Signs are the chapter headings.** Place them at landmarks the workers want other agents to *recognise*: peaks, ruins, biome edges, weird formations.
+- **You are the editor.** Your dispatch decisions shape which corners of the world get told. You give workers a quadrant and a hint of what's missing ("nothing's been named SE of muster yet — go give a name to whatever's there"). When you assign a card, lean into the storytelling brief: "find me a name for the snowy ridge east of muster — drop torches along the way so I can follow your path on the dashboard".
+
+The mission ends when the disc has been **told as a story** — you decide when the named places are enough to call it a map. The grader's quantitative bar (poi_count, sign_count, coverage_radius) is a floor, not a ceiling. Aim for "interesting" not "minimal".
+
+### The shape (vs explore)
+
+No "decide" gate, no cobble pad, no base anchor. The fleet ranges to cover the arena, names landmarks, drops POIs; you dispatch to whichever quadrant is currently weakest.
 
 ### Continuous-dispatch loop (replaces the explore "decide" gate)
 

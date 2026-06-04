@@ -347,28 +347,33 @@ def prep_commands(card: dict, *, world: str = "proc-lab",
     else:
         sy = catalog_sy
         cy = catalog_cy
+    # MC 1.20.5+ NBT format change: item count is `count:N` (lowercase int)
+    # not `Count:Nb` (uppercase byte). With the old syntax the parser
+    # silently drops the field and defaults to count=1, which is why
+    # Phase D's first run found 1 sign + 1 torch in the chest instead of
+    # 16 + 64.
     if mission == "mapping":
         # Mapping mission: bulk signs + torches in the shared chest so the
         # fleet can equip without returning to base after the first round.
         # Coal blocks let workers craft replacement torches mid-run.
         items_nbt = (
             "{Items:["
-            '{Slot:0b,id:"minecraft:iron_pickaxe",Count:1b},'
-            '{Slot:1b,id:"minecraft:iron_axe",Count:1b},'
-            '{Slot:2b,id:"minecraft:iron_shovel",Count:1b},'
-            '{Slot:3b,id:"minecraft:bread",Count:16b},'
-            '{Slot:4b,id:"minecraft:oak_sign",Count:16b},'
-            '{Slot:5b,id:"minecraft:torch",Count:64b},'
-            '{Slot:6b,id:"minecraft:coal",Count:32b}'
+            '{Slot:0b,id:"minecraft:iron_pickaxe",count:1},'
+            '{Slot:1b,id:"minecraft:iron_axe",count:1},'
+            '{Slot:2b,id:"minecraft:iron_shovel",count:1},'
+            '{Slot:3b,id:"minecraft:bread",count:16},'
+            '{Slot:4b,id:"minecraft:oak_sign",count:16},'
+            '{Slot:5b,id:"minecraft:torch",count:64},'
+            '{Slot:6b,id:"minecraft:coal",count:32}'
             "]}"
         )
     else:
         items_nbt = (
             "{Items:["
-            '{Slot:0b,id:"minecraft:iron_pickaxe",Count:1b},'
-            '{Slot:1b,id:"minecraft:iron_axe",Count:1b},'
-            '{Slot:2b,id:"minecraft:iron_shovel",Count:1b},'
-            '{Slot:3b,id:"minecraft:bread",Count:4b}'
+            '{Slot:0b,id:"minecraft:iron_pickaxe",count:1},'
+            '{Slot:1b,id:"minecraft:iron_axe",count:1},'
+            '{Slot:2b,id:"minecraft:iron_shovel",count:1},'
+            '{Slot:3b,id:"minecraft:bread",count:4}'
             "]}"
         )
     # Lighting: explore stays full-day (peaceful + day, dayCycle off).

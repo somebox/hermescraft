@@ -14,11 +14,43 @@ triggers:
 version: 1.0.0
 ---
 
-# Minecraft Mapping
+# Minecraft Mapping — map the world with light
 
-You are part of a fleet ranging across an unknown disc. Your job is to **name places**, **drop in-world signs** at named places, and **mark internal nav waypoints** with torches + personal POIs. The Steward dispatches you to a quadrant; you decide what's worth naming.
+You are part of a fleet building a **shared, visible map** of this disc. Not a checklist of placements — a small ongoing project. Future agents will read your signs. Human players will see your torches in the dusk. Your placements are *contributions*, not chores.
+
+The mission has three contributions per worker:
+
+1. **Light the way — and make it safe.** Torches you drop along your path become navigation anchors for the agents who come after. **A torch is a promise: "this path is safe."** Before you drop a torch and add the POI, walk the next 10–20 blocks of the path you came from — clear any blocking blocks (`mc dig` lips, `mc safe_dig` overhangs), build a short staircase (`mc build_stairs cobblestone <dir> 4`) over jumps that exceed 1 block. Don't leave a torch above terrain a worker (or human) would fall through. The torch trail you light is also the only way **human players** see fleet progress at a glance, especially in dusk lighting — a string of torches along a cleared ridge is the run made visible.
+2. **Name the places.** Signs you place at landmarks (peaks, ruins, biome edges, cave mouths) give the world identifiable locations. A name on a sign is a *chapter heading* — pick names that are evocative, not generic. "balders ruin" beats "stone formation 1".
+3. **Add the metadata.** Each sign and each torch gets a personal POI (`mc poi_add`) so the dashboard map shows it, the next agent can `mc go_poi` to it, and the Steward can grade coverage. A sign without a POI is just decoration.
+
+You are not building a checklist — you are contributing to a deliverable the operator and future agents will *look at and walk through*. Range, name, light, smooth the path, repeat.
+
+### The torch trail = a tested route
+
+When you place a torch, you are claiming the cells leading up to that torch are passable for the next agent. Two consequences:
+
+- **Don't torch a path you couldn't backtrack on.** If you reached a torch via a 4-block drop, either build steps back up (`mc build_stairs` or `mc pillar_up` + cleanup) before placing the torch, or place it somewhere with a real return path.
+- **Smooth the worst bumps.** A 2-block jump in the path isn't a crash, but a 2-block jump every 5 blocks is exhausting for pathfinders. When you see a jagged stretch, lay 3–4 cobblestone steps with `mc build_stairs <block> <dir> 4` and torch the top.
+
+This is what makes "map the world with light" mean something: the next worker should be able to `mc go_poi <name>` and walk there without fighting the terrain.
 
 Commands you'll lean on most: [`mc place_named_sign`](../docs/mc-cheatsheet.md), [`mc place_torch`](../docs/mc-cheatsheet.md), [`mc poi_add`](../docs/mc-cheatsheet.md), [`mc nearby_signs`](../docs/mc-cheatsheet.md), [`mc pois`](../docs/mc-cheatsheet.md). See `minecraft-navigation` for movement primitives — mapping work uses `mc move` exactly like any other patrol.
+
+## First-action checklist — commit, then refine
+
+Your single most common failure mode is "exploring for the perfect landmark and never naming anything". Don't. The first 90 seconds of your card:
+
+```
+mc status                                # where am I?
+mc nearby_signs 32                       # any existing signs near me?
+mc place_named_sign X Y Z "<a name>"     # ← COMMIT NOW; refine names later
+mc poi_add <name> --sign X Y Z --kind landmark
+```
+
+**Place your first sign within 90 seconds of card claim.** The name doesn't have to be perfect — `mc poi_update` exists. "snowy patch" today; "crow's roost" once you've explored further. The cost of a bland name is small; the cost of a card with zero placements is total.
+
+If you've scanned twice (`mc scene` + `mc nearby`) and still feel you "haven't found a landmark", *commit on the second scan*. Whatever you can see right now is namable. The dashboard is empty until you place something.
 
 ## Mission vocabulary
 

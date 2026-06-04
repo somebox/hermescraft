@@ -1,0 +1,10 @@
+landfolk-ops ─ 2026-06-04 07:34
+────────────────────────────────────────────────────────────
+IN-FLIGHT (0)
+  (none)
+
+READY (4)
+  t_1bc792b8  flint      size M   [MAP] NE quadrant — name 2+ places, drop signs prereqs ✓
+  t_7fa93dbc  gatherer   size M   [MAP] NW quadrant — name 2+ places, drop signs prereqs ✓
+  t_5a09d6d6  mason      size M   [MAP] SE quadrant — name 2+ places, drop signs prereqs ✓
+  t_d4a2f5a6  orchestrator-tracker size M   [MAP] SW quadrant — name 2+ places, drop signs prereqs ✓
