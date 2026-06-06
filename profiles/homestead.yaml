@@ -1,0 +1,18 @@
+# Homestead setting — flat farm patch, grass, low water (Setting 2 base).
+arena:
+  center: [0, 0]
+  radius: 48
+
+gates:
+  - biome in [plains, forest] >= 70%
+  - biomes distinct <= 2
+  - flat patch >= 12 cells
+  - neighbor height delta <= 2 blocks
+  - surface water <= 8%
+  - surface grass >= 20%
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+
+find: 3 solutions max 80 seeds

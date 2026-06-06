@@ -1,0 +1,6 @@
+id: mine_plains_iron_harness
+extends: requirements/mine_plains_iron
+
+prep:
+  - give stone_pickaxe at muster
+  - scatter iron_ore 8 if iron_ore hits < 3 y 32..48

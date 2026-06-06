@@ -1,0 +1,19 @@
+id: mine_plains_iron
+extends: profiles/plains_mining
+
+arena: { center: [0, 0], radius: 64 }
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  iron_view: random_safe near block iron_ore within 8 blocks attempts 32
+
+find: 5 solutions max 200 seeds
+
+server: ./server.local.yaml
+
+# Optional: catch cubiomes false-positives before full probe (needs live server).
+# pass1:
+#   verify_live: true
+#   verify_live_samples: 10
+#   verify_live_when: always   # always | borderline

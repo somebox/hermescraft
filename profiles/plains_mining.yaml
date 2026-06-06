@@ -1,0 +1,20 @@
+# Plains / forest envelope with iron and cave-air bands (mine smoke tests).
+arena:
+  center: [0, 0]
+  radius: 64
+
+gates:
+  - biome in [plains, forest] >= 75%
+  - biomes distinct <= 2
+  - flat patch >= 16 cells
+  - neighbor height delta <= 2 blocks
+  - surface water <= 5%
+  - surface grass >= 25%
+  - block iron_ore hits >= 3 in y -32..48 step 8
+  - block cave_air hits 20..400 in y -32..48 step 8
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+
+find: 5 solutions max 200 seeds

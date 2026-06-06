@@ -1,0 +1,16 @@
+arena:
+  center: [0, 0]
+  radius: 48
+
+gates:
+  - biome in [plains, meadow, sunflower_plains] >= 60%
+  - flat patch >= 24 cells
+  - neighbor height delta <= 1 blocks
+  - surface water <= 8%
+  - surface grass >= 40%
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+
+find: 5 solutions max 150 seeds

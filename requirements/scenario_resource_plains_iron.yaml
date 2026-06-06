@@ -1,0 +1,17 @@
+# Setting 1 — Resource field (primary). Same gates as mine_plains_iron; stable id for catalogs.
+id: scenario_resource_plains_iron
+extends: profiles/plains_mining
+
+arena: { center: [0, 0], radius: 64 }
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  iron_view: random_safe near block iron_ore within 8 blocks attempts 32
+  tree_line: offset_from spawn [12, 0, 0]
+
+find: 5 solutions max 120 seeds
+
+server: ./server.local.yaml
+
+# Agent hook: data/scenarios/registry.yaml → catalog_dir

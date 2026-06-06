@@ -1,0 +1,20 @@
+# Resource setting variant — mixed forest edge (chop + scout stress).
+arena:
+  center: [0, 0]
+  radius: 64
+
+gates:
+  - biome in [plains, forest, birch_forest] >= 70%
+  - biomes distinct <= 3
+  - flat patch >= 14 cells
+  - neighbor height delta <= 2 blocks
+  - surface water <= 8%
+  - surface grass >= 20%
+  - block iron_ore hits >= 2 in y -32..48 step 8
+  - block cave_air hits 20..400 in y -32..48 step 8
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+
+find: 3 solutions max 100 seeds

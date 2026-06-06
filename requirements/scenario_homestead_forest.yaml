@@ -1,0 +1,21 @@
+id: scenario_homestead_forest
+extends: profiles/homestead
+
+gates:
+  - biome in [plains, forest, birch_forest] >= 60%
+  - biomes distinct <= 3
+  - flat patch >= 10 cells
+  - neighbor height delta <= 2 blocks
+  - surface water <= 12%
+  - surface grass >= 18%
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  farm_patch: flat_patch_center
+  pen_corner: offset_from spawn [8, 0, 8]
+  wood_line: offset_from spawn [-8, 0, 4]
+
+find: 3 solutions max 100 seeds
+
+server: ./server.local.yaml

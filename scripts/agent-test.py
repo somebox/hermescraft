@@ -62,7 +62,7 @@ if str(ROOT) not in sys.path:
 from tests._lib.chest_nbt import sum_chest_item_from_nbt as _sum_chest_item_from_nbt
 
 DEFAULT_BOT_URL = "http://localhost:3001"
-DEFAULT_MODEL = "google/gemini-2.5-flash"  # baseline for terminal-tool agent tests.
+DEFAULT_MODEL = os.environ.get("AGENT_TEST_MODEL", "deepseek/deepseek-v4-flash:exacto")
 # 2026-05 model findings (agent-test context, not direct-API/benchmark):
 #   - google/gemini-2.5-flash       — reliable, fast, ~6 mc calls/composite test
 #   - openai/gpt-4o-mini            — confuses mc CLI for memory/search_files
@@ -189,17 +189,63 @@ def run_rcon_batch(cmds: list[str], timeout_s: float | None = None) -> str:
     return result.stdout
 
 
+def _test_world(spec: dict) -> str:
+    return str(spec.get("world") or "landfolk-test")
+
+
 def _player_reset_rcon_cmds(spec: dict) -> list[str]:
     """Reset Flint between runs (fire, effects, optional inventory clears)."""
+    # After proc-lab cleanup Flint is usually still in hub; prep mvtp moves him next.
+    world = (
+        "landfolk-test"
+        if _test_world(spec) == "proc-lab"
+        else _test_world(spec)
+    )
     cmds = [
-        "execute in landfolk-test run data merge entity @e[type=player,name=Flint,limit=1] {Fire:0s,HurtTime:0s,DeathTime:0s}",
-        "execute in landfolk-test run effect clear Flint",
-        "execute in landfolk-test run effect give Flint minecraft:instant_health 1 4",
+        f"execute in {world} run data merge entity @e[type=player,name=Flint,limit=1] {{Fire:0s,HurtTime:0s,DeathTime:0s}}",
+        f"execute in {world} run effect clear Flint",
+        f"execute in {world} run effect give Flint minecraft:instant_health 1 4",
     ]
     for item in spec.get("inventory_reset") or []:
         name = str(item).replace("minecraft:", "")
-        cmds.append(f"execute in landfolk-test run clear Flint minecraft:{name}")
+        cmds.append(f"execute in {world} run clear Flint minecraft:{name}")
     return cmds
+
+
+def _wait_for_bot_ready(bot_url: str, timeout_s: float = 45) -> bool:
+    """Landfolk-style: HTTP listener up + /observe position (after dimension tp)."""
+    import urllib.error
+    import urllib.request
+
+    deadline = time.time() + timeout_s
+    posted_connect = False
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"{bot_url}/health", timeout=5) as resp:
+                health = json.loads(resp.read().decode())
+            if not health.get("connected"):
+                if not posted_connect:
+                    try:
+                        urllib.request.urlopen(
+                            urllib.request.Request(
+                                f"{bot_url}/connect", method="POST", data=b""
+                            ),
+                            timeout=10,
+                        )
+                    except Exception:
+                        pass
+                    posted_connect = True
+                time.sleep(1.0)
+                continue
+        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
+            time.sleep(1.0)
+            continue
+        obs = observe(bot_url)
+        pos = (obs.get("state") or {}).get("position") or {}
+        if pos.get("x") is not None:
+            return True
+        time.sleep(1.0)
+    return False
 
 
 def fixture_run(spec: dict, mode: str) -> str:
@@ -742,12 +788,14 @@ def main():
     stage_times = {}
     overall_t0 = time.time()
 
-    # Cycle: player reset → spec cleanup (clear prior arena) → prep → settle.
-    # Do not hardcode A1 park here; each spec's cleanup+prep ends with tp spawn.
+    # Cycle: player reset → (landfolk only: spec cleanup) → prep → settle.
+    # proc-lab: do NOT run hub cleanup before prep — previous run's cleanup tp'd
+    # Flint to landfolk-test; prep mvtp+tp must run without an extra hub hop first.
     print(f"  pre-prep reset + clean...", end="", flush=True)
     _t = time.time()
     pre_cmds = _player_reset_rcon_cmds(spec)
-    pre_cmds.extend(spec.get("cleanup") or [])
+    if _test_world(spec) != "proc-lab":
+        pre_cmds.extend(spec.get("cleanup") or [])
     run_rcon_batch(pre_cmds)
     time.sleep(0.5)
     stage_times["pre_prep"] = time.time() - _t
@@ -762,12 +810,26 @@ def main():
     # Settle: let mineflayer's block cache ingest the rcon changes. 6s is
     # needed when the agent will read/write blocks that an external rcon
     # `fill` just modified — chunk update packets can lag 3-4s under load.
-    settle_s = int(spec.get("settle_seconds", 6))
+    settle_s = int(spec.get("settle_seconds", 8 if _test_world(spec) == "proc-lab" else 6))
     print(f"  settle ({settle_s}s)...", end="", flush=True)
     _t = time.time()
     time.sleep(settle_s)
     stage_times["settle"] = time.time() - _t
     print(f" ok ({stage_times['settle']:.1f}s)")
+
+    if _test_world(spec) == "proc-lab":
+        print(f"  wait for bot in proc-lab...", end="", flush=True)
+        _t = time.time()
+        if not _wait_for_bot_ready(args.bot_url, timeout_s=45):
+            print(f" FAIL ({time.time() - _t:.1f}s)", file=sys.stderr)
+            print(
+                "ERROR: Flint has no position after proc-lab prep — "
+                "check bot connected (landfolk start) and rcon mvtp/tp in prep.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        stage_times["bot_ready"] = time.time() - _t
+        print(f" ok ({stage_times['bot_ready']:.1f}s)")
 
     # Verify prep: query bot's perception and check counts match spec.
     # Spec uses `verify_after_prep` as a list of { block, min_count } items.

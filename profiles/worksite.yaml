@@ -1,0 +1,18 @@
+# Worksite setting — build/repair/defense on a natural flat pad (Setting 3 base).
+arena:
+  center: [0, 0]
+  radius: 48
+
+gates:
+  - biome in [plains, forest] >= 65%
+  - biomes distinct <= 3
+  - flat patch >= 16 cells
+  - neighbor height delta <= 2 blocks
+  - surface water <= 10%
+  - surface grass >= 15%
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+
+find: 3 solutions max 80 seeds

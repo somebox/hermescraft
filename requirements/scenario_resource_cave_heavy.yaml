@@ -1,0 +1,12 @@
+id: scenario_resource_cave_heavy
+extends: profiles/resource_cave_heavy
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  iron_view: random_safe near block iron_ore within 8 blocks attempts 32
+  cave_mouth: offset_from spawn [0, 0, -8]
+
+find: 3 solutions max 100 seeds
+
+server: ./server.local.yaml

@@ -1,0 +1,14 @@
+arena:
+  center: [0, 0]
+  radius: 96
+
+gates:
+  - biomes distinct >= 3
+  - neighbor height delta <= 4 blocks
+  - surface water <= 15%
+
+placements:
+  spawn: random_safe radius 1 attempts 48
+  muster: offset_from spawn [8, 0, 0]
+
+find: 3 solutions max 100 seeds

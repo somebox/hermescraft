@@ -1,0 +1,14 @@
+# Stub for procedural pool refresh — scouting steep approach / overlook.
+# Gates: monotone surface rise ≥4 blocks along approach vector from anchor.
+id: scenario_scouting_steep_slope
+topic: scouting
+description: Steep outdoor approach where pathfinder fails without stairs or lip dig
+anchors:
+  - overlook
+  - approach
+gates:
+  - kind: relief_monotone_rise
+    min_blocks: 4
+acceptance_note: >
+  Live or bench run expects NAV_BLOCKED or BOT_TRAPPED with next_action_hint
+  containing mc build_stairs or mc dig (lip). See docs/features/route-sculpt-navigation.md.

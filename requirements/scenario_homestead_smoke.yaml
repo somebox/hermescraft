@@ -1,0 +1,28 @@
+# Engine smoke — mapcatalog loop only (no biome enforcement).
+# Pass 1: skipped when no pass1 gates. Pass 2: flat + height on live heightmap.
+# Agent test: data/agent-tests/topics/smoke/map-anchor.yaml
+id: scenario_homestead_smoke
+extends: profiles/homestead
+
+arena:
+  center: [0, 0]
+  radius: 48
+
+gates:
+  - flat patch >= 8 cells
+  - neighbor height delta <= 5 blocks
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  farm_patch: flat_patch_center
+
+find:
+  solutions: 1
+  max_seeds: 15
+  seed_candidates: ["800", "2024", "271828"]
+
+pass1:
+  verify_live: false
+
+server: ./server.local.yaml

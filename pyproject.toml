@@ -1,4 +1,17 @@
+[project]
+name = "hermescraft-mapcatalog"
+version = "0.1.0"
+description = "Procedural map catalog seed finder (mapcatalog/)"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml>=6.0",
+]
+
+[project.scripts]
+mapcatalog = "mapcatalog.cli:main"
+
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["tests"]
 markers = [
   "unit: pure logic, no MC server, no LLM, no network",

@@ -1,0 +1,17 @@
+arena:
+  center: [0, 0]
+  radius: 64
+
+gates:
+  - biome in [forest, flower_forest, birch_forest] >= 70%
+  - biomes distinct <= 3
+  - flat patch >= 12 cells
+  - neighbor height delta <= 3 blocks
+  - surface grass >= 20%
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  wood_lot: random_safe in_biome forest attempts 24
+
+find: 5 solutions max 200 seeds

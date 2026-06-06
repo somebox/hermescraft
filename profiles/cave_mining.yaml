@@ -1,0 +1,14 @@
+arena:
+  center: [0, 0]
+  radius: 64
+
+gates:
+  - biome in [plains, forest, taiga] >= 50%
+  - block cave_air hits 40..500 in y -32..48 step 8
+  - block iron_ore hits >= 2 in y -32..48 step 8
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+
+find: 3 solutions max 80 seeds

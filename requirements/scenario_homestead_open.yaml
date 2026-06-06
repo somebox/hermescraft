@@ -1,0 +1,12 @@
+id: scenario_homestead_open
+extends: profiles/homestead
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  farm_patch: flat_patch_center
+  pen_corner: offset_from spawn [8, 0, 8]
+
+find: 3 solutions max 80 seeds
+
+server: ./server.local.yaml

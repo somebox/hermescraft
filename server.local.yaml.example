@@ -1,0 +1,27 @@
+# Copy to server.local.yaml and edit host/container names.
+minecraft_version: "1.21.4"
+
+rcon:
+  transport: ssh_docker
+  ssh_host: ubuntu-host
+  container: minecraft
+
+world:
+  name: proc-lab
+  generator: NORMAL
+  evac:
+    hub_world: landfolk-test
+    hub_xyz: [0, 65, 0]
+    use_unsafe_mvtp: true
+    bot_players: [Flint]   # only evac these from proc-lab before mv delete (not re44 on main world)
+  reuse_seed: true         # mapcatalog try --reuse-world / AUTO_REUSE in scenario-agent-test.sh
+
+cubiomes:
+  binary: tools/cubiome_scan/proc_biome_scan
+  mc_enum: MC_1_21   # Paper 1.21.4: no MC_1_21_4 in cubiomes; try MC_1_21_3 via calibrate --enum-sweep
+
+pass1:
+  verify_live: true
+  verify_live_samples: 10
+  verify_live_when: always   # always | borderline | off — see docs/features/cubiomes-paper-skew.md
+  # Smoke job overrides verify_live: false (flat-only Pass 2).

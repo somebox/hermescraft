@@ -1,0 +1,15 @@
+id: scenario_worksite_defense
+extends: profiles/worksite
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  build_pad: flat_patch_center
+  watch_post: offset_from build_pad [6, 0, 0]
+  breach_point: offset_from build_pad [-4, 0, -4]
+
+find: 3 solutions max 80 seeds
+
+server: ./server.local.yaml
+
+# Harness prep (P4): partial wall + summons at breach_point — see registry prep_notes.

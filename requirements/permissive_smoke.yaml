@@ -1,0 +1,14 @@
+# Permissive smoke: no biome / grass / ore gates — accept almost any seed so
+# placements + fingerprint paths can be exercised end-to-end.
+id: permissive_smoke
+
+arena: { center: [0, 0], radius: 64 }
+
+gates: []
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  iron_view: random_safe near block iron_ore within 32 blocks attempts 32
+
+find: 1 solutions max 5 seeds

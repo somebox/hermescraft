@@ -1,0 +1,14 @@
+# Force iron_view to be unreachable: require iron within 1 block of spawn cell,
+# which seed 424242 (mountains, sparse iron) cannot satisfy.
+id: unreachable_smoke
+
+arena: { center: [0, 0], radius: 64 }
+
+gates: []
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  iron_view: random_safe near block iron_ore within 1 blocks attempts 8
+
+find: 1 solutions max 5 seeds

@@ -1,0 +1,29 @@
+# Building flat pad — live flat/height gates only (no biome; avoids cubiomes/Paper skew on find).
+id: scenario_worksite_flat
+extends: profiles/worksite
+
+arena:
+  center: [0, 0]
+  radius: 48
+
+gates:
+  - flat patch >= 16 cells
+  - neighbor height delta <= 3 blocks
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  build_pad: flat_patch_center
+  watch_post: offset_from build_pad [4, 0, 4]
+
+find:
+  solutions: 1
+  max_seeds: 20
+  seed_candidates: ["800", "2024", "271828"]
+
+pass1:
+  verify_live: false
+
+server: ./server.local.yaml
+
+# Agent test: data/agent-tests/topics/building/flat-pad-watch-post.yaml

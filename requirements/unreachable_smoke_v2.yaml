@@ -1,0 +1,8 @@
+id: unreachable_smoke_v2
+arena: { center: [0, 0], radius: 64 }
+gates: []
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  unreachable_target: random_safe near block diamond_ore within 4 blocks attempts 8
+find: 1 solutions max 5 seeds

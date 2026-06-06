@@ -42,7 +42,10 @@ server/*/session.lock
 # Benchmark output (regenerate locally)
 scripts/benchmark/runs/
 
-# Local agent runtime state
+# Local agent / proc-lab bench runtime (maps, seed state)
+data/runtime/
+!data/runtime/.gitkeep
+
 data/locations-*.json
 !data/locations.json
 !data/locations-base.json
@@ -79,6 +82,36 @@ data/ops/plans/*-current-build.md
 *.swp
 *.swo
 /tmp/mc_screenshot_*.png
+
+# ── Procedural mapcatalog ─────────────────────────────────────────────
+# In git: requirements/, profiles/, calibration/seeds.yaml, data/scenarios/,
+#         server.local.yaml.example, mapcatalog/, tools/cubiome_scan/*.{c,Makefile,README}
+# Local: seed pools from `find` / scenario refresh, rejects, rcon secrets.
+
+catalog/**/*.json
+catalog/**/.find_state.json
+catalog/rejects/
+rejects/
+
+server.local.yaml
+
+tools/cubiome_scan/cubiomes/
+tools/cubiome_scan/proc_biome_scan
+
+# ── Local Paper bench (optional dev tree; not repo server/) ───────────
+bench/world/
+bench/world_nether/
+bench/world_the_end/
+bench/libraries/
+bench/cache/
+bench/logs/
+bench/crash-reports/
+bench/plugins/
+bench/versions/
+bench/*.jar
+bench/session.lock
+bench/usercache.json
+bench/eula.txt
 
 .venv/
 .claude/scheduled_tasks.lock

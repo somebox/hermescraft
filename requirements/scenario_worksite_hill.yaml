@@ -1,0 +1,20 @@
+id: scenario_worksite_hill
+extends: profiles/worksite
+
+gates:
+  - biome in [plains, forest] >= 65%
+  - biomes distinct <= 3
+  - flat patch >= 12 cells
+  - neighbor height delta <= 3 blocks
+  - surface water <= 12%
+  - surface grass >= 12%
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  build_pad: flat_patch_center
+  watch_post: offset_from build_pad [4, 0, 4]
+
+find: 3 solutions max 100 seeds
+
+server: ./server.local.yaml

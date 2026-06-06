@@ -2,7 +2,7 @@
 
 Spec-driven end-to-end tests that drive a real Hermes LLM agent through Minecraft scenarios and grade the result against deterministic predicates. Sister to the L0–L6 capability fixtures (which test the *bot action layer* in isolation) — these test the *agent + bot together*.
 
-Playbook-pass matrices (chop, tower, scaffold) are **closed**; harness and YAMLs remain for regression. See [`../features/playbook-improvement-pass-closure.md`](../features/playbook-improvement-pass-closure.md).
+Playbook-pass matrices (chop, tower, scaffold) are **closed**; harness and YAMLs remain for regression. New world-varied work uses **procedural topics** — see [`../features/procedural-testing-model.md`](../features/procedural-testing-model.md). **Smoke on live `proc-lab`:** [`procedural-smoke-test-runbook.md`](procedural-smoke-test-runbook.md). Playbook closure: [`../features/playbook-improvement-pass-closure.md`](../features/playbook-improvement-pass-closure.md).
 
 Shipped in Sprint A (`docs/design/phase-2/sprints.md`).
 

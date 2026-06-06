@@ -1,0 +1,12 @@
+id: scenario_resource_forest_edge
+extends: profiles/resource_forest_edge
+
+placements:
+  spawn: random_safe radius 1 attempts 32
+  muster: offset_from spawn [6, 0, 0]
+  iron_view: random_safe near block iron_ore within 12 blocks attempts 32
+  tree_line: offset_from spawn [-10, 0, 6]
+
+find: 3 solutions max 100 seeds
+
+server: ./server.local.yaml

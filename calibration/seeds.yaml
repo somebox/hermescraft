@@ -1,0 +1,54 @@
+# Cubiomes vs server calibration anchors (Pass 1).
+# Run: python -m mapcatalog calibrate -s server.local.yaml
+#
+# `allow_min_fraction` is a loose lower bound on cubiomes allow-set fraction
+# (± cell_tolerance cells) — tighten after live server cross-checks.
+
+mc_enum: MC_1_21
+cell_tolerance: 1
+step: 16
+
+seeds:
+  - seed: "800"
+    arena: { center: [0, 0], radius: 48 }
+    allow: [plains, forest, meadow]
+    allow_min_fraction: 0.0
+    notes: "smoke anchor; cubiomes 100% plains at origin — live Paper 1.21.4 may disagree (see cubiomes-paper-skew.md)"
+
+  - seed: "2024"
+    arena: { center: [0, 0], radius: 48 }
+    allow: [plains, forest]
+    allow_min_fraction: 0.0
+    notes: "smoke seed_candidate"
+
+  - seed: "271828"
+    arena: { center: [0, 0], radius: 48 }
+    allow: [plains, forest, river]
+    allow_min_fraction: 0.0
+    notes: "smoke seed_candidate"
+
+  - seed: "424242"
+    arena: { center: [0, 0], radius: 64 }
+    allow: [plains, forest, windswept_hills, stony_peaks, meadow]
+    allow_min_fraction: 0.0
+
+  - seed: "12345"
+    arena: { center: [0, 0], radius: 64 }
+    allow: [plains, forest, desert, ocean]
+    allow_min_fraction: 0.0
+
+  - seed: "9999"
+    arena: { center: [0, 0], radius: 64 }
+    allow: [plains, forest, stony_shore]
+    allow_min_fraction: 0.0
+    notes: "cubiomes false-positive candidate (verify with try + verify_live)"
+
+  - seed: "2"
+    arena: { center: [0, 0], radius: 64 }
+    allow: [plains, forest, ocean]
+    allow_min_fraction: 0.0
+
+  - seed: "12"
+    arena: { center: [0, 0], radius: 64 }
+    allow: [plains, forest, ocean]
+    allow_min_fraction: 0.0
