@@ -98,20 +98,15 @@ server.local.yaml
 tools/cubiome_scan/cubiomes/
 tools/cubiome_scan/proc_biome_scan
 
-# ── Local Paper bench (optional dev tree; not repo server/) ───────────
-bench/world/
-bench/world_nether/
-bench/world_the_end/
-bench/libraries/
-bench/cache/
-bench/logs/
-bench/crash-reports/
-bench/plugins/
-bench/versions/
-bench/*.jar
-bench/session.lock
-bench/usercache.json
-bench/eula.txt
+# Local Paper proc-lab tree (spawned beside repo; not source — see procedural-bench-ops)
+bench/
+
+# Establish / fleet postmortem captures (kanban DBs, nav logs, workspaces)
+data/postmortems/
+
+# Agent-test runner output (topic YAML stays under data/agent-tests/)
+data/agent-tests/runs/**
+!data/agent-tests/runs/.gitignore
 
 .venv/
 .claude/scheduled_tasks.lock
