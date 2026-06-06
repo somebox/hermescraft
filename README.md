@@ -17,23 +17,28 @@ HermesCraft lets you play Minecraft with Hermes agents as actual in-world player
 
 A Hermes agent can join your world, chat with you in Minecraft, follow you, gather resources, build, fight, remember what happened, and adapt over time. The same architecture also scales to multi-agent worlds, where many Hermes agents share the same server, privately message each other, and gradually become characters in the world.
 
-Built for the Nous Hermes hackathon.
+Built for the Nous Hermes hackathon. This repository is a **fork** of the original HermesCraft author’s project: the **idea** is unchanged — Hermes agents as real Minecraft players, fair-play perception, and multi-agent worlds — but **`experiment/hermes-agents` is a deep rewrite**, not a polish pass on the upstream tree.
 
-### Documentation on this branch
+### Architecture rewrite on this branch
 
-On **`experiment/hermes-agents`**, the `docs/` tree is a **full reorganization**, not a light edit. Old top-level files (`docs/features/`, `docs/design/`, scattered guides) are gone or moved to **`docs/archive/`**. New material is grouped by role:
+The implementation here targets **current Hermes (v0.15 kanban, skills, gateway dispatch, worker lanes)** and a **different orchestration model** than the early hackathon fleet (long-lived Steward + four named bot workers sharing huge skill catalogs). The design direction is written up in [`docs/architecture/target.md`](docs/architecture/target.md) (exploration in progress; not fully built yet). In short:
 
-| Start here | What you get |
-|------------|----------------|
-| [`docs/README.md`](docs/README.md) | Index and reading order |
-| [`docs/architecture/README.md`](docs/architecture/README.md) | **Target fleet** direction (`@planner`, `@dispatcher`, typed agents) |
-| [`docs/architecture/target.md`](docs/architecture/target.md) | Canonical “where we’re going” statement |
-| [`docs/guides/`](docs/guides/) | **Today’s ops** — genesis, landfolk lifecycle, kanban facade, testing runbooks |
-| [`docs/reference/`](docs/reference/) | **Bot + `mc`** — cheatsheet, command reference, codebase map, Hermes vs HTTP boundaries |
-| [`docs/specs/`](docs/specs/) | Feature specs (world/regions, nav, kanban plugin, observation grammar, …) |
-| [`docs/testing/`](docs/testing/) | Playbooks, procedural maps, context-tuner docs |
+- **Agents are actor identities; bots are bodies; cards pair them per phase.** An agent is a Hermes profile (`@navigator`, `@miner`, `@planner`, …). A bot is a Mineflayer body in `data/bots/*.yaml`. Work is kanban cards with `assignee=<agent>` and optional `metadata.bot=<bot>`.
+- **Smaller scope per invocation.** One card ≈ one phase, fresh worker, narrow skills — because wide catalogs and long sessions accumulate noise and hurt flash-tier models more than bigger models fix.
+- **Bot-less coordination.** `@planner` (intents from operator DSL), `@dispatcher` (bind bodies, fleet mutex), `@overseer` (epic judgment) replace the old Steward-as-orchestrator pattern; the in-game `mc` stack stays the execution surface.
 
-Agents and maintainers should treat **`docs/architecture/`** plus **`AGENTS.md`** as the source of truth for fleet direction; use **`docs/guides/`** for commands you run this week. Superseded phase-2/3 design and retired guides live under **`docs/archive/`** only.
+Same Minecraft stack (`mc` → bot HTTP API → Mineflayer), but **deeper bot/runtime work** (regions, nav briefs, playbooks, procedural test worlds, landfolk plugin hooks) and **docs/specs aligned to the new model**. [`docs/architecture/README.md`](docs/architecture/README.md) is the reading order; [`docs/guides/`](docs/guides/) still documents **today’s** landfolk genesis and fleet commands while migration proceeds.
+
+| Docs | Role |
+|------|------|
+| [`docs/README.md`](docs/README.md) | Full index |
+| [`docs/architecture/target.md`](docs/architecture/target.md) | Canonical target statement |
+| [`docs/reference/`](docs/reference/) | `mc` cheatsheet, command reference, bot map |
+| [`docs/specs/`](docs/specs/) | World, nav, kanban, agent DSL specs |
+| [`docs/testing/`](docs/testing/) | Playbooks, procedural maps, context-tuner |
+| [`docs/archive/`](docs/archive/) | Superseded phase-2/3 design and old `features/` (historical only) |
+
+Maintainers: **`AGENTS.md`** + **`docs/architecture/`** for where the fleet is going; **`docs/guides/`** for what to run this week.
 
 ## What HermesCraft actually is
 

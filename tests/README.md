@@ -15,7 +15,7 @@ tests/
   fixtures/              placeholder package (world-prep YAML lives in data/test-fixtures/)
 ```
 
-World-prep and capability scenarios: **`data/test-fixtures/`** (L0–L10, behavior B1–B4). Agent+LLM specs: **`data/agent-tests/`** (see [docs/guides/agent-tests.md](../docs/guides/agent-tests.md)).
+World-prep and capability scenarios: **`data/test-fixtures/`** (L0–L10, behavior B1–B4). Agent+LLM specs: **`data/agent-tests/`** (see [docs/guides/test-agent-llm-runbook.md](../docs/guides/test-agent-llm-runbook.md)).
 
 ## Setup
 
@@ -26,7 +26,7 @@ python3 -m venv .venv
 
 ## Running
 
-One-page cheat sheet (server, Tester, models): [docs/guides/arena-tests-quickstart.md](../docs/guides/arena-tests-quickstart.md).
+One-page cheat sheet (server, Tester, models): [docs/guides/test-arena-quickstart.md](../docs/guides/test-arena-quickstart.md).
 
 ```bash
 .venv/bin/pytest -m unit                  # fast, no infra
