@@ -20,6 +20,7 @@ from typing import Optional
 import sqlite3
 
 from . import config
+from .mutex_key import mutex_key
 
 
 def is_chat_request(title: Optional[str]) -> bool:
@@ -48,25 +49,31 @@ def _undone_parents_exist(conn: sqlite3.Connection, task_id: str) -> bool:
     return row is not None
 
 
-def has_active_card(conn: sqlite3.Connection, assignee: str) -> bool:
-    """True iff *assignee* has any non-chat-request card actively
-    occupying the bot in ``ready`` or ``running``.
+def has_active_card(conn: sqlite3.Connection, key: str) -> bool:
+    """True iff a card in mutex-domain *key* is actively occupying the
+    queue (``ready`` or ``running``), excluding parked siblings + chat
+    requests.
 
-    A card with a ``mutex_park:`` claim_lock is parked (waiting its
-    turn) and does NOT count as active — that's exactly the situation
-    we want promote to unblock. Chat-request cards are also ignored —
-    they're an interruption lane, not the assignee's queue head.
+    *key* is the resolved mutex domain — see ``mutex_key.mutex_key``.
+    For bot-tagged cards this is ``"bot:<name>"``; for untagged cards
+    it's the assignee (lowercased). The function accepts a bare assignee
+    string for backwards compatibility with pre-Concern-5 call sites
+    that passed assignee directly — those callers still work, they just
+    won't see bot-tagged cards' sharing/separation correctly. Caller-
+    supplied keys are normalised to lowercase to preserve the prior
+    case-insensitive contract.
     """
+    key_lc = key.lower() if key else ""
     rows = conn.execute(
         """
-        SELECT title, claim_lock FROM tasks
-        WHERE lower(coalesce(assignee, '')) = lower(?)
-          AND status IN ('ready', 'running')
+        SELECT title, assignee, claim_lock FROM tasks
+        WHERE status IN ('ready', 'running')
         """,
-        (assignee,),
     ).fetchall()
     for r in rows:
         if is_chat_request(r["title"]):
+            continue
+        if mutex_key(r["assignee"], r["title"]) != key_lc:
             continue
         lock = r["claim_lock"] or ""
         if lock.startswith(config.MUTEX_LOCK_PREFIX):
@@ -75,31 +82,36 @@ def has_active_card(conn: sqlite3.Connection, assignee: str) -> bool:
     return False
 
 
-def promote_next_for(conn: sqlite3.Connection, assignee: str) -> Optional[str]:
-    """Promote the highest-priority eligible ``todo`` card for *assignee*.
+def promote_next_for(conn: sqlite3.Connection, key: str) -> Optional[str]:
+    """Promote the highest-priority eligible ``todo`` card in mutex-domain
+    *key*.
 
     A card is eligible if all its parents are ``done``/``archived``.
     Within the eligible set, ordering is ``priority DESC, created_at ASC``.
 
-    Returns the promoted task_id, or None if the assignee already has an
-    active card or no eligible todo exists. Idempotent: safe to call
-    repeatedly; only flips one card per call (the next one comes on the
-    next call).
+    *key* is the resolved mutex domain (see ``mutex_key.mutex_key``). The
+    function scans todos and filters by computed key, so a bot-tagged
+    card promotes for its bot's queue even when other assignees share the
+    profile name.
+
+    Returns the promoted task_id, or None if the domain already has an
+    active card or no eligible todo exists. Idempotent.
     """
-    if has_active_card(conn, assignee):
+    key_lc = key.lower() if key else ""
+    if has_active_card(conn, key_lc):
         return None
 
     rows = conn.execute(
         """
-        SELECT id, title FROM tasks
+        SELECT id, title, assignee, priority, created_at FROM tasks
         WHERE status = 'todo'
-          AND lower(coalesce(assignee, '')) = lower(?)
         ORDER BY priority DESC, created_at ASC
         """,
-        (assignee,),
     ).fetchall()
 
     for row in rows:
+        if mutex_key(row["assignee"], row["title"]) != key_lc:
+            continue
         task_id = row["id"]
         if _undone_parents_exist(conn, task_id):
             continue
@@ -127,21 +139,26 @@ def promote_next_for(conn: sqlite3.Connection, assignee: str) -> Optional[str]:
 def park_via_lock(
     conn: sqlite3.Connection,
     task_id: str,
-    assignee: str,
+    key: str,
     reason: str,
     expires: int,
 ) -> bool:
-    """Park a ``ready`` card by writing ``claim_lock=mutex_park:<assignee>``.
+    """Park a ``ready`` card by writing ``claim_lock=mutex_park:<key>``.
+
+    *key* is the mutex domain (see ``mutex_key.mutex_key``). The lock
+    string carries the resolved key directly, so two cards in the same
+    domain serialize via lock-prefix matching, and gate-check's
+    per-key sweep finds them via ``claim_lock LIKE 'mutex_park:%'``.
 
     The card stays in ``ready`` status (so it's visible in the queue
     and `recompute_ready` doesn't touch it) but the dispatcher's
     ``WHERE claim_lock IS NULL`` selector skips it. The next gate-check
-    tick releases the lock when the assignee's active card finishes.
+    tick releases the lock when the domain's active card finishes.
 
     Returns True iff the row was updated (CAS-safe — no-op if the card
     isn't in ``ready`` any more or already locked by someone else).
     """
-    marker = f"{config.MUTEX_LOCK_PREFIX}{assignee.lower()}"
+    marker = f"{config.MUTEX_LOCK_PREFIX}{key.lower()}"
     cur = conn.execute(
         """
         UPDATE tasks

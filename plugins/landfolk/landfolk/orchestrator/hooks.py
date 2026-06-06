@@ -28,6 +28,7 @@ import time
 from typing import Any, Optional
 
 from . import config
+from .mutex_key import mutex_key
 from .promote import (
     _append_event,
     has_active_card,
@@ -141,43 +142,57 @@ def on_post_tool_call(
 
 
 def _handle_complete_or_block(conn: sqlite3.Connection, task_id: str) -> None:
-    """A worker just released a card. Free up its assignee:
+    """A worker just released a card. Free up its mutex domain:
 
-    1. Release any mutex_park lock on the assignee's other ready
-       cards (they were queued behind this one).
-    2. Promote the next eligible todo for the same assignee.
+    1. Release any mutex_park lock on a sibling in the same domain
+       (they were queued behind this one).
+    2. Promote the next eligible todo in the same domain.
+
+    The domain is the mutex key — ``[bot:<name>]`` tag if present,
+    otherwise the assignee. That means a finishing ``[bot:pip]`` card
+    unparks other ``[bot:pip]`` cards regardless of assignee, and
+    finishing untagged ``navigator`` cards unpark untagged ``navigator``
+    cards but leave bot-tagged ones alone.
     """
-    assignee, _status, _title = _get_assignee_and_status(conn, task_id)
+    assignee, _status, title = _get_assignee_and_status(conn, task_id)
     if not assignee:
         return
     if assignee in config.ORCHESTRATOR_PROFILES:
         return  # orchestrators don't get auto-promoted
 
-    # Release mutex parks for this assignee — but only one. The next
-    # gate-check tick handles the rest if multiple parked cards exist
-    # (we don't want to unblock the entire queue at once).
+    key = mutex_key(assignee, title)
+    if not key:
+        return
+
+    # Find the highest-priority sibling parked in this domain. The lock
+    # marker carries the key directly so we can filter precisely.
+    marker = f"{config.MUTEX_LOCK_PREFIX}{key}"
     parked = conn.execute(
         """
         SELECT id FROM tasks
-        WHERE lower(coalesce(assignee, '')) = ?
-          AND status = 'ready'
-          AND claim_lock LIKE ?
+        WHERE status = 'ready'
+          AND claim_lock = ?
         ORDER BY priority DESC, created_at ASC
         LIMIT 1
         """,
-        (assignee, f"{config.MUTEX_LOCK_PREFIX}%"),
+        (marker,),
     ).fetchone()
     if parked is not None:
         release_mutex_lock(conn, parked["id"])
         return  # the released card is now the head — don't also promote a todo
 
-    promote_next_for(conn, assignee)
+    promote_next_for(conn, key)
 
 
 def _handle_create_or_unblock(conn: sqlite3.Connection, task_id: str) -> None:
     """A card was just created or unblocked. If it landed in ``ready``
-    while the assignee already has a head card, park it via
-    ``claim_lock=mutex_park:<assignee>``.
+    while its mutex domain already has a head card, park it via
+    ``claim_lock=mutex_park:<key>``.
+
+    Sibling detection respects the mutex key, so a fresh ``[bot:zee]``
+    card lands alongside a running ``[bot:pip]`` card (different keys)
+    without parking, while a second ``[bot:pip]`` parks behind the
+    first.
     """
     assignee, status, title = _get_assignee_and_status(conn, task_id)
     if not assignee or status != "ready":
@@ -187,18 +202,23 @@ def _handle_create_or_unblock(conn: sqlite3.Connection, task_id: str) -> None:
     if is_chat_request(title):
         return  # chat-requests are exempt
 
-    # Check if assignee already has a non-parked head card. Excludes self.
+    key = mutex_key(assignee, title)
+    if not key:
+        return
+
+    # Check if the domain already has a non-parked head card. Excludes self.
     rows = conn.execute(
         """
-        SELECT id, title, status, claim_lock FROM tasks
-        WHERE lower(coalesce(assignee, '')) = ?
-          AND status IN ('ready', 'running')
+        SELECT id, title, status, assignee, claim_lock FROM tasks
+        WHERE status IN ('ready', 'running')
           AND id != ?
         """,
-        (assignee, task_id),
+        (task_id,),
     ).fetchall()
     has_head = False
     for r in rows:
+        if mutex_key(r["assignee"], r["title"]) != key:
+            continue
         if r["status"] == "running":
             has_head = True
             break
@@ -211,7 +231,7 @@ def _handle_create_or_unblock(conn: sqlite3.Connection, task_id: str) -> None:
         break
     if has_head:
         expires = int(time.time()) + config.LOCK_TTL_SECONDS
-        park_via_lock(conn, task_id, assignee, "per_assignee_mutex_hook", expires)
+        park_via_lock(conn, task_id, key, "per_key_mutex_hook", expires)
 
 
 def _handle_archive(conn: sqlite3.Connection, task_id: str) -> None:

@@ -28,9 +28,10 @@ import json
 import time
 from typing import Any
 
-import sqlite3
+import sqlite3  # noqa: I001
 
 from . import config
+from .mutex_key import mutex_key
 from .promote import (
     _append_event,
     is_chat_request,
@@ -129,59 +130,56 @@ def gate_check(conn: sqlite3.Connection) -> dict[str, int]:
         except sqlite3.Error:
             stats["errors"] += 1
 
-    # ----- Step 3: per-assignee head selection + park/release ----------
-    # Unified pass: for each non-orchestrator assignee, pick the rightful
-    # head purely by ordering (running first, then priority DESC,
-    # created_at ASC, ignoring lock state). Release any mutex_park lock
-    # on the head. Park all other ready siblings (except chat-requests)
-    # that aren't already locked by something else.
+    # ----- Step 3: per-key head selection + park/release ----------
+    # Unified pass: for each non-orchestrator mutex domain (bot-tagged
+    # cards key on the bot; untagged cards key on assignee), pick the
+    # rightful head purely by ordering (running first, then priority
+    # DESC, created_at ASC, ignoring lock state). Release any mutex_park
+    # lock on the head. Park all other ready siblings (except chat-
+    # requests) that aren't already locked by something else.
+    #
+    # The mutex domain (vs raw assignee) means two cards on
+    # ``assignee=navigator`` with different ``[bot:...]`` tags promote
+    # concurrently — different keys, different queues. Two cards with
+    # the same bot tag (across any assignee) serialize.
     #
     # This re-evaluates every tick, so priority changes on a parked
     # card promote it to head correctly, and the previous head (now
     # outranked) gets re-parked.
     try:
-        if orch_profiles:
-            placeholders = ",".join("?" * len(orch_profiles))
-            assignees = conn.execute(
-                f"""
-                SELECT DISTINCT lower(coalesce(assignee, '')) AS a
-                FROM tasks
-                WHERE status IN ('ready', 'running')
-                  AND assignee IS NOT NULL
-                  AND lower(coalesce(assignee, '')) NOT IN ({placeholders})
-                """,
-                orch_profiles,
-            ).fetchall()
-        else:
-            assignees = conn.execute(
-                """
-                SELECT DISTINCT lower(coalesce(assignee, '')) AS a
-                FROM tasks
-                WHERE status IN ('ready', 'running')
-                  AND assignee IS NOT NULL
-                """
-            ).fetchall()
+        # Walk every active card and compute its mutex key. Orchestrator
+        # assignees are excluded (they have their own parking lane).
+        rows = conn.execute(
+            """
+            SELECT id, title, status, assignee, priority, created_at, claim_lock
+            FROM tasks
+            WHERE status IN ('ready', 'running')
+              AND assignee IS NOT NULL
+            """,
+        ).fetchall()
 
-        for ar in assignees:
-            assignee = ar["a"]
-            if not assignee:
+        # Group by mutex key.
+        keyed: dict[str, list[Any]] = {}
+        for row in rows:
+            assignee_lc = (row["assignee"] or "").lower()
+            if orch_profiles and assignee_lc in orch_profiles:
                 continue
-            cards = conn.execute(
-                """
-                SELECT id, title, status, priority, created_at, claim_lock FROM tasks
-                WHERE lower(coalesce(assignee, '')) = ?
-                  AND status IN ('ready', 'running')
-                ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END,
-                         priority DESC,
-                         created_at ASC
-                """,
-                (assignee,),
-            ).fetchall()
+            key = mutex_key(row["assignee"], row["title"])
+            if not key:
+                continue
+            keyed.setdefault(key, []).append(row)
+
+        for key, cards in keyed.items():
+            cards.sort(
+                key=lambda c: (
+                    0 if c["status"] == "running" else 1,
+                    -(c["priority"] or 0),
+                    c["created_at"] or 0,
+                )
+            )
 
             # Pick the head — first running, OR first non-chat-request
-            # ready card. Ignores current lock state: if the rightful
-            # head happens to be mutex-parked (priority just bumped), we
-            # release its lock below.
+            # ready card.
             head_id: str | None = None
             head_lock: str | None = None
             for c in cards:
@@ -218,50 +216,36 @@ def gate_check(conn: sqlite3.Connection) -> dict[str, int]:
                     continue  # foreign lock (orch_continuous, real worker claim)
                 if existing_lock.startswith(config.MUTEX_LOCK_PREFIX):
                     continue  # already parked
-                if park_via_lock(conn, c["id"], assignee, "per_assignee_mutex", expires):
+                if park_via_lock(conn, c["id"], key, "per_key_mutex", expires):
                     stats["mutex_parked"] += 1
-
-        # Special case: an assignee can have ONLY mutex-parked cards
-        # (no running, no unlocked ready) if their head completed and
-        # only parked siblings remain. The loop above DOES handle this
-        # — the highest-priority parked card becomes the head and its
-        # lock is released — but only if that assignee shows up in the
-        # `assignees` list. It will, because the parked card is still
-        # status='ready'. Confirmed by test_release_when_assignee_becomes_idle.
     except sqlite3.Error:
         stats["errors"] += 1
 
-    # ----- Step 5: promote next-best for idle assignees -------------
-    # An idle assignee has at least one todo and zero ready/running
-    # (excluding chat-requests, which never count as the head).
+    # ----- Step 5: promote next-best for idle mutex keys ---------------
+    # An idle key has at least one todo and zero ready/running
+    # (excluding chat-requests, which never count as the head). Bot
+    # tagging is honoured here too: ``[bot:pip]`` tagged todos sit in
+    # a separate queue from untagged ``navigator`` todos.
     try:
-        if orch_profiles:
-            placeholders = ",".join("?" * len(orch_profiles))
-            idle_rows = conn.execute(
-                f"""
-                SELECT DISTINCT lower(coalesce(assignee, '')) AS a
-                FROM tasks
-                WHERE status = 'todo'
-                  AND assignee IS NOT NULL
-                  AND lower(coalesce(assignee, '')) NOT IN ({placeholders})
-                """,
-                orch_profiles,
-            ).fetchall()
-        else:
-            idle_rows = conn.execute(
-                """
-                SELECT DISTINCT lower(coalesce(assignee, '')) AS a
-                FROM tasks
-                WHERE status = 'todo'
-                  AND assignee IS NOT NULL
-                """
-            ).fetchall()
-
-        for ar in idle_rows:
-            assignee = ar["a"]
-            if not assignee:
+        todo_rows = conn.execute(
+            """
+            SELECT id, assignee, title
+            FROM tasks
+            WHERE status = 'todo'
+              AND assignee IS NOT NULL
+            """,
+        ).fetchall()
+        idle_keys: set[str] = set()
+        for row in todo_rows:
+            assignee_lc = (row["assignee"] or "").lower()
+            if orch_profiles and assignee_lc in orch_profiles:
                 continue
-            if promote_next_for(conn, assignee):
+            k = mutex_key(row["assignee"], row["title"])
+            if k:
+                idle_keys.add(k)
+
+        for k in sorted(idle_keys):
+            if promote_next_for(conn, k):
                 stats["promoted"] += 1
     except sqlite3.Error:
         stats["errors"] += 1
