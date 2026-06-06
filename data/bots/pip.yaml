@@ -1,0 +1,4 @@
+# Pip — default pilot bot. Replaces legacy Flint in target architecture.
+# See docs/architecture/bots-and-mc.md "Target fleet roster".
+api_port: 3005
+username: Pip

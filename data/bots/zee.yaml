@@ -1,0 +1,4 @@
+# Zee — second-lane bot. Replaces legacy Gatherer in target architecture.
+# See docs/architecture/bots-and-mc.md "Target fleet roster".
+api_port: 3006
+username: Zee

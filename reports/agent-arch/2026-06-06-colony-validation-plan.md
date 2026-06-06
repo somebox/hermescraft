@@ -1,7 +1,30 @@
 # Colony architecture validation — execution plan
 
-**Date:** 2026-06-06 late night
-**Status:** plan — Session 1 ready to execute
+**Date:** 2026-06-06 (last updated 2026-06-07)
+**Status:** Sessions 1–4 complete; Session 4½ ready to execute. See [Progress](#progress) below.
+
+## Progress
+
+| # | Session | Status | Commit | Notes |
+|---|---|---|---|---|
+| 1 | Foundation | ✅ done | `80e2b2b` | `colony` marker excluded from fast/full runners; `tests/colony/` tree + README; `C0_colony_arena.yaml` (POIs + `mc mark` post-prep); `test_chest_delta_predicate.py` (variant 3); `telemetry.py` JSONL emitter with `SUMMARY_FIELDS` lock. Handoff regression stayed green. |
+| 2 | Done-ness | ✅ done | `be2d6ca` | `mc verify` dispatcher (`bot/lib/actions/verify.js`, 13 Tier 1 contract tests in `bot/test/actions/`); verbs `chest_contains`, `chest_delta`, `region_blocks`. `test_chest_object_state_predicate.py` lands variant 2. Done-ness vocab map in `docs/architecture/mc-verify-spec.md`. |
+| 3 | Blocker / review | ✅ done | `225f8e1` | `prototypes/agent-arch/overseer/review_loop.py` (284 lines, polling subscription pattern; structured-reason recognition; linkage via `task_events.kind='review_link'` payload `review_of=<id>`). 7 contract tests in `test_overseer_contract.py`. |
+| 4 | Mutex 5a | ✅ done | `3c3fc4b` | `mutex_key.py` with `[bot:<name>]` title-prefix encoding (no metadata column in tasks schema yet — interim seam). `gate.py` Step 3+5 + `hooks.py` walk by computed key; `promote.py` helpers take a key string. 33 new tests; 108/108 plugin tests pass. |
+| 4½ | Spawn seam | next | — | See expanded section below. |
+| 5 | Capstone | pending | — | Walkthrough graph; freeze rule; wide-flint control with the same decomposed body. |
+
+### Assumption status (snapshot)
+
+| # | Assumption | Status |
+|---|---|---|
+| A1 | `mc verify` predicate shape stable across variants | **supported** (Session 2 — 13/13 contract tests; 3 verbs landed) |
+| A2 | `success_when` / `mc verify` / `acceptance` reconcile | **supported** (Session 2 — vocab map in `mc-verify-spec.md`; cross-reference in colony test) |
+| A3 | Block → review → unblock reduces operator load | **supported** (Session 3 — full loop observable in kanban events; structured prefixes recognised) |
+| A4 | `metadata.bot` mutex preserves parallelism without cross-claim | **supported** (Session 4 — both axes proven: same assignee + different bot promotes concurrent; same bot serializes across assignees) |
+| A5 | Spawn stand-in injects per-card MC env from `data/bots/<bot>.yaml` | untested |
+| A6 | Per-card scope reset improves multi-domain completion | untested |
+| A7 | Wheat-walkthrough graph exposes wide-flint paralysis | untested |
 
 ## Locked-in choices (decisions baked into the plan)
 
@@ -116,17 +139,29 @@ Both `gate.py` AND `hooks.py` key on `assignee` today. Extending only gate-check
 
 ### Session 4½ — Spawn stand-in (test seam, not production code)
 
-**Why:** the architecture's pilot card has `assignee=navigator` + `metadata.bot=pip`, with per-card MC env injected at spawn from `data/bots/<bot>.yaml` (Section F). Today proto profiles hardcode `MC_API_URL`. Without addressing this, the capstone proves "profile pinned to one body works," not "assignee rotates on `metadata.bot`."
+**Why this session exists at all.** Session 4 proved the *kanban-side* of `metadata.bot`: two cards with the same Hermes profile (`assignee=navigator`) and different bots (`pip` vs `zee`) live in distinct mutex domains, and two cards with the same bot across different assignees serialize. That's half the story. The architecture's *other* half is that when each of those cards runs, the spawning worker must talk to the *right Mineflayer bot* — `pip` lives on port 3005, `zee` on 3006. Without per-card env injection, both workers would talk to whatever port the profile's static `.env` pinned, the cards would step on each other in-world, and the mutex extension would prove nothing useful in practice.
 
-**Treat this as a test seam:**
-- The stand-in (`scripts/colony-validation/spawn-with-bot.sh`) validates the **contract** (`metadata.bot` → MC_* env) independently, via its own contract test.
-- It is **replaceable**. When Section F lands, the contract test still passes against the real spawn layer; nothing downstream couples to the script.
-- Don't let downstream code import the script; downstream consumes the env vars only.
+The production solution to this is **Section F of `impact.md`** — a Hermes spawn hook that reads `metadata.bot` from the claimed card and injects `MC_API_URL` / `MC_USERNAME` into the worker's environment before exec. That's months of work and touches Hermes-the-product. We're not building it now. We're building the *minimum test seam* that proves the contract such a spawn hook would have to honour.
 
-**Minimal stand-in:**
-- Read `metadata.bot` from `hermes kanban show --json`.
-- Look up `data/bots/<bot>.yaml` → `api_port`, `username`.
-- Export `MC_API_URL` + `MC_USERNAME`. Invoke the worker.
+**What we are testing.** The unit under test is a contract, not code:
+
+> Given a card with `metadata.bot=<name>` (today encoded as `[bot:<name>]` title prefix), the worker that spawns to run that card sees `MC_API_URL` and `MC_USERNAME` env vars derived from `data/bots/<name>.yaml` — not from the profile's static `.env`.
+
+Three things we verify:
+
+1. **Lookup correctness.** Given `metadata.bot=pip` and a fixture `data/bots/pip.yaml` with `api_port: 3005, username: pip`, the seam exports `MC_API_URL=http://127.0.0.1:3005` and `MC_USERNAME=pip`. Same for `zee` → 3006. Wrong key → `data/bots/<unknown>.yaml` missing → script exits non-zero (so a misconfigured card fails loudly instead of running on the wrong body).
+2. **Precedence.** When the seam runs a child process, the exported `MC_API_URL` overrides any profile-level `MC_API_URL` already in scope. This mirrors `bot/cli/api-url.mjs`'s precedence rule and is the property Section F will need.
+3. **Replaceability.** The contract test is written against the *contract*, not the script. When Section F lands, the same test should pass against the real spawn hook by swapping the invocation; nothing downstream of the env vars couples to `spawn-with-bot.sh`.
+
+**What we are NOT testing here.** No real Hermes worker, no LLM, no Minecraft. The capstone (Session 5) is what proves the contract pulls its weight under load. This session only proves the contract *exists* and *is honoured* by something testable.
+
+**Deliverables.**
+
+- `scripts/colony-validation/spawn-with-bot.sh` — reads `metadata.bot` (via `hermes kanban show --json` against the proto tenant, or accepts it as an arg for direct testing), looks up `data/bots/<bot>.yaml`, exports `MC_API_URL` + `MC_USERNAME`, then `exec`s the rest of its args as the worker invocation. Fails non-zero on missing card / missing bot file / missing required yaml fields.
+- `data/bots/pip.yaml` and `data/bots/zee.yaml` — `api_port`, `username`, optional `notes`. Schema documented inline with comments, matching the canonical surface from `bots-and-mc.md`.
+- `prototypes/agent-arch/tests/test_spawn_seam_contract.py` — the contract test. Three classes of assertion: (a) given a known card metadata, env vars match; (b) given an unknown bot, exit code is non-zero and stderr names the missing file; (c) given a profile env that already sets `MC_API_URL`, the child sees the seam's value (precedence). Implemented by exec'ing the shell script with `env -i` plus controlled inputs, capturing the child's environment with a `python -c 'import os, json; print(json.dumps({k: os.environ[k] for k in ("MC_API_URL","MC_USERNAME")}))'` victim.
+
+**Pivot triggers.** If the script-layer approach turns out to need state that only Hermes has (e.g. claim metadata not visible via CLI), escalate to a design issue for Section F before continuing — don't paper over it. If `data/bots/<bot>.yaml` ends up needing fields we haven't thought through (auth, model pinning, world-id), pause and write the schema first; the schema decision deserves its own thought.
 
 Outcome updates A5. ~¼ day.
 
@@ -198,6 +233,6 @@ After each session, evaluate **Binary success** and decide **Go / Pivot / Stop**
 
 ## Ready to execute
 
-All five open decisions confirmed (see "Locked-in choices" at the top). Session 1 is ~½ day; estimate the full plan at ~5 days across sessions. The Pivot gate after each session governs whether to continue.
+Sessions 1–4 complete (commits `80e2b2b`, `be2d6ca`, `225f8e1`, `3c3fc4b`). A1–A4 moved from *untested* to *supported* — every mechanism the architecture asks for in the kanban + predicate layer has a test backing it.
 
-Next action: execute Session 1 — `colony` pytest marker, `tests/colony/` tree + README, `C0_colony_arena.yaml` fixture with `mc mark` post-prep, `test_chest_delta_predicate.py`, `prototypes/agent-arch/automation/telemetry.py`, and confirm `test_handoff_contract.py` stays green.
+Next action: execute **Session 4½** — `scripts/colony-validation/spawn-with-bot.sh` + `data/bots/{pip,zee}.yaml` + `prototypes/agent-arch/tests/test_spawn_seam_contract.py`. The seam is a test-only stand-in for Section F; the contract it proves is what Section F will have to honour. Then Session 5 (capstone) is ready to run with all dependencies present.
