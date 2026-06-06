@@ -30,6 +30,7 @@ import { createRegionsCheckActions } from './regions/check.js';
 import { createBlueprintActions } from './blueprints/index.js';
 import { createPlaybookActions } from './playbooks.js';
 import { createReachActions } from './movement/reach.js';
+import { createVerifyActions } from './verify.js';
 
 export function createAllActions(deps) {
   // Modules already on services use deps.services; modules still on the
@@ -46,6 +47,7 @@ export function createAllActions(deps) {
   const lifecycle = createLifecycleActions(services);
   const queries = createQueriesActions(services);
   const crafting = createCraftingActions(services);
+  const verify = createVerifyActions(services);
 
   // Modules still on the legacy deps bag — they will migrate to services in
   // a future sweep. Phase 5 splits containers.js into 5 focused modules but
@@ -58,6 +60,7 @@ export function createAllActions(deps) {
     ...lifecycle,
     ...queries,
     ...crafting,
+    ...verify,
     ...createMovementActions(deps),
     ...createMiningActions(deps),
     ...createContainerActions(deps),

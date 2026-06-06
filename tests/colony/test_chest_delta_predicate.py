@@ -34,7 +34,7 @@ ITEM = "cobblestone"
 
 
 def _chest_count(rcon, world: str, item: str) -> int:
-    """Read item count from the C0 :storage: chest via rcon `data get block`."""
+    """Read item count from the :storage: chest via rcon `data get block`."""
     nbt = rcon.run(
         f"execute in {world} run data get block "
         f"{STORAGE_X} {STORAGE_Y} {STORAGE_Z} Items"
@@ -42,9 +42,22 @@ def _chest_count(rcon, world: str, item: str) -> int:
     return sum_chest_item_from_nbt(nbt, item)
 
 
-@pytest.mark.functional
+@pytest.fixture
+def storage_chest(rcon, config):
+    """Per-test chest at (4,65,0) — placed in the test body and torn down
+    after, because the autouse functional harness fills the arena with
+    air before any @pytest.mark.functional test runs and would destroy
+    a chest set up by the C0 fixture. Colony tests own their own block
+    state to remain hermetic regardless of which other markers are on.
+    """
+    world = config["mc"]["world"]
+    rcon.run(f"execute in {world} run setblock {STORAGE_X} {STORAGE_Y} {STORAGE_Z} minecraft:chest")
+    yield world
+    rcon.run(f"execute in {world} run setblock {STORAGE_X} {STORAGE_Y} {STORAGE_Z} minecraft:air")
+
+
 @pytest.mark.colony
-def test_chest_delta_predicate(rcon, config) -> None:
+def test_chest_delta_predicate(rcon, storage_chest) -> None:
     """Concern 2 variant 3 — delta predicate fires correctly.
 
     Snapshots the :storage: chest's cobblestone count, deposits 4 via rcon,
@@ -52,7 +65,7 @@ def test_chest_delta_predicate(rcon, config) -> None:
     whether the chest had pre-existing items (which is the whole point of
     delta vs absolute).
     """
-    world = config["mc"]["world"]
+    world = storage_chest  # the fixture yields the world name
 
     before = _chest_count(rcon, world, ITEM)
 

@@ -1226,6 +1226,19 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc harvest 0 0 4 4 65', 'mc harvest -2 -2 2 2'],
   }),
 
+  g('verify', 'world', ['check_done'], {
+    description: 'Predicate-check for card done-ness. Returns {satisfied, observed, expected}; ok:true means evaluated, ok:false means cannot evaluate. Kinds: inventory_contains <item> [min_count]; chest_contains <mark> <item> [min_count] (bot must be adjacent). Spec: docs/architecture/mc-verify-spec.md',
+    method: 'POST',
+    path: '/action/verify',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify(p),
+    usage: 'mc verify <kind> <args...>',
+    examples: [
+      'mc verify inventory_contains cobblestone 4',
+      'mc verify chest_contains storage cobblestone 4',
+    ],
+  }),
+
   g('verify_plot', 'world', ['farm_verify_plot'], {
     description: 'Verify construct plot: worksite coverage, terrain flatness, till readiness. Run before bulk till on kanban cards. Till is not region-guarded — failures here are spec/prep, not permission.',
     method: 'POST',

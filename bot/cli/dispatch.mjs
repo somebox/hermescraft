@@ -825,6 +825,32 @@ function customParse(canonicalName, positional) {
     case 'deposit':
     case 'withdraw':
       return parseDepositWithdrawPositional(positional);
+    case 'verify': {
+      // mc verify <kind> <args...>
+      //   inventory_contains <item> [min_count]
+      //   chest_contains <mark> <item> [min_count]
+      const q = positional.slice();
+      const kind = String(q.shift() || '').toLowerCase();
+      if (!kind) throw new Error('missing:kind');
+      const out = { kind };
+      if (kind === 'inventory_contains') {
+        out.item = String(q.shift() || '');
+        if (!out.item) throw new Error('missing:item');
+        if (q.length) out.min_count = Number(q.shift());
+      } else if (kind === 'chest_contains') {
+        out.mark = String(q.shift() || '').replace(/^:|:$/g, '');
+        if (!out.mark) throw new Error('missing:mark');
+        out.item = String(q.shift() || '');
+        if (!out.item) throw new Error('missing:item');
+        if (q.length) out.min_count = Number(q.shift());
+      } else {
+        // Forward unknown kinds with raw args so the server can reject
+        // them with the canonical UNKNOWN_KIND error response — this
+        // preserves error messages for forward-compat new kinds.
+        out._args = q.slice();
+      }
+      return out;
+    }
     case 'verify_plot': {
       const q = positional.slice();
       const out = {};
