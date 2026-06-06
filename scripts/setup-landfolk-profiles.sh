@@ -220,6 +220,7 @@ extra = sys.argv[2].split() if len(sys.argv) > 2 and sys.argv[2] else []
 base = [
     "MC_API_URL",
     "MC_USERNAME",
+    "_MC_API_URL_LOCKED",
     "HERMES_KANBAN_DB",
     "HERMES_KANBAN_ROOT",
     "HERMES_KANBAN_WORKSPACES_ROOT",
@@ -496,50 +497,65 @@ path.write_text(text)
 PYEOF
 }
 
-ensure_steward_env() {
-  local dir="$PROFILES_DIR/steward"
-  local env_file="$dir/.env"
-  local mc_url="http://localhost:3001"
-  local mc_user="Flint"
-  if [ "$SOLO_FLINT" = true ]; then
-    mc_url="http://localhost:3002"
+# Sync MC_API_URL, MC_USERNAME, and _MC_API_URL_LOCKED in a profile .env from
+# data/agent-models.json (api_port). mc CLI prefers _MC_API_URL_LOCKED; workers
+# need lock and URL aligned so terminal sessions cannot route to Steward :3005.
+patch_profile_mc_env() {
+  local profile="$1"
+  local agent_name="$2"
+  local mc_user="${3:-$agent_name}"
+  local env_file="$PROFILES_DIR/$profile/.env"
+  local models_json="${AGENT_MODELS_JSON:-$ROOT/data/agent-models.json}"
+  local port mc_url
+
+  port="$(BASE_API_PORT="${BASE_API_PORT:-3001}" python3 "$ROOT/scripts/resolve-agent-model.py" api-port "$agent_name" "$models_json" 2>/dev/null)" || port=""
+  if [ -z "$port" ]; then
+    echo "  WARN: no api_port for agent $agent_name — skip MC env for profile $profile" >&2
+    return 1
   fi
+  mc_url="http://localhost:${port}"
+
   if [ "$DRY_RUN" = true ]; then
-    echo "DRY: steward .env MC_API_URL=$mc_url MC_USERNAME=$mc_user"
+    echo "DRY: $profile .env MC_API_URL=$mc_url MC_USERNAME=$mc_user _MC_API_URL_LOCKED=$mc_url"
     return 0
   fi
-  if [ ! -f "$env_file" ]; then
-    echo "  steward .env: creating MC_API_URL=$mc_url MC_USERNAME=$mc_user (read-only survey)"
-    {
-      echo "MC_API_URL=$mc_url"
-      echo "MC_USERNAME=$mc_user"
-    } >> "$env_file"
-    return 0
-  fi
-  if grep -q '^MC_API_URL=' "$env_file" 2>/dev/null; then
-    if [ "$SOLO_FLINT" = true ]; then
-      python3 - "$env_file" "$mc_url" <<'PYEOF'
+
+  python3 - "$env_file" "$mc_url" "$mc_user" <<'PYEOF'
 import pathlib, re, sys
 path = pathlib.Path(sys.argv[1])
 url = sys.argv[2]
-text = path.read_text()
-new = re.sub(r'^MC_API_URL=.*$', f'MC_API_URL={url}', text, count=1, flags=re.M)
-if new != text:
-    path.write_text(new)
-    print(f"  steward .env: MC_API_URL -> {url} (solo-flint)")
-else:
-    print(f"  steward .env: MC_API_URL already {url}")
+user = sys.argv[3]
+pairs = [
+    ("MC_API_URL", url),
+    ("MC_USERNAME", user),
+    ("_MC_API_URL_LOCKED", url),
+]
+text = path.read_text() if path.exists() else ""
+for key, val in pairs:
+    line = f"{key}={val}\n"
+    pat = re.compile(rf"^{re.escape(key)}=.*$", re.M)
+    if pat.search(text):
+        text = pat.sub(f"{key}={val}", text, count=1)
+    else:
+        if text and not text.endswith("\n"):
+            text += "\n"
+        text += line
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(text)
+print(f"  {path.parent.name}/.env: {pairs[0][0]}={url} {pairs[1][0]}={user} (lock pinned)")
 PYEOF
-    else
-      echo "  steward .env: MC_API_URL present (re-run with --solo-flint to point at :3002)"
+}
+
+ensure_steward_env() {
+  if [ "$SOLO_FLINT" = true ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "DRY: steward .env solo-flint → :3002 / Flint"
+      return 0
     fi
+    patch_profile_mc_env steward Flint Flint
     return 0
   fi
-  echo "  steward .env: appending MC_API_URL=$mc_url MC_USERNAME=$mc_user"
-  {
-    echo "MC_API_URL=$mc_url"
-    echo "MC_USERNAME=$mc_user"
-  } >> "$env_file"
+  patch_profile_mc_env steward Steward Steward
 }
 
 ensure_minecraft_skills() {
@@ -660,6 +676,12 @@ setup_worker() {
   fi
 
   patch_env_passthrough "$dir/config.yaml" ""
+  case "$name" in
+    flint) patch_profile_mc_env flint Flint ;;
+    gatherer) patch_profile_mc_env gatherer Gatherer ;;
+    mason) patch_profile_mc_env mason Mason ;;
+    barley) patch_profile_mc_env barley Barley ;;
+  esac
   patch_max_turns "$dir/config.yaml" 150
   patch_context_length "$dir/config.yaml" 250000
   # apply_landfolk_compression_policy reads the aux model from

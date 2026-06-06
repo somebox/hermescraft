@@ -141,6 +141,36 @@ describe('cli output', () => {
     );
   });
 
+  it('renderHuman includes terrain=unknown with run-8 muster feet offset (PR-J regression)', () => {
+    const logs = [];
+    const orig = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+    try {
+      renderHuman({
+        ok: true,
+        command: 'status',
+        data: {
+          nav_header: {
+            situation: 'Surface',
+            pos: { x: 4, y: 88, z: 24 },
+            nav_mode: 'open',
+            signals: { text: '4 exits' },
+            terrain: { kind: 'unknown', feet_vs_local_ground: -9 },
+          },
+          health: 20,
+          food: 20,
+        },
+      });
+    } finally {
+      console.log = orig;
+    }
+    const joined = logs.join('\n');
+    assert.ok(
+      /terrain=unknown \(feet_vs_local_ground=-9\)/.test(joined),
+      `expected run-8 muster terrain line; got:\n${joined}`,
+    );
+  });
+
   it('renderHuman includes terrain= on mc scene when nav_header.terrain is set', () => {
     const logs = [];
     const orig = console.log;

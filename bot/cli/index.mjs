@@ -10,6 +10,7 @@ import { requestHttp } from './http.mjs';
 import { RAW_COMMAND_DEFS, buildAliasMap, CATEGORY_ORDER } from './registry.mjs';
 import { runAdviseCli } from './advise.mjs';
 import { renderHuman } from './output.mjs';
+import { apiUrl } from './api-url.mjs';
 
 const MAX_BATCH = 10;
 
@@ -103,12 +104,6 @@ function extractReason(positional) {
     if (t.startsWith('--reason=')) return t.slice('--reason='.length).trim();
   }
   return '';
-}
-
-function apiUrl() {
-  if (process.env._MC_API_URL_LOCKED) return String(process.env._MC_API_URL_LOCKED);
-  if (process.env.MC_API_URL) return String(process.env.MC_API_URL);
-  return `http://localhost:3001`;
 }
 
 /** Registry templates that never map to literal HTTP endpoints. */
