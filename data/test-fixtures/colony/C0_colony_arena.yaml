@@ -1,0 +1,90 @@
+# C0 — colony arena: canonical POIs for agent-arch validation tests.
+#
+# Purpose: prepare a deterministic landfolk-test arena with four named POIs
+# (:base_anchor:, :storage:, :test_mine:, :test_lookout:) reachable from
+# (0, 65, 0) within 12 blocks, queryable via `mc marks` on Tester.
+#
+# Used by: tests/colony/* tests via the `colony` pytest marker. NOT autoused;
+# colony tests are opt-in only and gated behind `pytest -m colony`.
+#
+# Layout (Y=65 plane):
+#     z
+#     ^
+#   8 |   m       . = ground (air over stone)
+#     |           m = test_mine (stone ore seam)
+#   0 |   .   .   c   .       s = storage (chest)
+#     |   ↑       ↑           b = base_anchor (spawn)
+#     |   b       s   .       o = test_lookout
+#  -- | --|---|---|---|---|--> x
+#         0       4       8
+#
+# Cards/skills resolve `:marks:` through the bot HTTP marks API per
+# agent-navigator.md — setblock alone is not enough. A `local:` post-prep
+# step issues POST /action/mark for each POI so they appear in `mc marks`.
+#
+# Plan: reports/agent-arch/2026-06-06-colony-validation-plan.md (Session 1).
+
+world: landfolk-test
+
+prep:
+  # Clear arena above the canonical 11x11 platform at Y=64.
+  - "execute in landfolk-test run fill -2 65 -2 10 80 10 minecraft:air"
+
+  # Ensure ground at Y=64 across the working area (canonical platform is
+  # already in place; this is defensive for the broader POI footprint).
+  - "execute in landfolk-test run fill -2 64 -2 10 64 10 minecraft:stone"
+
+  # POI 1 — :base_anchor: at (0, 65, 0). Sign for visual identification.
+  - "execute in landfolk-test run setblock 0 65 0 minecraft:oak_sign{front_text:{messages:['{\"text\":\"base_anchor\"}','{\"text\":\"\"}','{\"text\":\"\"}','{\"text\":\"\"}']}}"
+
+  # POI 2 — :storage: at (4, 65, 0). Chest; tests will assert deltas on its
+  # Items NBT.
+  - "execute in landfolk-test run setblock 4 65 0 minecraft:chest"
+
+  # POI 3 — :test_mine: at (0, 65, 8). A small stone column simulating an
+  # ore seam target. Y=64 stone is already laid; surface at Y=65 marks the
+  # entrance with a sign.
+  - "execute in landfolk-test run setblock 0 65 8 minecraft:oak_sign{front_text:{messages:['{\"text\":\"test_mine\"}','{\"text\":\"\"}','{\"text\":\"\"}','{\"text\":\"\"}']}}"
+  # Stone column below the sign for digging
+  - "execute in landfolk-test run fill 0 60 8 0 64 8 minecraft:stone"
+
+  # POI 4 — :test_lookout: at (8, 65, 0). Sign; useful as a nav-only target.
+  - "execute in landfolk-test run setblock 8 65 0 minecraft:oak_sign{front_text:{messages:['{\"text\":\"test_lookout\"}','{\"text\":\"\"}','{\"text\":\"\"}','{\"text\":\"\"}']}}"
+
+  # Tester setup: move into landfolk-test, tp to spawn, clear inventory,
+  # full health.
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 0 72 0"
+  - "clear Tester"
+  - "effect give Tester minecraft:saturation 1 10"
+  - "effect give Tester minecraft:instant_health 1 10 true"
+  - "effect give Tester minecraft:slow_falling 5 0 true"
+
+  # Post-prep: register POIs in the bot's marks API via HTTP so `mc marks`
+  # resolves them. Tester runs on :3004 — see scripts/run-tester-bot.sh.
+  # Wait briefly for the bot to settle after the teleport so the position
+  # of each mark is accurate when captured by /action/mark.
+  - "local: sleep 2"
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"base_anchor\",\"x\":0,\"y\":65,\"z\":0,\"note\":\"colony C0 spawn\"}' >/dev/null || echo 'mark base_anchor: bot HTTP not reachable'"
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"storage\",\"x\":4,\"y\":65,\"z\":0,\"note\":\"colony C0 chest\"}' >/dev/null || echo 'mark storage: bot HTTP not reachable'"
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"test_mine\",\"x\":0,\"y\":65,\"z\":8,\"note\":\"colony C0 mine\"}' >/dev/null || echo 'mark test_mine: bot HTTP not reachable'"
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"test_lookout\",\"x\":8,\"y\":65,\"z\":0,\"note\":\"colony C0 lookout\"}' >/dev/null || echo 'mark test_lookout: bot HTTP not reachable'"
+
+cleanup:
+  # Remove the POIs we placed (signs + chest). Don't touch the canonical
+  # 11x11 platform at Y=64 — other fixtures depend on it being intact.
+  - "execute in landfolk-test run setblock 0 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock 4 65 0 minecraft:air"
+  - "execute in landfolk-test run setblock 0 65 8 minecraft:air"
+  - "execute in landfolk-test run fill 0 60 8 0 64 8 minecraft:air"
+  - "execute in landfolk-test run setblock 8 65 0 minecraft:air"
+  # Air out the arena above ground
+  - "execute in landfolk-test run fill -2 65 -2 10 80 10 minecraft:air"
+  # Move Tester back to production-world default and kill any drops
+  - "execute in landfolk-test run tp Tester 52 65 52"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32]"
+  # Drop the marks we added so they don't leak across fixtures.
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H 'content-type: application/json' -d '{\"name\":\"base_anchor\"}' >/dev/null || true"
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H 'content-type: application/json' -d '{\"name\":\"storage\"}' >/dev/null || true"
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H 'content-type: application/json' -d '{\"name\":\"test_mine\"}' >/dev/null || true"
+  - "local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H 'content-type: application/json' -d '{\"name\":\"test_lookout\"}' >/dev/null || true"

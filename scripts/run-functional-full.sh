@@ -6,4 +6,4 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 "$ROOT/scripts/stop-bots.sh" Tester --quiet || true
 "$ROOT/scripts/run-tester-bot.sh"
-.venv/bin/pytest -m "functional and not integration" --durations=30 -q --tb=short "$@"
+.venv/bin/pytest -m "functional and not integration and not colony" --durations=30 -q --tb=short "$@"

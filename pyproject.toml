@@ -20,6 +20,7 @@ markers = [
   "slow: takes >30s, skip in fast feedback loops",
   "trace(interval): per-test BotTrace poll interval in seconds (default 1.0)",
   "no_trace: disable BotTrace poller for this test",
+  "colony: agent-arch validation tests; opt-in only, never in fast/full functional runners — see tests/colony/README.md",
 ]
 addopts = "-ra --strict-markers"
 python_files = ["test_*.py"]
