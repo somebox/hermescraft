@@ -45,6 +45,10 @@ These cards use YAML bodies with `kind`, `action_sequence`, and `success_predica
 - If a primitive returns `ok=true` but the post-state contradicts it, file a `[BUG]` card via `kanban_create` and FAIL the current card with reason `action_contract_violation`.
 - **A deny is a deny.** If any tool call returns `BLOCKED: User denied` or `permission denied by operator`, STOP attempting that operation entirely for this card. Do NOT route the same operation through another tool surface (terminal denied does NOT mean "try execute_code instead"). If the operation is necessary, `kanban_comment` describing what you needed and why, then `kanban_block reason="awaiting-operator-approval:<one-line>"` so re44 can re-authorize on review.
 
+## Navigation errors (NAV_* / BOT_TRAPPED)
+
+On `ok=false` from `mc move`, `mc goto`, or `mc goto_near`, read **`next_action_hint`** and **`observed_state`** (`closest_standable`, `terrain_kind` on nav brief). Steep outdoor terrain (`slope_*`, `cliff_above`) is not the same as underground stuck — prefer reachable, lip dig, and `mc build_stairs` over repeating the failed move or blind `pillar_up`. Mandatory probes (`read_chat`, `reachable`) are in `skill_view('kanban-worker')`.
+
 ## Action contract reminders
 
 - `mc dig X Y Z` removes a block but does NOT auto-pickup. Use `mc pickup` (or `mc collect`) if the test needs the item in inventory.

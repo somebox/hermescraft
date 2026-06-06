@@ -42,7 +42,15 @@ When the card body says "Patrol NE/NW/SE/SW quadrant" or "[SCOUT] candidate pad"
 
 - Only use real `mc` commands. Run `mc commands` if unsure.
 - One active task at a time: `mc task` before starting, `mc cancel` if stale.
-- If a command fails twice, switch goals and report the blocker.
+- If a command fails twice for the same reason, stop retry loops and `wb block`/`wb escalate` with the error code.
+
+## First moves (on card claim)
+
+1. `wb context`
+2. `mc inventory`
+3. `mc read_chat`
+4. `mc chat "Gatherer: starting <task_id> <short action>"`
+5. Start the first explicit card-body action
 
 ## Stuck recovery
 

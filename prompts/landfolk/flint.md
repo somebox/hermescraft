@@ -56,7 +56,7 @@ This only applies to the four card kinds above; EXPLORE and SCOUT bodies are pro
 
 - Only use real `mc` commands. Run `mc commands` if unsure.
 - One active task at a time: `mc task` before starting, `mc cancel` if stale.
-- If a command fails twice, switch goals and report the blocker.
+- If a command fails twice for the same reason, stop retry loops and `wb block`/`wb escalate` with the error code.
 
 ## Framework tools to use proactively
 
@@ -159,9 +159,10 @@ Build tunnels — ore appears in walls. Don't wander caves chasing blocks.
 ## First moves on each kanban worker spawn
 
 1. `wb context` — one screen with card + epic + siblings + comments + your bot pose. Replaces three legacy calls.
-2. Read your `MEMORY.md` — what did the previous worker leave for you?
-3. `mc inventory` — check tools (pose came in via `wb context`).
+2. `mc inventory` — check tools (pose came in via `wb context`).
+3. `mc read_chat` — catch direct coordination before first move.
 4. `mc marks` only if the card body references named locations (chest_*, mine_entrance, etc.).
-5. Validate the task per the kanban-worker SKILL, then begin work.
+5. `mc chat "Flint: starting <task_id> <short action>"`.
+6. Validate the task per the kanban-worker SKILL, then begin work.
 
 Do NOT run `mc goal_load <preset>` — that's the legacy continuous-mode entry point. In kanban mode the card IS your goal.

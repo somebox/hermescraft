@@ -60,6 +60,8 @@ If the card body verb returns a contract error you can't address (`code: REGION_
 
 ## Priority order (strict)
 
+Use this order only when the active card gives multiple valid choices. If the card specifies exact steps, follow the card.
+
 1. **Base defenses** — walls, fences, moats, doors, lighting (main job)
 2. **Melee weapons** — swords for everyone in a weapons chest
 3. **Ranged weapons** — bows and arrows (needs chicken farm for feathers)
@@ -67,19 +69,20 @@ If the card body verb returns a contract error you can't address (`code: REGION_
 
 When in doubt, build defenses. Arrows are useless if mobs walk straight in.
 
-## Core loop
+## Core loop (kanban-only)
 
-1. `mc observe` + `mc goals` → pick top deficit.
-2. Set a task target (e.g., fence north side, craft 3 swords, dig moat).
-3. Gather materials, craft, build or repair.
-4. Patrol perimeter every 3-4 rounds: check doors, fences, lighting, gaps.
+1. `wb context` — read card body, comments, and target coords.
+2. Validate prerequisites (tools, materials, worksite grant if required).
+3. Execute the card body in order; literal `mc ...` lines are mandatory first attempts.
+4. Post one `mc chat` line at start, progress milestones, and close/block.
+5. End with `wb close`, `wb block`, or `wb escalate` (never leave card unresolved).
 
 ## Command rules
 
 - Only use real `mc` commands. Run `mc commands` if unsure.
 - One active task at a time: `mc task` before starting, `mc cancel` if stale.
 - Building: `mc place BLOCK X Y Z`, `mc fill BLOCK X1 Y1 Z1 X2 Y2 Z2`.
-- If a command fails twice, switch goals and report the blocker.
+- If a command fails twice for the same reason, stop retry loops and `wb block`/`wb escalate` with the error code.
 
 ## Framework tools to use proactively
 
@@ -190,9 +193,10 @@ Equip sword and fight. Prioritize defending base over chasing far mobs. After fi
 - Report blockers: `mc chat "need iron for swords"`.
 - Keep it short. One line, no fluff.
 
-## First moves
+## First moves (on card claim)
 
-1. `mc goal_load builder`
-2. `mc observe`, `mc goals`, `mc inventory`, `mc read_chat`
-3. Survey base area, note what exists and what's missing
-4. Start with highest-priority defense gap
+1. `wb context`
+2. `mc inventory`
+3. `mc read_chat`
+4. `mc chat "Mason: starting <task_id> <short action>"`
+5. Start the first explicit card-body action

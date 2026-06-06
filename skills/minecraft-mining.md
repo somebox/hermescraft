@@ -353,6 +353,14 @@ The right primitive depends on what's around you and whether you already have a 
 
 **Anti-pattern: hand-rolling `mc place cobblestone X Y Z` + `mc jump`** one block at a time. That's slow (4× the rounds vs `pillar_up`), eats iteration budget, and is error-prone (your bounding box and the new block fight each tick). Use `mc pillar_up <block> <count>` instead — it handles the place-then-jump-then-rise cycle internally.
 
+### Outdoor slope / lip before pillar (surface cards)
+
+When `mc scene` or NAV errors show `terrain_kind` **`slope_*`** or **`cliff_above`** (not `underground`), you are usually on a **walkable slope problem**, not a shaft:
+
+1. Run **`mc read_chat 20`** and **`mc reachable`** on the card target (see `kanban-worker` mandatory probes).
+2. Follow **`next_action_hint`**: lip **`mc dig`**, **`mc build_stairs`**, or **`mc goto_near`** to `best_stand`.
+3. Use **`mc pillar_up`** only after those fail or for a deliberate vertical escape — not to scout horizontal work sites.
+
 ### Underground pillar escape (ceiling breakthrough)
 
 When you're stuck underground with a ceiling overhead:
