@@ -4,7 +4,8 @@
 agent-test falsification on `landfolk-test`. Work stops here; the next testing
 direction is **procedurally generated worlds** with controlled conditions for
 farming, mining, scouting, and field prep—not more build-geometry matrices on
-fixed slabs.
+fixed slabs. Spec: [procedural-scenario-runs.md](procedural-scenario-runs.md)
+(catalog pool + planned `mapcatalog scenario` CLI). Map finder: [procedural-map-catalog.md](procedural-map-catalog.md).
 
 ## Why we closed
 

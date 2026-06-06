@@ -5,7 +5,7 @@
 > Commands below remain valid for **regression** and historical reproduction.
 
 Companion to [followup-improvement-pass.md](followup-improvement-pass.md) (historical plan).
-**Gates** applied during the pass; new work uses procedural worlds + scenario iteration.
+**Gates** applied during the pass; new work uses procedural worlds + scenario iteration ([procedural-scenario-runs.md](procedural-scenario-runs.md)).
 
 ---
 

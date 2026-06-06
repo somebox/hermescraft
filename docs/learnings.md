@@ -2,7 +2,9 @@
 
 ## mc command registry
 
-After changing `bot/cli/registry.mjs`, run `npm run cheatsheet` from `bot/` (or `node scripts/gen-mc-cheatsheet.mjs`) and commit `docs/mc-cheatsheet.md` — `test/cheatsheet-sync.test.js` fails on drift. For a broader surface check, see `docs/mc-command-audit-2026-05-29.md` and re-run its grep-based coverage steps when adding verbs.
+After changing `bot/cli/registry.mjs`, run `npm run cheatsheet` from `bot/` (or `node scripts/gen-mc-cheatsheet.mjs`) and commit `docs/mc-cheatsheet.md` — `test/cheatsheet-sync.test.js` fails on drift.
+
+**Kanban worker routing:** `mc` resolves the bot URL in `bot/cli/api-url.mjs`. The phase-16 leak was mainly **`BASH_ENV`** pointing at Steward's `agent-bashenv.sh` (re-exports `MC_API_URL=:3005` in every terminal subshell), not the three MC vars the phase-12 spawn scrub already cleared. Fixes: unset `BASH_ENV` at gateway/dispatcher start (`scripts/landfolk`), drop it in `_default_spawn`, profile `.env` pins lock+URL, `api-url.mjs` prefers `MC_API_URL` when `HERMES_KANBAN_TASK` is set. Spawn audit: `/tmp/worker-env-debug.log` (rotates at 2MB to `.log.1`). For a broader surface check, see `docs/mc-command-audit-2026-05-29.md` and re-run its grep-based coverage steps when adding verbs.
 
 **Navigation / perception docs:** agent-facing movement doctrine lives in `skills/minecraft-navigation.md` (synced to profiles via `scripts/sync-skills.sh`). Canonical intent tables: `docs/mc-commands.md`; design depth: `docs/features/route-precompute-context.md`. CLI category for world reads is **`perceive`**, not `observe`.
 

@@ -124,8 +124,65 @@ index 5c2d03240..5084ae3ea 100644
 +    # getting correctly 403'd by the orchestrator deny gate. The fix:
 +    # drop these three vars so the worker's `_apply_profile_override` +
 +    # dotenv path is the single source of truth.
-+    for _leaked_key in ("_MC_API_URL_LOCKED", "MC_API_URL", "MC_USERNAME"):
++    for _leaked_key in (
++        "_MC_API_URL_LOCKED",
++        "MC_API_URL",
++        "MC_USERNAME",
++        "BASH_ENV",
++    ):
 +        env.pop(_leaked_key, None)
++
++    if os.environ.get("HERMES_KANBAN_WORKER_ENV_DEBUG", "1") not in (
++        "0",
++        "false",
++        "False",
++        "no",
++    ):
++        try:
++            from datetime import datetime, timezone
++            from pathlib import Path
++
++            _dbg_path = Path(
++                os.environ.get(
++                    "HERMES_KANBAN_WORKER_ENV_DEBUG_PATH",
++                    "/tmp/worker-env-debug.log",
++                )
++            )
++            _mc_keys = (
++                "_MC_API_URL_LOCKED",
++                "MC_API_URL",
++                "MC_USERNAME",
++                "BASH_ENV",
++                "HERMES_PROFILE",
++                "HERMES_KANBAN_TASK",
++            )
++            _line = {
++                "ts": datetime.now(timezone.utc).isoformat(),
++                "task_id": task.id,
++                "assignee": task.assignee,
++                "profile_arg": profile_arg,
++                "env_mc": {k: env.get(k) for k in _mc_keys},
++            }
++            _max_bytes = int(
++                os.environ.get("HERMES_KANBAN_WORKER_ENV_DEBUG_MAX_BYTES", "2097152")
++            )
++            if _dbg_path.exists() and _dbg_path.stat().st_size > _max_bytes:
++                _rot = _dbg_path.with_name(_dbg_path.name + ".1")
++                try:
++                    _rot.unlink(missing_ok=True)
++                except TypeError:
++                    if _rot.exists():
++                        _rot.unlink()
++                try:
++                    _dbg_path.replace(_rot)
++                except OSError:
++                    _dbg_path.write_text("", encoding="utf-8")
++            with _dbg_path.open("a", encoding="utf-8") as _df:
++                import json
++
++                _df.write(json.dumps(_line, sort_keys=True) + "\n")
++        except Exception:
++            pass
 +
      # Inject HERMES_HOME so the worker reads the profile-scoped config.yaml
      # (fallback_providers, toolsets, agent settings, etc.) instead of the root
@@ -183,6 +240,9 @@ index f9e05f99b..b3217b985 100644
 +    )
 +    assert "MC_USERNAME" not in env, (
 +        "MC_USERNAME leaked to worker env — would mis-attribute chat"
++    )
++    assert "BASH_ENV" not in env, (
++        "BASH_ENV leaked to worker env — terminal would source Steward bashenv"
 +    )
 +
 +
