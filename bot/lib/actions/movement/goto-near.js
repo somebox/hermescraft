@@ -245,7 +245,7 @@ export function createGotoNear(deps) {
             code: 'NAV_NO_PROGRESS',
             message: `Pathfinder stalled — bot stopped moving for ${e.info?.no_progress_for_ms}ms while heading to ${fmt(x)},${fmt(y)},${fmt(z)} (range ${range}). Likely a 1-block lip, wedge, or sealed route.${hopNote}`,
             observed_state: obs,
-            next_action_hint: navBlockedNextActionHint(b, { x, y, z }, posObj()),
+            next_action_hint: navBlockedNextActionHint(b, { x, y, z }, posObj(), { observedState: obs }),
             retry_safe: false,
           },
         };

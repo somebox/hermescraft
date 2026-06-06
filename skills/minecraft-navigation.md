@@ -135,6 +135,19 @@ replaced.
 
 When `mc move` fails with `NAV_BLOCKED`, the error includes `observed_state.nearby_doors` — useful if the auto-detection picked wrong and you want to retry with `mc move X Y Z --door GX GY GZ`.
 
+## Path failed on slope, lip, or pit (outdoor)
+
+**Traversability:** pathfinder treats **1-block** step-ups as walkable; natural slopes often need a **2-block lip** opened (`mc dig` on the upper blocking cell) or a short **`mc build_stairs BLOCK DIR LEN`** ramp (effective rise ≤2 blocks per step). Do not repeat the same `mc move` line after `NAV_BLOCKED` — read `next_action_hint` first.
+
+| Situation | Typical hint / action |
+|---|---|
+| Target not standable | `mc reachable` → `mc goto_near` to `best_stand`, then retry |
+| `terrain_kind` `slope_*` toward target | `mc build_stairs cobblestone <dir> 4-8` in that cardinal |
+| `cliff_above` or large Δy on horizontal goal | Lip dig or stairs before `mc pillar_up`; pillar only at a **anchor** column (`goto_near` first) |
+| `BOT_TRAPPED` / `step_up_only` | Lip `mc dig` on `next_action_hint` coords, else `mc escape` |
+
+Load `kanban-worker` for mandatory **`mc read_chat`** + **`mc reachable`** before retrying identical `recent[]` failures. Phase-2 automation may add `mc sculpt_path`; until then use dig + `build_stairs` per hint.
+
 ## Reachability pre-flight
 
 Before a long walk to an exotic coord (top of a tree, edge of a cliff, corner of a wall), check it's standable:

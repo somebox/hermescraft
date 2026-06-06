@@ -4,6 +4,7 @@
 
 import { formatStandingSituation } from '../shared/perception.js';
 import { buildLandscapeContext } from '../shared/scene-landscape.js';
+import { resolveRouteSculptHint } from '../actions/movement/route-sculpt-hint.js';
 import { floorCellFromPos } from './nav-trail.js';
 import { getConfig } from '../config/index.js';
 import { shouldSkipDigAt } from './regions/policy-guard.js';
@@ -345,10 +346,23 @@ function headerSituationLabel(standing, navMode) {
  * @param {{ getStandingState?: (bot: any) => any, now?: () => number }} deps
  */
 function cheapSuggestedHint(standing, ctx, deps) {
+  const bot = ctx?.world?.bot;
+  if (bot?.entity?.position && (standing?.classification === 'trapped' || standing?.classification === 'step_up_only')) {
+    try {
+      const pos = bot.entity.position;
+      const target = { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) };
+      const sculpted = resolveRouteSculptHint({
+        bot,
+        target,
+        pos,
+        standing,
+      });
+      if (sculpted.hint) return sculpted.hint;
+    } catch { /* ignore */ }
+  }
   if (standing?.open_dirs?.length === 1) {
     return `mc move one step ${standing.open_dirs[0]}`;
   }
-  const bot = ctx?.world?.bot;
   if (bot?.entity?.position) {
     try {
       const land = buildLandscapeContext(bot);

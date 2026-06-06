@@ -13,7 +13,7 @@ import {
   targetChunkLoaded,
 } from '../_nav-helpers.js';
 import { DIR_VEC_4 as DIR_VEC } from '../_directions.js';
-import { navBlockedNextActionHint } from './nav-hints.js';
+import { navBlockedNextActionHint, botTrappedNextActionHint } from './nav-hints.js';
 
 // Y-grace: when an agent calls mc move / goto / goto_near with the right
 // XZ but a wrong Y (target inside a hill, floating in air), we rescue by
@@ -99,7 +99,10 @@ export function createNavErrors(fmt, enrich) {
       : ' Try mc through GX GY GZ for a door/gate, or mc tunnel / mc dig_area to clear terrain explicitly.';
     const obs = enrich(b, { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)) }, x, y, z);
     if (reach) Object.assign(obs, reach);
-    const hint = navBlockedNextActionHint(b, { x, y, z }, pos, { inWater: !!b.entity?.isInWater });
+    const hint = navBlockedNextActionHint(b, { x, y, z }, pos, {
+      inWater: !!b.entity?.isInWater,
+      observedState: obs,
+    });
     return {
       ok: false,
       error: {
@@ -131,7 +134,10 @@ export function createNavErrors(fmt, enrich) {
         : ' Pathfinder is non-destructive — if a door blocks the path use mc through GX GY GZ; if terrain blocks it use mc tunnel or mc dig_area to clear it explicitly.';
       const obs = enrich(b, { current: pos, target: { x, y, z } }, x, y, z);
       if (reach) Object.assign(obs, reach);
-      const hint = navBlockedNextActionHint(b, { x, y, z }, pos, { inWater: !!b.entity?.isInWater });
+      const hint = navBlockedNextActionHint(b, { x, y, z }, pos, {
+        inWater: !!b.entity?.isInWater,
+        observedState: obs,
+      });
       return {
         ok: false,
         error: {
@@ -166,15 +172,17 @@ export function createPreflightNav(refuseWaterRouteWithoutBoat, recentStuckNear)
       const tx = Math.floor(Number(x));
       const ty = Math.floor(Number(y));
       const tz = Math.floor(Number(z));
+      const observed_state = enrichWithStand(b, {
+        your_standing_state: ss,
+        target: { x: tx, y: ty, z: tz },
+      }, tx, ty, tz);
       return {
         ok: false,
         error: {
           code: 'BOT_TRAPPED',
           message: `Cannot navigate — you are trapped at ${ss.cell.x},${ss.cell.y},${ss.cell.z}. All 4 cardinal dirs blocked at foot or head. Use mc dig <coord> to break out, or mc escape if available.`,
-          observed_state: {
-            your_standing_state: ss,
-            target: { x: tx, y: ty, z: tz },
-          },
+          observed_state,
+          next_action_hint: botTrappedNextActionHint(b, { x: tx, y: ty, z: tz }, ss, observed_state),
           retry_safe: false,
         },
       };

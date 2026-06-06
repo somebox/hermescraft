@@ -3,12 +3,13 @@
  */
 import { computeReachability } from '../_nav-helpers.js';
 import { detourHintForDy } from './detour-check.js';
+import { resolveRouteSculptHint, standabilityActionHint } from './route-sculpt-hint.js';
 
 /**
  * @param {import('mineflayer').Bot} b
  * @param {{ x: number, y: number, z: number }} target
  * @param {{ x: number, y: number, z: number }} pos
- * @param {{ inWater?: boolean, nearbyDoors?: Array<{ x: number, y: number, z: number }> }} [opts]
+ * @param {{ inWater?: boolean, nearbyDoors?: Array<{ x: number, y: number, z: number }>, observedState?: Record<string, unknown> }} [opts]
  */
 export function navBlockedNextActionHint(b, target, pos, opts = {}) {
   const tx = Math.floor(Number(target.x));
@@ -16,8 +17,12 @@ export function navBlockedNextActionHint(b, target, pos, opts = {}) {
   const tz = Math.floor(Number(target.z));
   const py = Number(pos?.y ?? b?.entity?.position?.y ?? ty);
   const dy = ty - py;
+  const obs = opts.observedState;
 
   if (opts.inWater) return 'mc escape';
+
+  const standHint = standabilityActionHint(obs, target);
+  if (standHint) return standHint;
 
   try {
     const reach = computeReachability(b, { x: tx, y: ty, z: tz }, 144);
@@ -25,7 +30,20 @@ export function navBlockedNextActionHint(b, target, pos, opts = {}) {
       const h = reach.next_hop_suggestion;
       return `mc goto_near ${h.x} ${h.y} ${h.z} range=1`;
     }
-  } catch { /* reachability is best-effort */ }
+    const sculpted = resolveRouteSculptHint({
+      bot: b,
+      target,
+      pos,
+      observedState: obs,
+      reach,
+    });
+    if (sculpted.hint) return sculpted.hint;
+  } catch { /* reachability / sculpt hints are best-effort */ }
+
+  try {
+    const sculpted = resolveRouteSculptHint({ bot: b, target, pos, observedState: obs });
+    if (sculpted.hint) return sculpted.hint;
+  } catch { /* ignore */ }
 
   if (dy < -3) {
     return `mc tunnel ${tx} ${ty} ${tz} down (or mc stair_down) — target is ${Math.abs(Math.round(dy))} blocks below`;
@@ -43,6 +61,31 @@ export function navBlockedNextActionHint(b, target, pos, opts = {}) {
   }
 
   return `mc dig_area to clear terrain blocking ${tx} ${ty} ${tz}, or mc tunnel — pathfinder will not break blocks`;
+}
+
+/**
+ * Hint for BOT_TRAPPED preflight (standing state known).
+ * @param {import('mineflayer').Bot} b
+ * @param {{ x: number, y: number, z: number }} target
+ * @param {ReturnType<import('../_nav-helpers.js').standingState>} ss
+ * @param {Record<string, unknown>} [observedState]
+ */
+export function botTrappedNextActionHint(b, target, ss, observedState) {
+  const standHint = standabilityActionHint(observedState, target);
+  if (standHint) return standHint;
+  const sculpted = resolveRouteSculptHint({
+    bot: b,
+    target,
+    pos: b?.entity?.position || { x: 0, y: 0, z: 0 },
+    observedState,
+    standing: ss,
+  });
+  if (sculpted.hint) return sculpted.hint;
+  const cell = ss?.cell;
+  if (cell) {
+    return `mc dig <coord> to break out at ${cell.x},${cell.y},${cell.z}, or mc escape`;
+  }
+  return 'mc escape';
 }
 
 /**

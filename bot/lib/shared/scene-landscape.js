@@ -25,8 +25,14 @@ export function yBandLabel(y) {
 // this guard, surfaceYAt picks the leaf Y as surface, classifyTerrain
 // reads it as 'mound' or 'on_structure', and Steward gets wrong advice.
 const CANOPY_BLOCK_RE = /(_leaves|_log|vine|cocoa|bamboo)$/;
+/** Actionable sky band above feet — distant canopy (e.g. Y=95 over feet≈79) must not force `unknown`. */
+const CANOPY_DY_MIN = 2;
+const CANOPY_DY_MAX = 8;
 function isCanopyBlock(name) {
   return !!name && CANOPY_BLOCK_RE.test(name);
+}
+function isCanopyBandDy(feetY, dy) {
+  return dy > feetY + CANOPY_DY_MIN && dy <= feetY + CANOPY_DY_MAX;
 }
 
 // Common worker-placed blocks for the on_structure heuristic. Conservative:
@@ -49,8 +55,10 @@ function surfaceYAt(bot, wx, wz, opts = {}) {
     const n = block.name;
     if (n === 'air' || n === 'cave_air' || n === 'void_air') continue;
     if (n === 'water' || n === 'flowing_water') continue;
-    if (dy > feetY + 2 && isCanopyBlock(n)) {
-      canopyDetected = true;
+    if (isCanopyBlock(n)) {
+      if (isCanopyBandDy(feetY, dy)) {
+        canopyDetected = true;
+      }
       continue;
     }
     if (opts.returnDetail) return { y: dy, canopyDetected };

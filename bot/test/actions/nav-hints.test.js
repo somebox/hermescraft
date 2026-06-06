@@ -34,3 +34,20 @@ test('withNavRetryWarning: unchanged when count is not 3', () => {
   const base = { ok: false, error: { code: 'NAV_BLOCKED', message: 'x', retry_safe: false } };
   assert.deepEqual(withNavRetryWarning(base, 'move@1,64,2', counts), base);
 });
+
+test('navBlockedNextActionHint: non-standable target prefers reachable + goto_near', () => {
+  const b = { entity: { position: { x: 0, y: 64, z: 0 }, isInWater: false } };
+  const hint = navBlockedNextActionHint(
+    b,
+    { x: 4, y: 77, z: 26 },
+    { x: 0, y: 64, z: 0 },
+    {
+      observedState: {
+        target_standable: false,
+        closest_standable: { x: 4, y: 76, z: 26, distance: 1 },
+      },
+    },
+  );
+  assert.match(hint, /mc reachable/);
+  assert.match(hint, /mc goto_near 4 76 26/);
+});

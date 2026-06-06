@@ -475,13 +475,18 @@ export function createMove(deps) {
         if (botInWater) {
           extraHint = ' You are in water — call `mc escape` to swim to the nearest shore before retrying navigation.';
         }
+        const observed_state = enrichWithStand(b, { current: pos, target, doors_used, nearby_doors: doorList, pathfinder_error: lastPathfinderError, in_water: botInWater }, target.x, target.y, target.z);
         const blocked = {
           ok: false,
           error: {
             code: 'NAV_BLOCKED',
             message: `No path to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} from ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} and no door/gate between to use.${extraHint}`,
-            observed_state: enrichWithStand(b, { current: pos, target, doors_used, nearby_doors: doorList, pathfinder_error: lastPathfinderError, in_water: botInWater }, target.x, target.y, target.z),
-            next_action_hint: navBlockedNextActionHint(b, target, pos, { inWater: botInWater, nearbyDoors: doorList }),
+            observed_state,
+            next_action_hint: navBlockedNextActionHint(b, target, pos, {
+              inWater: botInWater,
+              nearbyDoors: doorList,
+              observedState: observed_state,
+            }),
             retry_safe: false,
           },
         };
