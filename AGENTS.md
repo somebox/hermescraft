@@ -18,7 +18,7 @@ your tool calls land on real commands the first time.
 | `prompts/landfolk/` | Per-role SOULs + per-cycle wake prompts + starter command lists |
 | `skills/` | Worker-facing skill library (loaded on demand via `skill_view`) |
 | `data/` | World state, genesis runs, region/blueprint plans, kanban DB roots |
-| `docs/` | Architecture, design notes, command cheatsheet, learnings |
+| `docs/` | Doc index: [`docs/README.md`](docs/README.md). **Target fleet direction:** [`docs/architecture/`](docs/architecture/). Bot/`mc` reference: [`docs/reference/`](docs/reference/). |
 | `config/` | Central config (`hermescraft.yaml`) |
 | `server/` | Minecraft server config and start scripts |
 | `plugins/` | PaperMCP plugin code |
@@ -54,7 +54,7 @@ list --status ...` calls plus `scripts/board`. Use it first thing every cycle.
 ### In-world commands
 
 `mc <verb>` calls the bot server (port 3000-3005 per bot). Full registry of
-verbs is documented in `docs/mc-cheatsheet.md` — that file is **generated** from
+verbs is documented in `docs/reference/mc-cheatsheet.md` — that file is **generated** from
 `bot/cli/registry.mjs` (do not edit by hand). For the long-form per-command
 help, run `mc <verb> --help` against a live bot. The registry includes verbs
 like `status`, `observe`, `scene`, `nearby`, `goto`, `move`, `dig`, `collect`,
@@ -99,7 +99,7 @@ If you are about to type one of these, stop and use the replacement.
 | `hermes kanban list --status ...` | `scripts/kanban board` (covers all four statuses + recent in one view) |
 | Bare `board-recent.py` (no path) | `scripts/board-recent.py` if you really need the older delta view, but `scripts/kanban board`'s RECENT lane usually replaces it |
 | `mc pillar_step` | `mc pillar_up` (alias kept; prefer the canonical name) |
-| Editing `docs/mc-cheatsheet.md` by hand | Edit `bot/cli/registry.mjs`, then run `scripts/regenerate-artifacts.sh` |
+| Editing `docs/reference/mc-cheatsheet.md` by hand | Edit `bot/cli/registry.mjs`, then run `scripts/regenerate-artifacts.sh` |
 | `sqlite3 kanban.db ...` | Use `scripts/kanban` verbs — they handle the right path and don't fight the dispatcher |
 | `find ~/.hermes -name ...` | Be specific: `~/.hermes/profiles/<bot>/` for profiles, `~/.hermes-landfolk-<bot>/` for agent homes |
 
@@ -107,13 +107,13 @@ If you are about to type one of these, stop and use the replacement.
 
 - **Don't commit `data/locations-base.json`** — it is runtime state written by
   the location reconciler, not source.
-- **Don't edit `docs/mc-cheatsheet.md` by hand** — it is regenerated from the
+- **Don't edit `docs/reference/mc-cheatsheet.md` by hand** — it is regenerated from the
   registry. The CI gate `cheatsheet-sync.test.js` fails on drift.
 - **Don't put prompt text in `scripts/landfolk-control.sh`** — prompts live in
   `prompts/landfolk/*.md` and `*.starter.txt`. The CI gate `prompts-sync.test.js`
   fails on drift, including deprecated tool references.
 - **Don't invent `mc` verbs or `scripts/<name>` references** — if you can't find
-  the verb in `docs/mc-cheatsheet.md` or the script in `ls scripts/`, ask
+  the verb in `docs/reference/mc-cheatsheet.md` or the script in `ls scripts/`, ask
   (or in worker context, file a `[BUG]` card).
 - **If you are Steward, don't mine, place, or otherwise act in-world.** Stay at
   base. Your job is orchestration, not execution.
@@ -122,7 +122,7 @@ If you are about to type one of these, stop and use the replacement.
 
 The CI pipeline runs these from `bot/`:
 
-- `cheatsheet-sync.test.js` — `docs/mc-cheatsheet.md` must match the registry.
+- `cheatsheet-sync.test.js` — `docs/reference/mc-cheatsheet.md` must match the registry.
 - `prompts-sync.test.js` — every `mc <verb>` and `scripts/<name>` token in
   `prompts/landfolk/*.starter.txt` and `*.wake-*.md` must resolve to a real
   registry entry / file, and must not be a deprecated alias.

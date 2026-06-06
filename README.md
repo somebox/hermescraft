@@ -19,6 +19,22 @@ A Hermes agent can join your world, chat with you in Minecraft, follow you, gath
 
 Built for the Nous Hermes hackathon.
 
+### Documentation on this branch
+
+On **`experiment/hermes-agents`**, the `docs/` tree is a **full reorganization**, not a light edit. Old top-level files (`docs/features/`, `docs/design/`, scattered guides) are gone or moved to **`docs/archive/`**. New material is grouped by role:
+
+| Start here | What you get |
+|------------|----------------|
+| [`docs/README.md`](docs/README.md) | Index and reading order |
+| [`docs/architecture/README.md`](docs/architecture/README.md) | **Target fleet** direction (`@planner`, `@dispatcher`, typed agents) |
+| [`docs/architecture/target.md`](docs/architecture/target.md) | Canonical “where we’re going” statement |
+| [`docs/guides/`](docs/guides/) | **Today’s ops** — genesis, landfolk lifecycle, kanban facade, testing runbooks |
+| [`docs/reference/`](docs/reference/) | **Bot + `mc`** — cheatsheet, command reference, codebase map, Hermes vs HTTP boundaries |
+| [`docs/specs/`](docs/specs/) | Feature specs (world/regions, nav, kanban plugin, observation grammar, …) |
+| [`docs/testing/`](docs/testing/) | Playbooks, procedural maps, context-tuner docs |
+
+Agents and maintainers should treat **`docs/architecture/`** plus **`AGENTS.md`** as the source of truth for fleet direction; use **`docs/guides/`** for commands you run this week. Superseded phase-2/3 design and retired guides live under **`docs/archive/`** only.
+
 ## What HermesCraft actually is
 
 HermesCraft is not a fake NPC framework and not a separate custom agent runtime.
@@ -236,7 +252,7 @@ mc scene 16
 mc social
 mc read_chat
 mc commands
-mc advise --reason="find oak wood"   # slow digest; use when stuck (see docs/guides/perception-digest.md)
+mc advise --reason="find oak wood"   # slow digest; use when stuck (see docs/archive/guides/perception-digest.md)
 ```
 
 Action:
@@ -275,7 +291,7 @@ This matters for both believability and demo integrity.
 ## Repository guide
 
 Primary files:
-- `start-dashboard.sh` — fleet dashboard aggregator (see `docs/guides/dashboard.md`)
+- `start-dashboard.sh` — fleet dashboard aggregator (see `docs/guides/dashboard-command-center.md`)
 - `dashboard/` — standalone command-center UI (polls bot HTTP APIs + optional Kanban bridge)
 - `scripts/landfolk` — single Landfolk CLI (start/stop/enable/disable/restart/status/logs/chat/fix/players)
 - `scripts/landfolk-control.sh` — internal Landfolk engine (per-bot bot+watchdog+optional agent)
@@ -292,10 +308,12 @@ Primary files:
 - `SOUL-minecraft.md` — companion behavior
 - `SOUL-landfolk.md` — landfolk worker behavior (Gatherer, Flint, Mason, Barley)
 - `prompts/` — character prompts
-- `docs/` — architecture, patterns, guides (`docs/agent-boundaries.md`: Hermes vs server when using `mc`; `docs/guides/dashboard.md`: command center)
+- `docs/` — [`docs/README.md`](docs/README.md); target direction [`docs/architecture/`](docs/architecture/); bot/`mc` [`docs/reference/`](docs/reference/); runbooks [`docs/guides/`](docs/guides/)
 - `data/` — persistent per-bot data (goals, presets, locations, reminders)
 
-Archived reference material: `docs/archive/` (old plans, audits, experiment notes).
+Archived reference material: [`docs/archive/README.md`](docs/archive/README.md) (superseded design, old `features/` dumps, experiment notes). Do not add new canonical docs there.
+
+Agent-facing cheat sheet (generated): [`docs/reference/mc-cheatsheet.md`](docs/reference/mc-cheatsheet.md). Regenerate after registry edits via `scripts/regenerate-artifacts.sh`.
 
 ## Testing
 

@@ -1,6 +1,6 @@
 # Genesis operator runbook (Core v1)
 
-Spec: [docs/features/genesis-boot.md](../features/genesis-boot.md).
+Spec: [docs/specs/kanban/genesis-boot-cards.md](../specs/kanban/genesis-boot-cards.md).
 
 ## Preconditions
 

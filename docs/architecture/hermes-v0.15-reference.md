@@ -5,7 +5,7 @@ Topic-grouped catalog of the Hermes primitives our architecture cites or works a
 **Last verified against:** Hermes Agent v0.15.2 (date tag `v2026.5.29.2`) — 2026-06-06.
 **Source site:** [hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)
 
-**Upgrade runbook (not duplicated here):** [`../guides/hermes-0.15-upgrade.md`](../guides/hermes-0.15-upgrade.md).
+**Upgrade runbook (not duplicated here):** [`../platform/hermes-upgrade-0.15-runbook.md`](../platform/hermes-upgrade-0.15-runbook.md).
 
 Per-topic format: official docs link, key facts, our usage. Entries are tight by design — this is a fact-source, not an essay.
 
@@ -76,7 +76,7 @@ Per-topic format: official docs link, key facts, our usage. Entries are tight by
 **Our usage:**
 - This is **not** a substitute for our per-bot mutex. Our `landfolk` plugin's `gate-check` + `post_tool_call` hook enforces "one card per assignee at a time" because v0.15 doesn't expose a per-assignee cap.
 - We may set `max_in_progress` as a soft global ceiling (5 bots × 1 card each + headroom).
-- Our [`landfolk-plugin.md`](../features/landfolk-plugin.md) stays load-bearing because of this scope gap.
+- Our [`landfolk-plugin.md`](../specs/kanban/plugin-landfolk.md) stays load-bearing because of this scope gap.
 
 ---
 
@@ -355,7 +355,7 @@ Per-topic format: official docs link, key facts, our usage. Entries are tight by
 
 **Our usage:**
 - Our [`plugins/landfolk/__init__.py`](../../plugins/landfolk/__init__.py) registers `post_tool_call` (parking + promote) and `register_cli_command` (`hermes landfolk gate-check`). Live and load-bearing.
-- The doc banner in [`docs/features/landfolk-plugin.md`](../features/landfolk-plugin.md) claiming "hooks never registered" is **stale** — see `__init__.py:28`.
+- The doc banner in [`docs/specs/kanban/plugin-landfolk.md`](../specs/kanban/plugin-landfolk.md) claiming "hooks never registered" is **stale** — see `__init__.py:28`.
 - No decompose-lifecycle hooks means we can't intercept the LLM decomposer; our path-B fallback uses `post_tool_call` on `kanban_create` events instead.
 
 ---
@@ -492,7 +492,7 @@ Per-topic format: official docs link, key facts, our usage. Entries are tight by
 - `hermes version` — current version. Compare against GitHub releases for upgrade.
 
 **Our usage:**
-- Pre-flight + post-upgrade verification (per [`../guides/hermes-0.15-upgrade.md`](../guides/hermes-0.15-upgrade.md)).
+- Pre-flight + post-upgrade verification (per [`../platform/hermes-upgrade-0.15-runbook.md`](../platform/hermes-upgrade-0.15-runbook.md)).
 - Operator's "is the fleet healthy?" surface — could be composed into `landfolk status` to roll up per-bot `hermes doctor` outputs.
 
 ---
@@ -535,7 +535,7 @@ Per-topic format: official docs link, key facts, our usage. Entries are tight by
 - **Rollback:** `git checkout <commit-hash>` + `uv pip install -e ".[all]"`, OR `git checkout vX.Y.Z` for tag. Run `hermes config check` after, remove unrecognized config keys.
 
 **Our usage:**
-- See [`../guides/hermes-0.15-upgrade.md`](../guides/hermes-0.15-upgrade.md) for the hermescraft-specific upgrade runbook (pre-flight, verification, adoption phases). This reference doc is the **primitive catalog** architecture cites; the guide is **how to install and verify**.
+- See [`../platform/hermes-upgrade-0.15-runbook.md`](../platform/hermes-upgrade-0.15-runbook.md) for the hermescraft-specific upgrade runbook (pre-flight, verification, adoption phases). This reference doc is the **primitive catalog** architecture cites; the guide is **how to install and verify**.
 - Phase 0 pre-flight uses `hermes doctor` + `hermes config check` per docs.
 - Rollback path: pip-pinned reinstall of v0.14.0 + restore from `/tmp` backups.
 

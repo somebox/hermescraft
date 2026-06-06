@@ -4,7 +4,7 @@ Status: **design exploration** (2026-06-05). How cards behave at scale: leasing,
 
 [`target.md`](target.md) defines the building blocks and card flow. This doc is **runtime behavior** — per-bot mutex, **lexicographic bind** (no weighted scorer at MVP), interrupts, and what `@dispatcher` does between `@planner` and workers.
 
-Companion docs: [`hermes-agents.md`](hermes-agents.md), [`components.md`](components.md), [`workspaces.md`](workspaces.md), [`data-api.md`](data-api.md) (fleet + recall live state), [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md), [`../features/landfolk-plugin.md`](../features/landfolk-plugin.md).
+Companion docs: [`hermes-agents.md`](hermes-agents.md), [`components.md`](components.md), [`workspaces.md`](workspaces.md), [`data-api.md`](data-api.md) (fleet + recall live state), [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md), [`../specs/kanban/plugin-landfolk.md`](../specs/kanban/plugin-landfolk.md).
 
 ---
 

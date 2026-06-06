@@ -309,7 +309,7 @@ Lower priority — the file is isolated to one concern. Do it when mining reliab
 **Deliverables:**
 
 - `docs/architecture-map.md` (~1 page): layers (P8 recap), domain → file → handlers table, "how to add an action" checklist, state-slice ownership summary, pointer to `middleware/pipeline.js`.
-- Append **P16** (module size budget ≤500 LOC) and **P20** (mock key parity) to `docs/patterns.md` (same format as P1–P14). Wire both into `scripts/check-conventions.mjs`. Add P15/P17/P18/P19 when pain justifies them.
+- Append **P16** (module size budget ≤500 LOC) and **P20** (mock key parity) to `docs/reference/engineering-patterns.md` (same format as P1–P14). Wire both into `scripts/check-conventions.mjs`. Add P15/P17/P18/P19 when pain justifies them.
 - `http-app.js` gets a `// @size-exempt: thin GET handlers` comment if it remains >500 LOC after Phase 7 (expected ~400–500L of short GET routes + dispatcher). Split into route modules only if editing the file stays painful — no dedicated phase for it.
 - Dev-mode validator (`HERMES_VALIDATE=1`) promoted to default-on in test runner.
 - Move `docs/refactor-plan.md` to `docs/archive/` and replace with a stub pointing to `architecture-map.md`.
@@ -331,7 +331,7 @@ Lower priority — the file is isolated to one concern. Do it when mining reliab
 | 7 | `server/middleware/{place-repeat-guard,chat-banner,announce,task-lifecycle,pipeline}.js` (new), `server/http-app.js` |
 | 8 | `actions/**/*.js` (defineAction wrappers), optional cheatsheet pivot |
 | 9 | `actions/mining.js`, `actions/_mining-helpers.js` (new) |
-| 10 (after 7) | `docs/architecture-map.md` (new), `docs/patterns.md` (P16+P20 appended), `scripts/check-conventions.mjs` (P16+P20 checks), `docs/archive/refactor-plan-2026.md` |
+| 10 (after 7) | `docs/architecture-map.md` (new), `docs/reference/engineering-patterns.md` (P16+P20 appended), `scripts/check-conventions.mjs` (P16+P20 checks), `docs/archive/refactor-plan-2026.md` |
 
 (All paths relative to `bot/lib/` unless noted.)
 
@@ -365,4 +365,4 @@ These were left out of the March 2026 execution (Phases 1–7 + 10). Revisit if 
 
 - **Phase 9** — `mining.js` collect/dig decomposition. `collect` (~750L) and `dig` (~250L) become coordinators over named helpers. Trigger: mining reliability needs investment, or the `@size-exempt` annotation on `mining.js` stops being defensible.
 
-Current layout reference: [`docs/architecture.md`](../architecture.md).
+Current layout reference: [`docs/reference/bot-codebase-map.md`](../architecture.md).

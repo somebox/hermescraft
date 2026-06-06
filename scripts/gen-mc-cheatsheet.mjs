@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Generate docs/mc-cheatsheet.md from bot/cli/registry.mjs.
+ * Generate docs/reference/mc-cheatsheet.md from bot/cli/registry.mjs.
  *
  * One line per command, grouped by category. Skills include this as the
  * canonical "what mc verbs exist" reference; per-command detail is fetched
  * on demand via `mc <cmd> --help`. This keeps the agent's prompt small.
  *
  * Run:   node scripts/gen-mc-cheatsheet.mjs
- * Output: docs/mc-cheatsheet.md
+ * Output: docs/reference/mc-cheatsheet.md
  *
  * Programmatic:
  *   import { buildCheatsheet, CHEATSHEET_PATH } from './gen-mc-cheatsheet.mjs';
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-export const CHEATSHEET_PATH = join(ROOT, 'docs/mc-cheatsheet.md');
+export const CHEATSHEET_PATH = join(ROOT, 'docs/reference/mc-cheatsheet.md');
 
 import { CATEGORY_ORDER as REGISTRY_CATEGORY_ORDER } from '../bot/cli/registry.mjs';
 

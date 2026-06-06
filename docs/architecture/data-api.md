@@ -6,7 +6,7 @@ Status: **design exploration** (2026-06-05, revised for stream-first recall). Co
 
 Audited / designed content stays in the git workspace ([`workspaces.md`](workspaces.md)). Compaction cards bridge live recall data into git snapshots.
 
-Related: [`../features/designated-regions.md`](../features/designated-regions.md) — region enforcement stays on the bot side (`data/regions-<world>.json` + `/regions`); the host API does not replace that.
+Related: [`../specs/world/designated-regions.md`](../specs/world/designated-regions.md) — region enforcement stays on the bot side (`data/regions-<world>.json` + `/regions`); the host API does not replace that.
 
 ---
 
@@ -304,7 +304,7 @@ If hints + marks + git snapshots are insufficient, introduce a **materialized ca
 
 Each catalog row (future): `id` (`:mine_nw:`), `type` (`worksite` | `stockpile` | `place` | …), `kind` (`ore_vein` | `chest` | …), point geometry, `visibility`, `properties` JSON validated per `(type, kind)`.
 
-Endpoints such as `GET /entities` and promotion/overlap rules belong here — **after** recall is shipping. Geometry aligns with [`designated-regions.md`](../features/designated-regions.md) (`rect` / column hints); bot region resolver stays authoritative for dig/place.
+Endpoints such as `GET /entities` and promotion/overlap rules belong here — **after** recall is shipping. Geometry aligns with [`designated-regions.md`](../specs/world/designated-regions.md) (`rect` / column hints); bot region resolver stays authoritative for dig/place.
 
 Do not block MVP recall on this appendix.
 
@@ -317,4 +317,4 @@ Do not block MVP recall on this appendix.
 - [`dashboard-metrics-spec.md`](dashboard-metrics-spec.md) — colony overview UI + trend tiers
 - [`target.md`](target.md) — where the host API sits in “what we build”
 - [`hermes-agents.md`](hermes-agents.md) — `@reporter`, `@planner`, `@dispatcher`
-- [`../features/sign-anchored-placemarks.md`](../features/sign-anchored-placemarks.md) — committed placemarks vs recall
+- [`../specs/world/marks-sign-anchored.md`](../specs/world/marks-sign-anchored.md) — committed placemarks vs recall

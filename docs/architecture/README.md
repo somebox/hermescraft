@@ -52,10 +52,10 @@ Not a roadmap — what's actively in play. Update as we go.
 
 ## Related docs that stay where they are
 
-- [`../guides/hermes-0.15-upgrade.md`](../guides/hermes-0.15-upgrade.md) — **v0.15 upgrade runbook** (prerequisite for architecture primitives). Design catalog: [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md).
-- [`../features/landfolk-plugin.md`](../features/landfolk-plugin.md) — per-bot mutex (still load-bearing because `max_in_progress` is board-wide, not per-assignee). Note: the doc's "hooks never registered" banner is stale; the hook IS live at `plugins/landfolk/__init__.py:28`.
-- [`../features/sign-anchored-placemarks.md`](../features/sign-anchored-placemarks.md) — `:mark:` notation borrowed here.
-- [`../features/agent-playbooks.md`](../features/agent-playbooks.md) — superseded precursor. Stays for the closed improvement-pass artifacts it documents.
+- [`../platform/hermes-upgrade-0.15-runbook.md`](../platform/hermes-upgrade-0.15-runbook.md) — **v0.15 upgrade runbook** (prerequisite for architecture primitives). Design catalog: [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md).
+- [`../specs/kanban/plugin-landfolk.md`](../specs/kanban/plugin-landfolk.md) — per-bot mutex (still load-bearing because `max_in_progress` is board-wide, not per-assignee). Note: the doc's "hooks never registered" banner is stale; the hook IS live at `plugins/landfolk/__init__.py:28`.
+- [`../specs/world/marks-sign-anchored.md`](../specs/world/marks-sign-anchored.md) — `:mark:` notation borrowed here.
+- [`../testing/playbooks/design-composable-playbooks.md`](../testing/playbooks/design-composable-playbooks.md) — superseded precursor. Stays for the closed improvement-pass artifacts it documents.
 
 ## What this direction is, briefly
 

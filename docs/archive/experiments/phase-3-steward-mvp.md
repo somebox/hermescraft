@@ -1,7 +1,7 @@
 # Phase 3 steward MVP — experiment log
 
 **Date:** 2026-05-23  
-**Scope:** Bootstrap headless `steward` profile + `landfolk-ops` kanban board (see [steward-mvp.md](../../design/phase-3/steward-mvp.md)).
+**Scope:** Bootstrap headless `steward` profile + `landfolk-ops` kanban board (see [steward-mvp.md](../../archive/phase-3-steward-mvp.md)).
 
 ## What was run locally
 
@@ -26,7 +26,7 @@ Not completed in this session — requires:
 
 Prerequisites: bot(s) on the laptop connected to **192.168.1.202:25565**; profile `MC_API_URL` matches those ports; avoid overlapping Steve `run-steve.sh` and kanban workers on the same port.
 
-**Solo Flint (current laptop default for ops testing):** see [Solo Flint ops](../../design/phase-3/steward-mvp.md#solo-flint-ops-testing-mode). Run `scripts/setup-landfolk-profiles.sh --solo-flint`, keep Flint bot on `:3002`, stop Landfolk agent before dispatch, use `hermes kanban log` (not `watch-agent.py`) for kanban workers.
+**Solo Flint (current laptop default for ops testing):** see [Solo Flint ops](../../archive/phase-3-steward-mvp.md#solo-flint-ops-testing-mode). Run `scripts/setup-landfolk-profiles.sh --solo-flint`, keep Flint bot on `:3002`, stop Landfolk agent before dispatch, use `hermes kanban log` (not `watch-agent.py`) for kanban workers.
 
 ```bash
 hermes gateway start

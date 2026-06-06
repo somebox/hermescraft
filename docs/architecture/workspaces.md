@@ -538,7 +538,7 @@ Deprecated content moves to `data/workspace/archive/<original-path>`. Git histor
 
 ## The per-bot marks question (resolved)
 
-Today: marks live in `data/locations-<bot>.json` per bot, plus shared `data/locations-base.json` for fleet-wide marks. See [`../features/sign-anchored-placemarks.md`](../features/sign-anchored-placemarks.md) for the long-term direction (marks anchored to in-world signs).
+Today: marks live in `data/locations-<bot>.json` per bot, plus shared `data/locations-base.json` for fleet-wide marks. See [`../specs/world/marks-sign-anchored.md`](../specs/world/marks-sign-anchored.md) for the long-term direction (marks anchored to in-world signs).
 
 **Where do marks live under the new model?**
 

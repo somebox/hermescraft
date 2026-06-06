@@ -37,7 +37,7 @@ test('registry includes scout.resource for worker namespace', () => {
 
 test('registry doc copies match skills/playbook-*.md (regenerate-artifacts sync)', () => {
   const text = fs.readFileSync(REGISTRY, 'utf8');
-  const docRe = /doc:\s*(docs\/features\/playbooks\/[^\s#]+\.md)/g;
+  const docRe = /doc:\s*(docs\/testing\/playbooks\/catalog\/[^\s#]+\.md)/g;
   let m;
   let checked = 0;
   while ((m = docRe.exec(text)) !== null) {

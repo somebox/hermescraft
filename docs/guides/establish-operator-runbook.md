@@ -7,7 +7,7 @@ Single checklist for **proc-lab establishment runs** with the landfolk fleet. Co
 
 `VARIANT=establishment.<terrain>` is the single source of truth — `MISSION` is derived from the suffix (`explore` or `mapping`) and threaded through `establish-scenario.sh` → `establish-rcon-prep.py` → `establish-seed-cards.py`. Don't set `MISSION=` directly; the override path is gone (it used to allow `MISSION=mapping VARIANT=establishment.explore` mismatches).
 
-**Related:** [procedural-testing-model.md](../features/procedural-testing-model.md), [procedural-bench-ops.md](procedural-bench-ops.md), [architecture-audit.md](../../data/postmortems/establish-2026-06-03-phase10/architecture-audit.md), `prompts/landfolk/establish-epic.md`, `skills/minecraft-mapping.md`.
+**Related:** [testing-model.md](../testing/procedural/testing-model.md), [procedural-bench-runbook.md](procedural-bench-runbook.md), [architecture-audit.md](../../data/postmortems/establish-2026-06-03-phase10/architecture-audit.md), `prompts/landfolk/establish-epic.md`, `skills/minecraft-mapping.md`.
 
 **Do not mix** `scripts/genesis.sh` (campaign world + genesis kanban) with this proc-lab loop unless you intend to.
 
@@ -117,7 +117,7 @@ curl -s "https://openrouter.ai/api/v1/key" \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" | python3 -m json.tool
 ```
 
-Also visible on the [dashboard](dashboard.md) header when `OPENROUTER_API_KEY` or `secrets.yaml` is configured.
+Also visible on the [dashboard](../guides/dashboard-command-center.md) header when `OPENROUTER_API_KEY` or `secrets.yaml` is configured.
 
 **Rule of thumb:** if `limit_remaining` (or credits minus usage) is near zero, top up or switch models before starting a 60–90 minute establish replay.
 
@@ -367,7 +367,7 @@ Run 2–3 rounds; confirm workers could pick a base from `mc scene` one-liner (b
 
 | Issue | Signal |
 |-------|--------|
-| NAV lip / blocked move | `NAV_BLOCKED` in nav jsonl; `move:error` in progress; read `next_action_hint` (`reachable`, lip `dig`, `build_stairs`) — see [route-sculpt-navigation.md](../features/route-sculpt-navigation.md) |
+| NAV lip / blocked move | `NAV_BLOCKED` in nav jsonl; `move:error` in progress; read `next_action_hint` (`reachable`, lip `dig`, `build_stairs`) — see [route-sculpt-navigation.md](../specs/nav/route-sculpt-hints.md) |
 | Chunk visibility | Partial sector coverage on explore cards |
 | `goto_near` timeout | Message should cite **15000ms** cap (contract test); traps often dominate over timeout |
 | `level_ground` / `level` column cap | Split rectangles (≤16 columns per call) |

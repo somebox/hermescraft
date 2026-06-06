@@ -11,7 +11,7 @@
 **Status:** Proposed (2026-05-25), archived without execution (2026-05-27).
 **Owner:** re44 + steward
 **Companion docs:**
-- [../features/landfolk-plugin.md](../features/landfolk-plugin.md) — landfolk Hermes plugin (per-assignee kanban concurrency + future subsystems). The chat-bridge daemon proposed below is reframed as the plugin's `mc_chat_adapter/` subsystem.
+- [../specs/kanban/plugin-landfolk.md](../specs/kanban/plugin-landfolk.md) — landfolk Hermes plugin (per-assignee kanban concurrency + future subsystems). The chat-bridge daemon proposed below is reframed as the plugin's `mc_chat_adapter/` subsystem.
 - [../guides/landfolk-lifecycle.md](../guides/landfolk-lifecycle.md) — current bot/daemon lifecycle.
 
 ## Goal
@@ -176,7 +176,7 @@ Write a memory checkpoint before exiting.
 - [ ] Remove Steward's danger-react env vars from `scripts/landfolk-control.sh` (no body, no danger).
 - [ ] Remove `mc-steward.log` / `bot-steward.log` / `watchdog-steward.log` paths from `landfolk logs`.
 - [ ] Drop Steward from `scripts/scan-position-corruption.py`'s default fleet list.
-- [ ] Update `docs/guides/landfolk-lifecycle.md` to reflect the new role split.
+- [ ] Update `docs/guides/fleet-lifecycle-runbook.md` to reflect the new role split.
 
 ## Concurrency, scheduling, and de-duplication
 

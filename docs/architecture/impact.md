@@ -44,7 +44,7 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
 - Bots are **no longer Hermes profiles**. They're registry entries (`data/bots/<bot>.yaml`) with port, username, description, optional role hints. See [`workspaces.md`](workspaces.md).
 - Mineflayer process supervision is **unchanged** — `scripts/landfolk` still starts/stops the bot processes. The processes themselves don't care about the kanban model.
 - A new consumer: `@dispatcher` polls `/api/players`, `/api/marks`, per-bot status every ~60s and maintains `data/agents/dispatcher/fleet-state.yaml`.
-- Marks system stays as a system primitive. Long-term direction is [`../features/sign-anchored-placemarks.md`](../features/sign-anchored-placemarks.md) — independent of the agent model.
+- Marks system stays as a system primitive. Long-term direction is [`../specs/world/marks-sign-anchored.md`](../specs/world/marks-sign-anchored.md) — independent of the agent model.
 
 **MVP:**
 - **Keep entirely:** `scripts/landfolk` + `landfolk-control.sh` + bot HTTP API + marks system. The Mineflayer supervision layer is real work that's separate from the kanban model.
@@ -224,4 +224,4 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
 - `@dispatcher` advisory mode runs without touching the rest of the fleet.
 - Full migration of bot profiles → bot registry is the last step, not the first.
 
-This posture matches the [README's](README.md) next-steps list and is consistent with the v0.15.2 upgrade plan at [`../guides/hermes-0.15-upgrade.md`](../guides/hermes-0.15-upgrade.md).
+This posture matches the [README's](README.md) next-steps list and is consistent with the v0.15.2 upgrade plan at [`../platform/hermes-upgrade-0.15-runbook.md`](../platform/hermes-upgrade-0.15-runbook.md).

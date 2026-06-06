@@ -1,24 +1,21 @@
 # Archive
 
-Completed plans, superseded designs, experiment write-ups, and pre-fork notes. Not authoritative for current architecture or launch workflow.
+Completed plans, superseded designs, experiment write-ups, and pre-fork notes. Not authoritative for fleet direction.
 
-**Current project surface:**
+**Current surface:**
 
-- [README.md](../../README.md) — install, modes, scripts
-- [docs/architecture.md](../architecture.md) — bot codebase map
-- [docs/patterns.md](../patterns.md) — conventions
-- [docs/agent-boundaries.md](../agent-boundaries.md) — Hermes vs bot server
-- [docs/guides/](../guides/) — runbooks (Steve, dashboard, testing, …)
+- [`../architecture/README.md`](../architecture/README.md) — target architecture
+- [`../README.md`](../README.md) — full doc index
+- [`../reference/`](../reference/) — bot map, `mc`, patterns
+- [`../guides/`](../guides/) — current fleet runbooks
 
 ## What lives here
 
 | Area | Examples |
 |------|----------|
-| Refactor history | [refactor-plan-2026.md](refactor-plan-2026.md) |
-| Dashboard design (shipped) | [dashboard-redesign-v1.md](dashboard-redesign-v1.md), [dashboard-redesign-v2.md](dashboard-redesign-v2.md) |
-| Testing history | [test-inventory.md](test-inventory.md), [testing-migration.md](testing-migration.md) |
-| Perception digest (split docs) | [perception-digest-experiment.md](perception-digest-experiment.md), [perception-digest-findings.md](perception-digest-findings.md) — merged in [guides/perception-digest.md](../guides/perception-digest.md) |
-| Phase 1–2 experiments | [experiments/](experiments/) — phase-1 summaries, g21/m2/m3 findings, [phase-2-sprint-log.md](experiments/phase-2-sprint-log.md) |
-| Phase 3 steward bootstrap | [experiments/phase-3-steward-mvp.md](experiments/phase-3-steward-mvp.md) — ops board smoke log (design: [phase-3/steward-mvp.md](../design/phase-3/steward-mvp.md)) |
-| Parked design | [steward-out-of-game.md](steward-out-of-game.md) — webhook-driven Steward proposal; operational drivers resolved in-place, revisit if planning cadence becomes a bottleneck |
-| Hackathon / early vision | HACKATHON-PLAN, AUDIT-REPORT, ARENA, COMPANION_MODE, CIVILIZATION_MODE, LAN_PLAY, homelab-experiment, MC_TARGET_ARCHITECTURE |
+| Phase 2 design | [`phase-2-design/`](phase-2-design/) |
+| Phase 3 steward MVP | [`phase-3-steward-mvp.md`](phase-3-steward-mvp.md) |
+| Old guides | [`guides/running-steve.md`](guides/running-steve.md), [`guides/perception-digest.md`](guides/perception-digest.md) |
+| Parked features | [`features/designated-regions-full.md`](features/designated-regions-full.md) (active trim: [`../specs/world/designated-regions.md`](../specs/world/designated-regions.md)), … |
+| Expeditions | [`planning/expeditions/`](planning/expeditions/) |
+| Refactor / hackathon era | `refactor-plan-2026.md`, `HACKATHON-PLAN.md`, [`experiments/`](experiments/) |

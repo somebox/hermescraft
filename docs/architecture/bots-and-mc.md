@@ -2,7 +2,7 @@
 
 Status: **design exploration** (2026-06-05). **Minecraft bodies** and how agents act in-world: bot registry, Mineflayer HTTP, the **`mc` CLI**, marks, and host hooks (mutex, spawn env). Hermes profiles, skills, and planner DSL: [`hermes-agents.md`](hermes-agents.md). Card flow: [`target.md`](target.md).
 
-Operator cheat sheet: [`../../AGENTS.md`](../../AGENTS.md). Runtime map: [`components.md`](components.md). Verb registry: [`../mc-cheatsheet.md`](../mc-cheatsheet.md) (generated from [`bot/cli/registry.mjs`](../../bot/cli/registry.mjs)).
+Operator cheat sheet: [`../../AGENTS.md`](../../AGENTS.md). Runtime map: [`components.md`](components.md). Verb registry: [`../reference/mc-cheatsheet.md`](../reference/mc-cheatsheet.md) (generated from [`bot/cli/registry.mjs`](../../bot/cli/registry.mjs)).
 
 ---
 
@@ -69,12 +69,12 @@ Dashboard and operators also poll bot HTTP (read-only); agents use **`mc`** as t
 
 | Assumption | Evidence |
 |---|---|
-| Verb registry + CLI | `bot/cli/registry.mjs`, `docs/mc-cheatsheet.md` |
+| Verb registry + CLI | `bot/cli/registry.mjs`, `docs/reference/mc-cheatsheet.md` |
 | Per-bot listener + ports | `data/agent-models.json`, roster |
 | Live state slices | `bot/lib/server/state.js` — status, observe, inv, marks, … |
 | Marks + shared names | `GET /marks`, `data/locations-*.json`, [`reconcile-marks.py`](../../scripts/reconcile-marks.py) |
-| Regions (enforce) | Bot regions API + `data/regions-*.json` ([`designated-regions.md`](../features/designated-regions.md)) |
-| Mutex / promotion | `hermes landfolk gate-check` — **extend** to `metadata.bot` ([`landfolk-plugin.md`](../features/landfolk-plugin.md)) |
+| Regions (enforce) | Bot regions API + `data/regions-*.json` ([`designated-regions.md`](../specs/world/designated-regions.md)) |
+| Mutex / promotion | `hermes landfolk gate-check` — **extend** to `metadata.bot` ([`landfolk-plugin.md`](../specs/kanban/plugin-landfolk.md)) |
 
 **Not validated yet:** spawn-time injection from `metadata.bot`; assignee = agent name on production cards; `:mark:` resolver when chosen bot is `down` (fallback: `locations-base.json` vs fail parse — open question below).
 
@@ -82,7 +82,7 @@ Dashboard and operators also poll bot HTTP (read-only); agents use **`mc`** as t
 
 ## Marks and `:mark:` notation
 
-Placemarks tie card text to coordinates ([`sign-anchored-placemarks.md`](../features/sign-anchored-placemarks.md)).
+Placemarks tie card text to coordinates ([`sign-anchored-placemarks.md`](../specs/world/marks-sign-anchored.md)).
 
 | Consumer | Resolution |
 |---|---|

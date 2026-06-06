@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate repo artifacts derived from authoritative sources.
 #
-# Today this is just `docs/mc-cheatsheet.md` (generated from
+# Today this is just `docs/reference/mc-cheatsheet.md` (generated from
 # `bot/cli/registry.mjs`). Add new generators here as they appear so a
 # single call from `landfolk deploy` / genesis bootstrap keeps everything
 # fresh.
@@ -39,7 +39,7 @@ warn() { echo "[regenerate-artifacts] WARN: $*" >&2; }
 # ── mc-cheatsheet.md ──────────────────────────────────────────────────────
 regen_cheatsheet() {
   local gen="$ROOT/scripts/gen-mc-cheatsheet.mjs"
-  local target="$ROOT/docs/mc-cheatsheet.md"
+  local target="$ROOT/docs/reference/mc-cheatsheet.md"
   if ! command -v node >/dev/null 2>&1; then
     warn "node not found — skipping mc-cheatsheet regen"
     return 0
@@ -75,7 +75,7 @@ from pathlib import Path
 reg_path, skills_dir = Path(sys.argv[1]), Path(sys.argv[2])
 text = reg_path.read_text(encoding="utf-8")
 repo = reg_path.parents[2]
-for m in re.finditer(r"doc:\s*(docs/features/playbooks/[^\s#]+)", text):
+for m in re.finditer(r"doc:\s*(docs/testing/playbooks/catalog/[^\s#]+)", text):
     doc = repo / m.group(1)
     if not doc.is_file():
         continue

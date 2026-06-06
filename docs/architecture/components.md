@@ -86,7 +86,7 @@ flowchart TB
 |---|---|---|---|
 | Minecraft server | `server/` | Same | World sim; RCON optional for ops |
 | Mineflayer bot process | `bot/` via `scripts/landfolk` | Same; registry `data/bots/*.yaml` | One HTTP API port per bot |
-| Bot HTTP API | `bot/lib/server/*` | Same | [`docs/mc-cheatsheet.md`](../mc-cheatsheet.md) from registry |
+| Bot HTTP API | `bot/lib/server/*` | Same | [`docs/reference/mc-cheatsheet.md`](../reference/mc-cheatsheet.md) from registry |
 | Hermes gateway | External install | Same | Kanban DB, worker spawn, REST + WS |
 | Dashboard | `dashboard/server.js` | + colony rollup / trends writer | Proxies fleet, kanban, map; see below |
 | Host data API | *(not shipped)* | `plugins/landfolk` data_api module | [`data-api.md`](data-api.md) |

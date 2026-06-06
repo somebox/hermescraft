@@ -1,7 +1,7 @@
 # Playbook id registry — machine source for compliance (nav-telemetry --compliance).
 playbooks:
   - id: wood.chop_tall_tree
-    doc: docs/features/playbooks/wood-chop-tall-tree.md
+    doc: docs/testing/playbooks/catalog/wood-chop-tall-tree.md
     summary: "Flat Stage 2a chop loop with references_skill."
     inputs:
       required: [tree, target_logs, scaffold_block, deposit_to]
@@ -24,7 +24,7 @@ playbooks:
         allowed_verbs: [move, deposit, list_container, status, go_mark, playbook_phase_set, playbook_phase_clear]
 
   - id: scout.resource
-    doc: docs/features/playbooks/scout-resource.md
+    doc: docs/testing/playbooks/catalog/scout-resource.md
     summary: "Find and mark a surface resource patch."
     inputs:
       required: [resource, search_hint]
@@ -37,7 +37,7 @@ playbooks:
         allowed_verbs: [inspect, mark, go_mark, status, playbook_phase_set, playbook_phase_clear]
 
   - id: pillar_up_safe
-    doc: docs/features/playbooks/pillar-up-safe.md
+    doc: docs/testing/playbooks/catalog/pillar-up-safe.md
     summary: "Sub-play safe pillar ascent."
     inputs:
       required: [count, block]
@@ -52,21 +52,21 @@ playbooks:
         allowed_verbs: [pillar_up, place, scene, inspect, status, playbook_phase_set, playbook_phase_clear]
 
   - id: craft.from_inputs
-    doc: docs/features/playbooks/craft-from-inputs.md
+    doc: docs/testing/playbooks/catalog/craft-from-inputs.md
     summary: "Craft from inventory/chest with sub-card dispatch."
     inputs:
       required: [item, count, ingredients]
       optional: [table_mark, deposit_to]
 
   - id: recover.stuck
-    doc: docs/features/playbooks/recover-stuck.md
+    doc: docs/testing/playbooks/catalog/recover-stuck.md
     summary: "Named recovery when nav/dig traps the bot."
     inputs:
       required: [last_error]
       optional: [resume_playbook, resume_phase]
 
   - id: build.tower_vertical
-    doc: docs/features/playbooks/build-tower-vertical.md
+    doc: docs/testing/playbooks/catalog/build-tower-vertical.md
     summary: "Wave 6 lab — vertical column via pillar_up_safe sub-play."
     inputs:
       required: [anchor, count, block]
