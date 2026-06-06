@@ -50,5 +50,6 @@ content — it reads files by path. The 2026-05-30 fix landed this partition:
 
 `setup-landfolk-profiles.sh` is the deploy script (called via `landfolk
 deploy`). It writes SOULs, patches `config.yaml` knobs (max_turns,
-context_length, auxiliary.compression.model), and copies skills into
+`model.context_length` 250k, `compression.threshold` 0.2, auxiliary compression
+model via `scripts/patch-landfolk-compression-config.py`), and copies skills into
 `~/.hermes/profiles/<bot>/`. It is idempotent — safe to re-run.

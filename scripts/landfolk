@@ -72,6 +72,31 @@ cd "$SCRIPT_DIR"
 # terminal tool would have to absolute-path to the shim each time.
 export PATH="$SCRIPT_DIR/bin:$HOME/.local/bin:$PATH"
 
+# Drop Steward/orchestrator MC pins inherited from the operator shell before
+# starting gateway or out-of-process dispatcher children.
+_scrub_inherited_mc_routing_env() {
+  # Steward's continuous loop sets BASH_ENV to agent-bashenv.sh (MC pins for
+  # :3005). Gateway/dispatcher inherit it; kanban worker terminals source it
+  # before every mc call unless we drop it here (phase-16 postmortem).
+  unset _MC_API_URL_LOCKED MC_API_URL MC_USERNAME BASH_ENV
+}
+
+# 1 when ~/.hermes/config.yaml has kanban.dispatch_in_gateway enabled (default).
+_kanban_dispatch_embedded() {
+  local py="${PYTHON:-python3}"
+  "$py" -c "
+import yaml
+from pathlib import Path
+p = Path.home() / '.hermes' / 'config.yaml'
+try:
+    c = yaml.safe_load(p.read_text()) or {}
+    k = (c.get('kanban') or {}).get('dispatch_in_gateway')
+    print(1 if k in (True, 'true', 1, '1', 'yes', 'on') else 0)
+except Exception:
+    print(1)
+" 2>/dev/null || echo 1
+}
+
 MC_HOST="${MC_HOST:-192.168.1.202}"
 BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-slow}"
 PLAYERS_DEFAULT="${PLAYERS_DEFAULT:-${PROFILES_DEFAULT:-flint,mason,steward}}"
@@ -631,6 +656,7 @@ cmd_start() {
       # Force replace: useful after gateway code changes (e.g. dispatcher
       # config knobs like per_assignee_cap) so the in-memory dispatcher
       # picks up new defaults.
+      _scrub_inherited_mc_routing_env
       nohup hermes gateway run --replace >>"$LOG_DIR/gateway.log" 2>&1 &
       disown
       sleep 2
@@ -640,6 +666,7 @@ cmd_start() {
     elif gateway_running; then
       ok "hermes gateway already running"
     else
+      _scrub_inherited_mc_routing_env
       nohup hermes gateway run --replace >>"$LOG_DIR/gateway.log" 2>&1 &
       disown
       sleep 2
@@ -649,20 +676,32 @@ cmd_start() {
     fi
   fi
 
-  # Out-of-process kanban dispatcher loop. The gateway-embedded dispatcher
-  # (kanban.dispatch_in_gateway: true) wedges silently — see
-  # scripts/landfolk-dispatcher.sh header for the full rationale.
+  # Kanban dispatch: either gateway-embedded (kanban.dispatch_in_gateway) OR
+  # scripts/landfolk-dispatcher.sh — never both (claim races, duplicate spawns).
   if [ "$with_gateway" = 1 ]; then
     h1 "kanban dispatcher"
-    if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
-      ok "dispatcher already running (log $LOG_DIR/dispatcher.log)"
+    local dispatch_embedded
+    dispatch_embedded="$(_kanban_dispatch_embedded)"
+    if [ "$dispatch_embedded" = 1 ] && [ "${FORCE_STANDALONE_DISPATCHER:-0}" != 1 ]; then
+      if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
+        pkill -TERM -f 'landfolk-dispatcher\.sh' 2>/dev/null || true
+        sleep 1
+        dim "stopped standalone dispatcher (using gateway-embedded dispatch)"
+      fi
+      ok "dispatch: gateway-embedded (kanban.dispatch_in_gateway=true)"
+      dim "override: FORCE_STANDALONE_DISPATCHER=1 or set dispatch_in_gateway: false"
     else
-      nohup "$SCRIPT_DIR/scripts/landfolk-dispatcher.sh" >/dev/null 2>&1 &
-      disown
-      sleep 1
-      pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1 \
-        && ok "dispatcher started (log $LOG_DIR/dispatcher.log)" \
-        || err "dispatcher didn't come up; check $LOG_DIR/dispatcher.log"
+      if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
+        ok "dispatcher already running (log $LOG_DIR/dispatcher.log)"
+      else
+        _scrub_inherited_mc_routing_env
+        nohup "$SCRIPT_DIR/scripts/landfolk-dispatcher.sh" >/dev/null 2>&1 &
+        disown
+        sleep 1
+        pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1 \
+          && ok "dispatcher started (log $LOG_DIR/dispatcher.log)" \
+          || err "dispatcher didn't come up; check $LOG_DIR/dispatcher.log"
+      fi
     fi
   fi
 
@@ -923,6 +962,7 @@ cmd_restart() {
       ACTIVE_PROFILES_FILE="$ROSTER_FILE" daemon_start pauser "ACTIVE_PROFILES_FILE=$ROSTER_FILE" ;;
     gateway)
       if command -v hermes >/dev/null 2>&1; then
+        _scrub_inherited_mc_routing_env
         hermes gateway stop >/dev/null 2>&1 || true
         hermes gateway run --replace >/dev/null 2>&1 &
         disown
@@ -1021,7 +1061,17 @@ except Exception: pass" 2>/dev/null || true)"
 
   h1 "ambient services"
   if gateway_running; then ok "hermes gateway running"; else warn "hermes gateway NOT running (run: hermes gateway run --replace)"; fi
-  if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then ok "kanban dispatcher running"; else warn "kanban dispatcher NOT running (run: scripts/landfolk-dispatcher.sh)"; fi
+  if [ "$(_kanban_dispatch_embedded)" = 1 ] && [ "${FORCE_STANDALONE_DISPATCHER:-0}" != 1 ]; then
+    if pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
+      warn "standalone dispatcher running while dispatch_in_gateway=true (stop it to avoid dual dispatch)"
+    else
+      dim "kanban dispatch: gateway-embedded (no landfolk-dispatcher.sh)"
+    fi
+  elif pgrep -f 'landfolk-dispatcher\.sh' >/dev/null 2>&1; then
+    ok "kanban dispatcher running (standalone)"
+  else
+    warn "kanban dispatcher NOT running (embedded off — run landfolk-dispatcher.sh or enable dispatch_in_gateway)"
+  fi
   if [ -d "$LOG_DIR/cognition" ]; then
     dim "cognition JSONL: $LOG_DIR/cognition/*.jsonl (recorder: scripts/landfolk-cognition-record.py)"
   fi

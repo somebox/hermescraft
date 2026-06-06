@@ -241,7 +241,10 @@ def format_comment_body(signal: StuckSignal, fingerprint: str) -> str:
         f"first_round={signal.first_round} last_round={signal.last_round}. "
         f"Steward: kanban_comment a diagnosis + reclaim/reassign. mc chat "
         f"whispers don't enter the worker's decision loop — comments do. "
-        f"If this fp recurs after reclaim, the watchdog will auto-block."
+        f"If this fp recurs after reclaim, the watchdog will auto-block. "
+        f"Worker: before retrying, run mc read_chat 20 and mc reachable on "
+        f"the card target; if target is not standable use best_stand via "
+        f"mc goto_near range=1. Do not repeat the same recent[] verb."
     )
 
 

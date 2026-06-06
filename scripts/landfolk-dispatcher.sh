@@ -82,6 +82,12 @@ unset HERMES_HOME
 unset HERMES_PROFILE
 unset HERMES_MODEL
 unset HERMES_PROVIDER
+# Operator / Steward continuous sessions export MC routing vars; the
+# standalone dispatcher must not pass them into `hermes kanban dispatch`.
+unset _MC_API_URL_LOCKED
+unset MC_API_URL
+unset MC_USERNAME
+unset BASH_ENV
 
 mkdir -p "$LOG_DIR"
 

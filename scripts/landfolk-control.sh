@@ -1601,6 +1601,11 @@ AGENTENV
   (
     export PATH="$BIN_DIR:$PATH"
     export CONTEXT_MINIMAL_CONTINUE CONTEXT_REFRESH_EVERY_ROUNDS
+    # Phase-13 fix: heredoc body references $SCRIPT_DIR for auto-stuck-check.py
+    # under `set -u`. SCRIPT_DIR is not exported, so the new bash process from
+    # `exec bash /dev/stdin` doesn't inherit it → unbound variable → loop dies
+    # silently. Export the watchdog-style alias so the heredoc can reference it.
+    export LANDFOLK_SCRIPT_DIR="$SCRIPT_DIR"
     exec -a "landfolk:agent-loop:$name" bash /dev/stdin \
       "$name" "$port" \
       "$agent_log" "$agent_err_log" "$hermes_log" "$progress_log" "$mc_debug_log" \
@@ -1691,7 +1696,7 @@ print(json.dumps({k:v for k,v in out.items() if v is not None},separators=(',','
           "SELECT id FROM tasks WHERE LOWER(assignee)=LOWER('$name') AND status='running' LIMIT 1;" \
           2>/dev/null || true)"
         if [ -n "$active_task" ]; then
-          python3 "$SCRIPT_DIR/scripts/auto-stuck-check.py" \
+          python3 "$LANDFOLK_SCRIPT_DIR/scripts/auto-stuck-check.py" \
             --progress-log "$progress_log" \
             --task-id "$active_task" \
             --kanban-db "$kanban_db" \
