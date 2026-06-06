@@ -12,7 +12,12 @@ From repo root:
 chmod +x start-dashboard.sh   # once
 ./start-dashboard.sh
 ./start-dashboard.sh --world proc-lab   # establish / bench (initial world selector)
+./start-dashboard.sh --dev              # auto-restart on dashboard/*.js changes (Node 18+)
 ```
+
+From `dashboard/`: `npm run dev` is the same as `--dev` (watches `server.js` and imported `lib/`).
+
+**Reload:** Node does not apply code changes on `SIGHUP`. Use `--dev`, or stop and restart `start-dashboard.sh`. Static files under `dashboard/static/` are read from disk each request — a browser hard-refresh is enough for CSS/JS-only edits when the process is already running.
 
 Open `http://127.0.0.1:3000` (or the URL printed on startup, including `?world=` when `--world` is set).
 

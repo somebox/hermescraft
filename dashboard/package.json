@@ -4,6 +4,8 @@
   "type": "module",
   "description": "Standalone fleet dashboard aggregator for HermesCraft bots",
   "scripts": {
-    "test": "node --test test/**/*.test.js"
+    "test": "node --test test/**/*.test.js",
+    "dev": "node --watch server.js",
+    "start": "node server.js"
   }
 }

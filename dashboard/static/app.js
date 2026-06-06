@@ -35,7 +35,26 @@ const LS_SHOW_TRAILS = 'hc_dashboard_show_trails';
 const LS_CHAT_SUB = 'hc_dashboard_chat_sub';
 const LS_KANBAN_BOARD = 'hc_dashboard_kanban_board';
 
-const LANES = ['triage', 'todo', 'ready', 'running', 'blocked', 'done', 'archived'];
+/** Overview kanban: section order (not lane columns). */
+const KANBAN_DISPLAY_ORDER = [
+  'running',
+  'ready',
+  'triage',
+  'todo',
+  'blocked',
+  'done',
+  'archived',
+];
+
+const KANBAN_STATUS_LABEL = {
+  running: 'In progress',
+  ready: 'Ready',
+  triage: 'Triage',
+  todo: 'Todo',
+  blocked: 'Blocked',
+  done: 'Done',
+  archived: 'Archived',
+};
 
 let worlds = [];
 let fleet = null;
@@ -145,13 +164,16 @@ function setViewMode(mode) {
   const ro = document.getElementById('panelRightOverview');
   const ra = document.getElementById('panelRightAgent');
   const nav = document.getElementById('navOverview');
-  if (ov) ov.hidden = state.viewMode !== 'overview';
-  if (ag) ag.hidden = state.viewMode !== 'agent';
-  if (ro) ro.hidden = state.viewMode !== 'overview';
-  if (ra) ra.hidden = state.viewMode !== 'agent';
+  const isOverview = state.viewMode === 'overview';
+  if (ov) ov.hidden = !isOverview;
+  if (ag) ag.hidden = isOverview;
+  if (ro) ro.hidden = !isOverview;
+  if (ra) ra.hidden = isOverview;
+  document.body.classList.toggle('mode-overview', isOverview);
+  document.body.classList.toggle('mode-agent', !isOverview);
   if (nav) {
-    nav.classList.toggle('active', state.viewMode === 'overview');
-    nav.setAttribute('aria-pressed', state.viewMode === 'overview' ? 'true' : 'false');
+    nav.classList.toggle('active', isOverview);
+    nav.setAttribute('aria-pressed', isOverview ? 'true' : 'false');
   }
   if (state.viewMode === 'agent') {
     requestAnimationFrame(() => refreshFpv());
@@ -162,6 +184,7 @@ function setViewMode(mode) {
     renderFleetChat();
     fetchMappingGrade();
     updateCoverageStrip();
+    fetchKanban();
   }
   renderDetail();
 }
@@ -839,7 +862,11 @@ function renderHumanList() {
   }
   const list = [...byKey.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
   if (!list.length) {
-    host.appendChild(el('p', 'muted human-list-empty', 'No players in this world.'));
+    const msg =
+      agentsInWorld().length > 0
+        ? 'No human players in range (other bots appear under Agents, not here). Stand near a bot or fix Squaremap for map markers.'
+        : 'No players in this world — no online agents to scan.';
+    host.appendChild(el('p', 'muted human-list-empty', msg));
     return;
   }
   for (const h of list) {
@@ -849,7 +876,8 @@ function renderHumanList() {
     if (state.selection?.kind === 'human' && state.selection.id === h.name) {
       btn.classList.add('selected');
     }
-    btn.appendChild(el('span', 'human-sidebar-name', h.name));
+    const label = h.world && h.world !== state.world ? `${h.name} (${h.world})` : h.name;
+    btn.appendChild(el('span', 'human-sidebar-name', label));
     btn.addEventListener('click', () => {
       state.selection = { kind: 'human', id: h.name };
       saveJson(LS_SEL, state.selection);
@@ -879,11 +907,11 @@ function renderAgentLiveStrip() {
 }
 
 async function renderDetail() {
-  renderAgentLiveStrip();
   if (state.viewMode === 'overview') {
     renderOverviewSelection();
     return;
   }
+  renderAgentLiveStrip();
   const panel = $('detailPanel');
   const sel = state.selection;
   const key = sel ? `${sel.kind}:${sel.id}` : '';
@@ -1336,39 +1364,63 @@ function refreshMindFeed(force) {
     });
 }
 
+function bindKanbanCardClick(card, task) {
+  card.addEventListener('click', () => {
+    state.selection = { kind: 'task', id: task.id };
+    saveJson(LS_SEL, state.selection);
+    renderKanban();
+    renderDetail();
+  });
+}
+
+function buildKanbanCardButton(task) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'kanban-card';
+  if (state.selection?.kind === 'task' && state.selection.id === task.id) {
+    b.classList.add('selected');
+  }
+  b.appendChild(el('span', 'kanban-card-title', task.title));
+  if (task.assignee) {
+    b.appendChild(el('span', 'kanban-card-meta', task.assignee));
+  }
+  bindKanbanCardClick(b, task);
+  return b;
+}
+
 function renderKanban() {
-  const host = $('kanbanBoard');
+  const host = document.getElementById('kanbanBoard');
+  if (!host) return;
+  host.className = 'kanban-board kanban-masonry';
   host.replaceChildren();
   if (!kanbanData.ok) {
+    host.className = 'kanban-board';
     host.appendChild(
       el('p', 'muted', 'No board data — see status line below (bridge or hermes CLI).'),
     );
     return;
   }
   const g = kanbanData.grouped;
-  if (!g) return;
-  for (const lane of LANES) {
-    const cards = g[lane] || [];
-    const col = el('div', 'kanban-col', null);
-    col.appendChild(el('h4', null, `${lane} (${cards.length})`));
+  if (!g) {
+    host.className = 'kanban-board';
+    host.appendChild(el('p', 'muted', 'Board loaded but no lanes — check kanban API response.'));
+    return;
+  }
+  let any = false;
+  for (const status of KANBAN_DISPLAY_ORDER) {
+    const cards = g[status] || [];
+    if (!cards.length) continue;
+    any = true;
+    const section = el('section', 'kanban-section');
+    const label = KANBAN_STATUS_LABEL[status] || status;
+    section.appendChild(el('h4', null, `${label} (${cards.length})`));
     for (const c of cards) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'kanban-card';
-      if (state.selection?.kind === 'task' && state.selection.id === c.id) b.classList.add('selected');
-      b.appendChild(el('span', 'kanban-card-title', c.title));
-      if (c.assignee) {
-        b.appendChild(el('span', 'kanban-card-meta', c.assignee));
-      }
-      b.addEventListener('click', () => {
-        state.selection = { kind: 'task', id: c.id };
-        saveJson(LS_SEL, state.selection);
-        renderKanban();
-        renderDetail();
-      });
-      col.appendChild(b);
+      section.appendChild(buildKanbanCardButton(c));
     }
-    host.appendChild(col);
+    host.appendChild(section);
+  }
+  if (!any) {
+    host.appendChild(el('p', 'muted', 'No cards on this board.'));
   }
 }
 

@@ -4,11 +4,13 @@
  * @returns {string | null}
  */
 export function nearbyPlayerName(e) {
-  if (!e || e.kind !== 'player') return null;
+  if (!e) return null;
   const u = typeof e.username === 'string' ? e.username.trim() : '';
-  if (u) return u;
+  if (u && !isPlaceholderPlayerName(u)) return u;
+  const kind = e.kind === 'player' || e.type === 'player';
+  if (!kind) return null;
   const t = typeof e.type === 'string' ? e.type.trim() : '';
-  if (t && t !== 'player' && t !== 'unknown') return t;
+  if (t && !isPlaceholderPlayerName(t)) return t;
   return null;
 }
 

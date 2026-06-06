@@ -11,6 +11,10 @@ describe('nearbyPlayerName', () => {
     assert.equal(nearbyPlayerName({ kind: 'player', type: 'player' }), null);
   });
 
+  it('accepts username even when kind is missing', () => {
+    assert.equal(nearbyPlayerName({ username: 're44', type: 'player' }), 're44');
+  });
+
   it('ignores mobs', () => {
     assert.equal(nearbyPlayerName({ kind: 'mob', type: 'zombie' }), null);
   });

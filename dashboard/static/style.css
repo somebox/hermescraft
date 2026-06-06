@@ -1560,22 +1560,32 @@ html {
   color: #0d1117;
 }
 
-.view-panel-overview,
-.view-panel-agent {
-  flex: 1;
+/* Hidden view panels must not participate in flex layout (agent strip was stealing center space). */
+#panelOverview[hidden],
+#panelAgent[hidden],
+#panelRightOverview[hidden],
+#panelRightAgent[hidden] {
+  display: none !important;
+}
+
+.view-panel-overview:not([hidden]),
+.view-panel-agent:not([hidden]) {
+  flex: 1 1 0;
   min-height: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.view-panel-overview {
+.view-panel-overview:not([hidden]) {
   gap: 0.5rem;
 }
 
+/* Overview: fixed map stack; kanban fills remaining center column */
 .overview-map {
-  flex: 1 1 58%;
-  min-height: 200px;
+  flex: 0 0 600px;
+  height: 600px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1583,14 +1593,49 @@ html {
 }
 
 .overview-kanban {
-  flex: 1 1 38%;
-  min-height: 120px;
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
   border-top: 1px solid var(--border);
   padding-top: 0.4rem;
+}
+
+.overview-kanban .kanban-board.kanban-masonry {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  column-width: 240px;
+  column-gap: 0.75rem;
+  padding: 0.2rem 0.35rem 0.5rem;
+}
+
+.kanban-board.kanban-masonry .kanban-section {
+  break-inside: avoid;
+  margin-bottom: 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.45rem;
+}
+
+.kanban-board.kanban-masonry .kanban-section h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3rem;
+}
+
+.kanban-board.kanban-masonry .kanban-card {
+  display: block;
 }
 
 .view-panel-agent .fpv-wrap {
@@ -1647,20 +1692,40 @@ html {
   gap: 0.35rem;
 }
 
+.overview-map .map-subtabs,
+.overview-map .map-coverage-strip {
+  flex: 0 0 auto;
+}
+
 .overview-map .map-panel-terrain,
 .overview-map .map-panel-tactical {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
+  overflow: hidden;
+}
+
+.overview-map .terrain-frame {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
 }
 
 .overview-map .map-wrap {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .overview-map .map-wrap canvas {
-  flex: 1;
-  min-height: 120px;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.overview-map .terrain-map-hint {
+  flex: 0 0 auto;
+  margin: 0.25rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.3;
 }

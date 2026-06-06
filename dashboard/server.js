@@ -280,7 +280,10 @@ async function pollAllAgents() {
     rows.map(async (row, i) => {
       const reg = targets[i];
       if (!row.online) return;
-      const live = await fetchLiveWorldFromBot(botUrl, reg.api_port);
+      const live = await fetchLiveWorldFromBot(botUrl, reg.api_port, {
+        repoRoot: REPO_ROOT,
+        position: row.position,
+      });
       row.world = mergeAgentWorld(live, reg.world, registry.defaultWorld);
     }),
   );
@@ -411,7 +414,12 @@ async function fetchNearbyPlayers(agent) {
   if (!r || !r.ok) return [];
   const j = await r.json().catch(() => null);
   const ents = j?.data?.entities || [];
-  return ents.filter((e) => e.kind === 'player');
+  const out = [];
+  for (const e of ents) {
+    const name = nearbyPlayerName(e);
+    if (name) out.push({ ...e, username: name });
+  }
+  return out;
 }
 
 function dedupePoi(list) {
@@ -438,6 +446,7 @@ async function buildFleetSnapshot() {
 
   /** @type {{ name: string, online: boolean, world: string, position: any, human: boolean }[]} */
   const humansMap = new Map();
+  const botNames = botMcNameSet(registry, agents);
   const onlinePairs = agents
     .filter((a) => a.online)
     .map((row) => ({ row, reg: pollRegForAgentRow(row) }));
@@ -448,9 +457,10 @@ async function buildFleetSnapshot() {
       for (const e of nearby) {
         const name = nearbyPlayerName(e);
         if (!name || isPlaceholderPlayerName(name)) continue;
+        if (botNames.has(name.toLowerCase())) continue;
         if (
-          name.toLowerCase() === String(reg.name).toLowerCase() ||
-          name.toLowerCase() === String(row.mc_username || '').toLowerCase()
+          row.mc_username &&
+          name.toLowerCase() === String(row.mc_username).toLowerCase()
         ) {
           continue;
         }
@@ -468,8 +478,10 @@ async function buildFleetSnapshot() {
     }),
   );
 
-  const botNames = botMcNameSet(registry, agents);
   const worldsForPlayers = new Set([registry.defaultWorld]);
+  for (const w of registry.worlds || []) {
+    if (w?.name) worldsForPlayers.add(w.name);
+  }
   for (const a of agents) {
     if (a.world) worldsForPlayers.add(a.world);
   }
@@ -488,7 +500,9 @@ async function buildFleetSnapshot() {
   }
 
   for (const key of [...humansMap.keys()]) {
-    if (isPlaceholderPlayerName(key)) humansMap.delete(key);
+    if (isPlaceholderPlayerName(key) || botNames.has(key.toLowerCase())) {
+      humansMap.delete(key);
+    }
   }
 
   const humans = [...humansMap.values()];
