@@ -2,6 +2,7 @@
   "defaultWorld": "world",
   "worlds": [
     { "name": "world", "type": "NORMAL" },
+    { "name": "proc-lab", "type": "NORMAL" },
     { "name": "landfolk-test", "type": "NORMAL" },
     { "name": "testflat", "type": "NORMAL" },
     { "name": "world_nether", "type": "NETHER" },
@@ -11,6 +12,7 @@
     "baseUrl": "http://192.168.1.202:8123",
     "hermesToTileWorld": {
       "world": "minecraft_overworld",
+      "proc-lab": "minecraft_proc-lab",
       "landfolk-test": "minecraft_landfolk-test",
       "testflat": "minecraft_testflat",
       "world_nether": "minecraft_the_nether",

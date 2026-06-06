@@ -1,0 +1,49 @@
+# Scouting topic: spawn → overlook → survey terrain → name dominant feature.
+# Tests `mc scene` / `mc nearby` use on proc-lab. No build, no dig — pure perception.
+agent_test_id: proc_scouting_overlook_survey
+world: proc-lab
+
+procedural_map:
+  variant: scouting.overlook
+  pick: random
+
+prompt: |
+  You are the Minecraft bot Flint. The `mc` CLI is on PATH; MC_API_URL and MC_USERNAME are set.
+  You are in world proc-lab at the scenario spawn.
+
+  Do exactly this:
+  1. Run `mc status` once.
+  2. Go to the overlook at ({{OVERLOOK_X}}, {{OVERLOOK_Y}}, {{OVERLOOK_Z}}) within 4 blocks (`mc move` / `mc goto`).
+  3. Run `mc scene` once and pick the most prominent terrain feature you see.
+  4. Go to the return post at ({{RETURN_POST_X}}, {{RETURN_POST_Y}}, {{RETURN_POST_Z}}) within 4 blocks.
+  5. Say exactly: scout ok
+
+skills: [minecraft-navigation, minecraft-mining]
+max_turns: 12
+timeout_seconds: 180
+
+expect:
+  agent_chat_contains_any:
+    - scout ok
+  bot_at:
+    x: {{RETURN_POST_X}}
+    y: {{RETURN_POST_Y}}
+    z: {{RETURN_POST_Z}}
+    range: 4
+  mc_cli_invocations_max: 24
+
+prep:
+  - "execute in proc-lab run difficulty peaceful"
+  - "execute in proc-lab run gamerule doMobSpawning false"
+  - "execute in proc-lab run gamerule doDaylightCycle false"
+  - "execute in proc-lab run time set day"
+  - "execute in proc-lab run kill @e[type=!player]"
+  - "mvtp Flint proc-lab"
+  - "execute in proc-lab run tp Flint {{SPAWN_X}} {{SPAWN_Y}} {{SPAWN_Z}}"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+
+cleanup:
+  - "execute in proc-lab run kill @e[type=!player]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 52 65 52"

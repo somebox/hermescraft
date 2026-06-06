@@ -4,52 +4,38 @@ title: "[EPIC] [MAP:ARENA] Map this disc — torch-lit paths between named place
 assignee: steward
 initial_status: ready
 body: |
-  **Epic — mapping mission on proc-lab.** The fleet is collaboratively
-  building a *torch-lit map of named places* on this {arena_radius}-block
-  disc. Workers build paths; Steward dispatches them to frontier nodes
-  and edits proposed sign names.
+  Epic: map this {arena_radius}-block proc-lab disc with torch-lit paths between named places.
 
   Spawn: {spawn_x},{spawn_y},{spawn_z}
   Muster: {muster_x},{muster_y},{muster_z}
   Starter chest: {chest_x},{chest_y},{chest_z}
   Arena radius: {arena_radius} blocks
 
-  **Tag:** identified by the literal `[MAP:ARENA]` token in the title.
-  Steward detects on the tag, not by assignment.
+  Tag: `[MAP:ARENA]` (Steward detects this token in title).
 
-  ## Mission shape
+  Mission model:
+  - Worker card format: `[MAP-PATH] <startName> -> (target coord)`
+  - Node: named POI (`sign_at`)
+  - Edge: torch waypoint chain (`torch_at`, adjacency <= 30 blocks)
+  - Steward expands from named frontier nodes (graph degree <= 1)
 
-  - Cards are `[MAP-PATH] <startName> → (target coord)`.
-  - Each card has a worker build a torch-lit path from a known node to a
-    target coord (~40-60 blocks), name the endpoint, and return.
-  - The map emerges as a graph: nodes = named POIs (`sign_at`), edges =
-    torch-anchored POI chains within 30 blocks (`torch_at`).
-  - Steward grows the graph each cycle by dispatching workers to frontier
-    nodes (degree ≤ 1) toward fresh terrain.
+  Steward cycle checklist:
+  1. `scripts/poi-graph.py --pretty`
+  2. If graph looks stale or missing worker updates: `scripts/reconcile-pois.py --auto`
+  3. Select frontier node + target 40-60 blocks into less-covered terrain
+  4. Create max one `[MAP-PATH]` card per assignable worker
+  5. Process all new `SIGN_PROPOSAL` comments with `APPROVED` / `REJECTED` / `SUGGEST`
+  6. Do not copy stale instructions from old cards (re-read current protocol each cycle)
 
-  ## Steward's loop (each cycle)
+  Worker checklist (card body must enforce):
 
-  1. `scripts/poi-graph.py --pretty` → read the current graph
-  2. If stale, `scripts/reconcile-pois.py --auto` to merge per-bot files
-  3. Pick a frontier node + a target ~40-60 blocks away in an unexplored
-     direction. Bias toward under-represented quadrants.
-  4. Create one `[MAP-PATH]` card per assignable worker (max 1 per worker
-     per cycle). Body cites start coord, target coord, and the protocol.
-  5. Review any new `SIGN_PROPOSAL` comments on in-flight cards; reply
-     with `APPROVED`, `REJECTED`, or `SUGGEST` per the rubric.
+  - Start from `mc go_poi <start>` (or explicit start coord in card)
+  - Every ~25 blocks: `mc reachable` -> clear blocker -> `mc place_torch` -> `mc poi_add wp_* --torch`
+  - At target: `mc nearby_signs 32` -> `SIGN_PROPOSAL` comment -> wait <=90s -> place sign -> `mc poi_add --sign`
+  - Return via torch trail
+  - Completion body includes literal output of `mc marks`, `mc pois`, `mc nearby_signs 32`
 
-  ## Worker protocol
-
-   - `mc go_poi <start>` (or `mc move` to start coord)
-   - Walk toward target; every 25 blocks: `mc reachable` lookahead →
-     clear obstacles → `mc place_torch` → `mc poi_add wp_<n> --torch <coord>`
-   - At target: `mc nearby_signs 32`; propose name via `kanban_comment`;
-     wait ≤90s for Steward; place + `poi_add` with the approved name
-   - Return via torch trail
-   - Completion body MUST include literal output of `mc marks`, `mc pois`,
-     `mc nearby_signs 32`
-
-  ## Done when
+  Done when:
 
   - `named_count ≥ {poi_target}` landmark POIs in `personal-pois-shared.json`
   - `longest_path_len ≥ {coverage_min}` blocks (the map's spine)
@@ -57,7 +43,7 @@ body: |
   - `named_frontier_count ≤ 3` (most landmarks are connected, not isolated)
   - Steward chats `coverage sufficient — wrap up` and closes this epic
 
-  ## Vocabulary
+  Vocabulary:
 
    - **Personal POI** (per-bot, then reconciled): `mc poi_add`, `mc pois`,
      `mc go_poi`. Free-form creative names.

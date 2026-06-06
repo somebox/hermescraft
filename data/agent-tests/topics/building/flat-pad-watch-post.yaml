@@ -1,0 +1,47 @@
+# Building topic: spawn → build_pad → watch_post on proc-lab (map anchors injected).
+agent_test_id: proc_building_flat_pad_watch
+world: proc-lab
+
+procedural_map:
+  variant: building.flat_pad
+  pick: random
+
+prompt: |
+  You are the Minecraft bot Flint. The `mc` CLI is on PATH; MC_API_URL and MC_USERNAME are set.
+  You are in world proc-lab at the scenario spawn.
+
+  Do exactly this:
+  1. Run `mc status` once.
+  2. Go to the build pad at ({{BUILD_PAD_X}}, {{BUILD_PAD_Y}}, {{BUILD_PAD_Z}}) within 4 blocks (`mc move` / `mc goto`).
+  3. Go to the watch post at ({{WATCH_POST_X}}, {{WATCH_POST_Y}}, {{WATCH_POST_Z}}) within 4 blocks.
+  4. Run `mc status` and say exactly: platform ok
+
+skills: [minecraft-navigation, minecraft-building, minecraft-mining]
+max_turns: 10
+timeout_seconds: 180
+
+expect:
+  agent_chat_contains_any:
+    - platform ok
+  bot_at:
+    x: {{WATCH_POST_X}}
+    y: {{WATCH_POST_Y}}
+    z: {{WATCH_POST_Z}}
+    range: 4
+  mc_cli_invocations_max: 20
+
+prep:
+  - "execute in proc-lab run difficulty peaceful"
+  - "execute in proc-lab run gamerule doMobSpawning false"
+  - "execute in proc-lab run gamerule doDaylightCycle false"
+  - "execute in proc-lab run time set day"
+  - "execute in proc-lab run kill @e[type=!player]"
+  - "mvtp Flint proc-lab"
+  - "execute in proc-lab run tp Flint {{SPAWN_X}} {{SPAWN_Y}} {{SPAWN_Z}}"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+
+cleanup:
+  - "execute in proc-lab run kill @e[type=!player]"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 52 65 52"

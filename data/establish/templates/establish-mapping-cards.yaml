@@ -5,47 +5,40 @@ cards:
   - title: "[MAP-PATH] muster → first landmark"
     skills: [minecraft-navigation, minecraft-mapping]
     body: |
-      World: proc-lab. Mission: build the first torch-lit path of the run.
-      Hub: muster ({muster_x},{muster_y},{muster_z}).
+      World: proc-lab. Hub: muster ({muster_x},{muster_y},{muster_z}).
+      Goal: create the first graph edge and first non-muster landmark.
 
-      Your job: walk a 40-50 block bearing from muster (cardinal direction
-      of your choice — N/E/S/W) and name what you find at the endpoint.
-      The torch trail you light becomes the first edge of the map graph;
-      the endpoint sign becomes the first non-muster node.
+      Execute this checklist in order:
 
-      **Protocol:**
+      1. Register root node:
+         `mc poi_add muster --sign {muster_x} {muster_y} {muster_z} --kind hub`
+      2. Place root sign exactly as:
+         `mc place_named_sign {muster_x} {muster_y} {muster_z} "muster"`
+      3. Pick one bearing (N/E/S/W) and keep it for this card.
+      4. Move outward 40-50 blocks from muster.
+      5. Every ~25 blocks, run:
+         - `mc reachable` (next 5 cells)
+         - clear blocker (`mc dig` lip or `mc build_stairs cobblestone <dir> 4`)
+         - `mc place_torch X Y Z`
+         - `mc poi_add wp_<dir>_<n> --torch X Y Z --kind waypoint`
+      6. At endpoint, run `mc nearby_signs 32`.
+      7. Comment exactly:
+         `SIGN_PROPOSAL: name='<name>', coord=(X,Y,Z), kind=landmark, note='<terrain>'`
+      8. Wait up to 90s (`mc read_chat` + `kanban_show`):
+         - if Steward approved/suggested a name, use that name
+         - if no response, use your proposed name
+      9. Place and register landmark:
+         - `mc place_named_sign X Y Z "<name>"`
+         - `mc poi_add <name> --sign X Y Z --kind landmark`
+      10. Return to muster via your torch waypoints.
 
-      1. `mc poi_add muster --sign {muster_x} {muster_y} {muster_z} --kind hub`
-         (claim muster as a named node — without this the graph has no root)
-      2. `mc place_named_sign {muster_x} {muster_y} {muster_z} "muster"`
-         (propose 'muster' to Steward via comment if she's online; otherwise
-         place. This is the root sign — 15 char limit applies.)
-      3. Set a bearing — N (-z), E (+x), S (+z), or W (-x).
-      4. LOOP every ~25 blocks of travel:
-           `mc reachable` next 5 cells; clear obstacles
-             (`mc dig` lips, `mc build_stairs cobblestone <dir> 4` jumps)
-           `mc place_torch X Y Z`
-           `mc poi_add wp_<dir>_<n> --torch X Y Z --kind waypoint`
-      5. At ~40-50 blocks from muster, stop. Scan: `mc nearby_signs 32`.
-      6. Propose a name via kanban_comment:
-           `SIGN_PROPOSAL: name='<your-name>', coord=(X,Y,Z), kind=landmark, note='<terrain>'`
-      7. Wait up to 90s for Steward (`mc read_chat` + `kanban_show`).
-         No response → proceed with your proposal.
-      8. `mc place_named_sign X Y Z "<approved-name>"`
-         `mc poi_add <approved-name> --sign X Y Z --kind landmark`
-      9. Return via your torch trail: `mc go_poi wp_<dir>_<n-1>`, etc., back to muster.
+      Completion body MUST include literal output of:
+      - `mc marks`
+      - `mc pois`
+      - `mc nearby_signs 32`
 
-      **Completion body MUST include the literal output of:**
-       - `mc marks`
-       - `mc pois`
-       - `mc nearby_signs 32`
-
-      Empty-after-colon stubs are rejected.
-
-      **Don't:**
-       - Place signs where you stand (`TARGET_SELF_OCCUPIED`); offset 1-2 blocks.
-       - Write sign lines > 15 chars (`LINE_TOO_LONG`).
-       - Name the muster sign with anything weird; 'muster' is fine.
-       - Torch a path you couldn't return on.
-
-      Load skill `minecraft-mapping` for the full protocol details.
+      Hard constraints:
+      - Do not place sign on your standing cell (offset 1-2 blocks).
+      - Sign text lines must be <=15 chars.
+      - Do not skip `poi_add` for root, waypoints, or landmark.
+      - Do not leave an unreturnable torch trail.

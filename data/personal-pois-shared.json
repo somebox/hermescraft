@@ -1,0 +1,268 @@
+{
+  "birch_hollow": {
+    "added_at": "2026-06-04T09:58:55.938Z",
+    "agent_owner": "Mason",
+    "kind": "landmark",
+    "last_seen": "2026-06-04T09:58:55.938Z",
+    "last_torch_check": null,
+    "name": "birch_hollow",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "mason"
+    ],
+    "sign_at": {
+      "x": -20,
+      "y": 67,
+      "z": -80
+    },
+    "torch_at": null,
+    "torch_missing_since": null,
+    "x": -18,
+    "y": 67,
+    "z": -78
+  },
+  "birch_landing": {
+    "added_at": "2026-06-04T09:34:20.328Z",
+    "agent_owner": "Flint",
+    "kind": "landmark",
+    "last_seen": "2026-06-04T09:34:20.328Z",
+    "last_torch_check": null,
+    "name": "birch_landing",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "flint",
+      "mason"
+    ],
+    "sign_at": {
+      "x": 32,
+      "y": 67,
+      "z": -72
+    },
+    "torch_at": null,
+    "torch_missing_since": null,
+    "x": 32,
+    "y": 67,
+    "z": -72
+  },
+  "edge_east": {
+    "added_at": "2026-06-04T09:19:47.070Z",
+    "agent_owner": "Mason",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T09:19:47.070Z",
+    "last_torch_check": null,
+    "name": "edge_east",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "flint",
+      "mason"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 46,
+      "y": 64,
+      "z": -32
+    },
+    "torch_missing_since": null,
+    "x": 47,
+    "y": 64,
+    "z": -31
+  },
+  "lake_isle": {
+    "added_at": "2026-06-04T09:24:30.938Z",
+    "agent_owner": "Gatherer",
+    "kind": "landmark",
+    "last_seen": "2026-06-04T09:24:30.938Z",
+    "last_torch_check": null,
+    "name": "lake_isle",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "flint",
+      "gatherer",
+      "mason"
+    ],
+    "sign_at": {
+      "x": 30,
+      "y": 63,
+      "z": 32
+    },
+    "torch_at": null,
+    "torch_missing_since": null,
+    "x": 23,
+    "y": 63,
+    "z": 39
+  },
+  "muster": {
+    "added_at": "2026-06-04T09:21:13.180Z",
+    "agent_owner": "Flint",
+    "kind": "hub",
+    "last_seen": "2026-06-04T09:23:20.499Z",
+    "last_torch_check": null,
+    "last_visited": "2026-06-04T09:35:11.493Z",
+    "name": "muster",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "flint"
+    ],
+    "sign_at": {
+      "x": 32,
+      "y": 64,
+      "z": -32
+    },
+    "torch_at": null,
+    "torch_missing_since": null,
+    "visit_count": 1,
+    "x": 31,
+    "y": 64,
+    "z": -29
+  },
+  "wp_e_1": {
+    "added_at": "2026-06-04T09:25:52.601Z",
+    "agent_owner": "Flint",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T09:25:52.601Z",
+    "last_torch_check": null,
+    "name": "wp_e_1",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "flint",
+      "mason"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 49,
+      "y": 63,
+      "z": -29
+    },
+    "torch_missing_since": null,
+    "x": 50,
+    "y": 63,
+    "z": -29
+  },
+  "wp_e_2": {
+    "added_at": "2026-06-04T09:29:57.562Z",
+    "agent_owner": "Flint",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T09:29:57.562Z",
+    "last_torch_check": null,
+    "name": "wp_e_2",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "flint",
+      "mason"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 49,
+      "y": 62,
+      "z": -24
+    },
+    "torch_missing_since": null,
+    "x": 49,
+    "y": 63,
+    "z": -24
+  },
+  "wp_n_1": {
+    "added_at": "2026-06-04T09:31:46.200Z",
+    "agent_owner": "Flint",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T09:31:46.200Z",
+    "last_torch_check": null,
+    "last_visited": "2026-06-04T09:34:33.814Z",
+    "name": "wp_n_1",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "flint",
+      "mason"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 32,
+      "y": 69,
+      "z": -56
+    },
+    "torch_missing_since": null,
+    "visit_count": 1,
+    "x": 33,
+    "y": 69,
+    "z": -56
+  },
+  "wp_nw_0": {
+    "added_at": "2026-06-04T09:51:16.330Z",
+    "agent_owner": "Mason",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T09:51:16.330Z",
+    "last_torch_check": null,
+    "name": "wp_nw_0",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "mason"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 32,
+      "y": 64,
+      "z": -31
+    },
+    "torch_missing_since": null,
+    "x": 33,
+    "y": 64,
+    "z": -30
+  },
+  "wp_nw_1": {
+    "added_at": "2026-06-04T09:51:49.685Z",
+    "agent_owner": "Mason",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T09:51:53.828Z",
+    "last_torch_check": null,
+    "last_visited": "2026-06-04T09:59:15.128Z",
+    "name": "wp_nw_1",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "mason"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": 8,
+      "y": 65,
+      "z": -50
+    },
+    "torch_missing_since": null,
+    "visit_count": 1,
+    "x": 3,
+    "y": 65,
+    "z": -57
+  },
+  "wp_nw_2": {
+    "added_at": "2026-06-04T09:52:06.279Z",
+    "agent_owner": "Mason",
+    "kind": "waypoint",
+    "last_seen": "2026-06-04T09:55:27.151Z",
+    "last_torch_check": null,
+    "name": "wp_nw_2",
+    "note": "",
+    "reconciled_at": "2026-06-04T10:04:50.646834Z",
+    "reconciled_from": [
+      "mason"
+    ],
+    "sign_at": null,
+    "torch_at": {
+      "x": -18,
+      "y": 67,
+      "z": -79
+    },
+    "torch_missing_since": null,
+    "x": -18,
+    "y": 67,
+    "z": -78
+  }
+}

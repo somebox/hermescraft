@@ -14,19 +14,19 @@
   },
   "agents": {
     "Gatherer": {
-      "model": "deepseek/deepseek-v4-flash:exacto",
+      "model": "xiaomi/mimo-v2.5",
       "provider": "openrouter",
       "role": "gatherer",
       "api_port": 3001
     },
     "Flint": {
-      "model": "deepseek/deepseek-v4-flash:exacto",
+      "model": "xiaomi/mimo-v2.5",
       "provider": "openrouter",
       "role": "stone",
       "api_port": 3002
     },
     "Mason": {
-      "model": "deepseek/deepseek-v4-flash:exacto",
+      "model": "xiaomi/mimo-v2.5",
       "provider": "openrouter",
       "role": "builder",
       "api_port": 3003
