@@ -1,0 +1,3 @@
+# Phase 1 — single card on pilot-navigator.
+# Worker spawns, calls mc move @:mine_nw: against the mock, arrives, completes.
+@navigator pip to :mine_nw:

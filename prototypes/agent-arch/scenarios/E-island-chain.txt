@@ -1,0 +1,6 @@
+# Tiny multi-phase task for the live chain comparison.
+# Distance is ~3 blocks per leg — meant to demonstrate the chain mechanics
+# work live, NOT to provide a statistically meaningful comparison.
+@navigator to :island_tree:
+@miner extract 4 oak_log at :island_tree:
+@navigator return to :island_start:

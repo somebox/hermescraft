@@ -1,0 +1,6 @@
+# Phase 3 — navigator -> miner -> navigator handoff.
+# Card 2 spawns on pilot-miner (different profile) and reads exit_pos from
+# card 1's completion metadata. Card 3 reads inv_delta from card 2.
+@navigator pip to :mine_nw:
+@miner pip extract 4 stone at :ore_seam:
+@navigator pip return to :base_anchor:

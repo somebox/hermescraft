@@ -1,0 +1,6 @@
+# Multi-phase live test: navigate to mine, extract 4 stone, return.
+# Used by the live pinch-test follow-up to compare chain-on-pilot-* vs
+# one-card-on-flint on the same end-to-end task.
+@navigator to :mine_entrance:
+@miner extract 4 stone at :tunnel_start:
+@navigator return to :pinch_target:

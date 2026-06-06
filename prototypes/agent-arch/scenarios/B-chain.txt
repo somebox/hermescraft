@@ -1,0 +1,4 @@
+# Phase 2 — two cards on pilot-navigator, chained with --parent.
+# Card 2 blocks until card 1 hits done, then spawns a fresh worker.
+@navigator pip to :mine_nw:
+@navigator pip return to :base_anchor:
