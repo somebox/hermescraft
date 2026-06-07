@@ -829,6 +829,8 @@ function customParse(canonicalName, positional) {
       // mc verify <kind> <args...>
       //   inventory_contains <item> [min_count]
       //   chest_contains <mark> <item> [min_count]
+      //   at_mark <mark> [--near N | --block <id>]
+      //   region_blocks <x1> <y1> <z1> <x2> <y2> <z2> <block> [min_count]
       const q = positional.slice();
       const kind = String(q.shift() || '').toLowerCase();
       if (!kind) throw new Error('missing:kind');
@@ -842,6 +844,33 @@ function customParse(canonicalName, positional) {
         if (!out.mark) throw new Error('missing:mark');
         out.item = String(q.shift() || '');
         if (!out.item) throw new Error('missing:item');
+        if (q.length) out.min_count = Number(q.shift());
+      } else if (kind === 'at_mark') {
+        out.mark = String(q.shift() || '').replace(/^:|:$/g, '');
+        if (!out.mark) throw new Error('missing:mark');
+        // Parse --near N | --block <id> flags.
+        while (q.length) {
+          const f = String(q.shift());
+          if (f === '--near') out.near = Number(q.shift());
+          else if (f === '--block') out.block = String(q.shift() || '');
+          else throw new Error(`unknown_flag:${f}`);
+        }
+      } else if (kind === 'region_blocks') {
+        if (q.length < 7) {
+          throw new Error('missing:corners_or_block');
+        }
+        out.corner1 = {
+          x: Number(q.shift()),
+          y: Number(q.shift()),
+          z: Number(q.shift()),
+        };
+        out.corner2 = {
+          x: Number(q.shift()),
+          y: Number(q.shift()),
+          z: Number(q.shift()),
+        };
+        out.block = String(q.shift() || '');
+        if (!out.block) throw new Error('missing:block');
         if (q.length) out.min_count = Number(q.shift());
       } else {
         // Forward unknown kinds with raw args so the server can reject

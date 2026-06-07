@@ -252,16 +252,22 @@ class TestExecuteBodiesConcatenated:
 # ---------------------------------------------------------------------
 
 class TestAcceptanceFreezeRule:
-    def test_supported_kinds_match_session_2_landed_verbs(self) -> None:
-        # If this fails, either Session 2 grew new verbs (good — extend
-        # SUPPORTED_KINDS to match) or we deleted a verb (bad — find out
-        # why before merging).
-        assert SUPPORTED_KINDS == {"inventory_contains", "chest_contains"}
+    def test_supported_kinds_match_landed_verify_verbs(self) -> None:
+        # If this fails, either verify.js grew a new verb (good —
+        # extend SUPPORTED_KINDS) or a verb went away (bad — find out
+        # why before merging). After Session 5b prep gap 2, the set
+        # is {inventory_contains, chest_contains, at_mark, region_blocks}.
+        assert SUPPORTED_KINDS == {
+            "inventory_contains",
+            "chest_contains",
+            "at_mark",
+            "region_blocks",
+        }
 
     def test_unsupported_kind_raises(self) -> None:
         with pytest.raises(UnsupportedPredicate) as exc:
-            evaluate({"kind": "region_blocks", "at": "field_south"})
-        assert "region_blocks" in str(exc.value)
+            evaluate({"kind": "chest_delta", "mark": "storage"})
+        assert "chest_delta" in str(exc.value)
         # Helpful error names the supported set.
         assert "inventory_contains" in str(exc.value)
 

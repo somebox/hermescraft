@@ -22,14 +22,17 @@ Without `mc verify`, workers fall back to vague predicates ("complete when done"
 mc verify <kind> <args...>
 ```
 
-Predicate kinds for Session 2:
+Predicate kinds currently landed:
 
 | Kind | Args | Returns satisfied when |
 |---|---|---|
 | `chest_contains` | `<mark> <item> [min_count=1]` | Chest at `:mark:` contains ≥ `min_count` of `item` |
 | `inventory_contains` | `<item> [min_count=1]` | Bot's own inventory contains ≥ `min_count` of `item` |
+| `at_mark` (bot mode) | `<mark> [--near N]` | Bot is within `N` blocks of `:mark:`. Default `N=2`. |
+| `at_mark` (block mode) | `<mark> --block <id>` | Block at `:mark:`'s coords matches the named id (sign / water-source / chest placement) |
+| `region_blocks` | `<x1> <y1> <z1> <x2> <y2> <z2> <block> [min_count=1]` | Region contains ≥ `min_count` of `block`. Hard cap on volume: 4096 cells (≈ a 16×16×16 box). |
 
-Later sessions add: `at_mark <mark> [radius]`, `region_empty <bounds>`, `region_filled <bounds> <item>`, `chest_delta <mark> <item> <count> <since_marker>`.
+Future sessions: `chest_delta <mark> <item> <count> <since_marker>`, multi-kind region (all-of / any-of), `entity_at` for mob/player presence.
 
 ## Response shape
 

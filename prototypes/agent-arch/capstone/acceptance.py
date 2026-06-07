@@ -37,7 +37,12 @@ DEFAULT_TESTER_URL = "http://127.0.0.1:3004"
 # this set when new verbs land. The runner refuses to dispatch a
 # predicate not in this set, so the freeze rule is enforced
 # mechanically rather than by hope.
-SUPPORTED_KINDS = frozenset({"inventory_contains", "chest_contains"})
+SUPPORTED_KINDS = frozenset({
+    "inventory_contains",
+    "chest_contains",
+    "at_mark",
+    "region_blocks",
+})
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,24 @@ def _predicate_args(predicate: dict) -> list[str]:
         args = [
             str(predicate["mark"]),
             str(predicate["item"]),
+        ]
+        if "min_count" in predicate:
+            args.append(str(int(predicate["min_count"])))
+        return args
+    if kind == "at_mark":
+        args = [str(predicate["mark"])]
+        if "block" in predicate:
+            args.extend(["--block", str(predicate["block"])])
+        elif "near" in predicate:
+            args.extend(["--near", str(int(predicate["near"]))])
+        return args
+    if kind == "region_blocks":
+        c1 = predicate["corner1"]
+        c2 = predicate["corner2"]
+        args = [
+            str(int(c1["x"])), str(int(c1["y"])), str(int(c1["z"])),
+            str(int(c2["x"])), str(int(c2["y"])), str(int(c2["z"])),
+            str(predicate["block"]),
         ]
         if "min_count" in predicate:
             args.append(str(int(predicate["min_count"])))

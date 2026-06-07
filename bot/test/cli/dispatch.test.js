@@ -311,11 +311,78 @@ describe('cli dispatch', () => {
     assert.equal(body.expect_y, 65);
   });
 
+  it('checkpoint_respond POST body includes decision and lease_seconds', () => {
+    const def = defOf('checkpoint_respond');
+    const built = buildHttpRequest(def, 'checkpoint_respond', ['continue', '90']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.decision, 'continue');
+    assert.equal(body.lease_seconds, 90);
+  });
+
   it('retrace --trail sets use_trail in POST body', () => {
     const def = defOf('retrace');
     const built = buildHttpRequest(def, 'retrace', ['--trail']);
     assert.equal(built.path, '/action/retrace');
     const body = JSON.parse(built.body || '{}');
     assert.equal(body.use_trail, true);
+  });
+
+  // ── verify kinds (Session 5b prep gap 2) ─────────────────────────────
+
+  it('verify at_mark with --near sets mark + near in POST body', () => {
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', ['at_mark', 'field_south', '--near', '3']);
+    assert.equal(built.path, '/action/verify');
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.kind, 'at_mark');
+    assert.equal(body.mark, 'field_south');
+    assert.equal(body.near, 3);
+  });
+
+  it('verify at_mark with --block sets mark + block in POST body', () => {
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', ['at_mark', 'water_source', '--block', 'water']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.kind, 'at_mark');
+    assert.equal(body.mark, 'water_source');
+    assert.equal(body.block, 'water');
+  });
+
+  it('verify at_mark strips colons from mark', () => {
+    // Workers often pass `:field_south:` directly from card bodies.
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', ['at_mark', ':field_south:']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.mark, 'field_south');
+  });
+
+  it('verify region_blocks parses six coords + block + min_count', () => {
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', [
+      'region_blocks',
+      '0', '65', '0',  // corner1
+      '8', '65', '8',  // corner2
+      'farmland',
+      '81',
+    ]);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.kind, 'region_blocks');
+    assert.deepEqual(body.corner1, { x: 0, y: 65, z: 0 });
+    assert.deepEqual(body.corner2, { x: 8, y: 65, z: 8 });
+    assert.equal(body.block, 'farmland');
+    assert.equal(body.min_count, 81);
+  });
+
+  it('verify region_blocks min_count optional', () => {
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', [
+      'region_blocks',
+      '0', '65', '0',
+      '8', '65', '8',
+      'farmland',
+    ]);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.block, 'farmland');
+    assert.equal(body.min_count, undefined);
   });
 });
