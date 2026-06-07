@@ -80,7 +80,13 @@ class Graph:
     epic_title: str
     epic_body: str
     cards: tuple[Card, ...] = field(default_factory=tuple)
-    acceptance_predicate: Optional[dict] = None  # consumed by acceptance.py
+    # Single predicate — backwards-compat, fed to `acceptance.evaluate`.
+    # The two-bot demo uses this exclusively.
+    acceptance_predicate: Optional[dict] = None
+    # Multi-predicate set — fed to `acceptance.evaluate_all`. Used by
+    # the wheat capstone for the full walkthrough acceptance (plot,
+    # crop, water, sign). All must satisfy for the scorecard to pass.
+    acceptance_predicates: Optional[list[dict]] = None
 
 
 # Skill bundles per assignee. These reference real skill files under
@@ -166,15 +172,64 @@ def build_default_graph() -> Graph:
         ),
     )
 
-    # Narrowed acceptance — what current `mc verify` can express. The
-    # walkthrough's full set (tilled plots, water source, sign) needs
-    # region/at_mark verbs that haven't landed. See acceptance.py.
+    # Single-predicate acceptance (kept for `acceptance.evaluate`'s
+    # backward-compat path + the simplest scorecard reading): wheat
+    # actually deposited in the chest is the cheapest end-to-end proof.
     acceptance_predicate = {
         "kind": "chest_contains",
         "mark": deposit,
         "item": "wheat",
-        "min_count": 12,  # 3 plots of 4 wheat per walkthrough §Scenario
+        "min_count": 12,  # walkthrough §Scenario tolerance band
     }
+
+    # Multi-predicate acceptance (consumed by `acceptance.evaluate_all`):
+    # the full walkthrough acceptance set per example-wheat-farm-walk
+    # through.md "Spec on epic" — 9×9 tilled + planted, water source,
+    # sign at the field center. Predicate kinds all in SUPPORTED_KINDS
+    # (verbs added during two-bot trial 2 prep gap 2: at_mark + region_
+    # blocks).
+    #
+    # The corner coords below are PLACEHOLDERS — the real values come
+    # from the fixture's :field_south: definition. Session 5b's runner
+    # is expected to re-bind these from the fixture's known mark
+    # coords before invoking `evaluate_all`. Keeping them here makes
+    # the shape obvious; the README + runbook tell the operator to
+    # patch them.
+    acceptance_predicates = [
+        # ── 9×9 plot of farmland at Y=64 (the dirt layer post-till) ──
+        # 81 cells minus tolerance for the water source cell + a few
+        # till-misses. Set min_count=72 to allow ~10% loss.
+        {
+            "kind": "region_blocks",
+            "corner1": {"x": -54, "y": 64, "z": 46},  # PLACEHOLDER
+            "corner2": {"x": -46, "y": 64, "z": 54},  # PLACEHOLDER
+            "block": "farmland",
+            "min_count": 72,
+        },
+        # ── Wheat planted on top (Y=65) ──
+        # Same 9×9 footprint but at the plant Y. Wheat in any growth
+        # stage counts; we don't check stage. min_count=60 is lenient
+        # (some cells might not have been planted; some may have been
+        # eaten/walked over). Capstone's success criterion is "field
+        # was farmed", not "every cell perfect".
+        {
+            "kind": "region_blocks",
+            "corner1": {"x": -54, "y": 65, "z": 46},  # PLACEHOLDER
+            "corner2": {"x": -46, "y": 65, "z": 54},  # PLACEHOLDER
+            "block": "wheat",
+            "min_count": 60,
+        },
+        # ── Water source at the field center ──
+        # Walkthrough convention: water replaces farmland at one cell
+        # inside the plot. Without a water source within 4 blocks of
+        # any plot tile, wheat can't grow — so this predicate doubles
+        # as a sanity check on the till+plant cards' water-management.
+        {
+            "kind": "at_mark",
+            "mark": "field_south",  # placeholder mark; fixture defines coord
+            "block": "water",
+        },
+    ]
 
     return Graph(
         epic_slug="e001",
@@ -190,6 +245,7 @@ def build_default_graph() -> Graph:
         ),
         cards=cards,
         acceptance_predicate=acceptance_predicate,
+        acceptance_predicates=acceptance_predicates,
     )
 
 

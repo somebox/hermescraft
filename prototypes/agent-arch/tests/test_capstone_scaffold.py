@@ -341,3 +341,135 @@ class TestAcceptanceEvaluate:
         )
         assert result.satisfied is False
         assert result.evaluable is False
+
+
+# ---------------------------------------------------------------------
+# Multi-predicate acceptance — wheat capstone's all-of evaluation
+# ---------------------------------------------------------------------
+
+class TestEvaluateAll:
+    """`evaluate_all` runs every predicate, no short-circuit. The
+    wheat capstone needs this because the acceptance set is
+    (plot, crop, water, sign) — operator wants to know WHICH
+    predicate missed when the set fails."""
+
+    def _make_mc_stub(self, tmp_path, *, stdout: str, rc: int = 0):
+        stub = tmp_path / "mc"
+        stub.write_text(
+            "#!/usr/bin/env bash\n"
+            f"cat <<'EOF'\n{stdout}\nEOF\n"
+            f"exit {rc}\n"
+        )
+        stub.chmod(0o755)
+        return stub
+
+    def test_all_satisfied(self, tmp_path):
+        from capstone.acceptance import evaluate_all
+        stub = self._make_mc_stub(
+            tmp_path,
+            stdout=json.dumps({"ok": True, "satisfied": True}),
+        )
+        out = evaluate_all([
+            {"kind": "inventory_contains", "item": "wheat", "min_count": 5},
+            {"kind": "chest_contains", "mark": "storage", "item": "wheat", "min_count": 12},
+        ], mc_bin=str(stub))
+        assert out.satisfied is True
+        assert out.evaluable is True
+        assert len(out.per_predicate) == 2
+        assert all(r.satisfied for r in out.per_predicate)
+
+    def test_one_failure_blocks_set(self, tmp_path):
+        # The first call says satisfied; the second predicate also
+        # uses the same stub (returns satisfied:true), so we manually
+        # check the AcceptanceSet logic by passing a per-predicate
+        # mismatch isn't trivial with a single stub. Instead, use a
+        # stub that always returns satisfied:false to exercise the
+        # all-satisfied gate.
+        from capstone.acceptance import evaluate_all
+        stub = self._make_mc_stub(
+            tmp_path,
+            stdout=json.dumps({"ok": True, "satisfied": False}),
+        )
+        out = evaluate_all([
+            {"kind": "inventory_contains", "item": "wheat", "min_count": 5},
+        ], mc_bin=str(stub))
+        assert out.satisfied is False
+        assert out.evaluable is True   # we DID evaluate
+        assert len(out.per_predicate) == 1
+
+    def test_unsupported_predicate_records_not_evaluable(self, tmp_path):
+        # If a list contains an unsupported predicate kind, the set
+        # surfaces it as not-evaluable rather than raising. This lets
+        # the operator see the full attribution rather than dying on
+        # the first odd entry.
+        from capstone.acceptance import evaluate_all
+        stub = self._make_mc_stub(
+            tmp_path,
+            stdout=json.dumps({"ok": True, "satisfied": True}),
+        )
+        out = evaluate_all([
+            {"kind": "inventory_contains", "item": "wheat", "min_count": 5},
+            {"kind": "chest_delta", "mark": "storage"},  # not in SUPPORTED_KINDS yet
+        ], mc_bin=str(stub))
+        assert out.satisfied is False       # second predicate not satisfied
+        assert out.evaluable is False       # because second predicate wasn't evaluable
+        assert len(out.per_predicate) == 2
+        assert out.per_predicate[0].satisfied is True
+        assert out.per_predicate[1].evaluable is False
+        assert "UnsupportedPredicate" in out.per_predicate[1].detail.get("error", "")
+
+    def test_empty_list_returns_unsatisfied(self, tmp_path):
+        from capstone.acceptance import evaluate_all
+        out = evaluate_all([])
+        assert out.satisfied is False
+        assert out.evaluable is False
+        assert len(out.per_predicate) == 0
+
+
+# ---------------------------------------------------------------------
+# Wheat graph multi-predicate field
+# ---------------------------------------------------------------------
+
+class TestWheatAcceptancePredicates:
+    """The wheat graph now exposes BOTH a single
+    `acceptance_predicate` (for backward-compat) AND a list
+    `acceptance_predicates` (for the all-of wheat capstone gate)."""
+
+    def test_singular_field_still_present(self):
+        g = build_default_graph()
+        assert g.acceptance_predicate is not None
+        assert g.acceptance_predicate["kind"] == "chest_contains"
+
+    def test_plural_field_has_three_predicates(self):
+        g = build_default_graph()
+        assert g.acceptance_predicates is not None
+        assert len(g.acceptance_predicates) == 3
+
+    def test_plural_predicates_cover_plot_crop_water(self):
+        g = build_default_graph()
+        kinds = [p["kind"] for p in g.acceptance_predicates]
+        # region_blocks ×2 (farmland + wheat), at_mark ×1 (water).
+        assert kinds.count("region_blocks") == 2
+        assert kinds.count("at_mark") == 1
+
+    def test_plural_predicates_all_in_supported_kinds(self):
+        g = build_default_graph()
+        for p in g.acceptance_predicates:
+            assert p["kind"] in SUPPORTED_KINDS, (
+                f"predicate kind {p['kind']!r} not in current mc verify build; "
+                f"capstone runner would fail at evaluate_all time"
+            )
+
+    def test_farmland_predicate_min_count_under_81(self):
+        # 9×9 plot is 81 cells; reserve some headroom for water + miss
+        g = build_default_graph()
+        farmland_preds = [p for p in g.acceptance_predicates
+                          if p["kind"] == "region_blocks" and p["block"] == "farmland"]
+        assert len(farmland_preds) == 1
+        assert farmland_preds[0]["min_count"] < 81
+
+    def test_water_predicate_uses_block_mode(self):
+        g = build_default_graph()
+        water_preds = [p for p in g.acceptance_predicates
+                       if p["kind"] == "at_mark" and p.get("block") == "water"]
+        assert len(water_preds) == 1

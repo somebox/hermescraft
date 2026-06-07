@@ -36,7 +36,13 @@ Future sessions: `chest_delta <mark> <item> <count> <since_marker>`, multi-kind 
 
 ## Response shape
 
-`ok=true` means "we evaluated"; the `satisfied` field is the predicate result.
+`ok=true` means "we evaluated"; the **`data.satisfied`** field is the predicate result.
+
+> **Important — `satisfied` is nested under `data`, not top-level.** The bot HTTP action-contract envelope (`bot/lib/shared/action-contract.js`) wraps every action response with `{ ok, data, result, ... }` and every action-specific field lives under `data`. Consumer code that reads `body.satisfied` flat will silently get `None`/`false` even when the predicate succeeded. This was the root cause of a real bug in `prototypes/agent-arch/capstone/acceptance.py` (caught + fixed during two-bot trial 3). When writing a verify-response parser:
+>
+> - **canonical**: read `body["data"]["satisfied"]`
+> - **defensive** (if you must): fall back to `body.get("satisfied")` for forward-compat, but log when the flat form is used so you know the bridge envelope changed
+> - **never**: assume the flat form is the public API
 
 ```json
 {
@@ -58,6 +64,8 @@ Future sessions: `chest_delta <mark> <item> <count> <since_marker>`, multi-kind 
 }
 ```
 
+For `at_mark`, `data.mode` is `"bot"` or `"block"`. For `region_blocks`, `data.observed` includes `count` (matching), `scanned` (cells read), `unreadable` (chunk-unloaded cells), and `region` (normalised min/max corners). See `bot/test/actions/verify-contract.test.js` for the full coverage matrix.
+
 `ok=false` is reserved for cases where the predicate cannot be evaluated:
 
 ```json
@@ -71,7 +79,7 @@ Future sessions: `chest_delta <mark> <item> <count> <since_marker>`, multi-kind 
 }
 ```
 
-Distinguishing "we evaluated, answer is no" (`ok:true, satisfied:false`) from "we couldn't evaluate" (`ok:false`) lets workers and overseers handle each cleanly: the former is a card-state issue, the latter is a tooling/world issue.
+Distinguishing "we evaluated, answer is no" (`ok:true, data.satisfied:false`) from "we couldn't evaluate" (`ok:false`) lets workers and overseers handle each cleanly: the former is a card-state issue, the latter is a tooling/world issue.
 
 ## Error codes
 

@@ -65,10 +65,21 @@ prep:
   # Wait briefly for the bot to settle after the teleport so the position
   # of each mark is accurate when captured by /action/mark.
   - "local: sleep 2"
-  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"base_anchor\",\"x\":0,\"y\":65,\"z\":0,\"note\":\"colony C0 spawn\"}' >/dev/null || echo 'mark base_anchor: bot HTTP not reachable'"
-  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"storage\",\"x\":4,\"y\":65,\"z\":0,\"note\":\"colony C0 chest\"}' >/dev/null || echo 'mark storage: bot HTTP not reachable'"
-  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"test_mine\",\"x\":0,\"y\":65,\"z\":8,\"note\":\"colony C0 mine\"}' >/dev/null || echo 'mark test_mine: bot HTTP not reachable'"
-  - "local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H 'content-type: application/json' -d '{\"name\":\"test_lookout\",\"x\":8,\"y\":65,\"z\":0,\"note\":\"colony C0 lookout\"}' >/dev/null || echo 'mark test_lookout: bot HTTP not reachable'"
+  # Two NBT-shape bugs landed against this fixture earlier:
+  #   1. The /action/mark endpoint requires `at: {x,y,z}` to save at a
+  #      specific coord. Flat top-level x/y/z is silently ignored and
+  #      the mark saves at the bot's current position. See
+  #      bot/lib/runtime/locations.js#resolvePlace.
+  #   2. run-fixture.sh's parser is naive — double-quoted YAML strings
+  #      with embedded `\"name\":` get TRUNCATED at the first interior
+  #      `\` (the parser doesn't run YAML's escape processing). Switch
+  #      to single-quoted YAML — single quotes don't process escapes,
+  #      so interior `"` characters pass through verbatim. Same fix
+  #      applied to data/test-fixtures/open/two_bot_base.yaml.
+  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"base_anchor\",\"at\":{\"x\":0,\"y\":65,\"z\":0},\"note\":\"colony C0 spawn\"}" >/dev/null || echo "mark base_anchor: bot HTTP not reachable"'
+  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"storage\",\"at\":{\"x\":4,\"y\":65,\"z\":0},\"note\":\"colony C0 chest\"}" >/dev/null || echo "mark storage: bot HTTP not reachable"'
+  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"test_mine\",\"at\":{\"x\":0,\"y\":65,\"z\":8},\"note\":\"colony C0 mine\"}" >/dev/null || echo "mark test_mine: bot HTTP not reachable"'
+  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"test_lookout\",\"at\":{\"x\":8,\"y\":65,\"z\":0},\"note\":\"colony C0 lookout\"}" >/dev/null || echo "mark test_lookout: bot HTTP not reachable"'
 
 cleanup:
   # Remove the POIs we placed (signs + chest). Don't touch the canonical

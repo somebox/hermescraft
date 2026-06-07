@@ -55,9 +55,66 @@ class AcceptanceResult:
     stderr: str = ""
 
 
+@dataclass(frozen=True)
+class AcceptanceSet:
+    """The all-of result of evaluating a list of predicates against
+    Tester. Used by the wheat-farm capstone (multi-predicate acceptance:
+    plot, crop, water, sign) and any future card that needs more than
+    one done-ness check.
+
+    ``per_predicate`` preserves order so the postmortem can attribute
+    misses to specific predicates. ``satisfied`` is True iff every
+    predicate satisfied; ``evaluable`` is True iff every predicate
+    evaluated successfully (regardless of result).
+    """
+    satisfied: bool
+    evaluable: bool
+    per_predicate: tuple[AcceptanceResult, ...]
+
+
 class UnsupportedPredicate(ValueError):
     """Raised when the runner is asked to evaluate a kind the current
     ``mc verify`` build does not support."""
+
+
+def evaluate_all(
+    predicates: list[dict],
+    *,
+    tester_url: str = DEFAULT_TESTER_URL,
+    mc_bin: Optional[str] = None,
+) -> AcceptanceSet:
+    """Evaluate every predicate; report all-of result.
+
+    Runs predicates in order — no short-circuit on first failure. This
+    gives a postmortem-friendly attribution: if the wheat capstone
+    fails because the sign is missing OR the water source is in the
+    wrong cell, the AcceptanceSet records WHICH predicate(s) missed.
+
+    Per-predicate failures and per-predicate UnsupportedPredicate
+    errors are both surfaced via the per_predicate list. The set is
+    `satisfied` iff every predicate satisfied; `evaluable` iff every
+    predicate evaluated (regardless of result).
+    """
+    results: list[AcceptanceResult] = []
+    for predicate in predicates:
+        try:
+            results.append(evaluate(predicate, tester_url=tester_url, mc_bin=mc_bin))
+        except UnsupportedPredicate as exc:
+            # Record as "not evaluable" instead of raising — the rest
+            # of the predicates should still be checked. The detail
+            # carries the failure reason so the postmortem can read it.
+            results.append(AcceptanceResult(
+                satisfied=False, evaluable=False,
+                detail={"error": "UnsupportedPredicate", "message": str(exc),
+                        "predicate": predicate},
+            ))
+    all_satisfied = all(r.satisfied for r in results) if results else False
+    all_evaluable = all(r.evaluable for r in results) if results else False
+    return AcceptanceSet(
+        satisfied=all_satisfied,
+        evaluable=all_evaluable,
+        per_predicate=tuple(results),
+    )
 
 
 def evaluate(
