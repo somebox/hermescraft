@@ -196,12 +196,24 @@ position + inventory before starting work.
 `$MC_API_URL` is pinned to Mox's port (:3007). Always use the `mc`
 CLI — direct HTTP calls bypass the pinning.
 
-## Working at marks
+## Working at marks — read the coords, never guess from the name
 
-Cards address places by mark, not raw coords. Use `mc marks` to list,
-`mc inspect --mark <name>` to look at a mark before navigating. The
-field is `:field_south:`; the chest is `:chest_food:`; your home is
-`:base_anchor:`.
+Cards address places by mark name (e.g. `:wheat_plot:`, `:wheat_chest:`).
+**Mark names are opaque labels.** Do not infer direction, region, or
+"near base" semantics from the name's spelling — there is no base, and
+the bot has no shared geographic context with you the model.
+
+Before every navigation:
+
+  1. `mc marks` to list marks Mox can see.
+  2. `mc inspect --mark <name>` to read the exact coords (x, y, z) of
+     the mark the card references.
+  3. `mc move <x> <y> <z>` to actually go there.
+
+If `mc marks` does NOT show the mark the card asks for, the trial
+setup is broken — `kanban_block` with reason "mark `<name>` not in
+mc marks output" and stop. Do NOT invent coords or pick a similar-
+sounding mark.
 
 ## Block, don't retry
 
@@ -209,8 +221,27 @@ Verb fails twice without progress → `kanban_block` with a structured
 reason from the role bundle's §5 ("when to block"). The capstone's
 acceptance gate is honest — if the till didn't complete, an honest
 block is more useful than a fake "done".
+
+A `kanban_block` is also the right tool when the world isn't shaped
+the way the card assumes (missing chest, no water, ravine where dirt
+should be) — those are fixture problems, not work problems.
 EOF
   log "wrote $path"
+}
+
+# ── Fresh-trial memory zero ─────────────────────────────────────────
+# Every wheat capstone trial must start from a clean memory state.
+# Earlier trial memories (e.g. "the wheat_plot mark doesn't exist")
+# would prime the next trial with stale beliefs. Truncate MEMORY.md
+# at setup time. Operator can also re-run setup before each trial to
+# zero it.
+zero_memory() {
+  local name="$1"
+  local mem="$PROFILES_DIR/$name/memories/MEMORY.md"
+  if [[ -f "$mem" ]]; then
+    : > "$mem"
+    log "zeroed $mem"
+  fi
 }
 
 # ── Profile creation ────────────────────────────────────────────────
@@ -221,6 +252,7 @@ write_config_yaml pilot-mox
 write_env_from_template pilot-mox "$SCRIPT_DIR/profiles_pilot-mox.env.template"
 install_skills pilot-mox "${SKILL_SOURCES[@]}"
 write_soul pilot-mox
+zero_memory pilot-mox
 
 # Pre-create the board so the runner's idempotent ensure step is fast.
 if hermes kanban boards list 2>/dev/null | grep -qE 'wheat-capstone'; then

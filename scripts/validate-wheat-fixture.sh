@@ -144,13 +144,16 @@ else
   fail=1
 fi
 
-# ── 6. Marks on Tester (where mc verify queries) ────────────────────
-echo "── 6. Marks on Tester ──"
-marks_body=$(curl -sf "$TESTER_URL/marks" 2>/dev/null)
-check_mark() {
-  local name="$1" ex_x="$2" ex_y="$3" ex_z="$4"
+# ── 6. Marks on BOTH bots (Mox for nav, Tester for verify) ──────────
+# Per-bot mark DBs: Mox uses his own for navigation; Tester uses his
+# own for `mc verify`. Both must have all 3 marks at correct coords.
+echo "── 6. Marks on Mox + Tester ──"
+mox_marks=$(curl -sf "$MOX_URL/marks" 2>/dev/null)
+tester_marks=$(curl -sf "$TESTER_URL/marks" 2>/dev/null)
+check_mark_on() {
+  local who="$1" body="$2" name="$3" ex_x="$4" ex_y="$5" ex_z="$6"
   local result
-  result=$(echo "$marks_body" | python3 -c "
+  result=$(echo "$body" | python3 -c "
 import json, sys
 name = '$name'
 ex_x, ex_y, ex_z = $ex_x, $ex_y, $ex_z
@@ -170,15 +173,18 @@ else:
     print('absent')
 " 2>/dev/null)
   if [[ "$result" == "ok" ]]; then
-    printf '  %s  mark %s at (%d, %d, %d)\n' "$OK" "$name" "$ex_x" "$ex_y" "$ex_z"
+    printf '  %s  %s mark %s at (%d, %d, %d)\n' "$OK" "$who" "$name" "$ex_x" "$ex_y" "$ex_z"
   else
-    printf '  %s  mark %s: %s (expected %d, %d, %d)\n' "$NO" "$name" "$result" "$ex_x" "$ex_y" "$ex_z" >&2
+    printf '  %s  %s mark %s: %s (expected %d, %d, %d)\n' "$NO" "$who" "$name" "$result" "$ex_x" "$ex_y" "$ex_z" >&2
     fail=1
   fi
 }
-check_mark field_south "$WATER_X" "$WATER_Y" "$WATER_Z"
-check_mark chest_food  "$CHEST_X" "$CHEST_Y" "$CHEST_Z"
-check_mark base_anchor "$MOX_X"  "$MOX_Y"  "$MOX_Z"
+for who_marks in "Mox:$mox_marks" "Tester:$tester_marks"; do
+  who="${who_marks%%:*}"; body="${who_marks#*:}"
+  check_mark_on "$who" "$body" wheat_plot  "$WATER_X" "$WATER_Y" "$WATER_Z"
+  check_mark_on "$who" "$body" wheat_chest "$CHEST_X" "$CHEST_Y" "$CHEST_Z"
+  check_mark_on "$who" "$body" wheat_start "$MOX_X"   "$MOX_Y"   "$MOX_Z"
+done
 
 # ── Verdict ─────────────────────────────────────────────────────────
 echo

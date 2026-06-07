@@ -28,14 +28,17 @@ from typing import Optional
 # "Execute (Mox lane — assignee rotates)" section.
 EPIC_BOT = "mox"
 
-# Places used by the cards. These are mark names; the colony test
-# arena fixture (`data/test-fixtures/colony/`) is the canonical source
-# for whether they exist in-world. The capstone preflight checks
-# their presence.
+# Places used by the cards. Mark names are deliberately INERT — no
+# directional words — so the agent can't infer position from the name.
+# Trial 1780840853 failed because `field_south` was read by the agent
+# as "south of base", priming a phantom destination. The fixture
+# (`data/test-fixtures/colony/wheat_capstone.yaml`) is the canonical
+# source for the actual coords; the agent must `mc inspect --mark <n>`
+# to read them, not guess from the name.
 PLACES = {
-    "farm": "field_south",
-    "deposit": "chest_food",
-    "home": "base_anchor",
+    "farm": "wheat_plot",
+    "deposit": "wheat_chest",
+    "home": "wheat_start",
 }
 
 
@@ -133,12 +136,24 @@ def build_default_graph() -> Graph:
     farm = PLACES["farm"]
     deposit = PLACES["deposit"]
 
+    # Body conventions (informed by trial 1780840853 postmortem):
+    #
+    #   - Always tell the agent to `mc inspect --mark <name>` BEFORE
+    #     navigating. Mark names are opaque labels; the coords are
+    #     read from inspect, not inferred from the name.
+    #   - Be explicit about the mark name (no "the field" — name it).
+    #   - Spell out the 9×9 dimensions for till + plant (the agent
+    #     doesn't read PLACES.farm semantics).
     cards = (
         Card(
             slug="x001",
             title="nav survey",
             assignee="navigator",
-            body=f"Go to :{farm}: and survey a 16x16 area for a flat farm pad.",
+            body=(
+                f"Use `mc inspect --mark {farm}` to read the wheat-plot "
+                f"coordinates, then navigate there with `mc move`. "
+                f"Survey the immediate 16×16 area for a flat farm pad."
+            ),
             depends_on=(),
             skills=SKILL_BUNDLES["navigator"],
             work_at_mark=farm,
@@ -147,7 +162,12 @@ def build_default_graph() -> Graph:
             slug="x002",
             title="build pad",
             assignee="builder",
-            body=f"Level a 16x16 pad at :{farm}: per nav survey handoff.",
+            body=(
+                f"Use `mc inspect --mark {farm}` to read the wheat-plot "
+                f"coordinates. Level a 16×16 pad centered on the mark, "
+                f"per the navigator's handoff. If the pad is already "
+                f"flat dirt, mark this done."
+            ),
             depends_on=("x001",),
             skills=SKILL_BUNDLES["builder"],
             work_at_mark=farm,
@@ -156,7 +176,12 @@ def build_default_graph() -> Graph:
             slug="x003",
             title="plant",
             assignee="farmer",
-            body=f"Till and plant wheat 9x9 at :{farm}:. Water source within reach.",
+            body=(
+                f"Use `mc inspect --mark {farm}` to read the wheat-plot "
+                f"coordinates. Till a 9×9 area centered on the mark, "
+                f"then plant wheat in every cell. A water source is "
+                f"already at the mark's exact coord — leave it alone."
+            ),
             depends_on=("x002",),
             skills=SKILL_BUNDLES["farmer"],
             work_at_mark=farm,
@@ -165,7 +190,11 @@ def build_default_graph() -> Graph:
             slug="x004",
             title="deposit",
             assignee="crafter",
-            body=f"Deposit harvested wheat at :{deposit}:.",
+            body=(
+                f"Use `mc inspect --mark {deposit}` to read the storage "
+                f"chest coordinates. Open the chest and deposit any "
+                f"harvested wheat into it."
+            ),
             depends_on=("x003",),
             skills=SKILL_BUNDLES["crafter"],
             work_at_mark=deposit,
@@ -226,14 +255,14 @@ def build_default_graph() -> Graph:
         # as a sanity check on the till+plant cards' water-management.
         {
             "kind": "at_mark",
-            "mark": "field_south",  # placeholder mark; fixture defines coord
+            "mark": "wheat_plot",  # fixture POSTs this to BOTH bots; Tester is queried by verify
             "block": "water",
         },
     ]
 
     return Graph(
         epic_slug="e001",
-        epic_title="[FARM] Wheat at :field_south:",
+        epic_title=f"[FARM] Wheat at :{farm}:",
         epic_body=(
             "Spec:\n"
             "- Survey 16x16 at places.farm\n"

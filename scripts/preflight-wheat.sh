@@ -103,11 +103,13 @@ else
   fail=1
 fi
 
-header "4. Marks present (field_south, chest_food, base_anchor)"
-# Marks are POSTed by the fixture to Tester (:3004), not to Mox.
-# Tester is the neutral observer that mc verify queries too.
+header "4. Marks present (wheat_plot, wheat_chest, wheat_start)"
+# Marks are POSTed by the fixture to BOTH bots — Mox for navigation
+# AND Tester for `mc verify`. Preflight checks Tester since that's
+# where `mc verify` reads; the validator (run during fixture prep)
+# checks both.
 marks_json=$(curl -sf "$TESTER_URL/marks" 2>/dev/null)
-expected_marks=("field_south:-50,64,50" "chest_food:-50,65,60" "base_anchor:-55,65,50")
+expected_marks=("wheat_plot:-50,64,50" "wheat_chest:-50,65,60" "wheat_start:-55,65,50")
 for spec in "${expected_marks[@]}"; do
   name="${spec%%:*}"
   coords="${spec##*:}"

@@ -85,13 +85,27 @@ class TestWheatGraph:
         assert EPIC_BOT == "mox"
 
     def test_places_referenced_in_bodies(self) -> None:
+        # Bodies must reference the mark NAMES (not raw coords). Format
+        # is `mc inspect --mark <name>` per the trial-1780840853
+        # postmortem: agent must inspect, not guess.
         g = build_default_graph()
         farm = PLACES["farm"]
         deposit = PLACES["deposit"]
-        farm_cards = [c for c in g.cards if f":{farm}:" in c.body]
-        deposit_cards = [c for c in g.cards if f":{deposit}:" in c.body]
+        farm_cards = [c for c in g.cards if farm in c.body]
+        deposit_cards = [c for c in g.cards if deposit in c.body]
         assert len(farm_cards) >= 3  # nav, build, plant
         assert len(deposit_cards) >= 1  # deposit
+
+    def test_bodies_instruct_mark_inspect_first(self) -> None:
+        # Every card body must tell the agent to inspect the mark before
+        # navigating. This is the discipline that prevents trial
+        # 1780840853's hallucinated-base failure.
+        g = build_default_graph()
+        for c in g.cards:
+            assert "mc inspect --mark" in c.body, (
+                f"card {c.slug} body must instruct `mc inspect --mark` "
+                f"to read coords before navigating; got: {c.body!r}"
+            )
 
     def test_acceptance_predicate_is_chest_contains(self) -> None:
         # We deliberately narrowed to what current `mc verify` supports.

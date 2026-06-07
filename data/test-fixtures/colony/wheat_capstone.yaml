@@ -89,13 +89,23 @@ prep:
 
   - "local: sleep 2"
 
-  # ── Marks ──────────────────────────────────────────────────────────
-  # POST nested {at: {x,y,z}} per the locations.js#resolvePlace contract
+  # ── Marks (POSTed to BOTH bots) ────────────────────────────────────
+  # Marks live PER-BOT — each Mineflayer bot has its own marks DB.
+  # The worker (Mox :3007) needs them for navigation; Tester (:3004)
+  # needs them so `mc verify at_mark wheat_plot block=water` resolves.
+  # Trial 1780840853 failed because we only POSTed to Tester — Mox saw
+  # `unknown_mark: @wheat_plot` and hallucinated a phantom destination.
+  #
+  # Names are deliberately INERT — no directional words. `field_south`
+  # was read by the agent as "south of the base"; `wheat_plot` is an
+  # opaque label that has to be inspected, not inferred.
+  #
+  # POST nested {at: {x,y,z}} per locations.js#resolvePlace contract
   # documented in mc-verify-spec.md. Single-quoted YAML so the
   # run-fixture.sh parser preserves the interior `"` chars.
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"field_south\",\"at\":{\"x\":-50,\"y\":64,\"z\":50},\"note\":\"wheat plot center (1 cell of water; 9x9 farmland-plot footprint)\"}" >/dev/null || echo "mark field_south: bot HTTP not reachable"'
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"chest_food\",\"at\":{\"x\":-50,\"y\":65,\"z\":60},\"note\":\"wheat storage chest\"}" >/dev/null || echo "mark chest_food: bot HTTP not reachable"'
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"base_anchor\",\"at\":{\"x\":-55,\"y\":65,\"z\":50},\"note\":\"Mox start position (west edge of pad)\"}" >/dev/null || echo "mark base_anchor: bot HTTP not reachable"'
+  - 'local: for port in 3007 3004; do curl -sf -X POST "http://127.0.0.1:$port/action/mark" -H "content-type: application/json" -d "{\"name\":\"wheat_plot\",\"at\":{\"x\":-50,\"y\":64,\"z\":50},\"note\":\"wheat plot center (1 cell of water; 9x9 farmland-plot footprint)\"}" >/dev/null || echo "mark wheat_plot port=$port: bot HTTP not reachable"; done'
+  - 'local: for port in 3007 3004; do curl -sf -X POST "http://127.0.0.1:$port/action/mark" -H "content-type: application/json" -d "{\"name\":\"wheat_chest\",\"at\":{\"x\":-50,\"y\":65,\"z\":60},\"note\":\"wheat storage chest\"}" >/dev/null || echo "mark wheat_chest port=$port: bot HTTP not reachable"; done'
+  - 'local: for port in 3007 3004; do curl -sf -X POST "http://127.0.0.1:$port/action/mark" -H "content-type: application/json" -d "{\"name\":\"wheat_start\",\"at\":{\"x\":-55,\"y\":65,\"z\":50},\"note\":\"Mox start position (west edge of pad)\"}" >/dev/null || echo "mark wheat_start port=$port: bot HTTP not reachable"; done'
 
   # ── Bounds-check validation ────────────────────────────────────────
   # Runs scripts/validate-wheat-fixture.sh, which asserts every key
@@ -110,10 +120,10 @@ prep:
   - "local: scripts/validate-wheat-fixture.sh"
 
 cleanup:
-  # Drop marks
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H "content-type: application/json" -d "{\"name\":\"field_south\"}" >/dev/null || true'
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H "content-type: application/json" -d "{\"name\":\"chest_food\"}" >/dev/null || true'
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H "content-type: application/json" -d "{\"name\":\"base_anchor\"}" >/dev/null || true'
+  # Drop wheat marks from BOTH bots (matches the prep step's both-bots
+  # POST). Old names left in for retrofit-cleanup of fixtures from
+  # earlier trial generations.
+  - 'local: for port in 3007 3004; do for m in wheat_plot wheat_chest wheat_start field_south chest_food base_anchor; do curl -sf -X POST "http://127.0.0.1:$port/action/unmark" -H "content-type: application/json" -d "{\"name\":\"$m\"}" >/dev/null 2>&1 || true; done; done'
 
   # Move Mox out FIRST so he doesn't fall into the void when the floor goes
   - "execute in landfolk-test run tp Mox 0 65 0"
