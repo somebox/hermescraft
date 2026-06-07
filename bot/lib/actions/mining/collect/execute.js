@@ -804,16 +804,46 @@ function buildSuccessEnvelope(state, accounting) {
   const { count, blockName, startedInventory } = state.cctx;
   const { resolvedFromSource } = state.phaseInputs;
   const tips = [...state.tipSet];
-  const tipsSuffix = tips.length ? ` Tips: ${tips.join(' | ')}` : '';
 
   const remaining = count - state.collected;
   const partialFailure = remaining > 0;
   const sourceNote = resolvedFromSource ? ` [mined ${resolvedFromSource} as source]` : '';
   const cancelNote = state.wasCancelled ? ' [cancelled mid-task]' : '';
   const { endedInventory, pickedUp, inventoryGains, totalGain, dropItemName, dropNote, inventoryHave } = accounting;
-  const msg = remaining > 0
-    ? `Mined ${state.collected} ${blockName}${dropNote} (${remaining} more needed). Have ${inventoryHave} ${dropItemName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`
-    : `Mined ${state.collected}/${count} ${blockName}${dropNote}. Have ${inventoryHave} ${dropItemName} in inventory.${sourceNote}${cancelNote}${tipsSuffix}`;
+
+  // ── Result-message rewrite (postmortem 2026-06-07 trial 1) ──
+  //
+  // Old format led with "Mined N/M blockName" — the blocks-broken count.
+  // When drops landed out of pickup range, "Mined 32/32 cobblestone. Have
+  // 1 cobblestone in inventory" read as success to the model because the
+  // headline ("Mined 32/32") sounded done. Trial-1 zee miner trusted it,
+  // looped on retries, never blocked.
+  //
+  // New format LEADS with inventory truth ("Collected I/M") so the model
+  // sees the actual delivery count first. When mined > collected, we
+  // append an explicit "X blocks dropped but Y unreachable" diagnosis
+  // with one actionable hint.
+  const blocksBroken = state.collected;
+  const itemsInInventory = inventoryHave;
+  const itemsLostInWorld = Math.max(0, blocksBroken - itemsInInventory);
+  const hasInventoryGap = itemsLostInWorld > 0;
+
+  // Headline reflects inventory; sub-clause adds context when there's a
+  // discrepancy.
+  let msg;
+  if (remaining > 0) {
+    msg = `Collected ${itemsInInventory}/${count} ${dropItemName}${dropNote} in inventory `
+        + `(${remaining} more needed; mined ${blocksBroken} blocks).`;
+  } else {
+    msg = `Collected ${itemsInInventory}/${count} ${dropItemName}${dropNote} in inventory `
+        + `(mined ${blocksBroken} blocks).`;
+  }
+  if (hasInventoryGap) {
+    msg += ` ${itemsLostInWorld} dropped item(s) not picked up — likely out of reach.`
+        +  ` Try smaller batches (mc dig + mc pickup between cells) or reposition before mining.`;
+  }
+  msg += `${sourceNote}${cancelNote}`;
+  if (tips.length) msg += ` Tips: ${tips.join(' | ')}`;
 
   return ok({
     data: {
@@ -835,6 +865,15 @@ function buildSuccessEnvelope(state, accounting) {
       // check inventory[expected_drop_item] not inventory[block_name].
       expected_drop_item: dropItemName,
       drop_item_gained: inventoryHave,
+      // ── Trial-1 postmortem aliases ──
+      // Three names called out in the postmortem fix list. Aliases (not
+      // renames) preserve compatibility with code keying off mined_count /
+      // drop_item_gained while giving the agent + dashboards the
+      // semantically-correct names.
+      blocks_broken: blocksBroken,
+      items_collected_in_inventory: itemsInInventory,
+      items_dropped_uncollected: itemsLostInWorld,
+      inventory_gap: hasInventoryGap,
       ...(resolvedFromSource ? { mined_source_block: resolvedFromSource } : {}),
       ...(state.wasCancelled ? { cancelled: true } : {}),
     },

@@ -17,11 +17,13 @@ Graph: `prototypes/agent-arch/capstone/two_bot_base_graph.py` — **13 execute c
 
 ## P0 — load-bearing for trial 2
 
-- [ ] **Fix `mc collect` response shape** in `bot/lib/actions/mining/collect/execute.js`:
-  - [ ] Response `data` distinguishes blocks broken vs inventory gained (postmortem names: `blocks_broken`, `items_dropped`, `items_collected_in_inventory`; today partial fields exist — align names + message).
-  - [ ] `result:` text must not imply success when inventory is short.
-  - [ ] Tier-1 contract test in `bot/test/actions/` (extend `mining-collect.test.js` or add `collect-contract.test.js`).
-  - [ ] Regenerate `docs/reference/mc-cheatsheet.md` if collect wording drifts.
+- [x] **Fix `mc collect` response shape** in `bot/lib/actions/mining/collect/execute.js`:
+  - [x] Result message leads with inventory truth ("Collected I/N") not blocks broken; appends explicit gap diagnostic + actionable hint when `items_dropped_uncollected > 0`.
+  - [x] Data fields added (alongside legacy names): `blocks_broken`, `items_collected_in_inventory`, `items_dropped_uncollected`, `inventory_gap` (boolean).
+  - [x] Two Tier-1 contract tests in `bot/test/actions/mining-collect.test.js`:
+    - "success envelope exposes postmortem-named alias fields" — arithmetic invariants on the new fields
+    - "result message leads with inventory truth, not blocks broken" — regression test for the trial-1 misleading-headline pattern (asserts message starts with `Collected N/M`, contains "not picked up" diagnostic, contains an actionable hint).
+  - [x] Existing 30 mining-collect tests still pass; total 32/32 green.
 - [x] **Fix `agent-crafter.md` verb table** — `mc chest @MARK`, no `open` / `list_container`; mark vs `:colon:` body refs; `mc help` hint.
 - [x] **Verb audit script** — `scripts/audit-skill-verbs.py` (§3 tables vs `registry.mjs`).
   - [x] Re-runs clean against `navigator,builder,crafter,miner`.
@@ -80,9 +82,9 @@ Optional (not blocking trial 2):
 
 | Wave | Status | Notes |
 |---|---|---|
-| P0 | in progress | Crafter + audit script done; **collect bot fix** still open. |
+| P0 | **done** | Collect fix + 2 contract tests landed; crafter + audit + pilot config parity all green. |
 | P1 | mostly done | Graph 13-card + agent/miner/nav + mining caveat landed 2026-06-07. |
 | P2 | not started | |
 | P3 | not started | |
 
-**Gate for trial 2:** P0 collect fix + audit re-run green + pre-flight block above.
+**Gate for trial 2 is OPEN.** Run the pre-flight checks above (re-run setup-pilot-pip-zee.sh; reset-open-test.sh; manual smoke `mc collect cobblestone 5` against staged cobble face), then launch.

@@ -470,6 +470,131 @@ test('mining.collect: inventory_gain captures the drop name when blockName ≠ d
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// 6b. Inventory-truth in the success envelope
+//    (postmortem 2026-06-07: trial 1 z_mine stalled because `Mined 32/32
+//    cobblestone. Have 1 cobblestone in inventory` read as success to the
+//    model. The fix headlines inventory delivery, not blocks broken.)
+// ─────────────────────────────────────────────────────────────────────────
+
+test('mining.collect: success envelope exposes postmortem-named alias fields', async () => {
+  // Reuse the 5×5 integration fixture. bot.dig removes the block from the
+  // world but no items are added to inventory — simulates the trial-1
+  // pattern where drops landed out of reach and weren't collected.
+  const baseY = 63;
+  const patch = flatPatch('dirt', baseY, 2);
+  const cellNames = new Map();
+  for (const p of patch) cellNames.set(`${p.x},${p.y},${p.z}`, 'dirt');
+  const world = makeMutableWorld(cellNames);
+  const bot = makeStubBot({ position: new Vec3(0.5, 64, -3.5) });
+  bot.blockAt = (pos) => {
+    const name = world.get(pos);
+    if (!name || name === 'air') {
+      return { name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}) };
+    }
+    return { name, position: pos, boundingBox: 'block', getProperties: () => ({}), type: 3, hardness: 0.5 };
+  };
+  bot.findBlocks = ({ matching }) => {
+    const ids = Array.isArray(matching) ? matching : [matching];
+    const wanted = new Set(ids);
+    return patch.filter((p) => world.get(p) === 'dirt' && wanted.has(3));
+  };
+  bot.dig = async (block) => { world.setAir(block.position); };
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => true,
+    eyePosition: () => new Vec3(0.5, 65.6, -3.5),
+    findVisible: async (name) =>
+      name !== 'dirt' ? [] : patch.filter((p) => world.get(p) === 'dirt').map((p) => ({ position: p })),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'dirt', count: 5 });
+
+  // Sanity.
+  assert.equal(r.ok, true);
+  assert.equal(r.data.mined_count, 5);
+
+  // ── postmortem-named alias fields (claim-critical: dashboards + agents
+  //    keying off these names need them to exist on the success path) ──
+  assert.equal(typeof r.data.blocks_broken, 'number', 'blocks_broken alias must exist');
+  assert.equal(typeof r.data.items_collected_in_inventory, 'number',
+    'items_collected_in_inventory alias must exist');
+  assert.equal(typeof r.data.items_dropped_uncollected, 'number',
+    'items_dropped_uncollected alias must exist');
+  assert.equal(typeof r.data.inventory_gap, 'boolean', 'inventory_gap boolean must exist');
+
+  // ── arithmetic invariants ──
+  // blocks_broken matches mined_count.
+  assert.equal(r.data.blocks_broken, r.data.mined_count,
+    'blocks_broken should equal mined_count');
+  // bot.dig stub doesn't add to inventory, so collected = 0, lost = 5.
+  assert.equal(r.data.items_collected_in_inventory, 0,
+    'no inventory gain in this fixture (drops not picked up)');
+  assert.equal(r.data.items_dropped_uncollected, 5,
+    'all 5 blocks broken should count as uncollected drops');
+  assert.equal(r.data.inventory_gap, true,
+    'inventory_gap must be true when items_dropped_uncollected > 0');
+});
+
+test('mining.collect: result message leads with inventory truth, not blocks broken', async () => {
+  // Same fixture as above. We're asserting the user-facing `result` string
+  // does NOT lead with "Mined N/M" (trial-1 misleading wording).
+  const baseY = 63;
+  const patch = flatPatch('dirt', baseY, 2);
+  const cellNames = new Map();
+  for (const p of patch) cellNames.set(`${p.x},${p.y},${p.z}`, 'dirt');
+  const world = makeMutableWorld(cellNames);
+  const bot = makeStubBot({ position: new Vec3(0.5, 64, -3.5) });
+  bot.blockAt = (pos) => {
+    const name = world.get(pos);
+    if (!name || name === 'air') {
+      return { name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}) };
+    }
+    return { name, position: pos, boundingBox: 'block', getProperties: () => ({}), type: 3, hardness: 0.5 };
+  };
+  bot.findBlocks = ({ matching }) => {
+    const ids = Array.isArray(matching) ? matching : [matching];
+    const wanted = new Set(ids);
+    return patch.filter((p) => world.get(p) === 'dirt' && wanted.has(3));
+  };
+  bot.dig = async (block) => { world.setAir(block.position); };
+  const deps = makeDeps({
+    bot,
+    hasLineOfSight: () => true,
+    eyePosition: () => new Vec3(0.5, 65.6, -3.5),
+    findVisible: async (name) =>
+      name !== 'dirt' ? [] : patch.filter((p) => world.get(p) === 'dirt').map((p) => ({ position: p })),
+  });
+  const actions = createMiningActions(deps);
+  const r = await actions.collect({ block: 'dirt', count: 5 });
+
+  assert.equal(r.ok, true);
+
+  // ── trial-1 regression: must NOT lead with "Mined N/M". The agent saw
+  //    "Mined 32/32 cobblestone" and trusted the headline despite "Have 1
+  //    cobblestone in inventory" further along. ──
+  assert.ok(!/^Mined\s+\d+\/\d+/.test(r.result),
+    `result must not lead with "Mined N/M"; got: ${r.result}`);
+
+  // Headline must reference inventory, leading with "Collected" + the
+  // delivery count (0/5 in this fixture).
+  assert.match(r.result, /^Collected\s+0\/5\b/,
+    `result should lead with "Collected 0/5"; got: ${r.result}`);
+
+  // When inventory_gap is true, the message must include the explicit
+  // diagnostic + an actionable hint. The agent must see WHY it should
+  // change strategy.
+  assert.match(r.result, /not picked up/i,
+    `gap message missing "not picked up" diagnostic; got: ${r.result}`);
+  assert.match(r.result, /pickup|smaller batch|reposition/i,
+    `gap message missing actionable hint (pickup / smaller batch / reposition); got: ${r.result}`);
+
+  // Blocks-broken count is still surfaced (for context), just not as the
+  // headline.
+  assert.match(r.result, /mined\s+5\s+blocks?/i,
+    `result should still mention "mined 5 blocks" for context; got: ${r.result}`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // 7. NO_VISIBLE_BLOCKS contract when nothing is found and no source-block
 //    candidates exist either.
 // ─────────────────────────────────────────────────────────────────────────
