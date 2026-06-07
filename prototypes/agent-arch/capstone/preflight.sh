@@ -69,8 +69,9 @@ declare -A required_bundles=(
   [builder]="agent-builder minecraft-building minecraft-survival"
   [farmer]="agent-farmer minecraft-farming minecraft-survival"
   [crafter]="agent-crafter minecraft-chores minecraft-survival"
+  [miner]="agent-miner minecraft-mining minecraft-survival"
 )
-for assignee in navigator builder farmer crafter; do
+for assignee in navigator builder farmer crafter miner; do
   missing_for_assignee=""
   for skill in ${required_bundles[$assignee]}; do
     if [[ ! -f "$REPO_ROOT/skills/$skill.md" ]]; then
