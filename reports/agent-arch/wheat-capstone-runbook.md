@@ -216,6 +216,16 @@ HERMES_HOME=~/.hermes hermes kanban boards delete wheat-capstone
   also update `wheat_graph.acceptance_predicates`. A future
   improvement would read mark coords from Tester at trial time and
   rewrite the region predicates accordingly.
+- **Growth + harvest out of scope this trial.** Trial 1780842744 passed
+  on the acceptance predicates (farmland, wheat blocks, water) but the
+  deposit card was vacuous — `randomTickSpeed=0` on landfolk-test
+  freezes crop growth, so no wheat matured before x004 ran. The full
+  plant-then-grow-then-harvest-then-deposit cycle is owned by the
+  production architecture documented in
+  [`docs/architecture/scheduled-operations.md`](../../docs/architecture/scheduled-operations.md)
+  — orchestrator-owned cron, role-assigned check cards, aging-priority
+  registry. The capstone proves the worker-side narrow-scope claim;
+  the orchestrator-side trial is a separate session.
 
 ## Differences trial 3 → wheat capstone
 
