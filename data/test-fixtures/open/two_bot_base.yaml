@@ -48,14 +48,20 @@ prep:
 
   # ── Staged props ───────────────────────────────────────────────────
   # :wood_supply: chest at (295, 65, 300) — west of seed. 64 oak_log inside.
+  # NB: single-quoted YAML so the run-fixture.sh parser preserves interior
+  # double-quotes (its naive parser terminates double-quoted scalars at the
+  # first interior `"`). Inner content needs Minecraft's literal " quotes.
+  # NBT format note: MC 1.20.5+ changed `Count:Nb` → `count:N` (lowercase,
+  # no byte suffix). Smoke-tested via rcon `data get block` against
+  # landfolk-test on 2026-06-07.
   - "execute in landfolk-test run setblock 295 65 300 minecraft:chest"
-  - "execute in landfolk-test run data merge block 295 65 300 {Items:[{Slot:0b,id:\"oak_log\",Count:64b}]}"
+  - 'execute in landfolk-test run data merge block 295 65 300 {Items:[{Slot:0b,count:64,id:"oak_log"}]}'
 
   # :chest_stash: chest at (300, 65, 305) — south of seed. wooden_axe +
   # iron_pickaxe + 4 oak_sign. Pip withdraws the axe; Zee gets the
   # pickaxe (separate withdraw card).
   - "execute in landfolk-test run setblock 300 65 305 minecraft:chest"
-  - "execute in landfolk-test run data merge block 300 65 305 {Items:[{Slot:0b,id:\"wooden_axe\",Count:1b},{Slot:1b,id:\"iron_pickaxe\",Count:1b},{Slot:2b,id:\"oak_sign\",Count:4b}]}"
+  - 'execute in landfolk-test run data merge block 300 65 305 {Items:[{Slot:0b,count:1,id:"wooden_axe"},{Slot:1b,count:1,id:"iron_pickaxe"},{Slot:2b,count:4,id:"oak_sign"}]}'
 
   # Cobble outcrop — 5x3x5 = 75 blocks at SE (309-313, 65-67, 309-313).
   # Sits ON the stone floor, visible as a raised pile. zee mines from
