@@ -8,11 +8,12 @@
 | # | Session | Status | Commit | Notes |
 |---|---|---|---|---|
 | 1 | Foundation | ✅ done | `80e2b2b` | `colony` marker excluded from fast/full runners; `tests/colony/` tree + README; `C0_colony_arena.yaml` (POIs + `mc mark` post-prep); `test_chest_delta_predicate.py` (variant 3); `telemetry.py` JSONL emitter with `SUMMARY_FIELDS` lock. Handoff regression stayed green. |
-| 2 | Done-ness | ✅ done | `be2d6ca` | `mc verify` dispatcher (`bot/lib/actions/verify.js`, 13 Tier 1 contract tests in `bot/test/actions/`); verbs `chest_contains`, `chest_delta`, `region_blocks`. `test_chest_object_state_predicate.py` lands variant 2. Done-ness vocab map in `docs/architecture/mc-verify-spec.md`. |
+| 2 | Done-ness | ✅ done (verbs narrower than plan) | `be2d6ca` | `mc verify` dispatcher (`bot/lib/actions/verify.js`, 13 Tier 1 contract tests). Verbs landed: **`inventory_contains` and `chest_contains` only** — `chest_delta`, `region_*`, `at_mark` deferred (file marks them as future work). `test_chest_object_state_predicate.py` lands variant 2 against `chest_contains`. Done-ness vocab map in `docs/architecture/mc-verify-spec.md`. **Implication for Session 5:** capstone acceptance narrowed to a `chest_contains`-expressible predicate; richer region predicates need a follow-up session before the full walkthrough acceptance set is testable. |
 | 3 | Blocker / review | ✅ done | `225f8e1` | `prototypes/agent-arch/overseer/review_loop.py` (284 lines, polling subscription pattern; structured-reason recognition; linkage via `task_events.kind='review_link'` payload `review_of=<id>`). 7 contract tests in `test_overseer_contract.py`. |
 | 4 | Mutex 5a | ✅ done | `3c3fc4b` | `mutex_key.py` with `[bot:<name>]` title-prefix encoding (no metadata column in tasks schema yet — interim seam). `gate.py` Step 3+5 + `hooks.py` walk by computed key; `promote.py` helpers take a key string. 33 new tests; 108/108 plugin tests pass. |
-| 4½ | Spawn seam | next | — | See expanded section below. |
-| 5 | Capstone | pending | — | Walkthrough graph; freeze rule; wide-flint control with the same decomposed body. |
+| 4½ | Spawn seam | ✅ done | `3ce9bc4` | `spawn-with-bot.sh` + `data/bots/{pip,zee}.yaml` + 12 contract tests (lookup correctness / failure modes / precedence). |
+| 5a | Capstone scaffold | ✅ done | (this commit) | `prototypes/agent-arch/capstone/`: `wheat_graph.py`, `wide_baseline.py`, `acceptance.py`, `author.py`, `preflight.sh`, README. 29 contract tests. `data/bots/mox.yaml` added. Preflight surfaces two gaps (missing `agent-builder/farmer/crafter` skill bundles) that must close before 5b. |
+| 5b | Live wheat trial | pending — operator-driven | — | Run `preflight.sh`; close gaps; bring up `landfolk-test` world + Tester + mox; author colony lane + wide baseline; gate via `acceptance.evaluate`; categorise via plan's confound table; update A6 + A7. |
 
 ### Assumption status (snapshot)
 
@@ -22,9 +23,9 @@
 | A2 | `success_when` / `mc verify` / `acceptance` reconcile | **supported** (Session 2 — vocab map in `mc-verify-spec.md`; cross-reference in colony test) |
 | A3 | Block → review → unblock reduces operator load | **supported** (Session 3 — full loop observable in kanban events; structured prefixes recognised) |
 | A4 | `metadata.bot` mutex preserves parallelism without cross-claim | **supported** (Session 4 — both axes proven: same assignee + different bot promotes concurrent; same bot serializes across assignees) |
-| A5 | Spawn stand-in injects per-card MC env from `data/bots/<bot>.yaml` | untested |
-| A6 | Per-card scope reset improves multi-domain completion | untested |
-| A7 | Wheat-walkthrough graph exposes wide-flint paralysis | untested |
+| A5 | Spawn stand-in injects per-card MC env from `data/bots/<bot>.yaml` | **supported** (Session 4½ — 12/12 contract tests across lookup / failure / precedence) |
+| A6 | Per-card scope reset improves multi-domain completion | untested — scaffold ready (Session 5a); resolves in 5b live trial |
+| A7 | Wheat-walkthrough graph exposes wide-flint paralysis | untested — same as A6 |
 
 ## Locked-in choices (decisions baked into the plan)
 

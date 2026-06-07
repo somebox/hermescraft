@@ -1,0 +1,177 @@
+"""Translate a wheat-farm Graph into ``hermes kanban create`` calls.
+
+The proto tenant accepts cards via the v0.15 CLI primitive:
+
+  hermes kanban create
+      --tenant <name>
+      --assignee <slug>
+      --body <text>
+      --skill <bundle>          (repeatable)
+      --parent <card-id>        (repeatable)
+      --json
+      <title>
+
+For the capstone, every execute card carries ``[bot:<name>]`` as its
+title prefix, matching the encoding ``mutex_key.py`` parses on the
+kanban side. The author resolves ``depends_on`` slugs into real card
+ids — earlier cards in the graph must already have been created.
+
+This module emits **command vectors** (lists of strings) rather than
+running them directly. The runner script is responsible for execution
+(so dry-run / test paths don't shell out). One module surface keeps
+the trial driver thin and the contract testable.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Mapping, Optional
+
+from .wheat_graph import Card, EPIC_BOT, Graph
+from .wide_baseline import WideBaseline
+
+
+DEFAULT_TENANT = "proto-agent-arch"
+DEFAULT_MAX_RUNTIME = "30m"  # capstone cards are longer than scenarios A-C
+
+
+@dataclass(frozen=True)
+class Invocation:
+    """One ``hermes kanban create`` invocation, parameterised.
+
+    ``slug`` is the graph-local id (echoed for trace + telemetry).
+    ``cmd`` is ready to pass to ``subprocess.run``.
+    ``depends_on_slugs`` records what graph-local parents this card
+    waits on (the author resolves them to real ids at runtime).
+    """
+
+    slug: str
+    title: str
+    cmd: tuple[str, ...]
+    depends_on_slugs: tuple[str, ...]
+
+
+def title_with_bot(bot: str, title: str) -> str:
+    """Prefix a title with ``[bot:<name>]`` for the mutex_key parser.
+
+    Idempotent: a title already carrying a tag is returned unchanged.
+    """
+    stripped = title.lstrip()
+    if stripped.lower().startswith("[bot:"):
+        return title
+    return f"[bot:{bot.lower()}] {title}"
+
+
+def author_colony_lane(
+    graph: Graph,
+    *,
+    tenant: str = DEFAULT_TENANT,
+    max_runtime: str = DEFAULT_MAX_RUNTIME,
+    epic_bot: str = EPIC_BOT,
+) -> tuple[Invocation, ...]:
+    """Produce one Invocation per execute card in *graph*.
+
+    The epic itself is NOT included — the rig today doesn't create
+    epics via the CLI. The depends_on edges are between execute cards;
+    the runner resolves slug→id at trial time.
+
+    Title carries ``[bot:<epic_bot>]`` so:
+      - mutex_key.py groups the cards into the bot's domain
+        (Session 4 semantics), and
+      - spawn-with-bot.sh can resolve the same bot from the card title
+        when invoked with ``--task-id`` (Session 4½ symmetry).
+    """
+    invocations: list[Invocation] = []
+    for card in graph.cards:
+        invocations.append(_invocation_for_card(
+            card, epic_bot=epic_bot, tenant=tenant, max_runtime=max_runtime,
+        ))
+    return tuple(invocations)
+
+
+def author_wide_baseline(
+    baseline: WideBaseline,
+    *,
+    tenant: str = DEFAULT_TENANT,
+    max_runtime: str = DEFAULT_MAX_RUNTIME,
+) -> Invocation:
+    """Produce the single-card baseline Invocation. No bot binding,
+    no parents — wide flint runs the concatenated body as one prompt.
+    """
+    cmd: list[str] = [
+        "hermes", "kanban", "create",
+        "--tenant", tenant,
+        "--assignee", baseline.assignee,
+        "--body", baseline.body,
+        "--max-runtime", max_runtime,
+        "--json",
+    ]
+    for skill in baseline.skills:
+        cmd += ["--skill", skill]
+    cmd.append(baseline.title)
+
+    return Invocation(
+        slug="wide001",
+        title=baseline.title,
+        cmd=tuple(cmd),
+        depends_on_slugs=(),
+    )
+
+
+def _invocation_for_card(
+    card: Card,
+    *,
+    epic_bot: str,
+    tenant: str,
+    max_runtime: str,
+) -> Invocation:
+    title = title_with_bot(epic_bot, card.title)
+    cmd: list[str] = [
+        "hermes", "kanban", "create",
+        "--tenant", tenant,
+        "--assignee", card.assignee,
+        "--body", card.body,
+        "--max-runtime", max_runtime,
+        "--json",
+    ]
+    for skill in card.skills:
+        cmd += ["--skill", skill]
+    # `--parent` is added at execution time once we know the real ids
+    # of the parents. Storing slugs here keeps the invocation
+    # deterministic for tests.
+    cmd.append(title)
+
+    return Invocation(
+        slug=card.slug,
+        title=title,
+        cmd=tuple(cmd),
+        depends_on_slugs=card.depends_on,
+    )
+
+
+def resolve_parents(
+    invocation: Invocation,
+    slug_to_id: Mapping[str, str],
+) -> tuple[str, ...]:
+    """Insert ``--parent <id>`` for each depends_on slug.
+
+    Returns a NEW command tuple — Invocation is immutable. The runner
+    calls this just before subprocess execution, once the parent cards'
+    real ids are known.
+
+    Raises ``KeyError`` if a depends_on slug has no resolved id — that
+    catches dispatcher bugs early instead of letting Hermes complain
+    about a missing parent.
+    """
+    if not invocation.depends_on_slugs:
+        return invocation.cmd
+
+    base = list(invocation.cmd)
+    # Insert --parent flags BEFORE the final positional title arg.
+    title = base[-1]
+    head = base[:-1]
+    for slug in invocation.depends_on_slugs:
+        parent_id = slug_to_id[slug]
+        head += ["--parent", parent_id]
+    head.append(title)
+    return tuple(head)

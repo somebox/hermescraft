@@ -1,0 +1,5 @@
+# Mox — single-bot epic body. Replaces legacy Mason in target architecture.
+# Used by docs/architecture/example-wheat-farm-walkthrough.md.
+# See docs/architecture/bots-and-mc.md "Target fleet roster".
+api_port: 3007
+username: Mox
