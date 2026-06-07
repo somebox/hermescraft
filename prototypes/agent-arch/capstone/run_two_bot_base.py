@@ -134,8 +134,30 @@ def _hermes_home() -> Path:
     return Path(_hermes_env()["HERMES_HOME"])
 
 
+# Module-level board for SQL paths. Set by main() when --board is used so
+# query_board_statuses + query_running_intervals point at the right file.
+_BOARD: Optional[str] = None
+
+
 def _kanban_db() -> Path:
-    return _hermes_home() / "kanban.db"
+    """Locate the kanban DB file.
+
+    Two layouts:
+      - flat (proto rig, no --board): HERMES_HOME/kanban.db
+      - boards-per-tenant (live, --board <name>): HERMES_HOME/kanban/
+        boards/<name>/kanban.db
+
+    The boards-per-tenant layout was introduced in newer Hermes; the
+    flat layout is what the proto-agent-arch home uses.
+    """
+    home = _hermes_home()
+    if _BOARD:
+        path = home / "kanban" / "boards" / _BOARD / "kanban.db"
+        if path.exists():
+            return path
+        # Fall through to flat — some Hermes versions still write to the
+        # top-level state.db even with boards configured.
+    return home / "kanban.db"
 
 
 def query_board_statuses(card_ids: list[str]) -> dict[str, str]:
@@ -235,7 +257,33 @@ def mode_dry_run(board: Optional[str] = None) -> int:
     return 0
 
 
+def _ensure_board_exists(board: str) -> bool:
+    """Idempotently create the named kanban board.
+
+    The CLI's `hermes kanban boards create <slug>` is idempotent — second
+    call returns "Board already exists" with exit 0. We call it
+    defensively before the first `kanban create` so trial 3-style
+    "board does not exist" errors don't bite a fresh operator.
+    Returns True on success (board exists or was created).
+    """
+    proc = subprocess.run(
+        ["hermes", "kanban", "boards", "create", board],
+        env=_hermes_env(), capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        print(
+            f"[runner] could not ensure board {board!r} exists:"
+            f"\n  stderr: {proc.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def mode_create_only(run_id: str, board: Optional[str] = None) -> int:
+    if board:
+        if not _ensure_board_exists(board):
+            return 1
     graph = build_default_graph()
     invocations = author_colony_lane(graph, board=board)
 
@@ -437,6 +485,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                              "HERMES_HOME/kanban/boards/<name>/, visible "
                              "to the live :9119 dashboard.")
     args = parser.parse_args(argv)
+
+    # Set module-level board for SQL path resolution. _kanban_db() reads it.
+    global _BOARD
+    _BOARD = args.board
 
     if args.dry_run:
         return mode_dry_run(board=args.board)

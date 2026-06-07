@@ -41,7 +41,23 @@ from pathlib import Path
 import pytest
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes-proto-agent-arch"))
-KANBAN_DB = HERMES_HOME / "kanban.db"
+
+
+def _kanban_db_for_run(manifest: dict) -> Path:
+    """Locate the kanban DB used by this run.
+
+    Manifest carries `board` (set by run_two_bot_base.py via --board).
+    Two layouts:
+      - flat (proto rig, board=None): HERMES_HOME/kanban.db
+      - boards-per-tenant (live --board <name>): HERMES_HOME/kanban/
+        boards/<name>/kanban.db
+    """
+    board = manifest.get("board")
+    if board:
+        path = HERMES_HOME / "kanban" / "boards" / board / "kanban.db"
+        if path.exists():
+            return path
+    return HERMES_HOME / "kanban.db"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 POSTMORTEMS_DIR = REPO_ROOT / "data" / "postmortems" / "two-bot-base"
@@ -93,6 +109,12 @@ def card_ids(manifest) -> dict[str, str]:
     return {c["slug"]: c["card_id"] for c in manifest["cards"]}
 
 
+@pytest.fixture(scope="module")
+def kanban_db(manifest) -> Path:
+    """Per-manifest kanban DB lookup — board-aware."""
+    return _kanban_db_for_run(manifest)
+
+
 # ── DB helpers (mirror test_handoff_contract.py) ──────────────────
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -103,8 +125,8 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def _completed_run_metadata(task_id: str) -> dict:
-    conn = _connect(KANBAN_DB)
+def _completed_run_metadata(kanban_db: Path, task_id: str) -> dict:
+    conn = _connect(kanban_db)
     row = conn.execute(
         """
         SELECT metadata, outcome
@@ -121,8 +143,8 @@ def _completed_run_metadata(task_id: str) -> dict:
     return json.loads(row["metadata"]) if row["metadata"] else {}
 
 
-def _worker_session_id(task_id: str) -> str:
-    md = _completed_run_metadata(task_id)
+def _worker_session_id(kanban_db: Path, task_id: str) -> str:
+    md = _completed_run_metadata(kanban_db, task_id)
     sid = md.get("worker_session_id")
     if not sid:
         pytest.fail(f"no worker_session_id in run metadata for {task_id}")
@@ -153,11 +175,11 @@ def _message_corpus(profile: str, session_id: str) -> str:
 
 # ── Assertions ─────────────────────────────────────────────────────
 
-def test_parent_emits_exit_pos(card_ids):
+def test_parent_emits_exit_pos(card_ids, kanban_db):
     """p_nav_wood (navigator) must emit exit_pos in its completion
     metadata — that's the data the child reads."""
     parent_id = card_ids[PARENT_SLUG]
-    md = _completed_run_metadata(parent_id)
+    md = _completed_run_metadata(kanban_db, parent_id)
     assert "exit_pos" in md, (
         f"{PARENT_SLUG} card {parent_id} missing exit_pos in metadata; "
         f"got keys: {sorted(md.keys())}"
@@ -169,17 +191,17 @@ def test_parent_emits_exit_pos(card_ids):
     print(f"[ok] parent={parent_id} exit_pos={exit_pos}")
 
 
-def test_child_received_parent_exit_pos(card_ids):
+def test_child_received_parent_exit_pos(card_ids, kanban_db):
     """p_withdraw_wood's worker session must contain p_nav_wood's
     exit_pos value as a substring. This is the load-bearing check that
     handoff metadata actually crosses the spawn boundary — skill text
     saying 'read parent metadata' isn't enforcement."""
     parent_id = card_ids[PARENT_SLUG]
     child_id = card_ids[CHILD_SLUG]
-    parent_md = _completed_run_metadata(parent_id)
+    parent_md = _completed_run_metadata(kanban_db, parent_id)
     expected = parent_md["exit_pos"]
 
-    child_session = _worker_session_id(child_id)
+    child_session = _worker_session_id(kanban_db, child_id)
     corpus = _message_corpus(CHILD_PROFILE, child_session)
 
     # Same dual-form check as test_handoff_contract.py — JSON-pretty

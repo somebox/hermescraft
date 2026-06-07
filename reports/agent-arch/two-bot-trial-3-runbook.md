@@ -1,10 +1,15 @@
-# Two-bot trial 3 — runbook (live HERMES_HOME + dashboard-visible)
+# Two-bot trial 3+ — runbook (live HERMES_HOME + dashboard-visible)
 
 Trial 3 lands cards on the **live** Hermes home (`~/.hermes/`) under a
 custom board (`two-bot-demo`), so the existing `:9119` dashboard shows
 them with no second dashboard process needed. Workers spawn from
-`~/.hermes/profiles/pilot-{pip,zee}/` (new on this host — set up by
+`~/.hermes/profiles/pilot-{pip,zee}/` (set up by
 `setup-pilot-pip-zee-live.sh`).
+
+**Trial 3 result (2026-06-07):** PASS. 13/13 cards done; 483 s
+parallelism overlap; sign at seed; handoff contract green. Full report
+in [`2026-06-07-two-bot-trial-3-postmortem.md`](2026-06-07-two-bot-trial-3-postmortem.md).
+This runbook is for trial 4+ — applies the trial-3 lessons.
 
 ## Why this layout
 
@@ -58,6 +63,16 @@ HERMES_HOME=~/.hermes hermes profile show pilot-zee
 The script idempotently overwrites `config.yaml`, `SOUL.md`, and `.env`,
 but doesn't touch `state.db`, `memories/`, or `sessions/` if they
 already exist from a previous run.
+
+### About the board (`two-bot-demo`)
+
+As of post-trial-3, `run_two_bot_base.py` **auto-creates the board** on
+the first card-create call (via `hermes kanban boards create
+two-bot-demo` which is idempotent — second call returns "Board already
+exists" with exit 0). No manual board-create step is needed.
+
+If you want a different board name, pass `--board <slug>` to both the
+runner and the dispatcher loop; the runner ensures it exists.
 
 ## Trial 3 launch
 
