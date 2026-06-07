@@ -78,7 +78,10 @@ print('yes' if (in_x and in_z and above_floor) else 'no')
   fi
 fi
 
-header "3. Mox inventory (wooden_hoe + 64 wheat_seeds)"
+header "3. Mox inventory (iron_hoe + ≥80 wheat_seeds)"
+# Iron hoe (250 uses) replaces the wooden one — trial 1780841820's
+# wooden_hoe broke at 59/80 tills. Seeds bumped from 64 to 100 to
+# cover the 80-cell plot with margin.
 inv_check=$(curl -sf "$MOX_URL/inventory" 2>/dev/null \
   | python3 -c "
 import json, sys
@@ -92,14 +95,16 @@ items = []
 for cat, lst in cats.items():
     for it in lst:
         items.append((it.get('name'), it.get('count', 0)))
-hoe = next((c for n, c in items if n == 'wooden_hoe'), 0)
-seeds = next((c for n, c in items if n == 'wheat_seeds'), 0)
-print(f'hoe={hoe} seeds={seeds}')
+# Sum across stacks — wheat fixture gives 100 seeds as 64+36 split.
+hoe = sum(c for n, c in items if n in ('iron_hoe', 'wooden_hoe'))
+seeds = sum(c for n, c in items if n == 'wheat_seeds')
+ok = hoe >= 1 and seeds >= 80
+print(f'hoe={hoe} seeds={seeds} ok={\"yes\" if ok else \"no\"}')
 ")
-if [[ "$inv_check" =~ ^hoe=1\ seeds=6[0-9]$ ]]; then
-  say "$OK" "$inv_check"
+if [[ "$inv_check" == *ok=yes* ]]; then
+  say "$OK" "${inv_check% ok=*}"
 else
-  say "$MISS" "inventory check: $inv_check (expected hoe=1 seeds=64)"
+  say "$MISS" "inventory: $inv_check (expected hoe>=1, seeds>=80)"
   fail=1
 fi
 

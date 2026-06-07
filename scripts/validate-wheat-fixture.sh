@@ -129,10 +129,14 @@ try:
     cats = json.load(sys.stdin).get('data', {}).get('categories', {})
 except Exception:
     print('parse-error|no'); sys.exit()
-items = {it['name']: it['count'] for cat in cats.values() for it in cat}
-hoe = items.get('wooden_hoe', 0)
-seeds = items.get('wheat_seeds', 0)
-ok = (hoe == 1 and 60 <= seeds <= 64)
+# A single item can occupy multiple stacks; sum across them rather
+# than overwriting in a dict (the wheat fixture gives 100 seeds as
+# 64+36 split — a dict-overwrite was hiding the second stack).
+hoe = sum(it['count'] for cat in cats.values() for it in cat
+          if it['name'] in ('iron_hoe', 'wooden_hoe'))
+seeds = sum(it['count'] for cat in cats.values() for it in cat
+            if it['name'] == 'wheat_seeds')
+ok = (hoe >= 1 and seeds >= 80)
 print(f'hoe={hoe} seeds={seeds}|{ \"yes\" if ok else \"no\" }')
 " 2>/dev/null)
 inv_text="${inv_check%%|*}"
@@ -140,7 +144,26 @@ inv_ok="${inv_check##*|}"
 if [[ "$inv_ok" == "yes" ]]; then
   printf '  %s  Mox inventory: %s\n' "$OK" "$inv_text"
 else
-  printf '  %s  Mox inventory: %s (expected hoe=1, seeds 60-64)\n' "$NO" "$inv_text" >&2
+  printf '  %s  Mox inventory: %s (expected hoe>=1, seeds>=80)\n' "$NO" "$inv_text" >&2
+  fail=1
+fi
+
+# Chest spare inventory — escalation backup (iron_hoe + 32 seeds).
+# rcon-cli truncates long block data with `...`, so we can't reliably
+# grep the single response. Instead check each slot's id field.
+echo "── 5b. Chest spare inventory ──"
+slot0=$(rcon "run data get block $CHEST_X $CHEST_Y $CHEST_Z Items[0].id")
+slot1=$(rcon "run data get block $CHEST_X $CHEST_Y $CHEST_Z Items[1].id")
+if [[ "$slot0" == *"iron_hoe"* ]]; then
+  printf '  %s  chest slot 0 = iron_hoe\n' "$OK"
+else
+  printf '  %s  chest slot 0: expected iron_hoe — rcon: %s\n' "$NO" "${slot0:0:120}" >&2
+  fail=1
+fi
+if [[ "$slot1" == *"wheat_seeds"* ]]; then
+  printf '  %s  chest slot 1 = wheat_seeds\n' "$OK"
+else
+  printf '  %s  chest slot 1: expected wheat_seeds — rcon: %s\n' "$NO" "${slot1:0:120}" >&2
   fail=1
 fi
 

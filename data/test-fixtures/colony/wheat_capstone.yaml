@@ -81,11 +81,26 @@ prep:
   - "effect give Mox minecraft:instant_health 1 10 true"
 
   # ── Mox's starting inventory ───────────────────────────────────────
-  # The chain assumes hoe + seeds on hand; real prod would have a
-  # navigate-to-stash-and-withdraw card first, but for trial 1 we
-  # shortcut so the focus is the multi-domain plant/till/deposit chain.
-  - "give Mox minecraft:wooden_hoe 1"
-  - "give Mox minecraft:wheat_seeds 64"
+  # Provisioning sized so the chain can complete without an external
+  # supply run. Real prod would have a navigate-to-stash-and-withdraw
+  # card first; for trial 1 we shortcut so the focus stays on the
+  # multi-domain till/plant/deposit chain.
+  #
+  #   iron_hoe       : 250 uses — covers an 80-cell 9×9 plot with
+  #                    3× safety margin. Trial 1780841820 broke a
+  #                    wooden_hoe (60 uses) at 59/80 cells with no
+  #                    crafting recovery available.
+  #   wheat_seeds 100: covers 80 plot cells + 20 spare (some agents
+  #                    drop or plant outside the plot). Trial 1780841820
+  #                    had 64 — 16 short — even before the hoe broke.
+  - "give Mox minecraft:iron_hoe 1"
+  - "give Mox minecraft:wheat_seeds 100"
+
+  # Chest spare inventory — escalation route if iron_hoe somehow
+  # depletes or seeds are dropped. Mox's instinct (trial 1780841820)
+  # was to search trees + crafting tables; staging them in the chest
+  # gives him a recovery path his SOUL already knows to look for.
+  - 'execute in landfolk-test run data merge block -50 65 60 {Items:[{Slot:0b,id:"minecraft:iron_hoe",Count:1b},{Slot:1b,id:"minecraft:wheat_seeds",Count:32b}]}'
 
   - "local: sleep 2"
 

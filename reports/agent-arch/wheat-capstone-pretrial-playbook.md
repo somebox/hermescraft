@@ -165,3 +165,9 @@ HERMES_HOME=~/.hermes scripts/proto-logs-follow.py --profiles pilot-mox
 **Root cause:** fixture POSTed marks to Tester :3004 only. Mox queried his own bot at :3007, got `unknown_mark: @base_anchor`, hallucinated a phantom base at (-456, 74, 596), ran off the pad.
 **Caught how:** `proto-logs-follow.py` showed `ERROR: unknown_mark: @base_anchor — no such mark. Known: spawn, death_1, death_2, death_3.`
 **Playbook updates:** C2a + C2b — POST marks to BOTH bots. C1 — inert names (wheat_plot/wheat_chest/wheat_start). C3 + D4 — clean stale death marks. E3 — clear memory before each trial. F1 — bodies must instruct mark-inspect first.
+
+### Trial 1780841820 (abandoned — hoe broke mid-till, no recovery)
+**Root cause:** wooden_hoe (60 uses) broke at 59/80 tilled cells. Mox correctly searched 96 blocks for trees + crafting tables (none — terrain is bedrock-floored pad), `kanban_block`'ed with `materials_short:hoe`, also flagged "need 16 more wheat_seeds" (64 provided vs 80 cells needed).
+**Caught how:** state.db message — `blocked t_8b3fe6fa: materials_short:hoe — wooden_hoe broke after 59/80 tills, no trees/crafting_table within 96 blocks, chest empty. Also need 16 more wheat_seeds.`
+**Architectural reading:** Mox's block was the architecturally honest behavior — narrow-scope @farmer recognized the resource exhaustion and surfaced it as a clarification request rather than fabricating progress. The trial setup, not the agent, was wrong.
+**Playbook updates:** D2 — iron_hoe (250 uses, 3× margin on 81 cells) + 100 wheat_seeds (was wooden_hoe + 64). New "5b. Chest spare inventory" check in the validator — iron_hoe + 32 seeds in `wheat_chest` as documented escalation route his SOUL already knows to look for. D2 fixed bug where inventory check only saw the first wheat_seeds stack (overwritten by dict-of-name) — now sums across stacks.
