@@ -54,6 +54,7 @@ Optional (not blocking trial 2):
 - [ ] **`scripts/stop-bots.sh`** — Pip / Zee / Mox whitelist (or colony-owned kill).
 - [ ] **Colony health PID** — stale process answering `/health`.
 - [ ] **`hermes profile show --json`** — or parse text in setup verification.
+- [x] **Live log follower** — `scripts/proto-logs-follow.py`. Polls each pilot's `state.db` `messages` table (proto rig stores sessions in sqlite, not `session_*.json`) and prints assistant thoughts, tool calls (`⚙`), tool responses (`↩`), and bot chat (`[bot]`) with per-profile color. Flags mirror `landfolk-logs-aggregate.py`: `--tail N`, `--no-follow`, `--no-color`, `--no-bot-logs`, `--no-dispatcher`, `--quiet`, `--reasoning`, `--no-timestamps`, `--poll`.
 
 ## Pre-flight checks for trial 2 (after P0 lands)
 

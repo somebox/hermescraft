@@ -94,3 +94,71 @@ Deliberately left untouched:
 - [x] `hermes config check` against the proto HERMES_HOME is green.
 - [ ] After `scripts/reset-open-test.sh`, confirm `~/.hermes-proto-agent-arch/profiles/pilot-pip/config.yaml` has `compression.enabled: true`.
 - [ ] Compare token count in a trial-2 zee miner session vs trial 1's 86k — compression should kick in around 175k if a session gets that long, and trim back to ~52k (target_ratio: 0.3).
+
+## Player + world snapshot (verified 2026-06-07)
+
+The fixture targets `world: landfolk-test`. After `scripts/colony start --all` with `MC_HOST=192.168.1.202` and a fresh fixture prep, the server reports:
+
+| Player | Dimension | Role in trial 2 | Bot port | Pilot profile |
+|---|---|---|---|---|
+| Pip | `minecraft:landfolk-test` | demo bot (pip's 7-card lane) | 3005 | pilot-pip |
+| Zee | `minecraft:landfolk-test` | demo bot (zee's 6-card lane) | 3006 | pilot-zee |
+| Tester | `minecraft:landfolk-test` | observer for `mc verify at_mark seed --block oak_sign` | 3004 | (none — script bot) |
+| Mox | `minecraft:overworld` | **not in trial 2** — reserved for wheat capstone | 3007 | (none yet) |
+| re44 | (varies) | human operator if logged in to spectate | — | — |
+
+Notes:
+
+- The demo only uses **Pip and Zee** as worker bots. Mox running in `overworld` is fine — it's the wheat-farm capstone's body, not load-bearing here. If Mox isn't running, `scripts/colony status` will WARN but trial 2 doesn't read its state.
+- After `scripts/reset-open-test.sh`, the fixture's `mvtp Pip landfolk-test` / `mvtp Zee landfolk-test` lines move both demo bots into the test world (verified above). Mox stays where it was.
+- `Tester` must be running and in `landfolk-test` BEFORE the trial — `scripts/run-tester-bot.sh` puts it there.
+- `re44` (or any human player) joining is harmless; the demo doesn't interact with non-bot players.
+
+Quick verification command:
+
+```bash
+ssh -n ubuntu-host "sudo docker exec minecraft rcon-cli 'list'"
+# expect: "There are N of a max of 10 players online: Tester, Pip, Zee, Mox[, ...]"
+
+for p in Pip Zee Tester; do
+  ssh -n ubuntu-host "sudo docker exec minecraft rcon-cli \"data get entity $p Dimension\""
+done
+# expect each: "minecraft:landfolk-test"
+```
+
+## Live conversation following (trial 2)
+
+`scripts/proto-logs-follow.py` mirrors `scripts/landfolk-logs-aggregate.py`'s
+ergonomics for the proto rig. It polls the `state.db` `messages` table on
+each pilot profile (the proto worker conversations don't write
+`session_*.json` files — Hermes' state lives in sqlite) and prints
+assistant thoughts, tool calls, tool responses, and the bot HTTP chat
+log, all in a single tailed stream with per-profile color.
+
+Recommended trial-2 watch setup:
+
+```bash
+# In one terminal — start the trial:
+scripts/reset-open-test.sh
+HERMES_HOME=~/.hermes-proto-agent-arch \
+  python prototypes/agent-arch/capstone/run_two_bot_base.py \
+    --run-id trial-$(date +%s) --watch
+
+# In another terminal — follow the conversations live:
+scripts/proto-logs-follow.py
+
+# Or, --quiet hides successful tool responses + user messages, keeping
+# only thoughts, tool calls, and errors. Great for reading at speed:
+scripts/proto-logs-follow.py --quiet
+
+# Add --reasoning to surface the hidden chain-of-thought when the model
+# emits it. Useful for debugging "why didn't the agent block?" questions.
+scripts/proto-logs-follow.py --reasoning
+```
+
+Also tail the dispatcher and bot logs separately when needed:
+
+```bash
+tail -F /tmp/two-bot-dispatcher-*.log    # kanban tick + spawn events
+tail -F /tmp/hermescraft/bot-{pip,zee}.log  # raw bot HTTP API events
+```
