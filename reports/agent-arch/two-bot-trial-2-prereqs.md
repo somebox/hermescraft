@@ -1,5 +1,22 @@
 # Two-bot trial 2 — prerequisite fixes checklist
 
+> **Status: SUPERSEDED — both trial 2 and trial 3 PASSED.**
+>
+> | Trial | Run id | Date | Band | Postmortem |
+> |---|---|---|---|---|
+> | **2-B** | `trial-1780816982` | 2026-06-07 09:23 | **pass** ✅ | [trial 2 postmortem](2026-06-07-two-bot-trial-2-postmortem.md) |
+> | **3** | `trial-1780821845` | 2026-06-07 10:44 | **pass** ✅ | [trial 3 postmortem](2026-06-07-two-bot-trial-3-postmortem.md) |
+>
+> Trial 3 also migrated to the **live HERMES_HOME** with cards on a
+> dashboard-visible board (`two-bot-demo` at http://127.0.0.1:9119) —
+> see [trial 3 runbook](two-bot-trial-3-runbook.md).
+>
+> This file is preserved as the historical record of what trial 2
+> needed; checkmarks below reflect what landed in time. For trial 4+
+> work, start from the trial 3 runbook + postmortem.
+
+---
+
 Tick boxes as items land. Trial 2 doesn't run until every **P0** is green and **P1 graph + skills** decisions below are implemented.
 
 Sources: [`2026-06-07-two-bot-trial-1-postmortem.md`](2026-06-07-two-bot-trial-1-postmortem.md), trial-1 packet under `data/postmortems/two-bot-base/trial-1780797829/`.
@@ -44,48 +61,85 @@ Optional (not blocking trial 2):
 
 ## P2 — quality-of-life
 
-- [ ] **`mc pickup` search radius** — bot-side + contract test.
-- [ ] **Run-26 spawn crash** — Hermes `crashed` with no `state.db` session; trace dispatch boot path.
+- [ ] **`mc pickup` search radius** — bot-side + contract test. *(Trial 2 + 3 didn't surface this — z_mine completed cleanly via the `mc collect` rewrite; pickup radius is no longer load-bearing for the demo. Still worth landing eventually.)*
+- [ ] **Run-26 spawn crash** — Hermes `crashed` with no `state.db` session; trace dispatch boot path. *(Trial 2 + 3 had zero crashes — every card completed on first task_run. The original crash was tied to the trial-1 chest verb error, which the agent-crafter.md fix resolved. Watching status; closeable.)*
+- [x] **`agent-builder.md` placement-reachability + cross-bot coordination** *(landed before trial 3; trial 3 confirmed the guidance helps at the margin but isn't strict enough — see trial 3 postmortem P1)*
 
 ## P3 — operational hygiene
 
-- [ ] **Proto dispatcher** — `scripts/proto-dispatcher.sh` or `--watch` starts dispatch loop.
-- [ ] **`pytest --run-id`** — `pytest_addoption` in `prototypes/agent-arch/tests/conftest.py`.
-- [ ] **`scripts/stop-bots.sh`** — Pip / Zee / Mox whitelist (or colony-owned kill).
-- [ ] **Colony health PID** — stale process answering `/health`.
-- [ ] **`hermes profile show --json`** — or parse text in setup verification.
-- [x] **Live log follower** — `scripts/proto-logs-follow.py`. Polls each pilot's `state.db` `messages` table (proto rig stores sessions in sqlite, not `session_*.json`) and prints assistant thoughts, tool calls (`⚙`), tool responses (`↩`), and bot chat (`[bot]`) with per-profile color. Flags mirror `landfolk-logs-aggregate.py`: `--tail N`, `--no-follow`, `--no-color`, `--no-bot-logs`, `--no-dispatcher`, `--quiet`, `--reasoning`, `--no-timestamps`, `--poll`.
+- [ ] **Proto dispatcher** — `scripts/proto-dispatcher.sh` or `--watch` starts dispatch loop. *(Trial 3 still ran a hand-rolled bash loop. Works but operational debt.)*
+- [ ] **`pytest --run-id`** — `pytest_addoption` in `prototypes/agent-arch/tests/conftest.py`. *(Still env-var-only — `TWO_BOT_RUN_ID=… pytest …`. Works fine for the runbook procedure; not blocking.)*
+- [ ] **`scripts/stop-bots.sh`** — Pip / Zee / Mox whitelist (or colony-owned kill). *(Worked around by direct `kill` in the runbook.)*
+- [ ] **Colony health PID** — stale process answering `/health`. *(Surfaced once in trial 2 prep; worked around by direct PID kill.)*
+- [ ] **`hermes profile show --json`** — or parse text in setup verification. *(Confirmed: this Hermes version's `profile show` is text-only. The setup script's mandatory check reads the text output; works fine.)*
+- [x] **Live log follower** — `scripts/proto-logs-follow.py`. Polls each pilot's `state.db` `messages` table and prints assistant thoughts, tool calls (`⚙`), tool responses (`↩`), and bot chat (`[bot]`) with per-profile color. Flags mirror `landfolk-logs-aggregate.py`. *Hardened in trial 2 with read-only `mode=ro` URI + busy_timeout to handle worker write contention.*
+- [x] **`--board` flag through the runner** — `run_two_bot_base.py` + `author.py` accept `--board <name>`; runner auto-creates the board (idempotent). Made trial 3 dashboard-visible without touching the proto rig.
+- [x] **Board-aware `_kanban_db()`** — both runner and handoff contract test honor the boards-per-tenant layout (`HERMES_HOME/kanban/boards/<name>/kanban.db`) when `--board` is set; falls back to flat layout otherwise.
+- [x] **Live HERMES_HOME pilot setup** — `setup-pilot-pip-zee-live.sh` installs pilots into `~/.hermes/profiles/` without disturbing the live flint/mason/etc. fleet.
 
 ## Pre-flight checks for trial 2 (after P0 lands)
 
-- [ ] `cd bot && HERMES_VALIDATE=1 npm test` — green (collect contract included).
-- [ ] `pytest prototypes/agent-arch/tests/test_two_bot_base_graph.py` — 13-card topology green.
-- [ ] `python scripts/audit-skill-verbs.py` — zero unknown verbs in four demo bundles:
-  ```bash
-  python scripts/audit-skill-verbs.py --bundles navigator,builder,crafter,miner
-  ```
-- [ ] `scripts/reset-open-test.sh` → `scripts/colony status` — pip, zee, mox up on `landfolk-test`.
-- [ ] Manual smoke on Tester: staged cobble face, `mc collect cobblestone 5` — inventory matches reported gain.
-- [ ] `hermes config check` — green against `HERMES_HOME=~/.hermes-proto-agent-arch` (catches any new config-version drift from the richer pilot config.yaml).
-- [ ] Pilot `compression.enabled: true` confirmed in both `pilot-pip` and `pilot-zee` config.yaml after `setup-pilot-pip-zee.sh` re-run.
+All validated in trial 2 + 3 launches.
 
-## Trial 2 success criteria
+- [x] `cd bot && HERMES_VALIDATE=1 npm test` — green (collect contract included).
+- [x] `pytest prototypes/agent-arch/tests/test_two_bot_base_graph.py` — 13-card topology green (28 tests).
+- [x] `python scripts/audit-skill-verbs.py` — zero unknown verbs in four demo bundles.
+- [x] `scripts/reset-open-test.sh` → `scripts/colony status` — pip, zee, mox up on `landfolk-test`.
+- [x] Manual smoke on Tester: staged cobble face, `mc collect cobblestone 5` → `"Collected N/5 cobblestone in inventory (mined N blocks)."` (new headline format; trial-1 misleading message gone).
+- [x] `hermes config check` — green against `HERMES_HOME=~/.hermes-proto-agent-arch` AND `~/.hermes` (config version 27 ✓).
+- [x] Pilot `compression.enabled: true` confirmed in both `pilot-pip` and `pilot-zee` config.yaml after `setup-pilot-pip-zee.sh` re-run.
 
-| # | Metric | Target | Notes |
-|---|---|---|---|
-| 1 | `parallelism_observed` | true (≥60s overlap) | Regression; already proven in trial 1. |
-| 2 | `pip_done_count` / `zee_done_count` | **7/7** and **6/6** | Lane slug sets in `two_bot_base_graph.py`. |
-| 3 | `sign_at_seed` | true | `mc verify at_mark seed --block oak_sign` on Tester :3004. |
+## Trial 2 success criteria — all met
 
-**Pass** = (3) true and lane (2) complete. **Partial** = zee or pip lane mostly done with honest block reasons. **Fail** = cards never created or mutex/orchestration broken.
+| # | Metric | Target | Trial 2-B | Trial 3 |
+|---|---|---|---|---|
+| 1 | `parallelism_observed` | true (≥60s overlap) | true / **591s** | true / **483s** |
+| 2 | `pip_done_count` / `zee_done_count` | **7/7** and **6/6** | **7/7, 6/6** | **7/7, 6/6** |
+| 3 | `sign_at_seed` | true | **true** | **true** |
+| 4 | Handoff contract (`p_nav_wood → p_withdraw_wood`) | 2/2 pass | **2/2** | **2/2** |
+
+**Pass** = (3) true and lane (2) complete. **Both trials passed.**
 
 ## Status
 
 | Wave | Status | Notes |
 |---|---|---|
 | P0 | **done** | Collect fix + 2 contract tests landed; crafter + audit + pilot config parity all green. |
-| P1 | mostly done | Graph 13-card + agent/miner/nav + mining caveat landed 2026-06-07. |
-| P2 | not started | |
-| P3 | not started | |
+| P1 | **done** | Graph 13-card + agent/miner/nav + mining caveat landed 2026-06-07. agent-builder placement-reachability + cross-bot coordination landed before trial 3. |
+| P2 | **partial** | `mc pickup` radius + run-26 spawn crash investigation not landed — neither blocked trial 2 or 3. Status: backlog. |
+| P3 | **partial** | log follower + `--board` flag + live setup all landed. Operational items (dispatcher script, `pytest --run-id`, stop-bots whitelist, colony health PID, profile show --json) remain — none blocked the trials. |
 
-**Gate for trial 2 is OPEN.** Run the pre-flight checks above (re-run setup-pilot-pip-zee.sh; reset-open-test.sh; manual smoke `mc collect cobblestone 5` against staged cobble face), then launch.
+**Trial 2 gate: OPEN → PASSED. Trial 3 gate: OPEN → PASSED.**
+
+Falsifiability claims demonstrated across **three independent runs**, **two HERMES_HOME layouts**, **two workspace formats**. The architecture's headline value claim (mutex parallelism + cooperative handoff in vivo) is now closed for the v1 demo.
+
+## Plan-vs-deliverable scan (from `~/.claude/plans/create-a-plan-that-magical-lovelace.md`)
+
+| Plan item | Status |
+|---|---|
+| **Plan called for 10-card graph** | Shipped **13-card graph** per Option A pickaxe-fetch decision (`z_nav_stash` + `z_withdraw_pickaxe` added; `oak_sign` bundled into `p_withdraw_axe` so no separate fetch). |
+| **Goal**: pip + zee both running, sign at seed | Met in trial 2-B and trial 3. |
+| **3-number scorecard** | Implemented + scored in all 3 trials. |
+| **Hard stop 1**: graph tests green | 28 graph tests pass; 0 regressions. |
+| **Hard stop 2**: fixture inspect green | Reset script's preflight + inspect smoke ran every launch. |
+| **Hard stop 3**: `hermes profile show --json` for pilots | `--json` doesn't exist for `profile show`; substituted with text-output verification (works). |
+| **Phase 1 — promote miner** | Done. `skills/agent-miner.md` canonical. |
+| **Phase 2 — fixture + reset** | Done + thickened floor stack after trial 1 surfaced single-block-floor issue (dirt @ Y=64 / 4×stone Y=63-60 / bedrock Y=59). |
+| **Phase 3 — pilot profiles** | Done. Both `setup-pilot-pip-zee.sh` (proto) and `setup-pilot-pip-zee-live.sh` (live, added for trial 3) ship. |
+| **Phase 4 — graph + author + runner + tests** | Done. Runner has the four planned modes plus `--board`. |
+| **Live trial procedure** | Followed in all 3 trials. |
+| **Pivot options** | None used — trials 2-B and 3 succeeded without pivoting. |
+| **Risk 1** (mutex doesn't parallelise) | Confirmed mitigated: 529s/591s/483s overlap across the three trials. |
+| **Risk 2** (bots fall into void on `/tp`) | Mitigated by `/forceload add` in prep step 1. |
+| **Risk 3** (LLM picks wrong verb in narrow bundle) | Surfaced occasionally (e.g. `mc @Zee` in trial 2 p_build); recovered in 1-2 turns. |
+| **Out of scope (kept out)** | Scout-seed script, full 7-checkpoint matrix, full handoff matrix, heartbeat/soft-resume, board-snapshot.json/task-events.sql dumps, tiers A+B as built-in modes, wide-flint baseline, `spawn-with-bot.sh` wired into live spawn — all still out of scope. |
+| **Out of scope but built anyway** | `scripts/audit-skill-verbs.py` (built during trial 2 prep when bundle-verb drift surfaced). |
+| **Estimate**: ~3.5-4 hours to first scorecard | Actuals: trial 1 ~30 min (operator-blocked), trial 2-B ~15.4 min, trial 3 ~15.85 min. Total elapsed since plan: several hours including iteration. |
+
+**Nothing material from the plan went un-delivered.** The architecture's v1 falsifiability story is complete.
+
+## What's next (not in this plan, but follow-ups noted in trial 3 postmortem)
+
+- **`agent-builder.md` strict placement-reachability directive**: trial 3's z_build still spent 441s with placement-related errors despite the new bundle section. Tighten language from "use" to "MUST call before EVERY `mc place`".
+- **Optional bot-side auto-pathfind in `mc place`**: would eliminate the NAV_BLOCKED-during-placement pattern at the source.
+- **Wheat-farm capstone** (A6/A7): different question (single-bot multi-domain with wide-flint baseline). Plan exists at [`reports/agent-arch/2026-06-06-colony-validation-plan.md`](2026-06-06-colony-validation-plan.md).
