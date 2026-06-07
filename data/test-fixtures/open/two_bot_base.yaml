@@ -38,13 +38,20 @@ prep:
   # bots don't fall into the void on /tp into unloaded territory.
   - "execute in landfolk-test run forceload add 290 290 315 315"
 
-  # Clear air above the working footprint (Y=65 to 75). Floor at Y=64
-  # is laid next so bots have ground to stand on.
+  # Clear air above the working footprint (Y=65 to 75). Floor below is
+  # laid next so bots have ground to stand on.
   - "execute in landfolk-test run fill 295 65 295 313 75 313 minecraft:air"
 
-  # Stone floor across the full footprint at Y=64. The (300, 65, 300)
-  # area may or may not have natural terrain on landfolk-test; defensive.
-  - "execute in landfolk-test run fill 295 64 295 313 64 313 minecraft:stone"
+  # Thick stone floor across the full footprint (Y=60..64) +
+  # bedrock cap at Y=59. Trial 1 used a single-block-thick floor
+  # at Y=64; when zee's miner mistakenly mined the floor (which
+  # also drops cobblestone under an iron pickaxe), the holes let
+  # dropped items fall through into the void and zee couldn't pick
+  # them up. A 5-block floor with bedrock cap prevents both
+  # accidental floor-mining and any drop-through pathology.
+  - "execute in landfolk-test run fill 295 59 295 313 59 313 minecraft:bedrock"
+  - "execute in landfolk-test run fill 295 60 295 313 63 313 minecraft:stone"
+  - "execute in landfolk-test run fill 295 64 295 313 64 313 minecraft:dirt"
 
   # ── Staged props ───────────────────────────────────────────────────
   # :wood_supply: chest at (295, 65, 300) — west of seed. 64 oak_log inside.
@@ -101,13 +108,15 @@ cleanup:
   - "local: scripts/post-two-bot-marks.sh unmark 3005"
   - "local: scripts/post-two-bot-marks.sh unmark 3006"
 
-  # Clear all staged blocks: chests, cobble outcrop, stone floor, air
-  # above. Forceload removed last. Leaves the area as if the fixture
-  # was never there.
+  # Clear all staged blocks: chests, cobble outcrop, dirt-stone-bedrock
+  # floor stack, air above. Forceload removed last. Leaves the area as
+  # if the fixture was never there.
   - "execute in landfolk-test run setblock 295 65 300 minecraft:air"
   - "execute in landfolk-test run setblock 300 65 305 minecraft:air"
   - "execute in landfolk-test run fill 309 65 309 313 67 313 minecraft:air"
   - "execute in landfolk-test run fill 295 64 295 313 64 313 minecraft:air"
+  - "execute in landfolk-test run fill 295 60 295 313 63 313 minecraft:air"
+  - "execute in landfolk-test run fill 295 59 295 313 59 313 minecraft:air"
   - "execute in landfolk-test run fill 295 65 295 313 75 313 minecraft:air"
   - "execute in landfolk-test run kill @e[type=item,distance=..32,x=300,y=65,z=300]"
   - "execute in landfolk-test run forceload remove 290 290 315 315"

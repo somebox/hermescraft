@@ -151,7 +151,15 @@ def _parse_verify_response(
         )
 
     ok = bool(body.get("ok"))
-    satisfied = bool(body.get("satisfied")) if ok else False
+    # Bot HTTP envelope nests the predicate result under `data.satisfied`
+    # (matches action-contract.js). The Session 2 spec doc shows the
+    # nested form ({ok:true, data:{satisfied:true, ...}}); flat-form was
+    # an early-draft mistake in the bridge spec. Read both for safety —
+    # if either reports satisfied, we trust the predicate fired.
+    nested = body.get("data") or {}
+    nested_satisfied = nested.get("satisfied")
+    flat_satisfied = body.get("satisfied")
+    satisfied = bool(nested_satisfied if nested_satisfied is not None else flat_satisfied) if ok else False
     return AcceptanceResult(
         satisfied=satisfied,
         evaluable=ok,

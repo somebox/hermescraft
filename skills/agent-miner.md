@@ -62,9 +62,10 @@ The full grammar is in `skills/minecraft-mining.md`. Your working set is small:
 
 | Verb | When |
 |---|---|
-| `mc dig` | Primary. Break the block at the cursor / current cell. |
-| `mc dig_area` | Multi-cell sweep when card body asks for a count > 1 and blocks are adjacent. |
-| `mc collect <name> [--count N]` | High-level: walk to nearby instances and dig them. Use when blocks aren't already adjacent. |
+| `mc dig <x> <y> <z>` | Break one adjacent block; call `mc pickup` before moving on. |
+| `mc dig_area <c1> <c2>` | Box clear; **≤32 blocks per call**. Prefer one Y-plane to avoid fall-hazard aborts. |
+| `mc collect <item> <count>` | Pathfind + break nearby blocks. Trust **inventory count** over the headline. |
+| `mc pickup` | Collect drops at your feet after `mc dig`. |
 | `mc scene [--range N]` | Confirm the target block is in sight before digging. |
 | `mc nearby [--radius N]` | List candidate target blocks with positions. |
 | `mc inventory` | Check item count toward the requested total. |
@@ -74,8 +75,8 @@ The full grammar is in `skills/minecraft-mining.md`. Your working set is small:
 | `mc mark NAME` | Save a chest-spot or vein-entry as a future waypoint. |
 
 You do not need `mc move @MARK`, `mc sail_to`, `mc craft`, `mc smelt`,
-`mc deposit`, `mc attack`, `mc shoot`, `mc till`, `mc plant`, `mc build_*`.
-Those belong to other agents.
+`mc deposit`, `mc attack`, `mc shoot`, `mc till`, `mc plant`, or building
+verbs (`mc level`, `mc fill`, …). Those belong to other agents.
 
 ## 4. Phase-specific knowledge
 
@@ -104,9 +105,27 @@ the descent and `mc place` to fill exposed lava/water cells.
 
 ### Count check
 
-Before each `mc dig`, glance at `mc inventory` if you're close to the target
-count. Stop digging when the target is met. The card body specifies the
-material name (e.g. `extract 4 stone` → 4 cobblestone or stone drops).
+The card names a material and count (e.g. `extract 4 stone` → cobblestone in
+inventory). After `mc collect`, read `mc inventory` — blocks broken can exceed
+items gained when drops land out of reach. Switch to dig + immediate `mc pickup`
+on the same cell, or smaller `mc dig_area` slices at one Y level.
+
+### Mine the marked target, not the substrate underneath
+
+The card names a target (`:ore_seam:`, `:stone_source:`) — that's the explicit
+block region you should mine. Don't mine the floor or surrounding terrain just
+because it would also drop the material you want. The substrate may be
+thin/sacrificial in test environments; mining a hole in it can let dropped items
+fall through and become unreachable. If `mc inspect` at the mark shows your
+target material directly above (Y+1, Y+2), mine those cells; if the mark IS the
+target (the cell at the mark is the block to mine), mine outward from there at
+the mark's Y level, not downward.
+
+### Yield stall
+
+After **three** `mc collect` / `mc dig` attempts without inventory moving toward
+the target, block with `extraction_yield_low:<have>/<want>` and record what you
+have in `inv_delta` for downstream agents.
 
 ## 5. Escape rules — when to block, not retry
 
@@ -120,6 +139,7 @@ Block the card (`kanban_block reason="<...>"`) when:
 | Target material not visible in `mc nearby --radius 8` | `resource_not_found:<material>` |
 | No pickaxe / tool in inventory | `tool_required:<tool_name>` |
 | `mc dig` failed 3 times in a row with `INTERRUPTED` or `INVALID_BLOCK` | `dig_blocked:<last_reason>` |
+| Inventory short after 3 collect/dig attempts with no progress | `extraction_yield_low:<have>/<want>` |
 | Inventory full before count met | `inventory_full:<items_so_far>/<count>` |
 | Bot position drifted from parent `exit_pos` by > 4 blocks | `position_drift:<expected>:<actual>` |
 | Hostile attacks and persists after one `mc flee` | `combat_blocked_mine:<hostile>` |
