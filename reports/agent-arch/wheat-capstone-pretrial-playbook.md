@@ -115,6 +115,34 @@ and primed Mox toward a phantom base. Use `wheat_plot`,
 | I2 | RUN_ID is unique (no collision with abandoned dirs) | `ls data/postmortems/wheat-capstone/ \| grep "$RUN_ID"` empty | use `trial-$(date +%s)` |
 | I3 | scorecard.json and manifest.json get written in evaluate-only step | check after trial | runner code path |
 
+## J. Scheduled operations (cron + state)
+
+Trial 4 (1780842744's successor) tests the agent-driven scheduled
+harvest pattern. x003 (plant) ends by creating a one-shot
+`hermes cron` reminder; x004 (harvest+deposit) starts blocked and
+waits for the reminder to unblock it. Documented in
+[`docs/architecture/scheduled-operations.md`](../../docs/architecture/scheduled-operations.md)
+as the production-prototype shape (orchestrator-owned cron, role-
+assigned check work).
+
+| # | Check | Expected | Fix |
+|---|---|---|---|
+| J1 | Reminder script installed | `ls ~/.hermes/scripts/wheat-harvest-reminder.sh` exists, executable | `prototypes/agent-arch/setup-pilot-mox-live.sh` (installs idempotently) |
+| J2 | No leftover reminder cron jobs from prior trial | `HERMES_HOME=~/.hermes hermes cron list \| grep wheat-harvest-reminder` empty | fixture cleanup; or manually `hermes cron remove <id>` |
+| J3 | No leftover state file from prior trial | `ls ~/.hermes/state/wheat-harvest-pending.txt` absent | fixture cleanup; or `rm -f` |
+| J4 | `randomTickSpeed` bumped to 100 during trial | `rcon-cli 'gamerule randomTickSpeed'` says 100 | fixture prep (runs automatically) |
+| J5 | x004 starts in `blocked` status | `hermes kanban --board wheat-capstone list` shows x004 as ⊘/blocked at launch | check `initial_status="blocked"` on x004 in `wheat_graph.py` |
+| J6 | Reminder fires within ~90s of being created | `cat ~/.hermes/logs/wheat-harvest-reminder.log` shows a recent `fired` line + `unblock task=... rc=0` | inspect cron daemon: `hermes cron status` |
+| J7 | x004 transitions blocked → ready after fire | runner log shows `x004: blocked → ready` | dispatcher running; reminder ran successfully |
+| J8 | Mox cleans up cron jobs in x004 | `hermes cron list` empty after trial completes | x004 body has the cleanup step; verify Mox didn't skip |
+| J9 | Cleanup restores `randomTickSpeed=0` after trial | `rcon-cli 'gamerule randomTickSpeed'` says 0 | fixture cleanup runs |
+
+**Failure modes specific to scheduled operations**:
+
+- **Cron daemon not running.** `hermes cron status` must say "running" for the reminder to ever fire. If it's not, the cron-create succeeds but nothing happens at +90s. x004 stays blocked forever. Mitigation: check `hermes cron status` as part of preflight; document daemon-start as a setup step if applicable.
+- **Reminder fires but unblock fails.** Maybe the state file is gone (script ran twice), or the task id is wrong, or the board is mistyped. The script logs to `~/.hermes/logs/wheat-harvest-reminder.log`. Inspect after trial.
+- **Mox forgets to clean up the cron job.** Then `~/.hermes/cron/jobs.json` accumulates one entry per trial. Not load-bearing, but messy. Fixture cleanup drops anything matching the name pattern as a safety net.
+
 ---
 
 ## Launch sequence (after all sections green)

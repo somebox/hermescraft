@@ -68,6 +68,12 @@ class Card:
     skills: tuple[str, ...] = ()
     work_at_mark: Optional[str] = None
     bot: Optional[str] = None
+    # Optional initial-status override. When set (e.g. "blocked"), the
+    # author passes `--initial-status <value>` to `hermes kanban create`
+    # so the card starts in that state regardless of its dependency
+    # situation. Used by wheat capstone x004 to wait on the
+    # harvest-reminder cron before the agent can claim it.
+    initial_status: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -174,13 +180,29 @@ def build_default_graph() -> Graph:
         ),
         Card(
             slug="x003",
-            title="plant",
+            title="plant + schedule harvest",
             assignee="farmer",
             body=(
                 f"Use `mc inspect --mark {farm}` to read the wheat-plot "
                 f"coordinates. Till a 9×9 area centered on the mark, "
                 f"then plant wheat in every cell. A water source is "
-                f"already at the mark's exact coord — leave it alone."
+                f"already at the mark's exact coord — leave it alone.\n\n"
+                f"After planting is complete, schedule the harvest "
+                f"reminder so the harvest card unblocks once the wheat "
+                f"is mature. The harvest card is the only card on the "
+                f"wheat-capstone board that's in `blocked` status; find "
+                f"its task id with: "
+                f"`hermes kanban --board wheat-capstone list --status "
+                f"blocked --json`. Then:\n\n"
+                f"  1. `mkdir -p ~/.hermes/state && echo <task_id> > "
+                f"~/.hermes/state/wheat-harvest-pending.txt`\n"
+                f"  2. `hermes cron create '90s' --no-agent "
+                f"--script wheat-harvest-reminder.sh "
+                f"--name 'wheat-harvest-reminder'`\n\n"
+                f"Verify both succeeded (state file exists; "
+                f"`hermes cron list` shows the new job), then "
+                f"complete this card. The reminder fires once at +90s "
+                f"and unblocks the harvest card."
             ),
             depends_on=("x002",),
             skills=SKILL_BUNDLES["farmer"],
@@ -188,12 +210,25 @@ def build_default_graph() -> Graph:
         ),
         Card(
             slug="x004",
-            title="deposit",
+            title="harvest + deposit",
             assignee="crafter",
+            initial_status="blocked",
             body=(
-                f"Use `mc inspect --mark {deposit}` to read the storage "
-                f"chest coordinates. Open the chest and deposit any "
-                f"harvested wheat into it."
+                f"The wheat at :{farm}: should be mature now — this "
+                f"card was unblocked by the harvest reminder cron. "
+                f"Use `mc inspect --mark {farm}` to confirm coords, "
+                f"then harvest the 9×9 wheat plot with `mc collect "
+                f"wheat 80` (or equivalent — your @crafter bundle has "
+                f"the verb).\n\n"
+                f"Once harvested, use `mc inspect --mark {deposit}` "
+                f"to read the storage chest coordinates and deposit "
+                f"all wheat into it.\n\n"
+                f"Finally, clean up the reminder cron job (it has "
+                f"already fired but is still listed). "
+                f"`hermes cron list` will show any job whose name "
+                f"starts with `wheat-harvest-reminder`; remove each "
+                f"with `hermes cron remove <id>`. This keeps "
+                f"`~/.hermes/cron/jobs.json` tidy for the next trial."
             ),
             depends_on=("x003",),
             skills=SKILL_BUNDLES["crafter"],

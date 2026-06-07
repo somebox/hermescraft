@@ -244,6 +244,20 @@ zero_memory() {
   fi
 }
 
+# ── Install the wheat-harvest-reminder cron script ──────────────────
+# Pre-stage the script `hermes cron` will run. Hermes requires cron
+# scripts to live under ~/.hermes/scripts/, so we copy from the repo's
+# scripts/cron/ directory. Idempotent — overwrites each setup run so
+# fixes propagate.
+install_cron_scripts() {
+  local dest_dir="$HERMES_HOME/scripts"
+  mkdir -p "$dest_dir"
+  cp "$REPO_ROOT/scripts/cron/wheat-harvest-reminder.sh" \
+     "$dest_dir/wheat-harvest-reminder.sh"
+  chmod +x "$dest_dir/wheat-harvest-reminder.sh"
+  log "installed $dest_dir/wheat-harvest-reminder.sh"
+}
+
 # ── Profile creation ────────────────────────────────────────────────
 
 create_profile pilot-mox \
@@ -253,6 +267,7 @@ write_env_from_template pilot-mox "$SCRIPT_DIR/profiles_pilot-mox.env.template"
 install_skills pilot-mox "${SKILL_SOURCES[@]}"
 write_soul pilot-mox
 zero_memory pilot-mox
+install_cron_scripts
 
 # Pre-create the board so the runner's idempotent ensure step is fast.
 if hermes kanban boards list 2>/dev/null | grep -qE 'wheat-capstone'; then

@@ -43,6 +43,21 @@
 world: landfolk-test
 
 prep:
+  # ── Trial-state cleanup (idempotency for re-runs) ──────────────────
+  # Drop any leftover wheat-harvest-pending state file or cron job
+  # from a previous trial. Without this, a stale reminder could fire
+  # against this trial's harvest card unexpectedly.
+  - "local: rm -f $HOME/.hermes/state/wheat-harvest-pending.txt"
+  - 'local: HERMES_HOME=$HOME/.hermes hermes cron list 2>/dev/null | awk "/wheat-harvest-reminder/ {print \$1}" | while read jid; do [ -n "$jid" ] && HERMES_HOME=$HOME/.hermes hermes cron remove "$jid" 2>/dev/null || true; done'
+
+  # ── Crop growth ────────────────────────────────────────────────────
+  # landfolk-test defaults to randomTickSpeed=0 (frozen sandbox). Wheat
+  # needs random ticks to advance growth stages. 100 = wheat matures in
+  # ~30s real-time; the 90s reminder gives a comfortable margin.
+  # Restored to 0 in cleanup so the dimension goes back to its
+  # frozen-default for the next test.
+  - "execute in landfolk-test run gamerule randomTickSpeed 100"
+
   # ── Forceload ──────────────────────────────────────────────────────
   # Cover all chunks the pad touches (x:-60..-40, z:43..63). Chunk
   # boundaries are every 16 blocks; over-cover for safety.
@@ -135,6 +150,15 @@ prep:
   - "local: scripts/validate-wheat-fixture.sh"
 
 cleanup:
+  # Restore the dimension's frozen-default randomTickSpeed so the next
+  # test (or human visitor) doesn't have surprise crop growth.
+  - "execute in landfolk-test run gamerule randomTickSpeed 0"
+
+  # Trial-state cleanup — symmetric to prep. Drop the reminder state
+  # file and any leftover wheat-harvest-reminder cron jobs.
+  - "local: rm -f $HOME/.hermes/state/wheat-harvest-pending.txt"
+  - 'local: HERMES_HOME=$HOME/.hermes hermes cron list 2>/dev/null | awk "/wheat-harvest-reminder/ {print \$1}" | while read jid; do [ -n "$jid" ] && HERMES_HOME=$HOME/.hermes hermes cron remove "$jid" 2>/dev/null || true; done'
+
   # Drop wheat marks from BOTH bots (matches the prep step's both-bots
   # POST). Old names left in for retrofit-cleanup of fixtures from
   # earlier trial generations.

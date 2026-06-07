@@ -157,6 +157,12 @@ def _invocation_for_card(
     ]
     for skill in card.skills:
         cmd += ["--skill", skill]
+    # Initial-status override: lets the graph hold a card in `blocked`
+    # at creation so a downstream signal (cron unblock, manual review)
+    # is required before it ever transitions to ready. Wheat capstone
+    # x004 uses this to wait on the harvest-reminder cron.
+    if card.initial_status:
+        cmd += ["--initial-status", card.initial_status]
     # `--parent` is added at execution time once we know the real ids
     # of the parents. Storing slugs here keeps the invocation
     # deterministic for tests.
