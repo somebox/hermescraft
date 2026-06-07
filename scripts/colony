@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# colony — bring up the test-only bot roster for colony validation.
+#
+# The production fleet lives at scripts/landfolk (sticky roster,
+# supervisor daemons, gateway management). This is the simpler sister
+# script for the colony test environment used by the capstone trial:
+#
+#   - Disposable test bots whose names come from data/bots/<name>.yaml.
+#   - Always connect to the landfolk-test world, never production.
+#   - No sticky roster — `colony start` brings up the requested bots,
+#     `colony stop` takes them down, that's the whole state model.
+#   - No Hermes gateway management. Workers are spawned elsewhere via
+#     the spawn-with-bot.sh seam (Session 4½).
+#
+# Bot registry: data/bots/<name>.yaml provides api_port + username.
+# Anything else (mc host, world, log dir) comes from defaults below or
+# environment overrides. Tester is intentionally NOT in this script —
+# run scripts/run-tester-bot.sh separately for the verify observer.
+#
+# Usage:
+#   scripts/colony start [--bot a,b,c | --all] [--no-wait] [--dry-run]
+#   scripts/colony stop  [--bot a,b,c | --all] [--dry-run]
+#   scripts/colony status [--json]
+#   scripts/colony restart <bot|all>
+#   scripts/colony logs <bot>
+#
+# Env overrides:
+#   MC_HOST          (default localhost)
+#   MC_PORT          (default 25565)
+#   COLONY_LOG_DIR   (default /tmp/hermescraft)
+#   BOT_REGISTRY_DIR (default <repo>/data/bots)
+#
+# Exit codes:
+#   0   ok
+#   1   one or more bots failed to start / didn't pass health check
+#   64  CLI usage error
+#   66  registry yaml missing or malformed
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+MC_HOST="${MC_HOST:-localhost}"
+MC_PORT="${MC_PORT:-25565}"
+COLONY_LOG_DIR="${COLONY_LOG_DIR:-/tmp/hermescraft}"
+REGISTRY_DIR="${BOT_REGISTRY_DIR:-$REPO_ROOT/data/bots}"
+VIEWER_PORT_OFFSET="${VIEWER_PORT_OFFSET:-1000}"
+HEALTH_TIMEOUT_S="${HEALTH_TIMEOUT_S:-30}"
+
+# ── helpers ──────────────────────────────────────────────────────────
+
+die() { echo "colony: $1" >&2; exit "${2:-64}"; }
+warn() { echo "colony: $*" >&2; }
+
+list_registry_bots() {
+  # Names = yaml stems in $REGISTRY_DIR, alphabetical, stable.
+  [[ -d "$REGISTRY_DIR" ]] || die "registry dir not found: $REGISTRY_DIR" 66
+  local n
+  for f in "$REGISTRY_DIR"/*.yaml; do
+    [[ -f "$f" ]] || continue
+    n=$(basename "$f" .yaml)
+    echo "$n"
+  done | sort
+}
+
+read_bot_yaml() {
+  # Echoes "<port>|<username>". Exits non-zero on missing fields.
+  local bot="$1" path="$REGISTRY_DIR/$1.yaml"
+  [[ -f "$path" ]] || { warn "missing $path"; return 66; }
+  python3 - "$path" <<'PY' || return $?
+import sys, yaml
+path = sys.argv[1]
+with open(path) as f:
+    data = yaml.safe_load(f) or {}
+if not isinstance(data, dict):
+    sys.stderr.write(f"colony: {path} is not a mapping\n")
+    sys.exit(66)
+missing = [k for k in ("api_port", "username") if k not in data]
+if missing:
+    sys.stderr.write(f"colony: {path} missing fields: {','.join(missing)}\n")
+    sys.exit(66)
+try:
+    port = int(data["api_port"])
+except (TypeError, ValueError):
+    sys.stderr.write(f"colony: {path} api_port not an integer\n")
+    sys.exit(66)
+print(f"{port}|{data['username']}")
+PY
+}
+
+# Selected bot names from --bot a,b,c | --all (default = --all).
+parse_bots_flag() {
+  local args=("$@") sel="" i=0
+  while (( i < ${#args[@]} )); do
+    case "${args[i]}" in
+      --bot)
+        i=$((i + 1))
+        sel="${args[i]}" ;;
+      --all)
+        sel="__ALL__" ;;
+    esac
+    i=$((i + 1))
+  done
+  if [[ -z "$sel" || "$sel" == "__ALL__" ]]; then
+    list_registry_bots
+  else
+    echo "$sel" | tr ',' '\n' | sed '/^$/d'
+  fi
+}
+
+has_flag() {
+  local flag="$1"; shift
+  for a in "$@"; do [[ "$a" == "$flag" ]] && return 0; done
+  return 1
+}
+
+# ── subcommands ──────────────────────────────────────────────────────
+
+cmd_start() {
+  local bots dry_run=0 no_wait=0
+  bots=$(parse_bots_flag "$@") || die "could not resolve bot list" 64
+  has_flag "--dry-run" "$@" && dry_run=1
+  has_flag "--no-wait" "$@" && no_wait=1
+
+  mkdir -p "$COLONY_LOG_DIR"
+  local rc=0
+  while IFS= read -r bot; do
+    [[ -z "$bot" ]] && continue
+    local parsed
+    if ! parsed=$(read_bot_yaml "$bot"); then
+      rc=1; continue
+    fi
+    local port="${parsed%|*}" username="${parsed#*|}"
+    local viewer=$((port + VIEWER_PORT_OFFSET))
+    local logfile="$COLONY_LOG_DIR/bot-$bot.log"
+
+    if [[ $dry_run -eq 1 ]]; then
+      echo "[dry-run] would start $bot: MC_HOST=$MC_HOST MC_PORT=$MC_PORT MC_USERNAME=$username API_PORT=$port VIEWER_PORT=$viewer (log: $logfile)"
+      continue
+    fi
+
+    # Stop any prior copy of THIS bot before re-launching. Uses
+    # scripts/stop-bots.sh which is name-targeted (same pattern as
+    # run-tester-bot.sh).
+    if [[ -x "$SCRIPT_DIR/stop-bots.sh" ]]; then
+      "$SCRIPT_DIR/stop-bots.sh" "$username" --quiet 2>/dev/null || true
+    fi
+
+    echo "── starting $bot (port=$port, user=$username) → $MC_HOST:$MC_PORT ──"
+    (
+      cd "$REPO_ROOT/bot"
+      MC_HOST="$MC_HOST" \
+      MC_PORT="$MC_PORT" \
+      MC_USERNAME="$username" \
+      BOT_ACCEPT_SERVER_CHAT=true \
+      API_PORT="$port" \
+      VIEWER_PORT="$viewer" \
+        nohup node server.js > "$logfile" 2>&1 &
+      disown
+    )
+
+    if [[ $no_wait -eq 1 ]]; then
+      echo "  (--no-wait) skipping health check"
+      continue
+    fi
+
+    # Poll /health for HEALTH_TIMEOUT_S seconds.
+    local ready=""
+    for ((i = 1; i <= HEALTH_TIMEOUT_S; i++)); do
+      if conn=$(curl -sf "http://localhost:$port/health" 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected'))" \
+            2>/dev/null); then
+        if [[ "$conn" == "True" ]]; then
+          echo "  $bot ready (${i}s)"
+          ready=1
+          break
+        fi
+      fi
+      sleep 1
+    done
+    if [[ -z "$ready" ]]; then
+      warn "$bot did not reach connected=True within ${HEALTH_TIMEOUT_S}s (see $logfile)"
+      rc=1
+    fi
+  done <<< "$bots"
+  return $rc
+}
+
+cmd_stop() {
+  local bots dry_run=0
+  bots=$(parse_bots_flag "$@") || die "could not resolve bot list" 64
+  has_flag "--dry-run" "$@" && dry_run=1
+
+  while IFS= read -r bot; do
+    [[ -z "$bot" ]] && continue
+    local parsed
+    if ! parsed=$(read_bot_yaml "$bot"); then
+      continue
+    fi
+    local username="${parsed#*|}"
+
+    if [[ $dry_run -eq 1 ]]; then
+      echo "[dry-run] would stop $bot (user=$username) via stop-bots.sh"
+      continue
+    fi
+
+    if [[ -x "$SCRIPT_DIR/stop-bots.sh" ]]; then
+      "$SCRIPT_DIR/stop-bots.sh" "$username"
+    else
+      warn "no stop-bots.sh; can't stop $bot cleanly"
+    fi
+  done <<< "$bots"
+}
+
+cmd_status() {
+  local want_json=0
+  has_flag "--json" "$@" && want_json=1
+
+  local results=()
+  while IFS= read -r bot; do
+    [[ -z "$bot" ]] && continue
+    local parsed=""
+    if ! parsed=$(read_bot_yaml "$bot" 2>/dev/null); then
+      results+=("$bot|?|?|registry-error")
+      continue
+    fi
+    local port="${parsed%|*}" username="${parsed#*|}"
+    local status="down"
+    if conn=$(curl -sf "http://localhost:$port/health" 2>/dev/null \
+          | python3 -c "import sys,json; d=json.load(sys.stdin); print('up' if d.get('connected') else 'starting')" \
+          2>/dev/null); then
+      status="$conn"
+    fi
+    results+=("$bot|$port|$username|$status")
+  done < <(list_registry_bots)
+
+  if [[ $want_json -eq 1 ]]; then
+    python3 - "${results[@]}" <<'PY'
+import json, sys
+out = []
+for line in sys.argv[1:]:
+    bot, port, user, status = line.split("|")
+    out.append({"bot": bot, "api_port": port, "username": user, "status": status})
+print(json.dumps(out, indent=2))
+PY
+  else
+    printf "%-10s %-8s %-12s %s\n" "BOT" "PORT" "USERNAME" "STATUS"
+    for r in "${results[@]}"; do
+      IFS='|' read -r bot port user status <<< "$r"
+      printf "%-10s %-8s %-12s %s\n" "$bot" "$port" "$user" "$status"
+    done
+  fi
+}
+
+cmd_restart() {
+  local target="${1:-}"
+  [[ -z "$target" ]] && die "restart: name a bot or 'all'" 64
+  if [[ "$target" == "all" ]]; then
+    cmd_stop --all
+    sleep 1
+    cmd_start --all
+  else
+    cmd_stop --bot "$target"
+    sleep 1
+    cmd_start --bot "$target"
+  fi
+}
+
+cmd_logs() {
+  local target="${1:-}"
+  [[ -z "$target" ]] && die "logs: name a bot" 64
+  local logfile="$COLONY_LOG_DIR/bot-$target.log"
+  [[ -f "$logfile" ]] || die "no log file at $logfile" 66
+  exec tail -f "$logfile"
+}
+
+cmd_help() {
+  sed -n '1,40p' "${BASH_SOURCE[0]}"
+}
+
+# ── dispatch ─────────────────────────────────────────────────────────
+
+main() {
+  local sub="${1:-help}"
+  shift || true
+  case "$sub" in
+    start)   cmd_start "$@" ;;
+    stop)    cmd_stop "$@" ;;
+    status)  cmd_status "$@" ;;
+    restart) cmd_restart "$@" ;;
+    logs)    cmd_logs "$@" ;;
+    help|-h|--help) cmd_help ;;
+    *) die "unknown subcommand: $sub (try: start, stop, status, restart, logs)" 64 ;;
+  esac
+}
+
+main "$@"

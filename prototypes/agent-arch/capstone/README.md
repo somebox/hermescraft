@@ -147,16 +147,30 @@ Reset world state, author `build_wide_baseline(graph)`, run, gate.
 | Colony completes; flint blocks | Narrow-scope claim supported. | A6 → supported; A7 → supported |
 | Flint completes; colony struggles | Chain orchestration > scope-reset benefit. | A6 → contradicted |
 
-## Pre-trial gaps to close before Session 5b
+## Pre-trial gaps — closed
 
-1. Add `mc verify region_*` / `at_mark` if we want the full walkthrough
-   acceptance set (otherwise the narrowed chest_contains is fine for
-   the first trial).
-2. Land `agent-builder.md`, `agent-farmer.md`, `agent-crafter.md`
-   bundles in `skills/`, or document explicit substitutions in the
-   preflight gate and the trial log.
-3. Decide how `mox` is brought up — either extend `scripts/landfolk`
-   for the target roster or run a dedicated launcher.
+All three gaps the scaffold flagged closed in follow-up commits:
 
-Each of these is its own session; none should be folded into the trial
-itself.
+1. **`mc verify` verbs** — `at_mark` (bot proximity + block-at-mark
+   modes) and `region_blocks` (axis-aligned box scan with volume cap)
+   landed. The full walkthrough acceptance set is now expressible:
+   tilled grid via `region_blocks`+`farmland`, planted wheat via
+   `region_blocks`+`wheat`, water source via `at_mark`+`--block water`,
+   sign via `at_mark`+`--block oak_sign`, deposit via the existing
+   `chest_contains`. 17 new verify-contract tests, 5 new dispatch
+   parser tests. The default colony graph still uses just
+   `chest_contains` (minimum trial); richer predicates can be wired
+   when the walkthrough's full set is desired.
+2. **Agent skill bundles** — `agent-builder.md`, `agent-farmer.md`,
+   `agent-crafter.md` landed in `skills/`, each mirroring
+   `agent-navigator.md`'s 7-section template with role-scoped verbs,
+   structured block reasons, and handoff schemas.
+3. **Colony launcher** — `scripts/colony` brings up the test bots
+   (mox/pip/zee) from `data/bots/<name>.yaml`. Subcommands: `start`,
+   `stop`, `status`, `restart`, `logs`; `--dry-run` + `--bot a,b,c`
+   for selective ops; `status --json` for machine consumption. 15
+   contract tests cover dry-run env composition, status output
+   shape, and dispatch errors.
+
+Preflight (`preflight.sh`) now exits 0 on a clean checkout with
+Tester running, opening the path to 5b.

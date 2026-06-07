@@ -94,6 +94,33 @@ else
   # WARN, not fail: scaffold doesn't need Tester; trial does.
 fi
 
+header "4b. Colony bots (mox + pip + zee) — trial only"
+if [[ -x "$REPO_ROOT/scripts/colony" ]]; then
+  # `colony status` doesn't fail if bots are down — it reports them.
+  # The MISSING line surfaces a bot whose registry yaml is broken;
+  # that IS a fail (script can't launch what it can't parse).
+  if "$REPO_ROOT/scripts/colony" status --json 2>/dev/null \
+        | python3 -c "import json,sys;d=json.load(sys.stdin);
+errs=[b for b in d if b['status']=='registry-error']
+sys.exit(1 if errs else 0)" 2>/dev/null; then
+    up_count=$("$REPO_ROOT/scripts/colony" status --json 2>/dev/null \
+        | python3 -c "import json,sys;d=json.load(sys.stdin); print(sum(1 for b in d if b['status']=='up'))")
+    total=$("$REPO_ROOT/scripts/colony" status --json 2>/dev/null \
+        | python3 -c "import json,sys;print(len(json.load(sys.stdin)))")
+    if [[ "$up_count" == "$total" ]]; then
+      say "$OK" "all $total colony bots up"
+    else
+      say "$WARN" "$up_count/$total colony bots up — bring rest up with: scripts/colony start --all"
+    fi
+  else
+    say "$MISS" "registry-error in scripts/colony status — broken yaml under data/bots/"
+    fail=1
+  fi
+else
+  say "$MISS" "scripts/colony missing or not executable"
+  fail=1
+fi
+
 header "5. mc verify supports the default-graph predicate"
 if "$VENV_PY" - <<'PY' 2>/dev/null
 import sys

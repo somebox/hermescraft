@@ -13,7 +13,8 @@
 | 4 | Mutex 5a | ✅ done | `3c3fc4b` | `mutex_key.py` with `[bot:<name>]` title-prefix encoding (no metadata column in tasks schema yet — interim seam). `gate.py` Step 3+5 + `hooks.py` walk by computed key; `promote.py` helpers take a key string. 33 new tests; 108/108 plugin tests pass. |
 | 4½ | Spawn seam | ✅ done | `3ce9bc4` | `spawn-with-bot.sh` + `data/bots/{pip,zee}.yaml` + 12 contract tests (lookup correctness / failure modes / precedence). |
 | 5a | Capstone scaffold | ✅ done | (this commit) | `prototypes/agent-arch/capstone/`: `wheat_graph.py`, `wide_baseline.py`, `acceptance.py`, `author.py`, `preflight.sh`, README. 29 contract tests. `data/bots/mox.yaml` added. Preflight surfaces two gaps (missing `agent-builder/farmer/crafter` skill bundles) that must close before 5b. |
-| 5b | Live wheat trial | pending — operator-driven | — | Run `preflight.sh`; close gaps; bring up `landfolk-test` world + Tester + mox; author colony lane + wide baseline; gate via `acceptance.evaluate`; categorise via plan's confound table; update A6 + A7. |
+| 5a→b prep | Close pre-trial gaps | ✅ done | 3 commits | Gap 1: `agent-builder/farmer/crafter` skill bundles. Gap 2: `mc verify` `at_mark` + `region_blocks` verbs (17 new contract tests; spec doc updated). Gap 3: `scripts/colony` launcher (registry-driven, status/start/stop/restart/logs, `--dry-run` for testing; 15 contract tests). Preflight now exits 0. |
+| 5b | Live wheat trial | pending — operator-driven | — | All pre-trial gates pass. Bring up `landfolk-test` world + Tester (`scripts/run-tester-bot.sh`) + colony bots (`scripts/colony start --all`); author colony lane + wide baseline via `capstone/`; gate via `acceptance.evaluate`; categorise via plan's confound table; update A6 + A7. |
 
 ### Assumption status (snapshot)
 
