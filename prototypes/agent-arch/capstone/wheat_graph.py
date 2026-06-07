@@ -49,6 +49,12 @@ class Card:
     ``depends_on`` references other slugs in the same graph. The
     author resolves these to real card ids before passing them to
     ``hermes kanban create --parent``.
+
+    ``bot`` is the per-card bot binding for multi-bot graphs (e.g. the
+    two-bot demo). When None, the author falls back to the graph's
+    ``epic_bot`` — preserving wheat's single-bot binding behaviour.
+    Concrete value (e.g. "pip") becomes the ``[bot:<name>]`` title
+    prefix on the kanban side and is what mutex_key.py parses.
     """
 
     slug: str
@@ -58,6 +64,7 @@ class Card:
     depends_on: tuple[str, ...] = ()
     skills: tuple[str, ...] = ()
     work_at_mark: Optional[str] = None
+    bot: Optional[str] = None
 
 
 @dataclass(frozen=True)

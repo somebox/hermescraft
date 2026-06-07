@@ -125,7 +125,13 @@ def _invocation_for_card(
     tenant: str,
     max_runtime: str,
 ) -> Invocation:
-    title = title_with_bot(epic_bot, card.title)
+    # Per-card bot binding wins over the graph's epic_bot. Single-bot
+    # graphs (wheat) leave Card.bot = None and fall back to epic_bot.
+    # Multi-bot graphs (two-bot demo) set Card.bot per card so each
+    # card gets its own [bot:<name>] title prefix and lands in its
+    # own mutex_key domain.
+    bot = card.bot or epic_bot
+    title = title_with_bot(bot, card.title)
     cmd: list[str] = [
         "hermes", "kanban", "create",
         "--tenant", tenant,
