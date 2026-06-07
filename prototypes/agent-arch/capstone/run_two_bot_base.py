@@ -224,10 +224,10 @@ def overlap_seconds(
 
 # ── Mode implementations ───────────────────────────────────────────
 
-def mode_dry_run() -> int:
+def mode_dry_run(board: Optional[str] = None) -> int:
     graph = build_default_graph()
-    invocations = author_colony_lane(graph)
-    print(f"[runner] dry-run: {len(invocations)} invocations")
+    invocations = author_colony_lane(graph, board=board)
+    print(f"[runner] dry-run: {len(invocations)} invocations  (board={board or '(proto/default)'})")
     for inv in invocations:
         print(f"  {inv.slug}: {' '.join(shlex.quote(p) for p in inv.cmd)}")
         if inv.depends_on_slugs:
@@ -235,9 +235,9 @@ def mode_dry_run() -> int:
     return 0
 
 
-def mode_create_only(run_id: str) -> int:
+def mode_create_only(run_id: str, board: Optional[str] = None) -> int:
     graph = build_default_graph()
-    invocations = author_colony_lane(graph)
+    invocations = author_colony_lane(graph, board=board)
 
     trial_dir = POSTMORTEMS_DIR / run_id
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -276,6 +276,7 @@ def mode_create_only(run_id: str) -> int:
     manifest = {
         "run_id": run_id,
         "tenant": DEFAULT_TENANT,
+        "board": board,
         "cards": manifest_cards,
         "acceptance_predicate": graph.acceptance_predicate,
         "pip_lane": list(PIP_LANE_SLUGS),
@@ -428,23 +429,30 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="watch mode: give up after N seconds (default 7200)")
     parser.add_argument("--poll-interval", type=int, default=10,
                         help="watch mode: poll every N seconds (default 10)")
+    parser.add_argument("--board", default=None,
+                        help="kanban board name. None = proto-rig default "
+                             "(flat workspaces). Set to a name (e.g. "
+                             "'two-bot-demo') to land cards on a "
+                             "filesystem-isolated board under "
+                             "HERMES_HOME/kanban/boards/<name>/, visible "
+                             "to the live :9119 dashboard.")
     args = parser.parse_args(argv)
 
     if args.dry_run:
-        return mode_dry_run()
+        return mode_dry_run(board=args.board)
 
     if not args.run_id:
         parser.error("--run-id required for non-dry-run modes")
     run_id = args.run_id
 
     if args.create_only:
-        return mode_create_only(run_id)
+        return mode_create_only(run_id, board=args.board)
     if args.watch:
         # Watch implies create-only first if no manifest exists; otherwise
         # just watch.
         manifest = POSTMORTEMS_DIR / run_id / "manifest.json"
         if not manifest.exists():
-            rc = mode_create_only(run_id)
+            rc = mode_create_only(run_id, board=args.board)
             if rc != 0:
                 return rc
         return mode_watch(run_id, args.watch_timeout, args.poll_interval)

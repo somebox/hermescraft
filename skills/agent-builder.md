@@ -78,10 +78,13 @@ The full grammar is in `skills/minecraft-building.md`. Your working set:
 | `mc place <item> <pos>` | Place a single block. |
 | `mc construct <blueprint>` | Multi-block placement via blueprint (only when the card body references one). |
 | `mc build_stairs` | Climb or descend during work. |
-| `mc fill <corner1> <corner2> <item>` | Bulk fill (floors, walls). |
+| `mc fill <block> <x1> <y1> <z1> <x2> <y2> <z2> [overwrite=true]` | Bulk fill. Defaults to skip-occupied. Add `overwrite=true` if cells may already have other blocks you want to replace. |
 | `mc fence <corner1> <corner2> [--height H]` | Enclosure (animal pens, plot borders). |
 | `mc safe_dig` | When digging downward and worried about falling into a cavity. |
+| `mc reachable <x> <y> <z>` | Pre-check whether a cell is reachable from current pos. Use before `mc place` to confirm you have an adjacent standing cell. |
 | `mc inspect <pos>` | Check what's actually at a coordinate. |
+| `mc goto_near <x> <y> <z> --near N` | Walk to within N blocks of a target cell. Use when `mc move` to a solid-block target would fail. |
+| `mc chat "..."` / `mc chat_to <player> "..."` | Coordinate with another bot. `mc chat` broadcasts; `mc chat_to` addresses by name. |
 | `mc mark NAME` | Save a useful waypoint (e.g. pad corner). |
 
 You do **not** need `mc move @MARK`, `mc till`, `mc plant`, `mc craft`,
@@ -102,6 +105,39 @@ Before `mc level`, query `mc terrain_top X Z` at the corners of your
 intended pad. If they disagree by more than a couple of blocks, the
 ground is sloped — choose the lowest practical Y so you're not pillar-
 ing the entire pad. Document the chosen Y in your handoff.
+
+### Placement reachability (before every `mc place`)
+
+`mc place <block> <x> <y> <z>` requires the bot to have an adjacent
+standing cell — Mineflayer's pathfinder needs a place to stand to
+reach over and place the block. Trial-2 zee builder hit
+`NAV_BLOCKED` twice trying to move to the cell next to a placement
+target.
+
+Before each placement, especially when working diagonally around a
+build site:
+
+1. `mc reachable <x> <y> <z>` — confirms the target itself is air and
+   reachable. If not, output names the closest standable cell.
+2. If you're not adjacent, `mc goto_near <x> <y> <z> --near 2` to
+   step to a cell next to it (NOT `mc move <coord>` which targets the
+   solid cell itself and will fail).
+3. Then `mc place <block> <x> <y> <z>`.
+
+For bulk fill (`mc fill`), the pathfinder handles its own stepping —
+you don't need to pre-`reachable` every cell. But if the fill returns
+`FILL_BLOCKED_BY_EXISTING`, retry with `overwrite=true` appended (no
+`--` prefix; positional `key=value`).
+
+### Coordinating with a partner bot
+
+If `mc place` returns `TARGET_ENTITY_OCCUPIED` with another player at
+the target cell, two recovery patterns work:
+
+1. **Ask + retry**: `mc chat_to <PartnerName> "please step aside, I need to place at <x>,<y>,<z>"`. Wait one turn, re-`inspect` the cell, retry placement if clear.
+2. **Pivot**: choose an equivalent cell elsewhere in the structure rather than wait. For symmetric structures (4-corner posts, walls) any equivalent slot works. Pivoting is usually faster than waiting; the structure may end asymmetric but the card's success criterion still holds.
+
+Don't loop on the same cell after one chat without a response.
 
 ### Verify after build
 

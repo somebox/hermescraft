@@ -68,8 +68,16 @@ def author_colony_lane(
     tenant: str = DEFAULT_TENANT,
     max_runtime: str = DEFAULT_MAX_RUNTIME,
     epic_bot: str = EPIC_BOT,
+    board: Optional[str] = None,
 ) -> tuple[Invocation, ...]:
     """Produce one Invocation per execute card in *graph*.
+
+    *board* (optional) — when set, prepends ``--board <name>`` to every
+    `hermes kanban` call. Required for runs against live HERMES_HOME
+    (~/.hermes) where boards are filesystem-isolated (~/.hermes/kanban/
+    boards/<name>/workspaces/). Leave None for the original proto-rig
+    behaviour against ~/.hermes-proto-agent-arch (which uses a flat
+    workspace layout with no board namespace).
 
     The epic itself is NOT included — the rig today doesn't create
     epics via the CLI. The depends_on edges are between execute cards;
@@ -84,7 +92,8 @@ def author_colony_lane(
     invocations: list[Invocation] = []
     for card in graph.cards:
         invocations.append(_invocation_for_card(
-            card, epic_bot=epic_bot, tenant=tenant, max_runtime=max_runtime,
+            card, epic_bot=epic_bot, tenant=tenant,
+            max_runtime=max_runtime, board=board,
         ))
     return tuple(invocations)
 
@@ -124,6 +133,7 @@ def _invocation_for_card(
     epic_bot: str,
     tenant: str,
     max_runtime: str,
+    board: Optional[str] = None,
 ) -> Invocation:
     # Per-card bot binding wins over the graph's epic_bot. Single-bot
     # graphs (wheat) leave Card.bot = None and fall back to epic_bot.
@@ -132,8 +142,13 @@ def _invocation_for_card(
     # own mutex_key domain.
     bot = card.bot or epic_bot
     title = title_with_bot(bot, card.title)
-    cmd: list[str] = [
-        "hermes", "kanban", "create",
+    # `hermes kanban [--board <slug>] create …` — board flag sits at the
+    # kanban level, before the subcommand. Skip when None.
+    cmd: list[str] = ["hermes", "kanban"]
+    if board:
+        cmd += ["--board", board]
+    cmd += [
+        "create",
         "--tenant", tenant,
         "--assignee", card.assignee,
         "--body", card.body,
