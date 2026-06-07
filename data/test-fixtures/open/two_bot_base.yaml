@@ -1,0 +1,107 @@
+# two-bot-base — open-world demo arena for the cooperative wood + cobblestone
+# base test. Two bot bodies (Pip, Zee) start near seed (300, 65, 300); a wood
+# supply chest sits west, a stash with tools south, a cobble outcrop to the
+# southeast. Six named marks let cards navigate via :seed:, :wood_supply:, etc.
+#
+# Used by: prototypes/agent-arch/capstone/run_two_bot_base.py via the proto
+# tenant on landfolk-test. Apply through scripts/reset-open-test.sh which
+# orchestrates colony stop/start around this fixture.
+#
+# Layout (Y=65 plane, north is -Z):
+#
+#     z
+#     ^
+#  305|       s             s = chest_stash  (axe + pickaxe + signs)
+#     |
+#  300|   w   X p z         w = wood_supply  (64 oak_log)
+#     |                     X = seed         (build site)
+#     |                     p = pip_start    (2W of seed)
+#     |                     z = zee_start    (2E of seed)
+#     |                     o = stone_source (south face of outcrop)
+#  308|                 o   OOO = cobble outcrop (5x3x5)
+#  313|                 OOO
+#     |
+#  -- |---|---|---|---|---|--> x
+#         295 300 305 310 313
+#
+# Marks are POSTed to Tester (:3004), Pip (:3005), and Zee (:3006) since each
+# bot keeps its own /marks store (bot/lib/runtime/locations.js). POSTs to
+# missing bots are tolerated — supports first-run-before-colony-up flow.
+#
+# Plan: ~/.claude/plans/create-a-plan-that-magical-lovelace.md
+
+world: landfolk-test
+
+prep:
+  # ── World structure ────────────────────────────────────────────────
+  # Forceload chunks covering both the seed area and the SE outcrop so
+  # bots don't fall into the void on /tp into unloaded territory.
+  - "execute in landfolk-test run forceload add 290 290 315 315"
+
+  # Clear air above the working footprint (Y=65 to 75). Floor at Y=64
+  # is laid next so bots have ground to stand on.
+  - "execute in landfolk-test run fill 295 65 295 313 75 313 minecraft:air"
+
+  # Stone floor across the full footprint at Y=64. The (300, 65, 300)
+  # area may or may not have natural terrain on landfolk-test; defensive.
+  - "execute in landfolk-test run fill 295 64 295 313 64 313 minecraft:stone"
+
+  # ── Staged props ───────────────────────────────────────────────────
+  # :wood_supply: chest at (295, 65, 300) — west of seed. 64 oak_log inside.
+  - "execute in landfolk-test run setblock 295 65 300 minecraft:chest"
+  - "execute in landfolk-test run data merge block 295 65 300 {Items:[{Slot:0b,id:\"oak_log\",Count:64b}]}"
+
+  # :chest_stash: chest at (300, 65, 305) — south of seed. wooden_axe +
+  # iron_pickaxe + 4 oak_sign. Pip withdraws the axe; Zee gets the
+  # pickaxe (separate withdraw card).
+  - "execute in landfolk-test run setblock 300 65 305 minecraft:chest"
+  - "execute in landfolk-test run data merge block 300 65 305 {Items:[{Slot:0b,id:\"wooden_axe\",Count:1b},{Slot:1b,id:\"iron_pickaxe\",Count:1b},{Slot:2b,id:\"oak_sign\",Count:4b}]}"
+
+  # Cobble outcrop — 5x3x5 = 75 blocks at SE (309-313, 65-67, 309-313).
+  # Sits ON the stone floor, visible as a raised pile. zee mines from
+  # the south face (mark :stone_source: at 310, 65, 308).
+  - "execute in landfolk-test run fill 309 65 309 313 67 313 minecraft:cobblestone"
+
+  # ── Bot bodies (must be connected to receive /tp) ─────────────────
+  # mvtp moves into landfolk-test (Multiverse plugin); the in-world /tp
+  # then positions them on the seed plate. clear + heal effects so the
+  # trial starts with empty inventories and full HP/food.
+  - "mvtp Pip landfolk-test"
+  - "mvtp Zee landfolk-test"
+  - "execute in landfolk-test run tp Pip 298 65 300"
+  - "execute in landfolk-test run tp Zee 302 65 300"
+  - "clear Pip"
+  - "clear Zee"
+  - "effect give Pip minecraft:saturation 1 10"
+  - "effect give Zee minecraft:saturation 1 10"
+  - "effect give Pip minecraft:instant_health 1 10 true"
+  - "effect give Zee minecraft:instant_health 1 10 true"
+
+  # Settle: let bots reach their new positions before POSTing marks.
+  - "local: sleep 2"
+
+  # ── Marks — POST to all three bots ─────────────────────────────────
+  # Each bot keeps its own /marks; cards call `mc marks` against their
+  # bound bot's HTTP API. Body uses `at: {x,y,z}` (flat top-level coords
+  # are silently ignored by the resolver — see locations.js#resolvePlace).
+  # Bot-down responses are tolerated.
+  - "local: scripts/post-two-bot-marks.sh post 3004"
+  - "local: scripts/post-two-bot-marks.sh post 3005"
+  - "local: scripts/post-two-bot-marks.sh post 3006"
+
+cleanup:
+  # Drop marks first while bots are still up (if they are).
+  - "local: scripts/post-two-bot-marks.sh unmark 3004"
+  - "local: scripts/post-two-bot-marks.sh unmark 3005"
+  - "local: scripts/post-two-bot-marks.sh unmark 3006"
+
+  # Clear all staged blocks: chests, cobble outcrop, stone floor, air
+  # above. Forceload removed last. Leaves the area as if the fixture
+  # was never there.
+  - "execute in landfolk-test run setblock 295 65 300 minecraft:air"
+  - "execute in landfolk-test run setblock 300 65 305 minecraft:air"
+  - "execute in landfolk-test run fill 309 65 309 313 67 313 minecraft:air"
+  - "execute in landfolk-test run fill 295 64 295 313 64 313 minecraft:air"
+  - "execute in landfolk-test run fill 295 65 295 313 75 313 minecraft:air"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32,x=300,y=65,z=300]"
+  - "execute in landfolk-test run forceload remove 290 290 315 315"
