@@ -1,7 +1,7 @@
 # Colony architecture validation — execution plan
 
-**Date:** 2026-06-06 (last updated 2026-06-07)
-**Status:** Sessions 1–4 complete; Session 4½ ready to execute. See [Progress](#progress) below.
+**Date:** 2026-06-06 (last updated 2026-06-07 — post-two-bot-demo review)
+**Status:** Sessions 1–5a complete; 5b live wheat trial pending. **Sessions 1 + 2 also validated end-to-end by the two-bot demo trials** (see § "Sessions 1 + 2 — post-two-bot-demo validation").
 
 ## Progress
 
@@ -27,6 +27,63 @@
 | A5 | Spawn stand-in injects per-card MC env from `data/bots/<bot>.yaml` | **supported** (Session 4½ — 12/12 contract tests across lookup / failure / precedence) |
 | A6 | Per-card scope reset improves multi-domain completion | untested — scaffold ready (Session 5a); resolves in 5b live trial |
 | A7 | Wheat-walkthrough graph exposes wide-flint paralysis | untested — same as A6 |
+
+## Sessions 1 + 2 — post-two-bot-demo validation
+
+Reviewed 2026-06-07 after the two-bot live demo (three trials, two passes — see [trial 3 postmortem](2026-06-07-two-bot-trial-3-postmortem.md)). Both sessions' deliverables are not just present in the repo; they were **exercised under real wall time against real Mineflayer bots**.
+
+### Session 1 — Foundation (still solid)
+
+| Deliverable | Verification |
+|---|---|
+| `colony` pytest marker + exclusion from fast/full runners | Verified: `pyproject.toml` has `colony: agent-arch validation tests; opt-in only`; both `run-functional-fast.sh` and `run-functional-full.sh` filter `and not colony`. |
+| `tests/colony/` tree + README + chest-delta test | Present (3 files: `test_chest_delta_predicate.py`, `test_chest_object_state_predicate.py`, README). |
+| `data/test-fixtures/colony/C0_colony_arena.yaml` | Present; the **pattern was re-applied** by the two-bot demo's `data/test-fixtures/open/two_bot_base.yaml` (same prep/cleanup/local: shape; symmetric tear-down; mark POSTs via curl). Pattern proven reusable. |
+| `prototypes/agent-arch/automation/telemetry.py` with `SUMMARY_FIELDS` lock | Present; **used end-to-end** in trial 2 + 3 (manifest + telemetry.jsonl + scorecard.json all flow through it). SUMMARY_FIELDS schema held across three runs. |
+| Handoff regression (`test_handoff_contract.py`) | Currently skips because no scenario-C triple exists in the proto tenant's history. Not a regression — the test is design-correct, the scenario hasn't been re-run since the proto rig pre-dated the two-bot work. |
+
+**Net read:** the Foundation slice's job was to prove the testing pattern with zero CI risk. Three months later, two unrelated fixtures (`C0_colony_arena`, `two_bot_base`) and three trial-scoring artifacts all follow the same shape. Pattern validated.
+
+### Session 2 — Done-ness predicates (extended beyond original plan)
+
+| Deliverable | Verification |
+|---|---|
+| `mc verify` dispatcher | **4 verbs** now landed: `inventory_contains`, `chest_contains`, `at_mark`, `region_blocks` (the latter two added during two-bot trial 2 prep gap 2, commit `7cce0d8`). Original plan called for 2; Session 2 shipped 2; subsequent expansion took it to 4. |
+| 30 verify-contract tests pass | Confirmed: `node --test bot/test/actions/verify-contract.test.js` → 30/30. |
+| `tests/colony/test_chest_object_state_predicate.py` (variant 2) | Present; deterministic regression. |
+| `docs/architecture/mc-verify-spec.md` | Present; **enumerates all 4 landed verbs** with parameter lists, response envelope, and example pytest fixture. |
+| A1 / A2 vocab map | Documented in `tests/colony/README.md` under "Done-ness vocabulary (Session 2)". Two-bot demo used the `at_mark seed --block oak_sign` predicate from card body → `mc verify` → acceptance — full vocab-bridge round trip exercised three times. |
+
+**Real-world A1 + A2 validation (from the two-bot demo):**
+
+- A1 ("predicate shape stable") — `at_mark seed --block oak_sign` ran identically against the same verify code in trials 2 + 3. Verb shape stable.
+- A2 ("`success_when` / `mc verify` / `acceptance` reconcile") — the demo card body said "place an oak_sign at :seed:"; the acceptance predicate was `{kind: at_mark, mark: seed, block: oak_sign}`; the CLI was `mc verify at_mark seed --block oak_sign`. All three vocabularies bridged cleanly via the seam.
+
+**One real-world bug surfaced** that Session 2's contract didn't catch:
+
+> `prototypes/agent-arch/capstone/acceptance.py:_parse_verify_response` was reading `body.satisfied` (flat) but the bot HTTP envelope nests it as `body.data.satisfied` per `action-contract.js`. Trial 2 + 3's first `--evaluate-only` call reported `sign_at_seed: false` despite the verify succeeding.
+>
+> **Fixed mid-trial 2** (also re-applied in trial 3); `acceptance.py:153-165` now reads both nested (preferred) and flat (forward-compat) forms.
+
+**Session 2 follow-up worth noting in the plan:** the Tier-1 verify-contract tests assert the response shape *from inside the bot* (validate that `verify.js` returns the right structure). They don't assert what *consumers* expect (whether `data.satisfied` or `satisfied` is the documented public field). A short addendum to `mc-verify-spec.md` clarifying the canonical nesting + a Python-side parser tested against that doc would close the gap. Out of scope for v1 colony validation; worth noting for the wheat capstone where `acceptance.py` is on the critical path.
+
+### Net status of A1 + A2 + A3 + A4 + A5
+
+| # | Pre-two-bot-demo status | Post-two-bot-demo status |
+|---|---|---|
+| A1 (predicate shape stable) | supported (13/13 contract tests) | **supported, end-to-end** (4 verbs across 30 tests + live `at_mark` across 3 trials) |
+| A2 (vocab bridges reconcile) | supported (vocab map + cross-reference test) | **supported, end-to-end** (card body → verify → acceptance round-trip exercised 3 times) |
+| A3 (block→review→unblock) | supported (Session 3) | unchanged — not exercised by two-bot demo |
+| A4 (`metadata.bot` mutex) | supported (Session 4 — 33 plugin tests) | **supported, in vivo** (529/591/483 s overlap in trials 1/2/3 — live Mineflayer wall time confirms the SQLite contract) |
+| A5 (spawn-with-bot.sh) | supported (Session 4½ — 12 contract tests) | supported — still NOT wired into live spawn; static profile `.env` does the work for the demo. Section F still future. |
+
+A1 and A2 went from "supported by contract tests" to "supported by both contract tests AND a real live run." Sessions 1 + 2 didn't just close their contract gates; they pre-built the infrastructure that the two-bot demo turned out to need.
+
+### What to keep an eye on (before Session 5b)
+
+1. **The `body.data.satisfied` envelope quirk** — Session 5b's acceptance gate uses the same `acceptance.py`. The fix is in but the spec doc doesn't call out the nesting yet.
+2. **Region predicates for the wheat acceptance set** — `region_blocks` exists; needs a 9×9 farmland pattern + a 4-wheat pattern for the canonical wheat-farm acceptance. Doable; not yet built. The capstone scaffold (`capstone/acceptance.py`) accepts `region_blocks` shape.
+3. **C0_colony_arena.yaml has the SAME `/action/mark` body-shape bug** that two-bot found in its fixture (flat `x/y/z` instead of nested `at: {x,y,z}`). C0's marks land at Tester's spawn position (0, 65, 0) rather than the intended POI coords — but Tester happens to spawn near (0, 65, 0) so the misbehaviour wasn't visible. Worth a quick patch before Session 5b uses C0 for anything.
 
 ## Locked-in choices (decisions baked into the plan)
 
@@ -235,6 +292,17 @@ After each session, evaluate **Binary success** and decide **Go / Pivot / Stop**
 
 ## Ready to execute
 
-Sessions 1–4 complete (commits `80e2b2b`, `be2d6ca`, `225f8e1`, `3c3fc4b`). A1–A4 moved from *untested* to *supported* — every mechanism the architecture asks for in the kanban + predicate layer has a test backing it.
+Sessions 1–5a complete (commits `80e2b2b`, `be2d6ca`, `225f8e1`, `3c3fc4b`, `3ce9bc4`, `73372b1`). 5a→b prep (gaps 1+2+3) also complete (`0c6b5d2`, `7cce0d8`, `f01bff2`). A1–A5 supported; A6 + A7 still untested.
 
-Next action: execute **Session 4½** — `scripts/colony-validation/spawn-with-bot.sh` + `data/bots/{pip,zee}.yaml` + `prototypes/agent-arch/tests/test_spawn_seam_contract.py`. The seam is a test-only stand-in for Section F; the contract it proves is what Section F will have to honour. Then Session 5 (capstone) is ready to run with all dependencies present.
+**Two-bot demo extension** (out of original plan, in scope of A1+A2+A4+A5): three trials run 2026-06-07; trials 2-B + 3 PASS. Sessions 1 + 2 deliverables validated end-to-end under live wall time (see § "Sessions 1 + 2 — post-two-bot-demo validation"). Postmortems:
+- [trial 1](2026-06-07-two-bot-trial-1-postmortem.md) — partial, operator-blocked, surfaced collect-headline + verb-table bugs
+- [trial 2](2026-06-07-two-bot-trial-2-postmortem.md) — pass, 13/13 cards, 591s overlap
+- [trial 3](2026-06-07-two-bot-trial-3-postmortem.md) — pass, dashboard-visible on live HERMES_HOME
+
+Next action: execute **Session 5b** — live wheat trial against the wheat-walkthrough graph. All pre-trial gates pass per the capstone scaffold's preflight. Per the freeze rule, before launching:
+
+1. **C0_colony_arena.yaml mark-body fix** — flat `x/y/z` → nested `at: {x,y,z}` per `bot/lib/runtime/locations.js#resolvePlace` (the bug two-bot fixture discovered and worked around with `scripts/post-two-bot-marks.sh`). Quick fix; C0 marks currently land at Tester's spawn position.
+2. **`mc-verify-spec.md` addendum** — document that `satisfied` is nested under `data` per action-contract.js envelope (the `acceptance.py` parser bug two-bot trial 3 surfaced + fixed).
+3. **`region_blocks` predicate fixtures** for wheat acceptance (9×9 farmland pattern + 4-wheat per plot count). The capstone scaffold's `acceptance.py` already accepts `region_blocks` predicate shape; needs the right cell counts for the canonical wheat field.
+
+Items 1 + 2 are 30-minute fixes; item 3 needs walkthrough-doc cross-reference for the exact wheat layout. Then 5b can launch.
