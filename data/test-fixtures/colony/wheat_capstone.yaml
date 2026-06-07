@@ -1,94 +1,113 @@
 # wheat_capstone — staging arena for the wheat-farm capstone trial
 # (Session 5b of the colony validation plan).
 #
-# Places a clean, dirt-floored 16×16 pad at :field_south: with a
-# central water source, leaving the 9×9 plant area ready for the
-# capstone's @builder → @farmer → @crafter chain to:
-#   1. Level any uneven blocks (no-op if pad is already flat)
-#   2. Till the 9×9 dirt to farmland
-#   3. Plant wheat across all 80 non-water cells
-#   4. Deposit harvested wheat at :chest_food:
+# ── Geometry (all coords are in landfolk-test, Y=64 is the floor top) ──
 #
-# The mark coords match the corner values hardcoded in
-# `prototypes/agent-arch/capstone/wheat_graph.py`'s
-# `acceptance_predicates`. If you change one, change both.
+# Constants the agent ends up addressing through marks:
+#   plot_center   = (-50, 64, 50)   field_south center; 1 cell becomes water
+#   plot_corners  = x:-54..-46, z:46..54   9×9 wheat plot footprint
+#   chest_pos     = (-50, 65, 60)   storage chest, 10 blocks south of plot
+#   mox_start     = (-55, 65, 50)   1 block west of plot, on dirt
+#
+# Walkable surface (floor) — MUST contain plot + chest + mox_start AND
+# the corridors between them. Earlier revisions used an 11×11 floor
+# (x:-55..-45, z:45..55) which left the chest at z=60 outside the
+# walkable area; Mox would have fallen into the void on the way to
+# deposit. This revision extends:
+#   pad_corners = x:-60..-40, z:43..63       (21 × 21 floor)
+#
+# Margins around the four key spots (all in blocks):
+#   N of plot:   z=43..45                       3
+#   S of plot to chest corridor: z=55..59       5 (Mox walks here)
+#   S of chest:  z=61..63                       3
+#   W of mox_start:  x=-60..-56                 5
+#   E of plot:   x=-45..-40                     6
+#
+# Stack at every (x,z) in the pad:
+#   Y=59       bedrock           prevents void-fall via floor mining
+#   Y=60..62   stone             sacrificial buffer (3 layers)
+#   Y=63       dirt              "thicker dirt" — lower dirt layer
+#   Y=64       dirt              walkable top; tills to farmland
+#   Y=65       air               where Mox stands; where wheat plants
+#
+# Acceptance predicate corners (hardcoded in
+# prototypes/agent-arch/capstone/wheat_graph.py) point at the 9×9 plot:
+#   farmland: x:-54..-46, Y=64, z:46..54   min_count 72/81 (water cell + 8 misses)
+#   wheat:    x:-54..-46, Y=65, z:46..54   min_count 60/80
+#   at_mark field_south block=water
 #
 # Used by: prototypes/agent-arch/capstone/run_wheat_capstone.py
-# (Session 5b deliverable — runner script, not yet built).
-# Apply through scripts/reset-wheat-capstone.sh (Session 5b prep —
-# not yet built either; for now use scripts/run-fixture.sh directly).
-#
-# Plan: reports/agent-arch/2026-06-06-colony-validation-plan.md
-# § "Capstone — Wheat farm".
+# Plan:    reports/agent-arch/2026-06-06-colony-validation-plan.md
+# Runbook: reports/agent-arch/wheat-capstone-runbook.md
 
 world: landfolk-test
 
 prep:
-  # ── World structure ────────────────────────────────────────────────
-  # Forceload + clear the 16×16 region so the capstone runs from a
-  # known-clean state. Coords chosen far from the two-bot demo's seed
-  # area (300, 65, 300) to avoid trample.
-  - "execute in landfolk-test run forceload add -60 40 -40 60"
-  - "execute in landfolk-test run fill -55 65 45 -45 75 55 minecraft:air"
+  # ── Forceload ──────────────────────────────────────────────────────
+  # Cover all chunks the pad touches (x:-60..-40, z:43..63). Chunk
+  # boundaries are every 16 blocks; over-cover for safety.
+  - "execute in landfolk-test run forceload add -64 32 -32 64"
 
-  # Floor stack identical pattern to the two-bot demo (bedrock cap
-  # so accidental floor-digging can never reach the void):
-  #   Y=64: dirt (so till → farmland works; agents see "dirt" and
-  #         won't confuse it with cobble or stone)
-  #   Y=63-60: 4 layers of stone (sacrificial buffer)
-  #   Y=59: bedrock (indestructible cap)
-  - "execute in landfolk-test run fill -55 59 45 -45 59 55 minecraft:bedrock"
-  - "execute in landfolk-test run fill -55 60 45 -45 63 55 minecraft:stone"
-  - "execute in landfolk-test run fill -55 64 45 -45 64 55 minecraft:dirt"
+  # ── Clear the build envelope ───────────────────────────────────────
+  # 21×21 pad horizontally, Y=59..78 vertically. The Y range gives
+  # 6 blocks above the floor (Y=65..70) so trees, mob heads, or other
+  # stray entities/blocks left from prior trials don't interfere.
+  - "execute in landfolk-test run fill -60 65 43 -40 78 63 minecraft:air"
 
-  # ── Water source at field center ────────────────────────────────
-  # Replace the dirt at the field center (Y=64) with a water source
-  # block. This is what gives the surrounding tilled cells hydration
-  # — wheat won't grow without water within 4 cells of any tile.
-  # Single cell at (-50, 64, 50).
+  # ── Stage the floor stack (full pad, all Y layers) ─────────────────
+  - "execute in landfolk-test run fill -60 59 43 -40 59 63 minecraft:bedrock"
+  - "execute in landfolk-test run fill -60 60 43 -40 62 63 minecraft:stone"
+  - "execute in landfolk-test run fill -60 63 43 -40 64 63 minecraft:dirt"
+
+  # ── Water source at field center ───────────────────────────────────
+  # Replaces ONE cell of top dirt with water. Wheat within 4 blocks
+  # of water gets hydration; the 9×9 plot all sits within range.
   - "execute in landfolk-test run setblock -50 64 50 minecraft:water"
 
-  # ── Storage chest south of the field ────────────────────────────
-  # @crafter deposits harvested wheat here. Empty at start.
+  # ── Storage chest south of the plot ────────────────────────────────
+  # On top of the floor at chest_pos. Empty at start; the @crafter
+  # card deposits harvested wheat here.
   - "execute in landfolk-test run setblock -50 65 60 minecraft:chest"
 
-  # ── Bot bodies ──────────────────────────────────────────────────
-  # Move Mox (the wheat capstone's single body per walkthrough) into
-  # landfolk-test if not already, then tp to a working position just
-  # west of the field. Clear inventory so the trial starts from a
-  # known state.
+  # ── Bot bodies ─────────────────────────────────────────────────────
+  # Move Mox into landfolk-test if not already there, then tp him to
+  # mox_start on the west edge of the pad. Settle 1s after mvtp before
+  # tp — mvtp disconnect/reconnect can drop a tp fired during the gap.
   - "mvtp Mox landfolk-test"
-  # Brief settle — mvtp causes a disconnect/reconnect window; a tp
-  # fired during the gap silently misses.
   - "local: sleep 1"
-  # tp target MUST be inside the staged floor footprint (x: -55..-45,
-  # z: 45..55) or Mox falls through to the void. Use the west edge,
-  # standing on the dirt at Y=64 (so Y=65 is the air above).
   - "execute in landfolk-test run tp Mox -55 65 50"
   - "clear Mox"
   - "effect give Mox minecraft:saturation 1 10"
   - "effect give Mox minecraft:instant_health 1 10 true"
 
-  # ── Give Mox the tools the chain expects ────────────────────────
-  # The capstone's @farmer card body assumes the bot already has a
-  # hoe + wheat seeds in inventory. Real production would have the
-  # chain start with a navigate-to-stash-and-withdraw card (like the
-  # two-bot demo does), but for the first 5b trial we shortcut so the
-  # focus is on the multi-domain till/plant/deposit chain itself.
-  # Once 5b passes, a follow-up can add the stash + withdraw cards
-  # to mirror the two-bot architecture.
+  # ── Mox's starting inventory ───────────────────────────────────────
+  # The chain assumes hoe + seeds on hand; real prod would have a
+  # navigate-to-stash-and-withdraw card first, but for trial 1 we
+  # shortcut so the focus is the multi-domain plant/till/deposit chain.
   - "give Mox minecraft:wooden_hoe 1"
   - "give Mox minecraft:wheat_seeds 64"
 
   - "local: sleep 2"
 
-  # ── Marks ──────────────────────────────────────────────────────
+  # ── Marks ──────────────────────────────────────────────────────────
   # POST nested {at: {x,y,z}} per the locations.js#resolvePlace contract
   # documented in mc-verify-spec.md. Single-quoted YAML so the
-  # run-fixture.sh parser preserves interior `"` chars.
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"field_south\",\"at\":{\"x\":-50,\"y\":64,\"z\":50},\"note\":\"wheat farm plot center\"}" >/dev/null || echo "mark field_south: bot HTTP not reachable"'
+  # run-fixture.sh parser preserves the interior `"` chars.
+  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"field_south\",\"at\":{\"x\":-50,\"y\":64,\"z\":50},\"note\":\"wheat plot center (1 cell of water; 9x9 farmland-plot footprint)\"}" >/dev/null || echo "mark field_south: bot HTTP not reachable"'
   - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"chest_food\",\"at\":{\"x\":-50,\"y\":65,\"z\":60},\"note\":\"wheat storage chest\"}" >/dev/null || echo "mark chest_food: bot HTTP not reachable"'
-  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"base_anchor\",\"at\":{\"x\":-55,\"y\":65,\"z\":50},\"note\":\"Mox start position (west edge of plot)\"}" >/dev/null || echo "mark base_anchor: bot HTTP not reachable"'
+  - 'local: curl -sf -X POST http://127.0.0.1:3004/action/mark -H "content-type: application/json" -d "{\"name\":\"base_anchor\",\"at\":{\"x\":-55,\"y\":65,\"z\":50},\"note\":\"Mox start position (west edge of pad)\"}" >/dev/null || echo "mark base_anchor: bot HTTP not reachable"'
+
+  # ── Bounds-check validation ────────────────────────────────────────
+  # Runs scripts/validate-wheat-fixture.sh, which asserts every key
+  # cell via rcon (pad corners, plot corners, water source, walking
+  # corridor, chest, bedrock cap) and that Mox is on the pad with
+  # the expected inventory and all 3 marks are at the right coords.
+  #
+  # Exits non-zero on any FAIL — run-fixture.sh's set -euo pipefail
+  # propagates it so prep stops here rather than letting the operator
+  # launch a broken arena. Update the validator's geometry constants
+  # if you change the constants above.
+  - "local: scripts/validate-wheat-fixture.sh"
 
 cleanup:
   # Drop marks
@@ -96,16 +115,16 @@ cleanup:
   - 'local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H "content-type: application/json" -d "{\"name\":\"chest_food\"}" >/dev/null || true'
   - 'local: curl -sf -X POST http://127.0.0.1:3004/action/unmark -H "content-type: application/json" -d "{\"name\":\"base_anchor\"}" >/dev/null || true'
 
-  # Clear the chest + water + soil stack + air above
-  - "execute in landfolk-test run setblock -50 65 60 minecraft:air"
-  - "execute in landfolk-test run setblock -50 64 50 minecraft:air"
-  - "execute in landfolk-test run fill -55 64 45 -45 64 55 minecraft:air"
-  - "execute in landfolk-test run fill -55 60 45 -45 63 55 minecraft:air"
-  - "execute in landfolk-test run fill -55 59 45 -45 59 55 minecraft:air"
-  - "execute in landfolk-test run fill -55 65 45 -45 75 55 minecraft:air"
-  - "execute in landfolk-test run kill @e[type=item,distance=..16,x=-50,y=65,z=50]"
-  - "execute in landfolk-test run forceload remove -60 40 -40 60"
-
-  # Return Mox to a neutral position
+  # Move Mox out FIRST so he doesn't fall into the void when the floor goes
   - "execute in landfolk-test run tp Mox 0 65 0"
   - "clear Mox"
+
+  # Strip the pad (top down) — fill air over every layer we placed
+  - "execute in landfolk-test run setblock -50 65 60 minecraft:air"
+  - "execute in landfolk-test run setblock -50 64 50 minecraft:air"
+  - "execute in landfolk-test run fill -60 63 43 -40 64 63 minecraft:air"
+  - "execute in landfolk-test run fill -60 60 43 -40 62 63 minecraft:air"
+  - "execute in landfolk-test run fill -60 59 43 -40 59 63 minecraft:air"
+  - "execute in landfolk-test run fill -60 65 43 -40 78 63 minecraft:air"
+  - "execute in landfolk-test run kill @e[type=item,distance=..32,x=-50,y=65,z=50]"
+  - "execute in landfolk-test run forceload remove -64 32 -32 64"
