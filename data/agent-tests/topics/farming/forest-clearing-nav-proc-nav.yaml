@@ -1,0 +1,52 @@
+# Phase D: navigate to farm_patch on proc-nav (forest_clearing variant).
+agent_test_id: proc_farming_forest_clearing_nav
+world: proc-nav
+
+procedural_map:
+  variant: farming.forest_clearing
+  pick: random
+
+prompt: |
+  You are the Minecraft bot {{BOT_USERNAME}}. The `mc` CLI is on PATH; MC_API_URL and MC_USERNAME are set.
+  You are in world proc-nav at the scenario spawn.
+
+  Do exactly this:
+  1. Run `mc status` once.
+  2. Run `mc nearby` once (entities/blocks summary).
+  3. Navigate to the farm patch at ({{FARM_PATCH_X}}, {{FARM_PATCH_Y}}, {{FARM_PATCH_Z}}) within 4 blocks using `mc move`, `mc goto`, or `mc go_mark` if you created a mark.
+  4. Say exactly: forest nav ok
+
+skills: [minecraft-navigation, minecraft-farming]
+max_turns: 14
+timeout_seconds: 200
+
+expect:
+  agent_chat_contains_any:
+    - forest nav ok
+  bot_at:
+    x: {{FARM_PATCH_X}}
+    y: {{FARM_PATCH_Y}}
+    z: {{FARM_PATCH_Z}}
+    range: 4
+  mc_cli_invocations_max: 28
+  mc_verbs_include_any:
+    - nearby
+    - move
+    - goto
+    - go_mark
+
+prep:
+  - "execute in proc-nav run difficulty peaceful"
+  - "execute in proc-nav run gamerule doMobSpawning false"
+  - "execute in proc-nav run gamerule doDaylightCycle false"
+  - "execute in proc-nav run time set day"
+  - "execute in proc-nav run kill @e[type=!player]"
+  - "mvtp {{BOT_USERNAME}} proc-nav"
+  - "execute in proc-nav run tp {{BOT_USERNAME}} {{SPAWN_X}} {{SPAWN_Y}} {{SPAWN_Z}}"
+  - "effect clear {{BOT_USERNAME}}"
+  - "effect give {{BOT_USERNAME}} minecraft:saturation 600 1"
+
+cleanup:
+  - "execute in proc-nav run kill @e[type=!player]"
+  - "mvtp {{BOT_USERNAME}} landfolk-test"
+  - "execute in landfolk-test run tp {{BOT_USERNAME}} 52 65 52"

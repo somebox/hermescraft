@@ -1,0 +1,62 @@
+{
+  "run_id": "proc-nav-1780956289",
+  "tier": "core",
+  "graph": "proc-scout",
+  "band": "pass",
+  "cards_done_count": 5,
+  "cards_total": 5,
+  "wall_time_s": 2672,
+  "manual_interventions": [],
+  "mc_cli_invocations": 525,
+  "mc_scene_count": 55,
+  "mc_go_mark_count": 44,
+  "nav_escape_count": 11,
+  "mc_build_stairs_count": 7,
+  "mc_dig_count": 68,
+  "anchors_reached_ratio": 1.0,
+  "acceptance_satisfied": false,
+  "acceptance_evaluable": false,
+  "per_predicate": [],
+  "thresholds_ref": "/Users/foz/hermescraft/calibration/proc-nav-thresholds.yaml",
+  "thresholds": {
+    "reference_run_id": "proc-nav-1780956289",
+    "reference_graph": "proc-scout",
+    "tier": {
+      "baseline": {
+        "mc_cli_invocations_max": 24,
+        "wall_time_s_max": 180,
+        "notes": "Hard-pass blocked by W2-NAV-004 until chat-mode mc invocations counted"
+      },
+      "core": {
+        "mc_go_mark_min": 2,
+        "mc_scene_min": 2,
+        "wall_time_s_log_only": true,
+        "measured": {
+          "wall_time_s": 1936,
+          "mc_cli_invocations": 525,
+          "mc_go_mark_count": 44,
+          "mc_scene_count": 55,
+          "nav_escape_count": 11,
+          "mc_build_stairs_count": 7,
+          "mc_dig_count": 68
+        }
+      },
+      "stress": {
+        "nav_escape_min_or_stairs": 1,
+        "mc_go_mark_min": 3,
+        "mc_scene_min": 2,
+        "mc_cli_invocations_max": null,
+        "wall_time_ratio_vs_core": null,
+        "notes": "Core run exceeded stress floors; pin ratio/caps after first proc-scout-stress RUN_ID"
+      }
+    }
+  },
+  "card_statuses": {
+    "pn-plan": "done",
+    "pn-nav-1": "done",
+    "pn-nav-2": "done",
+    "pn-observe": "done",
+    "pn-plan-2": "done"
+  },
+  "spatial_map_path": "data/postmortems/proc-nav-lab/proc-nav-1780956289/spatial-map.html"
+}

@@ -1,0 +1,13 @@
+{
+  "run_id": "proc-nav-1780956289",
+  "board": "proc-nav-lab",
+  "generated_at": 1780959192.001869,
+  "roles": [
+    {
+      "role": "navigator",
+      "card_id": "t_a7261c92",
+      "status": "done",
+      "path": "/Users/foz/hermescraft/data/postmortems/proc-nav-lab/proc-nav-1780956289/feedback-navigator.md"
+    }
+  ]
+}

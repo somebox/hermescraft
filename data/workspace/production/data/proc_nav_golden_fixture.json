@@ -1,0 +1,10 @@
+{
+  "_comment": "Golden fixture for proc-nav-verify-anchor.sh --runtime-test. Frozen. Do not edit casually — the verifier asserts against these exact coords.",
+  "seed": 0,
+  "placements": {
+    "spawn":       [0, 65, 0],
+    "muster":      [6, 65, 0],
+    "overlook":    [12, 70, 8],
+    "return_post": [-4, 65, -4]
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "issues": [
+    {
+      "id": "W2-NAV-001",
+      "status": "in_progress",
+      "automation_eligible": true,
+      "script_path": "data/workspace/production/scripts/proc_nav_anchor_coords.sh",
+      "verifier": "scripts/proc-nav-verify-anchor.sh",
+      "note": "Anchor routing — flat_patch_center placed overlook in air; mc inspect --mark INVALID_COORD on bad marks",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780956289",
+          "observation": "mapcatalog flat_patch_center picked overlook=(0,80,0) — 15 blocks air above terrain; agent reported unreachable.",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780956289/baseline-passed"
+        }
+      ],
+      "last_seen_run": "proc-nav-1780956289"
+    },
+    {
+      "id": "W2-NAV-002",
+      "status": "in_progress",
+      "automation_eligible": false,
+      "script_path": null,
+      "note": "Stuck / escape / NAV_BLOCKED — card bodies + minecraft-navigation hints",
+      "last_seen_run": "proc-nav-1780956289"
+    },
+    {
+      "id": "W2-NAV-003",
+      "status": "open",
+      "automation_eligible": false,
+      "script_path": null,
+      "note": "verify_results handoff completeness (position_at_complete, predicates[])",
+      "last_seen_run": "proc-nav-1780956289"
+    },
+    {
+      "id": "W2-NAV-004",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "scripts/agent-test.py",
+      "verifier": "scripts/tests/test_agent_test_tool_counter.py",
+      "note": "agent-test.py tool_call_count = 0 when agent runs mc in Hermes chat mode — Phase B metrics blocker",
+      "first_seen_run": "proc-nav-1780956289",
+      "last_seen_run": "proc-nav-1780956289"
+    },
+    {
+      "id": "W2-NAV-005",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "prototypes/agent-arch/setup-role-profiles.sh",
+      "verifier": null,
+      "note": "setup-role-profiles.sh does not install minecraft-observe on navigator — pn-observe blocked until manual skill copy",
+      "first_seen_run": "proc-nav-1780956289",
+      "last_seen_run": "proc-nav-1780956289"
+    },
+    {
+      "id": "W2-NAV-006",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "prototypes/agent-arch/capstone/proc_scout_graph.py",
+      "verifier": null,
+      "note": "Planner cards (pn-plan, pn-plan-2) omit explicit data-source paths to last-scenario-map.json and playbook",
+      "first_seen_run": "proc-nav-1780956289",
+      "last_seen_run": "proc-nav-1780956289"
+    }
+  ]
+}

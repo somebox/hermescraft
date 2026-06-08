@@ -52,3 +52,16 @@ seeds:
     arena: { center: [0, 0], radius: 64 }
     allow: [plains, forest, ocean]
     allow_min_fraction: 0.0
+
+  # Proc-nav program pins (fill seed string after Phase B/C PASS):
+  - seed: "TBD_PROC_NAV_BASELINE"
+    arena: { center: [0, 0], radius: 96 }
+    allow: [plains, forest, meadow]
+    allow_min_fraction: 0.0
+    notes: "proc-nav-baseline — scouting.overlook on proc-nav; replace TBD after PASS"
+
+  - seed: "TBD_PROC_NAV_STRESS"
+    arena: { center: [0, 0], radius: 96 }
+    allow: [plains, forest, windswept_hills]
+    allow_min_fraction: 0.0
+    notes: "proc-nav-stress — steep_slope or gentle_hill; replace TBD after Stress PASS"

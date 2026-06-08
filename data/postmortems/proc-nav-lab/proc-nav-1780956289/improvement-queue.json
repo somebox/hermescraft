@@ -1,0 +1,13 @@
+{
+  "run_id": "proc-nav-1780956289",
+  "queue": [
+    {
+      "id": "W2-NAV-001",
+      "script_path": "data/workspace/production/scripts/proc_nav_anchor_coords.sh"
+    },
+    {
+      "id": "W2-NAV-004",
+      "script_path": "scripts/agent-test.py"
+    }
+  ]
+}

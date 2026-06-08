@@ -1,0 +1,101 @@
+{"kind": "run_started", "at": 1780956864, "run_id": "proc-nav-1780956289", "graph": "proc-scout", "board": "proc-nav-lab"}
+{"kind": "card_created", "at": 1780956865, "slug": "pn-plan", "card_id": "t_cd85d105"}
+{"kind": "card_created", "at": 1780956865, "slug": "pn-nav-1", "card_id": "t_272dd83b"}
+{"kind": "card_created", "at": 1780956865, "slug": "pn-nav-2", "card_id": "t_5267e4e6"}
+{"kind": "card_created", "at": 1780956865, "slug": "pn-observe", "card_id": "t_1e0cc1e4"}
+{"kind": "card_created", "at": 1780956866, "slug": "pn-plan-2", "card_id": "t_b8929b57"}
+{"kind": "watch_started", "at": 1780956866, "run_id": "proc-nav-1780956289"}
+{"kind": "position_snapshot", "at": 1780956866, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "card_transition", "at": 1780956866, "slug": "pn-observe", "card_id": "t_1e0cc1e4", "from_status": null, "to_status": "todo"}
+{"kind": "card_transition", "at": 1780956866, "slug": "pn-nav-1", "card_id": "t_272dd83b", "from_status": null, "to_status": "todo"}
+{"kind": "card_transition", "at": 1780956866, "slug": "pn-nav-2", "card_id": "t_5267e4e6", "from_status": null, "to_status": "todo"}
+{"kind": "card_transition", "at": 1780956866, "slug": "pn-plan-2", "card_id": "t_b8929b57", "from_status": null, "to_status": "todo"}
+{"kind": "card_transition", "at": 1780956866, "slug": "pn-plan", "card_id": "t_cd85d105", "from_status": null, "to_status": "ready"}
+{"kind": "card_transition", "at": 1780956876, "slug": "pn-plan", "card_id": "t_cd85d105", "from_status": "ready", "to_status": "running"}
+{"kind": "position_snapshot", "at": 1780956896, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780956926, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780956956, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780956986, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780957016, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780957046, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "card_transition", "at": 1780957066, "slug": "pn-nav-1", "card_id": "t_272dd83b", "from_status": "todo", "to_status": "ready"}
+{"kind": "card_terminal", "at": 1780957066, "slug": "pn-plan", "card_id": "t_cd85d105", "from_status": "running", "to_status": "done"}
+{"kind": "position_snapshot", "at": 1780957076, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "card_transition", "at": 1780957076, "slug": "pn-nav-1", "card_id": "t_272dd83b", "from_status": "ready", "to_status": "running"}
+{"kind": "position_snapshot", "at": 1780957106, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780957136, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780957166, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780957196, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780957226, "position": {"x": -24.5, "y": 89, "z": 28.5, "block_y": 88, "surface_y": 89}}
+{"kind": "position_snapshot", "at": 1780957256, "position": {"x": -24.5, "y": 87, "z": 30.7, "block_y": 86, "surface_y": 87}}
+{"kind": "position_snapshot", "at": 1780957286, "position": {"x": -27.5, "y": 84, "z": 34.3, "block_y": 83, "surface_y": 84}}
+{"kind": "position_snapshot", "at": 1780957316, "position": {"x": -20.7, "y": 79, "z": 40, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780957346, "position": {"x": -15.5, "y": 80, "z": 30.7, "block_y": 79, "surface_y": 80}}
+{"kind": "position_snapshot", "at": 1780957376, "position": {"x": -4.5, "y": 80, "z": 10.6, "block_y": 79, "surface_y": 80}}
+{"kind": "position_snapshot", "at": 1780957406, "position": {"x": -0.5, "y": 79, "z": 1.5, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780957437, "position": {"x": -0.5, "y": 82, "z": 1.5, "block_y": 81, "surface_y": 82}}
+{"kind": "position_snapshot", "at": 1780957467, "position": {"x": 2.6, "y": 83.9, "z": 4.4, "block_y": 82, "surface_y": 83}}
+{"kind": "position_snapshot", "at": 1780957497, "position": {"x": 1.5, "y": 81, "z": 0.7, "block_y": 80, "surface_y": 81}}
+{"kind": "position_snapshot", "at": 1780957527, "position": {"x": 1.5, "y": 81, "z": 0.7, "block_y": 80, "surface_y": 81}}
+{"kind": "position_snapshot", "at": 1780957557, "position": {"x": 1.5, "y": 81, "z": 0.7, "block_y": 80, "surface_y": 81}}
+{"kind": "position_snapshot", "at": 1780957587, "position": {"x": 0.6, "y": 79, "z": 0.5, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780957617, "position": {"x": 1.4, "y": 79, "z": 0.5, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780957647, "position": {"x": 0.6, "y": 78, "z": 0.5, "block_y": 77, "surface_y": 78}}
+{"kind": "position_snapshot", "at": 1780957677, "position": {"x": 0.6, "y": 78, "z": 0.5, "block_y": 77, "surface_y": 78}}
+{"kind": "position_snapshot", "at": 1780957707, "position": {"x": 0.4, "y": 77, "z": 0.5, "block_y": 76, "surface_y": 77}}
+{"kind": "position_snapshot", "at": 1780957737, "position": {"x": 0.4, "y": 77, "z": 0.5, "block_y": 76, "surface_y": 77}}
+{"kind": "position_snapshot", "at": 1780957767, "position": {"x": 0.4, "y": 77, "z": 0.5, "block_y": 76, "surface_y": 77}}
+{"kind": "position_snapshot", "at": 1780957797, "position": {"x": 1.5, "y": 79, "z": 0.5, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780957827, "position": {"x": 1.5, "y": 78, "z": 0.4, "block_y": 77, "surface_y": 78}}
+{"kind": "position_snapshot", "at": 1780957857, "position": {"x": 3.5, "y": 79, "z": -0.5, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780957887, "position": {"x": 0.5, "y": 79, "z": -0.5, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780957917, "position": {"x": 0.5, "y": 96, "z": -0.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780957947, "position": {"x": 0.5, "y": 96, "z": -0.5, "block_y": 95, "surface_y": 96}}
+{"kind": "card_terminal", "at": 1780957947, "slug": "pn-nav-1", "card_id": "t_272dd83b", "from_status": "running", "to_status": "done"}
+{"kind": "card_transition", "at": 1780957947, "slug": "pn-nav-2", "card_id": "t_5267e4e6", "from_status": "todo", "to_status": "ready"}
+{"kind": "card_transition", "at": 1780957957, "slug": "pn-nav-2", "card_id": "t_5267e4e6", "from_status": "ready", "to_status": "running"}
+{"kind": "position_snapshot", "at": 1780957977, "position": {"x": 0.5, "y": 96, "z": -0.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958007, "position": {"x": 0.5, "y": 96, "z": -0.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958037, "position": {"x": 2.5, "y": 79, "z": -6.5, "block_y": 78, "surface_y": 79}}
+{"kind": "position_snapshot", "at": 1780958068, "position": {"x": 4.5, "y": 82, "z": 9.3, "block_y": 81, "surface_y": 82}}
+{"kind": "position_snapshot", "at": 1780958098, "position": {"x": 4.5, "y": 83, "z": 6.5, "block_y": 82, "surface_y": 83}}
+{"kind": "position_snapshot", "at": 1780958128, "position": {"x": 4.5, "y": 94, "z": 6.5, "block_y": 93, "surface_y": 94}}
+{"kind": "position_snapshot", "at": 1780958158, "position": {"x": 4.5, "y": 94, "z": 6.5, "block_y": 93, "surface_y": 94}}
+{"kind": "position_snapshot", "at": 1780958188, "position": {"x": 0.6, "y": 85, "z": 6.5, "block_y": 84, "surface_y": 85}}
+{"kind": "position_snapshot", "at": 1780958218, "position": {"x": 0.6, "y": 100, "z": 6.5, "block_y": 99, "surface_y": 100}}
+{"kind": "position_snapshot", "at": 1780958248, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958278, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958308, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "card_transition", "at": 1780958318, "slug": "pn-observe", "card_id": "t_1e0cc1e4", "from_status": "todo", "to_status": "ready"}
+{"kind": "card_terminal", "at": 1780958318, "slug": "pn-nav-2", "card_id": "t_5267e4e6", "from_status": "running", "to_status": "done"}
+{"kind": "card_transition", "at": 1780958328, "slug": "pn-observe", "card_id": "t_1e0cc1e4", "from_status": "ready", "to_status": "running"}
+{"kind": "position_snapshot", "at": 1780958338, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958368, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "card_terminal", "at": 1780958368, "slug": "pn-observe", "card_id": "t_1e0cc1e4", "from_status": "running", "to_status": "blocked"}
+{"kind": "position_snapshot", "at": 1780958398, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958428, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "card_transition", "at": 1780958438, "slug": "pn-observe", "card_id": "t_1e0cc1e4", "from_status": "blocked", "to_status": "running"}
+{"kind": "position_snapshot", "at": 1780958458, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958488, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958518, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958548, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958578, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958608, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "card_terminal", "at": 1780958618, "slug": "pn-observe", "card_id": "t_1e0cc1e4", "from_status": "running", "to_status": "done"}
+{"kind": "card_transition", "at": 1780958618, "slug": "pn-plan-2", "card_id": "t_b8929b57", "from_status": "todo", "to_status": "ready"}
+{"kind": "card_transition", "at": 1780958628, "slug": "pn-plan-2", "card_id": "t_b8929b57", "from_status": "ready", "to_status": "running"}
+{"kind": "position_snapshot", "at": 1780958638, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958668, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958698, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958728, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "position_snapshot", "at": 1780958758, "position": {"x": 0.6, "y": 96, "z": 6.5, "block_y": 95, "surface_y": 96}}
+{"kind": "card_terminal", "at": 1780958778, "slug": "pn-plan-2", "card_id": "t_b8929b57", "from_status": "running", "to_status": "done"}
+{"kind": "watch_finished", "at": 1780958778, "reason": "all_terminal"}
+{"kind": "evaluate_started", "at": 1780958779, "run_id": "proc-nav-1780956289"}
+{"kind": "scorecard", "at": 1780958779, "run_id": "proc-nav-1780956289", "tier": "core", "graph": "proc-scout", "band": "pass", "cards_done_count": 5, "cards_total": 5, "wall_time_s": 1914, "manual_interventions": [], "mc_cli_invocations": 484, "mc_scene_count": 48, "mc_go_mark_count": 41, "nav_escape_count": 11, "mc_build_stairs_count": 7, "mc_dig_count": 68, "anchors_reached_ratio": 1.0, "acceptance_satisfied": false, "acceptance_evaluable": false, "thresholds_ref": "/Users/foz/hermescraft/calibration/proc-nav-thresholds.yaml", "thresholds": {"tier": {"baseline": {"mc_cli_invocations_max": 24, "wall_time_s_max": 180}, "core": {"mc_go_mark_min": 2, "mc_scene_min": 2, "wall_time_s_log_only": true}, "stress": {"nav_escape_min_or_stairs": 1, "mc_go_mark_min": 3, "mc_scene_min": 2, "mc_cli_invocations_max": null, "wall_time_ratio_vs_core": null}}}, "card_statuses": {"pn-plan": "done", "pn-nav-1": "done", "pn-nav-2": "done", "pn-observe": "done", "pn-plan-2": "done"}}
+{"kind": "evaluate_started", "at": 1780958801, "run_id": "proc-nav-1780956289"}
+{"kind": "scorecard", "at": 1780958801, "run_id": "proc-nav-1780956289", "tier": "core", "graph": "proc-scout", "band": "pass", "cards_done_count": 5, "cards_total": 5, "wall_time_s": 1936, "manual_interventions": [], "mc_cli_invocations": 525, "mc_scene_count": 55, "mc_go_mark_count": 44, "nav_escape_count": 11, "mc_build_stairs_count": 7, "mc_dig_count": 68, "anchors_reached_ratio": 1.0, "acceptance_satisfied": false, "acceptance_evaluable": false, "thresholds_ref": "/Users/foz/hermescraft/calibration/proc-nav-thresholds.yaml", "thresholds": {"tier": {"baseline": {"mc_cli_invocations_max": 24, "wall_time_s_max": 180}, "core": {"mc_go_mark_min": 2, "mc_scene_min": 2, "wall_time_s_log_only": true}, "stress": {"nav_escape_min_or_stairs": 1, "mc_go_mark_min": 3, "mc_scene_min": 2, "mc_cli_invocations_max": null, "wall_time_ratio_vs_core": null}}}, "card_statuses": {"pn-plan": "done", "pn-nav-1": "done", "pn-nav-2": "done", "pn-observe": "done", "pn-plan-2": "done"}}
+{"kind": "evaluate_started", "at": 1780959513, "run_id": "proc-nav-1780956289"}
+{"kind": "scorecard", "at": 1780959513, "run_id": "proc-nav-1780956289", "tier": "core", "graph": "proc-scout", "band": "pass", "cards_done_count": 5, "cards_total": 5, "wall_time_s": 2648, "manual_interventions": [], "mc_cli_invocations": 525, "mc_scene_count": 55, "mc_go_mark_count": 44, "nav_escape_count": 11, "mc_build_stairs_count": 7, "mc_dig_count": 68, "anchors_reached_ratio": 1.0, "acceptance_satisfied": false, "acceptance_evaluable": false, "thresholds_ref": "/Users/foz/hermescraft/calibration/proc-nav-thresholds.yaml", "thresholds": {"tier": {"baseline": {"mc_cli_invocations_max": 24, "wall_time_s_max": 180}, "core": {"mc_go_mark_min": 2, "mc_scene_min": 2, "wall_time_s_log_only": true}, "stress": {"nav_escape_min_or_stairs": 1, "mc_go_mark_min": 3, "mc_scene_min": 2, "mc_cli_invocations_max": null, "wall_time_ratio_vs_core": null}}}, "card_statuses": {"pn-plan": "done", "pn-nav-1": "done", "pn-nav-2": "done", "pn-observe": "done", "pn-plan-2": "done"}}
+{"kind": "evaluate_started", "at": 1780959537, "run_id": "proc-nav-1780956289"}
+{"kind": "scorecard", "at": 1780959537, "run_id": "proc-nav-1780956289", "tier": "core", "graph": "proc-scout", "band": "pass", "cards_done_count": 5, "cards_total": 5, "wall_time_s": 2672, "manual_interventions": [], "mc_cli_invocations": 525, "mc_scene_count": 55, "mc_go_mark_count": 44, "nav_escape_count": 11, "mc_build_stairs_count": 7, "mc_dig_count": 68, "anchors_reached_ratio": 1.0, "acceptance_satisfied": false, "acceptance_evaluable": false, "thresholds_ref": "/Users/foz/hermescraft/calibration/proc-nav-thresholds.yaml", "thresholds": {"reference_run_id": "proc-nav-1780956289", "reference_graph": "proc-scout", "tier": {"baseline": {"mc_cli_invocations_max": 24, "wall_time_s_max": 180, "notes": "Hard-pass blocked by W2-NAV-004 until chat-mode mc invocations counted"}, "core": {"mc_go_mark_min": 2, "mc_scene_min": 2, "wall_time_s_log_only": true, "measured": {"wall_time_s": 1936, "mc_cli_invocations": 525, "mc_go_mark_count": 44, "mc_scene_count": 55, "nav_escape_count": 11, "mc_build_stairs_count": 7, "mc_dig_count": 68}}, "stress": {"nav_escape_min_or_stairs": 1, "mc_go_mark_min": 3, "mc_scene_min": 2, "mc_cli_invocations_max": null, "wall_time_ratio_vs_core": null, "notes": "Core run exceeded stress floors; pin ratio/caps after first proc-scout-stress RUN_ID"}}}, "card_statuses": {"pn-plan": "done", "pn-nav-1": "done", "pn-nav-2": "done", "pn-observe": "done", "pn-plan-2": "done"}}

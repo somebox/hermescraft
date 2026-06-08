@@ -1,0 +1,78 @@
+{
+  "run_id": "proc-nav-1780956289",
+  "tenant": "proto-agent-arch",
+  "board": "proc-nav-lab",
+  "bot": "mox",
+  "graph": "proc-scout",
+  "tier": "core",
+  "map_seed": "proc-nav-1780956289",
+  "cards": [
+    {
+      "slug": "pn-plan",
+      "card_id": "t_cd85d105",
+      "assignee": "planner",
+      "bot": "mox",
+      "title": "[RESEARCH] proc-nav anchor playbook",
+      "depends_on_slugs": [],
+      "created_at": 1780956865
+    },
+    {
+      "slug": "pn-nav-1",
+      "card_id": "t_272dd83b",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] [NAV] reach overlook",
+      "depends_on_slugs": [
+        "pn-plan"
+      ],
+      "created_at": 1780956865
+    },
+    {
+      "slug": "pn-nav-2",
+      "card_id": "t_5267e4e6",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] [NAV] reach return post",
+      "depends_on_slugs": [
+        "pn-nav-1"
+      ],
+      "created_at": 1780956865
+    },
+    {
+      "slug": "pn-observe",
+      "card_id": "t_1e0cc1e4",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] [VERIFY] live anchors",
+      "depends_on_slugs": [
+        "pn-nav-2"
+      ],
+      "created_at": 1780956865
+    },
+    {
+      "slug": "pn-plan-2",
+      "card_id": "t_b8929b57",
+      "assignee": "planner",
+      "bot": "mox",
+      "title": "[RESEARCH] finalize from verify",
+      "depends_on_slugs": [
+        "pn-observe"
+      ],
+      "created_at": 1780956866
+    }
+  ],
+  "cards_total": 5,
+  "acceptance_predicates": [
+    {
+      "kind": "at_mark",
+      "mark": "overlook",
+      "near": 4
+    },
+    {
+      "kind": "at_mark",
+      "mark": "return_post",
+      "near": 4
+    }
+  ],
+  "manual_interventions": []
+}

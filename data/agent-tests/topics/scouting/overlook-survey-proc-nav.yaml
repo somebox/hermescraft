@@ -1,0 +1,53 @@
+# Tactical Phase B gate — hardcoded proc-nav world (before full {{PROC_WORLD}} migration).
+agent_test_id: proc_scouting_overlook_survey_proc_nav
+world: proc-nav
+
+procedural_map:
+  variant: scouting.overlook
+  pick: random
+
+prompt: |
+  You are the Minecraft bot {{BOT_USERNAME}}. The `mc` CLI is on PATH; MC_API_URL and MC_USERNAME are set.
+  You are in world proc-nav at the scenario spawn.
+
+  Do exactly this:
+  1. Run `mc status` once.
+  2. Go to the overlook at ({{OVERLOOK_X}}, {{OVERLOOK_Y}}, {{OVERLOOK_Z}}) within 4 blocks (`mc move` / `mc goto`).
+  3. Run `mc scene` once and pick the most prominent terrain feature you see.
+  4. Go to the return post at ({{RETURN_POST_X}}, {{RETURN_POST_Y}}, {{RETURN_POST_Z}}) within 4 blocks.
+  5. Say exactly: scout ok
+
+skills: [minecraft-navigation, minecraft-mining]
+max_turns: 12
+timeout_seconds: 180
+
+expect:
+  agent_chat_contains_any:
+    - scout ok
+  bot_at:
+    x: {{RETURN_POST_X}}
+    y: {{RETURN_POST_Y}}
+    z: {{RETURN_POST_Z}}
+    range: 4
+  mc_cli_invocations_max: 24
+  mc_verbs_include_any:
+    - scene
+    - move
+    - goto
+    - go_mark
+
+prep:
+  - "execute in proc-nav run difficulty peaceful"
+  - "execute in proc-nav run gamerule doMobSpawning false"
+  - "execute in proc-nav run gamerule doDaylightCycle false"
+  - "execute in proc-nav run time set day"
+  - "execute in proc-nav run kill @e[type=!player]"
+  - "mvtp {{BOT_USERNAME}} proc-nav"
+  - "execute in proc-nav run tp {{BOT_USERNAME}} {{SPAWN_X}} {{SPAWN_Y}} {{SPAWN_Z}}"
+  - "effect clear {{BOT_USERNAME}}"
+  - "effect give {{BOT_USERNAME}} minecraft:saturation 600 1"
+
+cleanup:
+  - "execute in proc-nav run kill @e[type=!player]"
+  - "mvtp {{BOT_USERNAME}} landfolk-test"
+  - "execute in landfolk-test run tp {{BOT_USERNAME}} 52 65 52"

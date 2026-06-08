@@ -12,6 +12,7 @@ set -euo pipefail
 
 MODEL_DEFAULT="${PROTO_MODEL:-deepseek/deepseek-v4-flash}"
 export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+KANBAN_BOARD="${KANBAN_BOARD:-wheat-capstone}"
 
 if [[ ! -d "$HERMES_HOME" ]]; then
   echo "FATAL: HERMES_HOME does not exist: $HERMES_HOME" >&2
@@ -168,18 +169,20 @@ write_soul() {
   cat > "$path" <<EOF
 # ${name} (execute role — wheat-capstone W1)
 
-You are the **${role}** worker on board **wheat-capstone**. Bot HTTP identity
+You are the **${role}** worker on board **${KANBAN_BOARD}**. Bot HTTP identity
 (\`MC_API_URL\`, \`MC_USERNAME\`) is loaded from this profile's \`.env\` at
 spawn — \`mc\` will reach Mox (:3007) without any manual export.
 
 ## Turn 1
 
-1. Load the full card skill bundle (L0–L3):
+1. When \`HERMES_KANBAN_TASK\` is set, read the active card first:
+   \`scripts/kanban card \$HERMES_KANBAN_TASK\` (or \`kanban_show\` equivalent).
+2. Load the full card skill bundle (L0–L3):
    \`skill_view('kanban-worker')\`, \`skill_view('agent-${role}')\`,
    \`skill_view('${domain_skill}')\`, \`skill_view('minecraft-survival')\`.
-2. Read parent handoff via \`kanban_show\` / parent completion metadata
+3. Read parent handoff via \`kanban_show\` / parent completion metadata
    (\`exit_pos\`, \`work_at_mark\`).
-3. \`mc status\` before acting.
+4. \`mc status\` before acting.
 
 ## On kanban_complete
 
@@ -223,10 +226,10 @@ setup_role builder builder minecraft-building minecraft-building "Builder execut
 setup_role farmer farmer minecraft-farming minecraft-farming "Farmer execute role (wheat W1)"
 setup_role crafter crafter minecraft-chores minecraft-chores "Crafter execute role (wheat W1)"
 
-if hermes kanban boards list 2>/dev/null | grep -qE 'wheat-capstone'; then
-  log "board wheat-capstone exists"
+if hermes kanban boards list 2>/dev/null | grep -qF "$KANBAN_BOARD"; then
+  log "board $KANBAN_BOARD exists"
 else
-  hermes kanban boards create wheat-capstone >/dev/null 2>&1 || warn "board create non-zero"
+  hermes kanban boards create "$KANBAN_BOARD" >/dev/null 2>&1 || warn "board create non-zero"
 fi
 
 log "done. Profiles: navigator builder farmer crafter under $HERMES_HOME"

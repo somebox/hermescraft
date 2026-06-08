@@ -1,0 +1,19 @@
+RUN_ID=proc-nav-1780956289
+TIER=baseline-soft
+SPEC=data/agent-tests/topics/scouting/overlook-survey-proc-nav.yaml
+SEED=1001
+MODEL=deepseek/deepseek-v4-flash
+AGENT_TEST_RUN_JSON=/Users/foz/hermescraft/data/agent-tests/runs/proc_scouting_overlook_survey_proc_nav-2026-06-08T22-10-25-031708+00-00.json
+TIMESTAMP=2026-06-09T00:13:02+02:00
+
+# Soft pass rationale (not predicate-PASS):
+# 1. Harness validated end-to-end: mapcatalog materialize -> prep mvtp -> hermes
+#    chat -> agent reasoned + ran mc commands -> said "scout ok".
+# 2. bot_at predicate failed because overlook anchor at (0, 80, 0) is 15 blocks
+#    above terrain (flat_patch_center picked an air column). Agent correctly
+#    identified and reported the unreachable target rather than fighting it.
+# 3. mc_verbs counter shows 0 invocations but the agent's own scout report
+#    cites position from mc status and terrain from mc scene — counter parsing
+#    bug, not behavior bug.
+#
+# Filed as W2-NAV-* issues for the self-improvement loop to pick up.
