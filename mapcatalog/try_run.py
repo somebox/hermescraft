@@ -12,7 +12,7 @@ from mapcatalog.models import Requirements
 from mapcatalog.pass1 import evaluate_pass1
 from mapcatalog.pass1_options import parse_pass1_options
 from mapcatalog.placement_resolve import placement_reject_reasons, resolve_placements
-from mapcatalog.rcon_client import SshDockerRcon
+from mapcatalog.rcon_client import make_rcon
 from mapcatalog.result import (
     audit_block,
     fingerprint_payload,
@@ -39,13 +39,7 @@ def try_seed(
     server_raw: dict | None = None,
     reuse_world: bool | None = None,
 ) -> TryOutcome:
-    client = SshDockerRcon(
-        ssh_host=cfg.ssh_host,
-        container=cfg.container,
-        cli=cfg.cli,
-        command_timeout_s=cfg.command_timeout_s,
-        batch_timeout_s=cfg.batch_timeout_s,
-    )
+    client = make_rcon(cfg)
 
     p1_opts = parse_pass1_options(req.source_lines, server_raw, cfg)
 

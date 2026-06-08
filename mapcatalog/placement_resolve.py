@@ -10,7 +10,7 @@ from mapcatalog.probe import blocks_match_batch
 
 if TYPE_CHECKING:
     from mapcatalog.metrics import ProbeMetrics
-    from mapcatalog.rcon_client import SshDockerRcon
+    from mapcatalog.rcon_protocol import RconClient
 
 NON_STANDABLE = frozenset(
     {
@@ -43,7 +43,7 @@ def _disc_feet_candidates(arena: Arena, rng: random.Random) -> list[tuple[int, i
 
 
 def _find_surface_y(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     x: int,
     z: int,
@@ -64,7 +64,7 @@ def _find_surface_y(
 
 
 def _is_standable(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     x: int,
     feet_y: int,
@@ -139,7 +139,7 @@ def _near_target_points(
 
 def resolve_placements(
     *,
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     arena: Arena,
     seed: str,

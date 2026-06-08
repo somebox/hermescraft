@@ -7,7 +7,7 @@ from mapcatalog.metrics import ColumnSample, find_surface_heights, probe_biome_f
 from mapcatalog.models import Arena, BiomeFractionGate, Requirements
 from mapcatalog.pass1_options import Pass1Options
 from mapcatalog.pass1 import Pass1Result
-from mapcatalog.rcon_client import SshDockerRcon
+from mapcatalog.rcon_protocol import RconClient
 
 
 def _allow_from_requirements(req: Requirements) -> list[str]:
@@ -42,7 +42,7 @@ def should_run_verify_live(
 
 
 def sparse_live_biome_fraction(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     arena: Arena,
     allow: list[str],
@@ -81,7 +81,7 @@ def sparse_live_biome_fraction(
 
 
 def verify_live_after_materialize(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     req: Requirements,
     seed: str,

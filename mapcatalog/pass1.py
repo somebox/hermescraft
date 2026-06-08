@@ -10,7 +10,9 @@ from mapcatalog.models import (
     Arena,
     BiomeCountGate,
     BiomeFractionGate,
+    FlatPatchGate,
     Gate,
+    HeightJitterGate,
     Requirements,
 )
 from mapcatalog.server_config import ServerConfig
@@ -107,14 +109,68 @@ def run_biome_scan(
 def _pass1_step_for_gates(gates: list[Gate]) -> int:
     step = 16
     for g in gates:
-        if isinstance(g, (BiomeFractionGate, BiomeCountGate)):
+        if isinstance(g, (BiomeFractionGate, BiomeCountGate, FlatPatchGate, HeightJitterGate)):
             step = min(step, g.grid_step)
     return step
 
 
+def _largest_flat_component_cubiomes(cells: list[dict], step: int, max_delta: float) -> int:
+    """Connected components on the cubiomes cell grid where |ΔY| <= max_delta."""
+    by_key: dict[tuple[int, int], float] = {}
+    for c in cells:
+        y = c.get("y")
+        if y is None:
+            continue
+        by_key[(int(c["x"]), int(c["z"]))] = float(y)
+    if not by_key:
+        return 0
+    visited: set[tuple[int, int]] = set()
+    best = 0
+    for start in by_key:
+        if start in visited:
+            continue
+        stack = [start]
+        comp = 0
+        visited.add(start)
+        while stack:
+            x, z = stack.pop()
+            comp += 1
+            y0 = by_key[(x, z)]
+            for dx, dz in ((step, 0), (-step, 0), (0, step), (0, -step)):
+                nb = (x + dx, z + dz)
+                if nb not in by_key or nb in visited:
+                    continue
+                if abs(y0 - by_key[nb]) <= max_delta:
+                    visited.add(nb)
+                    stack.append(nb)
+        best = max(best, comp)
+    return best
+
+
+def _mean_neighbor_height_delta_cubiomes(cells: list[dict], step: int) -> float:
+    by_key: dict[tuple[int, int], float] = {}
+    for c in cells:
+        y = c.get("y")
+        if y is None:
+            continue
+        by_key[(int(c["x"]), int(c["z"]))] = float(y)
+    deltas: list[float] = []
+    for (x, z), y in by_key.items():
+        for dx, dz in ((step, 0), (-step, 0), (0, step), (0, -step)):
+            nb = (x + dx, z + dz)
+            if nb in by_key:
+                deltas.append(abs(y - by_key[nb]))
+    return sum(deltas) / len(deltas) if deltas else 999.0
+
+
 def evaluate_pass1(req: Requirements, cfg: ServerConfig, seed: str) -> Pass1Result:
     pass1_gates = [g for g in req.gates if g.pass_num == 1]
-    if not pass1_gates:
+    # Height/flat gates are nominally Pass 2 but can be pre-filtered cheaply against
+    # cubiomes heightmap. Pass 2 still runs the live probe to confirm.
+    height_prefilter_gates = [
+        g for g in req.gates if isinstance(g, (FlatPatchGate, HeightJitterGate))
+    ]
+    if not pass1_gates and not height_prefilter_gates:
         return Pass1Result(
             continue_pass2=True,
             audit={"skipped": True, "reason": "no pass1 gates"},
@@ -159,6 +215,34 @@ def evaluate_pass1(req: Requirements, cfg: ServerConfig, seed: str) -> Pass1Resu
                 reasons.append(f"pass1: biomes distinct {distinct} > {g.max_distinct}")
             if g.min_distinct is not None and distinct < g.min_distinct:
                 reasons.append(f"pass1: biomes distinct {distinct} < {g.min_distinct}")
+
+    # Only pre-filter heights if cubiomes emitted y data (older scans / mocks may omit it).
+    # cubiomes mapApproxHeight is empirically 3-4x noisier than live Paper heightmap in
+    # plains-like biomes (see docs/specs/world/cubiomes-paper-skew.md). So Pass 1 only
+    # rejects catastrophically bad seeds; Pass 2 stays authoritative for accepts.
+    HEIGHT_SKEW_MULT = 4.0
+    cubiomes_has_y = any(c.get("y") is not None for c in scan.cells)
+    for g in (height_prefilter_gates if cubiomes_has_y else []):
+        step = _pass1_step_for_gates(req.gates)
+        if isinstance(g, FlatPatchGate):
+            n = _largest_flat_component_cubiomes(scan.cells, step=step, max_delta=2)
+            metrics["flat_patch_cells_cubiomes"] = n
+            # Cubiomes flat-patch is highly skew-sensitive (adjacency on rough Y); only reject
+            # if cubiomes finds essentially no contiguous flat area at all.
+            soft_floor = max(1, int(g.min_cells / HEIGHT_SKEW_MULT))
+            if n < soft_floor:
+                reasons.append(
+                    f"pass1: flat patch {n} cubiomes-cells < {soft_floor} (soft floor of {g.min_cells})"
+                )
+        elif isinstance(g, HeightJitterGate):
+            jitter = _mean_neighbor_height_delta_cubiomes(scan.cells, step=step)
+            metrics["height_jitter_cubiomes"] = jitter
+            soft_ceiling = g.max_blocks * HEIGHT_SKEW_MULT
+            if jitter > soft_ceiling:
+                reasons.append(
+                    f"pass1: neighbor height delta {jitter:.2f} cubiomes > {soft_ceiling:.1f} "
+                    f"(soft ceiling of {g.max_blocks})"
+                )
 
     audit = {
         "cubiomes_version": scan.mc,

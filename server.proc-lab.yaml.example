@@ -1,0 +1,29 @@
+# Copy to server.proc-lab.yaml — local Paper server on macOS, no ssh/docker.
+# Pair with ~/hermescraft-proc-lab/ install (Paper 1.21.4 + MV-Core 5.6.2,
+# rcon on 25576, world ports on 25566). See docs/testing/procedural/map-catalog.md.
+minecraft_version: "1.21.4"
+
+rcon:
+  transport: tcp
+  host: 127.0.0.1
+  port: 25576
+  password_file: ~/.config/hermescraft/proc-lab-rcon.pass   # chmod 600
+
+world:
+  name: proc-lab
+  generator: NORMAL
+  evac:
+    hub_world: proc-lab-bootstrap     # local-only sacrificial hub
+    hub_xyz: [0, 100, 0]
+    use_unsafe_mvtp: true
+    bot_players: []                   # no human/bot accounts ever join proc-lab locally
+  reuse_seed: true
+
+cubiomes:
+  binary: tools/cubiome_scan/proc_biome_scan
+  mc_enum: MC_1_21
+
+pass1:
+  verify_live: true
+  verify_live_samples: 10
+  verify_live_when: always

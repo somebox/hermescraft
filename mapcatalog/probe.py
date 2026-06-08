@@ -3,14 +3,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Protocol
+
+from mapcatalog.rcon_protocol import RconClient as RconClient  # re-export
 
 
 MAX_CMDS_PER_BATCH = 100
-
-
-class RconClient(Protocol):
-    def run_batch(self, cmds: list[str]) -> str: ...
 
 
 @dataclass

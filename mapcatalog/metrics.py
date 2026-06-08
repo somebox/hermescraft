@@ -19,7 +19,7 @@ from mapcatalog.probe import (
     classify_air_probe_line,
     line_indicates_block_match,
 )
-from mapcatalog.rcon_client import SshDockerRcon
+from mapcatalog.rcon_protocol import RconClient
 from mapcatalog.sampling import disc_grid_cells, underground_sample_cells
 
 
@@ -58,28 +58,21 @@ def _batch_chunks(cmds: list[str], size: int = MAX_CMDS_PER_BATCH) -> list[list[
     return [cmds[i : i + size] for i in range(0, len(cmds), size)]
 
 
-def find_surface_heights(
-    client: SshDockerRcon,
+def _scan_pass(
+    client: RconClient,
     world: str,
     columns: list[tuple[int, int]],
-    *,
-    y_lo: int = 48,
-    y_hi: int = 319,
-    y_step: int = 2,
+    y_hi: int,
+    y_lo: int,
+    y_step: int,
 ) -> dict[tuple[int, int], int | None]:
-    """Feet Y per column: scan downward for first non-air block, feet at y+1.
-
-    ``y_hi`` defaults to 319 (max block Y on 1.21+). OOB probe lines are treated
-    as "still air" so a scan starting too high does not pin every column to y+1.
-    """
-    heights: dict[tuple[int, int], int | None] = {c: None for c in columns}
+    """One descending scan from y_hi to y_lo. Returns {column: y+1 of first solid} or None."""
+    out_heights: dict[tuple[int, int], int | None] = {c: None for c in columns}
     pending = list(columns)
     for y in range(y_hi, y_lo - 1, -y_step):
         if not pending:
             break
-        cmds = [
-            f"execute in {world} if block {x} {y} {z} #minecraft:air" for x, z in pending
-        ]
+        cmds = [f"execute in {world} if block {x} {y} {z} #minecraft:air" for x, z in pending]
         still: list[tuple[int, int]] = []
         for chunk_start in range(0, len(cmds), MAX_CMDS_PER_BATCH):
             chunk = cmds[chunk_start : chunk_start + MAX_CMDS_PER_BATCH]
@@ -90,15 +83,64 @@ def find_surface_heights(
                 line = lines[i] if i < len(lines) else ""
                 kind = classify_air_probe_line(line)
                 if kind == "solid":
-                    heights[(x, z)] = y + 1
+                    out_heights[(x, z)] = y + 1
                 else:
                     still.append((x, z))
         pending = still
+    return out_heights
+
+
+def find_surface_heights(
+    client: RconClient,
+    world: str,
+    columns: list[tuple[int, int]],
+    *,
+    y_lo: int = 48,
+    y_hi: int = 200,
+    y_step: int = 2,
+) -> dict[tuple[int, int], int | None]:
+    """Feet Y per column: scan downward for first non-air block, feet at y+1.
+
+    Uses a two-phase scan to minimize rcon round-trips on a local TCP transport:
+      1. Coarse pass at y_step=16 to locate rough surface Y per column.
+      2. Fine pass in a tight ±18 Y window around each coarse hit at y_step=`y_step`.
+
+    Falls back to a single full-fine scan if the coarse pass missed (e.g. terrain above y_hi
+    or below y_lo). Default y_hi=200 is well above almost all overworld surface peaks; raise
+    it for tests against extreme mountain terrains.
+    """
+    # Phase 1: coarse scan (step 16) — fast, finds rough surface for each column.
+    coarse = _scan_pass(client, world, columns, y_hi=y_hi, y_lo=y_lo, y_step=16)
+
+    heights: dict[tuple[int, int], int | None] = {c: None for c in columns}
+    refine_groups: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    full_rescan: list[tuple[int, int]] = []
+    for col in columns:
+        rough = coarse.get(col)
+        if rough is None:
+            full_rescan.append(col)
+            continue
+        # Refine in a small window: search from rough+2 down to rough-18 at fine step.
+        window = (min(y_hi, rough + 2), max(y_lo, rough - 18))
+        refine_groups.setdefault(window, []).append(col)
+
+    # Phase 2: fine refinement per coarse-window group.
+    for (win_hi, win_lo), group in refine_groups.items():
+        fine = _scan_pass(client, world, group, y_hi=win_hi, y_lo=win_lo, y_step=y_step)
+        for col, y in fine.items():
+            heights[col] = y
+
+    # Fallback: any column the coarse pass missed gets a full scan at fine step.
+    if full_rescan:
+        rescanned = _scan_pass(client, world, full_rescan, y_hi=y_hi, y_lo=y_lo, y_step=y_step)
+        for col, y in rescanned.items():
+            heights[col] = y
+
     return heights
 
 
 def probe_biome_cell(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     x: int,
     y: int,
@@ -111,7 +153,7 @@ def probe_biome_cell(
 
 
 def probe_biome_fraction_at_surface(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     columns: list[ColumnSample],
     allow: list[str],
@@ -145,7 +187,7 @@ def probe_biome_fraction_at_surface(
 
 
 def probe_distinct_biomes_at_surface(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     columns: list[ColumnSample],
     *,
@@ -177,7 +219,7 @@ def probe_distinct_biomes_at_surface(
 
 
 def probe_biome_fraction(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     columns: list[tuple[int, int]],
     allow: list[str],
@@ -191,7 +233,7 @@ def probe_biome_fraction(
 
 
 def collect_probe_metrics(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     arena: Arena,
     gates: list[Gate],
@@ -265,7 +307,7 @@ def _mean_neighbor_height_delta(columns: list[ColumnSample]) -> float:
 
 
 def _surface_block_fraction(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     columns: list[ColumnSample],
     block: str,
@@ -295,7 +337,7 @@ class GateEvalResult:
 
 
 def evaluate_gates(
-    client: SshDockerRcon,
+    client: RconClient,
     world: str,
     arena: Arena,
     gates: list[Gate],

@@ -69,6 +69,7 @@ catalog/**/.find_state.json
 catalog/rejects/
 rejects/
 server.local.yaml
+server.proc-lab.yaml
 tools/cubiome_scan/cubiomes/
 tools/cubiome_scan/proc_biome_scan
 

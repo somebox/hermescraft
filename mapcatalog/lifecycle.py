@@ -2,19 +2,14 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 import time
 from dataclasses import dataclass
-from typing import Protocol
 
 from mapcatalog.models import Arena
 from mapcatalog.probe import line_indicates_block_match
+from mapcatalog.rcon_protocol import RconClient as LifecycleRcon  # backwards-compat alias
 from mapcatalog.server_config import ServerConfig
-
-
-class LifecycleRcon(Protocol):
-    def run(self, cmd: str) -> str: ...
-
-    def run_batch(self, cmds: list[str]) -> str: ...
 
 
 def assert_proc_world(name: str) -> None:
@@ -47,6 +42,18 @@ def evac_players(client: LifecycleRcon, cfg: ServerConfig) -> None:
 _MV_CONFIRM_OTP = re.compile(r"mv confirm\s+(\S+)", re.IGNORECASE)
 
 
+def _wait_world_gone(client: LifecycleRcon, world: str, timeout_s: float = 5.0) -> None:
+    """Poll `mv list` until the world is absent. Guards against APFS clone-cleanup
+    lag on macOS where `mv create` can race a not-yet-deleted region tree."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        listing = client.run("mv list")
+        # MV list entries are coloured; match the bare world name with whitespace/bracket boundary.
+        if not re.search(rf"\b{re.escape(world)}\b", listing):
+            return
+        time.sleep(0.2)
+
+
 def delete_and_create_world(client: LifecycleRcon, cfg: ServerConfig, seed: str) -> None:
     assert_proc_world(cfg.world_name)
     w = cfg.world_name
@@ -58,6 +65,10 @@ def delete_and_create_world(client: LifecycleRcon, cfg: ServerConfig, seed: str)
     m = _MV_CONFIRM_OTP.search(out)
     if m:
         client.run(f"mv confirm {m.group(1)}")
+    # macOS APFS can lag the region-dir cleanup after `mv confirm` returns;
+    # `mv create` then sees stale files. Poll `mv list` until the world is gone.
+    if sys.platform == "darwin" and getattr(cfg, "transport", "ssh_docker") == "tcp":
+        _wait_world_gone(client, w)
     # Create fresh. MV does NOT auto-load on this build — load explicitly so the
     # vanilla `execute in <w>` path resolves the dimension namespace.
     client.run(f"mv create {w} {gen} -s {seed}")
@@ -80,7 +91,10 @@ def preload_arena_chunks(client: LifecycleRcon, cfg: ServerConfig, arena: Arena)
         cmds.append(f"execute in {w} run setblock {cx} {y} {cz} minecraft:air replace minecraft:air")
     for i in range(0, len(cmds), 80):
         client.run_batch(cmds[i : i + 80])
-    time.sleep(2.0)
+    # Tiny settle pause — Paper queues chunk gen async, but the forceload+setblock above
+    # already blocks until generation completes for those columns. Previously this slept
+    # 2s as a defensive margin; on local rcon that's pure overhead per seed.
+    time.sleep(0.2)
 
 
 class WorldProbeError(RuntimeError):
