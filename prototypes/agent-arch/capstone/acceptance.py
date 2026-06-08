@@ -216,6 +216,24 @@ def _parse_verify_response(
     nested = body.get("data") or {}
     nested_satisfied = nested.get("satisfied")
     flat_satisfied = body.get("satisfied")
+
+    # READ_FAILED / chunk-unloaded guard: if mc verify couldn't read every
+    # cell in the region, the predicate is NOT evaluable — return
+    # evaluable=false so the acceptance band doesn't conflate "we couldn't
+    # measure" with "we measured a fail". Heuristic: presence of unreadable
+    # > 0 in either layer, or known error markers in raw_stdout.
+    unreadable = (nested.get("unreadable") if isinstance(nested.get("unreadable"), int) else None)
+    if unreadable is None:
+        unreadable = body.get("unreadable") if isinstance(body.get("unreadable"), int) else 0
+    raw_marker = "READ_FAILED" in (body.get("raw_stdout") or "") or "chunk unloaded" in (body.get("raw_stdout") or "")
+    if (unreadable and unreadable > 0) or raw_marker:
+        return AcceptanceResult(
+            satisfied=False,
+            evaluable=False,
+            detail=body,
+            stderr=stderr,
+        )
+
     satisfied = bool(nested_satisfied if nested_satisfied is not None else flat_satisfied) if ok else False
     return AcceptanceResult(
         satisfied=satisfied,

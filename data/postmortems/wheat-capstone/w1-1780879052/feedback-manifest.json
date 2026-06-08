@@ -1,0 +1,31 @@
+{
+  "run_id": "w1-1780879052",
+  "board": "wheat-capstone",
+  "generated_at": 1780880637.3455338,
+  "roles": [
+    {
+      "role": "navigator",
+      "card_id": "t_2a31258a",
+      "status": "done",
+      "path": "/Users/foz/hermescraft/data/postmortems/wheat-capstone/w1-1780879052/feedback-navigator.md"
+    },
+    {
+      "role": "builder",
+      "card_id": "t_16dbb970",
+      "status": "done",
+      "path": "/Users/foz/hermescraft/data/postmortems/wheat-capstone/w1-1780879052/feedback-builder.md"
+    },
+    {
+      "role": "farmer",
+      "card_id": "t_79df9d9a",
+      "status": "done",
+      "path": "/Users/foz/hermescraft/data/postmortems/wheat-capstone/w1-1780879052/feedback-farmer.md"
+    },
+    {
+      "role": "crafter",
+      "card_id": "t_0b687d72",
+      "status": "done",
+      "path": "/Users/foz/hermescraft/data/postmortems/wheat-capstone/w1-1780879052/feedback-crafter.md"
+    }
+  ]
+}

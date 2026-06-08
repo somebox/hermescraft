@@ -70,6 +70,7 @@ REPO_ROOT = _HERE.parent.parent.parent
 POSTMORTEMS_DIR = REPO_ROOT / "data" / "postmortems" / "wheat-capstone"
 DEFAULT_TESTER_URL = "http://127.0.0.1:3004"
 DEFAULT_BOARD = "wheat-capstone"
+W1_EXECUTE_ROLES = ("navigator", "builder", "farmer", "crafter")
 
 
 # ── Telemetry shim — minimal JSONL emitter ─────────────────────────
@@ -168,38 +169,58 @@ def query_board_statuses(card_ids: list[str]) -> dict[str, str]:
 
 # ── Mode implementations ───────────────────────────────────────────
 
-def _override_assignees(invocations, override: Optional[str]):
-    """If ``override`` is set, replace every invocation's ``--assignee``
-    value with it. Used to route all 4 role-named cards (navigator,
-    builder, farmer, crafter) to a single mox-bound profile at trial
-    time; the role distinction stays in the body @-mention and the
-    per-card --skill flags. Returns a new tuple (Invocation is frozen)."""
-    if not override:
-        return invocations
-    from dataclasses import replace
-    new_invs = []
+def _assignee_from_cmd(cmd: tuple[str, ...]) -> str:
+    return cmd[cmd.index("--assignee") + 1]
+
+
+def _skills_from_cmd(cmd: tuple[str, ...]) -> list[str]:
+    skills: list[str] = []
+    i = 0
+    while i < len(cmd):
+        if cmd[i] == "--skill":
+            skills.append(cmd[i + 1])
+        i += 1
+    return skills
+
+
+def _validate_w1_dry_run(graph, invocations) -> int:
+    """Architecture gate for W1 authoring shape."""
+    errors: list[str] = []
+    if len(invocations) != len(graph.cards):
+        errors.append(f"expected {len(graph.cards)} invocations, got {len(invocations)}")
+    slug_to_card = {c.slug: c for c in graph.cards}
     for inv in invocations:
-        cmd = list(inv.cmd)
-        try:
-            idx = cmd.index("--assignee")
-            cmd[idx + 1] = override
-        except ValueError:
-            pass
-        new_invs.append(replace(inv, cmd=tuple(cmd)))
-    return tuple(new_invs)
+        card = slug_to_card.get(inv.slug)
+        if not card:
+            errors.append(f"unknown slug {inv.slug}")
+            continue
+        assignee = _assignee_from_cmd(inv.cmd)
+        if assignee != card.assignee:
+            errors.append(f"{inv.slug}: assignee {assignee!r} != graph {card.assignee!r}")
+        if assignee not in W1_EXECUTE_ROLES:
+            errors.append(f"{inv.slug}: assignee {assignee!r} not a role slug")
+        title = inv.cmd[-1]
+        if "[bot:mox]" not in title.lower():
+            errors.append(f"{inv.slug}: title missing [bot:mox]: {title!r}")
+        expected_skills = list(card.skills)
+        got_skills = _skills_from_cmd(inv.cmd)
+        if got_skills != expected_skills:
+            errors.append(
+                f"{inv.slug}: skills mismatch expected={expected_skills} got={got_skills}"
+            )
+    if errors:
+        for e in errors:
+            print(f"[runner] dry-run FAIL: {e}", file=sys.stderr)
+        return 1
+    print("[runner] dry-run: W1 shape checks passed")
+    return 0
 
 
-def mode_dry_run(board: Optional[str] = None,
-                 assignee_override: Optional[str] = None) -> int:
+def mode_dry_run(board: Optional[str] = None) -> int:
     graph = build_default_graph()
-    # Wheat graph cards leave bot=None and fall back to graph epic_bot
-    # = "mox" (set in wheat_graph.EPIC_BOT). The author handles the
-    # [bot:mox] title prefix.
     invocations = author_colony_lane(graph, epic_bot=EPIC_BOT, board=board)
-    invocations = _override_assignees(invocations, assignee_override)
     print(f"[runner] dry-run: {len(invocations)} invocations  "
-          f"(board={board or '(proto/default)'}"
-          f"{', assignee=' + assignee_override if assignee_override else ''})")
+          f"(board={board or '(proto/default)'})")
     for inv in invocations:
         print(f"  {inv.slug}: {' '.join(shlex.quote(p) for p in inv.cmd)}")
         if inv.depends_on_slugs:
@@ -208,17 +229,15 @@ def mode_dry_run(board: Optional[str] = None,
     print(f"[runner] acceptance: {len(graph.acceptance_predicates or [])} predicates")
     for p in (graph.acceptance_predicates or []):
         print(f"  {p['kind']}: {json.dumps({k: v for k, v in p.items() if k != 'kind'})}")
-    return 0
+    return _validate_w1_dry_run(graph, invocations)
 
 
-def mode_create_only(run_id: str, board: Optional[str] = None,
-                     assignee_override: Optional[str] = None) -> int:
+def mode_create_only(run_id: str, board: Optional[str] = None) -> int:
     if board:
         if not _ensure_board_exists(board):
             return 1
     graph = build_default_graph()
     invocations = author_colony_lane(graph, epic_bot=EPIC_BOT, board=board)
-    invocations = _override_assignees(invocations, assignee_override)
 
     trial_dir = POSTMORTEMS_DIR / run_id
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -237,18 +256,17 @@ def mode_create_only(run_id: str, board: Optional[str] = None,
                   file=sys.stderr)
             break
         slug_to_id[inv.slug] = card_id
-        assignee_idx = inv.cmd.index("--assignee") + 1
         manifest_cards.append({
             "slug": inv.slug,
             "card_id": card_id,
-            "assignee": inv.cmd[assignee_idx],
+            "assignee": _assignee_from_cmd(inv.cmd),
             "bot": EPIC_BOT,
             "title": inv.title,
             "depends_on_slugs": list(inv.depends_on_slugs),
             "created_at": int(time.time()),
         })
         telemetry.emit("card_created", slug=inv.slug, card_id=card_id,
-                       assignee=inv.cmd[assignee_idx], bot=EPIC_BOT)
+                       assignee=_assignee_from_cmd(inv.cmd), bot=EPIC_BOT)
         print(f"[runner] {inv.slug} → {card_id}")
 
     manifest = {
@@ -317,12 +335,182 @@ def mode_watch(run_id: str, watch_timeout_s: int = 7200,
         time.sleep(poll_interval_s)
 
 
+def _hermes_home() -> Path:
+    return Path(os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes")))
+
+
+def _kanban_db_for_manifest(manifest: dict) -> Path:
+    board = manifest.get("board")
+    home = _hermes_home()
+    if board:
+        path = home / "kanban" / "boards" / board / "kanban.db"
+        if path.exists():
+            return path
+    legacy = home / "kanban.db"
+    if legacy.exists():
+        return legacy
+    return path if board else legacy
+
+
+def _completed_run_metadata(kanban_db: Path, task_id: str) -> dict:
+    if not kanban_db.exists():
+        return {}
+    conn = sqlite3.connect(kanban_db)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            """
+            SELECT metadata, outcome
+            FROM task_runs
+            WHERE task_id = ? AND outcome = 'completed'
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (task_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not row["metadata"]:
+        return {}
+    return json.loads(row["metadata"])
+
+
+def _task_assignee(kanban_db: Path, task_id: str) -> Optional[str]:
+    if not kanban_db.exists():
+        return None
+    conn = sqlite3.connect(kanban_db)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT assignee FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return row["assignee"] if row else None
+
+
+def _role_env_has_mc_vars() -> bool:
+    """W1 routes MC_* through profile .env (Hermes strips them at spawn —
+    see kanban_db.py:6671). The architectural gate is now: every role
+    .env carries MC_API_URL + MC_USERNAME so the worker can reach Mox."""
+    home = _hermes_home()
+    for role in W1_EXECUTE_ROLES:
+        env_path = home / "profiles" / role / ".env"
+        if not env_path.is_file():
+            return False
+        text = env_path.read_text()
+        for key in ("MC_API_URL", "MC_USERNAME"):
+            if f"{key}=" not in text:
+                return False
+    return True
+
+
+def _handoff_band_x001_x002(manifest: dict, kanban_db: Path) -> str:
+    """pass | partial | fail for nav→builder handoff edge."""
+    slug_to_id = {c["slug"]: c["card_id"] for c in manifest.get("cards", [])}
+    if "x001" not in slug_to_id or "x002" not in slug_to_id:
+        return "fail"
+    parent_md = _completed_run_metadata(kanban_db, slug_to_id["x001"])
+    has_exit = bool(parent_md.get("exit_pos"))
+    has_mark = bool(parent_md.get("work_at_mark"))
+    if not has_exit and not has_mark:
+        return "fail"
+    child_md = _completed_run_metadata(kanban_db, slug_to_id["x002"])
+    child_sid = child_md.get("worker_session_id")
+    if not child_sid:
+        return "partial"
+    child_assignee = next(
+        (c["assignee"] for c in manifest.get("cards", []) if c["slug"] == "x002"),
+        "builder",
+    )
+    child_role = child_assignee
+    db = _hermes_home() / "profiles" / child_role / "state.db"
+    if not db.exists():
+        return "partial"
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT content, tool_calls, reasoning
+            FROM messages WHERE session_id = ?
+            ORDER BY id
+            """,
+            (child_sid,),
+        ).fetchall()
+    finally:
+        conn.close()
+    corpus = "\n".join(
+        str(r[c] or "") for r in rows for c in ("content", "tool_calls", "reasoning")
+    )
+    needles: list[str] = []
+    if has_exit:
+        ep = parent_md["exit_pos"]
+        if isinstance(ep, list):
+            needles.append(json.dumps(ep, separators=(", ", ": ")))
+            needles.append(",".join(str(v) for v in ep))
+    if has_mark:
+        needles.append(str(parent_md["work_at_mark"]))
+    if any(n and n in corpus for n in needles):
+        return "pass"
+    return "partial"
+
+
+def _build_architectural_scorecard(manifest: dict, kanban_db: Path) -> dict:
+    cards = manifest.get("cards", [])
+    profiles_per_slug = {c["slug"]: c["assignee"] for c in cards}
+    session_ids: list[str] = []
+    assignee_mismatches: list[str] = []
+    for c in cards:
+        md = _completed_run_metadata(kanban_db, c["card_id"])
+        sid = md.get("worker_session_id")
+        if sid:
+            session_ids.append(sid)
+        db_assignee = _task_assignee(kanban_db, c["card_id"])
+        if db_assignee and db_assignee != c["assignee"]:
+            assignee_mismatches.append(
+                f"{c['slug']}: task={db_assignee} manifest={c['assignee']}"
+            )
+    home = _hermes_home()
+    return {
+        "injection_mode": "single_bot_fixed_mox_via_dotenv",
+        "injection_ceiling_note": (
+            "MC_* routed via role .env because Hermes spawn strips them "
+            "(kanban_db.py:6671); not per-card bot lookup (W4)."
+        ),
+        "profiles_per_slug": profiles_per_slug,
+        "distinct_worker_session_ids": len(set(session_ids)),
+        "worker_session_ids": session_ids,
+        "role_env_has_mc_vars": _role_env_has_mc_vars(),
+        "pilot_mox_absent": not (home / "profiles" / "pilot-mox").is_dir(),
+        "handoff_x001_x002": _handoff_band_x001_x002(manifest, kanban_db),
+        "assignee_mismatches": assignee_mismatches,
+    }
+
+
+def _run_verify_observer_prep() -> int:
+    """Teleport Tester near the wheat plot so acceptance predicates load chunks."""
+    script = REPO_ROOT / "scripts" / "prep-wheat-verify-observer.sh"
+    if not script.is_file():
+        print(f"[runner] WARN: missing {script}; skipping verify prep", file=sys.stderr)
+        return 0
+    print(f"[runner] running {script.name} before acceptance evaluate")
+    proc = subprocess.run([str(script)], cwd=str(REPO_ROOT), env=os.environ.copy())
+    if proc.returncode != 0:
+        print(f"[runner] verify prep failed (exit {proc.returncode})", file=sys.stderr)
+        return proc.returncode
+    return 0
+
+
 def mode_evaluate_only(run_id: str) -> int:
     trial_dir = POSTMORTEMS_DIR / run_id
     manifest_path = trial_dir / "manifest.json"
     if not manifest_path.exists():
         print(f"[runner] no manifest at {manifest_path}", file=sys.stderr)
         return 1
+    prep_rc = _run_verify_observer_prep()
+    if prep_rc != 0:
+        return prep_rc
     manifest = json.loads(manifest_path.read_text())
     cards = manifest["cards"]
     card_ids = [c["card_id"] for c in cards]
@@ -378,6 +566,7 @@ def mode_evaluate_only(run_id: str) -> int:
     else:
         band = "fail"
 
+    kanban_db = _kanban_db_for_manifest(manifest)
     scorecard = {
         "run_id": run_id,
         "band": band,
@@ -390,6 +579,7 @@ def mode_evaluate_only(run_id: str) -> int:
         "per_predicate": per_predicate,
         "card_statuses": {c["slug"]: statuses.get(c["card_id"], "?")
                           for c in cards},
+        "architectural": _build_architectural_scorecard(manifest, kanban_db),
     }
     (trial_dir / "scorecard.json").write_text(json.dumps(scorecard, indent=2))
     telemetry.emit("scorecard", **scorecard)
@@ -416,35 +606,24 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help=f"kanban board (default: {DEFAULT_BOARD}). "
                              "Set to empty string '' for proto-rig "
                              "flat-workspace layout.")
-    parser.add_argument("--assignee", default=None,
-                        help="Override every card's --assignee with this "
-                             "single profile slug (e.g. 'pilot-mox'). "
-                             "Use when the live HERMES_HOME has one "
-                             "mox-bound profile instead of four role "
-                             "profiles. Role distinction is preserved "
-                             "via the body @-mention and the per-card "
-                             "--skill flags.")
     args = parser.parse_args(argv)
 
     global _BOARD
     _BOARD = args.board or None
-    assignee = args.assignee
 
     if args.dry_run:
-        return mode_dry_run(board=_BOARD, assignee_override=assignee)
+        return mode_dry_run(board=_BOARD)
 
     if not args.run_id:
         parser.error("--run-id required for non-dry-run modes")
     run_id = args.run_id
 
     if args.create_only:
-        return mode_create_only(run_id, board=_BOARD,
-                                 assignee_override=assignee)
+        return mode_create_only(run_id, board=_BOARD)
     if args.watch:
         manifest = POSTMORTEMS_DIR / run_id / "manifest.json"
         if not manifest.exists():
-            rc = mode_create_only(run_id, board=_BOARD,
-                                  assignee_override=assignee)
+            rc = mode_create_only(run_id, board=_BOARD)
             if rc != 0:
                 return rc
         return mode_watch(run_id, args.watch_timeout, args.poll_interval)

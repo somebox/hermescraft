@@ -8,9 +8,7 @@
 #   2. Mox positioned inside the plot footprint (-55..-45 x, 45..55 z)
 #      at Y=65 (above the dirt floor at Y=64).
 #   3. Mox inventory contains wooden_hoe + 64 wheat_seeds.
-#   4. All three marks present and at expected coords:
-#      field_south (-50, 64, 50), chest_food (-50, 65, 60),
-#      base_anchor (-55, 65, 50).
+#   4. Marks wheat_plot, wheat_chest, wheat_start at fixture coords.
 #   5. Water source block at the field center (Y=64).
 #   6. Chest block at chest_food location (Y=65).
 #   7. Tester bot reachable on :3004 (needed for acceptance verify).
@@ -24,6 +22,7 @@
 #
 # Env:
 #   HERMES_HOME (defaults to ~/.hermes; the dashboard-visible install)
+#   W1_MODE=role — require navigator/builder/farmer/crafter; MC leak grep
 #   MC_HOST_SSH (defaults to ubuntu-host; where the minecraft container runs)
 
 set -u
@@ -182,12 +181,41 @@ else
   fail=1
 fi
 
-header "8. Live HERMES_HOME + pilot-mox profile"
-if [[ -d "$HERMES_HOME_LIVE/profiles/pilot-mox" ]]; then
-  say "$OK" "pilot-mox in $HERMES_HOME_LIVE/profiles/"
+header "8. Hermes profiles (W1 role or legacy pilot-mox)"
+W1_MODE="${W1_MODE:-}"
+if [[ "$W1_MODE" == "role" ]]; then
+  for role in navigator builder farmer crafter; do
+    if [[ -d "$HERMES_HOME_LIVE/profiles/$role" ]]; then
+      say "$OK" "profile $role present"
+    else
+      say "$MISS" "profile $role missing — run prototypes/agent-arch/setup-role-profiles.sh"
+      fail=1
+    fi
+    envf="$HERMES_HOME_LIVE/profiles/$role/.env"
+    # W1 routes MC_* through profile .env because Hermes strips them at
+    # worker spawn (kanban_db.py:6671). The dispatcher-export path is
+    # architecturally blocked until W4 adds per-card bot routing.
+    if [[ -f "$envf" ]] && grep -qE '^MC_API_URL=' "$envf" && grep -qE '^MC_USERNAME=' "$envf"; then
+      say "$OK" "$role .env has MC_API_URL + MC_USERNAME"
+    elif [[ -f "$envf" ]]; then
+      say "$MISS" "$envf missing MC_API_URL/MC_USERNAME (re-run setup-role-profiles.sh)"
+      fail=1
+    fi
+    cfg="$HERMES_HOME_LIVE/profiles/$role/config.yaml"
+    if [[ -f "$cfg" ]] && grep -q 'env_passthrough' "$cfg"; then
+      say "$OK" "$role config.yaml has env_passthrough"
+    else
+      say "$MISS" "$role config.yaml missing env_passthrough"
+      fail=1
+    fi
+  done
 else
-  say "$MISS" "pilot-mox missing from $HERMES_HOME_LIVE/profiles/ — run prototypes/agent-arch/setup-pilot-mox-live.sh"
-  fail=1
+  if [[ -d "$HERMES_HOME_LIVE/profiles/pilot-mox" ]]; then
+    say "$OK" "pilot-mox in $HERMES_HOME_LIVE/profiles/"
+  else
+    say "$MISS" "pilot-mox missing — run setup-pilot-mox-live.sh or W1_MODE=role"
+    fail=1
+  fi
 fi
 
 header "9. wheat-capstone board"
@@ -202,9 +230,14 @@ fi
 echo
 if [[ $fail -eq 0 ]]; then
   echo "preflight-wheat: all gates passed. Launch:"
-  echo "  HERMES_HOME=$HERMES_HOME_LIVE \\"
-  echo "    python prototypes/agent-arch/capstone/run_wheat_capstone.py \\"
-  echo "    --run-id trial-\$(date +%s) --board wheat-capstone --assignee pilot-mox --watch"
+  if [[ "$W1_MODE" == "role" ]]; then
+    echo "  scripts/wheat-dispatcher.sh &"
+    echo "  HERMES_HOME=$HERMES_HOME_LIVE python prototypes/agent-arch/capstone/run_wheat_capstone.py \\"
+    echo "    --run-id w1-\$(date +%s) --board wheat-capstone --watch"
+  else
+    echo "  HERMES_HOME=$HERMES_HOME_LIVE python prototypes/agent-arch/capstone/run_wheat_capstone.py \\"
+    echo "    --run-id trial-\$(date +%s) --board wheat-capstone --assignee pilot-mox --watch"
+  fi
   exit 0
 else
   echo "preflight-wheat: at least one gate FAILED — fix and re-run before trial."

@@ -103,6 +103,7 @@ class Graph:
 # file exists before authorising the trial.
 SKILL_BUNDLES: dict[str, tuple[str, ...]] = {
     "navigator": (
+        "kanban-worker",
         "agent-navigator",
         "minecraft-navigation",
         "minecraft-survival",
@@ -113,16 +114,19 @@ SKILL_BUNDLES: dict[str, tuple[str, ...]] = {
     # session OR use the closest available proxy. The scaffold lists
     # the canonical names so preflight surfaces the gap clearly.
     "builder": (
+        "kanban-worker",
         "agent-builder",
         "minecraft-building",
         "minecraft-survival",
     ),
     "farmer": (
+        "kanban-worker",
         "agent-farmer",
         "minecraft-farming",
         "minecraft-survival",
     ),
     "crafter": (
+        "kanban-worker",
         "agent-crafter",
         "minecraft-chores",
         "minecraft-survival",
@@ -157,8 +161,11 @@ def build_default_graph() -> Graph:
             assignee="navigator",
             body=(
                 f"Use `mc inspect --mark {farm}` to read the wheat-plot "
-                f"coordinates, then navigate there with `mc move`. "
-                f"Survey the immediate 16×16 area for a flat farm pad."
+                f"coordinates. Note: `{farm}` resolves to the center "
+                f"**water source block** — approach via an adjacent dirt "
+                f"cell (`mc move <x> 65 <z>` to the dirt one block off, "
+                f"or `mc goto_near {farm} 2`). Then survey the "
+                f"immediate 16×16 area for a flat farm pad."
             ),
             depends_on=(),
             skills=SKILL_BUNDLES["navigator"],
@@ -194,14 +201,14 @@ def build_default_graph() -> Graph:
                 f"its task id with: "
                 f"`hermes kanban --board wheat-capstone list --status "
                 f"blocked --json`. Then:\n\n"
-                f"  1. `mkdir -p ~/.hermes/state && echo <task_id> > "
-                f"~/.hermes/state/wheat-harvest-pending.txt`\n"
-                f"  2. `hermes cron create '90s' --no-agent "
+                f"  1. `mkdir -p $HERMES_HOME/state && echo <task_id> > "
+                f"$HERMES_HOME/state/wheat-harvest-pending.txt`\n"
+                f"  2. `hermes cron create '30s' --no-agent "
                 f"--script wheat-harvest-reminder.sh "
                 f"--name 'wheat-harvest-reminder'`\n\n"
                 f"Verify both succeeded (state file exists; "
                 f"`hermes cron list` shows the new job), then "
-                f"complete this card. The reminder fires once at +90s "
+                f"complete this card. The reminder fires once at +30s "
                 f"and unblocks the harvest card."
             ),
             depends_on=("x002",),
@@ -221,14 +228,15 @@ def build_default_graph() -> Graph:
                 f"wheat 80` (or equivalent — your @crafter bundle has "
                 f"the verb).\n\n"
                 f"Once harvested, use `mc inspect --mark {deposit}` "
-                f"to read the storage chest coordinates and deposit "
-                f"all wheat into it.\n\n"
+                f"to read the storage chest coordinates (the chest sits "
+                f"on the walkable pad south of the plot — stand adjacent "
+                f"for `mc deposit`). Deposit all wheat into it.\n\n"
                 f"Finally, clean up the reminder cron job (it has "
                 f"already fired but is still listed). "
                 f"`hermes cron list` will show any job whose name "
                 f"starts with `wheat-harvest-reminder`; remove each "
                 f"with `hermes cron remove <id>`. This keeps "
-                f"`~/.hermes/cron/jobs.json` tidy for the next trial."
+                f"`$HERMES_HOME/cron/jobs.json` tidy for the next trial."
             ),
             depends_on=("x003",),
             skills=SKILL_BUNDLES["crafter"],
@@ -270,18 +278,20 @@ def build_default_graph() -> Graph:
             "block": "farmland",
             "min_count": 72,
         },
-        # ── Wheat planted on top (Y=65) ──
-        # Same 9×9 footprint but at the plant Y. Wheat in any growth
-        # stage counts; we don't check stage. min_count=60 is lenient
-        # (some cells might not have been planted; some may have been
-        # eaten/walked over). Capstone's success criterion is "field
-        # was farmed", not "every cell perfect".
+        # ── Wheat deposited in the chest (post-harvest end-state) ──
+        # The previous in-field wheat predicate (`region_blocks block=wheat`
+        # min_count=60) checked a state the crafter card is supposed to
+        # ELIMINATE — wheat in the field after harvest is 0 by design.
+        # The honest end-state proof is "the crafter dropped wheat into
+        # wheat_chest." min_count=30 = ~37% of the 81-cell plot — a
+        # generous lower bound that accounts for wheat that wasn't mature
+        # at harvest time (random tick + crafter timing) without flattering
+        # a half-finished trial. Empirically w1-1780879052 deposited 40.
         {
-            "kind": "region_blocks",
-            "corner1": {"x": -54, "y": 65, "z": 46},  # PLACEHOLDER
-            "corner2": {"x": -46, "y": 65, "z": 54},  # PLACEHOLDER
-            "block": "wheat",
-            "min_count": 60,
+            "kind": "chest_contains",
+            "mark": deposit,
+            "item": "wheat",
+            "min_count": 30,
         },
         # ── Water source at the field center ──
         # Walkthrough convention: water replaces farmland at one cell

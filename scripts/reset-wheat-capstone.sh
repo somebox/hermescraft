@@ -16,7 +16,7 @@
 #      to wheat_start later.
 #   6. Run fixture cleanup (drops world blocks, restores randomTickSpeed,
 #      removes state file + leftover cron jobs).
-#   7. Zero pilot-mox memory file.
+#   7. Zero execute-profile memory (role agents W1 + legacy pilot-mox).
 #   8. Confirm board empty, no state files, no leftover crons.
 #
 # What it does NOT do:
@@ -46,7 +46,7 @@ log() { printf '[reset] %s\n' "$*"; }
 
 # ── 1. Kill running trial processes ─────────────────────────────────
 log "stopping any running trial processes"
-for pidfile in /tmp/wheat-runner-pid /tmp/wheat-dispatcher-pid; do
+for pidfile in /tmp/wheat-runner-pid /tmp/wheat-dispatcher-pid /tmp/wheat-dispatcher-w1-pid; do
   if [[ -f "$pidfile" ]]; then
     pid=$(cat "$pidfile" 2>/dev/null)
     if [[ -n "$pid" ]]; then
@@ -55,10 +55,12 @@ for pidfile in /tmp/wheat-runner-pid /tmp/wheat-dispatcher-pid; do
     rm -f "$pidfile"
   fi
 done
-if pgrep -f "hermes -p pilot-mox.*work kanban task" >/dev/null 2>&1; then
-  pkill -f "hermes -p pilot-mox.*work kanban task" 2>/dev/null
-  log "  killed leftover pilot-mox worker"
-fi
+for prof in pilot-mox navigator builder farmer crafter; do
+  if pgrep -f "hermes -p ${prof}.*work kanban task" >/dev/null 2>&1; then
+    pkill -f "hermes -p ${prof}.*work kanban task" 2>/dev/null
+    log "  killed leftover ${prof} worker"
+  fi
+done
 sleep 1
 
 # ── 2. Monitor reminder ─────────────────────────────────────────────
@@ -92,13 +94,15 @@ log "running fixture cleanup"
 "$REPO_ROOT/scripts/run-fixture.sh" cleanup data/test-fixtures/colony/wheat_capstone.yaml \
   2>&1 | tail -2 | sed 's/^/  /'
 
-# ── 7. Zero pilot-mox memory ────────────────────────────────────────
-log "zeroing pilot-mox memory"
-mem="$HERMES_HOME/profiles/pilot-mox/memories/MEMORY.md"
-if [[ -f "$mem" ]]; then
-  : > "$mem"
-  log "  zeroed $mem"
-fi
+# ── 7. Zero execute-profile memories ─────────────────────────────────
+log "zeroing execute-profile memories"
+for prof in pilot-mox navigator builder farmer crafter; do
+  mem="$HERMES_HOME/profiles/$prof/memories/MEMORY.md"
+  if [[ -f "$mem" ]]; then
+    : > "$mem"
+    log "  zeroed $mem"
+  fi
+done
 
 # ── 8. Final verification ───────────────────────────────────────────
 log "verifying clean state"

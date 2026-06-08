@@ -52,11 +52,11 @@ prep:
 
   # ── Crop growth ────────────────────────────────────────────────────
   # landfolk-test defaults to randomTickSpeed=0 (frozen sandbox). Wheat
-  # needs random ticks to advance growth stages. 100 = wheat matures in
-  # ~30s real-time; the 90s reminder gives a comfortable margin.
+  # needs random ticks to advance growth stages. 500 = wheat matures in
+  # ~6s real-time; the 30s reminder (wheat_graph.py) gives 5× margin.
   # Restored to 0 in cleanup so the dimension goes back to its
   # frozen-default for the next test.
-  - "execute in landfolk-test run gamerule randomTickSpeed 100"
+  - "execute in landfolk-test run gamerule randomTickSpeed 500"
 
   # ── Forceload ──────────────────────────────────────────────────────
   # Cover all chunks the pad touches (x:-60..-40, z:43..63). Chunk

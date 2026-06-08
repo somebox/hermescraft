@@ -1,0 +1,227 @@
+{
+  "run_id": "w1-1780875295",
+  "band": "partial",
+  "cards_done_count": 4,
+  "cards_total": 4,
+  "cards_blocked": 0,
+  "wall_time_s": 2108,
+  "acceptance_satisfied": false,
+  "acceptance_evaluable": true,
+  "per_predicate": [
+    {
+      "predicate": {
+        "kind": "region_blocks",
+        "corner1": {
+          "x": -54,
+          "y": 64,
+          "z": 46
+        },
+        "corner2": {
+          "x": -46,
+          "y": 64,
+          "z": 54
+        },
+        "block": "farmland",
+        "min_count": 72
+      },
+      "satisfied": true,
+      "evaluable": true,
+      "detail": {
+        "ok": true,
+        "command": "verify",
+        "data": {
+          "kind": "region_blocks",
+          "satisfied": true,
+          "observed": {
+            "block": "farmland",
+            "count": 79,
+            "scanned": 81,
+            "unreadable": 0,
+            "region": {
+              "min": {
+                "x": -54,
+                "y": 64,
+                "z": 46
+              },
+              "max": {
+                "x": -46,
+                "y": 64,
+                "z": 54
+              }
+            }
+          },
+          "expected": {
+            "block": "farmland",
+            "min_count": 72
+          }
+        },
+        "state": {
+          "health": 20,
+          "food": 20,
+          "position": {
+            "x": -49.5,
+            "y": 64.9,
+            "z": 50.5,
+            "block_y": 63,
+            "surface_y": 64
+          },
+          "holding": "empty",
+          "time": 6000,
+          "isDay": true,
+          "deaths": 8,
+          "death_recent": false,
+          "last_death_age_s": 2067,
+          "death_death_number": 8,
+          "seconds_until_despawn_approx": 0
+        }
+      }
+    },
+    {
+      "predicate": {
+        "kind": "region_blocks",
+        "corner1": {
+          "x": -54,
+          "y": 65,
+          "z": 46
+        },
+        "corner2": {
+          "x": -46,
+          "y": 65,
+          "z": 54
+        },
+        "block": "wheat",
+        "min_count": 60
+      },
+      "satisfied": false,
+      "evaluable": true,
+      "detail": {
+        "ok": true,
+        "command": "verify",
+        "data": {
+          "kind": "region_blocks",
+          "satisfied": false,
+          "observed": {
+            "block": "wheat",
+            "count": 0,
+            "scanned": 81,
+            "unreadable": 0,
+            "region": {
+              "min": {
+                "x": -54,
+                "y": 65,
+                "z": 46
+              },
+              "max": {
+                "x": -46,
+                "y": 65,
+                "z": 54
+              }
+            }
+          },
+          "expected": {
+            "block": "wheat",
+            "min_count": 60
+          }
+        },
+        "state": {
+          "health": 20,
+          "food": 20,
+          "position": {
+            "x": -49.5,
+            "y": 64.2,
+            "z": 50.5,
+            "block_y": 63,
+            "surface_y": 64
+          },
+          "holding": "empty",
+          "time": 6000,
+          "isDay": true,
+          "deaths": 8,
+          "hazard": "SUBMERGED in water \u2014 mc stop then mc jump to swim up, navigate to shore",
+          "death_recent": false,
+          "last_death_age_s": 2067,
+          "death_death_number": 8,
+          "seconds_until_despawn_approx": 0
+        }
+      }
+    },
+    {
+      "predicate": {
+        "kind": "at_mark",
+        "mark": "wheat_plot",
+        "block": "water"
+      },
+      "satisfied": true,
+      "evaluable": true,
+      "detail": {
+        "ok": true,
+        "command": "verify",
+        "data": {
+          "kind": "at_mark",
+          "mode": "block",
+          "satisfied": true,
+          "observed": {
+            "mark": "wheat_plot",
+            "coords": {
+              "x": -50,
+              "y": 64,
+              "z": 50
+            },
+            "block": "water"
+          },
+          "expected": {
+            "mark": "wheat_plot",
+            "block": "water"
+          }
+        },
+        "state": {
+          "health": 20,
+          "food": 20,
+          "position": {
+            "x": -49.5,
+            "y": 64,
+            "z": 50.5,
+            "block_y": 63,
+            "surface_y": 64
+          },
+          "holding": "empty",
+          "time": 6000,
+          "isDay": true,
+          "deaths": 8,
+          "hazard": "SUBMERGED in water \u2014 mc stop then mc jump to swim up, navigate to shore",
+          "death_recent": false,
+          "last_death_age_s": 2068,
+          "death_death_number": 8,
+          "seconds_until_despawn_approx": 0
+        }
+      }
+    }
+  ],
+  "card_statuses": {
+    "x001": "done",
+    "x002": "done",
+    "x003": "done",
+    "x004": "done"
+  },
+  "architectural": {
+    "injection_mode": "single_bot_fixed_mox",
+    "injection_ceiling_note": "Proves env_passthrough from dispatcher; not per-card bot lookup (W4).",
+    "profiles_per_slug": {
+      "x001": "navigator",
+      "x002": "builder",
+      "x003": "farmer",
+      "x004": "crafter"
+    },
+    "distinct_worker_session_ids": 4,
+    "worker_session_ids": [
+      "20260608_013457_28e324",
+      "20260608_014135_67d985",
+      "20260608_014358_d59630",
+      "20260608_015225_4ed4b1"
+    ],
+    "role_env_has_no_mc_vars": true,
+    "pilot_mox_absent": false,
+    "handoff_x001_x002": "pass",
+    "assignee_mismatches": []
+  }
+}

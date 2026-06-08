@@ -459,11 +459,15 @@ class TestWheatAcceptancePredicates:
         assert g.acceptance_predicates is not None
         assert len(g.acceptance_predicates) == 3
 
-    def test_plural_predicates_cover_plot_crop_water(self):
+    def test_plural_predicates_cover_plot_chest_water(self):
         g = build_default_graph()
         kinds = [p["kind"] for p in g.acceptance_predicates]
-        # region_blocks ×2 (farmland + wheat), at_mark ×1 (water).
-        assert kinds.count("region_blocks") == 2
+        # region_blocks ×1 (farmland), chest_contains ×1 (post-harvest wheat),
+        # at_mark ×1 (water). The previous "region_blocks wheat" predicate
+        # was replaced because it tested an in-field wheat state the
+        # crafter card eliminates by harvesting.
+        assert kinds.count("region_blocks") == 1
+        assert kinds.count("chest_contains") == 1
         assert kinds.count("at_mark") == 1
 
     def test_plural_predicates_all_in_supported_kinds(self):

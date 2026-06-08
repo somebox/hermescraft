@@ -65,6 +65,7 @@ _DEFAULTS_WITHOUT_YAML: dict[str, Any] = {
         # MC_API_URL env var always overrides this in resolve_api_url().
         "default_api_url": "http://localhost:3001",
         "health_poll_timeout_s": 10,
+        "health_poll_interval_s": 0.5,
     },
 }
 
@@ -116,4 +117,8 @@ def load_config(path: Path | None = None, profile: str | None = None) -> dict[st
     if resolved_profile in overrides:
         raw = _deep_merge(raw, overrides[resolved_profile])
 
-    return raw
+    # Merge defaults so consumers (perception_advise, BotClient) always see
+    # every key even if the YAML is sparse or missing a section. Prior bug:
+    # YAML path returned raw directly; BotClient hit KeyError on
+    # health_poll_interval_s on otherwise valid configs.
+    return _deep_merge(_DEFAULTS_WITHOUT_YAML, raw)

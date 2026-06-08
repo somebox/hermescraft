@@ -1,0 +1,94 @@
+{
+  "run_id": "w1-1780871693",
+  "tenant": "proto-agent-arch",
+  "board": "wheat-capstone",
+  "bot": "mox",
+  "cards": [
+    {
+      "slug": "x001",
+      "card_id": "t_5a1f0f61",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] nav survey",
+      "depends_on_slugs": [],
+      "created_at": 1780871713
+    },
+    {
+      "slug": "x002",
+      "card_id": "t_374f32d6",
+      "assignee": "builder",
+      "bot": "mox",
+      "title": "[bot:mox] build pad",
+      "depends_on_slugs": [
+        "x001"
+      ],
+      "created_at": 1780871713
+    },
+    {
+      "slug": "x003",
+      "card_id": "t_9a9e9cb7",
+      "assignee": "farmer",
+      "bot": "mox",
+      "title": "[bot:mox] plant + schedule harvest",
+      "depends_on_slugs": [
+        "x002"
+      ],
+      "created_at": 1780871714
+    },
+    {
+      "slug": "x004",
+      "card_id": "t_7022eec0",
+      "assignee": "crafter",
+      "bot": "mox",
+      "title": "[bot:mox] harvest + deposit",
+      "depends_on_slugs": [
+        "x003"
+      ],
+      "created_at": 1780871714
+    }
+  ],
+  "cards_total": 4,
+  "acceptance_predicate": {
+    "kind": "chest_contains",
+    "mark": "wheat_chest",
+    "item": "wheat",
+    "min_count": 12
+  },
+  "acceptance_predicates": [
+    {
+      "kind": "region_blocks",
+      "corner1": {
+        "x": -54,
+        "y": 64,
+        "z": 46
+      },
+      "corner2": {
+        "x": -46,
+        "y": 64,
+        "z": 54
+      },
+      "block": "farmland",
+      "min_count": 72
+    },
+    {
+      "kind": "region_blocks",
+      "corner1": {
+        "x": -54,
+        "y": 65,
+        "z": 46
+      },
+      "corner2": {
+        "x": -46,
+        "y": 65,
+        "z": 54
+      },
+      "block": "wheat",
+      "min_count": 60
+    },
+    {
+      "kind": "at_mark",
+      "mark": "wheat_plot",
+      "block": "water"
+    }
+  ]
+}
