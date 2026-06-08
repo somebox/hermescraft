@@ -107,6 +107,7 @@ terminal:
     - HERMES_KANBAN_WORKSPACES_ROOT
     - HERMES_KANBAN_BOARD
     - HERMES_HOME
+    - HERMESCRAFT_REPO
 EOF
   log "wrote $path"
 }
@@ -123,6 +124,7 @@ write_env() {
     echo "MC_API_URL=http://127.0.0.1:${api_port}"
     echo "MC_USERNAME=${user}"
     echo "_MC_API_URL_LOCKED=http://127.0.0.1:${api_port}"
+    echo "HERMESCRAFT_REPO=$REPO_ROOT"
   } > "$path"
   chmod 600 "$path"
   log "wrote $path (OPENROUTER + Mox MC_* for W1)"

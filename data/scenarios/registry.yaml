@@ -1,6 +1,6 @@
 # Scenario registry v2 — topics, terrain profiles, maps (catalog JSON).
 #
-# Terminology: docs/features/procedural-testing-model.md
+# Terminology: docs/testing/procedural/testing-model.md
 #
 # Refresh:  scripts/scenario-pools.sh refresh --only mining.plains_iron
 # Smoke:    scripts/scenario-pools.sh refresh --only smoke
@@ -79,6 +79,7 @@ topics:
       - id: flat_pad
         requirements: requirements/scenario_worksite_flat.yaml
         catalog: catalog/topics/building/flat_pad
+        find: { solutions: 5, max_seeds: 80 }
         agent_test_ref: data/agent-tests/topics/building/flat-pad-watch-post.yaml
         migration_note: legacy tower-platform-3x3 still on landfolk-test; use flat-pad-watch-post on proc-lab
         legacy_variant_id: scenario_worksite_flat
@@ -97,7 +98,7 @@ topics:
         requirements: requirements/scenario_scout_overlook.yaml
         catalog: catalog/topics/scouting/overlook
         agent_test_ref: data/agent-tests/topics/scouting/overlook-survey.yaml
-        find: { solutions: 1, max_seeds: 30 }
+        find: { solutions: 5, max_seeds: 80 }
 
   establishment:
     description: Explore unknown terrain; Steward picks base + builds, OR fleet maps the disc
@@ -111,11 +112,11 @@ topics:
       - id: explore
         requirements: requirements/scenario_establish_explore.yaml
         catalog: catalog/topics/establishment/explore
-        find: { solutions: 1, max_seeds: 40 }
+        find: { solutions: 5, max_seeds: 80 }
       - id: mapping
         requirements: requirements/scenario_establish_mapping.yaml
         catalog: catalog/topics/establishment/mapping
-        find: { solutions: 1, max_seeds: 40 }
+        find: { solutions: 5, max_seeds: 80 }
 
   defense:
     description: Base defense drills (harness mobs until P4)

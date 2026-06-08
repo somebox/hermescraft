@@ -23,5 +23,5 @@ cubiomes:
 pass1:
   verify_live: true
   verify_live_samples: 10
-  verify_live_when: always   # always | borderline | off — see docs/features/cubiomes-paper-skew.md
+  verify_live_when: always   # always | borderline | off — see docs/specs/world/cubiomes-paper-skew.md
   # Smoke job overrides verify_live: false (flat-only Pass 2).

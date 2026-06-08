@@ -29,8 +29,9 @@ url="http://127.0.0.1:${api_port}"
 export MC_API_URL="$url"
 export _MC_API_URL_LOCKED="$url"
 export MC_USERNAME="$user"
+export HERMESCRAFT_REPO="$REPO_ROOT"
 
-echo "[wheat-dispatcher] HERMES_HOME=$HERMES_HOME board=$BOARD MC_API_URL=$url MC_USERNAME=$user" >&2
+echo "[wheat-dispatcher] HERMES_HOME=$HERMES_HOME board=$BOARD MC_API_URL=$url MC_USERNAME=$user HERMESCRAFT_REPO=$REPO_ROOT" >&2
 
 while true; do
   echo "[wheat-dispatcher] tick $(date -Iseconds)" >&2
