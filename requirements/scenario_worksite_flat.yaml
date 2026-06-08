@@ -8,7 +8,7 @@ arena:
 
 gates:
   - flat patch >= 16 cells
-  - neighbor height delta <= 3 blocks
+  - neighbor height delta <= 4 blocks
 
 placements:
   spawn: random_safe radius 1 attempts 32

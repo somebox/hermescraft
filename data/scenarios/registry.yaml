@@ -57,6 +57,7 @@ topics:
       - id: forest_clearing
         requirements: requirements/scenario_homestead_forest.yaml
         catalog: catalog/topics/farming/forest_clearing
+        agent_test_ref: data/agent-tests/topics/farming/forest-clearing-nav-proc-nav.yaml
         legacy_variant_id: scenario_homestead_forest
 
   fishing:
@@ -99,6 +100,14 @@ topics:
         catalog: catalog/topics/scouting/overlook
         agent_test_ref: data/agent-tests/topics/scouting/overlook-survey.yaml
         find: { solutions: 5, max_seeds: 80 }
+      # steep_slope: parked until `relief_monotone_rise` gate kind lands in
+      # mapcatalog/gates.py. Today's lint rejects the requirements file with
+      # "unknown structured gate kind". Re-enable once the gate is added
+      # (Stress tier — see proc-nav plan Phase C-stress).
+      # - id: steep_slope
+      #   requirements: requirements/scenario_scouting_steep_slope.yaml
+      #   catalog: catalog/topics/scouting/overlook
+      #   find: { solutions: 3, max_seeds: 40 }
 
   establishment:
     description: Explore unknown terrain; Steward picks base + builds, OR fleet maps the disc
