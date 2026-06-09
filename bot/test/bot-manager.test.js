@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   reconnectBackoffMs,
   STUCK_MOVEMENT_ACTIONS,
+  SYNC_STUCK_ACTIONS,
   MOVEMENTS_TUNING,
   applyMovementsTuning,
   parsePositiveIntEnv,
@@ -22,6 +23,62 @@ test('STUCK_MOVEMENT_ACTIONS includes pathing but not collect (in-place mining)'
     assert.ok(STUCK_MOVEMENT_ACTIONS.includes(a), a);
   }
   assert.equal(STUCK_MOVEMENT_ACTIONS.includes('collect'), false);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// SYNC_STUCK_ACTIONS — guards the sync-action stuck detector. Any verb
+// missing here is a 2-minute wedge waiting to happen. The road trial on
+// 2026-06-09 (postmortem: data/postmortems/proc-nav-lab/proc-nav-1780994801)
+// surfaced that new road-tier verbs were never registered.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('SYNC_STUCK_ACTIONS includes all movement-bearing road-tier verbs', () => {
+  // These are the verbs the road trial observed wedging on without nudge.
+  // The bite criterion: if you add a verb that calls pathfindGotoNear
+  // and/or b.dig() / b.placeBlock() across multiple cells, it MUST be
+  // in this set, or the bot can wedge on a cell boundary for the entire
+  // call duration with no recenter intervention.
+  const movementBearing = [
+    // Terrain shapers
+    'level', 'level_ground', 'dig_pit', 'build_stairs',
+    // Road-tier primitives (new 2026-06)
+    'clear_strip', 'deck', 'fell_tree',
+  ];
+  for (const verb of movementBearing) {
+    assert.ok(
+      SYNC_STUCK_ACTIONS.has(verb),
+      `SYNC_STUCK_ACTIONS must include '${verb}' — it pathfinds + digs/places ` +
+      'across cells, so a block-edge wedge stalls the whole call. Without it ' +
+      'the stuck nudge at manager.js:~1080 never fires while ' + verb + ' runs.',
+    );
+  }
+});
+
+test('SYNC_STUCK_ACTIONS preserves the original movement verbs', () => {
+  // Regression guard: the 2026-06-09 fix added many new verbs to the set.
+  // Don't let a future cleanup drop any of the pre-existing entries.
+  const preExisting = [
+    'collect', 'dig', 'dig_area', 'goto', 'goto_near', 'pickup',
+    'follow', 'go_mark', 'fish', 'sail', 'hunt', 'lure', 'through',
+    'place_fill', 'wall', 'tunnel',
+  ];
+  for (const verb of preExisting) {
+    assert.ok(SYNC_STUCK_ACTIONS.has(verb),
+      `SYNC_STUCK_ACTIONS must still include the pre-2026-06 verb '${verb}'`);
+  }
+});
+
+test('SYNC_STUCK_ACTIONS does NOT include pure-look / pure-inventory verbs', () => {
+  // These verbs don't move the bot; including them would generate
+  // false-positive nudge logs during fast iterative use.
+  const stationary = [
+    'inventory', 'scene', 'observe', 'status', 'terrain_top',
+    'inspect', 'mark', 'go_marks', 'help',
+  ];
+  for (const verb of stationary) {
+    assert.equal(SYNC_STUCK_ACTIONS.has(verb), false,
+      `SYNC_STUCK_ACTIONS must NOT include '${verb}' — it doesn't move the bot`);
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────

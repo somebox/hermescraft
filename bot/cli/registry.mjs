@@ -851,6 +851,104 @@ export const RAW_COMMAND_DEFS = [
     ],
   }),
 
+  g('fell_tree', 'world', ['fell-tree'], {
+    description: 'Fell a tree rooted at column (X, Z). Finds the lowest log in a vertical scan window, BFS-walks the connected trunk + attached leaves, digs top-down (debris-safe), and picks up drops. Composes with mc clear_strip for "one specific tree the planner identified by coords". Use radius=0 to skip leaf cleanup; default 4. Caps: 24 logs, 256 leaves.',
+    method: 'POST',
+    path: '/action/fell_tree',
+    bodyFn: (p) =>
+      JSON.stringify({
+        x: Number(p.x),
+        z: Number(p.z),
+        ...(p.y_hint !== undefined ? { y_hint: Number(p.y_hint) } : {}),
+        ...(p.leaves_radius !== undefined ? { leaves_radius: Number(p.leaves_radius) } : {}),
+        ...(p.max_logs !== undefined ? { max_logs: Number(p.max_logs) } : {}),
+        ...(p.max_leaves !== undefined ? { max_leaves: Number(p.max_leaves) } : {}),
+        ...(p.dry_run !== undefined ? { dry_run: p.dry_run === true || p.dry_run === 'true' || p.dry_run === '1' } : {}),
+      }),
+    argSchema: [
+      { key: 'x', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+      { key: 'y_hint', type: 'number' },
+      { key: 'leaves_radius', type: 'number', min: 0, max: 8 },
+      { key: 'max_logs', type: 'number', min: 1, max: 64 },
+      { key: 'max_leaves', type: 'number', min: 0, max: 1024 },
+      { key: 'dry_run', type: 'string' },
+    ],
+    usage: 'mc fell_tree X Z [y_hint=Y] [leaves_radius=4] [dry_run=true]',
+    examples: [
+      'mc fell_tree 0 12                            # fell tree at column (0,12), scan around bot Y',
+      'mc fell_tree 0 12 y_hint=78 leaves_radius=4  # explicit scan center',
+      'mc fell_tree 0 12 leaves_radius=0            # trunk only, no leaf cleanup',
+    ],
+  }),
+
+  g('deck', 'world', [], {
+    description: 'Build a flat horizontal deck across an air gap. Places BLOCK at every air cell in [X1..X2] × {SURFACE_Y} × [Z1..Z2], using BFS edge-inward order so each placement anchors against a cell that\'s already solid — pre-existing terrain on the rim OR a deck cell placed earlier in this same call. Bridges over ravines / water / deep dips where ordinary `mc fill` fails at interior cells (no_adjacent_face). Cells that can\'t reach a rim are returned as `unanchored` — partial completion is reported as ok:true with data.unanchored populated. Default cap 256 cells.',
+    method: 'POST',
+    path: '/action/deck',
+    bodyFn: (p) =>
+      JSON.stringify({
+        x1: Number(p.x1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        z2: Number(p.z2),
+        surface_y: Number(p.surface_y),
+        block: String(p.block),
+        ...(p.max_cells !== undefined ? { max_cells: Number(p.max_cells) } : {}),
+        ...(p.dry_run !== undefined ? { dry_run: p.dry_run === true || p.dry_run === 'true' || p.dry_run === '1' } : {}),
+      }),
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'surface_y', type: 'number', required: true },
+      { key: 'block', type: 'string', required: true },
+      { key: 'max_cells', type: 'number', min: 8, max: 1024 },
+      { key: 'dry_run', type: 'string' },
+    ],
+    usage: 'mc deck X1 Z1 X2 Z2 surface_y=Y block=NAME [max_cells=256] [dry_run=true]',
+    examples: [
+      'mc deck -1 12 1 16 surface_y=78 block=cobblestone           # 3x5 deck across a ravine',
+      'mc deck -1 12 1 16 surface_y=78 block=cobblestone dry_run=true  # plan first; check unanchored',
+    ],
+  }),
+
+  g('clear_strip', 'world', ['clear-strip'], {
+    description: 'Clear a corridor strip ABOVE a road surface. Surveys every cell in [X1..X2] × [SURFACE_Y+1 .. SURFACE_Y+HEIGHT] × [Z1..Z2] and removes any non-air block in that volume. Below SURFACE_Y is never touched. Auto-batches into ≤32-cell dig_area calls under the hood — callers do not see the per-call cap. road_mode=true overrides the "structural" preservation so tree trunks, planks, fences, stairs etc. get cleared (region-deny still honored). dry_run=true returns the same accounting without digging. Default HEIGHT=4 (walkable headroom); use 8 to cut canopy. Cap: 1024 cells per call.',
+    method: 'POST',
+    path: '/action/clear_strip',
+    bodyFn: (p) =>
+      JSON.stringify({
+        x1: Number(p.x1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        z2: Number(p.z2),
+        surface_y: Number(p.surface_y),
+        ...(p.height !== undefined ? { height: Number(p.height) } : {}),
+        ...(p.road_mode !== undefined ? { road_mode: p.road_mode === true || p.road_mode === 'true' || p.road_mode === '1' } : {}),
+        ...(p.dry_run !== undefined ? { dry_run: p.dry_run === true || p.dry_run === 'true' || p.dry_run === '1' } : {}),
+        ...(p.max_cells !== undefined ? { max_cells: Number(p.max_cells) } : {}),
+      }),
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'surface_y', type: 'number', required: true },
+      { key: 'height', type: 'number', min: 1, max: 16 },
+      { key: 'road_mode', type: 'string' },
+      { key: 'dry_run', type: 'string' },
+      { key: 'max_cells', type: 'number', min: 32, max: 4096 },
+    ],
+    usage: 'mc clear_strip X1 Z1 X2 Z2 surface_y=Y [height=4] [road_mode=true] [dry_run=true] [max_cells=1024]',
+    examples: [
+      'mc clear_strip -1 0 1 11 surface_y=78                       # 3×12×4 walkable headroom',
+      'mc clear_strip -1 0 1 11 surface_y=78 road_mode=true        # also fell trees in the corridor',
+      'mc clear_strip -1 0 1 11 surface_y=78 height=8 dry_run=true # what would be removed if we cut to canopy',
+    ],
+  }),
+
   g('build_stairs', 'world', [], {
     description: 'Build an ascending triangular ramp of BLOCK in cardinal DIR for LEN steps. Each column i is filled from the floor up to height i, so column 1 is 1 block tall, column 2 is 2 blocks, etc. The bot walks up the ramp as it builds. Total blocks = LEN*(LEN+1)/2; LEN is capped at 16.',
     method: 'POST',
@@ -1255,21 +1353,13 @@ export const RAW_COMMAND_DEFS = [
     description: 'Plot status: counts per category (harvestable / planted_growing / tilled / empty_soil / unplantable / etc) + sample coords + next-action hint. Run once before deciding till/plant/harvest. With Y: probes that exact row; without Y: uses each column\'s topmost solid block.',
     method: 'POST',
     path: '/action/farm_status',
-    argSchema: [
-      { key: 'x1', type: 'number', required: true },
-      { key: 'z1', type: 'number', required: true },
-      { key: 'x2', type: 'number', required: true },
-      { key: 'z2', type: 'number', required: true },
-      { key: 'y', type: 'number', required: false },
-    ],
-    bodyFn: (p) => JSON.stringify({
-      x1: Number(p.x1), z1: Number(p.z1), x2: Number(p.x2), z2: Number(p.z2),
-      ...(p.y !== undefined ? { y: Number(p.y) } : {}),
-    }),
-    usage: 'mc farm_status X1 Z1 X2 Z2 [Y]',
+    customParse: true,
+    bodyFn: (p) => JSON.stringify(p),
+    usage: 'mc farm_status X1 Z1 X2 Z2 [Y] | mc farm_status --mark NAME [--size N]',
     examples: [
       'mc farm_status 355 -575 363 -567        # auto-Y per column',
       'mc farm_status 355 -575 363 -567 64     # probe Y=64 explicitly',
+      'mc farm_status --mark wheat_plot --size 9',
     ],
   }),
 
@@ -1502,13 +1592,10 @@ export const RAW_COMMAND_DEFS = [
     description: 'Inspect a single cell — block name, is_diggable, is_relocatable, suggested_tool, and entities standing in that cell. Use to plan place/dig without trial-and-error.',
     method: 'POST',
     path: '/action/inspect',
-    argSchema: [
-      { key: 'x', type: 'number', required: true, positional: true },
-      { key: 'y', type: 'number', required: true, positional: true },
-      { key: 'z', type: 'number', required: true, positional: true },
-    ],
-    bodyFn: (p) => JSON.stringify({ x: Number(p.x), y: Number(p.y), z: Number(p.z) }),
-    examples: ['mc inspect 10 64 -3'],
+    customParse: true,
+    bodyFn: (p) => JSON.stringify(p),
+    usage: 'mc inspect X Y Z | mc inspect --mark NAME',
+    examples: ['mc inspect 10 64 -3', 'mc inspect --mark wheat_plot'],
   }),
   g('reachable', 'world', ['standable', 'can_stand'], {
     description: 'Reachability pre-flight: can the bot STAND at (x,y,z)? Returns {target_standable, target_reason (ok|head_blocked|foot_blocked|no_foot_support), best_stand: {x,y,z,distance}}. If target_standable is false, use best_stand for your actual goto. Geometry-only — does not verify a path exists from your current position.',

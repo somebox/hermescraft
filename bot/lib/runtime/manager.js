@@ -22,6 +22,41 @@ export const STUCK_MOVEMENT_ACTIONS = [
   'combo',
 ];
 
+/**
+ * Sync-action watchdog set. While one of these is in-flight, the per-tick
+ * reactive loop runs the stuck-detection + recenter-nudge path
+ * (manager.js:~1080). If a movement-bearing verb is missing from this
+ * list, the bot can wedge on a block edge for the entire action duration
+ * (15-25s for level_ground execute, ~30s for clear_strip) with no nudge.
+ *
+ * Criterion for inclusion: the verb either moves the bot via pathfind, or
+ * dig/places at cells the bot might not be standing on (so pathfindGotoNear
+ * inside the verb can wedge).
+ *
+ * Pure-look or pure-inventory verbs (mc inventory, mc scene, mc terrain_top)
+ * stay OUT — they don't move the bot, and including them would generate
+ * false-positive nudge logs during fast iterations.
+ *
+ * See data/postmortems/proc-nav-lab/proc-nav-1780994801/ — the road trial
+ * surfaced that new road-tier verbs (clear_strip, deck, fell_tree) plus
+ * older shapers (level, level_ground, dig_pit, build_stairs) were never
+ * registered here, so Mox wedged for 2+ minutes during a level_ground
+ * execute call.
+ */
+export const SYNC_STUCK_ACTIONS = new Set([
+  // Movement primitives
+  'collect', 'goto', 'goto_near', 'pickup', 'follow', 'go_mark',
+  'fish', 'sail', 'hunt', 'lure', 'through',
+  // Per-cell dig primitives
+  'dig', 'dig_area', 'tunnel',
+  // Per-cell place primitives
+  'place_fill', 'wall',
+  // Terrain shapers
+  'level', 'level_ground', 'dig_pit', 'build_stairs',
+  // Road-tier primitives
+  'clear_strip', 'deck', 'fell_tree',
+]);
+
 /** Min ms with almost no position change before declaring stuck (pathfinder can crawl in tight caves). */
 const STUCK_IDLE_MS = 20000;
 
@@ -1077,11 +1112,6 @@ export function createBotManager(deps) {
       // because we want to unstick FAST during long mining sessions,
       // not just log after 20s. We also nudge BEFORE giving up so the
       // higher-level action can keep making progress.
-      const SYNC_STUCK_ACTIONS = new Set([
-        'collect', 'dig', 'dig_area', 'goto', 'goto_near', 'pickup',
-        'follow', 'go_mark', 'fish', 'sail', 'hunt', 'lure', 'through',
-        'place_fill', 'wall', 'tunnel',
-      ]);
       const SYNC_STUCK_IDLE_MS = 8000;
       if (ctx.tasks.syncActionInFlight && SYNC_STUCK_ACTIONS.has(ctx.tasks.syncActionName)) {
         // mc retrace drives its own short legs + burst; sync-stuck wiggle fights it.

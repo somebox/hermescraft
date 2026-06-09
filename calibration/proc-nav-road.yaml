@@ -1,0 +1,15 @@
+# Proc-scout-road — sync segment_count/centerline with requirements return_post offset.
+# Catalog anchors only **endpoints** (ground-clamped). Midpoints: agent `mc mark road_bound_*`.
+
+width_blocks: 3
+segment_length_blocks: 12
+centerline_blocks: 48
+segment_count: 4
+
+endpoints:
+  - overlook
+  - return_post
+
+# requirements/scenario_scout_overlook.yaml:
+#   overlook: random_safe near flat_patch (standable ground)
+#   return_post: ground_offset_from overlook [0, 0, 48]

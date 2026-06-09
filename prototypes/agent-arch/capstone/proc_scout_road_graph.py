@@ -1,0 +1,401 @@
+"""Proc-nav Road graph — two bots, multi-segment leveled corridor.
+
+Catalog **ground-anchored** endpoints + agent ``road_bound_*`` marks
+(``calibration/proc-nav-road.yaml``). Each segment gets **measure** + **clear**
+cards (alternating Mox/Pip).
+
+Graph name: ``proc-scout-road``.
+"""
+
+from __future__ import annotations
+
+from .plan_verify_graph import OBSERVE_SKILLS
+from .proc_scout_graph import PLAYBOOK, POSTMORTEM_MANIFEST, SCENARIO_MAP_JSON
+from .road_config import (
+    all_mark_names_for_graph,
+    interior_bound_marks,
+    load_road_config,
+    road_segments,
+)
+from .wheat_graph import Card, Graph
+
+BOT_MOX = "mox"
+BOT_PIP = "pip"
+
+ASSIGNEE_NAV_MOX = "navigator"
+ASSIGNEE_NAV_PIP = "navigator-pip"
+ASSIGNEE_BUILD_PIP = "builder"
+ASSIGNEE_BUILD_MOX = "builder-mox"
+
+NAV_SKILLS = (
+    "kanban-worker",
+    "agent-navigator",
+    "minecraft-navigation",
+    "minecraft-observe",
+)
+BUILD_SKILLS = (
+    "kanban-worker",
+    "agent-builder",
+    "minecraft-building",
+    "minecraft-mining",
+    "minecraft-roadbuilding",
+)
+
+PLANNER_SKILLS = (
+    "kanban-worker",
+    "agent-planner",
+    "minecraft-planning",
+)
+
+_ROAD_CFG = load_road_config()
+ROAD_WIDTH_M = int(_ROAD_CFG["width_blocks"])
+ROAD_CENTERLINE_BLOCKS_CATALOG = int(_ROAD_CFG["centerline_blocks"])
+ROAD_SEGMENT_COUNT = int(_ROAD_CFG["segment_count"])
+ROAD_SEGMENT_LENGTH = int(_ROAD_CFG["segment_length_blocks"])
+ROAD_ENDPOINTS: tuple[str, ...] = tuple(_ROAD_CFG["endpoints"])
+ROAD_INTERIOR_MARKS: tuple[str, ...] = interior_bound_marks(ROAD_SEGMENT_COUNT)
+ROAD_ALL_MARKS: tuple[str, ...] = all_mark_names_for_graph(_ROAD_CFG)
+
+# Persistent path for the road_plan.json artifact. Resolves W2-NAV-008
+# (planner workspace is GC'd before downstream measure/clear cards can
+# read the plan). Writing to data/runtime/ instead of $WORKSPACE keeps
+# the plan available across the trial lifetime. Singleton; one active
+# road trial at a time. Past trials should archive on completion.
+ROAD_PLAN_JSON = "data/runtime/proc-nav-road-plan.json"
+
+ROAD_SPEC = (
+    f"**Road:** {ROAD_WIDTH_M} blocks wide between catalog anchors "
+    f"**:{ROAD_ENDPOINTS[0]}:** and **:{ROAD_ENDPOINTS[-1]}:** "
+    f"({ROAD_CENTERLINE_BLOCKS_CATALOG} blocks centerline, {ROAD_SEGMENT_COUNT} segments). "
+    "Interior boundaries are **agent `mc mark`** names "
+    f"({', '.join(ROAD_INTERIOR_MARKS) or 'none'}) — not mapcatalog. "
+    "Level walking surface per segment (dig/fill to target_y)."
+)
+
+ROAD_PLAN_SCHEMA = """
+**`road_plan`** (JSON — one row per segment; automation clones worker cards from this):
+```json
+{
+  "centerline_length_blocks": 48,
+  "width_blocks": 3,
+  "endpoints": ["overlook", "return_post"],
+  "segment_boundaries": ["road_bound_1", "road_bound_2", "road_bound_3"],
+  "segments": [
+    {
+      "id": 1,
+      "from_mark": "overlook",
+      "to_mark": "road_bound_1",
+      "measure_bot": "mox",
+      "clear_bot": "pip",
+      "target_y": <int>,
+      "passage": "dig|fill|stairs",
+      "obstacles": []
+    }
+  ],
+  "tooling": {"mox": ["iron_shovel", "iron_pickaxe"], "pip": ["iron_shovel", "iron_pickaxe"]},
+  "automation_note": "same metadata schema for every segment_id"
+}
+```
+"""
+
+
+def _assign_measure(seg_id: int) -> tuple[str, str]:
+    if seg_id % 2 == 1:
+        return ASSIGNEE_NAV_MOX, BOT_MOX
+    return ASSIGNEE_NAV_PIP, BOT_PIP
+
+
+def _assign_clear(seg_id: int) -> tuple[str, str]:
+    if seg_id % 2 == 1:
+        return ASSIGNEE_BUILD_PIP, BOT_PIP
+    return ASSIGNEE_BUILD_MOX, BOT_MOX
+
+
+def _plan_body() -> str:
+    eps = ", ".join(f"**{m}**" for m in ROAD_ENDPOINTS)
+    bounds = ", ".join(f"`{m}`" for m in ROAD_INTERIOR_MARKS) or "(agents define during explore)"
+    return (
+        f"Read under `$HERMESCRAFT_REPO`:\n"
+        f"  1. **`{SCENARIO_MAP_JSON}`** — **ground-anchored** endpoints ({eps}); "
+        f"interior marks {bounds}.\n"
+        f"  2. **`calibration/proc-nav-road.yaml`** — segment count "
+        f"**{ROAD_SEGMENT_COUNT}**, centerline **{ROAD_CENTERLINE_BLOCKS_CATALOG}** blocks.\n"
+        f"  3. **`{PLAYBOOK}`** — proc-nav road section.\n"
+        f"  4. `skill_view('minecraft-planning')`.\n"
+        f"Optional: `{POSTMORTEM_MANIFEST}`.\n"
+        f"{ROAD_SPEC}\n"
+        f"Draft **`road_plan`** with **{ROAD_SEGMENT_COUNT} segment rows** (schema below). "
+        "Alternate **measure_bot** / **clear_bot** Mox↔Pip per segment_id.\n"
+        f"{ROAD_PLAN_SCHEMA}\n"
+        "No `mc`. metadata.card_kind=research"
+    )
+
+
+def _segment_plan_body() -> str:
+    seg_lines = "\n".join(
+        f"  - Seg {sid}: {a} → {b}" for sid, a, b in road_segments(_ROAD_CFG)
+    )
+    return (
+        f"Read **`corridor_profile`** (from parent SCOUT card metadata) + "
+        f"**`{SCENARIO_MAP_JSON}`**.\n"
+        f"Emit **`road_plan`** JSON with exactly **{ROAD_SEGMENT_COUNT}** segments:\n"
+        f"{seg_lines}\n"
+        f"\n"
+        f"**Target Y discipline (CRITICAL — this is the bug from "
+        f"`data/postmortems/proc-nav-lab/proc-nav-1780989125/postmortem-partial.md`):**\n"
+        f"- The catalog endpoints in `{SCENARIO_MAP_JSON}` carry stale Y values "
+        f"(the placement engine picks the highest cell in its target disc — "
+        f"often 10+ blocks above or below the live walkable surface). "
+        f"In the prior trial: catalog overlook Y=67 vs live surface Y=80 → 13-block drift.\n"
+        f"- **NEVER** copy `placements.overlook[1]` or `placements.return_post[1]` from "
+        f"`{SCENARIO_MAP_JSON}` into `road_plan.target_y_default` or any per-segment "
+        f"`target_y`. They are catalog placement Y, NOT a road surface.\n"
+        f"- **DO** set `road_plan.target_y_default = corridor_profile.elevation_median` "
+        f"(the scout already computed this from a real `mc terrain_top` sweep).\n"
+        f"- For per-segment `target_y`: default to `corridor_profile.elevation_median`. "
+        f"The measure card may revise per-segment based on its own samples; the "
+        f"planner just seeds the median.\n"
+        f"- If the catalog endpoint Y differs from `elevation_median` by ≥4, you MUST "
+        f"include an `obstacles[]` entry of the form "
+        f"`{{type: 'catalog_y_drift', catalog_y: <N>, live_y: <M>, delta: <abs>}}` — "
+        f"this is the audit trail proving you noticed and rejected the bad Y.\n"
+        f"\n"
+        f"Merge elevation + obstacles into the segment table; tooling per bot; echo "
+        f"segment list for automation.\n"
+        f"\n"
+        f"**Output (persistent path — W2-NAV-008 fix):**\n"
+        f"- Write the final `road_plan` JSON to `$HERMESCRAFT_REPO/{ROAD_PLAN_JSON}`. "
+        f"This survives your workspace GC so downstream measure/clear cards can read "
+        f"it. Use `write_file` or `cat > … <<EOF`.\n"
+        f"- Also echo `road_plan` as `metadata.road_plan` on this card's completion "
+        f"summary (for telemetry).\n"
+        f"\n"
+        f"No `mc`. metadata.card_kind=research; metadata.road_plan_path=`{ROAD_PLAN_JSON}`."
+    )
+
+
+def _explore_body() -> str:
+    bound_list = ", ".join(f"**{m}**" for m in ROAD_INTERIOR_MARKS)
+    return (
+        f"Reach catalog endpoints **{ROAD_ENDPOINTS[0]}** and **{ROAD_ENDPOINTS[-1]}** "
+        f"(each within **4 blocks**).\n"
+        f"Along the centerline (~{_ROAD_CFG['segment_length_blocks']} blocks per segment), "
+        f"**place ground-level marks** with `mc mark` for: {bound_list}. "
+        "Use `mc inspect` / `mc scene` at each boundary so feet Y is standable.\n"
+        "Walk full corridor; `mc scene` every **2 blocks**; 3-wide strip samples.\n"
+        "\n"
+        "**Target Y discipline (CRITICAL — read `skill_view('minecraft-roadbuilding')` "
+        "section 'Target Y — derive from terrain, NOT from catalog placement'):**\n"
+        "- For each segment boundary mark, ALSO run `mc terrain_top X Z` at the 3-wide "
+        "cross-section (center + ±1 in the cross-axis).\n"
+        "- Compute `corridor_profile.elevation_median` = median of all `surface_y` "
+        "samples across the corridor.\n"
+        "- **Never** copy the catalog endpoint Y (`overlook` / `return_post`) as a road "
+        "target — the catalog placement engine often sits the anchor 10+ blocks above "
+        "or below the live walkable surface. Use the terrain_top median.\n"
+        "\n"
+        "metadata **`corridor_profile`**: samples[], elevation_median (int), "
+        "elevation_delta, obstacles[], "
+        f"`segment_boundaries`: [{{mark, x, y, z}}], "
+        f"anchors_reached: [{', '.join(ROAD_ALL_MARKS)}], centerline_length_blocks."
+    )
+
+
+def _meas_body(seg_id: int, from_mark: str, to_mark: str) -> str:
+    # Nominal centerline coords for this segment. Corridor runs along +Z
+    # from overlook (z=0) to return_post (z=ROAD_CENTERLINE_BLOCKS_CATALOG).
+    # x ∈ {-1, 0, 1} (3-wide centered on x=0). Hardcoded so the agent
+    # can't skip the sampling step — Pip in the prior trial accepted the
+    # planner's bad target_y; literal commands are harder to ignore than
+    # procedure text. If the scout placed road_bound_* off-axis, the
+    # agent can adapt; these are seeds, not handcuffs.
+    z_start = (seg_id - 1) * ROAD_SEGMENT_LENGTH
+    z_mid = z_start + ROAD_SEGMENT_LENGTH // 2
+    z_end = z_start + ROAD_SEGMENT_LENGTH
+    literal_top_calls = "\n".join(
+        f"   mc terrain_top {x} {z}"
+        for z in (z_start, z_mid, z_end)
+        for x in (-1, 0, 1)
+    )
+    return (
+        f"**Segment {seg_id}:** `{from_mark}` (Z≈{z_start}) → `{to_mark}` (Z≈{z_end}) "
+        f"per **`road_plan`**.\n"
+        f"Repeat the standard measure contract (same schema every segment).\n"
+        f"\n"
+        f"**Step 1 — read the road_plan from the persistent path:**\n"
+        f"   `cat $HERMESCRAFT_REPO/{ROAD_PLAN_JSON}`\n"
+        f"Note `corridor_profile.elevation_median` and the planner's seeded `target_y` "
+        f"for this segment. You will verify them against live samples below.\n"
+        f"\n"
+        f"**Step 2 — sample the 3-wide cross-section at start, mid, end (9 cells). "
+        f"Run these LITERAL commands:**\n"
+        f"```\n{literal_top_calls}\n```\n"
+        f"\n"
+        f"**Step 3 — compute target_y from the 9 samples:**\n"
+        f"   `target_y = median(surface_y for all 9 terrain_top results)`\n"
+        f"If `abs(target_y - road_plan.corridor_profile.elevation_median) > 2`, log "
+        f"`obstacles[].type='segment_y_anomaly'` with the local median and the "
+        f"corridor median.\n"
+        f"\n"
+        f"**Step 4 — run `mc level_ground` dry-run for disposition classification:**\n"
+        f"   `mc level_ground -1 {z_start} 1 {z_end} target=<target_y>`\n"
+        f"Read `data.dispositions` and `data.dip_spans`:\n"
+        f"- If `summary.deck_required_n > 0` or `summary.reroute_required_n > 0`, set "
+        f"`passage='deck'` or `passage='reroute'` and pass the span coords through to "
+        f"`obstacles[]`.\n"
+        f"- Otherwise set `passage='dig'` or `passage='fill'` based on the cut/fill skew.\n"
+        f"\n"
+        f"**Step 5 — verify rejection of catalog Y:**\n"
+        f"NEVER set `target_y` to the catalog endpoint Y. If the catalog Y at this "
+        f"segment's endpoints differs from your terrain_top median by ≥4, log it in "
+        f"`obstacles[]` as `catalog_y_drift` with `catalog_y`, `live_y`, `delta`.\n"
+        f"\n"
+        f"metadata **`segment_measurements`**: segment_id={seg_id}, from_mark={from_mark}, "
+        f"to_mark={to_mark}, target_y (= terrain_top median, NOT catalog), "
+        f"passage (dig|fill|deck|reroute), samples[], "
+        f"dispositions{{level,cut,fill_shallow,fill_deep,no_floor}}, obstacles[], "
+        f"width_blocks={ROAD_WIDTH_M}."
+    )
+
+
+def _clear_body(seg_id: int) -> str:
+    z_start = (seg_id - 1) * ROAD_SEGMENT_LENGTH
+    z_end = z_start + ROAD_SEGMENT_LENGTH
+    return (
+        f"**Segment {seg_id}:** equip (`mc inventory`, metadata `tools_ready`); "
+        f"clear **{ROAD_WIDTH_M} blocks wide** for Z={z_start}..{z_end} (X=-1..1) per "
+        f"**`road_plan`**.\n"
+        f"\n"
+        f"**Step 1 — read the road_plan + this segment's measurements from persistent paths:**\n"
+        f"   `cat $HERMESCRAFT_REPO/{ROAD_PLAN_JSON}`\n"
+        f"Find this segment's entry: target_y, passage (dig|fill|deck|reroute), "
+        f"obstacles[]. Also read the upstream measure card's "
+        f"`segment_measurements` metadata for the same segment_id.\n"
+        f"\n"
+        f"**Step 2 — clear by passage:**\n"
+        f"- `passage=dig` or `fill`: `mc clear_strip -1 {z_start} 1 {z_end} "
+        f"surface_y=<target_y> road_mode=true` (cuts trees), then "
+        f"`mc level_ground -1 {z_start} 1 {z_end} target=<target_y> execute=true`.\n"
+        f"- `passage=deck`: route around if reroute viable; else `mc deck` over the "
+        f"flagged dip_spans.\n"
+        f"- `passage=reroute`: emit a `[DEFER]` comment with the span coords, complete "
+        f"this card with `obstacles_handled=[]` and a re-survey note.\n"
+        f"\n"
+        f"**Step 3 — verify the bed:** `mc level_ground -1 {z_start} 1 {z_end} "
+        f"target=<target_y>` (dry-run) should now report `dispositions.level == columns_n` "
+        f"and no remaining `dip_spans` with `suggestion != 'level_caps'`.\n"
+        f"\n"
+        f"metadata **`segment_cleared`**: segment_id={seg_id}, width_blocks={ROAD_WIDTH_M}, "
+        f"target_y, blocks_touched, obstacles_handled[], post_verify_dispositions{{...}}."
+    )
+
+
+def build_proc_scout_road_graph() -> Graph:
+    cards: list[Card] = [
+        Card(
+            slug="pn-plan",
+            title="[RESEARCH] proc-nav road playbook",
+            assignee="planner",
+            omit_bot_prefix=True,
+            body=_plan_body(),
+            depends_on=(),
+            skills=PLANNER_SKILLS,
+        ),
+        Card(
+            slug="pn-explore",
+            title="[NAV] scout road corridor",
+            assignee=ASSIGNEE_NAV_MOX,
+            bot=BOT_MOX,
+            body=_explore_body(),
+            depends_on=("pn-plan",),
+            skills=NAV_SKILLS,
+            work_at_mark="overlook",
+        ),
+        Card(
+            slug="pn-segments",
+            title="[RESEARCH] road segment table",
+            assignee="planner",
+            omit_bot_prefix=True,
+            body=_segment_plan_body(),
+            depends_on=("pn-explore",),
+            skills=PLANNER_SKILLS,
+        ),
+    ]
+
+    clear_slugs: list[str] = []
+    for seg_id, from_mark, to_mark in road_segments(_ROAD_CFG):
+        nav_assignee, nav_bot = _assign_measure(seg_id)
+        bld_assignee, bld_bot = _assign_clear(seg_id)
+        meas_slug = f"pn-meas-{seg_id}"
+        clear_slug = f"pn-clear-{seg_id}"
+        clear_slugs.append(clear_slug)
+        cards.append(
+            Card(
+                slug=meas_slug,
+                title=f"[NAV] measure segment {seg_id}",
+                assignee=nav_assignee,
+                bot=nav_bot,
+                body=_meas_body(seg_id, from_mark, to_mark),
+                depends_on=("pn-segments",),
+                skills=NAV_SKILLS,
+                work_at_mark=from_mark,
+            )
+        )
+        cards.append(
+            Card(
+                slug=clear_slug,
+                title=f"[BUILD] clear segment {seg_id}",
+                assignee=bld_assignee,
+                bot=bld_bot,
+                body=_clear_body(seg_id),
+                depends_on=(meas_slug,),
+                skills=BUILD_SKILLS,
+                work_at_mark=from_mark,
+            )
+        )
+
+    cards.extend(
+        [
+            Card(
+                slug="pn-road-verify",
+                title="[VERIFY] road corridor",
+                assignee=ASSIGNEE_NAV_MOX,
+                bot=BOT_MOX,
+                body=(
+                    "Walk overlook → interior marks → return_post; `mc verify` ≥1 predicate "
+                    "(at_mark on agent `road_bound_*` marks).\n"
+                    f"metadata **`verify_results`**: predicates[], position_at_complete, "
+                    f"road_width_blocks={ROAD_WIDTH_M}, segments_cleared={ROAD_SEGMENT_COUNT}."
+                ),
+                depends_on=tuple(clear_slugs),
+                skills=OBSERVE_SKILLS,
+                work_at_mark="return_post",
+            ),
+            Card(
+                slug="pn-plan-2",
+                title="[RESEARCH] finalize road trial",
+                assignee="planner",
+                omit_bot_prefix=True,
+                body=(
+                    f"Read verify **`verify_results`** and all **`segment_cleared`** "
+                    f"({ROAD_SEGMENT_COUNT} segments).\n"
+                    f"Update **`{PLAYBOOK}`**; note automation repeatability.\n"
+                    "metadata.card_kind=research"
+                ),
+                depends_on=("pn-road-verify",),
+                skills=PLANNER_SKILLS,
+            ),
+        ]
+    )
+
+    return Graph(
+        epic_slug="pn-road",
+        epic_title="[NAV] Proc-scout road (two-bot)",
+        epic_body=(
+            f"{ROAD_SEGMENT_COUNT}-segment corridor ({ROAD_CENTERLINE_BLOCKS_CATALOG} blocks) "
+            "on proc-nav-lab; Mox + Pip."
+        ),
+        cards=tuple(cards),
+        acceptance_predicate=None,
+        acceptance_predicates=(),
+    )

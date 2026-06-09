@@ -6,23 +6,59 @@
       "automation_eligible": true,
       "script_path": "data/workspace/production/scripts/proc_nav_anchor_coords.sh",
       "verifier": "scripts/proc-nav-verify-anchor.sh",
-      "note": "Anchor routing — flat_patch_center placed overlook in air; mc inspect --mark INVALID_COORD on bad marks",
+      "note": "Anchor routing \u2014 flat_patch_center placed overlook in air; mc inspect --mark INVALID_COORD on bad marks",
       "evidence": [
         {
           "run_id": "proc-nav-1780956289",
-          "observation": "mapcatalog flat_patch_center picked overlook=(0,80,0) — 15 blocks air above terrain; agent reported unreachable.",
+          "observation": "mapcatalog flat_patch_center picked overlook=(0,80,0) \u2014 15 blocks air above terrain; agent reported unreachable.",
           "file": "data/postmortems/proc-nav-lab/proc-nav-1780956289/baseline-passed"
+        },
+        {
+          "run_id": "proc-nav-1780960479",
+          "observation": "Second consecutive Mox death from anchor-in-air placement: spawn (-25, 90, 28) sits above a tree, bot dropped through canopy and died. The flat_patch_center heuristic is not ground-clamping. The proc_nav_anchor_coords.sh deliverable + runtime-test verifier (already wired) is the closeable loop here \u2014 needs an engineer IMPROVE pass.",
+          "severity": "fatal"
+        },
+        {
+          "run_id": "proc-nav-1780966603",
+          "observation": "Road tier seg 2 builder: planner used target_y=67 from catalog overlook anchor. Live surface Y=78. Builder tried to dig 11-block trench, timed out at 25s, got stuck in hole, did pillar_up 12 + pillar_down 12 (net zero progress). Same root cause as overlook-in-air; manifests in road as wrong target_y.",
+          "doctrine_fix": "Added target_y discipline + escape-vs-pillar doctrine to skills/minecraft-roadbuilding.md."
+        },
+        {
+          "run_id": "proc-nav-1780970837",
+          "observation": "Doctrine fix did NOT propagate to scout/navigator. Pip read 'target Y=67' directly from parent SCOUT's measurement output (the scout still uses catalog overlook Y, not live terrain). Builder consumed Y=67 unchanged. Root cause is the navigator-measure card, not the builder card where the doctrine was patched.",
+          "next_fix": "Re-ground target_y at the scout layer: scout must run terrain_top across corridor sample points and emit MEDIAN as target_y in road_plan, not the catalog placement Y."
         }
       ],
-      "last_seen_run": "proc-nav-1780956289"
+      "last_seen_run": "proc-nav-1780970837"
     },
     {
       "id": "W2-NAV-002",
       "status": "in_progress",
       "automation_eligible": false,
       "script_path": null,
-      "note": "Stuck / escape / NAV_BLOCKED — card bodies + minecraft-navigation hints",
-      "last_seen_run": "proc-nav-1780956289"
+      "note": "Stuck / escape / NAV_BLOCKED \u2014 card bodies + minecraft-navigation hints",
+      "last_seen_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780961096",
+          "observation": "Core re-run nav_escape_count=0 \u2014 no stuck recoveries this seed; Stress graph still required to exercise escape doctrine."
+        },
+        {
+          "run_id": "proc-nav-1780994801",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-index.md",
+          "excerpt": "# Trial feedback \u2014 proc-nav-1780994801\n\nBoard: proc-nav-lab\nRoles: navigator,navigator-pip,builder,builder-mox,planner\nGenerated: 2026-06-09T12:38:33+02:00\n\n## navigator\n\n- card: `t_306a80f6`  status: done\n\n_no feedback file written_\n\n## navigator-pip\n\n- card: `t_84a8175f`  status: done\n\n_no feedback file written_\n\n## builder\n\n- card: `t_8b25b8fb`  status: done\n\n_no feedback file written_\n\n## buil"
+        },
+        {
+          "run_id": "proc-nav-1780994801",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-navigator.md",
+          "excerpt": "# navigator FEEDBACK \u2014 proc-nav-1780994801 (bot:mox)\n\nCards worked: t_e009ee92 [SCOUT], t_7327ef41 [MEASURE seg 1], t_648102c0 [MEASURE seg 3], t_0ed9ae7e [VERIFY]\n\n---\n\n## Problems hit\n\n1. **Catalog anchor Y vs surface Y mismatch (every card)** \u2014 Overlook=67, return_post=68, but the actual walkable terrain is Y=78-80. Every card's first turn was \"why is the anchor in the air / below ground?\" This"
+        },
+        {
+          "run_id": "proc-nav-1780994801",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-planner.md",
+          "excerpt": "# FEEDBACK: planner @ proc-nav-1780994801\n\nThree planner cards across this run: `t_720518cc` (initial road_plan.json, catalog Y),\n`t_1e15c674` (road_plan.json v2 with corridor_profile Y), `t_a84bdbaf` (finalization).\n\n## Problems hit\n\n1. **Catalog Y vs live Y drift (W2-NAV-008)**\n   The biggest friction across the whole trial. The initial plan used Y=67/68 from\n   `last-scenario-map.json` (seed 10"
+        }
+      ]
     },
     {
       "id": "W2-NAV-003",
@@ -34,13 +70,14 @@
     },
     {
       "id": "W2-NAV-004",
-      "status": "open",
+      "status": "resolved",
       "automation_eligible": true,
       "script_path": "scripts/agent-test.py",
       "verifier": "scripts/tests/test_agent_test_tool_counter.py",
-      "note": "agent-test.py tool_call_count = 0 when agent runs mc in Hermes chat mode — Phase B metrics blocker",
+      "note": "Session mc metrics: session JSON + state.db (root + per-profile); hard-pass on next baseline agent-test",
       "first_seen_run": "proc-nav-1780956289",
-      "last_seen_run": "proc-nav-1780956289"
+      "last_seen_run": "proc-nav-1780961096",
+      "resolved_run": "proc-nav-1780961096"
     },
     {
       "id": "W2-NAV-005",
@@ -48,19 +85,295 @@
       "automation_eligible": true,
       "script_path": "prototypes/agent-arch/setup-role-profiles.sh",
       "verifier": null,
-      "note": "setup-role-profiles.sh does not install minecraft-observe on navigator — pn-observe blocked until manual skill copy",
+      "note": "Navigator profile installs minecraft-observe \u2014 pn-observe no longer blocks on first dispatch Recurred in proc-scout-road run (planner missing minecraft-planning).",
       "first_seen_run": "proc-nav-1780956289",
-      "last_seen_run": "proc-nav-1780956289"
+      "last_seen_run": "proc-nav-1780966603",
+      "resolved_run": "proc-nav-1780961096",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780966603",
+          "observation": "Road tier: planner card blocked with Unknown skill(s): minecraft-planning. setup-planner-w2.sh installed only agent-planner, not minecraft-planning. Skill exists at skills/minecraft-planning.md.",
+          "fix": "Added minecraft-planning install to setup-planner-w2.sh; manually installed for current run."
+        },
+        {
+          "run_id": "proc-nav-1780966603",
+          "observation": "Road tier: builder-mox card blocked with Unknown skill(s): agent-builder. setup-proc-nav-dual-bot.sh installed minecraft-mining/roadbuilding only, not agent-builder.",
+          "fix": "Patched dual-bot script to install agent-builder + minecraft-building too; manually installed for current run."
+        }
+      ]
     },
     {
       "id": "W2-NAV-006",
-      "status": "open",
+      "status": "resolved",
       "automation_eligible": true,
       "script_path": "prototypes/agent-arch/capstone/proc_scout_graph.py",
-      "verifier": null,
-      "note": "Planner cards (pn-plan, pn-plan-2) omit explicit data-source paths to last-scenario-map.json and playbook",
+      "verifier": "prototypes/agent-arch/tests/test_proc_nav_graph.py",
+      "note": "Planner cards cite last-scenario-map.json + runbook \u2014 Core re-run ~44% wall / ~41% mc vs prior PASS",
       "first_seen_run": "proc-nav-1780956289",
-      "last_seen_run": "proc-nav-1780956289"
+      "last_seen_run": "proc-nav-1780994801",
+      "resolved_run": "proc-nav-1780961096",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-navigator-pip.md",
+          "excerpt": "# FEEDBACK: navigator-pip on proc-nav-1780994801\n\n**Trial:** proc-nav-1780994801\n**Role:** navigator-pip\n**Card:** t_36c0e997 \u2014 [NAV] measure segment 2 (road_bound_1 \u2192 road_bound_2, Z\u224812\u219224)\n**Date:** 2026-06-09\n\n## Problems Hit\n\n1. **No batch verb for terrain sampling** \u2014 Measuring a 3-wide segment cross-section at\n   Z=12 (start), Z=18 (mid), Z=24 (end) required 9 separate `mc terrain_top` calls"
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-007",
+      "status": "open",
+      "automation_eligible": false,
+      "script_path": "prototypes/agent-arch/capstone/proc_scout_road_graph.py",
+      "verifier": "prototypes/agent-arch/tests/test_proc_nav_road_graph.py",
+      "note": "Two-bot proc-scout-road: 48b/4seg corridor; preflight Pip+bot_players; mvtp in prep-board; spatial-map+feedback on run-road; B(001) before A",
+      "first_seen_run": "proc-nav-1780961096",
+      "evidence": [
+        {
+          "run_id": "plan-review",
+          "observation": "Operator edges: Pip in bot_players, colony start pip, dual mvtp, anchor ground-clamp before road, profile MC_* smoke \u2014 addressed in preflight/prep-board/runbook."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-008",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "prototypes/agent-arch/capstone/proc_scout_road_graph.py",
+      "verifier": null,
+      "note": "Planner card writes road_plan.json to its own workspace dir (~/.hermes/kanban/boards/<board>/workspaces/<task_id>/). The dir is cleaned up on card completion. Downstream navigator cards cannot read the artifact. Fix: have planner write to a persistent path like data/postmortems/<board>/<RUN_ID>/road_plan.json, or put the plan in kanban_complete metadata for the next card to read.",
+      "first_seen_run": "proc-nav-1780966603",
+      "last_seen_run": "proc-nav-1780966603",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780966603",
+          "observation": "Planner card t_07dea4cb wrote road_plan.json then completed; workspace dir gone before navigator card t_e0481fde tried to read it. Navigator adapted by doing its own terrain survey."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-009",
+      "status": "resolved",
+      "automation_eligible": true,
+      "script_path": "plugins/landfolk/landfolk/orchestrator/gate.py",
+      "verifier": "plugins/landfolk/tests/test_mutex_todo_pre_park.py",
+      "note": "Per-bot mutex DESIGNED CORRECTLY in plugins/landfolk/landfolk/orchestrator/mutex_key.py: [bot:<name>] title prefix yields key bot:<name>. The enforcement gap was that dispatch_once (core Hermes) calls recompute_ready which promotes ALL eligible todos \u2192 ready in one shot, ignoring mutex_key. The dispatcher's claim loop then claimed them all before the NEXT gate-check could park duplicates. FIX (2026-06-09): added gate.gate_check Step 5b that pre-parks excess eligible todos by writing claim_lock=mutex_park:KEY while they're still in todo status. recompute_ready only touches `status`, so the lock survives the todo\u2192ready flip, and the dispatcher's `WHERE claim_lock IS NULL` selector skips parked siblings.",
+      "first_seen_run": "proc-nav-1780966603",
+      "last_seen_run": "proc-nav-1780970837",
+      "resolved_run": "fix-2026-06-09",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780966603",
+          "observation": "Three concurrent build cards mid-run: t_a1d8ad7c + t_acb2c6c9 both [bot:mox], t_9c2d96f4 [bot:pip]. Per-bot serialization required for road tier."
+        },
+        {
+          "run_id": "proc-nav-1780966603",
+          "observation": "mutex_key.mutex_key(assignee=builder-mox, title=[bot:mox] [BUILD] clear segment 2) returns bot:mox correctly; same for segment 4. Both still ran concurrently. Enforcement gap, not key gap."
+        },
+        {
+          "run_id": "fix-2026-06-09",
+          "observation": "Root cause traced to dispatch_once line 6046 calling recompute_ready WITHOUT mutex awareness. Fixed via landfolk gate.py Step 5b (pre-park todos). 8 new tests in test_mutex_todo_pre_park.py cover the race scenario end-to-end: 3 [bot:mox] todos all eligible \u2192 gate-check pre-parks 2 \u2192 simulated dispatcher recompute_ready + claim loop claims exactly 1. Full landfolk suite 116/116 pass."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-010",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "scripts/prep-proc-nav-supply-chest.py",
+      "verifier": null,
+      "note": "Ground-finding probe (is_air=false walk top-down) treats partial-height blocks (snow_layer, slab, carpet, tall_grass, leaves) as ground. Chest + tp Y came out 1 block low \u2014 embedded in the partial-height surface block. Fix: use bot terrain_top endpoint (knows block shape), fall back to inspect with bounding_box==\"block\" filter. Also: for entity tp, prefer surface_y + 1 not surface_y (avoid clip on uneven terrain).",
+      "first_seen_run": "proc-nav-1780966603",
+      "last_seen_run": "proc-nav-1780966603",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780966603",
+          "observation": "Chest placed at probe-returned y=79 was reported 1 block underground. Confirms partial-block surface present at y=79."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-011",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "bot/lib/actions/building/terrain.js",
+      "verifier": null,
+      "note": "level_ground cannot represent road work. (a) 16-column hard cap at terrain.js:457 forces a 3x12 segment into >=3 calls. (b) up_range capped at 16 (line 565) cannot cut a 19-block terrain spike in one call. (c) isStructural treats oak_log/spruce_log/birch_log/oak_planks etc. as tier_3 -> action='preserve', so trees in the corridor are deliberately left standing. (d) execute=true observed timing out at 25s even within the 16-col cap.",
+      "first_seen_run": "proc-nav-1780970837",
+      "last_seen_run": "proc-nav-1780970837",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780970837",
+          "observation": "Mox issued 6 level_ground calls in 11min trial: 4 of 6 either exceeded 16-col cap (exit 1) or timed out at 25s execute. Pip target_y=67 made every call invalid anyway. Sampled corridor surface afterwards: 8/9 center cells at y=78 are still grass/snow/dirt, not air."
+        }
+      ],
+      "next_fix": "Add bot/lib/actions/building/road.js with clear_strip primitive; add road_mode flag to level_ground that overrides isStructural; bump up_range cap to 32; auto-batch level_ground over the 16-col cap for total <=64 cells."
+    },
+    {
+      "id": "W2-NAV-012",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "bot/lib/actions",
+      "verifier": null,
+      "note": "No fell_tree primitive. Bots have to dig each trunk block individually and leave leaves floating. Combined with W2-NAV-011's tree-preservation behavior, this means corridor trees are never cleared in practice.",
+      "first_seen_run": "proc-nav-1780970837",
+      "last_seen_run": "proc-nav-1780970837",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780970837",
+          "observation": "Pip ran 'mc collect spruce_log 32' (40s) attempting to harvest a tree from the corridor manually instead of using a primitive. No cleanup of the leaves above the felled trunk."
+        }
+      ],
+      "next_fix": "Add mc fell_tree(x, z) that walks the connected log column, dig+pickup all logs, then dig connected leaves within radius."
+    },
+    {
+      "id": "W2-NAV-013",
+      "status": "open",
+      "automation_eligible": false,
+      "script_path": "skills/minecraft-planning.md",
+      "verifier": null,
+      "note": "Planner emits prose cards like 'clear 3 blocks wide per road_plan' with zero literal mc verb lines. Workers must invent the strategy. Reproduces the [[feedback_steward_card_verbs]] pattern up at the planner agent.",
+      "first_seen_run": "proc-nav-1780970837",
+      "last_seen_run": "proc-nav-1780970837",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780970837",
+          "observation": "Card t_3baa6723 body: 'Segment 3: equip (mc inventory, metadata tools_ready); clear 3 blocks wide per road_plan.'. Pip spent 10+ minutes hand-composing mc move / mc pillar / mc dig / mc collect calls instead of invoking a primitive."
+        }
+      ],
+      "next_fix": "Planner SOUL must include a hard contract: every output card body has >=1 literal mc <verb> line. Verify post-emit."
+    },
+    {
+      "id": "W2-NAV-014",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "scripts/prep-proc-nav-supply-chest.py",
+      "verifier": null,
+      "note": "Marks posted via /action/mark to a bot port don't resolve via 'mc go_mark' on the same bot in a later session. Either persistence is per-session, or per-profile mark store differs between navigator-pip and builder profiles for the same bot.",
+      "first_seen_run": "proc-nav-1780970837",
+      "last_seen_run": "proc-nav-1780970837",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780970837",
+          "observation": "Pip 'mc go_mark supply_chest' returns exit 1 although prep-proc-nav-supply-chest.py posted the mark to port 3005 immediately before. 'mc go_mark craft_table_-22_76_4' also exit 1."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-015",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "bot/lib/actions/building/road.js",
+      "verifier": null,
+      "note": "mc deck verb referenced by skill+card body but not yet implemented as a forward-walking sneak-place. minecraft-roadbuilding.md acknowledges 'until mc deck lands'; the planner pipeline still emits passage=deck classifications that workers cannot directly satisfy. Either implement the verb OR suppress the deck classification in the measurement pipeline.",
+      "first_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-builder-mox.md",
+          "observation": "Mox seg 2 + seg 4 both got passage=deck from measure card but mc deck doesn't exist. Manually reclassified as fill. False positives also seen: tree canopy at Y=85-90 read by terrain_top as solid ground -> passage=deck even though real ground was Y=78."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-016",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "bot/lib/actions/building/terrain.js",
+      "verifier": null,
+      "note": "mc level_ground execute fails with no_solid_neighbor on snowy-biome cells because the standing-surface neighbor check doesn't exclude snow/snow_block from candidates. Builder-mox had to fall back to per-cell mc place dirt to bridge gaps. Doctrine: snow above target_y should be treated as air for neighbor checks.",
+      "first_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-builder-mox.md",
+          "observation": "Segment 2 execute=true: 7+5+4 cells failed neighbor-find, forced hand-place fallback."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-017",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "prototypes/agent-arch/capstone/proc_scout_road_graph.py",
+      "verifier": null,
+      "note": "_meas_body() permission 'measure card may revise per-segment based on its own samples' is too soft. Trial proc-nav-1780994801 produced per-segment target_y values (78, 79, 78, 78) instead of all matching corridor median 78, creating real +/-1 boundary steps at z=12, 24, 36. Operator observed +/-1 block variation along the finished road. Fix: pin target_y MUST equal corridor_profile.elevation_median unless local median diverges by >= 2.",
+      "first_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "observation": "Live disposition check after trial: mc level_ground -1 0 1 4 target=78 reports {level:7, cut:8} -- 8 cells need cutting in seg 1 because seg 2 target_y=79 propagated edge cells via grass-spread. Operator observed +/-1 block on the finished road surface."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-018",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "prototypes/agent-arch/capstone/proc_scout_road_graph.py",
+      "verifier": null,
+      "note": "Verify card body checks mc verify at_mark per anchor + walks reachability, but does NOT re-run mc level_ground dispositions over the full corridor to assert level == columns_n. Leveling failures pass silently. Fix: add dispositions sweep + emit [CLEANUP] card on failure.",
+      "first_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "observation": "Verify t_0ed9ae7e summary: 'Road surface at Y=78-79' accepted as PASS despite per-segment target_y mismatches (W2-NAV-017). Fresh post-trial dispositions sweep finds 8+ cut cells in seg 1."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-019",
+      "status": "open",
+      "automation_eligible": true,
+      "script_path": "bot/lib/actions/building/terrain.js",
+      "verifier": null,
+      "note": "mc level_ground execute=true HTTP-timeouts at 25s default for 16-cell rectangles. Agents retry with smaller subdivisions but some cells get left unleveled. Fix: either chunk execute into 4-col batches with progress reporting (preferred), or raise MC_HTTP_LONG_ACTION_MS to 60s for level_ground.",
+      "first_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-builder.md",
+          "observation": "Multiple [exit 1] after 25.3s on level_ground execute. Pip seg 1: 'mc level_ground -1 0 1 12 target=78 execute=true 25.3s [exit 1]'."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-020",
+      "status": "open",
+      "automation_eligible": false,
+      "script_path": "skills/minecraft-roadbuilding.md",
+      "verifier": null,
+      "note": "Snowy/swamp biomes regenerate snow_layer and spread grass_block over dirt road beds. The road surface appears altered minutes after the trial completes. Use cobblestone (or stone_bricks) for road beds in regen-active biomes -- no grass spread, snow falls visibly but stays on a consistent material.",
+      "first_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "observation": "Operator observed +/-1 block surface variation; live inspect at z=20 found dirt at y=78 (placed by level_ground), grass_block at y=79 (biome regen), snow_layer at y=80 (snow accumulation)."
+        }
+      ]
+    },
+    {
+      "id": "W2-NAV-021",
+      "status": "resolved",
+      "automation_eligible": true,
+      "script_path": "bot/lib/runtime/manager.js",
+      "verifier": "bot/test/bot-manager.test.js",
+      "note": "SYNC_STUCK_ACTIONS set (the reactive-loop stuck-detect + recenter-nudge gate) was missing 8 movement-bearing verbs: level, level_ground, dig_pit, build_stairs, clear_strip, deck, fell_tree. Without registration, the bot wedged on a block edge for the entire action duration (15-25s+) with no recenter intervention. Fixed 2026-06-09 mid-trial: hoisted SYNC_STUCK_ACTIONS to module-level export, added all 8 verbs, 3 contract tests pin the bite (new road verb addition without registration now fails fast).",
+      "first_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1780994801",
+      "resolved_run": "proc-nav-1780994801",
+      "evidence": [
+        {
+          "run_id": "proc-nav-1780994801",
+          "observation": "Mox observed wedged on block edge ~2.4 min during level_ground execute. User flagged regression: 'we used to have this solved'. Root cause traced to missing verb registration; fix landed in same session."
+        }
+      ]
     }
   ]
 }

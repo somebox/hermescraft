@@ -7,6 +7,7 @@ import { createBuildingPillarPart } from './pillar.js';
 import { createBuildingPlaceSinglePart } from './place-single.js';
 import { createBuildingPlaceBulkPart } from './place-bulk.js';
 import { createBuildingTerrainPart } from './terrain.js';
+import { createBuildingRoadPart } from './road.js';
 
 export function createBuildingActions(services) {
   const { state: ctx, config, ensureBot, utils, social, resolver, fairPlay, getActions } = services;
@@ -20,12 +21,14 @@ export function createBuildingActions(services) {
   });
   const placeBulkPart = createBuildingPlaceBulkPart({ ctx, ensureBot, sleep, config });
   const terrainPart = createBuildingTerrainPart({ ctx, ensureBot, sleep, getActions, config });
+  const roadPart = createBuildingRoadPart({ ctx, config, ensureBot, getActions });
 
   return {
     ...pillarPart,
     ...placeSinglePart,
     ...placeBulkPart,
     ...terrainPart,
+    ...roadPart,
 
     /**
      * Highest solid block per vertical column — for pit/site selection without N×find_blocks.

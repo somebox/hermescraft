@@ -90,11 +90,16 @@ export function evaluateRegionPolicy(ctx, config, verb, x, y, z, blockName, over
 }
 
 /**
- * @param {{ forceEscape?: boolean }} [opts] If `forceEscape` is true, both
- *   region-deny and the global denylist are bypassed. Callers MUST gate this
- *   flag on a "genuinely stuck" predicate (e.g. 4 cardinal walls + ceiling
- *   overhead) and emit an audit event. Used by pillar_step --force to let a
- *   trapped bot dig its way out of a protected region.
+ * @param {{ forceEscape?: boolean, forceProtected?: boolean }} [opts]
+ *   - `forceEscape`: bypasses BOTH region-deny AND the global denylist.
+ *     Callers MUST gate this on a "genuinely stuck" predicate (e.g. 4 cardinal
+ *     walls + ceiling overhead) and emit an audit event. Used by
+ *     pillar_step --force to let a trapped bot dig its way out of a
+ *     protected region.
+ *   - `forceProtected`: bypasses ONLY the global denylist (`isDigProtected`),
+ *     NOT region-deny. Use for deliberate "clear this structural block"
+ *     operations where the operator opted into the action (e.g. road clearing
+ *     dropping a tree trunk in the corridor). Region protect rules still apply.
  * @returns {{ skip: boolean, regionId: string|null, forceEscapeBypassed?: string|null }}
  */
 export function shouldSkipDigAt(ctx, config, blockName, x, y, z, isDigProtectedFn, opts = {}) {
@@ -113,6 +118,9 @@ export function shouldSkipDigAt(ctx, config, blockName, x, y, z, isDigProtectedF
   if (isDigProtectedFn(blockName, { x, y, z }, ctx)) {
     if (opts.forceEscape) {
       return { skip: false, regionId: null, forceEscapeBypassed: 'global_denylist' };
+    }
+    if (opts.forceProtected) {
+      return { skip: false, regionId: null };
     }
     return { skip: true, regionId: null };
   }

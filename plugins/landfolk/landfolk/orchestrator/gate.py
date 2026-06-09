@@ -34,6 +34,8 @@ from . import config
 from .mutex_key import mutex_key
 from .promote import (
     _append_event,
+    _undone_parents_exist,
+    has_active_card,
     is_chat_request,
     park_via_lock,
     promote_next_for,
@@ -247,6 +249,78 @@ def gate_check(conn: sqlite3.Connection) -> dict[str, int]:
         for k in sorted(idle_keys):
             if promote_next_for(conn, k):
                 stats["promoted"] += 1
+    except sqlite3.Error:
+        stats["errors"] += 1
+
+    # ----- Step 5b: pre-park excess eligible todos ----------------
+    # W2-NAV-009 race: dispatch_once (core Hermes) calls recompute_ready
+    # which promotes ALL eligible todos → ready in one shot, ignoring
+    # mutex_key. The claim loop then claims them all before the NEXT
+    # gate-check tick can park duplicates. Fix: pre-park excess eligible
+    # todos by writing claim_lock=mutex_park:KEY now, BEFORE dispatch
+    # runs. recompute_ready only touches `status`, so the lock persists
+    # through the todo→ready flip, and the dispatcher's
+    # `claim_lock IS NULL` selector skips the parked siblings.
+    try:
+        todo_rows = conn.execute(
+            """
+            SELECT id, title, assignee, priority, created_at
+            FROM tasks
+            WHERE status = 'todo'
+              AND assignee IS NOT NULL
+              AND claim_lock IS NULL
+            """,
+        ).fetchall()
+        by_key: dict[str, list[Any]] = {}
+        for row in todo_rows:
+            assignee_lc = (row["assignee"] or "").lower()
+            if orch_profiles and assignee_lc in orch_profiles:
+                continue
+            if is_chat_request(row["title"]):
+                continue
+            k = mutex_key(row["assignee"], row["title"])
+            if not k:
+                continue
+            # Only consider todos that recompute_ready would actually
+            # promote this tick (all parents done).
+            if _undone_parents_exist(conn, row["id"]):
+                continue
+            by_key.setdefault(k, []).append(row)
+
+        for key, todos in by_key.items():
+            todos.sort(
+                key=lambda c: (-(c["priority"] or 0), c["created_at"] or 0)
+            )
+            active = has_active_card(conn, key)
+            # If the domain has an active card (running OR non-parked ready),
+            # park EVERY eligible todo — none should promote into a violation.
+            # If the domain is idle, leave the highest-priority eligible todo
+            # alone (it gets to become the new head) and park the rest.
+            park_from = 0 if active else 1
+            marker = f"{config.MUTEX_LOCK_PREFIX}{key}"
+            for t in todos[park_from:]:
+                cur = conn.execute(
+                    """
+                    UPDATE tasks
+                    SET claim_lock = ?, claim_expires = ?
+                    WHERE id = ?
+                      AND status = 'todo'
+                      AND claim_lock IS NULL
+                    """,
+                    (marker, expires, t["id"]),
+                )
+                if cur.rowcount:
+                    stats["mutex_parked"] += 1
+                    _append_event(
+                        conn,
+                        t["id"],
+                        "mutex_parked",
+                        {
+                            "by": "landfolk-orchestrator",
+                            "reason": "todo_pre_park",
+                            "lock": marker,
+                        },
+                    )
     except sqlite3.Error:
         stats["errors"] += 1
 

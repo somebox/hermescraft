@@ -66,10 +66,14 @@ export function createExcavationActions(services) {
    * Internal-only args (not in CLI argSchema):
    * @param {boolean} [args._bypassEgress] — Skip stair_down tread protection (stair_up).
    * @param {boolean} [args._internalEgress] — Tunnel slice: do not own egress trail clear.
+   * @param {boolean} [args.force_structural] — Dig through PROTECTED_DIG_BLOCKS
+   *   (oak_log, planks, fences, stairs, etc.) anyway. Used by clear_strip in
+   *   road_mode to remove tree trunks and similar structural intent blocks
+   *   from the corridor. Region-deny is still honored.
    */
   async dig_area(args) {
     // Y inputs: y1/y2 (= block_y, legacy) or surface_y1/surface_y2 (= the
-    // Y a bot stands on, = block_y + 1). See docs/conventions/coordinates.md.
+    // Y a bot stands on, = block_y + 1). See docs/reference/world-coordinates.md.
     const boxParsed = box6(normalizeBoxYArgs(args));
     if (!boxParsed.ok) return boxParsed.response;
     const { x1, y1, z1, x2, y2, z2 } = boxParsed;
@@ -82,6 +86,7 @@ export function createExcavationActions(services) {
     const clearStand = clear_stand !== false && clear_stand !== 'false';
     const safeDig = safe !== false && safe !== 'false';
     const force = args.force === true || args.force === 'true';
+    const forceStructural = args.force_structural === true || args.force_structural === 'true';
     // Egress protection: don't carve through the bot's own stair_down treads
     // unless forced. Internal callers (stair_up) opt out via _bypassEgress;
     // tunnel slices own the trail invalidation via _internalEgress so the
@@ -159,7 +164,7 @@ export function createExcavationActions(services) {
           skipped++;
           continue;
         }
-        const skipDig = shouldSkipDigAt(ctx, config, target.name, pos.x, pos.y, pos.z, isDigProtected);
+        const skipDig = shouldSkipDigAt(ctx, config, target.name, pos.x, pos.y, pos.z, isDigProtected, forceStructural ? { forceProtected: true } : {});
         if (skipDig.skip) {
           if (skipDig.regionId) regionSkips.noteSkip(skipDig.regionId);
           skipped++;

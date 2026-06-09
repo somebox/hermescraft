@@ -39,6 +39,15 @@ Write a numbered plan to memory before starting. Include:
 5. **Build order** — numbered steps from site prep through completion
 6. **Maintenance** — what needs periodic checking after it's done
 
+### Surveys drive plan adaptation, not assumption
+
+For any task that shapes terrain (level, fill, clear, road, large platform), do a **survey pass before locking the plan**. The relevant verbs emit a disposition map you can read:
+- `mc level_ground X1 Z1 X2 Z2 target=Y` (no `execute=true`) — returns `data.dispositions = { level, cut, fill_shallow, fill_deep, no_floor, preserved, unknown }`, `data.dip_spans[]`, and `data.recommended_actions[]`. Read these BEFORE deciding execute is safe.
+- If `summary.deck_required_n > 0` or `summary.reroute_required_n > 0`: the rectangle has gaps level execute can't honestly fill. Adapt the plan: split the rectangle, shift the corridor, or defer that section.
+- If only `fill_shallow + cut + level` are present: execute is safe; proceed.
+
+Don't issue an `execute=true` over deck/reroute spans hoping it'll work — the level primitive can only cap the surface, leaving a hollow shell. The survey output tells you when that would happen; respect it.
+
 Example memory entry:
 ```
 PLAN: wheat farm at mark:farm_site

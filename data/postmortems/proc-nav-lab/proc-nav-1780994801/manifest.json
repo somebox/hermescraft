@@ -1,0 +1,169 @@
+{
+  "run_id": "proc-nav-1780994801",
+  "tenant": "proto-agent-arch",
+  "board": "proc-nav-lab",
+  "bot": "mox",
+  "graph": "proc-scout-road",
+  "tier": "road",
+  "map_seed": "proc-nav-1780994801",
+  "cards": [
+    {
+      "slug": "pn-plan",
+      "card_id": "t_720518cc",
+      "assignee": "planner",
+      "bot": "mox",
+      "title": "[RESEARCH] proc-nav road playbook",
+      "depends_on_slugs": [],
+      "created_at": 1780994832
+    },
+    {
+      "slug": "pn-explore",
+      "card_id": "t_e009ee92",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] [NAV] scout road corridor",
+      "depends_on_slugs": [
+        "pn-plan"
+      ],
+      "created_at": 1780994832
+    },
+    {
+      "slug": "pn-segments",
+      "card_id": "t_1e15c674",
+      "assignee": "planner",
+      "bot": "mox",
+      "title": "[RESEARCH] road segment table",
+      "depends_on_slugs": [
+        "pn-explore"
+      ],
+      "created_at": 1780994833
+    },
+    {
+      "slug": "pn-meas-1",
+      "card_id": "t_7327ef41",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] [NAV] measure segment 1",
+      "depends_on_slugs": [
+        "pn-segments"
+      ],
+      "created_at": 1780994833
+    },
+    {
+      "slug": "pn-clear-1",
+      "card_id": "t_63e66378",
+      "assignee": "builder",
+      "bot": "mox",
+      "title": "[bot:pip] [BUILD] clear segment 1",
+      "depends_on_slugs": [
+        "pn-meas-1"
+      ],
+      "created_at": 1780994833
+    },
+    {
+      "slug": "pn-meas-2",
+      "card_id": "t_36c0e997",
+      "assignee": "navigator-pip",
+      "bot": "mox",
+      "title": "[bot:pip] [NAV] measure segment 2",
+      "depends_on_slugs": [
+        "pn-segments"
+      ],
+      "created_at": 1780994834
+    },
+    {
+      "slug": "pn-clear-2",
+      "card_id": "t_e8027f3a",
+      "assignee": "builder-mox",
+      "bot": "mox",
+      "title": "[bot:mox] [BUILD] clear segment 2",
+      "depends_on_slugs": [
+        "pn-meas-2"
+      ],
+      "created_at": 1780994834
+    },
+    {
+      "slug": "pn-meas-3",
+      "card_id": "t_648102c0",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] [NAV] measure segment 3",
+      "depends_on_slugs": [
+        "pn-segments"
+      ],
+      "created_at": 1780994834
+    },
+    {
+      "slug": "pn-clear-3",
+      "card_id": "t_995bcef6",
+      "assignee": "builder",
+      "bot": "mox",
+      "title": "[bot:pip] [BUILD] clear segment 3",
+      "depends_on_slugs": [
+        "pn-meas-3"
+      ],
+      "created_at": 1780994834
+    },
+    {
+      "slug": "pn-meas-4",
+      "card_id": "t_da1d2534",
+      "assignee": "navigator-pip",
+      "bot": "mox",
+      "title": "[bot:pip] [NAV] measure segment 4",
+      "depends_on_slugs": [
+        "pn-segments"
+      ],
+      "created_at": 1780994835
+    },
+    {
+      "slug": "pn-clear-4",
+      "card_id": "t_01b660a4",
+      "assignee": "builder-mox",
+      "bot": "mox",
+      "title": "[bot:mox] [BUILD] clear segment 4",
+      "depends_on_slugs": [
+        "pn-meas-4"
+      ],
+      "created_at": 1780994835
+    },
+    {
+      "slug": "pn-road-verify",
+      "card_id": "t_0ed9ae7e",
+      "assignee": "navigator",
+      "bot": "mox",
+      "title": "[bot:mox] [VERIFY] road corridor",
+      "depends_on_slugs": [
+        "pn-clear-1",
+        "pn-clear-2",
+        "pn-clear-3",
+        "pn-clear-4"
+      ],
+      "created_at": 1780994835
+    },
+    {
+      "slug": "pn-plan-2",
+      "card_id": "t_a84bdbaf",
+      "assignee": "planner",
+      "bot": "mox",
+      "title": "[RESEARCH] finalize road trial",
+      "depends_on_slugs": [
+        "pn-road-verify"
+      ],
+      "created_at": 1780994836
+    }
+  ],
+  "cards_total": 13,
+  "acceptance_predicates": [
+    {
+      "kind": "at_mark",
+      "mark": "overlook",
+      "near": 4
+    },
+    {
+      "kind": "at_mark",
+      "mark": "return_post",
+      "near": 4
+    }
+  ],
+  "manual_interventions": []
+}

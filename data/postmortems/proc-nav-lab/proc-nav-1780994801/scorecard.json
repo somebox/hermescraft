@@ -1,0 +1,104 @@
+{
+  "run_id": "proc-nav-1780994801",
+  "tier": "road",
+  "graph": "proc-scout-road",
+  "band": "pass",
+  "cards_done_count": 13,
+  "cards_total": 13,
+  "wall_time_s": 5282,
+  "manual_interventions": [],
+  "mc_cli_invocations": 1193,
+  "mc_scene_count": 75,
+  "mc_go_mark_count": 3,
+  "nav_escape_count": 12,
+  "mc_build_stairs_count": 4,
+  "mc_dig_count": 560,
+  "anchors_reached_ratio": 1.0,
+  "acceptance_satisfied": false,
+  "acceptance_evaluable": false,
+  "per_predicate": [],
+  "thresholds_ref": "/Users/foz/hermescraft/calibration/proc-nav-thresholds.yaml",
+  "thresholds": {
+    "reference_run_id": "proc-nav-1780956289",
+    "reference_run_id_efficient": "proc-nav-1780961096",
+    "reference_graph": "proc-scout",
+    "tier": {
+      "baseline": {
+        "mc_cli_invocations_max": 24,
+        "wall_time_s_max": 180,
+        "notes": "Re-gate after W2-NAV-001 anchor fix; mc counter uses state.db (004 resolved)"
+      },
+      "core": {
+        "mc_go_mark_min": 2,
+        "mc_scene_min": 2,
+        "wall_time_s_log_only": true,
+        "measured": {
+          "wall_time_s": 1936,
+          "mc_cli_invocations": 525,
+          "mc_go_mark_count": 44,
+          "mc_scene_count": 55,
+          "nav_escape_count": 11,
+          "mc_build_stairs_count": 7,
+          "mc_dig_count": 68,
+          "notes": "First Core PASS \u2014 verbose exploration reference"
+        },
+        "measured_efficient": {
+          "wall_time_s": 1085,
+          "mc_cli_invocations": 310,
+          "mc_go_mark_count": 13,
+          "mc_scene_count": 31,
+          "nav_escape_count": 0,
+          "mc_build_stairs_count": 0,
+          "mc_dig_count": 92,
+          "cards_completed": "5/5",
+          "band": "pass",
+          "notes": "Post W2-NAV-005/006; use as efficiency baseline for Stretch"
+        }
+      },
+      "road": {
+        "graph": "proc-scout-road",
+        "bots": [
+          "mox",
+          "pip"
+        ],
+        "corridor_width_blocks": 3,
+        "centerline_blocks": 48,
+        "segment_count": 4,
+        "interior_marks": [
+          "road_bound_1",
+          "road_bound_2",
+          "road_bound_3"
+        ],
+        "endpoints": [
+          "overlook",
+          "return_post"
+        ],
+        "notes": "Rematerialize proc-nav after requirements offset change; thresholds pinned after first PASS"
+      },
+      "stress": {
+        "nav_escape_min_or_stairs": 1,
+        "mc_go_mark_min": 3,
+        "mc_scene_min": 2,
+        "mc_cli_invocations_max": null,
+        "wall_time_ratio_vs_core": null,
+        "notes": "Pin ratio/caps after first proc-scout-stress RUN_ID"
+      }
+    }
+  },
+  "card_statuses": {
+    "pn-plan": "done",
+    "pn-explore": "done",
+    "pn-segments": "done",
+    "pn-meas-1": "done",
+    "pn-clear-1": "done",
+    "pn-meas-2": "done",
+    "pn-clear-2": "done",
+    "pn-meas-3": "done",
+    "pn-clear-3": "done",
+    "pn-meas-4": "done",
+    "pn-clear-4": "done",
+    "pn-road-verify": "done",
+    "pn-plan-2": "done"
+  },
+  "spatial_map_path": "data/postmortems/proc-nav-lab/proc-nav-1780994801/spatial-map.html"
+}

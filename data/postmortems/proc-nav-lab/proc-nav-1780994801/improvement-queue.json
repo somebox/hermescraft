@@ -1,0 +1,33 @@
+{
+  "run_id": "proc-nav-1780994801",
+  "queue": [
+    {
+      "id": "W2-NAV-001",
+      "script_path": "data/workspace/production/scripts/proc_nav_anchor_coords.sh"
+    },
+    {
+      "id": "W2-NAV-005",
+      "script_path": "prototypes/agent-arch/setup-role-profiles.sh"
+    },
+    {
+      "id": "W2-NAV-008",
+      "script_path": "prototypes/agent-arch/capstone/proc_scout_road_graph.py"
+    },
+    {
+      "id": "W2-NAV-010",
+      "script_path": "scripts/prep-proc-nav-supply-chest.py"
+    },
+    {
+      "id": "W2-NAV-011",
+      "script_path": "bot/lib/actions/building/terrain.js"
+    },
+    {
+      "id": "W2-NAV-012",
+      "script_path": "bot/lib/actions"
+    },
+    {
+      "id": "W2-NAV-014",
+      "script_path": "scripts/prep-proc-nav-supply-chest.py"
+    }
+  ]
+}

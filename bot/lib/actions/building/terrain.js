@@ -211,7 +211,7 @@ export function createBuildingTerrainPart(deps) {
      *
      * Y inputs: pass either `y` (= block_y of the fill block, legacy) or
      * `surface_y` (= where bots walk = block_y + 1). When both are passed,
-     * `surface_y` wins. See docs/conventions/coordinates.md.
+     * `surface_y` wins. See docs/reference/world-coordinates.md.
      *
      * Block selection: explicit `block=NAME` wins; otherwise picks the
      * region's profile palette (e.g. cobblestone inside :base:) if the
@@ -413,7 +413,7 @@ export function createBuildingTerrainPart(deps) {
      *   target           — explicit target Y (block_y, legacy)
      *   surface_y        — alternative to `target`: the Y a bot walks on
      *                      (= block_y + 1). When both given, surface_y wins.
-     *                      See docs/conventions/coordinates.md.
+     *                      See docs/reference/world-coordinates.md.
      *   mode             — 'median' (default) | 'min' | 'max', only used
      *                      when neither target nor surface_y is given
      *   block            — fill block name; otherwise picks the region's
@@ -515,12 +515,26 @@ export function createBuildingTerrainPart(deps) {
       // fences, doors, planks…) get action='preserve' instead of 'dig'
       // even when they sit above target — they're built infrastructure,
       // not orphan terrain. See data/materials.json tier_2+.
-      /** @type {{ x: number, z: number, top_block_y: number | null, top_surface_y: number | null, top_block: string | null, action: string, delta: number | null }[]} */
+      //
+      // Fill columns also get a fill_kind sub-classification:
+      //   - 'shallow' (hole_depth ≤ 3): `level` execute will plant a cap;
+      //     cavity below is invisible from above but present.
+      //   - 'deep' (4 ≤ hole_depth < 16): cap-only is structurally weak +
+      //     visually wrong; recommend deck primitive or reroute.
+      //   - 'no_floor' (hole_depth ≥ 16): ravine / cliff. Reroute is the
+      //     normal answer; bridging requires multi-segment planning.
+      // Connected fill cells get bucketed into dip_spans (BFS) so the
+      // planner can decide per-pocket, not per-column.
+      const FILL_SHALLOW_MAX_DEPTH = 3;
+      const NO_FLOOR_MIN_DEPTH = 16;
+      /** @type {{ x: number, z: number, top_block_y: number | null, top_surface_y: number | null, top_block: string | null, action: string, delta: number | null, hole_depth?: number, fill_kind?: string }[]} */
       const columns = [];
       const palette_observed = {};
       const structural_columns = [];
       let holes_n = 0, pillars_n = 0, level_n = 0, no_data_n = 0, preserved_n = 0;
+      let fill_shallow_n = 0, fill_deep_n = 0, no_floor_n = 0;
       let max_dig = 0, max_fill = 0, max_pillar_height = 0;
+      let max_hole_depth = 0;
       for (const s of surveys) {
         if (s.block) {
           palette_observed[s.block] = (palette_observed[s.block] || 0) + 1;
@@ -545,7 +559,22 @@ export function createBuildingTerrainPart(deps) {
           columns.push({ ...baseCol, action: 'level', delta: 0 });
           level_n++;
         } else if (delta < 0) {
-          columns.push({ ...baseCol, action: 'fill', delta });
+          // hole_depth = number of air cells between the live floor and the
+          // target cap. Example: targetY=80, top_y=77 → air at 78,79 → depth=2.
+          const hole_depth = -delta - 1;
+          if (hole_depth > max_hole_depth) max_hole_depth = hole_depth;
+          let fill_kind;
+          if (hole_depth >= NO_FLOOR_MIN_DEPTH) {
+            fill_kind = 'no_floor';
+            no_floor_n++;
+          } else if (hole_depth > FILL_SHALLOW_MAX_DEPTH) {
+            fill_kind = 'deep';
+            fill_deep_n++;
+          } else {
+            fill_kind = 'shallow';
+            fill_shallow_n++;
+          }
+          columns.push({ ...baseCol, action: 'fill', delta, hole_depth, fill_kind });
           holes_n++;
           if (-delta > max_fill) max_fill = -delta;
         } else if (s.block && isStructural(s.block)) {
@@ -561,11 +590,98 @@ export function createBuildingTerrainPart(deps) {
         }
       }
 
+      // Connected-component bucketing of fill cells into dip spans. Two fill
+      // cells are connected if they share a face in x or z. We classify each
+      // span by its worst fill_kind + max hole_depth so the planner can choose
+      // per-pocket. Spans of size 1–2 with shallow depth are "level caps
+      // these"; anything else gets a deck/reroute recommendation.
+      const DECK_MIN_SPAN_N = 3;
+      const cellByKey = new Map();
+      for (const c of columns) {
+        if (c.action === 'fill') cellByKey.set(`${c.x},${c.z}`, c);
+      }
+      const visited = new Set();
+      /** @type {{ cells: {x:number,z:number}[], n: number, max_depth: number, min_depth: number, contains_no_floor: boolean, suggestion: 'level_caps'|'deck'|'reroute' }[]} */
+      const dip_spans = [];
+      for (const start of cellByKey.values()) {
+        const startKey = `${start.x},${start.z}`;
+        if (visited.has(startKey)) continue;
+        const queue = [start];
+        visited.add(startKey);
+        const span = { cells: [], n: 0, max_depth: 0, min_depth: Infinity, contains_no_floor: false, suggestion: 'level_caps' };
+        while (queue.length) {
+          const cur = queue.shift();
+          span.cells.push({ x: cur.x, z: cur.z });
+          span.n++;
+          if (cur.hole_depth > span.max_depth) span.max_depth = cur.hole_depth;
+          if (cur.hole_depth < span.min_depth) span.min_depth = cur.hole_depth;
+          if (cur.fill_kind === 'no_floor') span.contains_no_floor = true;
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nk = `${cur.x + dx},${cur.z + dz}`;
+            if (visited.has(nk)) continue;
+            const nb = cellByKey.get(nk);
+            if (!nb) continue;
+            visited.add(nk);
+            queue.push(nb);
+          }
+        }
+        if (span.min_depth === Infinity) span.min_depth = 0;
+        // Suggestion ladder:
+        //   contains_no_floor → reroute (ravine; bridging is a separate plan)
+        //   max_depth > shallow OR n ≥ DECK_MIN_SPAN_N → deck (when primitive
+        //     exists; until then, the planner should reroute or mark for manual)
+        //   else → level_caps (current level execute will handle it)
+        if (span.contains_no_floor) span.suggestion = 'reroute';
+        else if (span.max_depth > FILL_SHALLOW_MAX_DEPTH || span.n >= DECK_MIN_SPAN_N) span.suggestion = 'deck';
+        else span.suggestion = 'level_caps';
+        dip_spans.push(span);
+      }
+
+      // Recommended actions: human-readable strings for the planner / agent
+      // to consume. Use them to decide whether to emit a level execute card,
+      // a deck card (when ready), or a reroute / segment-split.
+      const recommended_actions = [];
+      if (level_n + pillars_n + fill_shallow_n + preserved_n + no_data_n === surveys.length
+          && (fill_shallow_n > 0 || pillars_n > 0) && fill_deep_n === 0 && no_floor_n === 0) {
+        recommended_actions.push(
+          `Standard terrain — \`mc level_ground ${minX} ${minZ} ${maxX} ${maxZ} target=${targetY} execute=true\` will handle ${fill_shallow_n + pillars_n + level_n} cells. ${preserved_n ? `${preserved_n} structural preserved.` : ''}`.trim(),
+        );
+      }
+      for (const span of dip_spans) {
+        if (span.suggestion === 'level_caps') continue;
+        const xs = span.cells.map((c) => c.x);
+        const zs = span.cells.map((c) => c.z);
+        const sx1 = Math.min(...xs), sx2 = Math.max(...xs);
+        const sz1 = Math.min(...zs), sz2 = Math.max(...zs);
+        if (span.suggestion === 'deck') {
+          recommended_actions.push(
+            `Dip span (${sx1},${sz1})..(${sx2},${sz2}): ${span.n} cells, depth ${span.min_depth}..${span.max_depth} — too deep/wide for level cap. Use \`mc deck\` (when available) or reroute corridor around it. Until deck lands: shift this segment ±3 X to avoid.`,
+          );
+        } else {
+          recommended_actions.push(
+            `No-floor span (${sx1},${sz1})..(${sx2},${sz2}): ${span.n} cells, depth ≥${NO_FLOOR_MIN_DEPTH} — ravine/cliff. Reroute corridor around this section, OR mark the segment as [BRIDGE] for a multi-segment crossing plan.`,
+          );
+        }
+      }
+      if (no_data_n > 0) {
+        recommended_actions.push(
+          `${no_data_n} columns returned no terrain top — chunks unloaded or below build limit. Retry after \`mc map\` or shrink the rectangle.`,
+        );
+      }
+      const deck_required_n = dip_spans.filter((s) => s.suggestion === 'deck').length;
+      const reroute_required_n = dip_spans.filter((s) => s.suggestion === 'reroute').length;
+
       // up_range used by `mc level`'s dig phase. Cap at 16 (level's own limit).
       const upRecommended = Math.min(Math.max(max_pillar_height + 1, 1), 16);
 
       const preservedNote = preserved_n > 0 ? `, ${preserved_n} preserved (structural)` : '';
-      const planSummary = `${w}×${l} block_y=${targetY} surface_y=${targetY + 1} (${targetMode}): ${holes_n} holes (max fill ${max_fill}), ${pillars_n} pillars (max dig ${max_dig}), ${level_n} level${preservedNote}${no_data_n ? `, ${no_data_n} unloaded` : ''}`;
+      const fillBreakdown = holes_n > 0
+        ? ` [shallow=${fill_shallow_n}${fill_deep_n ? `, deep=${fill_deep_n}` : ''}${no_floor_n ? `, no_floor=${no_floor_n}` : ''}]`
+        : '';
+      const dispositionNote = (deck_required_n + reroute_required_n) > 0
+        ? `; ${deck_required_n ? `${deck_required_n} span(s) need deck` : ''}${deck_required_n && reroute_required_n ? ', ' : ''}${reroute_required_n ? `${reroute_required_n} span(s) need reroute` : ''}`
+        : '';
+      const planSummary = `${w}×${l} block_y=${targetY} surface_y=${targetY + 1} (${targetMode}): ${holes_n} holes${fillBreakdown} (max fill ${max_fill}, max hole_depth ${max_hole_depth}), ${pillars_n} pillars (max dig ${max_dig}), ${level_n} level${preservedNote}${no_data_n ? `, ${no_data_n} unloaded` : ''}${dispositionNote}`;
 
       // Phase 4 — execute? (optional)
       let executeResult = null;
@@ -609,7 +725,7 @@ export function createBuildingTerrainPart(deps) {
       return {
         ok: !(doExecute && executeErrors),
         data: {
-          // Canonical Y vocabulary (docs/conventions/coordinates.md):
+          // Canonical Y vocabulary (docs/reference/world-coordinates.md):
           block_y: targetY,
           surface_y: targetY + 1,
           // Legacy alias for back-compat (same as block_y).
@@ -626,7 +742,29 @@ export function createBuildingTerrainPart(deps) {
             max_dig,
             max_fill,
             max_pillar_height,
+            // Fill-kind breakdown — lets the planner detect deep holes
+            // before issuing an execute that would only cap them.
+            fill_shallow_n,
+            fill_deep_n,
+            no_floor_n,
+            max_hole_depth,
+            deck_required_n,
+            reroute_required_n,
           },
+          dispositions: {
+            // Planner-facing rollup: what each cell wants done. Use this
+            // to choose between level execute, deck (when available),
+            // reroute, or split the segment.
+            level: level_n,
+            cut: pillars_n,
+            fill_shallow: fill_shallow_n,
+            fill_deep: fill_deep_n,
+            no_floor: no_floor_n,
+            preserved: preserved_n,
+            unknown: no_data_n,
+          },
+          dip_spans,
+          recommended_actions,
           palette_observed,
           structural_columns,
           up_range_recommended: upRecommended,

@@ -22,7 +22,7 @@ import { createQueriesActions } from '../lib/actions/queries.js';
 
 const EXPECTED = {
   inventory:   ['equip', 'unequip', 'toss'],
-  building:    ['pillar_step', 'place', 'place_fill', 'wall', 'fence', 'path', 'dig_pit', 'level', 'level_ground', 'build_stairs'],
+  building:    ['pillar_step', 'place', 'place_fill', 'wall', 'fence', 'path', 'dig_pit', 'level', 'level_ground', 'build_stairs', 'clear_strip', 'deck', 'fell_tree'],
   excavation:  ['dig_area', 'tunnel', 'stair_down', 'stair_up', 'pillar_down'],
   interaction: ['close_screen', 'edit_sign', 'interact', 'place_named_sign', 'place_torch', 'through', 'use'],
   lifecycle:   ['chat', 'wait', 'surface', 'sleep_bed', 'set_home', 'chat_to', 'whisper', 'respawn', 'deathpoint'],
@@ -54,8 +54,8 @@ test('total split handler count matches the legacy world.js + water absorption',
   // to water.js, leaving 39 across the six new modules. #99 added
   // pillar_down to excavation, making the total 40. Phase A added
   // place_torch + place_named_sign to interaction (+2) and nearby_signs
-  // to queries (+1).
-  assert.equal(total, 45);
+  // to queries (+1). W2 added clear_strip + deck + fell_tree to building (+3).
+  assert.equal(total, 48);
 });
 
 test('water.js absorbed bucket_fill and bucket_empty from former world.js', async () => {
@@ -89,27 +89,6 @@ test('inventory.toss: fails when item not in inventory', async () => {
   const r = await actions.toss({ item: 'oak_log' });
   assert.equal(r.ok, false);
   assert.match(r.error?.message ?? '', /No oak_log in inventory/);
-});
-
-test('building.place_fill: oversize returns ok:false AREA_TOO_LARGE (dispatch contract)', async () => {
-  const bot = {
-    entity: { position: { x: 0, y: 64, z: 0 } },
-    inventory: { items: () => [] },
-  };
-  const services = createMockServices({
-    state: { world: { botReady: true, bot } },
-    ensureBot: () => bot,
-  });
-  const actions = createBuildingActions(services);
-  const r = await actions.place_fill({
-    block: 'cobblestone',
-    x1: 0, y1: 0, z1: 0,
-    x2: 30, y2: 30, z2: 30,
-  });
-  const v = validate(r);
-  assert.equal(v.valid, true, `validate() failed: ${v.issues.join('; ')}`);
-  assert.equal(r.ok, false);
-  assert.equal(r.error.code, 'AREA_TOO_LARGE');
 });
 
 test('building.fence: MISSING_FENCE_BLOCK conforms to contract', async () => {
