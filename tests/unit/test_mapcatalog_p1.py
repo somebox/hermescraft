@@ -151,3 +151,30 @@ def test_cli_lint_json(capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["ok"] is True
     assert data["requirements_id"] == "mine_plains_iron"
+
+
+@pytest.mark.unit
+def test_placement_near_gate_is_not_a_topological_dependency():
+    """`overlook: random_safe ... near gate flat_patch within 8 blocks` references
+    a GATE (from the `gates:` list), not a placement. Pre-fix the
+    topological_sort_placements visitor confused these and raised
+    `placement 'overlook' references unknown 'flat_patch'` even though
+    flat_patch was a valid gate.
+
+    The bug surfaced when materializing seed 20240601 for
+    scenario_scout_overlook (prior runs went through scenario-agent-test
+    which used a different code path)."""
+    overlook = parse_placement_value(
+        "overlook",
+        "random_safe radius 1 attempts 48 near gate flat_patch within 8 blocks",
+    )
+    return_post = parse_placement_value(
+        "return_post", "ground_offset_from overlook [0, 0, 96]",
+    )
+    # Topological sort must accept this — `flat_patch` is NOT a placement dep.
+    sorted_ = topological_sort_placements([overlook, return_post])
+    names = [s.name for s in sorted_]
+    # overlook has no placement deps; return_post depends on overlook.
+    assert "overlook" in names
+    assert "return_post" in names
+    assert names.index("overlook") < names.index("return_post")

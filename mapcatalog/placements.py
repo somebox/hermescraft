@@ -121,11 +121,22 @@ def _parse_structured(name: str, d: dict[str, Any]) -> PlacementSpec:
 
 
 def placement_dependencies(spec: PlacementSpec) -> set[str]:
+    """Topological-sort dependencies on OTHER PLACEMENTS only.
+
+    ``near_gate`` references a gate name from ``gates:``, not a placement.
+    Gates are resolved separately during arena evaluation; including
+    them here makes the topological sort fail with
+    ``"placement 'overlook' references unknown 'flat_patch'"`` even
+    when the gate is correctly defined under ``gates:``.
+
+    Discovered when trying to materialize seed 20240601 for
+    scenario_scout_overlook — same scenario worked on seed 1001 only
+    because the prior trial path went through scenario-agent-test.sh
+    instead of ``mapcatalog try`` directly.
+    """
     deps: set[str] = set()
     if spec.offset_from:
         deps.add(spec.offset_from)
-    if spec.near_gate:
-        deps.add(spec.near_gate)
     return deps
 
 
