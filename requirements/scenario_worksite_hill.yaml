@@ -2,12 +2,12 @@ id: scenario_worksite_hill
 extends: profiles/worksite
 
 gates:
-  - biome in [plains, forest] >= 65%
-  - biomes distinct <= 3
-  - flat patch >= 12 cells
-  - neighbor height delta <= 3 blocks
-  - surface water <= 12%
-  - surface grass >= 12%
+  - biome in [plains, sunflower_plains, snowy_plains, forest, flower_forest, birch_forest, old_growth_birch_forest, dark_forest, taiga, snowy_taiga, old_growth_pine_taiga, meadow, savanna, savanna_plateau, cherry_grove, windswept_hills, windswept_forest, windswept_gravelly_hills, grove, snowy_slopes, jungle] >= 50%
+  - biomes distinct <= 7
+  - flat patch >= 8 cells
+  - neighbor height delta <= 8 blocks
+  - surface water <= 25%
+  # No grass requirement.
 
 placements:
   spawn: random_safe radius 1 attempts 32

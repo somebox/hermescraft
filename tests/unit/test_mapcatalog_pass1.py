@@ -35,10 +35,11 @@ def test_pass1_rejects_low_biome_fraction():
         seed="1",
         cell_count=4,
         cells=[
+            # Biomes outside the plains_mining allow-list — should fail biome fraction.
             {"x": 0, "z": 0, "biome": "ocean"},
-            {"x": 16, "z": 0, "biome": "ocean"},
-            {"x": 0, "z": 16, "biome": "desert"},
-            {"x": 16, "z": 16, "biome": "desert"},
+            {"x": 16, "z": 0, "biome": "deep_ocean"},
+            {"x": 0, "z": 16, "biome": "frozen_ocean"},
+            {"x": 16, "z": 16, "biome": "mushroom_fields"},
         ],
     )
     with patch("mapcatalog.pass1.run_biome_scan", return_value=scan):

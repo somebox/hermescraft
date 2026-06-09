@@ -4,14 +4,15 @@ arena:
   radius: 64
 
 gates:
-  - biome in [plains, forest] >= 75%
-  - biomes distinct <= 2
-  - flat patch >= 16 cells
-  - neighbor height delta <= 2 blocks
-  - surface water <= 5%
-  - surface grass >= 25%
+  # Mining is biome-agnostic — iron veins exist anywhere there's stone. Exclude only deep water.
+  - biome in [plains, sunflower_plains, snowy_plains, forest, flower_forest, birch_forest, old_growth_birch_forest, dark_forest, taiga, snowy_taiga, old_growth_pine_taiga, old_growth_spruce_taiga, meadow, savanna, savanna_plateau, cherry_grove, desert, badlands, wooded_badlands, badlands_plateau, eroded_badlands, jungle, sparse_jungle, bamboo_jungle, swamp, mangrove_swamp, beach, snowy_beach, stony_shore, windswept_hills, windswept_forest, windswept_gravelly_hills, stony_peaks, snowy_slopes, grove] >= 50%
+  - biomes distinct <= 8
+  - flat patch >= 10 cells
+  - neighbor height delta <= 8 blocks
+  - surface water <= 25%
+  # No surface grass requirement — mining works in desert/badlands/snow too.
   - block iron_ore hits >= 3 in y -32..48 step 8
-  - block cave_air hits 20..400 in y -32..48 step 8
+  - block cave_air hits 10..600 in y -32..48 step 8
 
 placements:
   spawn: random_safe radius 1 attempts 32

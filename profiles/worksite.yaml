@@ -4,12 +4,12 @@ arena:
   radius: 48
 
 gates:
-  - biome in [plains, forest] >= 65%
-  - biomes distinct <= 3
-  - flat patch >= 16 cells
-  - neighbor height delta <= 2 blocks
-  - surface water <= 10%
-  - surface grass >= 15%
+  - biome in [plains, sunflower_plains, snowy_plains, forest, flower_forest, birch_forest, old_growth_birch_forest, dark_forest, taiga, snowy_taiga, old_growth_pine_taiga, old_growth_spruce_taiga, meadow, savanna, savanna_plateau, cherry_grove, desert, beach, snowy_beach, stony_shore] >= 50%
+  - biomes distinct <= 7
+  - flat patch >= 10 cells
+  - neighbor height delta <= 8 blocks
+  - surface water <= 25%
+  # No grass requirement — building works on any solid surface.
 
 placements:
   spawn: random_safe radius 1 attempts 32

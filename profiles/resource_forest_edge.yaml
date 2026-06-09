@@ -4,12 +4,12 @@ arena:
   radius: 64
 
 gates:
-  - biome in [plains, forest, birch_forest] >= 70%
-  - biomes distinct <= 3
-  - flat patch >= 14 cells
-  - neighbor height delta <= 2 blocks
-  - surface water <= 8%
-  - surface grass >= 20%
+  - biome in [forest, flower_forest, birch_forest, old_growth_birch_forest, dark_forest, taiga, snowy_taiga, old_growth_pine_taiga, old_growth_spruce_taiga, plains, sunflower_plains, meadow, jungle, sparse_jungle, bamboo_jungle, cherry_grove, savanna, savanna_plateau, swamp, mangrove_swamp, windswept_forest] >= 50%
+  - biomes distinct <= 7
+  - flat patch >= 10 cells
+  - neighbor height delta <= 8 blocks
+  - surface water <= 25%
+  # Grass requirement dropped — forest floors are dirt/podzol/leaves, not grass.
   - block iron_ore hits >= 2 in y -32..48 step 8
   - block cave_air hits 20..400 in y -32..48 step 8
 

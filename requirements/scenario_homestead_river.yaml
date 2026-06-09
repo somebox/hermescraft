@@ -3,13 +3,14 @@ extends: profiles/homestead
 
 # River-edge band: enough surface water to fish / fill buckets, not flooded.
 gates:
-  - biome in [plains, forest] >= 65%
-  - biomes distinct <= 3
-  - flat patch >= 10 cells
-  - neighbor height delta <= 2 blocks
-  - surface water >= 5%
-  - surface water <= 25%
-  - surface grass >= 15%
+  # River/fishing — water-adjacent. Includes ocean/river/swamp + grassland with water nearby.
+  - biome in [plains, sunflower_plains, forest, flower_forest, birch_forest, dark_forest, taiga, snowy_taiga, old_growth_pine_taiga, meadow, savanna, savanna_plateau, cherry_grove, jungle, sparse_jungle, bamboo_jungle, mangrove_swamp, swamp, beach, snowy_beach, stony_shore, river, frozen_river, lukewarm_ocean, ocean, cold_ocean, deep_lukewarm_ocean, deep_cold_ocean, warm_ocean, deep_ocean] >= 40%
+  - biomes distinct <= 8
+  - flat patch >= 8 cells
+  - neighbor height delta <= 7 blocks
+  - surface water >= 3%
+  - surface water <= 45%
+  - surface grass >= 2%
 
 placements:
   spawn: random_safe radius 1 attempts 32

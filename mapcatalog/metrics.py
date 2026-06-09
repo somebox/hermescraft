@@ -148,7 +148,11 @@ def probe_biome_cell(
     biome_id: str,
 ) -> bool:
     bid = biome_id if biome_id.startswith("minecraft:") else f"minecraft:{biome_id}"
-    out = client.run(f"execute in {world} positioned {x} {y} {z} if biome {bid}")
+    # `if biome` takes explicit X Y Z args, NOT execution-context coords from `positioned`.
+    # Prior `positioned … if biome` returned an "Expected integer" parse error every time,
+    # which line_indicates_block_match treated as no-match -> all biome probes silently
+    # returned False (verify_live always 0%, biome counts always empty).
+    out = client.run(f"execute in {world} if biome {x} {y} {z} {bid}")
     return line_indicates_block_match(out)
 
 
