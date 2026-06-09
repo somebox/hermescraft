@@ -2,8 +2,8 @@
 
 Standalone **seed finder** for procedural test maps.
 
-- **Black box:** [docs/features/procedural-map-catalog.md](../docs/features/procedural-map-catalog.md)
-- **Scenario runs (apply/prep/teardown):** [docs/features/procedural-scenario-runs.md](../docs/features/procedural-scenario-runs.md)
+- **Black box:** [docs/testing/procedural/map-catalog.md](../docs/testing/procedural/map-catalog.md)
+- **Scenario runs (apply/prep/teardown):** [docs/testing/procedural/scenario-runs.md](../docs/testing/procedural/scenario-runs.md)
 
 ## Quick start
 

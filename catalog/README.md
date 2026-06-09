@@ -2,7 +2,7 @@
 
 Generated **maps** (seed + anchor placements) live here after `scenario-pools.sh refresh`. **Gitignored** except this README.
 
-**Model:** [docs/features/procedural-testing-model.md](../docs/features/procedural-testing-model.md)
+**Model:** [docs/testing/procedural/testing-model.md](../docs/testing/procedural/testing-model.md)
 
 | In git | Local only |
 |--------|------------|

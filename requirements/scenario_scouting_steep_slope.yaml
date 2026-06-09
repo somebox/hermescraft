@@ -11,4 +11,4 @@ gates:
     min_blocks: 4
 acceptance_note: >
   Live or bench run expects NAV_BLOCKED or BOT_TRAPPED with next_action_hint
-  containing mc build_stairs or mc dig (lip). See docs/features/route-sculpt-navigation.md.
+  containing mc build_stairs or mc dig (lip). See docs/specs/nav/route-sculpt-hints.md.

@@ -1,6 +1,6 @@
 # Scenario registry
 
-Canonical model: **[docs/features/procedural-testing-model.md](../../docs/features/procedural-testing-model.md)**
+Canonical model: **[docs/testing/procedural/testing-model.md](../../docs/testing/procedural/testing-model.md)**
 
 ## Vocabulary
 
