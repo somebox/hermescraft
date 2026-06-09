@@ -321,6 +321,17 @@ export function createBuildingTerrainPart(deps) {
             for (const [ox, oy, oz] of offsets) {
               const ref = b.blockAt(new Vec3(x + ox, targetY + oy, z + oz));
               if (ref && !isAirLike(ref) && ref.boundingBox === 'block') {
+                // Snowy-biome fix (W2-NAV-016): snow_layer reports
+                // boundingBox=block when layers ≥ 2 but is not a stable
+                // place-against face — mineflayer's placeBlock against it
+                // fails with "Cannot place against {snow}". Skip if the
+                // candidate ref is snow_layer ABOVE target_y (decorative
+                // snow on the bed). Snow_block (full block) and snow_layer
+                // BELOW target_y are still valid floors.
+                if ((ref.name === 'snow' || ref.name === 'snow_layer') &&
+                    (targetY + oy) >= targetY) {
+                  continue;
+                }
                 if (shouldSkipPlaceAt(ctx, config, blockName, x, targetY, z).skip) {
                   failed++;
                   break;
@@ -437,7 +448,7 @@ export function createBuildingTerrainPart(deps) {
      *       execute_result?: { dug, placed, skipped, failed }  // present iff execute=true
      *     } }
      */
-    async level_ground({ x1, z1, x2, z2, target, surface_y, mode, block: fillBlockName, execute }) {
+    async level_ground({ x1, z1, x2, z2, target, surface_y, mode, block: fillBlockName, execute, exclude_foliage }) {
       const b = ensureBot();
       for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
@@ -468,6 +479,11 @@ export function createBuildingTerrainPart(deps) {
         return { ok: false, error: { code: 'INVALID_VALUE', message: `mc level_ground --mode must be median|min|max (got ${mode})`, retry_safe: false } };
       }
       const doExecute = execute === true || execute === 'true' || execute === '1';
+      // Foliage-aware survey: when set, columnTopSolid skips *_leaves and
+      // snow_layer. The road-tier measure card sets this so a spruce
+      // canopy doesn't get classified as a deck-required dip below it.
+      // Default false to preserve existing callers' behavior.
+      const excludeFoliage = exclude_foliage === true || exclude_foliage === 'true' || exclude_foliage === '1';
 
       // Phase 1 — survey
       /** @type {{ x: number, z: number, top_y: number | null, block: string | null }[]} */
@@ -475,7 +491,7 @@ export function createBuildingTerrainPart(deps) {
       const tops = [];
       for (let x = minX; x <= maxX; x++) {
         for (let z = minZ; z <= maxZ; z++) {
-          const top = columnTopSolid(b, x, z);
+          const top = columnTopSolid(b, x, z, { excludeFoliage });
           if (top) {
             surveys.push({ x, z, top_y: top.topY, block: top.blockName });
             tops.push(top.topY);

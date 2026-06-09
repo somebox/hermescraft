@@ -302,14 +302,19 @@ Triggered by step 1's disposition map — when `summary.deck_required_n > 0` or 
 
 2. **Split the segment** — narrow the rectangle so the dip falls outside. If the corridor is 3 wide and the dip is in column x=0, two parallel 1-wide rectangles at x=-1 and x=1 may both clear; the dip column becomes a "skip cell" left as natural terrain (acceptable when surrounded by clean shoulder).
 
-3. **Deck (manual, until `mc deck` lands).** When neither reroute nor split works — wide-open ravine across the corridor:
-   - `mc inspect` the gap. Water / lava / dirt below dictates supports.
-   - **Deck blocks**: `mc fill cobblestone X1 Y Z1 X2 Y Z2`. Note: `mc fill` requires an adjacent solid face for each placement, so for a wide gap you must build *edge-inward* — bot starts on the near bank, places one row at a time, each new row anchored to the previous. Practical limit: ~4-cell-deep gap per `mc fill` call (anchor-required pattern). Wider gaps need `mc place` one cell at a time from the bank, or a deferred [DECK] super-card.
-   - **Supports** (for spans >5 blocks): `mc fill cobblestone X Y-N Z X Y Z` piers every 4-6 blocks, depth N down to solid ground.
+3. **Deck with `mc deck`.** When neither reroute nor split works — wide-open ravine across the corridor — use the dedicated verb. It does the edge-inward BFS placement automatically (no manual "build from bank one row at a time"). Returns `unanchored[]` for cells it couldn't reach from a rim.
+
+   ```
+   mc deck X1 Z1 X2 Z2 surface_y=Y block=cobblestone [dry_run=true]
+   ```
+
+   - **Pre-flight**: `mc inspect` the gap to confirm water/lava/dirt below — affects support placement.
+   - **Dry-run first** on large spans to see `would_place` vs `unanchored` counts before committing the placements.
+   - **Supports** (for spans >5 blocks): place piers with `mc fill cobblestone X Y-N Z X Y Z` every 4-6 blocks, depth N down to solid ground. The piers act as anchor seeds for `mc deck` to BFS off of.
    - **Parapets** (safety): `mc wall cobblestone X1 Y+1 Z1 X1 Y+1 Z2` on each long edge.
    - **Material consistency:** cobblestone for the whole bridge stretch; the dirt road resumes on the far side.
 
-4. **Defer** — when the bridge would be >8 cells wide or the ravine has no solid floor in view: emit a `[DEFER]` card noting `dip_spans` coords + `suggestion='deck'` and stop. The orchestrator can route a multi-segment bridge plan in a follow-up.
+4. **Defer** — when the deck cap (256 cells per call) is exceeded or `unanchored.length > 0` even after manual pier placement: emit a `[DEFER]` card noting `dip_spans` coords + `suggestion='deck'` and stop. The orchestrator can route a multi-segment bridge plan in a follow-up.
 
 The disposition output's `recommended_actions` strings already include the per-span coords and the suggestion. Use them verbatim in your [DEFER] / [SPLIT] / [REROUTE] notes — they survive across handoffs.
 
@@ -362,15 +367,38 @@ read-only except level_ground). Don't skip — a segment that "looks right"
 but fails verify_plot is the same class of bug as the wheat trial-3
 script that returned the right shape from the wrong source.
 
+## Material selection by biome
+
+The default road bed is **dirt** — cheap, abundant, fast to place. But in biomes where the world process keeps modifying exposed dirt, the road looks wrong minutes after the trial completes.
+
+| Biome | Use | Why |
+|---|---|---|
+| Plains, forest, desert, savanna | `dirt` (default) | No grass spread issues outside snowy/swamp; surface stays consistent. |
+| **Snowy taiga, snowy plains, ice spikes** | `cobblestone` (or `stone`) | Snowfall accumulates `snow_layer` on dirt within a few minutes (looks like +1 block bumps). Grass also spreads to exposed dirt over time. Cobblestone is biome-stable. |
+| **Swamp, mangrove swamp** | `cobblestone` | Grass spread + water pooling on dirt. Cobblestone keeps the surface clean and walkable. |
+| Mushroom fields, the End, nether | `cobblestone` or `stone_bricks` | Default dirt looks alien against the biome palette. Cobblestone reads as "built" rather than "grown." |
+
+Pass the material via the `block=` arg on the road verbs:
+
+```
+mc clear_strip -1 0 1 12 surface_y=78 road_mode=true block=cobblestone
+mc level_ground -1 0 1 12 target=78 execute=true block=cobblestone exclude_foliage=true
+```
+
+When the measure card classifies a segment as `passage=deck`, the deck verb ALWAYS uses cobblestone regardless of biome (bridges over water/lava are visually + structurally load-bearing).
+
+This is the W2-NAV-020 fix from `data/postmortems/proc-nav-lab/proc-nav-1780994801/postmortem.md` — the prior trial's dirt road in snowy taiga had `snow_layer` accumulate on top within ~10 min, producing the `±1 block surface variation` the operator observed.
+
 ## Doctrine summary
 
-- **3 wide. Flat. Dirt by default. Cobble for bridges & tunnels.**
+- **3 wide. Flat. Dirt by default, cobblestone in snowy/swamp/regen-active biomes. Cobble for bridges & tunnels.**
 - **Gradual over steep.** A long ramp reads as a road; a wall reads as a building.
-- **All wood blocks gone.** Floating leaves = unfinished.
+- **All wood blocks gone.** Floating leaves = unfinished. `mc clear_strip road_mode=true` auto-cleans the canopy connected to any trunk it touches; you usually don't need a separate `mc fell_tree` pass.
 - **3-block vertical clearance.** Always.
 - **Curves are shifted rectangles.** Plan segment-by-segment, not arc-by-arc.
 - **Surface consistency in each visible stretch.** A material change at a structural seam is the only acceptable seam.
-- **Verify with `mc nearby` after each segment** — quick sanity before moving on.
+- **Survey with `mc corridor_sample` (one call), not N × `mc terrain_top`.** The batch verb returns the same aggregate (median/min/max/delta) in one round-trip and supports `exclude_foliage=true` to skip canopy.
+- **Verify with `mc level_ground target=<corridor_median> exclude_foliage=true` dispositions sweep** — checks the bed is actually flat, not just that anchors are reachable.
 
 For wider building grammar (materials, hollow shells, sectional fills,
 verification patterns), see [minecraft-building.md](minecraft-building.md).

@@ -32,6 +32,81 @@ function speciesOf(name) {
 }
 
 /**
+ * Walk upward from each log in `logs` to find connected logs above the
+ * input set. Used by clear_strip to extend its dig list with trunk parts
+ * sitting ABOVE the clear rectangle (e.g. a 4-tall clear_strip with
+ * height=4 only touches the lowest 4 trunk blocks; the top of a spruce
+ * trunk + canopy sit above and would normally be left floating).
+ *
+ * Returns a NEW array containing the input logs plus any newly-discovered
+ * connected logs above them. Max 16 extra blocks per starting log to
+ * bound the worst-case tall-tree walk.
+ */
+function expandLogsUpward(b, logs, maxExtraHeight = 16) {
+  const seen = new Set(logs.map((l) => `${l.x},${l.y},${l.z}`));
+  const out = [...logs];
+  for (const start of logs) {
+    let y = start.y;
+    for (let i = 0; i < maxExtraHeight; i++) {
+      y += 1;
+      const k = `${start.x},${y},${start.z}`;
+      if (seen.has(k)) break;
+      const above = b.blockAt(new Vec3(start.x, y, start.z));
+      if (!above || !isLogBlock(above.name)) break;
+      seen.add(k);
+      out.push({ x: start.x, y, z: start.z, name: above.name });
+    }
+  }
+  return out;
+}
+
+/**
+ * BFS connected leaves attached to a log set via 6-face neighbors, gated
+ * by Chebyshev distance from any log XZ. Pure read — does NOT dig.
+ *
+ * Extracted from fell_tree's Phase 3 (which previously inlined the same
+ * logic). Both fell_tree and clear_strip-with-road_mode now share this
+ * helper.
+ */
+function collectConnectedLeaves(b, logs, radius, cap) {
+  const leaves = [];
+  if (radius <= 0 || logs.length === 0) return leaves;
+  const seen = new Set();
+  const queue = [];
+  const OFFS = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+  for (const log of logs) {
+    for (const [dx, dy, dz] of OFFS) {
+      const lx = log.x + dx, ly = log.y + dy, lz = log.z + dz;
+      const k = `${lx},${ly},${lz}`;
+      if (seen.has(k)) continue;
+      const blk = b.blockAt(new Vec3(lx, ly, lz));
+      if (blk && isLeafBlock(blk.name)) {
+        seen.add(k);
+        queue.push({ x: lx, y: ly, z: lz, name: blk.name });
+      }
+    }
+  }
+  while (queue.length && leaves.length < cap) {
+    const cur = queue.shift();
+    const inRadius = logs.some((lg) =>
+      Math.max(Math.abs(cur.x - lg.x), Math.abs(cur.z - lg.z)) <= radius,
+    );
+    if (!inRadius) continue;
+    leaves.push(cur);
+    for (const [dx, dy, dz] of OFFS) {
+      const nk = `${cur.x + dx},${cur.y + dy},${cur.z + dz}`;
+      if (seen.has(nk)) continue;
+      seen.add(nk);
+      const blk = b.blockAt(new Vec3(cur.x + dx, cur.y + dy, cur.z + dz));
+      if (blk && isLeafBlock(blk.name)) {
+        queue.push({ x: cur.x + dx, y: cur.y + dy, z: cur.z + dz, name: blk.name });
+      }
+    }
+  }
+  return leaves;
+}
+
+/**
  * Road-building primitives. Composes lower-level dig / excavation verbs to
  * present road-tier semantics (corridor clearing, tree felling, bridge
  * decking) so the planner can emit one literal verb per intent instead of
@@ -147,6 +222,12 @@ export function createBuildingRoadPart(deps) {
       let skippedTier4 = 0;
       let skippedStructural = 0;
       let presentNonAir = 0;
+      // Track logs touched in road_mode so we can extend the dig to the
+      // canopy above the rectangle (W2-NAV-015 follow-up: foliage
+      // persisted after clear_strip removed in-rect logs but left the
+      // upper trunk + crown floating). Highest log per xz column wins
+      // (the seed for expandLogsUpward).
+      const touchedLogTops = new Map(); // key='x,z' → {x, y, z, name}
       for (let x = minX; x <= maxX; x++) {
         for (let z = minZ; z <= maxZ; z++) {
           for (let y = y1; y <= y2; y++) {
@@ -160,6 +241,13 @@ export function createBuildingRoadPart(deps) {
             if (!isRoad && isStructural(name)) { skippedStructural++; continue; }
             wouldDig++;
             removedByBlock[name] = (removedByBlock[name] || 0) + 1;
+            if (isRoad && isLogBlock(name)) {
+              const k = `${x},${z}`;
+              const prev = touchedLogTops.get(k);
+              if (!prev || y > prev.y) {
+                touchedLogTops.set(k, { x, y, z, name });
+              }
+            }
           }
         }
       }
@@ -187,9 +275,16 @@ export function createBuildingRoadPart(deps) {
       }
 
       if (wouldDig === 0) {
+        // Counters defaulted to 0 so the response shape is stable across
+        // the "already clear" early-return and the live execute path.
         return {
           ok: true,
-          data: { ...baseData, mode: 'live', dug: 0, skipped: presentNonAir, errors: 0, batches: 0 },
+          data: {
+            ...baseData,
+            mode: 'live',
+            dug: 0, skipped: presentNonAir, errors: 0, batches: 0,
+            wood_blocks_removed: 0, leaf_blocks_removed: 0,
+          },
           result: `clear_strip ${w}×${l}×${H} surface_y=${sy}: already clear (${presentNonAir} cells skipped${skippedStructural ? `, ${skippedStructural} structural preserved` : ''})`,
         };
       }
@@ -315,12 +410,90 @@ export function createBuildingRoadPart(deps) {
         try { await pickup(); } catch { /* best-effort */ }
       }
 
-      const data = { ...baseData, mode: 'live', dug, skipped, errors, batches };
+      // Phase 3 — road_mode tree extension. When a log was cut inside the
+      // rectangle, the rest of the trunk (above the height window) and the
+      // connected canopy can be left floating. Walk each touched trunk
+      // upward to find the rest of the logs, then BFS attached leaves.
+      // Dig the extras one cell at a time via dig_area 1×1×1 calls.
+      // Inventory: needs an axe for logs (existing equipForDig handles
+      // selection); shears or empty hand for leaves.
+      let extraLogsRemoved = 0;
+      let extraLeavesRemoved = 0;
+      if (isRoad && touchedLogTops.size > 0) {
+        const seedLogs = Array.from(touchedLogTops.values());
+        const expandedLogs = expandLogsUpward(b, seedLogs, 16);
+        // Leaves: BFS from full extended trunk set. Default radius 4 (same
+        // as fell_tree). Cap 256 leaves total to bound runtime.
+        const allLeaves = collectConnectedLeaves(b, expandedLogs, 4, 256);
+        // Filter: only cells OUTSIDE the original clear_strip rectangle
+        // (cells inside were already dug in Phase 2). The y check uses the
+        // inclusive [y1, y2] bounds.
+        function isInsideRect(c) {
+          return c.x >= minX && c.x <= maxX && c.z >= minZ && c.z <= maxZ
+                 && c.y >= y1 && c.y <= y2;
+        }
+        const extras = [
+          ...expandedLogs.filter((c) => !isInsideRect(c)),
+          ...allLeaves.filter((c) => !isInsideRect(c)),
+        ];
+        // Dig top-down (debris-safe).
+        extras.sort((a, c) => c.y - a.y);
+        for (const cell of extras) {
+          // eslint-disable-next-line no-await-in-loop
+          const res = await digArea({
+            x1: cell.x, y1: cell.y, z1: cell.z,
+            x2: cell.x, y2: cell.y, z2: cell.z,
+            pickup: false,
+            abort_on_fail: false,
+            clear_stand: false,
+            safe: true,
+            force_structural: true, // wood/leaves are structural; bypass
+          });
+          if (res && res.ok === false) continue;
+          const cellDug = Number(res?.dug || 0);
+          if (cellDug > 0) {
+            if (isLogBlock(cell.name)) extraLogsRemoved += cellDug;
+            else if (isLeafBlock(cell.name)) extraLeavesRemoved += cellDug;
+          }
+        }
+        if (typeof pickup === 'function' && extras.length > 0) {
+          try { await pickup(); } catch { /* best-effort */ }
+        }
+      }
+
+      // Tally wood/leaves counters across both Phase 2 (in-rect) and
+      // Phase 3 (extended) so the agent sees one unified number per
+      // category (Mox-builder feedback requested this).
+      const inRectLogs = Object.entries(removedByBlock)
+        .filter(([n]) => isLogBlock(n))
+        .reduce((sum, [, c]) => sum + c, 0);
+      const inRectLeaves = Object.entries(removedByBlock)
+        .filter(([n]) => isLeafBlock(n))
+        .reduce((sum, [, c]) => sum + c, 0);
+      const woodBlocksRemoved = inRectLogs + extraLogsRemoved;
+      const leafBlocksRemoved = inRectLeaves + extraLeavesRemoved;
+
+      const data = {
+        ...baseData,
+        mode: 'live',
+        dug,
+        skipped,
+        errors,
+        batches,
+        wood_blocks_removed: woodBlocksRemoved,
+        leaf_blocks_removed: leafBlocksRemoved,
+      };
+      if (extraLogsRemoved + extraLeavesRemoved > 0) {
+        data.extension = {
+          extra_logs_removed: extraLogsRemoved,
+          extra_leaves_removed: extraLeavesRemoved,
+        };
+      }
       if (errorHints.length > 0) data.first_hints = errorHints;
       return {
         ok: true,
         data,
-        result: `clear_strip ${w}×${l}×${H} surface_y=${sy}: dug ${dug}, skipped ${skipped}${errors ? `, ${errors} batch errors` : ''}, ${batches} batches${isRoad ? ' [road_mode]' : ''}${errorHints.length ? ` — first hint: ${errorHints[0]}` : ''}`,
+        result: `clear_strip ${w}×${l}×${H} surface_y=${sy}: dug ${dug}${extraLogsRemoved + extraLeavesRemoved > 0 ? ` +${extraLogsRemoved + extraLeavesRemoved} canopy ext` : ''}, skipped ${skipped}${errors ? `, ${errors} batch errors` : ''}, ${batches} batches${isRoad ? ' [road_mode]' : ''}${woodBlocksRemoved ? ` wood=${woodBlocksRemoved}` : ''}${leafBlocksRemoved ? ` leaves=${leafBlocksRemoved}` : ''}${errorHints.length ? ` — first hint: ${errorHints[0]}` : ''}`,
       };
     },
 
@@ -729,44 +902,9 @@ export function createBuildingRoadPart(deps) {
       const trunkTopY = logs.reduce((m, c) => (c.y > m ? c.y : m), trunkBaseY);
 
       // Phase 3 — BFS connected leaves attached to the trunk (radius gate
-      // by Chebyshev distance from the closest log). Same-species filter
-      // off — neighbor trees might share canopy; we conservatively only
-      // include leaves connected to OUR trunk's leaves via 6-face BFS.
-      const leaves = [];
-      const leafSeen = new Set();
-      if (lr > 0) {
-        // Seed queue: leaves directly adjacent (6-face) to a trunk log.
-        const q = [];
-        const OFFS = [[0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
-        for (const log of logs) {
-          for (const [dx, dy, dz] of OFFS) {
-            const lx = log.x + dx, ly = log.y + dy, lz = log.z + dz;
-            const k = `${lx},${ly},${lz}`;
-            if (leafSeen.has(k)) continue;
-            const blk = b.blockAt(new Vec3(lx, ly, lz));
-            if (blk && isLeafBlock(blk.name)) {
-              leafSeen.add(k);
-              q.push({ x: lx, y: ly, z: lz, name: blk.name });
-            }
-          }
-        }
-        while (q.length && leaves.length < leafCap) {
-          const cur = q.shift();
-          // Range gate: distance from any log XZ
-          const inRadius = logs.some((lg) => Math.max(Math.abs(cur.x - lg.x), Math.abs(cur.z - lg.z)) <= lr);
-          if (!inRadius) continue;
-          leaves.push(cur);
-          for (const [dx, dy, dz] of OFFS) {
-            const nk = `${cur.x + dx},${cur.y + dy},${cur.z + dz}`;
-            if (leafSeen.has(nk)) continue;
-            leafSeen.add(nk);
-            const blk = b.blockAt(new Vec3(cur.x + dx, cur.y + dy, cur.z + dz));
-            if (blk && isLeafBlock(blk.name)) {
-              q.push({ x: cur.x + dx, y: cur.y + dy, z: cur.z + dz, name: blk.name });
-            }
-          }
-        }
-      }
+      // by Chebyshev distance from the closest log). Shared helper at
+      // module top so clear_strip (road_mode) can call it too.
+      const leaves = collectConnectedLeaves(b, logs, lr, leafCap);
 
       const baseData = {
         species,

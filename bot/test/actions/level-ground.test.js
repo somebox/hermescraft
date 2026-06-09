@@ -598,3 +598,55 @@ test('level: surface_y wins over y; block_y derived as surface_y - 1', async () 
   assert.equal(res.data.block_y, 64);
   assert.equal(res.data.surface_y, 65);
 });
+
+test('level: snow_layer at/above target_y is skipped as placement anchor (W2-NAV-016)', async () => {
+  // Trial proc-nav-1780994801 found that mc level_ground execute=true
+  // failed with no_solid_neighbor on snowy-biome cells whose only
+  // horizontal neighbor was a snow_layer (boundingBox=block when
+  // layers ≥ 2, but mineflayer's placeBlock against it errors out).
+  // After the fix, snow_layer AT or ABOVE target_y is skipped as a
+  // ref candidate; the loop falls through to the cell BELOW for anchoring.
+  const fakeRegionStore = {
+    at() { return []; },
+    resolve() { return { decision: 'allow', reason: 'OUTSIDE_ALL_REGIONS', winning_region: null, losing_regions: [], matched_capability: null }; },
+  };
+  const terrain = new Map();
+  // Target cell at (0, 64, 0): air, needs fill.
+  // Cell below (0, 63, 0): cobblestone — the only legitimate anchor.
+  // Horizontal neighbor (1, 64, 0): snow_layer — must be SKIPPED.
+  terrain.set(`0,63,0`, { name: 'cobblestone' });
+  terrain.set(`1,64,0`, { name: 'snow' });
+  let placeCalls = 0;
+  let placeRefName = null;
+  const bot = {
+    entity: { position: { x: 0, y: 65, z: 0, distanceTo: () => 0 } },
+    game: { minY: -64, height: 384 },
+    inventory: { items: () => [{ name: 'dirt', count: 64 }] },
+    blockAt({ x, y, z }) {
+      const t = terrain.get(`${x},${y},${z}`);
+      if (!t) return { name: 'air', boundingBox: 'empty', position: { x, y, z } };
+      // snow_layer reports boundingBox=block when layers ≥ 2 (the case
+      // that defeats placeBlock); mock that exact contract.
+      return { name: t.name, boundingBox: 'block', position: { x, y, z } };
+    },
+    equip: async () => {},
+    placeBlock: async (ref) => { placeCalls++; placeRefName = ref?.name; },
+  };
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 0, z2: 0, y: 64 });
+  assert.equal(res.ok, true);
+  // The placement should succeed via the BELOW anchor (cobblestone), NOT
+  // the horizontal snow_layer neighbor. If snow_layer had been used as
+  // the ref, placeBlock would have been called with it — instead
+  // cobblestone should be the ref.
+  assert.equal(placeCalls, 1, 'expected exactly one placeBlock call');
+  assert.equal(placeRefName, 'cobblestone',
+    `placement must anchor against the cobblestone floor, not the snow_layer neighbor; got ref=${placeRefName}`);
+  assert.equal(res.data.placed, 1);
+});

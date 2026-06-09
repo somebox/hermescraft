@@ -742,17 +742,43 @@ export async function equipForDig(b, block, opts = {}) {
   return { hints };
 }
 
-export function columnTopSolid(b, ix, iz) {
+// Blocks that callers may want to "see through" when looking for the
+// underlying ground surface. The road-tier scout/measure cards pass
+// exclude_foliage=true to columnTopSolid so a spruce canopy at y=88
+// doesn't read as "ground at y=88". See trial postmortem
+// proc-nav-1780994801 (W2-NAV-015).
+//
+// snow_layer is the partial-height block placed by natural snowfall;
+// for bbox-survey purposes it's "decorative" above the road. The full
+// snow_block (= 8 layers compressed into one) is NOT in this set —
+// that IS legitimate ground in snowy biomes.
+const FOLIAGE_BLOCK_NAMES_REGEX = /(?:_leaves|_wart_block)$/;
+function isFoliageName(name) {
+  if (!name) return false;
+  if (name === 'snow' || name === 'snow_layer') return true;
+  return FOLIAGE_BLOCK_NAMES_REGEX.test(name);
+}
+export const FOLIAGE_FILTER = { isFoliageName };
+
+/**
+ * @param {any} b - mineflayer bot
+ * @param {number} ix - column x
+ * @param {number} iz - column z
+ * @param {{ excludeFoliage?: boolean }} [opts]
+ */
+export function columnTopSolid(b, ix, iz, opts = {}) {
   const lo = typeof b.game?.minY === 'number' ? b.game.minY : -64;
   const hi =
     typeof b.game?.height === 'number' && typeof b.game?.minY === 'number'
       ? b.game.minY + b.game.height - 1
       : 319;
+  const skipFoliage = !!opts.excludeFoliage;
   for (let y = hi; y >= lo; y--) {
     const block = b.blockAt(new Vec3(ix, y, iz));
     if (!block) continue;
     if (DIG_PASSABLE_NAMES.has(block.name)) continue;
     if (DIG_FLUID_NAMES.has(block.name)) continue;
+    if (skipFoliage && isFoliageName(block.name)) continue;
     return { topY: y, blockName: block.name };
   }
   return null;

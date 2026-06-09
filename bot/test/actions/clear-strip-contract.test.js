@@ -360,3 +360,89 @@ test('clear_strip: surfaces first dig_area tool-needed hint via data.first_hints
   assert.match(r.data.first_hints[0], /Refusing to dig/);
   assert.match(r.result, /first hint: .*Refusing to dig/);
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// road_mode auto-fell — extension Phase 3 from W2-NAV-015 follow-up.
+// When clear_strip's height window only covers the lowest trunk blocks,
+// the upper trunk + connected canopy were left floating. The fix walks
+// each touched trunk upward + BFSes attached leaves + digs the extras.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('clear_strip road_mode: trunk extending above the rectangle gets felled', async () => {
+  // Rectangle: x=0..0, z=0..0, surface_y=78, height=2 (covers y=79, y=80).
+  // Trunk: y=79..84 (6 logs, 4 above the rectangle).
+  // Leaves: a small 3x3 crown at y=83 around the trunk.
+  const fixed = {};
+  for (let y = 79; y <= 84; y++) fixed[`0,${y},0`] = 'oak_log';
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      if (dx === 0 && dz === 0) continue;
+      fixed[`${dx},83,${dz}`] = 'oak_leaves';
+    }
+  }
+  const calls = [];
+  const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
+  const r = await part.clear_strip({
+    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 2, road_mode: true,
+  });
+  assertContract(r);
+  assert.equal(r.ok, true);
+  // In-rect: 2 logs (y=79, 80) dug via the main batch loop.
+  // Extra (Phase 3): 4 logs (y=81..84) + 8 leaves at y=83.
+  assert.ok(r.data.wood_blocks_removed >= 6,
+    `expected ≥6 logs total (2 in-rect + 4 extension); got ${r.data.wood_blocks_removed}`);
+  assert.ok(r.data.leaf_blocks_removed >= 8,
+    `expected ≥8 leaves from canopy extension; got ${r.data.leaf_blocks_removed}`);
+  // Extension counters surface separately too.
+  assert.ok(r.data.extension, 'expected extension block in data when canopy was extended');
+  assert.equal(r.data.extension.extra_logs_removed, 4);
+  assert.equal(r.data.extension.extra_leaves_removed, 8);
+});
+
+test('clear_strip road_mode=false: no canopy extension (preserves legacy semantics)', async () => {
+  // Same setup but road_mode=false. Structural blocks (oak_log) are
+  // preserved by default; no canopy extension should run.
+  const fixed = {};
+  for (let y = 79; y <= 84; y++) fixed[`0,${y},0`] = 'oak_log';
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      if (dx === 0 && dz === 0) continue;
+      fixed[`${dx},83,${dz}`] = 'oak_leaves';
+    }
+  }
+  const calls = [];
+  const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
+  const r = await part.clear_strip({
+    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 2,
+    // road_mode omitted (default false)
+  });
+  assertContract(r);
+  assert.equal(r.ok, true);
+  // road_mode=false: logs counted as skipped_structural, no dig.
+  assert.equal(r.data.skipped_structural, 2);
+  // No extension phase ran.
+  assert.equal(r.data.wood_blocks_removed, 0);
+  assert.equal(r.data.leaf_blocks_removed, 0);
+  assert.equal(r.data.extension, undefined);
+});
+
+test('clear_strip road_mode: no tree in rect → no extension, no overhead', async () => {
+  // Just snow_layer and tall_grass in the rectangle. road_mode=true but
+  // no logs touched → Phase 3 short-circuits cleanly.
+  const fixed = {};
+  for (let x = 0; x <= 2; x++) {
+    for (let z = 0; z <= 2; z++) {
+      fixed[`${x},79,${z}`] = 'snow';
+    }
+  }
+  const calls = [];
+  const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
+  const r = await part.clear_strip({
+    x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, height: 1, road_mode: true,
+  });
+  assertContract(r);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.wood_blocks_removed, 0);
+  assert.equal(r.data.leaf_blocks_removed, 0);
+  assert.equal(r.data.extension, undefined);
+});

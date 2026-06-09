@@ -6,11 +6,12 @@ import { withYBoth, parseYInput } from '../../runtime/coordinates.js';
 
 export function createRegionQueries({ ensureBot, posObj, goals }) {
   return {
-  async terrain_top({ x, z, radius = 0, full = false }) {
+  async terrain_top({ x, z, radius = 0, full = false, exclude_foliage = false }) {
     const b = ensureBot();
     const cx = Math.floor(Number(x));
     const cz = Math.floor(Number(z));
     const r = Math.min(Math.max(parseInt(String(radius), 10) || 0, 0), 32);
+    const excludeFoliage = exclude_foliage === true || exclude_foliage === 'true' || exclude_foliage === '1';
     /** @type {{ x:number, z:number, topY:number, blockName:string }[]} */
     const columns = [];
     let maxTopY = Number.NEGATIVE_INFINITY;
@@ -21,7 +22,7 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
       for (let dz = -r; dz <= r; dz++) {
         const ix = cx + dx;
         const iz = cz + dz;
-        const col = columnTopSolid(b, ix, iz);
+        const col = columnTopSolid(b, ix, iz, { excludeFoliage });
         if (!col) continue;
         columns.push({ x: ix, z: iz, topY: col.topY, blockName: col.blockName });
         if (col.topY > maxTopY) {
@@ -44,7 +45,7 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
       };
     }
 
-    // Canonical Y vocabulary (docs/conventions/coordinates.md):
+    // Canonical Y vocabulary (docs/reference/world-coordinates.md):
     //   block_y = topmost solid block's Y
     //   surface_y = where a bot stands on top (= block_y + 1)
     // `feetYHint` kept as a back-compat alias for one release.
@@ -70,6 +71,118 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
           topY: c.topY, blockName: c.blockName,  // legacy
         })),
       } : {}),
+    };
+  },
+
+  /**
+   * Batch terrain_top over a rectangle. Returns per-cell samples + the
+   * elevation aggregate (median/min/max/delta) in one HTTP round-trip.
+   * Pure read — no bot movement, no dig, no place.
+   *
+   * Use case: road scout + measure cards. Sampling a 3-wide corridor at
+   * 2-block intervals takes ~24 individual mc terrain_top calls (each a
+   * 100-300ms round-trip); mc corridor_sample collapses them into 1.
+   *
+   * Args:
+   *   x1, z1, x2, z2   — rectangle bounds (inclusive). Order doesn't matter.
+   *   step             — z-step within the rectangle (1 = every cell,
+   *                      2 = every other). Default 1. Applied to z only;
+   *                      every x is sampled.
+   *   exclude_foliage  — pass through to columnTopSolid. When true, skips
+   *                      *_leaves and snow_layer so a tree canopy doesn't
+   *                      register as ground. Default false (legacy).
+   *   full             — when true, returns the full samples[] array.
+   *                      When false (default), samples[] is omitted to
+   *                      keep the response small; only aggregates returned.
+   */
+  async corridor_sample({ x1, z1, x2, z2, step = 1, exclude_foliage = false, full = false }) {
+    const b = ensureBot();
+    for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
+      if (!Number.isFinite(Number(v))) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_COORD',
+            message: `mc corridor_sample requires numeric ${k}`,
+            retry_safe: false,
+          },
+        };
+      }
+    }
+    const minX = Math.min(Number(x1), Number(x2));
+    const maxX = Math.max(Number(x1), Number(x2));
+    const minZ = Math.min(Number(z1), Number(z2));
+    const maxZ = Math.max(Number(z1), Number(z2));
+    const s = Math.max(1, Math.min(parseInt(String(step), 10) || 1, 16));
+    const excludeFoliage = exclude_foliage === true || exclude_foliage === 'true' || exclude_foliage === '1';
+    const includeFull = full === true || full === 'true' || full === '1';
+    const w = maxX - minX + 1;
+    const lFull = maxZ - minZ + 1;
+    // Cap inputs at 256 sampled cells (the per-step count, not the
+    // rectangle size). A 3×85 corridor at step=1 = 255; tight enough.
+    const sampledZ = Math.ceil(lFull / s);
+    const totalSamples = w * sampledZ;
+    if (totalSamples > 256) {
+      return {
+        ok: false,
+        error: {
+          code: 'OUT_OF_RANGE',
+          message: `mc corridor_sample: ${w}×${sampledZ} = ${totalSamples} samples > 256 cap. Increase step or split the rectangle.`,
+          observed_state: { requested_samples: totalSamples, max_samples: 256, bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ }, step: s },
+          retry_safe: false,
+        },
+      };
+    }
+    const samples = [];
+    let unknownN = 0;
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z += s) {
+        const col = columnTopSolid(b, x, z, { excludeFoliage });
+        if (!col) {
+          unknownN++;
+          samples.push({ x, z, block_y: null, surface_y: null, block_name: null });
+          continue;
+        }
+        samples.push({
+          x, z,
+          block_y: col.topY,
+          surface_y: col.topY + 1,
+          block_name: col.blockName,
+        });
+      }
+    }
+    const knownYs = samples.filter((s2) => s2.block_y !== null).map((s2) => s2.block_y);
+    if (knownYs.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'NO_SURFACE',
+          message: `mc corridor_sample: every column returned no solid block — chunks unloaded?`,
+          observed_state: { samples_n: samples.length, bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ }, exclude_foliage: excludeFoliage },
+          retry_safe: true,
+        },
+      };
+    }
+    const sortedYs = [...knownYs].sort((a, b2) => a - b2);
+    const median = sortedYs[Math.floor(sortedYs.length / 2)];
+    const minY = sortedYs[0];
+    const maxY = sortedYs[sortedYs.length - 1];
+    return {
+      ok: true,
+      data: {
+        bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ },
+        step: s,
+        exclude_foliage: excludeFoliage,
+        columns_n: samples.length,
+        known_n: knownYs.length,
+        unknown_n: unknownN,
+        elevation_median: median,
+        elevation_min: minY,
+        elevation_max: maxY,
+        elevation_delta: maxY - minY,
+        ...(includeFull ? { samples } : {}),
+      },
+      result: `corridor_sample ${w}×${sampledZ} (step=${s}${excludeFoliage ? ', exclude_foliage' : ''}): median=${median} delta=${maxY - minY} min=${minY} max=${maxY} (${knownYs.length}/${samples.length} cells with data)`,
     };
   },
 

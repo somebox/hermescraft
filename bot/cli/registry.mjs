@@ -832,6 +832,7 @@ export const RAW_COMMAND_DEFS = [
         ...(p.mode ? { mode: String(p.mode) } : {}),
         ...(p.block ? { block: String(p.block) } : {}),
         ...(p.execute !== undefined ? { execute: p.execute === true || p.execute === 'true' || p.execute === '1' } : {}),
+        ...(p.exclude_foliage !== undefined ? { exclude_foliage: p.exclude_foliage === true || p.exclude_foliage === 'true' || p.exclude_foliage === '1' } : {}),
       }),
     argSchema: [
       { key: 'x1', type: 'number', required: true },
@@ -842,12 +843,14 @@ export const RAW_COMMAND_DEFS = [
       { key: 'mode', type: 'string' },
       { key: 'block', type: 'string' },
       { key: 'execute', type: 'string' },
+      { key: 'exclude_foliage', type: 'string' },
     ],
-    usage: 'mc level_ground X1 Z1 X2 Z2 [target=Y] [mode=median|min|max] [block=NAME] [execute=true]',
+    usage: 'mc level_ground X1 Z1 X2 Z2 [target=Y] [mode=median|min|max] [block=NAME] [execute=true] [exclude_foliage=true]',
     examples: [
-      'mc level_ground 360 -605 376 -589                     # dry-run, median Y',
-      'mc level_ground 360 -605 376 -589 mode=min            # plan flatten-down (dig-only)',
+      'mc level_ground 360 -605 376 -589                                # dry-run, median Y',
+      'mc level_ground 360 -605 376 -589 mode=min                       # plan flatten-down (dig-only)',
       'mc level_ground 360 -605 376 -589 target=65 execute=true block=cobblestone',
+      'mc level_ground -1 0 1 12 target=78 exclude_foliage=true         # ignore tree canopy + snow_layer when surveying',
     ],
   }),
 
@@ -1176,21 +1179,57 @@ export const RAW_COMMAND_DEFS = [
         pickup: p.pickup !== false,
       }),
   }),
+  g('corridor_sample', 'world', ['terrain_strip'], {
+    method: 'POST',
+    path: '/action/corridor_sample',
+    description: 'Batch terrain_top over a rectangle. Returns aggregate (elevation_median, min, max, delta) + per-cell samples when full=true. Pure read; no bot movement. Cap 256 samples per call. Use exclude_foliage=true for road surveys (skips *_leaves + snow_layer so canopies don\'t register as ground).',
+    examples: [
+      'mc corridor_sample -1 0 1 47                     # 3×48 = 144 samples, dirt road corridor',
+      'mc corridor_sample -1 0 1 47 step=2              # 3×24 = 72 samples (every other z)',
+      'mc corridor_sample -1 0 1 11 exclude_foliage=true full=true   # canopy-aware survey with per-cell array',
+    ],
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'step', type: 'number', min: 1, max: 16 },
+      { key: 'exclude_foliage', type: 'string' },
+      { key: 'full', type: 'string' },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        x1: Number(p.x1),
+        z1: Number(p.z1),
+        x2: Number(p.x2),
+        z2: Number(p.z2),
+        ...(p.step !== undefined ? { step: Number(p.step) } : {}),
+        ...(p.exclude_foliage !== undefined ? { exclude_foliage: p.exclude_foliage === true || p.exclude_foliage === 'true' || p.exclude_foliage === '1' } : {}),
+        ...(p.full !== undefined ? { full: p.full === true || p.full === 'true' || p.full === '1' } : {}),
+      }),
+  }),
+
   g('terrain_top', 'world', ['ttop', 'surface_y'], {
     method: 'POST',
     path: '/action/terrain_top',
-    description: 'Top solid block in column(s): highest non-air, non-fluid from sky down (optional square radius).',
-    examples: ['mc terrain_top 120 -45', 'mc terrain_top 120 -45 12'],
+    description: 'Top solid block in column(s): highest non-air, non-fluid from sky down (optional square radius). With exclude_foliage=true, also skips *_leaves and snow_layer (use for road surveys where a tree canopy at y=88 should NOT register as ground).',
+    examples: [
+      'mc terrain_top 120 -45',
+      'mc terrain_top 120 -45 12',
+      'mc terrain_top 0 0 exclude_foliage=true   # ignore canopy + snow',
+    ],
     argSchema: [
       { key: 'x', type: 'number', required: true },
       { key: 'z', type: 'number', required: true },
       { key: 'radius', type: 'number', default: 0, min: 0, max: 32 },
+      { key: 'exclude_foliage', type: 'string' },
     ],
     bodyFn: (p) =>
       JSON.stringify({
         x: Number(p.x),
         z: Number(p.z),
         radius: Number(p.radius ?? 0),
+        ...(p.exclude_foliage !== undefined ? { exclude_foliage: p.exclude_foliage === true || p.exclude_foliage === 'true' || p.exclude_foliage === '1' } : {}),
       }),
   }),
   g('interact', 'world', ['use_block'], {

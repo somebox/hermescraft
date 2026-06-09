@@ -69,6 +69,17 @@ const LONG_ACTION_PATHS = new Set([
   '/action/build_stairs',
   '/action/till_area',
   '/task/place_fill',
+  // Road-tier verbs. Each batches pathfind + dig/place across
+  // multiple cells (level_ground execute = ≤16 cols × per-cell dig+fill;
+  // clear_strip = ≤1024 cells; deck = ≤256 BFS placements;
+  // fell_tree = ≤24 logs + ≤256 leaves). All routinely exceed 25s;
+  // pre-fix workers got "[exit 1]" at exactly 25.3s and split into
+  // smaller sub-tiles, paying the per-call overhead. Trial postmortem
+  // proc-nav-1780994801 (W2-NAV-019).
+  '/action/level_ground',
+  '/action/clear_strip',
+  '/action/deck',
+  '/action/fell_tree',
 ]);
 
 function classifyPathDeadline(method, pathname) {

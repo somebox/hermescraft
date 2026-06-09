@@ -295,3 +295,70 @@ test('per-column hole_depth and fill_kind fields appear on fill cells', async ()
   assert.equal(deep.fill_kind, 'deep');
   assert.equal(deep.hole_depth, 6);
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// exclude_foliage — Trial proc-nav-1780994801 (W2-NAV-015) surfaced that
+// spruce-tree canopies (snow-topped, y=85-90) read as "ground" by
+// columnTopSolid, falsely tripping the deck classifier. The fix adds an
+// opt that skips *_leaves and snow_layer when finding the column top.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('exclude_foliage=true: tree canopy over flat ground classifies as level (not deck)', async () => {
+  // 3x3 spruce canopy at y=88 over flat ground at y=64.
+  const t = buildTerrain({ x1: 0, x2: 2, z1: 0, z2: 2, groundY: 64 });
+  // Stack 5-block trunk + 3x3 leaves crown at top.
+  for (let y = 65; y <= 70; y++) {
+    t.set(`1,${y},1`, 'spruce_log');
+  }
+  for (let dx = 0; dx <= 2; dx++) {
+    for (let dz = 0; dz <= 2; dz++) {
+      t.set(`${dx},71,${dz}`, 'spruce_leaves');
+      t.set(`${dx},72,${dz}`, 'spruce_leaves');
+    }
+  }
+  // Snow_layer accumulated on top of the canopy.
+  for (let dx = 0; dx <= 2; dx++) {
+    for (let dz = 0; dz <= 2; dz++) {
+      t.set(`${dx},73,${dz}`, 'snow');
+    }
+  }
+
+  const part = makePart(makeBot(t));
+
+  // Default: foliage reads as ground → max y=73 (snow_layer over canopy).
+  // The whole 3x3 is "pillar" cells with delta=+9 from target=64.
+  const resDefault = await part.level_ground({ x1: 0, z1: 0, x2: 2, z2: 2, target: 64 });
+  assert.equal(resDefault.ok, true);
+  assert.ok(
+    resDefault.data.summary.pillars_n > 0,
+    'without exclude_foliage, canopy reads as terrain to dig'
+  );
+
+  // exclude_foliage=true: leaves + snow_layer skipped. The trunk at (1, y=65-70)
+  // still reports (no leaves to skip there), but the 3x3 ground at y=64 is the
+  // top for the 8 non-trunk cells. Classifier sees level cells, no deck.
+  const resOpt = await part.level_ground({
+    x1: 0, z1: 0, x2: 2, z2: 2, target: 64, exclude_foliage: true,
+  });
+  assert.equal(resOpt.ok, true);
+  // Non-trunk cells: y=64 ground, delta=0 → level.
+  assert.ok(resOpt.data.summary.level_n >= 8,
+    `expected ≥8 level cells (canopy ignored), got ${resOpt.data.summary.level_n}`);
+  // No deck recommendation should appear — the underlying terrain is flat.
+  assert.equal(resOpt.data.summary.deck_required_n, 0,
+    'flat ground under canopy must not classify as deck');
+});
+
+test('exclude_foliage default false preserves legacy behavior', async () => {
+  // Existing tests in this file all use default (no exclude_foliage).
+  // This sentinel test pins the default value — flipping it would break
+  // callers that pass live terrain with grass+leaves overhangs.
+  const t = buildTerrain({ x1: 0, x2: 0, z1: 0, z2: 0, groundY: 64 });
+  // Add an isolated leaf block above ground.
+  t.set(`0,68,0`, 'oak_leaves');
+  const part = makePart(makeBot(t));
+  const res = await part.level_ground({ x1: 0, z1: 0, x2: 0, z2: 0, target: 64 });
+  assert.equal(res.ok, true);
+  // Default-on means top reads as oak_leaves at y=68; delta=+4 → cut/pillar.
+  assert.equal(res.data.summary.pillars_n, 1);
+});

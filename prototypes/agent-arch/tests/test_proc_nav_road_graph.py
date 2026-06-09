@@ -79,13 +79,18 @@ def test_planner_cites_road_plan_and_length():
 
 
 def test_explore_card_enforces_target_y_from_terrain_top():
-    """The scout/explore card must derive target_y from terrain_top median,
-    NOT from the catalog overlook/return_post Y. This is the root cause of the
-    Y=67 propagation observed in run proc-nav-1780970837 (postmortem R2)."""
+    """The scout/explore card must derive target_y from a real terrain sample
+    median, NOT from the catalog overlook/return_post Y. This is the root cause
+    of the Y=67 propagation observed in run proc-nav-1780970837 (postmortem R2).
+    As of W2-NAV-018 follow-up the sampling verb is mc corridor_sample (batch
+    terrain_top with exclude_foliage)."""
     g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
     explore = next(c for c in g.cards if c.slug == "pn-explore")
     body = explore.body.lower()
-    assert "mc terrain_top" in body, "explore card must instruct terrain_top sampling"
+    assert "mc corridor_sample" in body or "mc terrain_top" in body, (
+        "explore card must instruct one of: mc corridor_sample (preferred) or "
+        "mc terrain_top (legacy) for the surface sampling"
+    )
     assert "median" in body, "explore card must mention median (target_y derivation)"
     assert "elevation_median" in body, "explore must emit elevation_median in corridor_profile"
     assert "never" in body and "catalog" in body, (
@@ -169,29 +174,92 @@ def test_measure_and_clear_read_road_plan_from_persistent_path():
         )
 
 
-def test_measure_cards_contain_literal_terrain_top_calls():
-    """Pip in proc-nav-1780989125 accepted the planner's target_y=67
-    uncritically; Mox correctly rejected it. The difference was judgment.
-    Mitigation: replace procedural 'mc terrain_top X Z' with literal
-    commands per segment. Literal commands are harder to skip than
-    procedure text."""
+def test_measure_cards_contain_literal_corridor_sample_call():
+    """Replaces the 9-call mc terrain_top loop with a single mc corridor_sample.
+    Same intent: a literal command per segment is harder to skip than a
+    procedure description (Pip in proc-nav-1780989125 accepted the planner's
+    target_y=67 uncritically). corridor_sample is also exclude_foliage-aware
+    so tree canopies don't read as ground (W2-NAV-015)."""
     g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
-    # Segments along +Z, each 12 blocks long starting at z = (id-1)*12.
-    # x ∈ {-1, 0, 1} for the 3-wide cross-section.
     for n in range(1, ROAD_SEGMENT_COUNT + 1):
         meas = next(c for c in g.cards if c.slug == f"pn-meas-{n}")
         body = meas.body
         z_start = (n - 1) * 12
-        z_mid = z_start + 6
         z_end = z_start + 12
-        # All 9 literal terrain_top calls (3 z × 3 x) must appear verbatim.
-        for z in (z_start, z_mid, z_end):
-            for x in (-1, 0, 1):
-                literal = f"mc terrain_top {x} {z}"
-                assert literal in body, (
-                    f"pn-meas-{n} must include the literal '{literal}' "
-                    f"(not a procedural 'mc terrain_top X Z at start/mid/end')"
-                )
+        literal = f"mc corridor_sample -1 {z_start} 1 {z_end} exclude_foliage=true"
+        assert literal in body, (
+            f"pn-meas-{n} must include the literal '{literal}' so the agent samples "
+            f"the segment in one round-trip with foliage filtering on (W2-NAV-015)"
+        )
+
+
+def test_measure_cards_pin_target_y_to_corridor_median():
+    """W2-NAV-017 fix. Measure cards must say target_y MUST equal corridor median
+    (allowing a per-segment override only when divergence >= 2). The prior trial
+    produced 78, 79, 78, 78 per-segment medians, creating ±1 boundary steps
+    at z=12, 24, 36."""
+    g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
+    for n in range(1, ROAD_SEGMENT_COUNT + 1):
+        meas = next(c for c in g.cards if c.slug == f"pn-meas-{n}")
+        body = meas.body
+        assert "MUST equal" in body, (
+            f"pn-meas-{n} must use 'MUST equal' language for target_y discipline "
+            f"(soft 'may revise' produced ±1 boundary steps in trial 1780994801)"
+        )
+        assert "corridor_median" in body, (
+            f"pn-meas-{n} must reference corridor_median as the pinned target_y source"
+        )
+        assert "segment_y_anomaly" in body, (
+            f"pn-meas-{n} must require segment_y_anomaly obstacle when divergence ≥ 2"
+        )
+
+
+def test_explore_card_uses_corridor_sample():
+    """W2-NAV-018 + feedback efficiency. The scout's corridor walk should use
+    mc corridor_sample (one call) instead of N individual mc terrain_top calls.
+    Both navigators independently requested this verb."""
+    g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
+    explore = next(c for c in g.cards if c.slug == "pn-explore")
+    body = explore.body
+    assert "mc corridor_sample" in body, (
+        "pn-explore must call mc corridor_sample for the full-corridor survey"
+    )
+    assert "exclude_foliage=true" in body, (
+        "pn-explore must pass exclude_foliage=true so canopy doesn't register as ground"
+    )
+
+
+def test_verify_card_runs_dispositions_sweep_and_can_emit_cleanup():
+    """W2-NAV-018 fix. The verify card must re-run mc level_ground dispositions
+    across the full corridor and emit a [CLEANUP] kanban card on failure.
+    Trial proc-nav-1780994801 had verify pass despite ±1 cells still un-leveled
+    because verify only checked anchors."""
+    g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
+    verify = next(c for c in g.cards if c.slug == "pn-road-verify")
+    body = verify.body
+    assert "mc level_ground" in body, (
+        "verify card must run mc level_ground for a dispositions sweep"
+    )
+    assert "dispositions" in body, (
+        "verify card must reference dispositions in its assertion"
+    )
+    assert "exclude_foliage=true" in body, (
+        "verify dispositions sweep must use exclude_foliage to avoid canopy false-positives"
+    )
+    assert "[CLEANUP]" in body, (
+        "verify card must mention [CLEANUP] kanban card emission on failure"
+    )
+    assert "kanban_create" in body, (
+        "verify card must instruct kanban_create for the follow-up CLEANUP card"
+    )
+    # Per-segment sweeps must be literally present (one per segment).
+    for n in range(1, ROAD_SEGMENT_COUNT + 1):
+        z_start = (n - 1) * 12
+        z_end = z_start + 12
+        literal = f"mc level_ground -1 {z_start} 1 {z_end} target=<target_y> exclude_foliage=true"
+        assert literal in body, (
+            f"verify card must include the literal '{literal}' for segment {n}"
+        )
 
 
 def test_clear_cards_use_new_road_primitives():

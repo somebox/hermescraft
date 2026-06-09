@@ -176,20 +176,24 @@ def _segment_plan_body() -> str:
 
 def _explore_body() -> str:
     bound_list = ", ".join(f"**{m}**" for m in ROAD_INTERIOR_MARKS)
+    z_max = ROAD_CENTERLINE_BLOCKS_CATALOG
     return (
         f"Reach catalog endpoints **{ROAD_ENDPOINTS[0]}** and **{ROAD_ENDPOINTS[-1]}** "
         f"(each within **4 blocks**).\n"
         f"Along the centerline (~{_ROAD_CFG['segment_length_blocks']} blocks per segment), "
         f"**place ground-level marks** with `mc mark` for: {bound_list}. "
         "Use `mc inspect` / `mc scene` at each boundary so feet Y is standable.\n"
-        "Walk full corridor; `mc scene` every **2 blocks**; 3-wide strip samples.\n"
+        "Walk full corridor; `mc scene` every **2 blocks**.\n"
         "\n"
         "**Target Y discipline (CRITICAL — read `skill_view('minecraft-roadbuilding')` "
         "section 'Target Y — derive from terrain, NOT from catalog placement'):**\n"
-        "- For each segment boundary mark, ALSO run `mc terrain_top X Z` at the 3-wide "
-        "cross-section (center + ±1 in the cross-axis).\n"
-        "- Compute `corridor_profile.elevation_median` = median of all `surface_y` "
-        "samples across the corridor.\n"
+        f"- **Run this ONE LITERAL command** to sample the full 3-wide corridor in one "
+        f"round-trip:\n"
+        f"   `mc corridor_sample -1 0 1 {z_max} exclude_foliage=true full=true`\n"
+        f"  This returns per-cell `block_y`/`surface_y` + aggregate "
+        f"`elevation_median`/`min`/`max`/`delta`. Use `exclude_foliage=true` so a "
+        f"spruce canopy doesn't register as ground (W2-NAV-015).\n"
+        "- Copy `data.elevation_median` directly into `corridor_profile.elevation_median`.\n"
         "- **Never** copy the catalog endpoint Y (`overlook` / `return_post`) as a road "
         "target — the catalog placement engine often sits the anchor 10+ blocks above "
         "or below the live walkable surface. Use the terrain_top median.\n"
@@ -202,21 +206,13 @@ def _explore_body() -> str:
 
 
 def _meas_body(seg_id: int, from_mark: str, to_mark: str) -> str:
-    # Nominal centerline coords for this segment. Corridor runs along +Z
-    # from overlook (z=0) to return_post (z=ROAD_CENTERLINE_BLOCKS_CATALOG).
-    # x ∈ {-1, 0, 1} (3-wide centered on x=0). Hardcoded so the agent
-    # can't skip the sampling step — Pip in the prior trial accepted the
-    # planner's bad target_y; literal commands are harder to ignore than
-    # procedure text. If the scout placed road_bound_* off-axis, the
-    # agent can adapt; these are seeds, not handcuffs.
+    # Corridor runs along +Z from overlook (z=0) to return_post
+    # (z=ROAD_CENTERLINE_BLOCKS_CATALOG). x ∈ {-1, 0, 1} (3-wide centered
+    # on x=0). The literal mc corridor_sample command is hardcoded so the
+    # agent can't skip sampling — trial 1780989125 showed Pip accept the
+    # planner's bad target_y without re-sampling. Literal verbs bite.
     z_start = (seg_id - 1) * ROAD_SEGMENT_LENGTH
-    z_mid = z_start + ROAD_SEGMENT_LENGTH // 2
     z_end = z_start + ROAD_SEGMENT_LENGTH
-    literal_top_calls = "\n".join(
-        f"   mc terrain_top {x} {z}"
-        for z in (z_start, z_mid, z_end)
-        for x in (-1, 0, 1)
-    )
     return (
         f"**Segment {seg_id}:** `{from_mark}` (Z≈{z_start}) → `{to_mark}` (Z≈{z_end}) "
         f"per **`road_plan`**.\n"
@@ -224,21 +220,26 @@ def _meas_body(seg_id: int, from_mark: str, to_mark: str) -> str:
         f"\n"
         f"**Step 1 — read the road_plan from the persistent path:**\n"
         f"   `cat $HERMESCRAFT_REPO/{ROAD_PLAN_JSON}`\n"
-        f"Note `corridor_profile.elevation_median` and the planner's seeded `target_y` "
-        f"for this segment. You will verify them against live samples below.\n"
+        f"Note `corridor_profile.elevation_median` (call it `corridor_median`) and the "
+        f"planner's seeded `target_y_default` for this segment.\n"
         f"\n"
-        f"**Step 2 — sample the 3-wide cross-section at start, mid, end (9 cells). "
-        f"Run these LITERAL commands:**\n"
-        f"```\n{literal_top_calls}\n```\n"
+        f"**Step 2 — sample the segment's 3-wide cross-section in ONE call:**\n"
+        f"   `mc corridor_sample -1 {z_start} 1 {z_end} exclude_foliage=true`\n"
+        f"This returns aggregate `elevation_median` for the segment (call it "
+        f"`segment_median`). Use `exclude_foliage=true` so a spruce canopy doesn't "
+        f"register as ground (W2-NAV-015). One round-trip instead of 9.\n"
         f"\n"
-        f"**Step 3 — compute target_y from the 9 samples:**\n"
-        f"   `target_y = median(surface_y for all 9 terrain_top results)`\n"
-        f"If `abs(target_y - road_plan.corridor_profile.elevation_median) > 2`, log "
-        f"`obstacles[].type='segment_y_anomaly'` with the local median and the "
-        f"corridor median.\n"
+        f"**Step 3 — pin target_y to the corridor median (W2-NAV-017):**\n"
+        f"   `target_y MUST equal corridor_median` UNLESS `abs(segment_median - "
+        f"corridor_median) >= 2`.\n"
+        f"- If divergence is < 2: set `target_y = corridor_median`. Segment boundaries "
+        f"stay flush; no ±1 steps at z={z_start} or z={z_end}.\n"
+        f"- If divergence is >= 2: set `target_y = segment_median` AND log an "
+        f"`obstacles[].type='segment_y_anomaly'` entry with `{{segment_median, "
+        f"corridor_median, delta}}`. This is the audit trail for an intentional step.\n"
         f"\n"
         f"**Step 4 — run `mc level_ground` dry-run for disposition classification:**\n"
-        f"   `mc level_ground -1 {z_start} 1 {z_end} target=<target_y>`\n"
+        f"   `mc level_ground -1 {z_start} 1 {z_end} target=<target_y> exclude_foliage=true`\n"
         f"Read `data.dispositions` and `data.dip_spans`:\n"
         f"- If `summary.deck_required_n > 0` or `summary.reroute_required_n > 0`, set "
         f"`passage='deck'` or `passage='reroute'` and pass the span coords through to "
@@ -251,10 +252,62 @@ def _meas_body(seg_id: int, from_mark: str, to_mark: str) -> str:
         f"`obstacles[]` as `catalog_y_drift` with `catalog_y`, `live_y`, `delta`.\n"
         f"\n"
         f"metadata **`segment_measurements`**: segment_id={seg_id}, from_mark={from_mark}, "
-        f"to_mark={to_mark}, target_y (= terrain_top median, NOT catalog), "
+        f"to_mark={to_mark}, target_y (= corridor_median pinned, NOT catalog), "
         f"passage (dig|fill|deck|reroute), samples[], "
         f"dispositions{{level,cut,fill_shallow,fill_deep,no_floor}}, obstacles[], "
         f"width_blocks={ROAD_WIDTH_M}."
+    )
+
+
+def _verify_body() -> str:
+    # Per-segment dispositions sweep. Each call surveys ROAD_SEGMENT_LENGTH+1
+    # cells of the corridor (3 wide × 12+1 long = 39 columns), well above
+    # level_ground's 16-col cap — but we want a single per-segment summary,
+    # so split inside the agent's worker via 3-col sub-rectangles.
+    z_max = ROAD_CENTERLINE_BLOCKS_CATALOG
+    return (
+        f"**Verify the finished road corridor across all "
+        f"{ROAD_SEGMENT_COUNT} segments.**\n"
+        f"\n"
+        f"**Step 1 — read the road_plan for the canonical target_y:**\n"
+        f"   `cat $HERMESCRAFT_REPO/{ROAD_PLAN_JSON}`\n"
+        f"Use `corridor.target_y_default` (or `target_y_default` at top level) for the "
+        f"sweep target.\n"
+        f"\n"
+        f"**Step 2 — walk anchors:** overlook → "
+        f"{' → '.join(ROAD_INTERIOR_MARKS) if ROAD_INTERIOR_MARKS else '...'}"
+        f" → return_post. `mc verify at_mark` on each agent `road_bound_*` "
+        f"mark. Record `predicates[]` with each at_mark result.\n"
+        f"\n"
+        f"**Step 3 — dispositions sweep (NEW: W2-NAV-018 fix).** "
+        f"For each segment, run a dry-run `mc level_ground` and assert "
+        f"the surface is fully leveled.\n"
+        + "\n".join(
+            f"   `mc level_ground -1 {(sid - 1) * ROAD_SEGMENT_LENGTH} "
+            f"1 {sid * ROAD_SEGMENT_LENGTH} target=<target_y> "
+            f"exclude_foliage=true`  # seg {sid}"
+            for sid in range(1, ROAD_SEGMENT_COUNT + 1)
+        )
+        + f"\n"
+        f"Read `data.dispositions` for each. Acceptance rule:\n"
+        f"   `dispositions.level + dispositions.preserved == columns_n`\n"
+        f"   AND `dispositions.cut == 0` AND `dispositions.fill_shallow == 0` "
+        f"AND `dispositions.fill_deep == 0` AND `dispositions.no_floor == 0`.\n"
+        f"\n"
+        f"**Step 4 — branch on the sweep result:**\n"
+        f"- **All segments pass:** complete this card with "
+        f"`verify_status=pass` and `dispositions_summary[]` populated for telemetry.\n"
+        f"- **Any segment fails:** emit a follow-up `[CLEANUP]` kanban card via "
+        f"`kanban_create` with `title='[BUILD] cleanup segment <id>'`, assignee mirroring "
+        f"the original clear card (builder/builder-mox per id), and body specifying the "
+        f"target_y + the failing cells. Complete THIS verify with "
+        f"`verify_status=needs_cleanup` and reference the cleanup card id(s).\n"
+        f"\n"
+        f"metadata **`verify_results`**: predicates[], "
+        f"dispositions_summary[{{segment_id, level, cut, fill_shallow, fill_deep, "
+        f"no_floor, preserved}}], cleanup_cards[], verify_status, "
+        f"position_at_complete, road_width_blocks={ROAD_WIDTH_M}, "
+        f"segments_cleared={ROAD_SEGMENT_COUNT}."
     )
 
 
@@ -361,12 +414,7 @@ def build_proc_scout_road_graph() -> Graph:
                 title="[VERIFY] road corridor",
                 assignee=ASSIGNEE_NAV_MOX,
                 bot=BOT_MOX,
-                body=(
-                    "Walk overlook → interior marks → return_post; `mc verify` ≥1 predicate "
-                    "(at_mark on agent `road_bound_*` marks).\n"
-                    f"metadata **`verify_results`**: predicates[], position_at_complete, "
-                    f"road_width_blocks={ROAD_WIDTH_M}, segments_cleared={ROAD_SEGMENT_COUNT}."
-                ),
+                body=_verify_body(),
                 depends_on=tuple(clear_slugs),
                 skills=OBSERVE_SKILLS,
                 work_at_mark="return_post",
