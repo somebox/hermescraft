@@ -5,7 +5,9 @@ extends: profiles/worksite
 
 arena:
   center: [0, 0]
-  radius: 48
+  # Bumped 48→128 on 2026-06-09 to fit the 96-block road corridor + headroom
+  # for arena boundary checks at the return_post (z=96) anchor.
+  radius: 128
 
 # Pick seeds where there's a tall column near the centre and surrounding terrain
 # is varied enough to be worth looking at.
@@ -25,8 +27,8 @@ placements:
   muster: offset_from spawn [6, 0, 0]
   # Road start — standable ground near flat patch (not canopy/air flat_patch_center).
   overlook: random_safe radius 1 attempts 48 near gate flat_patch within 8 blocks
-  # Road end — same XZ offset from start, Y from live surface (48 blocks on +Z).
-  return_post: ground_offset_from overlook [0, 0, 48]
+  # Road end — same XZ offset from start, Y from live surface (96 blocks on +Z).
+  return_post: ground_offset_from overlook [0, 0, 96]
   # Interior segment boundaries: agents place mc marks (road_bound_*) during pn-explore.
 
 find:

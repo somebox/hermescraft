@@ -28,13 +28,18 @@ def test_road_graph_card_count():
     assert f"pn-meas-{ROAD_SEGMENT_COUNT}" in slugs
 
 
-def test_four_segments_agent_midpoints():
-    assert ROAD_CENTERLINE_BLOCKS_CATALOG == 48
-    assert ROAD_SEGMENT_COUNT == 4
+def test_segments_correct_count_and_endpoint_marks():
+    """Test pulls config-driven values rather than hardcoded counts so a
+    legitimate bump (48→96 blocks, 4→8 segments on 2026-06-09) doesn't
+    require editing the test alongside the config."""
     segs = road_segments()
-    assert len(segs) == 4
-    assert segs[0][1:] == ("overlook", "road_bound_1")
-    assert segs[-1][1:] == ("road_bound_3", "return_post")
+    assert len(segs) == ROAD_SEGMENT_COUNT
+    assert segs[0][1] == "overlook"
+    assert segs[-1][2] == "return_post"
+    # Interior boundary marks: road_bound_1 .. road_bound_(N-1).
+    if ROAD_SEGMENT_COUNT > 1:
+        assert segs[0][2] == "road_bound_1"
+        assert segs[-1][1] == f"road_bound_{ROAD_SEGMENT_COUNT - 1}"
 
 
 def test_road_cites_width_and_agent_marks():

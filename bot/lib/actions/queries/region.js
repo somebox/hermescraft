@@ -118,17 +118,21 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
     const includeFull = full === true || full === 'true' || full === '1';
     const w = maxX - minX + 1;
     const lFull = maxZ - minZ + 1;
-    // Cap inputs at 256 sampled cells (the per-step count, not the
-    // rectangle size). A 3×85 corridor at step=1 = 255; tight enough.
+    // Cap inputs at 512 sampled cells. A 3-wide × 160-block corridor at
+    // step=1 = 480; covers the 2026-06-09 96-block road trial (288) and
+    // up to a 160-block corridor without splitting. The cap is purely
+    // memory + JSON-size guard; cells are read in tight loop so cost is
+    // O(N) blockAt calls.
+    const SAMPLE_CAP = 512;
     const sampledZ = Math.ceil(lFull / s);
     const totalSamples = w * sampledZ;
-    if (totalSamples > 256) {
+    if (totalSamples > SAMPLE_CAP) {
       return {
         ok: false,
         error: {
           code: 'OUT_OF_RANGE',
-          message: `mc corridor_sample: ${w}×${sampledZ} = ${totalSamples} samples > 256 cap. Increase step or split the rectangle.`,
-          observed_state: { requested_samples: totalSamples, max_samples: 256, bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ }, step: s },
+          message: `mc corridor_sample: ${w}×${sampledZ} = ${totalSamples} samples > ${SAMPLE_CAP} cap. Increase step or split the rectangle.`,
+          observed_state: { requested_samples: totalSamples, max_samples: SAMPLE_CAP, bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ }, step: s },
           retry_safe: false,
         },
       };

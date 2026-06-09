@@ -96,16 +96,27 @@ test('corridor_sample: full=false omits samples (compact response)', async () =>
   assert.equal(r.data.elevation_median, 64);
 });
 
-test('corridor_sample: oversize > 256 samples → OUT_OF_RANGE', async () => {
-  const t = buildFlatGround(0, 16, 0, 16, 64);
+test('corridor_sample: oversize > 512 samples → OUT_OF_RANGE', async () => {
+  // 23 × 23 = 529 samples > 512 cap.
+  const t = buildFlatGround(0, 22, 0, 22, 64);
   const q = makeQueries(makeBot(t));
-  const r = await q.corridor_sample({ x1: 0, z1: 0, x2: 16, z2: 16 });
+  const r = await q.corridor_sample({ x1: 0, z1: 0, x2: 22, z2: 22 });
   assertFailure(r, {
     code: 'OUT_OF_RANGE',
-    messageIncludes: '> 256',
+    messageIncludes: '> 512',
     observedKeys: ['requested_samples', 'max_samples', 'bounds'],
     retrySafe: false,
   });
+});
+
+test('corridor_sample: 3×96 = 288 samples is under the 512 cap (proc-nav-road second-trial size)', async () => {
+  const t = buildFlatGround(-1, 1, 0, 95, 64);
+  const q = makeQueries(makeBot(t));
+  const r = await q.corridor_sample({ x1: -1, z1: 0, x2: 1, z2: 95 });
+  assertContract(r);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.columns_n, 288);
+  assert.equal(r.data.elevation_median, 64);
 });
 
 test('corridor_sample: exclude_foliage skips canopy + snow_layer', async () => {

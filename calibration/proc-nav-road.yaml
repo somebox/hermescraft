@@ -3,8 +3,8 @@
 
 width_blocks: 3
 segment_length_blocks: 12
-centerline_blocks: 48
-segment_count: 4
+centerline_blocks: 96
+segment_count: 8
 
 endpoints:
   - overlook
@@ -12,4 +12,10 @@ endpoints:
 
 # requirements/scenario_scout_overlook.yaml:
 #   overlook: random_safe near flat_patch (standable ground)
-#   return_post: ground_offset_from overlook [0, 0, 48]
+#   return_post: ground_offset_from overlook [0, 0, 96]
+#
+# 2026-06-09 bump: doubled from 48→96 blocks (4→8 segments) for the
+# proc-nav-road second-trial. Stresses corridor_sample cap (288 samples
+# at 3×96, vs prior 256 cap → bumped to 512), per-segment dispositions
+# sweep in the verify card (now 8 sweeps), and dispatcher endurance
+# across 8 measure + 8 clear cards.
