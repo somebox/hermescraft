@@ -23,10 +23,11 @@ gates:
 placements:
   spawn: random_safe radius 1 attempts 32
   muster: offset_from spawn [6, 0, 0]
-  # Highest standable cell in the disc — the "overlook".
-  overlook: flat_patch_center
-  # Pick a point a few blocks out from the overlook for an "after first scan" target.
-  return_post: offset_from overlook [0, 0, 6]
+  # Road start — standable ground near flat patch (not canopy/air flat_patch_center).
+  overlook: random_safe radius 1 attempts 48 near gate flat_patch within 8 blocks
+  # Road end — same XZ offset from start, Y from live surface (48 blocks on +Z).
+  return_post: ground_offset_from overlook [0, 0, 48]
+  # Interior segment boundaries: agents place mc marks (road_bound_*) during pn-explore.
 
 find:
   solutions: 1

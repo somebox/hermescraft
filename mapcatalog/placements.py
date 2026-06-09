@@ -13,6 +13,10 @@ _OFFSET = re.compile(
     r"^offset_from\s+(?P<from>\w+)\s+\[(?P<dx>-?\d+),\s*(?P<dy>-?\d+),\s*(?P<dz>-?\d+)\]\s*$",
     re.IGNORECASE,
 )
+_GROUND_OFFSET = re.compile(
+    r"^ground_offset_from\s+(?P<from>\w+)\s+\[(?P<dx>-?\d+),\s*(?P<dy>-?\d+),\s*(?P<dz>-?\d+)\]\s*$",
+    re.IGNORECASE,
+)
 _FLAT_CENTER = re.compile(r"^flat_patch_center\s*$", re.IGNORECASE)
 _NEAR_BLOCK = re.compile(
     r"near\s+block\s+(?P<block>[\w:]+)\s+within\s+(?P<n>\d+)\s+(?P<unit>cells|blocks)",
@@ -38,6 +42,13 @@ def parse_placement_value(name: str, value: str | dict[str, Any]) -> PlacementSp
     m = _OFFSET.match(text)
     if m:
         spec.method = "offset_from"
+        spec.offset_from = m.group("from")
+        spec.offset = (int(m.group("dx")), int(m.group("dy")), int(m.group("dz")))
+        return spec
+
+    m = _GROUND_OFFSET.match(text)
+    if m:
+        spec.method = "ground_offset_from"
         spec.offset_from = m.group("from")
         spec.offset = (int(m.group("dx")), int(m.group("dy")), int(m.group("dz")))
         return spec

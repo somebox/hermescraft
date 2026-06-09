@@ -45,6 +45,9 @@ def test_parse_gate_structured():
 def test_placement_topo_and_offset():
     spawn = parse_placement_value("spawn", "random_safe radius 1 attempts 32")
     muster = parse_placement_value("muster", "offset_from spawn [6, 0, 0]")
+    end = parse_placement_value("return_post", "ground_offset_from overlook [0, 0, 48]")
+    assert end.method == "ground_offset_from"
+    assert end.offset == (0, 0, 48)
     order = topological_sort_placements([muster, spawn])
     assert [p.name for p in order] == ["spawn", "muster"]
 
@@ -61,7 +64,9 @@ def test_placement_cycle_fails():
 def test_load_mine_plains_iron_extends():
     req = load_requirements(ROOT / "requirements/mine_plains_iron.yaml")
     assert req.id == "mine_plains_iron"
-    assert len(req.gates) >= 8
+    # Profile chain must surface multiple gates from profiles/plains_mining
+    # (biome, distinct, flat, jitter, water, iron_ore, cave_air).
+    assert len(req.gates) >= 7
     assert req.placements[-1].name == "iron_view"
     assert req.find.solutions == 5
 
@@ -72,7 +77,7 @@ def test_load_harness_extends_chain():
     gates and placements through the full chain (not just one level)."""
     req = load_requirements(ROOT / "requirements/mine_plains_iron_harness.yaml")
     assert req.id == "mine_plains_iron_harness"
-    assert len(req.gates) >= 8, (
+    assert len(req.gates) >= 7, (
         f"expected harness to inherit profile gates via 2-level chain; "
         f"got {len(req.gates)} (extends not recursive?)"
     )

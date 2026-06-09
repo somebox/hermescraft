@@ -161,6 +161,21 @@ def resolve_placements(
             resolved[spec.name] = [px + ox, py + oy, pz + oz]
             continue
 
+        if spec.method == "ground_offset_from":
+            parent = spec.offset_from or ""
+            if parent not in resolved:
+                errors.append(f"placement {spec.name} unreachable")
+                continue
+            ox, _oy, oz = spec.offset or (0, 0, 0)
+            px, _, pz = resolved[parent]
+            tx, tz = px + ox, pz + oz
+            feet_y = _find_surface_y(client, world, tx, tz)
+            if feet_y is None or not _is_standable(client, world, tx, feet_y, tz, radius=1):
+                errors.append(f"placement {spec.name} unreachable")
+                continue
+            resolved[spec.name] = [tx, feet_y, tz]
+            continue
+
         if spec.method == "flat_patch_center":
             cols = [c for c in metrics.columns if c.surface_y is not None]
             if not cols:
@@ -168,11 +183,19 @@ def resolve_placements(
                 continue
             cx = int(sum(c.x for c in cols) / len(cols))
             cz = int(sum(c.z for c in cols) / len(cols))
-            sy = _find_surface_y(client, world, cx, cz)
-            if sy is None:
+            placed: list[int] | None = None
+            for dx, dz in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (2, 0), (-2, 0)):
+                tx, tz = cx + dx, cz + dz
+                sy = _find_surface_y(client, world, tx, tz)
+                if sy is None:
+                    continue
+                if _is_standable(client, world, tx, sy, tz, radius=1):
+                    placed = [tx, sy, tz]
+                    break
+            if placed is None:
                 errors.append(f"placement {spec.name} unreachable")
                 continue
-            resolved[spec.name] = [cx, sy, cz]
+            resolved[spec.name] = placed
             continue
 
         if spec.method != "random_safe":
