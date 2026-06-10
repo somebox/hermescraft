@@ -2,7 +2,7 @@ import { Vec3 } from 'vec3';
 import { columnTopSolid } from '../../runtime/dig-tools.js';
 import { standabilityReason, findClosestStandable } from '../_nav-helpers.js';
 import { AIR_NAMES } from '../_block-sets.js';
-import { withYBoth, parseYInput } from '../../runtime/coordinates.js';
+import { withYBoth, parseYInput, surfaceFromBlock } from '../../runtime/coordinates.js';
 
 export function createRegionQueries({ ensureBot, posObj, goals }) {
   return {
@@ -24,9 +24,9 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
         const iz = cz + dz;
         const col = columnTopSolid(b, ix, iz, { excludeFoliage });
         if (!col) continue;
-        columns.push({ x: ix, z: iz, topY: col.topY, blockName: col.blockName });
-        if (col.topY > maxTopY) {
-          maxTopY = col.topY;
+        columns.push({ x: ix, z: iz, topY: col.block_y, blockName: col.blockName });
+        if (col.block_y > maxTopY) {
+          maxTopY = col.block_y;
           maxBlock = col.blockName;
           maxAt = { x: ix, z: iz };
         }
@@ -49,7 +49,7 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
     //   block_y = topmost solid block's Y
     //   surface_y = where a bot stands on top (= block_y + 1)
     // `feetYHint` kept as a back-compat alias for one release.
-    const surface_y = maxTopY + 1;
+    const surface_y = surfaceFromBlock(maxTopY);
     return {
       result: `Top solid block_y=${maxTopY} (${maxBlock}) at ${maxAt.x},${maxAt.z}; surface_y=${surface_y}${r ? ` (max over radius ${r})` : ''}`,
       block_y: maxTopY,
@@ -66,7 +66,7 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
       ...(r > 0 && full ? {
         columns: columns.map((c) => ({
           x: c.x, z: c.z,
-          block_y: c.topY, surface_y: c.topY + 1,
+          block_y: c.topY, surface_y: surfaceFromBlock(c.topY),
           block_name: c.blockName,
           topY: c.topY, blockName: c.blockName,  // legacy
         })),
@@ -149,8 +149,8 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
         }
         samples.push({
           x, z,
-          block_y: col.topY,
-          surface_y: col.topY + 1,
+          block_y: col.block_y,
+          surface_y: surfaceFromBlock(col.block_y),
           block_name: col.blockName,
         });
       }
@@ -226,11 +226,50 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
     const target_standable = target_reason === 'ok';
     const best = findClosestStandable(b, ix, iy, iz, maxScan);
 
+    // Honest reachability: standability is geometry-only and lied to agents
+    // (proc-nav-1781014144 — confident retries against unreachable targets).
+    // Run the executor's own pathfinder with NO movement (getPathTo, same
+    // precedent as move.js door precheck) against the standable cell.
+    const pathTarget = target_standable ? { x: ix, y: iy, z: iz } : best;
+    let path = null;
+    if (pathTarget) {
+      try {
+        const movements = b.pathfinder?.movements;
+        if (movements && typeof b.pathfinder?.getPathTo === 'function') {
+          const dist = b.entity.position.distanceTo(
+            new Vec3(pathTarget.x + 0.5, pathTarget.y, pathTarget.z + 0.5),
+          );
+          // Think budget scales with distance; clamped so the probe stays
+          // well inside the CLI's 25s ACTION deadline.
+          const budgetMs = Math.min(3000, Math.max(1000, Math.round(dist * 40)));
+          const goal = new goals.GoalNear(pathTarget.x, pathTarget.y, pathTarget.z, 1);
+          const r = b.pathfinder.getPathTo(movements, goal, budgetMs);
+          const status = r?.status || 'unknown';
+          path = {
+            exists: status === 'success',
+            approximate: status === 'partial' || status === 'timeout',
+            length: Array.isArray(r?.path) ? r.path.length : null,
+            status,
+            checked_cell: { x: pathTarget.x, y: pathTarget.y, z: pathTarget.z },
+          };
+        }
+      } catch {
+        path = null; // probe never blocks the standability answer
+      }
+    }
+
+    const pathClause = (() => {
+      if (!path) return '';
+      if (path.exists) return ` Path found from your position (${path.length} blocks).`;
+      if (path.approximate) return ` Path check inconclusive (pathfinder hit its ${path.status} budget) — may still be reachable.`;
+      return ' NO path found from your position — moving there will fail; clear a route or pick another target.';
+    })();
+
     let resultMsg;
     if (target_standable) {
-      resultMsg = `Cell ${ix},${iy},${iz} is standable.`;
+      resultMsg = `Cell ${ix},${iy},${iz} is standable.${pathClause}`;
     } else if (best) {
-      resultMsg = `Cell ${ix},${iy},${iz} is NOT standable (${target_reason}). Closest standable cell: ${best.x},${best.y},${best.z} (distance ${best.distance}).`;
+      resultMsg = `Cell ${ix},${iy},${iz} is NOT standable (${target_reason}). Closest standable cell: ${best.x},${best.y},${best.z} (distance ${best.distance}).${pathClause}`;
     } else {
       resultMsg = `Cell ${ix},${iy},${iz} is NOT standable (${target_reason}), and no standable cell within range ${maxScan}.`;
     }
@@ -244,6 +283,7 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
         best_stand: best
           ? withYBoth({ x: best.x, y: best.y, z: best.z, distance: best.distance }, best.y)
           : null,
+        path,
         bot_position: posObj(b.entity.position),
         scan_range: maxScan,
       },

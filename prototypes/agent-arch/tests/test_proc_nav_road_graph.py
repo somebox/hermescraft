@@ -280,6 +280,16 @@ def test_clear_cards_use_new_road_primitives():
         assert "mc clear_strip" in body, (
             f"pn-clear-{n} must instruct mc clear_strip (the new tree+headroom verb)"
         )
+        # Y-vocabulary contract (surface-y migration phase 1): the bed Y is a
+        # block_y and must be passed as y=, never surface_y= (clear_strip
+        # rejects surface_y while its semantics migrate to canonical feet).
+        assert "y=<target_y>" in body, (
+            f"pn-clear-{n} must pass the bed as y=<target_y> (block_y)"
+        )
+        assert "surface_y=<target_y>" not in body, (
+            f"pn-clear-{n} must NOT pass surface_y= to clear_strip — the param "
+            f"is rejected during the Y-semantics migration"
+        )
         assert "road_mode=true" in body, (
             f"pn-clear-{n} must set road_mode=true so wood is cleared, not preserved"
         )

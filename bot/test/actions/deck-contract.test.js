@@ -2,7 +2,7 @@
  * deck — BFS edge-inward bridge primitive.
  *
  * Covers:
- *  - input validation (missing surface_y, missing block, oversize)
+ *  - input validation (missing y, missing block, oversize)
  *  - already-solid short-circuit (no placeBlock calls)
  *  - dry_run BFS planning (would_place_order, unanchored)
  *  - tier_4 cells preserved
@@ -68,24 +68,38 @@ function makePart(bot) {
   });
 }
 
-test('deck: missing surface_y → INVALID_COORD', async () => {
+test('deck: missing y → INVALID_COORD', async () => {
   const { bot } = makeBot({ terrain: new Map() });
   const part = makePart(bot);
   const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 2, block: 'cobblestone' });
-  assertFailure(r, { code: 'INVALID_COORD', messageIncludes: 'surface_y', retrySafe: false });
+  assertFailure(r, { code: 'INVALID_COORD', messageIncludes: 'y', retrySafe: false });
+});
+
+test('deck: surface_y is rejected during the Y-semantics migration (phase 1)', async () => {
+  // surface_y historically meant the DECK block Y here, clashing with the
+  // canonical vocabulary (feet = block_y + 1). Phase 1 rejects it loudly so
+  // no caller silently builds off-by-one; phase 2 reintroduces it as feet.
+  const { bot } = makeBot({ terrain: new Map() });
+  const part = makePart(bot);
+  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, block: 'cobblestone' });
+  assertFailure(r, {
+    code: 'INVALID_COORD',
+    messageIncludes: ['surface_y', 'y='],
+    retrySafe: false,
+  });
 });
 
 test('deck: missing block → INVALID_VALUE', async () => {
   const { bot } = makeBot({ terrain: new Map() });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78 });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 2, y: 78 });
   assertFailure(r, { code: 'INVALID_VALUE', messageIncludes: 'block', retrySafe: false });
 });
 
 test('deck: oversize → OUT_OF_RANGE', async () => {
   const { bot } = makeBot({ terrain: new Map() });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 31, z2: 31, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 31, z2: 31, y: 78, block: 'cobblestone' });
   assertFailure(r, {
     code: 'OUT_OF_RANGE',
     messageIncludes: 'exceeds',
@@ -102,7 +116,7 @@ test('deck: all cells already solid → placed=0, no placeBlock calls', async ()
   }
   const { bot, placeCalls } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 1, z2: 1, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 1, z2: 1, y: 78, block: 'cobblestone' });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.placed, 0);
@@ -119,7 +133,7 @@ test('deck: tier_4 cell at deck Y → counted as tier4_skipped, not placed', asy
   terrain.set(`-1,78,0`, 'stone'); // bank at deck Y
   const { bot } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 0, z2: 0, y: 78, block: 'cobblestone' });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.tier4_skipped, 1);
@@ -135,7 +149,7 @@ test('deck: dry_run reports BFS placement order + unanchored counts', async () =
   terrain.set(`5,78,0`, 'grass_block');
   const { bot, placeCalls } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 4, z2: 0, surface_y: 78, block: 'cobblestone', dry_run: true });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 4, z2: 0, y: 78, block: 'cobblestone', dry_run: true });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.mode, 'dry_run');
@@ -158,7 +172,7 @@ test('deck: live 1×5 bridge between banks — places 5 cells in BFS order, each
   terrain.set(`5,78,0`, 'grass_block');
   const { bot, placeCalls } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 4, z2: 0, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 4, z2: 0, y: 78, block: 'cobblestone' });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.placed, 5);
@@ -194,7 +208,7 @@ test('deck: live 3×3 deck over a ravine (with deeper banks at +1 below)', async
   // Interior 3x3 cells (0..2, 0..2) are pure air at sy.
   const { bot, placeCalls } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 2, y: 78, block: 'cobblestone' });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.placed, 9);
@@ -208,7 +222,7 @@ test('deck: cell with NO rim anchor returns as unanchored (no placement attempte
   // Should be reported as unanchored.
   const { bot, placeCalls } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 0, z2: 0, y: 78, block: 'cobblestone' });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.placed, 0);
@@ -223,7 +237,7 @@ test('deck: deck cell sitting on a column anchors via bottom face (placement on 
   terrain.set(`0,77,0`, 'stone');
   const { bot, placeCalls } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 0, z2: 0, y: 78, block: 'cobblestone' });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.placed, 1);
@@ -250,7 +264,7 @@ test('deck: MISSING_INVENTORY when block runs out mid-bridge', async () => {
     inventory: [], // no cobblestone
   });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 4, z2: 0, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 4, z2: 0, y: 78, block: 'cobblestone' });
   assertFailure(r, {
     code: 'MISSING_INVENTORY',
     messageIncludes: 'cobblestone',
@@ -267,7 +281,7 @@ test('deck: partial — one bank only, interior reaches but two cells isolated o
   terrain.set(`-1,78,0`, 'grass_block');
   const { bot, placeCalls } = makeBot({ terrain });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 0, surface_y: 78, block: 'cobblestone' });
+  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 0, y: 78, block: 'cobblestone' });
   assertContract(r);
   assert.equal(r.data.placed, 3);
   assert.equal(r.data.unanchored.length, 0);

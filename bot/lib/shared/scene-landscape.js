@@ -3,6 +3,7 @@
  */
 
 import { Vec3 } from 'vec3';
+import { surfaceFromBlock } from '../runtime/coordinates.js';
 
 const CARDINALS = [
   { key: 'N', label: 'north', dx: 0, dz: -1 },
@@ -21,8 +22,8 @@ export function yBandLabel(y) {
 }
 
 // Canopy guard for Phase 9 PR-E terrain classification: leaves/logs above
-// the bot's head are not "the surface" — they're tree canopy. Without
-// this guard, surfaceYAt picks the leaf Y as surface, classifyTerrain
+// the bot's head are not "the ground" — they're tree canopy. Without
+// this guard, groundBlockYAt picks the leaf Y as ground, classifyTerrain
 // reads it as 'mound' or 'on_structure', and Steward gets wrong advice.
 const CANOPY_BLOCK_RE = /(_leaves|_log|vine|cocoa|bamboo)$/;
 /** Actionable sky band above feet — distant canopy (e.g. Y=95 over feet≈79) must not force `unknown`. */
@@ -43,7 +44,16 @@ function isPlacedStructureBlock(name) {
   return !!name && PLACED_BLOCK_RE.test(name);
 }
 
-function surfaceYAt(bot, wx, wz, opts = {}) {
+/**
+ * Topmost solid GROUND BLOCK of a column (block_y in the canonical
+ * vocabulary — a bot's feet land at surfaceFromBlock(result)). Skips air,
+ * fluids, canopy (leaves/logs, with the canopyDetected band flag), and
+ * non-solid decorations (grass plants, flowers, snow layers): without the
+ * decoration skip, the classification of flat ground used to depend on
+ * ground cover — a grass plant in the feet cell read as "the surface"
+ * while bare ground scanned through to the supporting block one below.
+ */
+function groundBlockYAt(bot, wx, wz, opts = {}) {
   const bx = Math.floor(wx);
   const bz = Math.floor(wz);
   const feetY = Math.floor(opts.feetY ?? bot.entity.position.y);
@@ -55,19 +65,23 @@ function surfaceYAt(bot, wx, wz, opts = {}) {
     const n = block.name;
     if (n === 'air' || n === 'cave_air' || n === 'void_air') continue;
     if (n === 'water' || n === 'flowing_water') continue;
+    if (n === 'snow' || n === 'snow_layer') continue;
     if (isCanopyBlock(n)) {
       if (isCanopyBandDy(feetY, dy)) {
         canopyDetected = true;
       }
       continue;
     }
+    // Passable decorations (short_grass, ferns, flowers…) are cover, not
+    // ground. Mocks without boundingBox fall through as solid.
+    if (block.boundingBox === 'empty') continue;
     if (opts.returnDetail) return { y: dy, canopyDetected };
     return dy;
   }
   return opts.returnDetail ? { y: null, canopyDetected } : null;
 }
 
-export { surfaceYAt as _surfaceYAtForTests };
+export { groundBlockYAt as _groundBlockYAtForTests };
 
 /**
  * Δ surface Y at radius vs feet (integer blocks, signed).
@@ -78,8 +92,10 @@ export function cardinalReliefDeltas(bot, radius = 16) {
   const feetY = Math.floor(pos.y);
   const out = { N: 0, E: 0, S: 0, W: 0 };
   for (const c of CARDINALS) {
-    const sy = surfaceYAt(bot, pos.x + c.dx * radius, pos.z + c.dz * radius);
-    out[c.key] = sy == null ? 0 : sy - feetY;
+    const gy = groundBlockYAt(bot, pos.x + c.dx * radius, pos.z + c.dz * radius);
+    // Compare feet plane to feet plane: where the bot's feet WOULD be on
+    // that column vs where they are now. 0 = same walking level.
+    out[c.key] = gy == null ? 0 : surfaceFromBlock(gy) - feetY;
   }
   const formatted = CARDINALS.map((c) => `${c.key}${out[c.key] >= 0 ? '+' : ''}${out[c.key]}`).join(' ');
   return { ...out, formatted };
@@ -182,14 +198,23 @@ export function formatLandscapeClause(parts) {
  * trivially testable without a bot fixture. Caller (`buildLandscapeContext`)
  * fills inputs from the live world.
  *
+ * BOTH Y inputs are feet-plane values: `feetY` is the cell the bot's feet
+ * occupy (Math.floor(pos.y)); `surfaceY` is the cell its feet WOULD occupy
+ * standing on the local ground column (= surfaceFromBlock(ground block_y)).
+ * Standing normally on the local ground ⇒ feet_vs_local_ground = 0.
+ *
  * Labels (conservative; classifier returns 'unknown' when ambiguous):
  *   - flat:          max |cardinal delta| ≤ 1 AND feet_vs_local_ground == 0
  *   - slope_<N/E/S/W>: monotone delta ≥ 2 in one cardinal, |opposite| ≤ 1
  *   - depression_1:  feet_vs_local_ground == -1 (single-block hole)
  *   - mound_1:       feet_vs_local_ground == +1 AND feet block is natural
- *   - on_structure:  feet_vs_local_ground > 0 AND feet block is placed
+ *                    (e.g. standing on a log/canopy block the ground scan
+ *                    skips — the scan otherwise finds the standing block)
+ *   - on_structure:  feet_vs_local_ground >= 0 AND feet block is placed
  *                    material (cobble, planks, etc.) — "standing on pad"
  *   - underground:   feet_vs_local_ground ≤ -3 AND no cardinal egress within 2
+ *                    (negative fvlg = the column scan found terrain ABOVE
+ *                    the bot — a cave roof / overhang)
  *   - cliff_above:   one cardinal jumps ≥ 4 up, none drops
  *   - cliff_below:   one cardinal drops ≤ -4, none rises
  *   - unknown:       canopy detected, no surface found, or ambiguous shape
@@ -213,7 +238,9 @@ export function classifyTerrain({ deltas, feetY, surfaceY, canopyDetected, feetB
   const dW = deltas?.W || 0;
   const absMax = Math.max(Math.abs(dN), Math.abs(dE), Math.abs(dS), Math.abs(dW));
 
-  if (feet_vs_local_ground > 0 && isPlacedStructureBlock(feetBlockName)) {
+  // >= 0: standing directly on a placed block is the common case (the
+  // ground scan finds the placed block itself, so fvlg is 0, not +1).
+  if (feet_vs_local_ground >= 0 && isPlacedStructureBlock(feetBlockName)) {
     return { terrain_kind: 'on_structure', feet_vs_local_ground };
   }
 
@@ -275,17 +302,20 @@ export function pickSuggestedCardinalLabel(relief) {
 export function buildLandscapeContext(bot) {
   const pos = bot.entity.position;
   const feetY = Math.floor(pos.y);
-  // Phase 9 PR-E: get the local-column surface with canopy detection, plus
+  // Phase 9 PR-E: get the local-column ground with canopy detection, plus
   // the feet-block name for on_structure heuristic.
-  const localSurface = surfaceYAt(bot, pos.x, pos.z, { feetY, returnDetail: true });
+  const localGround = groundBlockYAt(bot, pos.x, pos.z, { feetY, returnDetail: true });
   const feetBlock = bot.blockAt(new Vec3(Math.floor(pos.x), feetY - 1, Math.floor(pos.z)));
   const relief = cardinalReliefDeltas(bot, 16);
   const trees = treeClusterSummary(bot, 12);
   const { terrain_kind, feet_vs_local_ground } = classifyTerrain({
     deltas: relief,
     feetY,
-    surfaceY: localSurface?.y ?? null,
-    canopyDetected: !!localSurface?.canopyDetected,
+    // classifyTerrain compares feet plane to feet plane: convert the ground
+    // BLOCK to the feet cell a bot standing on it would occupy. Standing
+    // normally on the local ground ⇒ feet_vs_local_ground = 0 ⇒ flat.
+    surfaceY: localGround?.y != null ? surfaceFromBlock(localGround.y) : null,
+    canopyDetected: !!localGround?.canopyDetected,
     feetBlockName: feetBlock?.name || null,
   });
   return {

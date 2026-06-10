@@ -1,7 +1,7 @@
 /**
  * Coordinate vocabulary helpers — block_y / surface_y.
  *
- * Convention: see docs/conventions/coordinates.md.
+ * Convention: see docs/reference/world-coordinates.md.
  *   block_y   = Y of a solid block (block occupies [block_y, block_y+1])
  *   surface_y = Y where a bot stands on top of that block (= block_y + 1)
  *

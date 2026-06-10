@@ -2,8 +2,9 @@ import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { isStructural, tierOf } from '../../runtime/materials.js';
 import { recordRecentPlace, equipForDig } from '../../runtime/dig-tools.js';
+import { withYBoth, surfaceFromBlock } from '../../runtime/coordinates.js';
 import { shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
-import { pathfindGotoNear, ACTION_CAPS_MS } from '../_helpers.js';
+import { pathfindGotoNear, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 
 const { goals } = pathfinderPkg;
 
@@ -121,6 +122,8 @@ function collectConnectedLeaves(b, logs, radius, cap) {
  */
 export function createBuildingRoadPart(deps) {
   const { ctx, config, ensureBot, getActions } = deps;
+  // Wallclock caps — injectable for tests (deps.capsMs), default shared caps.
+  const capsMs = deps.capsMs || ACTION_CAPS_MS;
 
   function parseFlag(v) {
     return v === true || v === 'true' || v === '1' || v === 1;
@@ -132,17 +135,26 @@ export function createBuildingRoadPart(deps) {
 
   return {
     /**
-     * Clear an axis-aligned corridor strip above a road surface.
+     * Clear an axis-aligned corridor strip above a road bed.
      *
-     * Surveys every cell in [x1..x2] × [surface_y+1..surface_y+height] × [z1..z2]
-     * and removes any non-air block in that volume. Below surface_y is never
-     * touched. Auto-batches the work into ≤32-cell dig_area calls so the
-     * caller is not exposed to the per-call cap.
+     * Surveys every cell in [x1..x2] × [y+1..y+height] × [z1..z2] and
+     * removes any non-air block in that volume. The road-bed block (at y)
+     * and everything below it are never touched. Auto-batches the work into
+     * ≤32-cell dig_area calls so the caller is not exposed to the per-call
+     * cap.
+     *
+     * Y MIGRATION (phase 1): `surface_y` is REJECTED with INVALID_COORD —
+     * its historical meaning here ("ground block Y") clashed with the
+     * canonical vocabulary (surface_y = feet = block_y + 1, see
+     * docs/reference/world-coordinates.md). Pass `y` (= block_y of the road
+     * bed) instead; phase 2 reintroduces `surface_y` as true feet via
+     * parseYInput.
      *
      * Args:
      *   x1, z1, x2, z2  — rectangle bounds (inclusive)
-     *   surface_y       — Y of the road surface. Volume cleared is the H cells
-     *                     ABOVE this Y (block_y = surface_y + 1 .. surface_y + H).
+     *   y               — block_y of the road bed. Volume cleared is the H
+     *                     cells ABOVE this block (y+1 .. y+H — the feet +
+     *                     head cells of a bot walking on the bed).
      *   height          — H, the headroom to clear. Default 4 (walkable).
      *                     Use 8 to fully clear small trees / pillar tops.
      *   road_mode       — true: dig wood (oak_log, planks, fences, stairs…)
@@ -155,7 +167,10 @@ export function createBuildingRoadPart(deps) {
      * Returns:
      *   { ok: true, data: { dug, skipped, errors, batches, columns_n,
      *       cells_total, would_dig, removed_by_block, skipped_tier4,
-     *       skipped_structural, bounds, surface_y, height, road_mode, mode } }
+     *       skipped_structural, bounds, block_y, surface_y, height,
+     *       road_mode, mode } }
+     *   block_y/surface_y are the canonical pair for the road bed
+     *   (surface_y = block_y + 1 = where a bot stands on the bed).
      *
      * Skip semantics:
      *   - tier_4 (diamond_block, beacon, dragon_egg…) is ALWAYS skipped.
@@ -166,6 +181,7 @@ export function createBuildingRoadPart(deps) {
      */
     async clear_strip({
       x1, z1, x2, z2,
+      y,
       surface_y,
       height,
       road_mode,
@@ -173,7 +189,18 @@ export function createBuildingRoadPart(deps) {
       max_cells,
     }) {
       const b = ensureBot();
-      for (const [k, v] of Object.entries({ x1, z1, x2, z2, surface_y })) {
+      if (surface_y !== undefined && surface_y !== null) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_COORD',
+            message: `mc clear_strip: surface_y is temporarily rejected — its meaning here is migrating from "ground block Y" to the canonical feet Y (= block_y + 1). Pass y=<block_y of the road bed> instead (terrain_top block_y / corridor_sample elevation_median).`,
+            next_action_hint: 'Re-issue with y=<ground block Y>; surface_y returns next release meaning feet.',
+            retry_safe: false,
+          },
+        };
+      }
+      for (const [k, v] of Object.entries({ x1, z1, x2, z2, y })) {
         if (!Number.isFinite(Number(v))) {
           return {
             ok: false,
@@ -189,7 +216,7 @@ export function createBuildingRoadPart(deps) {
       const maxX = Math.max(Number(x1), Number(x2));
       const minZ = Math.min(Number(z1), Number(z2));
       const maxZ = Math.max(Number(z1), Number(z2));
-      const sy = Math.floor(Number(surface_y));
+      const sy = Math.floor(Number(y)); // block_y of the road bed
       const H = Math.max(1, Math.min(parseInt(String(height ?? 4), 10) || 4, 16));
       const cap = Math.max(32, Math.min(parseInt(String(max_cells ?? 1024), 10) || 1024, 4096));
       const isRoad = parseFlag(road_mode);
@@ -210,7 +237,7 @@ export function createBuildingRoadPart(deps) {
         };
       }
 
-      const y1 = sy + 1;
+      const y1 = surfaceFromBlock(sy); // first cleared cell = feet cell on the bed
       const y2 = sy + H;
 
       // Phase 1 — survey every cell in the volume. We do this whether dry-run
@@ -261,7 +288,7 @@ export function createBuildingRoadPart(deps) {
         skipped_tier4: skippedTier4,
         skipped_structural: skippedStructural,
         bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y1, y2 },
-        surface_y: sy,
+        ...withYBoth({}, sy),
         height: H,
         road_mode: isRoad,
       };
@@ -270,7 +297,7 @@ export function createBuildingRoadPart(deps) {
         return {
           ok: true,
           data: { ...baseData, mode: 'dry_run' },
-          result: `clear_strip ${w}×${l}×${H} surface_y=${sy} dry_run: would dig ${wouldDig}/${presentNonAir} cells${skippedTier4 ? `, ${skippedTier4} tier_4 protected` : ''}${skippedStructural ? `, ${skippedStructural} structural preserved (pass road_mode=true to cut wood)` : ''}`,
+          result: `clear_strip ${w}×${l}×${H} y=${sy} dry_run: would dig ${wouldDig}/${presentNonAir} cells${skippedTier4 ? `, ${skippedTier4} tier_4 protected` : ''}${skippedStructural ? `, ${skippedStructural} structural preserved (pass road_mode=true to cut wood)` : ''}`,
         };
       }
 
@@ -285,7 +312,7 @@ export function createBuildingRoadPart(deps) {
             dug: 0, skipped: presentNonAir, errors: 0, batches: 0,
             wood_blocks_removed: 0, leaf_blocks_removed: 0,
           },
-          result: `clear_strip ${w}×${l}×${H} surface_y=${sy}: already clear (${presentNonAir} cells skipped${skippedStructural ? `, ${skippedStructural} structural preserved` : ''})`,
+          result: `clear_strip ${w}×${l}×${H} y=${sy}: already clear (${presentNonAir} cells skipped${skippedStructural ? `, ${skippedStructural} structural preserved` : ''})`,
         };
       }
 
@@ -328,6 +355,18 @@ export function createBuildingRoadPart(deps) {
       const errorHints = []; // first ≤3 dig_area error strings we see
       const pickup = handlers.pickup;
 
+      const capMs = Number(capsMs.clear_strip) || ACTION_CAPS_MS.clear_strip;
+      const deadline = Date.now() + capMs;
+      const partialTimeout = (extra = {}) => timeoutError('clear_strip', capMs, {
+        dug,
+        skipped,
+        errors,
+        batches,
+        would_dig: wouldDig,
+        bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y1, y2 },
+        ...extra,
+      }, `Partial completion: dug ${dug}/${wouldDig} across ${batches} batches. Re-run the same mc clear_strip command — already-clear cells are skipped quickly.`);
+
       // Build X-chunk starts once: minX, minX+chunkW, minX+2*chunkW, ...
       const xChunkStarts = [];
       for (let cx1 = minX; cx1 <= maxX; cx1 += chunkW) xChunkStarts.push(cx1);
@@ -346,6 +385,9 @@ export function createBuildingRoadPart(deps) {
           const zOrder = xi % 2 === 0 ? zChunkStarts : [...zChunkStarts].reverse();
           for (const cz1 of zOrder) {
             const cz2 = Math.min(cz1 + chunkL - 1, maxZ);
+            if (Date.now() > deadline) {
+              return partialTimeout({ next_batch: { x1: cx1, y1: y, z1: cz1, x2: cx2, y2: y, z2: cz2 } });
+            }
             // Pre-position to batch centroid (one cell above the deck Y so
             // the bot stands on the surface, not the dig layer). Skip if
             // already in reach. pathfindGotoNear is best-effort — if it
@@ -438,7 +480,16 @@ export function createBuildingRoadPart(deps) {
         ];
         // Dig top-down (debris-safe).
         extras.sort((a, c) => c.y - a.y);
-        for (const cell of extras) {
+        for (let ei = 0; ei < extras.length; ei++) {
+          const cell = extras[ei];
+          if (Date.now() > deadline) {
+            return partialTimeout({
+              phase: 'tree_extension',
+              extra_logs_removed: extraLogsRemoved,
+              extra_leaves_removed: extraLeavesRemoved,
+              extension_cells_remaining: extras.length - ei,
+            });
+          }
           // eslint-disable-next-line no-await-in-loop
           const res = await digArea({
             x1: cell.x, y1: cell.y, z1: cell.z,
@@ -493,14 +544,14 @@ export function createBuildingRoadPart(deps) {
       return {
         ok: true,
         data,
-        result: `clear_strip ${w}×${l}×${H} surface_y=${sy}: dug ${dug}${extraLogsRemoved + extraLeavesRemoved > 0 ? ` +${extraLogsRemoved + extraLeavesRemoved} canopy ext` : ''}, skipped ${skipped}${errors ? `, ${errors} batch errors` : ''}, ${batches} batches${isRoad ? ' [road_mode]' : ''}${woodBlocksRemoved ? ` wood=${woodBlocksRemoved}` : ''}${leafBlocksRemoved ? ` leaves=${leafBlocksRemoved}` : ''}${errorHints.length ? ` — first hint: ${errorHints[0]}` : ''}`,
+        result: `clear_strip ${w}×${l}×${H} y=${sy}: dug ${dug}${extraLogsRemoved + extraLeavesRemoved > 0 ? ` +${extraLogsRemoved + extraLeavesRemoved} canopy ext` : ''}, skipped ${skipped}${errors ? `, ${errors} batch errors` : ''}, ${batches} batches${isRoad ? ' [road_mode]' : ''}${woodBlocksRemoved ? ` wood=${woodBlocksRemoved}` : ''}${leafBlocksRemoved ? ` leaves=${leafBlocksRemoved}` : ''}${errorHints.length ? ` — first hint: ${errorHints[0]}` : ''}`,
       };
     },
 
     /**
      * Build a flat horizontal deck across an air-gap span.
      *
-     * Places `block` at every air cell in [x1..x2] × {surface_y} × [z1..z2],
+     * Places `block` at every air cell in [x1..x2] × {y} × [z1..z2],
      * using a **BFS edge-inward** order so each placement anchors against a
      * cell that's already solid — either pre-existing terrain on the rim,
      * or a deck cell placed earlier in this same call. This is the standard
@@ -508,9 +559,17 @@ export function createBuildingRoadPart(deps) {
      * open gap fails at interior cells with `no_adjacent_face` because all
      * neighbors are air at start.
      *
+     * Y MIGRATION (phase 1): `surface_y` is REJECTED with INVALID_COORD —
+     * its historical meaning here ("the deck block's Y") clashed with the
+     * canonical vocabulary (surface_y = feet = block_y + 1, see
+     * docs/reference/world-coordinates.md). Pass `y` (= block_y of the deck
+     * layer) instead; phase 2 reintroduces `surface_y` as true feet via
+     * parseYInput. Bots walk ON the deck at y + 1.
+     *
      * Args:
      *   x1, z1, x2, z2  — rectangle bounds (inclusive)
-     *   surface_y       — Y of the deck (single horizontal layer)
+     *   y               — block_y of the deck (single horizontal layer);
+     *                     match the road bed's block_y so the deck is flush
      *   block           — fill block name (e.g. 'cobblestone'; doctrine
      *                     prefers cobblestone for spans over water/ravines)
      *   max_cells       — soft cap on rectangle size. Default 256.
@@ -520,8 +579,10 @@ export function createBuildingRoadPart(deps) {
      *
      * Returns:
      *   { ok: true, data: { mode, placed, failed, unanchored,
-     *       already_solid, tier4_skipped, errors, bounds, surface_y, block,
-     *       would_place?, would_place_order? } }
+     *       already_solid, tier4_skipped, errors, bounds, block_y,
+     *       surface_y, block, would_place?, would_place_order? } }
+     *   block_y/surface_y are the canonical pair for the deck layer
+     *   (surface_y = block_y + 1 = where a bot walks on the deck).
      *
      * Note: `ok` stays `true` even on partial completion (some cells could
      * not be anchored). Inspect `data.unanchored.length` + `data.failed` to
@@ -530,13 +591,25 @@ export function createBuildingRoadPart(deps) {
      */
     async deck({
       x1, z1, x2, z2,
+      y,
       surface_y,
       block,
       max_cells,
       dry_run,
     }) {
       const b = ensureBot();
-      for (const [k, v] of Object.entries({ x1, z1, x2, z2, surface_y })) {
+      if (surface_y !== undefined && surface_y !== null) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_COORD',
+            message: `mc deck: surface_y is temporarily rejected — its meaning here is migrating from "deck block Y" to the canonical feet Y (= block_y + 1). Pass y=<block_y of the deck layer> instead.`,
+            next_action_hint: 'Re-issue with y=<deck block Y>; surface_y returns next release meaning feet.',
+            retry_safe: false,
+          },
+        };
+      }
+      for (const [k, v] of Object.entries({ x1, z1, x2, z2, y })) {
         if (!Number.isFinite(Number(v))) {
           return {
             ok: false,
@@ -562,7 +635,7 @@ export function createBuildingRoadPart(deps) {
       const maxX = Math.max(Number(x1), Number(x2));
       const minZ = Math.min(Number(z1), Number(z2));
       const maxZ = Math.max(Number(z1), Number(z2));
-      const sy = Math.floor(Number(surface_y));
+      const sy = Math.floor(Number(y)); // block_y of the deck layer
       const cap = Math.max(8, Math.min(parseInt(String(max_cells ?? 256), 10) || 256, 1024));
       const isDry = parseFlag(dry_run);
       const w = maxX - minX + 1;
@@ -633,7 +706,7 @@ export function createBuildingRoadPart(deps) {
         already_solid: alreadySolid,
         tier4_skipped: tier4Skipped,
         bounds: { x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: sy },
-        surface_y: sy,
+        ...withYBoth({}, sy),
         block,
       };
 
@@ -670,7 +743,7 @@ export function createBuildingRoadPart(deps) {
             would_place_order: order,
             unanchored,
           },
-          result: `deck ${w}×${l} surface_y=${sy} ${block} dry_run: would place ${order.length}/${airCells.size}${unanchored.length ? ` (${unanchored.length} unanchored — no path from rim)` : ''}${alreadySolid ? `, ${alreadySolid} already solid` : ''}${tier4Skipped ? `, ${tier4Skipped} tier_4 skipped` : ''}`,
+          result: `deck ${w}×${l} y=${sy} ${block} dry_run: would place ${order.length}/${airCells.size}${unanchored.length ? ` (${unanchored.length} unanchored — no path from rim)` : ''}${alreadySolid ? `, ${alreadySolid} already solid` : ''}${tier4Skipped ? `, ${tier4Skipped} tier_4 skipped` : ''}`,
         };
       }
 
@@ -795,7 +868,7 @@ export function createBuildingRoadPart(deps) {
           unanchored,
           errors: errors.slice(0, 5),
         },
-        result: `deck ${w}×${l} surface_y=${sy} ${block}: placed ${placed}/${airCells.size}${failed ? `, ${failed} failed` : ''}${unanchored.length ? `, ${unanchored.length} unanchored` : ''}`,
+        result: `deck ${w}×${l} y=${sy} ${block}: placed ${placed}/${airCells.size}${failed ? `, ${failed} failed` : ''}${unanchored.length ? `, ${unanchored.length} unanchored` : ''}`,
       };
     },
 

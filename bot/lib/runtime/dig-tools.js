@@ -761,10 +761,15 @@ function isFoliageName(name) {
 export const FOLIAGE_FILTER = { isFoliageName };
 
 /**
+ * Topmost solid block of a column. The returned Y is a block_y in the
+ * canonical vocabulary (docs/reference/world-coordinates.md); a bot's feet
+ * would land at surface_y = block_y + 1. `topY` is a legacy alias.
+ *
  * @param {any} b - mineflayer bot
  * @param {number} ix - column x
  * @param {number} iz - column z
  * @param {{ excludeFoliage?: boolean }} [opts]
+ * @returns {{ block_y: number, topY: number, blockName: string } | null}
  */
 export function columnTopSolid(b, ix, iz, opts = {}) {
   const lo = typeof b.game?.minY === 'number' ? b.game.minY : -64;
@@ -779,7 +784,7 @@ export function columnTopSolid(b, ix, iz, opts = {}) {
     if (DIG_PASSABLE_NAMES.has(block.name)) continue;
     if (DIG_FLUID_NAMES.has(block.name)) continue;
     if (skipFoliage && isFoliageName(block.name)) continue;
-    return { topY: y, blockName: block.name };
+    return { block_y: y, topY: y, blockName: block.name };
   }
   return null;
 }

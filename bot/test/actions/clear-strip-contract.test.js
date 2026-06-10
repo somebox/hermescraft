@@ -64,19 +64,43 @@ function makeRoadPart({ bot, digAreaCalls, digAreaImpl }) {
   });
 }
 
-test('clear_strip: missing surface_y → INVALID_COORD', async () => {
+test('clear_strip: missing y → INVALID_COORD', async () => {
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(), digAreaCalls: calls });
   const r = await part.clear_strip({ x1: 0, z1: 0, x2: 2, z2: 2 });
-  assertFailure(r, { code: 'INVALID_COORD', messageIncludes: 'surface_y', retrySafe: false });
+  assertFailure(r, { code: 'INVALID_COORD', messageIncludes: 'y', retrySafe: false });
   assert.equal(calls.length, 0);
+});
+
+test('clear_strip: surface_y is rejected during the Y-semantics migration (phase 1)', async () => {
+  // surface_y historically meant the BED block Y here, clashing with the
+  // canonical vocabulary (feet = block_y + 1). Phase 1 rejects it loudly so
+  // no caller silently builds off-by-one; phase 2 reintroduces it as feet.
+  const calls = [];
+  const part = makeRoadPart({ bot: makeBot(), digAreaCalls: calls });
+  const r = await part.clear_strip({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78 });
+  assertFailure(r, {
+    code: 'INVALID_COORD',
+    messageIncludes: ['surface_y', 'y='],
+    retrySafe: false,
+  });
+  assert.equal(calls.length, 0);
+});
+
+test('clear_strip: response carries the canonical block_y/surface_y pair for the bed', async () => {
+  const calls = [];
+  const part = makeRoadPart({ bot: makeBot(), digAreaCalls: calls });
+  const r = await part.clear_strip({ x1: 0, z1: 0, x2: 0, z2: 0, y: 78, dry_run: true });
+  assertContract(r);
+  assert.equal(r.data.block_y, 78);
+  assert.equal(r.data.surface_y, 79, 'surface_y in the RESPONSE is canonical feet (= block_y + 1)');
 });
 
 test('clear_strip: oversize volume → OUT_OF_RANGE', async () => {
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(), digAreaCalls: calls });
   // 33×33×4 = 4356 > 1024 default cap
-  const r = await part.clear_strip({ x1: 0, z1: 0, x2: 32, z2: 32, surface_y: 78, height: 4 });
+  const r = await part.clear_strip({ x1: 0, z1: 0, x2: 32, z2: 32, y: 78, height: 4 });
   assertFailure(r, {
     code: 'OUT_OF_RANGE',
     messageIncludes: 'exceeds',
@@ -89,7 +113,7 @@ test('clear_strip: oversize volume → OUT_OF_RANGE', async () => {
 test('clear_strip: empty corridor (all air) short-circuits with no dig_area calls', async () => {
   const calls = [];
   const part = makeRoadPart({ bot: makeBot({}), digAreaCalls: calls });
-  const r = await part.clear_strip({ x1: 0, z1: 0, x2: 2, z2: 11, surface_y: 78, height: 4 });
+  const r = await part.clear_strip({ x1: 0, z1: 0, x2: 2, z2: 11, y: 78, height: 4 });
   assertContract(r);
   assert.equal(r.ok, true);
   assert.equal(r.data.dug, 0);
@@ -102,7 +126,7 @@ test('clear_strip: empty corridor (all air) short-circuits with no dig_area call
 
 test('clear_strip: dry_run returns accounting without dig_area calls', async () => {
   const fixed = {};
-  // Put a 3×3 patch of grass at y=79 (just above surface_y=78)
+  // Put a 3×3 patch of grass at y=79 (just above the bed at y=78)
   for (let x = 0; x <= 2; x++) {
     for (let z = 0; z <= 2; z++) {
       fixed[`${x},79,${z}`] = 'grass_block';
@@ -111,7 +135,7 @@ test('clear_strip: dry_run returns accounting without dig_area calls', async () 
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, height: 4, dry_run: true,
+    x1: 0, z1: 0, x2: 2, z2: 2, y: 78, height: 4, dry_run: true,
   });
   assertContract(r);
   assert.equal(r.ok, true);
@@ -137,7 +161,7 @@ test('clear_strip: structural (oak_log) preserved by default, cleared in road_mo
     const calls = [];
     const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
     const r = await part.clear_strip({
-      x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, height: 4, dry_run: true,
+      x1: 0, z1: 0, x2: 2, z2: 2, y: 78, height: 4, dry_run: true,
     });
     assertContract(r);
     assert.equal(r.data.would_dig, 0);
@@ -149,7 +173,7 @@ test('clear_strip: structural (oak_log) preserved by default, cleared in road_mo
     const calls = [];
     const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
     const r = await part.clear_strip({
-      x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, height: 4, dry_run: true, road_mode: true,
+      x1: 0, z1: 0, x2: 2, z2: 2, y: 78, height: 4, dry_run: true, road_mode: true,
     });
     assertContract(r);
     assert.equal(r.data.would_dig, 4);
@@ -163,7 +187,7 @@ test('clear_strip: tier_4 (diamond_block) always skipped — even in road_mode',
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 4, dry_run: true, road_mode: true,
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 78, height: 4, dry_run: true, road_mode: true,
   });
   assertContract(r);
   assert.equal(r.data.would_dig, 0);
@@ -171,13 +195,13 @@ test('clear_strip: tier_4 (diamond_block) always skipped — even in road_mode',
   assert.equal(r.data.skipped_structural, 0);
 });
 
-test('clear_strip: surface_y itself is never touched', async () => {
-  // Put a block AT surface_y=78. It must be invisible to clear_strip.
+test('clear_strip: the road-bed block (y) itself is never touched', async () => {
+  // Put a block AT the bed y=78. It must be invisible to clear_strip.
   const fixed = { '0,78,0': 'stone', '0,79,0': 'grass_block' };
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 4, dry_run: true,
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 78, height: 4, dry_run: true,
   });
   assertContract(r);
   assert.equal(r.data.would_dig, 1); // only the grass_block at y=79
@@ -200,7 +224,7 @@ test('clear_strip: live path batches dig_area at ≤32 cells per call', async ()
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 2, z2: 11, surface_y: 78, height: 4,
+    x1: 0, z1: 0, x2: 2, z2: 11, y: 78, height: 4,
   });
   assertContract(r);
   assert.equal(r.ok, true);
@@ -230,7 +254,7 @@ test('clear_strip: live path propagates road_mode → force_structural on dig_ar
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 1, road_mode: true,
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 78, height: 1, road_mode: true,
   });
   assertContract(r);
   assert.equal(r.ok, true);
@@ -247,7 +271,7 @@ test('clear_strip: handlers.dig_area missing → WIRING error (covers integratio
     getActions: () => ({}), // no dig_area registered
   });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 1,
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 78, height: 1,
   });
   assertFailure(r, { code: 'WIRING', messageIncludes: 'dig_area', retrySafe: false });
 });
@@ -264,7 +288,7 @@ test('clear_strip: batches capped at 3x3 = 9 cells per dig_area call (bot reach)
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 5, z2: 5, surface_y: 78, height: 1,
+    x1: 0, z1: 0, x2: 5, z2: 5, y: 78, height: 1,
   });
   assertContract(r);
   assert.equal(r.ok, true);
@@ -286,7 +310,7 @@ test('clear_strip: batches snake across Z (alternate direction per X-chunk)', as
   }
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
-  await part.clear_strip({ x1: 0, z1: 0, x2: 5, z2: 5, surface_y: 78, height: 1 });
+  await part.clear_strip({ x1: 0, z1: 0, x2: 5, z2: 5, y: 78, height: 1 });
   assert.equal(calls.length, 4, 'expected 4 batches for 6×6 single layer');
   // Batches 0, 1 = X-chunk 0; batches 2, 3 = X-chunk 1
   assert.equal(calls[0].x1, 0); assert.equal(calls[0].z1, 0);
@@ -317,7 +341,7 @@ test('clear_strip: pickup is called per batch (drops stay near bot)', async () =
       pickup: async () => { pickupCalls++; return { ok: true }; },
     }),
   });
-  await part.clear_strip({ x1: 0, z1: 0, x2: 5, z2: 5, surface_y: 78, height: 1 });
+  await part.clear_strip({ x1: 0, z1: 0, x2: 5, z2: 5, y: 78, height: 1 });
   // 4 batches → 4 per-batch pickups + 1 final pickup = 5
   assert.equal(pickupCalls, calls.length + 1,
     `expected one pickup per batch plus one final; got ${pickupCalls} for ${calls.length} batches`);
@@ -351,7 +375,7 @@ test('clear_strip: surfaces first dig_area tool-needed hint via data.first_hints
     }),
   });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 1,
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 78, height: 1,
   });
   assertContract(r);
   assert.equal(r.ok, true);
@@ -369,7 +393,7 @@ test('clear_strip: surfaces first dig_area tool-needed hint via data.first_hints
 // ─────────────────────────────────────────────────────────────────────────
 
 test('clear_strip road_mode: trunk extending above the rectangle gets felled', async () => {
-  // Rectangle: x=0..0, z=0..0, surface_y=78, height=2 (covers y=79, y=80).
+  // Rectangle: x=0..0, z=0..0, bed y=78, height=2 (covers y=79, y=80).
   // Trunk: y=79..84 (6 logs, 4 above the rectangle).
   // Leaves: a small 3x3 crown at y=83 around the trunk.
   const fixed = {};
@@ -383,7 +407,7 @@ test('clear_strip road_mode: trunk extending above the rectangle gets felled', a
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 2, road_mode: true,
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 78, height: 2, road_mode: true,
   });
   assertContract(r);
   assert.equal(r.ok, true);
@@ -413,7 +437,7 @@ test('clear_strip road_mode=false: no canopy extension (preserves legacy semanti
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 0, z2: 0, surface_y: 78, height: 2,
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 78, height: 2,
     // road_mode omitted (default false)
   });
   assertContract(r);
@@ -438,7 +462,7 @@ test('clear_strip road_mode: no tree in rect → no extension, no overhead', asy
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(fixed), digAreaCalls: calls });
   const r = await part.clear_strip({
-    x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, height: 1, road_mode: true,
+    x1: 0, z1: 0, x2: 2, z2: 2, y: 78, height: 1, road_mode: true,
   });
   assertContract(r);
   assert.equal(r.ok, true);

@@ -47,8 +47,10 @@ doing with them.
 
 ```
 mc terrain_top X Z
-# surface_y at one XZ. Cheap. Spam at 4-block intervals along the planned
-# corridor to spot rises/dips before committing.
+# block_y (top solid) + surface_y (feet, = block_y + 1) at one XZ. Cheap.
+# Spam at 4-block intervals along the planned corridor to spot rises/dips
+# before committing. Road verbs (clear_strip y=, level_ground target=,
+# deck y=) take the block_y.
 
 mc regions_terrain --rect X1 Z1 X2 Z2 [--expect-y N]
 # Per-column top-solid survey for an entire rectangle. Returns the Y of
@@ -178,16 +180,19 @@ many blocks.
 the corridor.
 
 ```
-# Catalog says overlook=(0, 67, 0). Don't use 67 as target_y.
-mc terrain_top 0 0     # → surface_y = 78 at the overlook anchor itself
-mc terrain_top 0 12    # → surface_y = 78 segment 1/2 boundary
-mc terrain_top 0 24    # → surface_y = 79 segment 2/3 boundary
-mc terrain_top 0 36    # → surface_y = 78 segment 3/4 boundary
-mc terrain_top 0 48    # → surface_y = 78 at return_post
+# Suppose the catalog anchor is (X, CATALOG_Y, Z). Don't use CATALOG_Y as
+# target_y — sample the real terrain at the endpoints and each segment
+# boundary along the corridor:
+mc terrain_top X Z              # → block_y at the start anchor
+mc terrain_top X Z+SEG          # → block_y at each segment boundary…
+mc terrain_top X Z_END          # → block_y at the destination anchor
 
-# Use the *median* or *min* of these as target_y. Never go more than 2
-# blocks below the median surface — beyond that you're digging a trench.
-# Target: 78 (median). All four segments build at Y=78.
+# Use the *median* or *min* of the block_y values as target_y — target_y is
+# the BED block (block_y vocabulary), the same plane level_ground target=
+# and clear_strip y= take. Do NOT use the surface_y field here: it's the
+# feet level one above the bed, and passing it raises the road by 1.
+# Never go more than 2 blocks below the median — beyond that you're
+# digging a trench. Bots walk on top of the bed at target_y + 1.
 ```
 
 If the catalog anchor Y is **lower** than `terrain_top` at the same XZ
@@ -251,7 +256,7 @@ adjacent solid block, *then* dig the pillar from the side.
    - When in doubt: emit a [SURVEY] note describing the obstacle and ask the orchestrator to split the segment.
 
 3. **Clear trees and obstacles.**
-   - For each tree on the corridor: `mc clear_strip X1 Z1 X2 Z2 surface_y=Y road_mode=true` clears wood + leaves + above-surface blocks in one auto-batched call. The `road_mode` flag treats wood as diggable (default level/level_ground preserves it).
+   - For each tree on the corridor: `mc clear_strip X1 Z1 X2 Z2 y=Y road_mode=true` clears wood + leaves + above-bed blocks in one auto-batched call (Y = the bed's block_y, same value as level_ground's target=). The `road_mode` flag treats wood as diggable (default level/level_ground preserves it).
    - For tall grass/flowers in the path: `mc clear_strip` already covers Y..Y+height above the surface.
 
 4. **Shape the bed.** Only run this on segments whose dispositions cleared step 2.
@@ -269,7 +274,7 @@ adjacent solid block, *then* dig the pillar from the side.
 The road is a sequence of **axis-aligned rectangles**, not arcs. Curves come from rectangles that shift sideways at segment boundaries.
 
 ```
-overlook  ─────────►          ─────────►    road_mid
+start  ───────────►          ─────────►    waypoint
                   └──seg 2────┘                  ▲
                     shifts +X                    │
                     by 3 blocks                  shift +Z
@@ -286,7 +291,7 @@ Doctrine for curves:
 
 When terrain rises **>4 blocks** above the road's target Y for a stretch >8 blocks long, prefer a tunnel over a cut.
 
-1. `mc terrain_top` the corridor — find where surface_y exceeds target_y + 4.
+1. `mc terrain_top` the corridor — find where block_y exceeds target_y + 4.
 2. `mc tunnel <dir> <length>` from the segment start. Default cross-section is 1×2 — too small for a road.
 3. Widen: `mc fill air X1 Y Z1 X2 Y+2 Z2` to clear a **3×3 cross-section** (3 wide, 3 tall vertical clearance).
 4. Floor: `mc fill cobblestone X1 Y-1 Z1 X2 Y-1 Z2`. Stone or cobble underfoot — never dirt in a tunnel; it crumbles aesthetically and roots into the wall material.
@@ -305,7 +310,7 @@ Triggered by step 1's disposition map — when `summary.deck_required_n > 0` or 
 3. **Deck with `mc deck`.** When neither reroute nor split works — wide-open ravine across the corridor — use the dedicated verb. It does the edge-inward BFS placement automatically (no manual "build from bank one row at a time"). Returns `unanchored[]` for cells it couldn't reach from a rim.
 
    ```
-   mc deck X1 Z1 X2 Z2 surface_y=Y block=cobblestone [dry_run=true]
+   mc deck X1 Z1 X2 Z2 y=Y block=cobblestone [dry_run=true]   # Y = bed block_y; bots walk at Y+1
    ```
 
    - **Pre-flight**: `mc inspect` the gap to confirm water/lava/dirt below — affects support placement.
@@ -381,8 +386,8 @@ The default road bed is **dirt** — cheap, abundant, fast to place. But in biom
 Pass the material via the `block=` arg on the road verbs:
 
 ```
-mc clear_strip -1 0 1 12 surface_y=78 road_mode=true block=cobblestone
-mc level_ground -1 0 1 12 target=78 execute=true block=cobblestone exclude_foliage=true
+mc clear_strip X1 Z1 X2 Z2 y=TARGET_Y road_mode=true block=cobblestone
+mc level_ground X1 Z1 X2 Z2 target=TARGET_Y execute=true block=cobblestone exclude_foliage=true
 ```
 
 When the measure card classifies a segment as `passage=deck`, the deck verb ALWAYS uses cobblestone regardless of biome (bridges over water/lava are visually + structurally load-bearing).

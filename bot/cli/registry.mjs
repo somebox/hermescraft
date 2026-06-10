@@ -761,7 +761,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('dig_pit', 'world', [], {
-    description: 'Dig a W×L×D pit at corner (X, Z). Top of pit defaults to bot Y - 1 (the surface block); pit floor ends up at top - D. Use mc build_stairs separately to add stairs out. Max 256 columns × 16 depth.',
+    description: 'Dig a W×L×D pit at corner (X, Z). Top of pit defaults to bot Y - 1 (the surface block); pit floor ends up at top - D. Use mc build_stairs separately to add stairs out. Max 32 blocks (W×L×D) per call — split larger pits into multiple calls.',
     method: 'POST',
     path: '/action/dig_pit',
     bodyFn: (p) =>
@@ -789,7 +789,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('level', 'world', [], {
-    description: 'Flatten a rectangle to target Y: dig solid blocks above Y (up to 8 by default), and fill any air gaps at Y with a leveling block. Auto-picks a fill block from {dirt, cobblestone, stone} unless BLOCK is given. Below Y is not touched. Max 256 columns.',
+    description: 'Flatten a rectangle to target Y: dig solid blocks above Y (up to 8 by default), and fill any air gaps at Y with a leveling block. Auto-picks a fill block from {dirt, cobblestone, stone} unless BLOCK is given. Below Y is not touched. Max 16 columns per call — split larger areas into ≤16-column rectangles (e.g. 4x4).',
     method: 'POST',
     path: '/action/level',
     bodyFn: (p) =>
@@ -819,7 +819,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('level_ground', 'world', ['level-ground'], {
-    description: 'Survey + flatten "lumpy" terrain to a single Y. Scans each column\'s top-solid, picks a target Y (median by default, --mode min|max alt), categorizes columns as hole/level/pillar, and reports a plan. Pass execute=true to do the work (delegates to mc level with up_range=max-pillar-height+1). Defaults to dry-run so you can review the plan before acting. Use to clean up scattered pillars + holes left by pillar_up churn or interrupted leveling sessions. Max 256 columns.',
+    description: 'Survey + flatten "lumpy" terrain to a single Y. Scans each column\'s top-solid, picks a target Y (median by default, --mode min|max alt), categorizes columns as hole/level/pillar, and reports a plan. Pass execute=true to do the work (delegates to mc level with up_range=max-pillar-height+1). Defaults to dry-run so you can review the plan before acting. Use to clean up scattered pillars + holes left by pillar_up churn or interrupted leveling sessions. Max 16 columns per call — split larger areas into ≤16-column rectangles (e.g. 4x4).',
     method: 'POST',
     path: '/action/level_ground',
     bodyFn: (p) =>
@@ -886,7 +886,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('deck', 'world', [], {
-    description: 'Build a flat horizontal deck across an air gap. Places BLOCK at every air cell in [X1..X2] × {SURFACE_Y} × [Z1..Z2], using BFS edge-inward order so each placement anchors against a cell that\'s already solid — pre-existing terrain on the rim OR a deck cell placed earlier in this same call. Bridges over ravines / water / deep dips where ordinary `mc fill` fails at interior cells (no_adjacent_face). Cells that can\'t reach a rim are returned as `unanchored` — partial completion is reported as ok:true with data.unanchored populated. Default cap 256 cells.',
+    description: 'Build a flat horizontal deck across an air gap. Places BLOCK at every air cell in [X1..X2] × {Y} × [Z1..Z2], using BFS edge-inward order so each placement anchors against a cell that\'s already solid — pre-existing terrain on the rim OR a deck cell placed earlier in this same call. Y is the deck layer\'s block_y (bots walk on top at Y+1); match the road bed\'s block_y so the deck is flush. NOTE: surface_y is temporarily rejected while its semantics migrate to the canonical feet Y — pass y= instead. Bridges over ravines / water / deep dips where ordinary `mc fill` fails at interior cells (no_adjacent_face). Cells that can\'t reach a rim are returned as `unanchored` — partial completion is reported as ok:true with data.unanchored populated. Default cap 256 cells.',
     method: 'POST',
     path: '/action/deck',
     bodyFn: (p) =>
@@ -895,7 +895,9 @@ export const RAW_COMMAND_DEFS = [
         z1: Number(p.z1),
         x2: Number(p.x2),
         z2: Number(p.z2),
-        surface_y: Number(p.surface_y),
+        ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+        // Forwarded so the handler rejects it with the migration message.
+        ...(p.surface_y !== undefined ? { surface_y: Number(p.surface_y) } : {}),
         block: String(p.block),
         ...(p.max_cells !== undefined ? { max_cells: Number(p.max_cells) } : {}),
         ...(p.dry_run !== undefined ? { dry_run: p.dry_run === true || p.dry_run === 'true' || p.dry_run === '1' } : {}),
@@ -905,20 +907,20 @@ export const RAW_COMMAND_DEFS = [
       { key: 'z1', type: 'number', required: true },
       { key: 'x2', type: 'number', required: true },
       { key: 'z2', type: 'number', required: true },
-      { key: 'surface_y', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
       { key: 'block', type: 'string', required: true },
       { key: 'max_cells', type: 'number', min: 8, max: 1024 },
       { key: 'dry_run', type: 'string' },
     ],
-    usage: 'mc deck X1 Z1 X2 Z2 surface_y=Y block=NAME [max_cells=256] [dry_run=true]',
+    usage: 'mc deck X1 Z1 X2 Z2 y=BLOCK_Y block=NAME [max_cells=256] [dry_run=true]',
     examples: [
-      'mc deck -1 12 1 16 surface_y=78 block=cobblestone           # 3x5 deck across a ravine',
-      'mc deck -1 12 1 16 surface_y=78 block=cobblestone dry_run=true  # plan first; check unanchored',
+      'mc deck -1 12 1 16 y=78 block=cobblestone           # 3x5 deck across a ravine, flush with bed at 78',
+      'mc deck -1 12 1 16 y=78 block=cobblestone dry_run=true  # plan first; check unanchored',
     ],
   }),
 
   g('clear_strip', 'world', ['clear-strip'], {
-    description: 'Clear a corridor strip ABOVE a road surface. Surveys every cell in [X1..X2] × [SURFACE_Y+1 .. SURFACE_Y+HEIGHT] × [Z1..Z2] and removes any non-air block in that volume. Below SURFACE_Y is never touched. Auto-batches into ≤32-cell dig_area calls under the hood — callers do not see the per-call cap. road_mode=true overrides the "structural" preservation so tree trunks, planks, fences, stairs etc. get cleared (region-deny still honored). dry_run=true returns the same accounting without digging. Default HEIGHT=4 (walkable headroom); use 8 to cut canopy. Cap: 1024 cells per call.',
+    description: 'Clear a corridor strip ABOVE a road bed. Surveys every cell in [X1..X2] × [Y+1 .. Y+HEIGHT] × [Z1..Z2] and removes any non-air block in that volume. Y is the road bed\'s block_y (terrain_top block_y / corridor_sample elevation_median); the bed itself and everything below is never touched, so the cleared cells are exactly the feet+head space of a bot walking on the bed. NOTE: surface_y is temporarily rejected while its semantics migrate to the canonical feet Y — pass y= instead. Auto-batches into ≤32-cell dig_area calls under the hood — callers do not see the per-call cap. road_mode=true overrides the "structural" preservation so tree trunks, planks, fences, stairs etc. get cleared (region-deny still honored). dry_run=true returns the same accounting without digging. Default HEIGHT=4 (walkable headroom); use 8 to cut canopy. Cap: 1024 cells per call.',
     method: 'POST',
     path: '/action/clear_strip',
     bodyFn: (p) =>
@@ -927,7 +929,9 @@ export const RAW_COMMAND_DEFS = [
         z1: Number(p.z1),
         x2: Number(p.x2),
         z2: Number(p.z2),
-        surface_y: Number(p.surface_y),
+        ...(p.y !== undefined ? { y: Number(p.y) } : {}),
+        // Forwarded so the handler rejects it with the migration message.
+        ...(p.surface_y !== undefined ? { surface_y: Number(p.surface_y) } : {}),
         ...(p.height !== undefined ? { height: Number(p.height) } : {}),
         ...(p.road_mode !== undefined ? { road_mode: p.road_mode === true || p.road_mode === 'true' || p.road_mode === '1' } : {}),
         ...(p.dry_run !== undefined ? { dry_run: p.dry_run === true || p.dry_run === 'true' || p.dry_run === '1' } : {}),
@@ -938,17 +942,17 @@ export const RAW_COMMAND_DEFS = [
       { key: 'z1', type: 'number', required: true },
       { key: 'x2', type: 'number', required: true },
       { key: 'z2', type: 'number', required: true },
-      { key: 'surface_y', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
       { key: 'height', type: 'number', min: 1, max: 16 },
       { key: 'road_mode', type: 'string' },
       { key: 'dry_run', type: 'string' },
       { key: 'max_cells', type: 'number', min: 32, max: 4096 },
     ],
-    usage: 'mc clear_strip X1 Z1 X2 Z2 surface_y=Y [height=4] [road_mode=true] [dry_run=true] [max_cells=1024]',
+    usage: 'mc clear_strip X1 Z1 X2 Z2 y=BLOCK_Y [height=4] [road_mode=true] [dry_run=true] [max_cells=1024]',
     examples: [
-      'mc clear_strip -1 0 1 11 surface_y=78                       # 3×12×4 walkable headroom',
-      'mc clear_strip -1 0 1 11 surface_y=78 road_mode=true        # also fell trees in the corridor',
-      'mc clear_strip -1 0 1 11 surface_y=78 height=8 dry_run=true # what would be removed if we cut to canopy',
+      'mc clear_strip -1 0 1 11 y=78                       # 3×12×4 walkable headroom above bed at 78',
+      'mc clear_strip -1 0 1 11 y=78 road_mode=true        # also fell trees in the corridor',
+      'mc clear_strip -1 0 1 11 y=78 height=8 dry_run=true # what would be removed if we cut to canopy',
     ],
   }),
 
@@ -1364,7 +1368,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('verify', 'world', ['check_done'], {
-    description: 'Predicate-check for card done-ness. Returns {satisfied, observed, expected}; ok:true means evaluated, ok:false means cannot evaluate. Kinds: inventory_contains <item> [min_count]; chest_contains <mark> <item> [min_count] (bot must be adjacent). Spec: docs/architecture/mc-verify-spec.md',
+    description: 'Predicate-check for card done-ness. Returns {satisfied, observed, expected}; ok:true means evaluated, ok:false means cannot evaluate. Kinds: inventory_contains <item> [min_count]; chest_contains <mark> <item> [min_count] (bot must be adjacent); at_mark <mark> [--near N | --block <id>] [from=X,Y,Z]; region_blocks <c1> <c2> <block> [min_count]. at_mark with --block or from= is fully REMOTE — no walking needed (chunk must be loaded). Spec: docs/architecture/mc-verify-spec.md',
     method: 'POST',
     path: '/action/verify',
     customParse: true,
@@ -1373,6 +1377,7 @@ export const RAW_COMMAND_DEFS = [
     examples: [
       'mc verify inventory_contains cobblestone 4',
       'mc verify chest_contains storage cobblestone 4',
+      'mc verify at_mark field_south from=365,65,-575 --near 5',
     ],
   }),
 
@@ -1637,7 +1642,7 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc inspect 10 64 -3', 'mc inspect --mark wheat_plot'],
   }),
   g('reachable', 'world', ['standable', 'can_stand'], {
-    description: 'Reachability pre-flight: can the bot STAND at (x,y,z)? Returns {target_standable, target_reason (ok|head_blocked|foot_blocked|no_foot_support), best_stand: {x,y,z,distance}}. If target_standable is false, use best_stand for your actual goto. Geometry-only — does not verify a path exists from your current position.',
+    description: 'Reachability pre-flight: can the bot STAND at (x,y,z), and can it GET there? Returns {target_standable, target_reason (ok|head_blocked|foot_blocked|no_foot_support), best_stand: {x,y,z,distance}, path: {exists, length, approximate}}. path runs the real pathfinder from your current position (no movement) — path.exists=false means goto WILL fail even though the cell is standable. If target_standable is false, use best_stand for your actual goto.',
     method: 'POST',
     path: '/action/reachable',
     argSchema: [
@@ -2703,4 +2708,48 @@ export function buildAliasMap(defs = RAW_COMMAND_DEFS) {
 export function resolveCommand(raw, aliasMap = buildAliasMap()) {
   const k = String(raw || '').toLowerCase();
   return aliasMap[k] ?? null;
+}
+
+/** Iterative two-row Levenshtein — alias maps are small, no need for fancier. */
+function editDistance(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/**
+ * Nearest-match suggestions for a mistyped command. Ranks by shared prefix
+ * (catches family typos like chest_search → chest_find) then edit distance
+ * (catches misspellings like reachabl → reachable). Dedupes aliases to their
+ * canonical command name.
+ * @param {string} token mistyped command token
+ * @param {ReturnType<typeof buildAliasMap>} aliasMap
+ */
+export function suggestCommands(token, aliasMap = buildAliasMap(), max = 3) {
+  const k = String(token || '').toLowerCase();
+  const scored = [];
+  for (const [name, entry] of Object.entries(aliasMap)) {
+    let p = 0;
+    while (p < k.length && p < name.length && k[p] === name[p]) p++;
+    const dist = editDistance(k, name);
+    if (dist <= 3 || p >= 4) scored.push({ canonical: entry.canonicalName, dist, prefix: p });
+  }
+  scored.sort((a, b) => (b.prefix - a.prefix) || (a.dist - b.dist));
+  const out = [];
+  for (const s of scored) {
+    if (out.includes(s.canonical)) continue;
+    out.push(s.canonical);
+    if (out.length >= max) break;
+  }
+  return out;
 }

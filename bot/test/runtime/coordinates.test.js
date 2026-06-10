@@ -1,6 +1,6 @@
 /**
  * Unit tests for block_y / surface_y helpers.
- * See bot/lib/runtime/coordinates.js and docs/conventions/coordinates.md.
+ * See bot/lib/runtime/coordinates.js and docs/reference/world-coordinates.md.
  */
 
 import test from 'node:test';
@@ -117,4 +117,34 @@ test('normalizeBoxYArgs: leaves args untouched when aliases are absent/invalid',
   assert.deepEqual(normalizeBoxYArgs({ y1: 1, y2: 2 }), { y1: 1, y2: 2 });
   assert.deepEqual(normalizeBoxYArgs({ y1: 1, y2: 2, surface_y1: 'bogus' }), { y1: 1, y2: 2, surface_y1: 'bogus' });
   assert.equal(normalizeBoxYArgs(null), null);
+});
+
+// ---------------------------------------------------------------------------
+// Chain contracts — the parse -> convert -> respond seam handlers compose.
+// These pin the exact pattern the road phase-2 migration uses: parseYInput
+// normalizes input to block_y, surfaceFromBlock derives the feet cell,
+// withYBoth shapes the response. No extra "command-plane" helper is needed.
+// ---------------------------------------------------------------------------
+
+test('chain: parseYInput -> surfaceFromBlock round-trips a feet input', () => {
+  // A caller passing surface_y=65 means feet=65; the working volume floor
+  // (first cell above the ground block) must be that same feet cell.
+  const blockY = parseYInput({ surface_y: 65 });
+  assert.equal(blockY, 64);
+  assert.equal(surfaceFromBlock(blockY), 65);
+});
+
+test('chain: y= and surface_y= inputs converge to identical working planes', () => {
+  const viaBlock = parseYInput({ y: 64 });
+  const viaSurface = parseYInput({ surface_y: 65 });
+  assert.equal(viaBlock, viaSurface);
+  assert.equal(surfaceFromBlock(viaBlock), surfaceFromBlock(viaSurface));
+});
+
+test('chain: parseYInput -> withYBoth response carries the canonical pair', () => {
+  const blockY = parseYInput({ surface_y: '65' });
+  const out = withYBoth({ x: 1, z: 2 }, blockY);
+  assert.equal(out.block_y, 64);
+  assert.equal(out.surface_y, 65);
+  assert.equal(out.surface_y, out.block_y + 1);
 });
