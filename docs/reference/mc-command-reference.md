@@ -1,6 +1,8 @@
 # MC command surface (canonical)
 
-Hand-maintained specification for agents and developers. The generated inventory lives in [`mc-cheatsheet.md`](mc-cheatsheet.md) (from `bot/cli/registry.mjs`). When they disagree on **syntax**, trust the registry; when they disagree on **intent, chains, or argument vocabulary**, trust this document.
+> **Transition (2026-06):** Strategic direction is **registry as sole contract** + **generated agent surface** — see [`../architecture/embodied-control.md`](../architecture/embodied-control.md) (§ Two layers, § Delivery order). **Shipped (2026-06-10):** registry `surface` tier (`core` / `extended` / `microscope`), tier-grouped [`mc-cheatsheet.md`](mc-cheatsheet.md), `mc commands --tier`. This file remains **hand-maintained intent, chains, and argument vocabulary** until `intent` metadata and generators subsume § A. **Syntax** always follows the generated cheatsheet.
+
+Hand-maintained specification for agents and developers until registry-driven generation replaces § A below. The generated inventory lives in [`mc-cheatsheet.md`](mc-cheatsheet.md) (from `bot/cli/registry.mjs`).
 
 See also [`bot/handler-contract-adr.md`](bot/handler-contract-adr.md) for return envelopes. Navigation DSL, breadcrumbs, and per-round brief: [`../specs/nav/route-precompute-context.md`](../specs/nav/route-precompute-context.md).
 

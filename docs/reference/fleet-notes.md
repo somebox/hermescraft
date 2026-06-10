@@ -2,7 +2,13 @@
 
 ## mc command registry
 
-After changing `bot/cli/registry.mjs`, run `npm run cheatsheet` from `bot/` (or `node scripts/gen-mc-cheatsheet.mjs`) and commit `docs/reference/mc-cheatsheet.md` — `test/cheatsheet-sync.test.js` fails on drift.
+After changing `bot/cli/registry.mjs` or agent surface tiers in `bot/cli/registry-surface.mjs`:
+
+1. Regenerate and commit the cheatsheet — `npm run cheatsheet` from `bot/` (or `node scripts/gen-mc-cheatsheet.mjs`, or `scripts/regenerate-artifacts.sh` / `scripts/landfolk deploy`). Output is **tier-grouped** (Agent core → Extended → Microscope); same path `docs/reference/mc-cheatsheet.md`.
+2. Run `cd bot && HERMES_VALIDATE=1 npm test` — `test/cheatsheet-sync.test.js` fails on drift; `registry-guardrails.test.js` enforces valid tiers and core count.
+3. When moving verbs between **core** and **microscope**, re-run `python3 scripts/mc-call-survey.py --minutes 10080 --json` and note traffic in the PR (see embodied-control implementation status).
+
+Introspection: `mc commands --tier core` (JSON field `surface`). Full strategy: `docs/architecture/embodied-control.md`.
 
 **Kanban worker routing:** `mc` resolves the bot URL in `bot/cli/api-url.mjs`. The phase-16 leak was mainly **`BASH_ENV`** pointing at Steward's `agent-bashenv.sh` (re-exports `MC_API_URL=:3005` in every terminal subshell), not the three MC vars the phase-12 spawn scrub already cleared. Fixes: unset `BASH_ENV` at gateway/dispatcher start (`scripts/landfolk`), drop it in `_default_spawn`, profile `.env` pins lock+URL, `api-url.mjs` prefers `MC_API_URL` when `HERMES_KANBAN_TASK` is set. Spawn audit: `/tmp/worker-env-debug.log` (rotates at 2MB to `.log.1`). For a broader surface check, see `docs/reference/audits/audit-mc-commands-2026-05-29.md` and re-run its grep-based coverage steps when adding verbs.
 

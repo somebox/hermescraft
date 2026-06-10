@@ -1,5 +1,7 @@
 # mc command surface audit — 2026-05-29
 
+**Follow-on strategy:** convergence policy (two-layer registry vs agent surface, facade roadmap, evidence loop) — [`../architecture/embodied-control.md`](../architecture/embodied-control.md).
+
 Workflow run: regenerated cheatsheet from `bot/cli/registry.mjs`, reconciled `docs/reference/mc-command-reference.md`, ran the static-sync test suite, and audited per-command schema/test coverage.
 
 **Scope:** 181 commands across 11 categories.
@@ -163,3 +165,5 @@ Full list dumped to `/tmp/mc-findings.json` and reproducible via `node -e "impor
 - [ ] **F.2** Add a registry test that fails when `category` is not in `CATEGORY_ORDER`.
 - [ ] **F.3** Add a test that every command in registry has at least one `examples:` entry (or explicitly opt-out via a known list).
 - [ ] **F.4** Document this audit + cadence (e.g., "rerun this audit after every command-registry PR") in `docs/conventions/` or `CLAUDE.md`.
+- [ ] **F.5** Add `intent` + agent-surface tier (`core` / `macro` / `microscope`) on `CmdDef`; generate cheatsheet, lane tables, and `mc help --profile` from registry — strategy: [`../architecture/embodied-control.md`](../architecture/embodied-control.md) § Delivery order.
+- [ ] **F.6** Contract test: block/entity payloads use shared typed-noun shape (observation-verb-grammar § response shapes).

@@ -68,7 +68,7 @@ function summarizeArgSchema(def) {
   }));
 }
 
-/** @typedef {{ category?: string }} CommandsExtra */
+/** @typedef {{ category?: string, tier?: string }} CommandsExtra */
 
 /** @returns { CommandsExtra & { rest: string[] } } */
 function extractCommandsFlags(positional) {
@@ -80,6 +80,9 @@ function extractCommandsFlags(positional) {
     if ((a === '--category' || a === '--commands-category') && positional[i + 1]) {
       opts.category = String(positional[i + 1]);
       i++;
+    } else if (a === '--tier' && positional[i + 1]) {
+      opts.tier = String(positional[i + 1]).toLowerCase();
+      i++;
     } else rest.push(a);
   }
   return { ...opts, rest };
@@ -90,17 +93,24 @@ function extractCommandsFlags(positional) {
  *
  * @param {{ limit?:number, fields?:string[] }} [globalsOpts]
  */
-function introspectDefinitions(globalsOpts = {}, categoryFilterRaw) {
+function introspectDefinitions(globalsOpts = {}, categoryFilterRaw, tierFilterRaw) {
   const catFilter = categoryFilterRaw?.toLowerCase?.();
+  const tierFilter = tierFilterRaw?.toLowerCase?.();
+  if (tierFilter && !['core', 'extended', 'microscope'].includes(tierFilter)) {
+    throw new Error(`invalid --tier ${tierFilterRaw} (use core, extended, or microscope)`);
+  }
   /** @type {Record<string, unknown>} */
   const defs = {};
 
   for (const def of RAW_COMMAND_DEFS) {
     const name = def.name;
+    const surface = def.surface ?? 'extended';
+    if (tierFilter && surface !== tierFilter) continue;
     if (name === 'bg') {
       if (catFilter && String(def.category).toLowerCase() !== catFilter) continue;
       defs[name] = {
         category: def.category,
+        surface,
         ...(def.aliases?.length ? { aliases: [...def.aliases] } : {}),
         method: def.method ?? 'POST',
         ...(def.description ? { description: def.description } : {}),
@@ -116,6 +126,7 @@ function introspectDefinitions(globalsOpts = {}, categoryFilterRaw) {
 
     defs[name] = {
       category: def.category,
+      surface,
       ...(def.aliases?.length ? { aliases: [...def.aliases] } : {}),
       method: def.method,
       ...(def.description ? { description: def.description } : {}),
@@ -166,7 +177,7 @@ function printHelp(aliasMap) {
     for (const n of groups[cat]) console.log(`  mc ${n}`);
   }
 
-  console.log('\nAlso: mc help <command>, mc commands [--category <perceive|...>]');
+  console.log('\nAlso: mc help <command>, mc commands [--category <perceive|...>] [--tier <core|extended|microscope>]');
   console.log('Flags anywhere: --json, --dry-run, --limit N, --fields a,b,c');
   console.log(`Registry: ~${Object.keys(aliasMap).length} tokens.\n`);
 }
@@ -261,9 +272,9 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
   const { canonicalName, def } = resolved;
 
   if (canonicalName === 'commands') {
-    const { category, rest } = extractCommandsFlags(positional);
+    const { category, tier, rest } = extractCommandsFlags(positional);
     if (rest.length) throw new Error(`commands: unexpected arguments: ${rest.join(' ')}`);
-    const data = introspectDefinitions(globals, category);
+    const data = introspectDefinitions(globals, category, tier);
     const env = { ok: true, command: 'commands', data: { definitions: data } };
     /** Introspection is always JSON-shaped (even without `--json`). */
     return { ok: true, env, render: 'json' };

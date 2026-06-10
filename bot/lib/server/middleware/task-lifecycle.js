@@ -22,6 +22,7 @@
  */
 
 import { validate } from '../../shared/action-contract.js';
+import { validateBlockRef } from '../../shared/typed-nouns.js';
 import { logNavEvent } from '../../runtime/metrics.js';
 import { syncPreMiddleware, syncPostMiddleware } from './pipeline.js';
 
@@ -86,6 +87,34 @@ function runDevValidator(actionName, result) {
   if (!v.valid) {
     // eslint-disable-next-line no-console
     console.warn(`[HERMES_VALIDATE] ${actionName} returned non-conformant: ${v.issues.join('; ')}`);
+  }
+  runTypedNounValidator(actionName, result);
+}
+
+const TYPED_NOUN_VALIDATE_ACTIONS = new Set(['find_blocks', 'inspect']);
+
+function runTypedNounValidator(actionName, result) {
+  if (!TYPED_NOUN_VALIDATE_ACTIONS.has(actionName)) return;
+  if (!result || result.ok === false) return;
+  if (actionName === 'inspect') {
+    const ref = result.data?.block_ref;
+    const v = validateBlockRef(ref);
+    if (!v.valid) {
+      // eslint-disable-next-line no-console
+      console.warn(`[HERMES_VALIDATE] ${actionName} block_ref: ${v.issues.join('; ')}`);
+    }
+    return;
+  }
+  if (actionName === 'find_blocks') {
+    const locs = result.locations;
+    if (!Array.isArray(locs)) return;
+    for (let i = 0; i < locs.length; i++) {
+      const v = validateBlockRef(locs[i]?.block_ref);
+      if (!v.valid) {
+        // eslint-disable-next-line no-console
+        console.warn(`[HERMES_VALIDATE] ${actionName} locations[${i}].block_ref: ${v.issues.join('; ')}`);
+      }
+    }
   }
 }
 

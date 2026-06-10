@@ -24,7 +24,7 @@ Use this workflow for any task with 4+ steps, unfamiliar mechanics, or infrastru
 Before building anything you haven't done before:
 - **Load the relevant skill** — `skill_view("minecraft-survival")` (mechanics, recipes, farming, animals), `skill_view("minecraft-building")`, etc.
 - **Web search** (if available) — look up the Minecraft wiki for specific mechanics, layouts, or recipes you're unsure about.
-- **`mc help`** / **`mc commands`** — list available verbs and their signatures.
+- **`mc help`** / **`mc commands`** — list available verbs and their signatures. Filter the working set with **`mc commands --tier core`** (JSON field `surface`; use `--tier`, not `--surface`, because `mc surface` is the swim verb).
 - **`mc recipes ITEM`** and **`mc craft_plan ITEM`** — check crafting dependencies.
 
 Do not guess at mechanics. A 30-second lookup prevents 10 minutes of wrong work.

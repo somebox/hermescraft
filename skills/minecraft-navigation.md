@@ -17,7 +17,7 @@ version: 4.1.0
 
 # Minecraft Navigation
 
-Canonical command syntax, argument keys, and refusal → next-command matrix: [`docs/mc-commands.md`](../docs/mc-commands.md) (especially Section D–E for water and `BOAT_REQUIRED`). Navigation refactor (move-canonical DSL, per-round brief, breadcrumbs): [`docs/features/route-precompute-context.md`](../docs/features/route-precompute-context.md).
+Canonical command syntax, argument keys, and refusal → next-command matrix: [`docs/reference/mc-command-reference.md`](../docs/reference/mc-command-reference.md) (especially Section D–E for water and `BOAT_REQUIRED`). Navigation refactor (move-canonical DSL, per-round brief, breadcrumbs): [`docs/specs/nav/route-precompute-context.md`](../docs/specs/nav/route-precompute-context.md). Strategic framing (taxi nav, replan on stall): [`docs/architecture/embodied-control.md`](../docs/architecture/embodied-control.md).
 
 ## Per-round route brief (`mc observe`)
 

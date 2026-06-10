@@ -53,6 +53,8 @@ list --status ...` calls plus `scripts/board`. Use it first thing every cycle.
 
 ### In-world commands
 
+Design intent for the bot ↔ agent interface (reflex-first control, **registry vs agent surface**, survey-driven facades): [`docs/architecture/embodied-control.md`](docs/architecture/embodied-control.md). After registry changes, `landfolk deploy` regenerates the tier-grouped cheatsheet; filter introspection with `mc commands --tier core`.
+
 `mc <verb>` calls the bot server (port 3000-3005 per bot). Full registry of
 verbs is documented in `docs/reference/mc-cheatsheet.md` — that file is **generated** from
 `bot/cli/registry.mjs` (do not edit by hand). For the long-form per-command
@@ -99,7 +101,7 @@ If you are about to type one of these, stop and use the replacement.
 | `hermes kanban list --status ...` | `scripts/kanban board` (covers all four statuses + recent in one view) |
 | Bare `board-recent.py` (no path) | `scripts/board-recent.py` if you really need the older delta view, but `scripts/kanban board`'s RECENT lane usually replaces it |
 | `mc pillar_step` | `mc pillar_up` (alias kept; prefer the canonical name) |
-| Editing `docs/reference/mc-cheatsheet.md` by hand | Edit `bot/cli/registry.mjs`, then run `scripts/regenerate-artifacts.sh` |
+| Editing `docs/reference/mc-cheatsheet.md` by hand | Edit `bot/cli/registry.mjs` and/or `bot/cli/registry-surface.mjs`, then run `scripts/regenerate-artifacts.sh` |
 | `sqlite3 kanban.db ...` | Use `scripts/kanban` verbs — they handle the right path and don't fight the dispatcher |
 | `find ~/.hermes -name ...` | Be specific: `~/.hermes/profiles/<bot>/` for profiles, `~/.hermes-landfolk-<bot>/` for agent homes |
 

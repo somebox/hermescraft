@@ -1,5 +1,7 @@
 # Hermes vs `mc` / bot server
 
+Strategic framing (reflex-first control, taxi navigation, macro vs microscope): [`../architecture/embodied-control.md`](../architecture/embodied-control.md).
+
 Hermes (or any external LLM orchestrator) keeps **procedural notes**: what worked, retries, social strategy, and long-form reasoning. It should not be the only copy of **world truth**.
 
 The **Mineflayer bot + HTTP API** (`bot/server.js`) is the source of truth for:
@@ -8,7 +10,7 @@ The **Mineflayer bot + HTTP API** (`bot/server.js`) is the source of truth for:
 - Operational memory: marks (`GET /marks`, `POST /action/mark`, `mark_update`), chest snapshots, deaths, task history
 - Anything that must stay consistent if Hermes restarts or multiple tools call `mc` concurrently
 
-CLI (`bin/mc` → `bot/cli/`): uniform transport, validation, JSON envelopes, introspection (`mc commands`). It does not embed strategy or multi-step plans beyond `mc batch`.
+CLI (`bin/mc` → `bot/cli/`): uniform transport, validation, JSON envelopes, introspection (`mc commands`). It does not embed strategy or multi-step plans beyond `mc batch`. **Motor execution** (pathfind, collect chains, recovery) and **honest envelopes** belong here; agents compose verbs, macros, playbooks, and workspace scripts on top — see embodied-control doc above.
 
 ## Reliability (lightweight)
 

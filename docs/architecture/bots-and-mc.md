@@ -1,6 +1,6 @@
 # Bots and in-game control (`mc`, HTTP, marks)
 
-Status: **design exploration** (2026-06-05). **Minecraft bodies** and how agents act in-world: bot registry, Mineflayer HTTP, the **`mc` CLI**, marks, and host hooks (mutex, spawn env). Hermes profiles, skills, and planner DSL: [`hermes-agents.md`](hermes-agents.md). Card flow: [`target.md`](target.md).
+Status: **design exploration** (2026-06-05). **Minecraft bodies** and how agents act in-world: bot registry, Mineflayer HTTP, the **`mc` CLI**, marks, and host hooks (mutex, spawn env). Hermes profiles, skills, and planner DSL: [`hermes-agents.md`](hermes-agents.md). Card flow: [`target.md`](target.md). **Reflex-first interface vision:** [`embodied-control.md`](embodied-control.md).
 
 Operator cheat sheet: [`../../AGENTS.md`](../../AGENTS.md). Runtime map: [`components.md`](components.md). Verb registry: [`../reference/mc-cheatsheet.md`](../reference/mc-cheatsheet.md) (generated from [`bot/cli/registry.mjs`](../../bot/cli/registry.mjs)).
 
@@ -63,6 +63,8 @@ Mineflayer process (scripts/landfolk supervises)
 
 Dashboard and operators also poll bot HTTP (read-only); agents use **`mc`** as the blessed write path during cards.
 
+**Design intent:** each `mc` call should behave like **motor control** — destination in, envelope out — not a prompt to re-derive geometry. Navigation is a **taxi** (arrive or replan); common jobs should be **macros**; block coords are **microscope** mode. Workers see a **small agent surface** (~30–40 core verbs); the full registry is for implementers. Policy: [`embodied-control.md`](embodied-control.md).
+
 ---
 
 ## Validated today (in-game stack)
@@ -96,7 +98,7 @@ No global Hermes `/api/marks` at MVP — bot HTTP + reconciled base file.
 
 ## Skill bundles — in-game **Verbs**
 
-Agent bundles ([`hermes-agents.md`](hermes-agents.md)) include a **Verbs** section: the **`mc` commands** allowed in that phase. Grammar and edge cases live in L3 **`minecraft-*`** companions, not duplicated in architecture docs.
+Agent bundles ([`hermes-agents.md`](hermes-agents.md)) include a **Verbs** section: the **`mc` commands** allowed in that phase. Grammar and edge cases live in L3 **`minecraft-*`** companions, not duplicated in architecture docs. **Interface philosophy** (prefer macros and task-shaped reads over block-level reasoning): [`embodied-control.md`](embodied-control.md).
 
 | Agent phase | Typical `mc` families (see cheatsheet) |
 |---|---|
@@ -121,6 +123,73 @@ Long-running work: `bg_*` async variants where the registry exposes them.
 | **pre_tool_call** (target) | Path allowlist — agents cwd `data/workspace/` ([`workspaces.md`](workspaces.md)) |
 
 Dispatcher loop: [`components.md`](components.md) (`landfolk-dispatcher.sh` → gate-check → dispatch).
+
+---
+
+## Fleet binding and supervision (normative)
+
+This section is the **contract** for mapping kanban cards to in-game players and keeping `mc` pointed at the right HTTP listener. Enforcement details for bind/rebind live in [`board-dynamics.md`](board-dynamics.md); process supervision in [`components.md`](components.md); aggregated status schema in [`data-api.md`](data-api.md) § Fleet state record.
+
+### Sources of truth
+
+| Layer | Field | Meaning |
+|---|---|---|
+| Card | `assignee` | Hermes **agent** profile (`navigator`, `miner`, …) — expertise only |
+| Card | `metadata.bot` | Registry **body** id (`pip`, `mox`, …) — target canonical store |
+| Card title | `[bot:<id>]` prefix | Encoding used today on many boards; same id as `metadata.bot` when both present |
+| Host | `data/bots/<id>.yaml` | `api_port`, `username` — **only** the spawn layer and operators read this at runtime |
+
+**Resolution order** when determining which body a card uses:
+
+1. `metadata.bot` if set on the card (target).
+2. Else leading `[bot:<id>]` on the title (matches [`mutex_key.py`](../../plugins/landfolk/landfolk/orchestrator/mutex_key.py) and [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh)).
+3. Never treat `assignee` as the body name — legacy boards that used bot names as assignee are migration debt ([`impact.md`](impact.md)).
+
+**Today:** Hermes tasks have no `metadata.bot` column yet. Landfolk [`mutex_key.py`](../../plugins/landfolk/landfolk/orchestrator/mutex_key.py) and [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh) resolve the body from a leading **`[bot:<id>]`** title prefix, else per-assignee mutex (legacy). When storage catches up, both call sites should read `metadata.bot` first without changing gate-check or spawn semantics ([`impact.md`](impact.md) § F).
+
+Epic-level default bot: [`epic-lifecycle.md`](epic-lifecycle.md) (inherit on child cards).
+
+### Enforcement points (three layers)
+
+| Layer | Mechanism | Doc |
+|---|---|---|
+| **Write-time bind** | `@dispatcher` sets `metadata.bot` when materializing intents | [`board-dynamics.md`](board-dynamics.md) |
+| **Dispatch mutex** | landfolk **gate-check**: at most one **running** card per `metadata.bot` | [`board-dynamics.md`](board-dynamics.md), plugin hooks |
+| **Worker spawn** | Host reads resolved body → registry yaml → exports `MC_API_URL`, `MC_USERNAME`, `_MC_API_URL_LOCKED` (optional), sets `HERMES_KANBAN_TASK` | [`impact.md`](impact.md) § F, [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh) |
+
+Gate-check and spawn **must use the same body-resolution function** so mutex domain and HTTP port never disagree.
+
+### Worker runtime contract
+
+- Agents **do not** read `data/bots/` or discover ports from card prose ([`workspaces.md`](workspaces.md) access model).
+- `mc` resolves HTTP via [`bot/cli/api-url.mjs`](../../bot/cli/api-url.mjs): on kanban workers, `HERMES_KANBAN_TASK` + `MC_API_URL` beat a stale parent `_MC_API_URL_LOCKED`.
+- Hermes **scrubs `MC_*` at kanban worker spawn** (parent/dispatcher exports do not stick). Injection must land **after** scrub via:
+  - **Target:** spawn wrapper / plugin hook (per-card registry lookup) — [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh).
+  - **Validated interim (W1 wheat):** same-body `MC_API_URL` + `MC_USERNAME` in each execute-role profile `.env` ([`setup-role-profiles.sh`](../../prototypes/agent-arch/setup-role-profiles.sh)); **not** SOUL/wrapper-on-PATH. **Capstone / single-bot only** — fleet needs per-card lookup (scorecard `injection_ceiling_note` in [`w1-1780879052`](../../data/postmortems/wheat-capstone/w1-1780879052/scorecard.json)).
+- Pre-live gate: [`scripts/smoke-worker-env.sh`](../../scripts/smoke-worker-env.sh) (or equivalent) asserts bot HTTP reachable with profile `.env` or spawn injection.
+
+Optional belt-and-suspenders (not primary): spawn writes `~/.hermes/profiles/<agent>/.mc-binding.json`; `mc status` echoes `bound_bot` + task id for postmortems.
+
+### Binding vs liveness vs supervision
+
+| Concept | Question | Ground truth |
+|---|---|---|
+| **Binding** | Which card may drive which body? | Kanban + `metadata.bot` / title prefix + gate-check |
+| **Liveness** | Can `mc` talk to that body now? | Bot HTTP `GET /health` or `/status` (200) |
+| **Supervision** | Is the Mineflayer OS process up? | `scripts/landfolk` / `scripts/colony` `start <id>` — see [`components.md`](components.md) |
+
+Use **HTTP** for dispatch and scorecards; supervisor PID is for **restart**, not for “bot ready to accept `mc`”.
+
+**Observer bots** (e.g. Tester on a separate port for `mc verify`) are separate registry entries. Acceptance prep may tp an observer near the plot ([`prep-wheat-verify-observer.sh`](../../scripts/prep-wheat-verify-observer.sh)); that does not change the worker’s `MC_API_URL`.
+
+### Reliable patterns (checklist)
+
+1. **Encode body on the card** — `[bot:mox]` in title and/or `metadata.bot` at create; `assignee` = agent only.
+2. **Resolve once at spawn** — card → body id → `data/bots/<id>.yaml` → env exports; no agent-side registry reads.
+3. **One running card per `metadata.bot`** — mutex on body, not assignee.
+4. **Skip down bodies at bind** — dispatcher reads fleet snapshot ([`data-api.md`](data-api.md)); rebind ready cards when body is `down`.
+5. **Deploy `mc` CLI** — binding does not fix stale `~/.local/bin/mc`; symlink/regenerate from repo `bin/mc` before trials.
+6. **Capstone vs fleet** — single-bot epic: shared body across four agents is OK; fleet: same agent profile on different cards must get **per-card** spawn injection, not a static body in profile `.env`.
 
 ---
 
@@ -171,4 +240,6 @@ Hermes parser/profile steps: [`hermes-agents.md`](hermes-agents.md).
 - [`hermes-agents.md`](hermes-agents.md) — profiles, skill matrix, DSL ownership  
 - [`epic-lifecycle.md`](epic-lifecycle.md) — `--epic`, `--depends-on`, bot inheritance  
 - [`components.md`](components.md) — bot processes, dashboard poll, dispatcher  
-- [`data-api.md`](data-api.md) — recall alongside marks  
+- [`data-api.md`](data-api.md) — recall + § Fleet state record  
+- [`board-dynamics.md`](board-dynamics.md) — bind, mutex, rebind  
+- [`impact.md`](impact.md) § F — spawn pipeline  

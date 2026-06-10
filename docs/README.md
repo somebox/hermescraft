@@ -10,6 +10,7 @@
 |-----|---------|
 | [`architecture/README.md`](architecture/README.md) | Reading order, doc map, next steps |
 | [`architecture/target.md`](architecture/target.md) | Canonical target statement |
+| [`architecture/embodied-control.md`](architecture/embodied-control.md) | Reflex-first interface — registry vs agent surface, delivery order, evidence loop |
 | [`architecture/impact.md`](architecture/impact.md) | Code touchpoints for migration |
 
 ## 2. Reference (bot, `mc`, conventions)

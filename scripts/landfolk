@@ -1184,7 +1184,7 @@ except Exception: pass" 2>/dev/null || true)"
 
   echo
   echo "${C_DIM}── help ──${C_RST}"
-  echo "  ${C_DIM}lifecycle guide:  docs/guides/landfolk-lifecycle.md${C_RST}"
+  echo "  ${C_DIM}lifecycle guide:  docs/guides/fleet-lifecycle-runbook.md${C_RST}"
   echo "  ${C_DIM}commands:         scripts/landfolk --help${C_RST}"
   echo "  ${C_DIM}per-bot logs:     scripts/landfolk logs <player>${C_RST}"
   echo "  ${C_DIM}board delta:      scripts/board-recent.py --ticks 5${C_RST}"
@@ -1675,10 +1675,10 @@ cmd_regenerate() {
       cat <<'EOF'
 landfolk regenerate — regenerate derived repo artifacts
 
-Runs scripts/regenerate-artifacts.sh, which currently refreshes
-docs/mc-cheatsheet.md from bot/cli/registry.mjs. `landfolk deploy` calls
-this helper internally; this subcommand is for ad-hoc use (e.g. after
-editing the registry and before committing).
+Runs scripts/regenerate-artifacts.sh, which refreshes
+docs/reference/mc-cheatsheet.md from bot/cli/registry.mjs and surface tiers in
+bot/cli/registry-surface.mjs. `landfolk deploy` calls this helper internally;
+this subcommand is for ad-hoc use (e.g. after registry/tier edits and before committing).
 EOF
       return 0 ;;
   esac

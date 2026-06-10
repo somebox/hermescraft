@@ -1,6 +1,6 @@
 # Target architecture
 
-Status: **design exploration** (2026-06-05). Not yet built. This is the canonical statement of the architecture we're building toward. Other docs in this folder zoom into specific parts: [`hermes-agents.md`](hermes-agents.md) for Hermes profiles and skills, [`bots-and-mc.md`](bots-and-mc.md) for in-game control, [`components.md`](components.md) for processes and APIs, [`workspaces.md`](workspaces.md) for the storage model, [`board-dynamics.md`](board-dynamics.md) for operations, [`impact.md`](impact.md) for where this touches existing code.
+Status: **design exploration** (2026-06-05). Not yet built. This is the canonical statement of the architecture we're building toward. Other docs in this folder zoom into specific parts: [`embodied-control.md`](embodied-control.md) for the **reflex-first** bot ↔ agent interface, [`hermes-agents.md`](hermes-agents.md) for Hermes profiles and skills, [`bots-and-mc.md`](bots-and-mc.md) for in-game control, [`components.md`](components.md) for processes and APIs, [`workspaces.md`](workspaces.md) for the storage model, [`board-dynamics.md`](board-dynamics.md) for operations, [`impact.md`](impact.md) for where this touches existing code.
 
 If you want the visual version first, open [`architecture-visual-guide.html`](architecture-visual-guide.html) in a browser.
 
@@ -17,6 +17,8 @@ Long Minecraft worker sessions thrash. The diagnosis:
 
 The fix is not a stronger model. It's **smaller scope per agent invocation**. The card boundary is the natural place to reset scope.
 
+Pair that horizontal split with a **vertical** one: push motor control and task-shaped sensing into the bot; keep the agent on goals and choices. **Convergence strategy** (large registry, small generated agent surface, envelope/addressing spine, survey-driven facades): [`embodied-control.md`](embodied-control.md).
+
 ## The model in three sentences
 
 **Agents are actor identities. Bots are bodies. Cards pair them per phase.**
@@ -31,9 +33,9 @@ Six categories. Detailed in [`architecture-visual-guide.html`](architecture-visu
 |---|---|---|
 | **Role** | Architectural concern | planning, allocation, execution, review, watch, tooling |
 | **Agent** | A named actor identity — Hermes profile with expertise | `miner`, `navigator`, `crafter`, `planner`, `dispatcher` |
-| **Bot** | A named player body — Mineflayer + registry entry; persona (later) | [`bots-and-mc.md`](bots-and-mc.md#target-fleet-roster) |
+| **Bot** | A named player body — Mineflayer + registry entry; persona (later) | [`bots-and-mc.md`](bots-and-mc.md#target-fleet-roster); card→body contract: [§ Fleet binding](bots-and-mc.md#fleet-binding-and-supervision-normative) |
 | **Workspace** | A directory of state and code (often git-backed) | `data/agents/miner/`, `~/.hermes/profiles/miner/workspace/` |
-| **Card** | A unit of work on the kanban board | `assignee=<agent>` + optional `metadata.bot=<bot>` + optional `metadata.card_kind` |
+| **Card** | A unit of work on the kanban board | `assignee=<agent>` + `metadata.bot=<bot>` (target) or interim `[bot:<id>]` title prefix + optional `metadata.card_kind` |
 | **Human** | The operator | Sets goals, reviews, intervenes on edge cases |
 
 ## Three concerns
@@ -99,7 +101,7 @@ All children done → parent root ready → @overseer judges epic completion
 
 Epic **metadata**, **`--epic` vs `--depends-on`**, progress as child counts, review + follow-up doc: [`epic-lifecycle.md`](epic-lifecycle.md).
 
-Detail walkthroughs: [`hermes-agents.md`](hermes-agents.md) (profiles + DSL), [`bots-and-mc.md`](bots-and-mc.md) (`mc` + registry), [`board-dynamics.md`](board-dynamics.md) (dispatch tick, mutex, recovery).
+Detail walkthroughs: [`hermes-agents.md`](hermes-agents.md) (profiles + DSL), [`bots-and-mc.md`](bots-and-mc.md) (`mc` + registry + § Fleet binding), [`board-dynamics.md`](board-dynamics.md) (dispatch tick, mutex, recovery).
 
 ## What we lean on v0.15 for
 
@@ -122,8 +124,8 @@ Field-level detail in [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md).
 |---|---|
 | Hermes profile per agent | `~/.hermes/profiles/<agent>/` (one per agent, set up by deploy script) |
 | Bot registry | `data/bots/<bot>.yaml` (port, username, description) |
-| Per-card MC env injection at spawn | Custom dispatcher layer (see below) |
-| Per-bot mutex | `landfolk` plugin gate-check, extended to read `metadata.bot` |
+| Per-card MC env injection at spawn | Custom dispatcher layer (see below); normative contract [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding |
+| Per-bot mutex | `landfolk` plugin gate-check on resolved body id ([`mutex_key.py`](../../plugins/landfolk/landfolk/orchestrator/mutex_key.py); `metadata.bot` when schema ships) |
 | `@mention` DSL parser | Deterministic Python lib + `@planner` agent loop |
 | Fleet state + bind rules | `@dispatcher` tick (lexicographic; see [`board-dynamics.md`](board-dynamics.md)) |
 | Agent skill bundles | `data/workspace/reference/skills/agent-<name>.md` — skill **layers** L0–L3 in [`hermes-agents.md`](hermes-agents.md) |

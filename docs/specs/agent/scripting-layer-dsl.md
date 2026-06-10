@@ -38,6 +38,8 @@ selectors (Part 1), query DSL (Layer A), `call()` engine (Layer B) —
 becomes the eventual runtime that playbook phases execute through, in that
 order of risk.
 
+**Delivery order:** Part 1 (region selectors) is **step 2** after the typed envelope spine — see [`../../architecture/embodied-control.md`](../../architecture/embodied-control.md) § Delivery order. Layer A/B remain deferred until spine + selectors land.
+
 ## Hard constraints (unchanged from earlier draft)
 
 Any scripting surface has to respect what the framework already enforces.

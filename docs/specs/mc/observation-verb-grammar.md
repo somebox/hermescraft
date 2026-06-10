@@ -2,6 +2,8 @@
 
 Status: draft / planning. Package 1 (May 2026) implemented the **status = self / scene = world** split in code; see below. CLI registry (2026-05): the former **`observe` command group** is renamed **`perceive`** in `mc commands --category perceive`; the verb **`mc observe`** is unchanged (orchestration snapshot).
 
+**Strategy owner:** typed nouns, symmetric success, and perceive-lane consolidation are **step 1** of the delivery chain in [`../../architecture/embodied-control.md`](../../architecture/embodied-control.md). This spec is the technical detail; embodied-control is the organizing policy (registry vs agent surface, facades, evidence loop).
+
 ## Package 1 shipped (status = self, scene = world)
 
 - **`GET /status`** no longer embeds `nearbyBlocks`, `notableBlocks`, or raycast `scene`. Lean status returns `supplies`, `holding` (with tool `durability_left` when applicable), `nearby_entities`, optional `situation` and `hand_vs_inventory`.

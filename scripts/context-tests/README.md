@@ -2,7 +2,7 @@
 
 Offline harness for **prompt/context interpretation**: given persona, skills, synthetic `observe`, and optional prior tool results, does the model emit the expected `mc` (or shell) lines? No live Mineflayer or Hermes.
 
-**Entry point:** `./context-tuner` at repo root (dispatches here). Human-oriented docs: `docs/context-tests/README.md`.
+**Entry point:** `./context-tuner` at repo root (dispatches here). Human-oriented docs: `docs/testing/context-tuner/README.md`.
 
 ## Layout
 
@@ -57,6 +57,8 @@ Prefer `./context-tuner run …` so `--config` on a scenario id is applied corre
 - **mc** (default): `expect.tool_calls`, `patterns` — see `grading.mjs`, `lib/shell-lines.mjs` for shell.
 - **shell**: `expect.shell_commands` for Steward-style output.
 - NL judge: diagnostic; defaults in `configs/default.yaml` (`mc_conventions`, no cheatsheet).
+
+**Cheatsheet in prompts:** `run.mjs` embeds `docs/reference/mc-cheatsheet.md` by default (tier layout: Agent core / Extended / Microscope). Run manifests record its SHA256 — expect a new hash after `scripts/regenerate-artifacts.sh` or registry edits; not a CI gate.
 
 ## Capture (optional)
 

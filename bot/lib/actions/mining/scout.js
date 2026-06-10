@@ -3,6 +3,7 @@ import { bearingFromDelta, classifySector, angleDiffDegrees } from '../../shared
 import { fail, ok } from '../../shared/action-contract.js';
 import { annotateReachability } from '../_nav-helpers.js';
 import { toolReadiness } from '../../runtime/inventory-hints.js';
+import { blockRef } from '../../shared/typed-nouns.js';
 
 // IMPORTANT: `find_blocks` uses raw `b.findBlocks` — an x-ray scan that
 // doesn't gate on line-of-sight. That's deliberate: scout's job is to
@@ -98,7 +99,24 @@ export function createScoutHandlers(deps) {
         // Sorted reachable-first by annotateReachability. maxVisit=512
         // gives the BFS ~D=8-15 coverage in typical terrain — enough for
         // 32-block scan_range while keeping latency under ~200ms total.
-        const locations = annotateReachability(b, rawLocations, 512);
+        const locations = annotateReachability(b, rawLocations, 512).map((loc) => {
+          const origin = {
+            x: b.entity.position.x,
+            y: b.entity.position.y,
+            z: b.entity.position.z,
+          };
+          return {
+            ...loc,
+            block_ref: blockRef(
+              { name: blockName, x: loc.x, y: loc.y, z: loc.z },
+              origin,
+              {
+                reachable: loc.reachable,
+                ...(loc.approach_cell ? { approach_cell: loc.approach_cell } : {}),
+              },
+            ),
+          };
+        });
         const nReachable = locations.filter((l) => l.reachable).length;
     
         const fpNote = ctx.reactive.fairPlayMode ? fairPlayCollectNote(blockName, blockType) : '';

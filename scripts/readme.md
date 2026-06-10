@@ -69,7 +69,8 @@ but day-to-day use goes through `scripts/landfolk`.
 | `landfolk-logs-aggregate.py` | Multi-profile session-log tailer used by `landfolk logs`. |
 | `analyze-progress-logs.sh` | Read-only summaries over watchdog progress JSONL. |
 | `run-landfolk-agent.sh` | Thin Hermes launcher once a bot is listening on a known port. |
-| `setup-landfolk-profiles.sh` | Phase 2 workers + steward ops: profiles, `landfolk-ops` board, kanban config; `--solo-flint` for one-bot testing; `--apply-config` to refresh SOUL/skills/max_turns only (see `docs/design/phase-3/steward-mvp.md`). |
+| `setup-landfolk-profiles.sh` | Phase 2 workers + steward ops: profiles, `landfolk-ops` board, kanban config; `--solo-flint` for one-bot testing; `--apply-config` to refresh SOUL/skills/max_turns only (see `docs/archive/phase-3-steward-mvp.md`). |
+| `regenerate-artifacts.sh` | Regenerate derived repo files (tier-grouped `docs/reference/mc-cheatsheet.md`; playbook skill sync). Called by `landfolk deploy`; also `landfolk regenerate`. |
 | `inactive-cards-pauser.py` / `steward-supervisor.py` / `steward-chat-listener.py` | Optional operator daemons; listener starts with `landfolk start`, supervisor/pauser via `restart` or flags. |
 | `ledger-update.py` | Fold completed ops-board task metadata into `data/ops/logistics-ledger.yaml`. |
 | `blueprint-plan.py` | GrabCraft URL → build plan JSON (substitutions, phases); steward skill `minecraft-steward-blueprint-plan`. |

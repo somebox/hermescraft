@@ -33,7 +33,7 @@ If your bug fix is sitting uncommitted, the run won't have it.
 
 ### 3. Deploy SOULs
 
-`scripts/landfolk deploy` syncs `prompts/landfolk/*.md` and `skills/*.md` into `~/.hermes/profiles/<bot>/`. **Required** every time you edit a SOUL or skill — even if you committed it, the deploy is the runtime install step.
+`scripts/landfolk deploy` syncs `prompts/landfolk/*.md` and `skills/*.md` into `~/.hermes/profiles/<bot>/`, and **regenerates** `docs/reference/mc-cheatsheet.md` from `bot/cli/registry.mjs` (agent surface tiers from `registry-surface.mjs`). Skills that embed the cheatsheet pick up the new layout on the next context build; **required** every time you edit a SOUL, skill, or registry — even if you committed it, deploy is the runtime install step.
 
 Watch for `✓ deploy complete` and no `ERROR` lines.
 

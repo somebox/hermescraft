@@ -11,6 +11,7 @@ import {
   formatStandingSituation,
 } from '../shared/perception.js';
 import { buildLandscapeContext } from '../shared/scene-landscape.js';
+import { blockRef } from '../shared/typed-nouns.js';
 import { filterPlacementBlockingEntities } from '../shared/entity-blocking.js';
 import {
   nearbyPlacementBlockersFromHits,
@@ -361,12 +362,30 @@ export function createFairPlaySuite(deps) {
     if (standingLine) summary = `${standingLine} ${summary}`;
     if (landscape?.clause) summary = `${landscape.clause} — ${summary}`;
 
+    const origin = {
+      x: b.entity.position.x,
+      y: b.entity.position.y,
+      z: b.entity.position.z,
+    };
+    const visibleBlockHits = visibleBlocks.map((entry) => ({
+      ...entry,
+      block_ref: blockRef(
+        {
+          name: entry.name,
+          x: entry.position.x,
+          y: entry.position.y,
+          z: entry.position.z,
+        },
+        origin,
+      ),
+    }));
+
     return {
       summary,
       ...(landscape ? { landscape } : {}),
       ...(topology ? { topology } : {}),
       visible_blocks: summarizeVisibleBlocks(visibleBlocks),
-      visible_block_hits: visibleBlocks,
+      visible_block_hits: visibleBlockHits,
       visible_entities: visibleEntities,
       hazards,
       looking_at: lookingAt,

@@ -1,4 +1,6 @@
-/** @typedef {{ name:string, aliases?: string[], category:string, method:'GET'|'POST'|'DELETE', path?: string, pathFn?: (p:Record<string,unknown>) => string, bodyFn?: (p:Record<string,unknown>) => string | null | undefined, kind?: 'http', description?: string, usage?: string, examples?: string[], argSchema?: import('./args.mjs').ArgSpec[], customParse?: boolean }} CmdDef */
+/** @typedef {{ name:string, aliases?: string[], category:string, surface?: 'core'|'extended'|'microscope', method:'GET'|'POST'|'DELETE', path?: string, pathFn?: (p:Record<string,unknown>) => string, bodyFn?: (p:Record<string,unknown>) => string | null | undefined, kind?: 'http', description?: string, usage?: string, examples?: string[], argSchema?: import('./args.mjs').ArgSpec[], customParse?: boolean }} CmdDef */
+
+import { applyAgentSurfaceTiers } from './registry-surface.mjs';
 
 const CAT = [
   'platform',
@@ -2699,6 +2701,8 @@ export const RAW_COMMAND_DEFS = [
     examples: ['mc unremind 1'],
   }),
 ];
+
+applyAgentSurfaceTiers(RAW_COMMAND_DEFS);
 
 export const CATEGORY_ORDER = CAT;
 

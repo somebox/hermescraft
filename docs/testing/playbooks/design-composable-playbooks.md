@@ -9,6 +9,10 @@ Orchestration spec on top of the existing `mc` verb registry. Companion to
 and [`improvement-pass-followup.md`](improvement-pass-followup.md) (historical plan).
 Evidence base: g-2026-05-30-3 (`data/genesis-runs/g-2026-05-30-3/findings/`).
 
+Architecture owner for the same ideas (reflex, taxi nav, perception zoom, living vocabulary): [`../../architecture/embodied-control.md`](../../architecture/embodied-control.md).
+
+Playbook **phase verb whitelists** are the per-card slice of the **agent surface** (not the full 181-verb registry). See embodied-control § Two layers.
+
 ## Delivered v1 vs design ambition
 
 **Design ambition:** composable playbooks with `use_playbook:` sub-plays
@@ -65,6 +69,8 @@ a read-only `mc` call. The playbook is data + doctrine; the runtime is
 the worker SOUL walking the phase table.
 
 ## Domain-coupled perception (the key insight)
+
+Canonical write-up: [`../../architecture/embodied-control.md`](../../architecture/embodied-control.md) § Ecological sight. Summary:
 
 Today's `mc scene` returns the same data whether you're surveying a
 chicken pen, auditing a wall, or counting trunk logs. Workers pay for

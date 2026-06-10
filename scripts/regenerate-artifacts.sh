@@ -2,9 +2,18 @@
 # Regenerate repo artifacts derived from authoritative sources.
 #
 # Today this is just `docs/reference/mc-cheatsheet.md` (generated from
-# `bot/cli/registry.mjs`). Add new generators here as they appear so a
-# single call from `landfolk deploy` / genesis bootstrap keeps everything
-# fresh.
+# `bot/cli/registry.mjs` + agent surface tiers in `bot/cli/registry-surface.mjs`).
+# Add new generators here as they appear so a single call from `landfolk deploy`
+# / genesis bootstrap keeps everything fresh.
+#
+# Maintainer note (registry changes):
+#   1. Edit `bot/cli/registry.mjs` (new verb) and/or `registry-surface.mjs` (core/microscope).
+#   2. Run this script (or `cd bot && npm run cheatsheet`).
+#   3. Commit regenerated `docs/reference/mc-cheatsheet.md` — CI `cheatsheet-sync.test.js`.
+#   4. After changing core/microscope membership, optional: `python3 scripts/mc-call-survey.py --minutes 10080 --json`.
+#   5. If restructuring cheatsheet layout for eval, refresh
+#      `scripts/eval-grammar/fixtures/cheatsheet-flat-baseline.md` only when intentionally
+#      changing the v1 baseline (see `scripts/eval-grammar/RESULTS.md`).
 #
 # Usage:
 #   scripts/regenerate-artifacts.sh           # verbose

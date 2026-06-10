@@ -4,7 +4,9 @@ HermesCraft has five tiers of tests with different prerequisites and
 runtimes. Only Tier 1 runs in CI today; the rest are manual / local.
 
 **Related documents:**
-- [`docs/archive/test-inventory.md`](../archive/test-inventory.md) — per-test catalog (overlaps, gaps, validation notes)
+- [`bot/test/README.md`](../../bot/test/README.md) — Tier 1 taxonomy and contract conventions
+- [`docs/reference/audits/`](../reference/audits/) — mc command coverage matrix (`bot-test-coverage-*.md`, from `node scripts/bot-test-coverage-report.mjs`)
+- [`docs/archive/test-inventory.md`](../archive/test-inventory.md) — per-test catalog (overlaps, gaps; Node section superseded by bot/test README + coverage audits)
 - [`docs/archive/testing-migration.md`](../archive/testing-migration.md) — pytest migration cookbook (Round 3 complete)
 - [`config/hermescraft.yaml`](../../config/hermescraft.yaml) — central MC/rcon/bot/model/logging config
 - [`tests/README.md`](../../tests/README.md) — pytest tree overview
@@ -28,13 +30,15 @@ Pure JS logic. No Minecraft server, no bot running, no external dependencies.
 cd bot && npm test
 ```
 
-45 test files under `bot/test/` (including `bot/test/cli/` and integration cases), **438** tests in the default `npm test` run (~15–20 s locally). Uses Node's built-in
-`node:test` + `node:assert/strict`.
+~160 `*.test.js` files under `bot/test/` (including `cli/`, `runtime/`, `integration/`), **1300+** cases in the default `npm test` run (~15–20 s locally). Uses Node's built-in
+`node:test` + `node:assert/strict`. Set `HERMES_VALIDATE=1` (via `npm test`) so action envelopes are validated in contract tests.
 
 Includes a **contract test** (`bot/test/cli-action-sync.test.js`) that
 asserts every CLI command in `bot/cli/registry.mjs` has a matching async
 handler in `bot/lib/actions/*.js`. This is the gate that catches drift
 between the CLI and the server during refactors.
+
+Registry-derived artifacts: `cheatsheet-sync.test.js` (tier-grouped cheatsheet from `scripts/gen-mc-cheatsheet.mjs`), `registry-guardrails.test.js` (examples, **agent surface** tiers, core cap), `prompts-sync.test.js` (starter/wake tokens resolve to real verbs).
 
 CI: `.github/workflows/ci.yml` runs this on every push + PR, plus
 `node --check bot/server.js` and `bash -n` on the main launch scripts.

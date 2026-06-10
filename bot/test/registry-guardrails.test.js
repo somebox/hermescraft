@@ -4,6 +4,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RAW_COMMAND_DEFS, CATEGORY_ORDER } from '../cli/registry.mjs';
+import { buildCheatsheet } from '../../scripts/gen-mc-cheatsheet.mjs';
+import { SURFACE_CORE, SURFACE_MICROSCOPE } from '../cli/registry-surface.mjs';
+
+const VALID_SURFACES = new Set(['core', 'extended', 'microscope']);
+const MAX_CORE = 45;
 
 /** Meta verbs where empty Examples in --help is acceptable. */
 const EXAMPLES_OPT_OUT = new Set([
@@ -35,4 +40,33 @@ test('commands have examples or are explicitly opted out', () => {
     0,
     `${violations.length} commands missing examples (run scripts/backfill-registry-examples.mjs):\n  ${violations.slice(0, 20).join(', ')}${violations.length > 20 ? '…' : ''}`,
   );
+});
+
+test('agent surface tier is valid on every command', () => {
+  for (const cmd of RAW_COMMAND_DEFS) {
+    const tier = cmd.surface ?? 'extended';
+    assert.ok(VALID_SURFACES.has(tier), `${cmd.name} has invalid surface ${tier}`);
+  }
+});
+
+test('core surface tier count stays bounded', () => {
+  const coreN = RAW_COMMAND_DEFS.filter((c) => (c.surface ?? 'extended') === 'core').length;
+  assert.ok(coreN <= MAX_CORE, `core tier has ${coreN} commands (max ${MAX_CORE})`);
+  assert.equal(coreN, SURFACE_CORE.size, 'core tier should match SURFACE_CORE set size');
+});
+
+test('surface tier sets do not overlap', () => {
+  for (const name of SURFACE_CORE) {
+    assert.ok(!SURFACE_MICROSCOPE.has(name), `${name} in both core and microscope`);
+  }
+});
+
+test('every registry command appears in generated cheatsheet', () => {
+  const text = buildCheatsheet(RAW_COMMAND_DEFS);
+  const missing = [];
+  for (const cmd of RAW_COMMAND_DEFS) {
+    const hasMc = text.includes(`mc ${cmd.name}`) || text.includes(`\`${cmd.name}\``);
+    if (!hasMc) missing.push(cmd.name);
+  }
+  assert.equal(missing.length, 0, `missing from cheatsheet: ${missing.join(', ')}`);
 });

@@ -8,8 +8,8 @@ Hermescraft ops scripts live here. Two flavors:
   prose. Prompts live in `prompts/landfolk/*.md` and `*.starter.txt`.
 - **Deploy + setup** — `setup-landfolk-profiles.sh` (installs SOULs, config
   patches, skills into `~/.hermes/profiles/<bot>/`), `regenerate-artifacts.sh`
-  (regenerates `docs/mc-cheatsheet.md` from the registry). Called from
-  `scripts/landfolk deploy`.
+  (regenerates tier-grouped `docs/reference/mc-cheatsheet.md` from the registry +
+  `bot/cli/registry-surface.mjs`). Called from `scripts/landfolk deploy`.
 
 The `landfolk` wrapper in this directory is the single entry point for fleet
 operations: `landfolk start | stop | status | restart | deploy | regenerate |
@@ -53,3 +53,16 @@ deploy`). It writes SOULs, patches `config.yaml` knobs (max_turns,
 `model.context_length` 250k, `compression.threshold` 0.2, auxiliary compression
 model via `scripts/patch-landfolk-compression-config.py`), and copies skills into
 `~/.hermes/profiles/<bot>/`. It is idempotent — safe to re-run.
+
+## Registry, cheatsheet, and agent surface tiers
+
+When you add or change `mc` verbs or who should see them by default:
+
+1. **`bot/cli/registry.mjs`** — command definition (description, examples, HTTP path).
+2. **`bot/cli/registry-surface.mjs`** — optional `core` / `microscope` membership (default tier is **extended**). Guardrail: ≤45 core verbs (`registry-guardrails.test.js`).
+3. **Regenerate** — `scripts/regenerate-artifacts.sh`, `scripts/landfolk deploy`, or `cd bot && npm run cheatsheet`; commit `docs/reference/mc-cheatsheet.md`.
+4. **Validate** — `cd bot && HERMES_VALIDATE=1 npm test` (includes `cheatsheet-sync`, `prompts-sync`, surface guardrails).
+5. **Evidence (when retuning tiers)** — `python3 scripts/mc-call-survey.py --minutes 10080 --json` (offline session logs); save snapshot under `docs/reference/audits/` for PR notes.
+6. **Discovery CLI** — agents/tools can filter introspection with `mc commands --tier core|extended|microscope` (field name in JSON is `surface`; flag is `--tier` to avoid the swim verb `mc surface`).
+
+Strategy: [`docs/architecture/embodied-control.md`](../docs/architecture/embodied-control.md) § Two layers.

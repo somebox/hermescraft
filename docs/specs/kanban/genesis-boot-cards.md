@@ -421,7 +421,7 @@ scripts/genesis.sh new-run \
 - Genesis is independent of plugin rollout; difficulty + snapshots must work via `genesis_lib` rcon/poller alone.
 - Steward SOUL edit (Build D) is additive; reverts cleanly.
 - `data/genesis-runs/<run-id>/` gitignored by default; `git add -f` interesting snapshot JSONs for posterity.
-- Cheatsheet is registry-generated (`npm run cheatsheet`); full list is 181 verbs — worker SOULs should emphasize the **core ~30** from survey + package-1 observe doctrine ([`observation-verb-grammar.md`](../mc/observation-verb-grammar.md)). After a genesis run, re-survey zero-use verbs (`construct`, `regions_terrain`, combat advanced) before adding more registry entries.
+- Cheatsheet is registry-generated (`npm run cheatsheet` or `landfolk deploy`); layout is **tier-grouped** (Agent core / Extended / Microscope) — worker SOULs and skills should lead with the core section + package-1 observe doctrine ([`observation-verb-grammar.md`](../mc/observation-verb-grammar.md)). After a genesis run, re-survey with `scripts/mc-call-survey.py` and adjust `bot/cli/registry-surface.mjs` before adding registry entries.
 
 ## Validated against repo (Core v1 ship)
 

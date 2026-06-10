@@ -135,7 +135,7 @@ Async `POST /task/<name>` (background) **skips** pre/post middleware — preserv
 5. If the module is new, add the factory import + call to `lib/actions/index.js`. `actions-manifest.test.js` fails on omission.
 6. Add a smoke test under `bot/test/`. Build the factory with `createMockServices()`, exercise one representative failure path, and assert `validate()` passes.
 7. If the module passes 500 LOC, either split it OR add `// @size-exempt: <reason>` at the top.
-8. Update the CLI registry (`bot/cli/registry.mjs`) with description, params, and examples. P3 requires a non-empty description. Run `node scripts/gen-mc-cheatsheet.mjs` after.
+8. Update the CLI registry (`bot/cli/registry.mjs`) with description, params, and examples. P3 requires a non-empty description. If the verb belongs on the default agent surface, add the name to `bot/cli/registry-surface.mjs` (`SURFACE_CORE` or `SURFACE_MICROSCOPE`; omit for extended). Run `node scripts/gen-mc-cheatsheet.mjs` (or `npm run cheatsheet`) and commit the regenerated cheatsheet. If emitting structured world nouns, use `bot/lib/shared/typed-nouns.js` (`block_ref` pilot on `find_blocks`, `inspect`, scene hits).
 
 ## Adding a new HTTP middleware — checklist
 

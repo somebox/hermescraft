@@ -11,4 +11,5 @@ Every `mc <verb>` handler returns an **ActionResult**:
 
 Handlers should build results with **`ok()`** and **`fail()`** so shape and `retry_safe` stay consistent. **`validate(result)`** checks conformance (used when `HERMES_VALIDATE=1`).
 
-Design reference: [`docs/design/action-contract.md`](../../docs/design/action-contract.md).
+Design reference: [`docs/reference/bot/handler-contract-adr.md`](../../docs/reference/bot/handler-contract-adr.md).
+Strategic context (reflex-first envelopes as “spinal protocol”): [`docs/architecture/embodied-control.md`](../../docs/architecture/embodied-control.md).

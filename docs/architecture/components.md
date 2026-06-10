@@ -7,6 +7,7 @@ This doc is the **inventory**. Behavior details live elsewhere:
 | Question | Doc |
 |---|---|
 | Vocabulary, card flow, concerns | [`target.md`](target.md) |
+| Reflex-first `mc` interface | [`embodied-control.md`](embodied-control.md) |
 | Hermes profiles, skills, DSL | [`hermes-agents.md`](hermes-agents.md) |
 | Bot registry, `mc`, HTTP, marks | [`bots-and-mc.md`](bots-and-mc.md) |
 | Dispatcher tick, bind, maintenance | [`board-dynamics.md`](board-dynamics.md) |
@@ -90,6 +91,27 @@ flowchart TB
 | Hermes gateway | External install | Same | Kanban DB, worker spawn, REST + WS |
 | Dashboard | `dashboard/server.js` | + colony rollup / trends writer | Proxies fleet, kanban, map; see below |
 | Host data API | *(not shipped)* | `plugins/landfolk` data_api module | [`data-api.md`](data-api.md) |
+
+### Supervision contract (PIDs and restarts)
+
+Host orchestration only — **not** visible to agent workers. Card→body binding rules: [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding.
+
+| Process kind | Typical management | PID / state | Notes |
+|---|---|---|---|
+| **Mineflayer body** | [`scripts/landfolk`](../../scripts/landfolk), [`scripts/colony`](../../scripts/colony) `start <id>` | Supervisor or parent shell; optional pidfiles | One Node process per registry id; port from `data/bots/<id>.yaml` |
+| **Bot HTTP** | Same process as Mineflayer | N/A (in-process listener) | **Liveness** for dispatch = `GET /health` or `/status`, not OS PID |
+| **Hermes gateway** | Operator / systemd | Gateway PID | Kanban DB, worker spawn, WS |
+| **Hermes worker** | Gateway spawn | Ephemeral child PID | **Not** the bot body — one worker per claimed card |
+| **Dispatcher loop** | [`landfolk-dispatcher.sh`](../../scripts/landfolk-dispatcher.sh), trial scripts | Often `/tmp/*-dispatcher-*-pid` | Kill pidfile on teardown; see capstone runbooks |
+| **Bot watchdog** | [`landfolk-control.sh`](../../scripts/landfolk-control.sh) ~8s | Internal | Restart stuck connect/collect; **restart ≠ rebind** — WS/dispatcher rebinds cards on body death |
+
+**Conventions (operator):**
+
+- Trial scripts may write pidfiles under `/tmp` (e.g. `wheat-dispatcher-w1-pid`). Reset scripts should kill those PIDs before archiving cards ([`reset-wheat-capstone.sh`](../../scripts/reset-wheat-capstone.sh)).
+- Do not use “PID file exists” as proof the bot HTTP API is healthy — always curl `/status` or use [`scripts/roster.py`](../../scripts/roster.py) / dashboard fleet poll.
+- Capstone **Tester** is a second long-lived body (separate port); supervision matches any other registry entry.
+
+Target: supervisor state (landfolk) feeds optional `supervisor.pid` into [`data-api.md`](data-api.md) fleet-state records; HTTP remains authoritative for `mc`.
 
 ---
 
@@ -220,5 +242,7 @@ When adding a component, update **this file** (one row in the right table) and t
 - New **dispatch rule** → [`board-dynamics.md`](board-dynamics.md)
 - New **dashboard metric** → [`dashboard-metrics-spec.md`](dashboard-metrics-spec.md)
 - Retiring today’s script → [`impact.md`](impact.md) cross-cutting table
+- Supervision / PID convention change → this file § Supervision contract
+- Card→body binding rule change → [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding (not here)
 
 Avoid duplicating full script lists in [`impact.md`](impact.md); use impact for **migration posture** and link here for the live map.

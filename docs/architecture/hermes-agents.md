@@ -9,6 +9,7 @@ Status: **design exploration** (2026-06-05). **Hermes-side** design: who runs on
 | Recall on complete | [`data-api.md`](data-api.md) |
 | Skills/SOULs in git | [`workspaces.md`](workspaces.md) |
 | Hermes primitives cited | [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md) |
+| Registry vs agent `mc` surface | [`embodied-control.md`](embodied-control.md) |
 
 Skill sources today: [`skills/`](../../skills/) (bundles + `minecraft-*` companions). Benchmark bundle: [`skills/agent-navigator.md`](../../skills/agent-navigator.md).
 
@@ -35,6 +36,8 @@ Bot-less cards: `@planner`, `@dispatcher`, `@overseer`, research/desk work. `@en
 | **L1 — Survival + opportunistic craft** | [`minecraft-survival.md`](../../skills/minecraft-survival.md) | All **bot-bound execution** agents |
 | **L2 — Agent bundle** | `agent-<name>.md` — scope, done/stop, handoff | `skill_view` turn 1 |
 | **L3 — Companions** | `minecraft-*.md`, playbooks | `kanban_create(skills=[...])` |
+
+**Agent surface (`mc` visibility):** the full handler registry stays large; each worker sees a **curated subset** — L2 **Verbs** sections, L3 companions, and playbook phase whitelists define the **core lane** for that card; everything else is **microscope tier** (valid but not turn-1 context). Target: generated `mc help --profile <agent>` from registry tiers. Policy: [`embodied-control.md`](embodied-control.md) § Two layers.
 
 **L1** — short craft ladder (torches, tools, table) without a `@crafter` card; no bulk smelt or chest org.
 

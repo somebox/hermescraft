@@ -2,6 +2,8 @@
 
 Section 8 of the Phase 2 architecture. The required response shape for every `mc <verb>` action handler. Heavily referenced (P9 in docs/reference/engineering-patterns.md cites this).
 
+Strategic context: consistent envelopes let agents and scripts compose **output → input** without prose parsing — [`../architecture/embodied-control.md`](../architecture/embodied-control.md).
+
 ## 8. Primitive action reliability contract
 
 This is the **gate**: no L1+ test can pass until the action it depends on meets this contract. Sprint 1 fixes them.

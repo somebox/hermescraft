@@ -97,3 +97,13 @@ Revisit the categorical proposal if/when:
 
 The eval harness is at `scripts/eval-grammar/run.mjs`. Re-run with
 `node scripts/eval-grammar/run.mjs` to refresh.
+
+## v3 tier-grouped cheatsheet (2026-06-10)
+
+After agent-surface tiering, **v1** in the harness reads the frozen flat baseline
+(`scripts/eval-grammar/fixtures/cheatsheet-flat-baseline.md`); **v3** reads the live
+tier-grouped [`docs/reference/mc-cheatsheet.md`](../../docs/reference/mc-cheatsheet.md)
+(Agent core / Extended / Microscope). **v2** remains the archived categorical doc at
+`docs/archive/mc-cheatsheet-v2.md`. Direct tasks grade v1/v3 against flat `v1_correct`
+forms (verb names unchanged). Re-run A/B/C when changing tier layout or core membership.
+Optional merge gate — `cd bot && HERMES_VALIDATE=1 npm test` is authoritative.

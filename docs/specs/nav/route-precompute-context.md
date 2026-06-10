@@ -4,6 +4,8 @@
 
 Status: **shipped in code (2026-05-30)** — Phases 0a–3 implemented behind flags (`HERMES_RETRACE_TRAIL`, `HERMES_MOVE_RESOLVE`, `HERMES_NAV_BRIEF=shadow|1`). Rollout: shadow → SLO calibration → single-profile canary → fleet. See `bot/lib/config/README.md` and `bot/lib/runtime/nav-brief.js`.
 
+Strategic home for this refactor (taxi navigation, reflex vs reasoning): [`../architecture/embodied-control.md`](../architecture/embodied-control.md).
+
 ## Thesis
 
 Today the agent navigates by **reasoning over geometry in the prompt**: it pulls raw blocks (`scene`, `map`, `nearby`), builds a 3D picture in-context, guesses a move, and frequently guesses wrong. This refactor moves that work **out of the prompt and into bot primitives**:
