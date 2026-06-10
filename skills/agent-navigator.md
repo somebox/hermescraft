@@ -63,7 +63,8 @@ The full grammar is in `skills/minecraft-navigation.md`. Your working set is sma
 | Verb | When |
 |---|---|
 | `mc move @MARK` | Primary. Mark resolves to coords with door + region awareness. |
-| `mc move X Y Z [--near N]` | Coords target. `--near 2` for arrive-near-block cases. |
+| `mc move X Y Z [--near N]` | Coords target; use `--near 2` when the cell is solid (chest, wall). |
+| `mc goto_near X Y Z [range]` | Legacy alias for stand-near-solid; prefer `mc move X Y Z --near 2`. |
 | `mc observe` | Read the per-round nav brief. Pick the `← suggested` line. |
 | `mc scene` / `mc reachable` / `mc map` | When `observe` is stale or surprising. |
 | `mc retrace` | Backtrack via stair trail or breadcrumbs. |
@@ -80,15 +81,29 @@ You do not need `mc dig_area`, `mc tunnel`, `mc place`, `mc craft`, `mc smelt`,
 `mc deposit`, `mc attack`, `mc shoot`, `mc till`, `mc plant`. Those belong to
 other agents.
 
+### Survey verbs — measure terrain *before* you commit
+
+When scouting or measuring a corridor / segment, use batch verbs. One round-trip
+beats N. Don't reach for `mc terrain_top X Z` in a loop.
+
+| Verb | When |
+|---|---|
+| `mc corridor_sample X1 Z1 X2 Z2 [step=N] [full=true]` | Per-column block_y across a rectangle + aggregate (`elevation_median`, `min`, `max`, `delta`). One call covers a 3-wide segment instead of 9 × `mc terrain_top`. Foliage is excluded by default — canopy doesn't read as ground. |
+| `mc level_ground X1 Z1 X2 Z2 target=Y` (no `execute`) | Dry-run dispositions: `level`, `cut`, `fill_shallow`, `fill_deep`, `no_floor` per column + spans needing `deck` / `level_caps`. Use as a post-clear "is the bed flat?" check. **16-column cap per call** — split a 3×13 segment into three 3×4 sub-rectangles. |
+| `mc terrain_top X Z [exclude_foliage=false]` | Single-column read. Default skips canopy + snow; pass `exclude_foliage=false` only when you specifically want to inspect leaves. |
+| `mc find_blocks BLOCK [RADIUS] [COUNT]` | Census a specific block (`oak_log`, `birch_log`, `water`) within a radius. Use after `clear_strip` to catch residual trunks above the cleared corridor. |
+
 ## 4. Phase-specific knowledge
 
 ### Read the brief
 
-When `HERMES_NAV_BRIEF=1`, `mc observe` includes a per-round `nav_brief` with
+When the worker environment sets `HERMES_NAV_BRIEF=1` (off by default; see
+`bot/lib/config/README.md`), `mc observe` includes a per-round `nav_brief` with
 suggested next moves. Read it first; pick the `← suggested` line. If `confined`
 mode is on, far targets show `⚠ blocked (confined)` — use the local DO
 primitives (`pillar_up`, `dig`, `stair_up`) the brief offers instead of long
-strategic moves.
+strategic moves. Without `HERMES_NAV_BRIEF=1`, rely on `mc status`, marks, and
+`mc move` — do not expect `nav_brief` in observe output.
 
 ### Mark resolution
 
@@ -100,6 +115,13 @@ something like `to :mine_nw:` or `return to :base_anchor:`. Translation:
 - If the mark resolves: `mc move @<name>` is your primary verb.
 - If the mark doesn't exist: block with `unknown_mark:<name>`. Do not guess
   coordinates.
+
+### Solid targets (chests, placed blocks)
+
+`mc move X Y Z` to a **solid** cell (chest, cobble, wall) returns
+`NAV_BLOCKED`. Use `mc move @MARK` (standable offset) or
+`mc move X Y Z --near 2` / `mc goto_near X Y Z 2`. Raw coords are for
+**air** stand cells only.
 
 ### Route-sculpt hints
 
@@ -145,6 +167,9 @@ If the card body specifies an arrival hint (e.g. "facing north" or "at chest
 level"), satisfy it. Otherwise, arrival on the standable cell is enough.
 
 ## 7. Handoff state — what the next agent reads
+
+On complete, always set `exit_pos` and `work_at_mark` when the card names a mark;
+downstream agents read these on turn 1 via parent completion metadata.
 
 On `kanban_complete`, attach this metadata. The next agent's preflight reads
 it as starting state:

@@ -516,9 +516,11 @@ Rule of thumb: ~1 chat per 3-5 `mc` verbs. After every significant milestone (ve
 
 ## Heartbeats worth sending
 
-Good heartbeats name progress: `"epoch 12/50, loss 0.31"`, `"scanned 1.2M/2.4M rows"`, `"uploaded 47/120 videos"`.
+Good heartbeats name progress: `"epoch 12/50, loss 0.31"`, `"scanned 1.2M/2.4M rows"`, `"uploaded 47/120 videos"`, `"cleared 24/39 columns seg 2"`.
 
-Bad heartbeats: `"still working"`, empty notes, sub-second intervals. Every few minutes max; skip entirely for tasks under ~2 minutes.
+Bad heartbeats: `"still working"`, empty `payload: null`, sub-second intervals. Every few minutes max; skip entirely for tasks under ~2 minutes.
+
+**Always pass a non-empty progress string.** `kanban_heartbeat(payload="…")` — *not* a bare `kanban_heartbeat()`. proc-nav-1781079999 builder-mox observed 7 consecutive heartbeats with `"payload": null` on a 30-minute clear card; from the dashboard's perspective, those are indistinguishable from a stuck process. A 5-word progress string is fast to write and tells the operator whether to intervene.
 
 ## Retry scenarios
 

@@ -650,3 +650,123 @@ test('level: snow_layer at/above target_y is skipped as placement anchor (W2-NAV
     `placement must anchor against the cobblestone floor, not the snow_layer neighbor; got ref=${placeRefName}`);
   assert.equal(res.data.placed, 1);
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Bridge-gap fallback (proc-nav-1781079999 hyp G).
+// When the target cell has NO solid neighbor in any of the 6 face offsets,
+// `level` used to give up with "no solid neighbor". Builder-mox on seg 2
+// of proc-nav-1781079999 hit this on cells where the canopy had been
+// cleared but the ground sat several blocks below target_y. The fallback
+// walks down the column to find a solid floor, then builds a pillar up
+// to target_y so the cell gets filled. Scaffold blocks placed below are
+// reported as `bridge_filled` separately from `placed`.
+// ─────────────────────────────────────────────────────────────────────────
+
+test('level execute: bridge-gap fills a column with a deep floor', async () => {
+  const fakeRegionStore = { at() { return []; } };
+  const terrain = new Map();
+  // Target column (0, 64, 0): air. Floor at (0, 60, 0) → 3 cells of air
+  // between (y=61,62,63) and the target (y=64). All face-neighbors of (0,64,0)
+  // are air (no horizontal anchor either).
+  terrain.set(`0,60,0`, { name: 'cobblestone' });
+  const placedAt = [];
+  const bot = {
+    entity: { position: { x: 0, y: 66, z: 0, distanceTo: () => 0 } },
+    game: { minY: -64, height: 384 },
+    inventory: { items: () => [{ name: 'dirt', count: 64 }] },
+    blockAt({ x, y, z }) {
+      const key = `${x},${y},${z}`;
+      const t = terrain.get(key);
+      if (!t) return { name: 'air', boundingBox: 'empty', position: { x, y, z } };
+      return { name: t.name, boundingBox: 'block', position: { x, y, z } };
+    },
+    equip: async () => {},
+    placeBlock: async (ref, face) => {
+      // Compute where the placement lands: ref position + face vector.
+      const at = { x: ref.position.x + face.x, y: ref.position.y + face.y, z: ref.position.z + face.z };
+      placedAt.push(at);
+      terrain.set(`${at.x},${at.y},${at.z}`, { name: 'dirt' });
+    },
+  };
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 0, z2: 0, y: 64 });
+  assert.equal(res.ok, true);
+  // Should bridge-fill y=61, 62, 63 (scaffold) then place y=64 (target).
+  assert.equal(res.data.placed, 1, `expected 1 placement at targetY, got ${res.data.placed}`);
+  assert.equal(res.data.bridge_filled, 3,
+    `expected 3 bridge_filled below target, got ${res.data.bridge_filled}`);
+  assert.equal(placedAt.length, 4, 'expected 4 placeBlock calls (3 scaffold + 1 target)');
+  // Each placement should ascend by 1.
+  assert.deepEqual(placedAt.map((p) => p.y), [61, 62, 63, 64]);
+  assert.match(res.result, /\+3 bridge-fill below/);
+});
+
+test('level execute: no bridge-fill when target already has a horizontal anchor', async () => {
+  // Even when below is air, the existing code path should still try the
+  // horizontal neighbors first — bridge-gap only kicks in when ALL 6 face
+  // offsets are air.
+  const fakeRegionStore = { at() { return []; } };
+  const terrain = new Map();
+  // Horizontal anchor at (1, 64, 0); below the target column is empty.
+  terrain.set(`1,64,0`, { name: 'cobblestone' });
+  let placeCalls = 0;
+  const bot = {
+    entity: { position: { x: 0, y: 66, z: 0, distanceTo: () => 0 } },
+    game: { minY: -64, height: 384 },
+    inventory: { items: () => [{ name: 'dirt', count: 64 }] },
+    blockAt({ x, y, z }) {
+      const t = terrain.get(`${x},${y},${z}`);
+      if (!t) return { name: 'air', boundingBox: 'empty', position: { x, y, z } };
+      return { name: t.name, boundingBox: 'block', position: { x, y, z } };
+    },
+    equip: async () => {},
+    placeBlock: async () => { placeCalls++; },
+  };
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 0, z2: 0, y: 64 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.placed, 1);
+  assert.equal(res.data.bridge_filled, 0,
+    'expected no bridge-fill when a horizontal anchor exists');
+  assert.equal(placeCalls, 1);
+});
+
+test('level execute: no floor within MAX_BRIDGE → bridge-gap aborts cleanly (no crash)', async () => {
+  // Deep void — no solid block within 8 cells below target. Bridge-gap
+  // should find no floor and fall through to the normal "no solid neighbor"
+  // failed counter without crashing.
+  const fakeRegionStore = { at() { return []; } };
+  const bot = {
+    entity: { position: { x: 0, y: 66, z: 0, distanceTo: () => 0 } },
+    game: { minY: -64, height: 384 },
+    inventory: { items: () => [{ name: 'dirt', count: 64 }] },
+    blockAt: () => ({ name: 'air', boundingBox: 'empty', position: { x: 0, y: 0, z: 0 } }),
+    equip: async () => {},
+    placeBlock: async () => {},
+  };
+  const part = createBuildingTerrainPart({
+    ctx: { runtime: { regions: fakeRegionStore, recentPlaces: [] } },
+    config: { behaviors: {} },
+    ensureBot: () => bot,
+    sleep: async () => {},
+    getActions: () => null,
+  });
+  const res = await part.level({ x1: 0, z1: 0, x2: 0, z2: 0, y: 64 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.placed, 0);
+  assert.equal(res.data.bridge_filled, 0);
+  assert.equal(res.data.failed, 1);
+});

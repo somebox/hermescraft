@@ -450,6 +450,9 @@ def build_proc_scout_road_graph() -> Graph:
                 depends_on=("pn-segments",),
                 skills=NAV_SKILLS,
                 work_at_mark=from_mark,
+                # Bumped from the default 2 — proc-nav-1781079999 had
+                # measure cards auto-gave_up under transient HTTP timeouts.
+                max_retries=3,
             )
         )
         cards.append(
@@ -462,6 +465,11 @@ def build_proc_scout_road_graph() -> Graph:
                 depends_on=(meas_slug,),
                 skills=BUILD_SKILLS,
                 work_at_mark=from_mark,
+                # proc-nav-1781079999: clear-1 reached gave_up after 2
+                # timeouts on a forested segment with the work actually
+                # complete. Allowing one more retry covers the
+                # transient-timeout case without unbounding retries.
+                max_retries=3,
             )
         )
 
@@ -476,6 +484,10 @@ def build_proc_scout_road_graph() -> Graph:
                 depends_on=tuple(clear_slugs),
                 skills=OBSERVE_SKILLS,
                 work_at_mark="return_post",
+                # Verify across 8 segments + dispositions sweep is the
+                # longest single card; allow extra retries against the
+                # 30m max-runtime.
+                max_retries=3,
             ),
             Card(
                 slug="pn-plan-2",

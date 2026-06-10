@@ -91,6 +91,21 @@ You do **not** need `mc move @MARK`, `mc till`, `mc plant`, `mc craft`,
 `mc deposit`, `mc smelt`, `mc attack`, `mc shoot`. Those belong to other
 agents.
 
+### Survey + verify in batch — don't sequential-loop
+
+When working on a rectangular area (road segment, pad, dig site), use the
+batch verbs *before* and *after* you build. One call beats N.
+
+| Verb | When |
+|---|---|
+| `mc corridor_sample X1 Z1 X2 Z2 [full=true]` | Pre-build survey across a rectangle: per-cell `block_y` + aggregate (`median`, `min`, `max`, `delta`). Foliage excluded by default. |
+| `mc level_ground X1 Z1 X2 Z2 target=Y` (dry-run, no `execute=true`) | Both a pre-build planner (`fill_shallow`, `cut`, `deck`) AND a post-build verifier (assert `dispositions.level == columns_n`). **16-column cap per call** — split a 3×13 segment into three 3×4 sub-rectangles. |
+| `mc find_blocks BLOCK [RADIUS] [COUNT]` | After `clear_strip` or `level_ground execute`, sweep for residual obstacle blocks (`oak_log`, `birch_log`, stray `cobblestone` you don't want). Catches the floating log `clear_strip` missed. |
+
+Per-cell loops over `mc terrain_top` / `mc inspect` for a whole rectangle
+are an anti-pattern — they cost N × 100-300ms when one batch call gives the
+same answer.
+
 ## 4. Phase-specific knowledge
 
 ### Read the handoff
@@ -184,7 +199,16 @@ For pad cards: every corner reports the target Y on `mc inspect`.
 For place cards: every named coordinate reports the expected block on
 `mc inspect`.
 
+**Short-circuit (flat pad already done):** When the card body says the
+pad may already be flat (or `mc terrain_top` / corner `mc inspect`
+shows uniform dirt or grass at one Y within a block or two), do not run
+`mc level`. Complete with `pad_verified: true` and the observed surface
+block in handoff metadata.
+
 ## 7. Handoff state — what the next agent reads
+
+On complete, always set `exit_pos` and `work_at_mark` when the card names a mark;
+downstream agents read these on turn 1 via parent completion metadata.
 
 ```yaml
 metadata:

@@ -141,7 +141,7 @@ def _invocation_for_card(
     # card gets its own [bot:<name>] title prefix and lands in its
     # own mutex_key domain.
     bot = card.bot or epic_bot
-    title = title_with_bot(bot, card.title)
+    title = card.title if card.omit_bot_prefix else title_with_bot(bot, card.title)
     # `hermes kanban [--board <slug>] create …` — board flag sits at the
     # kanban level, before the subcommand. Skip when None.
     cmd: list[str] = ["hermes", "kanban"]
@@ -163,6 +163,8 @@ def _invocation_for_card(
     # x004 uses this to wait on the harvest-reminder cron.
     if card.initial_status:
         cmd += ["--initial-status", card.initial_status]
+    if card.max_retries is not None:
+        cmd += ["--max-retries", str(card.max_retries)]
     # `--parent` is added at execution time once we know the real ids
     # of the parents. Storing slugs here keeps the invocation
     # deterministic for tests.

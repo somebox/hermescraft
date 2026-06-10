@@ -344,3 +344,34 @@ def test_card_bodies_use_livemap_corridor_geometry():
             f"pn-clear-{n}: must not hardcode X=-1..1 (catalog) — use livemap from "
             f"road_plan / last-scenario-map.json"
         )
+
+
+def test_long_cards_get_bumped_max_retries():
+    """proc-nav-1781079999 hypothesis E. clear-1 hit auto-gave_up after
+    2 timeouts despite the segment being fully cleared. Bump retry
+    budget on measure / clear / verify so transient timeouts don't
+    strand downstream cards."""
+    from capstone.author import author_colony_lane  # noqa: WPS433
+    g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
+    invocations = author_colony_lane(g, epic_bot=EPIC_BOT, board=None)
+    by_slug = {inv.slug: inv for inv in invocations}
+
+    for slug in [
+        *(f"pn-meas-{i}" for i in range(1, ROAD_SEGMENT_COUNT + 1)),
+        *(f"pn-clear-{i}" for i in range(1, ROAD_SEGMENT_COUNT + 1)),
+        "pn-road-verify",
+    ]:
+        cmd = by_slug[slug].cmd
+        assert "--max-retries" in cmd, (
+            f"{slug} must pass --max-retries (post proc-nav-1781079999)"
+        )
+        idx = cmd.index("--max-retries")
+        assert int(cmd[idx + 1]) >= 3, (
+            f"{slug} max-retries must be ≥3, got {cmd[idx + 1]}"
+        )
+
+    # Sanity: plan / explore / segments cards stay at default (no flag).
+    for slug in ("pn-plan", "pn-explore", "pn-segments", "pn-plan-2"):
+        assert "--max-retries" not in by_slug[slug].cmd, (
+            f"{slug} should keep the kanban default (no --max-retries override)"
+        )

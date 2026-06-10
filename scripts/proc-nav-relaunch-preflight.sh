@@ -40,6 +40,9 @@
 #   SKIP_MEMORY_RESET  true → leave MEMORY.md files alone
 #   SKIP_INVENTORY     true → don't give bots tools
 #   SKIP_WORLD_FRESHNESS true → don't check for accumulated trial artifacts
+#   MATERIALIZE        true → when world is stale, actually reset proc-nav
+#                      via reset-proc-lab.py (evac → mv delete OTP → mv
+#                      create); default is warn-only with the command echoed
 #   STRICT             true → fail-fast on any RED check (default: collect all, exit non-zero)
 #   RESTART_STALE_BOTS true → kill + restart any stale bot (skips the manual restart instruction)
 #   MC_HOST            override Minecraft server host (default from running bot or 192.168.1.202)
@@ -182,11 +185,30 @@ PY
     fi
     if [[ "$newer_postmortems" -eq 0 ]]; then
       ok "world fresh — no postmortems since last map probe (${probed_at:-unknown})"
+    elif [[ "${MATERIALIZE:-}" == "true" ]]; then
+      # Auto-reset path. reset-proc-lab.py is world-agnostic (--world,
+      # --hub, --bots) — wrapping it here keeps the relaunch flow honest
+      # for proc-nav. The script handles evac → mv delete (OTP) → mv create.
+      # After reset, the bots end up in the hub world; prep-board's
+      # proc-nav-mvtp-bots.py mvtp's them back into proc-nav.
+      warn "world stale — $newer_postmortems trial postmortem(s) since last map probe; MATERIALIZE=true → resetting proc-nav (seed=$seed)"
+      if [[ "$DRY_RUN" == "true" ]]; then
+        printf '\033[2m  [dry-mat] python3 scripts/reset-proc-lab.py --world proc-nav --seed %s --bots Mox,Pip\033[0m\n' "$seed"
+      else
+        if python3 scripts/reset-proc-lab.py \
+             --world proc-nav --seed "$seed" --bots Mox,Pip \
+             --no-verify >/tmp/preflight-materialize.log 2>&1; then
+          ok "proc-nav world reset (log: /tmp/preflight-materialize.log)"
+        else
+          fail "world reset failed — see /tmp/preflight-materialize.log"
+        fi
+      fi
     else
       warn "world stale — $newer_postmortems trial postmortem(s) since last map probe (${probed_at:-unknown}); corridor artifacts likely"
       printf '\033[2m    map seed:      %s\033[0m\n' "$seed"
-      printf '\033[2m    To reset proc-nav (operator):\n      python3 scripts/reset-proc-lab.py --world proc-nav --seed %s --bots Mox,Pip\033[0m\n' "$seed"
-      printf '\033[2m    Suppress this check with SKIP_WORLD_FRESHNESS=true.\033[0m\n'
+      printf '\033[2m    To reset (operator-driven):\n      python3 scripts/reset-proc-lab.py --world proc-nav --seed %s --bots Mox,Pip\033[0m\n' "$seed"
+      printf '\033[2m    Or re-run with MATERIALIZE=true to reset inline.\033[0m\n'
+      printf '\033[2m    Suppress this check entirely with SKIP_WORLD_FRESHNESS=true.\033[0m\n'
     fi
   else
     warn "no last-scenario-map.json — materialize first (scripts/proc-nav-trial.sh prep-map)"

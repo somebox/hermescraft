@@ -24,6 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .constants import WHEAT_CHEST_MIN_COUNT
+
 # Bot binding for the entire epic. Matches the walkthrough's
 # "Execute (Mox lane — assignee rotates)" section.
 EPIC_BOT = "mox"
@@ -74,6 +76,13 @@ class Card:
     # situation. Used by wheat capstone x004 to wait on the
     # harvest-reminder cron before the agent can claim it.
     initial_status: Optional[str] = None
+    # Desk / planner cards: no [bot:mox] title prefix.
+    omit_bot_prefix: bool = False
+    # Per-card override for the consecutive-failure circuit breaker.
+    # None → use the kanban dispatcher default (currently 2 retries).
+    # Long-running cards (e.g. 8-segment road clear) bump this so a
+    # transient HTTP timeout doesn't auto-gave_up a card mid-build.
+    max_retries: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -251,7 +260,7 @@ def build_default_graph() -> Graph:
         "kind": "chest_contains",
         "mark": deposit,
         "item": "wheat",
-        "min_count": 12,  # walkthrough §Scenario tolerance band
+        "min_count": WHEAT_CHEST_MIN_COUNT,
     }
 
     # Multi-predicate acceptance (consumed by `acceptance.evaluate_all`):
@@ -291,7 +300,7 @@ def build_default_graph() -> Graph:
             "kind": "chest_contains",
             "mark": deposit,
             "item": "wheat",
-            "min_count": 30,
+            "min_count": WHEAT_CHEST_MIN_COUNT,
         },
         # ── Water source at the field center ──
         # Walkthrough convention: water replaces farmland at one cell

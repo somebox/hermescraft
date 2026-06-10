@@ -281,6 +281,11 @@ export function createBuildingTerrainPart(deps) {
       const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
 
       let dug = 0, placed = 0, skipped = 0, failed = 0;
+      // proc-nav-1781079999 hyp G: bridge-fill (placing a pillar from a
+      // deep floor up to targetY) happens when the column has no solid
+      // neighbor at targetY but has solid ground deeper. Track scaffold
+      // placements separately so the agent sees them in the result.
+      let bridge_filled = 0;
       const errors = [];
       // Track per-block placements so we can detect tier_2 fallback (= a
       // placement happened because tier_1 was unavailable in inventory).
@@ -371,6 +376,63 @@ export function createBuildingTerrainPart(deps) {
             if (didPlace) break;
           }
           if (!didPlace) {
+            // Bridge-gap fallback (proc-nav-1781079999 hyp G).
+            // When no face had a solid anchor, the column is a "fill_deep":
+            // air all the way down to a deep floor. Walk down to find the
+            // floor, then build a pillar up to targetY using the just-placed
+            // block as the anchor for the next placement.
+            // Builder-mox on seg 2 of proc-nav-1781079999 hit this exact
+            // shape — ground at y=61, target y=63, level execute couldn't
+            // anchor at targetY and bailed; they had to manual `mc place`.
+            const MAX_BRIDGE = 8;
+            let floor_y = null;
+            for (let dy = -1; dy >= -MAX_BRIDGE; dy--) {
+              const probe = b.blockAt(new Vec3(x, targetY + dy, z));
+              if (probe && probe.boundingBox === 'block' && !isAirLike(probe)) {
+                floor_y = targetY + dy;
+                break;
+              }
+            }
+            if (floor_y !== null && floor_y < targetY - 1) {
+              if (b.entity.position.distanceTo(new Vec3(x, targetY, z)) > 4.5) {
+                try {
+                  await pathfindGotoNear(
+                    b, goals, x, targetY + 1, z, 3,
+                    { opName: 'bridge_fill', capMs: ACTION_CAPS_MS.reach },
+                  );
+                } catch {}
+              }
+              // Place from floor_y+1 up to targetY. Each iteration's anchor
+              // is the cell we just placed (or the original floor).
+              for (let by = floor_y + 1; by <= targetY; by++) {
+                let placed_here = false;
+                for (const blockName of fillCascade) {
+                  const item = b.inventory.items().find((it) => it.name === blockName);
+                  if (!item) continue;
+                  try { await b.equip(item, 'hand'); } catch { continue; }
+                  const ref = b.blockAt(new Vec3(x, by - 1, z));
+                  if (!ref || isAirLike(ref) || ref.boundingBox !== 'block') break;
+                  if (shouldSkipPlaceAt(ctx, config, blockName, x, by, z).skip) break;
+                  try {
+                    await b.placeBlock(ref, new Vec3(0, 1, 0));
+                    recordRecentPlace(ctx, { x, y: by, z }, blockName);
+                    placed_here = true;
+                    if (by === targetY) {
+                      placed++;
+                      placedByBlock[blockName] = (placedByBlock[blockName] || 0) + 1;
+                      didPlace = true;
+                    } else {
+                      bridge_filled++;
+                      placedByBlock[blockName] = (placedByBlock[blockName] || 0) + 1;
+                    }
+                    break;
+                  } catch { /* try next block */ }
+                }
+                if (!placed_here) break;
+              }
+            }
+          }
+          if (!didPlace) {
             // No fillable item in inventory — only count as failed if there was an air gap to fill.
             const present = fillCascade.some((nm) => b.inventory.items().find((it) => it.name === nm));
             if (!present) {
@@ -409,6 +471,7 @@ export function createBuildingTerrainPart(deps) {
           placed,
           skipped,
           failed,
+          bridge_filled,
           bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY }, targetY),
           block_y: targetY,
           surface_y: targetY + 1,
@@ -419,7 +482,7 @@ export function createBuildingTerrainPart(deps) {
           up_range: upRange,
           errors: errors.slice(0, 5),
         },
-        result: `level ${w}×${l} block_y=${targetY} (surface_y=${targetY + 1}): dug ${dug}, placed ${placed}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''} [cascade=${cascadeReason}]${fillFallbackHint ? ` ${fillFallbackHint}` : ''}`,
+        result: `level ${w}×${l} block_y=${targetY} (surface_y=${targetY + 1}): dug ${dug}, placed ${placed}${bridge_filled ? ` (+${bridge_filled} bridge-fill below)` : ''}${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''} [cascade=${cascadeReason}]${fillFallbackHint ? ` ${fillFallbackHint}` : ''}`,
       };
     },
 
