@@ -57,12 +57,30 @@ def test_road_cites_width_and_agent_marks():
     assert "road_bound" in explore.body
 
 
-def test_dual_bot_alternation():
+def test_dual_bot_collocation():
+    """proc-nav-1781079999 follow-up: measure + clear collocated per bot.
+    Pre-fix the alternation was inverted (measure-N + clear-N on different
+    bots), which created cross-bot dependency waits. Now Pip owns odd
+    segments end-to-end, Mox owns even segments end-to-end.
+    Each bot's chain runs independently; same parallelism, no handoff."""
     g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
     inv = author_colony_lane(g, epic_bot=EPIC_BOT, board="proc-nav-lab")
     by_slug = {i.slug: i for i in inv}
-    assert "[bot:mox]" in by_slug["pn-meas-1"].cmd[-1].lower()
-    assert "[bot:pip]" in by_slug["pn-meas-2"].cmd[-1].lower()
+
+    # Both bots still measure in parallel from t=0 (different assignees).
+    assert "[bot:pip]" in by_slug["pn-meas-1"].cmd[-1].lower()
+    assert "[bot:mox]" in by_slug["pn-meas-2"].cmd[-1].lower()
+
+    # The key invariant: clear-N has the SAME bot as meas-N.
+    for n in range(1, ROAD_SEGMENT_COUNT + 1):
+        meas_title = by_slug[f"pn-meas-{n}"].cmd[-1].lower()
+        clear_title = by_slug[f"pn-clear-{n}"].cmd[-1].lower()
+        meas_bot = "pip" if "[bot:pip]" in meas_title else "mox"
+        clear_bot = "pip" if "[bot:pip]" in clear_title else "mox"
+        assert meas_bot == clear_bot, (
+            f"segment {n}: meas={meas_bot} but clear={clear_bot}; "
+            f"collocation requires same bot for the pair"
+        )
 
 
 def test_parallel_measure_same_parent():

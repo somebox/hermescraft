@@ -147,12 +147,24 @@ ROAD_PLAN_SCHEMA = """
 
 
 def _assign_measure(seg_id: int) -> tuple[str, str]:
+    # proc-nav-1781079999 follow-up: collocate measure + clear on the
+    # same bot per segment. Pre-fix the alternation was inverted
+    # (measure-N and clear-N done by different bots), which created
+    # cross-bot dependencies — clear-N would wait for the OTHER bot to
+    # finish meas-N. With both bots running 8-card serial chains, the
+    # cross-bot wait dominated the 2h trial time (~30-50 min cumulative
+    # idle on the prior trial). Collocation: each bot owns alternating
+    # segments end-to-end and runs its chain independently. Same total
+    # work, same parallelism, no cross-bot handoffs.
+    #   Pip:  segments 1, 3, 5, 7
+    #   Mox:  segments 2, 4, 6, 8
     if seg_id % 2 == 1:
-        return ASSIGNEE_NAV_MOX, BOT_MOX
-    return ASSIGNEE_NAV_PIP, BOT_PIP
+        return ASSIGNEE_NAV_PIP, BOT_PIP
+    return ASSIGNEE_NAV_MOX, BOT_MOX
 
 
 def _assign_clear(seg_id: int) -> tuple[str, str]:
+    # Mirrors _assign_measure — same bot does the clear it just measured.
     if seg_id % 2 == 1:
         return ASSIGNEE_BUILD_PIP, BOT_PIP
     return ASSIGNEE_BUILD_MOX, BOT_MOX
