@@ -60,6 +60,14 @@ mc feedback "level timed out with no partial counters" tag=timeout
 
 One line, ~1 second, fire-and-forget — it never blocks your task. Notes are collected per trial into the postmortem, and they are the primary input for fixing the tooling between runs. Do NOT spend iterations working around a broken tool silently: log the friction, then take the workaround. If the friction actually blocks your card, also raise it through the normal escalation path (e.g. a kanban card) — `mc feedback` is telemetry, not a request for help.
 
+**Critical reflex: `kanban_complete` rejected with "unknown id or terminal state".** This means the card auto-`gave_up` after prior timeouts, but the work IS done. Your only path to register completion is `mc feedback`:
+
+```
+mc feedback "kanban_complete rejected on t_XXXXXXXX — work done (segment 4 leveled 39/39) but card already in gave_up state" tag=kanban
+```
+
+Then leave a comment with the full result metadata via `kanban_comment` and save a state-snapshot memory. Downstream cards that depend on this one will be stranded — that's a kanban infra bug, not your fault, but logging it lets the next trial trace the gap.
+
 ## Don't invent verbs — `mc help` discovers, doesn't cost much
 
 Your training data has Minecraft commands from other contexts; not all of them exist in our `mc` CLI. Examples seen in production logs: `mc chest_scan`, `mc chests`, `mc list_containers`, `mc rcon`, `mc tp` — none of these exist. When a worker invokes a non-existent verb the framework returns `unknown command: <verb>`, the call wastes an iteration, and the LLM often follows up with 2-3 more guesses before recovering.

@@ -6,12 +6,16 @@ import { withYBoth, parseYInput, surfaceFromBlock } from '../../runtime/coordina
 
 export function createRegionQueries({ ensureBot, posObj, goals }) {
   return {
-  async terrain_top({ x, z, radius = 0, full = false, exclude_foliage = false }) {
+  async terrain_top({ x, z, radius = 0, full = false, exclude_foliage = true }) {
     const b = ensureBot();
     const cx = Math.floor(Number(x));
     const cz = Math.floor(Number(z));
     const r = Math.min(Math.max(parseInt(String(radius), 10) || 0, 0), 32);
-    const excludeFoliage = exclude_foliage === true || exclude_foliage === 'true' || exclude_foliage === '1';
+    // exclude_foliage default flipped to true (proc-nav-1781079999): every
+    // production caller in road / scout / build flows wants ground Y, not
+    // canopy Y. Pass exclude_foliage=false explicitly to read leaves/snow
+    // as a topY (rare — only used by tree-canopy inspection).
+    const excludeFoliage = exclude_foliage !== false && exclude_foliage !== 'false' && exclude_foliage !== '0' && exclude_foliage !== 0;
     /** @type {{ x:number, z:number, topY:number, blockName:string }[]} */
     const columns = [];
     let maxTopY = Number.NEGATIVE_INFINITY;
@@ -88,14 +92,16 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
    *   step             — z-step within the rectangle (1 = every cell,
    *                      2 = every other). Default 1. Applied to z only;
    *                      every x is sampled.
-   *   exclude_foliage  — pass through to columnTopSolid. When true, skips
-   *                      *_leaves and snow_layer so a tree canopy doesn't
-   *                      register as ground. Default false (legacy).
+   *   exclude_foliage  — pass through to columnTopSolid. When true (default),
+   *                      skips *_leaves and snow_layer so a tree canopy doesn't
+   *                      register as ground. Pass exclude_foliage=false to
+   *                      include leaves as topY (rare — only canopy-inspection
+   *                      callers want this).
    *   full             — when true, returns the full samples[] array.
    *                      When false (default), samples[] is omitted to
    *                      keep the response small; only aggregates returned.
    */
-  async corridor_sample({ x1, z1, x2, z2, step = 1, exclude_foliage = false, full = false }) {
+  async corridor_sample({ x1, z1, x2, z2, step = 1, exclude_foliage = true, full = false }) {
     const b = ensureBot();
     for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
       if (!Number.isFinite(Number(v))) {
@@ -114,7 +120,8 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
     const minZ = Math.min(Number(z1), Number(z2));
     const maxZ = Math.max(Number(z1), Number(z2));
     const s = Math.max(1, Math.min(parseInt(String(step), 10) || 1, 16));
-    const excludeFoliage = exclude_foliage === true || exclude_foliage === 'true' || exclude_foliage === '1';
+    // Default true (proc-nav-1781079999) — production callers want ground Y.
+    const excludeFoliage = exclude_foliage !== false && exclude_foliage !== 'false' && exclude_foliage !== '0' && exclude_foliage !== 0;
     const includeFull = full === true || full === 'true' || full === '1';
     const w = maxX - minX + 1;
     const lFull = maxZ - minZ + 1;

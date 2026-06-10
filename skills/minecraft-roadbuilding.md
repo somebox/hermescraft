@@ -87,6 +87,13 @@ mc reachable X Y Z [--range N]
 mc level_ground X1 Z1 X2 Z2 [target=Y] [mode=median|min|max] [block=NAME] [execute=true]
 # Plan a flatten on a rectangle. Dry-run by default (omit execute=true to
 # read the plan first — the dry-run output is itself a useful survey).
+#
+# **16-column cap per call.** A 3×13 segment is 39 columns and rejects with
+# OUT_OF_RANGE. Split into ≤16-column sub-rectangles (e.g. 3×4 = 12 cols):
+#   mc level_ground -21 0 -19 3 target=63   # cols 1..12
+#   mc level_ground -21 4 -19 7 target=63   # cols 13..24
+#   mc level_ground -21 8 -19 11 target=63  # cols 25..36
+# The error message shows the split suggestion; don't retry the full rect.
 # - mode=min   — cut downward to the lowest cell (cut into a hill)
 # - mode=max   — build up to the highest cell (bridge a shallow dip)
 # - mode=median— meet in the middle (default; normal segments)
@@ -387,7 +394,7 @@ Pass the material via the `block=` arg on the road verbs:
 
 ```
 mc clear_strip X1 Z1 X2 Z2 y=TARGET_Y road_mode=true block=cobblestone
-mc level_ground X1 Z1 X2 Z2 target=TARGET_Y execute=true block=cobblestone exclude_foliage=true
+mc level_ground X1 Z1 X2 Z2 target=TARGET_Y execute=true block=cobblestone
 ```
 
 When the measure card classifies a segment as `passage=deck`, the deck verb ALWAYS uses cobblestone regardless of biome (bridges over water/lava are visually + structurally load-bearing).
@@ -402,8 +409,8 @@ This is the W2-NAV-020 fix from `data/postmortems/proc-nav-lab/proc-nav-17809948
 - **3-block vertical clearance.** Always.
 - **Curves are shifted rectangles.** Plan segment-by-segment, not arc-by-arc.
 - **Surface consistency in each visible stretch.** A material change at a structural seam is the only acceptable seam.
-- **Survey with `mc corridor_sample` (one call), not N × `mc terrain_top`.** The batch verb returns the same aggregate (median/min/max/delta) in one round-trip and supports `exclude_foliage=true` to skip canopy.
-- **Verify with `mc level_ground target=<corridor_median> exclude_foliage=true` dispositions sweep** — checks the bed is actually flat, not just that anchors are reachable.
+- **Survey with `mc corridor_sample` (one call), not N × `mc terrain_top`.** The batch verb returns the same aggregate (median/min/max/delta) in one round-trip. **Foliage is excluded by default** — canopy doesn't register as ground, no flag needed. Pass `exclude_foliage=false` only when you specifically want to inspect leaves/snow_layer as a topY.
+- **Verify with `mc level_ground target=<corridor_median>` dispositions sweep** — checks the bed is actually flat, not just that anchors are reachable. (Foliage exclusion is the default; explicit `exclude_foliage=true` is redundant but harmless.)
 
 For wider building grammar (materials, hollow shells, sectional fills,
 verification patterns), see [minecraft-building.md](minecraft-building.md).

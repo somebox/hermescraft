@@ -502,10 +502,10 @@ export function createBuildingTerrainPart(deps) {
       }
       const doExecute = execute === true || execute === 'true' || execute === '1';
       // Foliage-aware survey: when set, columnTopSolid skips *_leaves and
-      // snow_layer. The road-tier measure card sets this so a spruce
-      // canopy doesn't get classified as a deck-required dip below it.
-      // Default false to preserve existing callers' behavior.
-      const excludeFoliage = exclude_foliage === true || exclude_foliage === 'true' || exclude_foliage === '1';
+      // snow_layer. Default true (proc-nav-1781079999) — every production
+      // caller wants ground Y, not canopy Y. Pass exclude_foliage=false to
+      // include leaves as topY (rare — canopy-inspection callers only).
+      const excludeFoliage = exclude_foliage !== false && exclude_foliage !== 'false' && exclude_foliage !== '0' && exclude_foliage !== 0;
 
       // Phase 1 — survey
       /** @type {{ x: number, z: number, top_y: number | null, block: string | null }[]} */
@@ -664,13 +664,21 @@ export function createBuildingTerrainPart(deps) {
           }
         }
         if (span.min_depth === Infinity) span.min_depth = 0;
-        // Suggestion ladder:
+        // Suggestion ladder (proc-nav-1781079999 fix — drop OR span_n trigger):
         //   contains_no_floor → reroute (ravine; bridging is a separate plan)
-        //   max_depth > shallow OR n ≥ DECK_MIN_SPAN_N → deck (when primitive
-        //     exists; until then, the planner should reroute or mark for manual)
-        //   else → level_caps (current level execute will handle it)
+        //   max_depth > shallow → deck (cells need deep fill, level execute
+        //     can't reliably handle multi-block depth)
+        //   else → level_caps (level execute fills shallow dips of any width)
+        //
+        // Pre-fix, the condition was `max_depth > shallow OR n ≥ wide`.
+        // The OR-span_n branch wrongly classified wide-but-shallow dips
+        // (10-cell span at max_depth=1) as decks, when in fact a flat
+        // fill handles them. Builder-mox on seg 2 of proc-nav-1781079999
+        // had to manually reject the classification before proceeding.
+        // DECK_MIN_SPAN_N is retained for future use (e.g. choosing
+        // between deck and reroute on deep spans).
         if (span.contains_no_floor) span.suggestion = 'reroute';
-        else if (span.max_depth > FILL_SHALLOW_MAX_DEPTH || span.n >= DECK_MIN_SPAN_N) span.suggestion = 'deck';
+        else if (span.max_depth > FILL_SHALLOW_MAX_DEPTH) span.suggestion = 'deck';
         else span.suggestion = 'level_caps';
         dip_spans.push(span);
       }

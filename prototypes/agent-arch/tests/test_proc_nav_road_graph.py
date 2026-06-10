@@ -11,7 +11,11 @@ from capstone.author import author_colony_lane  # noqa: E402
 from capstone.graph_loader import load_graph  # noqa: E402
 from capstone.proc_scout_road_graph import (  # noqa: E402
     ROAD_CENTERLINE_BLOCKS_CATALOG,
+    ROAD_CORRIDOR_X_MAX,
+    ROAD_CORRIDOR_X_MIN,
+    ROAD_CORRIDOR_Z_START,
     ROAD_SEGMENT_COUNT,
+    ROAD_SEGMENT_LENGTH,
     ROAD_WIDTH_M,
 )
 from capstone.road_config import road_segments  # noqa: E402
@@ -183,18 +187,23 @@ def test_measure_cards_contain_literal_corridor_sample_call():
     """Replaces the 9-call mc terrain_top loop with a single mc corridor_sample.
     Same intent: a literal command per segment is harder to skip than a
     procedure description (Pip in proc-nav-1780989125 accepted the planner's
-    target_y=67 uncritically). corridor_sample is also exclude_foliage-aware
-    so tree canopies don't read as ground (W2-NAV-015)."""
+    target_y=67 uncritically). Coords are livemap-derived (proc-nav-1781079999
+    fix): X from corridor centerline, Z anchored at overlook (not catalog
+    origin). corridor_sample defaults to exclude_foliage=true so tree canopies
+    don't read as ground (W2-NAV-015)."""
     g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
     for n in range(1, ROAD_SEGMENT_COUNT + 1):
         meas = next(c for c in g.cards if c.slug == f"pn-meas-{n}")
         body = meas.body
-        z_start = (n - 1) * 12
-        z_end = z_start + 12
-        literal = f"mc corridor_sample -1 {z_start} 1 {z_end} exclude_foliage=true"
+        z_start = ROAD_CORRIDOR_Z_START + (n - 1) * ROAD_SEGMENT_LENGTH
+        z_end = z_start + ROAD_SEGMENT_LENGTH
+        literal = (
+            f"mc corridor_sample {ROAD_CORRIDOR_X_MIN} {z_start} "
+            f"{ROAD_CORRIDOR_X_MAX} {z_end}"
+        )
         assert literal in body, (
             f"pn-meas-{n} must include the literal '{literal}' so the agent samples "
-            f"the segment in one round-trip with foliage filtering on (W2-NAV-015)"
+            f"the segment in one round-trip in livemap coords"
         )
 
 
@@ -222,15 +231,14 @@ def test_measure_cards_pin_target_y_to_corridor_median():
 def test_explore_card_uses_corridor_sample():
     """W2-NAV-018 + feedback efficiency. The scout's corridor walk should use
     mc corridor_sample (one call) instead of N individual mc terrain_top calls.
-    Both navigators independently requested this verb."""
+    Both navigators independently requested this verb. exclude_foliage is now
+    the default (proc-nav-1781079999 doctrine flip), so the explicit flag is
+    no longer required."""
     g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
     explore = next(c for c in g.cards if c.slug == "pn-explore")
     body = explore.body
     assert "mc corridor_sample" in body, (
         "pn-explore must call mc corridor_sample for the full-corridor survey"
-    )
-    assert "exclude_foliage=true" in body, (
-        "pn-explore must pass exclude_foliage=true so canopy doesn't register as ground"
     )
 
 
@@ -248,9 +256,8 @@ def test_verify_card_runs_dispositions_sweep_and_can_emit_cleanup():
     assert "dispositions" in body, (
         "verify card must reference dispositions in its assertion"
     )
-    assert "exclude_foliage=true" in body, (
-        "verify dispositions sweep must use exclude_foliage to avoid canopy false-positives"
-    )
+    # exclude_foliage is now the default (proc-nav-1781079999 doctrine flip),
+    # so the explicit flag is no longer required in the verify sweep.
     assert "[CLEANUP]" in body, (
         "verify card must mention [CLEANUP] kanban card emission on failure"
     )
@@ -259,9 +266,12 @@ def test_verify_card_runs_dispositions_sweep_and_can_emit_cleanup():
     )
     # Per-segment sweeps must be literally present (one per segment).
     for n in range(1, ROAD_SEGMENT_COUNT + 1):
-        z_start = (n - 1) * 12
-        z_end = z_start + 12
-        literal = f"mc level_ground -1 {z_start} 1 {z_end} target=<target_y> exclude_foliage=true"
+        z_start = ROAD_CORRIDOR_Z_START + (n - 1) * ROAD_SEGMENT_LENGTH
+        z_end = z_start + ROAD_SEGMENT_LENGTH
+        literal = (
+            f"mc level_ground {ROAD_CORRIDOR_X_MIN} {z_start} "
+            f"{ROAD_CORRIDOR_X_MAX} {z_end} target=<target_y>"
+        )
         assert literal in body, (
             f"verify card must include the literal '{literal}' for segment {n}"
         )
@@ -298,4 +308,39 @@ def test_clear_cards_use_new_road_primitives():
         )
         assert "mc deck" in body, (
             f"pn-clear-{n} must mention mc deck as the deep-dip/ravine option"
+        )
+def test_card_bodies_use_livemap_corridor_geometry():
+    """proc-nav-1781079999 hypothesis A+B fix. Pre-fix, _meas_body and
+    _clear_body hardcoded catalog coords (X=-1..1, Z=(seg-1)*12); the
+    materialized world placed the corridor at livemap X=-21..-19,
+    Z=-12..84, so every segment card was off-by-12 in Z and off-by-20 in
+    X versus road_plan.json. Workers spent 1-2 orientation rounds per card
+    reconciling. This test pins the corridor geometry to last-scenario-map.json
+    placements so seg-1 = Z=-12..0, seg-2 = Z=0..12, ... and X bounds align
+    with the corridor centerline."""
+    g = load_graph("proc-scout-road", repo_root=REPO_ROOT)
+    for n in range(1, ROAD_SEGMENT_COUNT + 1):
+        meas = next(c for c in g.cards if c.slug == f"pn-meas-{n}")
+        clear = next(c for c in g.cards if c.slug == f"pn-clear-{n}")
+        z_start = ROAD_CORRIDOR_Z_START + (n - 1) * ROAD_SEGMENT_LENGTH
+        z_end = z_start + ROAD_SEGMENT_LENGTH
+
+        # Measure card header: "Z≈{z_start}) → ... (Z≈{z_end})"
+        assert f"Z≈{z_start}" in meas.body, (
+            f"pn-meas-{n}: header must cite Z≈{z_start} (livemap), got body without it"
+        )
+        assert f"Z≈{z_end}" in meas.body, (
+            f"pn-meas-{n}: header must cite Z≈{z_end} (livemap), got body without it"
+        )
+        # Clear card scope preamble: "Z={z_start}..{z_end} (X={x_min}..{x_max})"
+        assert f"Z={z_start}..{z_end}" in clear.body, (
+            f"pn-clear-{n}: scope must cite Z={z_start}..{z_end} (livemap)"
+        )
+        assert f"X={ROAD_CORRIDOR_X_MIN}..{ROAD_CORRIDOR_X_MAX}" in clear.body, (
+            f"pn-clear-{n}: scope must cite X={ROAD_CORRIDOR_X_MIN}..{ROAD_CORRIDOR_X_MAX} (livemap)"
+        )
+        # Body should not still carry the broken catalog coords.
+        assert "X=-1..1" not in clear.body, (
+            f"pn-clear-{n}: must not hardcode X=-1..1 (catalog) — use livemap from "
+            f"road_plan / last-scenario-map.json"
         )

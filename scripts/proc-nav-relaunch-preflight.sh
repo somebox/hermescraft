@@ -39,6 +39,7 @@
 #   SKIP_BOARD_RESET   true → leave board state alone
 #   SKIP_MEMORY_RESET  true → leave MEMORY.md files alone
 #   SKIP_INVENTORY     true → don't give bots tools
+#   SKIP_WORLD_FRESHNESS true → don't check for accumulated trial artifacts
 #   STRICT             true → fail-fast on any RED check (default: collect all, exit non-zero)
 #   RESTART_STALE_BOTS true → kill + restart any stale bot (skips the manual restart instruction)
 #   MC_HOST            override Minecraft server host (default from running bot or 192.168.1.202)
@@ -67,6 +68,7 @@ SKIP_DOCTRINE_CHECK="${SKIP_DOCTRINE_CHECK:-false}"
 SKIP_BOARD_RESET="${SKIP_BOARD_RESET:-false}"
 SKIP_MEMORY_RESET="${SKIP_MEMORY_RESET:-false}"
 SKIP_INVENTORY="${SKIP_INVENTORY:-false}"
+SKIP_WORLD_FRESHNESS="${SKIP_WORLD_FRESHNESS:-false}"
 STRICT="${STRICT:-false}"
 RESTART_STALE_BOTS="${RESTART_STALE_BOTS:-false}"
 MC_HOST_DEFAULT="${MC_HOST:-192.168.1.202}"
@@ -134,11 +136,72 @@ rcon() {
 }
 
 # =========================================================================
+# Step 0 — World freshness check
+# =========================================================================
+# Proc-nav-1781079999 postmortem: relaunch-preflight resets the board, kit,
+# and memories but does NOT reset the Minecraft world. Dug holes, placed
+# dirt caps, and marker blocks from prior trials accumulate inside the
+# corridor, biasing any trial-to-trial comparison.
+#
+# This step warns when there's evidence of accumulated artifacts (any
+# postmortem scorecard newer than the materialized map file). The actual
+# reset is operator-driven for now — auto-reset has bot-lifecycle ordering
+# subtleties (mvtp to hub → mv delete with OTP → mv create → mvtp back)
+# that need separate work. Once the auto-reset path lands, this step can
+# trigger it via MATERIALIZE=true.
+if [[ "$SKIP_WORLD_FRESHNESS" != "true" ]]; then
+  header "0. World freshness — accumulated trial artifacts"
+  map_json="$REPO_ROOT/data/runtime/last-scenario-map.json"
+  if [[ -f "$map_json" ]]; then
+    # audit.probed_at is the genuine probe timestamp; the file's mtime gets
+    # touched by every prep-board / mvtp run so it's not a reliable signal.
+    probed_at=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('audit',{}).get('probed_at') or '')" "$map_json" 2>/dev/null || echo "")
+    seed=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('seed','?'))" "$map_json" 2>/dev/null || echo "?")
+    if [[ -d "$REPO_ROOT/data/postmortems/proc-nav-lab" && -n "$probed_at" ]]; then
+      # Count postmortem scorecards with run_id (unix seconds) newer than probed_at.
+      newer_postmortems=$(python3 - "$REPO_ROOT/data/postmortems/proc-nav-lab" "$probed_at" <<'PY'
+import sys, os, re
+from datetime import datetime, timezone
+root, probed_at = sys.argv[1], sys.argv[2]
+try:
+    probed_ts = int(datetime.fromisoformat(probed_at.replace("Z", "+00:00")).timestamp())
+except Exception:
+    probed_ts = 0
+count = 0
+for name in os.listdir(root):
+    m = re.match(r"proc-nav-(\d+)$", name)
+    if m and int(m.group(1)) > probed_ts:
+        sc = os.path.join(root, name, "scorecard.json")
+        if os.path.exists(sc):
+            count += 1
+print(count)
+PY
+)
+    else
+      newer_postmortems=0
+    fi
+    if [[ "$newer_postmortems" -eq 0 ]]; then
+      ok "world fresh — no postmortems since last map probe (${probed_at:-unknown})"
+    else
+      warn "world stale — $newer_postmortems trial postmortem(s) since last map probe (${probed_at:-unknown}); corridor artifacts likely"
+      printf '\033[2m    map seed:      %s\033[0m\n' "$seed"
+      printf '\033[2m    To reset proc-nav (operator):\n      python3 scripts/reset-proc-lab.py --world proc-nav --seed %s --bots Mox,Pip\033[0m\n' "$seed"
+      printf '\033[2m    Suppress this check with SKIP_WORLD_FRESHNESS=true.\033[0m\n'
+    fi
+  else
+    warn "no last-scenario-map.json — materialize first (scripts/proc-nav-trial.sh prep-map)"
+  fi
+else
+  say "skipping world freshness check"
+fi
+
+# =========================================================================
 # Step 1 — Bot freshness check
 # =========================================================================
 # Helper: probe whether a bot port is responding AND has the new road verbs
-# loaded. Returns 0 (alive + new), 1 (DOWN), or 2 (STALE — alive but
-# missing one or more of clear_strip / deck / fell_tree).
+# loaded AND is running the slow movement profile. Returns 0 (alive + new),
+# 1 (DOWN), or 2 (STALE — alive but missing one or more of clear_strip /
+# deck / fell_tree, or /health doesn't report movement_profile=slow).
 _bot_status() {
   local port="$1"
   local resp
@@ -153,6 +216,26 @@ _bot_status() {
       return 2  # STALE
     fi
   done
+  # Movement-profile assertion: an old build doesn't expose movement_profile
+  # at all; a new build launched without BOT_MOVEMENT_PROFILE=slow exposes
+  # "default". Either way the bot sprints (0.28m/tick > the F58 ±0.25m
+  # waypoint tolerance) and wedges on block seams — proc-nav-1781014144's
+  # core regression. A verb probe alone CANNOT catch this: the 2026-06-10
+  # rerun reported "alive, new verbs" for a 9h-old sprinting process.
+  local health
+  health=$(curl -s --max-time 3 "http://127.0.0.1:${port}/health" 2>&1 || true)
+  if ! echo "$health" | grep -q '"movement_profile":"slow"'; then
+    return 2  # STALE — wrong/missing movement profile
+  fi
+  # Build drift: the bot stamps BUILD_COMMIT at spawn (now exported by
+  # _start_bot below); /health compares it to disk HEAD. drift:true means
+  # the source moved since this process started. NOTE: dirty-at-spawn →
+  # still-dirty-at-same-commit does NOT register as drift (uncommitted
+  # edits after spawn are invisible) — during active development, restart
+  # explicitly after editing bot code.
+  if echo "$health" | grep -q '"drift":true'; then
+    return 2  # STALE — running code predates current disk HEAD
+  fi
   return 0  # OK
 }
 
@@ -179,8 +262,29 @@ _start_bot() {
     printf '\033[2m  [dry] spawn %s on :%s (viewer :%s)\033[0m\n' "$user" "$port" "$viewer_port"
     return 0
   fi
+  # Spawn-time build stamp — without BUILD_COMMIT the bot's /health reports
+  # spawn:null and its drift detector can never fire (the 2026-06-10 rerun
+  # kept a 9h-old process alive because drift was silently disabled).
+  # Mirrors the capture in landfolk-control.sh:565.
+  local build_commit build_branch build_dirty
+  build_commit=$(git rev-parse HEAD 2>/dev/null || echo '')
+  build_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')
+  if [[ -n "$build_commit" && -n "$(git status --porcelain -uno 2>/dev/null)" ]]; then
+    build_dirty=1
+  else
+    build_dirty=0
+  fi
   # nohup + (cmd &) double-bg so the bot survives the script returning.
+  # BOT_MOVEMENT_PROFILE=slow is REQUIRED for kanban trial bots: it disables
+  # sprinting (0.28m/tick > the F58 ±0.25m waypoint tolerance — sprinting
+  # bots overrun waypoints and stall riding block edges), forbids parkour,
+  # and triples jumpCost. proc-nav-1781014144 ran with the default profile
+  # because this launcher didn't set it — see that postmortem's movement
+  # deep-dive. scripts/landfolk:101 has always defaulted to slow.
   (env MC_USERNAME="$user" API_PORT="$port" VIEWER_PORT="$viewer_port" \
+       BOT_MOVEMENT_PROFILE="${BOT_MOVEMENT_PROFILE:-slow}" \
+       BUILD_COMMIT="$build_commit" BUILD_BRANCH="$build_branch" \
+       BUILD_DIRTY="$build_dirty" BUILD_CAPTURED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
        PAPERMCP_HOST="$MC_HOST_DEFAULT" MC_HOST="$MC_HOST_DEFAULT" MC_PORT="$MC_PORT_DEFAULT" \
        nohup node bot/server.js >"$log_path" 2>&1 &) >/dev/null 2>&1
   # Poll for up to 30s (slower hosts need more than 10 for the MC handshake).
@@ -206,7 +310,7 @@ if [[ "$SKIP_BOT_VERIFY" != "true" ]]; then
     _bot_status "$port"
     case $? in
       0)
-        ok "$bot (:$port) alive, new verbs present (clear_strip, deck, fell_tree)"
+        ok "$bot (:$port) alive, new verbs present (clear_strip, deck, fell_tree), movement_profile=slow"
         ;;
       1)
         # DOWN — no response at all.
@@ -217,7 +321,7 @@ if [[ "$SKIP_BOT_VERIFY" != "true" ]]; then
             fail "$bot (:$port) — start attempted but bot didn't come up within 30s (log: /tmp/preflight-bot-${bot}.log)"
           fi
         else
-          fail "$bot ($user, :$port) — bot server DOWN. Re-run with RESTART_STALE_BOTS=true to auto-start, or start manually: env MC_USERNAME=$user API_PORT=$port VIEWER_PORT=$((4000 + (port % 1000))) PAPERMCP_HOST=$MC_HOST_DEFAULT MC_HOST=$MC_HOST_DEFAULT MC_PORT=$MC_PORT_DEFAULT nohup node bot/server.js &"
+          fail "$bot ($user, :$port) — bot server DOWN. Re-run with RESTART_STALE_BOTS=true to auto-start, or start manually: env MC_USERNAME=$user API_PORT=$port VIEWER_PORT=$((4000 + (port % 1000))) BOT_MOVEMENT_PROFILE=slow PAPERMCP_HOST=$MC_HOST_DEFAULT MC_HOST=$MC_HOST_DEFAULT MC_PORT=$MC_PORT_DEFAULT nohup node bot/server.js &"
         fi
         ;;
       2)
@@ -229,7 +333,7 @@ if [[ "$SKIP_BOT_VERIFY" != "true" ]]; then
             fail "$bot (:$port) — restart attempted but bot didn't come up within 30s (log: /tmp/preflight-bot-${bot}.log)"
           fi
         else
-          fail "$bot (:$port) — running STALE build (missing clear_strip/deck/fell_tree). Re-run with RESTART_STALE_BOTS=true, or restart manually."
+          fail "$bot (:$port) — running STALE build (missing clear_strip/deck/fell_tree, or movement_profile != slow in /health). Re-run with RESTART_STALE_BOTS=true, or restart manually."
         fi
         ;;
     esac

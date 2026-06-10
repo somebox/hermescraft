@@ -147,9 +147,12 @@ test('dispositions: 6-deep isolated hole → fill_deep, suggests deck (or rerout
   assert.match(res.result, /max hole_depth 6/);
 });
 
-test('dispositions: 3-cell connected shallow span → deck (span_n ≥ 3 even with shallow depth)', async () => {
-  // 3 adjacent holes in a row at z=1, each 2 deep. Should bucket as ONE span
-  // with n=3, max_depth=1. Span size triggers deck even though each cell is shallow.
+test('dispositions: 3-cell connected shallow span → level_caps (width alone no longer triggers deck)', async () => {
+  // proc-nav-1781079999 fix (hypothesis H): the deck classifier was
+  // `max_depth>3 OR n>=3`, so this 3-cell wide span at depth=1 was
+  // wrongly marked deck-required. Builder-mox on seg 2 hit exactly this
+  // case and had to manually reject the classification. The fix drops
+  // the OR-span_n branch — only depth determines deck now.
   const t = buildTerrain({
     x1: 0, x2: 3, z1: 0, z2: 3, groundY: 64,
     holes: [
@@ -164,9 +167,31 @@ test('dispositions: 3-cell connected shallow span → deck (span_n ≥ 3 even wi
   // Each cell is shallow…
   assert.equal(res.data.dispositions.fill_shallow, 3);
   assert.equal(res.data.dispositions.fill_deep, 0);
-  // …but the SPAN is wide enough that the planner should still treat it as deck-required.
+  // …and the span is wide but not deep, so `level_caps` (fill) is enough.
   assert.equal(res.data.dip_spans.length, 1);
   assert.equal(res.data.dip_spans[0].n, 3);
+  assert.equal(res.data.dip_spans[0].suggestion, 'level_caps');
+  assert.equal(res.data.summary.deck_required_n, 0);
+});
+
+test('dispositions: 3-cell wide deep span → deck (max_depth>3 still triggers)', async () => {
+  // The deck classifier still triggers on depth alone (max_depth > 3).
+  // 3 adjacent holes, each 5 deep → still deck-required.
+  const t = buildTerrain({
+    x1: 0, x2: 3, z1: 0, z2: 3, groundY: 64,
+    holes: [
+      { x: 1, z: 1, depth: 5 }, // hole_depth=4 (> FILL_SHALLOW_MAX_DEPTH=3)
+      { x: 2, z: 1, depth: 5 },
+      { x: 3, z: 1, depth: 5 },
+    ],
+  });
+  const part = makePart(makeBot(t));
+  const res = await part.level_ground({ x1: 0, z1: 0, x2: 3, z2: 3 });
+  assert.equal(res.ok, true);
+  assert.equal(res.data.dip_spans.length, 1);
+  assert.equal(res.data.dip_spans[0].n, 3);
+  assert.ok(res.data.dip_spans[0].max_depth > 3,
+    `expected max_depth > 3, got ${res.data.dip_spans[0].max_depth}`);
   assert.equal(res.data.dip_spans[0].suggestion, 'deck');
   assert.equal(res.data.summary.deck_required_n, 1);
 });
@@ -303,8 +328,11 @@ test('per-column hole_depth and fill_kind fields appear on fill cells', async ()
 // opt that skips *_leaves and snow_layer when finding the column top.
 // ─────────────────────────────────────────────────────────────────────────
 
-test('exclude_foliage=true: tree canopy over flat ground classifies as level (not deck)', async () => {
-  // 3x3 spruce canopy at y=88 over flat ground at y=64.
+test('exclude_foliage default-true: tree canopy over flat ground classifies as level (not deck)', async () => {
+  // proc-nav-1781079999: default flipped from false → true. The legacy
+  // behavior (canopy reads as terrain) is still reachable via
+  // exclude_foliage=false for tree-canopy inspection callers.
+  // 3x3 spruce canopy at y=72 over flat ground at y=64.
   const t = buildTerrain({ x1: 0, x2: 2, z1: 0, z2: 2, groundY: 64 });
   // Stack 5-block trunk + 3x3 leaves crown at top.
   for (let y = 65; y <= 70; y++) {
@@ -325,40 +353,38 @@ test('exclude_foliage=true: tree canopy over flat ground classifies as level (no
 
   const part = makePart(makeBot(t));
 
-  // Default: foliage reads as ground → max y=73 (snow_layer over canopy).
-  // The whole 3x3 is "pillar" cells with delta=+9 from target=64.
+  // Default (no flag): foliage is skipped. The trunk at (1, y=65-70) is the
+  // top for that column; the 8 non-trunk cells see ground at y=64 (delta=0).
   const resDefault = await part.level_ground({ x1: 0, z1: 0, x2: 2, z2: 2, target: 64 });
   assert.equal(resDefault.ok, true);
   assert.ok(
-    resDefault.data.summary.pillars_n > 0,
-    'without exclude_foliage, canopy reads as terrain to dig'
+    resDefault.data.summary.level_n >= 8,
+    `expected ≥8 level cells under canopy (default skips foliage), got ${resDefault.data.summary.level_n}`,
   );
-
-  // exclude_foliage=true: leaves + snow_layer skipped. The trunk at (1, y=65-70)
-  // still reports (no leaves to skip there), but the 3x3 ground at y=64 is the
-  // top for the 8 non-trunk cells. Classifier sees level cells, no deck.
-  const resOpt = await part.level_ground({
-    x1: 0, z1: 0, x2: 2, z2: 2, target: 64, exclude_foliage: true,
-  });
-  assert.equal(resOpt.ok, true);
-  // Non-trunk cells: y=64 ground, delta=0 → level.
-  assert.ok(resOpt.data.summary.level_n >= 8,
-    `expected ≥8 level cells (canopy ignored), got ${resOpt.data.summary.level_n}`);
-  // No deck recommendation should appear — the underlying terrain is flat.
-  assert.equal(resOpt.data.summary.deck_required_n, 0,
+  assert.equal(resDefault.data.summary.deck_required_n, 0,
     'flat ground under canopy must not classify as deck');
+
+  // exclude_foliage=false: legacy — foliage reads as ground (snow_layer at y=73
+  // becomes the topmost block), so the whole 3x3 is "pillar" cells.
+  const resLegacy = await part.level_ground({
+    x1: 0, z1: 0, x2: 2, z2: 2, target: 64, exclude_foliage: false,
+  });
+  assert.equal(resLegacy.ok, true);
+  assert.ok(
+    resLegacy.data.summary.pillars_n > 0,
+    'with exclude_foliage=false, canopy reads as terrain to dig',
+  );
 });
 
-test('exclude_foliage default false preserves legacy behavior', async () => {
-  // Existing tests in this file all use default (no exclude_foliage).
-  // This sentinel test pins the default value — flipping it would break
-  // callers that pass live terrain with grass+leaves overhangs.
+test('exclude_foliage default-true sentinel', async () => {
+  // Pin the default value so a flip back to false would break this test.
   const t = buildTerrain({ x1: 0, x2: 0, z1: 0, z2: 0, groundY: 64 });
   // Add an isolated leaf block above ground.
   t.set(`0,68,0`, 'oak_leaves');
   const part = makePart(makeBot(t));
   const res = await part.level_ground({ x1: 0, z1: 0, x2: 0, z2: 0, target: 64 });
   assert.equal(res.ok, true);
-  // Default-on means top reads as oak_leaves at y=68; delta=+4 → cut/pillar.
-  assert.equal(res.data.summary.pillars_n, 1);
+  // Default-on means foliage is skipped → ground at y=64 → delta=0 → level.
+  assert.equal(res.data.summary.level_n, 1);
+  assert.equal(res.data.summary.pillars_n, 0);
 });

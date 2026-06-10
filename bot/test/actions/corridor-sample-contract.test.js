@@ -119,8 +119,12 @@ test('corridor_sample: 3×96 = 288 samples is under the 512 cap (proc-nav-road s
   assert.equal(r.data.elevation_median, 64);
 });
 
-test('corridor_sample: exclude_foliage skips canopy + snow_layer', async () => {
-  // Flat ground at y=64. A spruce log + canopy at y=78. Snow on canopy top.
+test('corridor_sample: exclude_foliage default-true skips canopy + snow_layer; explicit false includes them', async () => {
+  // proc-nav-1781079999: default flipped from false → true. Every
+  // production road/scout caller wants ground Y, not canopy Y. The
+  // legacy "leaves count as top" behavior is still reachable via
+  // exclude_foliage=false for tree-canopy inspection callers.
+  // Flat ground at y=64. A spruce canopy at y=78. Snow on canopy top.
   const t = buildFlatGround(0, 2, 0, 2, 64);
   for (let dx = 0; dx <= 2; dx++) {
     for (let dz = 0; dz <= 2; dz++) {
@@ -130,18 +134,27 @@ test('corridor_sample: exclude_foliage skips canopy + snow_layer', async () => {
   }
 
   const q = makeQueries(makeBot(t));
-  // Without exclude_foliage: top reads as snow_layer at y=79.
+  // Default (no flag): canopy + snow are skipped, ground reads at y=64.
   const rDefault = await q.corridor_sample({ x1: 0, z1: 0, x2: 2, z2: 2 });
   assertContract(rDefault);
-  assert.equal(rDefault.data.elevation_median, 79);
+  assert.equal(rDefault.data.elevation_median, 64);
+  assert.equal(rDefault.data.exclude_foliage, true);
 
-  // With exclude_foliage: leaves + snow_layer skipped, ground at y=64.
+  // Explicit exclude_foliage=true: same as default.
   const rOpt = await q.corridor_sample({
     x1: 0, z1: 0, x2: 2, z2: 2, exclude_foliage: true,
   });
   assertContract(rOpt);
   assert.equal(rOpt.data.elevation_median, 64);
   assert.equal(rOpt.data.exclude_foliage, true);
+
+  // Explicit exclude_foliage=false: legacy — top reads as snow_layer at y=79.
+  const rLegacy = await q.corridor_sample({
+    x1: 0, z1: 0, x2: 2, z2: 2, exclude_foliage: false,
+  });
+  assertContract(rLegacy);
+  assert.equal(rLegacy.data.elevation_median, 79);
+  assert.equal(rLegacy.data.exclude_foliage, false);
 });
 
 test('corridor_sample: order-independent bounds (x1>x2 OK)', async () => {

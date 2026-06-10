@@ -10,6 +10,7 @@ Graph name: ``proc-scout-road``.
 from __future__ import annotations
 
 from .plan_verify_graph import OBSERVE_SKILLS
+from .proc_nav_helpers import load_map_card
 from .proc_scout_graph import PLAYBOOK, POSTMORTEM_MANIFEST, SCENARIO_MAP_JSON
 from .road_config import (
     all_mark_names_for_graph,
@@ -62,6 +63,52 @@ ROAD_ALL_MARKS: tuple[str, ...] = all_mark_names_for_graph(_ROAD_CFG)
 # the plan available across the trial lifetime. Singleton; one active
 # road trial at a time. Past trials should archive on completion.
 ROAD_PLAN_JSON = "data/runtime/proc-nav-road-plan.json"
+
+
+def _road_corridor_geom() -> dict[str, int]:
+    """Derive corridor X/Z geometry from `last-scenario-map.json`.
+
+    proc-nav-1781079999 postmortem (hypothesis A+B): card bodies hardcoded
+    catalog coordinates (X=-1..1, Z = (seg-1)*12) while the materialized
+    world placed the corridor at livemap X=-20 centerline, Z=-12..84. Every
+    worker had to manually reconcile the two coordinate systems before
+    issuing any mc verb. This helper reads the materialized map's overlook
+    + return_post placements so card bodies emit livemap coords directly.
+
+    Fallback values match the legacy catalog coords so the helper is safe
+    on a clean checkout / before any materialization.
+    """
+    card = load_map_card()
+    overlook = card.get("placements", {}).get("overlook") or card.get("overlook")
+    return_post = card.get("placements", {}).get("return_post") or card.get("return_post")
+    if (
+        isinstance(overlook, (list, tuple)) and len(overlook) >= 3
+        and isinstance(return_post, (list, tuple)) and len(return_post) >= 3
+    ):
+        center_x = int(overlook[0])
+        corridor_z_start = int(overlook[2])
+        # Corridor end = return_post Z. We don't trust it absolutely (the
+        # canonical length is segment_count * segment_length_blocks from
+        # config), but we use overlook Z to anchor the corridor's start.
+    else:
+        # Catalog default — same numbers the body used to hardcode.
+        center_x = 0
+        corridor_z_start = 0
+    half = max(0, (ROAD_WIDTH_M - 1) // 2)
+    x_min = center_x - half
+    x_max = center_x + (ROAD_WIDTH_M - 1 - half)
+    return {
+        "center_x": center_x,
+        "x_min": x_min,
+        "x_max": x_max,
+        "z_start": corridor_z_start,
+    }
+
+
+_GEOM = _road_corridor_geom()
+ROAD_CORRIDOR_X_MIN = _GEOM["x_min"]
+ROAD_CORRIDOR_X_MAX = _GEOM["x_max"]
+ROAD_CORRIDOR_Z_START = _GEOM["z_start"]
 
 ROAD_SPEC = (
     f"**Road:** {ROAD_WIDTH_M} blocks wide between catalog anchors "
@@ -176,7 +223,10 @@ def _segment_plan_body() -> str:
 
 def _explore_body() -> str:
     bound_list = ", ".join(f"**{m}**" for m in ROAD_INTERIOR_MARKS)
-    z_max = ROAD_CENTERLINE_BLOCKS_CATALOG
+    z_min = ROAD_CORRIDOR_Z_START
+    z_max = z_min + ROAD_CENTERLINE_BLOCKS_CATALOG
+    x_min = ROAD_CORRIDOR_X_MIN
+    x_max = ROAD_CORRIDOR_X_MAX
     return (
         f"Reach catalog endpoints **{ROAD_ENDPOINTS[0]}** and **{ROAD_ENDPOINTS[-1]}** "
         f"(each within **4 blocks**).\n"
@@ -189,9 +239,9 @@ def _explore_body() -> str:
         "section 'Target Y — derive from terrain, NOT from catalog placement'):**\n"
         f"- **Run this ONE LITERAL command** to sample the full 3-wide corridor in one "
         f"round-trip:\n"
-        f"   `mc corridor_sample -1 0 1 {z_max} exclude_foliage=true full=true`\n"
+        f"   `mc corridor_sample {x_min} {z_min} {x_max} {z_max} full=true`\n"
         f"  This returns per-cell `block_y`/`surface_y` + aggregate "
-        f"`elevation_median`/`min`/`max`/`delta`. Use `exclude_foliage=true` so a "
+        f"`elevation_median`/`min`/`max`/`delta`. Foliage is excluded by default — a "
         f"spruce canopy doesn't register as ground (W2-NAV-015).\n"
         "- Copy `data.elevation_median` directly into `corridor_profile.elevation_median`.\n"
         "- **Never** copy the catalog endpoint Y (`overlook` / `return_post`) as a road "
@@ -206,13 +256,16 @@ def _explore_body() -> str:
 
 
 def _meas_body(seg_id: int, from_mark: str, to_mark: str) -> str:
-    # Corridor runs along +Z from overlook (z=0) to return_post
-    # (z=ROAD_CENTERLINE_BLOCKS_CATALOG). x ∈ {-1, 0, 1} (3-wide centered
-    # on x=0). The literal mc corridor_sample command is hardcoded so the
-    # agent can't skip sampling — trial 1780989125 showed Pip accept the
-    # planner's bad target_y without re-sampling. Literal verbs bite.
-    z_start = (seg_id - 1) * ROAD_SEGMENT_LENGTH
+    # Corridor runs along +Z from overlook (Z=ROAD_CORRIDOR_Z_START) to
+    # return_post. X strip is [ROAD_CORRIDOR_X_MIN..ROAD_CORRIDOR_X_MAX]
+    # (livemap coords from last-scenario-map.json — proc-nav-1781079999
+    # postmortem). The literal mc corridor_sample command is hardcoded so
+    # the agent can't skip sampling — trial 1780989125 showed Pip accept
+    # the planner's bad target_y without re-sampling. Literal verbs bite.
+    z_start = ROAD_CORRIDOR_Z_START + (seg_id - 1) * ROAD_SEGMENT_LENGTH
     z_end = z_start + ROAD_SEGMENT_LENGTH
+    x_min = ROAD_CORRIDOR_X_MIN
+    x_max = ROAD_CORRIDOR_X_MAX
     return (
         f"**Segment {seg_id}:** `{from_mark}` (Z≈{z_start}) → `{to_mark}` (Z≈{z_end}) "
         f"per **`road_plan`**.\n"
@@ -224,9 +277,9 @@ def _meas_body(seg_id: int, from_mark: str, to_mark: str) -> str:
         f"planner's seeded `target_y_default` for this segment.\n"
         f"\n"
         f"**Step 2 — sample the segment's 3-wide cross-section in ONE call:**\n"
-        f"   `mc corridor_sample -1 {z_start} 1 {z_end} exclude_foliage=true`\n"
+        f"   `mc corridor_sample {x_min} {z_start} {x_max} {z_end}`\n"
         f"This returns aggregate `elevation_median` for the segment (call it "
-        f"`segment_median`). Use `exclude_foliage=true` so a spruce canopy doesn't "
+        f"`segment_median`). Foliage is excluded by default — spruce canopy doesn't "
         f"register as ground (W2-NAV-015). One round-trip instead of 9.\n"
         f"\n"
         f"**Step 3 — pin target_y to the corridor median (W2-NAV-017):**\n"
@@ -239,7 +292,7 @@ def _meas_body(seg_id: int, from_mark: str, to_mark: str) -> str:
         f"corridor_median, delta}}`. This is the audit trail for an intentional step.\n"
         f"\n"
         f"**Step 4 — run `mc level_ground` dry-run for disposition classification:**\n"
-        f"   `mc level_ground -1 {z_start} 1 {z_end} target=<target_y> exclude_foliage=true`\n"
+        f"   `mc level_ground {x_min} {z_start} {x_max} {z_end} target=<target_y>`\n"
         f"Read `data.dispositions` and `data.dip_spans`:\n"
         f"- If `summary.deck_required_n > 0` or `summary.reroute_required_n > 0`, set "
         f"`passage='deck'` or `passage='reroute'` and pass the span coords through to "
@@ -283,9 +336,11 @@ def _verify_body() -> str:
         f"For each segment, run a dry-run `mc level_ground` and assert "
         f"the surface is fully leveled.\n"
         + "\n".join(
-            f"   `mc level_ground -1 {(sid - 1) * ROAD_SEGMENT_LENGTH} "
-            f"1 {sid * ROAD_SEGMENT_LENGTH} target=<target_y> "
-            f"exclude_foliage=true`  # seg {sid}"
+            f"   `mc level_ground {ROAD_CORRIDOR_X_MIN} "
+            f"{ROAD_CORRIDOR_Z_START + (sid - 1) * ROAD_SEGMENT_LENGTH} "
+            f"{ROAD_CORRIDOR_X_MAX} "
+            f"{ROAD_CORRIDOR_Z_START + sid * ROAD_SEGMENT_LENGTH} "
+            f"target=<target_y>`  # seg {sid}"
             for sid in range(1, ROAD_SEGMENT_COUNT + 1)
         )
         + f"\n"
@@ -312,12 +367,14 @@ def _verify_body() -> str:
 
 
 def _clear_body(seg_id: int) -> str:
-    z_start = (seg_id - 1) * ROAD_SEGMENT_LENGTH
+    z_start = ROAD_CORRIDOR_Z_START + (seg_id - 1) * ROAD_SEGMENT_LENGTH
     z_end = z_start + ROAD_SEGMENT_LENGTH
+    x_min = ROAD_CORRIDOR_X_MIN
+    x_max = ROAD_CORRIDOR_X_MAX
     return (
         f"**Segment {seg_id}:** equip (`mc inventory`, metadata `tools_ready`); "
-        f"clear **{ROAD_WIDTH_M} blocks wide** for Z={z_start}..{z_end} (X=-1..1) per "
-        f"**`road_plan`**.\n"
+        f"clear **{ROAD_WIDTH_M} blocks wide** for Z={z_start}..{z_end} "
+        f"(X={x_min}..{x_max}) per **`road_plan`**.\n"
         f"\n"
         f"**Step 1 — read the road_plan + this segment's measurements from persistent paths:**\n"
         f"   `cat $HERMESCRAFT_REPO/{ROAD_PLAN_JSON}`\n"
@@ -326,16 +383,16 @@ def _clear_body(seg_id: int) -> str:
         f"`segment_measurements` metadata for the same segment_id.\n"
         f"\n"
         f"**Step 2 — clear by passage:**\n"
-        f"- `passage=dig` or `fill`: `mc clear_strip -1 {z_start} 1 {z_end} "
+        f"- `passage=dig` or `fill`: `mc clear_strip {x_min} {z_start} {x_max} {z_end} "
         f"y=<target_y> road_mode=true` (cuts trees; y = the bed's block_y — "
         f"clear_strip removes the cells ABOVE it), then "
-        f"`mc level_ground -1 {z_start} 1 {z_end} target=<target_y> execute=true`.\n"
+        f"`mc level_ground {x_min} {z_start} {x_max} {z_end} target=<target_y> execute=true`.\n"
         f"- `passage=deck`: route around if reroute viable; else `mc deck` over the "
         f"flagged dip_spans.\n"
         f"- `passage=reroute`: emit a `[DEFER]` comment with the span coords, complete "
         f"this card with `obstacles_handled=[]` and a re-survey note.\n"
         f"\n"
-        f"**Step 3 — verify the bed:** `mc level_ground -1 {z_start} 1 {z_end} "
+        f"**Step 3 — verify the bed:** `mc level_ground {x_min} {z_start} {x_max} {z_end} "
         f"target=<target_y>` (dry-run) should now report `dispositions.level == columns_n` "
         f"and no remaining `dip_spans` with `suggestion != 'level_caps'`.\n"
         f"\n"
