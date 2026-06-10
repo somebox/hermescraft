@@ -418,18 +418,22 @@ export const RAW_COMMAND_DEFS = [
   g('pillar_down', 'world', ['descend', 'pillardown'], {
     method: 'POST',
     path: '/action/pillar_down',
-    description: 'Descend a vertical pillar — mine the block directly underfoot, drop 1, repeat. Stops on bedrock, lava, or when surface is reached (multiple solid floor cells around the bot at the new level). Use when stuck on top of a 1×1 column you climbed with mc pillar_up.',
+    description: 'Descend a vertical pillar — mine the block directly underfoot, drop 1, repeat. Stops on bedrock, lava, or when surface is reached (multiple solid floor cells around the bot at the new level). Use when stuck on top of a 1×1 column you climbed with mc pillar_up. Refuses with SELF_TRAP_RISK when inventory has fewer pillar-capable blocks (dirt/cobble…) than count — pass force=true to acknowledge (dug blocks are picked up and may self-fund the climb back).',
     argSchema: [
-      { key: 'count', type: 'number', description: 'max blocks to descend (default 12, max 64)' , min: 1, max: 32},
+      { key: 'count', type: 'number', description: 'max blocks to descend (default 12, max 32)' , min: 1, max: 32},
       { key: 'pickup', type: 'boolean', description: 'pickup drops as you go (default true). Pass pickup=false to skip.' },
+      { key: 'force', type: 'boolean', description: 'descend even if inventory cannot fund pillaring back up (default false)' },
     ],
     bodyFn: (p) => JSON.stringify({
       ...(p.count !== undefined ? { count: Number(p.count) } : {}),
       ...(p.pickup !== undefined && `${p.pickup}`.trim() !== ''
         ? { pickup: p.pickup === true || `${p.pickup}`.toLowerCase() === 'true' || `${p.pickup}` === '1' }
         : {}),
+      ...(p.force !== undefined && `${p.force}`.trim() !== ''
+        ? { force: p.force === true || `${p.force}`.toLowerCase() === 'true' || `${p.force}` === '1' }
+        : {}),
     }),
-    examples: [`mc pillar_down`, `mc pillar_down 8`, `mc pillar_down 20 pickup=false`],
+    examples: [`mc pillar_down`, `mc pillar_down 8`, `mc pillar_down 20 pickup=false`, `mc pillar_down 12 --force`],
   }),
   g('ladder', 'movement', [], {
     method: 'POST',
@@ -2642,6 +2646,18 @@ export const RAW_COMMAND_DEFS = [
       examples: [`mc batch status goals inventory`, `mc batch "nearby 32" observe`],
     },
   ),
+  g('feedback', 'platform', [], {
+    method: 'POST',
+    path: '/action/feedback',
+    argSchema: [
+      { key: 'note', type: 'string', required: true, description: 'one line describing the tooling friction' },
+      { key: 'tag', type: 'string', description: 'optional category tag (e.g. nav, timeout, docs)' },
+    ],
+    bodyFn: (p) => JSON.stringify({ note: p.note, tag: p.tag }),
+    description: 'Log tooling friction for the trial postmortem — use when a tool fights you (lying results, blind timeouts, missing data). Appends to data/runtime/feedback-<bot>.jsonl; collected per run.',
+    usage: 'mc feedback "NOTE" [tag=TAG]',
+    examples: ['mc feedback "reachable said yes but goto found no path"', 'mc feedback "level timed out blind" tag=timeout'],
+  }),
 
   /** URL echo only — same as bash */
   g('dashboard', 'platform', ['dash'], {

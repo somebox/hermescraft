@@ -4,7 +4,7 @@ import { recordRecentPlace, equipForDig, isDigProtected } from '../../runtime/di
 import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
 import { shouldSkipPlaceAt, shouldSkipDigAt, createRegionSkipTracker } from '../../runtime/regions/policy-guard.js';
 import { fail, ok } from '../../shared/action-contract.js';
-import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from '../_helpers.js';
+import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 import { box6, itemName, bool } from '../_args.js';
 import { withYBoth, parseYInput, normalizeBoxYArgs } from '../../runtime/coordinates.js';
 
@@ -15,12 +15,14 @@ const { goals } = pathfinderPkg;
  */
 export function createBuildingPlaceBulkPart(deps) {
   const { ctx, ensureBot, sleep, config } = deps;
+  // Wallclock caps — injectable for tests (deps.capsMs), default shared caps.
+  const capsMs = deps.capsMs || ACTION_CAPS_MS;
 
   return {
     async place_fill(args) {
       // Y inputs: y1/y2 are block_y (legacy); surface_y1/surface_y2 are
       // an alternative perspective (= block_y + 1, where bots stand).
-      // See docs/conventions/coordinates.md.
+      // See docs/reference/world-coordinates.md.
       const box = box6(normalizeBoxYArgs(args));
       if (!box.ok) return box.response;
       const { x1, y1, z1, x2, y2, z2 } = box;
@@ -59,6 +61,9 @@ export function createBuildingPlaceBulkPart(deps) {
           }
         }
       }
+
+      const capMs = Number(capsMs.place_fill) || ACTION_CAPS_MS.place_fill;
+      const deadline = Date.now() + capMs;
 
       // Pre-check: detect cells already occupied by something other than
       // the target block. Default `overwrite=false` returns a clear
@@ -109,6 +114,18 @@ export function createBuildingPlaceBulkPart(deps) {
       const overwriteSkipped = [];
       if (overwrite && occupiedByOther.length > 0) {
         for (const c of occupiedByOther) {
+          if (Date.now() > deadline) {
+            return timeoutError('place_fill', capMs, {
+              block: blockName,
+              phase: 'overwrite_dig',
+              dug: dugForOverwrite.length,
+              placed: 0,
+              total: positions.length,
+              remaining_count: positions.length,
+              next_unfilled: positions.slice(0, 8).map((p) => [p.x, p.y, p.z]),
+              bounds: { x1: minX, x2: maxX, z1: minZ, z2: maxZ, y1: minY, y2: maxY },
+            }, `Timed out while digging blockers (overwrite=true) — ${dugForOverwrite.length}/${occupiedByOther.length} dug, nothing placed yet. Re-run the same mc fill command to continue.`);
+          }
           const blk = b.blockAt(new Vec3(c.x, c.y, c.z));
           if (!blk) continue;
           if (shouldSkipDigAt(ctx, config, blk.name, c.x, c.y, c.z, isDigProtected).skip) {
@@ -222,7 +239,22 @@ export function createBuildingPlaceBulkPart(deps) {
       const place_failures = [];    // [{x,y,z,reason}]
       const occupied_by_counts = {}; // {block_name: count}
       const regionSkips = createRegionSkipTracker();
+      const processedKeys = new Set();
+      const partialTimeout = () => {
+        const remaining = positions.filter((p) => !processedKeys.has(cellKey(p)));
+        return timeoutError('place_fill', capMs, {
+          block: blockName,
+          placed,
+          skipped_already,
+          total: positions.length,
+          cells_done: positions.length - remaining.length,
+          remaining_count: remaining.length,
+          next_unfilled: remaining.slice(0, 8).map((p) => [p.x, p.y, p.z]),
+          bounds: { x1: minX, x2: maxX, z1: minZ, z2: maxZ, y1: minY, y2: maxY },
+        }, `Partial completion: ${positions.length - remaining.length}/${positions.length} cells processed (${placed} placed). Re-run the same mc fill command — already-placed cells are skipped.`);
+      };
       for (const cluster of clusters) {
+        if (Date.now() > deadline) return partialTimeout();
         // Walk to the cluster's standpoint (skip if at one already).
         if (cluster.standpoint) {
           const [sx, sy, sz] = cluster.standpoint;
@@ -244,6 +276,8 @@ export function createBuildingPlaceBulkPart(deps) {
           }
         }
         for (const pos of cluster.cells) {
+          if (Date.now() > deadline) return partialTimeout();
+          processedKeys.add(cellKey(pos));
           const skipPl = shouldSkipPlaceAt(ctx, config, blockName, pos.x, pos.y, pos.z);
           if (skipPl.skip) {
             regionSkips.noteSkip(skipPl.regionId);
@@ -407,8 +441,8 @@ export function createBuildingPlaceBulkPart(deps) {
      * Build a wall: vertical line/rectangle of blocks. Sugar over place_fill
      * with action-contract shape and a "must have height" guard so a flat
      * single-Y rectangle (= floor) gets a clear error instead of silently
-     * placing a slab. See docs/design/phase-2/sprints.md (Sprint 5 — Building primitives).
-     * — Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc wall) —
+     * placing a slab. See docs/archive/phase-2-design/sprints.md (Sprint 5 — Building primitives).
+     * — Phase-2 action contract (see docs/reference/bot/handler-response-contracts.md mc wall) —
      */
     async wall(args) {
       const normalized = normalizeBoxYArgs(args);
@@ -564,7 +598,7 @@ export function createBuildingPlaceBulkPart(deps) {
      * --gate DIR places a matching fence_gate at the midpoint of the named
      * side (north|south|east|west), inferring gate type from fence type
      * (e.g. oak_fence → oak_fence_gate).
-     * — Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc fence) —
+     * — Phase-2 action contract (see docs/reference/bot/handler-response-contracts.md mc fence) —
      */
     async fence({ block: blockName, x1, z1, x2, z2, gate, y, surface_y }) {
       const b = ensureBot();

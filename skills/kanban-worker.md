@@ -49,6 +49,17 @@ Hermes delimits memory entries with `§` automatically. Don't manually format se
 
 If the task spans multiple workers (long-running collect, multi-layer build, etc.), prefer **replacing** older state entries rather than accumulating — `memory(action="replace", name="state-snapshot", content=...)` keeps memory clean. Keep one canonical "current state" entry plus a few discrete fact entries (e.g., "discovered iron vein at 410,42,-615") rather than a sprawl of timestamps.
 
+## When a tool fights you — log it with `mc feedback`
+
+If an `mc` verb misleads you (a query said yes but the action failed, a command timed out with no progress data, help text didn't match behavior, an error gave no usable next step), log it the moment it happens:
+
+```
+mc feedback "reachable said standable but goto found no path" tag=nav
+mc feedback "level timed out with no partial counters" tag=timeout
+```
+
+One line, ~1 second, fire-and-forget — it never blocks your task. Notes are collected per trial into the postmortem, and they are the primary input for fixing the tooling between runs. Do NOT spend iterations working around a broken tool silently: log the friction, then take the workaround. If the friction actually blocks your card, also raise it through the normal escalation path (e.g. a kanban card) — `mc feedback` is telemetry, not a request for help.
+
 ## Don't invent verbs — `mc help` discovers, doesn't cost much
 
 Your training data has Minecraft commands from other contexts; not all of them exist in our `mc` CLI. Examples seen in production logs: `mc chest_scan`, `mc chests`, `mc list_containers`, `mc rcon`, `mc tp` — none of these exist. When a worker invokes a non-existent verb the framework returns `unknown command: <verb>`, the call wastes an iteration, and the LLM often follows up with 2-3 more guesses before recovering.
@@ -105,6 +116,7 @@ The warning includes a suggested `mc advise` command pre-filled with your coords
 **Required order** (cheap — do all three before any retry):
 
 1. **`mc read_chat 20`** — operator guidance and Steward comments land in chat; whispers and `mc chat` from other bots are invisible until you read.
+   Tool output may also prefix lines like `<OtherBot> done t_…` from fleet chat — **background noise** unless your card body asks you to coordinate with that bot.
 2. **`mc reachable <target_x> <target_y> <target_z>`** (use `surface_y` when the card gives surface coords).
 3. If the target cell is **not** standable and the response includes **`best_stand`**: **`mc goto_near <best.x> <best.y> <best.z> range=1`**, then re-run `mc reachable` on the original target. **Do not** repeat the prior failed verb until these probes complete.
 
@@ -390,7 +402,7 @@ When the card body includes `playbook: <registry_id>` (Stage 2a+), routing lives
 
 `mc playbook phase set <parent_id> <parent_phase> --sub-playbook pillar_up_safe --sub-phase check_lateral`
 
-Write nested `sub:` under `[run_state]` (see `docs/features/agent-playbooks.md`). Clear `--sub-*` when exiting the sub-play back to the parent phase.
+Write nested `sub:` under `[run_state]` (see `docs/testing/playbooks/design-composable-playbooks.md`). Clear `--sub-*` when exiting the sub-play back to the parent phase.
 
 ## First-turn spec review — judge clarity before working
 

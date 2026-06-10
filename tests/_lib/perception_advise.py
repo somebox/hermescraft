@@ -204,7 +204,10 @@ def run_advise(
         }
 
     digest_t0 = time.perf_counter()
-    advise_timeout = 25.0 if (cmd or "advise") == "advise" else 90.0
+    # 15s LLM budget keeps bundle-fetch + digest inside the CLI's 25s
+    # shell cap (bot/cli/advise.mjs), so the degraded fallback below can
+    # actually reach the agent instead of the shell killing the process.
+    advise_timeout = 15.0 if (cmd or "advise") == "advise" else 90.0
     result = digest(
         bundle,
         reason,
@@ -243,24 +246,29 @@ def run_advise(
     append_advise_log(log_entry)
 
     if parsed is None:
-        # F14 (task #51): distinguish timeouts from parse failures so
-        # the agent can react appropriately. Timeouts often resolve on
-        # retry; parse failures don't.
+        # Degraded fallback (proc-nav-1781014144 item 9): the bundle is
+        # already fetched, so a dead LLM shouldn't cost the agent the
+        # observation. Return the raw perception bundle with degraded=true
+        # instead of a bare failure. F14 (task #51) timeout-vs-parse
+        # distinction is preserved in digest_error_type: timeouts often
+        # resolve on retry; parse failures don't.
         is_timeout = result.get("error_kind") == "timeout"
         return {
-            "ok": False,
+            "ok": True,
             "command": cmd,
-            "error": result.get("error") or "digest did not return valid JSON",
-            "error_type": "advise_timeout" if is_timeout else "digest_failed",
-            "next_action_hint": (
-                "mc advise --reason=\"<same>\" --target X,Y,Z  # retry; OpenRouter was slow"
-                if is_timeout
-                else "Skip mc advise for now — check mc map / mc scene directly."
-            ),
             "data": {
                 "reason": reason,
                 "kind": cmd,
+                "degraded": True,
+                "note": (
+                    "LLM digest timed out; raw perception bundle attached — read it directly."
+                    if is_timeout
+                    else "LLM digest failed to parse; raw perception bundle attached — read it directly."
+                ),
+                "digest_error": result.get("error") or "digest did not return valid JSON",
+                "digest_error_type": "advise_timeout" if is_timeout else "digest_failed",
                 "raw_preview": (result.get("raw") or "")[:500],
+                "perception_input": bundle,
                 "timing": {"http_ms": http_ms, "digest_ms": digest_ms, "total_ms": total_ms},
             },
         }

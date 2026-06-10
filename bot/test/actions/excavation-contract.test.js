@@ -1,6 +1,6 @@
 /**
  * Excavation action contract tests.
- * ADR: docs/design/action-contract.md
+ * ADR: docs/reference/bot/handler-contract-adr.md
  */
 
 import test from 'node:test';
@@ -168,7 +168,8 @@ test('excavation.pillar_down: reported `position` is captured BEFORE pickup runs
   const dugCells = new Set();
   const bot = {
     entity: { position: new Vec3(10.5, 65, 5.5), isInWater: false, onGround: true },
-    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] },
+    // dirt funds the self-trap guard (pillarable >= count)
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'dirt', count: 64 }] },
     pathfinder: { goto: async () => {} },
     blockAt: (p) => {
       const key = `${p.x},${p.y},${p.z}`;
@@ -224,7 +225,8 @@ test('excavation.pillar_down: position snapshot is correct even when pickup=fals
   const dugCells = new Set();
   const bot = {
     entity: { position: new Vec3(2.5, 64, 8.5), isInWater: false, onGround: true },
-    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] },
+    // dirt funds the self-trap guard (pillarable >= count)
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'dirt', count: 64 }] },
     pathfinder: { goto: async () => {} },
     blockAt: (p) => {
       const key = `${p.x},${p.y},${p.z}`;
@@ -254,4 +256,70 @@ test('excavation.pillar_down: position snapshot is correct even when pickup=fals
   assert.equal(r.position.x, 2);
   assert.equal(r.position.z, 8);
   assert.equal(r.position.y, 63);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// pillar_down self-trap guard (proc-nav-1781014144 item 8): descending a
+// 1×1 shaft without enough pillar-capable blocks to climb back strands the
+// bot. The guard refuses with SELF_TRAP_RISK unless inventory funds the
+// climb or force=true acknowledges the risk.
+// ─────────────────────────────────────────────────────────────────────────
+
+function makePillarDownBot({ items }) {
+  const dugCells = new Set();
+  const bot = {
+    entity: { position: new Vec3(0.5, 70, 0.5), isInWater: false, onGround: true },
+    inventory: { items: () => items },
+    pathfinder: { goto: async () => {} },
+    blockAt: (p) => {
+      const key = `${p.x},${p.y},${p.z}`;
+      if (dugCells.has(key)) return { name: 'air', position: p, boundingBox: 'empty' };
+      if (p.x === 0 && p.z === 0 && p.y <= 69) return { name: 'stone', position: p, boundingBox: 'block' };
+      return { name: 'air', position: p, boundingBox: 'empty' };
+    },
+    dig: async (blk) => {
+      dugCells.add(`${blk.position.x},${blk.position.y},${blk.position.z}`);
+      bot.entity.position = new Vec3(0.5, bot.entity.position.y - 1, 0.5);
+    },
+    equip: async () => {},
+    heldItem: { name: 'iron_pickaxe' },
+    tool: { itemInHand: () => ({ name: 'iron_pickaxe' }), getDigTime: () => 20 },
+  };
+  return bot;
+}
+
+test('excavation.pillar_down: count exceeding pillar-capable inventory → SELF_TRAP_RISK', async () => {
+  const bot = makePillarDownBot({ items: [{ name: 'iron_pickaxe', count: 1 }] });
+  const services = makeExcavationServices({ bot, digAreaImpl: undefined });
+  const actions = createExcavationActions(services);
+  const r = await actions.pillar_down({ count: 12 });
+  assertFailure(r, {
+    code: 'SELF_TRAP_RISK',
+    messageIncludes: ['force=true', 'climb'],
+    observedKeys: ['requested', 'pillarable_blocks', 'by_block'],
+    retrySafe: false,
+  });
+  assert.equal(r.error.observed_state.requested, 12);
+  assert.equal(r.error.observed_state.pillarable_blocks, 0);
+  assert.ok(r.error.next_action_hint.includes('force=true'));
+});
+
+test('excavation.pillar_down: enough dirt to climb back → proceeds and digs', async () => {
+  const bot = makePillarDownBot({
+    items: [{ name: 'iron_pickaxe', count: 1 }, { name: 'dirt', count: 12 }],
+  });
+  const services = makeExcavationServices({ bot, digAreaImpl: undefined });
+  const actions = createExcavationActions(services);
+  const r = await actions.pillar_down({ count: 12, pickup: false });
+  assert.notEqual(r.ok, false);
+  assert.ok(r.dug >= 1, `expected digs, got ${r.dug}`);
+});
+
+test('excavation.pillar_down: force=true bypasses the guard with empty inventory', async () => {
+  const bot = makePillarDownBot({ items: [{ name: 'iron_pickaxe', count: 1 }] });
+  const services = makeExcavationServices({ bot, digAreaImpl: undefined });
+  const actions = createExcavationActions(services);
+  const r = await actions.pillar_down({ count: 12, force: true, pickup: false });
+  assert.notEqual(r.ok, false);
+  assert.ok(r.dug >= 1, `expected digs, got ${r.dug}`);
 });

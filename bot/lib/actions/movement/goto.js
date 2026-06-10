@@ -190,7 +190,7 @@ export function createGoto(deps) {
         const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
           ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`
           : ' Try mc escape, mc dig at the blocker, or pick a different target.';
-        const obs = enrichWithStand(b, { target: { x, y, z }, current: posObj(), ...e.info }, x, y, z);
+        const obs = enrichWithStand(b, { target: { x, y, z }, current: posObj(), ...e.info, pathfinder_error: `no_progress:${e.info?.no_progress_for_ms || '?'}ms` }, x, y, z);
         if (reach) Object.assign(obs, reach);
         const stallFail = {
           ok: false,
@@ -207,7 +207,7 @@ export function createGoto(deps) {
       if (e instanceof OperationTimeoutError) {
         recordMoveFailure('goto', x, y, z, posObj(), 'wallclock_timeout');
         return timeoutError('goto', ACTION_CAPS_MS.goto,
-          enrichWithStand(b, { target: { x, y, z }, current: posObj() }, x, y, z),
+          enrichWithStand(b, { target: { x, y, z }, current: posObj(), pathfinder_error: 'timeout' }, x, y, z),
           `Pathfinder didn't finish in time. If observed_state.closest_standable is set, retry mc goto there instead.`);
       }
       const pos = posObj();

@@ -14,7 +14,7 @@ const { goals } = pathfinderPkg;
  * createQueriesActions — extracted from former lib/actions/world.js (Phase 4 split).
  */
 export function createQueriesActions(services) {
-  const { state: ctx, ensureBot, utils, fairPlay, getActions, personalPois } = services;
+  const { state: ctx, ensureBot, utils, fairPlay, getActions, personalPois, locations } = services;
   const { posObj } = utils;
   const loadPersonalPois = personalPois?.load ? () => personalPois.load() : null;
 
@@ -24,7 +24,7 @@ export function createQueriesActions(services) {
     ...createStandingQueries({ ensureBot }),
     ...createEscapeQueries({ ctx, ensureBot, getActions, utils, goals }),
     ...createFindQueries({ ctx, ensureBot }),
-    ...createInspectQueries({ ctx, ensureBot }),
+    ...createInspectQueries({ ctx, ensureBot, locations }),
     ...createSignsQueries({ ensureBot, loadPersonalPois }),
   };
 }

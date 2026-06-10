@@ -202,11 +202,19 @@ export function pathfindWithProgressWatchdog(cfg) {
       if (!hasBegunMoving && distFromStart >= minTotalMovement) {
         hasBegunMoving = true;
       }
+      // Progress is HORIZONTAL distance only. The manager-level stuck
+      // wiggle (manager.js sync watchdog) issues 250ms jumps; a jump arc
+      // peaks at ~1.25m of pure-Y motion, which under a 3D metric reset
+      // this 4s stall window every activation — NoProgressError was
+      // suppressed and wedged actions ran to their wallclock cap (then
+      // the CLI's 25s HTTP timeout, exit 124). Net |dy| ≥ 1.5 still
+      // counts as progress so ladder climbs and falls don't false-trip
+      // (a jump returns to its origin Y; sustained climb/descent doesn't).
       const dxLast = p.x - lastMovedPos.x;
-      const dyLast = p.y - lastMovedPos.y;
       const dzLast = p.z - lastMovedPos.z;
-      const distFromLast = Math.sqrt(dxLast * dxLast + dyLast * dyLast + dzLast * dzLast);
-      if (distFromLast >= minDelta) {
+      const horizFromLast = Math.hypot(dxLast, dzLast);
+      const vertFromLast = Math.abs(p.y - lastMovedPos.y);
+      if (horizFromLast >= minDelta || vertFromLast >= 1.5) {
         lastMovedPos = { x: p.x, y: p.y, z: p.z };
         lastMovedTime = Date.now();
         return;
@@ -272,6 +280,11 @@ export function pathfindWithProgressWatchdog(cfg) {
 // move from 12000 → 30000 to permit longer door-chained legs. The
 // 4s progress watchdog (windowMs in pathfindWithProgressWatchdog,
 // _helpers.js:166) remains the primary stall signal.
+// level / clear_strip / place_fill: server-side caps set BELOW the CLI's
+// 120s LONG_ACTION deadline so the partial-completion envelope (counters,
+// remaining, next_unfilled) reaches the agent instead of a blind client
+// abort. Handlers check the deadline between work units and stop digging/
+// placing — the bot does not keep working past the returned envelope.
 export const ACTION_CAPS_MS = Object.freeze({
   place: 8000,
   goto: 300000,
@@ -282,6 +295,9 @@ export const ACTION_CAPS_MS = Object.freeze({
   dig: 10000,
   craft: 30000,
   reach: 8000,
+  level: 100000,
+  clear_strip: 100000,
+  place_fill: 100000,
 });
 
 
@@ -377,7 +393,7 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
 
 /**
  * Pathfind to GoalNear under progress watchdog + wallclock cap.
- * Shared action helpers also include `_block-sets`, `_directions`, `_los`, `_args` (see docs/design/actions-layout.md).
+ * Shared action helpers also include `_block-sets`, `_directions`, `_los`, `_args` (see docs/reference/bot/handlers-directory.md).
  */
 export async function pathfindGotoNear(bot, goals, x, y, z, range, {
   opName = 'goto',

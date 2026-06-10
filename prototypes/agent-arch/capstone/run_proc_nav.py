@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Proc-nav kanban runner (fork of run_wheat_capstone modes).
 
-Board: proc-nav-lab. Graphs: proc-scout | proc-scout-stress.
+Board: proc-nav-lab. Graphs: proc-scout | proc-scout-stress | proc-scout-road.
 Postmortems: data/postmortems/proc-nav-lab/<RUN_ID>/.
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ POSTMORTEMS_DIR = REPO_ROOT / "data" / "postmortems" / "proc-nav-lab"
 DEFAULT_BOARD = "proc-nav-lab"
 DEFAULT_TESTER_URL = "http://127.0.0.1:3004"
 DEFAULT_MOX_URL = "http://127.0.0.1:3007"
-PROC_NAV_GRAPHS = frozenset({"proc-scout", "proc-scout-stress"})
+PROC_NAV_GRAPHS = frozenset({"proc-scout", "proc-scout-stress", "proc-scout-road"})
 
 
 class TelemetryWriter:
@@ -161,7 +161,15 @@ def _session_corpus_for_card(kanban_db: Path, task_id: str) -> str:
     if not sid:
         return json.dumps(meta)
     home = Path(_hermes_env()["HERMES_HOME"])
-    for role in ("navigator", "planner", "builder", "farmer", "crafter"):
+    for role in (
+        "navigator",
+        "navigator-pip",
+        "planner",
+        "builder",
+        "builder-mox",
+        "farmer",
+        "crafter",
+    ):
         db = home / "profiles" / role / "state.db"
         if not db.is_file():
             continue
@@ -300,6 +308,40 @@ def mode_watch(
         time.sleep(poll_interval_s)
 
 
+def collect_feedback(run_id: str, trial_dir: Path) -> int:
+    """Collect `mc feedback` lines into the postmortem dir.
+
+    Workers append tooling-friction notes to data/runtime/feedback-<bot>.jsonl.
+    Lines tagged with this run_id — or with run_id null, since RUN_ID often
+    doesn't survive env passthrough to bot servers — move to
+    <trial_dir>/feedback.jsonl; unrelated lines stay in the runtime files.
+    """
+    runtime_dir = REPO_ROOT / "data" / "runtime"
+    collected: list[str] = []
+    for src in sorted(runtime_dir.glob("feedback-*.jsonl")):
+        keep: list[str] = []
+        for line in src.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                keep.append(line)
+                continue
+            if entry.get("run_id") in (run_id, None):
+                collected.append(line)
+            else:
+                keep.append(line)
+        if keep:
+            src.write_text("\n".join(keep) + "\n")
+        else:
+            src.unlink()
+    if collected:
+        (trial_dir / "feedback.jsonl").write_text("\n".join(collected) + "\n")
+    return len(collected)
+
+
 def mode_evaluate_only(run_id: str, *, use_tester: bool, mox_url: str = DEFAULT_MOX_URL) -> int:
     trial_dir = POSTMORTEMS_DIR / run_id
     manifest_path = trial_dir / "manifest.json"
@@ -314,6 +356,10 @@ def mode_evaluate_only(run_id: str, *, use_tester: bool, mox_url: str = DEFAULT_
 
     telemetry = TelemetryWriter(trial_dir / "telemetry.jsonl")
     telemetry.emit("evaluate_started", run_id=run_id)
+
+    feedback_count = collect_feedback(run_id, trial_dir)
+    if feedback_count:
+        telemetry.emit("feedback_collected", count=feedback_count)
 
     statuses = query_board_statuses(card_ids)
     cards_done = sum(1 for c in cards if statuses.get(c["card_id"]) == "done")
@@ -400,8 +446,8 @@ def mode_evaluate_only(run_id: str, *, use_tester: bool, mox_url: str = DEFAULT_
     scorecard["spatial_map_path"] = str(spatial.relative_to(REPO_ROOT))
     (trial_dir / "scorecard.json").write_text(json.dumps(scorecard, indent=2))
 
-    if tier == "stress" and not spatial.is_file():
-        print("[proc-nav] stress tier missing spatial-map.html", file=sys.stderr)
+    if tier in ("stress", "road") and not spatial.is_file():
+        print(f"[proc-nav] {tier} tier missing spatial-map.html", file=sys.stderr)
         return 1
 
     print(

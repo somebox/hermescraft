@@ -3,7 +3,7 @@ import pathfinderPkg from 'mineflayer-pathfinder';
 import { equipForDig, isDigProtected, recordRecentPlace, columnTopSolid } from '../../runtime/dig-tools.js';
 import { shouldSkipDigAt, shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
 import { cardinalDelta } from '../_directions.js';
-import { pathfindGotoNear, ACTION_CAPS_MS } from '../_helpers.js';
+import { pathfindGotoNear, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 import { parseYInput, withYBoth } from '../../runtime/coordinates.js';
 import { cascadeFor, paletteForRegion, tierOf, isStructural } from '../../runtime/materials.js';
 
@@ -19,6 +19,8 @@ const { goals } = pathfinderPkg;
  */
 export function createBuildingTerrainPart(deps) {
   const { ctx, ensureBot, sleep, getActions, config } = deps;
+  // Wallclock caps — injectable for tests (deps.capsMs), default shared caps.
+  const capsMs = deps.capsMs || ACTION_CAPS_MS;
 
   return {
     async path({ x1, z1, x2, z2, y, surface_y }) {
@@ -128,7 +130,7 @@ export function createBuildingTerrainPart(deps) {
 
     /**
      * Dig a W×L×D pit. The pit top is at the bot's existing surface (bot Y - 1)
-     * unless `top_y` is given. Capped at 256 columns × 16 depth = 4096 blocks.
+     * unless `top_y` is given. Capped at 32 blocks (W×L×D) per call.
      * Thin wrapper over dig_area; stair-out is a separate verb (mc build_stairs).
      */
     async dig_pit({ x, z, w, l, d, top_y, surface_y }) {
@@ -285,10 +287,30 @@ export function createBuildingTerrainPart(deps) {
       /** @type {Record<string, number>} */
       const placedByBlock = {};
 
-      for (let x = minX; x <= maxX; x++) {
-        for (let z = minZ; z <= maxZ; z++) {
+      const capMs = Number(capsMs.level) || ACTION_CAPS_MS.level;
+      const deadline = Date.now() + capMs;
+      const cols = [];
+      for (let cx = minX; cx <= maxX; cx++) {
+        for (let cz = minZ; cz <= maxZ; cz++) cols.push({ x: cx, z: cz });
+      }
+      const partialTimeout = (colIdx) => timeoutError('level', capMs, {
+        dug,
+        placed,
+        skipped,
+        failed,
+        columns_done: colIdx,
+        columns_remaining: cols.length - colIdx,
+        next_unfilled: cols.slice(colIdx, colIdx + 8).map((c) => [c.x, c.z]),
+        bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY }, targetY),
+      }, `Partial completion: ${colIdx}/${cols.length} columns done. Re-run the same mc level command — already-leveled columns are skipped quickly.`);
+
+      for (let ci = 0; ci < cols.length; ci++) {
+        const { x, z } = cols[ci];
+        if (Date.now() > deadline) return partialTimeout(ci);
+        {
           // 1) Dig blocks above targetY (top-down so debris doesn't fall on us).
           for (let dy = upRange; dy >= 1; dy--) {
+            if (Date.now() > deadline) return partialTimeout(ci);
             const py = targetY + dy;
             const blk = b.blockAt(new Vec3(x, py, z));
             if (!blk || isAirLike(blk)) continue;
@@ -357,7 +379,7 @@ export function createBuildingTerrainPart(deps) {
                 error: {
                   code: 'MISSING_INVENTORY',
                   message: `mc level: no fill block in inventory (tried ${fillCascade.join(', ')})`,
-                  observed_state: { dug, placed, columns_remaining: (maxX - x + 1) * l + (maxZ - z), bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY }, targetY), fill_cascade: fillCascade },
+                  observed_state: { dug, placed, columns_done: ci, columns_remaining: cols.length - ci, next_unfilled: cols.slice(ci, ci + 8).map((c) => [c.x, c.z]), bounds: withYBoth({ x1: minX, z1: minZ, x2: maxX, z2: maxZ, y: targetY }, targetY), fill_cascade: fillCascade },
                   retry_safe: true,
                 },
               };

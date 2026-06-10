@@ -7,9 +7,9 @@ import { stripGlobalFlags } from './args.mjs';
 import { buildHttpRequest } from './dispatch.mjs';
 import { executeHttp, logDebug } from './execute.mjs';
 import { requestHttp } from './http.mjs';
-import { RAW_COMMAND_DEFS, buildAliasMap, CATEGORY_ORDER } from './registry.mjs';
+import { RAW_COMMAND_DEFS, buildAliasMap, CATEGORY_ORDER, suggestCommands } from './registry.mjs';
 import { runAdviseCli } from './advise.mjs';
-import { renderHuman } from './output.mjs';
+import { renderHuman, slimStatusEnvelope } from './output.mjs';
 import { apiUrl } from './api-url.mjs';
 
 const MAX_BATCH = 10;
@@ -23,67 +23,6 @@ const MAX_BATCH = 10;
  * scene/find/map/nearby (which DO wrap).
  */
 const FORCED_REASON_COMMANDS = new Set(['scene', 'map', 'find', 'nearby']);
-
-/** Derive a coarse phase label from MC tick (0..23999). */
-function timePhase(t) {
-  if (t == null || isNaN(Number(t))) return null;
-  const tick = Number(t) % 24000;
-  if (tick < 12000) return 'day';
-  if (tick < 13000) return 'dusk';
-  if (tick < 23000) return 'night';
-  return 'dawn';
-}
-
-/**
- * Project /status into a thin envelope. Drops scene/nearby/inventory etc —
- * agents must call `mc inventory`, `mc scene --reason=...`, `mc look` for
- * those. Keeps: position, HP/food, holding, time/phase, weather.
- */
-function slimStatusEnvelope(raw, { verbose = false } = {}) {
-  const d = raw?.data || {};
-  const pos = d.position || null;
-  const stuckMin = d.stuck_minutes;
-  const stuckWarning = d.stuck_warning;
-  const hint = stuckWarning
-    ? `⚠ ${stuckWarning}`
-    : ('status = self (location/HP/food/holding/supplies). ' +
-       'World vision: mc scene / nearby / map. Task poll: mc task.');
-  const data = {
-    position: pos
-      ? { x: Math.round((pos.x ?? 0) * 10) / 10, y: Math.round(pos.y ?? 0), z: Math.round((pos.z ?? 0) * 10) / 10 }
-      : null,
-    health: d.health ?? null,
-    food: d.food ?? null,
-    saturation: d.saturation ?? null,
-    holding: d.holding ?? null,
-    time: d.time ?? null,
-    phase: timePhase(d.time),
-    raining: d.isRaining ?? null,
-    ...(stuckMin != null ? { stuck_minutes: stuckMin } : {}),
-    ...(stuckWarning ? { stuck_warning: stuckWarning } : {}),
-    hint,
-  };
-  if (d.supplies != null) data.supplies = d.supplies;
-  if (d.nearby_entities != null) data.nearby_entities = d.nearby_entities;
-  if (d.hand_vs_inventory) data.hand_vs_inventory = d.hand_vs_inventory;
-  if (d.situation) data.situation = d.situation;
-  // #50: nav_header rides on /status now (open|confined classification +
-  // signals). It's small enough to keep in the slim projection — without
-  // this the brief reaches /status's response but slimStatusEnvelope drops
-  // it before the CLI renderer ever sees it.
-  if (d.nav_header) data.nav_header = d.nav_header;
-  if (verbose) {
-    if (d.task_context) data.task_context = d.task_context;
-    if (d.regions_here) data.regions_here = d.regions_here;
-    if (d.lookingAt) data.lookingAt = d.lookingAt;
-    if (d.mounted !== undefined) data.mounted = d.mounted;
-    if (d.unreadChat) data.unreadChat = d.unreadChat;
-    if (d.inventoryCount != null) data.inventoryCount = d.inventoryCount;
-    if (d.deaths != null) data.deaths = d.deaths;
-    if (d.sounds) data.sounds = d.sounds;
-  }
-  return { ok: true, command: 'status', data };
-}
 
 function statusArgvFull(positional) {
   return positional.some((t) => String(t) === '--full');
@@ -299,7 +238,11 @@ function expandBatchArgv(restArgv) {
 function resolveToken(token, aliasMap) {
   const k = String(token || '').toLowerCase();
   const hit = aliasMap[k];
-  if (!hit) throw new Error(`unknown command: ${token}`);
+  if (!hit) {
+    const sugg = suggestCommands(k, aliasMap);
+    const tail = sugg.length ? ` — did you mean: ${sugg.join(', ')}?` : '';
+    throw new Error(`unknown command: ${token}${tail}`);
+  }
   return hit;
 }
 

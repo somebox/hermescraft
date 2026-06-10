@@ -8,6 +8,7 @@ import { cardinalDelta } from './_directions.js';
 import { box6 } from './_args.js';
 import { pathfindGotoNear, pathfindWithProgressWatchdog, ACTION_CAPS_MS } from './_helpers.js';
 import { withYBoth, parseYInput, normalizeBoxYArgs } from '../runtime/coordinates.js';
+import { buildPillarCascade } from './building/pillar.js';
 import { sampleNavTrailCrumb } from '../runtime/nav-trail.js';
 import { markBriefRefreshRequired } from '../runtime/nav-brief.js';
 
@@ -883,9 +884,40 @@ export function createExcavationActions(services) {
    * Picks up drops after each step by default; set `pickup: false` to
    * skip (faster, but the agent has to call mc pickup later).
    */
-  async pillar_down({ count: rawCount, pickup: doPickup = true } = {}) {
+  async pillar_down({ count: rawCount, pickup: doPickup = true, force: rawForce } = {}) {
     const b = ensureBot();
-    const maxSteps = Math.min(Math.max(parseInt(rawCount, 10) || 12, 1), 64);
+    // Cap aligned with the CLI argSchema (32) — was 64, unreachable via CLI.
+    const maxSteps = Math.min(Math.max(parseInt(rawCount, 10) || 12, 1), 32);
+    const force = rawForce === true || rawForce === 'true' || rawForce === '1' || rawForce === 1;
+
+    // Self-trap guard (proc-nav-1781014144): descending N blocks leaves the
+    // bot at the bottom of a 1×1 shaft. If inventory can't fund pillaring
+    // back up, require force=true to acknowledge. Note the dug blocks
+    // themselves are often pillar-capable (dirt/stone drops self-fund the
+    // climb) — that's exactly what force is for.
+    if (!force) {
+      const cascade = buildPillarCascade();
+      const byBlock = {};
+      let pillarable = 0;
+      for (const it of b.inventory.items()) {
+        if (cascade.includes(it.name)) {
+          const n = Number(it.count) || 0;
+          pillarable += n;
+          byBlock[it.name] = (byBlock[it.name] || 0) + n;
+        }
+      }
+      if (maxSteps > pillarable) {
+        return fail(
+          'SELF_TRAP_RISK',
+          `pillar_down ${maxSteps} would leave you ${maxSteps} blocks down a 1×1 shaft, but inventory only holds ${pillarable} pillar-capable block${pillarable === 1 ? '' : 's'} to climb back. Carry ≥${maxSteps} dirt/cobblestone, use a smaller count, or pass force=true (dug blocks are picked up and may self-fund the climb).`,
+          {
+            observed_state: { requested: maxSteps, pillarable_blocks: pillarable, by_block: byBlock },
+            next_action_hint: `carry ≥${maxSteps} dirt/cobble, use count=${pillarable || 1}, or force=true`,
+            retry_safe: false,
+          },
+        );
+      }
+    }
 
     const isAirLike = (blk) => blk && (blk.name === 'air' || blk.name === 'cave_air' || blk.name === 'void_air');
     const isHazardBelow = (blk) => {

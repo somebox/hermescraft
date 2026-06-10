@@ -728,6 +728,9 @@ export function createObservation(deps) {
     } catch { /* never let a status read break on a nav classifier hiccup */ }
 
     return {
+      // Identity FIRST: proc-nav-1781014144 — a worker ran 200+ commands as
+      // Mox while believing it was Pip. Every status read must say who you are.
+      bot: ctx.world.bot?.username || null,
       health: fmt(b.health),
       ...(lean ? {} : { maxHealth: 20 }),
       food: b.food,

@@ -278,7 +278,8 @@ export function positionalToParams(commandName, argSchema = [], positional) {
   const kwOverrides = /** @type {Record<string, string>} */ ({});
   const specByKey = Object.fromEntries(argSchema.map((s) => [s.key, s]));
   const remaining = [];
-  for (const t of tokens) {
+  for (let ti = 0; ti < tokens.length; ti++) {
+    const t = tokens[ti];
     if (typeof t !== 'string') {
       remaining.push(t);
       continue;
@@ -292,6 +293,20 @@ export function positionalToParams(commandName, argSchema = [], positional) {
     if (m && specByKey[m[1]]?.type === 'boolean') {
       kwOverrides[m[1]] = 'true';
       continue;
+    }
+    // Space-separated `--key VALUE` for non-boolean spec keys (agents assume
+    // this form works — proc-nav-1781014144 saw `--range 3` exit 2). Only
+    // consume the next token when the key isn't already filled and the value
+    // coerces cleanly; otherwise both tokens stay positional and surface the
+    // normal error.
+    if (m && specByKey[m[1]] && specByKey[m[1]].type !== 'boolean'
+        && !(m[1] in kwOverrides) && ti + 1 < tokens.length && typeof tokens[ti + 1] === 'string') {
+      try {
+        coerceValue(specByKey[m[1]], tokens[ti + 1]);
+        kwOverrides[m[1]] = tokens[ti + 1];
+        ti++;
+        continue;
+      } catch { /* not a clean value — fall through to positional */ }
     }
     // --no-FLAG → false for boolean specs (common CLI convention).
     // Accept dashes and underscores both BETWEEN --no and the key, and

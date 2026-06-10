@@ -11,7 +11,11 @@
  * Landed verbs:
  *   - inventory_contains <item> [min_count=1]
  *   - chest_contains <mark> <item> [min_count=1]    (bot must be adjacent)
- *   - at_mark <mark> [--near N | --block <id>]      (bot pos OR block at mark)
+ *   - at_mark <mark> [--near N | --block <id>] [from=X,Y,Z]
+ *       Proximity defaults to the bot's position; `from` measures from an
+ *       arbitrary point instead (fully remote — bot doesn't move). The
+ *       --block mode is also remote: it reads the block at the mark's
+ *       coords from wherever the bot stands (chunk must be loaded).
  *   - region_blocks <c1> <c2> <block> [min_count]   (count blocks in a box)
  *
  * Future: chest_delta, multi-kind region (all-of / any-of), entity_at.
@@ -273,27 +277,61 @@ function verifyAtMark(ensureBot, services, body) {
     });
   }
 
-  // Bot-proximity mode (default).
+  // Proximity mode (default). Measures from the bot's position, or — with
+  // `from` — from an arbitrary point, so a remote orchestrator can check
+  // "is this mark within N of X,Y,Z" without the bot walking there
+  // (proc-nav-1781014144: verification verbs that require bot presence
+  // forced wasteful round-trips).
   const nearRaw = Number(body?.near);
   const near = Number.isFinite(nearRaw) ? Math.max(0, nearRaw) : 2;
-  const botPos = b.entity.position;
+  let origin = null;
+  let mode = 'bot';
+  if (body?.from != null) {
+    const f = parseFromPoint(body.from);
+    if (!f) {
+      return fail(
+        'INVALID_ARG',
+        "verify at_mark: 'from' must be X,Y,Z (e.g. from=100,64,-200)",
+        { observed_state: { from: body.from }, retry_safe: false }
+      );
+    }
+    origin = f;
+    mode = 'from';
+  } else {
+    const botPos = b.entity.position;
+    origin = { x: botPos.x, y: botPos.y, z: botPos.z };
+  }
   const dist = Math.sqrt(
-    (botPos.x - m.x) ** 2 + (botPos.y - m.y) ** 2 + (botPos.z - m.z) ** 2
+    (origin.x - m.x) ** 2 + (origin.y - m.y) ** 2 + (origin.z - m.z) ** 2
   );
   return ok({
     data: {
       kind: 'at_mark',
-      mode: 'bot',
+      mode,
       satisfied: dist <= near,
       observed: {
         mark,
-        bot_pos: { x: botPos.x, y: botPos.y, z: botPos.z },
+        ...(mode === 'from' ? { from: origin } : { bot_pos: origin }),
         coords: { x: m.x, y: m.y, z: m.z },
         dist,
       },
       expected: { mark, max_dist: near },
     },
   });
+}
+
+// Accepts {x,y,z} or "x,y,z"; returns {x,y,z} numbers or null.
+function parseFromPoint(raw) {
+  let c = raw;
+  if (typeof c === 'string') {
+    const parts = c.split(',').map((s) => Number(s.trim()));
+    if (parts.length !== 3) return null;
+    c = { x: parts[0], y: parts[1], z: parts[2] };
+  }
+  if (typeof c !== 'object' || c === null) return null;
+  const x = Number(c.x); const y = Number(c.y); const z = Number(c.z);
+  if (![x, y, z].every(Number.isFinite)) return null;
+  return { x, y, z };
 }
 
 // ── region_blocks ───────────────────────────────────────────────────────

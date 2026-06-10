@@ -9,7 +9,7 @@ import {
 
 import { enrichWithStand } from './_preflight.js';
 import { isDetourAllowed, detourHintForDy } from './detour-check.js';
-import { navBlockedNextActionHint, withNavRetryWarning } from './nav-hints.js';
+import { navBlockedNextActionHint, withNavRetryWarning, describePathfinderError } from './nav-hints.js';
 import { coord3 } from '../_args.js';
 import { recordNavBriefFailureForMark } from '../../runtime/nav-brief.js';
 
@@ -476,11 +476,14 @@ export function createMove(deps) {
           extraHint = ' You are in water — call `mc escape` to swim to the nearest shore before retrying navigation.';
         }
         const observed_state = enrichWithStand(b, { current: pos, target, doors_used, nearby_doors: doorList, pathfinder_error: lastPathfinderError, in_water: botInWater }, target.x, target.y, target.z);
+        const reasonClause = lastPathfinderError
+          ? ` Why: ${describePathfinderError(lastPathfinderError)}.`
+          : '';
         const blocked = {
           ok: false,
           error: {
             code: 'NAV_BLOCKED',
-            message: `No path to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} from ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} and no door/gate between to use.${extraHint}`,
+            message: `No path to ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)} from ${pos.x.toFixed(1)},${pos.y.toFixed(1)},${pos.z.toFixed(1)} and no door/gate between to use.${reasonClause}${extraHint}`,
             observed_state,
             next_action_hint: navBlockedNextActionHint(b, target, pos, {
               inWater: botInWater,
@@ -505,7 +508,7 @@ export function createMove(deps) {
           error: {
             code: 'NAV_BLOCKED',
             message: `Could not traverse ${chosen.block} at ${chosen.pos.x},${chosen.pos.y},${chosen.pos.z}: ${through.error?.message || 'through failed'}`,
-            observed_state: enrichWithStand(b, { current: posNow, target, doors_used, failed_door: { x: chosen.pos.x, y: chosen.pos.y, z: chosen.pos.z, block: chosen.block }, through_error: through.error }, target.x, target.y, target.z),
+            observed_state: enrichWithStand(b, { current: posNow, target, doors_used, failed_door: { x: chosen.pos.x, y: chosen.pos.y, z: chosen.pos.z, block: chosen.block }, through_error: through.error, pathfinder_error: lastPathfinderError }, target.x, target.y, target.z),
             next_action_hint: `mc through ${chosen.pos.x} ${chosen.pos.y} ${chosen.pos.z} (retry after mc goto_near door approach cell)`,
             retry_safe: through.error?.retry_safe ?? false,
           },
@@ -522,12 +525,15 @@ export function createMove(deps) {
     }
 
     recordNavBriefFailureForMark(ctx, args.mark);
+    const doorsReasonClause = lastPathfinderError
+      ? ` Last pathfinder failure: ${describePathfinderError(lastPathfinderError)}.`
+      : '';
     return {
       ok: false,
       error: {
         code: 'TOO_MANY_DOORS',
-        message: `Used max ${maxDoors} doors without reaching ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)}. Building may have a routing loop or be too complex; try mc move --door X Y Z to pick a specific door.`,
-        observed_state: enrichWithStand(b, { doors_used, target, current: posObj() }, target.x, target.y, target.z),
+        message: `Used max ${maxDoors} doors without reaching ${fmt(target.x)},${fmt(target.y)},${fmt(target.z)}.${doorsReasonClause} Building may have a routing loop or be too complex; try mc move --door X Y Z to pick a specific door.`,
+        observed_state: enrichWithStand(b, { doors_used, target, current: posObj(), pathfinder_error: lastPathfinderError }, target.x, target.y, target.z),
         retry_safe: false,
       },
     };
