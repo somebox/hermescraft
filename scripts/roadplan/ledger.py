@@ -67,9 +67,12 @@ def read_sample_cells(root):
 def _kind_from_tag(tag, y):
     if y is None or tag is None:
         return "gap"
-    if tag in _FLUIDS:
+    # Strip the namespace prefix the RCON adapter emits (`minecraft:water`),
+    # so the lookup against the K1-style bare names works either way.
+    name = tag.split(":", 1)[1] if ":" in tag else tag
+    if name in _FLUIDS:
         return "water"
-    if tag.endswith(_VEG_SUFFIXES):
+    if name.endswith(_VEG_SUFFIXES):
         return "tree"
     return "ground"
 
