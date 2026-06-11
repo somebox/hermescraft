@@ -1873,7 +1873,6 @@ export const RAW_COMMAND_DEFS = [
     ],
     method: 'POST',
     path: '/action/survey_line',
-    customParse: true,
     argSchema: [
       { key: 'x1', type: 'number', required: true },
       { key: 'z1', type: 'number', required: true },
@@ -1905,7 +1904,6 @@ export const RAW_COMMAND_DEFS = [
     ],
     method: 'POST',
     path: '/action/waypoint',
-    customParse: true,
     argSchema: [
       { key: 'name', type: 'string', required: true },
       { key: 'x', type: 'number', required: true },

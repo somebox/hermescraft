@@ -207,6 +207,63 @@ def cmd_solve(args):
     return 0
 
 
+def cmd_promote(args):
+    """Promote a wp_* waypoint from a bot's private locations.json into the
+    fleet-shared locations-base.json (§5.1). `roadplan` is the SOLE writer
+    of the shared file; bots write only their private marks. This is the
+    one step that closes the loop on the two-bot mark contract."""
+    name = args.name
+    if not name.startswith("wp_"):
+        print(f"promote: {name!r} — only wp_* names go in locations-base.json",
+              file=sys.stderr)
+        return 2
+    data_dir = Path(args.data_dir)
+    private = data_dir / f"locations-{args.bot.lower()}.json" if args.bot else None
+    if private is None or not private.exists():
+        # Fallback: scan all per-bot files; the most recent wins.
+        candidates = sorted(data_dir.glob("locations-*.json"),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = [p for p in candidates
+                      if p.name != "locations-base.json"
+                      and p.name != "locations.json"]
+        if not candidates:
+            print(f"promote: no per-bot locations files under {data_dir}",
+                  file=sys.stderr)
+            return 2
+        private = candidates[0]
+    try:
+        priv_data = json.loads(private.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"promote: cannot read {private}: {e}", file=sys.stderr)
+        return 2
+    entry = priv_data.get(name)
+    if not entry:
+        print(f"promote: {name!r} not found in {private.name}", file=sys.stderr)
+        return 2
+    shared_path = data_dir / "locations-base.json"
+    try:
+        shared = json.loads(shared_path.read_text()) if shared_path.exists() else {}
+    except (OSError, json.JSONDecodeError):
+        shared = {}
+    prev = shared.get(name)
+    keep = {k: v for k, v in entry.items()
+            if k in {"x", "y", "z", "saved", "updated", "category",
+                     "note", "torch_at"}}
+    shared[name] = keep
+    tmp = shared_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(shared, indent=2, sort_keys=True) + "\n")
+    tmp.replace(shared_path)
+    if prev and (prev.get("x") != keep.get("x")
+                 or prev.get("y") != keep.get("y")
+                 or prev.get("z") != keep.get("z")):
+        print(f"promoted {name}: ({prev['x']},{prev['y']},{prev['z']}) "
+              f"→ ({keep['x']},{keep['y']},{keep['z']})")
+    else:
+        print(f"promoted {name} from {private.name} to locations-base.json: "
+              f"({keep['x']},{keep['y']},{keep['z']})")
+    return 0
+
+
 def cmd_render(args):
     samples = samples_for_solver(args.ledger)
     if not samples:
@@ -264,6 +321,16 @@ def build_parser():
     pr.add_argument("--start", type=_xz)
     pr.add_argument("--end", type=_xz)
     pr.set_defaults(func=cmd_render)
+
+    pp = sub.add_parser("promote",
+                        help="§5.1: copy a wp_* mark from a bot's private "
+                             "locations file into the shared locations-base.json")
+    pp.add_argument("name", help="Waypoint name (must start with wp_)")
+    pp.add_argument("--bot", help="Bot name (lowercase) — picks "
+                                  "data/locations-<bot>.json (default: latest)")
+    pp.add_argument("--data-dir", default="data", type=Path,
+                    help="Directory holding the locations files (default: data)")
+    pp.set_defaults(func=cmd_promote)
 
     pf = sub.add_parser("preflight",
                         help="Toolchain readiness check (S4: bin wrapper, "
