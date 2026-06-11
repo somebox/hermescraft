@@ -1860,6 +1860,38 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /* marks */
+  g('survey_line', 'world', ['survey-line', 'sline'], {
+    description:
+      'Adaptive road planning §7.2 — Bresenham-scan a corridor and classify against the '
+      + 'walkability spec. Returns RLE runs + deficits + literal fix commands in a '
+      + 'roadplan-survey/v1 envelope (pipe to `roadplan ingest`). Output is O(terrain features), '
+      + 'never O(blocks). --diff compares against the prior survey of the same leg.',
+    examples: [
+      'mc survey_line -10 0 -10 31',
+      'mc survey_line -10 0 -10 31 --width 5',
+      'mc survey_line -10 0 -10 31 --diff',
+    ],
+    method: 'POST',
+    path: '/action/survey_line',
+    customParse: true,
+    argSchema: [
+      { key: 'x1', type: 'number', required: true },
+      { key: 'z1', type: 'number', required: true },
+      { key: 'x2', type: 'number', required: true },
+      { key: 'z2', type: 'number', required: true },
+      { key: 'width', type: 'number', default: undefined },
+      { key: 'y_hint', type: 'number', default: undefined },
+      { key: 'diff', type: 'boolean', default: false },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        x1: Number(p.x1), z1: Number(p.z1), x2: Number(p.x2), z2: Number(p.z2),
+        ...(p.width !== undefined ? { width: Number(p.width) } : {}),
+        ...(p.y_hint !== undefined ? { y_hint: Number(p.y_hint) } : {}),
+        ...(p.diff ? { diff: true } : {}),
+      }),
+    usage: 'mc survey_line X1 Z1 X2 Z2 [--width W] [--y-hint Y] [--diff]',
+  }),
   g('waypoint', 'memory', ['wp'], {
     description:
       'Adaptive road planning §7.1 — set the private mark <name> and place a torch at (x,y,z). '

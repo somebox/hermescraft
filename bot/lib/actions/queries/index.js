@@ -7,6 +7,7 @@ import { createRegionQueries } from './region.js';
 import { createScoutQueries } from './scout.js';
 import { createSignsQueries } from './signs.js';
 import { createStandingQueries } from './standing.js';
+import { createSurveyLineQueries } from './survey-line.js';
 
 const { goals } = pathfinderPkg;
 
@@ -26,5 +27,6 @@ export function createQueriesActions(services) {
     ...createFindQueries({ ctx, ensureBot }),
     ...createInspectQueries({ ctx, ensureBot, locations }),
     ...createSignsQueries({ ensureBot, loadPersonalPois }),
+    ...createSurveyLineQueries({ ensureBot }),
   };
 }
