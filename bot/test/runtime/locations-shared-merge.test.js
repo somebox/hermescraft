@@ -1,7 +1,7 @@
 /**
  * Read-merge for fleet-prefix marks via data/locations-base.json.
  *
- * Design lives in docs/features/landfolk-plugin.md → Glossary →
+ * Design lives in docs/specs/kanban/plugin-landfolk.md → Glossary →
  * "Fleet-prefix mark". Shared file wins for chest_, base_, lt_ marks; private
  * entries with those names are proposal-only and shadowed on read.
  */
@@ -31,6 +31,7 @@ test('isFleetMark detects every configured prefix', () => {
   assert.equal(isFleetMark('chest_food'), true);
   assert.equal(isFleetMark('base_anchor'), true);
   assert.equal(isFleetMark('lt_mine_north'), true);
+  assert.equal(isFleetMark('wp_3'), true);
   assert.equal(isFleetMark('hut1_site'), false);
   assert.equal(isFleetMark('death_4'), false);
   assert.equal(isFleetMark(''), false);
@@ -40,8 +41,10 @@ test('isFleetMark detects every configured prefix', () => {
 
 test('FLEET_MARK_PREFIXES is the documented set', () => {
   // If you add a new prefix, update the Glossary entry in
-  // docs/features/landfolk-plugin.md → Fleet-prefix mark.
-  assert.deepEqual([...FLEET_MARK_PREFIXES].sort(), ['base_', 'chest_', 'lt_']);
+  // docs/specs/kanban/plugin-landfolk.md → Fleet-prefix mark.
+  // wp_ is the adaptive-road-planning waypoint family (§5.1).
+  assert.deepEqual([...FLEET_MARK_PREFIXES].sort(),
+    ['base_', 'chest_', 'lt_', 'wp_']);
 });
 
 test('mergeMarks: shared wins for fleet-prefix names, source tag added', () => {

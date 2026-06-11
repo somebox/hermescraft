@@ -72,6 +72,7 @@ SKIP_BOARD_RESET="${SKIP_BOARD_RESET:-false}"
 SKIP_MEMORY_RESET="${SKIP_MEMORY_RESET:-false}"
 SKIP_INVENTORY="${SKIP_INVENTORY:-false}"
 SKIP_WORLD_FRESHNESS="${SKIP_WORLD_FRESHNESS:-false}"
+SKIP_ROADPLAN_TOOLCHAIN="${SKIP_ROADPLAN_TOOLCHAIN:-false}"
 STRICT="${STRICT:-false}"
 RESTART_STALE_BOTS="${RESTART_STALE_BOTS:-false}"
 MC_HOST_DEFAULT="${MC_HOST:-192.168.1.202}"
@@ -530,6 +531,43 @@ if [[ "$SKIP_INVENTORY" != "true" ]]; then
   fi
 else
   say "skipping inventory kit"
+fi
+
+# =========================================================================
+# Step 7 — roadplan toolchain (S4 / adaptive road planning §8.0.3)
+# =========================================================================
+# The trial's planner pipes `mc … --json | roadplan ingest` and runs
+# `roadplan solve / render`. Catch the bin wrapper / venv / spec file
+# problems here, before bots have generated any samples to feed it.
+# Worker-shell env vars are reported as a *warn* only — this step runs
+# in the planner's shell; the W1 env_passthrough lesson is that the
+# launcher must also verify inside the worker's spawned shell.
+if [[ "$SKIP_ROADPLAN_TOOLCHAIN" != "true" ]]; then
+  header "7. roadplan toolchain"
+  if [[ ! -x "$REPO_ROOT/bin/roadplan" ]]; then
+    fail "bin/roadplan missing or not executable"
+  else
+    if [[ "$DRY_RUN" == "true" ]]; then
+      printf '\033[2m  [dry] %s preflight\033[0m\n' "$REPO_ROOT/bin/roadplan"
+      ok "roadplan preflight (dry-run)"
+    else
+      _tc_log=/tmp/preflight-roadplan-toolchain.log
+      if "$REPO_ROOT/bin/roadplan" preflight >"$_tc_log" 2>&1; then
+        while IFS= read -r ln; do
+          case "$ln" in
+            "✓ "*) ok "${ln#✓ }" ;;
+            "⚠ "*) warn "${ln#⚠ }" ;;
+            "✗ "*) fail "${ln#✗ }" ;;
+            *)     printf '\033[2m    %s\033[0m\n' "$ln" ;;
+          esac
+        done <"$_tc_log"
+      else
+        fail "roadplan preflight reported failures — see $_tc_log"
+      fi
+    fi
+  fi
+else
+  say "skipping roadplan toolchain check"
 fi
 
 # =========================================================================

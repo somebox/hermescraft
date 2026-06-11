@@ -1,0 +1,18 @@
+#!/bin/bash
+# HermesCraft roadplan CLI — planner-side survey/route powertool.
+# Delegates to the Python package at scripts/roadplan/.
+set -o pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  [[ "$TARGET" = /* ]] && SOURCE="$TARGET" || SOURCE="$(dirname "$SOURCE")/$TARGET"
+done
+DIR="$(CDPATH="" cd "$(dirname "$SOURCE")" && pwd)"
+ROOT="$(cd "$DIR/.." && pwd)"
+
+PY_BIN="$ROOT/.venv/bin/python"
+[ -x "$PY_BIN" ] || PY_BIN="python3"
+
+cd "$ROOT/scripts"
+exec "$PY_BIN" -m roadplan "$@"

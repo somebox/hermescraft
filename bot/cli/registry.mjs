@@ -1860,6 +1860,37 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /* marks */
+  g('waypoint', 'memory', ['wp'], {
+    description:
+      'Adaptive road planning §7.1 — set the private mark <name> and place a torch at (x,y,z). '
+      + 'Bots write only the private mark; `roadplan` is the sole writer of locations-base.json '
+      + 'for wp_* fleet-prefix names. Placement-fallback decision table handles water/leaves/slab/air '
+      + 'anchors; idempotent on re-call (already-lit cells skip placement). When the mark moves, '
+      + 'the old torch is dug if reachable, otherwise a cleanup hint comes back.',
+    examples: [
+      'mc waypoint wp_3 12 64 -7',
+      'mc wp wp_3 12 64 -7 --block soul_torch',
+    ],
+    method: 'POST',
+    path: '/action/waypoint',
+    customParse: true,
+    argSchema: [
+      { key: 'name', type: 'string', required: true },
+      { key: 'x', type: 'number', required: true },
+      { key: 'y', type: 'number', required: true },
+      { key: 'z', type: 'number', required: true },
+      { key: 'block', type: 'string', default: 'torch' },
+    ],
+    bodyFn: (p) =>
+      JSON.stringify({
+        name: p.name,
+        x: Number(p.x),
+        y: Number(p.y),
+        z: Number(p.z),
+        ...(p.block ? { block: String(p.block) } : {}),
+      }),
+    usage: 'mc waypoint NAME X Y Z [--block torch]',
+  }),
   g('mark', 'memory', [], {
     description:
       'Save a named mark. Default is bot foot position; use --at X Y Z (or --at @other_mark) for vein/pad/target coords.',

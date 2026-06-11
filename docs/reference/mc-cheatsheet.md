@@ -200,6 +200,7 @@ Working set for most cards; full usage on each line.
 - `mc site_remove` (site-remove) — Remove site from region
 - `mc unmark NAME` — Delete a mark by name
 - `mc unpoi NAME` — Delete a personal POI by name
+- `mc waypoint NAME X Y Z [--block torch]` (wp) — Adaptive road planning §7.1 — set the private mark <name> and place a torch at (x,y,z). Bots write only the private mark; `roadplan` is the sole writer of locations-base.json for wp_* fleet-prefix names. Placement-fallback decision table handles water/leaves/slab/air anchors; idempotent on re-call (already-lit cells skip placement). When the mark moves, the old torch is dug if reachable, otherwise a cleanup hint comes back.
 
 ## Microscope
 

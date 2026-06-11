@@ -1,0 +1,2279 @@
+{
+ "annotations": {
+  "deficits": [
+   {
+    "at": [
+     0,
+     14
+    ],
+    "kind": "step",
+    "rise": 2
+   }
+  ],
+  "expected_route_class": "stairs",
+  "expected_run_kinds": [
+   "walk",
+   "climb",
+   "walk",
+   "descend",
+   "walk"
+  ],
+  "walkable": false
+ },
+ "columns": [
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 0
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 1
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 2
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 3
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 4
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 5
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 6
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 7
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 8
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 9
+  },
+  {
+   "blocks": [
+    [
+     64,
+     "dirt"
+    ],
+    [
+     65,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 10
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 11
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 12
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 13
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 14
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 15
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 16
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 17
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 18
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 19
+  },
+  {
+   "blocks": [
+    [
+     68,
+     "dirt"
+    ],
+    [
+     69,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 20
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 21
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 22
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 23
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 24
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 25
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 26
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 27
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 28
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 29
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 30
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -2,
+   "z": 31
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 0
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 1
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 2
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 3
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 4
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 5
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 6
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 7
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 8
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 9
+  },
+  {
+   "blocks": [
+    [
+     64,
+     "dirt"
+    ],
+    [
+     65,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 10
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 11
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 12
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 13
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 14
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 15
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 16
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 17
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 18
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 19
+  },
+  {
+   "blocks": [
+    [
+     68,
+     "dirt"
+    ],
+    [
+     69,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 20
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 21
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 22
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 23
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 24
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 25
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 26
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 27
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 28
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 29
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 30
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": -1,
+   "z": 31
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 0
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 1
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 2
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 3
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 4
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 5
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 6
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 7
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 8
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 9
+  },
+  {
+   "blocks": [
+    [
+     64,
+     "dirt"
+    ],
+    [
+     65,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 10
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 11
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 12
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 13
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 14
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 15
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 16
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 17
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 18
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 19
+  },
+  {
+   "blocks": [
+    [
+     68,
+     "dirt"
+    ],
+    [
+     69,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 20
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 21
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 22
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 23
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 24
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 25
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 26
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 27
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 28
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 29
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 30
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 0,
+   "z": 31
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 0
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 1
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 2
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 3
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 4
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 5
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 6
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 7
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 8
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 9
+  },
+  {
+   "blocks": [
+    [
+     64,
+     "dirt"
+    ],
+    [
+     65,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 10
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 11
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 12
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 13
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 14
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 15
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 16
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 17
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 18
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 19
+  },
+  {
+   "blocks": [
+    [
+     68,
+     "dirt"
+    ],
+    [
+     69,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 20
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 21
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 22
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 23
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 24
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 25
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 26
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 27
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 28
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 29
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 30
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 1,
+   "z": 31
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 0
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 1
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 2
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 3
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 4
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 5
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 6
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 7
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 8
+  },
+  {
+   "blocks": [
+    [
+     63,
+     "dirt"
+    ],
+    [
+     64,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 9
+  },
+  {
+   "blocks": [
+    [
+     64,
+     "dirt"
+    ],
+    [
+     65,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 10
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 11
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 12
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 13
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 14
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 15
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 16
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 17
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 18
+  },
+  {
+   "blocks": [
+    [
+     69,
+     "dirt"
+    ],
+    [
+     70,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 19
+  },
+  {
+   "blocks": [
+    [
+     68,
+     "dirt"
+    ],
+    [
+     69,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 20
+  },
+  {
+   "blocks": [
+    [
+     67,
+     "dirt"
+    ],
+    [
+     68,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 21
+  },
+  {
+   "blocks": [
+    [
+     66,
+     "dirt"
+    ],
+    [
+     67,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 22
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 23
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 24
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 25
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 26
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 27
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 28
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 29
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 30
+  },
+  {
+   "blocks": [
+    [
+     65,
+     "dirt"
+    ],
+    [
+     66,
+     "grass_block"
+    ]
+   ],
+   "x": 2,
+   "z": 31
+  }
+ ],
+ "description": "Climb with one 2-block step; gentle descent.",
+ "line": {
+  "from": [
+   0,
+   0
+  ],
+  "to": [
+   0,
+   31
+  ],
+  "y_hint": 64
+ },
+ "name": "ridge",
+ "schema": "terrain-fixture/v1"
+}

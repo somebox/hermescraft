@@ -1,0 +1,1213 @@
+{
+ "captured_with": {
+  "exclude_foliage": true,
+  "execute": false,
+  "slice": "per-z-row",
+  "surface_y": 65,
+  "verb": "level_ground"
+ },
+ "columns": [
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 7
+  },
+  {
+   "action": "preserve",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 65,
+   "x": -2,
+   "z": 8
+  },
+  {
+   "action": "dig",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 65,
+   "x": -2,
+   "z": 9
+  },
+  {
+   "action": "preserve",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 66,
+   "x": -2,
+   "z": 10
+  },
+  {
+   "action": "dig",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 66,
+   "x": -2,
+   "z": 11
+  },
+  {
+   "action": "preserve",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 12
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 13
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 14
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 15
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 16
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 17
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 18
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 19
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 20
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 21
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 22
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -2,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 7
+  },
+  {
+   "action": "preserve",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 65,
+   "x": -1,
+   "z": 8
+  },
+  {
+   "action": "dig",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 65,
+   "x": -1,
+   "z": 9
+  },
+  {
+   "action": "preserve",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 66,
+   "x": -1,
+   "z": 10
+  },
+  {
+   "action": "dig",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 66,
+   "x": -1,
+   "z": 11
+  },
+  {
+   "action": "preserve",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 12
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 13
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 14
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 15
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 16
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 17
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 18
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 19
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 20
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 21
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 22
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": -1,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 7
+  },
+  {
+   "action": "preserve",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 65,
+   "x": 0,
+   "z": 8
+  },
+  {
+   "action": "dig",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 65,
+   "x": 0,
+   "z": 9
+  },
+  {
+   "action": "preserve",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 66,
+   "x": 0,
+   "z": 10
+  },
+  {
+   "action": "dig",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 66,
+   "x": 0,
+   "z": 11
+  },
+  {
+   "action": "preserve",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 12
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 13
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 14
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 15
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 16
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 17
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 18
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 19
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 20
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 21
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 22
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 0,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 7
+  },
+  {
+   "action": "preserve",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 65,
+   "x": 1,
+   "z": 8
+  },
+  {
+   "action": "dig",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 65,
+   "x": 1,
+   "z": 9
+  },
+  {
+   "action": "preserve",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 66,
+   "x": 1,
+   "z": 10
+  },
+  {
+   "action": "dig",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 66,
+   "x": 1,
+   "z": 11
+  },
+  {
+   "action": "preserve",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 12
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 13
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 14
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 15
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 16
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 17
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 18
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 19
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 20
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 21
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 22
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 1,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 7
+  },
+  {
+   "action": "preserve",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 65,
+   "x": 2,
+   "z": 8
+  },
+  {
+   "action": "dig",
+   "delta": 1,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 65,
+   "x": 2,
+   "z": 9
+  },
+  {
+   "action": "preserve",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 66,
+   "x": 2,
+   "z": 10
+  },
+  {
+   "action": "dig",
+   "delta": 2,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 66,
+   "x": 2,
+   "z": 11
+  },
+  {
+   "action": "preserve",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_slab",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 12
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 13
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 14
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 15
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 16
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 17
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 18
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 19
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 20
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 21
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 22
+  },
+  {
+   "action": "dig",
+   "delta": 3,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 67,
+   "x": 2,
+   "z": 23
+  }
+ ],
+ "fixture": "slab_stairs",
+ "schema": "terrain-golden/v1"
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "max_step_up": 1,
+  "max_unguarded_drop": 2,
+  "clearance_height": 3,
+  "path_width": 3,
+  "shoulder_width": 1,
+  "fill_shallow_max_depth": 3,
+  "no_floor_min_depth": 16,
+  "max_bridge": 8,
+  "forbidden_floor": ["water", "lava", "magma_block", "cactus"],
+  "torch_spacing_max": 12
+}

@@ -32,6 +32,7 @@ import { createPlaybookActions } from './playbooks.js';
 import { createReachActions } from './movement/reach.js';
 import { createVerifyActions } from './verify.js';
 import { createFeedbackActions } from './feedback.js';
+import { createWaypointActions } from './waypoint.js';
 
 export function createAllActions(deps) {
   // Modules already on services use deps.services; modules still on the
@@ -78,6 +79,7 @@ export function createAllActions(deps) {
     ...createReachActions(services),
     ...createTeamActions(deps),
     ...createRemindersActions(deps),
+    ...createWaypointActions(deps),
   };
 
   // Combat, farming, animals, movement, water still need `ACTIONS` for

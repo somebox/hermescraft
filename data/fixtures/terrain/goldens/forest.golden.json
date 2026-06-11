@@ -1,0 +1,1613 @@
+{
+ "captured_with": {
+  "exclude_foliage": true,
+  "execute": false,
+  "slice": "per-z-row",
+  "surface_y": 65,
+  "verb": "level_ground"
+ },
+ "columns": [
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 7
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 8
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 9
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 10
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 11
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 12
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 13
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 14
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 15
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 16
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 17
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 18
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 19
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 20
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 21
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 22
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 24
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 25
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 26
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 27
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 28
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 29
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 30
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -2,
+   "z": 31
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 7
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 8
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 9
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 10
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 11
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 12
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 13
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 14
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 15
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 16
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 17
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 18
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 19
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 20
+  },
+  {
+   "action": "preserve",
+   "delta": 4,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_log",
+   "top_block_y": 68,
+   "x": -1,
+   "z": 21
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 22
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 24
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 25
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 26
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 27
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 28
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 29
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 30
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": -1,
+   "z": 31
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 7
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 8
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 9
+  },
+  {
+   "action": "preserve",
+   "delta": 4,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_log",
+   "top_block_y": 68,
+   "x": 0,
+   "z": 10
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 11
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 12
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 13
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 14
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 15
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 16
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 17
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 18
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 19
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 20
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 21
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 22
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 24
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 25
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 26
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 27
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 28
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 29
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 30
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 0,
+   "z": 31
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 7
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 8
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 9
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 10
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 11
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 12
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 13
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 14
+  },
+  {
+   "action": "preserve",
+   "delta": 4,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "oak_log",
+   "top_block_y": 68,
+   "x": 1,
+   "z": 15
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 16
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 17
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 18
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 19
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 20
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 21
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 22
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 24
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 25
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 26
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 27
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 28
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 29
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 30
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 1,
+   "z": 31
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 0
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 1
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 2
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 3
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 4
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 5
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 6
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 7
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 8
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 9
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 10
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 11
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 12
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 13
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 14
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 15
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 16
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 17
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 18
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 19
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 20
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 21
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 22
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 23
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 24
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 25
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 26
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 27
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 28
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 29
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 30
+  },
+  {
+   "action": "level",
+   "delta": 0,
+   "fill_kind": null,
+   "hole_depth": null,
+   "top_block": "grass_block",
+   "top_block_y": 64,
+   "x": 2,
+   "z": 31
+  }
+ ],
+ "fixture": "forest",
+ "schema": "terrain-golden/v1"
+}

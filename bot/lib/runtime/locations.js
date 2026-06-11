@@ -4,7 +4,7 @@
  *
  * Fleet-prefix marks (chest_*, base_*, lt_*) are read with a shared
  * Steward-owned overlay at data/locations-base.json (see
- * docs/features/landfolk-plugin.md Glossary: "Fleet-prefix mark"). The
+ * docs/specs/kanban/plugin-landfolk.md Glossary: "Fleet-prefix mark"). The
  * overlay wins for fleet-prefix keys, so workers' private writes to those
  * names are proposal-only and never override the canonical coords.
  */
@@ -19,7 +19,11 @@ const CONTAINER_BLOCK_NAMES = new Set([
 ]);
 
 /** Names starting with any of these prefixes resolve through locations-base.json. */
-export const FLEET_MARK_PREFIXES = ['chest_', 'base_', 'lt_'];
+// wp_* is the adaptive-road-planning waypoint family (§5.1): bots write
+// the *private* mark via `mc waypoint`; `roadplan` is the sole writer of
+// the shared projection, matching the reconciler-only-writer invariant
+// above.
+export const FLEET_MARK_PREFIXES = ['chest_', 'base_', 'lt_', 'wp_'];
 
 export function isFleetMark(name) {
   if (!name || typeof name !== 'string') return false;

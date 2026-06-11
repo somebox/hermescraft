@@ -6,6 +6,7 @@ import { cardinalDelta } from '../_directions.js';
 import { pathfindGotoNear, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 import { parseYInput, withYBoth } from '../../runtime/coordinates.js';
 import { cascadeFor, paletteForRegion, tierOf, isStructural } from '../../runtime/materials.js';
+import { getWalkabilitySpec } from '../../shared/walkability-spec.js';
 
 const { goals } = pathfinderPkg;
 
@@ -384,7 +385,7 @@ export function createBuildingTerrainPart(deps) {
             // Builder-mox on seg 2 of proc-nav-1781079999 hit this exact
             // shape — ground at y=61, target y=63, level execute couldn't
             // anchor at targetY and bailed; they had to manual `mc place`.
-            const MAX_BRIDGE = 8;
+            const MAX_BRIDGE = getWalkabilitySpec().max_bridge;
             let floor_y = null;
             for (let dy = -1; dy >= -MAX_BRIDGE; dy--) {
               const probe = b.blockAt(new Vec3(x, targetY + dy, z));
@@ -626,8 +627,10 @@ export function createBuildingTerrainPart(deps) {
       //     normal answer; bridging requires multi-segment planning.
       // Connected fill cells get bucketed into dip_spans (BFS) so the
       // planner can decide per-pocket, not per-column.
-      const FILL_SHALLOW_MAX_DEPTH = 3;
-      const NO_FLOOR_MIN_DEPTH = 16;
+      const {
+        fill_shallow_max_depth: FILL_SHALLOW_MAX_DEPTH,
+        no_floor_min_depth: NO_FLOOR_MIN_DEPTH,
+      } = getWalkabilitySpec();
       /** @type {{ x: number, z: number, top_block_y: number | null, top_surface_y: number | null, top_block: string | null, action: string, delta: number | null, hole_depth?: number, fill_kind?: string }[]} */
       const columns = [];
       const palette_observed = {};
