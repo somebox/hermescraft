@@ -103,6 +103,8 @@ def _normalize_envelope(env):
 
 
 def cmd_ingest(args):
+    if args.rcon:
+        return _cmd_ingest_rcon(args)
     raw = (Path(args.file).read_text() if args.file else sys.stdin.read())
     try:
         envs = _parse_input(raw)
@@ -118,6 +120,39 @@ def cmd_ingest(args):
             return 2
         total += append_samples(args.ledger, src, bot, cells)
     print(f"ingested {total} cells")
+    return 0
+
+
+def _cmd_ingest_rcon(args):
+    """Phase 1: dev/test bypass — probe the world directly via RCON.
+
+    Production wire is the corridor_sample pipe (§5.1); this exists so
+    K2/K3 can be exercised end-to-end before `mc survey_line` lands.
+    """
+    if not args.bounds or args.y_hint is None:
+        print("ingest --rcon: --bounds X1 Z1 X2 Z2 --y-hint Y required",
+              file=sys.stderr)
+        return 2
+    try:
+        from pathlib import Path as _P
+        from mapcatalog.rcon_client import make_rcon
+        from mapcatalog.server_config import load_server_config
+        from .rcon_adapter import ingest_via_rcon
+    except ImportError as e:
+        print(f"ingest --rcon: mapcatalog not importable ({e})", file=sys.stderr)
+        return 2
+    server_cfg_path = _P(args.server_config) if args.server_config else \
+        _P("server.local.yaml")
+    if not server_cfg_path.exists():
+        print(f"ingest --rcon: server config not found at {server_cfg_path}",
+              file=sys.stderr)
+        return 2
+    cfg = load_server_config(server_cfg_path)
+    world = args.world or getattr(cfg, "world", None) or "world"
+    with make_rcon(cfg) as client:
+        n, _ = ingest_via_rcon(client, world, tuple(args.bounds),
+                               args.y_hint, args.ledger)
+    print(f"ingested {n} cells")
     return 0
 
 
@@ -203,6 +238,18 @@ def build_parser():
     pi = sub.add_parser("ingest",
                         help="Append mc JSON envelopes from stdin (or --file)")
     pi.add_argument("--file", help="Read envelope(s) from FILE instead of stdin")
+    pi.add_argument("--rcon", action="store_true",
+                    help="Phase-1 dev mode: probe the world via RCON instead "
+                         "(needs --bounds and --y-hint).")
+    pi.add_argument("--bounds", nargs=4, type=int,
+                    metavar=("X1", "Z1", "X2", "Z2"),
+                    help="--rcon: rectangle to probe")
+    pi.add_argument("--y-hint", type=int,
+                    help="--rcon: line elevation (block Y, not stand height)")
+    pi.add_argument("--world",
+                    help="--rcon: MC world name (default: cfg.world)")
+    pi.add_argument("--server-config",
+                    help="--rcon: server.local.yaml path (default: ./server.local.yaml)")
     pi.set_defaults(func=cmd_ingest)
 
     ps = sub.add_parser("solve", help="Run the K2 solver, write state.json")
