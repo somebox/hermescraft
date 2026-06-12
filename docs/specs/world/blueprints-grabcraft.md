@@ -132,3 +132,9 @@ python scripts/grabcraft_downloader.py --compact "https://www.grabcraft.com/mine
 | Age of Empires Castle | 12,405 | 40 | 10 |
 
 The `blocks_3d` flat dictionary is especially useful for automation — you can look up any coordinate directly with `"x,y,z"` keys.
+
+### Other Interesting Blueprints
+
+- https://www.grabcraft.com/minecraft/restaurant-in-the-woods/restaurants
+- https://www.grabcraft.com/minecraft/medieval-colonial-inn/restaurants
+- https://www.grabcraft.com/minecraft/medieval-kingdom-saxon-hall/medieval-houses
