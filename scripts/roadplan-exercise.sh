@@ -113,10 +113,15 @@ The loop: \`roadplan sample\` (run its lines, repeat until it prints
 \`roadplan confirm --bot ${BOT}\` (run its blocks, repeat until all waypoints
 confirmed).
 
-STOP when \`roadplan confirm\` reports all waypoints confirmed. If \`confirm\`
-REFUSES because the route needs construction, report that the route needs the
-build role and stop — do not force it. Never place any block except the
-torches \`mc waypoint\` places; never build ground under a torch.
+When \`roadplan confirm\` reports ALL waypoints confirmed, do a final
+acceptance walk to prove the road is traversable: starting at START, use
+\`mc move <x> <y> <z>\` to each confirmed waypoint in order (wp_1, wp_2, … to
+the last), following the torch chain to END. Report how many hops succeeded.
+Then STOP.
+
+If \`confirm\` REFUSES because the route needs construction, report that the
+route needs the build role and stop — do not force it. Never place any block
+except the torches \`mc waypoint\` places; never build ground under a torch.
 EOF
 }
 
