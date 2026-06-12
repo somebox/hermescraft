@@ -4,7 +4,9 @@ Status: IN PROGRESS (design agreed 2026-06-10, revised same day after code
 review; this doc is the implementation contract). Phases 0–1 kernels (K1–K3),
 the S2 RCON adapter, and natural torch placement are built and in-world
 validated as of 2026-06-12 — field learnings and doctrine deltas in §11.
-Phases 2+ stand as planned.
+The planner-agent loop (`roadplan sample`/`confirm` + `skills/road-planner.md`)
+is built and driven end-to-end on a live world 2026-06-12 — §12. Phases 2+
+stand as planned.
 Owner: agent-arch / proc-nav lab
 Prior art: proc-nav trials 1781014144 and 1781079999, postmortems in
 `data/postmortems/proc-nav-lab/`, fixed-graph generator
@@ -911,7 +913,67 @@ done" pass had missed.
   along each leg. A chain is "lit" when verification says so, not when
   placement returns.
 
-## 12. What this generalizes to
+## 12. Agent-loop build + live validation (2026-06-12)
+
+The §3 dataflow's two missing pieces — `roadplan sample` (§6.1) and
+`roadplan confirm` (§6.4) — are built as general-purpose CLI subcommands
+that **emit literal `mc` commands** for a planner agent to run (never
+execute them); the agent pipes `--json` output back through
+`roadplan ingest`. `ingest` now accepts three envelope kinds
+(corridor_sample, survey_line, waypoint). New skill `skills/road-planner.md`
+carries the loop doctrine. Pure decision logic lives in
+`scripts/roadplan/emit.py` (fixture-tested); the live world only runs the
+emitted strings.
+
+The loop was driven end-to-end on the live `proc-nav` world (operator acting
+as the planner agent, running the emitted commands verbatim against bot Mox):
+a clean ~14-block corridor converged, solved `natural` (0 edits), and
+`confirm` staked + lit a 3-waypoint torch chain — **3/3 verified on natural
+ground**. A parallel clearing-class corridor exercised the construction
+guard. Going live surfaced eight bugs that fixture tests could not; all are
+fixed and regression-tested (88 Python + 176 JS green):
+
+1. **`mc move` needs X Y Z, not X Z** (the doc's §6.4 examples were wrong).
+   The sampling-approach surface Y isn't known until you sample it, so
+   `sample` emits `mc goto_near <x> <y> <z> <range>` (tolerant of an
+   approximate Y from `--y-hint`/ledger median) instead.
+2. **Confirm-walk vs construction.** A route with construction edits is not
+   yet traversable — the bot can't reach its waypoints, and a torch on an
+   unbuilt span hangs in mid-air. `confirm` now **refuses** non-natural
+   routes (exit 3) and points to the build role; `--force` overrides. Build
+   first, then light.
+3. **Prior torches poisoned re-samples.** `corridor_sample` reported a route
+   torch as a 1-block "surface", lifting the next solve onto it. Torches
+   (and soul variants) are now see-through in the `exclude_foliage` path
+   (`dig-tools.js` `isFoliageName`), like snow — only surveys are affected,
+   not dig/place.
+4. **Piped stdout truncated at 64 KB.** `mc … --json | roadplan ingest`
+   lost large samples because the CLI called `process.exit()` before the
+   async pipe write drained (classic Node footgun). `bot/cli/index.mjs` now
+   flushes before exit — fixes every large `mc --json` pipe, not just
+   roadplan.
+5. **Flat error-envelope shape crashed ingest.** `mc` emits both
+   `{error:{code,message}}` and flat `{error:"msg", code}`; ingest now
+   handles both so the §11.1 alarm reaches the agent loudly.
+6. **`promote` looked in the wrong dir** — `bin/roadplan` runs from
+   `scripts/`, so its relative `--data-dir data` default missed the repo
+   `data/`. Now defaults to repo-root `data/`.
+7. **Torch provisioning.** `mc waypoint` lights from inventory; an unstocked
+   bot fails `INVENTORY_MISSING`. Documented in the skill (check `mc status`
+   before confirm; restock mid-chain).
+8. **Self-occupied torch cell.** The torch goes in the route's standable
+   feet cell, so a bot standing there to light it blocks its own placement
+   (`TARGET_SELF_OCCUPIED`). `mc waypoint` now **steps off** the cell (exact
+   GoalBlock to an adjacent standable cell) before placing.
+
+Doctrine these feed into `skills/road-planner.md` and Phase 3: the loop is
+`sample→ingest until converged → solve → render → refine×N → confirm →
+verify`; `confirm` refuses construction routes; tools emit commands, agents
+ratify. Deferred to the next iteration: deriving the sampling approach-Y
+per-rect from the ledger (vs one `--y-hint`), and re-requesting
+unloaded-null cells instead of treating them as covered gap.
+
+## 13. What this generalizes to
 
 `sample/ingest/confirm`, the ledger, `waypoint`, `survey_line`, and
 rolling-wave card emission are task-agnostic. A structure project swaps the

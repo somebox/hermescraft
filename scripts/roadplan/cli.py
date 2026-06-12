@@ -22,10 +22,16 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .emit import (
+    coarse_plan, confirm_blocks, refine_plan, sample_commands,
+    allocate_waypoints,
+)
 from .ledger import (
-    append_samples, read_state, samples_for_solver, write_state,
+    append_observation, append_samples, read_sample_cells, read_state,
+    samples_for_solver, write_state,
 )
 from .preflight import cmd_preflight
+from .refine import refine
 from .solver import Route, render_ascii, solve
 from .spec import load_spec
 
@@ -72,20 +78,38 @@ def _parse_input(raw):
     return obj if isinstance(obj, list) else [obj]
 
 
-def _normalize_envelope(env):
-    """(src, bot, cells[]) from one mc envelope. cells are
-    [x, z, y, block_tag]. Raises IngestError on malformed shapes."""
+def _classify_envelope(env):
+    """(kind, bot, payload) from one mc envelope. Raises IngestError on
+    malformed / error envelopes (the loud-failure contract — an ok:false
+    NO_TORCH_ANCHOR survey is the §11.1 route-quality alarm reaching the
+    agent). Kinds:
+      corridor_sample -> payload = cells[] [x, z, y, block_tag]
+      survey_line     -> payload = data dict (runs/deficits/walkable/from/to)
+      waypoint        -> payload = data dict (waypoint/position/torch_at)
+    """
     if not isinstance(env, dict):
         raise IngestError("envelope is not a JSON object")
     if env.get("ok") is False:
-        err = env.get("error") or {}
-        raise IngestError(
-            f"error envelope: {err.get('code', '?')}: "
-            f"{err.get('message', '<no message>')}")
+        # mc emits two error shapes: nested {error:{code,message}} and flat
+        # {error:"msg", code, error_type}. Handle both so the §11.1 alarm
+        # (NO_TORCH_ANCHOR, INVENTORY_MISSING) reaches the agent loudly
+        # rather than crashing ingest.
+        err = env.get("error")
+        if isinstance(err, dict):
+            code = err.get("code") or env.get("code") or "?"
+            msg = err.get("message") or "<no message>"
+        else:
+            code = env.get("code") or env.get("error_type") or "?"
+            msg = err if isinstance(err, str) else "<no message>"
+        raise IngestError(f"error envelope: {code}: {msg}")
     if env.get("ok") is not True:
         raise IngestError("envelope missing `ok: true`")
     data = env.get("data") or {}
     bot = env.get("bot") or data.get("bot")
+    if data.get("envelope_schema") == "roadplan-survey/v1":
+        return ("survey_line", bot, data)
+    if isinstance(data.get("waypoint"), str) and data.get("torch_at"):
+        return ("waypoint", bot, data)
     if isinstance(data.get("samples"), list):
         cells = []
         for s in data["samples"]:
@@ -99,7 +123,55 @@ def _normalize_envelope(env):
         return ("corridor_sample", bot, cells)
     raise IngestError(
         "envelope has no recognized cell payload "
-        "(need corridor_sample with full=true samples[])")
+        "(need corridor_sample with full=true samples[], a survey_line, "
+        "or a waypoint envelope)")
+
+
+def _ingest_survey(ledger, bot, data):
+    """Record a survey_line: observations.jsonl + state.json legs[]."""
+    frm, to = data.get("from"), data.get("to")
+    walkable = data.get("walkable")
+    deficits = data.get("deficits") or []
+    append_observation(ledger, {
+        "bot": bot, "src": "survey_line",
+        "from": frm, "to": to,
+        "walkable": walkable, "deficits": deficits,
+        "runs": data.get("runs") or [],
+    })
+    state = read_state(ledger)
+    if state is not None and frm is not None and to is not None:
+        legs = state.setdefault("legs", [])
+        leg = next((L for L in legs
+                    if L.get("from") == frm and L.get("to") == to), None)
+        if leg is None:
+            leg = {"from": frm, "to": to}
+            legs.append(leg)
+        leg.update({"status": "surveyed", "walkable": walkable,
+                    "deficits": deficits, "surveyed_at": _now()})
+        write_state(ledger, state)
+    pct = "" if walkable is None else (" walkable" if walkable else " NOT walkable")
+    return (f"survey ({frm[0]},{frm[1]})->({to[0]},{to[1]}){pct}, "
+            f"{len(deficits)} deficit(s)") if frm and to else "survey"
+
+
+def _ingest_waypoint(ledger, bot, data):
+    """Confirm a waypoint: flip its state.json status + record torch_at."""
+    name = data.get("waypoint")
+    torch_at = data.get("torch_at") or {}
+    state = read_state(ledger)
+    confirmed_at = None
+    if state is not None:
+        for w in state.get("waypoints", []):
+            if w.get("name") == name:
+                w["status"] = "confirmed"
+                w["torch_at"] = [torch_at.get("x"), torch_at.get("y"),
+                                 torch_at.get("z")]
+                confirmed_at = w["torch_at"]
+                break
+        write_state(ledger, state)
+    where = (f" @ ({confirmed_at[0]},{confirmed_at[1]},{confirmed_at[2]})"
+             if confirmed_at else "")
+    return f"waypoint {name} confirmed{where}"
 
 
 def cmd_ingest(args):
@@ -111,15 +183,26 @@ def cmd_ingest(args):
     except IngestError as e:
         print(f"ingest: {e}", file=sys.stderr)
         return 2
-    total = 0
+    sample_cells = 0
+    notes = []
     for env in envs:
         try:
-            src, bot, cells = _normalize_envelope(env)
+            kind, bot, payload = _classify_envelope(env)
         except IngestError as e:
             print(f"ingest: {e}", file=sys.stderr)
             return 2
-        total += append_samples(args.ledger, src, bot, cells)
-    print(f"ingested {total} cells")
+        if kind == "corridor_sample":
+            sample_cells += append_samples(args.ledger, kind, bot, payload)
+        elif kind == "survey_line":
+            notes.append(_ingest_survey(args.ledger, bot, payload))
+        elif kind == "waypoint":
+            notes.append(_ingest_waypoint(args.ledger, bot, payload))
+    # Keep the corridor_sample line shape exact (existing contract); survey
+    # and waypoint envelopes get their own `ingested <note>` line each.
+    if sample_cells or not notes:
+        print(f"ingested {sample_cells} cells")
+    for note in notes:
+        print(f"ingested {note}")
     return 0
 
 
@@ -217,7 +300,10 @@ def cmd_promote(args):
         print(f"promote: {name!r} — only wp_* names go in locations-base.json",
               file=sys.stderr)
         return 2
-    data_dir = Path(args.data_dir)
+    # Default to <repo-root>/data — NOT a CWD-relative "data", because the
+    # bin/roadplan wrapper runs from scripts/, where ./data doesn't exist.
+    data_dir = Path(args.data_dir) if args.data_dir is not None \
+        else Path(__file__).resolve().parents[2] / "data"
     private = data_dir / f"locations-{args.bot.lower()}.json" if args.bot else None
     if private is None or not private.exists():
         # Fallback: scan all per-bot files; the most recent wins.
@@ -261,6 +347,107 @@ def cmd_promote(args):
     else:
         print(f"promoted {name} from {private.name} to locations-base.json: "
               f"({keep['x']},{keep['y']},{keep['z']})")
+    return 0
+
+
+def cmd_sample(args):
+    """Emit the `mc` commands that acquire the sampling still needed for the
+    start->end corridor (§6.1). stdout carries ONLY command lines; status
+    goes to stderr so the agent loop is `while stdout: run; re-ask`."""
+    spec = load_spec()
+    ledger = args.ledger
+    if args.refine:
+        samples = samples_for_solver(ledger)
+        if not samples:
+            print("sample --refine: no samples yet — run coarse sample first",
+                  file=sys.stderr)
+            return 2
+        route = _make_route_for_render(read_state(ledger))
+        reqs = refine(samples, route, args.start, args.end, spec,
+                      budget=args.budget)
+        if not reqs:
+            print("converged: refine empty — route stable", file=sys.stderr)
+            return 0
+        rects = refine_plan(reqs)
+        print(f"refine: {len(reqs)} cells over {len(rects)} segment(s)",
+              file=sys.stderr)
+    else:
+        swath = args.swath if args.swath is not None \
+            else spec["path_width"] + 2 * spec["shoulder_width"]
+        known = set(read_sample_cells(ledger).keys())
+        rects = coarse_plan(known, args.start, args.end, swath)
+        if not rects:
+            print(f"converged: corridor covered ({len(known)} cells known)",
+                  file=sys.stderr)
+            return 0
+        cells = sum((r["x2"] - r["x1"] + 1) * (r["z2"] - r["z1"] + 1)
+                    for r in rects)
+        print(f"sample: {len(rects)} segment(s), ~{cells} cells pending",
+              file=sys.stderr)
+    y = _corridor_y(args.y_hint, ledger)
+    for line in sample_commands(rects, ledger, y):
+        print(line)
+    return 0
+
+
+def _corridor_y(y_hint, ledger):
+    """Approach Y for sampling moves: the explicit hint, else the median of
+    known ledger elevations, else a sea-level default. goto_near tolerates
+    a wrong Y, so this only needs to be in the right neighbourhood."""
+    if y_hint is not None:
+        return int(y_hint)
+    ys = [y for (_xz), (y, _t) in read_sample_cells(ledger).items()
+          if y is not None]
+    if ys:
+        ys.sort()
+        return int(ys[len(ys) // 2])
+    return 64
+
+
+def cmd_confirm(args):
+    """Emit per-waypoint confirm command blocks (§6.4): move + waypoint
+    torch + leg survey + promote, for every waypoint not yet confirmed.
+    Allocates wp_<n> names on first run (single namer, §6.3)."""
+    state = read_state(args.ledger)
+    if not state or not state.get("routes"):
+        print("confirm: no solved route in state.json — run solve first",
+              file=sys.stderr)
+        return 2
+    start = state.get("endpoints", {}).get("start")
+    if start is None:
+        print("confirm: state.json has no start endpoint", file=sys.stderr)
+        return 2
+    # A route that needs construction is not yet traversable — the bot can't
+    # walk to its waypoints to light them, and a torch on an unbuilt span
+    # would hang in mid-air. Confirm-and-light is the LAST step, after the
+    # build role has cleared/built the route (§6.4, skill doctrine). Refuse
+    # here and hand off, unless --force (rare: lighting a known-walkable
+    # route the classifier over-flagged).
+    route = state["routes"][-1]
+    rclass = route.get("route_class", "natural")
+    if rclass != "natural" and not args.force:
+        edits = route.get("est_edits", 0)
+        print(f"confirm: route needs construction "
+              f"({rclass}, {edits} edit(s)) — build/clear it before lighting. "
+              f"Hand the route to the build role (minecraft-roadbuilding); "
+              f"confirm once it is walkable. (--force to override.)",
+              file=sys.stderr)
+        return 3
+    state = allocate_waypoints(state, start)
+    write_state(args.ledger, state)
+    blocks, n_confirmed, n_total = confirm_blocks(
+        state, start, args.bot, args.ledger)
+    if not blocks:
+        print(f"converged: {n_confirmed}/{n_total} waypoints confirmed",
+              file=sys.stderr)
+        return 0
+    print(f"confirm: {len(blocks)} waypoint(s) pending "
+          f"({n_confirmed}/{n_total} confirmed)", file=sys.stderr)
+    for i, block in enumerate(blocks):
+        if i:
+            print()
+        for line in block:
+            print(line)
     return 0
 
 
@@ -315,6 +502,36 @@ def build_parser():
     ps.add_argument("--project", help="Project name (first solve only)")
     ps.set_defaults(func=cmd_solve)
 
+    psa = sub.add_parser("sample",
+                         help="Emit the mc commands that acquire corridor "
+                              "samples still needed (§6.1). stdout=commands, "
+                              "stderr=status; empty stdout = converged.")
+    psa.add_argument("start", type=_xz, help="X,Z")
+    psa.add_argument("end", type=_xz, help="X,Z")
+    psa.add_argument("--swath", type=int,
+                     help="Corridor width (default: path_width + 2*shoulder)")
+    psa.add_argument("--y-hint", type=int,
+                     help="Approx corridor elevation for approach moves "
+                          "(default: ledger median, else 64). goto_near "
+                          "tolerates error, so a rough value is fine.")
+    psa.add_argument("--budget", type=int, default=32,
+                     help="--refine: max cells requested per call (default 32)")
+    psa.add_argument("--refine", action="store_true",
+                     help="Target low-confidence route cells instead of the "
+                          "coarse swath (needs a solved route in state.json)")
+    psa.set_defaults(func=cmd_sample)
+
+    pc = sub.add_parser("confirm",
+                        help="Emit per-waypoint confirm blocks (move + torch + "
+                             "leg survey + promote) for unconfirmed waypoints "
+                             "(§6.4). Empty stdout = all confirmed.")
+    pc.add_argument("--bot", required=True,
+                    help="Bot name driving the confirm (for promote)")
+    pc.add_argument("--force", action="store_true",
+                    help="Confirm even a construction route (default: refuse "
+                         "non-natural routes — build them first)")
+    pc.set_defaults(func=cmd_confirm)
+
     pr = sub.add_parser("render", help="ASCII terrain + route overlay")
     pr.add_argument("--solve", action="store_true",
                     help="Solve fresh from samples (needs --start/--end)")
@@ -328,8 +545,9 @@ def build_parser():
     pp.add_argument("name", help="Waypoint name (must start with wp_)")
     pp.add_argument("--bot", help="Bot name (lowercase) — picks "
                                   "data/locations-<bot>.json (default: latest)")
-    pp.add_argument("--data-dir", default="data", type=Path,
-                    help="Directory holding the locations files (default: data)")
+    pp.add_argument("--data-dir", default=None, type=Path,
+                    help="Directory holding the locations files "
+                         "(default: <repo-root>/data)")
     pp.set_defaults(func=cmd_promote)
 
     pf = sub.add_parser("preflight",

@@ -84,6 +84,20 @@ def test_ingest_error_envelope_loud_fails(tmp_path, capsys, monkeypatch):
     assert "NO_SURFACE" in err
 
 
+def test_ingest_flat_string_error_envelope_loud_fails(
+        tmp_path, capsys, monkeypatch):
+    # mc's flat error shape: error is a top-level string, code a sibling
+    # (e.g. `mc waypoint` with no torch). Must loud-fail, not crash.
+    env = {"ok": False, "error": "No torch in inventory.",
+           "error_type": "missing_item", "code": "INVENTORY_MISSING"}
+    rc, out, err = _run(["--ledger", str(tmp_path), "ingest"],
+                        stdin=json.dumps(env),
+                        capsys=capsys, monkeypatch=monkeypatch)
+    assert rc != 0
+    assert "ingested" not in out
+    assert "INVENTORY_MISSING" in err
+
+
 def test_ingest_garbage_loud_fails(tmp_path, capsys, monkeypatch):
     rc, out, err = _run(["--ledger", str(tmp_path), "ingest"],
                         stdin="not json at all",
@@ -173,3 +187,239 @@ def test_render_without_samples_loud_fails(tmp_path, capsys):
     out, err = capsys.readouterr()
     assert rc != 0
     assert "no samples" in err
+
+
+# ── sample subcommand (§6.1) ────────────────────────────────────────────
+
+def test_sample_empty_ledger_emits_commands(tmp_path, capsys):
+    rc = main(["--ledger", str(tmp_path), "sample", "0,0", "0,31"])
+    out, err = capsys.readouterr()
+    assert rc == 0
+    lines = [L for L in out.splitlines() if L.strip()]
+    assert lines and all(L.startswith("mc ") for L in lines)
+    assert any(L.startswith("mc goto_near") for L in lines)
+    assert any("corridor_sample" in L and "roadplan" in L for L in lines)
+    assert "segment" in err  # status on stderr, not stdout
+
+
+def _ground_envelope_for_bounds(x1, z1, x2, z2):
+    """A corridor_sample envelope of flat ground over a rectangle — what a
+    worker running the emitted `mc corridor_sample` line would pipe back."""
+    samples = [{"x": x, "z": z, "block_y": 63, "surface_y": 64,
+                "block_name": "grass_block"}
+               for x in range(x1, x2 + 1) for z in range(z1, z2 + 1)]
+    return {"ok": True, "bot": "mox", "data": {"samples": samples}}
+
+
+def _bounds_from_sample_lines(out):
+    """Parse `mc corridor_sample x1 z1 x2 z2 ...` lines into bound tuples."""
+    bounds = []
+    for line in out.splitlines():
+        if line.startswith("mc corridor_sample"):
+            toks = line.split()
+            bounds.append(tuple(int(t) for t in toks[2:6]))
+    return bounds
+
+
+def test_sample_converges_after_running_emitted_commands(
+        tmp_path, capsys, monkeypatch):
+    # Round-trip: run `sample`, ingest exactly the rectangles it asked for,
+    # then `sample` again must converge (nothing left to observe).
+    rc = main(["--ledger", str(tmp_path), "sample", "0,0", "0,31"])
+    out, _ = capsys.readouterr()
+    assert rc == 0
+    for x1, z1, x2, z2 in _bounds_from_sample_lines(out):
+        env = _ground_envelope_for_bounds(x1, z1, x2, z2)
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(env)))
+        assert main(["--ledger", str(tmp_path), "ingest"]) == 0
+        capsys.readouterr()
+    rc = main(["--ledger", str(tmp_path), "sample", "0,0", "0,31"])
+    out, err = capsys.readouterr()
+    assert rc == 0
+    assert out.strip() == ""
+    assert "converged" in err
+
+
+def test_sample_refine_without_samples_loud_fails(tmp_path, capsys):
+    rc = main(["--ledger", str(tmp_path), "sample", "0,0", "0,31", "--refine"])
+    out, err = capsys.readouterr()
+    assert rc != 0
+    assert "coarse sample first" in err
+
+
+def test_sample_refine_converged_when_fully_observed(
+        tmp_path, capsys, monkeypatch):
+    fx = build_all()["river"]
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_envelope_for(fx))))
+    main(["--ledger", str(tmp_path), "ingest"])
+    main(["--ledger", str(tmp_path), "solve", "--start", "0,0", "--end", "0,31"])
+    capsys.readouterr()
+    rc = main(["--ledger", str(tmp_path), "sample", "0,0", "0,31", "--refine"])
+    out, err = capsys.readouterr()
+    assert rc == 0
+    assert out.strip() == ""
+    assert "converged" in err
+
+
+# ── ingest extensions: survey_line + waypoint envelopes ─────────────────
+
+def _survey_env(frm, to, *, walkable=True, deficits=None):
+    return {
+        "ok": True, "bot": "mox",
+        "data": {
+            "from": list(frm), "to": list(to),
+            "runs": [{"kind": "walk", "length": 10}],
+            "deficits": deficits or [],
+            "walkable": walkable,
+            "fix_commands": [],
+            "envelope_schema": "roadplan-survey/v1",
+        },
+    }
+
+
+def _waypoint_env(name, x, y, z):
+    return {
+        "ok": True, "bot": "mox",
+        "data": {
+            "waypoint": name,
+            "position": {"x": x, "y": y, "z": z},
+            "torch_at": {"x": x, "y": y, "z": z},
+            "anchor_at": {"x": x, "y": y - 1, "z": z},
+            "placement": "placed", "moved": False,
+        },
+    }
+
+
+def test_ingest_survey_appends_observation_and_leg(
+        tmp_path, capsys, monkeypatch):
+    # A solved route in state.json so the leg can attach.
+    fx = build_all()["river"]
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_envelope_for(fx))))
+    main(["--ledger", str(tmp_path), "ingest"])
+    main(["--ledger", str(tmp_path), "solve", "--start", "0,0", "--end", "0,31"])
+    capsys.readouterr()
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps(_survey_env((0, 0), (0, 10)))))
+    rc = main(["--ledger", str(tmp_path), "ingest"])
+    out, err = capsys.readouterr()
+    assert rc == 0, err
+    assert out.startswith("ingested survey")
+    assert (tmp_path / "observations.jsonl").exists()
+    state = read_state(tmp_path)
+    leg = next(L for L in state["legs"]
+               if L["from"] == [0, 0] and L["to"] == [0, 10])
+    assert leg["status"] == "surveyed" and leg["walkable"] is True
+
+
+def test_ingest_survey_error_envelope_still_loud(tmp_path, capsys, monkeypatch):
+    env = {"ok": False, "error": {"code": "UNLOADED_CHUNKS",
+                                  "message": "move closer"}}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(env)))
+    rc = main(["--ledger", str(tmp_path), "ingest"])
+    out, err = capsys.readouterr()
+    assert rc != 0
+    assert "ingested" not in out
+    assert "UNLOADED_CHUNKS" in err
+
+
+def test_ingest_waypoint_confirms_status(tmp_path, capsys, monkeypatch):
+    fx = build_all()["river"]
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_envelope_for(fx))))
+    main(["--ledger", str(tmp_path), "ingest"])
+    main(["--ledger", str(tmp_path), "solve", "--start", "0,0", "--end", "0,31"])
+    # confirm allocates wp_* names into state.json (river=bridge -> --force)
+    main(["--ledger", str(tmp_path), "confirm", "--bot", "Mox", "--force"])
+    capsys.readouterr()
+    state = read_state(tmp_path)
+    wp = state["waypoints"][0]
+    x, y, z = wp["pos"]
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps(_waypoint_env(wp["name"], x, y, z))))
+    rc = main(["--ledger", str(tmp_path), "ingest"])
+    out, err = capsys.readouterr()
+    assert rc == 0, err
+    assert out.startswith(f"ingested waypoint {wp['name']} confirmed")
+    state2 = read_state(tmp_path)
+    w2 = next(w for w in state2["waypoints"] if w["name"] == wp["name"])
+    assert w2["status"] == "confirmed"
+    assert w2["torch_at"] == [x, y, z]
+
+
+# ── confirm subcommand (§6.4) ───────────────────────────────────────────
+
+def _setup_route(tmp_path, monkeypatch):
+    fx = build_all()["river"]
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_envelope_for(fx))))
+    main(["--ledger", str(tmp_path), "ingest"])
+    main(["--ledger", str(tmp_path), "solve", "--start", "0,0", "--end", "0,31"])
+
+
+def test_confirm_allocates_waypoints_and_emits_blocks(
+        tmp_path, capsys, monkeypatch):
+    _setup_route(tmp_path, monkeypatch)
+    capsys.readouterr()
+    rc = main(["--ledger", str(tmp_path), "confirm", "--bot", "Mox", "--force"])
+    out, err = capsys.readouterr()
+    assert rc == 0
+    lines = [L for L in out.splitlines() if L.strip()]
+    assert any(L.startswith("mc waypoint wp_1") for L in lines)
+    assert any(L.startswith("roadplan promote wp_1 --bot Mox") for L in lines)
+    state = read_state(tmp_path)
+    names = [w["name"] for w in state["waypoints"]]
+    assert names[0] == "wp_1" and len(names) == len(set(names))
+
+
+def test_confirm_idempotent_names_and_skips_confirmed(
+        tmp_path, capsys, monkeypatch):
+    _setup_route(tmp_path, monkeypatch)
+    main(["--ledger", str(tmp_path), "confirm", "--bot", "Mox", "--force"])
+    state = read_state(tmp_path)
+    names_first = [w["name"] for w in state["waypoints"]]
+    # Confirm wp_1 via a waypoint ingest, then re-run confirm.
+    wp = state["waypoints"][0]
+    x, y, z = wp["pos"]
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps(_waypoint_env(wp["name"], x, y, z))))
+    main(["--ledger", str(tmp_path), "ingest"])
+    capsys.readouterr()
+    rc = main(["--ledger", str(tmp_path), "confirm", "--bot", "Mox", "--force"])
+    out, err = capsys.readouterr()
+    assert rc == 0
+    # Names stable across reruns; wp_1 no longer emitted.
+    state2 = read_state(tmp_path)
+    assert [w["name"] for w in state2["waypoints"]] == names_first
+    assert "mc waypoint wp_1 " not in out
+
+
+def test_confirm_without_route_loud_fails(tmp_path, capsys):
+    rc = main(["--ledger", str(tmp_path), "confirm", "--bot", "Mox"])
+    out, err = capsys.readouterr()
+    assert rc != 0
+    assert "no solved route" in err
+
+
+def test_confirm_refuses_construction_route(tmp_path, capsys, monkeypatch):
+    # river -> bridge: not yet walkable, so confirm must refuse and hand off.
+    _setup_route(tmp_path, monkeypatch)
+    capsys.readouterr()
+    rc = main(["--ledger", str(tmp_path), "confirm", "--bot", "Mox"])
+    out, err = capsys.readouterr()
+    assert rc == 3
+    assert out.strip() == ""              # no commands emitted
+    assert "needs construction" in err
+    assert "bridge" in err
+
+
+def test_confirm_natural_route_no_force_needed(tmp_path, capsys, monkeypatch):
+    # flat -> natural: walkable as-is, confirm proceeds without --force.
+    fx = build_all()["flat"]
+    zs = [c["z"] for c in fx["columns"]]
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(_envelope_for(fx))))
+    main(["--ledger", str(tmp_path), "ingest"])
+    main(["--ledger", str(tmp_path), "solve",
+          "--start", f"0,{min(zs)}", "--end", f"0,{max(zs)}"])
+    capsys.readouterr()
+    rc = main(["--ledger", str(tmp_path), "confirm", "--bot", "Mox"])
+    out, err = capsys.readouterr()
+    assert rc == 0
+    assert any(L.startswith("mc waypoint wp_1") for L in out.splitlines())

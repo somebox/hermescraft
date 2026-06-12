@@ -261,6 +261,16 @@ function printJson(obj, pretty) {
   console.log(JSON.stringify(obj, null, pretty ? 2 : undefined));
 }
 
+// Node truncates piped stdout when process.exit() is called before the
+// async pipe write drains (>~64KB output, e.g. corridor_sample full=true
+// piped to `roadplan ingest`). Flush first, then exit. To a TTY/file the
+// write is synchronous and the callback fires immediately.
+function flushAndExit(code) {
+  process.exitCode = code;
+  if (process.stdout.writableLength === 0) { process.exit(code); return; }
+  process.stdout.write('', () => process.exit(code));
+}
+
 /**
  * @typedef {{ ok: boolean, env?: unknown, render: 'json'|'human'|'none' }} DispatchOutcome
  */
@@ -489,14 +499,14 @@ async function main() {
     if (globals.json) printJson(out, true);
 
     anyBad ||= out.some((e) => e && typeof e === 'object' && 'ok' in e && /** @type {any}*/ (e).ok === false);
-    process.exit(anyBad ? 1 : 0);
+    flushAndExit(anyBad ? 1 : 0);
     return;
   }
 
   const r = await dispatchHttpLike(firstHit, cmdLine.slice(1), globals, ctx);
   if (r.render === 'json' && r.env !== undefined) printJson(r.env, true);
   else if (r.render === 'human' && r.env !== undefined) renderHuman(/** @type {any} */ (r.env));
-  process.exit(r.ok ? 0 : 1);
+  flushAndExit(r.ok ? 0 : 1);
 }
 
 main().catch((e) => {

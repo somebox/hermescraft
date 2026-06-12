@@ -752,10 +752,21 @@ export async function equipForDig(b, block, opts = {}) {
 // for bbox-survey purposes it's "decorative" above the road. The full
 // snow_block (= 8 layers compressed into one) is NOT in this set —
 // that IS legitimate ground in snowy biomes.
+//
+// Torches are decorative-above-ground too: the road planner places a torch
+// chain ON the route it just surveyed, so a re-survey of that corridor must
+// see THROUGH its own torches to the real ground — otherwise the torch reads
+// as a 1-block-high "surface" and the next solve lifts the route onto it
+// (adaptive-road-planning §11.1; live proc-nav iter3). Only the see-through
+// (exclude_foliage) path is affected; dig/place logic is unchanged.
 const FOLIAGE_BLOCK_NAMES_REGEX = /(?:_leaves|_wart_block)$/;
+const SEE_THROUGH_NAMES = new Set([
+  'snow', 'snow_layer',
+  'torch', 'wall_torch', 'soul_torch', 'soul_wall_torch',
+]);
 function isFoliageName(name) {
   if (!name) return false;
-  if (name === 'snow' || name === 'snow_layer') return true;
+  if (SEE_THROUGH_NAMES.has(name)) return true;
   return FOLIAGE_BLOCK_NAMES_REGEX.test(name);
 }
 export const FOLIAGE_FILTER = { isFoliageName };

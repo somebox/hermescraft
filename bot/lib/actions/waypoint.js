@@ -19,7 +19,36 @@
  *                                                                  or next_action_hint
  */
 import { Vec3 } from 'vec3';
+import pathfinderPkg from 'mineflayer-pathfinder';
 import { ok, fail } from '../shared/action-contract.js';
+
+const { goals } = pathfinderPkg;
+
+// Move the bot OFF (tx, ty, tz) onto an adjacent standable cell, so a torch
+// can be placed in the cell the bot was occupying. Uses an exact GoalBlock
+// (not GoalNear) so "already within range of the original cell" can't be a
+// no-op. Returns true once the bot's foot cell differs from the target.
+async function stepOffCell(b, tx, ty, tz) {
+  const isStandable = (x, y, z) => {
+    const at = b.blockAt(new Vec3(x, y, z));
+    const head = b.blockAt(new Vec3(x, y + 1, z));
+    const below = b.blockAt(new Vec3(x, y - 1, z));
+    const clear = (blk) => !blk || blk.boundingBox === 'empty';
+    return below && below.boundingBox === 'block' && clear(at) && clear(head);
+  };
+  const offsets = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+  const timeout = () => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000));
+  for (const [ox, oz] of offsets) {
+    const gx = tx + ox, gz = tz + oz;
+    if (!isStandable(gx, ty, gz)) continue;
+    try {
+      await Promise.race([b.pathfinder.goto(new goals.GoalBlock(gx, ty, gz)), timeout()]);
+    } catch { try { b.pathfinder.setGoal(null); } catch { /* ignore */ } continue; }
+    const f = b.entity.position.floored();
+    if (f.x !== tx || f.y !== ty || f.z !== tz) return true;
+  }
+  return false;
+}
 
 // Names safe to overwrite when placing a torch. Vegetation and snow_layer
 // are sticky in the K1 walk-classify kernel for a reason (they're walkable);
@@ -180,6 +209,15 @@ export function createWaypointActions(deps) {
           return fail('INTERNAL_ERROR',
             'place action unavailable — waypoint cannot place its torch',
             { retry_safe: true });
+        }
+        // The torch goes in the route's standable feet cell; if the bot
+        // walked onto that exact cell to reach the waypoint, it now blocks
+        // its own placement (TARGET_SELF_OCCUPIED). Step aside first so the
+        // torch cell is clear. The bot can place from an adjacent cell.
+        const t = decision.torch_at;
+        const foot = b.entity.position.floored();
+        if (foot.x === t.x && foot.y === t.y && foot.z === t.z) {
+          await stepOffCell(b, t.x, t.y, t.z);
         }
         const result = await placeFn({
           block: blockName,

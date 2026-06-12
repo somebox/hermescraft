@@ -28,6 +28,10 @@ def samples_path(root):
     return Path(root) / "samples.jsonl"
 
 
+def observations_path(root):
+    return Path(root) / "observations.jsonl"
+
+
 def state_path(root):
     return Path(root) / "state.json"
 
@@ -46,6 +50,18 @@ def append_samples(root, src, bot, cells):
     with path.open("a") as f:
         f.write(json.dumps(rec, separators=(",", ":")) + "\n")
     return len(rec["cells"])
+
+
+def append_observation(root, record):
+    """Append one survey/field observation to observations.jsonl (§5).
+    Append-only, multi-writer-safe; record is any JSON-able dict (a `ts` is
+    added if absent). Returns the record written."""
+    path = observations_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"ts": _now(), **record}
+    with path.open("a") as f:
+        f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    return rec
 
 
 def read_sample_cells(root):

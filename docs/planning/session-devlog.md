@@ -2,6 +2,23 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-06-12 — roadplan agent loop (`sample`/`confirm`) + live validation, 8 bugs
+
+Built the two missing pieces of the §3 planner dataflow so a planner *agent* (not an ad-hoc script) can run the loop: `roadplan sample` and `roadplan confirm` (new `scripts/roadplan/emit.py` pure module; CLI wiring in `cli.py`). Both **emit literal `mc` commands** — the agent runs them and pipes `--json` back through `roadplan ingest`, which now accepts three envelope kinds (corridor_sample, survey_line, waypoint). New `skills/road-planner.md` carries the scenario-agnostic loop doctrine. 88 Python tests (emit + CLI) green.
+
+Drove the whole loop end-to-end on the live `proc-nav` world (operator as planner agent, running emitted commands verbatim against Mox): a clean corridor converged → solved `natural` → `confirm` staked + lit a 3-waypoint chain, **3/3 verified on natural ground**; a parallel clearing route exercised the construction guard. Live surfaced 8 bugs fixture tests missed, all fixed + regression-tested (176 JS green too):
+
+1. `mc move` needs X Y Z (doc §6.4 had `x z`) → sampling approach uses `mc goto_near x y z range` (tolerant Y, since surface Y is unknown pre-sample).
+2. `confirm` now refuses non-natural routes (exit 3, build-first guidance; `--force` overrides) — you can't walk-confirm an unbuilt route.
+3. Route torches poisoned re-samples (reported as 1-block surface) → torches see-through in the `exclude_foliage` path (`dig-tools.js`), like snow.
+4. **`mc … --json |` truncated at 64 KB** — CLI `process.exit()` before async pipe flush (`bot/cli/index.mjs`); now flushes first. Affects every large mc pipe.
+5. Flat `{error:"msg",code}` envelopes crashed ingest → handles both shapes.
+6. `promote` default `--data-dir` resolved to `scripts/data` (bin wrapper cd's there) → defaults to repo-root `data/`.
+7. `mc waypoint` needs torches in inventory → documented in skill (check `mc status`, restock).
+8. `TARGET_SELF_OCCUPIED` — the torch cell is the route's feet cell; a bot standing there blocks itself → `mc waypoint` steps off to an adjacent cell before placing.
+
+Findings + doctrine in `docs/planning/adaptive-road-planning.md` §12. Deferred next: per-rect approach-Y from ledger (vs one `--y-hint`), and re-requesting unloaded-null cells instead of treating them as covered.
+
 ## 2026-06-12 — adaptive road planning: Y-truth fixes, torch doctrine, two-phase RCON probe
 
 A node-by-node audit of the diagnostic torch chain ("torches in mid-air / underground, x,z fine") on `proc-nav` traced every bad node to two root causes, both fixed in `scripts/roadplan/`:
