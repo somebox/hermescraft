@@ -72,12 +72,11 @@ The full grammar is in `skills/minecraft-chores.md`. Your working set:
 | Verb | When |
 |---|---|
 | `mc observe` / `mc status` | Turn-1 read. Confirm pos, hp, food, inventory, target chest visible. |
-| `mc inspect <pos>` | Confirm the block at a coord is a chest / furnace before opening. |
-| `mc chest open :mark:` / `mc chest open <pos>` | Open a chest. Pre-req for deposit/withdraw. |
-| `mc chest_search <item>` | Find which chest holds an item (when the card doesn't name a specific mark). |
-| `mc list_container :mark:` | Read chest contents without opening (when supported). |
-| `mc deposit <item> <count> :mark:` | Put items into chest. |
-| `mc withdraw <item> <count> :mark:` | Take items out of chest. |
+| `mc inspect <pos>` | Confirm the block at a coord is a chest / furnace before acting. |
+| `mc chest <x> <y> <z>` / `mc chest @MARK` | List chest contents (no `open` subverb). |
+| `mc chest_search <item>` | Find which cached chest holds an item when the card doesn't name a mark. |
+| `mc deposit <item> <count> @MARK` | Put items into chest at mark (also `… MARK` or coords). |
+| `mc withdraw <item> <count> @MARK` | Take items from chest at mark (also `… MARK` or coords). |
 | `mc pickup` | Sweep dropped items near the bot. |
 | `mc craft <recipe> [count]` | Run a recipe. Bench must be adjacent. |
 | `mc smelt <input> <count>` | Queue a furnace run. |
@@ -91,6 +90,10 @@ The full grammar is in `skills/minecraft-chores.md`. Your working set:
 You do **not** need `mc move @MARK`, `mc level`, `mc place` (except via
 crafted recipes), `mc till`, `mc plant`, `mc harvest`, `mc attack`.
 Those belong to other agents.
+
+Card bodies use `:mark_name:` with colons; CLI marks use bare names or
+`@mark_name` (no colons). If syntax fails, run `mc help chest` /
+`mc help withdraw` — the registry beats this table.
 
 ## 4. Phase-specific knowledge
 
@@ -116,11 +119,9 @@ If the chest is full, **do not spill into adjacent space**. Block with
 For deposit cards, the canonical sequence is:
 
 1. `mc inspect <chest_pos>` — confirm chest exists.
-2. `mc chest open :mark:` — fail loud if unreachable.
-3. `mc deposit <item> <count> :mark:` — for each item from `inv_delta`.
+2. `mc chest @MARK` — fail loud if unreachable; read listed contents.
+3. `mc deposit <item> <count> @MARK` — for each item from `inv_delta`.
 4. Re-read `mc status` to confirm inventory delta matches expectations.
-5. Close chest (handled by `mc deposit` cleanup, but `mc status` is the
-   ground truth).
 
 ### Recipe + smelt cards
 
@@ -162,7 +163,7 @@ either fix or block.
 You complete the card (`kanban_complete result=PASS`) when:
 
 - For deposit cards: every line item from the card body is reflected in
-  the chest's contents (verified via `mc list_container` or
+  the chest's contents (verified via `mc chest @MARK` or
   `mc chest_search`), and the bot's `mc status` inventory delta matches.
 - For withdraw cards: items are now in the bot's inventory in the
   requested count, chest content reflects the removal.
@@ -173,6 +174,9 @@ You complete the card (`kanban_complete result=PASS`) when:
 - HP and food above critical thresholds.
 
 ## 7. Handoff state — what the next agent reads
+
+On complete, always set `exit_pos` and `work_at_mark` when the card names a mark;
+downstream agents read these on turn 1 via parent completion metadata.
 
 ```yaml
 metadata:

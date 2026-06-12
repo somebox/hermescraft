@@ -111,7 +111,7 @@ For any "I need ore X" goal, **pick the primitive that matches the situation**:
 
 | Situation | Primitive | Why |
 |---|---|---|
-| Ore is in your line-of-sight (visible via `mc nearby` or `mc scene`) | **`mc collect <ore_name> <count>`** | Embedded pathfinder routes to ore and mines it in one call. Handles ore-by-ore movement automatically. |
+| Ore is in your line-of-sight (visible via `mc nearby` or `mc scene`) | **`mc collect <ore_name> <count>`** | Pathfinder mines reachable blocks in one call. **Always confirm with `mc inventory`** — blocks broken can exceed items picked up when drops land off your feet. |
 | Ore is at a known coord but **behind a wall** (LOS blocked) | **`mc tunnel X Y Z <dir> <length> [width] [height]`** | Industrial corridor digger — repeated `dig_area` slices in a direction. Use the ore's coord as origin and dig **toward** it. Default width=2, height=3 = walkable corridor you can return through. |
 | You need to **descend** to ore depth from the surface | **`mc stair_down <dir> <N>`** | 3-wide walkable staircase, auto head clearance, climbable back up with `mc stair_up`. |
 | You need to **clear out a 3D volume** (room, branch mine bay) | **`mc dig_area X1 Y1 Z1 X2 Y2 Z2`** | Axis-aligned box clearance, high-Y first. **Per-call cap is 32 blocks** — split larger volumes into multiple ≤32-block boxes (the CLI error names the limit). |

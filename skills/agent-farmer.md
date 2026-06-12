@@ -162,6 +162,9 @@ You complete the card (`kanban_complete result=PASS`) when:
 
 ## 7. Handoff state — what the next agent reads
 
+On complete, always set `exit_pos` and `work_at_mark` when the card names a mark;
+downstream agents read these on turn 1 via parent completion metadata.
+
 ```yaml
 metadata:
   exit_pos: [x, y, z]
