@@ -64,7 +64,9 @@ from capstone.author import (  # noqa: E402
     author_colony_lane,
     resolve_parents,
 )
-from capstone.wheat_graph import EPIC_BOT, build_default_graph  # noqa: E402
+from capstone.graph_loader import GRAPH_NAMES, load_graph  # noqa: E402
+from capstone.predicates import resolve_for_evaluate  # noqa: E402
+from capstone.wheat_graph import EPIC_BOT  # noqa: E402
 
 REPO_ROOT = _HERE.parent.parent.parent
 POSTMORTEMS_DIR = REPO_ROOT / "data" / "postmortems" / "wheat-capstone"
@@ -216,8 +218,18 @@ def _validate_w1_dry_run(graph, invocations) -> int:
     return 0
 
 
-def mode_dry_run(board: Optional[str] = None) -> int:
-    graph = build_default_graph()
+def _fixture_seed_from_env(run_id: Optional[str]) -> int:
+    raw = os.environ.get("WHEAT_DISCOVERY_SEED") or run_id or "w2"
+    return abs(hash(raw)) % (2**31)
+
+
+def mode_dry_run(
+    board: Optional[str] = None,
+    *,
+    graph_name: str = "capstone",
+    w2_cycle: int = 1,
+) -> int:
+    graph = load_graph(graph_name, repo_root=REPO_ROOT, w2_cycle=w2_cycle)
     invocations = author_colony_lane(graph, epic_bot=EPIC_BOT, board=board)
     print(f"[runner] dry-run: {len(invocations)} invocations  "
           f"(board={board or '(proto/default)'})")
@@ -229,14 +241,23 @@ def mode_dry_run(board: Optional[str] = None) -> int:
     print(f"[runner] acceptance: {len(graph.acceptance_predicates or [])} predicates")
     for p in (graph.acceptance_predicates or []):
         print(f"  {p['kind']}: {json.dumps({k: v for k, v in p.items() if k != 'kind'})}")
-    return _validate_w1_dry_run(graph, invocations)
+    if graph_name in ("capstone", "w2"):
+        return _validate_w1_dry_run(graph, invocations)
+    print("[runner] dry-run: non-W1 graph — shape checks skipped")
+    return 0
 
 
-def mode_create_only(run_id: str, board: Optional[str] = None) -> int:
+def mode_create_only(
+    run_id: str,
+    board: Optional[str] = None,
+    *,
+    graph_name: str = "capstone",
+    w2_cycle: int = 1,
+) -> int:
     if board:
         if not _ensure_board_exists(board):
             return 1
-    graph = build_default_graph()
+    graph = load_graph(graph_name, repo_root=REPO_ROOT, w2_cycle=w2_cycle)
     invocations = author_colony_lane(graph, epic_bot=EPIC_BOT, board=board)
 
     trial_dir = POSTMORTEMS_DIR / run_id
@@ -274,9 +295,12 @@ def mode_create_only(run_id: str, board: Optional[str] = None) -> int:
         "tenant": DEFAULT_TENANT,
         "board": board,
         "bot": EPIC_BOT,
+        "graph": graph_name,
+        "w2_cycle": w2_cycle,
+        "fixture_seed": _fixture_seed_from_env(run_id),
+        "deposit_mark": "wheat_chest",
         "cards": manifest_cards,
         "cards_total": len(invocations),
-        # Capstone-specific: full acceptance set + the singular fallback.
         "acceptance_predicate": graph.acceptance_predicate,
         "acceptance_predicates": graph.acceptance_predicates,
     }
@@ -526,14 +550,8 @@ def mode_evaluate_only(run_id: str) -> int:
     cards_blocked = sum(1 for c in cards
                         if statuses.get(c["card_id"]) == "blocked")
 
-    # Acceptance — multi-predicate
-    predicates = manifest.get("acceptance_predicates") or []
+    predicates = resolve_for_evaluate(manifest, trial_dir)
     tester_url = os.environ.get("MC_TESTER_URL", DEFAULT_TESTER_URL)
-    if not predicates:
-        # Fall back to singular if the manifest predates the upgrade
-        sp = manifest.get("acceptance_predicate")
-        if sp:
-            predicates = [sp]
 
     per_predicate: list[dict] = []
     all_satisfied = False
@@ -570,6 +588,8 @@ def mode_evaluate_only(run_id: str) -> int:
     scorecard = {
         "run_id": run_id,
         "band": band,
+        "graph": manifest.get("graph", "capstone"),
+        "fixture_seed": manifest.get("fixture_seed"),
         "cards_done_count": cards_done,
         "cards_total": cards_total,
         "cards_blocked": cards_blocked,
@@ -579,6 +599,7 @@ def mode_evaluate_only(run_id: str) -> int:
         "per_predicate": per_predicate,
         "card_statuses": {c["slug"]: statuses.get(c["card_id"], "?")
                           for c in cards},
+        "manual_interventions": manifest.get("manual_interventions", []),
         "architectural": _build_architectural_scorecard(manifest, kanban_db),
     }
     (trial_dir / "scorecard.json").write_text(json.dumps(scorecard, indent=2))
@@ -606,24 +627,46 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help=f"kanban board (default: {DEFAULT_BOARD}). "
                              "Set to empty string '' for proto-rig "
                              "flat-workspace layout.")
+    parser.add_argument(
+        "--graph",
+        default="capstone",
+        choices=sorted(GRAPH_NAMES),
+        help="card graph: capstone | w2 | discovery | plan-verify",
+    )
+    parser.add_argument("--w2-cycle", type=int, default=1, dest="w2_cycle",
+                        help="W2 execute cycle (script/survey hooks)")
     args = parser.parse_args(argv)
 
     global _BOARD
     _BOARD = args.board or None
 
     if args.dry_run:
-        return mode_dry_run(board=_BOARD)
+        return mode_dry_run(
+            board=_BOARD,
+            graph_name=args.graph,
+            w2_cycle=args.w2_cycle,
+        )
 
     if not args.run_id:
         parser.error("--run-id required for non-dry-run modes")
     run_id = args.run_id
 
     if args.create_only:
-        return mode_create_only(run_id, board=_BOARD)
+        return mode_create_only(
+            run_id,
+            board=_BOARD,
+            graph_name=args.graph,
+            w2_cycle=args.w2_cycle,
+        )
     if args.watch:
         manifest = POSTMORTEMS_DIR / run_id / "manifest.json"
         if not manifest.exists():
-            rc = mode_create_only(run_id, board=_BOARD)
+            rc = mode_create_only(
+                run_id,
+                board=_BOARD,
+                graph_name=args.graph,
+                w2_cycle=args.w2_cycle,
+            )
             if rc != 0:
                 return rc
         return mode_watch(run_id, args.watch_timeout, args.poll_interval)

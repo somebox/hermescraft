@@ -15,14 +15,24 @@ MC_DOCKER_NAME="${MC_DOCKER_NAME:-minecraft}"
 # (distance 1) and ~10 blocks from the plot — same 16×16 chunk, so all
 # region cells load. Mox goes to wheat_start (-55,65,50) — known dry, out
 # of the water hole so it doesn't drown during eval.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LAYOUT="$REPO_ROOT/data/tmp/wheat_discovery_layout.json"
 TESTER_X=-50
 TESTER_Y=65
 TESTER_Z=59
 MOX_X=-55
 MOX_Y=65
 MOX_Z=50
+if [[ -f "$LAYOUT" ]]; then
+  read -r TESTER_X TESTER_Y TESTER_Z < <(python3 -c "import json; t=json.load(open('$LAYOUT'))['verify_observer']['tester']; print(t['x'],t['y'],t['z'])")
+  read -r MOX_X MOX_Y MOX_Z < <(python3 -c "import json; t=json.load(open('$LAYOUT'))['verify_observer']['mox']; print(t['x'],t['y'],t['z'])")
+fi
 
 log() { printf '[prep-verify-observer] %s\n' "$*"; }
+
+log "gamemode creative Tester (chunk load + verify retention)"
+ssh -n "$MC_HOST_SSH" "sudo docker exec $MC_DOCKER_NAME rcon-cli 'gamemode creative Tester'" 2>&1 \
+  | grep -E "Set|already|Error" | sed 's/^/  /' || true
 
 log "tp Tester to dry plot vicinity ($TESTER_X $TESTER_Y $TESTER_Z) in landfolk-test"
 if ! ssh -n "$MC_HOST_SSH" "sudo docker exec $MC_DOCKER_NAME rcon-cli 'execute in landfolk-test run tp Tester $TESTER_X $TESTER_Y $TESTER_Z'" 2>&1 \

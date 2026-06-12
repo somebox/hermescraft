@@ -98,6 +98,9 @@ You are completing a post-trial feedback card for run **$RUN_ID** on board **$BO
 
 You (the **$role** role) just finished: \`$prior_id\` "$prior_title".
 
+Report only what **you** observed in **this** worker session. Do not copy
+text from archived FEEDBACK cards or other roles' reports.
+
 Reflect briefly on what you observed during the trial. Write a short markdown
 report — 5–12 concrete bullets — covering:
 

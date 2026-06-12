@@ -1,0 +1,21 @@
+# wheat_discovery — W2 exploratory arena (seeded grass, two water pools).
+# Generator: scripts/prep-wheat-discovery.py (version 1)
+# Layout cache: data/tmp/wheat_discovery_layout.json (written at prep time)
+
+world: landfolk-test
+
+prep:
+  - "local: rm -f $HOME/.hermes/state/wheat-harvest-pending.txt"
+  - 'local: HERMES_HOME=$HOME/.hermes hermes cron list 2>/dev/null | awk "/wheat-harvest-reminder/ {print \$1}" | while read jid; do [ -n "$jid" ] && HERMES_HOME=$HOME/.hermes hermes cron remove "$jid" 2>/dev/null || true; done'
+  - "local: python3 scripts/prep-wheat-discovery.py --write-layout --apply"
+  - "local: chmod +x scripts/validate-wheat-discovery.sh && scripts/validate-wheat-discovery.sh"
+
+cleanup:
+  - "execute in landfolk-test run gamerule randomTickSpeed 0"
+  - "local: rm -f $HOME/.hermes/state/wheat-harvest-pending.txt"
+  - 'local: HERMES_HOME=$HOME/.hermes hermes cron list 2>/dev/null | awk "/wheat-harvest-reminder/ {print \$1}" | while read jid; do [ -n "$jid" ] && HERMES_HOME=$HOME/.hermes hermes cron remove "$jid" 2>/dev/null || true; done'
+  - 'local: for port in 3007 3004; do for m in wheat_start arena_se wheat_plot wheat_chest farm_water; do curl -sf -X POST "http://127.0.0.1:$port/action/unmark" -H "content-type: application/json" -d "{\"name\":\"$m\"}" >/dev/null 2>&1 || true; done; done'
+  - "execute in landfolk-test run tp Mox 0 65 0"
+  - "clear Mox"
+  - "local: python3 -c \"import json; from pathlib import Path; p=Path('data/tmp/wheat_discovery_layout.json'); d=json.loads(p.read_text()) if p.is_file() else {'arena':{'x1':-74,'x2':-26,'z1':26,'z2':74,'floor_y':64}}; a=d['arena']; fy=a['floor_y']; exec(f'import subprocess; subprocess.run([\\\"ssh\\\",\\\"-n\\\",\\\"ubuntu-host\\\",\\\"sudo docker exec minecraft rcon-cli execute in landfolk-test run fill {a[\\\"x1\\\"]} {fy+1} {a[\\\"z1\\\"]} {a[\\\"x2\\\"]} {fy+14} {a[\\\"z2\\\"]} minecraft:air\\\"], check=False)')\" 2>/dev/null || true"
+  - "execute in landfolk-test run forceload remove all landfolk-test"

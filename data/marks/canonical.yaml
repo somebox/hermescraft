@@ -77,3 +77,8 @@ lt_beach:
   world: landfolk-test
   coords: [12, 64, 12]
   note: "Sand + shallow pond NE — glass smelt for window"
+
+wheat_plot:
+  world: world
+  coords: [359, 65, -571]
+  note: "9x9 wheat plot center"
