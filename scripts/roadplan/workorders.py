@@ -58,6 +58,15 @@ def _split_span(fx, fz, tx, tz, cap=LEVEL_COL_CAP):
     return out
 
 
+def _pad_to_rim(fx, fz, tx, tz, pad=2):
+    """Extend a span's bounding box by `pad` cells on every side so a deck
+    can anchor on the solid banks just outside the water. deck skips the
+    already-solid cells, so over-reaching onto the banks is free."""
+    lox, hix = min(fx, tx), max(fx, tx)
+    loz, hiz = min(fz, tz), max(fz, tz)
+    return lox - pad, loz - pad, hix + pad, hiz + pad
+
+
 def compile_leg(leg, wp_a, wp_b, spec):
     """Ordered build commands for one surveyed leg. Returns
     {from, to, orders[], deficits_n, split, est_minutes}. Empty orders =
@@ -100,8 +109,16 @@ def compile_leg(leg, wp_a, wp_b, spec):
             # each block anchoring on the rim or a just-placed neighbour —
             # the creep-and-place mechanism that actually spans water. Its Y
             # is the deck block_y (walk surface = Y+1), so block_y = feet - 1.
+            #
+            # PAD the span to reach the solid banks: deck needs a solid rim to
+            # anchor its first placement. The deficit's from/to are the WATER
+            # extent only — a region of pure water has no rim, so deck reports
+            # everything `unanchored` (proc-nav span2, 0/85). Extending the box
+            # a couple cells past the water onto the banks gives it an anchor;
+            # deck skips the already-solid bank cells and only fills the gap.
             y = _interp_y(wp_a, wp_b, (fx, fz)) - 1
-            for sx1, sz1, sx2, sz2 in _split_span(fx, fz, tx, tz,
+            px1, pz1, px2, pz2 = _pad_to_rim(fx, fz, tx, tz, pad=2)
+            for sx1, sz1, sx2, sz2 in _split_span(px1, pz1, px2, pz2,
                                                   cap=DECK_CELL_CAP):
                 bridges.append(
                     f"mc deck {sx1} {sz1} {sx2} {sz2} y={y} block=cobblestone")

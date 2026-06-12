@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from roadplan.workorders import (  # noqa: E402
-    compile_leg, compile_workorders, _split_span, _interp_y,
+    compile_leg, compile_workorders, _split_span, _interp_y, _pad_to_rim,
 )
 from roadplan.spec import load_spec  # noqa: E402
 
@@ -59,7 +59,7 @@ def test_gap_emits_bridge_fill_level():
            "deficits": [{"kind": "gap", "from": [3, 0], "to": [6, 0],
                          "width": 4, "depth": 3}]}
     lo = compile_leg(leg, (0, 65, 0), (10, 65, 0), SPEC)
-    assert lo["orders"] == ["mc deck 3 0 6 0 y=64 block=cobblestone"]
+    assert lo["orders"] == ["mc deck 1 -2 8 2 y=64 block=cobblestone"]
 
 
 def test_clearing_before_grading_order():
@@ -143,3 +143,18 @@ def test_compile_workorders_only_leg_filter():
     leg_orders, _ = compile_workorders(state, SPEC, only_leg=([10, 0], [20, 0]))
     assert len(leg_orders) == 1
     assert leg_orders[0]["from"] == [10, 0]
+
+
+def test_pad_to_rim_extends_box():
+    # A span 3..6 padded by 2 reaches the banks at 1 and 8.
+    assert _pad_to_rim(3, 0, 6, 0, pad=2) == (1, -2, 8, 2)
+
+
+def test_bridge_span_is_padded_to_reach_banks():
+    leg = {"from": [0, 0], "to": [10, 0],
+           "deficits": [{"kind": "water", "from": [4, 0], "to": [6, 0],
+                         "width": 3, "depth": 3}]}
+    lo = compile_leg(leg, (0, 65, 0), (10, 65, 0), SPEC)
+    # the emitted deck reaches past the water (4..6) onto the banks.
+    deck = lo["orders"][0]
+    assert deck.startswith("mc deck 2 -2 8 2 "), deck
