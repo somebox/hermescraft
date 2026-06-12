@@ -125,8 +125,12 @@ The world will contradict the plan. That's the loop working, not failing.
   card exists. Replanning a torch is free; replanning a built road is not.
 - **The solver reports construction edits** (stairs/bridge/fill in the
   `solve` verdict) — that's a real finding, not an error. The route needs
-  building, not just lighting. Hand it to the build role
-  (`minecraft-roadbuilding`); your job ends at a confirmed, surveyed plan.
+  building, not just lighting. Survey the construction legs
+  (`mc survey_line … | roadplan ingest`), then `roadplan workorders` compiles
+  the per-leg `mc` build commands (clear → grade → bridge, with concrete Ys).
+  Hand those to the build role (`minecraft-roadbuilding`); once it rebuilds
+  and re-surveys the legs to spec, re-`solve` (now natural) and `confirm`
+  lights it. Your job ends at a confirmed, surveyed plan.
 
 ## What you never do
 

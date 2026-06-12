@@ -34,6 +34,7 @@ from .preflight import cmd_preflight
 from .refine import refine
 from .solver import Route, render_ascii, solve
 from .spec import load_spec
+from .workorders import compile_workorders
 
 
 class IngestError(Exception):
@@ -467,6 +468,38 @@ def cmd_confirm(args):
     return 0
 
 
+def cmd_workorders(args):
+    """Compile surveyed construction legs into literal build commands (§6.5).
+    stdout carries the orders (grouped per leg); status to stderr."""
+    spec = load_spec()
+    state = read_state(args.ledger)
+    if not state or not state.get("routes"):
+        print("workorders: no solved route in state.json — run solve first",
+              file=sys.stderr)
+        return 2
+    only = (args.leg_from, args.leg_to) if args.leg_from and args.leg_to \
+        else None
+    leg_orders, total = compile_workorders(state, spec, only_leg=only)
+    if not leg_orders:
+        print("workorders: no surveyed legs with deficits — survey the "
+              "construction legs first (mc survey_line … | roadplan ingest)",
+              file=sys.stderr)
+        return 0
+    print(f"workorders: {len(leg_orders)} leg(s), {total} build command(s)",
+          file=sys.stderr)
+    for i, lo in enumerate(leg_orders):
+        if i:
+            print()
+        frm, to = lo["from"], lo["to"]
+        print(f"# leg ({frm[0]},{frm[1]})->({to[0]},{to[1]}): "
+              f"{lo['deficits_n']} deficit(s), ~{lo['est_minutes']} min")
+        for cmd in lo["orders"]:
+            print(cmd)
+        for note in lo["notes"]:
+            print(f"# NOTE: {note}")
+    return 0
+
+
 def cmd_render(args):
     samples = samples_for_solver(args.ledger)
     if not samples:
@@ -551,6 +584,15 @@ def build_parser():
                     help="Confirm even a construction route (default: refuse "
                          "non-natural routes — build them first)")
     pc.set_defaults(func=cmd_confirm)
+
+    pw = sub.add_parser("workorders",
+                        help="Compile surveyed construction legs into literal "
+                             "mc build commands (§6.5). Hand to the build role; "
+                             "re-survey to spec, then confirm lights it.")
+    pw.add_argument("--leg-from", type=_xz, metavar="X,Z",
+                    help="Restrict to one leg (with --leg-to)")
+    pw.add_argument("--leg-to", type=_xz, metavar="X,Z")
+    pw.set_defaults(func=cmd_workorders)
 
     pr = sub.add_parser("render", help="ASCII terrain + route overlay")
     pr.add_argument("--solve", action="store_true",
