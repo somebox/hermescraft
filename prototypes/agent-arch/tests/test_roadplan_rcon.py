@@ -19,6 +19,7 @@ from roadplan.rcon_adapter import (  # noqa: E402
     ingest_via_rcon, sample_corridor,
 )
 from roadplan.spec import load_spec  # noqa: E402
+from roadplan.torch_chain import place_chain  # noqa: E402
 
 SPEC = load_spec()
 WORLD = "test-world"
@@ -33,7 +34,7 @@ class FakeRcon:
     """
 
     def __init__(self, *, solids=None, water=None, lava=None, logs=None,
-                 leaves=None, snow_layer=None, short_grass=None):
+                 leaves=None, snow_layer=None, short_grass=None, torches=None):
         self.solids = set(solids or [])             # (x, y, z) is true solid
         self.water = set(water or [])               # (x, y, z) is water
         self.lava = set(lava or [])
@@ -41,6 +42,7 @@ class FakeRcon:
         self.leaves = set(leaves or [])
         self.snow_layer = set(snow_layer or [])
         self.short_grass = set(short_grass or [])
+        self.torches = set(torches or [])           # passable, matches torch tag
         self.batches = []
         self.cmd_count = 0
 
@@ -77,6 +79,8 @@ class FakeRcon:
             return "Test passed" if cell in self.snow_layer else "Test failed"
         if tag == "minecraft:short_grass":
             return "Test passed" if cell in self.short_grass else "Test failed"
+        if tag == "minecraft:torch":
+            return "Test passed" if cell in self.torches else "Test failed"
         # Other passable tags (#minecraft:saplings, tall_grass, fern, etc.)
         # never match in this harness — sufficient for the tests we have.
         return "Test failed"
@@ -187,6 +191,36 @@ def test_walkable_descent_odd_y_surface_is_not_off_by_one():
     assert cells[0]["y"] == 64.0, cells[0]
 
 
+def test_spike_repair_takes_floor_under_overhang():
+    """A column carrying a solid shelf well above its neighbors (the
+    61,-100 field case: roof at 102-110, true floor at 96) must report
+    the floor under the shelf, not the roof top."""
+    bounds = (-1, -1, 1, 1)
+    solids = _flat_solids(range(-1, 2), range(-1, 2), surface_y=96)
+    # Overhang on the center column only: solid 102..110.
+    solids |= {(0, y, 0) for y in range(102, 111)}
+    client = FakeRcon(solids=solids)
+    cells = sample_corridor(client, WORLD, bounds, y_hint=97, spec=SPEC)
+    by_xz = {(c["x"], c["z"]): c for c in cells}
+    assert by_xz[(0, 0)]["y"] == 97.0, by_xz[(0, 0)]
+    assert by_xz[(0, 0)]["kind"] == "ground"
+    assert by_xz[(1, 1)]["y"] == 97.0
+
+
+def test_spike_repair_keeps_genuine_solid_bump():
+    """A real one-column pillar (solid all the way down) has no second
+    surface below — the original feet must stand."""
+    bounds = (-1, -1, 1, 1)
+    solids = _flat_solids(range(-1, 2), range(-1, 2), surface_y=63)
+    # Solid pillar on the center column up to y=72, attached to ground.
+    solids |= {(0, y, 0) for y in range(64, 73)}
+    client = FakeRcon(solids=solids)
+    cells = sample_corridor(client, WORLD, bounds, y_hint=63, spec=SPEC)
+    by_xz = {(c["x"], c["z"]): c for c in cells}
+    assert by_xz[(0, 0)]["y"] == 73.0, by_xz[(0, 0)]
+    assert by_xz[(-1, 1)]["y"] == 64.0
+
+
 def test_sample_corridor_unloaded_or_no_floor_is_gap():
     # No solids anywhere → every column reports surface_y=None → kind=gap.
     client = FakeRcon(solids=set())
@@ -209,6 +243,68 @@ def test_sample_corridor_deep_floor_classified_as_gap():
     cells = sample_corridor(client, WORLD, (0, 0, 0, 0), y_hint=63, spec=spec)
     assert cells[0]["kind"] == "gap"
     assert cells[0]["y"] == 41.0, cells[0]  # feet sit above the y=40 floor
+
+
+def test_probe_budget_two_phase_scan():
+    """The two-phase scan (coarse air grid + bracket + full-predicate
+    refinement) must answer a flat 3x5 corridor in far fewer probes than
+    the old exhaustive per-Y full-predicate descent (~6900 commands for
+    this fixture). Guard against regressions back to per-Y probing."""
+    bounds = (-1, 0, 1, 4)
+    solids = _flat_solids(range(-1, 2), range(0, 5), surface_y=63)
+    client = FakeRcon(solids=solids)
+    cells = sample_corridor(client, WORLD, bounds, y_hint=63, spec=SPEC)
+    assert all(c["y"] == 64.0 for c in cells), cells
+    assert client.cmd_count < 1000, client.cmd_count
+
+
+def _setblocks(client):
+    return [c for b in client.batches for c in b if "setblock" in c]
+
+
+def test_place_chain_natural_ground_places_torch_only():
+    solids = _flat_solids(range(-2, 3), range(-2, 3), surface_y=63)
+    client = FakeRcon(solids=solids)
+    reports = place_chain(client, WORLD, [(0, 64, 0)])
+    assert reports == [{"node": [0, 64, 0], "at": [0, 64, 0],
+                        "status": "placed"}]
+    sets = _setblocks(client)
+    assert sets == [
+        "execute in test-world run setblock 0 64 0 minecraft:torch"]
+
+
+def test_place_chain_pit_snaps_to_lateral_grade():
+    """A 1-wide pit under the waypoint: no natural anchor at deck
+    elevation in-column — the torch goes one cell aside at grade, with
+    no base block fabricated."""
+    solids = _flat_solids(range(-2, 3), range(-2, 3), surface_y=63)
+    solids -= {(0, y, 0) for y in range(58, 64)}    # pit floor at 57
+    client = FakeRcon(solids=solids)
+    reports = place_chain(client, WORLD, [(0, 64, 0)])
+    assert reports[0]["status"] == "placed"
+    ax, ay, az = reports[0]["at"]
+    assert (ax, az) != (0, 0) and ay == 64, reports[0]
+    sets = _setblocks(client)
+    assert len(sets) == 1 and "minecraft:torch" in sets[0]
+
+
+def test_place_chain_wide_pit_reports_needs_construction():
+    solids = _flat_solids(range(-3, 4), range(-3, 4), surface_y=63)
+    solids -= {(x, y, z) for x in range(-1, 2) for z in range(-1, 2)
+               for y in range(50, 64)}
+    client = FakeRcon(solids=solids)
+    reports = place_chain(client, WORLD, [(0, 64, 0)])
+    assert reports == [{"node": [0, 64, 0], "at": None,
+                        "status": "needs_construction"}]
+    assert _setblocks(client) == []
+
+
+def test_place_chain_already_lit_is_untouched():
+    solids = _flat_solids(range(-2, 3), range(-2, 3), surface_y=63)
+    client = FakeRcon(solids=solids, torches={(0, 64, 0)})
+    reports = place_chain(client, WORLD, [(0, 64, 0)])
+    assert reports[0]["status"] == "already_lit"
+    assert _setblocks(client) == []
 
 
 def test_ingest_via_rcon_appends_ledger_and_round_trips(tmp_path):

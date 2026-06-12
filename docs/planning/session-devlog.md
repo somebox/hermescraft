@@ -2,6 +2,21 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-06-12 — adaptive road planning: Y-truth fixes, torch doctrine, two-phase RCON probe
+
+A node-by-node audit of the diagnostic torch chain ("torches in mid-air / underground, x,z fine") on `proc-nav` traced every bad node to two root causes, both fixed in `scripts/roadplan/`:
+
+- **Solver emitted raw cell Y for gap-cell waypoints** — RDP lands waypoints on gap/water cells and the route took the measured pit/valley floor (torches buried 4–5 deep in 1-wide pits). Fix: `solver._walk_elevations` — waypoint elevation is the walk grade interpolated across gap/water cells from flanking walkable samples; floor Y stays in the ledger for bridging economics.
+- **Top-down descent captured overhang roofs** — a 9-thick natural shelf reported feet at y=111 over a y=97 route ("torch in mid-air"). Fix: `rcon_adapter._repair_spikes` — columns whose feet exceed the 8-neighbor median by `rcon_spike_threshold` resume the descent below the roof and take the surface nearest the median; genuine solid bumps survive.
+
+**Torch doctrine (user-mandated, binding)**: route torches stand on existing natural ground only — never fabricate a base block or pillar. The first repair pass had "fixed" unplaceable torches with cobble anchors, which masked the Y errors. An unplaceable torch is a route-quality alarm: snap laterally ≤1 cell to natural grade or report `needs_construction`. Embodied in `scripts/roadplan/torch_chain.py` (RCON wire; `mc waypoint` → pickTorchAnchor already complied); memory entry + design-doc §11.1 carry the rule forward.
+
+**Two-phase RCON probe**: the exhaustive descent (14 predicates × every Y × every column) cost ~390–450s per 450-cell segment. Replaced `_descend_to_walkable` with coarse `#minecraft:air`-only y_step=4 grid (+ fine air-only rescan for sub-step-thin floors) → bracket batch → full-predicate refinement from the boundary only. Same answers (62 roadplan tests green, semantics unchanged), 6–11× faster in the field; a probe-budget test pins it.
+
+**End-to-end demo** (spawn → 24,97,168): 2,749 cells in 283s via segment-chained ingest with rolling y_hint (64→96 climb, 8 segments); natural route, 22 waypoints, **zero construction edits**; 22/22 torches placed naturally and verified (torch present, natural support, |Δ| vs 4-neighbor median ≤ 1.5).
+
+Learnings + planner-agent doctrine captured in `docs/planning/adaptive-road-planning.md` §11 (status → IN PROGRESS): torches-as-verification, walk-grade vs measured-floor elevation, neighbor-continuity repair for any column-top sampler, coarse-then-fine probe economics, segmented ingest, verify-after-placement. These feed `skills/road-planner.md` (Phase 3) and apply to any placement-producing solver (pads, canals), not just roads.
+
 ## 2026-05-29 — worker board proxy + Steward kanban redesign (commit A)
 
 Three genesis runs (`g-2026-05-27-10`, `g-2026-05-27-N`, `g-2026-05-28-4 round 9`) wedged on the same flag: `hermes kanban create --parent` overloads epic membership and real-prereq dependency onto a single argument. Steward SOUL (`prompts/landfolk/steward.md:68-82`) and the kanban-worker skill both carry dedicated interdiction sections telling the LLM "do not type this" — the warnings' existence IS the bug. Fix: split the kanban surface **by role**, not by syntax. Workers get a tiny verb set on a new CLI scoped to their active card; Steward keeps `scripts/kanban` but with action-oriented verbs (Commit B). The wedge becomes structurally unreachable from the worker surface even before Steward switches over. Underlying philosophy: workers are the agile team, Steward is product/PM — give each the surface their role actually needs.

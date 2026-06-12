@@ -1,7 +1,10 @@
 # Adaptive Road Planning — survey powertools + field judgment verbs
 
-Status: PLANNED (design agreed 2026-06-10, revised same day after code review;
-this doc is the implementation contract)
+Status: IN PROGRESS (design agreed 2026-06-10, revised same day after code
+review; this doc is the implementation contract). Phases 0–1 kernels (K1–K3),
+the S2 RCON adapter, and natural torch placement are built and in-world
+validated as of 2026-06-12 — field learnings and doctrine deltas in §11.
+Phases 2+ stand as planned.
 Owner: agent-arch / proc-nav lab
 Prior art: proc-nav trials 1781014144 and 1781079999, postmortems in
 `data/postmortems/proc-nav-lab/`, fixed-graph generator
@@ -50,6 +53,10 @@ cosmetic surface work.
 - **The plan is physically visible.** Every confirmed waypoint carries a
   torch. When the route moves, the torch moves. A human (or bot) can watch
   planning unfold in-world and navigate by the torch chain at night.
+  **Torches stand on existing natural ground only** — placement never
+  fabricates a base block or pillar. A waypoint that cannot be lit naturally
+  is a route-quality alarm (wrong Y, or a span that needs construction
+  first), not a placement problem to patch (§11.1).
 - **Agents confirm ground truth in-game.** RCON is a development/test data
   source only (Phases 0–1). Load-bearing route assumptions are confirmed by a
   bot standing on (or scanning) the point before work cards exist.
@@ -404,7 +411,12 @@ Mark + torch, with move semantics:
    contract (bots never write shared state; shared wins on read for
    fleet-prefix names, `locations.js:34-45`).
 2. Place a torch on the surface block at the point (bot must be adjacent —
-   mineflayer constraint; doctrine pairs it with `mc move`).
+   mineflayer constraint; doctrine pairs it with `mc move`). The torch must
+   sit on existing natural ground: anchor-or-report per the S3 decision
+   table — snap laterally ≤1 cell to natural grade if the exact cell can't
+   hold a torch, else return `needs_construction`. **Never place a support
+   block under a torch** (§11.1; `roadplan/torch_chain.py` is the RCON-wire
+   reference implementation of the same contract).
 3. If the mark previously existed elsewhere: dig the old torch if within
    reach/loaded; otherwise return
    `next_action_hint: "old torch at (x,y,z) — remove when nearby"` and record
@@ -790,7 +802,116 @@ S5 graph module, card emission, doctrine edits (junior).
     surveyed legs, offline estimates are provisional-only, and Phase 0 parity
     goldens keep them honest.
 
-## 11. What this generalizes to
+## 11. Phase 0–1 field learnings (2026-06-12)
+
+K1–K3, the S2 RCON adapter (`scripts/roadplan/`), and natural torch
+placement ran end-to-end on the live `proc-nav` world twice: a diagnostic
+corridor (29 waypoints, audited node-by-node after a "torches in mid-air /
+underground" report) and a clean spawn → (24,97,168) demo — 2,749 cells
+sampled in 283s, natural route, 22 waypoints, **zero construction edits**,
+22/22 torches verified on natural ground at grade. The audit surfaced two
+root-cause bugs and four doctrine lessons. Each entry names the code that
+embodies it and the rule that must survive into `skills/road-planner.md`
+(Phase 3) — these apply to **any planner agent computing routes or
+placements** (roads, pads, canals), not just this pipeline.
+
+### 11.1 Torches are verification, not decoration
+
+The first in-world repair "fixed" unplaceable torches by placing cobble
+anchors and pillars under them — which masked Y errors: bad waypoints got
+anchored high in the air or deep underground and looked "placed" anyway.
+User doctrine (binding): *if a torch cannot be placed naturally (without
+any base block) then it's likely in the wrong place.* Natural-anchor-only
+placement turns a placement failure into a route-quality signal.
+
+- Code: `scripts/roadplan/torch_chain.py` (`place_chain`: in-column natural
+  anchor → lateral snap ≤1 cell at grade → `needs_construction` report,
+  never a fabricated block; idempotent on already-lit cells). The bot wire
+  (`mc waypoint` → pickTorchAnchor) already complies.
+- Planner doctrine: a `needs_construction` torch report triggers re-solve
+  or a construction card for that span — never "fix" placement by adding
+  blocks. Worker cards must not instruct anchor fabrication either.
+
+### 11.2 Waypoint elevation is walk grade, never raw cell Y
+
+Root cause of "torches buried 4–5 blocks deep": RDP simplification lands
+waypoints on `gap`/`water` cells, and `solve` emitted that cell's measured
+floor Y — the bottom of a 1-wide pit, not the elevation a walker crosses it
+at. Gap/water floor Y exists for bridging economics; the route's elevation
+across those cells is the grade interpolated between the adjacent walkable
+cells.
+
+- Code: `solver._walk_elevations` (interpolates waypoint Y across
+  gap/water cells from flanking walkable samples).
+- Generalizes: any solver output consumed for *physical placement* must
+  distinguish "measured floor" from "travel elevation". Same rule for pad
+  corners, bridge abutments, stair landings.
+
+### 11.3 Top-down column scans report roofs; neighbor continuity repairs them
+
+Root cause of "torch in mid-air": a 9-block-thick natural overhang shelf
+captured its column — the descent reported feet on the shelf roof (y=111)
+while the route ran on the ground below (y=97). Pure column data cannot
+distinguish roof from floor; **neighbor continuity can**: a column whose
+feet exceed its 8-neighbor median by more than `rcon_spike_threshold`
+resumes the descent below the roof and takes the surface nearest the
+neighbor median. Genuine one-column bumps survive (solid all the way down
+→ no second surface).
+
+- Code: `rcon_adapter._repair_spikes`. Tests: overhang and genuine-bump
+  fixtures.
+- Generalizes: the K1 swath classifier and any field column-top sampler
+  (`survey_line`, `corridor_sample`) share this blind spot — Phase 2
+  cross-validation must include an overhang leg, and K1 should adopt the
+  same median-continuity check if disagreements show up there.
+
+### 11.4 Probe economics: coarse-then-fine, at every layer
+
+The exhaustive descent (14 passable predicates × every Y × every column)
+cost ~390–450s per 450-cell segment over RCON — each probe is one
+`execute if block` round-trip share. Replaced with a two-phase scan
+(§rcon_adapter docstring): coarse `#minecraft:air`-only grid at y_step=4
+(+ fine air-only rescan for columns the grid misses — floors thinner than
+the step exist), one bracket batch to pin the topmost non-air block, then
+full-predicate refinement only from that boundary down. Same answers
+(regression suite unchanged), **6–11× faster in the field**; a budget test
+pins the probe count so it can't regress.
+
+- Accepted blind spot: a thin (<4) floating shell above deeper ground is
+  skipped in favor of the ground — which is what road semantics want; the
+  exhaustive scan had the inverse problem (§11.3) and needed repair anyway.
+- Generalizes: this is the same shape as `roadplan sample` → `--refine`
+  (§2 "samples are the currency"). Observation budgets bind at every layer
+  — solver sampling, RCON probing, and field `survey_line` hops alike.
+
+### 11.5 Ingest long corridors in segments with a rolling y_hint
+
+`gap` is judged against the corridor-wide reference (`y_hint + 1`), so a
+single ingest over steadily climbing/descending terrain misreads the far
+end (deep-floor "gaps" that are really just lower ground, or missed real
+gaps on higher ground). The demo corridor climbed 64 → 96 cleanly by
+ingesting in ~24-line-cell segments with each segment's `y_hint` set to
+the previous segment's median feet.
+
+- Planner doctrine: never single-shot a corridor whose endpoints differ by
+  more than a few blocks of elevation; chain segments and roll the hint
+  forward. `roadplan sample` should own this arithmetic eventually (same
+  spirit as §10.11 — agents never see the cap).
+
+### 11.6 Verify the chain after placement
+
+Placement reports are claims. The demo's acceptance check re-probed every
+node: torch present, solid natural support beneath, |torch Y − 4-neighbor
+median feet| ≤ 1.5. Cheap (a handful of probes per node) and it caught a
+silently-skipped node in the diagnostic corridor that every earlier "looks
+done" pass had missed.
+
+- Planner doctrine: after `confirm`/placement, run the verification sweep
+  before authoring work cards; in Phase 2+ this is `survey_line --diff`
+  along each leg. A chain is "lit" when verification says so, not when
+  placement returns.
+
+## 12. What this generalizes to
 
 `sample/ingest/confirm`, the ledger, `waypoint`, `survey_line`, and
 rolling-wave card emission are task-agnostic. A structure project swaps the

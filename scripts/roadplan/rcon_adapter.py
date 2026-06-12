@@ -8,28 +8,47 @@ without bots in the loop; the production wire (`mc … --json | roadplan
 ingest`, §5.1) takes over in Phase 2.
 
 Three-pass strategy:
-  1. `find_surface_heights` with y_step=1 finds first-NON-AIR Y per
-     column. Bait: this catches leaves/logs/snow_layer/grass-tufts too,
-     so the result is the canopy top, not the walkable floor. The
-     y_step=1 is the parity-safe fix — the upstream default y_step=2
-     can skip surfaces on odd Y values, leaving torches one block
-     below the visible surface.
-  2. `_walkable_descent` mirrors K1's `columnTopSolid` semantics:
-     descend through the foliage/passable cells until the first true
-     solid (dirt, stone, grass_block, …) — feet_y = that block's y+1.
-     The PASSABLE set is the same list K1 uses in
-     bot/lib/shared/walk-classify.js (kept by hand in sync; the K1↔RCON
-     cross-validation goldens are the regression guard).
-  3. `_classify_floor` tests each true-floor cell for water/lava/log so
-     the K2 kind mapping (water → water, logs → tree, else → ground)
-     fires correctly. Cells with the surface more than `no_floor_min_depth`
-     below the line reference become `gap`.
+  1. `_descend_to_walkable`, two-phase to keep the probe count sane
+     (every probe is one `execute if block` RCON round-trip share):
+       a. Coarse `#minecraft:air`-only scan on a y_step=4 grid from
+          y_hint+headroom down (plus y_lo as terminal point) — one
+          predicate per grid Y instead of fourteen per Y. Columns the
+          grid misses entirely (a floor thinner than the step CAN sit
+          between grid points) get a fine air-only rescan of the
+          skipped Ys before being declared empty.
+       b. Bracket: the three Ys above a coarse hit are probed to find
+          the TOPMOST non-air block — the refinement start.
+       c. Full-predicate refinement descent from that boundary: the
+          first cell matching NO passable predicate is the surface
+          block, feet = Y+1. The PASSABLE set mirrors K1's
+          `columnTopSolid` semantics in bot/lib/shared/walk-classify.js
+          (kept by hand in sync; the K1↔RCON cross-validation goldens
+          are the regression guard). Water/lava/log tags encountered
+          drive the K2 kind mapping (water → water, logs → tree,
+          else → ground); surfaces more than `no_floor_min_depth`
+          below the line reference become `gap`.
+     Residual blind spot (accepted): a thin (<4) floating shell ABOVE
+     deeper solid ground is skipped — the coarse scan hits the ground
+     beneath and reports the under-floor. Road semantics want the
+     ground anyway; the old exhaustive descent had the inverse problem
+     (reporting the shell) and needed `_repair_spikes` to undo it.
+  2. `_repair_spikes`: top-down descent reports the TOPMOST surface, so
+     overhang roofs / terrain spikes capture the column (torch lands in
+     mid-air over the real route). Columns whose feet exceed their
+     8-neighbor median by `rcon_spike_threshold` resume the descent
+     below the roof and take the surface nearest the neighbor median.
+  3. Known limitation: `gap` is judged against the corridor-wide
+     y_hint reference, so a long single ingest over steadily
+     descending terrain misreads the far end as gap — ingest long
+     routes in segments with per-segment y_hint (as the demos do).
 
 The §6.1 foliage pairing — exclude_foliage=true ground read +
 exclude_foliage=false canopy read — is still deferred to Phase 2's
 `mc survey_line`; here we only need the *walkable* floor.
 """
 from __future__ import annotations
+
+import statistics
 
 from .ledger import append_samples
 from .spec import load_spec
@@ -148,55 +167,177 @@ _INTEREST_TAGS = {
 }
 
 
-def _descend_to_walkable(client, world, cells, *, y_hi=120, y_lo=32):
-    """Single-pass per-cell descent to the topmost walkable surface.
+def _air_probe(client, world, cell_ys):
+    """Probe `#minecraft:air` at each (cell, y). Returns {(cell, y): is_air}."""
+    probes = [(c, y, "#minecraft:air") for c, y in cell_ys]
+    hits = _run_predicates(client, world, probes)
+    return {(c, y): hit for (c, y, _pred), hit in hits.items()}
 
-    Scans every Y from y_hi down to y_lo at y_step=1, testing the
-    passable-predicate set at each Y for every still-pending cell. The
-    first Y where NO predicate matches is the surface block — feet sits
-    at Y + 1. Cells that never hit a non-passable block within the range
-    report `None` (no walkable surface).
 
-    Why not reuse `find_surface_heights`: the upstream coarse-then-fine
-    algorithm uses y_step=16 for the coarse pass and only refines around
-    the first coarse hit. For columns where the *first* non-air block
-    descending is deep underground (e.g. y=56 stone under an air gap),
-    the actual walkable surface (e.g. y=72 grass) sits above the coarse
-    grid and gets skipped entirely — the symptom is "torches deep
-    underground." y_step=1 from the start is the only fix.
+def _find_boundaries(client, world, cells, *, y_hi, y_lo, step=4):
+    """Phases A+B: per-cell topmost non-air Y within [y_lo, y_hi], or
+    None when the whole window is air.
 
-    Per Y is a single batch of `|pending| * |predicates|` `if block`
-    probes. Pending shrinks each Y as cells find their floor.
+    A. Descend a y_step=`step` grid (y_lo always included) probing only
+       `#minecraft:air`, batched per grid Y over still-pending cells.
+       Columns with no grid hit get a fine rescan of the skipped Ys —
+       a floor thinner than `step` can sit between grid points.
+    B. A coarse hit is *inside or at* the surface, but the true topmost
+       non-air block may be up to step-1 above it (the grid point above
+       was air). One bracket batch resolves it. Fine-scan hits are
+       already exact.
     """
-    pending = {tuple(c): y_hi for c in cells}
-    feet = {}
-    encountered = {tuple(c): set() for c in cells}
-    y = y_hi
-    while pending and y >= y_lo:
-        probes = []
+    grid = list(range(y_hi, y_lo - 1, -step))
+    if grid[-1] != y_lo:
+        grid.append(y_lo)
+    pending = set(cells)
+    coarse = {}
+    for y in grid:
+        if not pending:
+            break
+        res = _air_probe(client, world, [(c, y) for c in pending])
+        for (c, cy), is_air in res.items():
+            if not is_air:
+                coarse[c] = cy
+        pending -= set(coarse)
+    boundary = {}
+    if pending:
+        grid_set = set(grid)
+        for y in range(y_hi, y_lo - 1, -1):
+            if y in grid_set or not pending:
+                continue
+            res = _air_probe(client, world, [(c, y) for c in pending])
+            for (c, cy), is_air in res.items():
+                if not is_air:
+                    boundary[c] = cy
+            pending -= set(boundary)
         for c in pending:
-            for pred in _PASSABLE_PREDICATES:
-                probes.append((c, y, pred))
-        hits = _run_predicates(client, world, probes)
-        cell_matches = {c: set() for c in pending}
-        for (c, _y, pred), hit in hits.items():
+            boundary[c] = None
+    probes = []
+    for c, h in coarse.items():
+        for y in range(h + 1, min(h + step, y_hi + 1)):
+            probes.append((c, y, "#minecraft:air"))
+    res = _run_predicates(client, world, probes) if probes else {}
+    for c, h in coarse.items():
+        b = h
+        for y in range(h + 1, min(h + step, y_hi + 1)):
+            if res.get((c, y, "#minecraft:air")) is False:
+                b = y
+        boundary[c] = b
+    return boundary
+
+
+def _descend_to_walkable(client, world, cells, *, y_hi=120, y_lo=32):
+    """Two-phase per-cell descent to the topmost walkable surface.
+
+    `_find_boundaries` locates each column's topmost non-air block with
+    cheap air-only probes; the full passable-predicate descent (Phase C)
+    then runs only from that boundary down — the first Y where NO
+    predicate matches is the surface block, feet = Y + 1. Cells with no
+    non-air block in the window, or that stay passable all the way to
+    y_lo, report `None` (no walkable surface).
+
+    Why not reuse `find_surface_heights`: its y_step=16 coarse pass only
+    refines around the first coarse hit, so a walkable surface above a
+    deep first-hit (e.g. grass at 72 over a cave hit at 56) is skipped
+    entirely — the "torches deep underground" symptom. The step=4 grid
+    plus fine-rescan fallback here keeps the exhaustive descent's
+    answers (regression-tested) at ~1/15th the probe count.
+
+    Each refinement round is one batch of `|pending| * |predicates|`
+    probes, each cell at its own current Y; pending shrinks per round.
+    """
+    cells = [tuple(c) for c in cells]
+    encountered = {c: set() for c in cells}
+    feet = {}
+    boundary = _find_boundaries(client, world, cells, y_hi=y_hi, y_lo=y_lo)
+    cur = {}
+    for c in cells:
+        b = boundary.get(c)
+        if b is None:
+            feet[c] = None
+        else:
+            cur[c] = b
+    while cur:
+        probes = [(c, y, pred)
+                  for c, y in cur.items() for pred in _PASSABLE_PREDICATES]
+        res = _run_predicates(client, world, probes)
+        cell_matches = {c: set() for c in cur}
+        for (c, _y, pred), hit in res.items():
             if hit:
                 cell_matches[c].add(pred)
-        next_pending = {}
-        for c in pending:
+        nxt = {}
+        for c, y in cur.items():
             matched = cell_matches[c]
             for pred, tag in _INTEREST_TAGS.items():
                 if pred in matched:
                     encountered[c].add(tag)
-            if matched:
-                next_pending[c] = y - 1
-            else:
+            if not matched:
                 feet[c] = y + 1
-        pending = next_pending
-        y -= 1
-    for c in pending:
-        feet[c] = None  # never found a non-passable block in the range
+            elif y - 1 >= y_lo:
+                nxt[c] = y - 1
+            else:
+                feet[c] = None
+        cur = nxt
     return feet, encountered
+
+
+def _repair_spikes(client, world, feet, encountered, *, y_lo, threshold):
+    """Overhang/spike correction (top-down descent's blind spot).
+
+    The descent reports the TOPMOST surface per column. When a column
+    carries a roof — a floating shelf, a terrain spike, a tree-house
+    floor — that roof is what gets reported, and a torch placed there
+    hangs in mid-air relative to the route below. Detectable purely from
+    neighbor continuity: a column whose feet exceed the median of its
+    8-neighbors by more than `threshold` is a suspect; resume its descent
+    BELOW the roof and accept the first surface within `threshold` of the
+    neighbor median. Genuine one-column bumps are kept: solid all the way
+    down yields no second surface, so the original feet stand.
+    """
+    def median_neighbors(c):
+        vals = [feet.get((c[0] + dx, c[1] + dz))
+                for dx in (-1, 0, 1) for dz in (-1, 0, 1)
+                if (dx, dz) != (0, 0)]
+        vals = [v for v in vals if v is not None]
+        return statistics.median(vals) if vals else None
+
+    suspects = []
+    for c, f in feet.items():
+        if f is None:
+            continue
+        med = median_neighbors(c)
+        if med is not None and f - med > threshold:
+            suspects.append((c, f, med))
+
+    for c, f, med in suspects:
+        # Resume below the roof's surface block (block_y = f - 1): walk
+        # down through the solid, then through any cavity, recording each
+        # passable->solid transition as a candidate surface.
+        y = int(f) - 2
+        in_ground = True
+        best = None
+        while y >= y_lo:
+            hits = _run_predicates(
+                client, world, [(c, y, p) for p in _PASSABLE_PREDICATES])
+            matched = {p for (_c, _y, p), hit in hits.items() if hit}
+            for pred, tag in _INTEREST_TAGS.items():
+                if pred in matched:
+                    encountered[c].add(tag)
+            if in_ground:
+                if matched:
+                    in_ground = False
+            elif not matched:
+                cand = y + 1
+                if best is None or abs(cand - med) < abs(best - med):
+                    best = cand
+                if abs(cand - med) <= threshold:
+                    break
+                in_ground = True
+            y -= 1
+        if best is not None and abs(best - med) < abs(f - med):
+            feet[c] = best
+    return feet
 
 
 def _classify_floor(client, world, surface_cells):
@@ -239,6 +380,9 @@ def sample_corridor(client, world, bounds, y_hint, spec=None):
     y_lo = spec.get("rcon_y_lo", 32)
     heights, encountered = _descend_to_walkable(
         client, world, columns, y_hi=y_hi, y_lo=y_lo)
+    heights = _repair_spikes(
+        client, world, heights, encountered, y_lo=y_lo,
+        threshold=spec.get("rcon_spike_threshold", 5))
     ref = float(y_hint) + 1
     out = []
     for x, z in columns:

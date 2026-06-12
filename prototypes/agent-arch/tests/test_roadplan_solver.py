@@ -134,6 +134,40 @@ def test_unknown_cells_are_untraversable():
         "a one-cell observation hole must break the route, not be guessed over"
 
 
+def test_gap_waypoints_take_deck_elevation_not_floor():
+    # A straight corridor with a 3-cell pit (kind=gap, floor 12 below grade)
+    # mid-span. The route bridges it; any waypoint emitted on a gap cell
+    # must carry the interpolated deck elevation, not the pit floor —
+    # torches at the floor read as "buried" relative to the walking line.
+    samples = []
+    for z in range(0, 9):
+        gap = z in (3, 4, 5)
+        samples.append({
+            "x": 0, "z": z,
+            "y": 53.0 if gap else 65.0 + (1.0 if z > 5 else 0.0),
+            "kind": "gap" if gap else "ground",
+        })
+    # Force a waypoint ON the pit: an L-corner at the gap cell (0,4)->(2,4).
+    for x in (1, 2):
+        samples.append({"x": x, "z": 4, "y": 53.0, "kind": "gap"})
+    samples.append({"x": 3, "z": 4, "y": 67.0, "kind": "ground"})
+    route = solve(samples, (0, 0), (3, 4), SPEC, path_width=1)
+    assert route is not None
+    by_xz = {(x, z): y for x, y, z in route.waypoints}
+    for (x, z), y in by_xz.items():
+        assert y is not None and y >= 65.0, \
+            f"waypoint ({x},{z}) sits at pit floor y={y}"
+
+
+def test_walkable_waypoints_keep_sampled_y():
+    samples = [{"x": 0, "z": z, "y": 65.0 + z, "kind": "ground"}
+               for z in range(0, 5)]
+    route = solve(samples, (0, 0), (0, 4), SPEC, path_width=1)
+    assert route is not None
+    assert route.waypoints[0][1] == 65.0
+    assert route.waypoints[-1][1] == 69.0
+
+
 def test_render_ascii_smoke(fixtures):
     route, samples = _solve_fixture(fixtures["river"])
     art = render_ascii(samples, route)

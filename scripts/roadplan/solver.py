@@ -214,6 +214,36 @@ def _rdp_indices(cells, tol, lo=0, hi=None, keep=None):
     return keep
 
 
+def _walk_elevations(cells, idx):
+    """Per-path-cell walking elevation. Walkable cells keep their sampled
+    y; water/gap cells (and y=None) take the linear interpolation between
+    the nearest flanking walkable cells — the deck elevation a bridge
+    over that span would use. Waypoints emitted at a pit/valley floor put
+    torches underground relative to the route; the route walks the deck.
+    """
+    ys = [None] * len(cells)
+    for i, c in enumerate(cells):
+        s = idx[c]
+        if s["kind"] not in ("water", "gap") and s["y"] is not None:
+            ys[i] = s["y"]
+    known = [i for i, v in enumerate(ys) if v is not None]
+    if not known:
+        return [idx[c]["y"] for c in cells]
+    for i in range(len(ys)):
+        if ys[i] is not None:
+            continue
+        prev = max((k for k in known if k < i), default=None)
+        nxt = min((k for k in known if k > i), default=None)
+        if prev is None:
+            ys[i] = ys[nxt]
+        elif nxt is None:
+            ys[i] = ys[prev]
+        else:
+            t = (i - prev) / (nxt - prev)
+            ys[i] = float(round(ys[prev] + t * (ys[nxt] - ys[prev])))
+    return ys
+
+
 def _revalidated_waypoint_indices(cells, idx, half, tol):
     """RDP, then split any leg whose straight line crosses untraversable
     cells — the corner-cut guard."""
@@ -255,10 +285,11 @@ def solve(samples, start, end, spec, weights=None, incumbent=None, path_width=No
     _, natural_cost = _astar(idx, start, end, spec, w, half, natural_only=True)
 
     wp_idx = _revalidated_waypoint_indices(cells, idx, half, w["rdp_tolerance"])
+    elev = _walk_elevations(cells, idx)
     waypoints = []
     for i in wp_idx:
         x, z = cells[i]
-        waypoints.append((x, idx[(x, z)]["y"], z))
+        waypoints.append((x, elev[i], z))
 
     by_kind = {}
     for c in construction:
