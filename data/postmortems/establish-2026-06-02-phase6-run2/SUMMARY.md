@@ -80,7 +80,7 @@ These were observed during run2 but didn't block success; recording for future i
 
 ## Recommendation — revise Phase 6 plan items
 
-The plan as written ([procedural-planning.md Phase 6](../../docs/features/procedural-planning.md#phase-6--upstream-alignment)) called for retiring both `scripts/landfolk-dispatcher.sh` AND `plugins/landfolk/`. This run shows that's only half right:
+The plan as written ([planning-tracker.md Phase 6](../../docs/testing/procedural/planning-tracker.md#phase-6--upstream-alignment)) called for retiring both `scripts/landfolk-dispatcher.sh` AND `plugins/landfolk/`. This run shows that's only half right:
 
 - **6.1, 6.2, 6.3, 6.4, 6.7 → DONE.** Gateway-embedded dispatcher works; bootstrap wires the gateway; Steward SOUL uses `parents`; auto_decompose stays false; re-test demonstrates success.
 - **6.5 → REVISE.** Retire `scripts/landfolk-dispatcher.sh` (correct — it was racing the gateway and not running anyway). **KEEP `plugins/landfolk/`** — its `post_tool_call` hooks fire automatically when Steward calls `kanban_create` via tool, providing per-assignee mutex with no extra plumbing. Verified by the 3 `mutex_parked`/`mutex_released` events in this run.

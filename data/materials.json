@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Material economy reference. Read by bot/lib/runtime/materials.js. See docs/conventions/coordinates.md for the related coordinate convention. Editing: add new blocks by name to the right tier; cascades define which blocks a primitive will try in order; region_palettes name the preferred fill for each region profile.",
+  "comment": "Material economy reference. Read by bot/lib/runtime/materials.js. See docs/reference/world-coordinates.md for the related coordinate convention. Editing: add new blocks by name to the right tier; cascades define which blocks a primitive will try in order; region_palettes name the preferred fill for each region profile.",
 
   "tiers": {
     "tier_1": {

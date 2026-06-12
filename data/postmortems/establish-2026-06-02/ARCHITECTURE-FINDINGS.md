@@ -2,7 +2,7 @@
 
 **TL;DR.** The dual-claim and dup-card symptoms we've been chasing for weeks are both fixable with **default Hermes capabilities** (`--parent` dependencies + `--idempotency-key`). Our local plumbing — `scripts/landfolk-dispatcher.sh`, `plugins/landfolk/`, the `dispatch_in_gateway: false` override — shadows upstream features rather than complementing them, was based on an older bug that is no longer current, and was not actually enforcing the invariants we thought it was.
 
-This document records (a) what we verified by direct test against the live Hermes install on 2026-06-02, (b) which of our docs got it wrong, and (c) the migration shape proposed in [procedural-planning.md Phase 6](../../docs/features/procedural-planning.md#phase-6--upstream-alignment).
+This document records (a) what we verified by direct test against the live Hermes install on 2026-06-02, (b) which of our docs got it wrong, and (c) the migration shape proposed in [planning-tracker.md Phase 6](../../docs/testing/procedural/planning-tracker.md#phase-6--upstream-alignment).
 
 ## What we verified
 
@@ -19,13 +19,13 @@ Five small tests, all on the `scratch-mutex` board (no live bots, no production 
 
 ## Misinformation in our docs that I'm correcting
 
-### 1. `docs/guides/landfolk-lifecycle.md:28`
+### 1. `docs/guides/fleet-lifecycle-runbook.md:28`
 
 > "Ensures the standalone dispatcher is running — `scripts/landfolk-dispatcher.sh` (out-of-process kanban worker dispatcher; the gateway-embedded one is disabled via `kanban.dispatch_in_gateway: false` **because it wedges**)."
 
 The "wedges" claim is **stale**. The current Hermes docs (`~/.hermes/hermes-agent/website/docs/user-guide/features/kanban.md:191`) describe `dispatch_in_gateway: true` as the **default and recommended** path, and explicitly call running both *unsupported*: *"running both a gateway-embedded dispatcher AND a standalone daemon against the same kanban.db causes claim races."*
 
-### 2. `docs/guides/landfolk-lifecycle.md:110-114` ("Gateway wedge" section)
+### 2. `docs/guides/fleet-lifecycle-runbook.md:110-114` ("Gateway wedge" section)
 
 > "Used to happen with `kanban.dispatch_in_gateway: true`. We disabled that — dispatcher is now out-of-process (`landfolk-dispatcher.sh`)."
 
@@ -37,7 +37,7 @@ Same story. The historical wedge bug appears to be resolved upstream; we've been
 
 The reference to #29034 (auto-launch swarms) and #28805 (no config knob for cap) point at a *different* upstream concern (paid-LLM cost safety), not the gateway-wedge bug. Conflating the two has kept the workaround feeling load-bearing. The real safety knob upstream now ships — `kanban.max_spawn` is config-exposed in `~/.hermes/config.yaml`.
 
-### 4. `docs/features/landfolk-plugin.md:11` (the plugin's purpose statement)
+### 4. `docs/specs/kanban/plugin-landfolk.md:11` (the plugin's purpose statement)
 
 > "The first subsystem (`orchestrator/`) enforces a per-assignee concurrency cap on the `landfolk-ops` kanban board, replacing three independent userland mutex layers with one cohesive plugin."
 
@@ -76,7 +76,7 @@ What we gain: ~600 LOC deleted (`landfolk-dispatcher.sh` ~140 lines + `plugins/l
 
 ## Migration path
 
-See [procedural-planning.md Phase 6](../../docs/features/procedural-planning.md#phase-6--upstream-alignment).
+See [planning-tracker.md Phase 6](../../docs/testing/procedural/planning-tracker.md#phase-6--upstream-alignment).
 
 ## What this doesn't fix
 
