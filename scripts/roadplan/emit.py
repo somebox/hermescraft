@@ -94,6 +94,22 @@ def refine_plan(requests, cap=SAMPLE_CAP):
     return pack_rects([(r["x"], r["z"]) for r in requests], cap=cap)
 
 
+def nearest_known_y(known_cells, cx, cz, default):
+    """Y of the known ledger cell nearest (cx, cz) by Manhattan distance.
+    `known_cells` is {(x, z): (y, tag)}. Used to pick a per-segment approach
+    elevation so `goto_near` lands close enough on varied terrain — the
+    previous segment's cells are the nearest knowns and a good predictor of
+    the next. Falls back to `default` when nothing with a Y is known yet."""
+    best, best_d = None, None
+    for (x, z), (y, _t) in known_cells.items():
+        if y is None:
+            continue
+        d = abs(x - cx) + abs(z - cz)
+        if best_d is None or d < best_d:
+            best_d, best = d, y
+    return int(best) if best is not None else default
+
+
 def sample_commands(rects, ledger, y, approach_range=8):
     """Two lines per rect: approach its centre (loading chunks), then
     sample + ingest.

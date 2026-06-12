@@ -34,11 +34,17 @@ remembers everything, so no observation is ever paid for twice.
 Run this until the route is staked and lit. Each step's mechanics live in
 `roadplan <sub> --help` — don't memorize flags, ask the tool.
 
-1. **Sample** — `roadplan sample <START> <END>` prints `mc move` +
-   `mc corridor_sample … | roadplan ingest` lines. Run every line, then run
-   `roadplan sample` again. Repeat until it prints nothing (stderr says
-   `converged`). The tool tracks what's already in the ledger and only asks
-   for what's missing — a dropped or failed command just reappears next call.
+1. **Sample** — `roadplan sample <START> <END> [--y-hint <Y>]` prints a
+   `mc goto_near` + `mc corridor_sample … | roadplan ingest` pair for the
+   **next** corridor segment. Run both lines, then run `roadplan sample`
+   again. Repeat until it prints nothing (stderr says `converged`). It hands
+   out **one segment at a time on purpose**: the bot walks the corridor,
+   loading each segment's chunks by standing in the previous one — so a long
+   corridor samples correctly even past the loaded-chunk radius. The tool
+   tracks the ledger and only asks for what's missing; a dropped, failed, or
+   unloaded sample simply reappears next call. Pass `--y-hint` with the rough
+   start elevation on the first call (from `mc status`); after that each
+   segment's approach elevation comes from the ledger automatically.
 2. **Solve** — `roadplan solve --start <START> --end <END>`. Reads the
    ledger, writes the route to `state.json`, prints the verdict (waypoint
    count, edits, natural-path baseline).

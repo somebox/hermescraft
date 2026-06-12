@@ -128,6 +128,24 @@ def test_ingest_envelope_without_samples_loud_fails(
     assert "no recognized cell payload" in err
 
 
+def test_ingest_skips_unloaded_cells(tmp_path, capsys, monkeypatch):
+    # A partial sample: one real ground cell + one unloaded (null/null) cell.
+    # The unloaded cell must NOT be recorded (so `sample` re-requests it).
+    env = {"ok": True, "bot": "mox", "data": {"samples": [
+        {"x": 0, "z": 0, "block_y": 63, "surface_y": 64, "block_name": "grass_block"},
+        {"x": 0, "z": 1, "block_y": None, "surface_y": None, "block_name": None},
+    ]}}
+    rc, out, err = _run(["--ledger", str(tmp_path), "ingest"],
+                        stdin=json.dumps(env),
+                        capsys=capsys, monkeypatch=monkeypatch)
+    assert rc == 0, err
+    assert out.strip() == "ingested 1 cells"   # only the loaded cell
+    from roadplan.ledger import read_sample_cells
+    known = read_sample_cells(tmp_path)
+    assert (0, 0) in known
+    assert (0, 1) not in known                  # unloaded -> not covered
+
+
 def test_ingest_happy_path_writes_ledger(tmp_path, capsys, monkeypatch):
     fx = build_all()["river"]
     env = _envelope_for(fx)
@@ -238,6 +256,31 @@ def test_sample_converges_after_running_emitted_commands(
     assert rc == 0
     assert out.strip() == ""
     assert "converged" in err
+
+
+def test_sample_long_corridor_emits_one_segment_per_call(
+        tmp_path, capsys, monkeypatch):
+    # A corridor longer than one rect's max span: coarse sample must hand out
+    # ONE segment per call (the bot walks the box), converging over a loop.
+    iters = 0
+    while True:
+        rc = main(["--ledger", str(tmp_path), "sample", "0,0", "0,140",
+                   "--y-hint", "64"])
+        out, err = capsys.readouterr()
+        assert rc == 0
+        if not out.strip():
+            assert "converged" in err
+            break
+        cs = [L for L in out.splitlines() if L.startswith("mc corridor_sample")]
+        assert len(cs) == 1, f"expected one segment, got {len(cs)}"
+        for x1, z1, x2, z2 in _bounds_from_sample_lines(out):
+            env = _ground_envelope_for_bounds(x1, z1, x2, z2)
+            monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(env)))
+            assert main(["--ledger", str(tmp_path), "ingest"]) == 0
+            capsys.readouterr()
+        iters += 1
+        assert iters < 20, "did not converge"
+    assert iters > 1, "long corridor should take multiple segments"
 
 
 def test_sample_refine_without_samples_loud_fails(tmp_path, capsys):

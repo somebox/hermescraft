@@ -17,7 +17,12 @@ Drove the whole loop end-to-end on the live `proc-nav` world (operator as planne
 7. `mc waypoint` needs torches in inventory → documented in skill (check `mc status`, restock).
 8. `TARGET_SELF_OCCUPIED` — the torch cell is the route's feet cell; a bot standing there blocks itself → `mc waypoint` steps off to an adjacent cell before placing.
 
-Findings + doctrine in `docs/planning/adaptive-road-planning.md` §12. Deferred next: per-rect approach-Y from ledger (vs one `--y-hint`), and re-requesting unloaded-null cells instead of treating them as covered.
+Findings + doctrine in `docs/planning/adaptive-road-planning.md` §12.
+
+**Follow-up same day — sample-over-distance + the walk.** Built the two deferred robustness items and proved the whole artifact on a ~178-block natural corridor past the loaded-chunk radius:
+- Coarse `sample` now emits ONE segment per call, approach-Y per segment from the nearest known ledger cell — the bot walks the box, chunks load segment by segment, and the approach elevation tracked a 64→87→74 ridge automatically (7 segments, 3081 cells, converged).
+- `ingest` drops unloaded (block_y+block_name null) cells so they're re-requested rather than recorded as a covered gap (a loaded overworld column always hits bedrock → null/null ⟺ unloaded).
+- End to end: solve `natural` 24 waypoints → confirm 24/24 (self-healing) → 24/24 torches verified → **bot walked the full chain at night, 23 hops / 81 s**, reaching the destination. Pre-road, a single `mc move`/`reachable` couldn't span 178 blocks (pathfinder budget); the chain makes the long haul traversable as short hops. Tests: 90 Python green. Next: hand the loop to a real agent (Phase 3, deploy roadplan to agent PATH).
 
 ## 2026-06-12 — adaptive road planning: Y-truth fixes, torch doctrine, two-phase RCON probe
 

@@ -969,9 +969,34 @@ fixed and regression-tested (88 Python + 176 JS green):
 Doctrine these feed into `skills/road-planner.md` and Phase 3: the loop is
 `sample→ingest until converged → solve → render → refine×N → confirm →
 verify`; `confirm` refuses construction routes; tools emit commands, agents
-ratify. Deferred to the next iteration: deriving the sampling approach-Y
-per-rect from the ledger (vs one `--y-hint`), and re-requesting
-unloaded-null cells instead of treating them as covered gap.
+ratify.
+
+**Over-distance + the walk (2026-06-12, second live run).** The two
+robustness items above were then built and proven on a ~178-block natural
+corridor that runs well past the loaded-chunk radius:
+
+- **Coarse `sample` hands out ONE segment per call**, with each segment's
+  `goto_near` approach-Y taken from the nearest already-known ledger cell.
+  The bot physically walks the corridor segment by segment, loading each
+  segment's chunks by standing in the previous one — the approach-Y tracked
+  a 64→87→74 ridge automatically (a single `--y-hint` could never). 7
+  segments, converged at 3081 cells.
+- **`ingest` drops unloaded (block_y AND block_name null) cells** so they're
+  re-requested after the bot moves, rather than poisoning the ledger as a
+  covered "gap". (A loaded overworld column always hits bedrock, so
+  null/null ⟺ unloaded, never a real void.)
+- End to end: sample→solve (`natural`, 0 edits, 24 waypoints)→confirm
+  (24/24 lit, self-healing over re-runs)→**24/24 torches verified on natural
+  ground**→**bot walked the full chain at night, 23 hops in 81 s**, arriving
+  at the destination. Pre-road baseline: a single `mc move` / `mc reachable`
+  could not span 178 blocks (pathfinder budget; `path.exists=false`). The
+  torch chain is what makes the long haul traversable — short waypoint hops
+  the bot can each make.
+
+Still operator-driven (Phase 3 hands the same loop to a real agent: deploy
+`roadplan` to the agent PATH per S4, scout endpoints, run unaided). Phase 4
+adds construction (`workorders` + build role) so non-natural routes can be
+built, then lit and walked the same way.
 
 ## 13. What this generalizes to
 

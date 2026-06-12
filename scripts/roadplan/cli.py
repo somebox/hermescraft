@@ -23,8 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .emit import (
-    coarse_plan, confirm_blocks, refine_plan, sample_commands,
-    allocate_waypoints,
+    coarse_plan, confirm_blocks, nearest_known_y, refine_plan,
+    sample_commands, allocate_waypoints,
 )
 from .ledger import (
     append_observation, append_samples, read_sample_cells, read_state,
@@ -114,11 +114,18 @@ def _classify_envelope(env):
         cells = []
         for s in data["samples"]:
             x, z = s.get("x"), s.get("z")
+            if x is None or z is None:
+                raise IngestError(f"sample missing x/z: {s!r}")
+            # A cell with no block at all (block_y AND block_name null) is an
+            # UNLOADED chunk, not a real void — a loaded overworld column
+            # always hits bedrock (columnTopSolid scans to minY). Skip it so
+            # `sample` re-requests it after the bot walks closer; recording it
+            # as a covered "gap" would blind the planner to never-seen terrain.
+            if s.get("block_y") is None and s.get("block_name") is None:
+                continue
             y = s.get("surface_y")
             if y is None:
                 y = s.get("block_y")
-            if x is None or z is None:
-                raise IngestError(f"sample missing x/z: {s!r}")
             cells.append([x, z, y, s.get("block_name")])
         return ("corridor_sample", bot, cells)
     raise IngestError(
@@ -371,37 +378,45 @@ def cmd_sample(args):
         rects = refine_plan(reqs)
         print(f"refine: {len(reqs)} cells over {len(rects)} segment(s)",
               file=sys.stderr)
-    else:
-        swath = args.swath if args.swath is not None \
-            else spec["path_width"] + 2 * spec["shoulder_width"]
-        known = set(read_sample_cells(ledger).keys())
-        rects = coarse_plan(known, args.start, args.end, swath)
-        if not rects:
-            print(f"converged: corridor covered ({len(known)} cells known)",
-                  file=sys.stderr)
-            return 0
-        cells = sum((r["x2"] - r["x1"] + 1) * (r["z2"] - r["z1"] + 1)
-                    for r in rects)
-        print(f"sample: {len(rects)} segment(s), ~{cells} cells pending",
+        # Refine targets are localized; a single approach Y is fine.
+        y = args.y_hint if args.y_hint is not None \
+            else _ledger_median_y(ledger)
+        for line in sample_commands(rects, ledger, y):
+            print(line)
+        return 0
+
+    # Coarse mode: emit ONE segment per call so the bot walks the corridor
+    # incrementally — each segment's chunks load because the bot just sampled
+    # the adjacent one (§10.1). The approach Y comes from the nearest already-
+    # known cell (the prior segment), so goto_near lands close on terrain that
+    # drifts far from any single hint. Loop is still `while lines: run; re-ask`.
+    swath = args.swath if args.swath is not None \
+        else spec["path_width"] + 2 * spec["shoulder_width"]
+    known_cells = read_sample_cells(ledger)
+    rects = coarse_plan(set(known_cells.keys()), args.start, args.end, swath)
+    if not rects:
+        print(f"converged: corridor covered ({len(known_cells)} cells known)",
               file=sys.stderr)
-    y = _corridor_y(args.y_hint, ledger)
-    for line in sample_commands(rects, ledger, y):
+        return 0
+    rect = rects[0]
+    cx, cz = rect["move"]
+    default_y = args.y_hint if args.y_hint is not None else 64
+    y = nearest_known_y(known_cells, cx, cz, default_y)
+    cells = (rect["x2"] - rect["x1"] + 1) * (rect["z2"] - rect["z1"] + 1)
+    print(f"sample: segment 1 of {len(rects)} pending (~{cells} cells, "
+          f"approach y={y})", file=sys.stderr)
+    for line in sample_commands([rect], ledger, y):
         print(line)
     return 0
 
 
-def _corridor_y(y_hint, ledger):
-    """Approach Y for sampling moves: the explicit hint, else the median of
-    known ledger elevations, else a sea-level default. goto_near tolerates
-    a wrong Y, so this only needs to be in the right neighbourhood."""
-    if y_hint is not None:
-        return int(y_hint)
+def _ledger_median_y(ledger):
     ys = [y for (_xz), (y, _t) in read_sample_cells(ledger).items()
           if y is not None]
-    if ys:
-        ys.sort()
-        return int(ys[len(ys) // 2])
-    return 64
+    if not ys:
+        return 64
+    ys.sort()
+    return int(ys[len(ys) // 2])
 
 
 def cmd_confirm(args):
