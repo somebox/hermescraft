@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3';
 import { columnTopSolid } from '../../runtime/dig-tools.js';
 import { standabilityReason, findClosestStandable } from '../_nav-helpers.js';
-import { AIR_NAMES } from '../_block-sets.js';
+import { AIR_NAMES, WATER_NAMES } from '../_block-sets.js';
 import { withYBoth, parseYInput, surfaceFromBlock } from '../../runtime/coordinates.js';
 
 export function createRegionQueries({ ensureBot, posObj, goals }) {
@@ -154,11 +154,19 @@ export function createRegionQueries({ ensureBot, posObj, goals }) {
           samples.push({ x, z, block_y: null, surface_y: null, block_name: null });
           continue;
         }
+        // columnTopSolid reports the topmost SOLID block, skipping water —
+        // so a submerged column returns the bed and reads as plain ground,
+        // and the route planner would happily route along the riverbed.
+        // If the cell directly above the floor is water, report the column
+        // as water so the ledger/solver treat the crossing as a bridge,
+        // not free ground. (proc-nav water-crossing finding, 2026-06-12.)
+        const above = b.blockAt(new Vec3(x, col.block_y + 1, z));
+        const submerged = above && WATER_NAMES.has(above.name);
         samples.push({
           x, z,
           block_y: col.block_y,
           surface_y: surfaceFromBlock(col.block_y),
-          block_name: col.blockName,
+          block_name: submerged ? 'water' : col.blockName,
         });
       }
     }

@@ -192,3 +192,21 @@ test('corridor_sample: result string includes median + delta', async () => {
   assert.match(r.result, /median=/);
   assert.match(r.result, /delta=/);
 });
+
+test('corridor_sample: submerged column reports block_name=water', async () => {
+  // Flat banks at y=64, one cell is a 4-deep water column: bed at y=60,
+  // water 61..64. columnTopSolid returns the bed (skips water) — the sample
+  // must still flag it as water so the solver bridges it, not walks the bed.
+  const t = buildFlatGround(0, 2, 0, 2, 64);
+  t.delete(`1,64,1`);
+  t.set(`1,60,1`, 'sand');                       // riverbed
+  for (let y = 61; y <= 64; y++) t.set(`1,${y},1`, 'water');
+  const q = makeQueries(makeBot(t));
+  const r = await q.corridor_sample({ x1: 0, z1: 0, x2: 2, z2: 2, full: true });
+  assertContract(r);
+  const cell = r.data.samples.find((sm) => sm.x === 1 && sm.z === 1);
+  assert.equal(cell.block_name, 'water', JSON.stringify(cell));
+  // A dry neighbour stays ground.
+  const dry = r.data.samples.find((sm) => sm.x === 0 && sm.z === 0);
+  assert.equal(dry.block_name, 'grass_block');
+});
