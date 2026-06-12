@@ -2,6 +2,17 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-06-12 — roadplan Phase 4a: bridge a real water crossing (3 build-verb fixes)
+
+Drove the construct half on the live water crossing — running workorders' commands surfaced three real bugs the fixture tests couldn't:
+1. **Wrong build-verb signatures.** workorders (copying the design §6.5 templates) emitted `mc level X Y Z X Y Z y=Y`, `mc clear_strip X Y Z X Y Z`, `mc fell_tree X base_y Z` — but the real verbs are `mc level X1 Z1 X2 Z2 Y`, `mc clear_strip X1 Z1 X2 Z2 y=Y`, `mc fell_tree X Z [y_hint=Y]`. The level call parsed garbage ("974×633 columns"). Fixed all three.
+2. **Cell tiling.** `mc level` caps at 16 *cells*, not 16-per-axis; a 16×5 bridge box (80 cells) blew the cap. Replaced `_split_span`'s one-axis clamp with a ≤16-cell tiler.
+3. **`mc level` can't bridge open water.** It pathfinds to each column to place; over open water there's nowhere to stand, so the deck never forms (verified: only the bank-adjacent column got a block). The right verb is **`mc deck`** — BFS edge-inward, each block anchoring on the rim or a just-placed neighbour (the "creep-and-place" the user described). workorders now emits `mc deck X1 Z1 X2 Z2 y=<feet-1> block=cobblestone` (cap 256) for gap/water. Validated live: `mc deck` placed a 15/16 cobblestone deck across the open water in one call.
+
+Also (prior commits today): expanded `max_bridge` into `max_bridge` (fill DEPTH, 12) + `max_bridge_span` (bridgeable WIDTH, 24) so wide spans aren't reflexively rerouted; corridor_sample now detects water so solve returns a bridge route (not a phantom underwater natural one).
+
+Open refinements: deck Y must sit above the water surface (a span whose interpolated feet is at water level skips — cells are water, not air); and `mc deck` needs the bot near each span's rim (the build role positions per-span). A full multi-span bridge build + re-survey-to-spec is the next live step.
+
 ## 2026-06-12 — roadplan Phase 4a: workorders + the solver-routes-underwater finding
 
 Built `roadplan workorders` (§6.5): reads the solved route + surveyed legs[] (K1 deficits from `mc survey_line`) and emits concrete, ordered `mc` build commands per leg — `fell_tree` for trees, `mc level y=<deck>` for steps/drops/gaps (deck Y interpolated from route waypoints), `clear_strip` (split at the 16-col cap), ordered clear→grade→bridge. Guards flag no-floor gaps and spans > `max_bridge` for a bridge plan/reroute. Assembly, not a second classifier (deficit kinds from K1, elevations from K2). 11 tests; committed `a57ed84`.

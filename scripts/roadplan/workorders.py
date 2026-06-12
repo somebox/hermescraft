@@ -17,8 +17,10 @@ Pure: route + legs + spec in, command strings out. No IO, no bot.
 """
 from __future__ import annotations
 
-# mc level caps at 16 columns per call; a wider span splits into chunks.
+# mc level caps at 16 cells per call; mc deck (the over-water/ravine bridge
+# builder) caps at 256.
 LEVEL_COL_CAP = 16
+DECK_CELL_CAP = 256
 
 
 def _interp_y(wp_a, wp_b, cell):
@@ -35,20 +37,24 @@ def _interp_y(wp_a, wp_b, cell):
 
 
 def _split_span(fx, fz, tx, tz, cap=LEVEL_COL_CAP):
-    """Split a from→to span into <=cap-column sub-rects along its long axis."""
-    if abs(tx - fx) >= abs(tz - fz):
-        lo, hi, fixed, horiz = min(fx, tx), max(fx, tx), (fz, tz), True
-    else:
-        lo, hi, fixed, horiz = min(fz, tz), max(fz, tz), (fx, tx), False
+    """Tile the from→to bounding box into rects of <=cap CELLS each — `mc
+    level` caps at 16 *columns* (cells), not 16 per axis, so a 16×5 span must
+    tile (e.g. 16×1 strips), not just clamp its long edge."""
+    lox, hix = min(fx, tx), max(fx, tx)
+    loz, hiz = min(fz, tz), max(fz, tz)
+    bw = hix - lox + 1
+    tw = min(bw, cap)
+    th = max(1, cap // tw)
     out = []
-    a = lo
-    while a <= hi:
-        b = min(a + cap - 1, hi)
-        if horiz:
-            out.append((a, fixed[0], b, fixed[1]))
-        else:
-            out.append((fixed[0], a, fixed[1], b))
-        a = b + 1
+    x = lox
+    while x <= hix:
+        xe = min(x + tw - 1, hix)
+        z = loz
+        while z <= hiz:
+            ze = min(z + th - 1, hiz)
+            out.append((x, z, xe, ze))
+            z = ze + 1
+        x = xe + 1
     return out
 
 
@@ -66,12 +72,12 @@ def compile_leg(leg, wp_a, wp_b, spec):
         k = d.get("kind")
         if k == "tree":
             x, z = d["at"]
-            clears.append(f"mc fell_tree {x} {d['base_y']} {z}")
+            clears.append(f"mc fell_tree {x} {z} y_hint={d['base_y']}")
         elif k == "clearance":
             (fx, fz), (tx, tz) = d["from"], d["to"]
             y = _interp_y(wp_a, wp_b, (fx, fz))
             for sx1, sz1, sx2, sz2 in _split_span(fx, fz, tx, tz):
-                clears.append(f"mc clear_strip {sx1} {y} {sz1} {sx2} {y} {sz2}")
+                clears.append(f"mc clear_strip {sx1} {sz1} {sx2} {sz2} y={y}")
         elif k in ("gap", "water"):
             (fx, fz), (tx, tz) = d["from"], d["to"]
             if d.get("depth") is not None and k == "gap" \
@@ -88,14 +94,21 @@ def compile_leg(leg, wp_a, wp_b, spec):
                     f"max_bridge_span {max_span} — reroute or multi-segment "
                     f"bridge")
                 continue
-            y = _interp_y(wp_a, wp_b, (fx, fz))
-            for sx1, sz1, sx2, sz2 in _split_span(fx, fz, tx, tz):
+            # Bridge over open water/gap with `mc deck`, NOT `mc level`:
+            # level pathfinds to each column to place and can't stand over
+            # open water, so the deck never forms. deck places edge-inward,
+            # each block anchoring on the rim or a just-placed neighbour —
+            # the creep-and-place mechanism that actually spans water. Its Y
+            # is the deck block_y (walk surface = Y+1), so block_y = feet - 1.
+            y = _interp_y(wp_a, wp_b, (fx, fz)) - 1
+            for sx1, sz1, sx2, sz2 in _split_span(fx, fz, tx, tz,
+                                                  cap=DECK_CELL_CAP):
                 bridges.append(
-                    f"mc level {sx1} {y} {sz1} {sx2} {y} {sz2} y={y}")
+                    f"mc deck {sx1} {sz1} {sx2} {sz2} y={y} block=cobblestone")
         elif k in ("step", "drop"):
             x, z = d["at"]
             y = _interp_y(wp_a, wp_b, (x, z))
-            grades.append(f"mc level {x} {y} {z} {x} {y} {z} y={y}")
+            grades.append(f"mc level {x} {z} {x} {z} {y}")
         elif k == "forbidden_floor":
             x, z = d["at"]
             y = _interp_y(wp_a, wp_b, (x, z))

@@ -27,18 +27,21 @@ def test_interp_y_linear():
     assert _interp_y(a, b, (5, 0)) == 69
 
 
-def test_split_span_caps_at_16():
-    chunks = _split_span(0, 0, 40, 0, cap=16)
-    assert len(chunks) == 3  # 0..15, 16..31, 32..40
-    for x1, z1, x2, z2 in chunks:
-        assert x2 - x1 + 1 <= 16
+def test_split_span_tiles_to_16_cells():
+    # 1-wide 41-long span -> 3 strips of <=16.
+    for x1, z1, x2, z2 in _split_span(0, 0, 40, 0, cap=16):
+        assert (x2 - x1 + 1) * (z2 - z1 + 1) <= 16
+    # A 16x5 box (80 cells) must tile into <=16-cell rects, not one big rect.
+    tiles = _split_span(0, 0, 15, 4, cap=16)
+    assert all((x2 - x1 + 1) * (z2 - z1 + 1) <= 16 for x1, z1, x2, z2 in tiles)
+    assert len(tiles) >= 5
 
 
 def test_tree_deficit_emits_fell_tree():
     leg = {"from": [0, 0], "to": [10, 0],
            "deficits": [{"kind": "tree", "at": [3, 0], "base_y": 64}]}
     lo = compile_leg(leg, (0, 64, 0), (10, 64, 0), SPEC)
-    assert lo["orders"] == ["mc fell_tree 3 64 0"]
+    assert lo["orders"] == ["mc fell_tree 3 0 y_hint=64"]
 
 
 def test_step_and_drop_emit_level_at_deck_y():
@@ -47,7 +50,7 @@ def test_step_and_drop_emit_level_at_deck_y():
                         {"kind": "drop", "at": [8, 60], "drop": 3}]}
     lo = compile_leg(leg, (0, 64, 0), (10, 74, 0), SPEC)
     # deck Y interpolates 64->74 along the leg.
-    assert any(c.startswith("mc level 5 ") and "y=" in c for c in lo["orders"])
+    assert any(c.startswith("mc level 5 ") for c in lo["orders"])
     assert any(c.startswith("mc level 8 ") for c in lo["orders"])
 
 
@@ -56,7 +59,7 @@ def test_gap_emits_bridge_fill_level():
            "deficits": [{"kind": "gap", "from": [3, 0], "to": [6, 0],
                          "width": 4, "depth": 3}]}
     lo = compile_leg(leg, (0, 65, 0), (10, 65, 0), SPEC)
-    assert lo["orders"] == ["mc level 3 65 0 6 65 0 y=65"]
+    assert lo["orders"] == ["mc deck 3 0 6 0 y=64 block=cobblestone"]
 
 
 def test_clearing_before_grading_order():
@@ -99,7 +102,7 @@ def test_bridgeable_span_within_max_bridge_span_emits_fill():
                          "width": width, "depth": 5}]}
     lo = compile_leg(leg, (0, 65, 0), (30, 65, 0), SPEC)
     assert lo["orders"], "wide-but-bridgeable span should emit build commands"
-    assert all(c.startswith("mc level") for c in lo["orders"])
+    assert all(c.startswith("mc deck") for c in lo["orders"])
 
 
 def test_clearance_span_splits_and_clears():
@@ -124,7 +127,7 @@ def test_compile_workorders_skips_to_spec_legs():
     leg_orders, total = compile_workorders(state, SPEC)
     assert len(leg_orders) == 1            # only the leg with deficits
     assert total == 1
-    assert leg_orders[0]["orders"] == ["mc fell_tree 15 64 0"]
+    assert leg_orders[0]["orders"] == ["mc fell_tree 15 0 y_hint=64"]
 
 
 def test_compile_workorders_only_leg_filter():
