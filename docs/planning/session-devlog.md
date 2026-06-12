@@ -2,6 +2,14 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-06-12 — roadplan Phase 4a: workorders + the solver-routes-underwater finding
+
+Built `roadplan workorders` (§6.5): reads the solved route + surveyed legs[] (K1 deficits from `mc survey_line`) and emits concrete, ordered `mc` build commands per leg — `fell_tree` for trees, `mc level y=<deck>` for steps/drops/gaps (deck Y interpolated from route waypoints), `clear_strip` (split at the 16-col cap), ordered clear→grade→bridge. Guards flag no-floor gaps and spans > `max_bridge` for a bridge plan/reroute. Assembly, not a second classifier (deficit kinds from K1, elevations from K2). 11 tests; committed `a57ed84`.
+
+Validated on a **real water crossing** (-523,409→-685,354, user-found). Findings:
+- workorders works on genuine construction terrain: `mc survey_line` across the water flagged 2 water spans (16 & 17 wide, depth 9) + 3 trees + drop-hazards; workorders emitted the 3 `fell_tree` and correctly flagged both spans as "> max_bridge 8 — reroute or multi-segment bridge" instead of trying to fill them.
+- **The solver routes UNDERWATER.** `solve` called this corridor `natural, 0 edits` — but the route dips to the riverbed (y61) because `corridor_sample` reads the floor *under* water (water isn't solid → `columnTopSolid` returns the bed → kind=ground). `survey_line` correctly classifies water as a deficit. So solve and survey disagree: solve thinks the river is walkable ground, survey knows it's water. The road as solved would walk along the riverbed. **Next fix:** water detection in `corridor_sample`/the ledger (the §6.1 pairing, extended from trees to water) so the solver's cost grid treats water columns as bridge/avoid, and a route over water comes back as a construction (bridge) class — not a phantom natural route. Until then, the water is invisible to `solve` but caught by `survey_line`+`workorders`.
+
 ## 2026-06-12 — roadplan agent loop (`sample`/`confirm`) + live validation, 8 bugs
 
 Built the two missing pieces of the §3 planner dataflow so a planner *agent* (not an ad-hoc script) can run the loop: `roadplan sample` and `roadplan confirm` (new `scripts/roadplan/emit.py` pure module; CLI wiring in `cli.py`). Both **emit literal `mc` commands** — the agent runs them and pipes `--json` back through `roadplan ingest`, which now accepts three envelope kinds (corridor_sample, survey_line, waypoint). New `skills/road-planner.md` carries the scenario-agnostic loop doctrine. 88 Python tests (emit + CLI) green.
