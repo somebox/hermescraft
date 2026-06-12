@@ -119,7 +119,8 @@ and the Python script — the thresholds already exist in JS and must not fork:
   "path_width": 3,
   "shoulder_width": 1,
   "fill_shallow_max_depth": 3,
-  "max_bridge": 8,
+  "max_bridge": 12,
+  "max_bridge_span": 24,
   "forbidden_floor": ["water", "lava", "magma_block", "cactus"],
   "torch_spacing_max": 12
 }
@@ -136,7 +137,8 @@ column is a change to all three):
 | Spec key | JS source today | Skill doctrine |
 |---|---|---|
 | `fill_shallow_max_depth: 3` | `FILL_SHALLOW_MAX_DEPTH` — `bot/lib/actions/building/terrain.js:629` | roadbuilding fill guidance |
-| `max_bridge: 8` | `MAX_BRIDGE` — `terrain.js:387` | bridge-fill doctrine |
+| `max_bridge: 12` (bridge-fill DEPTH) | `MAX_BRIDGE` — `terrain.js:387` | bridge-fill doctrine |
+| `max_bridge_span: 24` (bridgeable WIDTH, Python-only) | — (workorders span guard) | creep-and-place bridge |
 | `path_width: 3` | `clear_strip` road_mode width conventions | "3-wide roads" |
 | `clearance_height: 3` | implicit in clear_strip/dispositions | "≥3 blocks vertical clearance" |
 | `max_step_up: 1` | implicit in dispositions step classification | walkability framing |
@@ -269,7 +271,7 @@ is a data-source change, not a code change.
    forbidden floor=∞, |Δy|≥2 between neighbors=∞ **unless** a construction
    edge applies:
    - **stairs edge**: sustained slope >1/block → cost = base + edits×w_edit
-   - **bridge edge**: gap/water span ≤ `max_bridge` → cost = span×w_edit
+   - **bridge edge**: gap/water span ≤ `max_bridge_span` → cost = span×w_edit
    - **tunnel edge**: through-ridge bore where over-the-top ≫ through
      (v1: computed and *reported*, never auto-selected — see §10)
    - interpolated-cell penalty × (1 − confidence) — uncertainty is expensive,
@@ -355,7 +357,7 @@ carry exact commands — it does *not* require hand-compiled block-by-block
 |---|---|---|
 | slope ≤ 1/block sustained | walk | (clear pass only) |
 | slope > 1 over a run | stairs | per-rise `mc level <1-col rect> y=<step>` sequence — each rise its own literal call through the shipped verb |
-| gap / water ≤ max_bridge | bridge | `mc level ... y=<deck>` (bridge-fill descends ≤ MAX_BRIDGE) or `deck` |
+| gap / water ≤ max_bridge_span | bridge | `mc level ... y=<deck>` (bridge-fill descends ≤ MAX_BRIDGE) or `deck` |
 | ridge with through ≪ over | tunnel | flag-and-report (v1; see §10) |
 | trees/canopy on line | clear | `mc fell_tree x y z` per trunk, `clear_strip ... road_mode=true` for brush |
 | dips ≤ fill_shallow_max_depth | grade | `mc level ... y=<target>` |

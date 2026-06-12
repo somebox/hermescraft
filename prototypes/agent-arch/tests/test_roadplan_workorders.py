@@ -80,14 +80,26 @@ def test_no_floor_gap_is_flagged_not_filled():
     assert any("no-floor" in n for n in lo["notes"])
 
 
-def test_wide_gap_over_max_bridge_is_flagged():
-    wide = SPEC["max_bridge"] + 5
-    leg = {"from": [0, 0], "to": [40, 0],
+def test_wide_gap_over_max_bridge_span_is_flagged():
+    wide = SPEC["max_bridge_span"] + 5
+    leg = {"from": [0, 0], "to": [wide + 10, 0],
            "deficits": [{"kind": "water", "from": [3, 0], "to": [3 + wide, 0],
                          "width": wide, "depth": 2}]}
-    lo = compile_leg(leg, (0, 65, 0), (40, 65, 0), SPEC)
+    lo = compile_leg(leg, (0, 65, 0), (wide + 10, 65, 0), SPEC)
     assert lo["orders"] == []
-    assert any("max_bridge" in n for n in lo["notes"])
+    assert any("max_bridge_span" in n for n in lo["notes"])
+
+
+def test_bridgeable_span_within_max_bridge_span_emits_fill():
+    # A span wider than the old max_bridge (8) but within max_bridge_span (24)
+    # now bridges instead of being flagged.
+    width = 16
+    leg = {"from": [0, 0], "to": [30, 0],
+           "deficits": [{"kind": "water", "from": [3, 0], "to": [3 + width, 0],
+                         "width": width, "depth": 5}]}
+    lo = compile_leg(leg, (0, 65, 0), (30, 65, 0), SPEC)
+    assert lo["orders"], "wide-but-bridgeable span should emit build commands"
+    assert all(c.startswith("mc level") for c in lo["orders"])
 
 
 def test_clearance_span_splits_and_clears():

@@ -22,7 +22,11 @@ def test_spec_loads_with_required_keys():
 def test_spec_invariants():
     spec = load_spec()
     assert spec["fill_shallow_max_depth"] < spec["no_floor_min_depth"]
+    # max_bridge is the bridge-fill DEPTH — never fill deeper than a ravine.
     assert spec["max_bridge"] <= spec["no_floor_min_depth"]
+    # max_bridge_span is the bridgeable WIDTH (creep-and-place) — independent
+    # of depth, can exceed it.
+    assert spec["max_bridge_span"] >= spec["max_bridge"]
     assert spec["max_step_up"] >= 1
     assert spec["path_width"] >= 1 and spec["clearance_height"] >= 2
 

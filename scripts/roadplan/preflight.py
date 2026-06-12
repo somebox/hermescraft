@@ -44,6 +44,7 @@ REQUIRED_SPEC_KEYS = (
     "clearance_height",
     "no_floor_min_depth",
     "max_bridge",
+    "max_bridge_span",
     "shoulder_width",
     "forbidden_floor",
 )

@@ -21,6 +21,7 @@ REQUIRED_NUMERIC = (
     "fill_shallow_max_depth",
     "no_floor_min_depth",
     "max_bridge",
+    "max_bridge_span",
     "torch_spacing_max",
 )
 

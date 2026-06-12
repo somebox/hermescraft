@@ -7,7 +7,8 @@
   "shoulder_width": 1,
   "fill_shallow_max_depth": 3,
   "no_floor_min_depth": 16,
-  "max_bridge": 8,
+  "max_bridge": 12,
+  "max_bridge_span": 24,
   "forbidden_floor": ["water", "lava", "magma_block", "cactus"],
   "torch_spacing_max": 12
 }

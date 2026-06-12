@@ -81,11 +81,12 @@ def compile_leg(leg, wp_a, wp_b, spec):
                     f"{spec.get('no_floor_min_depth', 16)} — needs a bridge "
                     f"plan or reroute, not a fill")
                 continue
-            if d.get("width", 0) and d["width"] > spec.get("max_bridge", 8):
+            max_span = spec.get("max_bridge_span", spec.get("max_bridge", 8))
+            if d.get("width", 0) and d["width"] > max_span:
                 notes.append(
                     f"span ({fx},{fz})..({tx},{tz}) width {d['width']} > "
-                    f"max_bridge {spec.get('max_bridge', 8)} — reroute or "
-                    f"multi-segment bridge")
+                    f"max_bridge_span {max_span} — reroute or multi-segment "
+                    f"bridge")
                 continue
             y = _interp_y(wp_a, wp_b, (fx, fz))
             for sx1, sz1, sx2, sz2 in _split_span(fx, fz, tx, tz):
