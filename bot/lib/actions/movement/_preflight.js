@@ -97,7 +97,7 @@ export function createNavErrors(fmt, enrich) {
     const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
       ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`
       : ' Try mc through GX GY GZ for a door/gate, or mc tunnel / mc dig_area to clear terrain explicitly.';
-    const obs = enrich(b, { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)) }, x, y, z);
+    const obs = enrich(b, { current: pos, target: { x, y, z }, distance: Number(dist.toFixed(1)), pathfinder_error: 'gave_up_short_of_target' }, x, y, z);
     if (reach) Object.assign(obs, reach);
     const hint = navBlockedNextActionHint(b, { x, y, z }, pos, {
       inWater: !!b.entity?.isInWater,
@@ -122,7 +122,7 @@ export function createNavErrors(fmt, enrich) {
         error: {
           code: 'NAV_TIMEOUT',
           message: `Walked toward ${fmt(x)},${fmt(y)},${fmt(z)} for 15s, now at ${pos.x},${pos.y},${pos.z}. Use mc bg_goto for long distances or mc through for doors.`,
-          observed_state: enrich(b, { current: pos, target: { x, y, z } }, x, y, z),
+          observed_state: enrich(b, { current: pos, target: { x, y, z }, pathfinder_error: 'timeout' }, x, y, z),
           retry_safe: true,
         },
       };
@@ -132,7 +132,7 @@ export function createNavErrors(fmt, enrich) {
       const hopNote = reach && !reach.walkable_to_target && reach.next_hop_suggestion
         ? ` Try mc goto_near ${reach.next_hop_suggestion.x} ${reach.next_hop_suggestion.y} ${reach.next_hop_suggestion.z} range=1 to route around the obstacle.`
         : ' Pathfinder is non-destructive — if a door blocks the path use mc through GX GY GZ; if terrain blocks it use mc tunnel or mc dig_area to clear it explicitly.';
-      const obs = enrich(b, { current: pos, target: { x, y, z } }, x, y, z);
+      const obs = enrich(b, { current: pos, target: { x, y, z }, pathfinder_error: msg }, x, y, z);
       if (reach) Object.assign(obs, reach);
       const hint = navBlockedNextActionHint(b, { x, y, z }, pos, {
         inWater: !!b.entity?.isInWater,
@@ -142,7 +142,7 @@ export function createNavErrors(fmt, enrich) {
         ok: false,
         error: {
           code: 'NAV_BLOCKED',
-          message: `No path to ${fmt(x)},${fmt(y)},${fmt(z)} from ${pos.x},${pos.y},${pos.z}.${hopNote}`,
+          message: `No path to ${fmt(x)},${fmt(y)},${fmt(z)} from ${pos.x},${pos.y},${pos.z} — pathfinder searched and found no route.${hopNote}`,
           observed_state: obs,
           next_action_hint: hint,
           retry_safe: false,
@@ -151,7 +151,7 @@ export function createNavErrors(fmt, enrich) {
     }
     return {
       ok: false,
-      error: { code: 'NAV_FAILED', message: `Navigation failed: ${msg}`, observed_state: enrich(b, { current: pos, target: { x, y, z } }, x, y, z), retry_safe: false },
+      error: { code: 'NAV_FAILED', message: `Navigation failed: ${msg}`, observed_state: enrich(b, { current: pos, target: { x, y, z }, pathfinder_error: msg }, x, y, z), retry_safe: false },
     };
   };
 

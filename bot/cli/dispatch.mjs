@@ -816,6 +816,48 @@ function customParse(canonicalName, positional) {
       }
       return body;
     }
+    case 'inspect': {
+      const q = positional.slice();
+      const out = {};
+      while (q.length && String(q[0]).startsWith('--')) {
+        const f = String(q.shift());
+        if (f === '--mark' || f === '-m') out.mark = String(q.shift() ?? '').replace(/^:|:$/g, '');
+        else throw new Error(`unknown_flag:${f}`);
+      }
+      if (out.mark) {
+        if (q.length) throw new Error('extra_arguments:inspect');
+        return out;
+      }
+      if (q.length < 3) throw new Error('missing:coords');
+      out.x = Number(q.shift());
+      out.y = Number(q.shift());
+      out.z = Number(q.shift());
+      if (q.length) throw new Error('extra_arguments:inspect');
+      return out;
+    }
+    case 'farm_status': {
+      const q = positional.slice();
+      const out = {};
+      while (q.length && String(q[0]).startsWith('--')) {
+        const f = String(q.shift());
+        if (f === '--mark' || f === '-m') out.mark = String(q.shift() ?? '').replace(/^:|:$/g, '');
+        else if (f === '--size') out.size = Number(q.shift());
+        else if (f === '--y') out.y = Number(q.shift());
+        else throw new Error(`unknown_flag:${f}`);
+      }
+      if (out.mark) {
+        if (q.length) throw new Error('extra_arguments:farm_status');
+        return out;
+      }
+      if (q.length < 4) throw new Error('missing:rect');
+      out.x1 = Number(q.shift());
+      out.z1 = Number(q.shift());
+      out.x2 = Number(q.shift());
+      out.z2 = Number(q.shift());
+      if (q.length === 1) out.y = Number(q.shift());
+      else if (q.length) throw new Error('extra_arguments:farm_status');
+      return out;
+    }
     case 'chest':
     case 'list_container':
       if (positional[0]?.startsWith('{')) return JSON.parse(positional[0]);
@@ -829,7 +871,7 @@ function customParse(canonicalName, positional) {
       // mc verify <kind> <args...>
       //   inventory_contains <item> [min_count]
       //   chest_contains <mark> <item> [min_count]
-      //   at_mark <mark> [--near N | --block <id>]
+      //   at_mark <mark> [--near N | --block <id>] [from=X,Y,Z]
       //   region_blocks <x1> <y1> <z1> <x2> <y2> <z2> <block> [min_count]
       const q = positional.slice();
       const kind = String(q.shift() || '').toLowerCase();
@@ -848,11 +890,17 @@ function customParse(canonicalName, positional) {
       } else if (kind === 'at_mark') {
         out.mark = String(q.shift() || '').replace(/^:|:$/g, '');
         if (!out.mark) throw new Error('missing:mark');
-        // Parse --near N | --block <id> flags.
+        // Parse --near N | --block <id> | from=X,Y,Z flags. `from` measures
+        // proximity from an arbitrary point instead of the bot's position
+        // (remote verification — no walking required).
         while (q.length) {
           const f = String(q.shift());
           if (f === '--near') out.near = Number(q.shift());
           else if (f === '--block') out.block = String(q.shift() || '');
+          else if (f === '--from') out.from = String(q.shift() || '');
+          else if (/^(--)?near=./.test(f)) out.near = Number(f.slice(f.indexOf('=') + 1));
+          else if (/^(--)?block=./.test(f)) out.block = f.slice(f.indexOf('=') + 1);
+          else if (/^(--)?from=./.test(f)) out.from = f.slice(f.indexOf('=') + 1);
           else throw new Error(`unknown_flag:${f}`);
         }
       } else if (kind === 'region_blocks') {

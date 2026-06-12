@@ -96,6 +96,22 @@ export function botTrappedNextActionHint(b, target, ss, observedState) {
  * @param {Map<string, { count: number, lastReason: string|null }>} counts
  * @param {number} [limit]
  */
+/**
+ * Map a raw pathfinder failure token to a human-readable reason. Movement
+ * verbs record reasons like 'no_progress:4200ms' / 'timeout' / mineflayer's
+ * own message strings; agents only ever saw "No path" with no why
+ * (proc-nav-1781014144 — opaque failures drove blind identical retries).
+ */
+export function describePathfinderError(reason) {
+  if (!reason) return null;
+  const r = String(reason);
+  const np = r.match(/^no_progress:(\d+|\?)ms$/);
+  if (np) return `pathfinder stalled — the bot moved but stopped making progress after ${np[1]}ms`;
+  if (r === 'timeout') return 'pathfinder hit its time cap — there may be no route at all';
+  if (/no path/i.test(r)) return 'pathfinder searched and found no route';
+  return r;
+}
+
 export function withNavRetryWarning(result, retryKey, counts, limit = 4) {
   if (!result || result.ok !== false || !result.error) return result;
   const entry = counts?.get(retryKey);

@@ -11,6 +11,7 @@ import { planWaterRoute, _internals as _waterRouteInternals } from '../runtime/w
 import { normalizeId } from '../runtime/regions/index.js';
 import { buildRegionResolveArgs } from '../runtime/regions/policy-guard.js';
 import { getBuildInfo } from '../runtime/build-info.js';
+import { MOVEMENTS_TUNING } from '../runtime/manager.js';
 import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 import { clearNavTrail, navTrailCrumbsNewestFirst } from '../runtime/nav-trail.js';
 import { buildNavFrame } from '../runtime/nav-brief.js';
@@ -302,6 +303,12 @@ export function createBotHttpListener(deps) {
           move_rate: moveRate,
           stuck_minutes: stuckMinutes,
           ...(stuckWarning ? { stuck_warning: stuckWarning } : {}),
+          // Surfaced so preflight scripts can ASSERT the profile instead of
+          // trusting launch env. proc-nav-1781014144: trial bots silently ran
+          // profile=default (sprint on) because the preflight launcher didn't
+          // set BOT_MOVEMENT_PROFILE — sprint (0.28m/tick) overruns the F58
+          // waypoint tolerance (±0.25m) and produces block-edge stalls.
+          movement_profile: MOVEMENTS_TUNING.movementProfile,
           build: getBuildInfo(),
         });
       }

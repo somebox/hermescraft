@@ -141,7 +141,7 @@ export function resolveHarvestY({ minX, maxX, minZ, maxZ, footY, blockAt }) {
 }
 
 export function createFarmingActions(deps) {
-  const { ctx, ensureBot, goals, sleep, posObj, log, getMyName, ACTIONS } = deps;
+  const { ctx, ensureBot, goals, sleep, posObj, log, getMyName, ACTIONS, loadLocations } = deps;
 
   const inventoryAt = (b) =>
     b.inventory.items().reduce((acc, it) => {
@@ -706,7 +706,33 @@ export function createFarmingActions(deps) {
      * the state of this plot, what should I do next?" verb.
      */
     async farm_status(body) {
-      return runFarmStatus({ ctx, ensureBot }, body || {});
+      let req = body || {};
+      if (req.mark) {
+        const locs = loadLocations ? loadLocations() : {};
+        const m = locs[String(req.mark)];
+        if (!m) {
+          return {
+            ok: false,
+            error: {
+              code: 'UNKNOWN_MARK',
+              message: `Unknown mark '${req.mark}'`,
+              retry_safe: false,
+            },
+          };
+        }
+        const size = Number(req.size) || 9;
+        const half = Math.floor(size / 2);
+        req = {
+          ...req,
+          x1: m.x - half,
+          z1: m.z - half,
+          x2: m.x + half,
+          z2: m.z + half,
+        };
+        delete req.mark;
+        delete req.size;
+      }
+      return runFarmStatus({ ctx, ensureBot }, req);
     },
   };
 

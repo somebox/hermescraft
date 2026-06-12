@@ -41,11 +41,13 @@ export const STUCK_MOVEMENT_ACTIONS = [
  * surfaced that new road-tier verbs (clear_strip, deck, fell_tree) plus
  * older shapers (level, level_ground, dig_pit, build_stairs) were never
  * registered here, so Mox wedged for 2+ minutes during a level_ground
- * execute call.
+ * execute call. proc-nav-1781014144 then surfaced that `move` itself was
+ * missing — it accounted for 49% of all CLI timeouts (30/61) with no
+ * stuck coverage at all.
  */
 export const SYNC_STUCK_ACTIONS = new Set([
   // Movement primitives
-  'collect', 'goto', 'goto_near', 'pickup', 'follow', 'go_mark',
+  'collect', 'goto', 'goto_near', 'move', 'pickup', 'follow', 'go_mark',
   'fish', 'sail', 'hunt', 'lure', 'through',
   // Per-cell dig primitives
   'dig', 'dig_area', 'tunnel',
@@ -1182,13 +1184,29 @@ export function createBotManager(deps) {
                 // Step toward cell centre. mineflayer's setControlState
                 // moves relative to current yaw, so we use lookAt + brief
                 // forward step to nudge the bot back to (.5, .5).
+                //
+                // The goal MUST be cancelled first: while a goal is active,
+                // pathfinder re-issues look()+setControlState('forward')
+                // every physics tick, overriding the nudge within ~50ms.
+                // proc-nav-1781014144 forensics: two recentre activations
+                // at the same spot saw off-centre INCREASE 0.27m → 0.32m
+                // because the nudge and pathfinder fought. The in-flight
+                // sync action's goto rejects (GoalChanged) and its caller
+                // re-plans from the recentred position — same contract as
+                // the ESCALATE branch below.
+                try { ctx.world.bot.pathfinder.setGoal(null); } catch {}
                 try {
                   const target = ctx.world.bot.entity.position.offset(-offX, 0, -offZ);
+                  // Burst sized to the offset: at ~4.3 m/s walk speed a
+                  // 250ms burst covers ~1.07m — a 3-5× overshoot for a
+                  // typical 0.2-0.35m correction that lands the bot on
+                  // the opposite edge.
+                  const burstMs = Math.max(60, Math.min(200, Math.round((offDist / 4.3) * 1000)));
                   ctx.world.bot.lookAt(target, true).then(() => {
                     try { ctx.world.bot.setControlState('forward', true); } catch {}
                     setTimeout(() => {
                       try { ctx.world.bot.setControlState('forward', false); } catch {}
-                    }, 250);
+                    }, burstMs);
                   }).catch(() => {});
                 } catch {}
                 ctx.runtime._stuckActivations.push({ x: pos.x, z: pos.z, time: now });
