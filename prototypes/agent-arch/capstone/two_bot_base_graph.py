@@ -1,4 +1,4 @@
-"""Canonical 10-card DAG for the two-bot cooperative-base demo.
+"""Canonical 13-card DAG for the two-bot cooperative-base demo.
 
 Pip and Zee converge on a small wood + cobblestone base at :seed:. The
 graph proves two falsifiable claims in vivo:
@@ -85,8 +85,8 @@ def build_default_graph() -> Graph:
     Pip's lane (5 cards):
       p_nav_stash → p_withdraw_axe → p_nav_wood → p_withdraw_wood → p_return
 
-    Zee's lane (3 cards):
-      z_nav_stone → z_mine → z_return
+    Zee's lane (5 cards):
+      z_nav_stash → z_withdraw_pickaxe → z_nav_stone → z_mine → z_return
 
     Convergence (3 cards):
       p_build  depends on (p_return, z_return)
@@ -114,7 +114,8 @@ def build_default_graph() -> Graph:
             title="@crafter withdraw wooden_axe at :chest_stash:",
             assignee=ASSIGNEE_PIP,
             body=(
-                "From :chest_stash: withdraw one wooden_axe. Hand off "
+                "From :chest_stash: withdraw one wooden_axe and one "
+                "oak_sign (for the final placement card). Hand off "
                 "inv_delta on completion."
             ),
             depends_on=("p_nav_stash",),
@@ -163,15 +164,40 @@ def build_default_graph() -> Graph:
         ),
         # ── Zee's cobble-gather lane ───────────────────────────────
         Card(
+            slug="z_nav_stash",
+            title="@navigator → :chest_stash:",
+            assignee=ASSIGNEE_ZEE,
+            body=(
+                "Navigate to :chest_stash: so the next card can withdraw "
+                "the iron_pickaxe. Hand off exit_pos on completion."
+            ),
+            depends_on=(),
+            skills=SKILL_BUNDLES["navigator"],
+            work_at_mark=PLACES["chest_stash"],
+            bot=BOT_ZEE,
+        ),
+        Card(
+            slug="z_withdraw_pickaxe",
+            title="@crafter withdraw iron_pickaxe at :chest_stash:",
+            assignee=ASSIGNEE_ZEE,
+            body=(
+                "From :chest_stash: withdraw one iron_pickaxe. Hand off "
+                "inv_delta on completion."
+            ),
+            depends_on=("z_nav_stash",),
+            skills=SKILL_BUNDLES["crafter"],
+            work_at_mark=PLACES["chest_stash"],
+            bot=BOT_ZEE,
+        ),
+        Card(
             slug="z_nav_stone",
             title="@navigator → :stone_source:",
             assignee=ASSIGNEE_ZEE,
             body=(
-                "Navigate to :stone_source:. The cobble outcrop is "
-                "immediately northeast; your exit_pos should put you "
-                "adjacent to it."
+                "Navigate to :stone_source:. Your exit_pos should put you "
+                "adjacent to the cobble outcrop."
             ),
-            depends_on=(),
+            depends_on=("z_withdraw_pickaxe",),
             skills=SKILL_BUNDLES["navigator"],
             work_at_mark=PLACES["stone_source"],
             bot=BOT_ZEE,
@@ -182,7 +208,7 @@ def build_default_graph() -> Graph:
             assignee=ASSIGNEE_ZEE,
             body=(
                 "Mine 32 cobblestone from the outcrop at :stone_source:. "
-                "Use the iron_pickaxe from your inventory. Hand off "
+                "Pickaxe must already be in inventory. Hand off "
                 "inv_delta on completion."
             ),
             depends_on=("z_nav_stone",),
@@ -239,10 +265,9 @@ def build_default_graph() -> Graph:
             title="@crafter place oak_sign at :seed:",
             assignee=ASSIGNEE_PIP,
             body=(
-                "Place an oak_sign at the :seed: coord (300, 65, 300). "
-                "Use the oak_sign in your inventory from the stash "
-                "withdraw earlier. Acceptance for this trial is verified "
-                "by `mc verify at_mark seed --block oak_sign` on Tester."
+                "Place an oak_sign at :seed:. Use the oak_sign already "
+                "in inventory from the stash withdraw card. Acceptance "
+                "is `mc verify at_mark seed --block oak_sign` on Tester."
             ),
             depends_on=("p_build", "z_build"),
             skills=SKILL_BUNDLES["crafter"],
@@ -266,10 +291,10 @@ def build_default_graph() -> Graph:
         epic_body=(
             "Pip + Zee build a small wood + cobblestone base at the "
             ":seed: mark.\n"
-            "Pip handles wood: stash → withdraw axe → wood_supply → "
+            "Pip handles wood: stash → withdraw axe + sign → wood_supply → "
             "withdraw 16 oak_log → return.\n"
-            "Zee handles stone: stone_source → mine 32 cobblestone → "
-            "return.\n"
+            "Zee handles stone: stash → withdraw pickaxe → stone_source → "
+            "mine 32 cobblestone → return.\n"
             "Both build their material at :seed: (parallel after "
             "convergence); pip places the acceptance sign last.\n"
             "Acceptance: mc verify at_mark seed --block oak_sign."
@@ -285,4 +310,7 @@ PIP_LANE_SLUGS = (
     "p_nav_stash", "p_withdraw_axe", "p_nav_wood", "p_withdraw_wood",
     "p_return", "p_build", "p_sign",
 )
-ZEE_LANE_SLUGS = ("z_nav_stone", "z_mine", "z_return", "z_build")
+ZEE_LANE_SLUGS = (
+    "z_nav_stash", "z_withdraw_pickaxe", "z_nav_stone", "z_mine",
+    "z_return", "z_build",
+)

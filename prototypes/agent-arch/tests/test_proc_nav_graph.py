@@ -22,6 +22,14 @@ def test_proc_scout_five_slugs():
     assert slugs == ["pn-plan", "pn-nav-1", "pn-nav-2", "pn-observe", "pn-plan-2"]
 
 
+def test_planner_cards_cite_data_sources():
+    g = load_graph("proc-scout", repo_root=REPO_ROOT)
+    by_slug = {c.slug: c for c in g.cards}
+    assert "last-scenario-map.json" in by_slug["pn-plan"].body
+    assert "proc-nav-scout-runbook.md" in by_slug["pn-plan"].body
+    assert "verify_results" in by_slug["pn-plan-2"].body
+
+
 def test_execute_cards_have_bot_prefix():
     g = load_graph("proc-scout", repo_root=REPO_ROOT)
     inv = author_colony_lane(g, epic_bot=EPIC_BOT, board="proc-nav-lab")

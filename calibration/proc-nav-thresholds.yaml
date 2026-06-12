@@ -1,12 +1,13 @@
-# Measure-then-pin (W2 rhythm). Core row filled from proc-nav-1780956289 scorecard.
+# Measure-then-pin (W2 rhythm). Core rows from proc-nav scorecards.
 reference_run_id: proc-nav-1780956289
+reference_run_id_efficient: proc-nav-1780961096
 reference_graph: proc-scout
 
 tier:
   baseline:
     mc_cli_invocations_max: 24
     wall_time_s_max: 180
-    notes: "Hard-pass blocked by W2-NAV-004 until chat-mode mc invocations counted"
+    notes: "Re-gate after W2-NAV-001 anchor fix; mc counter uses state.db (004 resolved)"
   core:
     mc_go_mark_min: 2
     mc_scene_min: 2
@@ -19,10 +20,31 @@ tier:
       nav_escape_count: 11
       mc_build_stairs_count: 7
       mc_dig_count: 68
+      notes: "First Core PASS — verbose exploration reference"
+    measured_efficient:
+      wall_time_s: 1085
+      mc_cli_invocations: 310
+      mc_go_mark_count: 13
+      mc_scene_count: 31
+      nav_escape_count: 0
+      mc_build_stairs_count: 0
+      mc_dig_count: 92
+      cards_completed: "5/5"
+      band: pass
+      notes: "Post W2-NAV-005/006; use as efficiency baseline for Stretch"
+  road:
+    graph: proc-scout-road
+    bots: [mox, pip]
+    corridor_width_blocks: 3
+    centerline_blocks: 48
+    segment_count: 4
+    interior_marks: [road_bound_1, road_bound_2, road_bound_3]
+    endpoints: [overlook, return_post]
+    notes: "Rematerialize proc-nav after requirements offset change; thresholds pinned after first PASS"
   stress:
     nav_escape_min_or_stairs: 1
     mc_go_mark_min: 3
     mc_scene_min: 2
     mc_cli_invocations_max: null
     wall_time_ratio_vs_core: null
-    notes: "Core run exceeded stress floors; pin ratio/caps after first proc-scout-stress RUN_ID"
+    notes: "Pin ratio/caps after first proc-scout-stress RUN_ID"

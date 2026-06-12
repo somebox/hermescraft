@@ -221,7 +221,17 @@ setup_role() {
   zero_memory "$role"
 }
 
-setup_role navigator navigator minecraft-navigation minecraft-navigation "Navigator execute role (wheat W1)"
+# Navigator also runs proc-nav observe cards (pn-observe) — needs minecraft-observe.
+_navigator_skills=("${COMMON[@]}" \
+  "$SKILLS_SRC/agent-navigator.md:gaming/agent-navigator" \
+  "$SKILLS_SRC/minecraft-navigation.md:gaming/minecraft-navigation" \
+  "$SKILLS_SRC/minecraft-observe.md:gaming/minecraft-observe")
+create_profile navigator "Navigator execute role (wheat W1)"
+write_config_yaml navigator
+write_env navigator
+install_skills navigator "${_navigator_skills[@]}"
+write_soul navigator navigator minecraft-navigation
+zero_memory navigator
 setup_role builder builder minecraft-building minecraft-building "Builder execute role (wheat W1)"
 setup_role farmer farmer minecraft-farming minecraft-farming "Farmer execute role (wheat W1)"
 setup_role crafter crafter minecraft-chores minecraft-chores "Crafter execute role (wheat W1)"

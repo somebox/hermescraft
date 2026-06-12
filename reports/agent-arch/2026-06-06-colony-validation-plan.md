@@ -1,7 +1,7 @@
 # Colony architecture validation — execution plan
 
 **Date:** 2026-06-06 (last updated 2026-06-07 — post-two-bot-demo review)
-**Status:** Sessions 1–5a complete; 5b live wheat trial pending. **Sessions 1 + 2 also validated end-to-end by the two-bot demo trials** (see § "Sessions 1 + 2 — post-two-bot-demo validation").
+**Status:** Sessions 1–5a complete; **5b / W1 wheat PASS** (`w1-1780879052`, band pass, 3/3 predicates, postmortem [`data/postmortems/wheat-capstone/w1-1780879052/`](../../data/postmortems/wheat-capstone/w1-1780879052/)). **Sessions 1 + 2 also validated end-to-end by the two-bot demo trials** (see § "Sessions 1 + 2 — post-two-bot-demo validation").
 
 ## Progress
 
@@ -14,7 +14,8 @@
 | 4½ | Spawn seam | ✅ done | `3ce9bc4` | `spawn-with-bot.sh` + `data/bots/{pip,zee}.yaml` + 12 contract tests (lookup correctness / failure modes / precedence). |
 | 5a | Capstone scaffold | ✅ done | (this commit) | `prototypes/agent-arch/capstone/`: `wheat_graph.py`, `wide_baseline.py`, `acceptance.py`, `author.py`, `preflight.sh`, README. 29 contract tests. `data/bots/mox.yaml` added. Preflight surfaces two gaps (missing `agent-builder/farmer/crafter` skill bundles) that must close before 5b. |
 | 5a→b prep | Close pre-trial gaps | ✅ done | 3 commits | Gap 1: `agent-builder/farmer/crafter` skill bundles. Gap 2: `mc verify` `at_mark` + `region_blocks` verbs (17 new contract tests; spec doc updated). Gap 3: `scripts/colony` launcher (registry-driven, status/start/stop/restart/logs, `--dry-run` for testing; 15 contract tests). Preflight now exits 0. |
-| 5b | Live wheat trial | pending — operator-driven | — | All pre-trial gates pass. Bring up `landfolk-test` world + Tester (`scripts/run-tester-bot.sh`) + colony bots (`scripts/colony start --all`); author colony lane + wide baseline via `capstone/`; gate via `acceptance.evaluate`; categorise via plan's confound table; update A6 + A7. |
+| 5b | Live wheat trial (W1 role profiles) | ✅ pass | `w1-1780879052` | 4/4 cards, 3/3 acceptance (`chest_contains` + farmland + water). MC via role `.env` post Hermes scrub. A7 (vs wide baseline) still open — no scored wide-flint run in same fixture. |
+| 6 | W2 self-improve (B+C) | 🔲 scaffold | — | Feedback → `_known_issues.json` → IMPROVE/REVIEW → promote workspace scripts; discovery fixture + `--graph discovery`; plan-live-verify (`pv001`–`pv003`); tiered success in `w2_report.py`. Runbook: `reports/agent-arch/wheat-w2-self-improve-runbook.md`. Contract tests: `test_w2_*`. |
 
 ### Assumption status (snapshot)
 
@@ -25,8 +26,8 @@
 | A3 | Block → review → unblock reduces operator load | **supported** (Session 3 — full loop observable in kanban events; structured prefixes recognised) |
 | A4 | `metadata.bot` mutex preserves parallelism without cross-claim | **supported** (Session 4 — both axes proven: same assignee + different bot promotes concurrent; same bot serializes across assignees) |
 | A5 | Spawn stand-in injects per-card MC env from `data/bots/<bot>.yaml` | **supported** (Session 4½ — 12/12 contract tests across lookup / failure / precedence) |
-| A6 | Per-card scope reset improves multi-domain completion | untested — scaffold ready (Session 5a); resolves in 5b live trial |
-| A7 | Wheat-walkthrough graph exposes wide-flint paralysis | untested — same as A6 |
+| A6 | Per-card scope reset improves multi-domain completion | **supported (W1)** — four role profiles, four sessions, one body; [`w1-1780879052` scorecard](../../data/postmortems/wheat-capstone/w1-1780879052/scorecard.json) |
+| A7 | Wheat-walkthrough graph exposes wide-flint paralysis | **untested** — colony chain passed; wide baseline not run/scored in W1 fixture |
 
 ## Sessions 1 + 2 — post-two-bot-demo validation
 
@@ -299,7 +300,9 @@ Sessions 1–5a complete (commits `80e2b2b`, `be2d6ca`, `225f8e1`, `3c3fc4b`, `3
 - [trial 2](2026-06-07-two-bot-trial-2-postmortem.md) — pass, 13/13 cards, 591s overlap
 - [trial 3](2026-06-07-two-bot-trial-3-postmortem.md) — pass, dashboard-visible on live HERMES_HOME
 
-Next action: execute **Session 5b** — live wheat trial against the wheat-walkthrough graph. All pre-trial gates pass per the capstone scaffold's preflight. Per the freeze rule, before launching:
+Next action: execute **Session 6 (W2)** — self-improve loop on `wheat-capstone` using `scripts/wheat-w2-trial.sh` (minimum tier: one IMPROVE→REVIEW→promote cycle). Legacy capstone fixture remains optional regression; primary lane is `wheat_discovery.yaml` + `--graph discovery`.
+
+Prior: **Session 5b** — live wheat trial against the wheat-walkthrough graph. All pre-trial gates pass per the capstone scaffold's preflight. Per the freeze rule, before launching:
 
 1. **C0_colony_arena.yaml mark-body fix** — flat `x/y/z` → nested `at: {x,y,z}` per `bot/lib/runtime/locations.js#resolvePlace` (the bug two-bot fixture discovered and worked around with `scripts/post-two-bot-marks.sh`). Quick fix; C0 marks currently land at Tester's spawn position.
 2. **`mc-verify-spec.md` addendum** — document that `satisfied` is nested under `data` per action-contract.js envelope (the `acceptance.py` parser bug two-bot trial 3 surfaced + fixed).

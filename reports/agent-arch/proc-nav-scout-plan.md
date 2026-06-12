@@ -1,91 +1,93 @@
 ---
 name: Proc-nav scout phases
-overview: Proc-nav program on dedicated MV world proc-nav (proc-lab left for other seed work), W2-slim kanban proc-nav-lab + Mox, tiered baseline→stress gates with explicit mc verbs/skills and scorecard thresholds.
+overview: "Wave 1 complete (Core PASS). Wave 2 agent-led IMPROVE — direct repo/script fixes, verify-fast, then short baseline/stress re-gates."
 todos:
-  - id: a2-bot-username-render
-    content: "agent-test-from-map: {{BOT_USERNAME}} in substitution_map (env MC_USERNAME default Mox); unresolved {{FOO}} already fails"
+  - id: harness-delivery
+    content: "Repo harness — landed; trial proc-nav-1780956289 Core PASS + E synthesize"
+    status: completed
+  - id: wave2-agent-repo-fixes
+    content: "In-repo fixes 004/005/006 (+ trial bugs); agents authorized; verify-fast gate"
+    status: completed
+  - id: wave2-fast-verify
+    content: proc-nav-trial.sh verify-fast phase
+    status: completed
+  - id: wave2-mapcatalog-001
+    content: W2-NAV-001 terrain anchors + proc_nav_anchor_coords.sh
     status: pending
-  - id: a2-agent-test-mc-user
-    content: "agent-test.py: stop hardcoding Flint; MC_USERNAME from env or resolve port→data/bots/*.yaml"
+  - id: baseline-hard-pass
+    content: Short baseline re-gate + seed pin
     status: pending
-  - id: spike-proc-nav-mv-world
-    content: "Gate Phase B live: mapcatalog try -s server.local.yaml (world.name proc-nav) dry-run or one materialize; document in runbook"
+  - id: handoff-w2-nav-003
+    content: W2-NAV-003 + handoff pytest
     status: pending
-  - id: phase-b-tactical-spec
-    content: "overlook-survey-proc-nav.yaml hardcoded proc-nav + Mox; registry agent_test_ref or AGENT_SPEC for Phase B before {{PROC_WORLD}} migration"
+  - id: calibrate-thresholds-pin
+    content: Core efficient row pinned (1780961096); stress caps after stress run
+    status: in_progress
+  - id: proc-scout-road-tier
+    content: W2-NAV-007 road tier — preflight/mvtp/feedback runbook; B(001) before first run-road
+    status: in_progress
+  - id: stress-tier-run
+    content: proc-scout-stress live
     status: pending
-  - id: proc-nav-world-name
-    content: "Systematic path: {{PROC_WORLD}} in from-map; migrate map-anchor + building specs; server.local.yaml proc-nav"
+  - id: phase-d-forest-run
+    content: forest agent-test ops
     status: pending
-  - id: a2-specs-flint-to-template
-    content: "BOT_USERNAME in overlook tactical spec + map-anchor; full proc-lab→template migration follows proc-nav-world-name"
-    status: pending
-  - id: a2-scenario-common-docs
-    content: "scenario-agent-common.sh comment block for proc-nav BOT_URL=:3007 MC_USERNAME=Mox"
-    status: pending
-  - id: a7-soul-board-param
-    content: "write_soul: parameterize board name proc-nav-lab (mechanical; no trial required)"
-    status: pending
-  - id: a7-soul-card-first
-    content: "write_soul: scripts/kanban card before skill_view; validate with Phase C kanban smoke before Core trust"
-    status: pending
-  - id: a-lazy-mc-t9
-    content: "Optional: agent-test.py honor procedural_map OR document gate must use scenario-agent-test/from-map only"
-    status: pending
-  - id: preflight-runbook-doc
-    content: "reports/agent-arch/proc-nav-scout-runbook.md — matrix + bot_players Mox + collision list"
-    status: pending
-  - id: proc-nav-preflight-script
-    content: "proc-nav-preflight.sh — fail if world.name is proc-lab; require proc-nav + Mox :3007"
-    status: pending
-  - id: phase-b-overlook-mox
-    content: "Baseline tier scouting.overlook on proc-nav; mc_verbs_include_any in spec; pin proc-nav-baseline seed"
-    status: pending
-  - id: reset-proc-nav-board
-    content: "scripts/reset-proc-nav-lab.sh — archive BOARD cards, kill dispatcher pid, zero navigator mem; NO wheat fixture"
-    status: pending
-  - id: prep-proc-scout-marks
-    content: "POST /action/mark to Mox :3007 and Tester :3004 (wheat_capstone dual-port pattern)"
-    status: pending
-  - id: proc-scout-graph
-    content: "proc_scout_graph.py + proc_scout_stress_graph.py — five-slug Core table + stress tour; graph_loader proc-scout|proc-scout-stress"
-    status: pending
-  - id: registry-steep-slope
-    content: "registry scouting.steep_slope terrain + pool refresh on proc-nav; pin proc-nav-stress seed in calibration/seeds.yaml"
-    status: pending
-  - id: a6-telemetry-position
-    content: "Stress metrics: extend telemetry or parse Hermes sessions for position-per-mc-call; prerequisite for nav_stuck_minutes"
-    status: pending
-  - id: calibrate-thresholds
-    content: "After first Core PASS record mc counts + wall_time; pin stress caps in calibration/proc-nav-thresholds.yaml"
-    status: pending
-  - id: scorecard-verb-metrics
-    content: "evaluate: verb counts from agent-test JSON / session parse; thresholds from calibrate-thresholds not hardcoded in plan"
-    status: pending
-  - id: run-proc-nav-runner
-    content: "run_proc_nav.py — fork run_wheat_capstone modes; POSTMORTEMS proc-nav-lab; acceptance nav predicates"
-    status: pending
-  - id: proc-nav-trial-sh
-    content: "proc-nav-trial.sh phases wired to above; BOARD=proc-nav-lab; teardown uses reset-proc-nav-lab"
-    status: pending
-  - id: contract-verify-results
-    content: "pytest like test_w2_plan_verify_handoff for proc-nav board + observe card metadata"
-    status: pending
-  - id: phase-d-forest-spec
-    content: "New agent-test YAML + registry agent_test_ref for farming.forest_clearing; pool refresh gate"
-    status: pending
-  - id: phase-e-self-improve
-    content: "W2-NAV issues; synthesizer nav patterns BEFORE generic coord/marks; proc-nav-verify-anchor runs script on fixture not grep-only"
-    status: pending
-  - id: proc-nav-spatial-map
-    content: "spatial-map.html best-effort on Core PASS; required gate on Stress + Stretch tiers"
-    status: pending
-  - id: proc-nav-evaluate-tester
-    content: "Optional stretch: run_proc_nav --evaluate-only uses Tester mc verify for anchor predicates; not required for verify_results handoff gate"
+  - id: optional-tester-evaluate
+    content: --evaluate-tester stretch
     status: pending
 ---
 
 # Proc-nav: seeded catalog, discovery scout, forest clearing, self-improve
+
+## Operational status (trial `proc-nav-1780956289`)
+
+First end-to-end proc-nav trial on **`proc-nav`** + **`proc-nav-lab`** + graph **`proc-scout`**. Reference scorecard: `data/postmortems/proc-nav-lab/proc-nav-1780956289/scorecard.json`.
+
+| Plan tier | Status | Notes |
+|-----------|--------|--------|
+| **Baseline (Phase B)** | **Soft-pass** | Harness validated (materialize → mvtp → agent-test worker → `mc` + `scout ok`). **Not hard-pass:** catalog anchor quality (**W2-NAV-001** `flat_patch_center` / overlook in air, `mc inspect --mark` INVALID_COORD) and Phase B metrics (**W2-NAV-004** chat-mode tool counter → `mc_cli_invocations` 0 in JSON). Seed not pinned (`TBD_PROC_NAV_BASELINE`). |
+| **Core (Phase C)** | **PASS** | **First non-wheat kanban PASS:** `band=pass`, **5/5** cards, `wall_time_s≈1936`, **525** session-parsed `mc` invocations. Verbs exceeded planned Stress *floors* on the Core graph: `go_mark` 44, `scene` 55, `escape` 11, `build_stairs` 7, `dig` 68. `spatial-map.html` written (Core best-effort). Tester `acceptance_*` not run (`per_predicate` empty). |
+| **Stress (C-stress + D)** | **Not started** | **`proc-scout-stress`** (3-stop tour, go_mark-only hints) and **`farming.forest_clearing`** agent-test not executed. Core verb counts do **not** replace Stress tier — still need stress graph, optional **proc-nav-stress** seed, and **required** spatial-map gate on Stress runs. |
+| **Stretch (Phase E)** | **Loop closed once** | feedback → synthesize → `improvement-queue.json` with **6** issues. **IMPROVE cards** not yet run for deliverables. |
+
+### Issue registry (`data/postmortems/proc-nav-lab/_known_issues.json`)
+
+| ID | Type | Status (post-trial) | Focus |
+|----|------|---------------------|--------|
+| W2-NAV-001 | AUTO | in_progress | Anchor resolver script; `flat_patch_center` / air overlook; verify via `proc-nav-verify-anchor.sh` |
+| W2-NAV-002 | doc | in_progress | Stuck/escape — card bodies + `minecraft-navigation` hints (Core already used escape/stairs heavily) |
+| W2-NAV-003 | doc | open | `verify_results` handoff completeness + `test_proc_nav_handoff` |
+| W2-NAV-004 | AUTO | **resolved** (`1780961096`) | `agent-test.py` session JSON + `state.db` mc metrics |
+| W2-NAV-005 | AUTO | **resolved** (`1780961096`) | Navigator installs **`minecraft-observe`** — no pn-observe block |
+| W2-NAV-006 | AUTO | **resolved** (`1780961096`) | Planner cites data sources — ~44% wall / ~41% mc vs first Core |
+| W2-NAV-007 | doc | open | Two-bot `proc-scout-road` — 3m corridor overlook→return_post |
+
+**IMPROVE when ready:**
+
+```bash
+export RUN_ID=proc-nav-1780956289 BOARD=proc-nav-lab
+scripts/seed-w2-improve-cards.sh W2-NAV-001 "$RUN_ID"
+# repeat for W2-NAV-004, W2-NAV-005, W2-NAV-006
+```
+
+### Wave 2 — agent-led iteration (active)
+
+Agents **fix simple bugs in `scripts/`, `prototypes/agent-arch/`, and specs directly** when tied to `W2-NAV-*`; run **`scripts/proc-nav-trial.sh verify-fast`** before asking for a live trial. Full kanban IMPROVE is **optional** (001 workspace script, large changes).
+
+**Workspaces alignment:** Target model blocks agent writes to `scripts/` ([`docs/architecture/workspaces.md`](../../docs/architecture/workspaces.md) Layer 1). Proc-nav Wave 2 is an **interim proto-rig exception** — harness fixes by coding agents/maintainers; promoted nav tools should land under **`geo/scripts/`** per workspaces § Interim capstone / proc-nav lanes.
+
+| Step | Action |
+|------|--------|
+| 1 | Repo fix: **004** `agent-test.py`, **005** `setup-role-profiles.sh`, **006** `proc_scout_graph.py` |
+| 2 | `verify-fast` (pytest + dry-run + anchor verifier) |
+| 3 | **001** mapcatalog/anchor + `proc_nav_anchor_coords.sh` |
+| 4 | Short **baseline** re-gate + seed pin |
+| 5 | **003/002** docs/skills as needed |
+| 6 | Batch **stress** + **forest** (ops); calibrate stress thresholds after |
+
+Kanban IMPROVE when desired: `BOARD=proc-nav-lab scripts/seed-w2-improve-cards.sh W2-NAV-<id> proc-nav-1780956289`
+
+---
 
 ## Design intent (unchanged)
 
@@ -107,7 +109,7 @@ Discovery on mapcatalog anchors; W2-slim harness (kanban board **`proc-nav-lab`*
 
 **Naming clarity:** Kanban board **`proc-nav-lab`** is Hermes SQLite namespace only — it is **not** the Minecraft dimension name.
 
-**Code/docs touch list (systematic path):** Four agent-test specs still hardcode `proc-lab` ([overlook-survey](data/agent-tests/topics/scouting/overlook-survey.yaml), [map-anchor](data/agent-tests/topics/smoke/map-anchor.yaml), [flat-pad-watch-post](data/agent-tests/topics/building/flat-pad-watch-post.yaml), [kanban-smoke](data/agent-tests/topics/establishment/kanban-smoke.yaml)). Migrate via `{{PROC_WORLD}}` after tactical Phase B path lands.
+**Code/docs touch list:** overlook / map-anchor / flat-pad migrated to `{{PROC_WORLD}}` + `{{BOT_USERNAME}}`. [kanban-smoke](data/agent-tests/topics/establishment/kanban-smoke.yaml) still `proc-lab` (establish track only).
 
 ### World adoption — two parallel paths (verified)
 
@@ -532,9 +534,9 @@ Wake-minimal exit-on-task unchanged (landfolk watchdog). Phase B agent-test unaf
 
 | Piece | Status |
 |-------|--------|
-| Registry `farming.forest_clearing` | Exists in [registry.yaml](data/scenarios/registry.yaml); **no** `agent_test_ref` yet |
-| Agent-test spec | **Missing** under `data/agent-tests/topics/farming/` — must author (nav to `farm_patch` or registry anchor name from [scenario_homestead_forest.yaml](requirements/scenario_homestead_forest.yaml)) |
-| Run path | Same as Phase B once spec + A2 landed |
+| Registry `farming.forest_clearing` | `agent_test_ref`: [forest-clearing-nav-proc-nav.yaml](data/agent-tests/topics/farming/forest-clearing-nav-proc-nav.yaml) |
+| Agent-test spec | **In repo** — ops run pending |
+| Run path | Same as Phase B (`scenario-agent-test.sh farming.forest_clearing`) |
 
 ### Phase E — self-improve
 
@@ -556,12 +558,15 @@ Wake-minimal exit-on-task unchanged (landfolk watchdog). Phase B agent-test unaf
 
 ## Phase A–E summary (sequencing)
 
-1. **A-blockers** + **`spike-proc-nav-mv-world`** + **tactical overlook-proc-nav spec**  
-2. **Baseline B** (`server.local.yaml` `world.name: proc-nav`, never `proc-lab`)  
-3. **`calibrate-thresholds`** after first Core metrics  
-4. **Core C** + **A6 telemetry** before Stress stuck-time gates  
-5. **Stress C** + spatial map **required** + Phase D forest  
-6. **Stretch E** with **end-to-end** `proc-nav-verify-anchor.sh`  
+**Done (trial `proc-nav-1780956289`):** harness delivery, MV spike, Core **PASS**, E feedback/synthesize once, spatial-map (Core).
+
+**Next:**
+
+1. **IMPROVE** W2-NAV-001/004/005/006 (AUTO) + doc fixes 002/003  
+2. **Baseline B hard-pass** + seed pin  
+3. **`calibrate-thresholds`** — core numbers from scorecard; stress after stress run  
+4. **Stress** (`proc-scout-stress`) + spatial map required + Phase D forest  
+5. **Stretch** promote + `proc-nav-verify-anchor.sh` on promoted scripts + stress re-run  
 
 ---
 
@@ -574,6 +579,8 @@ Wake-minimal exit-on-task unchanged (landfolk watchdog). Phase B agent-test unaf
 | Thresholds miscalibrated | **calibrate-thresholds** after Core; no hard 80/1.25× in CI until pinned |
 | Stress fails on stuck minutes without A6 | Gate `nav_stuck_minutes` only after telemetry or session parse lands |
 | Baseline passes on `move` spam, Stress never run | Trial script **blocks `run-stress`** until `baseline` + `run-core` scorecards pass |
+| Core verb counts already exceed Stress floors | Stress tier still requires **`proc-scout-stress` graph**, stress seed, and spatial-map **required** gate — do not skip Stress because Core was verbose |
+| Planner lacks data-source paths | **W2-NAV-006** — explicit `last-scenario-map.json` / playbook paths in pn-plan bodies |
 | Agents skip `escape`/stairs under Stress | Card bodies cite [minecraft-navigation](skills/minecraft-navigation.md) hint doctrine; scorecard requires escape **or** stairs/dig |
 | Vague “discovery” cards | Core graph uses **named marks only** in execute bodies; coords only in prep/marks JSON |
 | A7 / Flint / evac | Unchanged technical blockers |

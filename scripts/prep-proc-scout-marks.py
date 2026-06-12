@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""POST catalog anchors as marks to Mox (:3007) and Tester (:3004)."""
+"""POST catalog anchors as marks to bot HTTP ports (+ Tester).
+
+Posts only **catalog** placements (spawn, muster, overlook, return_post, …).
+Interior road marks (`road_bound_*`) are placed by agents during pn-explore.
+"""
 from __future__ import annotations
 
 import argparse
@@ -11,7 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MAP = ROOT / "data/runtime/last-scenario-map.json"
 DEFAULT_PORTS = (3007, 3004)
-MARK_NAMES = ("spawn", "muster", "overlook", "return_post", "farm_patch")
+
+# Catalog anchors only — no agent midpoint marks.
+BASE_MARK_NAMES = ("spawn", "muster", "overlook", "return_post", "farm_patch")
 
 
 def anchor_xyz(card: dict, name: str) -> tuple[int, int, int] | None:
@@ -49,7 +55,7 @@ def main() -> int:
     card = json.loads(args.map_json.read_text(encoding="utf-8"))
     ports = [int(p.strip()) for p in args.ports.split(",") if p.strip()]
     ok = 0
-    for name in MARK_NAMES:
+    for name in BASE_MARK_NAMES:
         xyz = anchor_xyz(card, name)
         if not xyz:
             continue

@@ -5,7 +5,10 @@ from __future__ import annotations
 from .plan_verify_graph import OBSERVE_SKILLS
 from .wheat_graph import SKILL_BUNDLES, Card, Graph
 
+# Explicit data sources for desk cards (W2-NAV-006).
+SCENARIO_MAP_JSON = "data/runtime/last-scenario-map.json"
 PLAYBOOK = "reports/agent-arch/proc-nav-scout-runbook.md"
+POSTMORTEM_MANIFEST = "data/postmortems/proc-nav-lab/<RUN_ID>/manifest.json"
 
 
 def build_proc_scout_graph() -> Graph:
@@ -14,19 +17,30 @@ def build_proc_scout_graph() -> Graph:
         "agent-navigator",
         "minecraft-navigation",
     )
+    plan_body = (
+        f"Read these paths under `$HERMESCRAFT_REPO` (repo root):\n"
+        f"  1. **`{SCENARIO_MAP_JSON}`** — record `seed` and `placements` keys "
+        "(spawn, muster, overlook, return_post).\n"
+        f"  2. **`{PLAYBOOK}`** — add a **proc-nav anchors** section citing that seed "
+        "and anchor list.\n"
+        f"Optional trial manifest: `{POSTMORTEM_MANIFEST}` (replace RUN_ID).\n"
+        "No `mc` on this card.\n"
+        "metadata.card_kind=research"
+    )
+    plan2_body = (
+        "Read child card `pn-observe` completion metadata (`verify_results`).\n"
+        f"Update **`{PLAYBOOK}`** (path above) or leave a kanban comment that quotes "
+        "`verify_results.predicates` and `position_at_complete`.\n"
+        f"Re-open `{SCENARIO_MAP_JSON}` only if seed/anchors need correction.\n"
+        "metadata.card_kind=research"
+    )
     cards = (
         Card(
             slug="pn-plan",
             title="[RESEARCH] proc-nav anchor playbook",
             assignee="planner",
             omit_bot_prefix=True,
-            body=(
-                "Read `data/runtime/last-scenario-map.json` (or trial manifest) and "
-                f"draft a short playbook section in `{PLAYBOOK}` citing **seed** and "
-                "anchor names: spawn, muster, overlook, return_post.\n"
-                "No `mc` on this card.\n"
-                "metadata.card_kind=research"
-            ),
+            body=plan_body,
             depends_on=(),
             skills=("kanban-worker", "agent-planner"),
         ),
@@ -78,11 +92,7 @@ def build_proc_scout_graph() -> Graph:
             title="[RESEARCH] finalize from verify",
             assignee="planner",
             omit_bot_prefix=True,
-            body=(
-                "Read child `pn-observe` completion metadata (`verify_results`). "
-                f"Update notes in `{PLAYBOOK}` or kanban comment referencing predicates.\n"
-                "metadata.card_kind=research"
-            ),
+            body=plan2_body,
             depends_on=("pn-observe",),
             skills=("kanban-worker", "agent-planner"),
         ),

@@ -78,6 +78,8 @@ def load_thresholds(repo_root: Path) -> dict:
 
 
 def tier_from_graph(graph: str) -> str:
+    if graph == "proc-scout-road":
+        return "road"
     if graph == "proc-scout-stress":
         return "stress"
     if graph in ("proc-scout",):

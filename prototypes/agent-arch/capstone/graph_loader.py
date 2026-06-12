@@ -7,6 +7,7 @@ from pathlib import Path
 from .discovery_graph import build_discovery_graph
 from .plan_verify_graph import build_plan_verify_graph
 from .proc_scout_graph import build_proc_scout_graph
+from .proc_scout_road_graph import build_proc_scout_road_graph
 from .proc_scout_stress_graph import build_proc_scout_stress_graph
 from .w2_graph import build_w2_graph
 from .wheat_graph import Graph, build_default_graph
@@ -18,6 +19,7 @@ GRAPH_NAMES = frozenset({
     "plan-verify",
     "proc-scout",
     "proc-scout-stress",
+    "proc-scout-road",
 })
 
 
@@ -39,4 +41,6 @@ def load_graph(
         return build_proc_scout_graph()
     if name == "proc-scout-stress":
         return build_proc_scout_stress_graph()
+    if name == "proc-scout-road":
+        return build_proc_scout_road_graph()
     raise ValueError(f"unknown graph {name!r}; expected one of {sorted(GRAPH_NAMES)}")

@@ -13,7 +13,9 @@ world:
     hub_world: landfolk-test
     hub_xyz: [0, 65, 0]
     use_unsafe_mvtp: true
-    bot_players: [Flint]   # only evac these from proc-lab before mv delete (not re44 on main world)
+    # Proc-nav road: include every in-game bot that must survive materialize evac
+    # (e.g. [Flint, Mox, Pip]). Scout-only trials need at least Mox.
+    bot_players: [Flint]
   reuse_seed: true         # mapcatalog try --reuse-world / AUTO_REUSE in scenario-agent-test.sh
 
 cubiomes:

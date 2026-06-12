@@ -5,7 +5,7 @@ infrastructure. The runner's --dry-run mode is also exercised in the
 mode_dry_run integration test below.
 
 What we prove:
-  - 11-card DAG topology (pip's 5-lane + zee's 3-lane + 3-converge).
+  - 13-card DAG topology (pip gather + zee gather + 3 converge).
   - Every execute card has a bot tag of `pip` or `zee` (no untagged
     cards leak into the trial).
   - Convergence: both builders depend on BOTH return cards (parallel
@@ -45,17 +45,17 @@ from capstone.two_bot_base_graph import (  # noqa: E402
 # ── Topology ───────────────────────────────────────────────────────
 
 class TestGraphShape:
-    def test_eleven_cards_total(self) -> None:
+    def test_thirteen_cards_total(self) -> None:
         g = build_default_graph()
-        assert len(g.cards) == 11
+        assert len(g.cards) == 13
 
     def test_pip_lane_has_seven_slugs(self) -> None:
         # 5 gather + 1 build + 1 sign
         assert len(PIP_LANE_SLUGS) == 7
 
-    def test_zee_lane_has_four_slugs(self) -> None:
-        # 3 gather + 1 build
-        assert len(ZEE_LANE_SLUGS) == 4
+    def test_zee_lane_has_six_slugs(self) -> None:
+        # 5 gather + 1 build
+        assert len(ZEE_LANE_SLUGS) == 6
 
     def test_every_card_in_lane_groups(self) -> None:
         # Lane sets are disjoint and cover every card exactly once.
@@ -69,7 +69,7 @@ class TestGraphShape:
         # Pip's first nav and zee's first nav are the entry points.
         g = build_default_graph()
         roots = [c for c in g.cards if not c.depends_on]
-        assert {c.slug for c in roots} == {"p_nav_stash", "z_nav_stone"}
+        assert {c.slug for c in roots} == {"p_nav_stash", "z_nav_stash"}
 
 
 class TestPipLaneChain:
@@ -87,10 +87,13 @@ class TestPipLaneChain:
 
 class TestZeeLaneChain:
     def test_zee_lane_serial_dependencies(self) -> None:
-        # z_nav_stone → z_mine → z_return
+        # z_nav_stash → z_withdraw_pickaxe → z_nav_stone → z_mine → z_return
         g = build_default_graph()
         cards_by_slug = {c.slug: c for c in g.cards}
-        chain = ["z_nav_stone", "z_mine", "z_return"]
+        chain = [
+            "z_nav_stash", "z_withdraw_pickaxe", "z_nav_stone",
+            "z_mine", "z_return",
+        ]
         for i in range(1, len(chain)):
             assert cards_by_slug[chain[i]].depends_on == (chain[i - 1],), (
                 f"{chain[i]} should depend on {chain[i-1]}"

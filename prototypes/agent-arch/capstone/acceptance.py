@@ -221,12 +221,17 @@ def _parse_verify_response(
     # cell in the region, the predicate is NOT evaluable — return
     # evaluable=false so the acceptance band doesn't conflate "we couldn't
     # measure" with "we measured a fail". Heuristic: presence of unreadable
-    # > 0 in either layer, or known error markers in raw_stdout.
-    unreadable = (nested.get("unreadable") if isinstance(nested.get("unreadable"), int) else None)
-    if unreadable is None:
-        unreadable = body.get("unreadable") if isinstance(body.get("unreadable"), int) else 0
+    # > 0 in any of three locations (data.observed.unreadable — current
+    # verify shape; data.unreadable — legacy; body.unreadable — flat),
+    # or known error markers in raw_stdout.
+    observed = (nested.get("observed") or {}) if isinstance(nested.get("observed"), dict) else {}
+    unreadable = 0
+    for candidate in (observed.get("unreadable"), nested.get("unreadable"), body.get("unreadable")):
+        if isinstance(candidate, int) and candidate > 0:
+            unreadable = candidate
+            break
     raw_marker = "READ_FAILED" in (body.get("raw_stdout") or "") or "chunk unloaded" in (body.get("raw_stdout") or "")
-    if (unreadable and unreadable > 0) or raw_marker:
+    if unreadable > 0 or raw_marker:
         return AcceptanceResult(
             satisfied=False,
             evaluable=False,

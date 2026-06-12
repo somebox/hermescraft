@@ -27,9 +27,14 @@
           "run_id": "proc-nav-1780970837",
           "observation": "Doctrine fix did NOT propagate to scout/navigator. Pip read 'target Y=67' directly from parent SCOUT's measurement output (the scout still uses catalog overlook Y, not live terrain). Builder consumed Y=67 unchanged. Root cause is the navigator-measure card, not the builder card where the doctrine was patched.",
           "next_fix": "Re-ground target_y at the scout layer: scout must run terrain_top across corridor sample points and emit MEDIAN as target_y in road_plan, not the catalog placement Y."
+        },
+        {
+          "run_id": "proc-nav-1781079999",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1781079999/feedback-navigator.md",
+          "excerpt": "# FEEDBACK \u2014 navigator on proc-nav-1781079999\n\n**Worker session**: 2026-06-10 (t_9815e648 \"scout road corridor\" + 4 segment measurements)\n**World**: proc-nav / snowy_taiga / seed 1001\n**Bot**: mox\n\n---\n\n## Problems hit\n\n1. **Catalog Y vs live surface drift persisted in segment 1.** The corridor_median was 63 (scout-computed), but segment 1 (Z=-12\u21920) had a segment_median of 59, delta=4 \u2265 2, forcing"
         }
       ],
-      "last_seen_run": "proc-nav-1780970837"
+      "last_seen_run": "proc-nav-1781079999"
     },
     {
       "id": "W2-NAV-002",
@@ -37,7 +42,7 @@
       "automation_eligible": false,
       "script_path": null,
       "note": "Stuck / escape / NAV_BLOCKED \u2014 card bodies + minecraft-navigation hints",
-      "last_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1781079999",
       "evidence": [
         {
           "run_id": "proc-nav-1780961096",
@@ -57,6 +62,21 @@
           "run_id": "proc-nav-1780994801",
           "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-planner.md",
           "excerpt": "# FEEDBACK: planner @ proc-nav-1780994801\n\nThree planner cards across this run: `t_720518cc` (initial road_plan.json, catalog Y),\n`t_1e15c674` (road_plan.json v2 with corridor_profile Y), `t_a84bdbaf` (finalization).\n\n## Problems hit\n\n1. **Catalog Y vs live Y drift (W2-NAV-008)**\n   The biggest friction across the whole trial. The initial plan used Y=67/68 from\n   `last-scenario-map.json` (seed 10"
+        },
+        {
+          "run_id": "proc-nav-1781079999",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1781079999/feedback-builder-mox.md",
+          "excerpt": "# FEEDBACK \u2014 builder-mox on proc-nav-1781079999\n## Segment 2 (t_b8ec717e)\n\n## Problems hit\n\n1. **`mc level_ground` 16-column limit per call.** The segment is 3\u00d713 (39 columns), but `level_ground` rejects anything over 16 columns with `OUT_OF_RANGE`. The card body and the parent measure card already tile the segment into Z=12..16 / 17..20 / 21..24, so splitting was manageable, but the error on the "
+        },
+        {
+          "run_id": "proc-nav-1781079999",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1781079999/feedback-builder.md",
+          "excerpt": "# FEEDBACK \u2014 builder on proc-nav-1781079999\n\n**Worker sessions**: 2026-06-10 (t_a2e650d9 \"clear segment 1\", t_d71da318 \"clear segment 5\", t_d774d2be \"clear segment 7\")\n**World**: proc-nav / snowy_taiga / seed 1001\n**Bot**: pip\n\n---\n\n## Problems hit\n\n1. **Blocked task with completed work \u2014 no `kanban_complete` transition.** `t_a2e650d9` was in `blocked` (gave_up) state from 2 prior timeouts. I clea"
+        },
+        {
+          "run_id": "proc-nav-1781079999",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1781079999/feedback-index.md",
+          "excerpt": "# Trial feedback \u2014 proc-nav-1781079999\n\nBoard: proc-nav-lab\nRoles: navigator,navigator-pip,builder,builder-mox,planner\nGenerated: 2026-06-10T13:56:29+02:00\n\n## navigator\n\n- card: `t_45caf9c5`  status: done\n\n# FEEDBACK \u2014 navigator on proc-nav-1781079999\n\n**Worker session**: 2026-06-10 (t_9815e648 \"scout road corridor\" + 4 segment measurements)\n**World**: proc-nav / snowy_taiga / seed 1001\n**Bot**: "
         }
       ]
     },
@@ -110,13 +130,18 @@
       "verifier": "prototypes/agent-arch/tests/test_proc_nav_graph.py",
       "note": "Planner cards cite last-scenario-map.json + runbook \u2014 Core re-run ~44% wall / ~41% mc vs prior PASS",
       "first_seen_run": "proc-nav-1780956289",
-      "last_seen_run": "proc-nav-1780994801",
+      "last_seen_run": "proc-nav-1781079999",
       "resolved_run": "proc-nav-1780961096",
       "evidence": [
         {
           "run_id": "proc-nav-1780994801",
           "file": "data/postmortems/proc-nav-lab/proc-nav-1780994801/feedback-navigator-pip.md",
           "excerpt": "# FEEDBACK: navigator-pip on proc-nav-1780994801\n\n**Trial:** proc-nav-1780994801\n**Role:** navigator-pip\n**Card:** t_36c0e997 \u2014 [NAV] measure segment 2 (road_bound_1 \u2192 road_bound_2, Z\u224812\u219224)\n**Date:** 2026-06-09\n\n## Problems Hit\n\n1. **No batch verb for terrain sampling** \u2014 Measuring a 3-wide segment cross-section at\n   Z=12 (start), Z=18 (mid), Z=24 (end) required 9 separate `mc terrain_top` calls"
+        },
+        {
+          "run_id": "proc-nav-1781079999",
+          "file": "data/postmortems/proc-nav-lab/proc-nav-1781079999/feedback-planner.md",
+          "excerpt": "# FEEDBACK \u2014 planner on proc-nav-1781079999\n\n**Worker sessions**: 2026-06-10 (t_2df02e9a \"[RESEARCH] proc-nav road playbook\", t_b7b71b1d \"[RESEARCH] road segment table\")\n**World**: proc-nav / snowy_taiga / seed 1001\n**Bot**: mox (offline \u2014 no mc verbs used either session)\n\n---\n\n## Problems hit\n\n1. **Segment numbering mismatch between the road plan and the card bodies.** The road_plan.json defines "
         }
       ]
     },
@@ -374,6 +399,69 @@
           "observation": "Mox observed wedged on block edge ~2.4 min during level_ground execute. User flagged regression: 'we used to have this solved'. Root cause traced to missing verb registration; fix landed in same session."
         }
       ]
+    },
+    {
+      "id": "W2-NAV-022",
+      "title": "BUILD workers tally dispositions BEFORE final fill patches land",
+      "trial": "proc-nav-1781014144",
+      "category": "doctrine",
+      "severity": "high",
+      "evidence": "6 of 8 segments reported success but global VERIFY found 92 residual cells. The Step 3 verify in clear_body runs before Step 2's fills complete. Same pattern in t_3dd80c25, t_f0de4427, t_2572d4b6, t_9c40f92b, t_697b336b, t_5894e643.",
+      "fix": "Add explicit 'Step 4 \u2014 re-run dispositions sweep after fills' to clear_body. Block card completion until dispositions.level + preserved == columns_n."
+    },
+    {
+      "id": "W2-NAV-023",
+      "title": "Relative vs absolute Z coords silently fixed by agents (no signal)",
+      "trial": "proc-nav-1781014144",
+      "category": "doctrine",
+      "severity": "medium",
+      "evidence": "4 of 4 BUILD cards + 2 of 8 MEASURE cards silently corrected. t_172eb43e quote: 'The card body says Z\u224872\u2192Z\u224884... road plan shows segment 7 as Z=60..72'.",
+      "fix": "Rewrite _clear_body() + _meas_body() to embed ABSOLUTE z from segments[i].from_coord/to_coord. Drop 'relative' language entirely."
+    },
+    {
+      "id": "W2-NAV-024",
+      "title": "level_ground 16-col cap forces 3-way splits for every 12-block segment",
+      "trial": "proc-nav-1781014144",
+      "category": "primitive",
+      "severity": "medium",
+      "evidence": "A 3\u00d712 segment = 36 cols > 16 cap \u2192 OUT_OF_RANGE. Agents discover this mid-task. clear_strip has same 16-col cap.",
+      "fix": "Bump cap to 64 (covers 3\u00d721). Sample math: level_ground is O(W\u00d7L) terrain reads + O(bad_cells) writes; 36 cols is well within bot perf."
+    },
+    {
+      "id": "W2-NAV-025",
+      "title": "move + clear_strip + fill + goto_near missing from LONG_ACTION_PATHS",
+      "trial": "proc-nav-1781014144",
+      "category": "tooling",
+      "severity": "high",
+      "evidence": "30 of 61 total timeouts (49%) are `mc move` hitting the 25s HTTP cap. `clear_strip` has 33% timeout rate (8/24). Both legitimately need 30-120s.",
+      "fix": "Add move, clear_strip, fill, goto_near to LONG_ACTION_PATHS in bot/cli/http.mjs. Already-fixed verbs: level_ground."
+    },
+    {
+      "id": "W2-NAV-026",
+      "title": "Sand-at-sea-level corridor edges unbuildable without anchor",
+      "trial": "proc-nav-1781014144",
+      "category": "primitive",
+      "severity": "medium",
+      "evidence": "seg1 BUILD timed out 4\u00d7 (1801s each). Sand at y=62 adjacent to water \u2014 mc place dirt has no anchor face. mc fill against water times out at 60-80s. Cleared after force-completion via fill (luckily it eventually landed).",
+      "fix": "Either: (a) scout doctrine rejects corridors with water-adjacent sand edges, OR (b) add mc seed_anchor primitive that places 1 dirt at lowest known-solid Y to bootstrap placement, OR (c) mc level_ground execute=true uses cell-below as anchor."
+    },
+    {
+      "id": "W2-NAV-027",
+      "title": "VERIFY worker assumes corridor is walkable",
+      "trial": "proc-nav-1781014144",
+      "category": "doctrine",
+      "severity": "medium",
+      "evidence": "Mox spent 2 \u00d7 1800s VERIFY runs trying to walk anchors across unbuilt seg1. Fell into holes from prior BUILD attempts. Never reached dispositions-sweep step.",
+      "fix": "Reorder VERIFY card body: dispositions sweep FIRST (remote-runnable from anywhere), anchor-walk SECOND (optional, gated on sweep success)."
+    },
+    {
+      "id": "W2-NAV-028",
+      "title": "Pre-trial env (mobs, day-lock, weather) not enforced",
+      "trial": "proc-nav-1781014144",
+      "category": "tooling",
+      "severity": "high",
+      "evidence": "4 deaths in trial \u2014 phantom + zombie + spider + drowned compounding with water+drown cycles. All occurred before operator manually set doMobSpawning=false + killed mobs + day-locked the world at ~17:00.",
+      "fix": "Add to proc-nav-relaunch-preflight.sh Step 6 (or new Step 7): kill all hostile mobs in proc-nav; set doMobSpawning false, doDaylightCycle false, doWeatherCycle false; time set day; weather clear."
     }
   ]
 }
