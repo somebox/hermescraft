@@ -227,6 +227,29 @@ GET      /api/workspace/operations/colony-overview               # optional; lat
 
 Compaction control (`/compaction/...`) deferred until a domain needs watermarks.
 
+### Fleet state record (schema owner)
+
+`GET|PUT /api/workspace/operations/fleet-state` holds one **aggregated snapshot** per dispatcher tick (and may be mirrored to `operations/generated/` for offline dashboard reads). Card→body binding rules: [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding. Dispatcher consumer: [`board-dynamics.md`](board-dynamics.md) § State `@dispatcher` reads and writes.
+
+**Today:** [`scripts/roster.py`](../../scripts/roster.py), dashboard `GET /api/fleet`, and ad-hoc yaml under dispatcher workspace approximate this. **Target:** single writer (`@dispatcher` or host poll job) replaces script-local snapshots.
+
+Each fleet entry (keyed by `registry_id`):
+
+| Field | Required | Meaning |
+|---|---|---|
+| `registry_id` | yes | `pip`, `mox`, … — matches `data/bots/<id>.yaml` |
+| `username` | yes | In-game player name from registry |
+| `api_port` | yes | Bot HTTP port |
+| `http_reachable` | yes | Last poll: `/health` or `/status` returned success |
+| `last_poll_at` | yes | ISO time of last HTTP probe |
+| `kanban` | no | `{ "running_card_id", "assignee", "bound_bot" }` — from gateway + card metadata when a body is busy |
+| `game` | no | Lean slice from `/status?lean=true`: position, hp, food, dimension |
+| `supervisor` | no | `{ "pid", "managed_by": "landfolk" \| "colony" }` — **secondary** to `http_reachable` |
+
+**Phase A aggregation** (read-only poll, ~30–60s): for each registry id, `GET /health` and `/status`; merge kanban “who is running on this body” by scanning running cards whose resolved `metadata.bot` (or title prefix) matches. Do not scrape full `/observe` into fleet-state.
+
+**`down` semantics:** `http_reachable === false` for two consecutive polls (or immediate on connection refused). Dispatcher step: rebind ready cards bound to that body ([`board-dynamics.md`](board-dynamics.md)).
+
 ---
 
 ## Metrics & trends (colony dashboard)

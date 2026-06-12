@@ -116,6 +116,10 @@ Hermes v0.15 already provides leases — use them, don't reinvent ([ref](hermes-
 | Stale | Heartbeat or TTL past `dispatch_stale_timeout_seconds` (default 4 hr) |
 | Force move | `hermes kanban reassign` ([June 3 patch](../../reports/expedition/2026-06-03-hermes-framework-patches.patch)) |
 
+**Binding inputs (must match spawn):** **Target** resolution: (1) `metadata.bot` if set, else (2) leading `[bot:<id>]` on the title — same rules as [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding. Gate-check mutex domain and spawn-time `MC_*` injection **must use one shared function** so mutex domain and HTTP port never disagree.
+
+**Today:** only the title prefix is implemented in [`mutex_key.py`](../../plugins/landfolk/landfolk/orchestrator/mutex_key.py) and [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh); wheat capstone cards rely on `[bot:mox]` + profile `.env` for MC binding ([`impact.md`](impact.md) § F, A5 in colony validation plan).
+
 **Per-bot exclusion** sits on the landfolk plugin gate-check: scope mutex on **`metadata.bot`**, not assignee (assignee is the agent profile). Park excess ready cards with `mutex_park:<bot>`. **Lease ends when the card ends** — no cross-card bot reservations.
 
 ---
@@ -194,7 +198,7 @@ Details of git layout: [`workspaces.md`](workspaces.md). Operationally:
 
 | Artifact | Writer | Purpose |
 |---|---|---|
-| Fleet snapshot | `@dispatcher` each tick | Positions, HP, food, idle/busy — pilot: yaml under dispatcher workspace; target: host API `operations/fleet-state` |
+| Fleet snapshot | `@dispatcher` each tick | Positions, HP, food, idle/busy — pilot: yaml under dispatcher workspace; target: host API operations/fleet-state ([`data-api.md`](data-api.md) § Fleet state record) |
 | Capacity forecast | `@dispatcher` (later) | Backlog pressure vs horizon — defer until duration baselines exist |
 | Kanban DB | Hermes | Cards, locks, deps — source of truth for board |
 | Recall stream | Workers (+ optional bot auto-emit) | `subject` + `type` events — [`data-api.md`](data-api.md) |

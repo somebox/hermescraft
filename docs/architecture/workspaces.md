@@ -616,6 +616,54 @@ The current implementation is overwhelmingly **per-bot JSON files + bot HTTP API
 
 ---
 
+## Interim: capstone / proc-nav lanes (proto-rig, 2026-06)
+
+Status: **design target above; proc-nav and wheat-capstone still run on repo-root harness paths.** This section records the gap so Wave 2 iteration does not silently contradict Layer 1 isolation.
+
+### Three board classes today
+
+| Board | Role | Workspace / git model |
+|---|---|---|
+| `landfolk-ops` | In-world execute | Target: `cwd=data/workspace/`, recall API, OWNERS writes |
+| `landfolk-backoffice` (target) | `[MR]` on workspace scripts/data | Worktree under `data/workspace/` |
+| **`wheat-capstone` / `proc-nav-lab`** | R&D capstone graphs, IMPROVE/REVIEW | **Not** on back-office worktrees yet; uses `data/postmortems/<board>/`, `prototypes/agent-arch/`, repo `scripts/` |
+
+Proc-nav self-improvement ([`reports/agent-arch/proc-nav-scout-plan.md`](../../reports/agent-arch/proc-nav-scout-plan.md) § Wave 2) uses **`proc-nav-lab`** + `_known_issues.json` + optional `[IMPROVE]` cards — same *pattern* as back-office (engineer deliverable → verifier → promote), different *paths*.
+
+### Layer 1 edits during proto trials
+
+**Target (`workspaces.md` Layers 1–3):** agents at runtime do not read or write `scripts/`, `bot/`, `prototypes/`.
+
+**Interim (proc-nav / wheat W2):** coding agents and maintainers **do** edit harness code (`scripts/agent-test.py`, `scripts/proc-nav-trial.sh`, `prototypes/agent-arch/setup-role-profiles.sh`, `prototypes/agent-arch/capstone/*.py`) with **`scripts/proc-nav-trial.sh verify-fast`** (or wheat preflight/pytest) as the gate — typically **outside** a live Minecraft worker spawn, or via maintainer/IDE sessions with full repo access.
+
+Treat this as **operator-maintained framework** until IMPROVE deliverables are promoted into the workspace and fleet agents are confined to Layer 4 again.
+
+### Mapping W2-NAV deliverables → target workspace
+
+| Issue | Interim deliverable (today) | Target home (when back-office MR lands) |
+|---|---|---|
+| W2-NAV-001 anchor resolver | `data/workspace/production/scripts/proc_nav_anchor_coords.sh` (wheat path convention) | Prefer **`geo/scripts/resolve-anchor.sh`** (or `geo/scripts/proc-nav-anchor.sh`) — navigation is geo domain; OWNERS `geo/scripts/**` |
+| W2-NAV-002 nav hints | `skills/minecraft-navigation.md` (repo root) | `reference/ingest/skills/minecraft-navigation.md` + deploy |
+| W2-NAV-003 observe handoff | `docs/architecture/observe-cards.md` | `reference/ingest/guides/` or `operations/ingest/runbooks/` |
+| W2-NAV-004 agent-test counter | `scripts/agent-test.py` | Stays **Layer 1** (framework); fix by maintainers, not workspace MR |
+| W2-NAV-005 observe skill install | `prototypes/agent-arch/setup-role-profiles.sh` | Deploy reads `reference/ingest/skills/`; installer stays Layer 1 |
+| W2-NAV-006 planner paths | `proc_scout_graph.py` bodies cite `data/runtime/last-scenario-map.json` | Playbook ingest: **`production/ingest/playbooks/proc-nav-scout.md`** (or `operations/ingest/runbooks/`) |
+
+### Postmortems and registry
+
+Today: `data/postmortems/proc-nav-lab/<RUN_ID>/`, `_known_issues.json` beside it.
+
+Target analogue: trial writeups → **`operations/ingest/post-mortems/`** (PR-reviewed); issue registry could move to **`operations/ingest/`** or stay as generated JSON under `operations/generated/` once compaction owns it. **No migration required** for proc-nav Wave 2 — note the mapping when landfolk-backoffice is live.
+
+### Sync checklist (proc-nav → workspaces)
+
+- [ ] After W2-NAV-001 promote: add script under `geo/scripts/` and OWNERS row; keep thin wrapper in `bin/workspace` if needed.
+- [ ] When `reference/ingest/skills/` is authoritative: `setup-role-profiles.sh` + proc-nav preflight assert `minecraft-observe` on navigator.
+- [ ] Document proc-nav runbook under `operations/ingest/runbooks/proc-nav-scout.md` (mirror of `reports/agent-arch/proc-nav-scout-runbook.md` or replace over time).
+- [ ] Capstone boards: either register as a **fourth** board type in this doc or fold IMPROVE into `landfolk-backoffice` with `metadata.program=proc-nav`.
+
+---
+
 ## Open questions
 
 1. **OWNERS.yaml enforcement** — pure convention (documentation), or wire it into the back-office MR review as a lint check (PR rejected if non-owner writes to a `write:` path)? Lean: convention for MVP, lint when `@engineer` ships.
@@ -626,3 +674,4 @@ The current implementation is overwhelmingly **per-bot JSON files + bot HTTP API
 6. **Bot-specific transient state** — when a bot needs file-backed transient state ("currently mining at Y=44"), does it go in `data/bots/<bot>/` or in card metadata? Lean: card metadata for everything that crosses cards; `data/bots/<bot>/` only for things that need a stable filesystem location (rare).
 7. **Cross-domain artifacts** — when something doesn't fit one of the five domains, that's a signal a domain is missing or needs splitting. Don't force-fit; add a domain.
 8. **Marks under sign-anchored** — when sign-anchored placemarks land, the workspace consumers don't notice. The decision above pre-validates this.
+9. **Capstone boards vs back-office** — `proc-nav-lab` / `wheat-capstone` IMPROVE cards edit repo-root harness until workspace MR flow exists. Consolidate to `landfolk-backoffice` worktrees, or keep explicit proto lane? See § Interim capstone / proc-nav lanes.

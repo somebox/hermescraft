@@ -154,6 +154,8 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
   - Embedded dispatcher (`kanban.dispatch_in_gateway: true`) — Hermes spawns directly, picks up env from gateway process + profile `.env`.
   - Standalone dispatcher (`landfolk-dispatcher.sh`) — shell loop uses explicit `env MC_API_URL=… MC_USERNAME=… hermes …` to invoke a worker with the bot's MC binding.
 
+**Validated (W1 wheat capstone, `w1-1780879052`):** Hermes kanban spawn **strips `MC_*` from the parent env** at the worker boundary (upstream `kanban_db.py` scrub). Dispatcher exports and `terminal.env_passthrough` do not reliably leave `MC_API_URL` / `MC_USERNAME` in the worker shell. **Profile `.env` is loaded after scrub** and is the working channel for single-bot trials: duplicate the same body’s `MC_*` in each execute-role profile via [`setup-role-profiles.sh`](../../prototypes/agent-arch/setup-role-profiles.sh). Wrapper-on-PATH + SOUL Turn-1 instructions **failed** (agents do not auto-run SOUL; PATH never included profile `bin/`). Pre-trial gate: [`smoke-worker-env.sh`](../../scripts/smoke-worker-env.sh). Postmortem: [`data/postmortems/wheat-capstone/w1-1780879052/`](../../data/postmortems/wheat-capstone/w1-1780879052/). **Not fleet-safe** — per-card body still needs Section F spawn seam ([`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh) or plugin hook).
+
 **New model:**
 - For **bot-less cards** (no `metadata.bot`): Hermes embedded dispatcher handles spawn natively. Loads agent profile, no MC env needed.
 - For **bot-bound cards** (`metadata.bot` set): we need MC env injected at spawn. v0.15 has **no native `pre_spawn` hook** for per-card env modification. Resolution: a small spawn layer (extension to `landfolk` plugin's gate-check, or a thin wrapper) reads `metadata.bot`, looks up `data/bots/<bot>.yaml`, and injects `MC_API_URL` + `MC_USERNAME` before delegating to Hermes worker spawn. The agent profile's `config.yaml` declares `env_passthrough: [MC_API_URL, MC_USERNAME]`.
@@ -179,7 +181,8 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
 | Worker base SOUL |  | (smaller, generic) |  |
 | Bot Hermes profiles (`~/.hermes/profiles/flint/` etc.) |  | (registry entries in `data/bots/`) | When agent profiles ship + spawn layer works |
 | Agent Hermes profiles |  | (NEW: one per agent) |  |
-| Spawn pipeline for bot-bound cards |  | (NEW: env injection layer) |  |
+| Spawn pipeline for bot-bound cards |  | (NEW: env injection layer) | Stand-in: [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh); wire into live dispatch per [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding |
+| Fleet status snapshot | [`scripts/roster.py`](../../scripts/roster.py), dashboard `GET /api/fleet`, dispatcher yaml | (NEW: `PUT …/operations/fleet-state`) | When single writer ships ([`data-api.md`](data-api.md) § Fleet state record) |
 | `scripts/setup-landfolk-profiles.sh` |  | (rewrite: agent profiles + bot registry; sources skills/SOULs from workspace) |  |
 | Skill bundles | (move from `skills/` to `data/workspace/reference/skills/`) |  | After workspace migration |
 | SOULs | (move from `prompts/landfolk/` to `data/workspace/reference/souls/`) |  | After workspace migration |

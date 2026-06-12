@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Colony dashboard — wireframes</title>
+<style>
+  :root {
+    --bg: #f4f4f5;
+    --surface: #fff;
+    --text: #18181b;
+    --muted: #71717a;
+    --border: #d4d4d8;
+    --accent: #3f3f46;
+    --warn: #b45309;
+    --warn-bg: #fffbeb;
+    --link: #2563eb;
+    --region-bg: #fafafa;
+    --note: #52525b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 13px/1.45 ui-sans-serif, system-ui, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+  }
+  .shell {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    min-height: 100vh;
+  }
+  nav {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 12px 0;
+  }
+  nav h1 {
+    margin: 0 12px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  nav a {
+    display: block;
+    padding: 6px 12px;
+    color: var(--text);
+    text-decoration: none;
+    border-left: 3px solid transparent;
+  }
+  nav a:hover { background: var(--region-bg); }
+  nav a.active {
+    font-weight: 600;
+    border-left-color: var(--accent);
+    background: var(--region-bg);
+  }
+  nav .sep {
+    height: 1px;
+    background: var(--border);
+    margin: 8px 12px;
+  }
+  nav .note {
+    margin: 12px;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  main {
+    padding: 16px 20px 40px;
+    max-width: 1100px;
+  }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .screen-title {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .screen-meta {
+    margin: 0 0 16px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .screen-meta a { color: var(--link); }
+
+  /* App chrome (repeated per screen) */
+  .app-header {
+    border: 1px dashed var(--border);
+    background: var(--surface);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    align-items: baseline;
+  }
+  .app-header .brand { font-weight: 600; }
+  .app-header .chip {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, monospace;
+  }
+  .app-header .chip strong { color: var(--text); font-weight: 500; }
+
+  .strip {
+    border: 1px dashed var(--border);
+    background: var(--surface);
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .strip.warn { background: var(--warn-bg); border-color: #fcd34d; }
+  .strip label {
+    font-weight: 600;
+    margin-right: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 800px) {
+    .shell { grid-template-columns: 1fr; }
+    nav { border-right: none; border-bottom: 1px solid var(--border); }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+
+  .region {
+    border: 1px solid var(--border);
+    background: var(--region-bg);
+    padding: 10px 12px;
+    min-height: 72px;
+  }
+  .region h3 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+  }
+  .region .content {
+    font-size: 12px;
+    color: var(--text);
+  }
+  .region .placeholder {
+    color: var(--note);
+    font-style: italic;
+  }
+  .region .example {
+    margin-top: 6px;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--text);
+  }
+  .region .actions {
+    margin-top: 10px;
+  }
+  .region .actions button,
+  .region .actions .fake-link {
+    font: inherit;
+    font-size: 11px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--link);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .region .actions .fake-link { display: inline-block; text-decoration: none; }
+  .region.full { margin-bottom: 12px; }
+
+  .bar-placeholder {
+    height: 10px;
+    background: linear-gradient(90deg, var(--border) 62%, transparent 62%);
+    border: 1px solid var(--border);
+    margin: 6px 0;
+    max-width: 200px;
+  }
+  .phase-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+  }
+  .phase-strip span {
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .phase-strip .arrow { border: none; background: none; padding: 0 2px; color: var(--muted); }
+
+  .list-rows .row {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--soft, #eee);
+    font-size: 12px;
+  }
+  .list-rows .row:last-child { border-bottom: none; }
+
+  .subnav {
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .subnav a { color: var(--link); margin-right: 12px; }
+  .period {
+    float: right;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: ui-monospace, monospace;
+  }
+
+  /* Mental model stack */
+  .stack .layer {
+    border: 1px solid var(--border);
+    border-bottom: none;
+    padding: 8px 12px;
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 12px;
+    font-size: 12px;
+  }
+  .stack .layer:last-child { border-bottom: 1px solid var(--border); }
+  .stack .layer .name { font-weight: 600; }
+  .stack .layer .desc { color: var(--muted); }
+
+  .ia-tree {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav aria-label="Screens">
+    <h1>Wireframes</h1>
+    <a href="#overview" data-screen="overview" class="active">Overview (home)</a>
+    <a href="#agents" data-screen="agents">Agents</a>
+    <a href="#handoffs" data-screen="handoffs">Handoffs</a>
+    <a href="#hotspots" data-screen="hotspots">Hotspots</a>
+    <a href="#productivity" data-screen="productivity">Productivity</a>
+    <a href="#economy" data-screen="economy">Economy</a>
+    <a href="#strategy" data-screen="strategy">Strategy</a>
+    <a href="#intelligence" data-screen="intelligence">Intelligence</a>
+    <a href="#llm" data-screen="llm">LLM costs</a>
+    <a href="#operations" data-screen="operations">Operations</a>
+    <div class="sep"></div>
+    <a href="#model" data-screen="model">Mental model</a>
+    <a href="#ia" data-screen="ia">Info architecture</a>
+    <p class="note">Design exploration. Regions = components. Example values are illustrative. Spec: <code>dashboard-metrics-spec.md</code></p>
+  </nav>
+
+  <main>
+
+    <!-- OVERVIEW -->
+    <section id="overview" class="screen active" aria-labelledby="t-overview">
+      <h2 class="screen-title" id="t-overview">Colony overview</h2>
+      <p class="screen-meta">Default route · drill-down via region links · data: kanban, fleet-state, handoff metadata</p>
+
+      <div class="app-header">
+        <span class="brand">Landfolk Colony</span>
+        <span class="chip">world <strong>▾</strong></span>
+        <span class="chip">MC day <strong>1243</strong></span>
+        <span class="chip">LLM <strong>$2.40</strong> / mo <strong>$68</strong></span>
+        <span class="chip">fleet <strong>3/4 up</strong></span>
+        <span class="chip">intent queue <strong>2</strong></span>
+        <span class="chip" style="color:var(--warn)">hotspot <strong>mox gap p90 4m</strong></span>
+      </div>
+
+      <div class="strip warn">
+        <label>Hotspots 24h</label>
+        bind defer ×3 · needs_nav ×2 · epic stall t_e001
+        <span class="placeholder">— ranked; click → Hotspots screen</span>
+      </div>
+
+      <div class="grid-2">
+        <div class="region">
+          <h3>Colony assets</h3>
+          <div class="content placeholder">structures, farms, stockpile bars by anchor</div>
+          <div class="example">wheat 64 @ chest_food · iron 18 ↓ deficit</div>
+          <div class="actions"><a class="fake-link" href="#economy" data-screen-link="economy">Economy →</a></div>
+        </div>
+        <div class="region">
+          <h3>Effort mix (24h)</h3>
+          <div class="bar-placeholder" title="execute | desk | maint"></div>
+          <div class="example">execute 62% · desk 28% · maint 10%</div>
+          <div class="placeholder">by assignee profile counts</div>
+          <div class="actions">
+            <a class="fake-link" href="#agents" data-screen-link="agents">Agents →</a>
+            <a class="fake-link" href="#handoffs" data-screen-link="handoffs">Handoffs →</a>
+          </div>
+        </div>
+        <div class="region">
+          <h3>Strategy snapshot</h3>
+          <div class="placeholder">open epics progress bars · plans in flight · goals rollup</div>
+          <div class="example">t_e001 FARM 3/4</div>
+          <div class="actions"><a class="fake-link" href="#strategy" data-screen-link="strategy">Strategy →</a></div>
+        </div>
+        <div class="region">
+          <h3>Agent effectiveness (24h)</h3>
+          <div class="list-rows">
+            <div class="row">navigator · 6 done · p50 3m · $/card</div>
+            <div class="row">builder · 4 done · 1 block</div>
+            <div class="row">planner · desk · clarify×1</div>
+          </div>
+          <div class="placeholder">assignee ≠ bot</div>
+        </div>
+      </div>
+
+      <div class="region full">
+        <h3>Bot lanes (metadata.bot)</h3>
+        <div class="content">
+          <div class="example">mox · busy 78% · idle 12% · queue 2 · gap p50 1m08s</div>
+          <div class="example">zee · busy 91% · queue 5 ⚠</div>
+        </div>
+        <div class="placeholder">one mutex per body; serial phases rotate assignee</div>
+      </div>
+
+      <div class="region full">
+        <h3>Handoff summary</h3>
+        <div class="example">legs 3 · needs_nav open 0 · exit_pos missing 0/14</div>
+        <div class="actions"><a class="fake-link" href="#operations" data-screen-link="operations">Operations swimlanes →</a></div>
+      </div>
+    </section>
+
+    <!-- AGENTS -->
+    <section id="agents" class="screen" aria-labelledby="t-agents">
+      <h2 class="screen-title" id="t-agents">Agents &amp; desk mix</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · period selector · kanban assignee + card_kind</p>
+      <span class="period">[24h ▾] [7d] [since genesis]</span>
+
+      <div class="region full">
+        <h3>Execution profiles</h3>
+        <div class="placeholder">compact metric rows per assignee — not a wide data table in v1</div>
+        <div class="example">navigator · done/block · p50 wall · spawn→mc · turns · $/card</div>
+        <div class="example">builder · farmer · crafter · …</div>
+      </div>
+
+      <div class="region full">
+        <h3>Coordination profiles</h3>
+        <div class="example">planner · plan+clarify count · plan→first execute latency</div>
+        <div class="example">overseer · reviews · judgment outcome</div>
+      </div>
+
+      <div class="region full">
+        <h3>Desk vs in-world</h3>
+        <div class="bar-placeholder"></div>
+        <div class="placeholder">stacked hours by day · LLM $ split execute / desk / maint</div>
+      </div>
+    </section>
+
+    <!-- HANDOFFS -->
+    <section id="handoffs" class="screen" aria-labelledby="t-handoffs">
+      <h2 class="screen-title" id="t-handoffs">Handoffs &amp; phase gaps</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · complete metadata · epic deps · auto_leg</p>
+
+      <div class="region full">
+        <h3>Epic phase strip (example t_e001 · bot mox)</h3>
+        <div class="phase-strip">
+          <span>nav</span><span class="arrow">→</span>
+          <span>build</span><span class="arrow">→</span>
+          <span>repair?</span><span class="arrow">→</span>
+          <span>farm</span><span class="arrow">→</span>
+          <span>leg nav</span><span class="arrow">→</span>
+          <span>crafter</span>
+        </div>
+        <div class="placeholder" style="margin-top:8px">desk phases: plan · research · clarify · review · doc</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="region">
+          <h3>Completeness 24h</h3>
+          <div class="example">exit_pos 14/14 · work_at_mark 12/14</div>
+        </div>
+        <div class="region">
+          <h3>Friction</h3>
+          <div class="example">needs_nav 2 resolved · mismatch→repair 1</div>
+        </div>
+        <div class="region">
+          <h3>Auto-legs</h3>
+          <div class="example">inserted 3 · p50 duration · dup idempotency 0</div>
+        </div>
+        <div class="region">
+          <h3>Lane gaps (mox)</h3>
+          <div class="example">complete→claim p50 · p90 ⚠</div>
+        </div>
+      </div>
+
+      <div class="region full">
+        <h3>Recent handoffs</h3>
+        <div class="placeholder">scrollable list: card · assignee→next · exit_pos ok? · block reason · gap sec</div>
+        <div class="example">t_x003 farmer→crafter · leg t_n001 · gap 52s</div>
+      </div>
+    </section>
+
+    <!-- HOTSPOTS -->
+    <section id="hotspots" class="screen" aria-labelledby="t-hotspots">
+      <h2 class="screen-title" id="t-hotspots">Hotspots</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · dispatch-log · thresholds · deep link to Operations</p>
+
+      <div class="region full">
+        <h3>Active now</h3>
+        <div class="list-rows">
+          <div class="row">mox · queue 5 · oldest ready 12m</div>
+          <div class="row">intent · needs_bot 2 · defer all busy</div>
+        </div>
+      </div>
+
+      <div class="region full">
+        <h3>24h ranking</h3>
+        <div class="list-rows">
+          <div class="row">1 lane gap p90 mox → <a href="#operations" data-screen-link="operations">Operations</a></div>
+          <div class="row">2 bind defer ×3 → dispatch log</div>
+          <div class="row">3 clarify loop t_e001 → Strategy</div>
+        </div>
+      </div>
+
+      <div class="region full">
+        <h3>Block reason histogram</h3>
+        <div class="example">needs_nav · world_state_mismatch · dead_mid_card · …</div>
+        <div class="placeholder">prefix counts; click filters Operations</div>
+      </div>
+    </section>
+
+    <!-- PRODUCTIVITY -->
+    <section id="productivity" class="screen" aria-labelledby="t-productivity">
+      <h2 class="screen-title" id="t-productivity">Productivity</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · throughput · bodies · assignee timing</p>
+
+      <div class="strip">
+        <label>Throughput</label>
+        completed / running / blocked / URGENT — headline counts
+      </div>
+
+      <div class="grid-2">
+        <div class="region">
+          <h3>Time per task</h3>
+          <div class="placeholder">p50 wall by assignee (not bot)</div>
+        </div>
+        <div class="region">
+          <h3>Overhead</h3>
+          <div class="example">spawn→first-mc · turns/card execute</div>
+        </div>
+        <div class="region">
+          <h3>Utilization</h3>
+          <div class="example">per bot: busy% · idle%</div>
+        </div>
+        <div class="region">
+          <h3>Lane depth</h3>
+          <div class="example">ready count per bot · warn if deep</div>
+        </div>
+      </div>
+
+      <div class="region full">
+        <h3>Swimlanes (compact)</h3>
+        <div class="example">Mox ▶ crafter t_x004 · Zee ▶ miner t_y012</div>
+        <div class="actions"><a class="fake-link" href="#operations" data-screen-link="operations">Expand operations →</a></div>
+      </div>
+    </section>
+
+    <!-- ECONOMY -->
+    <section id="economy" class="screen" aria-labelledby="t-economy">
+      <h2 class="screen-title" id="t-economy">Economy</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · balance sheet · not chest dump</p>
+      <span class="period">period [24h ▾]</span>
+
+      <div class="region full">
+        <h3>Burn rate (colony)</h3>
+        <div class="placeholder">food/day · fuel · maint cards · LLM $/day · $/card</div>
+      </div>
+
+      <div class="region full">
+        <h3>Stock by anchor</h3>
+        <div class="placeholder">goal target · now · trend per mark/chest/farm</div>
+      </div>
+
+      <div class="region full">
+        <h3>Production log</h3>
+        <div class="placeholder">inv_delta from completes — filterable list</div>
+        <div class="example">time · epic · assignee · item · ±qty</div>
+      </div>
+    </section>
+
+    <!-- STRATEGY -->
+    <section id="strategy" class="screen" aria-labelledby="t-strategy">
+      <h2 class="screen-title" id="t-strategy">Strategy</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · epics · workspace ingest</p>
+
+      <div class="grid-2">
+        <div class="region">
+          <h3>Epics (open)</h3>
+          <div class="example">child done/total · blocked flag</div>
+        </div>
+        <div class="region">
+          <h3>Plans (infra ingest)</h3>
+          <div class="placeholder">yaml index · draft vs active</div>
+        </div>
+        <div class="region">
+          <h3>Goals rollup</h3>
+          <div class="bar-placeholder"></div>
+        </div>
+        <div class="region">
+          <h3>Budgets &amp; presets</h3>
+          <div class="placeholder">spent vs planned · preset checklist</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INTELLIGENCE -->
+    <section id="intelligence" class="screen" aria-labelledby="t-intelligence">
+      <h2 class="screen-title" id="t-intelligence">Intelligence</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · recall · generated freshness</p>
+
+      <div class="grid-2">
+        <div class="region">
+          <h3>Recall 24h</h3>
+          <div class="example">count · by subject/type</div>
+        </div>
+        <div class="region">
+          <h3>Worksites / POIs</h3>
+        </div>
+        <div class="region">
+          <h3>Compaction &amp; artifacts</h3>
+          <div class="placeholder">playbooks · post-mortems · judgments</div>
+        </div>
+        <div class="region">
+          <h3>File freshness</h3>
+          <div class="example">stockpiles.json 6h ago · worksites 2d</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LLM -->
+    <section id="llm" class="screen" aria-labelledby="t-llm">
+      <h2 class="screen-title" id="t-llm">LLM costs</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · OpenRouter · attribution target</p>
+
+      <div class="strip">
+        <label>OpenRouter</label>
+        balance · limit · today · month
+      </div>
+
+      <div class="region full">
+        <h3>Trend</h3>
+        <div class="bar-placeholder" style="max-width:100%; height:40px"></div>
+        <div class="placeholder">30d daily usage sparkline from fleet / JSONL</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="region">
+          <h3>Attribution</h3>
+          <div class="placeholder">by assignee · desk vs execute</div>
+        </div>
+        <div class="region">
+          <h3>Efficiency flags</h3>
+          <div class="placeholder">$/card vs median turns · outliers</div>
+        </div>
+      </div>
+
+      <div class="region full">
+        <h3>Model mix</h3>
+        <div class="placeholder">profile config / agent-models</div>
+      </div>
+    </section>
+
+    <!-- OPERATIONS -->
+    <section id="operations" class="screen" aria-labelledby="t-operations">
+      <h2 class="screen-title" id="t-operations">Operations (debug)</h2>
+      <p class="screen-meta"><a href="#overview" data-screen-link="overview">← Colony</a> · legacy lanes + WS pulse · card drawer</p>
+
+      <div class="region full">
+        <h3>Bot swimlanes</h3>
+        <div class="placeholder">mutex lanes · running + ready queue · parked cards</div>
+      </div>
+
+      <div class="grid-2">
+        <div class="region">
+          <h3>Event pulse</h3>
+          <div class="placeholder">kanban WS tail since=</div>
+        </div>
+        <div class="region">
+          <h3>Card drawer</h3>
+          <div class="placeholder">selected card · block reason · metadata.bot · assignee</div>
+        </div>
+      </div>
+
+      <div class="region full">
+        <h3>World / map (alt route)</h3>
+        <div class="placeholder">existing dashboard map · FPV · spatial debug — separate mode</div>
+      </div>
+    </section>
+
+    <!-- MENTAL MODEL -->
+    <section id="model" class="screen" aria-labelledby="t-model">
+      <h2 class="screen-title" id="t-model">Mental model (layers)</h2>
+      <p class="screen-meta">What the overview is organized around — not a UI screen in production</p>
+
+      <div class="stack">
+        <div class="layer"><span class="name">Strategy</span><span class="desc">epics, plans, budgets, goals — intent</span></div>
+        <div class="layer"><span class="name">Agents &amp; handoff</span><span class="desc">assignee effectiveness, desk vs execute, handoff health</span></div>
+        <div class="layer"><span class="name">Productivity</span><span class="desc">throughput, spawn overhead, bot lanes</span></div>
+        <div class="layer"><span class="name">Hotspots</span><span class="desc">defer, blocks, stall, serial wait</span></div>
+        <div class="layer"><span class="name">Colony</span><span class="desc">assets, stock, burn, production</span></div>
+        <div class="layer"><span class="name">Intelligence</span><span class="desc">recall, worksites, compaction</span></div>
+        <div class="layer"><span class="name">LLM economics</span><span class="desc">$/day, attribution by profile</span></div>
+      </div>
+    </section>
+
+    <!-- IA -->
+    <section id="ia" class="screen" aria-labelledby="t-ia">
+      <h2 class="screen-title" id="t-ia">Information architecture</h2>
+      <p class="screen-meta">Nav tree · drill-down paths in spec</p>
+
+      <pre class="ia-tree">Colony overview (default)
+├── Economy
+├── Agents
+├── Handoffs
+├── Hotspots
+├── Productivity
+├── Strategy
+├── Intelligence
+├── LLM costs
+└── Operations* (debug)
+World / Map (legacy)</pre>
+
+      <div class="region full" style="margin-top:12px">
+        <h3>Drill-down paths</h3>
+        <div class="list-rows">
+          <div class="row">Hotspot row → Operations (filtered)</div>
+          <div class="row">Agent tile → Agents detail</div>
+          <div class="row">Epic strip → Strategy + DAG</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  const screens = document.querySelectorAll('.screen');
+  const navLinks = document.querySelectorAll('nav a[data-screen]');
+  const inlineLinks = document.querySelectorAll('[data-screen-link]');
+
+  function show(id) {
+    const target = id.replace(/^#/, '');
+    screens.forEach(s => s.classList.toggle('active', s.id === target));
+    navLinks.forEach(a => a.classList.toggle('active', a.dataset.screen === target));
+    if (history.replaceState) {
+      history.replaceState(null, '', '#' + target);
+    } else {
+      location.hash = target;
+    }
+  }
+
+  function fromHash() {
+    const h = (location.hash || '#overview').slice(1);
+    if (document.getElementById(h)) show(h);
+    else show('overview');
+  }
+
+  navLinks.forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      show(a.dataset.screen);
+    });
+  });
+
+  inlineLinks.forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      show(a.dataset.screenLink);
+    });
+  });
+
+  window.addEventListener('hashchange', fromHash);
+  fromHash();
+})();
+</script>
+</body>
+</html>
