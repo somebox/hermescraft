@@ -63,6 +63,218 @@ from tests._lib.chest_nbt import sum_chest_item_from_nbt as _sum_chest_item_from
 
 DEFAULT_BOT_URL = "http://localhost:3001"
 DEFAULT_MODEL = os.environ.get("AGENT_TEST_MODEL", "deepseek/deepseek-v4-flash:exacto")
+
+_MC_VERB_RE = re.compile(r"\bmc\s+([a-z_]+)\b", re.I)
+_TERMINAL_TOOL_NAMES = frozenset({"terminal", "bash", "shell", "execute", "execute_code"})
+
+
+def _message_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                chunks.append(part)
+            elif isinstance(part, dict):
+                if part.get("type") == "text":
+                    chunks.append(part.get("text") or "")
+                elif part.get("type") == "tool_use":
+                    inp = part.get("input") or {}
+                    if isinstance(inp, dict):
+                        chunks.append(
+                            inp.get("command") or inp.get("code") or inp.get("script") or ""
+                        )
+        return "\n".join(chunks)
+    return ""
+
+
+def _parse_tool_arguments(args_raw) -> dict:
+    if isinstance(args_raw, dict):
+        return args_raw
+    if not args_raw:
+        return {}
+    if isinstance(args_raw, str):
+        try:
+            parsed = json.loads(args_raw)
+            return parsed if isinstance(parsed, dict) else {"command": args_raw}
+        except json.JSONDecodeError:
+            return {"command": args_raw}
+    return {}
+
+
+def _mc_verbs_from_command_text(cmd: str) -> list[str]:
+    if not cmd:
+        return []
+    verbs: list[str] = []
+    for m in _MC_VERB_RE.finditer(cmd):
+        verbs.append(m.group(1).lower())
+    try:
+        tokens = shlex.split(cmd, posix=True)
+    except ValueError:
+        tokens = []
+    for i, tok in enumerate(tokens):
+        if tok != "mc" or i + 1 >= len(tokens) or tokens[i + 1] != "batch":
+            continue
+        for j in range(i + 2, len(tokens)):
+            t = tokens[j]
+            if not (t.startswith("[") or t.startswith("{")):
+                continue
+            try:
+                steps = json.loads(t)
+            except (json.JSONDecodeError, TypeError):
+                break
+            if isinstance(steps, list):
+                for step in steps:
+                    if isinstance(step, dict) and isinstance(step.get("action"), str):
+                        verbs.append(step["action"].lower())
+            break
+    return verbs
+
+
+def extract_session_mc_metrics(sess: dict) -> tuple[list[dict], list[str]]:
+    """Parse Hermes session JSON for tool calls and `mc <verb>` invocations.
+
+    Handles chat-completions shapes: tool_use blocks in content, `code` arg
+    alias, and assistant text that documents executed mc commands.
+    """
+    tool_calls: list[dict] = []
+    mc_verbs_used: list[str] = []
+
+    for msg in sess.get("messages", []):
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            if not fn and tc.get("name"):
+                fn = {"name": tc.get("name"), "arguments": tc.get("arguments")}
+            args = _parse_tool_arguments(fn.get("arguments"))
+            name = (fn.get("name") or "?").lower()
+            tool_calls.append({"name": fn.get("name"), "args": args})
+            cmd = (
+                args.get("command") or args.get("code") or args.get("script") or ""
+            )
+            if isinstance(cmd, str) and (name in _TERMINAL_TOOL_NAMES or "mc " in cmd):
+                mc_verbs_used.extend(_mc_verbs_from_command_text(cmd))
+
+        content = msg.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "tool_use":
+                    continue
+                inp = part.get("input") or {}
+                if not isinstance(inp, dict):
+                    continue
+                tool_calls.append({"name": part.get("name"), "args": inp})
+                cmd = inp.get("command") or inp.get("code") or inp.get("script") or ""
+                if isinstance(cmd, str):
+                    mc_verbs_used.extend(_mc_verbs_from_command_text(cmd))
+
+        if msg.get("role") == "assistant":
+            # Only plain text parts — tool_use mc commands are counted above.
+            if isinstance(content, str):
+                text = content
+            elif isinstance(content, list):
+                text = "\n".join(
+                    (p.get("text") or "")
+                    for p in content
+                    if isinstance(p, dict) and p.get("type") == "text"
+                )
+            else:
+                text = ""
+            if text and _MC_VERB_RE.search(text):
+                for line in text.splitlines():
+                    line = line.strip()
+                    if line.startswith("mc ") or " mc " in f" {line} ":
+                        mc_verbs_used.extend(_mc_verbs_from_command_text(line))
+
+    return tool_calls, mc_verbs_used
+
+
+def resolve_session_path(
+    *,
+    session_id: str | None,
+    my_session: Path | None,
+    sessions_dir: Path,
+    pre_session_files: set[Path],
+) -> Path | None:
+    if my_session and my_session.exists():
+        return my_session
+    if session_id:
+        for base in (
+            sessions_dir,
+            Path.home() / ".hermes" / "sessions",
+        ):
+            candidate = base / f"session_{session_id}.json"
+            if candidate.is_file():
+                return candidate
+    if sessions_dir.is_dir():
+        new_files = set(sessions_dir.glob("session_*.json")) - pre_session_files
+        if new_files:
+            return max(new_files, key=lambda p: p.stat().st_mtime)
+    return None
+
+
+def _load_session_from_state_db(session_id: str) -> dict | None:
+    """Fallback: hermes >= 2026-06 stores worker conversations in sqlite
+    ``state.db`` (``messages`` table) instead of per-session JSON under
+    ``~/.hermes/sessions/``. Two locations:
+
+      - ``~/.hermes/state.db`` (root) — chat-mode hermes runs with no
+        explicit ``-p <profile>`` (this is the agent-test path).
+      - ``~/.hermes/profiles/<name>/state.db`` — worker mode, used by
+        the dispatcher's kanban claims.
+
+    Scan both, return a ``{"messages": [...]}`` dict mirroring the legacy
+    JSON shape so :func:`extract_session_mc_metrics` reads either source.
+    Returns ``None`` if no db row matches the session id.
+    """
+    import sqlite3
+    hermes_home = Path.home() / ".hermes"
+    candidate_dbs: list[Path] = []
+    root_db = hermes_home / "state.db"
+    if root_db.is_file():
+        candidate_dbs.append(root_db)
+    profiles_dir = hermes_home / "profiles"
+    if profiles_dir.is_dir():
+        for profile_dir in sorted(profiles_dir.iterdir()):
+            db = profile_dir / "state.db"
+            if db.is_file():
+                candidate_dbs.append(db)
+    for db in candidate_dbs:
+        try:
+            conn = sqlite3.connect(f"file:{db.resolve()}?mode=ro", uri=True)
+            cur = conn.execute(
+                "SELECT role, content, tool_calls FROM messages "
+                "WHERE session_id = ? ORDER BY id",
+                (session_id,),
+            )
+            rows = cur.fetchall()
+            conn.close()
+        except sqlite3.Error:
+            continue
+        if not rows:
+            continue
+        messages: list[dict] = []
+        for role, content_raw, tool_calls_raw in rows:
+            # content may be plain text or a JSON-encoded list of content
+            # parts (tool_use / text); decode the latter so extractor can
+            # walk parts. tool_calls is JSON-encoded list of tool_call dicts.
+            content: Any = content_raw
+            if isinstance(content_raw, str) and content_raw.startswith(("[", "{")):
+                try:
+                    content = json.loads(content_raw)
+                except json.JSONDecodeError:
+                    pass
+            tcs: list = []
+            if isinstance(tool_calls_raw, str) and tool_calls_raw.strip():
+                try:
+                    decoded = json.loads(tool_calls_raw)
+                    if isinstance(decoded, list):
+                        tcs = decoded
+                except json.JSONDecodeError:
+                    pass
+            messages.append({"role": role, "content": content, "tool_calls": tcs})
+        return {"messages": messages}
+    return None
 # 2026-05 model findings (agent-test context, not direct-API/benchmark):
 #   - google/gemini-2.5-flash       — reliable, fast, ~6 mc calls/composite test
 #   - openai/gpt-4o-mini            — confuses mc CLI for memory/search_files
@@ -193,22 +405,52 @@ def _test_world(spec: dict) -> str:
     return str(spec.get("world") or "landfolk-test")
 
 
-def _player_reset_rcon_cmds(spec: dict) -> list[str]:
-    """Reset Flint between runs (fire, effects, optional inventory clears)."""
-    # After proc-lab cleanup Flint is usually still in hub; prep mvtp moves him next.
+def _is_proc_scratch_world(spec: dict) -> bool:
+    """MV scratch arenas (proc-lab, proc-nav, …) skip pre-prep hub cleanup."""
+    return _test_world(spec).startswith("proc-")
+
+
+def resolve_mc_username(bot_url: str) -> str:
+    """Bot in-game name for rcon prep and Hermes MC_* env."""
+    explicit = os.environ.get("MC_USERNAME", "").strip()
+    if explicit:
+        return explicit
+    import re
+
+    m = re.search(r":(\d+)\s*$", bot_url.rstrip("/"))
+    if m:
+        port = m.group(1)
+        bots_dir = ROOT / "data" / "bots"
+        try:
+            import yaml
+        except ImportError:
+            return "Flint"
+        for path in sorted(bots_dir.glob("*.yaml")):
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except OSError:
+                continue
+            if str(data.get("api_port")) == port:
+                return str(data.get("username") or "Flint")
+    return "Flint"
+
+
+def _player_reset_rcon_cmds(spec: dict, player: str) -> list[str]:
+    """Reset test player between runs (fire, effects, optional inventory clears)."""
     world = (
         "landfolk-test"
-        if _test_world(spec) == "proc-lab"
+        if _is_proc_scratch_world(spec)
         else _test_world(spec)
     )
     cmds = [
-        f"execute in {world} run data merge entity @e[type=player,name=Flint,limit=1] {{Fire:0s,HurtTime:0s,DeathTime:0s}}",
-        f"execute in {world} run effect clear Flint",
-        f"execute in {world} run effect give Flint minecraft:instant_health 1 4",
+        f"execute in {world} run data merge entity @e[type=player,name={player},limit=1] "
+        f"{{Fire:0s,HurtTime:0s,DeathTime:0s}}",
+        f"execute in {world} run effect clear {player}",
+        f"execute in {world} run effect give {player} minecraft:instant_health 1 4",
     ]
     for item in spec.get("inventory_reset") or []:
         name = str(item).replace("minecraft:", "")
-        cmds.append(f"execute in {world} run clear Flint minecraft:{name}")
+        cmds.append(f"execute in {world} run clear {player} minecraft:{name}")
     return cmds
 
 
@@ -793,8 +1035,9 @@ def main():
     # Flint to landfolk-test; prep mvtp+tp must run without an extra hub hop first.
     print(f"  pre-prep reset + clean...", end="", flush=True)
     _t = time.time()
-    pre_cmds = _player_reset_rcon_cmds(spec)
-    if _test_world(spec) != "proc-lab":
+    mc_user = resolve_mc_username(args.bot_url)
+    pre_cmds = _player_reset_rcon_cmds(spec, mc_user)
+    if not _is_proc_scratch_world(spec):
         pre_cmds.extend(spec.get("cleanup") or [])
     run_rcon_batch(pre_cmds)
     time.sleep(0.5)
@@ -810,21 +1053,22 @@ def main():
     # Settle: let mineflayer's block cache ingest the rcon changes. 6s is
     # needed when the agent will read/write blocks that an external rcon
     # `fill` just modified — chunk update packets can lag 3-4s under load.
-    settle_s = int(spec.get("settle_seconds", 8 if _test_world(spec) == "proc-lab" else 6))
+    settle_s = int(spec.get("settle_seconds", 8 if _is_proc_scratch_world(spec) else 6))
     print(f"  settle ({settle_s}s)...", end="", flush=True)
     _t = time.time()
     time.sleep(settle_s)
     stage_times["settle"] = time.time() - _t
     print(f" ok ({stage_times['settle']:.1f}s)")
 
-    if _test_world(spec) == "proc-lab":
-        print(f"  wait for bot in proc-lab...", end="", flush=True)
+    if _is_proc_scratch_world(spec):
+        scratch = _test_world(spec)
+        print(f"  wait for bot in {scratch}...", end="", flush=True)
         _t = time.time()
         if not _wait_for_bot_ready(args.bot_url, timeout_s=45):
             print(f" FAIL ({time.time() - _t:.1f}s)", file=sys.stderr)
             print(
-                "ERROR: Flint has no position after proc-lab prep — "
-                "check bot connected (landfolk start) and rcon mvtp/tp in prep.",
+                f"ERROR: {mc_user} has no position after {scratch} prep — "
+                "check bot connected (colony start mox) and rcon mvtp/tp in prep.",
                 file=sys.stderr,
             )
             sys.exit(2)
@@ -905,7 +1149,7 @@ def main():
 
     env = os.environ.copy()
     env["MC_API_URL"] = args.bot_url
-    env["MC_USERNAME"] = "Flint"
+    env["MC_USERNAME"] = mc_user
     # Propagate the synthetic task ID used in the prompt so agents that read
     # `scripts/kanban card $HERMES_KANBAN_TASK` get the same id we templated
     # into {{TASK_ID}}. Otherwise the var expands to empty in the hermes
@@ -1145,56 +1389,33 @@ def main():
     # -Q suppresses tool traces in stdout, so this is the only reliable source.
     # On timeout/stall, the session_id line may not have flushed to stderr —
     # fall back to my_session (the file path the watchdog identified).
-    tool_calls = []
-    sess_path = None
-    if session_id:
-        sess_path = Path.home() / ".hermes" / "sessions" / f"session_{session_id}.json"
-    elif my_session and my_session.exists():
-        sess_path = my_session
-        session_id = sess_path.stem.replace("session_", "")
+    sess_path = resolve_session_path(
+        session_id=session_id,
+        my_session=my_session,
+        sessions_dir=sessions_dir,
+        pre_session_files=pre_session_files,
+    )
+    tool_calls: list[dict] = []
+    mc_verbs_used: list[str] = []
     if sess_path and sess_path.exists():
         try:
             sess = json.loads(sess_path.read_text())
-            for msg in sess.get("messages", []):
-                for tc in (msg.get("tool_calls") or []):
-                    fn = tc.get("function", {}) or {}
-                    try:
-                        args = json.loads(fn.get("arguments") or "{}")
-                    except Exception:
-                        args = {"_raw": fn.get("arguments")}
-                    tool_calls.append({"name": fn.get("name"), "args": args})
+            if not session_id:
+                session_id = sess_path.stem.replace("session_", "")
+            tool_calls, mc_verbs_used = extract_session_mc_metrics(sess)
         except Exception as e:
             print(f"  WARN: could not read session {sess_path}: {e}", file=sys.stderr)
+    elif session_id:
+        # Newer Hermes writes per-profile state.db, not session JSON.
+        # Fall back to scanning the sqlite messages table.
+        sess = _load_session_from_state_db(session_id)
+        if sess:
+            tool_calls, mc_verbs_used = extract_session_mc_metrics(sess)
+        else:
+            print(f"  WARN: no hermes session JSON or state.db row for {session_id}", file=sys.stderr)
+    else:
+        print("  WARN: no hermes session id available for mc verb metrics", file=sys.stderr)
 
-    # Extract individual `mc <verb>` invocations from terminal tool commands.
-    # When the verb is `batch`, also peek into the JSON payload so inner
-    # action names (e.g. "craft" inside a batch step) count toward predicates.
-    mc_verbs_used = []
-    for tc in tool_calls:
-        if tc.get("name") == "terminal":
-            cmd = (tc.get("args") or {}).get("command") or ""
-            for m in re.finditer(r"\bmc\s+([a-z_]+)\b", cmd):
-                mc_verbs_used.append(m.group(1))
-            try:
-                tokens = shlex.split(cmd, posix=True)
-            except ValueError:
-                tokens = []
-            for i, tok in enumerate(tokens):
-                if tok != "mc" or i + 1 >= len(tokens) or tokens[i + 1] != "batch":
-                    continue
-                for j in range(i + 2, len(tokens)):
-                    t = tokens[j]
-                    if not (t.startswith("[") or t.startswith("{")):
-                        continue
-                    try:
-                        steps = json.loads(t)
-                    except (json.JSONDecodeError, TypeError):
-                        break
-                    if isinstance(steps, list):
-                        for step in steps:
-                            if isinstance(step, dict) and isinstance(step.get("action"), str):
-                                mc_verbs_used.append(step["action"])
-                    break
     mc_cli_calls = len(mc_verbs_used)
     verb_counts = {}
     for v in mc_verbs_used:

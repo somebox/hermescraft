@@ -56,8 +56,19 @@ def placeholders_in_template(template: str) -> list[tuple[str, str]]:
     return out
 
 
+_STATIC_PLACEHOLDER_RE = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
+
+
+def _static_placeholders() -> dict[str, str]:
+    """Non-coordinate template tokens (proc-nav harness defaults)."""
+    return {
+        "{{BOT_USERNAME}}": os.environ.get("MC_USERNAME", "Mox"),
+        "{{PROC_WORLD}}": os.environ.get("PROC_WORLD", "proc-nav"),
+    }
+
+
 def substitution_map(card: dict, template: str) -> dict[str, str]:
-    out: dict[str, str] = {}
+    out: dict[str, str] = dict(_static_placeholders())
     for prefix, axis in placeholders_in_template(template):
         anchor = _anchor_from_token_prefix(prefix)
         xyz = _anchor_xyz(card, anchor)
@@ -70,7 +81,8 @@ def render_spec(template: str, card: dict) -> str:
     text = template
     for token, value in substitution_map(card, template).items():
         text = text.replace(token, value)
-    leftover = re.findall(r"\{\{[A-Z0-9_]+\}\}", text)
+    leftover = _STATIC_PLACEHOLDER_RE.findall(text)
+    leftover = [f"{{{{{k}}}}}" for k in leftover]
     if leftover:
         raise ValueError(f"unresolved placeholders: {sorted(set(leftover))}")
     return text

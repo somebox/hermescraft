@@ -86,20 +86,49 @@ def state_db_path(profile: str) -> Path:
     return HERMES_HOME / "profiles" / profile / "state.db"
 
 
+def _open_ro(db: Path) -> sqlite3.Connection | None:
+    """Open the state.db read-only with a short timeout.
+
+    Hermes workers hold exclusive locks during writes; opening with
+    `mode=ro` + a 1s busy-timeout lets us race with the writer without
+    crashing. Returns None on any open error so the caller can skip
+    this poll cycle silently.
+    """
+    try:
+        uri = f"file:{db}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=1.0)
+        conn.execute("PRAGMA busy_timeout=1000")
+        return conn
+    except sqlite3.OperationalError:
+        return None
+
+
 def get_latest_message_id(profile: str) -> int:
     db = state_db_path(profile)
     if not db.exists():
         return 0
-    with sqlite3.connect(str(db)) as conn:
+    conn = _open_ro(db)
+    if conn is None:
+        return 0
+    try:
         row = conn.execute("SELECT COALESCE(MAX(id), 0) FROM messages").fetchone()
         return int(row[0]) if row else 0
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        try: conn.close()
+        except Exception: pass
 
 
 def fetch_new_messages(profile: str, since_id: int) -> list[sqlite3.Row]:
     db = state_db_path(profile)
     if not db.exists():
         return []
-    with sqlite3.connect(str(db)) as conn:
+    conn = _open_ro(db)
+    if conn is None:
+        # Writer holds the lock; skip this poll, try next interval.
+        return []
+    try:
         conn.row_factory = sqlite3.Row
         return list(conn.execute(
             "SELECT id, session_id, role, tool_name, content, tool_calls, "
@@ -107,6 +136,11 @@ def fetch_new_messages(profile: str, since_id: int) -> list[sqlite3.Row]:
             "WHERE id > ? ORDER BY id",
             (since_id,),
         ).fetchall())
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        try: conn.close()
+        except Exception: pass
 
 
 # ── Formatting ──────────────────────────────────────────────────────
@@ -315,7 +349,10 @@ def backfill(profile: str, n: int) -> list[sqlite3.Row]:
     db = state_db_path(profile)
     if not db.exists():
         return []
-    with sqlite3.connect(str(db)) as conn:
+    conn = _open_ro(db)
+    if conn is None:
+        return []
+    try:
         conn.row_factory = sqlite3.Row
         rows = list(conn.execute(
             "SELECT id, session_id, role, tool_name, content, tool_calls, "
@@ -323,7 +360,12 @@ def backfill(profile: str, n: int) -> list[sqlite3.Row]:
             "ORDER BY id DESC LIMIT ?",
             (n,),
         ).fetchall())
-    return list(reversed(rows))
+        return list(reversed(rows))
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        try: conn.close()
+        except Exception: pass
 
 
 # ── Main loop ───────────────────────────────────────────────────────

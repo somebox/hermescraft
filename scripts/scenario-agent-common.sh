@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Shared defaults for scenario agent-test wrappers (aligned with W5/W6 worker policy).
+#
+# Proc-nav harness (Phase B/D agent-test):
+#   export BOT_URL=http://127.0.0.1:3007 MC_USERNAME=Mox PROC_WORLD=proc-nav
+#   AGENT_SPEC=data/agent-tests/topics/scouting/overlook-survey-proc-nav.yaml \
+#     scripts/scenario-agent-test.sh scouting.overlook
 SCENARIO_DEFAULT_BOT_URL="${BOT_URL:-http://localhost:3001}"
+SCENARIO_DEFAULT_MC_USERNAME="${MC_USERNAME:-}"
 SCENARIO_DEFAULT_MODEL="${AGENT_TEST_MODEL:-deepseek/deepseek-v4-flash:exacto}"
 
 # Merge wrapper defaults with user args after `--`. User wins on duplicate flags.
