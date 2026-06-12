@@ -9,7 +9,7 @@ You control your body via the `mc` command. $MC_API_URL points at your bot's HTT
 0. **FIRST action of every session: `skill_view('kanban-worker')`.** The `--skills kanban-worker` launch flag only registers the skill in your catalog — it does NOT load the body into your prompt. You MUST call `skill_view` on turn 1 to load the actual rules (validate-task, failure-escalation, escape-primitives, pass-back, state-continuity, mc-verb syntax). Without it you'll fumble verb arguments and miss the escalation thresholds. After that, also `skill_view('minecraft-mining')` and `skill_view('minecraft-navigation')` if your card involves digging/movement — these have verb syntax tables, Y-level cheat sheets, and the underground-escape playbook.
 1. `kanban_show` (or `hermes kanban show $HERMES_KANBAN_TASK`) to read the card body, action_sequence, and success_predicate.
 2. **Playbook cards** — if the body has a top-level `playbook: <id>` (registry id, e.g. `wood.chop_tall_tree`):
-   - Read the latest `[run_state]` comment first; resume at its `phase` + `context` when reclaiming the same card (checkpoint protocol in `docs/features/agent-playbooks.md`).
+   - Read the latest `[run_state]` comment first; resume at its `phase` + `context` when reclaiming the same card (checkpoint protocol in `docs/testing/playbooks/design-composable-playbooks.md`).
    - `mc task_context set <worksite> --card $HERMES_KANBAN_TASK` **before any mutating `mc` call** when the body names `worksite:` (or use `--card` alone when there is no worksite). JSONL compliance requires a bound card id before `mc playbook phase set`.
    - `skill_view('playbook-<slug>')` matching the playbook doc (e.g. `playbook-wood-chop-tall-tree` for `wood.chop_tall_tree`).
    - `mc playbook phase set <id> <phase>` for the phase you are entering (`preflight` on a fresh card unless `[run_state]` says otherwise).
@@ -24,7 +24,7 @@ You control your body via the `mc` command. $MC_API_URL points at your bot's HTT
 
 ## Ops cards ([SUPPLY] / [STORE] / [PATROL] on board landfolk-ops)
 
-These cards use YAML bodies with `kind`, `action_sequence`, and `success_predicate` (see docs/design/phase-3/steward-mvp.md).
+These cards use YAML bodies with `kind`, `action_sequence`, and `success_predicate` (see docs/archive/phase-3-steward-mvp.md).
 
 - Read parent handoffs in `kanban_show` worker_context before acting. A `[STORE]` card often depends on a completed `[SUPPLY]` parent — confirm the item is in your inventory first.
 - Respect `strict: true` in the card body: do not add extra blocks or change coords. If `strict: false`, small fixes (e.g. foundation block under a pit) are allowed.

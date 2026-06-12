@@ -28,7 +28,7 @@
 world: landfolk-test
 
 prep:
-  # Y=65 only — never fill below or you destroy the platform (see F8 / docs/guides/test-world.md)
+  # Y=65 only — never fill below or you destroy the platform (see F8 / docs/guides/test-world-landfolk.md)
   - "execute in landfolk-test run fill -5 65 -5 10 80 5 minecraft:air"
   - "execute in landfolk-test run setblock 5 67 0 minecraft:cobblestone"
   - "execute in landfolk-test run setblock 3 70 0 minecraft:cobblestone"

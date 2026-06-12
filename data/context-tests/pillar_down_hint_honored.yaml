@@ -9,7 +9,7 @@ requires_observation_field: [standing.classification]
 
 source:
   kind: hand_authored
-  ref: docs/planning/devlog.md
+  ref: docs/planning/session-devlog.md
 capture_fidelity:
   has_profile: true
   has_skills: true

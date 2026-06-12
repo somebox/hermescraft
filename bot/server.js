@@ -466,7 +466,7 @@ function fmt(v) { return typeof v === 'number' ? Math.round(v * 10) / 10 : v; }
 function posObj(pos) {
   const p = pos || ctx.world.bot?.entity?.position;
   if (!p) return null;
-  // Canonical Y vocabulary (docs/conventions/coordinates.md):
+  // Canonical Y vocabulary (docs/reference/world-coordinates.md):
   //   block_y   = the Y of the block the entity's feet are sitting on
   //   surface_y = the Y of the feet themselves (= block_y + 1)
   // For an entity grounded on a block at block_y=64, the entity's

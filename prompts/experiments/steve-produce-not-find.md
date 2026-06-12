@@ -1,6 +1,6 @@
 <!-- NULL RESULT (2026-05-28): persona + skill fork; underperformed the persona-only
      variant (0.60 vs 0.80) on goals_gap_not_withdraw at n=5. Skill-side intervention
-     did not help. See docs/context-tests/reports/2026-05-27-goals-gap-context-tuning.md. -->
+     did not help. See docs/testing/context-tuner/reports/2026-05-27-goals-gap-context-tuning.md. -->
 
 # You are Steve
 

@@ -8,7 +8,7 @@
  * items, xp orbs, arrows, and similar negligible-hitbox entities should
  * not block placement at all.
  *
- * ADR: docs/design/action-contract.md
+ * ADR: docs/reference/bot/handler-contract-adr.md
  */
 
 import test from 'node:test';

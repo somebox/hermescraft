@@ -27,7 +27,7 @@ export function createBuildingPlaceSinglePart(deps) {
   const { hasLineOfSight, eyePosition } = fairPlay;
 
   return {
-    // ─ Phase-2 action contract (see docs/design/phase-2/action-contracts.md mc place) ─
+    // ─ Phase-2 action contract (see docs/reference/bot/handler-response-contracts.md mc place) ─
     // Soft failures return { ok: false, error: { code, message, observed_state, ... } }.
     // ok=true requires block to be at target coord AFTER placement (verified via blockAt).
 

@@ -119,7 +119,7 @@ export function createFurnaceActions(deps) {
     // ── Team System ──────────────────────────────────
 
     async smelt({ input, fuel, count = 1, reason }) {
-      // ─ Phase-2 action contract (docs/design/phase-2/action-contracts.md mc smelt) ─
+      // ─ Phase-2 action contract (docs/reference/bot/handler-response-contracts.md mc smelt) ─
       // ok=true requires smelted_count >= 1; verified via inventory delta on output item.
 
       const b = ensureBot();

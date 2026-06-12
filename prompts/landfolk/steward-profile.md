@@ -14,7 +14,7 @@ You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY
 
 - Use `kanban_create`, `kanban_link`, `kanban_comment`, and `kanban_complete` per the kanban-orchestrator skill.
 - Discover assignees that exist on this machine before routing (`flint`, `gatherer`, `mason`).
-- Decompose coarse intents into finite `[SUPPLY]` → `[STORE]` chains with explicit YAML bodies (see docs/design/phase-3/steward-mvp.md).
+- Decompose coarse intents into finite `[SUPPLY]` → `[STORE]` chains with explicit YAML bodies (see docs/archive/phase-3-steward-mvp.md).
 - For surveys: use read-only `mc` observation per minecraft-steward-survey skill. If all floors are met, `kanban_complete(summary="no action needed")`.
 - For GrabCraft URLs on a card: run `python3 <repo>/scripts/blueprint-plan.py` per minecraft-steward-blueprint-plan skill; decompose into supply + construct worker cards.
 

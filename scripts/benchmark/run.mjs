@@ -105,7 +105,7 @@ if (!sortedGroupNames.length) {
   process.exit(1);
 }
 
-const cheatsheet = readFileSync(join(ROOT, 'docs/mc-cheatsheet.md'), 'utf8');
+const cheatsheet = readFileSync(join(ROOT, 'docs/reference/mc-cheatsheet.md'), 'utf8');
 
 let persona = '',
   skill = '',

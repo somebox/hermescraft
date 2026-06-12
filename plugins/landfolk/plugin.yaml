@@ -14,7 +14,7 @@ description: |
     - memory/      mc-aware memory provider for locations + regions
     - mc_chat_adapter/  platform adapter for in-game @steward routing
 
-  Full spec: hermescraft/docs/features/landfolk-plugin.md
+  Full spec: hermescraft/docs/specs/kanban/plugin-landfolk.md
 author: jeremy@somebox.com
 kind: standalone
 hooks:

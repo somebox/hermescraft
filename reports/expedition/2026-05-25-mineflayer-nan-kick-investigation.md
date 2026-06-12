@@ -224,7 +224,7 @@ of SIGKILL (or OOM kill).
 
 - 2026-05-24 anti-cheat work (different bug class, same surface):
   `reports/expedition/2026-05-24-flint-iron-mining-deep-shaft.md`
-- Landfolk lifecycle reference: `docs/guides/landfolk-lifecycle.md`
+- Landfolk lifecycle reference: `docs/guides/fleet-lifecycle-runbook.md`
 - Probe tooling deployed earlier:
   - `scripts/probe-bot.sh` (read-only diagnostic)
   - `scripts/scan-position-corruption.py` (historical correlation analysis)

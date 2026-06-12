@@ -14,7 +14,7 @@ without the actual block data. So when you see such a card:
    → Construct schematic`) was vague-by-design because the auto-
    decomposer was guessing. You have the right tool — use it.
 2. **Run `scripts/blueprint-plan.py`** (the proper decomposer; wraps
-   `docs/features/grabcraft_downloader.py` with material substitutions).
+   `scripts/grabcraft_downloader.py` with material substitutions).
 3. **Read the plan JSON** to extract: total block count, materials list
    with counts, layer-by-layer cells.
 4. **Decompose into discrete, concrete cards** (see "Kanban workflow"
@@ -36,7 +36,7 @@ python3 scripts/blueprint-plan.py "<grabcraft_url>" \
 Raw download only (no plan):
 
 ```bash
-python3 docs/features/grabcraft_downloader.py "<url>" blueprint.json
+python3 scripts/grabcraft_downloader.py "<url>" blueprint.json
 ```
 
 ## Defaults
@@ -44,7 +44,7 @@ python3 docs/features/grabcraft_downloader.py "<url>" blueprint.json
 - **`--substitute`** (on): swaps hard-to-source blocks for base-friendly ids (e.g. clay→dirt, stone_bricks→cobblestone, extra wood→oak_planks). Use `--no-substitute` for faithful materials.
 - **`--simplify`** (on): drops decorative cells (carpets, flower pots, etc.). Use `--no-simplify` to keep them.
 
-Output JSON includes `materials_planned`, `phases` (by blueprint Y layer), and `cells` (local x,y,z + block id). See `docs/features/blueprints.md`.
+Output JSON includes `materials_planned`, `phases` (by blueprint Y layer), and `cells` (local x,y,z + block id). See `docs/specs/world/blueprints-grabcraft.md`.
 
 ## Kanban workflow
 

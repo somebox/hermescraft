@@ -103,7 +103,7 @@ if (!pairs.length) {
 const taskFile = join(HERE, 'tasks/composition.json');
 const tasks = JSON.parse(readFileSync(taskFile, 'utf8'));
 
-const cheatsheet = readFileSync(join(ROOT, 'docs/mc-cheatsheet.md'), 'utf8');
+const cheatsheet = readFileSync(join(ROOT, 'docs/reference/mc-cheatsheet.md'), 'utf8');
 const persona = readFileSync(join(HERE, 'fixtures/persona-flint.md'), 'utf8');
 const skill = readFileSync(join(HERE, 'fixtures/skill-survival.md'), 'utf8');
 const observeJson = readFileSync(join(HERE, 'fixtures/observe-flint.json'), 'utf8');

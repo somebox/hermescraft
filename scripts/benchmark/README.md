@@ -111,7 +111,7 @@ Two-tier eval: `runs/two-tier/<decomposer_slug>__<executor_slug>/<stamp>-two-tie
 | Trigger | Cadence |
 |---|---|
 | Change to `bot/cli/registry.mjs` | Recommended |
-| Change to `docs/mc-cheatsheet.md` (generated from registry) | Recommended |
+| Change to `docs/reference/mc-cheatsheet.md` (generated from registry) | Recommended |
 | Change to benchmark fixtures under `fixtures/` or skills referenced by agents | Recommended |
 | End of sprint | Required where docs say so |
 | Model/pricing refresh | Optional |

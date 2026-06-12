@@ -24,7 +24,7 @@ Usage:
   context-tuner trend --scenario <id> [-n N] [--json]
 
 Exit codes: 0 ok, 1 usage, 2 validate fail, 3 grading failures, 4 infra abort
-Docs: docs/context-tests/README.md
+Docs: docs/testing/context-tuner/README.md
 `;
 
 const argv = process.argv.slice(2);

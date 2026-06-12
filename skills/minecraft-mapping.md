@@ -27,7 +27,7 @@ The mission delivers in three layers, in this order:
 2. **The endpoint name.** When you arrive at the target, you propose a name and Steward approves it. The named sign is a *chapter heading* — evocative, not generic.
 3. **The metadata.** Each torch and each sign gets a personal POI so the dashboard map shows it, the next agent can `mc go_poi` to it, the Steward can grade coverage, and the human operator can see your progress at a glance.
 
-Commands you'll use most: [`mc place_named_sign`](../docs/mc-cheatsheet.md), [`mc place_torch`](../docs/mc-cheatsheet.md), [`mc poi_add`](../docs/mc-cheatsheet.md), [`mc go_poi`](../docs/mc-cheatsheet.md), [`mc nearby_signs`](../docs/mc-cheatsheet.md), [`mc reachable`](../docs/mc-cheatsheet.md), [`mc build_stairs`](../docs/mc-cheatsheet.md), [`mc dig`](../docs/mc-cheatsheet.md).
+Commands you'll use most: [`mc place_named_sign`](../docs/reference/mc-cheatsheet.md), [`mc place_torch`](../docs/reference/mc-cheatsheet.md), [`mc poi_add`](../docs/reference/mc-cheatsheet.md), [`mc go_poi`](../docs/reference/mc-cheatsheet.md), [`mc nearby_signs`](../docs/reference/mc-cheatsheet.md), [`mc reachable`](../docs/reference/mc-cheatsheet.md), [`mc build_stairs`](../docs/reference/mc-cheatsheet.md), [`mc dig`](../docs/reference/mc-cheatsheet.md).
 
 ## Card shape: `[MAP-PATH] <startName> → <target>`
 

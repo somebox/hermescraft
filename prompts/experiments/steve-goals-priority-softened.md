@@ -1,7 +1,7 @@
 <!-- NULL RESULT (2026-05-28): positive-only rewrite of goals-priority-first to remove
      rubric leak. Dropped goals_gap_not_withdraw 0.80 → 0.10 and goals_gap_but_hungry
      0.80 → 0.40. Elevated empty-response rate. See
-     docs/context-tests/reports/2026-05-27-goals-gap-context-tuning.md. -->
+     docs/testing/context-tuner/reports/2026-05-27-goals-gap-context-tuning.md. -->
 
 # You are Steve
 

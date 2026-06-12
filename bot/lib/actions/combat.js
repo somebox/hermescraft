@@ -48,7 +48,7 @@ export function createCombatActions(deps) {
   return {
 
     /**
-     * Reactive mode selector — Layer 2 per docs/design/phase-2/reactive-layer.md.
+     * Reactive mode selector — Layer 2 per docs/archive/phase-2-design/reactive-layer.md.
      *   normal: auto-engage if attacked or hostile in melee range; auto-flee creepers.
      *   guard:  auto-engage hostiles in 12-block radius; hold ground.
      *   hold:   no auto-actions (pure observation).

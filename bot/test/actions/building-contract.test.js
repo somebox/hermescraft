@@ -1,6 +1,6 @@
 /**
  * Building action contract tests.
- * ADR: docs/design/action-contract.md
+ * ADR: docs/reference/bot/handler-contract-adr.md
  */
 
 import test from 'node:test';

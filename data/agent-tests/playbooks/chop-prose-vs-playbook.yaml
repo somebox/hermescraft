@@ -3,7 +3,7 @@
 #
 # Run one arm:
 #   scripts/stress.sh chop-prose-vs-playbook --arm playbook
-# Matrix (≥5× each arm): see docs/features/baseline-turns-fixture.md
+# Matrix (≥5× each arm): see docs/testing/playbooks/fixture-baseline-turns.md
 
 agent_test_id: chop_prose_vs_playbook
 world: landfolk-test

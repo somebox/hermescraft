@@ -1,6 +1,6 @@
 /** @size-exempt: Layer-2 reactive autopilot kept as single-purpose module (refactor plan) */
 /**
- * Reactive layer (Layer 2 per docs/design/phase-2/reactive-layer.md).
+ * Reactive layer (Layer 2 per docs/archive/phase-2-design/reactive-layer.md).
  *
  * Tactical autopilot — NOT a macro dispatcher. Issues per-tick micro-actions
  * so the next tick can re-evaluate. Never invokes long-running macros

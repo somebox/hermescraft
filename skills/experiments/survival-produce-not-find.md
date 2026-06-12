@@ -1,6 +1,6 @@
 <!-- NULL RESULT (2026-05-28): skill-side intervention paired with steve-produce-not-find.md;
      underperformed persona-only arm (0.60 vs 0.80) and contributed to the broader null
-     result. See docs/context-tests/reports/2026-05-27-goals-gap-context-tuning.md. -->
+     result. See docs/testing/context-tuner/reports/2026-05-27-goals-gap-context-tuning.md. -->
 
 ---
 name: minecraft-survival
@@ -22,7 +22,7 @@ version: 3.3.0
 
 # Minecraft Survival — Master Skill
 
-Command surface reference (schemas, ferry playbooks, error recovery): [`docs/mc-commands.md`](../docs/mc-commands.md).
+Command surface reference (schemas, ferry playbooks, error recovery): [`docs/reference/mc-command-reference.md`](../docs/reference/mc-command-reference.md).
 
 ## Tools
 

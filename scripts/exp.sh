@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # /tmp/hermescraft/runs/<RUN_ID>/ — reliable test-run logging convention.
-# See docs/guides/run-logging.md.
+# See docs/guides/expedition-logging-runbook.md.
 #
 # Subcommands:
 #   exp.sh start <slug> [prompt_file]   — start a new run

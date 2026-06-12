@@ -11,7 +11,7 @@ version: 1.0.0
 
 # Minecraft blueprints
 
-Plans live at `data/ops/plans/<plan_id>-plan.json`. Regions bind with `plan=<plan_id>` on the placemark sign (see [designated-regions](../docs/features/designated-regions.md)).
+Plans live at `data/ops/plans/<plan_id>-plan.json`. Regions bind with `plan=<plan_id>` on the placemark sign (see [designated-regions](../docs/specs/world/designated-regions.md)).
 
 ## Read-only
 
@@ -52,5 +52,5 @@ Air at adopt target **removes** the cell from `cells[]`. Capture scans a region 
 
 ## Docs
 
-- [`docs/features/blueprints.md`](../docs/features/blueprints.md)
-- [`docs/design/action-contract.md`](../docs/design/action-contract.md) — verify envelope
+- [`docs/specs/world/blueprints-grabcraft.md`](../docs/specs/world/blueprints-grabcraft.md)
+- [`docs/reference/bot/handler-contract-adr.md`](../docs/reference/bot/handler-contract-adr.md) — verify envelope

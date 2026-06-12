@@ -8,7 +8,7 @@ import {
 } from '../../lib/runtime/nav-brief.js';
 
 test('rankNavBriefPaths tags distant strategic rows when confined (Phase 2 doctrine)', () => {
-  // Phase 2 behavior per docs/features/route-precompute-context.md:188-190 —
+  // Phase 2 behavior per docs/specs/nav/route-precompute-context.md:188-190 —
   // strategic rows are KEPT in the list so the agent knows base/chest_food
   // exist, but tagged blocked + confined_strategic and never suggested.
   // Earlier Phase 1 behavior dropped them; this test guards the new tag.

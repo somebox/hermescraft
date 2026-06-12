@@ -1,6 +1,6 @@
 /**
  * Pure argument normalizers for action handler entry.
- * See docs/mc-commands.md Section B and Assumption A2/A4 in actions refactor plan.
+ * See docs/reference/mc-command-reference.md Section B and Assumption A2/A4 in actions refactor plan.
  */
 
 import { fail } from '../shared/action-contract.js';

@@ -11,7 +11,7 @@ const { goals } = pathfinderPkg;
 /**
  * Crafting actions — first module migrated to the action contract + services
  * container. Every handler returns ok()/fail() per
- * docs/design/phase-2/action-contracts.md. Optional `reason` parameter is surfaced
+ * docs/reference/bot/handler-response-contracts.md. Optional `reason` parameter is surfaced
  * in `data._reason` for the audit trail wired in Phase 7.
  */
 export function createCraftingActions(services) {
@@ -66,7 +66,7 @@ export function createCraftingActions(services) {
 
   const handlers = {
     async craft({ item, count = 1, reason }) {
-      // ─ Phase-2 action contract (docs/design/phase-2/action-contracts.md mc craft) ─
+      // ─ Phase-2 action contract (docs/reference/bot/handler-response-contracts.md mc craft) ─
       // ok=true requires crafted_count >= 1; verified via inventory delta.
 
       const b = ensureBot();

@@ -44,6 +44,6 @@ hermes landfolk gate-check --board landfolk-ops --json
 
 ## Design
 
-See [docs/features/landfolk-plugin.md](../../docs/features/landfolk-plugin.md)
+See [docs/specs/kanban/plugin-landfolk.md](../../docs/specs/kanban/plugin-landfolk.md)
 in the hermescraft repo for the full design, rationale, decisions
 table, acceptance criteria, and glossary.

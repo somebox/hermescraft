@@ -1,5 +1,5 @@
 /**
- * Per-round navigation brief (planner + renderer). See docs/features/route-precompute-context.md.
+ * Per-round navigation brief (planner + renderer). See docs/specs/nav/route-precompute-context.md.
  */
 
 import { formatStandingSituation } from '../shared/perception.js';
@@ -457,7 +457,7 @@ export function rankNavBriefPaths(paths, policy = {}) {
   const nav_mode = policy.nav_mode || 'open';
   // Confined mode: don't DROP strategic rows — tag them so the agent still
   // sees that base/chest/etc exist and are currently sealed. The doctrine
-  // (`docs/features/route-precompute-context.md`, lines 188-190) is "blocked
+  // (`docs/specs/nav/route-precompute-context.md`, lines 188-190) is "blocked
   // strategic marks are still listed, carry ⚠ and never ← suggested." We
   // keep local rows, the back-line, and DO primitives untouched; we mark
   // distant strategic moves as confined-blocked.

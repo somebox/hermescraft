@@ -6,4 +6,4 @@ Standing-state dispatch in [`action.js`](./action.js): `standingState()` classif
 - **Strategies** live in [`strategies.js`](./strategies.js); failures return **`fail()`** from [`../../../shared/action-contract.js`](../../../shared/action-contract.js) (same shape as other `mc` verbs).
 - Success paths keep `recordEscapeSuccess` envelopes with `ok: true` unchanged.
 
-When adding or changing escape behavior, follow the checklist in [docs/design/action-contract.md](../../../../docs/design/action-contract.md) (codes, `retry_safe`, hints, `HERMES_VALIDATE=1`).
+When adding or changing escape behavior, follow the checklist in [docs/reference/bot/handler-contract-adr.md](../../../../docs/reference/bot/handler-contract-adr.md) (codes, `retry_safe`, hints, `HERMES_VALIDATE=1`).

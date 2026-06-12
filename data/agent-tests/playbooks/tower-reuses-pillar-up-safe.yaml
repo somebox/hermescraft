@@ -1,5 +1,5 @@
 # W6-T1 — mini vertical tower; prose vs coarse vs medium playbook (granularity lab).
-# See docs/features/wave-6-granularity-lab.md
+# See docs/testing/playbooks/lab-wave-6-granularity.md
 #
 #   scripts/stress.sh tower-reuses-pillar-up-safe --arm prose-skilled
 #   scripts/stress.sh tower-mini-pillar --arm playbook-coarse   # same file

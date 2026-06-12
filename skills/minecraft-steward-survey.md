@@ -22,7 +22,7 @@ Do **not** run dig, place, collect, craft, smelt, fill, deposit, withdraw, or ch
 
 1. `kanban_show()` — read `kind: survey` body and floors.
 2. **`mc observe`** (lean) — logistics context, standing, and mark reachability via **`nav_brief`** when enabled. Then `mc chest_search` / inventory as needed. Do not use `status`+`marks`+`nearby` instead of observe for the first pass.
-3. If deficits exist, `kanban_create` child `[SUPPLY]` / `[STORE]` cards with YAML bodies from `docs/design/phase-3/steward-mvp.md`, link dependencies, assign by role.
+3. If deficits exist, `kanban_create` child `[SUPPLY]` / `[STORE]` cards with YAML bodies from `docs/archive/phase-3-steward-mvp.md`, link dependencies, assign by role.
 4. If all floors met, `kanban_complete(summary="no action needed", metadata={ kind: survey, floors_checked: [...] })`.
 5. Post a short `kanban_comment` with chest counts for `scripts/ledger-update.py` consumers.
 

@@ -1,6 +1,6 @@
 /**
  * Named escape strategies extracted from queries.escape (Phase 5).
- * ADR: docs/design/action-contract.md
+ * ADR: docs/reference/bot/handler-contract-adr.md
  */
 
 import { AIR_NAMES } from '../../_block-sets.js';

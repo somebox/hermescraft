@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reconcile fleet-prefix marks (chest_*/base_*/lt_*) into locations-base.json.
 
-Design lives in docs/features/landfolk-plugin.md → Glossary → "Fleet-prefix
+Design lives in docs/specs/kanban/plugin-landfolk.md → Glossary → "Fleet-prefix
 mark" and the `mark-drift.py` detector entry. This script is the manual
 one-shot reconciler; mark-drift.py will be the scheduled detector that files
 [HEALTH] cards for ongoing drift.

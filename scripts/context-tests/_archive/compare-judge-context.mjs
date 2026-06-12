@@ -34,7 +34,7 @@ if (!OPENROUTER_KEY) {
 
 const run = JSON.parse(readFileSync(runPath, 'utf8'));
 const judgeModelId = run.config_resolved?.judge?.model || 'google/gemini-2.5-flash-lite';
-const cheatsheet = readFileSync(join(REPO_ROOT, 'docs/mc-cheatsheet.md'), 'utf8');
+const cheatsheet = readFileSync(join(REPO_ROOT, 'docs/reference/mc-cheatsheet.md'), 'utf8');
 
 const contextOff = '';
 const contextConventions = buildJudgeContext({

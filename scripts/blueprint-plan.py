@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn a GrabCraft URL into a build plan JSON for steward / kanban workers.
 
-Uses docs/features/grabcraft_downloader.py to fetch the blueprint, then:
+Uses scripts/grabcraft_downloader.py to fetch the blueprint, then:
   - normalizes block names to Minecraft ids (snake_case)
   - applies optional material substitutions (easier-to-source blocks)
   - optionally drops decorative blocks

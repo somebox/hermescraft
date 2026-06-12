@@ -7,7 +7,7 @@ Phase 1 wires the ``orchestrator/`` subsystem:
 Future subsystems (mc_tools, compressor, memory, mc_chat_adapter,
 detectors) live alongside ``landfolk/orchestrator/`` and get wired in
 by extending this register() function. Full spec lives in
-``hermescraft/docs/features/landfolk-plugin.md``.
+``hermescraft/docs/specs/kanban/plugin-landfolk.md``.
 """
 
 from __future__ import annotations
@@ -34,6 +34,6 @@ def register(ctx) -> None:
         description=(
             "Per-assignee concurrency cap for the landfolk-ops kanban board. "
             "Run `hermes landfolk gate-check` once per dispatcher tick before "
-            "`hermes kanban dispatch`. Spec: hermescraft/docs/features/landfolk-plugin.md"
+            "`hermes kanban dispatch`. Spec: hermescraft/docs/specs/kanban/plugin-landfolk.md"
         ),
     )

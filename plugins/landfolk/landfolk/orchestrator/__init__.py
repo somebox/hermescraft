@@ -10,5 +10,5 @@ Public surface:
 - :mod:`cli` — argparse setup for ``hermes landfolk gate-check``.
 
 Design + acceptance criteria live in
-``hermescraft/docs/features/landfolk-plugin.md``.
+``hermescraft/docs/specs/kanban/plugin-landfolk.md``.
 """

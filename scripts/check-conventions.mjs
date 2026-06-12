@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Lint repo conventions documented in docs/patterns.md.
+ * Lint repo conventions documented in docs/reference/engineering-patterns.md.
  *
  * Run:    node scripts/check-conventions.mjs
  * Exit:   0 if all checks pass, 1 otherwise.

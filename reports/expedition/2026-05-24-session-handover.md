@@ -242,8 +242,8 @@ bash ~/homelab/scripts/relax-paper-movement.sh
 - `bot/lib/shared/recipe-ingredients.js`
 - `bot/test/bot-manager.test.js`
 - `bot/test/crafting.test.js`
-- `docs/design/phase-3/steward-mvp.md`
-- `docs/guides/running-steve.md`
+- `docs/archive/phase-3-steward-mvp.md`
+- `docs/archive/guides/running-steve.md`
 - `reports/expedition/2026-05-24-flint-iron-mining-deep-shaft.md` (new)
 - `reports/expedition/2026-05-24-session-handover.md` (this file, new)
 - `scripts/landfolk-control.sh`

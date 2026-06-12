@@ -6,7 +6,7 @@ have ONE place that knows how to parse `mc status` output (it sometimes
 returns a string for `holding` instead of an object, etc — too easy to
 shred a quick shell pipeline on that).
 
-Convention (see docs/guides/run-logging.md):
+Convention (see docs/guides/expedition-logging-runbook.md):
   /tmp/hermescraft/runs/<RUN_ID>/    — one dir per test run
     meta.json
     agent.log, bot.log

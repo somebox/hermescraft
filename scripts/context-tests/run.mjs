@@ -108,7 +108,7 @@ scenarios = scenarios.map((sc) => ({
   raw: applyScenarioPatches(sc.raw, overrideMaps.scenarioPatches),
 }));
 
-const cheatsheetPath = cheatsheetOverridePath || join(REPO_ROOT, 'docs/mc-cheatsheet.md');
+const cheatsheetPath = cheatsheetOverridePath || join(REPO_ROOT, 'docs/reference/mc-cheatsheet.md');
 const cheatsheet = readFileSync(cheatsheetPath, 'utf8');
 const suiteName =
   cfg.suite?.preset || (Array.isArray(suiteFilter.scenarios) ? suiteFilter.scenarios.join(',') : null);
@@ -399,7 +399,7 @@ for (const model of models) {
     config_resolved: cfg,
     model_id: model.id,
     fixture_hashes: {
-      cheatsheet: sha256File(join(REPO_ROOT, 'docs/mc-cheatsheet.md')),
+      cheatsheet: sha256File(join(REPO_ROOT, 'docs/reference/mc-cheatsheet.md')),
       models_json: sha256File(join(BENCHMARK_DIR, 'models.json')),
     },
     scenarios: scenarioResults,

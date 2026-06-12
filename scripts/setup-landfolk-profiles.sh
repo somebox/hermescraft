@@ -16,9 +16,9 @@
 #                   Use after checkout when ~/.hermes/profiles already exist.
 #
 #   --solo-flint  Decomposer descriptions: all in-world landfolk-ops work → flint
-#                 (see docs/design/phase-3/steward-mvp.md § Solo Flint ops)
+#                 (see docs/archive/phase-3-steward-mvp.md § Solo Flint ops)
 #
-# See docs/design/phase-3/steward-mvp.md for ops board and card schemas.
+# See docs/archive/phase-3-steward-mvp.md for ops board and card schemas.
 
 set -euo pipefail
 
@@ -295,7 +295,7 @@ ops_worker_section() {
 
 ## Ops cards ([SUPPLY] / [STORE] / [PATROL] on board landfolk-ops)
 
-These cards use YAML bodies with `kind`, `action_sequence`, and `success_predicate` (see docs/design/phase-3/steward-mvp.md).
+These cards use YAML bodies with `kind`, `action_sequence`, and `success_predicate` (see docs/archive/phase-3-steward-mvp.md).
 
 - Read parent handoffs in `kanban_show` worker_context before acting. A `[STORE]` card often depends on a completed `[SUPPLY]` parent — confirm the item is in your inventory first.
 - Respect `strict: true` in the card body: do not add extra blocks or change coords. If `strict: false`, small fixes (e.g. foundation block under a pit) are allowed.
@@ -456,7 +456,7 @@ You are spawned for **landfolk-ops** board tasks: triage decomposition, `[SURVEY
 
 - Use `kanban_create`, `kanban_link`, `kanban_comment`, and `kanban_complete` per the kanban-orchestrator skill.
 - Discover assignees that exist on this machine before routing (`flint`, `gatherer`, `mason`).
-- Decompose coarse intents into finite `[SUPPLY]` → `[STORE]` chains with explicit YAML bodies (see docs/design/phase-3/steward-mvp.md).
+- Decompose coarse intents into finite `[SUPPLY]` → `[STORE]` chains with explicit YAML bodies (see docs/archive/phase-3-steward-mvp.md).
 - For surveys: use read-only `mc` observation per minecraft-steward-survey skill. If all floors are met, `kanban_complete(summary="no action needed")`.
 - For GrabCraft URLs on a card: run `python3 <repo>/scripts/blueprint-plan.py` per minecraft-steward-blueprint-plan skill; decompose into supply + construct worker cards.
 
@@ -792,7 +792,7 @@ install_landfolk_plugin() {
   # Idempotent: ensure the landfolk plugin is symlinked into
   # ~/.hermes/plugins/ and enabled in config. The plugin owns
   # per-assignee kanban concurrency (gate-check + hooks). See
-  # docs/features/landfolk-plugin.md.
+  # docs/specs/kanban/plugin-landfolk.md.
   local plugin_src="$ROOT/plugins/landfolk"
   local plugin_dst="$HOME/.hermes/plugins/landfolk"
 
@@ -910,4 +910,4 @@ echo "done."
 echo "  Phase 2 workers: hermes -p flint|gatherer|mason chat -q 'work kanban task <id>'"
 echo "  Ops board:       hermes kanban --board $OPS_BOARD_SLUG list"
 echo "  Ledger fold:     python3 scripts/ledger-update.py"
-echo "  Docs:            docs/design/phase-3/steward-mvp.md"
+echo "  Docs:            docs/archive/phase-3-steward-mvp.md"

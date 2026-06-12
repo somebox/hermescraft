@@ -2,7 +2,7 @@
 
 HTTP API around a Mineflayer client: one Node process per in-world character. The bot is the source of truth for live state (inventory, position, marks, chest snapshots, deaths, task history). The agent—Hermes, another planner, or a human using `mc`—owns strategy and multi-step reasoning. The `mc` CLI layers capability, telemetry, and task control on top of HTTP; it does not embed planning.
 
-See also: [docs/agent-boundaries.md](../docs/agent-boundaries.md), [docs/archive/MC_TARGET_ARCHITECTURE.md](../docs/archive/MC_TARGET_ARCHITECTURE.md).
+See also: [docs/reference/hermes-mc-boundaries.md](../docs/reference/hermes-mc-boundaries.md), [docs/archive/MC_TARGET_ARCHITECTURE.md](../docs/archive/MC_TARGET_ARCHITECTURE.md).
 
 ## Design layers
 

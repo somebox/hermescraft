@@ -1,6 +1,6 @@
 /**
  * Minimal shared helpers for action contract tests.
- * ADR: docs/design/action-contract.md
+ * ADR: docs/reference/bot/handler-contract-adr.md
  */
 
 import assert from 'node:assert/strict';

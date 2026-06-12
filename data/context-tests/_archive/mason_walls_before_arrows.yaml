@@ -7,7 +7,7 @@ contract_level: hard
 
 source:
   kind: hand_authored
-  ref: docs/planning/devlog.md
+  ref: docs/planning/session-devlog.md
 
 profile: prompts/landfolk/mason.md
 skills:

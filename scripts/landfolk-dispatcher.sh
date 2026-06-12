@@ -19,7 +19,7 @@
 # ------------------
 # Hermes' `--max N` is a *global* concurrency cap, not per-assignee. The
 # per-assignee enforcement lives in the `landfolk` plugin (commit
-# 2026-05-27 via docs/features/landfolk-plugin.md). Each tick we call
+# 2026-05-27 via docs/specs/kanban/plugin-landfolk.md). Each tick we call
 # `hermes landfolk gate-check` before `hermes kanban dispatch`; the
 # plugin parks excess ready cards via `claim_lock=mutex_park:<assignee>`,
 # parks orchestrator (steward) cards via `claim_lock=orch_continuous:`,
@@ -98,7 +98,7 @@ echo "[$(date +%H:%M:%S)] dispatcher starting: board=$BOARD interval=${INTERVAL}
 # Per-assignee mutex enforcement moved into the `landfolk` plugin
 # (`plugins/landfolk/landfolk/orchestrator/`). The plugin's CLI verb
 # `hermes landfolk gate-check` runs each tick below before
-# `hermes kanban dispatch`. See docs/features/landfolk-plugin.md.
+# `hermes kanban dispatch`. See docs/specs/kanban/plugin-landfolk.md.
 
 while true; do
   ts=$(date +%H:%M:%S)

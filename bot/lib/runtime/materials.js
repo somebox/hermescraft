@@ -2,7 +2,7 @@
  * Material tier + cascade lookup.
  *
  * Loads data/materials.json once at module init. See
- * docs/conventions/coordinates.md for the related coordinate convention
+ * docs/reference/world-coordinates.md for the related coordinate convention
  * and data/materials.json for the underlying data table.
  *
  * Naming:

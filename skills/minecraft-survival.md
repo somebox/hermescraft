@@ -18,7 +18,7 @@ version: 3.3.0
 
 # Minecraft Survival — Master Skill
 
-Command surface reference (schemas, ferry playbooks, error recovery): [`docs/mc-commands.md`](../docs/mc-commands.md).
+Command surface reference (schemas, ferry playbooks, error recovery): [`docs/reference/mc-command-reference.md`](../docs/reference/mc-command-reference.md).
 
 ## Tools
 

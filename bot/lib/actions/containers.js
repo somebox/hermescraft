@@ -72,7 +72,7 @@ export function evictChestSnapshotsAtPosition(snapshots, ix, iy, iz) {
   return removed;
 }
 
-// ─ Phase-2 chest contract helpers (see docs/design/phase-2/action-contracts.md mc chest) ─
+// ─ Phase-2 chest contract helpers (see docs/reference/bot/handler-response-contracts.md mc chest) ─
 
 /**
  * Open a container at the body's resolved coords. Returns either
