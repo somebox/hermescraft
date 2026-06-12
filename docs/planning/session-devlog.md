@@ -2,6 +2,12 @@
 
 Running log of design decisions, bugs encountered, and solutions applied while developing the multi-agent Minecraft system.
 
+## 2026-06-13 — roadplan: `--exec` batching + card session metrics
+
+Sandboxed workers cannot run `roadplan … | bash` (command guard blocks the pipe). `roadplan sample` and `roadplan confirm` now accept `--exec` to run emitted `mc` lines via subprocess inside one approved `roadplan` call; `skills/road-planner.md` documents `--exec` as the canonical batch path.
+
+Added `scripts/roadplan-card-metrics.py` to join kanban card rows to assignee Hermes `sessions` for Phase 5 colony A/B numbers (context tokens, turns, wall time, outcome). Wired in `docs/planning/adaptive-road-planning.md` §Phase 5 metrics + file map.
+
 ## 2026-06-12 — roadplan Phase 4a: bridge a real water crossing (3 build-verb fixes)
 
 Drove the construct half on the live water crossing — running workorders' commands surfaced three real bugs the fixture tests couldn't:

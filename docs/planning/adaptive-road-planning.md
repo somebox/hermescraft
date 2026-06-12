@@ -718,6 +718,8 @@ S5 graph module, card emission, doctrine edits (junior).
   - ready→running idle (rolling wave should beat even collocated-fixed)
   - cards authored by agent vs orchestrator (target: orchestrator ≤ 3)
   - sampling commands spent; profile calls per leg
+  - per-card worker cost: `scripts/roadplan-card-metrics.py --board <id>`
+    (context tokens, turns, wall time vs card outcome)
 - Postmortem mines reasoning logs for residual block-by-block probing — the
   metric this whole effort targets.
 
@@ -737,6 +739,7 @@ S5 graph module, card emission, doctrine edits (junior).
 | `skills/road-planner.md` | 3 | planner loop doctrine |
 | `skills/kanban-worker.md`, `skills/agent-builder.md`, `skills/agent-navigator.md` | 4 | worker doctrine deltas |
 | `scripts/roadplan-exercise.sh` | 3 | single-agent end-to-end check (gate enforcer) |
+| `scripts/roadplan-card-metrics.py` | 5 | per-card session metrics (kanban `tasks` → profile `state.db`) for colony A/B vs baseline |
 | `prototypes/agent-arch/capstone/proc_adaptive_road_graph.py` (new) | 4 | bookends graph |
 | `prototypes/agent-arch/capstone/proc_scout_road_graph.py` | — | control arm, untouched; tests pinned in CI |
 

@@ -25,30 +25,32 @@ be done to make this path clear and walkable?** — sometimes the answer is
 the bot's `mc` verbs touch the world. You never reason block-by-block.
 
 Two tools, one contract: `roadplan` **emits literal `mc` commands** — it
-never touches the world. You **run its printed commands by piping them
-straight to your shell** — `roadplan <sub> … | bash` — which executes the
-whole emitted batch in ONE step instead of copying each line. Their `--json`
-output flows back into `roadplan ingest` automatically (the pipe is baked
-into each printed line). The ledger remembers everything, so no observation
-is ever paid for twice.
+never touches the world. You **let it run the whole batch itself with `--exec`** —
+`roadplan <sub> … --exec` runs every emitted `mc` command in one approved
+roadplan call instead of you copying each line. Their
+`--json` output flows back into `roadplan ingest` automatically (the pipe is
+baked into each printed line). The ledger remembers everything, so no
+observation is ever paid for twice.
 
-**Run emitted commands with `| bash`, not line by line.** Copying each
-printed line as its own command burns one agent step per line — a long route
-has hundreds and you will run out of steps before the chain is lit. Piping
-`roadplan sample`/`roadplan confirm` to `bash` runs all its printed commands
-in a single step. Re-run the same piped command until the tool reports it is
-done (stderr `converged` / all waypoints confirmed); each re-run picks up
-whatever is still pending.
+**Run emitted commands as a batch (`--exec`), not line by line.**
+Copying each printed line as its own command burns one agent step per line —
+a long route has hundreds and you will run out of steps before the chain is
+lit. `roadplan sample … --exec` / `roadplan confirm … --exec` runs all the
+emitted commands in a single approved step. (Do NOT pipe to bash yourself —
+`… | bash` is blocked by the command sandbox; `--exec` is the built-in
+equivalent and always works.) The status line (`converged` / `N/N waypoints
+confirmed`) prints to stderr, so you still see it. Re-run the same
+`--exec` command until the tool reports done; each re-run picks up whatever is
+still pending.
 
 ## The loop
 
 Run this until the route is staked and lit. Each step's mechanics live in
 `roadplan <sub> --help` — don't memorize flags, ask the tool.
 
-1. **Sample** — `roadplan sample <START> <END> [--y-hint <Y>] | bash` runs
-   the `mc goto_near` + `mc corridor_sample … | roadplan ingest` pair for the
-   **next** corridor segment. Re-run the same piped command until stderr says
-   `converged`. It hands out **one segment at a time on purpose**: the bot
+1. **Sample** — `roadplan sample <START> <END> [--y-hint <Y>] --exec` runs the `mc goto_near` + `mc corridor_sample … | roadplan
+   ingest` pair for the **next** corridor segment. Re-run the same
+   `--exec` command until stderr says `converged`. It hands out **one segment at a time on purpose**: the bot
    walks the corridor, loading each segment's chunks by standing in the
    previous one — so a long corridor samples correctly even past the
    loaded-chunk radius. The tool tracks the ledger and only asks for what's
@@ -62,12 +64,10 @@ Run this until the route is staked and lit. Each step's mechanics live in
 3. **Look** — `roadplan render` (ASCII terrain + route). Sanity-check the
    line before committing the bot to walking it. A route through obvious
    nonsense means a sampling gap — go back to step 1 with `--refine`.
-4. **Refine** — `roadplan sample --refine --start <START> --end <END> | bash`
-   targets the low-confidence cells the route depends on, re-`solve`,
-   re-`render`. Two or three rounds; stop when waypoints stop moving (stderr
-   `converged`).
-5. **Confirm** — `roadplan confirm --bot <YOU> --near <your X,Z> | bash` runs
-   the per-waypoint blocks (`mc goto_near`, `mc waypoint … | roadplan
+4. **Refine** — `roadplan sample --refine --start <START> --end <END> --exec` targets the low-confidence cells the route
+   depends on, re-`solve`, re-`render`. Two or three rounds; stop when
+   waypoints stop moving (stderr `converged`).
+5. **Confirm** — `roadplan confirm --bot <YOU> --near <your X,Z> --exec` runs the per-waypoint blocks (`mc goto_near`, `mc waypoint … | roadplan
    ingest`, `mc survey_line … | roadplan ingest`, `roadplan promote`) for
    every unconfirmed waypoint in one step. **Always pass `--near` with your
    current X,Z** (from `mc status`): after sampling you're at the far end, so
