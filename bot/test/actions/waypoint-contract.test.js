@@ -15,6 +15,7 @@ import { Vec3 } from 'vec3';
 import {
   createWaypointActions,
   pickTorchAnchor,
+  suggestNearbyAnchor,
 } from '../../lib/actions/waypoint.js';
 import { assertContract, assertFailure } from '../_helpers/action-harness.js';
 
@@ -58,6 +59,25 @@ test('pickTorchAnchor: water below — hard fails with fluid_below', () => {
   const r = pickTorchAnchor({ x: 0, y: 64, z: 0, blockAtFn: blockAt });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'fluid_below');
+});
+
+test('suggestNearbyAnchor: obstructed cell → nearest workable cell', () => {
+  // Requested cell (0,64,0) is blocked by stone at the torch cell; the cell
+  // one east (1,64,0) has natural grass below and clear air above.
+  const blockAt = gridBlockAt({
+    '0,64,0': 'stone',          // torch cell obstructed (non-replaceable)
+    '0,63,0': 'stone',
+    '1,64,0': 'air',
+    '1,63,0': 'grass_block',
+  });
+  const s = suggestNearbyAnchor({ x: 0, y: 64, z: 0, blockAtFn: blockAt });
+  assert.deepEqual(s, { x: 1, y: 64, z: 0 });
+});
+
+test('suggestNearbyAnchor: nothing workable nearby → null', () => {
+  const blockAt = gridBlockAt({ '0,64,0': 'stone', '0,63,0': 'stone' });
+  const s = suggestNearbyAnchor({ x: 0, y: 64, z: 0, blockAtFn: blockAt });
+  assert.equal(s, null);
 });
 
 test('pickTorchAnchor: leaves are skipped; falls through to the dirt below', () => {

@@ -130,6 +130,34 @@ export function pickTorchAnchor({ x, y, z, blockAtFn, maxScanDown = 3 }) {
   };
 }
 
+/**
+ * When the requested cell can't anchor a torch, scan a small lateral ring
+ * for a cell that CAN (natural ground, clear torch cell) near the planned
+ * elevation. Returns the nearest workable torch_at {x,y,z}, or null. This is
+ * the §11.1-compliant "snap laterally within ~1 cell" suggestion — the
+ * planner uses it to nudge the waypoint, never to fabricate a base.
+ *
+ * @param {{x:number,y:number,z:number,
+ *          blockAtFn:(p:{x:number,y:number,z:number})=>any|null,
+ *          maxRing?:number}} opts
+ */
+export function suggestNearbyAnchor({ x, y, z, blockAtFn, maxRing = 2 }) {
+  let best = null, bestD = Infinity;
+  for (let dx = -maxRing; dx <= maxRing; dx++) {
+    for (let dz = -maxRing; dz <= maxRing; dz++) {
+      if (dx === 0 && dz === 0) continue;
+      const d = Math.abs(dx) + Math.abs(dz);
+      if (d >= bestD) continue;
+      const cand = pickTorchAnchor({ x: x + dx, y, z: z + dz, blockAtFn });
+      if (cand.ok && Math.abs(cand.torch_at.y - y) <= 2) {
+        best = cand.torch_at;
+        bestD = d;
+      }
+    }
+  }
+  return best;
+}
+
 export function createWaypointActions(deps) {
   const { ensureBot, loadLocations, saveLocations, services } = deps;
   return {
@@ -157,15 +185,33 @@ export function createWaypointActions(deps) {
         blockAtFn: (p) => b.blockAt(new Vec3(p.x, p.y, p.z)),
       });
       if (!decision.ok) {
+        // The planned cell won't take a torch on natural ground. Don't just
+        // fail — scan a small ring for a cell that WOULD work and suggest it,
+        // so the planner can nudge the waypoint there (§11.1 lateral snap)
+        // instead of looping. unloaded_chunk is a move-closer problem, not a
+        // route problem, so skip the suggestion there.
+        const suggested = decision.reason === 'unloaded_chunk' ? null
+          : suggestNearbyAnchor({
+              x, y, z,
+              blockAtFn: (p) => b.blockAt(new Vec3(p.x, p.y, p.z)),
+            });
+        const hint = decision.reason === 'fluid_below'
+          ? 'Pick a dry cell (the K2 solver should not route a torchable point onto water/lava).'
+          : decision.reason === 'unloaded_chunk'
+            ? `mc move ${x} ${y} ${z}   # load the chunk first`
+            : suggested
+              ? `Cell blocked. A nearby cell takes a torch on natural ground: `
+                + `mc waypoint ${name} ${suggested.x} ${suggested.y} ${suggested.z}`
+              : 'No natural torch cell nearby — this span needs the build role '
+                + '(clear/grade it), or re-solve. Do not retry as-is.';
         return fail('NO_TORCH_ANCHOR',
           `Cannot anchor a torch for waypoint '${name}' at (${x},${y},${z}): ${decision.reason}.`,
           {
-            observed_state: { waypoint: name, requested: { x, y, z }, decision },
-            next_action_hint: decision.reason === 'fluid_below'
-              ? 'Pick a dry cell (the K2 solver should not route a torchable point onto water/lava).'
-              : decision.reason === 'unloaded_chunk'
-                ? `mc move ${x} ${y} ${z}   # load the chunk first`
-                : 'Re-solve the waypoint with the K2 swath rule honoured.',
+            observed_state: {
+              waypoint: name, requested: { x, y, z }, decision,
+              ...(suggested ? { suggested_anchor: suggested } : {}),
+            },
+            next_action_hint: hint,
             retry_safe: false,
           });
       }

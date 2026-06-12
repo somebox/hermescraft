@@ -66,11 +66,15 @@ Run this until the route is staked and lit. Each step's mechanics live in
    targets the low-confidence cells the route depends on, re-`solve`,
    re-`render`. Two or three rounds; stop when waypoints stop moving (stderr
    `converged`).
-5. **Confirm** — `roadplan confirm --bot <YOU> | bash` runs the per-waypoint
-   blocks (`mc goto_near`, `mc waypoint … | roadplan ingest`, `mc survey_line
-   … | roadplan ingest`, `roadplan promote`) for every unconfirmed waypoint
-   in one step. Re-run the same piped command until it reports all waypoints
-   confirmed. This stakes a torch at each waypoint and ground-truths each leg.
+5. **Confirm** — `roadplan confirm --bot <YOU> --near <your X,Z> | bash` runs
+   the per-waypoint blocks (`mc goto_near`, `mc waypoint … | roadplan
+   ingest`, `mc survey_line … | roadplan ingest`, `roadplan promote`) for
+   every unconfirmed waypoint in one step. **Always pass `--near` with your
+   current X,Z** (from `mc status`): after sampling you're at the far end, so
+   `--near` makes confirm walk the chain from there instead of backtracking
+   the whole corridor to wp_1. Re-run the same piped command (refreshing
+   `--near` from your new position) until it reports all waypoints confirmed.
+   This stakes a torch at each waypoint and ground-truths each leg.
    **You must be carrying torches**
    — `mc waypoint` lights from your inventory; check `mc status` shows a
    torch supply before you start, and restock if it runs out mid-chain.
@@ -99,10 +103,15 @@ sure" — the ledger already knows.
 The world will contradict the plan. That's the loop working, not failing.
 
 - **`NO_TORCH_ANCHOR` / a torch that won't sit on natural ground** — a
-  route-quality alarm, never a placement problem. It means the waypoint's Y
-  is wrong or the span needs construction first. Re-ingest, re-solve. **Never
-  fabricate a base block or pillar under a torch** — an honest unplaceable
-  torch is signal; a torch on a fake pedestal hides a bad waypoint.
+  route-quality alarm, never a placement problem. **Never fabricate a base
+  block or pillar under a torch** — an honest unplaceable torch is signal; a
+  torch on a fake pedestal hides a bad waypoint. The error tells you what to
+  do: if it carries `observed_state.suggested_anchor` (a nearby cell that
+  takes a torch on natural ground), place the waypoint there —
+  `mc waypoint <name> <suggested x y z>` — a ≤2-cell lateral nudge, then
+  move on. If there is NO suggestion, the span needs the build role or a
+  re-solve: report it and continue with the other waypoints — **do not retry
+  the same cell** (it will keep failing and burn your steps).
 - **`UNLOADED_CHUNKS`** on a sample or survey — the bot is too far. The
   error carries an `mc move` hint; move closer and rerun. (The emitted
   sample/confirm lines already interleave moves; this only bites on manual

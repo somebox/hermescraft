@@ -152,3 +152,28 @@ def test_confirm_blocks_prev_is_preceding_waypoint():
     # Second waypoint's survey runs from wp_1 (0,0) to wp_2 (5,10).
     survey = next(L for L in blocks[1] if L.startswith("mc survey_line"))
     assert survey.startswith("mc survey_line 0 0 5 10 --json")
+
+
+def test_confirm_near_end_walks_in_reverse():
+    # Chain wp_1..wp_3; bot near the END (wp_3). Confirm should start at wp_3
+    # (no long backtrack to wp_1) and walk back toward the start.
+    state = _state_with_route([(0, 64, 0), (5, 65, 10), (10, 66, 20)],
+                              start=(0, 0))
+    allocate_waypoints(state, (0, 0))
+    blocks, _, _ = confirm_blocks(state, (0, 0), "Mox", "/tmp/L",
+                                  near=(10, 20), end=(10, 20))
+    first_wp = next(L for L in blocks[0] if L.startswith("mc waypoint"))
+    assert first_wp.startswith("mc waypoint wp_3 "), first_wp
+    # First survey leg runs from the END endpoint to wp_3 (short).
+    first_survey = next(L for L in blocks[0] if L.startswith("mc survey_line"))
+    assert first_survey.startswith("mc survey_line 10 20 10 20")
+
+
+def test_confirm_near_start_walks_forward():
+    state = _state_with_route([(0, 64, 0), (5, 65, 10), (10, 66, 20)],
+                              start=(0, 0))
+    allocate_waypoints(state, (0, 0))
+    blocks, _, _ = confirm_blocks(state, (0, 0), "Mox", "/tmp/L",
+                                  near=(0, 0), end=(10, 20))
+    first_wp = next(L for L in blocks[0] if L.startswith("mc waypoint"))
+    assert first_wp.startswith("mc waypoint wp_1 "), first_wp

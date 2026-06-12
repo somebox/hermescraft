@@ -179,20 +179,36 @@ def allocate_waypoints(state, start):
     return state
 
 
-def confirm_blocks(state, start, bot, ledger):
+def confirm_blocks(state, start, bot, ledger, near=None, end=None):
     """Per-waypoint command blocks for every waypoint not yet confirmed.
     Returns (blocks, n_confirmed, n_total). Each block:
-        mc move x z
+        mc goto_near x y z 2
         mc waypoint wp_n x y z --json | roadplan ingest
         mc survey_line px pz x z --json | roadplan ingest   (per <=96 leg)
         roadplan promote wp_n --bot <bot>
-    `prev` is the preceding waypoint, or the start endpoint for the first.
+
+    Walk direction: the chain is traversed from whichever route endpoint is
+    nearest `near` (the bot's current x,z). After sampling the bot sits at
+    the END, so without this it would backtrack the whole corridor to wp_1
+    (the long approach blows goto_near's wallclock cap). With `near`, it
+    confirms the closest waypoint first and walks the chain — every hop
+    short. `prev` (the survey-leg origin) is the previously-walked waypoint,
+    or the endpoint the walk starts from.
     """
-    wps = state.get("waypoints") or []
-    blocks = []
+    wps = list(state.get("waypoints") or [])
     n_confirmed = sum(1 for w in wps if w.get("status") == "confirmed")
-    prev_xz = (start[0], start[1])
-    for w in wps:
+    n_total = len(wps)
+    start_xz = (start[0], start[1])
+    end_xz = (end[0], end[1]) if end is not None else (
+        (wps[-1]["pos"][0], wps[-1]["pos"][2]) if wps else start_xz)
+    reverse = False
+    if near is not None and wps:
+        d = lambda p: abs(near[0] - p[0]) + abs(near[1] - p[1])  # noqa: E731
+        reverse = d(end_xz) < d(start_xz)
+    ordered = list(reversed(wps)) if reverse else wps
+    prev_xz = end_xz if reverse else start_xz
+    blocks = []
+    for w in ordered:
         x, y, z = w["pos"]
         if w.get("status") != "confirmed":
             # Stand NEAR the waypoint, not ON it: the torch goes in the
@@ -211,4 +227,4 @@ def confirm_blocks(state, start, bot, ledger):
             lines.append(f"roadplan promote {w['name']} --bot {bot}")
             blocks.append(lines)
         prev_xz = (x, z)
-    return blocks, n_confirmed, len(wps)
+    return blocks, n_confirmed, n_total

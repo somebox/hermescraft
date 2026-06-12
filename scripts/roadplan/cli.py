@@ -448,10 +448,11 @@ def cmd_confirm(args):
               f"confirm once it is walkable. (--force to override.)",
               file=sys.stderr)
         return 3
+    end = state.get("endpoints", {}).get("end")
     state = allocate_waypoints(state, start)
     write_state(args.ledger, state)
     blocks, n_confirmed, n_total = confirm_blocks(
-        state, start, args.bot, args.ledger)
+        state, start, args.bot, args.ledger, near=args.near, end=end)
     if not blocks:
         print(f"converged: {n_confirmed}/{n_total} waypoints confirmed",
               file=sys.stderr)
@@ -542,6 +543,10 @@ def build_parser():
                              "(§6.4). Empty stdout = all confirmed.")
     pc.add_argument("--bot", required=True,
                     help="Bot name driving the confirm (for promote)")
+    pc.add_argument("--near", type=_xz, metavar="X,Z",
+                    help="Your current X,Z (from mc status) — confirm walks "
+                         "the chain from the nearest end, avoiding a long "
+                         "backtrack to wp_1 after sampling")
     pc.add_argument("--force", action="store_true",
                     help="Confirm even a construction route (default: refuse "
                          "non-natural routes — build them first)")
