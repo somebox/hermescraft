@@ -577,7 +577,31 @@ def build_parser():
     return p
 
 
+def _hoist_ledger(argv):
+    """Move a `--ledger VALUE` / `--ledger=VALUE` anywhere in argv to the
+    front. `--ledger` is a global (before the subcommand), but agents
+    naturally write `roadplan sample … --ledger L` — accept both rather than
+    exit 2 on the placement. Last occurrence wins."""
+    argv = list(argv)
+    out, ledger = [], None
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--ledger" and i + 1 < len(argv):
+            ledger = argv[i + 1]
+            i += 2
+            continue
+        if a.startswith("--ledger="):
+            ledger = a.split("=", 1)[1]
+            i += 1
+            continue
+        out.append(a)
+        i += 1
+    return (["--ledger", ledger] + out) if ledger is not None else out
+
+
 def main(argv=None):
+    argv = _hoist_ledger(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(argv)
     return args.func(args)
 

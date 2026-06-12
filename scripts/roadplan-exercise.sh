@@ -67,6 +67,12 @@ setup() {
   mkdir -p "$AGENT_HOME/memories" "$AGENT_HOME/sessions" "$AGENT_HOME/skills/gaming"
   QUIET=1 "$REPO/scripts/sync-skills.sh" "$AGENT_HOME/skills/gaming" >/dev/null
   log "world: peaceful + day, provision $BOT with torches, tp to start ($sx,$sz)"
+  # mvtp first — after a regen the bot is in the hub world; an in-world `tp`
+  # can't cross worlds. Then settle the bot at the start (loads chunks).
+  rcon "mvtp $BOT $WORLD" >/dev/null; sleep 2
+  # tp to just above the rough ground (y_hint+3), NOT y=100 — a long drop over
+  # water/gaps kills the bot and it respawns at worldspawn (the ocean spire on
+  # this seed). setworldspawn at the start keeps any respawn local.
   rcon \
     "execute in $WORLD run difficulty peaceful" \
     "execute in $WORLD run gamerule doMobSpawning false" \
@@ -74,7 +80,9 @@ setup() {
     "execute in $WORLD run time set day" \
     "execute in $WORLD run kill @e[type=!minecraft:player]" \
     "execute in $WORLD run give $BOT minecraft:torch 64" \
-    "execute in $WORLD run tp $BOT $sx 100 $sz" >/dev/null
+    "execute in $WORLD run setworldspawn $sx $YHINT $sz" \
+    "execute in $WORLD run tp $BOT $sx $((YHINT+3)) $sz" >/dev/null
+  sleep 3
   write_prompt
   log "prompt written to $PROMPT_FILE"
 }
@@ -84,6 +92,12 @@ write_prompt() {
 You are ${BOT}, a road planner in Minecraft. Plan a SAFE, WALKABLE route
 between two points and stake it with a torch chain. You decide the route; the
 tools do the geometry and the world.
+
+The bot ${BOT} is ALREADY running and connected — your \`mc\` commands act on
+it directly (MC_API_URL and MC_USERNAME are set for you). Do NOT start, spawn,
+or manage bots; do NOT use roster, landfolk, profiles, or any other scripts.
+The ONLY commands you need are \`roadplan\` and \`mc\` — don't explore the repo.
+Run \`mc status\` first to confirm the bot responds, then begin.
 
 START: ${START}      END: ${END}      (rough ground elevation ~${YHINT})
 
@@ -111,6 +125,10 @@ launch() {
   model="$("$REPO/scripts/resolve-agent-model.py" entrypoint run_landfolk_agent model "$REPO/data/agent-models.json")"
   provider="$("$REPO/scripts/resolve-agent-model.py" entrypoint run_landfolk_agent provider "$REPO/data/agent-models.json")"
   log "launching planner agent ($model/$provider) — it drives the loop now"
+  # Provider API keys (OPENROUTER_API_KEY etc.) live in ~/.hermes/.env;
+  # load them so the agent's provider resolves, same as hermescraft.sh.
+  # shellcheck disable=SC1091
+  . "$REPO/scripts/load-hermes-env.sh"
   unset ANTHROPIC_API_KEY ANTHROPIC_TOKEN CLAUDE_CODE_OAUTH_TOKEN || true
   env HERMES_HOME="$AGENT_HOME" \
       MC_API_URL="http://localhost:${PORT}" MC_USERNAME="$BOT" \
