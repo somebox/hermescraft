@@ -149,6 +149,12 @@ test('createBotHttpListener GET /health returns JSON envelope', async () => {
     assert.equal(r.json.username, 'TestBot');
     assert.equal(r.json.connected, false);
     assert.match(String(r.json.server || ''), /127\.0\.0\.1:25565/);
+    // movement_profile must be exposed so launchers (proc-nav preflight)
+    // can ASSERT the profile instead of trusting their own env plumbing.
+    // proc-nav-1781014144 ran the default (sprinting) profile undetected
+    // because nothing surfaced it.
+    assert.ok(['slow', 'default'].includes(r.json.movement_profile),
+      `movement_profile must be 'slow' or 'default', got: ${r.json.movement_profile}`);
   } finally {
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }

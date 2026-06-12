@@ -57,10 +57,11 @@ async function smokeAction(name, args = {}) {
 }
 
 /** Handler keys on createAllActions() (registry aliases may differ). */
+/** Handlers covered by *-contract.test.js — registry smoke only for the rest. */
 const ACTION_HANDLERS = [
-  'shoot', 'shield_block', 'sprint_attack', 'critical_hit', 'strafe', 'combo',
-  'fish', 'farm_status', 'construct', 'repair',
-  'region_update_intent', 'regions_terrain', 'site_remove', 'blueprint',
+  'sprint_attack', 'critical_hit',
+  'fish', 'farm_status',
+  'region_update_intent', 'regions_terrain', 'site_remove',
 ];
 
 /** Registered CLI names served via HTTP/task routes, not ACTION handlers. */

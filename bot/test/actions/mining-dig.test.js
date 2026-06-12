@@ -24,7 +24,7 @@ import { makeStubBot, makeDeps } from './_mining-test-helpers.js';
 // within 60s. Resets on a successful dig at that cell.
 // ─────────────────────────────────────────────────────────────────────────
 
-test('mining.dig: DIG_BLOCKED_REPEAT after 3 NO_LINE_OF_SIGHT failures at the same cell', async () => {
+test('mining.dig: DIG_BLOCKED_REPEAT after 3 NO_LINE_OF_SIGHT failures at the same cell # spec', async () => {
   // Bot at (0,64,0) trying to dig stone at (5,64,0) with no LOS (raycast
   // returns false). 3 calls should all return NO_LINE_OF_SIGHT; 4th
   // returns DIG_BLOCKED_REPEAT pre-empting the LOS check.

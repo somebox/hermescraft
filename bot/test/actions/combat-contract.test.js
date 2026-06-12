@@ -1,6 +1,6 @@
 /**
  * Combat action contract tests (refusal paths).
- * ADR: docs/design/action-contract.md
+ * ADR: docs/reference/bot/handler-contract-adr.md
  */
 
 import test from 'node:test';
@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 import { createCombatActions } from '../../lib/actions/combat.js';
 import { createMockServices } from '../../lib/server/mock-services.js';
-import { assertFailure } from '../_helpers/action-harness.js';
+import { assertContract, assertFailure } from '../_helpers/action-harness.js';
 
 function combatDeps(overrides = {}) {
   const bot = overrides.bot || {
@@ -89,9 +89,11 @@ test('combat.attack: target item with only drop entity → NO_TARGET', async () 
   assertFailure(r, { code: 'NO_TARGET', messageIncludes: 'item', retrySafe: false });
 });
 
-test('combat.fight: no hostile nearby → informal refusal result', async () => {
+test('combat.fight: no hostile nearby → ok with actionable result # spec', async () => {
   const combat = createCombatActions(combatDeps());
   const r = await combat.fight({});
+  assertContract(r);
+  assert.equal(r.ok, true);
   assert.match(r.result, /No .* found nearby/i);
 });
 
@@ -126,5 +128,55 @@ test('combat.fight: low health triggers retreat path', async () => {
   deps.ctx.world.mcData = { foodsByName: {} };
   const combat = createCombatActions(deps);
   const r = await combat.fight({ target: 'Zombie', retreat_health: 6, duration: 1 });
+  assertContract(r);
+  assert.equal(r.ok, true);
   assert.match(r.result, /Retreated/i);
+});
+
+test('combat.shoot: no bow → NO_BOW # spec', async () => {
+  const combat = createCombatActions(combatDeps());
+  const r = await combat.shoot({ target: 'zombie' });
+  assertFailure(r, { code: 'NO_BOW', retrySafe: false });
+});
+
+test('combat.shield_block: no shield → NO_SHIELD', async () => {
+  const combat = createCombatActions(combatDeps());
+  const r = await combat.shield_block({ duration: 1 });
+  assertFailure(r, { code: 'NO_SHIELD', retrySafe: false });
+});
+
+test('combat.sneak: toggles ok envelope', async () => {
+  const bot = {
+    entity: { position: { x: 0, y: 64, z: 0 } },
+    entities: {},
+    inventory: { items: () => [] },
+    health: 20,
+    setControlState: () => {},
+    pathfinder: { goto: async () => {}, setGoal: () => {} },
+  };
+  const deps = combatDeps({ bot });
+  const combat = createCombatActions(deps);
+  const r = await combat.sneak({ enable: true });
+  assertContract(r);
+  assert.equal(r.ok, true);
+});
+
+test('combat.strafe: no target → NO_TARGET', async () => {
+  const combat = createCombatActions(combatDeps());
+  const r = await combat.strafe({ target: 'Ghost' });
+  assertFailure(r, { code: 'NO_TARGET', retrySafe: false });
+});
+
+test('combat.combo: unknown style → INVALID_ARGS', async () => {
+  const zombie = {
+    name: 'zombie',
+    position: { x: 1, y: 64, z: 0, distanceTo: () => 2 },
+    height: 1.8,
+    isValid: true,
+  };
+  const deps = combatDeps({ entities: { z1: zombie } });
+  deps.hasLineOfSight = () => true;
+  const combat = createCombatActions(deps);
+  const r = await combat.combo({ target: 'zombie', style: 'invalid' });
+  assertFailure(r, { code: 'INVALID_ARGS', messageIncludes: 'style', retrySafe: false });
 });

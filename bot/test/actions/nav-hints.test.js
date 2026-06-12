@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { navBlockedNextActionHint, withNavRetryWarning } from '../../lib/actions/movement/nav-hints.js';
+import { navBlockedNextActionHint, withNavRetryWarning, describePathfinderError } from '../../lib/actions/movement/nav-hints.js';
+
+test('describePathfinderError maps recorded tokens to readable reasons', () => {
+  assert.match(describePathfinderError('no_progress:4200ms'), /stalled.*4200ms/);
+  assert.match(describePathfinderError('no_progress:?ms'), /stalled/);
+  assert.match(describePathfinderError('timeout'), /time cap.*no route/);
+  assert.match(describePathfinderError('No path to the goal!'), /searched and found no route/);
+  // Unrecognized mineflayer messages pass through verbatim.
+  assert.equal(describePathfinderError('GoalChanged'), 'GoalChanged');
+  assert.equal(describePathfinderError(null), null);
+  assert.equal(describePathfinderError(''), null);
+});
 
 test('navBlockedNextActionHint: downward target suggests tunnel/stair_down', () => {
   const b = { entity: { position: { x: 0, y: 70, z: 0 }, isInWater: false } };

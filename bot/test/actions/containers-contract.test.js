@@ -1,6 +1,6 @@
 /**
  * Containers action contract tests (refusal paths).
- * ADR: docs/design/action-contract.md
+ * ADR: docs/reference/bot/handler-contract-adr.md
  */
 
 import test from 'node:test';
@@ -79,7 +79,7 @@ test('parseChestSnapshotStaleHours: parses, floors, and clamps valid values', ()
   assert.equal(parseChestSnapshotStaleHours('10000', 6), 24 * 30);
 });
 
-test('containers.deposit: missing item in body → MISSING_ITEMS', async () => {
+test('containers.deposit: missing item in body → MISSING_ITEMS # spec', async () => {
   const bot = {
     entity: { position: { x: 1.5, y: 64, z: 1.5 } },
     inventory: { items: () => [] },

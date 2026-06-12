@@ -548,6 +548,64 @@ describe('cli args', () => {
     });
   });
 
+  // Space-separated `--key VALUE` for non-boolean schema keys. Agents assume
+  // this form works (proc-nav-1781014144: `mc goto_near ... --range 3` exited
+  // 2 while `range=3` and `--range=3` parsed fine). The pre-pass now consumes
+  // the next token when the key matches an unfilled non-boolean spec AND the
+  // value coerces cleanly; otherwise both tokens stay positional.
+  describe('space-separated --key VALUE (per-verb kwargs)', () => {
+    const gotoNear = RAW_COMMAND_DEFS.find((d) => d.name === 'goto_near');
+    assert.ok(gotoNear, 'goto_near must be registered');
+    const SCHEMA = gotoNear.argSchema;
+
+    it('--range 3 ≡ --range=3 ≡ range=3 ≡ positional', () => {
+      const expected = { x: 100, y: 64, z: -200, range: 3 };
+      assert.deepEqual(positionalToParams('goto_near', SCHEMA, ['100', '64', '-200', '--range', '3']), expected);
+      assert.deepEqual(positionalToParams('goto_near', SCHEMA, ['100', '64', '-200', '--range=3']), expected);
+      assert.deepEqual(positionalToParams('goto_near', SCHEMA, ['100', '64', '-200', 'range=3']), expected);
+      assert.deepEqual(positionalToParams('goto_near', SCHEMA, ['100', '64', '-200', '3']), expected);
+    });
+
+    it('--range 3 before positionals also binds', () => {
+      const p = positionalToParams('goto_near', SCHEMA, ['--range', '3', '100', '64', '-200']);
+      assert.deepEqual(p, { x: 100, y: 64, z: -200, range: 3 });
+    });
+
+    it('unknown key --near 3 still errors (no silent guessing)', () => {
+      assert.throws(
+        () => positionalToParams('goto_near', SCHEMA, ['100', '64', '-200', '--near', '3']),
+        /goto_near:range:not_number/,
+      );
+    });
+
+    it('--range banana (value fails coercion) → falls through and errors', () => {
+      assert.throws(
+        () => positionalToParams('goto_near', SCHEMA, ['100', '64', '-200', '--range', 'banana']),
+        /goto_near:range:not_number/,
+      );
+    });
+
+    it('does not double-consume when key already set: --range=2 --range 5 → last form wins safely', () => {
+      // --range=2 fills the key; the later space form sees it filled and
+      // leaves "--range 5" positional → extra_arguments error rather than a
+      // silent overwrite. Conservative by design.
+      assert.throws(
+        () => positionalToParams('goto_near', SCHEMA, ['100', '64', '-200', '--range=2', '--range', '5']),
+        /extra_arguments|not_number/,
+      );
+    });
+
+    it('boolean specs are unaffected: bare --full never eats the next token', () => {
+      const BOOL_SCHEMA = [
+        { key: 'range', type: 'number', default: 16 },
+        { key: 'full', type: 'boolean', default: false },
+      ];
+      const p = positionalToParams('scene', BOOL_SCHEMA, ['--full', '32']);
+      assert.equal(p.full, true);
+      assert.equal(p.range, 32);
+    });
+  });
+
   // B4: @mark token expansion. The CLI dispatcher (execute.mjs) fetches
   // /marks once and passes a name→{x,y,z} map to expandMarkTokens, which
   // returns a new positional list where every `@name` has been replaced

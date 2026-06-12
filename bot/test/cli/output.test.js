@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
-import { renderHuman, fmtHumanErrOneLine } from '../../cli/output.mjs';
+import { renderHuman, fmtHumanErrOneLine, slimStatusEnvelope } from '../../cli/output.mjs';
 
 describe('cli output', () => {
   it('renderHuman surfaces failures with hints', () => {
@@ -255,6 +255,80 @@ describe('cli output', () => {
     assert.match(joined, /Surface at 5,64,-1 — open \(4 exits\)/);
     assert.ok(joined.includes('journey: spawn → here'));
     assert.ok(!joined.includes('"nav_header"'));
+  });
+
+  // proc-nav-1781014144: a worker ran 200+ commands as Mox while believing
+  // it was Pip. Every status read must lead with WHO you are.
+  describe('bot identity leads mc status', () => {
+    it('slimStatusEnvelope puts bot + identity first in data', () => {
+      const out = slimStatusEnvelope({
+        ok: true,
+        data: { bot: 'Mox', position: { x: 1.24, y: 64, z: -2.4 }, health: 20, food: 18 },
+      });
+      assert.equal(out.data.bot, 'Mox');
+      assert.equal(out.data.identity, 'You are Mox @ (1, 64, -2)');
+      const keys = Object.keys(out.data);
+      assert.equal(keys[0], 'bot', `bot must be the first key; got ${keys[0]}`);
+      assert.equal(keys[1], 'identity');
+    });
+
+    it('slimStatusEnvelope identity without position omits coords', () => {
+      const out = slimStatusEnvelope({ ok: true, data: { bot: 'Pip', health: 20 } });
+      assert.equal(out.data.identity, 'You are Pip');
+    });
+
+    it('slimStatusEnvelope omits identity when bot is unknown', () => {
+      const out = slimStatusEnvelope({ ok: true, data: { health: 20, food: 20 } });
+      assert.equal(out.data.identity, undefined);
+      assert.equal(out.data.bot, undefined);
+    });
+
+    it('renderHuman prints identity as the FIRST line of mc status', () => {
+      const logs = [];
+      const orig = console.log;
+      console.log = (...args) => logs.push(args.join(' '));
+      try {
+        renderHuman({
+          ok: true,
+          command: 'status',
+          data: {
+            bot: 'Mox',
+            identity: 'You are Mox @ (1, 64, -2)',
+            nav_header: {
+              situation: 'Surface',
+              pos: { x: 1, y: 64, z: -2 },
+              nav_mode: 'open',
+              signals: { text: '4 exits' },
+            },
+            health: 20,
+            food: 18,
+            position: { x: 1, y: 64, z: -2 },
+          },
+        });
+      } finally {
+        console.log = orig;
+      }
+      assert.ok(logs.length > 0, 'nothing rendered');
+      assert.equal(logs[0], 'You are Mox @ (1, 64, -2)', `identity must lead; got: ${logs[0]}`);
+      const navIdx = logs.findIndex((l) => l.startsWith('Surface at'));
+      assert.ok(navIdx > 0, 'nav header should still render after identity');
+    });
+
+    it('renderHuman does not print identity on non-status commands', () => {
+      const logs = [];
+      const orig = console.log;
+      console.log = (...args) => logs.push(args.join(' '));
+      try {
+        renderHuman({
+          ok: true,
+          command: 'scene',
+          data: { identity: 'You are Mox @ (1, 64, -2)', summary: 'Visible blocks: stone.' },
+        });
+      } finally {
+        console.log = orig;
+      }
+      assert.ok(!logs.includes('You are Mox @ (1, 64, -2)'), 'identity leaked onto scene output');
+    });
   });
 
   it('fmtHumanErrOneLine packs hint and meta on one row', () => {

@@ -68,6 +68,16 @@ test('SYNC_STUCK_ACTIONS preserves the original movement verbs', () => {
   }
 });
 
+test('SYNC_STUCK_ACTIONS includes move (proc-nav-1781014144: 49% of CLI timeouts)', () => {
+  // `move` was missing from BOTH stuck lists during trial
+  // proc-nav-1781014144 — it accounted for 30 of the 61 command timeouts
+  // with zero stuck-detector coverage. A wedged `mc move` ran silently
+  // to its per-leg wallclock cap, then the harness exec timeout (124).
+  assert.ok(SYNC_STUCK_ACTIONS.has('move'),
+    "SYNC_STUCK_ACTIONS must include 'move' — it pathfinds per leg and was " +
+    'the single largest timeout source in proc-nav-1781014144');
+});
+
 test('SYNC_STUCK_ACTIONS does NOT include pure-look / pure-inventory verbs', () => {
   // These verbs don't move the bot; including them would generate
   // false-positive nudge logs during fast iterative use.

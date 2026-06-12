@@ -242,6 +242,44 @@ test('verify at_mark (block mode): satisfied=false when block differs', async ()
   assert.equal(r.data.observed.block, 'dirt');
 });
 
+// `from=` mode — remote proximity check without the bot moving
+// (proc-nav-1781014144: presence-requiring verification forced round-trips).
+
+test('verify at_mark (from mode): satisfied without bot anywhere near', async () => {
+  const { verify } = createVerifyActions(makeServices({
+    botPos: { x: 9999, y: 65, z: 9999 },  // bot is far away and stays there
+    locations: { load: () => ({ field_south: { x: 365, y: 65, z: -575 } }) },
+  }));
+  const r = await verify({ kind: 'at_mark', mark: 'field_south', from: '366,65,-575', near: 2 });
+  assert.equal(r.ok, true);
+  assert.equal(r.data.mode, 'from');
+  assert.equal(r.data.satisfied, true);
+  assert.deepEqual(r.data.observed.from, { x: 366, y: 65, z: -575 });
+  assert.equal(r.data.observed.bot_pos, undefined);
+});
+
+test('verify at_mark (from mode): accepts {x,y,z} object form', async () => {
+  const { verify } = createVerifyActions(makeServices({
+    botPos: { x: 9999, y: 65, z: 9999 },
+    locations: { load: () => ({ field_south: { x: 0, y: 65, z: 0 } }) },
+  }));
+  const r = await verify({ kind: 'at_mark', mark: 'field_south', from: { x: 50, y: 65, z: 0 }, near: 2 });
+  assert.equal(r.ok, true);
+  assert.equal(r.data.mode, 'from');
+  assert.equal(r.data.satisfied, false);
+  assert.equal(r.data.observed.dist, 50);
+});
+
+test('verify at_mark (from mode): malformed from → INVALID_ARG', async () => {
+  const { verify } = createVerifyActions(makeServices({
+    locations: { load: () => ({ field_south: { x: 0, y: 65, z: 0 } }) },
+  }));
+  const r = await verify({ kind: 'at_mark', mark: 'field_south', from: 'not-coords' });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'INVALID_ARG');
+  assert.equal(r.error.retry_safe, false);
+});
+
 test('verify at_mark: mark not found → MARK_NOT_FOUND', async () => {
   const { verify } = createVerifyActions(makeServices({
     locations: { load: () => ({}) },

@@ -10,6 +10,8 @@ actual source files (not just filename heuristics) — see "Validation
 notes" at the end of each section.
 
 **Last verified:** 2026-05-23 (functional audit hardening — assertion depth, shared fixtures, xfail scope)
+
+**Node Tier 1:** superseded for layout and mc-command coverage by [`bot/test/README.md`](../../bot/test/README.md) and [`docs/reference/audits/bot-test-coverage-2026-06-06.md`](../reference/audits/bot-test-coverage-2026-06-06.md) (regenerate via `node scripts/bot-test-coverage-report.mjs`).
 **Verification baseline:** 113 Node unit tests + 15 pytest unit tests + 127 pytest
 functional tests green against the **Tester bot at :3004** (Phase G: all
 functional tests standardized on Tester; Flint role kept available via

@@ -348,6 +348,29 @@ describe('cli dispatch', () => {
     assert.equal(body.block, 'water');
   });
 
+  it('verify at_mark from=X,Y,Z sets from in POST body (remote proximity)', () => {
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', ['at_mark', 'field_south', 'from=365,65,-575', '--near', '5']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.kind, 'at_mark');
+    assert.equal(body.from, '365,65,-575');
+    assert.equal(body.near, 5);
+  });
+
+  it('verify at_mark --from X,Y,Z (space form) also sets from', () => {
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', ['at_mark', 'field_south', '--from', '0,64,0']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.from, '0,64,0');
+  });
+
+  it('verify at_mark near=N (kw form) sets near', () => {
+    const def = defOf('verify');
+    const built = buildHttpRequest(def, 'verify', ['at_mark', 'field_south', 'near=4']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.near, 4);
+  });
+
   it('verify at_mark strips colons from mark', () => {
     // Workers often pass `:field_south:` directly from card bodies.
     const def = defOf('verify');

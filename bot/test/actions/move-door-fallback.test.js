@@ -130,3 +130,46 @@ test('move: max doors exhausted returns TOO_MANY_DOORS and records negative leg'
   assert.equal(r.error.code, 'TOO_MANY_DOORS');
   assert.ok(ctx.runtime.navBriefNegativeLegs[navBriefLineKey({ verb: 'move', args: 'base_anchor' })]);
 });
+
+// proc-nav-1781014144: movement failures said "No path" with no WHY —
+// lastPathfinderError was recorded internally but only surfaced in one
+// branch. These pin pathfinder_error + the readable reason clause.
+
+test('move: NAV_BLOCKED surfaces pathfinder error reason in message + observed_state', async () => {
+  const bot = makeBotForNoDoor();
+  bot.pathfinder.goto = async () => { throw new Error('No path to the goal!'); };
+  const ctx = { runtime: { navBriefNegativeLegs: {} }, world: { bot } };
+  const move = createMove(makeMoveDeps({ bot, ctx }));
+
+  const r = await move({ x: 8, y: 64, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NAV_BLOCKED');
+  assert.equal(r.error.observed_state.pathfinder_error, 'No path to the goal!');
+  assert.match(r.error.message, /Why: pathfinder searched and found no route/);
+});
+
+test('move: TOO_MANY_DOORS carries pathfinder_error + readable clause', async () => {
+  const bot = makeBotWithDoorLoop({});
+  bot.pathfinder.goto = async () => { throw new Error('No path to the goal!'); };
+  const ctx = { runtime: { navBriefNegativeLegs: {} }, world: { bot } };
+  const move = createMove(makeMoveDeps({ bot, ctx }));
+
+  const r = await move({ x: 80, y: 64, z: 0, max_doors: 1 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'TOO_MANY_DOORS');
+  assert.equal(r.error.observed_state.pathfinder_error, 'No path to the goal!');
+  assert.match(r.error.message, /Last pathfinder failure: pathfinder searched and found no route/);
+});
+
+test('move: door traverse failure includes pathfinder_error in observed_state', async () => {
+  const bot = makeBotWithDoorLoop({});
+  bot.pathfinder.goto = async () => { throw new Error('No path to the goal!'); };
+  const ctx = { runtime: { navBriefNegativeLegs: {} }, world: { bot } };
+  const move = createMove(makeMoveDeps({ bot, ctx, throughOk: false }));
+
+  const r = await move({ x: 80, y: 64, z: 0 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'NAV_BLOCKED');
+  assert.match(r.error.message, /Could not traverse/);
+  assert.equal(r.error.observed_state.pathfinder_error, 'No path to the goal!');
+});
