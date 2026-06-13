@@ -48,3 +48,29 @@ test('hasLineOfSight: stone between bot and log still occludes', () => {
   const logFace = new Vec3(5.48, 64.5, 0.5);
   assert.equal(hasLineOfSight(eye, logFace), false);
 });
+
+// Characterization pin for the unified occludesLOS predicate (Pass 1). The
+// key branch existing tests miss is the harvest target-log identity: a log
+// is transparent ONLY in harvest mode AND only when it IS the target.
+test('occludesLOS: target-log identity differs by mode', () => {
+  const { occludesLOS } = makeSuite(() => ({ name: 'air', boundingBox: 'empty' }));
+  const log = { name: 'oak_log', boundingBox: 'block' };
+  const otherLog = { name: 'spruce_log', boundingBox: 'block' };
+  const leaves = { name: 'oak_leaves', boundingBox: 'block' };
+  const stone = { name: 'stone', boundingBox: 'block' };
+
+  // Harvest mode: the matching log is passable (you're looking AT it);
+  // a different-species log still occludes.
+  assert.equal(occludesLOS(log, { mode: 'harvest', targetName: 'oak_log' }), false);
+  assert.equal(occludesLOS(otherLog, { mode: 'harvest', targetName: 'oak_log' }), true);
+
+  // Generic mode: every log occludes (no target to look at).
+  assert.equal(occludesLOS(log, { mode: 'generic' }), true);
+  assert.equal(occludesLOS(log), true); // generic is the default
+
+  // Foliage passes in both modes; solid stone occludes in both.
+  assert.equal(occludesLOS(leaves, { mode: 'generic' }), false);
+  assert.equal(occludesLOS(leaves, { mode: 'harvest', targetName: 'oak_log' }), false);
+  assert.equal(occludesLOS(stone, { mode: 'generic' }), true);
+  assert.equal(occludesLOS(stone, { mode: 'harvest', targetName: 'oak_log' }), true);
+});

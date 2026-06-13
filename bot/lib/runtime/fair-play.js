@@ -135,20 +135,33 @@ export function createFairPlaySuite(deps) {
   // discovery used hasHarvestLineOfSightToWoodBlock (leaves ok) but dig and
   // collect execute used this helper without foliage → "can't see log" with
   // only leaves in the way (boundingBox='block' on many leaf types).
-  function isPassableForLOS(block) {
-    if (!block) return true;
-    if (isHarvestLosTransparentBlock(block, '')) return true;
-    if (block.boundingBox !== 'block') return true;
-    const name = block.name || '';
-    if (!/(_door|_fence_gate|_trapdoor)$/.test(name)) return false;
-    // Iron doors only open via redstone, not a click — but if they're
-    // open in-state they're still passable for LOS purposes.
-    try {
-      const props = typeof block.getProperties === 'function' ? block.getProperties() : {};
-      return props.open === true || props.open === 'true';
-    } catch {
-      return false;
+  // LOS-occlusion: does this block block a sightline to a target? Foliage,
+  // water, leaves, air are passable (you see through them); in harvest mode
+  // the target log is passable too (you're looking AT it). `generic` mode
+  // adds the open door/gate/trapdoor escape. This is THE LOS-occlusion
+  // predicate — see docs/reference/fair-play-charter.md. It is NOT
+  // scan-solidity (raycastFirstScanSolid) — foliage IS a visible block there.
+  function occludesLOS(block, { mode = 'generic', targetName = '' } = {}) {
+    // Foliage/water/air/leaves (+ harvest target log) are transparent.
+    if (isHarvestLosTransparentBlock(block, mode === 'harvest' ? targetName : '')) return false;
+    // A solid block. In generic mode an OPEN door/gate/trapdoor still lets a
+    // sightline through (#95); harvest mode has no door escape.
+    if (mode === 'generic' && /(_door|_fence_gate|_trapdoor)$/.test(block?.name || '')) {
+      // Iron doors only open via redstone, not a click — but open in-state
+      // they're still passable for LOS purposes.
+      try {
+        const props = typeof block.getProperties === 'function' ? block.getProperties() : {};
+        return !(props.open === true || props.open === 'true');
+      } catch {
+        return true;
+      }
     }
+    return true;
+  }
+
+  // Thin wrapper: passable-for-LOS = not occluding in generic mode.
+  function isPassableForLOS(block) {
+    return !occludesLOS(block, { mode: 'generic' });
   }
 
   function hasLineOfSight(from, to) {
@@ -202,7 +215,10 @@ export function createFairPlaySuite(deps) {
     return entity.position.offset(0, (entity.height || FAIR_PLAY.PHYSICAL_EYE_HEIGHT) * FAIR_PLAY.FAIRPLAY_EYE_FACTOR, 0);
   }
 
-  function raycastFirstSolid(origin, direction, maxDistance = 16, step = 0.75) {
+  // Scan-solidity (NOT LOS-occlusion): the first block the eye-ray actually
+  // hits. Only air is passable here — foliage/leaves ARE visible blocks the
+  // bot should report. Do not confuse with occludesLOS (foliage passable).
+  function raycastFirstScanSolid(origin, direction, maxDistance = 16, step = 0.75) {
     for (let distance = step; distance <= maxDistance; distance += step) {
       const sample = new Vec3(
         origin.x + direction.x * distance,
@@ -264,7 +280,7 @@ export function createFairPlaySuite(deps) {
 
           const yaw = ((baseYawDeg + panDeg + horizOffsetDeg) * Math.PI) / 180;
           const pitch = ((basePitchDeg + pitchOffset) * Math.PI) / 180;
-          const hit = raycastFirstSolid(origin, yawPitchToDir(yaw, pitch), range);
+          const hit = raycastFirstScanSolid(origin, yawPitchToDir(yaw, pitch), range);
           if (!hit) continue;
           const key = `${hit.block.name}@${hit.block.position.x},${hit.block.position.y},${hit.block.position.z}`;
           if (seen.has(key)) continue;
@@ -539,13 +555,14 @@ export function createFairPlaySuite(deps) {
 
   return {
     isHarvestLosTransparentBlock,
+    occludesLOS,
     hasHarvestLineOfSightToWoodBlock,
     fairPlayHarvestTrunkCandidates,
     hasLineOfSight,
     canDetectEntity,
     filterEntitiesFairPlay,
     eyePosition,
-    raycastFirstSolid,
+    raycastFirstScanSolid,
     rememberObservedBlock,
     scanVisibleBlocks,
     detectHazardsFromVisibleBlocks,
