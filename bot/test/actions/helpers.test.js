@@ -195,6 +195,110 @@ test('ensureWithinReach: pathfind failure → OUT_OF_RANGE', async () => {
   assert.equal(r.error.code, 'OUT_OF_RANGE');
 });
 
+// ── ensureWithinReach LOS-stance branch (Pass 2: affordance approach) ──
+// Target solid block at (10,64,10); (9,64,10) is a standable neighbor
+// (floor at 9,63,10). canSeeBlockFaces passes a Vec3 eye (eyePosition());
+// pickLosStandCell passes a plain-object candidate eye — so a stub keyed on
+// `from instanceof Vec3` separates "current cell blocked" from "stance cell
+// has LOS".
+function reachGoals() {
+  return {
+    GoalNear: class { constructor(x, y, z, r) { this.kind = 'near'; this.x = x; this.y = y; this.z = z; this.r = r; } },
+    GoalBlock: class { constructor(x, y, z) { this.kind = 'block'; this.x = x; this.y = y; this.z = z; } },
+  };
+}
+function reachBot({ start, solids = [], onGoto }) {
+  const solidSet = new Set(solids);
+  const calls = [];
+  const bot = {
+    entity: { position: new Vec3(start.x, start.y, start.z) },
+    blockAt: (p) => (solidSet.has(`${p.x},${p.y},${p.z}`)
+      ? { name: 'chest', boundingBox: 'block' }
+      : { name: 'air', boundingBox: 'empty' }),
+    pathfinder: {
+      setGoal() {},
+      goto: async (goal) => { calls.push(goal); if (onGoto) await onGoto(goal, bot); },
+    },
+  };
+  return { bot, calls };
+}
+const arrive = (goal, bot) => {
+  bot.entity.position = goal.kind === 'block'
+    ? new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5)
+    : new Vec3(goal.x + 0.5, goal.y, goal.z + 1.5);
+};
+const SOLIDS = ['10,64,10', '9,63,10'];
+
+test('ensureWithinReach: out of range → picks GoalBlock at the visible adjacent cell', async () => {
+  const { bot, calls } = reachBot({ start: { x: 0, y: 64, z: 0 }, solids: SOLIDS, onGoto: arrive });
+  const r = await ensureWithinReach({ bot, goals: reachGoals() }, { x: 10, y: 64, z: 10 }, {
+    range: 4.5, los: true, hasLineOfSight: () => true, eyePosition: () => new Vec3(0, 65.4, 0),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(calls.length, 1, 'exactly one pathfind — the stance, no fallback');
+  assert.equal(calls[0].kind, 'block');
+  assert.deepEqual([calls[0].x, calls[0].y, calls[0].z], [9, 64, 10]);
+});
+
+test('ensureWithinReach: stance pathfind throws → falls back to GoalNear, never regresses', async () => {
+  const onGoto = async (goal, bot) => {
+    if (goal.kind === 'block') throw new Error('no path to stance');
+    arrive(goal, bot);
+  };
+  const { bot, calls } = reachBot({ start: { x: 0, y: 64, z: 0 }, solids: SOLIDS, onGoto });
+  const r = await ensureWithinReach({ bot, goals: reachGoals() }, { x: 10, y: 64, z: 10 }, {
+    range: 4.5, los: true, hasLineOfSight: () => true, eyePosition: () => new Vec3(0, 65.4, 0),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].kind, 'block');
+  assert.equal(calls[1].kind, 'near');
+});
+
+test('ensureWithinReach: non-solid target → no stance, single GoalNear', async () => {
+  const { bot, calls } = reachBot({ start: { x: 0, y: 64, z: 0 }, solids: ['9,63,10'], onGoto: arrive });
+  const r = await ensureWithinReach({ bot, goals: reachGoals() }, { x: 10, y: 64, z: 10 }, {
+    range: 4.5, los: true, hasLineOfSight: () => true, eyePosition: () => new Vec3(0, 65.4, 0),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].kind, 'near');
+});
+
+test('ensureWithinReach: los:false → unchanged GoalNear path even with hasLineOfSight present', async () => {
+  const { bot, calls } = reachBot({ start: { x: 0, y: 64, z: 0 }, solids: SOLIDS, onGoto: arrive });
+  const r = await ensureWithinReach({ bot, goals: reachGoals() }, { x: 10, y: 64, z: 10 }, {
+    range: 4.5, los: false, hasLineOfSight: () => true, eyePosition: () => new Vec3(0, 65.4, 0),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].kind, 'near');
+});
+
+test('ensureWithinReach: in range + already visible → ok with zero pathfinds', async () => {
+  const { bot, calls } = reachBot({
+    start: { x: 10.5, y: 64, z: 11.5 }, solids: SOLIDS,
+    onGoto: () => { throw new Error('should not pathfind'); },
+  });
+  const r = await ensureWithinReach({ bot, goals: reachGoals() }, { x: 10, y: 64, z: 10 }, {
+    range: 4.5, los: true, hasLineOfSight: () => true, eyePosition: () => new Vec3(10.5, 65.4, 11.5),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(calls.length, 0);
+});
+
+test('ensureWithinReach: in range but blocked → re-stances to a visible cell', async () => {
+  const { bot, calls } = reachBot({ start: { x: 10.5, y: 64, z: 11.5 }, solids: SOLIDS, onGoto: arrive });
+  const r = await ensureWithinReach({ bot, goals: reachGoals() }, { x: 10, y: 64, z: 10 }, {
+    range: 4.5, los: true,
+    // Vec3 eye (current cell) → blocked; plain-object candidate eye → has LOS.
+    hasLineOfSight: (from) => !(from instanceof Vec3),
+    eyePosition: () => new Vec3(10.5, 65.4, 11.5),
+  });
+  assert.equal(r.ok, true);
+  assert.ok(calls.some((g) => g.kind === 'block'), 'a re-stance GoalBlock was attempted');
+});
+
 test('goto_near OPERATION_TIMEOUT message cites wallclock cap # spec', () => {
   const r = timeoutError('goto_near', ACTION_CAPS_MS.goto_near, {}, 'hint');
   assert.equal(r.ok, false);

@@ -9,6 +9,9 @@
  * fail-and-recover loop instead of a stale-state grind.
  */
 
+import { pickLosStandCell } from './movement/_los-stand.js';
+import { canSeeBlockFaces } from './_los.js';
+
 
 /** Marker error class so callers can distinguish timeout from inner errors. */
 export class OperationTimeoutError extends Error {
@@ -319,17 +322,53 @@ export const ACTION_CAPS_MS = Object.freeze({
  * @returns {Promise<{ok:true, distance:number} | {ok:false, error:object}>}
  */
 export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
-  const { range = 4.5, capMs = ACTION_CAPS_MS.reach, observed = {} } = opts;
+  const { range = 4.5, capMs = ACTION_CAPS_MS.reach, observed = {}, los = true, hasLineOfSight, eyePosition } = opts;
   const tx = Math.floor(Number(target.x));
   const ty = Math.floor(Number(target.y));
   const tz = Math.floor(Number(target.z));
-  const dx = bot.entity.position.x - (tx + 0.5);
-  const dy = bot.entity.position.y - (ty + 0.5);
-  const dz = bot.entity.position.z - (tz + 0.5);
-  const realDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const distTo = () => {
+    const ddx = bot.entity.position.x - (tx + 0.5);
+    const ddy = bot.entity.position.y - (ty + 0.5);
+    const ddz = bot.entity.position.z - (tz + 0.5);
+    return Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+  };
+  const realDist = distTo();
+
+  // LOS-stance approach (fair-play charter): prefer a cell that can actually
+  // see a face of the target — the same predicate the act-time guard
+  // enforces — over a blind radius landing. Opt-in (only the LOS-gated verbs
+  // pass hasLineOfSight); robustness over precision (always falls back to
+  // GoalNear, never regresses reachability).
+  const losEnabled = los !== false && typeof hasLineOfSight === 'function';
+  const STANCE_CAP_MS = Math.min(capMs, 4000);
+  const stanceGoal = () => {
+    if (!losEnabled) return null;
+    const pick = pickLosStandCell(bot, { tx, ty, tz, range }, { hasLineOfSight });
+    return pick ? new goals.GoalBlock(pick.cx, pick.cy, pick.cz) : null;
+  };
+  const tryGoto = async (goal, ms) => {
+    try { await raceWithTimeout(bot.pathfinder.goto(goal), ms, 'reach'); return true; }
+    catch { try { bot.pathfinder.setGoal(null); } catch { /* ignore */ } return false; }
+  };
+
   if (realDist <= range) {
-    return { ok: true, distance: Math.round(realDist * 10) / 10 };
+    // Already in range. Keep the zero-cost early return when we can already
+    // see the target (or LOS isn't in play). Only re-stance when blocked.
+    if (!losEnabled || canSeeBlockFaces(bot, tx, ty, tz, { hasLineOfSight, eyePosition })) {
+      return { ok: true, distance: Math.round(realDist * 10) / 10 };
+    }
+    const g = stanceGoal();
+    if (g) await tryGoto(g, STANCE_CAP_MS);
+    // Still in range regardless of the re-stance outcome — let the caller's
+    // act-time LOS guard make the final call (never worse than today).
+    return { ok: true, distance: Math.round(distTo() * 10) / 10 };
   }
+
+  // Out of range: try the LOS stance first (bounded), then fall back to the
+  // full-budget GoalNear if the stance didn't land us in range.
+  const g = stanceGoal();
+  const stanced = g ? await tryGoto(g, STANCE_CAP_MS) : false;
+  if (!stanced || distTo() > range) {
   try {
     await raceWithTimeout(
       bot.pathfinder.goto(new goals.GoalNear(tx, ty, tz, Math.max(2, Math.floor(range)))),
@@ -364,6 +403,7 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
       },
     };
   }
+  } // end GoalNear fallback (skipped when the LOS stance already reached range)
   // Post-pathfind distance check — pathfinder occasionally returns ok
   // but lands the bot just outside reach (G21 v2 finding).
   const postDx = bot.entity.position.x - (tx + 0.5);
