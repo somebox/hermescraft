@@ -160,6 +160,7 @@ async function openContainerStructured(deps, body) {
   const reach = await ensureWithinReach({ bot: b, goals }, { x, y, z }, {
     range: 4.5,
     observed: { container_position: { x, y, z } },
+    los: true, hasLineOfSight, eyePosition,
   });
   if (!reach.ok) return reach;
 

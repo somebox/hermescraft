@@ -104,6 +104,7 @@ export function createInteractionActions(services) {
     const reach = await ensureWithinReach({ bot: b, goals }, { x, y, z }, {
       range: 4.5,
       observed: { block_at_target: block.name },
+      los: true, hasLineOfSight, eyePosition,
     });
     if (!reach.ok) return reach;
     // F65: line-of-sight guard. Mirrors F45.3 (mc place) and F64 (chest
@@ -229,6 +230,7 @@ export function createInteractionActions(services) {
         approach_cap_ms: reachCapMs,
         door_state: (typeof gate.getProperties === 'function') ? (gate.getProperties().open === 'true' || gate.getProperties().open === true ? 'open' : 'closed') : null,
       },
+      los: true, hasLineOfSight, eyePosition,
     });
     if (!reach.ok) {
       // Re-frame OUT_OF_RANGE from the reach helper as TRAVERSAL_FAILED so
