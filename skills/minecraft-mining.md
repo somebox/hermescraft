@@ -51,6 +51,31 @@ mine_site:
 3. **One entrance per resource band.** Iron @ Y=16 and diamond @ Y=-59 are different sites. Don't dig a single shaft 100 blocks deep and tunnel sideways for everything — that's a session-killer pillar collapse waiting to happen.
 4. **Re-use entrances aggressively.** Before designating a new entry, check `scripts/board list --status done --assignee <bot>` for previously-mined sites at the same depth band and reassign workers to the existing entrance. Marks like `mine_iron`, `mine_coal`, `mine_diamond` should be saved at each entry with `mc mark` for future use.
 
+### Size dig ops SMALL through solid stone (or they outrun the CLI)
+
+Every stone block takes ~1 second to break. A big dig op through solid rock is
+therefore **minutes** of grinding: `mc tunnel … 50 2 3` is ~300 blocks ≈ 5+
+minutes; `mc stair_down … 30` is ~90 blocks ≈ 1.5 min. The bot finishes, but
+your `mc` command **returns a timeout long before** — and if you re-issue it you
+stack a second grind on top of the first. This is the #1 time-sink in stone.
+
+Rules through solid stone:
+
+- **Tunnel in ≤8-length bites.** `mc tunnel <x> <y> <z> <dir> 8 2 3`, then call
+  again to extend. Eight small tunnels beat one that times out.
+- **Stair_down/up ≤8 steps per call.** To reach a deep band, chain several
+  `mc stair_down <dir> 8` calls — each returns; the next continues from where
+  you stand.
+- **level_ground ≤8 columns per call** (the hard cap is 16, but on stone even
+  10 is slow). Split a 5×5 entry into 2–3 small calls.
+- **A "timed-out" dig op probably WORKED.** Before retrying, run `mc inventory`
+  / `mc status` — the bot likely finished (or is still finishing). Never blindly
+  re-issue the same big dig; you'll double the work and burn your turn budget.
+
+These small sizes are for digging through fresh stone. The long trunks/branches
+in the room-and-pillar diagram below assume an already-opened bay or soft ground
+— size DOWN when the rock is solid.
+
 ### Stair → tunnel → branch pattern
 
 Once the entry is chosen, mining follows a fixed three-phase shape:
@@ -58,7 +83,7 @@ Once the entry is chosen, mining follows a fixed three-phase shape:
 ```
         [SURFACE Y=65]
               │
-              │ mc stair_down north 50   ←  Phase 1: stair (one-time per entry)
+              │ mc stair_down north 8    ←  Phase 1: descend (chain ×N to reach the band)
               ▼
         [LANDING Y=15]
               │
@@ -200,7 +225,7 @@ NEVER `mc dig` straight down (lava) and NEVER make a 1-wide vertical shaft (no e
 
 ```bash
 # 1. Descend safely
-mc stair_down south 30          # 3-wide staircase south, lands around Y=34
+mc stair_down south 8           # 3-wide staircase south; chain ×N to reach a deeper band
 
 # 2. Once at ore depth, get the cluster
 mc nearby 16                     # confirm visible iron
@@ -278,14 +303,14 @@ The card body either has explicit coordinates OR it doesn't. Branch on this:
 
 **Action first. Don't probe first.** The stair_down primitive has good error envelopes — call it, read the error if it fails, react. Pre-inspecting every cell is a paralysis trap; you burn 5-10 calls verifying terrain that the primitive itself can tell you about in one call.
 
-Standard descent — first attempt:
+Standard descent — first attempt (short bite; chain more calls to go deeper):
 
 ```
-mc stair_down south 30
+mc stair_down south 8
 ```
 
 - Direction: pick a cardinal that points AWAY from base structures. If unsure, `mc regions --at` once.
-- Length 30 lands ~Y34 — iron + coal sweet zone, above the lava layer (Y10).
+- Each 8-step bite drops ~8 Y. To reach the iron/coal band (~Y34, above the Y10 lava layer) from the surface, chain ~4 `mc stair_down` calls — each returns quickly; the next continues from where you stand. One big `30` would grind for over a minute and read as a timeout.
 - If it succeeds, `mc set_mark mine_entrance` at the top, continue to Phase 4.
 
 **If stair_down errors, read the envelope and react with ONE move:**
@@ -305,13 +330,13 @@ NEVER pillar straight down. NEVER dig a 1-wide shaft. The escape primitives don'
 
 ### Phase 4 — Tunnel (mandatory primitive: `mc tunnel`)
 
-Pick a direction toward the densest ore signature (from Phase 2 advise/scan) and run:
+Pick a direction toward the densest ore signature (from Phase 2 advise/scan) and run it in **short bites through stone** (see the sizing rule above — a `50`-long tunnel through solid rock takes minutes and will look like a timeout):
 
 ```
-mc tunnel <x> <y> <z> <dir> 50 2 3         # 2-wide × 3-high × 50 long corridor
+mc tunnel <x> <y> <z> <dir> 8 2 3          # 2-wide × 3-high × 8-long bite; call again to extend
 ```
 
-The `tunnel` primitive uses the embedded pathfinder + dig_area slices — much more efficient than per-block `mc dig`. It also handles head clearance and torch-spacing automatically when the bot has torches in inventory.
+The `tunnel` primitive uses the embedded pathfinder + dig_area slices — much more efficient than per-block `mc dig`. It also handles head clearance and torch-spacing automatically when the bot has torches in inventory. Extend by repeating the call from your new position; don't ask for a 50-long corridor in one shot through stone.
 
 ### Phase 5 — Scan-and-branch (every 10 blocks during Phase 4)
 
@@ -331,7 +356,7 @@ mc move @mine_entrance                         # or mc go_mark mine_entrance
 
 If ore is found IN the corridor: `mc collect <ore> 16` and continue the main tunnel.
 
-After the main tunnel reaches 50 blocks total, **stop**. Don't keep extending — file a follow-up `[EXTEND]` card if more length is needed. Long-running cards exceed iteration budget.
+After the main tunnel reaches ~50 blocks total (built up from short bites), **stop**. Don't keep extending — file a follow-up `[EXTEND]` card if more length is needed. Long-running cards exceed iteration budget.
 
 ### Returning + completing
 
