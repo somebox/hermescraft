@@ -75,18 +75,29 @@ test('deck: missing y → INVALID_COORD', async () => {
   assertFailure(r, { code: 'INVALID_COORD', messageIncludes: 'y', retrySafe: false });
 });
 
-test('deck: surface_y is rejected during the Y-semantics migration (phase 1)', async () => {
-  // surface_y historically meant the DECK block Y here, clashing with the
-  // canonical vocabulary (feet = block_y + 1). Phase 1 rejects it loudly so
-  // no caller silently builds off-by-one; phase 2 reintroduces it as feet.
+test('deck (phase 2): surface_y is canonical feet — equivalent to y = surface_y - 1', async () => {
+  // After the Y-vocabulary migration: surface_y means feet (= block_y + 1),
+  // same as every other Y-taking primitive. dry_run results must match.
+  const { bot: bot1 } = makeBot({ terrain: new Map() });
+  const part1 = makePart(bot1);
+  const r1 = await part1.deck({ x1: 0, z1: 0, x2: 2, z2: 2, y: 78, block: 'cobblestone', dry_run: true });
+  const { bot: bot2 } = makeBot({ terrain: new Map() });
+  const part2 = makePart(bot2);
+  const r2 = await part2.deck({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 79, block: 'cobblestone', dry_run: true });
+  assertContract(r1);
+  assertContract(r2);
+  assert.deepEqual(r2.data, r1.data);
+});
+
+test('deck (phase 2): surface_y wins when both y and surface_y are supplied', async () => {
   const { bot } = makeBot({ terrain: new Map() });
   const part = makePart(bot);
-  const r = await part.deck({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78, block: 'cobblestone' });
-  assertFailure(r, {
-    code: 'INVALID_COORD',
-    messageIncludes: ['surface_y', 'y='],
-    retrySafe: false,
+  const r = await part.deck({
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 10, surface_y: 79, block: 'cobblestone', dry_run: true,
   });
+  assertContract(r);
+  assert.equal(r.data.block_y, 78, 'surface_y=79 → block_y=78, ignoring y=10');
+  assert.equal(r.data.surface_y, 79);
 });
 
 test('deck: missing block → INVALID_VALUE', async () => {

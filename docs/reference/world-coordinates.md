@@ -1,6 +1,6 @@
 # Coordinates convention — `block_y` and `surface_y`
 
-> Status: convention adopted 2026-05-27. Primitives are being migrated; until phase C of the [coordinates+materials plan](../../docs/planning/session-devlog.md) completes, treat older return shapes as legacy and prefer reading `block_y` / `surface_y` when present.
+> Status: convention adopted 2026-05-27; migration complete 2026-06-13 (clear_strip and deck were the last holdouts). Every Y-taking primitive accepts `y` or `surface_y` and returns both fields. Older callers can keep passing `y` — only the return shapes still vary by primitive (see the outputs table).
 
 Every Y coordinate in the bot's universe is one of two things. Naming them once and using the names everywhere removes the off-by-one ambiguity that has shown up repeatedly in live-fleet runs (`docs/planning/session-devlog.md:250`, `:318`, `docs/archive/experiments/1.4-kanban-minecraft.md:95`).
 
@@ -80,11 +80,13 @@ The table below names every primitive that reads or writes a Y and lists what it
 | `mc dig_pit` | `top_y` or `surface_y` | pit surface Y (block_y) |
 | `mc path` | `y` or `surface_y` | path tiles' Y (block_y) |
 | `mc build_stairs` | `y` or `surface_y` | starting Y (block_y) |
-| `mc place_fill` | `y1, y2` or `surface_y1, surface_y2` | inclusive Y range (block_y) |
+| `mc fill` | `y1, y2` or `surface_y1, surface_y2` | inclusive Y range (block_y) |
 | `mc wall` | `y1, y2` or `surface_y1, surface_y2` | wall Y range (block_y) |
 | `mc fence` | `y` or `surface_y` | fence Y (block_y) |
 | `mc dig_area` | `y1, y2` or `surface_y1, surface_y2` | inclusive Y range (block_y) |
 | `mc tunnel` | `y` or `surface_y` | feet-level Y for the tunnel (surface_y is more natural here — bot walks through it) |
+| `mc clear_strip` | `y` or `surface_y` | road-bed block (block_y); cleared volume is the feet+head cells above it |
+| `mc deck` | `y` or `surface_y` | deck-layer block (block_y); bots walk on top at block_y + 1 |
 | `mc goto`, `mc goto_near` | `y` or `surface_y` | foot block Y to stand on (= block_y of floor below feet) |
 | `mc reachable` | `y` or `surface_y` | tested cell Y (block_y) |
 | `mc dig` | `y` | block Y of the block to dig |
@@ -101,9 +103,10 @@ The table below names every primitive that reads or writes a Y and lists what it
 | `mc goto`, `mc goto_near` | `end_position.block_y`, `end_position.surface_y` | already returns `end_position` post 2026-05-27 |
 | `mc level`, `mc level_ground` | `bounds.block_y`, `bounds.surface_y`, `target_y` (= block_y for back-compat) | per-column entries get `top_block_y`, `top_surface_y` |
 | `mc dig_pit` | `floor_block_y`, `floor_surface_y`, `bounds.{block_y1,...}` | |
-| `mc place_fill`, `mc wall`, `mc fence` | `bounds.{block_y1, surface_y1, block_y2, surface_y2}` | |
+| `mc fill`, `mc wall`, `mc fence` | `bounds.{block_y1, surface_y1, block_y2, surface_y2}` | |
 | `mc dig_area`, `mc tunnel`, `mc stair_*`, `mc pillar_*` | `start.{block_y, surface_y}`, `end.{block_y, surface_y}` | position objects also include `block_y` / `surface_y` |
 | `mc dig`, `mc place` | `position.{block_y, surface_y}` | |
+| `mc clear_strip`, `mc deck` | `block_y`, `surface_y`, `bounds` | canonical bed/deck pair |
 
 ## Why two fields, not one (with one canonical perspective)
 

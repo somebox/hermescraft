@@ -1,18 +1,16 @@
 /**
  * Cross-command Y composition: terrain_top -> clear_strip.
  *
- * PHASE 1 of the surface-y migration (see the surface-y-consistency plan).
- * Historically clear_strip's `surface_y` param meant the GROUND BLOCK Y
- * (road.js dialect) while terrain_top's `surface_y` output means FEET
- * (= block_y + 1, canonical) — so the naive name-matching composition was
- * silently off by one (the feet cell stayed uncleared).
+ * Surface-y migration end-state (phase 2 landed): clear_strip accepts both
+ * `y` (= block_y of the road bed, legacy) and `surface_y` (= feet =
+ * block_y + 1, canonical). Either composition with terrain_top works —
+ * `top.block_y → clear_strip.y` is what proc_scout_road_graph.py emits;
+ * `top.surface_y → clear_strip.surface_y` is the natural name-matching
+ * composition and now does the right thing (clears the feet cell).
  *
- * Phase 1 turns that silent off-by-one into a LOUD error: clear_strip
- * rejects `surface_y` outright and takes `y` (= block_y of the road bed),
- * which pairs directly with terrain_top.block_y / corridor_sample
- * elevation_median. Phase 2 will reintroduce `surface_y` as true feet via
- * parseYInput — at that point the rejection test below flips to a
- * works-canonically assertion.
+ * Historically clear_strip had a dialect where `surface_y` meant the
+ * GROUND BLOCK Y; phase 1 turned that into a loud rejection, phase 2
+ * unified the vocabulary via parseYInput.
  */
 
 import test from 'node:test';
@@ -21,7 +19,7 @@ import assert from 'node:assert/strict';
 import { createQueriesActions } from '../../lib/actions/queries.js';
 import { createMockServices } from '../../lib/server/mock-services.js';
 import { createBuildingRoadPart } from '../../lib/actions/building/road.js';
-import { assertContract, assertFailure } from '../_helpers/action-harness.js';
+import { assertContract } from '../_helpers/action-harness.js';
 
 const PASSABLE = new Set(['air', 'cave_air', 'void_air']);
 
@@ -94,21 +92,24 @@ test('composition: terrain_top.block_y -> clear_strip.y clears exactly the feet+
   assert.equal(r.data.surface_y, 65);
 });
 
-test('composition (PHASE 1, flips at phase 2): terrain_top.surface_y -> clear_strip.surface_y fails LOUDLY, not off-by-one', async () => {
+test('composition (phase 2): terrain_top.surface_y -> clear_strip.surface_y clears the feet cell', async () => {
   const bot = makeBot(makeWorld());
   const { queries, road } = makeHandlers(bot);
 
   const top = await queries.terrain_top({ x: 0, z: 0 });
+  assert.equal(top.surface_y, 65);
 
-  // The naive name-matching composition an agent would write. Before the
-  // migration this silently cleared one cell too high; now it errors with
-  // guidance instead.
+  // Natural name-matching composition. Pre-phase-2 this was rejected; now
+  // surface_y is canonical feet and the call clears the same volume as
+  // y = top.block_y would.
   const r = await road.clear_strip({
     x1: 1, z1: 0, x2: 1, z2: 0, surface_y: top.surface_y, height: 4, dry_run: true,
   });
-  assertFailure(r, {
-    code: 'INVALID_COORD',
-    messageIncludes: ['surface_y', 'y='],
-    retrySafe: false,
-  });
+  assertContract(r);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.bounds.y1, 65);
+  assert.equal(r.data.would_dig, 1);
+  assert.equal(r.data.removed_by_block.dirt, 1);
+  assert.equal(r.data.block_y, 64);
+  assert.equal(r.data.surface_y, 65);
 });

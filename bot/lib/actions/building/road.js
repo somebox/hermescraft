@@ -2,7 +2,7 @@ import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { isStructural, tierOf } from '../../runtime/materials.js';
 import { recordRecentPlace, equipForDig } from '../../runtime/dig-tools.js';
-import { withYBoth, surfaceFromBlock } from '../../runtime/coordinates.js';
+import { withYBoth, surfaceFromBlock, parseYInput } from '../../runtime/coordinates.js';
 import { shouldSkipPlaceAt } from '../../runtime/regions/policy-guard.js';
 import { pathfindGotoNear, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
 
@@ -143,18 +143,16 @@ export function createBuildingRoadPart(deps) {
      * ≤32-cell dig_area calls so the caller is not exposed to the per-call
      * cap.
      *
-     * Y MIGRATION (phase 1): `surface_y` is REJECTED with INVALID_COORD —
-     * its historical meaning here ("ground block Y") clashed with the
-     * canonical vocabulary (surface_y = feet = block_y + 1, see
-     * docs/reference/world-coordinates.md). Pass `y` (= block_y of the road
-     * bed) instead; phase 2 reintroduces `surface_y` as true feet via
-     * parseYInput.
+     * Y vocabulary: accepts either `y` (= block_y of the road bed, legacy)
+     * or `surface_y` (= feet Y = block_y + 1, canonical). `surface_y` wins
+     * when both are given. See docs/reference/world-coordinates.md.
      *
      * Args:
      *   x1, z1, x2, z2  — rectangle bounds (inclusive)
-     *   y               — block_y of the road bed. Volume cleared is the H
-     *                     cells ABOVE this block (y+1 .. y+H — the feet +
-     *                     head cells of a bot walking on the bed).
+     *   y / surface_y   — block_y of the road bed (or its feet equivalent).
+     *                     Volume cleared is the H cells ABOVE this block
+     *                     (block_y+1 .. block_y+H — the feet + head cells of
+     *                     a bot walking on the bed).
      *   height          — H, the headroom to clear. Default 4 (walkable).
      *                     Use 8 to fully clear small trees / pillar tops.
      *   road_mode       — true: dig wood (oak_log, planks, fences, stairs…)
@@ -189,18 +187,7 @@ export function createBuildingRoadPart(deps) {
       max_cells,
     }) {
       const b = ensureBot();
-      if (surface_y !== undefined && surface_y !== null) {
-        return {
-          ok: false,
-          error: {
-            code: 'INVALID_COORD',
-            message: `mc clear_strip: surface_y is temporarily rejected — its meaning here is migrating from "ground block Y" to the canonical feet Y (= block_y + 1). Pass y=<block_y of the road bed> instead (terrain_top block_y / corridor_sample elevation_median).`,
-            next_action_hint: 'Re-issue with y=<ground block Y>; surface_y returns next release meaning feet.',
-            retry_safe: false,
-          },
-        };
-      }
-      for (const [k, v] of Object.entries({ x1, z1, x2, z2, y })) {
+      for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
           return {
             ok: false,
@@ -212,11 +199,22 @@ export function createBuildingRoadPart(deps) {
           };
         }
       }
+      const parsedY = parseYInput({ y, surface_y });
+      if (parsedY === null) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_COORD',
+            message: `mc clear_strip requires y (block_y) or surface_y (feet)`,
+            retry_safe: false,
+          },
+        };
+      }
       const minX = Math.min(Number(x1), Number(x2));
       const maxX = Math.max(Number(x1), Number(x2));
       const minZ = Math.min(Number(z1), Number(z2));
       const maxZ = Math.max(Number(z1), Number(z2));
-      const sy = Math.floor(Number(y)); // block_y of the road bed
+      const sy = parsedY; // block_y of the road bed
       const H = Math.max(1, Math.min(parseInt(String(height ?? 4), 10) || 4, 16));
       const cap = Math.max(32, Math.min(parseInt(String(max_cells ?? 1024), 10) || 1024, 4096));
       const isRoad = parseFlag(road_mode);
@@ -559,16 +557,14 @@ export function createBuildingRoadPart(deps) {
      * open gap fails at interior cells with `no_adjacent_face` because all
      * neighbors are air at start.
      *
-     * Y MIGRATION (phase 1): `surface_y` is REJECTED with INVALID_COORD —
-     * its historical meaning here ("the deck block's Y") clashed with the
-     * canonical vocabulary (surface_y = feet = block_y + 1, see
-     * docs/reference/world-coordinates.md). Pass `y` (= block_y of the deck
-     * layer) instead; phase 2 reintroduces `surface_y` as true feet via
-     * parseYInput. Bots walk ON the deck at y + 1.
+     * Y vocabulary: accepts either `y` (= block_y of the deck layer, legacy)
+     * or `surface_y` (= feet Y = block_y + 1, canonical — where a bot walks
+     * on the deck). `surface_y` wins when both are given. See
+     * docs/reference/world-coordinates.md.
      *
      * Args:
      *   x1, z1, x2, z2  — rectangle bounds (inclusive)
-     *   y               — block_y of the deck (single horizontal layer);
+     *   y / surface_y   — block_y of the deck (or its feet equivalent);
      *                     match the road bed's block_y so the deck is flush
      *   block           — fill block name (e.g. 'cobblestone'; doctrine
      *                     prefers cobblestone for spans over water/ravines)
@@ -598,18 +594,7 @@ export function createBuildingRoadPart(deps) {
       dry_run,
     }) {
       const b = ensureBot();
-      if (surface_y !== undefined && surface_y !== null) {
-        return {
-          ok: false,
-          error: {
-            code: 'INVALID_COORD',
-            message: `mc deck: surface_y is temporarily rejected — its meaning here is migrating from "deck block Y" to the canonical feet Y (= block_y + 1). Pass y=<block_y of the deck layer> instead.`,
-            next_action_hint: 'Re-issue with y=<deck block Y>; surface_y returns next release meaning feet.',
-            retry_safe: false,
-          },
-        };
-      }
-      for (const [k, v] of Object.entries({ x1, z1, x2, z2, y })) {
+      for (const [k, v] of Object.entries({ x1, z1, x2, z2 })) {
         if (!Number.isFinite(Number(v))) {
           return {
             ok: false,
@@ -620,6 +605,17 @@ export function createBuildingRoadPart(deps) {
             },
           };
         }
+      }
+      const parsedY = parseYInput({ y, surface_y });
+      if (parsedY === null) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_COORD',
+            message: `mc deck requires y (block_y) or surface_y (feet)`,
+            retry_safe: false,
+          },
+        };
       }
       if (typeof block !== 'string' || !block) {
         return {
@@ -635,7 +631,7 @@ export function createBuildingRoadPart(deps) {
       const maxX = Math.max(Number(x1), Number(x2));
       const minZ = Math.min(Number(z1), Number(z2));
       const maxZ = Math.max(Number(z1), Number(z2));
-      const sy = Math.floor(Number(y)); // block_y of the deck layer
+      const sy = parsedY; // block_y of the deck layer
       const cap = Math.max(8, Math.min(parseInt(String(max_cells ?? 256), 10) || 256, 1024));
       const isDry = parseFlag(dry_run);
       const w = maxX - minX + 1;

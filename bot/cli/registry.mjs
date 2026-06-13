@@ -892,7 +892,7 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   g('deck', 'world', [], {
-    description: 'Build a flat horizontal deck across an air gap. Places BLOCK at every air cell in [X1..X2] × {Y} × [Z1..Z2], using BFS edge-inward order so each placement anchors against a cell that\'s already solid — pre-existing terrain on the rim OR a deck cell placed earlier in this same call. Y is the deck layer\'s block_y (bots walk on top at Y+1); match the road bed\'s block_y so the deck is flush. NOTE: surface_y is temporarily rejected while its semantics migrate to the canonical feet Y — pass y= instead. Bridges over ravines / water / deep dips where ordinary `mc fill` fails at interior cells (no_adjacent_face). Cells that can\'t reach a rim are returned as `unanchored` — partial completion is reported as ok:true with data.unanchored populated. Default cap 256 cells.',
+    description: 'Build a flat horizontal deck across an air gap. Places BLOCK at every air cell in [X1..X2] × {Y} × [Z1..Z2], using BFS edge-inward order so each placement anchors against a cell that\'s already solid — pre-existing terrain on the rim OR a deck cell placed earlier in this same call. Y is the deck layer\'s block_y (bots walk on top at Y+1); match the road bed\'s block_y so the deck is flush. Accepts y (= block_y) or surface_y (= feet, block_y+1); surface_y wins when both given — same convention as level/path. Bridges over ravines / water / deep dips where ordinary `mc fill` fails at interior cells (no_adjacent_face). Cells that can\'t reach a rim are returned as `unanchored` — partial completion is reported as ok:true with data.unanchored populated. Default cap 256 cells.',
     method: 'POST',
     path: '/action/deck',
     bodyFn: (p) =>
@@ -902,7 +902,6 @@ export const RAW_COMMAND_DEFS = [
         x2: Number(p.x2),
         z2: Number(p.z2),
         ...(p.y !== undefined ? { y: Number(p.y) } : {}),
-        // Forwarded so the handler rejects it with the migration message.
         ...(p.surface_y !== undefined ? { surface_y: Number(p.surface_y) } : {}),
         block: String(p.block),
         ...(p.max_cells !== undefined ? { max_cells: Number(p.max_cells) } : {}),
@@ -913,20 +912,22 @@ export const RAW_COMMAND_DEFS = [
       { key: 'z1', type: 'number', required: true },
       { key: 'x2', type: 'number', required: true },
       { key: 'z2', type: 'number', required: true },
-      { key: 'y', type: 'number', required: true },
+      { key: 'y', type: 'number' },
       { key: 'block', type: 'string', required: true },
       { key: 'max_cells', type: 'number', min: 8, max: 1024 },
       { key: 'dry_run', type: 'string' },
+      { key: 'surface_y', type: 'number' },
     ],
-    usage: 'mc deck X1 Z1 X2 Z2 y=BLOCK_Y block=NAME [max_cells=256] [dry_run=true]',
+    usage: 'mc deck X1 Z1 X2 Z2 {y=BLOCK_Y | surface_y=FEET_Y} block=NAME [max_cells=256] [dry_run=true]',
     examples: [
       'mc deck -1 12 1 16 y=78 block=cobblestone           # 3x5 deck across a ravine, flush with bed at 78',
+      'mc deck -1 12 1 16 surface_y=79 block=cobblestone   # same deck addressed by feet Y (= y=78)',
       'mc deck -1 12 1 16 y=78 block=cobblestone dry_run=true  # plan first; check unanchored',
     ],
   }),
 
   g('clear_strip', 'world', ['clear-strip'], {
-    description: 'Clear a corridor strip ABOVE a road bed. Surveys every cell in [X1..X2] × [Y+1 .. Y+HEIGHT] × [Z1..Z2] and removes any non-air block in that volume. Y is the road bed\'s block_y (terrain_top block_y / corridor_sample elevation_median); the bed itself and everything below is never touched, so the cleared cells are exactly the feet+head space of a bot walking on the bed. NOTE: surface_y is temporarily rejected while its semantics migrate to the canonical feet Y — pass y= instead. Auto-batches into ≤32-cell dig_area calls under the hood — callers do not see the per-call cap. road_mode=true overrides the "structural" preservation so tree trunks, planks, fences, stairs etc. get cleared (region-deny still honored). dry_run=true returns the same accounting without digging. Default HEIGHT=4 (walkable headroom); use 8 to cut canopy. Cap: 1024 cells per call.',
+    description: 'Clear a corridor strip ABOVE a road bed. Surveys every cell in [X1..X2] × [Y+1 .. Y+HEIGHT] × [Z1..Z2] and removes any non-air block in that volume. Y is the road bed\'s block_y (terrain_top block_y / corridor_sample elevation_median); the bed itself and everything below is never touched, so the cleared cells are exactly the feet+head space of a bot walking on the bed. Accepts y (= block_y) or surface_y (= feet, block_y+1); surface_y wins when both given — same convention as level/path. Auto-batches into ≤32-cell dig_area calls under the hood — callers do not see the per-call cap. road_mode=true overrides the "structural" preservation so tree trunks, planks, fences, stairs etc. get cleared (region-deny still honored). dry_run=true returns the same accounting without digging. Default HEIGHT=4 (walkable headroom); use 8 to cut canopy. Cap: 1024 cells per call.',
     method: 'POST',
     path: '/action/clear_strip',
     bodyFn: (p) =>
@@ -936,7 +937,6 @@ export const RAW_COMMAND_DEFS = [
         x2: Number(p.x2),
         z2: Number(p.z2),
         ...(p.y !== undefined ? { y: Number(p.y) } : {}),
-        // Forwarded so the handler rejects it with the migration message.
         ...(p.surface_y !== undefined ? { surface_y: Number(p.surface_y) } : {}),
         ...(p.height !== undefined ? { height: Number(p.height) } : {}),
         ...(p.road_mode !== undefined ? { road_mode: p.road_mode === true || p.road_mode === 'true' || p.road_mode === '1' } : {}),
@@ -948,15 +948,17 @@ export const RAW_COMMAND_DEFS = [
       { key: 'z1', type: 'number', required: true },
       { key: 'x2', type: 'number', required: true },
       { key: 'z2', type: 'number', required: true },
-      { key: 'y', type: 'number', required: true },
+      { key: 'y', type: 'number' },
       { key: 'height', type: 'number', min: 1, max: 16 },
       { key: 'road_mode', type: 'string' },
       { key: 'dry_run', type: 'string' },
       { key: 'max_cells', type: 'number', min: 32, max: 4096 },
+      { key: 'surface_y', type: 'number' },
     ],
-    usage: 'mc clear_strip X1 Z1 X2 Z2 y=BLOCK_Y [height=4] [road_mode=true] [dry_run=true] [max_cells=1024]',
+    usage: 'mc clear_strip X1 Z1 X2 Z2 {y=BLOCK_Y | surface_y=FEET_Y} [height=4] [road_mode=true] [dry_run=true] [max_cells=1024]',
     examples: [
       'mc clear_strip -1 0 1 11 y=78                       # 3×12×4 walkable headroom above bed at 78',
+      'mc clear_strip -1 0 1 11 surface_y=79               # same strip as y=78 (feet perspective)',
       'mc clear_strip -1 0 1 11 y=78 road_mode=true        # also fell trees in the corridor',
       'mc clear_strip -1 0 1 11 y=78 height=8 dry_run=true # what would be removed if we cut to canopy',
     ],

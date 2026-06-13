@@ -72,19 +72,32 @@ test('clear_strip: missing y → INVALID_COORD', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('clear_strip: surface_y is rejected during the Y-semantics migration (phase 1)', async () => {
-  // surface_y historically meant the BED block Y here, clashing with the
-  // canonical vocabulary (feet = block_y + 1). Phase 1 rejects it loudly so
-  // no caller silently builds off-by-one; phase 2 reintroduces it as feet.
+test('clear_strip (phase 2): surface_y is canonical feet — equivalent to y = surface_y - 1', async () => {
+  // After the Y-vocabulary migration: surface_y means feet (= block_y + 1),
+  // same as every other Y-taking primitive. Calling with surface_y=79 must
+  // produce a byte-identical dry-run result to y=78 over the same rectangle.
+  const calls1 = [];
+  const part1 = makeRoadPart({ bot: makeBot(), digAreaCalls: calls1 });
+  const r1 = await part1.clear_strip({ x1: 0, z1: 0, x2: 2, z2: 2, y: 78, dry_run: true });
+  const calls2 = [];
+  const part2 = makeRoadPart({ bot: makeBot(), digAreaCalls: calls2 });
+  const r2 = await part2.clear_strip({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 79, dry_run: true });
+  assertContract(r1);
+  assertContract(r2);
+  assert.deepEqual(r2.data, r1.data);
+  assert.equal(calls1.length, 0);
+  assert.equal(calls2.length, 0);
+});
+
+test('clear_strip (phase 2): surface_y wins when both y and surface_y are supplied', async () => {
   const calls = [];
   const part = makeRoadPart({ bot: makeBot(), digAreaCalls: calls });
-  const r = await part.clear_strip({ x1: 0, z1: 0, x2: 2, z2: 2, surface_y: 78 });
-  assertFailure(r, {
-    code: 'INVALID_COORD',
-    messageIncludes: ['surface_y', 'y='],
-    retrySafe: false,
+  const r = await part.clear_strip({
+    x1: 0, z1: 0, x2: 0, z2: 0, y: 10, surface_y: 79, dry_run: true,
   });
-  assert.equal(calls.length, 0);
+  assertContract(r);
+  assert.equal(r.data.block_y, 78, 'surface_y=79 → block_y=78, ignoring y=10');
+  assert.equal(r.data.surface_y, 79);
 });
 
 test('clear_strip: response carries the canonical block_y/surface_y pair for the bed', async () => {
