@@ -16,7 +16,7 @@ import {
 import { coord3 } from '../_args.js';
 import { ok } from '../../shared/action-contract.js';
 import { navBlockedNextActionHint, withNavRetryWarning } from './nav-hints.js';
-import { FAIR_PLAY } from '../../runtime/fair-play-constants.js';
+import { pickLosStandCell } from './_los-stand.js';
 
 /**
  * @param {object} deps
@@ -64,44 +64,9 @@ export function createGotoNear(deps) {
     let goal = new goals.GoalNear(tx, ty, tz, range);
     let losPicked = null;
     if (los !== false && typeof hasLineOfSight === 'function') {
-      const targetBlock = b.blockAt(new Vec3(tx, ty, tz));
-      const targetIsSolid = !!(targetBlock
-        && targetBlock.boundingBox === 'block'
-        && targetBlock.name !== 'air'
-        && targetBlock.name !== 'cave_air');
-      if (targetIsSolid) {
-        const cBx = tx + 0.5, cBy = ty + 0.5, cBz = tz + 0.5;
-        const faces = [
-          { x: cBx, y: cBy, z: cBz - 0.48 },
-          { x: cBx, y: cBy, z: cBz + 0.48 },
-          { x: cBx - 0.48, y: cBy, z: cBz },
-          { x: cBx + 0.48, y: cBy, z: cBz },
-          { x: cBx, y: cBy - 0.48, z: cBz },
-          { x: cBx, y: cBy + 0.48, z: cBz },
-          { x: cBx, y: cBy, z: cBz },
-        ];
-        const cands = [];
-        const R = Math.max(1, Math.floor(range));
-        for (let dx = -R; dx <= R; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dz = -R; dz <= R; dz++) {
-              if (dx === 0 && dy === 0 && dz === 0) continue;
-              const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-              if (d > range) continue;
-              const cx = tx + dx, cy = ty + dy, cz = tz + dz;
-              if (!isStandableCell(b, cx, cy, cz)) continue;
-              const candEye = { x: cx + 0.5, y: cy + FAIR_PLAY.FAIRPLAY_EYE_HEIGHT_DEFAULT, z: cz + 0.5 };
-              if (faces.some((p) => hasLineOfSight(candEye, p))) {
-                cands.push({ cx, cy, cz, d });
-              }
-            }
-          }
-        }
-        if (cands.length > 0) {
-          cands.sort((a, c) => a.d - c.d);
-          losPicked = cands[0];
-          goal = new goals.GoalBlock(losPicked.cx, losPicked.cy, losPicked.cz);
-        }
+      losPicked = pickLosStandCell(b, { tx, ty, tz, range }, { hasLineOfSight });
+      if (losPicked) {
+        goal = new goals.GoalBlock(losPicked.cx, losPicked.cy, losPicked.cz);
       }
     }
     try {
