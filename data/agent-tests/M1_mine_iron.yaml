@@ -70,10 +70,11 @@ prep:
   - "execute in landfolk-test run time set day"
   - "execute in landfolk-test run kill @e[type=!player]"
   # Solid stone block the agent descends + tunnels through.
-  - "execute in landfolk-test run fill -8 50 -8 8 80 8 minecraft:air"
-  - "execute in landfolk-test run fill -8 50 -8 8 64 8 minecraft:stone"
-  # Iron vein ~7 below, to the north, encased in stone (not surface-reachable).
-  - "execute in landfolk-test run fill -1 58 9 1 59 11 minecraft:iron_ore"
+  - "execute in landfolk-test run fill -13 50 -13 13 80 13 minecraft:air"
+  - "execute in landfolk-test run fill -13 50 -13 13 64 13 minecraft:stone"
+  # Iron vein ~7 below, to the NORTH (-z), encased in stone (not surface-reachable).
+  # North = -z in Minecraft; keep this consistent with the prompt's "north".
+  - "execute in landfolk-test run fill -1 58 -11 1 59 -9 minecraft:iron_ore"
   - "mvtp Flint landfolk-test"
   - "execute in landfolk-test run tp Flint 0 65 0"
   - "effect clear Flint"
@@ -85,6 +86,6 @@ prep:
 
 cleanup:
   - "execute in landfolk-test run kill @e[type=!player]"
-  - "execute in landfolk-test run fill -8 50 -8 8 80 8 minecraft:air"
-  - "execute in landfolk-test run fill -8 50 -8 8 64 8 minecraft:stone"
+  - "execute in landfolk-test run fill -13 50 -13 13 80 13 minecraft:air"
+  - "execute in landfolk-test run fill -13 50 -13 13 64 13 minecraft:stone"
   - "execute in landfolk-test run tp Flint 52 65 52"

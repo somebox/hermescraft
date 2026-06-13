@@ -129,10 +129,33 @@ export function createScoutHandlers(deps) {
         // object to the data envelope so reasoning can branch deterministically.
         const toolStatus = toolReadiness(b, blockName);
         const toolNote = toolStatus?.hint ? ` — ${toolStatus.hint}` : '';
+        // Encourage the efficient path to ore. When the nearest find is behind
+        // rock (not reachable — the mining case), `mc collect` can't reach it
+        // and a weak agent falls into inspect/dig probing. Hand over a ready
+        // `mc tunnel` toward it instead: tunneling is how you reach ore behind
+        // a wall. Gated to mineable-through targets so chest/tree finds are
+        // unaffected.
+        let nextHint;
+        const mineable = /_ore$|ore$|stone|deepslate|debris|netherrack/i.test(blockName);
+        const nearest = locations
+          .slice()
+          .sort((a, c) => parseFloat(a.distance) - parseFloat(c.distance))[0];
+        if (mineable && nearest && !nearest.reachable) {
+          const bx = Math.floor(b.entity.position.x);
+          const bz = Math.floor(b.entity.position.z);
+          const dx = nearest.x - bx;
+          const dz = nearest.z - bz;
+          const dir = Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 'east' : 'west') : (dz >= 0 ? 'south' : 'north');
+          const reach = Math.abs(Math.abs(dx) >= Math.abs(dz) ? dx : dz);
+          const len = Math.min(32, Math.max(4, reach + 2));
+          nextHint = `nearest ${blockName} at ${nearest.x},${nearest.y},${nearest.z} is behind rock — `
+            + `tunnel to it (don't inspect/dig block-by-block): mc tunnel ${bx} ${nearest.y} ${bz} ${dir} ${len}`;
+        }
         return ok({
           result: `Found ${found.length} ${blockName}${fpNote}${reachNote}${toolNote}`,
           locations,
           tool_readiness: toolStatus,
+          ...(nextHint ? { next_action_hint: nextHint } : {}),
         });
   }
 
