@@ -9,7 +9,7 @@
  * fail-and-recover loop instead of a stale-state grind.
  */
 
-import { pickLosStandCell } from './movement/_los-stand.js';
+import { losStanceGoal, tryLosStance } from './movement/_los-stand.js';
 import { canSeeBlockFaces } from './_los.js';
 
 
@@ -340,12 +340,8 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
   // pass hasLineOfSight); robustness over precision (always falls back to
   // GoalNear, never regresses reachability).
   const losEnabled = los !== false && typeof hasLineOfSight === 'function';
+  const losArg = losEnabled ? hasLineOfSight : null;
   const STANCE_CAP_MS = Math.min(capMs, 4000);
-  const stanceGoal = () => {
-    if (!losEnabled) return null;
-    const pick = pickLosStandCell(bot, { tx, ty, tz, range }, { hasLineOfSight });
-    return pick ? new goals.GoalBlock(pick.cx, pick.cy, pick.cz) : null;
-  };
   const tryGoto = async (goal, ms) => {
     try { await raceWithTimeout(bot.pathfinder.goto(goal), ms, 'reach'); return true; }
     catch { try { bot.pathfinder.setGoal(null); } catch { /* ignore */ } return false; }
@@ -357,7 +353,7 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
     if (!losEnabled || canSeeBlockFaces(bot, tx, ty, tz, { hasLineOfSight, eyePosition })) {
       return { ok: true, distance: Math.round(realDist * 10) / 10 };
     }
-    const g = stanceGoal();
+    const g = losStanceGoal(bot, goals, { tx, ty, tz, range }, losArg);
     if (g) await tryGoto(g, STANCE_CAP_MS);
     // Still in range regardless of the re-stance outcome — let the caller's
     // act-time LOS guard make the final call (never worse than today).
@@ -366,9 +362,10 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
 
   // Out of range: try the LOS stance first (bounded), then fall back to the
   // full-budget GoalNear if the stance didn't land us in range.
-  const g = stanceGoal();
-  const stanced = g ? await tryGoto(g, STANCE_CAP_MS) : false;
-  if (!stanced || distTo() > range) {
+  const stanced = losEnabled
+    ? await tryLosStance({ bot, goals, tx, ty, tz, range, hasLineOfSight, capMs: STANCE_CAP_MS, runGoto: tryGoto })
+    : false;
+  if (!stanced) {
   try {
     await raceWithTimeout(
       bot.pathfinder.goto(new goals.GoalNear(tx, ty, tz, Math.max(2, Math.floor(range)))),

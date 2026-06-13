@@ -67,3 +67,53 @@ export function pickLosStandCell(b, { tx, ty, tz, range }, { hasLineOfSight } = 
   cands.sort((a, c) => a.d - c.d);
   return cands[0];
 }
+
+/**
+ * Build a GoalBlock to the nearest LOS stance cell beside a solid target, or
+ * null when there's no such cell (or LOS is unavailable). The caller pathfinds
+ * to it. Shared by the approach helpers so the GoalBlock construction lives in
+ * one place.
+ *
+ * @param {import('mineflayer').Bot} bot
+ * @param {{ GoalBlock: new (x:number,y:number,z:number)=>object }} goals
+ * @param {{ tx:number, ty:number, tz:number, range:number }} target
+ * @param {(from:object,to:object)=>boolean} [hasLineOfSight]
+ * @returns {object | null}
+ */
+export function losStanceGoal(bot, goals, { tx, ty, tz, range }, hasLineOfSight) {
+  if (typeof hasLineOfSight !== 'function') return null;
+  const pick = pickLosStandCell(bot, { tx, ty, tz, range }, { hasLineOfSight });
+  return pick ? new goals.GoalBlock(pick.cx, pick.cy, pick.cz) : null;
+}
+
+/**
+ * Walk to a LOS stance cell beside a solid target. Returns true only if the
+ * bot ended within `range` of the target via the stance; false when there's no
+ * stance cell, the pathfind failed, or it didn't land in range — in which case
+ * the caller should fall back to its normal GoalNear approach (robustness over
+ * precision: never regress reachability).
+ *
+ * `runGoto(goal, capMs)` is caller-injected and returns true|false (it must
+ * swallow errors + clear the goal on failure) — so each caller keeps its own
+ * cap mechanism (raceWithTimeout vs the progress watchdog).
+ *
+ * @param {{
+ *   bot: import('mineflayer').Bot,
+ *   goals: object,
+ *   tx:number, ty:number, tz:number, range:number,
+ *   hasLineOfSight?: (from:object,to:object)=>boolean,
+ *   capMs:number,
+ *   runGoto: (goal:object, capMs:number)=>Promise<boolean>,
+ * }} args
+ * @returns {Promise<boolean>}
+ */
+export async function tryLosStance({ bot, goals, tx, ty, tz, range, hasLineOfSight, capMs, runGoto }) {
+  const goal = losStanceGoal(bot, goals, { tx, ty, tz, range }, hasLineOfSight);
+  if (!goal) return false;
+  const ok = await runGoto(goal, capMs);
+  if (!ok) return false;
+  const ddx = bot.entity.position.x - (tx + 0.5);
+  const ddy = bot.entity.position.y - (ty + 0.5);
+  const ddz = bot.entity.position.z - (tz + 0.5);
+  return Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) <= range;
+}
