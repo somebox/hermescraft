@@ -37,18 +37,24 @@ export function createExcavationActions(services) {
     return { mines, mid, by: config?.mc?.username || null };
   }
 
-  function maybeRegisterStairMine(start, end, dir) {
+  function maybeRegisterStairMine(start, dir) {
     try {
       const bound = resolveBoundMine();
       if (!bound) return null;
+      // Register the ENTRANCE once — the surface start of a descent. A deep
+      // descent is many small stair_down bites; without this guard each bite
+      // registered a fresh entrance (and a landing), flooding the registry.
+      // If an entrance already exists within ~16 blocks horizontally (from
+      // mine_open or an earlier bite), this is a continuation — skip it. The
+      // landing (true bottom) isn't known until the agent stops descending, so
+      // it's left to an explicit `mc mine_note <id> landing`, not auto-guessed.
+      const mine = bound.mines.get(bound.mid);
+      const near = (mine?.entrances || []).some(
+        (e) => Math.hypot(e.pos.x - start.x, e.pos.z - start.z) <= 16,
+      );
+      if (near) return null;
       bound.mines.open({ id: bound.mid, entrance: { x: start.x, y: start.y, z: start.z }, dir, by: bound.by });
-      const landing = bound.mines.addPoint(bound.mid, {
-        kind: 'landing',
-        pos: { x: end.x, y: end.y, z: end.z },
-        by: bound.by,
-        note: `stair_down ${dir}`,
-      });
-      return { mine: bound.mid, entrance: { x: start.x, y: start.y, z: start.z }, landing: landing?.id || null };
+      return { mine: bound.mid, entrance: { x: start.x, y: start.y, z: start.z } };
     } catch {
       return null; // registry is best-effort; never break the descent
     }
@@ -852,12 +858,12 @@ export function createExcavationActions(services) {
     // + a landing point (bottom) so the workings stay navigable and resumable
     // across sessions. No-op for road/non-mine descents — best-effort, never
     // breaks the dig.
-    const mineUpdate = maybeRegisterStairMine(start, end, key);
+    const mineUpdate = maybeRegisterStairMine(start, key);
     const resultMsg = stoppedAtStep
       ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim()
       : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim();
     return ok({
-      result: mineUpdate ? `${resultMsg} [mine "${mineUpdate.mine}": entrance + landing recorded]` : resultMsg,
+      result: mineUpdate ? `${resultMsg} [mine "${mineUpdate.mine}": entrance recorded]` : resultMsg,
       data: {
         dug: totalDug,
         skipped: totalSkipped,

@@ -1,7 +1,8 @@
 """Mine-registry ergonomics, validated in-world:
 
-  - `stair_down` auto-registers an entrance + landing when the card is bound
-    to a known mine via `mc task_context set <mine>` (opt-in; no-op otherwise).
+  - `stair_down` bound to a mine registers the entrance ONCE (proximity-deduped)
+    and does NOT auto-record a landing per bite — a multi-bite descent must not
+    flood the registry with duplicate entrances/landings.
   - `chamber` hollows a box, lights it, and records a chamber point in the
     bound mine.
   - `mine_remove --confirm` deletes the mine (teardown).
@@ -51,17 +52,25 @@ def _points(bot, kind):
 
 
 @pytest.mark.functional
-def test_stair_down_auto_registers_entrance_and_landing(bot, em_arena):
-    """A bound stair_down records an entrance (top) + landing (bottom)."""
+def test_stair_down_does_not_pollute_registry(bot, em_arena):
+    """A bound stair_down near the existing entrance must NOT add a duplicate
+    entrance or an auto-landing. (A deep descent is many small bites; the old
+    code registered a fresh entrance+landing per bite, flooding the registry —
+    one real run produced 13 entrances + 11 landings for a single mine.)"""
+    # em_arena already did mine_open at (0,65,0): exactly one entrance.
+    mine0 = bot.post("/action/mine_show", {"id": MINE_ID}, timeout=15).get("data")["mine"]
+    assert len(mine0["entrances"]) == 1, mine0["entrances"]
+
     r = bot.post("/action/stair_down", {"direction": "south", "length": 4}, timeout=40)
     assert r.get("ok"), r
-    update = (r.get("data") or {}).get("mine_updated")
-    assert update and update.get("mine") == MINE_ID, f"expected mine_updated for {MINE_ID}: {r.get('data')}"
-    assert update.get("landing"), update
-    landings = _points(bot, "landing")
-    assert len(landings) >= 1, landings
-    # Landing sits below the surface entrance.
-    assert landings[0]["pos"]["y"] < 65, landings
+    # The stair starts within 16 blocks of the entrance → a continuation, not a
+    # new surface route → no re-registration.
+    assert (r.get("data") or {}).get("mine_updated") is None, \
+        f"nearby stair_down must not re-register the entrance: {r.get('data')}"
+
+    mine1 = bot.post("/action/mine_show", {"id": MINE_ID}, timeout=15).get("data")["mine"]
+    assert len(mine1["entrances"]) == 1, f"still exactly one entrance: {mine1['entrances']}"
+    assert _points(bot, "landing") == [], "stair_down must not auto-record a landing per bite"
 
 
 @pytest.mark.functional

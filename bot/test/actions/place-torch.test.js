@@ -1,11 +1,11 @@
 /**
- * place_torch action — refusal paths + variant auto-pick + delegation.
+ * place_torch action — forgiving cell selection + delegation.
  *
- * The action is a thin wrapper around `mc place` that knows how to pick
- * floor vs wall torch variant based on adjacency, and that returns a
- * precise NO_SOLID_FACE error before mineflayer's 5s placeBlock timeout
- * kicks in. These tests pin the wrapper's behaviour without touching
- * the underlying `place` implementation (which has its own test suite).
+ * place_torch should "just work": agents routinely pass a coord that can't
+ * hold a torch (their own foot/head cell, a solid block, an unsupported air
+ * cell). Rather than fail, the wrapper SNAPS to the nearest cell that can hold
+ * a torch (air/replaceable, clear of the bot, with a solid floor below or wall
+ * beside), then delegates to `mc place`. These tests pin that behaviour.
  */
 
 import test from 'node:test';
@@ -16,67 +16,49 @@ import { createMockServices } from '../../lib/server/mock-services.js';
 import { assertFailure } from '../_helpers/action-harness.js';
 
 /**
- * Build a bot stub with configurable inventory + blockAt behaviour.
- *
- * @param {object} opts
- * @param {string[]} opts.inventory  — list of item names the bot holds (count 1 each)
- * @param {Record<string, {name:string, boundingBox?:string}>} opts.blocks
- *        Map keyed by "x,y,z" → { name, boundingBox?: 'block' | 'empty' }.
- *        Cells not in the map resolve to air.
+ * Bot stub. Bot stands at foot cell (0,64,0). `blocks` maps "x,y,z" → block;
+ * unmapped cells are air. A 3×3 solid floor at y=63 (x,z ∈ {-1,0,1}) gives the
+ * cells at y=64 floor support, so there are real snap targets around the bot.
  */
-function makeBot({ inventory = [], blocks = {} } = {}) {
+function makeBot({ inventory = ['torch'], blocks = null } = {}) {
+  const floor = {};
+  for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) floor[`${x},63,${z}`] = { name: 'stone' };
+  const map = blocks ?? floor;
   return {
-    entity: {
-      position: { x: 0.5, y: 64, z: 0.5 },
-    },
+    entity: { position: { x: 0.5, y: 64, z: 0.5 } },
     inventory: {
       items: () => inventory.map((name, i) => ({ name, count: 1, slot: 36 + i })),
     },
     blockAt: (vec) => {
       const k = `${Math.floor(vec.x)},${Math.floor(vec.y)},${Math.floor(vec.z)}`;
-      const blk = blocks[k];
+      const blk = map[k];
       if (!blk) return { name: 'air', boundingBox: 'empty' };
       return { name: blk.name, boundingBox: blk.boundingBox ?? 'block' };
     },
     lookAt: async () => {},
-    placeBlock: async () => {},
-    pathfinder: { goto: async () => {}, setGoal: () => {} },
   };
 }
 
-/**
- * Stub `getActions().place` to return a canned response. Lets us test
- * the wrapper without exercising the real place pipeline.
- */
-function withPlaceStub(placeResponse) {
-  return createMockServices({
-    state: { world: { botReady: true } },
-    fairPlay: { hasLineOfSight: () => true, eyePosition: () => ({ x: 0, y: 64, z: 0 }) },
-    getActions: () => ({ place: async () => placeResponse }),
-  });
-}
-
-test('place_torch: missing coords → MISSING_ARGS', async () => {
-  const bot = makeBot();
+function actionsWith(bot, placeImpl) {
   const services = createMockServices({
     state: { world: { botReady: true } },
     ensureBot: () => bot,
-    getActions: () => ({}),
+    fairPlay: { hasLineOfSight: () => true, eyePosition: () => ({ x: 0, y: 64, z: 0 }) },
+    getActions: () => ({ place: placeImpl }),
   });
-  const actions = createInteractionActions(services);
+  services.ensureBot = () => bot;
+  return createInteractionActions(services);
+}
+
+test('place_torch: missing coords → MISSING_ARGS', async () => {
+  const actions = actionsWith(makeBot(), async () => ({ ok: true }));
   const r = await actions.place_torch({ y: 64 });
   assertFailure(r, { code: 'MISSING_ARGS', observedKeys: ['received'], retrySafe: false });
 });
 
 test('place_torch: empty inventory → NO_TORCH_IN_INVENTORY', async () => {
-  const bot = makeBot({ inventory: [], blocks: { '0,63,0': { name: 'stone' } } });
-  const services = createMockServices({
-    state: { world: { botReady: true } },
-    ensureBot: () => bot,
-    getActions: () => ({}),
-  });
-  const actions = createInteractionActions(services);
-  const r = await actions.place_torch({ x: 0, y: 64, z: 0 });
+  const actions = actionsWith(makeBot({ inventory: [] }), async () => ({ ok: true }));
+  const r = await actions.place_torch({ x: 1, y: 64, z: 0 });
   assertFailure(r, {
     code: 'NO_TORCH_IN_INVENTORY',
     observedKeys: ['requested_coord', 'inventory_summary'],
@@ -84,140 +66,75 @@ test('place_torch: empty inventory → NO_TORCH_IN_INVENTORY', async () => {
   });
 });
 
-test('place_torch: prefer floor + no solid below → NO_SOLID_FACE', async () => {
-  // Block below is air; no walls anywhere. --prefer floor explicitly.
-  const bot = makeBot({ inventory: ['torch'], blocks: {} });
-  const services = withPlaceStub({ ok: true });
-  services.ensureBot = () => bot;
-  const actions = createInteractionActions(services);
-  const r = await actions.place_torch({ x: 0, y: 64, z: 0, prefer: 'floor' });
-  assertFailure(r, {
-    code: 'NO_SOLID_FACE',
-    messageIncludes: 'block below',
-    retrySafe: false,
-  });
-});
-
-test('place_torch: prefer wall + no wall sides → NO_SOLID_FACE', async () => {
-  // Floor IS supported, but caller asked for wall and no walls available.
-  const bot = makeBot({
-    inventory: ['torch'],
-    blocks: { '0,63,0': { name: 'stone' } },
-  });
-  const services = withPlaceStub({ ok: true });
-  services.ensureBot = () => bot;
-  const actions = createInteractionActions(services);
-  const r = await actions.place_torch({ x: 0, y: 64, z: 0, prefer: 'wall' });
-  assertFailure(r, {
-    code: 'NO_SOLID_FACE',
-    messageIncludes: 'wall',
-    retrySafe: false,
-  });
-});
-
-test('place_torch: auto downgrade — no floor support, walls exist → uses wall', async () => {
-  // Block below is air. East side is stone wall. prefer=auto picks wall.
-  const placedAtCalls = [];
-  const bot = makeBot({
-    inventory: ['torch'],
-    blocks: { '1,64,0': { name: 'stone' } },  // east wall (x+1)
-  });
-  // Mutate blockAt so the post-place readback returns wall_torch.
-  const origBlockAt = bot.blockAt;
+test('place_torch: valid non-body cell → places there (no snap)', async () => {
+  let placedAt = null;
+  const bot = makeBot();
+  // After placement the target reads back as a torch.
+  const orig = bot.blockAt;
   bot.blockAt = (vec) => {
     const k = `${Math.floor(vec.x)},${Math.floor(vec.y)},${Math.floor(vec.z)}`;
-    if (k === '0,64,0' && placedAtCalls.length > 0) return { name: 'wall_torch', boundingBox: 'empty' };
-    return origBlockAt(vec);
+    if (k === '1,64,0' && placedAt) return { name: 'torch', boundingBox: 'empty' };
+    return orig(vec);
   };
-  const services = withPlaceStub({ ok: true });
-  services.ensureBot = () => bot;
-  // Inject placement-tracking into the place stub.
-  services.getActions = () => ({
-    place: async (args) => {
-      placedAtCalls.push(args);
-      return { ok: true, result: 'placed' };
-    },
-  });
-  const actions = createInteractionActions(services);
-  const r = await actions.place_torch({ x: 0, y: 64, z: 0, prefer: 'auto' });
+  const actions = actionsWith(bot, async (args) => { placedAt = args; return { ok: true }; });
+  const r = await actions.place_torch({ x: 1, y: 64, z: 0 });  // air, floor below, not body
   assert.equal(r.ok, true);
-  assert.equal(r.data.variant, 'wall_torch');
-  assert.deepEqual(r.data.wall_sides_available, ['east']);
-  assert.deepEqual(placedAtCalls[0], { block: 'torch', x: 0, y: 64, z: 0 });
+  assert.equal(r.data.snapped, false);
+  assert.deepEqual(r.data.coord, { x: 1, y: 64, z: 0 });
+  assert.equal(r.data.support, 'floor');
+  assert.deepEqual(placedAt, { block: 'torch', x: 1, y: 64, z: 0 });
 });
 
-test('place_torch: happy path floor — variant detected from post-place readback', async () => {
-  let placeCalled = false;
-  const bot = makeBot({
-    inventory: ['torch'],
-    blocks: { '0,63,0': { name: 'dirt' } },  // solid below
-  });
-  // After place, the target cell has a torch block.
-  const origBlockAt = bot.blockAt;
-  bot.blockAt = (vec) => {
-    const k = `${Math.floor(vec.x)},${Math.floor(vec.y)},${Math.floor(vec.z)}`;
-    if (k === '0,64,0' && placeCalled) return { name: 'torch', boundingBox: 'empty' };
-    return origBlockAt(vec);
-  };
-  const services = createMockServices({
-    state: { world: { botReady: true } },
-    ensureBot: () => bot,
-    getActions: () => ({
-      place: async () => {
-        placeCalled = true;
-        return { ok: true, result: 'placed' };
-      },
-    }),
-  });
-  const actions = createInteractionActions(services);
+test('place_torch: request the bot\'s own cell → snaps to a nearby supported cell', async () => {
+  let placedAt = null;
+  const actions = actionsWith(makeBot(), async (args) => { placedAt = args; return { ok: true }; });
+  const r = await actions.place_torch({ x: 0, y: 64, z: 0 });  // bot's foot cell
+  assert.equal(r.ok, true);
+  assert.equal(r.data.snapped, true, 'should snap off the body cell');
+  assert.deepEqual(r.data.requested, { x: 0, y: 64, z: 0 });
+  // Snapped to some other supported cell, not the body cell.
+  assert.notDeepEqual(r.data.coord, { x: 0, y: 64, z: 0 });
+  assert.deepEqual(placedAt, { block: 'torch', ...r.data.coord });
+});
+
+test('place_torch: request a solid block → snaps to the air cell above it', async () => {
+  let placedAt = null;
+  const actions = actionsWith(makeBot(), async (args) => { placedAt = args; return { ok: true }; });
+  const r = await actions.place_torch({ x: 1, y: 63, z: 0 });  // solid floor block
+  assert.equal(r.ok, true);
+  assert.equal(r.data.snapped, true);
+  // Above the solid block (1,64,0) is air with floor support — the natural snap.
+  assert.equal(placedAt.block, 'torch');
+  assert.ok(r.data.support);
+});
+
+test('place_torch: no supported air cell anywhere near → NO_TORCH_SPOT', async () => {
+  // Floating in the void: no solid blocks at all, so nothing supports a torch.
+  const bot = makeBot({ blocks: {} });
+  const actions = actionsWith(bot, async () => ({ ok: true }));
   const r = await actions.place_torch({ x: 0, y: 64, z: 0 });
-  assert.equal(r.ok, true);
-  assert.equal(r.data.variant, 'torch');
-  assert.equal(r.data.floor_supported, true);
-  assert.equal(r.data.prefer, 'auto');
-  assert.equal(placeCalled, true);
+  assertFailure(r, { code: 'NO_TORCH_SPOT', retrySafe: true });
 });
 
 test('place_torch: place delegation failure propagates', async () => {
-  const bot = makeBot({
-    inventory: ['torch'],
-    blocks: { '0,63,0': { name: 'stone' } },
-  });
-  const services = createMockServices({
-    state: { world: { botReady: true } },
-    ensureBot: () => bot,
-    getActions: () => ({
-      place: async () => ({
-        ok: false,
-        error: {
-          code: 'TARGET_OCCUPIED',
-          message: 'cell already has something',
-          retry_safe: false,
-        },
-      }),
-    }),
-  });
-  const actions = createInteractionActions(services);
-  const r = await actions.place_torch({ x: 0, y: 64, z: 0 });
-  // The wrapper passes the underlying error envelope back unchanged.
+  const actions = actionsWith(makeBot(), async () => ({
+    ok: false,
+    error: { code: 'REGION_PROTECTED', message: 'denied', retry_safe: false },
+  }));
+  const r = await actions.place_torch({ x: 1, y: 64, z: 0 });
   assert.equal(r.ok, false);
-  assert.equal(r.error.code, 'TARGET_OCCUPIED');
+  assert.equal(r.error.code, 'REGION_PROTECTED');
 });
 
 test('place_torch: getActions().place not registered → PLACE_NOT_AVAILABLE', async () => {
-  const bot = makeBot({
-    inventory: ['torch'],
-    blocks: { '0,63,0': { name: 'stone' } },
-  });
+  const bot = makeBot();
   const services = createMockServices({
     state: { world: { botReady: true } },
     ensureBot: () => bot,
     getActions: () => ({}),  // no place
   });
+  services.ensureBot = () => bot;
   const actions = createInteractionActions(services);
-  const r = await actions.place_torch({ x: 0, y: 64, z: 0 });
-  assertFailure(r, {
-    code: 'PLACE_NOT_AVAILABLE',
-    retrySafe: true,
-  });
+  const r = await actions.place_torch({ x: 1, y: 64, z: 0 });
+  assertFailure(r, { code: 'PLACE_NOT_AVAILABLE', retrySafe: true });
 });

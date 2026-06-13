@@ -76,6 +76,55 @@ export function linesMatch(observed, expected) {
 }
 
 /**
+ * Find the nearest cell that can actually hold a torch, starting from the
+ * requested (x,y,z). A valid cell is air/replaceable (not solid, not fluid),
+ * clear of the bot's own foot/head cell, and supported by a solid floor below
+ * OR a solid wall beside it. Searches the requested cell first, then a small
+ * surrounding shell (nearest-first). Returns { tx, ty, tz, support } or null.
+ */
+function pickTorchCell(b, x, y, z) {
+  const isSolid = (blk) => blk && blk.boundingBox === 'block';
+  const isPlaceable = (blk) => {
+    if (!blk) return false;
+    const n = blk.name || '';
+    if (/^(air|cave_air|void_air)$/.test(n)) return true;
+    if (/water|lava/.test(n)) return false;
+    return blk.boundingBox === 'empty'; // short_grass, ferns, etc. — torch replaces
+  };
+  const me = b.entity?.position;
+  const fx = me ? Math.floor(me.x) : NaN;
+  const fy = me ? Math.floor(me.y) : NaN;
+  const fz = me ? Math.floor(me.z) : NaN;
+  const isBody = (cx, cy, cz) => cx === fx && cz === fz && (cy === fy || cy === fy + 1);
+  const supportAt = (cx, cy, cz) => {
+    if (isSolid(b.blockAt(new Vec3(cx, cy - 1, cz)))) return 'floor';
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (isSolid(b.blockAt(new Vec3(cx + dx, cy, cz + dz)))) return 'wall';
+    }
+    return null;
+  };
+  // Candidate offsets, nearest-first: requested cell, then a 3×3×3 shell
+  // (same layer first, then one below, then one above).
+  const offsets = [[0, 0, 0]];
+  for (const dy of [0, -1, 1]) {
+    for (const dx of [-1, 0, 1]) {
+      for (const dz of [-1, 0, 1]) {
+        if (dx === 0 && dy === 0 && dz === 0) continue;
+        offsets.push([dx, dy, dz]);
+      }
+    }
+  }
+  for (const [dx, dy, dz] of offsets) {
+    const cx = x + dx, cy = y + dy, cz = z + dz;
+    if (isBody(cx, cy, cz)) continue;
+    if (!isPlaceable(b.blockAt(new Vec3(cx, cy, cz)))) continue;
+    const support = supportAt(cx, cy, cz);
+    if (support) return { tx: cx, ty: cy, tz: cz, support };
+  }
+  return null;
+}
+
+/**
  * createInteractionActions — extracted from former lib/actions/world.js (Phase 4 split).
  */
 export function createInteractionActions(services) {
@@ -750,85 +799,51 @@ export function createInteractionActions(services) {
       });
     }
 
-    // ── Adjacency probe — what surfaces support a torch here? ──
-    const isSolid = (blk) => blk && blk.boundingBox === 'block';
-    const belowBlock = b.blockAt(new Vec3(x, y - 1, z));
-    const hasFloorSupport = isSolid(belowBlock);
-    const sides = [
-      { dir: 'east',  d: [1, 0, 0] },
-      { dir: 'west',  d: [-1, 0, 0] },
-      { dir: 'south', d: [0, 0, 1] },
-      { dir: 'north', d: [0, 0, -1] },
-    ];
-    const wallSides = sides.filter(({ d }) => isSolid(b.blockAt(new Vec3(x + d[0], y, z + d[2]))));
-    const hasWallSupport = wallSides.length > 0;
-
-    // ── Pick variant per prefer flag ──
-    let useFloor;
-    const preferStr = String(prefer || 'auto').toLowerCase();
-    if (preferStr === 'floor') useFloor = true;
-    else if (preferStr === 'wall') useFloor = false;
-    else useFloor = hasFloorSupport;  // auto: floor first, fall back to wall
-
-    if (useFloor && !hasFloorSupport && hasWallSupport) {
-      // Auto downgrade — caller said 'auto' but floor isn't supported.
-      useFloor = false;
-    }
-
-    if (useFloor && !hasFloorSupport) {
-      return fail('NO_SOLID_FACE', `Cannot place floor torch at ${x},${y},${z}: block below is not solid (got ${belowBlock?.name ?? 'air/null'}). Try --prefer wall or move to a cell with solid ground beneath.`, {
-        observed_state: {
-          block_below: belowBlock?.name ?? null,
-          wall_sides_available: wallSides.map((s) => s.dir),
-          prefer: preferStr,
-        },
-        retry_safe: false,
+    // ── Forgiving cell selection ──
+    // Agents routinely pass a coord that can't hold a torch: their own
+    // foot/head cell, a solid block, or a cell with no floor/wall support.
+    // Rather than fail, SNAP to the nearest cell that actually works (an
+    // air/replaceable cell, clear of the bot's body, with a solid floor below
+    // or a solid wall beside it). Searches the requested cell first, then a
+    // small surrounding shell. `place_torch` should just work.
+    const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+    const picked = pickTorchCell(b, ix, iy, iz);
+    if (!picked) {
+      return fail('NO_TORCH_SPOT', `No placeable torch spot near ${ix},${iy},${iz} — every nearby cell is solid, flooded, your own body, or unsupported. Dig out a pocket or move first.`, {
+        observed_state: { requested: { x: ix, y: iy, z: iz } },
+        retry_safe: true,
       });
     }
-    if (!useFloor && !hasWallSupport) {
-      return fail('NO_SOLID_FACE', `Cannot place wall torch at ${x},${y},${z}: no adjacent solid wall face found. Try --prefer floor or move to a cell next to a wall.`, {
-        observed_state: {
-          block_below: belowBlock?.name ?? null,
-          prefer: preferStr,
-        },
-        retry_safe: false,
-      });
-    }
+    const { tx, ty, tz, support } = picked;
+    const snapped = tx !== ix || ty !== iy || tz !== iz;
 
     // ── Look at the target so the placeBlock face direction is sane ──
-    // Server resolves which face the torch attaches to based on the
-    // line-of-sight crosshair; without lookAt, mineflayer can pick the
-    // wrong face and place a wall torch where the caller wanted floor.
     try {
-      await b.lookAt(new Vec3(x + 0.5, y + 0.5, z + 0.5), true);
+      await b.lookAt(new Vec3(tx + 0.5, ty + 0.5, tz + 0.5), true);
     } catch {
       /* lookAt is best-effort; if it throws, place may still succeed. */
     }
 
-    // ── Delegate to mc place ──
-    // The existing place action handles equip, reach, pathfind, region
-    // policy, entity blocking, and post-place verification. We just
-    // call it and re-shape the response.
+    // ── Delegate to mc place (handles equip, reach, pathfind, policy, verify) ──
     const place = getActions?.()?.place;
     if (typeof place !== 'function') {
       return fail('PLACE_NOT_AVAILABLE', 'mc place action is not registered; cannot delegate.', {
         retry_safe: true,
       });
     }
-    const result = await place({ block: 'torch', x, y, z });
+    const result = await place({ block: 'torch', x: tx, y: ty, z: tz });
     if (!result.ok) return result;
 
-    // ── Read back the placed block to report the actual variant ──
-    const placed = b.blockAt(new Vec3(x, y, z));
+    const placed = b.blockAt(new Vec3(tx, ty, tz));
     const variant = placed?.name === 'wall_torch' ? 'wall_torch' : 'torch';
     return ok({
-      result: `Placed ${variant} at ${x},${y},${z}`,
+      result: `Placed ${variant} at ${tx},${ty},${tz}${snapped ? ` (snapped from ${ix},${iy},${iz})` : ''}`,
       data: {
-        coord: { x, y, z },
+        coord: { x: tx, y: ty, z: tz },
         variant,
-        prefer: preferStr,
-        floor_supported: hasFloorSupport,
-        wall_sides_available: wallSides.map((s) => s.dir),
+        support,
+        snapped,
+        ...(snapped ? { requested: { x: ix, y: iy, z: iz } } : {}),
       },
     });
   },
