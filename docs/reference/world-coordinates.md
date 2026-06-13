@@ -87,10 +87,9 @@ The table below names every primitive that reads or writes a Y and lists what it
 | `mc tunnel` | `y` or `surface_y` | feet-level Y for the tunnel (surface_y is more natural here — bot walks through it) |
 | `mc clear_strip` | `y` or `surface_y` | road-bed block (block_y); cleared volume is the feet+head cells above it |
 | `mc deck` | `y` or `surface_y` | deck-layer block (block_y); bots walk on top at block_y + 1 |
-| `mc goto`, `mc goto_near` | `y` or `surface_y` | foot block Y to stand on (= block_y of floor below feet) |
+| `mc goto`, `mc goto_near`, `mc bg_goto`, `mc sail`, `mc sail_to`, `mc lure`, `mc set_home` | `y` or `surface_y` (goto/goto_near only) | destination/foot block Y to stand on (= block_y of floor below feet) |
 | `mc reachable` | `y` or `surface_y` | tested cell Y (block_y) |
-| `mc dig` | `y` | block Y of the block to dig |
-| `mc place` | `y` | block Y of the cell to fill |
+| `mc dig`, `mc place`, `mc interact`, `mc bucket_fill`, `mc bucket_empty`, `mc till`, `mc till_area`, `mc plant`, `mc bonemeal`, `mc harvest`, `mc place_torch`, `mc place_named_sign`, `mc place_boat`, `mc is_empty`, `mc is_filled`, `mc chest`, `mc deposit`, `mc withdraw`, `mc furnace_check`, `mc furnace_take`, `mc waypoint` | `y` | block Y of the specific block being operated on (no surface_y dialect — the cell is the target, not a stand-on surface) |
 | `mc terrain_top`, `mc nearby`, `mc scout` | (none — surveys) | — |
 | `mc stair_down`, `mc stair_up`, `mc pillar_step`, `mc pillar_down` | (none — uses current bot position) | — |
 
