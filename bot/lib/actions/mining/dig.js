@@ -6,8 +6,7 @@ import {
   getSupportedDoorAbove,
   detectPostDigBreach,
 } from '../../runtime/dig-tools.js';
-import { OperationTimeoutError, ACTION_CAPS_MS, timeoutError } from '../_helpers.js';
-import { gotoWithTimeout } from './goto-with-timeout.js';
+import { OperationTimeoutError, ACTION_CAPS_MS, timeoutError, pathfindGotoNear } from '../_helpers.js';
 import { coord3 } from '../_args.js';
 import { canSeeBlockFaces } from '../_los.js';
 import { ok, fail } from '../../shared/action-contract.js';
@@ -259,7 +258,7 @@ export function createDigHandlers(deps) {
   async function approachOrFail(b, target, x, y, z, distance, tracker) {
     if (distance <= 4.5) return null;
     try {
-      await gotoWithTimeout(b, new goals.GoalNear(x, y, z, 3), ACTION_CAPS_MS.dig);
+      await pathfindGotoNear(b, goals, x, y, z, 3, { opName: 'dig', capMs: ACTION_CAPS_MS.dig, hasLineOfSight });
       return null;
     } catch (err) {
       if (err instanceof OperationTimeoutError || err.code === 'OPERATION_TIMEOUT') {
