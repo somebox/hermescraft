@@ -9,8 +9,9 @@ drops despawned (5 min item timer).
 
 This test locks down the fix: the success envelope reports the actual
 drop item name (`data.expected_drop_item`) and the inventory gain in
-that item (`data.drop_item_gained`). The result string says
-"Mined N iron_ore (drops as raw_iron). Have N raw_iron in inventory."
+that item (`data.drop_item_gained`). The result string leads with the
+inventory truth, e.g. "Collected 1/1 raw_iron (drops as raw_iron) in
+inventory (mined 1 blocks)."
 
 Scenarios:
   A: iron_ore + iron_pickaxe → expected_drop_item=raw_iron, raw_iron
@@ -20,6 +21,8 @@ Scenarios:
 """
 
 from __future__ import annotations
+
+import re
 
 import pytest
 
@@ -69,7 +72,12 @@ def test_collect_iron_ore_reports_raw_iron_drop_name(bot, ore_arena):
     # model matches reality.
     result = r.get("result") or ""
     assert "drops as raw_iron" in result, f"result should mention drops-as: {result!r}"
-    assert "raw_iron in inventory" in result, f"result should mention raw_iron inventory: {result!r}"
+    # The message leads with inventory truth: "Collected N/N raw_iron (drops
+    # as raw_iron) in inventory ...". The `(drops as …)` note sits between the
+    # item name and "in inventory", so match across it rather than as one
+    # contiguous substring.
+    assert re.search(r"raw_iron.*in inventory", result), \
+        f"result should report raw_iron in inventory: {result!r}"
 
 
 @pytest.mark.functional

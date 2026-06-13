@@ -4,6 +4,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-"$ROOT/scripts/stop-bots.sh" Tester --quiet || true
-"$ROOT/scripts/run-tester-bot.sh"
+# Verified fresh restart (reaps :3004 orphans + asserts the new bot is live on
+# current code) so the suite never runs against stale code.
+"$ROOT/scripts/restart-tester.sh"
 .venv/bin/pytest -m "functional and not integration and not colony" --durations=30 -q --tb=short "$@"
