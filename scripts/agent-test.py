@@ -291,22 +291,23 @@ def action_log_offset(username: str) -> int:
         return 0
 
 
-def read_action_log_verbs(username: str, since_offset: int) -> list[str]:
-    """mc verbs the bot actually executed since ``since_offset``.
+def read_action_log_entries(username: str, since_offset: int) -> list[dict]:
+    """Action-log entries the bot executed since ``since_offset``.
 
     The bot appends every dispatched action to data/runtime/actions-<user>.jsonl
     synchronously, so this survives a hermes timeout-kill (when the hermes
     session's own tool rows are never flushed). This is the authoritative
-    source for mc-verb telemetry.
+    source for mc-verb telemetry — including per-action status and timeouts,
+    which the (broken-on-timeout) recent_actions diff misses.
     """
     p = _action_log_path(username)
-    verbs: list[str] = []
+    out: list[dict] = []
     try:
         with open(p, "rb") as fh:
             fh.seek(since_offset)
             blob = fh.read().decode("utf-8", "replace")
     except OSError:
-        return verbs
+        return out
     for line in blob.splitlines():
         line = line.strip()
         if not line:
@@ -315,10 +316,61 @@ def read_action_log_verbs(username: str, since_offset: int) -> list[str]:
             entry = json.loads(line)
         except ValueError:
             continue
-        a = entry.get("action")
-        if a:
-            verbs.append(a)
-    return verbs
+        if entry.get("action"):
+            out.append(entry)
+    return out
+
+
+def read_action_log_verbs(username: str, since_offset: int) -> list[str]:
+    """mc verb names only (back-compat wrapper)."""
+    return [e["action"] for e in read_action_log_entries(username, since_offset)]
+
+
+# A bot action slower than this likely outran the agent's `mc` CLI patience —
+# the bot finishes (status=done) but the agent already gave up and retried,
+# wasting turns. This is the friction that dominated M1, invisible to a plain
+# error count. Matches the go_mark/goto_near 15s wallclock cap territory.
+SLOW_ACTION_MS = 15000
+
+
+def summarize_action_log(entries: list[dict]) -> dict:
+    """Friction telemetry from the action log: error + bot-side timeout counts,
+    plus SLOW actions (the bot finished but took long enough that a weak agent
+    likely perceived a timeout and retried). All broken down per verb.
+    """
+    errors = 0
+    timeouts = 0
+    slow = 0
+    per_verb: dict[str, dict] = {}
+    for e in entries:
+        verb = e.get("action", "?")
+        status = e.get("status")
+        detail = str(e.get("detail") or "")
+        is_err = status == "error"
+        is_to = is_err and ("wallclock cap" in detail or "timed out" in detail or "exceeded" in detail)
+        dur = None
+        try:
+            dur = int(e["finished_at"]) - int(e["started_at"])
+        except (KeyError, TypeError, ValueError):
+            pass
+        is_slow = dur is not None and dur >= SLOW_ACTION_MS
+        if is_err:
+            errors += 1
+        if is_to:
+            timeouts += 1
+        if is_slow:
+            slow += 1
+        slot = per_verb.setdefault(verb, {"calls": 0, "errors": 0, "timeouts": 0, "slow": 0, "max_ms": 0})
+        slot["calls"] += 1
+        if is_err:
+            slot["errors"] += 1
+        if is_to:
+            slot["timeouts"] += 1
+        if is_slow:
+            slot["slow"] += 1
+        if dur is not None:
+            slot["max_ms"] = max(slot["max_ms"], dur)
+    return {"errors": errors, "timeouts": timeouts, "slow": slow, "per_verb": per_verb}
 
 
 # 2026-05 model findings (agent-test context, not direct-API/benchmark):
@@ -1512,10 +1564,15 @@ def main():
     # every dispatched action synchronously, so unlike the hermes session (which
     # isn't flushed when killed on timeout) it's complete and survives the kill.
     # Prefer it over the hermes extraction; fall back to hermes only if empty.
-    bot_verbs = read_action_log_verbs(mc_user, pre_action_offset)
+    bot_entries = read_action_log_entries(mc_user, pre_action_offset)
+    bot_verbs = [e["action"] for e in bot_entries]
+    action_friction = summarize_action_log(bot_entries)
     if bot_verbs:
         if len(bot_verbs) != len(mc_verbs_used):
             print(f"  action log: {len(bot_verbs)} mc verb(s) (hermes saw {len(mc_verbs_used)})", file=sys.stderr)
+        if action_friction["errors"] or action_friction["timeouts"]:
+            print(f"  action friction: {action_friction['errors']} error(s), "
+                  f"{action_friction['timeouts']} timeout(s)", file=sys.stderr)
         mc_verbs_used = bot_verbs
         if not tool_calls:
             tool_calls = [{"action": v} for v in bot_verbs]
@@ -1553,6 +1610,12 @@ def main():
             "tool_call_count": len(tool_calls),
             "ok_false_count": ok_false_count,
             "loop_signature": loop_sig,
+            # From the durable action log (survives timeout-kill, unlike the
+            # recent_actions diff): per-action error/timeout friction.
+            "action_errors": action_friction["errors"],
+            "action_timeouts": action_friction["timeouts"],
+            "action_slow": action_friction.get("slow", 0),
+            "action_per_verb": action_friction["per_verb"],
         },
         "tool_calls": tool_calls,
         "pre": {"position": pre_pos, "inventory": pre_inv},
@@ -1587,7 +1650,15 @@ def main():
     verb_summary = ", ".join(f"{k}×{v}" for k, v in sorted(verb_counts.items(), key=lambda kv: -kv[1])[:5]) or "(none)"
     timing_summary = " ".join(f"{k}={v:.1f}s" for k, v in stage_times.items())
     print(f"  timing: total={report['total_seconds']:.1f}s | {timing_summary}")
-    print(f"  {verdict}  {mc_cli_calls} mc/cli ({verb_summary}), {ok_false_count} ok:false, loop={loop_sig.get('max_streak', 0)}")
+    print(f"  {verdict}  {mc_cli_calls} mc/cli ({verb_summary}), "
+          f"{action_friction['errors']} err / {action_friction.get('slow', 0)} slow(>15s), "
+          f"loop={loop_sig.get('max_streak', 0)}")
+    slow_verbs = ", ".join(
+        f"{v}×{d['slow']} (max {d['max_ms'] / 1000:.0f}s)"
+        for v, d in action_friction["per_verb"].items() if d.get("slow")
+    )
+    if slow_verbs:
+        print(f"    ⏱ slow verbs (agent likely retried): {slow_verbs}")
     for r in preds:
         flag = "✓" if r["pass"] else "✗"
         print(f"    {flag} {r['kind']}" + (f" — {r['detail']}" if r['detail'] else ""))
