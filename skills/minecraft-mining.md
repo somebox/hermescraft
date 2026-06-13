@@ -318,9 +318,18 @@ mc stair_down south 8
 | Error | Meaning | What to do (one action, then retry) |
 |---|---|---|
 | `no_progress_at_step_1 (3 already_air)` | You're at a cliff edge or existing tunnel | `mc move <X> <Y> <Z>` 5 blocks in any direction away from your current spot, then retry stair_down |
-| `cave_below_step_N_floor_is_air_at_X_Y_Z` | Hit a cave after N steps down | You're already partway down — `mc place cobblestone X Y Z` to bridge, retry stair_down (it continues from your current position) |
+| `cave_below_step_N_floor_is_air_at_X_Y_Z` | Hit a cave after N steps down | You're already partway down — `mc place cobblestone X Y Z` to bridge the air floor, then retry stair_down in the **SAME direction** (it continues from where you stand) |
 | `no_progress_at_step_N (M bedrock)` | Bedrock hit | You're as deep as you'll get on this shaft — switch to `mc tunnel` horizontally |
 | `reconnect_during_step_N` | Watchdog forced a reconnect mid-flight | Just retry — bot is settled now |
+
+**Commit to ONE descent direction — do NOT keep switching.** The #1 way a
+deep descent fails: the bot hits a cave, the agent switches from `south` to
+`north` to `east`…, and spirals in the same shallow band without ever reaching
+the target Y. Pick a direction at the entrance and stay with it the whole way
+down. When a cave interrupts you, **bridge it and continue the same way** — a
+cave is a discovery to log (`mc mine_note <id> danger` or just push through),
+not a reason to abandon the shaft and start over elsewhere. Each new direction
+is a new staircase you have to dig from scratch.
 
 **Do not inspect cells before calling stair_down.** The primitive's own error envelope already tells you what blocked it AND where, in fewer calls than a pre-check. Pre-checking is only useful if you've already failed twice in a row in different ways.
 

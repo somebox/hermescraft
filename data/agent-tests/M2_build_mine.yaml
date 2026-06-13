@@ -1,0 +1,81 @@
+# M2 — build a full structured mine CHAIN in the real world (production seed).
+#
+# Real `world` terrain, a cave-light hilltop at (320, 81, 451) — surface y=81,
+# solid stone below. The agent builds the whole chain: stairs down → trunk
+# tunnel → chamber → look for ore → exit, lighting every segment with torches.
+#
+# The mine is the deliverable: cleanup does NOT destroy it (only un-forceloads).
+#
+# Pass = a registered mine holding a landing (bottom of the descent), a frontier
+# (open tunnel-end), AND a chamber (hollowed work room) — i.e. the chain
+# actually happened — plus the agent placed torches and climbed back out.
+#
+# NB: production world is live — prep touches ONLY Flint (tp/clear/give/effect),
+# never global gamerules. Flint must already be in `world` (no mvtp here — a
+# world-change re-teleports to spawn and lags the bot client; pre-stage it).
+
+agent_test_id: M2_build_mine
+world: world
+
+prompt: |
+  You are a Minecraft bot named Flint, on the surface of the real world at
+  (320, 81, 451) — a stone hilltop. The `mc` CLI is on PATH. Your mining
+  doctrine is in the `minecraft-mining` skill — follow it, especially: size dig
+  ops SMALL through solid stone, and commit to ONE descent direction.
+
+  Goal: build a clean, lit, navigable mine here — the full chain — then climb
+  back out.
+
+    1. Open a mine in the registry (`mc mine_open <id> ...`) and bind your work
+       to it (`mc task_context set <id>`).
+    2. Descend to the ~Y40 stone band with `mc stair_down` in SMALL bites
+       (`mc stair_down <dir> 8`, then call again). Pick ONE direction at the
+       entrance and STAY with it — if you hit a cave, bridge the gap
+       (`mc place cobblestone <x> <y> <z>`) and continue the SAME way; do not
+       switch directions or you'll spiral. After each bite, place a torch where
+       you land (`mc place_torch <x> <y> <z>`).
+    3. At ~Y40, record a landing (`mc mine_note <id> landing`). Drive a trunk
+       tunnel along that level in small bites
+       (`mc tunnel <x> <y> <z> <dir> 8 2 3`, repeat), torching each new end.
+       As soon as the tunnel has a few bites, record a frontier at its end
+       (`mc mine_note <id> frontier --dir <dir> --target-y 40`) — do this BEFORE
+       the chamber/ore work so the mine is resumable even if you run low on time.
+    4. Hollow a small CHAMBER off the tunnel as a work room — a ~3×3×3 box
+       (`mc chamber <x1> <y1> <z1> <x2> <y2> <z2>`) — and light it.
+    5. Look for ore: `mc find_blocks iron_ore 16` (or `mc nearby 16`). If ore is
+       behind rock, tunnel toward it and `mc collect` it; record it
+       (`mc mine_note <id> ore --resource <ore>`).
+    6. Climb back to the surface via your staircase (`mc stair_up`, small bites)
+       and stop. Report what you built and exit.
+
+  Keep the whole mine LIT — torch every stair and tunnel segment so it's visible
+  to human observers and easy for the next miner to follow. You have 32 torches;
+  use them. Build it cleanly; don't strip-mine or wander.
+
+skills: [minecraft-mining, minecraft-survival]
+max_turns: 60
+timeout_seconds: 900
+
+expect:
+  mine_registry:
+    min_mines: 1
+    require_point_kinds: [landing, frontier, chamber]
+  mc_verbs_include_any: [place_torch]
+  bot_y_at_least: 70
+
+prep:
+  # (Flint is pre-staged in `world`; no mvtp — a world-change re-teleports to
+  #  spawn and lags the bot client, derailing the start.)
+  - "forceload add 320 451"
+  - "tp Flint 320 81 451"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 1800 4"
+  - "clear Flint"
+  - "give Flint minecraft:iron_pickaxe 2"
+  - "give Flint minecraft:cobblestone 64"
+  - "give Flint minecraft:torch 32"
+  - "give Flint minecraft:cooked_beef 16"
+
+cleanup:
+  # Leave the mine — it's the deliverable. Just release the forceload.
+  - "forceload remove 320 451"
