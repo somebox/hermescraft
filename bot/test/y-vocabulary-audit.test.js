@@ -17,12 +17,16 @@
  *   4. The exemption list stays honest — no exempt command can also appear
  *      in the doc table.
  *
- * Known limitation: the enumeration reads argSchema, so a command using
- * customParse: true with a Y param is invisible to assertion 1. `fence` is
- * exactly this today (no argSchema, but documented at line 85 — harmless).
- * A future customParse command could invent a Y dialect undetected. If
- * that happens, follow-ups could scan handler source or require customParse
- * commands to declare a `yParams` hint here.
+ * Enumeration: a command is Y-bearing if (a) its argSchema has a Y-named
+ * key, or (b) its `usage` string advertises a Y token. The usage scan
+ * catches customParse commands that have no argSchema Y key (e.g. `fence`,
+ * `safe_dig`, `reach`, `through`, `inspect`, the `--at X Y Z` annotation
+ * verbs) — these were previously invisible to an argSchema-only scan.
+ *
+ * Residual limitation: a command that reads a Y internally but advertises
+ * it in neither argSchema NOR usage stays invisible. None exist today; a
+ * future one could be caught by scanning handler source or requiring a
+ * `yParams` hint. This is the only remaining hole.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,20 +50,31 @@ const EXTRA_Y_PARAMS = {
 // — that's what keeps the exemption list from accumulating cruft.
 const EXEMPT = {
   look_at: 'y is a gaze-target point coordinate (camera aim), not a stand/dig/place Y — no block/surface ambiguity',
+  region_create: '`--y MIN..MAX` is a vertical *range* (region extent), not a point/stand/dig Y — documented in docs/specs/world/designated-regions.md',
 };
+
+// Y tokens in a usage string: positional Y / GY / DY / Y1 / Y2 (uppercase
+// placeholders), the surface_y keyword, the y_hint hint, and the `--y` /
+// `--y-hint` flag forms. Case-sensitive on the bare-Y branch so lowercase
+// `y` inside ordinary words (e.g. "any") is not matched.
+const USAGE_Y_RE = /(\b[GD]?Y[12]?\b|surface_y|y_hint|--y\b|--y-)/;
 
 function collectYBearingCommands() {
   const out = [];
   for (const d of RAW_COMMAND_DEFS) {
     const schema = Array.isArray(d.argSchema) ? d.argSchema : null;
-    if (!schema) continue;
     let hit = false;
-    for (const spec of schema) {
-      const k = String(spec.key || '');
-      if (Y_KEY_RE.test(k)) { hit = true; break; }
+    if (schema) {
+      for (const spec of schema) {
+        const k = String(spec.key || '');
+        if (Y_KEY_RE.test(k)) { hit = true; break; }
+      }
+      if (!hit && EXTRA_Y_PARAMS[d.name]) {
+        hit = schema.some((s) => s.key === EXTRA_Y_PARAMS[d.name]);
+      }
     }
-    if (!hit && EXTRA_Y_PARAMS[d.name]) {
-      hit = schema.some((s) => s.key === EXTRA_Y_PARAMS[d.name]);
+    if (!hit && typeof d.usage === 'string' && USAGE_Y_RE.test(d.usage)) {
+      hit = true;
     }
     if (hit) out.push(d.name);
   }
