@@ -23,6 +23,7 @@
 | [`reference/mc-command-reference.md`](reference/mc-command-reference.md) | Verb intent, args, envelopes |
 | [`reference/mc-cheatsheet.md`](reference/mc-cheatsheet.md) | Generated one-line per command |
 | [`reference/world-coordinates.md`](reference/world-coordinates.md) | `block_y` / `surface_y` convention |
+| [`reference/fair-play-charter.md`](reference/fair-play-charter.md) | Parity principle, sensing vs acting, LOS vs scan-solidity |
 | [`reference/fleet-notes.md`](reference/fleet-notes.md) | Ops notes (registry, routing, perception) |
 | [`reference/bot/handler-contract-adr.md`](reference/bot/handler-contract-adr.md) | Action handler ADR |
 | [`reference/bot/handler-response-contracts.md`](reference/bot/handler-response-contracts.md) | Per-verb response shape |
