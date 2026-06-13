@@ -16,4 +16,12 @@ export const FAIR_PLAY = Object.freeze({
   // mc collect + find_entities fair-play: physically turn, merge LOS hits.
   LOOK_SWEEP_HEADINGS: 5,
   LOOK_SETTLE_MS: 45,
+  // Eye-height geometry. PHYSICAL_EYE_HEIGHT is a real player's eye (aim
+  // points, head-above-water). The fair-play *sensor* eye is reduced by
+  // FAIRPLAY_EYE_FACTOR (a parity nerf). FAIRPLAY_EYE_HEIGHT_DEFAULT is the
+  // product for a default-height bot — a literal for sites that are not
+  // entity-height-aware (see goto_near; fair-play charter asymmetry #1).
+  PHYSICAL_EYE_HEIGHT: 1.62,
+  FAIRPLAY_EYE_FACTOR: 0.85,
+  FAIRPLAY_EYE_HEIGHT_DEFAULT: 1.377, // = PHYSICAL_EYE_HEIGHT * FAIRPLAY_EYE_FACTOR
 });

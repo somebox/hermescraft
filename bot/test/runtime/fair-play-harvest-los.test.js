@@ -7,10 +7,11 @@ import assert from 'node:assert/strict';
 import { Vec3 } from 'vec3';
 
 import { createFairPlaySuite } from '../../lib/runtime/fair-play.js';
+import { FAIR_PLAY } from '../../lib/runtime/fair-play-constants.js';
 
 function makeSuite(blockAtFn) {
   const bot = {
-    entity: { position: new Vec3(0, 64, 0), height: 1.62, yaw: 0, pitch: 0 },
+    entity: { position: new Vec3(0, 64, 0), height: FAIR_PLAY.PHYSICAL_EYE_HEIGHT, yaw: 0, pitch: 0 },
     blockAt: blockAtFn,
   };
   const ctx = { world: { bot, botReady: true }, reactive: { fairPlayMode: true, observedBlocks: new Map() } };

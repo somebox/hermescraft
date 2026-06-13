@@ -16,6 +16,7 @@ import {
 import { coord3 } from '../_args.js';
 import { ok } from '../../shared/action-contract.js';
 import { navBlockedNextActionHint, withNavRetryWarning } from './nav-hints.js';
+import { FAIR_PLAY } from '../../runtime/fair-play-constants.js';
 
 /**
  * @param {object} deps
@@ -89,7 +90,7 @@ export function createGotoNear(deps) {
               if (d > range) continue;
               const cx = tx + dx, cy = ty + dy, cz = tz + dz;
               if (!isStandableCell(b, cx, cy, cz)) continue;
-              const candEye = { x: cx + 0.5, y: cy + 1.377, z: cz + 0.5 };
+              const candEye = { x: cx + 0.5, y: cy + FAIR_PLAY.FAIRPLAY_EYE_HEIGHT_DEFAULT, z: cz + 0.5 };
               if (faces.some((p) => hasLineOfSight(candEye, p))) {
                 cands.push({ cx, cy, cz, d });
               }

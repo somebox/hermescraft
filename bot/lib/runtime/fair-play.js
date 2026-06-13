@@ -183,7 +183,7 @@ export function createFairPlaySuite(deps) {
 
     if (dist > FAIR_PLAY.LOS_ENTITY_RANGE) return false;
 
-    const eyeHeight = ctx.world.bot.entity.height * 0.85;
+    const eyeHeight = ctx.world.bot.entity.height * FAIR_PLAY.FAIRPLAY_EYE_FACTOR;
     const eyePos = pos.offset(0, eyeHeight, 0);
     const targetCenter = entity.position.offset(0, (entity.height || 1.8) * 0.5, 0);
 
@@ -199,7 +199,7 @@ export function createFairPlaySuite(deps) {
 
   function eyePosition(entity = ctx.world.bot?.entity) {
     if (!entity?.position) return null;
-    return entity.position.offset(0, (entity.height || 1.62) * 0.85, 0);
+    return entity.position.offset(0, (entity.height || FAIR_PLAY.PHYSICAL_EYE_HEIGHT) * FAIR_PLAY.FAIRPLAY_EYE_FACTOR, 0);
   }
 
   function raycastFirstSolid(origin, direction, maxDistance = 16, step = 0.75) {
