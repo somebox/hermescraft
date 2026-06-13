@@ -14,6 +14,7 @@ import {
   pathfindWithProgressWatchdog,
   NoProgressError,
   ensureWithinReach,
+  pathfindGotoNear,
   timeoutError,
   ACTION_CAPS_MS,
 } from '../../lib/actions/_helpers.js';
@@ -297,6 +298,30 @@ test('ensureWithinReach: in range but blocked → re-stances to a visible cell',
   });
   assert.equal(r.ok, true);
   assert.ok(calls.some((g) => g.kind === 'block'), 'a re-stance GoalBlock was attempted');
+});
+
+// ── pathfindGotoNear opt-in LOS stance (Pass 3b: dig/place approach) ──
+test('pathfindGotoNear: LOS opt-in goes to the GoalBlock stance cell', async () => {
+  const { bot, calls } = reachBot({ start: { x: 0, y: 64, z: 0 }, solids: SOLIDS, onGoto: arrive });
+  await pathfindGotoNear(bot, reachGoals(), 10, 64, 10, 3, { opName: 'dig', hasLineOfSight: () => true });
+  assert.ok(calls.some((g) => g.kind === 'block'), 'stance GoalBlock used');
+  assert.ok(!calls.some((g) => g.kind === 'near'), 'stance reached → no GoalNear fallback');
+});
+
+test('pathfindGotoNear: no LOS opt-in → plain GoalNear (unchanged for ~50 callers)', async () => {
+  const { bot, calls } = reachBot({ start: { x: 0, y: 64, z: 0 }, solids: SOLIDS, onGoto: arrive });
+  await pathfindGotoNear(bot, reachGoals(), 10, 64, 10, 3, { opName: 'place' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].kind, 'near');
+});
+
+test('pathfindGotoNear: LOS stance misses range → falls back to GoalNear', async () => {
+  // 'block' "succeeds" but doesn't move the bot (stays far); 'near' arrives.
+  const onGoto = async (goal, bot) => { if (goal.kind === 'near') arrive(goal, bot); };
+  const { bot, calls } = reachBot({ start: { x: 0, y: 64, z: 0 }, solids: SOLIDS, onGoto });
+  await pathfindGotoNear(bot, reachGoals(), 10, 64, 10, 3, { opName: 'dig', hasLineOfSight: () => true });
+  assert.ok(calls.some((g) => g.kind === 'block'));
+  assert.ok(calls.some((g) => g.kind === 'near'), 'fell back to GoalNear');
 });
 
 test('goto_near OPERATION_TIMEOUT message cites wallclock cap # spec', () => {

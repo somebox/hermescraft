@@ -435,7 +435,35 @@ export async function ensureWithinReach({ bot, goals }, target, opts = {}) {
 export async function pathfindGotoNear(bot, goals, x, y, z, range, {
   opName = 'goto',
   capMs = ACTION_CAPS_MS.reach,
+  hasLineOfSight,
 } = {}) {
+  const runGoto = async (goal, ms) => {
+    try {
+      await pathfindWithProgressWatchdog({
+        bot,
+        opName,
+        capMs: ms,
+        pathfinderGoto: () => bot.pathfinder.goto(goal),
+        onStall: () => { try { bot.pathfinder.setGoal(null); } catch { /* ignore */ } },
+      });
+      return true;
+    } catch {
+      try { bot.pathfinder.setGoal(null); } catch { /* ignore */ }
+      return false;
+    }
+  };
+  // Opt-in LOS stance (fair-play charter): when the caller passes
+  // hasLineOfSight, prefer a cell that can see a face of the target over a
+  // blind radius landing. Bounded sub-cap; falls through to the normal
+  // GoalNear pathfind (which throws on failure — contract for the ~50 other
+  // callers that don't opt in is preserved).
+  if (typeof hasLineOfSight === 'function') {
+    const tx = Math.floor(x), ty = Math.floor(y), tz = Math.floor(z);
+    const stanced = await tryLosStance({
+      bot, goals, tx, ty, tz, range, hasLineOfSight, capMs: Math.min(capMs, 4000), runGoto,
+    });
+    if (stanced) return;
+  }
   await pathfindWithProgressWatchdog({
     bot,
     opName,
