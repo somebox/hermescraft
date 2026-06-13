@@ -28,6 +28,8 @@ The bot may **know more than it can see**, but may only **act on what a human co
 
 Corollary: `mc reachable` is **geometry-only** (can a body stand/path here) — it is **not** a harvest/container LOS oracle. Don't treat "reachable" as "interactable." See [`../specs/nav/route-precompute-context.md`](../specs/nav/route-precompute-context.md).
 
+Applied: `ensureWithinReach` (the reach precheck for the LOS-gated verbs `chest`/`interact`/`through`) now plans an LOS **stance** — it pathfinds to a cell that can see a face of the target (via `pickLosStandCell`, using the same fair-play `hasLineOfSight` the act-time `canSeeBlockFaces` guard enforces), instead of a blind radius landing. It falls back to a plain `GoalNear` whenever no LOS stance is reachable, so reachability never regresses.
+
 ## The ledger (what the code actually grants)
 
 **Disabilities** (where the bot is worse than a human): no peripheral vision; blind while moving/acting; no scene gestalt (text summaries, not a glance); no startle reflex.
