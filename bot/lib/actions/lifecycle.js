@@ -3,6 +3,7 @@ import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { ok, fail } from '../shared/action-contract.js';
 import { clearNavTrail } from '../runtime/nav-trail.js';
 import { pathfindGotoNear, ACTION_CAPS_MS } from './_helpers.js';
+import { FAIR_PLAY } from '../runtime/fair-play-constants.js';
 
 const { goals } = pathfinderPkg;
 
@@ -128,7 +129,7 @@ export function createLifecycleActions(services) {
         ticks++;
         // Mineflayer caches isInWater on the entity object, updated each
         // physics tick. Check the EYE level too — head out of water = surfaced.
-        const eyePos = b.entity.position.offset(0, 1.62, 0);
+        const eyePos = b.entity.position.offset(0, FAIR_PLAY.PHYSICAL_EYE_HEIGHT, 0);
         const eyeBlock = b.blockAt(eyePos.floored());
         const surfaced = !b.entity.isInWater || (eyeBlock && eyeBlock.name !== 'water');
         if (surfaced) break;

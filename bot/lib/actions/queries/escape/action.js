@@ -3,6 +3,7 @@ import { fail } from '../../../shared/action-contract.js';
 import { pathfindGoalCapped } from '../../_helpers.js';
 import { standingState } from '../../_nav-helpers.js';
 import { DIR_VEC_4 as DIR_VEC } from '../../_directions.js';
+import { FAIR_PLAY } from '../../../runtime/fair-play-constants.js';
 import {
   escapeStrategyEnclosureInside,
   escapeStrategyInAir,
@@ -190,7 +191,7 @@ export function createEscapeQueries({ ctx, ensureBot, getActions, utils, goals }
       for (const pickDir of candidates) {
         const v = DIR_VEC[pickDir];
         try {
-          await b.lookAt(new Vec3(cell.x + 0.5 + v.dx * 1.5, cell.y + 1.62, cell.z + 0.5 + v.dz * 1.5));
+          await b.lookAt(new Vec3(cell.x + 0.5 + v.dx * 1.5, cell.y + FAIR_PLAY.PHYSICAL_EYE_HEIGHT, cell.z + 0.5 + v.dz * 1.5));
           b.setControlState('forward', true);
           b.setControlState('jump', true);
           await new Promise(r => setTimeout(r, 450));

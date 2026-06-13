@@ -7,6 +7,7 @@ import pathfinderPkg from 'mineflayer-pathfinder';
 import { fail, ok } from '../../shared/action-contract.js';
 import { pathfindGoalCapped } from '../_helpers.js';
 import { navTrailCrumbsNewestFirst } from '../../runtime/nav-trail.js';
+import { FAIR_PLAY } from '../../runtime/fair-play-constants.js';
 
 const { goals } = pathfinderPkg;
 
@@ -206,7 +207,7 @@ export function createRetrace(deps) {
         const lookX = cx + (dirX !== 0 ? Math.sign(dirX) * 0.5 : 0);
         const lookZ = cz + (dirZ !== 0 ? Math.sign(dirZ) * 0.5 : 0);
         try {
-          await b.lookAt(new Vec3(lookX, cy + 1.62, lookZ));
+          await b.lookAt(new Vec3(lookX, cy + FAIR_PLAY.PHYSICAL_EYE_HEIGHT, lookZ));
           b.setControlState('forward', true);
           b.setControlState('jump', true);
           await sleep(450);

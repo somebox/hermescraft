@@ -9,6 +9,7 @@ import { fail, ok } from '../../shared/action-contract.js';
 import { entitiesAtBlockingCell } from '../../shared/entity-blocking.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
 import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
+import { FAIR_PLAY } from '../../runtime/fair-play-constants.js';
 
 const { goals } = pathfinderPkg;
 
@@ -249,7 +250,7 @@ export function createBuildingPlaceSinglePart(deps) {
         if (typeof hasLineOfSight === 'function') {
           try {
             const ringRadius = 3;
-            const standY = y - 1; // bot stands here, eye at standY+1.62
+            const standY = y - 1; // bot stands here, eye at standY+1+PHYSICAL_EYE_HEIGHT
             const standCandidates = [];
             for (let dx = -ringRadius; dx <= ringRadius; dx++) {
               for (let dz = -ringRadius; dz <= ringRadius; dz++) {
@@ -262,7 +263,7 @@ export function createBuildingPlaceSinglePart(deps) {
                 if (!floor || floor.boundingBox !== 'block') continue;
                 if (feet && feet.boundingBox === 'block') continue;
                 if (head && head.boundingBox === 'block') continue;
-                const fakeEye = { x: sx + 0.5, y: standY + 1 + 1.62, z: sz + 0.5 };
+                const fakeEye = { x: sx + 0.5, y: standY + 1 + FAIR_PLAY.PHYSICAL_EYE_HEIGHT, z: sz + 0.5 };
                 const sees = faceCandidates.some((p) => hasLineOfSight(fakeEye, p));
                 if (sees) {
                   const dist = Math.abs(dx) + Math.abs(dz);
