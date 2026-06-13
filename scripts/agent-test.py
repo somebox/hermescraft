@@ -275,6 +275,52 @@ def _load_session_from_state_db(session_id: str) -> dict | None:
             messages.append({"role": role, "content": content, "tool_calls": tcs})
         return {"messages": messages}
     return None
+
+
+def _action_log_path(username: str) -> Path:
+    safe = re.sub(r"[^\w.-]", "_", username or "")
+    return ROOT / "data" / "runtime" / f"actions-{safe}.jsonl"
+
+
+def action_log_offset(username: str) -> int:
+    """Byte offset of the bot's durable action log, captured before a run."""
+    p = _action_log_path(username)
+    try:
+        return p.stat().st_size
+    except OSError:
+        return 0
+
+
+def read_action_log_verbs(username: str, since_offset: int) -> list[str]:
+    """mc verbs the bot actually executed since ``since_offset``.
+
+    The bot appends every dispatched action to data/runtime/actions-<user>.jsonl
+    synchronously, so this survives a hermes timeout-kill (when the hermes
+    session's own tool rows are never flushed). This is the authoritative
+    source for mc-verb telemetry.
+    """
+    p = _action_log_path(username)
+    verbs: list[str] = []
+    try:
+        with open(p, "rb") as fh:
+            fh.seek(since_offset)
+            blob = fh.read().decode("utf-8", "replace")
+    except OSError:
+        return verbs
+    for line in blob.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        a = entry.get("action")
+        if a:
+            verbs.append(a)
+    return verbs
+
+
 # 2026-05 model findings (agent-test context, not direct-API/benchmark):
 #   - google/gemini-2.5-flash       — reliable, fast, ~6 mc calls/composite test
 #   - openai/gpt-4o-mini            — confuses mc CLI for memory/search_files
@@ -971,6 +1017,49 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
                 "detail": f"count={count} bbox=({x1},{y1},{z1})..({x2},{y2},{z2})",
             })
 
+    if "mine_registry" in expect:
+        # Inspect the persisted mine registry (data/mines-*.json) to prove the
+        # agent didn't just CALL the verbs but captured durable, correct state.
+        # Config:
+        #   mine_registry:
+        #     min_mines: 1                       # total mines across registry files
+        #     require_point_kinds: [landing, frontier]  # one mine must hold >=1 of EACH
+        #     world: world                       # optional — restrict to mines-<world>.json
+        import glob as _glob
+        cfg = expect["mine_registry"] or {}
+        world = cfg.get("world")
+        if world:
+            safe = re.sub(r"[^\w.-]", "_", str(world))
+            files = [str(ROOT / "data" / f"mines-{safe}.json")]
+        else:
+            files = _glob.glob(str(ROOT / "data" / "mines-*.json"))
+        mines = []
+        for fp in files:
+            try:
+                with open(fp) as fh:
+                    mines.extend((json.load(fh) or {}).get("mines") or [])
+            except (OSError, ValueError):
+                continue
+        min_mines = int(cfg.get("min_mines", 1))
+        ok_count = len(mines) >= min_mines
+        results.append({
+            "kind": f"mine_registry:mines>={min_mines}",
+            "pass": ok_count,
+            "detail": f"mines={len(mines)} ({', '.join(m.get('id', '?') for m in mines) or 'none'})",
+        })
+        want_kinds = cfg.get("require_point_kinds") or []
+        if want_kinds:
+            def _kinds(m):
+                return {p.get("kind") for p in (m.get("points") or [])}
+            winner = next((m for m in mines if all(k in _kinds(m) for k in want_kinds)), None)
+            results.append({
+                "kind": f"mine_registry:one_mine_has[{','.join(want_kinds)}]",
+                "pass": winner is not None,
+                "detail": (f"mine '{winner['id']}' has all" if winner
+                           else f"no single mine holds all of {want_kinds}; "
+                                + "; ".join(f"{m.get('id')}:{sorted(_kinds(m))}" for m in mines) or "no mines"),
+            })
+
     return results
 
 
@@ -1195,6 +1284,9 @@ def main():
     stalled = False
     sessions_dir = Path.home() / ".hermes" / "sessions"
     pre_session_files = set(sessions_dir.glob("session_*.json")) if sessions_dir.exists() else set()
+    # Durable bot-side telemetry: snapshot the action-log offset so we can read
+    # exactly the verbs this run executed, even if hermes is killed on timeout.
+    pre_action_offset = action_log_offset(mc_user)
     proc = None
     my_session = None
     # message_timeline records (t_since_launch, msg_count, role) each time
@@ -1414,7 +1506,19 @@ def main():
         else:
             print(f"  WARN: no hermes session JSON or state.db row for {session_id}", file=sys.stderr)
     else:
-        print("  WARN: no hermes session id available for mc verb metrics", file=sys.stderr)
+        print("  WARN: no hermes session JSON/db (timeout kill?) — using bot action log", file=sys.stderr)
+
+    # Authoritative mc-verb telemetry: the bot's durable action log. It records
+    # every dispatched action synchronously, so unlike the hermes session (which
+    # isn't flushed when killed on timeout) it's complete and survives the kill.
+    # Prefer it over the hermes extraction; fall back to hermes only if empty.
+    bot_verbs = read_action_log_verbs(mc_user, pre_action_offset)
+    if bot_verbs:
+        if len(bot_verbs) != len(mc_verbs_used):
+            print(f"  action log: {len(bot_verbs)} mc verb(s) (hermes saw {len(mc_verbs_used)})", file=sys.stderr)
+        mc_verbs_used = bot_verbs
+        if not tool_calls:
+            tool_calls = [{"action": v} for v in bot_verbs]
 
     mc_cli_calls = len(mc_verbs_used)
     verb_counts = {}

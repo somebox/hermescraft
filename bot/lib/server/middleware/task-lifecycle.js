@@ -21,10 +21,36 @@
  * regardless of mode.
  */
 
+import fs from 'fs';
+import path from 'path';
 import { validate } from '../../shared/action-contract.js';
 import { validateBlockRef } from '../../shared/typed-nouns.js';
 import { logNavEvent } from '../../runtime/metrics.js';
 import { syncPreMiddleware, syncPostMiddleware } from './pipeline.js';
+
+// Durable per-bot action log. The in-memory actionHistory (below) is a capped
+// ring and is lost when the process is killed — e.g. when the agent-test
+// harness force-kills a hung/timed-out hermes run. This append-only JSONL
+// survives the kill and is the source of truth for "what mc commands ran",
+// independent of hermes' own (un-flushed) session storage. Synchronous append
+// so the last line is on disk even if the process dies the next tick.
+const ACTION_LOG_ROTATE_BYTES = 16 * 1024 * 1024;
+
+function appendActionLog(ctx, entry) {
+  try {
+    const dataDir = ctx?.runtime?.dataDir;
+    const username = ctx?.config?.mc?.username;
+    if (!dataDir || !username) return;
+    const safe = String(username).replace(/[^\w.-]/g, '_');
+    const dir = path.join(dataDir, 'runtime');
+    const file = path.join(dir, `actions-${safe}.jsonl`);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (fs.statSync(file).size > ACTION_LOG_ROTATE_BYTES) fs.renameSync(file, file + '.prev');
+    } catch { /* file may not exist yet */ }
+    fs.appendFileSync(file, JSON.stringify({ bot: username, ...entry }) + '\n');
+  } catch { /* telemetry is best-effort; never break an action */ }
+}
 
 /** Extract a short (≤80 char) one-liner from an action result for the dashboard. */
 function actionSummary(result) {
@@ -48,6 +74,7 @@ export function pushAction(ctx, action, status, startedAt, result, error, reason
   if (reason) entry.reason = reason;
   ctx.tasks.actionHistory.push(entry);
   if (ctx.tasks.actionHistory.length > ctx.tasks.MAX_ACTION_HISTORY) ctx.tasks.actionHistory.shift();
+  appendActionLog(ctx, entry);
 }
 
 /** Append a rolling counter event for buildActionStats(). */

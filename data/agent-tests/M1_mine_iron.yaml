@@ -1,0 +1,90 @@
+# M1 — does a live agent USE the mine registry tooling?
+#
+# Single-card structured-mining run. A small iron_ore vein sits ~7 blocks
+# below and north of spawn, behind stone (so it can't be surface-collected —
+# the agent must descend + tunnel). The bot starts geared (stone_pickaxe,
+# cobble, torches) so the test is about the *mining loop + registry*, not
+# gathering gear.
+#
+# Pass = the agent extracts iron AND leaves durable, correct registry state:
+#   - >=3 raw_iron in inventory (it actually reached + mined the vein)
+#   - it opened a mine (mc mine_open was called)
+#   - the registry holds one mine with a landing (descent recorded) AND a
+#     frontier (it left the workings resumable) — proving the doctrine drove
+#     structured use, not just ad-hoc digging.
+#
+# NB (tune after first live run): `landing` relies on the agent binding the
+# card (mc task_context set <mine>) so stair_down auto-registers it, OR
+# noting it explicitly. If the model reliably does one but not the other,
+# relax require_point_kinds to [frontier].
+
+agent_test_id: M1_mine_iron
+world: landfolk-test
+
+prompt: |
+  You are a Minecraft bot named Flint. The `mc` CLI is on PATH with
+  MC_API_URL and MC_USERNAME set. Your mining doctrine is in the
+  `minecraft-mining` skill — follow it.
+
+  Goal: establish and work a small iron mine, then leave it navigable and
+  resumable for the next miner.
+
+  There is an iron_ore vein roughly 7 blocks below the surface and a little
+  to the NORTH of where you start (around y=58). It is behind solid stone —
+  you cannot reach it from the surface; you must descend and tunnel to it.
+
+  Do this as a *structured* mine, per doctrine:
+    1. Open a mine in the registry at your start position
+       (`mc mine_open <id> ...`) and bind your work to it
+       (`mc task_context set <id>`).
+    2. Descend with `mc stair_down` toward the ore band (~y58).
+    3. Tunnel toward the iron (`mc tunnel`), then extract it
+       (`mc collect iron_ore ...`). Iron drops as raw_iron.
+    4. Before you stop, record a frontier where your tunnel ends
+       (`mc mine_note <id> frontier --dir <dir> --target-y 58`) so the next
+       miner can resume.
+
+  Stop once you have at least 3 raw_iron and have noted the frontier. Don't
+  keep digging after that — report what you did and exit.
+
+skills: [minecraft-mining, minecraft-survival]
+max_turns: 40
+timeout_seconds: 480
+
+expect:
+  bot_inventory:
+    raw_iron: ">=3"
+  mc_verbs_include_any: [mine_open]
+  mine_registry:
+    min_mines: 1
+    require_point_kinds: [landing, frontier]
+  mc_cli_invocations_max: 70
+
+verify_after_prep:
+  - { block: iron_ore, min_count: 4 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  # Solid stone block the agent descends + tunnels through.
+  - "execute in landfolk-test run fill -8 50 -8 8 80 8 minecraft:air"
+  - "execute in landfolk-test run fill -8 50 -8 8 64 8 minecraft:stone"
+  # Iron vein ~7 below, to the north, encased in stone (not surface-reachable).
+  - "execute in landfolk-test run fill -1 58 9 1 59 11 minecraft:iron_ore"
+  - "mvtp Flint landfolk-test"
+  - "execute in landfolk-test run tp Flint 0 65 0"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 600 1"
+  - "clear Flint"
+  - "execute in landfolk-test run give Flint minecraft:stone_pickaxe 1"
+  - "execute in landfolk-test run give Flint minecraft:cobblestone 64"
+  - "execute in landfolk-test run give Flint minecraft:torch 32"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill -8 50 -8 8 80 8 minecraft:air"
+  - "execute in landfolk-test run fill -8 50 -8 8 64 8 minecraft:stone"
+  - "execute in landfolk-test run tp Flint 52 65 52"
