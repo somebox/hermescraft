@@ -86,6 +86,21 @@ test('buildObservePayload always includes nav frame fields', () => {
   }
 });
 
+test('buildObservePayload with HERMES_NAV_BRIEF unset (default off) does NOT surface the brief', () => {
+  // Safety pin: the brief is opt-in. With the flag off, /observe must not
+  // carry nav_brief/nav_brief_text and must not bump payload_version — so the
+  // flag default can never silently flip without this test going red.
+  const { buildObservePayload, restore } = makeObserve();
+  try {
+    const p = buildObservePayload({ lean: true });
+    assert.equal(p.nav_brief, undefined);
+    assert.equal(p.nav_brief_text, undefined);
+    assert.notEqual(p.payload_version, 2);
+  } finally {
+    restore();
+  }
+});
+
 test('buildObservePayload with HERMES_NAV_BRIEF=1 surfaces nav_brief_text', () => {
   const { buildObservePayload, restore } = makeObserve({
     envBrief: '1',
