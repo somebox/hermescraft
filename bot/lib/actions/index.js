@@ -26,6 +26,7 @@ import { createAnimalsActions } from './animals.js';
 import { createWaterActions } from './water.js';
 import { createRegionsObserveActions } from './regions/observe.js';
 import { createRegionsMutateActions } from './regions/create.js';
+import { createMinesActions } from './mines/index.js';
 import { createRegionsCheckActions } from './regions/check.js';
 import { createBlueprintActions } from './blueprints/index.js';
 import { createPlaybookActions } from './playbooks.js';
@@ -74,6 +75,7 @@ export function createAllActions(deps) {
     ...createRegionsObserveActions(deps),
     ...createRegionsMutateActions(deps),
     ...createRegionsCheckActions(deps),
+    ...createMinesActions(deps),
     ...createBlueprintActions(deps),
     ...createPlaybookActions(services),
     ...createReachActions(services),

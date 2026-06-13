@@ -11,6 +11,7 @@ import { withYBoth, parseYInput, normalizeBoxYArgs } from '../runtime/coordinate
 import { buildPillarCascade } from './building/pillar.js';
 import { sampleNavTrailCrumb } from '../runtime/nav-trail.js';
 import { markBriefRefreshRequired } from '../runtime/nav-brief.js';
+import { normalizeMineId } from '../runtime/mines/index.js';
 
 const { goals } = pathfinderPkg;
 
@@ -23,6 +24,55 @@ export function createExcavationActions(services) {
   const { resolveInventoryItem } = resolver;
   const { rememberSocialEvent, getMyName } = social;
   const { hasLineOfSight, eyePosition } = fairPlay;
+
+  // Opt-in mine registry binding: fires only when the card is bound to a known
+  // mine via `mc task_context set <mine>` (the same binding the reactive danger
+  // recorder uses). Returns { mines, mid, by } or null.
+  function resolveBoundMine() {
+    const mines = ctx?.runtime?.mines;
+    const worksite = ctx?.runtime?.taskContext?.worksite_region;
+    if (!mines || !worksite) return null;
+    const mid = normalizeMineId(worksite);
+    if (!mid || !mines.get(mid)) return null;
+    return { mines, mid, by: config?.mc?.username || null };
+  }
+
+  function maybeRegisterStairMine(start, end, dir) {
+    try {
+      const bound = resolveBoundMine();
+      if (!bound) return null;
+      bound.mines.open({ id: bound.mid, entrance: { x: start.x, y: start.y, z: start.z }, dir, by: bound.by });
+      const landing = bound.mines.addPoint(bound.mid, {
+        kind: 'landing',
+        pos: { x: end.x, y: end.y, z: end.z },
+        by: bound.by,
+        note: `stair_down ${dir}`,
+      });
+      return { mine: bound.mid, entrance: { x: start.x, y: start.y, z: start.z }, landing: landing?.id || null };
+    } catch {
+      return null; // registry is best-effort; never break the descent
+    }
+  }
+
+  function maybeRegisterChamber(center, dims) {
+    try {
+      const bound = resolveBoundMine();
+      if (!bound) return null;
+      const p = bound.mines.addPoint(bound.mid, { kind: 'chamber', pos: center, by: bound.by, note: `chamber ${dims}` });
+      return { mine: bound.mid, chamber: p?.id || null };
+    } catch {
+      return null;
+    }
+  }
+
+  // Non-falling placeable for chamber floor patching (sand/gravel fall through).
+  function pickPlaceableFloorItem(b) {
+    const inv = b.inventory?.items?.() || [];
+    for (const name of ['cobblestone', 'stone', 'dirt', 'coarse_dirt', 'cobbled_deepslate', 'netherrack']) {
+      if (inv.some((it) => it.name === name)) return name;
+    }
+    return null;
+  }
 
   const cardinalDeltaOrFail = (direction) => {
     const r = cardinalDelta(direction);
@@ -61,6 +111,109 @@ export function createExcavationActions(services) {
     };
   };
   return {
+  /**
+   * Hollow a box into a walkable, lit chamber: batched dig_area (high-Y
+   * first, hazard-aware), best-effort floor-patch of SAFE holes (a dip with
+   * solid ground ≤1 below — never placed blindly over a void), torches at
+   * spacing, and a chamber point in the bound mine. The "make the workings
+   * traversable" verb. Volume-capped — split larger rooms.
+   */
+  async chamber(args) {
+    const b = ensureBot();
+    const boxParsed = box6(normalizeBoxYArgs(args));
+    if (!boxParsed.ok) return boxParsed.response;
+    const xmin = Math.min(boxParsed.x1, boxParsed.x2), xmax = Math.max(boxParsed.x1, boxParsed.x2);
+    const ymin = Math.min(boxParsed.y1, boxParsed.y2), ymax = Math.max(boxParsed.y1, boxParsed.y2);
+    const zmin = Math.min(boxParsed.z1, boxParsed.z2), zmax = Math.max(boxParsed.z1, boxParsed.z2);
+    const w = xmax - xmin + 1, hgt = ymax - ymin + 1, d = zmax - zmin + 1;
+    const vol = w * hgt * d;
+    const MAX_VOL = 512;
+    if (vol > MAX_VOL) {
+      return fail('CHAMBER_TOO_LARGE', `chamber ${w}x${hgt}x${d}=${vol} exceeds ${MAX_VOL} blocks — split into smaller chambers`, { retry_safe: false });
+    }
+    const force = args.force === true || args.force === 'true';
+    const doFloor = !(args.no_floor === true || args.no_floor === 'true');
+    const doLight = !(args.no_light === true || args.no_light === 'true');
+
+    // 1) Hollow — one dig_area per y-layer strip of ≤32 cells, high-Y first.
+    let dug = 0, skipped = 0, hazard = null;
+    const zStep = Math.max(1, Math.floor(32 / w));
+    hollow:
+    for (let y = ymax; y >= ymin; y--) {
+      for (let z0 = zmin; z0 <= zmax; z0 += zStep) {
+        const z1t = Math.min(zmax, z0 + zStep - 1);
+        const res = await getActions().dig_area({
+          x1: xmin, y1: y, z1: z0, x2: xmax, y2: y, z2: z1t,
+          pickup: false, abort_on_fail: false, clear_stand: true, force,
+        });
+        if (res && res.ok === false) {
+          dug += Number(res.error?.observed_state?.dug_so_far || 0);
+          hazard = res.error;
+          break hollow;
+        }
+        dug += Number(res?.dug || 0);
+        skipped += Number(res?.skipped || 0);
+      }
+    }
+    try { await getActions().pickup(); } catch { /* best-effort */ }
+    if (hazard) {
+      return fail(hazard.code || 'HAZARD', `chamber hollow aborted: ${hazard.message}`, {
+        observed_state: { dug, ...(hazard.observed_state || {}) }, retry_safe: false,
+      });
+    }
+
+    // 2) Floor — patch SAFE holes in the floor layer (y = ymin-1): air/fluid
+    // with solid ground one block below (a dip). Deep voids are reported, not
+    // filled (placing over a void is a fall hazard).
+    let floor_filled = 0;
+    const floor_holes = [];
+    if (doFloor) {
+      const plug = pickPlaceableFloorItem(b);
+      for (let x = xmin; x <= xmax; x++) {
+        for (let z = zmin; z <= zmax; z++) {
+          const fc = b.blockAt(new Vec3(x, ymin - 1, z));
+          if (fc && fc.boundingBox === 'block' && !/water|lava/.test(fc.name)) continue;
+          const below = b.blockAt(new Vec3(x, ymin - 2, z));
+          const shallow = below && below.boundingBox === 'block' && !/water|lava/.test(below.name);
+          if (shallow && plug) {
+            try {
+              const pr = await getActions().place({ name: plug, x, y: ymin - 1, z });
+              if (pr?.ok) { floor_filled++; continue; }
+            } catch { /* fall through to report */ }
+          }
+          floor_holes.push({ x, y: ymin - 1, z });
+        }
+      }
+    }
+
+    // 3) Light — torches on the floor at a spacing.
+    let torches = 0;
+    if (doLight) {
+      for (let x = xmin; x <= xmax; x += 5) {
+        for (let z = zmin; z <= zmax; z += 5) {
+          try {
+            const tr = await getActions().place_torch({ x, y: ymin, z, prefer: 'floor' });
+            if (tr?.ok) torches++;
+          } catch { /* best-effort */ }
+        }
+      }
+    }
+
+    // 4) Register a chamber point in the bound mine, if any.
+    const center = { x: Math.round((xmin + xmax) / 2), y: ymin, z: Math.round((zmin + zmax) / 2) };
+    const mineUpdate = maybeRegisterChamber(center, `${w}x${hgt}x${d}`);
+
+    const holeNote = floor_holes.length ? ` ${floor_holes.length} floor hole(s) over void left to fill` : '';
+    return ok({
+      result: `Chamber ${w}x${hgt}x${d}: dug ${dug}, floored ${floor_filled}, lit ${torches}.${holeNote}${mineUpdate ? ` [mine "${mineUpdate.mine}"]` : ''}`.trim(),
+      data: {
+        dug, skipped, floor_filled, floor_holes, torches,
+        box: { xmin, ymin, zmin, xmax, ymax, zmax },
+        ...(mineUpdate ? { mine_updated: mineUpdate } : {}),
+      },
+    });
+  },
+
   /**
    * Bulk-dig an axis-aligned box (max 32 blocks per call).
    *
@@ -694,17 +847,24 @@ export function createExcavationActions(services) {
     markBriefRefreshRequired(ctx, {
       cells: steps.slice(-4).map((s) => ({ x: s.x, y: s.y, z: s.z })),
     });
+    // Opt-in mine registry: when this card is bound to a known mine via
+    // `mc task_context set <mine>`, record the descent as an entrance (top)
+    // + a landing point (bottom) so the workings stay navigable and resumable
+    // across sessions. No-op for road/non-mine descents — best-effort, never
+    // breaks the dig.
+    const mineUpdate = maybeRegisterStairMine(start, end, key);
     const resultMsg = stoppedAtStep
       ? `Stair down ${key} stopped at step ${stoppedAtStep}/${L} (${stoppedReason.value}): dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim()
       : `Stair down ${key} length ${L}: dug ${totalDug}, skipped ${totalSkipped}, errors ${totalErrors}.${pickupSuffix}${regionSkips.suffix()}`.trim();
     return ok({
-      result: resultMsg,
+      result: mineUpdate ? `${resultMsg} [mine "${mineUpdate.mine}": entrance + landing recorded]` : resultMsg,
       data: {
         dug: totalDug,
         skipped: totalSkipped,
         errors: totalErrors,
         ...regionSkips.dataFields(),
         ...(errorMsgs.length ? { error_messages: errorMsgs.slice(0, 5) } : {}),
+        ...(mineUpdate ? { mine_updated: mineUpdate } : {}),
         ...trailPayload,
       },
     });

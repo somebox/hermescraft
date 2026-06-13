@@ -23,7 +23,7 @@ import { createQueriesActions } from '../lib/actions/queries.js';
 const EXPECTED = {
   inventory:   ['equip', 'unequip', 'toss'],
   building:    ['pillar_step', 'place', 'place_fill', 'wall', 'fence', 'path', 'dig_pit', 'level', 'level_ground', 'build_stairs', 'clear_strip', 'deck', 'fell_tree'],
-  excavation:  ['dig_area', 'tunnel', 'stair_down', 'stair_up', 'pillar_down'],
+  excavation:  ['dig_area', 'tunnel', 'stair_down', 'stair_up', 'pillar_down', 'chamber'],
   interaction: ['close_screen', 'edit_sign', 'interact', 'place_named_sign', 'place_torch', 'through', 'use'],
   lifecycle:   ['chat', 'wait', 'surface', 'sleep_bed', 'set_home', 'chat_to', 'whisper', 'respawn', 'deathpoint'],
   queries:     ['scout', 'terrain_top', 'corridor_sample', 'reachable', 'standing', 'escape', 'find', 'inspect', 'is_empty', 'is_filled', 'is_sheltered', 'nearby_signs', 'survey_line'],
@@ -56,8 +56,9 @@ test('total split handler count matches the legacy world.js + water absorption',
   // place_torch + place_named_sign to interaction (+2) and nearby_signs
   // to queries (+1). W2 added clear_strip + deck + fell_tree to building (+3)
   // and corridor_sample to queries (+1). Adaptive road planning added
-  // survey_line to queries (+1).
-  assert.equal(total, 50);
+  // survey_line to queries (+1). The mine registry work added chamber to
+  // excavation (+1).
+  assert.equal(total, 51);
 });
 
 test('water.js absorbed bucket_fill and bucket_empty from former world.js', async () => {

@@ -55,6 +55,7 @@ data/*.db
 data/locations-*.json
 !data/locations.json
 !data/locations-base.json
+data/mines-*.json
 data/chest-snapshots-*.json
 data/ops/kanban-*-body.md
 data/ops/rescue/*.md

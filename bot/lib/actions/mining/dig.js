@@ -15,6 +15,7 @@ import { createDigFailureTracker } from '../../runtime/dig-failure-ring.js';
 import { egressTreadCells, isEgressProtectedCell, clearEgressTrail } from '../../runtime/egress-guard.js';
 import { promoteNavTrailJunction } from '../../runtime/nav-trail.js';
 import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
+import { dangerFamily, recordBreachDanger } from '../../runtime/mines/reactive.js';
 
 // Plug-block selection for water/lava breach next-action hints. Sand/gravel
 // are excluded because they fall through a fluid column instead of plugging
@@ -76,7 +77,71 @@ export function createDigHandlers(deps) {
     sleep,
     hasLineOfSight,
     eyePosition,
+    services,
   } = deps;
+
+  // Reactive recovery + danger recording when a dig breaches lava/water.
+  // Water: auto-plug the dug cell (matches the warn-doctrine hint). Lava:
+  // honor retreat-first — never plug in place; best-effort one safe step
+  // back. Either way, record the spot as a `danger` point so future
+  // sessions route around it. Best-effort throughout: a recovery/recording
+  // failure must never break the dig that triggered it.
+  async function handleBreachReaction(b, breach) {
+    const store = ctx.runtime?.mines || null;
+    const family = dangerFamily(breach.kind);
+    const worksiteRegion = ctx.runtime?.taskContext?.worksite_region || null;
+    const by = config?.mc?.username || null;
+    const { x, y, z } = breach.breach_cell;
+    const actions = (typeof services?.getActions === 'function' ? services.getActions() : null) || {};
+    let sealed = false;
+    let recovery;
+
+    if (family === 'water') {
+      const plug = pickPlugItem(b);
+      if (plug && typeof actions.place === 'function') {
+        try {
+          const r = await actions.place({ name: plug, x, y, z });
+          sealed = r?.ok === true;
+          recovery = sealed ? `plugged_${plug}` : 'plug_failed';
+        } catch { recovery = 'plug_failed'; }
+      } else {
+        recovery = 'no_plug_block';
+      }
+    } else {
+      recovery = await retreatFromBreach(b, breach, actions);
+    }
+
+    const danger = recordBreachDanger(store, breach, { worksiteRegion, pos: breach.breach_cell, sealed, by });
+    return { family, sealed, recovery, danger };
+  }
+
+  // Conservative single-step retreat away from a lava breach. Only moves to a
+  // cell verified walkable (air feet+head, solid non-fluid floor); otherwise
+  // it records the danger and leaves positioning to the agent's next action.
+  async function retreatFromBreach(b, breach, actions) {
+    try {
+      const feet = b.entity?.position;
+      if (!feet) return 'no_pos';
+      const fx = Math.floor(feet.x), fy = Math.floor(feet.y), fz = Math.floor(feet.z);
+      const dx = Math.sign(fx - breach.breach_cell.x);
+      const dz = Math.sign(fz - breach.breach_cell.z);
+      if (dx === 0 && dz === 0) return 'no_retreat_dir';
+      const tx = fx + dx, tz = fz + dz;
+      const isAir = (blk) => !blk || AIR_NAMES.has(blk.name);
+      const isFluid = (blk) => blk && /water|lava/.test(blk.name);
+      const feetCell = b.blockAt(new Vec3(tx, fy, tz));
+      const headCell = b.blockAt(new Vec3(tx, fy + 1, tz));
+      const floorCell = b.blockAt(new Vec3(tx, fy - 1, tz));
+      const solidFloor = floorCell && floorCell.boundingBox === 'block' && !isFluid(floorCell);
+      if (isAir(feetCell) && isAir(headCell) && solidFloor && typeof actions.move === 'function') {
+        const r = await actions.move({ x: tx, y: fy, z: tz });
+        return r?.ok === true ? 'retreated' : 'retreat_failed';
+      }
+      return 'no_safe_step';
+    } catch {
+      return 'retreat_error';
+    }
+  }
 
   /**
    * Run the sequence of pre-dig refusal guards. Returns a `fail()` envelope
@@ -379,11 +444,15 @@ export function createDigHandlers(deps) {
   }
 
   /** Compose the ok() success envelope for a completed dig. */
-  function buildSuccessEnvelope(b, target, x, y, z, dropped, breach, tipSet) {
+  function buildSuccessEnvelope(b, target, x, y, z, dropped, breach, tipSet, breachReaction = null) {
     const tips = [...tipSet];
     const breachFields = breach ? buildBreachFields(b, breach) : null;
+    const sealedByReaction = breachReaction?.sealed === true;
+    const dangerNote = breachReaction?.danger?.mineId
+      ? ` [danger recorded on mine "${breachReaction.danger.mineId}"${sealedByReaction ? ', plugged' : ''}]`
+      : '';
     const breachSuffix = breachFields
-      ? ` ⚠ ${breachFields.severity === 'critical' ? 'LAVA' : 'WATER'} BREACH at ${breach.breach_cell.x},${breach.breach_cell.y},${breach.breach_cell.z} — ${breachFields.hint}`
+      ? ` ⚠ ${breachFields.severity === 'critical' ? 'LAVA' : 'WATER'} BREACH at ${breach.breach_cell.x},${breach.breach_cell.y},${breach.breach_cell.z} — ${sealedByReaction ? 'auto-plugged; ' : ''}${breachFields.hint}${dangerNote}`
       : '';
     return ok({
       data: {
@@ -391,11 +460,12 @@ export function createDigHandlers(deps) {
         dropped_items: dropped,
         position_after: posObj(b.entity.position),
         ...(breach ? { breach } : {}),
+        ...(breachReaction ? { breach_reaction: breachReaction } : {}),
       },
       // Preserve legacy field so existing callers (goal engine, older tests) still see it.
       result: `Mined ${target.name} at ${x}, ${y}, ${z}${tips.length ? ` Tips: ${tips.join(' | ')}` : ''}${breachSuffix}`,
       ...(tips.length ? { hints: tips } : {}),
-      ...(breachFields ? { next_action_hint: breachFields.next_action_hint } : {}),
+      ...(breachFields && !sealedByReaction ? { next_action_hint: breachFields.next_action_hint } : {}),
     });
   }
 
@@ -474,6 +544,10 @@ export function createDigHandlers(deps) {
     // for a face-neighbour source to reach the dug cell. Lava is slower
     // (~30 ticks/cell) but face-adjacent lava still flows in within window.
     const breach = await detectPostDigBreach(b, { x, y, z }, { settleMs: 0 });
+    let breachReaction = null;
+    if (breach) {
+      try { breachReaction = await handleBreachReaction(b, breach); } catch { /* never break the dig */ }
+    }
     tracker.clearForCell();
     // Forced through our own staircase: the retrace trail is now broken.
     if (forcedThroughEgress) clearEgressTrail(ctx, 'dig_force_through_tread');
@@ -484,7 +558,7 @@ export function createDigHandlers(deps) {
       }
     } catch { /* trail junction is best-effort */ }
     markBriefRefreshRequired(ctx, { cells: [cell] });
-    return buildSuccessEnvelope(b, target, x, y, z, dropped, breach, new Set(equipResult.hints));
+    return buildSuccessEnvelope(b, target, x, y, z, dropped, breach, new Set(equipResult.hints), breachReaction);
   }
 
   function createSafeDig(invokeDig) {

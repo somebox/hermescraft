@@ -606,6 +606,94 @@ function customParse(canonicalName, positional) {
       }
       return { id, intent: String(intent).toLowerCase() };
     }
+    case 'mine_open': {
+      const q = positional.slice();
+      /** @type {Record<string, unknown>} */
+      const out = {};
+      const rest = [];
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--at') {
+          q.shift();
+          out.x = Number(q.shift());
+          out.y = Number(q.shift());
+          out.z = Number(q.shift());
+        } else if (t.startsWith('--')) {
+          throw new Error(`unknown_flag:${t} — usage: mc mine_open <ID> [DIR] [TARGET_Y] [RESOURCE] [--at X Y Z]`);
+        } else {
+          rest.push(String(q.shift()));
+        }
+      }
+      out.id = rest[0];
+      if (!out.id) throw new Error('missing_id: usage mc mine_open <ID> [DIR] [TARGET_Y] [RESOURCE] [--at X Y Z]');
+      // Positional DIR / TARGET_Y / RESOURCE are order-tolerant: a cardinal is
+      // the dir, a number is the target_y, anything else is the resource.
+      const DIRS = new Set(['north', 'south', 'east', 'west']);
+      for (const tok of rest.slice(1)) {
+        if (DIRS.has(tok.toLowerCase())) out.dir = tok.toLowerCase();
+        else if (/^-?\d+$/.test(tok)) out.target_y = Number(tok);
+        else out.resource = tok;
+      }
+      return out;
+    }
+    case 'mine_note': {
+      const q = positional.slice();
+      /** @type {Record<string, unknown>} */
+      const out = {};
+      const tags = [];
+      const rest = [];
+      while (q.length) {
+        const t = String(q[0]);
+        if (t === '--at') {
+          q.shift();
+          out.x = Number(q.shift());
+          out.y = Number(q.shift());
+          out.z = Number(q.shift());
+        } else if (t === '--note') { q.shift(); out.note = String(q.shift() ?? ''); }
+        else if (t === '--tag') { q.shift(); tags.push(String(q.shift() ?? '')); }
+        else if (t === '--dir') { q.shift(); out.dir = String(q.shift() ?? '').toLowerCase(); }
+        else if (t === '--target-y') { q.shift(); out.target_y = Number(q.shift()); }
+        else if (t === '--resource') { q.shift(); out.resource = String(q.shift() ?? ''); }
+        else if (t === '--qty') { q.shift(); out.qty = Number(q.shift()); }
+        else if (t === '--hazard') { q.shift(); out.hazard = String(q.shift() ?? '').toLowerCase(); }
+        else if (t === '--sealed') { q.shift(); out.sealed = true; }
+        else if (t.startsWith('--')) throw new Error(`unknown_flag:${t} — usage: mc mine_note <ID> <KIND> [--at X Y Z] [--note ..] [--tag T] [--dir D] [--target-y Y] [--resource R] [--qty N] [--hazard H] [--sealed]`);
+        else rest.push(String(q.shift()));
+      }
+      out.id = rest[0];
+      out.kind = rest[1];
+      if (tags.length) out.tags = tags;
+      if (!out.id || !out.kind) {
+        throw new Error('missing_args: usage mc mine_note <ID> <KIND> — KIND is landing|chamber|junction|station|frontier|ore|danger');
+      }
+      return out;
+    }
+    case 'mine_status': {
+      const q = positional.slice();
+      const id = q.shift();
+      const status = q.shift();
+      if (!id || !status) {
+        throw new Error('missing_args: usage mc mine_status <ID> <active|exhausted|abandoned|hazard_locked>');
+      }
+      return { id, status: String(status).toLowerCase() };
+    }
+    case 'mine_show':
+    case 'mine_resume': {
+      const id = positional[0];
+      if (!id) throw new Error(`missing_id: usage mc ${canonicalName} <ID>`);
+      return { id };
+    }
+    case 'mine_remove': {
+      const q = positional.slice();
+      let confirm = false;
+      const rest = [];
+      for (const tok of q) {
+        if (tok === '--confirm') confirm = true;
+        else rest.push(tok);
+      }
+      if (!rest[0]) throw new Error('missing_id: usage mc mine_remove <ID> --confirm');
+      return { id: rest[0], confirm };
+    }
     case 'edit_sign': {
       const q = positional.slice();
       let back = false;

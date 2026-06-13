@@ -82,6 +82,7 @@ import { createReactive } from './lib/runtime/reactive.js';
 import { createLocationsStore, isContainerBlock, findNearbyContainer } from './lib/runtime/locations.js';
 import { createPersonalPoiStore } from './lib/runtime/personal-pois.js';
 import { createRegionStore } from './lib/runtime/regions/index.js';
+import { createMineStore } from './lib/runtime/mines/index.js';
 import { createAllActions } from './lib/actions/index.js';
 import { isDigProtected } from './lib/runtime/dig-tools.js';
 import { maybeRecordChatComment } from './lib/server/chat-card-comment.js';
@@ -129,6 +130,7 @@ locations = createLocationsStore({ dataDir: DATA_DIR, username: config.mc.userna
 personalPois = createPersonalPoiStore({ dataDir: DATA_DIR, username: config.mc.username });
 const ctx = createBotState(config);
 ctx.runtime.regions = createRegionStore({ dataDir: DATA_DIR, world: config.behaviors.regionsWorld });
+ctx.runtime.mines = createMineStore({ dataDir: DATA_DIR, world: config.behaviors.regionsWorld });
 ctx.runtime.dataDir = DATA_DIR;
 
 const viewerPortOpt = (() => {

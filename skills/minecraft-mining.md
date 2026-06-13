@@ -94,6 +94,81 @@ mc level_ground <entry_x-2> <entry_z-2> <entry_x+2> <entry_z+2> execute=true
 
 This levels the 5×5 around your stair entry so the next worker (or a passing operator) doesn't trip. If the entry was a reused site, the cleanup is idempotent — `level_ground` just re-confirms the cap.
 
+## Mine registry — durable state across sessions
+
+A mine is more than a hole: it's a place you return to. The bot keeps a flat
+**mine registry** (`data/mines-<world>.json`, shared across bots on the world)
+so a mine's entrances, discoveries, resume points, and dangers survive across
+cards and sessions. Use it; don't re-descend blind.
+
+**Before digging a new mine, check for an existing one.**
+
+```
+mc mine_list                 # nearest entrance first: status, resource, point counts
+mc mine_show <id>            # entrances (routes to surface) + every point + OPEN frontiers
+```
+
+If a mine already reaches your target resource/band, return to it and resume
+from an **open frontier** instead of staking a fresh descent. That's the whole
+point of keeping state — one orderly mine beats ten orphan shafts (the
+2026-05-27 surface-scarring lesson).
+
+**Register a mine and annotate as you discover.** A mine is a registry of
+points you drop where you stand (or at `--at X Y Z`):
+
+```
+mc mine_open iron_north north 12 iron_ore     # entrance here, descending north to Y12 for iron
+mc mine_note iron_north landing               # bottom of the stair
+mc mine_note iron_north ore --resource iron_ore --qty 8   # a pocket, ~8 left
+mc mine_note iron_north chamber --note "hollowed the lumpy bit by the iron vein"
+mc mine_note iron_north station --tag furnace --tag chest
+mc mine_note iron_north frontier --dir north --target-y 12 # open tunnel-end: resume here next time
+```
+
+Point kinds: `landing | chamber | junction | station | frontier | ore | danger`.
+A **frontier** is the single most valuable annotation — it's where the next
+miner picks up the tunnel instead of starting over. Drop one whenever you stop
+mid-tunnel. An **ore** point with `status: open` is a pocket worth returning to;
+mark it `extracted` (re-`mine_note` the same cell, or it auto-dedupes) once
+pulled.
+
+**Several routes to the surface.** Re-run `mc mine_open <id> --at X Y Z` at a
+second exit to add another entrance to the same mine — the registry holds a
+list, and `mine_list` reports the nearest one.
+
+**Retire a mine** when it's played out or unsafe:
+
+```
+mc mine_status iron_north exhausted      # active | exhausted | abandoned | hazard_locked
+```
+
+**Bind your card to the mine.** Run `mc task_context set <mine_id>` at session
+start (the same grant you need for `protect`-region dig — see top of this
+skill). Beyond authorization, it tells the **reactive danger recorder** which
+mine to attach a hazard to when you breach one.
+
+### Reactive dangers — the bot marks hazards for you
+
+When a `mc dig` breaks into **water or lava**, the bot reacts automatically and
+records the spot so nobody walks into it again:
+
+- **Water**: auto-plugs the dug cell (cobble/stone/dirt/planks from your
+  inventory) and records a `danger` point marked `sealed`. Carry plug blocks or
+  it can only record, not seal.
+- **Lava**: honors retreat-first — it does **not** plug in place (standing next
+  to lava to place a block is how bots die). It steps one safe cell back if it
+  can, records the `danger` unsealed, and surfaces the plug hint. You finish the
+  seal from a safe stance: `mc place <cobble> <x> <y> <z>`.
+
+The danger attaches to your `task_context` mine, or the nearest mine entrance
+within ~48 blocks (horizontal). No active mine and none nearby? It still warns
+in the dig result, but the record has nowhere to live — `mc mine_open` first if
+you're working a spot you'll return to.
+
+**Read dangers before you tunnel.** `mc mine_show <id>` lists every recorded
+hazard. Route branches away from `danger` cells; an unsealed lava danger near
+your planned tunnel is a `kanban_block hazard:lava` decision, not a dig-through.
+
 ## Pre-mining checklist
 
 Before descending more than 5 blocks below your current foot Y, verify in inventory:
