@@ -365,4 +365,4 @@ These were left out of the March 2026 execution (Phases 1–7 + 10). Revisit if 
 
 - **Phase 9** — `mining.js` collect/dig decomposition. `collect` (~750L) and `dig` (~250L) become coordinators over named helpers. Trigger: mining reliability needs investment, or the `@size-exempt` annotation on `mining.js` stops being defensible.
 
-Current layout reference: [`docs/reference/bot-codebase-map.md`](../architecture.md).
+Current layout reference: [`docs/reference/bot-codebase-map.md`](../reference/bot-codebase-map.md) and [`docs/architecture/README.md`](../architecture/README.md).

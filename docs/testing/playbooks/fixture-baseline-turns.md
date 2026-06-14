@@ -7,7 +7,7 @@ output still lands under `data/genesis-runs/<run_id>/findings/baseline-turns.md`
 via `nav-telemetry.py --baseline-turns`.
 
 Stage 4 A1 **% improvement target: N/A** (A1 falsified n=5). Wave 6 granularity
-lab **closed** — see [`lab-wave-6-granularity.md`](lab-wave-6-granularity.md).
+lab **closed** — see [`lab-wave-6-granularity.md`](../../archive/testing/playbooks/lab-wave-6-granularity.md).
 
 ## Genesis aggregate (g-2026-05-30-3)
 
@@ -83,7 +83,7 @@ Flash n=3: **0/3** full chest pass; sub-play telemetry verified. Not a regressio
 
 ## Fixture W6-T1 — tower mini pillar
 
-See [`lab-wave-6-granularity.md`](lab-wave-6-granularity.md) § Results (Option C, n=3 Flash).
+See [`lab-wave-6-granularity.md`](../../archive/testing/playbooks/lab-wave-6-granularity.md) § Results (Option C, n=3 Flash).
 
 ## Fixture W6-T3 — platform 3×3
 
@@ -91,7 +91,7 @@ See [`lab-wave-6-granularity.md`](lab-wave-6-granularity.md) § Results (Option 
 scripts/stress.sh tower-platform-3x3 --arm prose-skilled
 ```
 
-Medians: [`lab-wave-6-granularity.md`](lab-wave-6-granularity.md) § W6-T3 Results (complete).
+Medians: [`lab-wave-6-granularity.md`](../../archive/testing/playbooks/lab-wave-6-granularity.md) § W6-T3 Results (complete).
 
 ## Follow-ups (not blocking regression)
 

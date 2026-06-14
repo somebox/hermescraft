@@ -11,3 +11,11 @@
 | Playbook improvement pass (closed) | [`playbooks/`](playbooks/) |
 
 **Target architecture** for harness direction: [`../architecture/README.md`](../architecture/README.md).
+
+## Operational vs historical
+
+| Operational (maintained) | Historical ([`../archive/testing/`](../archive/testing/)) |
+|--------------------------|-----------------------------------------------------------|
+| [`procedural/testing-model.md`](procedural/testing-model.md), [`scenario-runs.md`](procedural/scenario-runs.md), [`map-catalog.md`](procedural/map-catalog.md), [`smoke-closure.md`](procedural/smoke-closure.md) | [`procedural/establishment-log.md`](../archive/testing/procedural/establishment-log.md) |
+| [`context-tuner/`](context-tuner/) ops docs | Dated reports under [`context-tuner/reports/`](context-tuner/reports/) (optional archive later) |
+| [`playbooks/improvement-pass-closure.md`](playbooks/improvement-pass-closure.md), [`design-composable-playbooks.md`](playbooks/design-composable-playbooks.md), [`catalog/`](playbooks/catalog/) | Playbook pass followup, test procedure, wave-6 lab, stage checklist under [`../archive/testing/playbooks/`](../archive/testing/playbooks/) |

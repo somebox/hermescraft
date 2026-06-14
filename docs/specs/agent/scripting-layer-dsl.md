@@ -9,7 +9,7 @@ is preserved in the Appendix.
 Companion to
 [`observation-verb-grammar.md`](../mc/observation-verb-grammar.md) (verb
 lanes + typed response shapes) and the delivery vehicle
-[`improvement-pass-followup.md`](../../testing/playbooks/improvement-pass-followup.md).
+[`improvement-pass-followup.md`](../../archive/testing/playbooks/improvement-pass-followup.md).
 
 ## Why a substrate layer
 
@@ -351,7 +351,7 @@ registry already in this design.
 - Orchestration spec built on this substrate:
   [`design-composable-playbooks.md`](../../testing/playbooks/design-composable-playbooks.md).
 - Delivery vehicle:
-  [`improvement-pass-followup.md`](../../testing/playbooks/improvement-pass-followup.md).
+  [`improvement-pass-followup.md`](../../archive/testing/playbooks/improvement-pass-followup.md).
 - Observation-verbs redesign (verbs + response shapes):
   [`observation-verb-grammar.md`](../mc/observation-verb-grammar.md).
 - Coordinate convention: `docs/reference/world-coordinates.md`.
@@ -367,4 +367,4 @@ registry already in this design.
   [`audit-mc-commands-2026-05-29.md`](../../reference/audits/audit-mc-commands-2026-05-29.md).
 - Playbook pass closure (defer Layer B runtime; prose vs structured by task):
   [`improvement-pass-closure.md`](../../testing/playbooks/improvement-pass-closure.md),
-  [`lab-wave-6-granularity.md`](../../testing/playbooks/lab-wave-6-granularity.md).
+  [`lab-wave-6-granularity.md`](../../archive/testing/playbooks/lab-wave-6-granularity.md).

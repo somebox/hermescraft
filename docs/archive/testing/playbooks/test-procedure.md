@@ -117,7 +117,7 @@ scripts/kanban create "x" --assignee flint --body $'playbook: not.real\n'
 # → rejected at facade
 ```
 
-Checklist: [docs/testing/playbooks/checklist-stage-2a-s.md](checklist-stage-2a-s.md).
+Checklist: [docs/archive/testing/playbooks/checklist-stage-2a-s.md](checklist-stage-2a-s.md).
 
 ---
 

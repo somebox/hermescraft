@@ -317,7 +317,7 @@ Findings doc: [`data/postmortems/establish-2026-06-02/ARCHITECTURE-FINDINGS.md`]
 
 **Plan location.** Detailed plan lives in [`.cursor/plans/run2_worker_friction_triage_6b269a59.plan.md`](../../.cursor/plans/run2_worker_friction_triage_6b269a59.plan.md), with verified code citations and exit criteria. This stub keeps the phase visible in the central progression doc.
 
-**Roll-up of existing dev tasks** (cross-referenced 2026-06-03 against [`docs/testing/procedural/establishment-log.md`](../../planning/session-devlog.md) backlog #27–#58):
+**Roll-up of existing dev tasks** (cross-referenced 2026-06-03 against [`../../archive/testing/procedural/establishment-log.md`](../../archive/testing/procedural/establishment-log.md) and [`../../planning/session-devlog.md`](../../planning/session-devlog.md) backlog #27–#58):
 
 | Existing # | Phase 7 item | Disposition |
 |---|---|---|

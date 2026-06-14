@@ -1,4 +1,4 @@
-# W6-T3 — 3×3 cobble platform (multi-anchor build). See docs/testing/playbooks/lab-wave-6-granularity.md
+# W6-T3 — 3×3 cobble platform (multi-anchor build). See docs/archive/testing/playbooks/lab-wave-6-granularity.md
 #
 #   scripts/stress.sh tower-platform-3x3 --arm prose-skilled
 # Matrix: prose-skilled, playbook-coarse, prose-skilled-resume (n≥3 each)

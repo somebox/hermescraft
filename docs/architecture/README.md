@@ -27,6 +27,8 @@ Status: **design exploration** (2026-06-05). Not yet built. Validating with one 
 | Hermes upstream primitives | [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md) | target v0.15 table (high level) |
 | Today → target code touchpoints | [`impact.md`](impact.md) | components (inventory) |
 | Visual narrative + walkthrough stepper | [`architecture-visual-guide.html`](architecture-visual-guide.html) | keep in sync with target + walkthrough |
+| **`mc verify`** facade | [`mc-verify-spec.md`](mc-verify-spec.md) | embodied-control (summary); observation grammar (detail) |
+| Scheduled / cron colony cards | [`scheduled-operations.md`](scheduled-operations.md) | epic-lifecycle (card shape only) |
 
 ## Reading order
 
@@ -64,7 +66,9 @@ Not a roadmap — what's actively in play. Update as we go.
 - [`../platform/hermes-upgrade-0.15-runbook.md`](../platform/hermes-upgrade-0.15-runbook.md) — **v0.15 upgrade runbook** (prerequisite for architecture primitives). Design catalog: [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md).
 - [`../specs/kanban/plugin-landfolk.md`](../specs/kanban/plugin-landfolk.md) — per-bot mutex (still load-bearing because `max_in_progress` is board-wide, not per-assignee). Note: the doc's "hooks never registered" banner is stale; the hook IS live at `plugins/landfolk/__init__.py:28`.
 - [`../specs/world/marks-sign-anchored.md`](../specs/world/marks-sign-anchored.md) — `:mark:` notation borrowed here.
-- [`../testing/playbooks/design-composable-playbooks.md`](../testing/playbooks/design-composable-playbooks.md) — superseded precursor. Stays for the closed improvement-pass artifacts it documents.
+- [`../testing/playbooks/design-composable-playbooks.md`](../testing/playbooks/design-composable-playbooks.md) — superseded precursor. Stays for the closed improvement-pass artifacts it documents. **Successor harness direction:** [`../testing/procedural/testing-model.md`](../testing/procedural/testing-model.md).
+- [`../planning/adaptive-road-planning.md`](../planning/adaptive-road-planning.md) — roadplan / proc-nav implementation contract (not re-specified here).
+- Colony narrow-vs-wide POC postmortem (archived): [`../archive/planning/expeditions/2026-06-13-colony-poc-narrow-vs-wide.md`](../archive/planning/expeditions/2026-06-13-colony-poc-narrow-vs-wide.md).
 
 ## What this direction is, briefly
 

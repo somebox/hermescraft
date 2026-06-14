@@ -6,7 +6,7 @@ Playbooks remain orchestration spec + test harness; production cards favor
 prose + skills unless closeout/preflight/resume patterns require structure.
 Orchestration spec on top of the existing `mc` verb registry. Companion to
 [`agent-scripting-layer.md`](../../specs/agent/scripting-layer-dsl.md) (eventual runtime substrate)
-and [`improvement-pass-followup.md`](improvement-pass-followup.md) (historical plan).
+and [`improvement-pass-followup.md`](../../archive/testing/playbooks/improvement-pass-followup.md) (historical plan).
 Evidence base: g-2026-05-30-3 (`data/genesis-runs/g-2026-05-30-3/findings/`).
 
 Architecture owner for the same ideas (reflex, taxi nav, perception zoom, living vocabulary): [`../../architecture/embodied-control.md`](../../architecture/embodied-control.md).
@@ -557,7 +557,7 @@ attribution.
 
 Flat A1 at Flash **falsified**; **W6-T1** confirmed Option C (prose-skilled ~2–3× cheaper, all arms 3/3).
 Next measurement: **W6-T3** platform — see
-[`lab-wave-6-granularity.md`](lab-wave-6-granularity.md).
+[`lab-wave-6-granularity.md`](../../archive/testing/playbooks/lab-wave-6-granularity.md).
 
 | Tier | When Steward uses `playbook:` on worker cards |
 |------|-----------------------------------------------|
@@ -639,7 +639,7 @@ SOUL is the interpreter.
 - Companion: [`agent-scripting-layer.md`](../../specs/agent/scripting-layer-dsl.md) —
   the eventual runtime substrate.
 - Delivery vehicle:
-  [`improvement-pass-followup.md`](improvement-pass-followup.md).
+  [`improvement-pass-followup.md`](../../archive/testing/playbooks/improvement-pass-followup.md).
 - Observation verbs:
   [`observation-verb-grammar.md`](../../specs/mc/observation-verb-grammar.md).
 - Existing five-phase mining template: `skills/minecraft-mining.md`.

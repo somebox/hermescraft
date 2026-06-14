@@ -244,7 +244,7 @@ Successor testing ([improvement-pass-closure.md](../playbooks/improvement-pass-c
 |--------|----------------------|
 | [design-composable-playbooks.md](../playbooks/design-composable-playbooks.md) registry (design) | **`mine.underground_target`**, **`wood.chop_tall_tree`** (shipped doc), **`scout.resource`**, **`farm.passive_mob_chicken`**, **`build.repair_site`**, **`build.tower_vertical`** (shipped doc), **`craft.from_inputs`**, **`supply.from_chest`**; perception examples for **`chore.fish_quota`** (fish — **not in registry yet**) |
 | [data/playbooks/registry.yaml](../../../data/playbooks/registry.yaml) | **Shipped ids:** `wood.chop_tall_tree`, `scout.resource`, `pillar_up_safe`, `craft.from_inputs`, `recover.stuck`, `build.tower_vertical` — **docs on disk:** wood, tower, pillar only |
-| [improvement-pass-followup.md](../playbooks/improvement-pass-followup.md) Stage 3 | Library expansion list matches mining / repair / chicken / tower |
+| [improvement-pass-followup.md](../../archive/testing/playbooks/improvement-pass-followup.md) Stage 3 | Library expansion list matches mining / repair / chicken / tower |
 | [goal-profiles.md](../../archive/design-misc/goal-profiles.md) | Role metrics: **miner**, **builder** (`base_integrity`, repair), **defender** (`defend_base`) — presets not shipped |
 | Agent-test history ([phase-2 sprints](../../archive/phase-2-design/sprints.md)) | **G10** wheat farm; **G11–G16** animals; **G1** stone pickaxe / mining chain; [water-navigation-arena-tests.md](../../archive/features/water-navigation-arena-tests.md) **W0** boat/fish |
 | Skills (load via `skill_view`) | **`minecraft-mining`**, **`minecraft-farming`**, **`minecraft-survival`** (fishing depth), **`minecraft-building`**, **`minecraft-combat`**, **`minecraft-chores`** |
@@ -364,5 +364,5 @@ Author under `requirements/scenario_<setting>_<variant>.yaml`; commit **catalog*
 
 - [map-catalog.md](map-catalog.md) — gates, placements, find/try/lint
 - [genesis-boot-cards.md](../../specs/kanban/genesis-boot-cards.md) — when to use genesis instead
-- [playbook-pass-test-procedure.md](../playbooks/test-procedure.md) — regression; new work uses procedural worlds
+- [playbook-pass-test-procedure.md](../../archive/testing/playbooks/test-procedure.md) — regression; new work uses procedural worlds
 - [learnings.md](../../reference/fleet-notes.md) — successor bench direction

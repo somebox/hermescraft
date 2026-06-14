@@ -55,9 +55,9 @@ fixed slabs. Spec: [scenario-runs.md](../procedural/scenario-runs.md)
 
 | Kind | Location |
 |------|----------|
-| Master plan (historical) | [`improvement-pass-followup.md`](improvement-pass-followup.md) |
-| Test runbook (historical) | [`playbook-pass-test-procedure.md`](test-procedure.md) |
-| Wave 6 results | [`lab-wave-6-granularity.md`](lab-wave-6-granularity.md) |
+| Master plan (historical) | [`improvement-pass-followup.md`](../../archive/testing/playbooks/improvement-pass-followup.md) |
+| Test runbook (historical) | [`playbook-pass-test-procedure.md`](../../archive/testing/playbooks/test-procedure.md) |
+| Wave 6 results | [`lab-wave-6-granularity.md`](../../archive/testing/playbooks/lab-wave-6-granularity.md) |
 | A1/A4 fixture numbers | [`baseline-turns-fixture.md`](fixture-baseline-turns.md) |
 | Agent-test specs | `data/agent-tests/playbooks/` (chop, tower, scaffold) |
 | Playbook registry (lab ids) | `data/playbooks/registry.yaml`, `docs/testing/playbooks/catalog/` |
@@ -94,4 +94,4 @@ behavior before the next full run.
 - Genesis evidence: `data/genesis-runs/g-2026-05-30-3/findings/` (local run dir)
 - Agent-test run JSON: `data/agent-tests/runs/` (when present on bench hosts)
 - Postmortem themes: card re-interpretation, prep traps, return path — see
-  [`improvement-pass-followup.md`](improvement-pass-followup.md) § Why this pass
+  [`improvement-pass-followup.md`](../../archive/testing/playbooks/improvement-pass-followup.md) § Why this pass
