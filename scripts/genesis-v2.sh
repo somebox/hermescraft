@@ -119,21 +119,12 @@ g2.snapshot("start", run_id)
 
 import subprocess
 
-# Park sibling cards BEFORE any dispatcher (gateway included) can grab them —
-# closes the initial-seed race where multiple same-bot cards are all ready and
-# unparked at once. Parks persist across ticks, so this one call is enough to
-# establish the per-bot mutex invariant immediately.
-subprocess.run(["hermes", "landfolk", "gate-check", "--board", "genesis-v2"],
-               cwd=os.getcwd(), capture_output=True, text=True, timeout=30)
-
-# Canonical stack dispatcher: gate-check (per-bot mutex via [bot:] tags) THEN
-# dispatch. This is what serializes work per body — the bare hermes gateway
-# skips gate-check, which is what let multiple workers pile onto one bot.
-disp_env = {**os.environ, "BOARD": "genesis-v2", "INTERVAL": "10", "MAX": "3"}
-disp_log = open(g2.run_dir(run_id) / "dispatcher.log", "a")
-disp = subprocess.Popen(["bash", os.path.join(os.getcwd(), "scripts", "landfolk-dispatcher.sh")],
-                        stdout=disp_log, stderr=subprocess.STDOUT, cwd=os.getcwd(), env=disp_env)
-(g2.run_dir(run_id) / "dispatcher.pid").write_text(str(disp.pid))
+# No gate-check / landfolk-dispatcher: the BOT LEASE is the body-mutex now (one
+# lease per body, atomic, with --near ranking + defer). The hermes gateway
+# auto-dispatches ready cards concurrently; each lease-mode worker checks out a
+# distinct free body via `mc bot checkout`, so same-expertise cards (e.g. the 4
+# scout cards) run in PARALLEL across the pool and any excess defers. (Gate-check
+# would re-serialize them per assignee — the opposite of what we want here.)
 
 # phase poller: gate-completes epics on verified world state + snapshots
 poller = os.path.join(os.getcwd(), "scripts", "genesis-v2-poller.py")
@@ -144,7 +135,7 @@ proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id],
 
 print(f"[genesis-v2] run {run_id} live: world={world} spawn={spawn} "
       f"epics={len(meta['epic_ids'])} scout_cards={len(meta['scout_ids'])}")
-print(f"[genesis-v2] dispatcher (gate-check+dispatch) + poller started")
+print(f"[genesis-v2] lease-mutex (no gate-check); gateway dispatch + poller started")
 PYEOF
     ;;
 

@@ -1,21 +1,17 @@
-# Genesis v2 — P1 pre-seeded worker cards.
+# Genesis v2 — P1 pre-seeded worker cards (lease model).
 #
-# Only the SCOUT cards are pre-seeded: they are the colony's opening move and
-# start building the map immediately, without waiting on the Steward's first
-# decomposition cycle. The Steward (from the P1 epic) handles the downstream
-# CHOOSE base / GATHER wood+tools / BUILD shelter cards once the scout marks
-# land — those are NOT pre-seeded because they depend on runtime-discovered
-# coordinates.
+# Only the SCOUT cards are pre-seeded — the colony's opening move, building the
+# map immediately. The Steward (P1 epic) files the downstream CHOOSE/GATHER/BUILD
+# cards once marks land.
 #
-# One scout card per quadrant, all assignee colony-scout. We DON'T use [bot:]
-# tags: each colony profile maps 1:1 to a body (colony-scout -> Mox), so the
-# assignee IS the per-body mutex domain. The gate-check serializes all
-# colony-scout cards — only ONE runs on Mox at a time — regardless of title.
-# (Tagging only some cards [bot:mox] while the Steward files untagged ones
-# splits the domain and lets two workers fight over one body.) Each card is
-# scenario-agnostic: it names a direction + radius from spawn and defers the
-# verb-level loop to the minecraft-scouting-site skill. No literal resource
-# coordinates — the scout discovers and marks them.
+# Bodies are a POOL (mox/pip/zee) and these are lease-mode `colony-scout`
+# (expertise, no fixed body). Each card leases a body via `mc bot checkout`; the
+# LEASE is the body-mutex (one lease per body), so all four scout cards run
+# CONCURRENTLY across the pool — three lease mox/pip/zee, the fourth defers until
+# one frees. No `[bot:]` tags (the lease, not the assignee, enforces exclusivity).
+# Verb-level scouting loop defers to the minecraft-scouting-site skill; lease
+# ritual to the minecraft-bot-lease skill. No literal resource coords — the scout
+# discovers and marks them.
 
 cards:
   - title: "[GENESIS2:P1] Scout NE from spawn"
@@ -24,45 +20,51 @@ cards:
     body: |
       You are a site scout. Spawn (colony center for now) is
       ({spawn_x},{spawn_y},{spawn_z}). Explore the NORTH-EAST quadrant out to
-      ~48 blocks (toward +X / -Z). First run `mc status` to confirm your body
-      is connected, then `skill_view minecraft-scouting-site` and follow it.
-      Mark what you find on the SHARED map: trees as `lt_wood_<n>`, exposed
-      stone as `lt_stone_<n>`, water as `lt_water_<n>`, and any flat open patch
-      big enough for a base as `candidate_pad_<n>`. Surface only — do not dig or
-      build. `kanban_complete` with a one-line tally of marks placed.
+      ~48 blocks (toward +X / -Z).
+      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout` to
+         lease a body. On `no free body — defer`: `kanban_block` with reason
+         `no_free_body` and stop (do not retry in a loop).
+      2. `mc status`, then `skill_view minecraft-scouting-site` and follow it.
+         Mark finds on the SHARED map: trees `lt_wood_<n>`, exposed stone
+         `lt_stone_<n>`, water `lt_water_<n>`, flat base-sized patches
+         `candidate_pad_<n>`. Surface only — no dig/build.
+      3. `mc bot release`, then `kanban_complete` with a one-line tally.
 
   - title: "[GENESIS2:P1] Scout NW from spawn"
     assignee: colony-scout
     initial_status: ready
     body: |
-      You are a site scout. Spawn (colony center for now) is
-      ({spawn_x},{spawn_y},{spawn_z}). Explore the NORTH-WEST quadrant out to
-      ~48 blocks (toward -X / -Z). First run `mc status`, then
-      `skill_view minecraft-scouting-site` and follow it. Mark trees as
-      `lt_wood_<n>`, exposed stone as `lt_stone_<n>`, water as `lt_water_<n>`,
-      and flat base-sized patches as `candidate_pad_<n>` on the SHARED map.
-      Surface only — no dig/build. `kanban_complete` with a tally.
+      You are a site scout. Spawn is ({spawn_x},{spawn_y},{spawn_z}). Explore the
+      NORTH-WEST quadrant out to ~48 blocks (toward -X / -Z).
+      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout`; on
+         `no free body — defer`: `kanban_block(no_free_body)` and stop.
+      2. `mc status`, `skill_view minecraft-scouting-site`, follow it. Mark trees
+         `lt_wood_<n>`, stone `lt_stone_<n>`, water `lt_water_<n>`, flat patches
+         `candidate_pad_<n>` on the SHARED map. Surface only.
+      3. `mc bot release`, then `kanban_complete` with a tally.
 
   - title: "[GENESIS2:P1] Scout SE from spawn"
     assignee: colony-scout
     initial_status: ready
     body: |
-      You are a site scout. Spawn (colony center for now) is
-      ({spawn_x},{spawn_y},{spawn_z}). Explore the SOUTH-EAST quadrant out to
-      ~48 blocks (toward +X / +Z). First run `mc status`, then
-      `skill_view minecraft-scouting-site` and follow it. Mark trees as
-      `lt_wood_<n>`, exposed stone as `lt_stone_<n>`, water as `lt_water_<n>`,
-      and flat base-sized patches as `candidate_pad_<n>` on the SHARED map.
-      Surface only — no dig/build. `kanban_complete` with a tally.
+      You are a site scout. Spawn is ({spawn_x},{spawn_y},{spawn_z}). Explore the
+      SOUTH-EAST quadrant out to ~48 blocks (toward +X / +Z).
+      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout`; on
+         `no free body — defer`: `kanban_block(no_free_body)` and stop.
+      2. `mc status`, `skill_view minecraft-scouting-site`, follow it. Mark trees
+         `lt_wood_<n>`, stone `lt_stone_<n>`, water `lt_water_<n>`, flat patches
+         `candidate_pad_<n>` on the SHARED map. Surface only.
+      3. `mc bot release`, then `kanban_complete` with a tally.
 
   - title: "[GENESIS2:P1] Scout SW from spawn"
     assignee: colony-scout
     initial_status: ready
     body: |
-      You are a site scout. Spawn (colony center for now) is
-      ({spawn_x},{spawn_y},{spawn_z}). Explore the SOUTH-WEST quadrant out to
-      ~48 blocks (toward -X / +Z). First run `mc status`, then
-      `skill_view minecraft-scouting-site` and follow it. Mark trees as
-      `lt_wood_<n>`, exposed stone as `lt_stone_<n>`, water as `lt_water_<n>`,
-      and flat base-sized patches as `candidate_pad_<n>` on the SHARED map.
-      Surface only — no dig/build. `kanban_complete` with a tally.
+      You are a site scout. Spawn is ({spawn_x},{spawn_y},{spawn_z}). Explore the
+      SOUTH-WEST quadrant out to ~48 blocks (toward -X / +Z).
+      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout`; on
+         `no free body — defer`: `kanban_block(no_free_body)` and stop.
+      2. `mc status`, `skill_view minecraft-scouting-site`, follow it. Mark trees
+         `lt_wood_<n>`, stone `lt_stone_<n>`, water `lt_water_<n>`, flat patches
+         `candidate_pad_<n>` on the SHARED map. Surface only.
+      3. `mc bot release`, then `kanban_complete` with a tally.

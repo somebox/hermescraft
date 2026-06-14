@@ -31,12 +31,14 @@ DATA_DIR = REPO_ROOT / "data"
 BOARD = "genesis-v2"
 SERVER_CFG = REPO_ROOT / "server.local.yaml"
 
-# Specialist -> body. Steward is read-only (no body). Mirrors the .env routing
-# baked by genesis-v2-mint-profiles.sh.
-BODIES = {
-    "colony-scout": {"user": "Mox", "port": 3007},
-    "colony-gatherer": {"user": "Pip", "port": 3005},
-    "colony-builder": {"user": "Zee", "port": 3006},
+# Generic body pool (NOT a specialist→body map). Expertise profiles
+# (colony-scout/gatherer/builder) are lease-mode and check out ANY of these
+# bodies per card via `mc bot checkout` — the lease is the body-mutex, so
+# same-expertise cards run concurrently across the pool. Steward is bodiless.
+BODY_POOL = {
+    "mox": {"user": "Mox", "port": 3007},
+    "pip": {"user": "Pip", "port": 3005},
+    "zee": {"user": "Zee", "port": 3006},
 }
 
 
@@ -121,10 +123,10 @@ def reset_world(*, world: str, seed: int, hub: str = "landfolk-test") -> None:
     create it — there's nothing to delete, so the reset-proc-lab delete+OTP path
     would stall. If it exists, route through reset-proc-lab.py for the full
     evacuate→delete→confirm→create cycle."""
-    bots = ",".join(b["user"] for b in BODIES.values())
+    bots = ",".join(b["user"] for b in BODY_POOL.values())
     if not _world_exists(world):
         # Evacuate any body that happens to be there, then create fresh.
-        for b in BODIES.values():
+        for b in BODY_POOL.values():
             _rcon([f"mvtp {b['user']} {hub}"])
         out = _rcon([f"mv create {world} NORMAL -s {seed}"])
         if "created" in out.lower() or "already exists" in out.lower():
@@ -219,7 +221,7 @@ def world_setup(world: str, spawn: dict[str, int]) -> None:
     x, y, z = spawn["x"], spawn["y"], spawn["z"]
     # Resetting the world (delete+recreate) drops the bodies; wait for each to
     # reconnect (bot/server.js auto-reconnects) before positioning them.
-    for b in BODIES.values():
+    for b in BODY_POOL.values():
         for _ in range(30):
             if _bot_position(b["port"]) is not None:
                 break
@@ -234,10 +236,10 @@ def world_setup(world: str, spawn: dict[str, int]) -> None:
         f"forceload add {x >> 4} {z >> 4}",
         f"setworldspawn {x} {y} {z}",
     ])
-    for b in BODIES.values():
+    for b in BODY_POOL.values():
         _rcon([f"mvtp {b['user']} {world}"])
     time.sleep(3)
-    for b in BODIES.values():
+    for b in BODY_POOL.values():
         user, port = b["user"], b["port"]
         for attempt in range(6):
             rcon_in(world, [f"tp {user} {x} {y + 1} {z}", f"spawnpoint {user} {x} {y} {z}"])

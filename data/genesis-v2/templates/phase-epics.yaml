@@ -24,27 +24,32 @@ epics:
       ({spawn_x},{spawn_y},{spawn_z}). You are the Steward: decompose this
       into specialist worker cards and emit them — never act in-world yourself.
 
-      Route each worker card by ASSIGNEE — `colony-scout` for exploration,
-      `colony-gatherer` for wood/tools, `colony-builder` for shelter/chests.
-      Each specialist maps 1:1 to one body, and the gate-check serializes per
-      assignee, so one assignee => one worker on that body. Do NOT add `[bot:]`
-      title tags (that splits the per-body lock and lets two workers fight over
-      one body). You assign work; you never take a body yourself.
+      Route each worker card by EXPERTISE assignee — `colony-scout` for
+      exploration, `colony-gatherer` for wood/tools, `colony-builder` for
+      shelter/chests. Bodies (mox/pip/zee) are a shared POOL: every worker is
+      lease-mode and leases a body itself with `mc bot checkout`. So:
+        - Each worker card body MUST start with
+          `mc bot checkout --near <X,Y,Z> --cap <scout|gather|build>` (use the
+          card's target coords — the resource mark or base_anchor) and end with
+          `mc bot release` before `kanban_complete`. On `no free body — defer`
+          the worker `kanban_block(no_free_body)`.
+        - Do NOT add `[bot:]` title tags and do NOT pin a body — the lease (one
+          lease per body) is the mutex, and `--near` self-balances work to the
+          nearest free body. You assign expertise; the worker takes the body.
 
       Decompose into, roughly in order (wire later cards `after:` the ones
       they depend on):
-        1. SCOUT (assignee colony-scout) — explore outward from spawn, mark
-           wood (`lt_wood_*`), stone (`lt_stone_*`), water (`lt_water_*`) and
-           1-2 flat candidate base pads (`candidate_pad_*`). Surface only.
+        1. SCOUT (colony-scout) — explore outward from spawn, mark wood
+           (`lt_wood_*`), stone (`lt_stone_*`), water (`lt_water_*`) and 1-2 flat
+           candidate base pads (`candidate_pad_*`). Surface only. (Pre-seeded.)
         2. Choose the base site from the candidate marks; record it as the
-           shared mark `base_anchor` (one CHOOSE card, or do it from scout
-           output) — this is the colony's center.
-        3. GATHER (assignee colony-gatherer) — collect >=16 wood near the
-           wood marks and craft a full set of stone tools (pickaxe, axe,
-           shovel). Body must carry literal `mc` verb lines.
-        4. BUILD (assignee colony-builder) — at `base_anchor`, raise a simple
-           shelter (>=5x5 walls + roof) and place >=2 labeled storage chests;
-           record chest marks (`chest_*`).
+           shared mark `base_anchor` — the colony's center.
+        3. GATHER (colony-gatherer) — `mc bot checkout --near <lt_wood coords>
+           --cap gather`, collect >=16 wood, craft a full stone tool set
+           (pickaxe, axe, shovel), `mc bot release`. Literal `mc` verb lines.
+        4. BUILD (colony-builder) — `mc bot checkout --near <base_anchor coords>
+           --cap build`, raise a simple shelter (>=5x5 walls + roof), place >=2
+           labeled storage chests (record `chest_*`), `mc bot release`.
 
       Do NOT `kanban_complete` this epic — it auto-completes when the P1 gate
       passes (base_anchor mark + >=2 chest_* marks + active shelter region). If

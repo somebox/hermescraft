@@ -6,12 +6,13 @@
 # the body routing (.env), and the model. Idempotent: re-running re-syncs the
 # skill/SOUL/.env/model without disturbing the cloned profile's auth/state.
 #
-# Specialist -> body mapping (a profile binds to a body via its .env, the same
-# mechanism the colony POC used):
-#   colony-scout    -> Mox  (api :3007)   skill: minecraft-scouting-site
-#   colony-gatherer -> Pip  (api :3005)   skill: minecraft-survival
-#   colony-builder  -> Zee  (api :3006)   skill: minecraft-building
-#   colony-steward  -> (read-only, no body) skills: steward-survey + blueprint-plan
+# Expertise profiles (lease mode — NO fixed body). Each runs HERMES_BOT_LEASE=1
+# with no MC_API_URL and checks out any body from the pool (mox/pip/zee) per
+# card via `mc bot checkout`. Steward is bodiless (read-only orchestrator).
+#   colony-scout    skills: minecraft-scouting-site + minecraft-bot-lease
+#   colony-gatherer skills: minecraft-survival       + minecraft-bot-lease
+#   colony-builder  skills: minecraft-building        + minecraft-bot-lease
+#   colony-steward  skills: steward-survey + blueprint-plan (no body)
 #
 # Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>]
 set -euo pipefail
@@ -104,10 +105,9 @@ PY
     cat >> "$dst/SOUL.md" <<'LEASE'
 
 ## Bot lease (genesis v2)
-Before any in-world `mc` action: `mc bot checkout` (optionally `--bot <name>`).
-After in-world work, before desk-work / `kanban_complete`: `mc bot release`.
-On `no free body — defer`, block the card with reason `no_free_body` — do not retry in a tight loop.
-See `docs/architecture/bot-lease.md`.
+You run in lease mode (no fixed body). Before any in-world `mc` action,
+`skill_view minecraft-bot-lease` and follow it: `mc bot checkout --near … --cap …`
+→ work → `mc bot release`. `mc` action verbs hard-fail until you check out a body.
 LEASE
   fi
 
@@ -135,7 +135,7 @@ PY
   : > "$dst/MEMORY.md" 2>/dev/null || true
 }
 
-mint colony-scout    Mox 3007 "minecraft-scouting-site" \
+mint colony-scout    Mox 3007 "minecraft-scouting-site minecraft-bot-lease" \
 "# Colony scout
 
 You are a colony scout. Your only job is to explore unknown terrain and mark
@@ -143,7 +143,7 @@ what the colony needs — wood, stone, water, and flat candidate base pads — o
 the shared map. You never dig, build, craft, or fight. On every task, run
 \`skill_view minecraft-scouting-site\` first and follow it exactly."
 
-mint colony-gatherer Pip 3005 "minecraft-survival" \
+mint colony-gatherer Pip 3005 "minecraft-survival minecraft-bot-lease" \
 "# Colony gatherer
 
 You are a colony gatherer. Your only job is to collect raw materials (wood
@@ -151,7 +151,7 @@ first) and craft the basic tools the colony needs, driving the \`mc\` verbs.
 You do not scout, build structures, mine deep, or farm. On every task, run
 \`skill_view minecraft-survival\` first and follow it exactly."
 
-mint colony-builder  Zee 3006 "minecraft-building" \
+mint colony-builder  Zee 3006 "minecraft-building minecraft-bot-lease" \
 "# Colony builder
 
 You are a colony builder. Your only job is to place blocks to spec — shelters,
@@ -168,8 +168,8 @@ NEVER mine, place, dig, or move a body yourself. Every card you emit must
 carry literal \`mc <verb> <args>\` lines for the worker, never prose.
 
 Read + write the board ONLY through these commands — NEVER touch the kanban
-database with \`sqlite3\` or raw SQL (it bypasses the gate-check mutex + board
-invariants, and the schema is not a stable interface). The \`kanban\` facade is
+database with \`sqlite3\` or raw SQL (it bypasses board invariants and the schema
+is not a stable interface). The \`kanban\` facade is
 on your PATH and already targets this board (via \$HERMES_KANBAN_BOARD):
   - This epic + its children:  \`kanban epic <epic_id>\`
   - All epics on the board:    \`kanban list-epics\`

@@ -115,6 +115,8 @@ v<version>"`. A failed stamp **never** fails the checkout (audit is advisory).
 
 Target [@dispatcher](board-dynamics.md) **push-binds** `metadata.bot` at card write time. **Pull-checkout** is the same policy store accessed at runtime (`mc bot checkout`). MVP implements pull only; push via Python dispatcher is deferred (D11).
 
+**genesis-v2 uses the lease as its body-mutex (D9):** the colony boot does NOT run the landfolk gate-check / `landfolk-dispatcher`. Expertise profiles (colony-scout/gatherer/builder) are lease-mode over a shared body pool (mox/pip/zee); the hermes gateway dispatches ready cards concurrently and each worker leases a distinct free body (`--near` self-balances, excess defers). The per-assignee gate-check would re-serialize same-expertise cards, so it's intentionally dropped here. Landfolk production is unchanged (still gate-check + frozen `MC_API_URL`).
+
 ---
 
 ## Deferred (post-MVP)
@@ -129,9 +131,9 @@ Track status here (`planned` → `done` + PR link). Do not rely on chat or Curso
 | D4 | Kanban audit on checkout (`leased_bot=…` comment) | Bodiless workers on real board | done |
 | D5 | `owner_id` Hermes session suffix | Stable `HERMES_SESSION_ID` / run id | planned |
 | D6 | `spawn-with-bot.sh --lease-mode` | Optional; mint covers genesis | planned |
-| D7 | Genesis `phase-epics.yaml` pull-lease decomposition | After D1–D4 on manual `[LEASE-TRIAL]` | planned |
-| D8 | `skills/minecraft-bot-lease.md` + mint | With D7 | planned |
-| D9 | Assignee model (expertise vs 1:1 body profile) | With D7; explicit decision | planned |
+| D7 | Genesis `phase-epics.yaml` + scout cards pull-lease decomposition (location-tagged, `--near`) | After D1–D4 on manual `[LEASE-TRIAL]` | done |
+| D8 | `skills/minecraft-bot-lease.md` + mint install | With D7 | done |
+| D9 | Assignee model: expertise profiles + body pool; **lease replaces gate-check as the genesis-v2 body-mutex** | With D7; explicit decision | done |
 | D10 | Clear lease on Hermes card reclaim | TTL-only reap pain in production | planned |
 | D11 | Python dispatcher reads `bot-leases.db` | Pull path stable | planned |
 | D12 | Landfolk fleet lease-mode migration | Operator decision; default stay on `MC_API_URL` | planned |
