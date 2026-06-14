@@ -704,20 +704,33 @@ def detect_blocked_workers(gates: dict | None = None) -> list[dict]:
     return out
 
 
+MAX_SUPERVISE_PER_WORKER = 3  # cap escalations — past this the worker is parked
+                              # for the operator, not re-escalated (a structural /
+                              # admin-needed block can't be fixed by the planner, and
+                              # churning supervise cards is pure waste; one run hit 31).
+
+
 def file_supervise_card(run_id: str, worker_id: str, worker_title: str, summary: str) -> str | None:
     """Re-engage the PLANNER: file a [SUPERVISE] card (assignee colony-steward) for a
-    stuck worker (running too long OR blocked), unless one is already open for it. The
-    planner investigates and intervenes via the board only (block/re-scope/reassign/
-    provide-prereq) — it never touches a body. Returns the new card id, or None."""
+    stuck worker (running too long OR blocked). Skips if one is already OPEN, OR if the
+    worker has already been escalated MAX_SUPERVISE_PER_WORKER times (open+resolved) —
+    a persistently-stuck worker is an operator problem (structural/admin), so stop the
+    churn rather than file an endless stream of supervise cards. The planner acts via
+    the board only — it never touches a body. Returns the new card id, or None."""
     try:
         lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
         tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
     except Exception:
         tasks = []
     tag = f"SUPERVISE {worker_id}"
+    prior = 0
     for t in tasks:
-        if tag in (t.get("title", "") or "") and (t.get("status") or "").lower() not in ("done", "archived"):
-            return None  # already escalated for this worker
+        if tag in (t.get("title", "") or ""):
+            prior += 1
+            if (t.get("status") or "").lower() not in ("done", "archived"):
+                return None  # already escalated (open card) for this worker
+    if prior >= MAX_SUPERVISE_PER_WORKER:
+        return None  # escalation budget spent — leave it parked for the operator
     title = f"[GENESIS2:SUPERVISE] {tag}"
     body = (
         f"Worker {worker_id} (\"{worker_title[:60]}\") is stuck — {summary}\n\n"
