@@ -111,12 +111,22 @@ See `docs/architecture/bot-lease.md`.
 LEASE
   fi
 
-  # Model.
-  python3 - "$dst/config.yaml" "$MODEL" <<'PY'
+  # Model + env_passthrough. Lease-mode specialists need HERMES_BOT_LEASE (and
+  # the optional DB/admin guards) FORWARDED to the `mc` terminal subprocess —
+  # without this the agent has the var but `mc` never sees lease mode.
+  python3 - "$dst/config.yaml" "$MODEL" "$port" <<'PY'
 import re, sys
-cfgf, model = sys.argv[1], sys.argv[2]
+cfgf, model, port = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(cfgf).read()
 s = re.sub(r'(\n\s*default:\s*)\S+', rf'\g<1>{model}', s, count=1)
+if port:  # body-using specialist → lease mode
+    m = re.search(r'(\n\s*env_passthrough:\s*\[)([^\]]*)\]', s)
+    if m:
+        items = [x.strip() for x in m.group(2).split(',') if x.strip()]
+        for k in ('HERMES_BOT_LEASE', 'HERMES_BOT_LEASE_DB', 'HERMES_BOT_LEASE_ADMIN'):
+            if k not in items:
+                items.append(k)
+        s = s[:m.start()] + m.group(1) + ', '.join(items) + ']' + s[m.end():]
 open(cfgf, "w").write(s)
 PY
 
