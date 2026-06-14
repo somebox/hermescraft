@@ -1,0 +1,16 @@
+#!/bin/bash
+# HermesCraft kanban CLI — agent-facing facade over `hermes kanban` with
+# extended read access (epic/children/dependencies/list-epics) that the raw
+# `hermes kanban` CLI lacks. Delegates to scripts/kanban. Board comes from
+# $HERMES_KANBAN_BOARD (passed through to dispatched workers).
+#
+# Exposed on agent PATH via ~/.local/bin/kanban → here, same as bin/mc, so
+# orchestrators can query the board with proper commands instead of raw SQL.
+set -o pipefail
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  [[ "$TARGET" = /* ]] && SOURCE="$TARGET" || SOURCE="$(dirname "$SOURCE")/$TARGET"
+done
+DIR="$(CDPATH="" cd "$(dirname "$SOURCE")" && pwd)"
+exec python3 "$DIR/../scripts/kanban" "$@"

@@ -1,0 +1,68 @@
+# Genesis v2 — P1 pre-seeded worker cards.
+#
+# Only the SCOUT cards are pre-seeded: they are the colony's opening move and
+# start building the map immediately, without waiting on the Steward's first
+# decomposition cycle. The Steward (from the P1 epic) handles the downstream
+# CHOOSE base / GATHER wood+tools / BUILD shelter cards once the scout marks
+# land — those are NOT pre-seeded because they depend on runtime-discovered
+# coordinates.
+#
+# One scout card per quadrant, all assignee colony-scout. We DON'T use [bot:]
+# tags: each colony profile maps 1:1 to a body (colony-scout -> Mox), so the
+# assignee IS the per-body mutex domain. The gate-check serializes all
+# colony-scout cards — only ONE runs on Mox at a time — regardless of title.
+# (Tagging only some cards [bot:mox] while the Steward files untagged ones
+# splits the domain and lets two workers fight over one body.) Each card is
+# scenario-agnostic: it names a direction + radius from spawn and defers the
+# verb-level loop to the minecraft-scouting-site skill. No literal resource
+# coordinates — the scout discovers and marks them.
+
+cards:
+  - title: "[GENESIS2:P1] Scout NE from spawn"
+    assignee: colony-scout
+    initial_status: ready
+    body: |
+      You are a site scout. Spawn (colony center for now) is
+      ({spawn_x},{spawn_y},{spawn_z}). Explore the NORTH-EAST quadrant out to
+      ~48 blocks (toward +X / -Z). First run `mc status` to confirm your body
+      is connected, then `skill_view minecraft-scouting-site` and follow it.
+      Mark what you find on the SHARED map: trees as `lt_wood_<n>`, exposed
+      stone as `lt_stone_<n>`, water as `lt_water_<n>`, and any flat open patch
+      big enough for a base as `candidate_pad_<n>`. Surface only — do not dig or
+      build. `kanban_complete` with a one-line tally of marks placed.
+
+  - title: "[GENESIS2:P1] Scout NW from spawn"
+    assignee: colony-scout
+    initial_status: ready
+    body: |
+      You are a site scout. Spawn (colony center for now) is
+      ({spawn_x},{spawn_y},{spawn_z}). Explore the NORTH-WEST quadrant out to
+      ~48 blocks (toward -X / -Z). First run `mc status`, then
+      `skill_view minecraft-scouting-site` and follow it. Mark trees as
+      `lt_wood_<n>`, exposed stone as `lt_stone_<n>`, water as `lt_water_<n>`,
+      and flat base-sized patches as `candidate_pad_<n>` on the SHARED map.
+      Surface only — no dig/build. `kanban_complete` with a tally.
+
+  - title: "[GENESIS2:P1] Scout SE from spawn"
+    assignee: colony-scout
+    initial_status: ready
+    body: |
+      You are a site scout. Spawn (colony center for now) is
+      ({spawn_x},{spawn_y},{spawn_z}). Explore the SOUTH-EAST quadrant out to
+      ~48 blocks (toward +X / +Z). First run `mc status`, then
+      `skill_view minecraft-scouting-site` and follow it. Mark trees as
+      `lt_wood_<n>`, exposed stone as `lt_stone_<n>`, water as `lt_water_<n>`,
+      and flat base-sized patches as `candidate_pad_<n>` on the SHARED map.
+      Surface only — no dig/build. `kanban_complete` with a tally.
+
+  - title: "[GENESIS2:P1] Scout SW from spawn"
+    assignee: colony-scout
+    initial_status: ready
+    body: |
+      You are a site scout. Spawn (colony center for now) is
+      ({spawn_x},{spawn_y},{spawn_z}). Explore the SOUTH-WEST quadrant out to
+      ~48 blocks (toward -X / +Z). First run `mc status`, then
+      `skill_view minecraft-scouting-site` and follow it. Mark trees as
+      `lt_wood_<n>`, exposed stone as `lt_stone_<n>`, water as `lt_water_<n>`,
+      and flat base-sized patches as `candidate_pad_<n>` on the SHARED map.
+      Surface only — no dig/build. `kanban_complete` with a tally.

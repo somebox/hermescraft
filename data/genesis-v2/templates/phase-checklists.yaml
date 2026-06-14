@@ -1,0 +1,41 @@
+# Genesis v2 — machine-readable phase gates.
+#
+# Read by scripts/genesis-v2-check.py (via genesis2_lib.check_phases). A phase
+# passes when all of its declared conditions hold. Marks are read from the
+# shared map (data/locations-base.json on the genesis-v2 world); regions from
+# regions-world.json; the mine registry from data/mines-world.json.
+#
+# P1 is fully specified for this slice. P2-P5 carry their intended gates so the
+# poller + check tool know the shape, but they are only exercised once those
+# phases are implemented.
+
+phases:
+  P1:
+    marks:
+      base_anchor_required: true        # the chosen colony center
+      chest_prefix_min: 2               # >= 2 chest_* marks
+    regions:
+      - id: shelter
+        must_allow_place: true          # shelter region exists + is buildable
+  P2:
+    marks:
+      lt_prefix_min: 3                  # at least 3 resource marks on the map
+    regions:
+      - id: farm                        # a tilled wheat plot region
+    inventory:
+      resources: [wheat, wood, cobblestone]   # each at/above its target_min
+  P3:
+    mine_registry:
+      entries_min: 1                    # at least one registered mine entrance
+    marks:
+      mine_prefix_min: 1               # mine_* mark present
+  P4:
+    marks:
+      lt_far_min: 2                    # >=2 resource marks far from base_anchor
+      far_distance: 64                 # "far" threshold (blocks from base)
+    roads:
+      confirmed_min: 1                 # >=1 confirmed road chain base->resource
+  P5:
+    steady_state:
+      window_min: 30                   # hold balance for >= 30 minutes
+      no_starved_pipeline: true        # no resource pipeline hits zero in window

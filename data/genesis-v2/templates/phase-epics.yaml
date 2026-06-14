@@ -1,0 +1,98 @@
+# Genesis v2 — colony phase epics (procworld stack, specialist architecture).
+#
+# Five phases, chained P1->P2->P3->P4->P5 via depends_on (each phase's
+# done_when gate, in phase-checklists.yaml, must pass before the next opens).
+# All epics are assigned to colony-steward: the read-only orchestrator
+# DECOMPOSES each epic into specialist worker cards bound to a free body.
+# Steward never digs/places — it emits cards with literal `mc <verb>` lines.
+#
+# Placeholders are limited to what is known at boot — only the plains spawn.
+# Everything else (base site, resource areas, roads) is discovered at runtime
+# via exploration and lives in marks, never hard-written into a card body.
+#
+# Title convention: `[EPIC] [GENESIS2:Pn] ...` — the [EPIC] prefix fires the
+# steward decomposition handler; the [GENESIS2:Pn] tag is the poller's phase
+# routing key (see scripts/genesis-v2-poller.py).
+
+epics:
+  - phase: P1
+    title: "[EPIC] [GENESIS2:P1] Establish base"
+    assignee: colony-steward
+    initial_status: ready
+    body: |
+      Establish the colony's first foothold from the bare plains spawn at
+      ({spawn_x},{spawn_y},{spawn_z}). You are the Steward: decompose this
+      into specialist worker cards and emit them — never act in-world yourself.
+
+      Route each worker card by ASSIGNEE — `colony-scout` for exploration,
+      `colony-gatherer` for wood/tools, `colony-builder` for shelter/chests.
+      Each specialist maps 1:1 to one body, and the gate-check serializes per
+      assignee, so one assignee => one worker on that body. Do NOT add `[bot:]`
+      title tags (that splits the per-body lock and lets two workers fight over
+      one body). You assign work; you never take a body yourself.
+
+      Decompose into, roughly in order (wire later cards `after:` the ones
+      they depend on):
+        1. SCOUT (assignee colony-scout) — explore outward from spawn, mark
+           wood (`lt_wood_*`), stone (`lt_stone_*`), water (`lt_water_*`) and
+           1-2 flat candidate base pads (`candidate_pad_*`). Surface only.
+        2. Choose the base site from the candidate marks; record it as the
+           shared mark `base_anchor` (one CHOOSE card, or do it from scout
+           output) — this is the colony's center.
+        3. GATHER (assignee colony-gatherer) — collect >=16 wood near the
+           wood marks and craft a full set of stone tools (pickaxe, axe,
+           shovel). Body must carry literal `mc` verb lines.
+        4. BUILD (assignee colony-builder) — at `base_anchor`, raise a simple
+           shelter (>=5x5 walls + roof) and place >=2 labeled storage chests;
+           record chest marks (`chest_*`).
+
+      Do NOT `kanban_complete` this epic — it auto-completes when the P1 gate
+      passes (base_anchor mark + >=2 chest_* marks + active shelter region). If
+      worker cards for this phase already exist on the board, do not create
+      duplicates: just report status and stop. Your job is to decompose and
+      monitor, never to declare the phase done.
+
+  - phase: P2
+    title: "[EPIC] [GENESIS2:P2] Provision the colony"
+    assignee: colony-steward
+    initial_status: todo
+    body: |
+      Make the base self-sustaining for food and basic supply. Decompose into
+      FARM (colony-farmer: till a small wheat plot near water, plant, set a
+      harvest loop) and STORAGE (colony-builder: organize + label chests so
+      wood/stone/food each have a home). Keep a steady stock of wood, stone,
+      and food. Emit specialist cards with literal `mc` verb lines; never act
+      yourself. Done when the P2 gate passes.
+
+  - phase: P3
+    title: "[EPIC] [GENESIS2:P3] Open a mine"
+    assignee: colony-steward
+    initial_status: todo
+    body: |
+      Start extracting stone-tier resources. Decompose into MINE cards
+      (colony-miner) that register a mine entrance near a `lt_stone_*` mark,
+      dig a safe descent, and bring stone/coal/iron back to storage. Use the
+      mine-registry. Emit specialist cards with literal `mc` verb lines. Done
+      when the P3 gate passes.
+
+  - phase: P4
+    title: "[EPIC] [GENESIS2:P4] Connect resource areas with roads"
+    assignee: colony-steward
+    initial_status: todo
+    body: |
+      Tie the map together. Decompose into SCOUT cards (colony-scout) to mark
+      distant resource areas (`lt_*` >= a threshold distance from
+      `base_anchor`) and ROAD cards (road-planner) to plan + light walkable
+      routes base->resource using the roadplan loop. Emit specialist cards;
+      never act yourself. Done when the P4 gate passes.
+
+  - phase: P5
+    title: "[EPIC] [GENESIS2:P5] Steady-state routine"
+    assignee: colony-steward
+    initial_status: todo
+    body: |
+      Hold the colony in balance. Run a managed recurring routine: restock low
+      resources, do chores (replant, deposit, tidy), and patrol-scout for new
+      opportunities. The acceptance is that the colony sustains a resource
+      balance over a fixed window without any pipeline starving. Emit specialist
+      cards each cycle; never act yourself. Done when the P5 gate passes.
