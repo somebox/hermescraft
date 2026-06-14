@@ -267,10 +267,37 @@ def probe_natural_spawn(world: str, *, probe_user: str = "Mox",
         raise RuntimeError(
             f"natural spawn ({x},{y},{z}) is not a temperate colony biome in {world} "
             f"(frozen/desert/badlands — no liquid water or wood); re-roll the seed (--seed)")
+    # Flatness: a colony needs buildable land, not a mountainside. Sample the
+    # surface height in a small ring around the spawn and reject if it varies too
+    # much (mountainous / cliff). NB: forceload the sampled chunks first — an
+    # UNLOADED chunk reads as air via `execute if block`, which would falsely
+    # report flat ground at sea level.
+    rcon_in(world, [f"forceload add {(x - 8) >> 4} {(z - 8) >> 4} {(x + 8) >> 4} {(z + 8) >> 4}"])
+    time.sleep(0.5)
+
+    def _surface_y(px: int, pz: int) -> int | None:
+        for yy in range(y + 12, y - 12, -1):
+            solid = "Test passed" in rcon_in(
+                world,
+                [f"execute positioned {px} {yy} {pz} unless block ~ ~ ~ minecraft:air "
+                 f"unless block ~ ~ ~ minecraft:water"])
+            if solid:
+                return yy
+        return None
+
+    samples = [(x + dx, z + dz) for dx, dz in
+               ((0, 0), (6, 0), (-6, 0), (0, 6), (0, -6), (6, 6), (-6, -6))]
+    ys = [s for s in (_surface_y(px, pz) for px, pz in samples) if s is not None]
+    if len(ys) >= 4:
+        spread = max(ys) - min(ys)
+        if spread > 5:
+            raise RuntimeError(
+                f"natural spawn ({x},{y},{z}) terrain too steep (surface-Y spread "
+                f"{spread} over ~12 blocks) — mountainous, not buildable; re-roll the seed")
     return {"x": x, "y": y, "z": z}
 
 
-def find_good_spawn(world: str, seed: int, *, max_tries: int = 8) -> tuple[int, dict[str, int]]:
+def find_good_spawn(world: str, seed: int, *, max_tries: int = 12) -> tuple[int, dict[str, int]]:
     """Reset the world and probe its natural spawn, AUTO-REROLLING the seed until
     the spawn is a temperate land biome (not ocean/frozen/desert). Resetting wedges
     mineflayer, so each attempt also restarts the bodies before probing. Returns
