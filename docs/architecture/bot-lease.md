@@ -73,12 +73,35 @@ Lease-mode workers must **not** set `MC_API_URL` or `_MC_API_URL_LOCKED` (genesi
 
 See [mc-cheatsheet.md](../reference/mc-cheatsheet.md) for generated help.
 
-- `mc bot checkout [--bot <name>] [--ttl <s>] [--json]` — lease a body; defer returns `retry_after_ms` and `holders[]`
+- `mc bot checkout [--bot <name>] [--near X,Y,Z] [--cap <skill>] [--mark <name>] [--ttl <s>] [--json]` —
+  lease a body; defer returns `retry_after_ms` and `holders[]`
 - `mc bot release` — refuse if body busy; `mc bot release --force --as-operator` with admin env cancels job first
 - `mc bot renew [--ttl <s>]`
 - `mc bot status [--pool] [--json]`
 
-Body pool: `data/bots/*.yaml` (`api_port`, `username`).
+Body pool: `data/bots/*.yaml` (`api_port`, `username`, optional `caps: [...]`).
+
+### Checkout ranking (D1–D3, board-dynamics pull face)
+
+Among free (or reclaimable) candidates, after the explicit-`--bot` shortcut:
+
+1. **Capability filter (D2):** drop bodies whose `caps` don't include `--cap`. A
+   body with **no `caps`** is universal (passes any `--cap`) — the current
+   generic pool is unaffected. (Registry-flag path; inventory snapshot deferred.)
+2. **Continuity (D3):** prefer the body whose `bot_last_mark` matches `--mark`
+   (it last worked that mark). Stored in a sibling `bot_last_mark(bot, mark, ts)`
+   table, written on a `--mark` checkout; survives release.
+3. **Nearest (D1):** ascending distance from `--near` to each candidate's
+   `GET /health` position (probed **only** when `--near` is given).
+4. **Least-recently-leased → lexical** (tie-break; LRL orders currently-held
+   leases — once released the row is gone, so sequential free picks fall to
+   lexical. Concurrent holds + `--near` are the real self-balancers).
+
+### Audit stamp (D4)
+
+On a successful checkout with `HERMES_KANBAN_TASK` set, the lease **best-effort**
+stamps the card: `hermes kanban --board <board> comment <task> "leased_bot=<bot>
+v<version>"`. A failed stamp **never** fails the checkout (audit is advisory).
 
 ## Worker ritual (genesis v2 lease-mode)
 
@@ -100,10 +123,10 @@ Track status here (`planned` → `done` + PR link). Do not rely on chat or Curso
 
 | ID | Capability | Trigger | Status |
 |----|------------|---------|--------|
-| D1 | `mc bot checkout --near X,Y,Z` | Live two-body spike signed off | planned |
-| D2 | `mc bot checkout --cap <skill>` | After D1 or parallel | planned |
-| D3 | `last_mark` column + `--mark` on checkout | With D1 | planned |
-| D4 | Kanban audit on checkout (`[leased_bot=…]` comment) | Bodiless workers on real board | planned |
+| D1 | `mc bot checkout --near X,Y,Z` | Live two-body spike signed off | done |
+| D2 | `mc bot checkout --cap <skill>` (registry-flag; inventory deferred) | After D1 or parallel | done |
+| D3 | `last_mark` (`bot_last_mark` table) + `--mark` on checkout | With D1 | done |
+| D4 | Kanban audit on checkout (`leased_bot=…` comment) | Bodiless workers on real board | done |
 | D5 | `owner_id` Hermes session suffix | Stable `HERMES_SESSION_ID` / run id | planned |
 | D6 | `spawn-with-bot.sh --lease-mode` | Optional; mint covers genesis | planned |
 | D7 | Genesis `phase-epics.yaml` pull-lease decomposition | After D1–D4 on manual `[LEASE-TRIAL]` | planned |

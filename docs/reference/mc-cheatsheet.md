@@ -75,7 +75,7 @@ Working set for most cards; full usage on each line.
 ### platform
 
 - `mc batch` — Run multiple mc calls in one invocation
-- `mc bot checkout|release|renew|status [flags]` — Bot body lease — checkout, release, renew, status (see docs/architecture/bot-lease.md)
+- `mc bot checkout [--bot|--near X,Y,Z|--cap <skill>|--mark <name>|--ttl] | release [--force --as-operator] | renew [--ttl] | status [--pool] [--json]` — Bot body lease — checkout, release, renew, status (see docs/architecture/bot-lease.md)
 - `mc commands` — Dump CLI registry metadata as JSON.
 - `mc connect` (reconnect) — Reconnect bot to server
 - `mc dashboard` (dash) — Print fleet command center URL (./start-dashboard.sh, default port 3000)

@@ -2804,10 +2804,12 @@ export const RAW_COMMAND_DEFS = [
   g('bot', 'platform', [], {
     customParse: true,
     description: 'Bot body lease — checkout, release, renew, status (see docs/architecture/bot-lease.md)',
-    usage: 'mc bot checkout|release|renew|status [flags]',
+    usage: 'mc bot checkout [--bot|--near X,Y,Z|--cap <skill>|--mark <name>|--ttl] | release [--force --as-operator] | renew [--ttl] | status [--pool] [--json]',
     examples: [
       'mc bot checkout --bot mox',
-      'mc bot checkout --json',
+      'mc bot checkout --near 12,64,-37',
+      'mc bot checkout --cap mine --near 100,64,200',
+      'mc bot checkout --mark base_anchor',
       'mc bot release',
       'mc bot renew --ttl 600',
       'mc bot status --pool --json',

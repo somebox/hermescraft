@@ -64,6 +64,11 @@ function ensureSchema(db) {
       leased_at_ms INTEGER NOT NULL,
       expires_at_ms INTEGER NOT NULL,
       profile TEXT
+    );
+    CREATE TABLE IF NOT EXISTS bot_last_mark (
+      bot TEXT PRIMARY KEY,
+      mark TEXT NOT NULL,
+      ts_ms INTEGER NOT NULL
     );`,
     ],
     { encoding: 'utf8' },
@@ -80,10 +85,19 @@ function runSql(sql, { db = dbPath() } = {}) {
   return out.trim();
 }
 
-/** @returns {Record<string, { bot: string, api_url: string, username: string, port: number }>} */
+/** @type {(() => Record<string, any>) | null} */
+let poolOverride = null;
+
+/** @param {(() => Record<string, any>) | null} fn */
+export function __testOnly_setPool(fn) {
+  poolOverride = fn;
+}
+
+/** @returns {Record<string, { bot: string, api_url: string, username: string, port: number, caps: string[] | null }>} */
 export function loadBotPool() {
+  if (poolOverride) return poolOverride();
   const dir = path.join(REPO_ROOT, 'data', 'bots');
-  /** @type {Record<string, { bot: string, api_url: string, username: string, port: number }>} */
+  /** @type {Record<string, { bot: string, api_url: string, username: string, port: number, caps: string[] | null }>} */
   const pool = {};
   if (!fs.existsSync(dir)) return pool;
   for (const name of fs.readdirSync(dir)) {
@@ -93,11 +107,17 @@ export function loadBotPool() {
     const doc = yaml.parse(raw);
     const port = Number(doc?.api_port);
     if (!Number.isFinite(port)) continue;
+    // Optional capability registry flag. Missing/empty caps = universal body
+    // (passes any --cap), so the current generic pool is unaffected.
+    const caps = Array.isArray(doc?.caps)
+      ? doc.caps.map((c) => String(c).toLowerCase())
+      : null;
     pool[bot] = {
       bot,
       api_url: `http://127.0.0.1:${port}`,
       username: String(doc?.username || bot),
       port,
+      caps,
     };
   }
   return pool;
@@ -192,6 +212,78 @@ async function isReclaimable(row, now) {
   return !busy;
 }
 
+/** @type {((apiUrl: string) => Promise<{ position: {x:number,y:number,z:number} | null }>) | null} */
+let healthProbeOverride = null;
+
+/** @param {((apiUrl: string) => Promise<{ position: {x:number,y:number,z:number} | null }>) | null} fn */
+export function __testOnly_setHealthProbe(fn) {
+  healthProbeOverride = fn;
+}
+
+/** @returns {Promise<{ position: {x:number,y:number,z:number} | null }>} */
+async function probeHealth(apiUrl) {
+  if (healthProbeOverride) return healthProbeOverride(apiUrl);
+  const base = String(apiUrl).replace(/\/$/, '');
+  try {
+    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return { position: null };
+    const body = await res.json();
+    const pos = body?.position ?? body?.data?.position ?? null;
+    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)) {
+      return { position: { x: pos.x, y: pos.y, z: pos.z } };
+    }
+    return { position: null };
+  } catch {
+    return { position: null };
+  }
+}
+
+function dist3(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/** @returns {string | null} mark this body last worked, for continuity */
+function lastMarkFor(bot) {
+  const out = runSql(`SELECT mark FROM bot_last_mark WHERE bot='${sqlQuote(bot)}';`);
+  return out ? out.trim() : null;
+}
+
+function recordLastMark(bot, mark) {
+  runSql(
+    `INSERT INTO bot_last_mark (bot, mark, ts_ms) VALUES ('${sqlQuote(bot)}','${sqlQuote(mark)}',${Date.now()})
+     ON CONFLICT(bot) DO UPDATE SET mark=excluded.mark, ts_ms=excluded.ts_ms;`,
+  );
+}
+
+/** @type {((info: { bot: string, leaseVersion: number, board: string, task: string }) => void) | null} */
+let stampOverride = null;
+
+/** @param {((info: { bot: string, leaseVersion: number, board: string, task: string }) => void) | null} fn */
+export function __testOnly_setStamp(fn) {
+  stampOverride = fn;
+}
+
+/** Best-effort audit: stamp the worker's card with which body it leased. Never throws. */
+function stampCard(bot, leaseVersion) {
+  const task = process.env.HERMES_KANBAN_TASK;
+  if (!task) return;
+  const board = process.env.HERMES_KANBAN_BOARD || 'landfolk-ops';
+  try {
+    if (stampOverride) {
+      stampOverride({ bot, leaseVersion, board, task });
+      return;
+    }
+    execFileSync('hermes', ['kanban', '--board', board, 'comment', task, `leased_bot=${bot} v${leaseVersion}`], {
+      encoding: 'utf8',
+      timeout: 10000,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+  } catch {
+    /* audit is advisory — a failed stamp must not fail the checkout */
+  }
+}
+
 /**
  * @param {number} now
  */
@@ -212,7 +304,7 @@ export function resolveLeaseUrl(owner_id) {
   if (!leaseModeEnabled()) return NO_LEASE;
   const row = leaseForOwner(owner_id);
   if (!row) return NO_LEASE;
-  if (row.expires_at_ms < Date.now()) return NO_LELEASE;
+  if (row.expires_at_ms < Date.now()) return NO_LEASE;
   return row.api_url;
 }
 
@@ -246,21 +338,44 @@ async function buildHolders(leasedRows, pool, now) {
   return holders;
 }
 
-function sortCandidates(candidates, leasedRows) {
+/**
+ * Rank free candidates by the board-dynamics pull policy:
+ * continuity (last worked the mark) → nearest (--near) → least-recently-leased
+ * → lexical. `distances`/`mark` are optional; omitting them reduces to the
+ * original LRL→lexical tie-break.
+ * @param {{ leasedRows?: LeaseRow[], mark?: string|null, distances?: Map<string,number>|null }} opts
+ */
+function rankCandidates(candidates, opts = {}) {
+  const { leasedRows = [], mark = null, distances = null } = opts;
   const byBot = Object.fromEntries(leasedRows.map((r) => [r.bot, r]));
+  const continuity = new Set(
+    mark ? candidates.filter((c) => lastMarkFor(c.bot) === mark).map((c) => c.bot) : [],
+  );
   return [...candidates].sort((a, b) => {
+    // 1. continuity: a body that last worked this mark comes first.
+    const ca = continuity.has(a.bot) ? 0 : 1;
+    const cb = continuity.has(b.bot) ? 0 : 1;
+    if (ca !== cb) return ca - cb;
+    // 2. nearest to --near (only when distances provided).
+    if (distances) {
+      const da = distances.has(a.bot) ? distances.get(a.bot) : Infinity;
+      const db = distances.has(b.bot) ? distances.get(b.bot) : Infinity;
+      if (da !== db) return da - db;
+    }
+    // 3. least-recently leased (never-leased first).
     const la = byBot[a.bot]?.leased_at_ms ?? 0;
     const lb = byBot[b.bot]?.leased_at_ms ?? 0;
     const aNull = la === 0;
     const bNull = lb === 0;
     if (aNull !== bNull) return aNull ? -1 : 1;
     if (la !== lb) return la - lb;
+    // 4. lexical.
     return a.bot.localeCompare(b.bot);
   });
 }
 
 /**
- * @param {{ bot?: string, ttl?: number, profile?: string }} opts
+ * @param {{ bot?: string, ttl?: number, profile?: string, near?: {x:number,y:number,z:number}, cap?: string, mark?: string }} opts
  */
 export async function checkout(opts = {}) {
   const owner_id = requireOwnerForMutation();
@@ -294,6 +409,20 @@ export async function checkout(opts = {}) {
   let candidates = want ? [pool[want]].filter(Boolean) : poolBots.map((b) => pool[b]);
   if (want && !candidates.length) throw new Error(`unknown bot: ${want}`);
 
+  // D2 capability filter — a body with no `caps` is universal (passes any --cap).
+  const cap = opts.cap ? String(opts.cap).toLowerCase() : null;
+  if (cap) {
+    candidates = candidates.filter((c) => !c.caps || c.caps.includes(cap));
+    if (!candidates.length) {
+      return {
+        ok: false,
+        error: want ? `bot ${want} lacks cap ${cap}` : `no body with cap ${cap} — defer`,
+        retry_after_ms: randomDeferMs(),
+        holders: await buildHolders(queryLeases(), pool, now),
+      };
+    }
+  }
+
   const leasedRows = queryLeases();
   const free = [];
   for (const c of candidates) {
@@ -322,7 +451,19 @@ export async function checkout(opts = {}) {
     };
   }
 
-  const ordered = sortCandidates(free.length ? free : candidates, leasedRows);
+  const rankSet = free.length ? free : candidates;
+  // D1 nearest — probe each candidate's /health position only when --near given.
+  let distances = null;
+  if (opts.near) {
+    distances = new Map();
+    await Promise.all(
+      rankSet.map(async (c) => {
+        const { position } = await probeHealth(c.api_url);
+        if (position) distances.set(c.bot, dist3(opts.near, position));
+      }),
+    );
+  }
+  const ordered = rankCandidates(rankSet, { leasedRows, mark: opts.mark || null, distances });
 
   for (const entry of ordered) {
     const prev = leaseForBot(entry.bot);
@@ -353,6 +494,8 @@ export async function checkout(opts = {}) {
     runSql(insertSql);
     const got = leaseForBot(entry.bot);
     if (got && got.owner_id === owner_id && got.expires_at_ms >= now) {
+      if (opts.mark) recordLastMark(got.bot, String(opts.mark)); // D3 continuity
+      stampCard(got.bot, got.lease_version); // D4 audit (best-effort)
       return {
         ok: true,
         bot: got.bot,
@@ -460,7 +603,7 @@ export async function status(opts = {}) {
 export async function dispatchBotSubcommand(positional, globals = {}) {
   const sub = (positional[0] || 'help').toLowerCase();
   const args = positional.slice(1);
-  const flags = { bot: null, ttl: null, force: false, asOperator: false, pool: false };
+  const flags = { bot: null, ttl: null, force: false, asOperator: false, pool: false, near: null, cap: null, mark: null };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--bot' && args[i + 1]) flags.bot = args[++i];
@@ -468,14 +611,28 @@ export async function dispatchBotSubcommand(positional, globals = {}) {
     else if (a === '--force') flags.force = true;
     else if (a === '--as-operator') flags.asOperator = true;
     else if (a === '--pool') flags.pool = true;
-    else if (a === '--near' || a === '--cap' || a === '--mark') {
-      throw new Error(`${a} not implemented in MVP — see docs/architecture/bot-lease.md § Deferred`);
-    }
+    else if (a === '--near' && args[i + 1]) flags.near = args[++i];
+    else if (a === '--cap' && args[i + 1]) flags.cap = args[++i];
+    else if (a === '--mark' && args[i + 1]) flags.mark = args[++i];
+  }
+
+  // --near X,Y,Z (comma-separated, e.g. --near 10,64,-20)
+  let near;
+  if (flags.near) {
+    const [x, y, z] = String(flags.near).split(',').map((n) => Number(n.trim()));
+    if (![x, y, z].every(Number.isFinite)) throw new Error('--near must be X,Y,Z (e.g. --near 10,64,-20)');
+    near = { x, y, z };
   }
 
   let result;
   if (sub === 'checkout') {
-    result = await checkout({ bot: flags.bot || undefined, ttl: flags.ttl || undefined });
+    result = await checkout({
+      bot: flags.bot || undefined,
+      ttl: flags.ttl || undefined,
+      near,
+      cap: flags.cap || undefined,
+      mark: flags.mark || undefined,
+    });
   } else if (sub === 'release') {
     result = await release({ force: flags.force, asOperator: flags.asOperator });
   } else if (sub === 'renew') {

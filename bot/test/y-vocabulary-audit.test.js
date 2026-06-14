@@ -51,6 +51,7 @@ const EXTRA_Y_PARAMS = {
 const EXEMPT = {
   look_at: 'y is a gaze-target point coordinate (camera aim), not a stand/dig/place Y — no block/surface ambiguity',
   region_create: '`--y MIN..MAX` is a vertical *range* (region extent), not a point/stand/dig Y — documented in docs/specs/world/designated-regions.md',
+  bot: '`--near X,Y,Z` is an absolute-position distance hint for lease checkout (nearest free body), not a world-edit Y — no surface/block semantics; see docs/architecture/bot-lease.md',
 };
 
 // Y tokens in a usage string: positional Y / GY / DY / Y1 / Y2 (uppercase

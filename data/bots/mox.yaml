@@ -3,3 +3,7 @@
 # See docs/architecture/bots-and-mc.md "Target fleet roster".
 api_port: 3007
 username: Mox
+# Optional `caps:` registry flag for `mc bot checkout --cap <skill>` (bot-lease
+# D2). Omitted = universal body (passes any --cap) — leave unset for the generic
+# colony pool. Example to differentiate a body:
+#   caps: [scout, gather, build, mine]
