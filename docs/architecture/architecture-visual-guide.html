@@ -43,7 +43,7 @@
     padding-bottom: 8px; border-bottom: 1px solid var(--soft-border);
     letter-spacing: -0.005em;
   }
-  section .lede { color: var(--muted); font-size: 14.5px; margin: 0 0 24px; max-width: 720px; }
+  section .lede { color: var(--muted); font-size: 14.5px; margin: 0 0 22px; max-width: 680px; }
 
   code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
   code { background: var(--code-bg); padding: 1px 6px; border-radius: 3px; }
@@ -69,6 +69,20 @@
   .vocab-card.workspace { border-left: 3px solid var(--workspace); }
   .vocab-card.card      { border-left: 3px solid var(--card); }
   .vocab-card.human     { border-left: 3px solid var(--human); }
+
+  /* === Relationship flow === */
+  .relation-flow { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
+  .rel-node { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: white; min-width: 64px; }
+  .rel-node.human     { border-top: 3px solid var(--human); }
+  .rel-node.card      { border-top: 3px solid var(--card); }
+  .rel-node.agent     { border-top: 3px solid var(--agent); }
+  .rel-node.bot       { border-top: 3px solid var(--bot); }
+  .rel-node.workspace { border-top: 3px solid var(--workspace); }
+  .rel-node .name { font-size: 12px; font-weight: 600; }
+  .rel-arrow { color: var(--muted); font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+  .rel-group { display: flex; gap: 8px; }
+  .relation-governs { text-align: center; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .relation-governs b { color: var(--role); }
 
   /* === The split: bot vs agent === */
   .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -102,33 +116,6 @@
   .roles-row .impl { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--agent); }
   .roles-row .what { color: var(--muted); font-size: 13.5px; }
 
-  /* === Card lifecycle === */
-  .lifecycle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .card-state {
-    border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: white;
-  }
-  .card-state .state-label {
-    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-    color: var(--muted); margin-bottom: 8px;
-  }
-  .card-mock {
-    font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.55;
-    background: var(--code-bg); padding: 10px 12px; border-radius: 4px;
-    white-space: pre-wrap; border-left: 3px solid var(--card);
-  }
-  .card-mock .field-bot   { color: var(--bot); font-weight: 600; }
-  .card-mock .field-agent { color: var(--agent); font-weight: 600; }
-  .card-mock .comment     { color: var(--muted); }
-  .card-state .step-note { color: var(--muted); margin-top: 8px; font-size: 12px; }
-
-  .hermes-translation {
-    margin-top: 14px; padding: 12px 14px; background: var(--code-bg); border-radius: 6px;
-    border: 1px dashed var(--border);
-    font-size: 13px;
-  }
-  .hermes-translation .label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
-  .hermes-translation code { background: white; }
-
   /* === Sequence diagram wrapper === */
   .svg-wrap { border: 1px solid var(--border); border-radius: 6px; background: white; padding: 12px; overflow-x: auto; }
   .svg-wrap svg { display: block; max-width: 100%; height: auto; }
@@ -161,41 +148,6 @@
   .case ul { padding-left: 18px; margin: 0; font-size: 13.5px; line-height: 1.65; }
   .case ul li { margin-bottom: 4px; }
 
-  /* === Workspaces (now with code-as-asset) === */
-  .workspaces { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .workspace {
-    border: 1px solid var(--border); border-radius: 8px; padding: 18px 22px; background: white;
-  }
-  .workspace.bot { border-left: 3px solid var(--bot); }
-  .workspace.agent { border-left: 3px solid var(--workspace); }
-  .workspace h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
-  .workspace .scope { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
-  .tree {
-    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
-    background: var(--code-bg); padding: 12px; border-radius: 4px; line-height: 1.55;
-    white-space: pre; overflow-x: auto;
-  }
-  .tree .comment { color: var(--muted); }
-  .tree .code-asset { color: var(--tool); }
-  .tree .data-asset { color: var(--workspace); }
-  .workspace .rule { font-size: 12.5px; color: var(--muted); margin-top: 10px;
-    border-top: 1px dashed var(--soft-border); padding-top: 10px; }
-  .workspace .rule b { color: var(--text); }
-
-  /* === @engineer self-improvement sequence === */
-  .engineer-flow {
-    display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
-    margin-top: 8px;
-  }
-  .eng-step {
-    border: 1px solid var(--border); border-radius: 6px; padding: 10px 11px;
-    background: white; font-size: 12.5px; line-height: 1.4;
-    border-left: 3px solid var(--tool);
-  }
-  .eng-step .num { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
-  .eng-step .title { font-weight: 600; margin: 3px 0 3px; font-size: 12.5px; }
-  .eng-step .body { color: var(--muted); font-size: 12px; }
-
   /* === Five-layer access model === */
   .layer-stack { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
   .layer {
@@ -205,11 +157,11 @@
   }
   .layer .num {
     font-size: 18px; font-weight: 700; color: var(--muted);
-    text-align: center; font-family: ui-monospace, Menlo, monospace;
+    text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .layer .name { font-weight: 600; }
   .layer .name .desc { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 2px; }
-  .layer .access { color: var(--muted); font-size: 12.5px; font-family: ui-monospace, Menlo, monospace; }
+  .layer .access { color: var(--muted); font-size: 12.5px; }
   .layer .access b { color: var(--text); font-family: inherit; }
   .layer.framework { border-left: 3px solid var(--warn); }
   .layer.commands  { border-left: 3px solid var(--tool); }
@@ -225,10 +177,7 @@
     border-top: 3px solid var(--workspace);
   }
   .domain .name { font-family: ui-monospace, Menlo, monospace; font-weight: 700; font-size: 13px; margin-bottom: 4px; }
-  .domain .gloss { color: var(--muted); font-size: 11.5px; margin-bottom: 6px; }
-  .domain .items { color: var(--text); font-size: 11.5px; }
-  .domain .items .ingest { color: var(--workspace); }
-  .domain .items .gen    { color: var(--tool); }
+  .domain .gloss { color: var(--muted); font-size: 11.5px; }
 
   /* === Two boards === */
   .boards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
@@ -242,6 +191,20 @@
   .board .kv { font-size: 12.5px; line-height: 1.65; }
   .board .kv b { display: inline-block; min-width: 78px; color: var(--text); }
   .board .kv .v { color: var(--muted); }
+
+  /* === @engineer self-improvement sequence === */
+  .engineer-flow {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+    margin-top: 8px;
+  }
+  .eng-step {
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px 11px;
+    background: white; font-size: 12.5px; line-height: 1.4;
+    border-left: 3px solid var(--tool);
+  }
+  .eng-step .num { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
+  .eng-step .title { font-weight: 600; margin: 3px 0 3px; font-size: 12.5px; }
+  .eng-step .body { color: var(--muted); font-size: 12px; }
 
   /* === Recall stream === */
   .recall-flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 8px; align-items: center; margin-top: 8px; }
@@ -339,11 +302,15 @@
   .wt-sync a { color: var(--text); }
 
   @media (max-width: 720px) {
-    .vocab, .split, .roles-row, .lifecycle, .compare, .workspaces, .hard-parts, .flow, .arrow-row, .engineer-flow,
+    .vocab, .split, .roles-row, .compare, .hard-parts, .flow, .arrow-row, .engineer-flow,
     .domains, .boards, .recall-flow, .recall-split, .wt-grid { grid-template-columns: 1fr; }
     .layer { grid-template-columns: 30px 1fr; }
     .layer .access { grid-column: 2; }
     .container { padding: 24px 16px 64px; }
+    .relation-flow { flex-direction: column; gap: 8px; align-items: stretch; }
+    .rel-node { width: 100%; }
+    .rel-group { flex-direction: column; gap: 6px; }
+    .rel-arrow { text-align: center; }
   }
 </style>
 </head>
@@ -352,16 +319,16 @@
 
 <header class="page">
   <h1>Hermescraft Architecture</h1>
-  <div class="tag">A visual guide. Six categories of thing, one shape language, one mental model: a robot factory with software-engineering on the inside, an episodic memory it all shares, and a back-office board where the team improves itself.</div>
-  <div class="meta">design exploration · 2026-06-05 · canonical: <a href="README.md">README</a> + target.md · sync bot names: pip, mox, zee, bix, glim</div>
+  <div class="tag">A visual guide to the operating model: who does what, how cards flow, where memory lives, and how the team improves itself.</div>
+  <div class="meta">design exploration · 2026-06-14 · canonical: <a href="README.md">README</a> + target.md · sync bot names: pip, mox, zee, bix, glim</div>
 </header>
 
 <!-- =========================================== -->
-<!-- SECTION 1: VOCABULARY (the visual language) -->
+<!-- SECTION 1: VOCABULARY + RELATIONSHIPS       -->
 <!-- =========================================== -->
 <section>
   <h2>1 · Vocabulary</h2>
-  <p class="lede">Six categories. Each has a color, a shape, and a job. Everywhere a thing appears in this guide it uses its own shape, so a glance tells you what kind of thing you're looking at.</p>
+  <p class="lede">Six categories. Each has a color, shape, and role. The same shape language is used throughout so relationships are readable at a glance.</p>
   <div class="vocab">
     <div class="vocab-card role">
       <div class="head">
@@ -375,7 +342,7 @@
         <span class="icon icon-lg"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1"/></svg></span>
         <span class="name">Bot</span>
       </div>
-      <div class="gloss">A Minecraft body. Mineflayer process + registry entry (<span class="mono">data/bots/&lt;bot&gt;.yaml</span>). <span class="mono">pip</span>, <span class="mono">mox</span>, <span class="mono">zee</span>.</div>
+      <div class="gloss">A Minecraft body. Mineflayer process + registry entry. <span class="mono">pip</span>, <span class="mono">mox</span>, <span class="mono">zee</span>.</div>
     </div>
     <div class="vocab-card agent">
       <div class="head">
@@ -389,7 +356,7 @@
         <span class="icon icon-lg"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="#fef3c7" stroke="#d97706" stroke-width="1"/></svg></span>
         <span class="name">Workspace</span>
       </div>
-      <div class="gloss">Storage for state and code. Shared tree <span class="mono">data/workspace/</span> + agent Hermes homes. Git-backed.</div>
+      <div class="gloss">Shared storage for state and code. Git-backed. The team's collective memory.</div>
     </div>
     <div class="vocab-card card">
       <div class="head">
@@ -406,6 +373,36 @@
       <div class="gloss">The operator. Sets goals, reviews, intervenes on edge cases. Not the orchestrator.</div>
     </div>
   </div>
+
+  <p class="lede" style="margin-top: 28px; margin-bottom: 4px;">How they connect:</p>
+  <div class="relation-flow">
+    <div class="rel-node human">
+      <span class="icon icon-lg"><svg viewBox="0 0 16 16"><circle cx="8" cy="5" r="2.4" fill="#ccfbf1" stroke="#0d9488" stroke-width="1"/><path d="M3 14.5 Q3 10 8 10 Q13 10 13 14.5" fill="#ccfbf1" stroke="#0d9488" stroke-width="1" stroke-linejoin="round"/></svg></span>
+      <span class="name">Human</span>
+    </div>
+    <div class="rel-arrow">writes →</div>
+    <div class="rel-node card">
+      <span class="icon icon-lg"><svg viewBox="0 0 16 16"><polygon points="8,1.5 14.5,8 8,14.5 1.5,8" fill="#f1f5f9" stroke="#475569" stroke-width="1"/></svg></span>
+      <span class="name">Card</span>
+    </div>
+    <div class="rel-arrow">pairs →</div>
+    <div class="rel-group">
+      <div class="rel-node agent">
+        <span class="icon icon-lg"><svg viewBox="0 0 16 16"><polygon points="8,1.5 14.5,13.5 1.5,13.5" fill="#dcfce7" stroke="#16a34a" stroke-width="1"/></svg></span>
+        <span class="name">Agent</span>
+      </div>
+      <div class="rel-node bot">
+        <span class="icon icon-lg"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1"/></svg></span>
+        <span class="name">Bot</span>
+      </div>
+    </div>
+    <div class="rel-arrow">acts in →</div>
+    <div class="rel-node workspace">
+      <span class="icon icon-lg"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" fill="#fef3c7" stroke="#d97706" stroke-width="1"/></svg></span>
+      <span class="name">Workspace</span>
+    </div>
+  </div>
+  <div class="relation-governs"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span> <b>Role</b> governs which agent fulfills each card</div>
 </section>
 
 <!-- ========================================== -->
@@ -422,10 +419,10 @@
       </h3>
       <div class="sub">Mineflayer process. Persistent. One card at a time per bot.</div>
       <div class="kv">
-        <div><b>Owns</b><span class="v">MC connection (port, username), in-world state (inventory, position, hp, food)</span></div>
-        <div><b>Hermes status</b><span class="v"><b>Not a Hermes profile.</b> Lightweight registry entry: <span class="mono">data/bots/&lt;bot&gt;.yaml</span></span></div>
-        <div><b>Lifetime</b><span class="v">Persistent (the player keeps existing in the world)</span></div>
-        <div><b>Mutex</b><span class="v">One card at a time, enforced by landfolk plugin on <span class="mono">metadata.bot</span></span></div>
+        <div><b>Owns</b><span class="v">MC connection, in-world state (inventory, position, hp, food)</span></div>
+        <div><b>Not</b><span class="v">A Hermes profile. It's a registry entry in <span class="mono">data/bots/</span></span></div>
+        <div><b>Lifetime</b><span class="v">Persistent — the player keeps existing in the world</span></div>
+        <div><b>Mutex</b><span class="v">One card at a time, via bot lease (<span class="mono">mc bot checkout/renew/release</span>)</span></div>
         <div><b>Identity</b><span class="v">Stable: <span class="mono">pip</span> is always the same Minecraft player</span></div>
       </div>
       <div class="examples">pip · mox · zee · bix · glim</div>
@@ -437,13 +434,13 @@
       </h3>
       <div class="sub">Hermes profile. Owns expertise + memory. Spawned per card.</div>
       <div class="kv">
-        <div><b>Owns</b><span class="v">SOUL.md, model preference, skill bundle, accumulated cross-bot memory</span></div>
-        <div><b>Hermes status</b><span class="v">Hermes profile at <span class="mono">~/.hermes/profiles/&lt;agent&gt;/</span></span></div>
+        <div><b>Owns</b><span class="v">SOUL.md, model preference, skill bundle, cross-bot memory</span></div>
+        <div><b>Is</b><span class="v">A Hermes profile at <span class="mono">~/.hermes/profiles/&lt;agent&gt;/</span></span></div>
         <div><b>Lifetime</b><span class="v">Persistent profile; fresh worker spawned per card</span></div>
         <div><b>Mutex</b><span class="v">None — same agent profile spawns concurrently across different bots</span></div>
         <div><b>Identity</b><span class="v">A role anyone can play: <span class="mono">@miner</span> on pip today, on mox tomorrow</span></div>
       </div>
-      <div class="examples">@navigator · @miner · @crafter · @builder · @soldier · @farmer · @planner · @dispatcher · @overseer · …</div>
+      <div class="examples">@navigator · @miner · @crafter · @builder · @soldier · @farmer · @planner · @dispatcher · @overseer</div>
     </div>
   </div>
 </section>
@@ -453,7 +450,7 @@
 <!-- ========================================== -->
 <section>
   <h2>3 · Concerns and who fulfills them</h2>
-  <p class="lede">Architectural roles are concerns — abstract jobs that must be done. Each concern is fulfilled by one or more agents. The role is the contract; the agent is the implementation. (There is no "Steward" bot in this model — the planning concern is fulfilled by <span class="mono">@planner</span>, who is bot-less.)</p>
+  <p class="lede">Roles are abstract concerns; agents are concrete implementations. This separation keeps responsibilities stable even if implementations change. (There is no Steward bot in this model; planning is fulfilled by bot-less <span class="mono">@planner</span>.)</p>
   <div class="roles-table">
     <div class="roles-row head">
       <div>Concern (role)</div>
@@ -463,12 +460,12 @@
     <div class="roles-row">
       <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Planning</b></div>
       <div class="impl">@planner</div>
-      <div class="what">Reads goals + in-game whispers + threats. Writes <span class="mono">@agent</span>-typed intents via the mention DSL. Bot-less.</div>
+      <div class="what">Reads goals + threats. Writes <span class="mono">@agent</span>-typed intents via the mention DSL. Bot-less.</div>
     </div>
     <div class="roles-row">
-      <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Allocation (Fleet Manager)</b></div>
+      <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Allocation</b></div>
       <div class="impl">@dispatcher</div>
-      <div class="what">Lexicographic bind at write time. Sets <span class="mono">metadata.bot</span>. Maintenance + rebind cards. Bot-less (script OK at MVP).</div>
+      <div class="what">Binds bots to cards at write time. Maintenance + rebind cards. Bot-less.</div>
     </div>
     <div class="roles-row">
       <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Execution</b></div>
@@ -478,90 +475,34 @@
     <div class="roles-row">
       <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Review</b></div>
       <div class="impl">@overseer @verifier</div>
-      <div class="what">Judges epic completion, verifies invariants post-card, escalates anomalies to the operator.</div>
+      <div class="what">Judges epic completion, verifies invariants, escalates anomalies to the operator.</div>
     </div>
     <div class="roles-row">
       <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Watch</b></div>
       <div class="impl">@sentinel</div>
-      <div class="what">Bot-less or short-cycled. Watches for threats, environmental change, stale marks. Emits URGENT cards.</div>
+      <div class="what">Watches for threats, environmental change, stale marks. Emits URGENT cards.</div>
     </div>
     <div class="roles-row">
       <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Curation</b></div>
       <div class="impl">@reporter</div>
-      <div class="what">Tails the <b>recall stream</b>, compacts clusters into git <span class="mono">generated/</span> snapshots, writes post-mortems &amp; digests. May fold into <span class="mono">@overseer</span> at MVP.</div>
+      <div class="what">Tails the <b>recall stream</b>, compacts clusters into git snapshots, writes post-mortems.</div>
     </div>
     <div class="roles-row">
       <div class="concern"><span class="icon"><svg viewBox="0 0 16 16"><polygon points="8,1 14,4.5 14,11.5 8,15 2,11.5 2,4.5" fill="#ede9fe" stroke="#7c3aed" stroke-width="1"/></svg></span><b>Tooling</b></div>
       <div class="impl">@engineer</div>
-      <div class="what">Maintains workspace scripts, plans, runbooks. Files <span class="mono">[MR]</span> cards on the back-office board. (See section 8.)</div>
+      <div class="what">Maintains workspace scripts, plans, runbooks. Files <span class="mono">[MR]</span> cards on the back-office board. (See §9.)</div>
     </div>
   </div>
 </section>
 
 <!-- ========================================== -->
-<!-- SECTION 4: A CARD'S SHAPE                   -->
+<!-- SECTION 4: THE MISSION (merged 4+5)         -->
 <!-- ========================================== -->
 <section>
-  <h2>4 · A card's shape</h2>
-  <p class="lede">A card pairs an agent (who/what kind of work) with a bot (which body) when both are needed. Logically these are two fields. In Hermes' native schema, <span class="mono">agent</span> compiles to the <span class="mono">skills</span> array and <span class="mono">bot</span> compiles to <span class="mono">assignee</span>.</p>
-
-  <div class="lifecycle">
-    <div class="card-state">
-      <div class="state-label">1 · Operator wrote (free-form)</div>
-<div class="card-mock">title: Stock base with iron
-status: triage
-body:
-  @navigator to :mine_nw:
-  @miner 16 iron + 8 coal
-  @navigator return to :base:
-  @crafter smelt + deposit
-</div>
-      <div class="step-note">Mention DSL. No bot named. <span class="mono">@planner</span> parses + validates marks.</div>
-    </div>
-
-    <div class="card-state">
-      <div class="state-label">2 · After @dispatcher bound it</div>
-<div class="card-mock">id: t_b3 (child 2 of 5)
-title: Mine 16 iron + 8 coal
-status: ready
-<span class="field-agent">assignee: miner</span>          <span class="comment"># Hermes profile</span>
-<span class="field-bot">metadata.bot: pip</span>      <span class="comment"># body to drive</span>
-skills: [agent-miner,
-         minecraft-mining]
-parents: [t_b2]
-max_runtime: 1800s
-idempotency: mission-X-2</div>
-      <div class="step-note">Concrete card. <span class="mono">@dispatcher</span> picked <span class="mono">pip</span> via affinity (just arrived at mine).</div>
-    </div>
-
-    <div class="card-state">
-      <div class="state-label">3 · After worker completed</div>
-<div class="card-mock">id: t_b3
-status: done
-result: PASS
-metadata:
-  inv_delta: {iron:+16, coal:+8}
-  exit_pos: [276, 64, 78]
-  marks_updated: [mine_nw_d3]
-  duration_s: 1342</div>
-      <div class="step-note">Handoff metadata. Next phase (<span class="mono">@navigator</span> return) reads <span class="mono">exit_pos</span> as start.</div>
-    </div>
-  </div>
-
-  <div class="hermes-translation">
-    <div class="label">How spawn composes them</div>
-    Hermes' kanban dispatcher loads <code>~/.hermes/profiles/miner/</code> (the agent's home: SOUL, model, skills, memory). Our spawn layer reads <code>metadata.bot</code>, looks up <code>data/bots/pip.yaml</code>, and injects <code>MC_API_URL</code> + <code>MC_USERNAME</code> at worker spawn. The agent profile's <code>config.yaml</code> declares <code>env_passthrough: [MC_API_URL, MC_USERNAME]</code> to accept them. Agent expertise + injected bot body = the worker.
-  </div>
-</section>
-
-<!-- ========================================== -->
-<!-- SECTION 5: SEQUENCE DIAGRAM                 -->
-<!-- ========================================== -->
-<section>
-  <h2>5 · Sequence: a mining mission</h2>
-  <p class="lede">Five phases, five fresh workers on the same body. The bot (<span class="mono">pip</span>) persists; the agent Hermes profile spawning a worker rotates per card.</p>
+  <h2>4 · The mission: from intent to done</h2>
+  <p class="lede">A card moves through three stages: <b>triage</b>, <b>bind</b>, and <b>execute</b>. The sequence below shows five phases on one persistent body (<span class="mono">pip</span>) with fresh agent workers per card.</p>
   <div class="svg-wrap">
-    <svg viewBox="0 0 940 740" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="12">
+    <svg viewBox="0 0 940 790" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="12">
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2328"/>
@@ -574,117 +515,123 @@ metadata:
         </marker>
       </defs>
 
+      <!-- Stage labels -->
+      <rect x="20" y="4" width="345" height="16" rx="3" fill="#f1f5f9"/>
+      <text x="192" y="15" text-anchor="middle" font-size="9.5" font-weight="600" fill="#475569" letter-spacing="0.08em">TRIAGE</text>
+      <rect x="370" y="4" width="160" height="16" rx="3" fill="#dbeafe"/>
+      <text x="450" y="15" text-anchor="middle" font-size="9.5" font-weight="600" fill="#2563eb" letter-spacing="0.08em">BIND</text>
+      <rect x="535" y="4" width="385" height="16" rx="3" fill="#dcfce7"/>
+      <text x="727" y="15" text-anchor="middle" font-size="9.5" font-weight="600" fill="#16a34a" letter-spacing="0.08em">EXECUTE</text>
+
       <!-- Lane headers with category icons -->
       <g>
-        <!-- Operator -->
-        <rect x="20" y="20" width="150" height="42" rx="4" fill="#ccfbf1" stroke="#0d9488"/>
-        <circle cx="40" cy="36" r="4" fill="#5eead4" stroke="#0d9488" stroke-width="0.7"/>
-        <path d="M32 50 Q32 44 40 44 Q48 44 48 50" fill="#5eead4" stroke="#0d9488" stroke-width="0.7"/>
-        <text x="100" y="46" text-anchor="middle" font-weight="600">Operator</text>
+        <rect x="20" y="28" width="150" height="42" rx="4" fill="#ccfbf1" stroke="#0d9488"/>
+        <circle cx="40" cy="44" r="4" fill="#5eead4" stroke="#0d9488" stroke-width="0.7"/>
+        <path d="M32 58 Q32 52 40 52 Q48 52 48 58" fill="#5eead4" stroke="#0d9488" stroke-width="0.7"/>
+        <text x="100" y="54" text-anchor="middle" font-weight="600">Operator</text>
 
-        <!-- @planner -->
-        <rect x="190" y="20" width="150" height="42" rx="4" fill="#dcfce7" stroke="#16a34a"/>
-        <polygon points="208,28 219,46 197,46" fill="#86efac" stroke="#16a34a" stroke-width="0.7"/>
-        <text x="280" y="40" text-anchor="middle" font-weight="600">@planner</text>
-        <text x="280" y="54" text-anchor="middle" font-size="10.5" fill="#6e7781">bot-less</text>
+        <rect x="190" y="28" width="150" height="42" rx="4" fill="#dcfce7" stroke="#16a34a"/>
+        <polygon points="208,36 219,54 197,54" fill="#86efac" stroke="#16a34a" stroke-width="0.7"/>
+        <text x="280" y="48" text-anchor="middle" font-weight="600">@planner</text>
+        <text x="280" y="62" text-anchor="middle" font-size="10.5" fill="#6e7781">bot-less</text>
 
-        <!-- @dispatcher -->
-        <rect x="360" y="20" width="150" height="42" rx="4" fill="#dcfce7" stroke="#16a34a"/>
-        <polygon points="378,28 389,46 367,46" fill="#86efac" stroke="#16a34a" stroke-width="0.7"/>
-        <text x="450" y="40" text-anchor="middle" font-weight="600">@dispatcher</text>
-        <text x="450" y="54" text-anchor="middle" font-size="10.5" fill="#6e7781">bot-less</text>
+        <rect x="360" y="28" width="150" height="42" rx="4" fill="#dcfce7" stroke="#16a34a"/>
+        <polygon points="378,36 389,54 367,54" fill="#86efac" stroke="#16a34a" stroke-width="0.7"/>
+        <text x="450" y="48" text-anchor="middle" font-weight="600">@dispatcher</text>
+        <text x="450" y="62" text-anchor="middle" font-size="10.5" fill="#6e7781">bot-less</text>
 
-        <!-- Kanban -->
-        <rect x="530" y="20" width="140" height="42" rx="4" fill="#f1f5f9" stroke="#475569"/>
-        <polygon points="548,28 557,38 548,48 539,38" fill="#cbd5e1" stroke="#475569" stroke-width="0.7"/>
-        <text x="608" y="46" text-anchor="middle" font-weight="600">Kanban</text>
+        <rect x="530" y="28" width="140" height="42" rx="4" fill="#f1f5f9" stroke="#475569"/>
+        <polygon points="548,36 557,46 548,56 539,46" fill="#cbd5e1" stroke="#475569" stroke-width="0.7"/>
+        <text x="608" y="54" text-anchor="middle" font-weight="600">Kanban</text>
 
-        <!-- Worker driving bot pip -->
-        <rect x="690" y="20" width="230" height="42" rx="4" fill="#dbeafe" stroke="#2563eb"/>
-        <circle cx="708" cy="38" r="6" fill="#dbeafe" stroke="#2563eb" stroke-width="0.7"/>
-        <text x="805" y="40" text-anchor="middle" font-weight="600">Worker driving bot pip</text>
-        <text x="805" y="54" text-anchor="middle" font-size="10.5" fill="#6e7781">agent profile rotates per card</text>
+        <rect x="690" y="28" width="230" height="42" rx="4" fill="#dbeafe" stroke="#2563eb"/>
+        <circle cx="708" cy="46" r="6" fill="#dbeafe" stroke="#2563eb" stroke-width="0.7"/>
+        <text x="805" y="48" text-anchor="middle" font-weight="600">Worker driving bot pip</text>
+        <text x="805" y="62" text-anchor="middle" font-size="10.5" fill="#6e7781">agent profile rotates per card</text>
       </g>
 
       <!-- Lifelines -->
       <g stroke="#d8dee4" stroke-dasharray="4,4">
-        <line x1="100" y1="62" x2="100" y2="720"/>
-        <line x1="280" y1="62" x2="280" y2="720"/>
-        <line x1="450" y1="62" x2="450" y2="720"/>
-        <line x1="608" y1="62" x2="608" y2="720"/>
-        <line x1="805" y1="62" x2="805" y2="720"/>
+        <line x1="100" y1="70" x2="100" y2="770"/>
+        <line x1="280" y1="70" x2="280" y2="770"/>
+        <line x1="450" y1="70" x2="450" y2="770"/>
+        <line x1="608" y1="70" x2="608" y2="770"/>
+        <line x1="805" y1="70" x2="805" y2="770"/>
       </g>
 
       <!-- Step 1: operator → @planner -->
-      <line x1="100" y1="95" x2="278" y2="95" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
-      <text x="189" y="89" text-anchor="middle">triage card · @mention DSL</text>
+      <line x1="100" y1="103" x2="278" y2="103" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <text x="189" y="97" text-anchor="middle">triage card · @mention DSL</text>
 
       <!-- Step 2: @planner internal -->
-      <rect x="215" y="115" width="130" height="46" rx="4" fill="#dcfce7" stroke="#16a34a"/>
-      <text x="280" y="133" text-anchor="middle" font-size="11.5">parse @mentions</text>
-      <text x="280" y="148" text-anchor="middle" font-size="11.5">validate :marks:</text>
+      <rect x="215" y="123" width="130" height="46" rx="4" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="280" y="141" text-anchor="middle" font-size="11.5">parse @mentions</text>
+      <text x="280" y="156" text-anchor="middle" font-size="11.5">validate :marks:</text>
 
       <!-- Step 3: @planner → @dispatcher -->
-      <line x1="280" y1="180" x2="448" y2="180" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
-      <text x="364" y="174" text-anchor="middle">5 intents (agent only, no bot)</text>
+      <line x1="280" y1="188" x2="448" y2="188" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <text x="364" y="182" text-anchor="middle">5 intents (agent only, no bot)</text>
 
       <!-- Step 4: @dispatcher internal -->
-      <rect x="385" y="200" width="130" height="46" rx="4" fill="#dcfce7" stroke="#16a34a"/>
-      <text x="450" y="218" text-anchor="middle" font-size="11.5">score candidates</text>
-      <text x="450" y="233" text-anchor="middle" font-size="11.5">→ all bind to pip</text>
+      <rect x="385" y="208" width="130" height="46" rx="4" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="450" y="226" text-anchor="middle" font-size="11.5">lexicographic bind</text>
+      <text x="450" y="241" text-anchor="middle" font-size="11.5">→ all to pip</text>
 
       <!-- Step 5: @dispatcher → Kanban -->
-      <line x1="450" y1="266" x2="606" y2="266" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
-      <text x="528" y="260" text-anchor="middle">5 cards: assignee=&lt;agent&gt;, metadata.bot=pip</text>
+      <line x1="450" y1="274" x2="606" y2="274" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <text x="528" y="268" text-anchor="middle">5 cards: assignee=&lt;agent&gt;, metadata.bot=pip</text>
 
       <!-- Step 6: Kanban → Worker c1 -->
-      <line x1="608" y1="302" x2="803" y2="302" stroke="#2563eb" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
-      <text x="705" y="296" text-anchor="middle" fill="#2563eb">dispatch c1 · agent=@crafter</text>
-
-      <rect x="799" y="302" width="12" height="44" fill="#dbeafe" stroke="#2563eb"/>
-      <text x="697" y="332" text-anchor="end" fill="#6e7781">equip phase · fresh context</text>
-
-      <line x1="803" y1="357" x2="611" y2="357" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
-      <text x="707" y="351" text-anchor="middle">complete c1 · {inv, ready}</text>
+      <line x1="608" y1="310" x2="803" y2="310" stroke="#2563eb" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
+      <text x="705" y="304" text-anchor="middle" fill="#2563eb">dispatch c1 · agent=@crafter</text>
+      <rect x="799" y="310" width="12" height="44" fill="#dbeafe" stroke="#2563eb"/>
+      <text x="697" y="340" text-anchor="end" fill="#6e7781">equip phase · fresh context</text>
+      <line x1="803" y1="365" x2="611" y2="365" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <text x="707" y="359" text-anchor="middle">complete c1 · {inv, ready}</text>
 
       <!-- Step 7: Kanban → Worker c2 -->
-      <line x1="608" y1="390" x2="803" y2="390" stroke="#2563eb" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
-      <text x="705" y="384" text-anchor="middle" fill="#2563eb">dispatch c2 · agent=@navigator</text>
+      <line x1="608" y1="398" x2="803" y2="398" stroke="#2563eb" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
+      <text x="705" y="392" text-anchor="middle" fill="#2563eb">dispatch c2 · agent=@navigator</text>
+      <rect x="799" y="398" width="12" height="44" fill="#dbeafe" stroke="#2563eb"/>
+      <text x="697" y="428" text-anchor="end" fill="#6e7781">nav to :mine_nw: · fresh context</text>
+      <line x1="803" y1="453" x2="611" y2="453" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <text x="707" y="447" text-anchor="middle">complete c2 · {pos, facing}</text>
 
-      <rect x="799" y="390" width="12" height="44" fill="#dbeafe" stroke="#2563eb"/>
-      <text x="697" y="420" text-anchor="end" fill="#6e7781">nav to :mine_nw: · fresh context</text>
+      <!-- Step 8: Kanban → Worker c3 -->
+      <line x1="608" y1="486" x2="803" y2="486" stroke="#2563eb" stroke-width="1.4" marker-end="url(#arrow-blue)"/>
+      <text x="705" y="480" text-anchor="middle" fill="#2563eb">dispatch c3 · agent=@miner</text>
+      <rect x="799" y="486" width="12" height="52" fill="#dbeafe" stroke="#2563eb"/>
+      <text x="697" y="516" text-anchor="end" fill="#6e7781">mine 16 iron · ~30 min</text>
+      <line x1="803" y1="551" x2="611" y2="551" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <text x="707" y="545" text-anchor="middle">complete c3 · {iron:+16, coal:+8}</text>
 
-      <line x1="803" y1="445" x2="611" y2="445" stroke="#1f2328" stroke-width="1.4" marker-end="url(#arrow)"/>
-      <text x="707" y="439" text-anchor="middle">complete c2 · {pos, facing}</text>
-
-      <!-- Ellipsis row -->
+      <!-- Ellipsis row (c4 + c5 only) -->
       <g>
-        <text x="805" y="482" text-anchor="middle" fill="#6e7781" font-style="italic">⋯ c3 (@miner, ~30 min)</text>
-        <text x="805" y="500" text-anchor="middle" fill="#6e7781" font-style="italic">⋯ c4 (@navigator, return)</text>
-        <text x="805" y="518" text-anchor="middle" fill="#6e7781" font-style="italic">⋯ c5 (@crafter, smelt + deposit)</text>
+        <text x="805" y="583" text-anchor="middle" fill="#6e7781" font-style="italic">⋯ c4 (@navigator, return)</text>
+        <text x="805" y="601" text-anchor="middle" fill="#6e7781" font-style="italic">⋯ c5 (@crafter, smelt + deposit)</text>
       </g>
 
       <!-- Kanban → @planner: root ready -->
-      <line x1="608" y1="565" x2="282" y2="565" stroke="#6e7781" stroke-width="1.2" stroke-dasharray="3,3" marker-end="url(#arrow-soft)"/>
-      <text x="445" y="559" text-anchor="middle" fill="#6e7781">root ready · all children done</text>
+      <line x1="608" y1="633" x2="282" y2="633" stroke="#6e7781" stroke-width="1.2" stroke-dasharray="3,3" marker-end="url(#arrow-soft)"/>
+      <text x="445" y="627" text-anchor="middle" fill="#6e7781">root ready · all children done</text>
 
       <!-- @planner → @overseer (optional review) -->
-      <rect x="215" y="585" width="130" height="46" rx="4" fill="#dcfce7" stroke="#16a34a"/>
-      <text x="280" y="603" text-anchor="middle" font-size="11.5">delegate review →</text>
-      <text x="280" y="618" text-anchor="middle" font-size="11.5">@overseer (bot-less)</text>
+      <rect x="215" y="658" width="130" height="46" rx="4" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="280" y="676" text-anchor="middle" font-size="11.5">delegate review →</text>
+      <text x="280" y="691" text-anchor="middle" font-size="11.5">@overseer (bot-less)</text>
 
-      <!-- Footnote -->
-      <text x="20" y="700" fill="#6e7781" font-style="italic" font-size="11.5">Bot pip persists across all five phases. The agent Hermes profile spawning each worker changes — fresh SOUL, fresh skills, narrow context.</text>
-      <text x="20" y="717" fill="#6e7781" font-style="italic" font-size="11.5">Body state carries through the world (position, inventory). Expertise context resets every card boundary. No thrashing.</text>
+      <!-- Key insight -->
+      <rect x="20" y="730" width="900" height="36" rx="4" fill="#f6f8fa" stroke="#eaeef2"/>
+      <text x="470" y="752" text-anchor="middle" fill="#6e7781" font-size="12">Bot pip persists across all five phases. Agent expertise resets every card — fresh SOUL, fresh skills, narrow context.</text>
     </svg>
   </div>
 </section>
 
 <!-- ========================================== -->
-<!-- SECTION 6: WHEN THINGS CHANGE               -->
+<!-- SECTION 5: WHEN THINGS CHANGE               -->
 <!-- ========================================== -->
 <section>
-  <h2>6 · When the world changes underneath</h2>
+  <h2>5 · When the world changes underneath</h2>
   <p class="lede">A creeper destroys road section 3 mid-build. The next card's preflight catches the mismatch; <span class="mono">@dispatcher</span> wires in a repair card; the chain resumes.</p>
   <div class="flow">
     <div class="flow-step start">
@@ -705,7 +652,7 @@ metadata:
     <div class="flow-step fix">
       <div class="num">4 · Repair</div>
       <div class="title">@dispatcher writes</div>
-      <div class="body"><span class="mono">@builder</span> on &lt;closest&gt; · repair section 3 · prio=85</div>
+      <div class="body"><span class="mono">@builder</span> on &lt;closest&gt; · repair section 3</div>
     </div>
     <div class="flow-step ok">
       <div class="num">5 · Resume</div>
@@ -713,220 +660,169 @@ metadata:
       <div class="body">Repair done → chain continues</div>
     </div>
   </div>
-  <div class="arrow-row" style="margin-top: 6px;">
-    <div>↓</div><div>↓</div><div>↓</div><div>↓</div><div>↓</div>
-  </div>
-  <p class="lede" style="margin-top: 12px;">No card has to know about creepers. Each verifies its own preconditions; failures trigger targeted repair. Robustness is local; the 50-card plan keeps flowing.</p>
+  <p class="lede" style="margin-top: 16px;">No card has to know about creepers. Each verifies its own preconditions; failures trigger targeted repair. Robustness is local; the 50-card plan keeps flowing.</p>
 </section>
 
 <!-- ========================================== -->
-<!-- SECTION 7: CARDS WITHOUT BODIES             -->
+<!-- SECTION 6: CARDS WITHOUT BODIES             -->
 <!-- ========================================== -->
 <section>
-  <h2>7 · Many cards have no bot</h2>
-  <p class="lede">Specialist agents do plenty of work that needs no Minecraft body: planning, allocation, judgment, watching, curating the recall stream, maintaining scripts. These cards run in parallel with bot work and don't compete for bot time. <span class="mono">@planner</span>, <span class="mono">@dispatcher</span>, <span class="mono">@overseer</span>, <span class="mono">@reporter</span>, <span class="mono">@engineer</span> are always bot-less. <span class="mono">@crafter</span> is sometimes bot-less (inventory audits, material budgets). <span class="mono">@sentinel</span> is usually bot-less but patrol variants bind a bot.</p>
+  <h2>6 · Many cards have no bot</h2>
+  <p class="lede">Many cards do not need a Minecraft body at all. Bot-less cards run in parallel with in-world execution and do not consume bot capacity.</p>
   <div class="compare">
     <div class="case bound">
-      <h3><span class="badge bot">Bot-bound</span> &nbsp; <span class="mono">@miner</span> driving <span class="mono">pip</span> · mine 16 iron at <span class="mono">:mine_nw:</span></h3>
+      <h3><span class="badge bot">Bot-bound</span> &nbsp; <span class="mono">@miner</span> driving <span class="mono">pip</span></h3>
       <div class="desc">Needs a body in the world.</div>
       <ul>
-        <li>Hermes profile: <code>~/.hermes/profiles/miner/</code> (the agent)</li>
-        <li>Spawn layer injects MC env from <code>data/bots/pip.yaml</code></li>
-        <li>Holds per-bot mutex on <code>metadata.bot=pip</code></li>
-        <li>Runs ~30 minutes</li>
-        <li>Heartbeats every 5-10 min</li>
-        <li>Writes inventory delta on complete; <code>recall.resource(subject)</code> and other presets (see data-api.md)</li>
+        <li>Spawn layer injects MC env → drives a body in the world</li>
+        <li>Holds per-bot lease — one card at a time per bot</li>
+        <li>Writes handoff metadata on complete (position, inventory delta)</li>
       </ul>
     </div>
     <div class="case unbound">
-      <h3><span class="badge tool">Bot-less</span> &nbsp; <span class="mono">@crafter</span> · material budget for <span class="mono">road-bluff-v4</span></h3>
+      <h3><span class="badge tool">Bot-less</span> &nbsp; <span class="mono">@crafter</span> · material budget</h3>
       <div class="desc">Pure data work — reads the shared workspace, writes a budget.</div>
       <ul>
-        <li>Hermes profile: <code>~/.hermes/profiles/crafter/</code> (the agent)</li>
-        <li>No <code>metadata.bot</code> → no MC env injected</li>
-        <li>No per-bot mutex (any number can run)</li>
-        <li>Runs ~30 seconds</li>
-        <li>Reads <code>infra/ingest/plans/road-bluff-v4.json</code>, <code>production/generated/stockpiles.json</code>, queries <code>recall.near?subject=stone&type=resource</code></li>
-        <li>Writes budget back as a comment on the parent card</li>
+        <li>No MC env injected — no body needed</li>
+        <li>No per-bot lease — any number can run in parallel</li>
+        <li>Reads workspace + recall; writes comments or workspace files</li>
       </ul>
     </div>
   </div>
 </section>
 
 <!-- ========================================== -->
-<!-- SECTION 8: WORKSPACES AS CODE               -->
+<!-- SECTION 7: LAYERED ACCESS                   -->
 <!-- ========================================== -->
 <section>
-  <h2>8 · Workspaces: layered access, shared brain, two boards</h2>
-  <p class="lede">Workspaces hold state <em>and</em> code — plans, runbooks, skill bundles, scripts agents run to parse blueprints or score affinity. Three things make this work: <b>a five-layer access model</b> that hides the framework source from agents, <b>a single domain-organized workspace</b> that the whole team reads and writes (governed by <span class="mono">OWNERS.yaml</span>), and <b>a back-office kanban board</b> where script and plan changes flow through PR review.</p>
-
-  <h3 style="margin-top: 26px; font-size: 16px; font-weight: 600;">8a · Five-layer access model</h3>
-  <p class="lede" style="margin-bottom: 8px;">Agents see the workspace, their own Hermes home, and a curated set of distributed commands. The framework source tree is invisible at runtime.</p>
+  <h2>7 · Layered access: what agents can see</h2>
+  <p class="lede">Agents see only what they need: workspace, Hermes home, and curated commands. Framework source is hidden at runtime. Layers 1-3 are <em>build-time</em>; layers 4-5 are <em>runtime mutable</em>.</p>
   <div class="layer-stack">
     <div class="layer framework">
       <div class="num">1</div>
-      <div class="name">Framework / system <span class="desc"><span class="mono">bot/</span> · <span class="mono">plugins/</span> · <span class="mono">scripts/</span> · <span class="mono">dashboard/</span></span></div>
-      <div class="access">Agent runtime access: <b>none</b><br>Modified by humans + developers</div>
+      <div class="name">Framework / system</div>
+      <div class="access">Agent access: <b>none</b> — modified by humans only</div>
     </div>
     <div class="layer commands">
       <div class="num">2</div>
-      <div class="name">Distributed commands <span class="desc"><span class="mono">bin/mc</span> · <span class="mono">bin/marks</span> · <span class="mono">bin/workspace</span></span></div>
-      <div class="access">Agent runtime access: <b>execute only</b><br>Installed to each profile's PATH at deploy</div>
+      <div class="name">Distributed commands</div>
+      <div class="access">Agent access: <b>execute only</b> — installed at deploy</div>
     </div>
     <div class="layer profile">
       <div class="num">3</div>
-      <div class="name">Profile content <span class="desc"><span class="mono">~/.hermes/profiles/&lt;agent&gt;/{SOUL.md, skills/, config.yaml}</span></span></div>
-      <div class="access">Agent runtime access: <b>Hermes-managed</b><br>Deployed from <span class="mono">data/workspace/reference/{skills,souls}/</span></div>
+      <div class="name">Profile content</div>
+      <div class="access">Agent access: <b>Hermes-managed</b> — deployed from workspace</div>
     </div>
     <div class="layer workspace">
       <div class="num">4</div>
-      <div class="name">Shared workspace <span class="desc"><span class="mono">data/workspace/{geo, infra, production, operations, reference}/</span></span></div>
-      <div class="access">Agent runtime access: <b>read freely; write per OWNERS.yaml</b><br>Tracked in git, per-world/scenario</div>
+      <div class="name">Shared workspace</div>
+      <div class="access">Agent access: <b>read freely; write per OWNERS.yaml</b></div>
     </div>
     <div class="layer home">
       <div class="num">5</div>
-      <div class="name">Agent home <span class="desc"><span class="mono">~/.hermes/profiles/&lt;agent&gt;/{memories/, sessions/, .env}</span></span></div>
-      <div class="access">Agent runtime access: <b>Hermes-mediated</b><br>Secrets never readable; memory via the <span class="mono">memory</span> tool</div>
+      <div class="name">Agent home</div>
+      <div class="access">Agent access: <b>Hermes-mediated</b> — secrets never readable</div>
     </div>
   </div>
-  <p class="lede" style="margin-top: 14px;">Workers spawn with <span class="mono">cwd=data/workspace/</span>; a <span class="mono">pre_tool_call</span> hook in the <span class="mono">landfolk</span> plugin enforces the allowlist on the <span class="mono">file</span> and <span class="mono">terminal</span> tools. Layers 1-3 are <em>build-time / deploy-time</em>. Layers 4-5 are <em>runtime mutable</em>.</p>
+</section>
 
-  <h3 style="margin-top: 32px; font-size: 16px; font-weight: 600;">8b · The shared workspace: five domains, each split into ingest vs generated</h3>
-  <p class="lede" style="margin-bottom: 8px;">Organized <em>by domain</em>, not by agent — work is collaborative. Ownership lives in <span class="mono">OWNERS.yaml</span>. Each domain separates <span style="color: var(--workspace);">designed input</span> (<span class="mono">ingest/</span>) from <span style="color: var(--tool);">computed output</span> (<span class="mono">generated/</span>) so PR diffs don't drown in compaction noise.</p>
-
+<!-- ========================================== -->
+<!-- SECTION 8: SHARED WORKSPACE                 -->
+<!-- ========================================== -->
+<section>
+  <h2>8 · Shared workspace: five domains</h2>
+  <p class="lede">Organized <em>by domain</em>, not by agent — work is collaborative. Each domain separates designed input (<span class="mono">ingest/</span>) from computed output (<span class="mono">generated/</span>). Ownership is governed by <span class="mono">OWNERS.yaml</span> — see <a href="workspaces.md">workspaces.md</a> for the full listing.</p>
   <div class="domains">
     <div class="domain">
       <div class="name">geo/</div>
       <div class="gloss">Places, worksites, routes, POIs</div>
-      <div class="items">
-        <span class="ingest">ingest:</span> route + worksite templates<br>
-        <span class="gen">generated:</span> worksites.json, routes, POIs, placemark-audit<br>
-        scripts: classify-worksite, path-sim
-      </div>
     </div>
     <div class="domain">
       <div class="name">infra/</div>
       <div class="gloss">Buildings, structures, blueprints</div>
-      <div class="items">
-        <span class="ingest">ingest:</span> plans/ (road-bluff-v4.json, …)<br>
-        <span class="gen">generated:</span> structures.json, construction-log.jsonl<br>
-        scripts: parse-blueprint, verify-structure
-      </div>
     </div>
     <div class="domain">
       <div class="name">production/</div>
       <div class="gloss">Resources, recipes, goals</div>
-      <div class="items">
-        <span class="ingest">ingest:</span> recipes, budgets/, goals/&lt;bot&gt;.json<br>
-        <span class="gen">generated:</span> stockpiles, deficits, goal-metrics<br>
-        scripts: calc-materials, compose-budget
-      </div>
     </div>
     <div class="domain">
       <div class="name">operations/</div>
-      <div class="gloss">Fleet, dispatch, defense, runbooks, regions</div>
-      <div class="items">
-        <span class="ingest">ingest:</span> regions/, runbooks/, post-mortems/, threats, loadouts<br>
-        <span class="gen">generated:</span> dispatch-log, intent-log, epic-judgments<br>
-        scripts: score-affinity, compose-fleet-state
-      </div>
+      <div class="gloss">Fleet, dispatch, defense, runbooks</div>
     </div>
     <div class="domain">
       <div class="name">reference/</div>
       <div class="gloss">Skills, SOULs, guides, research</div>
-      <div class="items">
-        <span class="ingest">ingest:</span> skills/, souls/, guides/, research/<br>
-        <span class="gen">generated:</span> project-log.jsonl<br>
-        scripts: lookup-recipe
-      </div>
     </div>
   </div>
+</section>
 
-  <p class="lede" style="margin-top: 14px;"><b>Skill bundles + SOULs live in <span class="mono">reference/ingest/</span>.</b> The deploy script installs them into each profile's <span class="mono">skills/</span> + <span class="mono">SOUL.md</span>. The framework keeps only the install machinery; the expertise is workspace content, versioned per world/scenario.</p>
-
-<div class="card-mock" style="margin-top: 16px;"><span class="comment"># data/workspace/OWNERS.yaml — the single-writer convention, made explicit</span>
-<span class="comment">#   write:   single canonical writer (for ingest/)</span>
-<span class="comment">#   approve: PR-style approval before merge</span>
-<span class="comment">#   compact: maintenance writer (for generated/)</span>
-
-geo/ingest/route-templates.yaml:        {write: navigator, approve: overseer}
-geo/generated/worksites.json:           {compact: navigator}
-infra/ingest/plans/:                    {write: builder, approve: engineer}
-production/ingest/recipes.yaml:         {write: crafter, approve: overseer}
-operations/ingest/runbooks/:            {write: any,    approve: overseer}
-reference/ingest/skills/**:             {write: engineer, approve: <span class="field-bot">operator</span>}
-reference/ingest/souls/**:              {write: engineer, approve: <span class="field-bot">operator</span>}
-**/scripts/**:                          {write: engineer, approve: overseer}
-</div>
-  <p class="lede" style="margin-top: 8px;">Skills, SOULs, world regions, and goal definitions use <span class="mono">approve: operator</span> because they shape agent behavior or world policy. Adding an agent: add their rows to OWNERS, no directory shuffling. Confused? <span class="mono">grep &lt;path&gt; OWNERS.yaml</span> tells you who writes there.</p>
-
-  <h3 style="margin-top: 32px; font-size: 16px; font-weight: 600;">8c · Two boards: operations &amp; back-office</h3>
-  <p class="lede" style="margin-bottom: 10px;">A kanban board is a unit of cards + dispatch + workers. We run two. Different cadence, different reviewers, different metrics.</p>
+<!-- ========================================== -->
+<!-- SECTION 9: TWO BOARDS + SELF-IMPROVEMENT    -->
+<!-- ========================================== -->
+<section>
+  <h2>9 · Two boards + self-improvement</h2>
+  <p class="lede">A kanban board is a unit of cards + dispatch + workers. We run two. Different cadence, different reviewers, different metrics.</p>
   <div class="boards">
     <div class="board ops">
       <h3><span class="badge bot">landfolk-ops</span> &nbsp; in-game work</h3>
-      <div class="desc">Real-time (minutes). Per-bot mutex enforced.</div>
+      <div class="desc">Real-time (minutes). Per-bot lease enforced.</div>
       <div class="kv">
-        <div><b>Cards</b><span class="v">[NAV] [MINE] [BUILD] [CRAFT] [DEFENSE] [SUPERVISE] [MAINT] [URGENT] …</span></div>
+        <div><b>Cards</b><span class="v">[NAV] [MINE] [BUILD] [CRAFT] [DEFENSE] [MAINT] [URGENT] …</span></div>
         <div><b>Workers</b><span class="v">execution agents · @dispatcher · @planner · @overseer · @sentinel</span></div>
-        <div><b>Mutex</b><span class="v">yes — landfolk plugin on <span class="mono">metadata.bot</span></span></div>
       </div>
     </div>
     <div class="board back">
       <h3><span class="badge tool">landfolk-backoffice</span> &nbsp; the team improves itself</h3>
       <div class="desc">Async (hours-days). Workers run on git worktrees, parallel-safe.</div>
       <div class="kv">
-        <div><b>Cards</b><span class="v">[BUG] [FEAT] [REFACTOR] [RESEARCH] [DOC] [MR] (merge request)</span></div>
+        <div><b>Cards</b><span class="v">[BUG] [FEAT] [REFACTOR] [RESEARCH] [DOC] [MR]</span></div>
         <div><b>Workers</b><span class="v">@engineer (primary) · @overseer (reviews) · @planner (research)</span></div>
-        <div><b>Mutex</b><span class="v">none — branch-per-card via Hermes <span class="mono">-w</span> worktrees</span></div>
       </div>
     </div>
   </div>
-  <p class="lede" style="margin-top: 14px;"><span class="mono">kanban_create --board &lt;name&gt;</span> selects the board per card; profile configs declare which boards they participate in. The back-office board exists so code, plan, runbook, and skill changes flow through proper review — same agent-driven kanban flow, just a separate lane with PR mechanics.</p>
 
-  <h3 style="margin-top: 32px; font-size: 16px; font-weight: 600;">8d · PR-via-card: how the team ships its own improvements</h3>
+  <h3 style="margin-top: 32px; font-size: 16px; font-weight: 600;">How the team ships its own improvements</h3>
   <p class="lede">When <span class="mono">@builder</span> finds <code>calc-materials.py</code> crashes on tilted blueprints, the bug-fix moves through the <b>back-office board</b> on a git-worktree branch, with <span class="mono">@overseer</span> or operator review per OWNERS.</p>
   <div class="engineer-flow">
     <div class="eng-step">
       <div class="num">1 · Find</div>
       <div class="title">@builder hits crash</div>
-      <div class="body">Files <code>[BUG]</code> card on <span class="mono">landfolk-backoffice</span>; original ops card blocks with <code>tool_bug:calc-materials</code></div>
+      <div class="body">Files <code>[BUG]</code> on back-office; ops card blocks</div>
     </div>
     <div class="eng-step">
       <div class="num">2 · Claim</div>
-      <div class="title">@engineer claims [BUG]</div>
-      <div class="body">Spawns in a fresh worktree (<span class="mono">.worktrees/hermes-&lt;hash&gt;/</span>, branch <span class="mono">hermes/fix-calc-materials</span>)</div>
+      <div class="title">@engineer claims</div>
+      <div class="body">Spawns in a fresh git worktree</div>
     </div>
     <div class="eng-step">
       <div class="num">3 · Code</div>
       <div class="title">@engineer edits</div>
-      <div class="body">Modifies <span class="mono">production/scripts/calc-materials.py</span>, runs tests, commits</div>
+      <div class="body">Modifies script, runs tests, commits</div>
     </div>
     <div class="eng-step">
       <div class="num">4 · MR</div>
       <div class="title">Files [MR] card</div>
-      <div class="body">Assignee: <span class="mono">@overseer</span> (or operator per OWNERS); body: branch + diff + test output</div>
+      <div class="body">Assignee: @overseer or operator per OWNERS</div>
     </div>
     <div class="eng-step">
       <div class="num">5 · Review</div>
-      <div class="title">@overseer / operator</div>
-      <div class="body">Reviews diff. Approve → merge to main; reject → comments; @engineer revises</div>
+      <div class="title">@overseer reviews</div>
+      <div class="body">Approve → merge; reject → revise</div>
     </div>
     <div class="eng-step">
       <div class="num">6 · Resume</div>
       <div class="title">Ops card unblocks</div>
-      <div class="body">Next <span class="mono">@crafter</span> run uses the fixed script</div>
+      <div class="body">Next run uses the fixed script</div>
     </div>
   </div>
-  <p class="lede" style="margin-top: 14px;">Same flow works for blueprint revisions (<span class="mono">infra/ingest/plans/</span>), runbook updates (<span class="mono">operations/ingest/runbooks/</span>), skill bundles (<span class="mono">reference/ingest/skills/</span>) — anything OWNERS marks <span class="mono">approve:</span>. <em>This is the factory metaphor in full</em>: line workers do production on the ops board, engineers maintain the machines on the back-office board, QA reviews via PR. Every change is a card; every artifact change is a commit; every review is a human-readable diff.</p>
 </section>
 
 <!-- ========================================== -->
-<!-- SECTION 9: RECALL STREAM + HOST DATA API   -->
+<!-- SECTION 10: RECALL STREAM                   -->
 <!-- ========================================== -->
 <section>
-  <h2>9 · Recall stream: episodic memory the fleet shares</h2>
-  <p class="lede">A host data API holds a single append-only stream — what an agent saw, where, when. The whole fleet writes into it; the whole fleet queries it. <b>Recall is episodic memory.</b> Marks are committed coordinates. Workspaces are audited content. The recall stream is the cheap intermediate that lets <span class="mono">@farmer</span>'s glimpse of iron at <span class="mono">(22, 98, 10)</span> turn into <span class="mono">@miner</span>'s next card body, with no spatial entity model on the write path.</p>
+  <h2>10 · Recall stream: episodic memory the fleet shares</h2>
+  <p class="lede">A host data API holds one append-only stream of sightings. The fleet writes to it and reads from it. <b>Recall is episodic memory</b>: what one worker sees can guide the next worker's card.</p>
 
   <div class="recall-flow">
     <div class="recall-node">
@@ -936,23 +832,23 @@ reference/ingest/souls/**:              {write: engineer, approve: <span class="
     <div class="recall-arrow">→</div>
     <div class="recall-node">
       <div class="head">2 · Report</div>
-      <div class="body"><span class="mono">recall.resource("iron_ore")</span> &nbsp;<br>{ subject, type, where, who, card_id? }</div>
+      <div class="body"><span class="mono">recall.resource("iron_ore")</span></div>
     </div>
     <div class="recall-arrow">→</div>
     <div class="recall-node">
       <div class="head">3 · Persist</div>
-      <div class="body">Host API stores the event (SQLite or JSONL+index) with dedupe window</div>
+      <div class="body">Host API stores the event with dedupe window</div>
     </div>
   </div>
   <div class="recall-flow" style="margin-top: 6px;">
     <div class="recall-node">
       <div class="head">4 · Plan</div>
-      <div class="body"><span class="mono">@planner</span> reads a new <code>[MINE]</code> intent. Card body mentions <span class="mono">iron</span>.</div>
+      <div class="body"><span class="mono">@planner</span> reads a new <code>[MINE]</code> intent</div>
     </div>
     <div class="recall-arrow">→</div>
     <div class="recall-node">
       <div class="head">5 · Recall</div>
-      <div class="body"><span class="mono">recall.near?subject=iron_ore&amp;type=resource&amp;…</span> &nbsp;<br>Top hits injected into the card body before dispatch</div>
+      <div class="body">Top hits injected into the card body before dispatch</div>
     </div>
     <div class="recall-arrow">→</div>
     <div class="recall-node">
@@ -961,53 +857,26 @@ reference/ingest/souls/**:              {write: engineer, approve: <span class="
     </div>
   </div>
 
-  <p class="lede" style="margin-top: 18px;">Each event has a <b>subject</b> (what it is about) and a <b>type</b> (closed enum: resource, blocked, damage, depleted, note). No free-form <code>refs</code> bag on the write path.</p>
-
-<div class="card-mock" style="margin-top: 6px;">POST /api/workspace/recall/events
-{
-  <span class="field-bot">"subject"</span>: "iron_ore",       <span class="comment"># block / item / mob id</span>
-  <span class="field-bot">"type"</span>:    "resource",       <span class="comment"># resource | blocked | damage | depleted | note</span>
-  <span class="field-bot">"qty"</span>:     1,
-  <span class="field-bot">"where"</span>:   { "world": "world", "x": 22, "y": 98, "z": 10 },
-  <span class="field-agent">"who"</span>:     { "agent": "farmer", "bot": "zee" },
-  <span class="field-agent">"card_id"</span>: "t_abc123"
-}</div>
-
   <div class="recall-split">
     <div class="case bound">
       <h3><span class="badge bot">Live</span> &nbsp; Host data API</h3>
-      <div class="desc">Append-only stream, high write rate, transactional reads, optional clustered hints.</div>
-      <ul>
-        <li><code>POST /recall/events</code> — append one sighting</li>
-        <li><code>GET /recall/near?subject=&amp;type=&amp;x=&amp;…</code> — task-time lookup</li>
-        <li><code>GET /recall/events?subject=&amp;type=&amp;since=</code> — tail by subject/type</li>
-        <li><code>GET /recall/hints?subject=&amp;type=&amp;near=</code> — derived clusters (optional)</li>
-        <li>Also hosts ops state: <code>fleet-state</code>, <code>capacity-forecast</code>, intent / dispatch / judgment logs</li>
-      </ul>
+      <div class="desc">Append-only stream, high write rate, transactional reads. Also hosts fleet state, capacity forecasts, and dispatch logs.</div>
     </div>
     <div class="case unbound">
       <h3><span class="badge workspace">Compacted</span> &nbsp; Git workspace <span class="mono">generated/</span></h3>
-      <div class="desc">Low write rate, diff-reviewable, snapshot-stable. Compaction cards bridge stream → git.</div>
-      <ul>
-        <li><span class="mono">[COMPACT] geo</span> reads <span class="mono">recall/events</span> since watermark</li>
-        <li>Clusters recurring <span class="mono">subject</span> + <span class="mono">type</span> by location</li>
-        <li>Writes <span class="mono">geo/generated/worksites.json</span>, <span class="mono">production/generated/stockpiles.json</span></li>
-        <li>Archives pre-watermark rows to <span class="mono">archive/recall/&lt;year-week&gt;.jsonl.gz</span></li>
-        <li><span class="mono">@reporter</span> is the named curator; folds into <span class="mono">@overseer</span> at MVP</li>
-      </ul>
+      <div class="desc">Low write rate, diff-reviewable, snapshot-stable. Compaction cards bridge stream → git, archived by watermark.</div>
     </div>
   </div>
 
-  <p class="lede" style="margin-top: 18px;"><b>What the recall stream is <em>not</em>:</b> not a chest database (chest snapshots stay on bot HTTP), not a region authority (regions stay on bot for dig/place enforcement), not a replacement for marks (marks remain committed fleet agreement — compaction may <em>produce</em> marks, never replace them). The stream is episodic; marks are committed; workspaces are audited. Three layers, three cadences, one mental model.</p>
-  <p class="lede" style="margin-top: 8px; font-size: 13px;">Keep this HTML aligned with markdown: vocabulary and bot names → <a href="target.md">target.md</a>, <a href="bots-and-mc.md">bots-and-mc.md</a>. Walkthrough steps → <a href="example-wheat-farm-walkthrough.md">example-wheat-farm-walkthrough.md</a>. Doc ownership → <a href="README.md">README</a> doc map.</p>
+  <p class="lede" style="margin-top: 18px;"><b>What recall is <em>not</em>:</b> not a chest database, not a region authority, and not a replacement for marks. Recall is episodic, marks are committed agreements, and workspaces are audited artifacts.</p>
 </section>
 
 <!-- ========================================== -->
-<!-- SECTION 10: WHEAT FARM WALKTHROUGH          -->
+<!-- SECTION 11: WHEAT FARM WALKTHROUGH          -->
 <!-- ========================================== -->
 <section id="wheat-walkthrough">
-  <h2>10 · Wheat farm epic — step through</h2>
-  <p class="lede">Animated board timeline from <a href="example-wheat-farm-walkthrough.md">example-wheat-farm-walkthrough.md</a>. One bot (<span class="mono">mox</span>), many agents. Use ← → keys or buttons. Boxes show the card, Mox’s place/activity, the active Hermes profile, and what happens this step.</p>
+  <h2>11 · Wheat farm epic — step through</h2>
+  <p class="lede">Animated board timeline from <a href="example-wheat-farm-walkthrough.md">example-wheat-farm-walkthrough.md</a>. One bot (<span class="mono">mox</span>), many agents. Use ← → keys or buttons. Step 8 mirrors the repair pattern in §5.</p>
 
   <div class="wt-controls">
     <button type="button" id="wt-prev" aria-label="Previous step">← Prev</button>
@@ -1038,23 +907,19 @@ reference/ingest/souls/**:              {write: engineer, approve: <span class="
 </section>
 
 <!-- ========================================== -->
-<!-- SECTION 11: HARD PARTS                      -->
+<!-- SECTION 12: HARD PARTS                      -->
 <!-- ========================================== -->
 <section>
-  <h2>11 · The hard parts, plainly</h2>
+  <h2>12 · The hard parts, plainly</h2>
   <p class="lede">Conceptual gotchas worth holding in mind.</p>
   <div class="hard-parts">
     <div class="callout">
-      <div class="head"><span class="badge warn">Constraint</span><b>Late binding is not native</b></div>
-      <p>Hermes v0.15 requires <code>assignee</code> at <code>kanban_create</code>. <span class="mono">@dispatcher</span> binds at <b>write time</b>, not at dispatch. WS event subscription handles bots that die between bind and dispatch via <code>kanban reassign</code>.</p>
+      <div class="head"><span class="badge warn">Constraint</span><b>Hermes scheduling is board-wide, not per-bot</b></div>
+      <p>v0.15 binds <code>assignee</code> at <code>kanban_create</code> (not at dispatch) and caps <code>max_in_progress</code> board-wide, not per-assignee. Our per-bot mutex lives in the bot lease + landfolk plugin, not in Hermes core. Don't expect upstream features to retire it.</p>
     </div>
     <div class="callout">
-      <div class="head"><span class="badge bot">Primitive</span><b>The lease already exists</b></div>
-      <p><code>claim_lock</code> at dispatch + <code>kanban_heartbeat</code> (every 5-10 min) + 4hr TTL + reclaim on PID death. The lease primitive is given; per-bot exclusion sits on top via the landfolk plugin.</p>
-    </div>
-    <div class="callout">
-      <div class="head"><span class="badge warn">Constraint</span><b>max_in_progress is global</b></div>
-      <p>v0.15's cap is board-wide, not per-assignee. Our per-bot mutex lives in the landfolk plugin's gate-check, not in Hermes core. Don't expect upstream features to retire it.</p>
+      <div class="head"><span class="badge bot">Primitive</span><b>Bot lease: checkout, renew, release</b></div>
+      <p>Agents explicitly <code>mc bot checkout</code> a registry body, <code>renew</code> while acting, and <code>release</code> when done. The lease lives in <code>~/.hermes/bot-leases.db</code> with conditional writes and <code>lease_version</code> fencing. Ranking: explicit <code>--bot</code>, capability filter, continuity (<code>bot_last_mark</code>), nearest (<code>--near</code>), LRU tie-break.</p>
     </div>
     <div class="callout">
       <div class="head"><span class="badge tool">Tool fit</span><b>Delegation is narrow</b></div>
@@ -1065,36 +930,20 @@ reference/ingest/souls/**:              {write: engineer, approve: <span class="
       <p><span class="mono">@crafter</span> doesn't dig holes because <code>mc dig</code> isn't in its loaded catalog. Discipline is structural — the model can't reach for verbs it doesn't know about. <em>Bundle quality is architecture quality.</em></p>
     </div>
     <div class="callout">
-      <div class="head"><span class="badge agent">Discipline</span><b>Roles are abstract; agents are real</b></div>
-      <p>"Planning" is a concern; <span class="mono">@planner</span> is the agent fulfilling it. You can swap implementations (rewrite <span class="mono">@planner</span>) without changing what the role <em>means</em>. Don't conflate them when reasoning about the system.</p>
-    </div>
-    <div class="callout">
       <div class="head"><span class="badge tool">Sequence</span><b>Build observability first</b></div>
-      <p>Before binding logic, ship the dashboard lease panel + fleet-state file + recall stream skeleton. Validate that what you see matches reality. Only then add scoring, maintenance, preemption. Each step reversible; no big-bang.</p>
-    </div>
-    <div class="callout">
-      <div class="head"><span class="badge workspace">Discipline</span><b>Workspaces are public; secrets aren't workspace</b></div>
-      <p>Workspace content is git-backed, reviewable, shareable. Secrets, tokens, API keys do <em>not</em> live in workspaces — they live in <code>~/.hermes/profiles/&lt;agent&gt;/.env</code> with strict file modes. Workspace files commit; env files don't.</p>
-    </div>
-    <div class="callout">
-      <div class="head"><span class="badge tool">Custom layer</span><b>Spawn injects MC env per card</b></div>
-      <p>v0.15 has no native <code>pre_spawn</code> hook for per-card env. Bot-bound cards need <code>MC_API_URL</code> + <code>MC_USERNAME</code> at spawn from <span class="mono">data/bots/&lt;bot&gt;.yaml</span>. Resolution: small spawn layer (extension to landfolk gate-check). Bot-less cards stay on the embedded dispatcher with no change.</p>
+      <p>Before binding logic, ship the dashboard lease panel + fleet-state file + recall stream skeleton. Validate that what you see matches reality. Only then add dispatch scoring, maintenance, preemption. Each step reversible; no big-bang.</p>
     </div>
     <div class="callout">
       <div class="head"><span class="badge workspace">Discipline</span><b>Recall is episodic; marks are committed</b></div>
-      <p>Three storage cadences, three purposes. <b>Recall stream</b> = anyone-can-write-anyone-can-read sightings. <b>Marks</b> = committed coordinates the fleet agrees on. <b>Workspace</b> = audited, designed content (PR-reviewed). Don't reimplement <span class="mono">locations-base.json</span> inside recall; compaction may <em>produce</em> marks, never replace them.</p>
+      <p>Three storage cadences, three purposes. <b>Recall stream</b> = anyone-can-write sightings. <b>Marks</b> = committed coordinates the fleet agrees on. <b>Workspace</b> = audited, designed content. Don't reimplement <span class="mono">locations-base.json</span> inside recall; compaction may <em>produce</em> marks, never replace them.</p>
     </div>
     <div class="callout">
-      <div class="head"><span class="badge workspace">Discipline</span><b>Ingest vs generated — never mix</b></div>
-      <p>Each domain splits <span class="mono">ingest/</span> (designed input, PR-reviewed) from <span class="mono">generated/</span> (computed output, written only by <code>compact:</code> writers). Different cadences, different reviewers. A bug-fix diff shouldn't drown in nightly worksite churn.</p>
+      <div class="head"><span class="badge tool">Tool fit</span><b>mc verify: deterministic acceptance predicates</b></div>
+      <p>Workers self-check completion and overseers validate acceptance with structured predicates: <code>chest_contains</code>, <code>inventory_contains</code>, <code>at_mark</code>, <code>region_blocks</code>. Response distinguishes "evaluated and false" from "could not evaluate" with explicit error codes and <code>retry_safe</code> flags. Replaces vague natural-language <code>success_when</code> clauses with testable checks.</p>
     </div>
     <div class="callout">
-      <div class="head"><span class="badge warn">Isolation</span><b>Framework source is invisible at runtime</b></div>
-      <p>Workers spawn with <span class="mono">cwd=data/workspace/</span>. A <span class="mono">pre_tool_call</span> hook in the landfolk plugin enforces a path allowlist. Agents can't read <span class="mono">bot/</span>, <span class="mono">plugins/</span>, <span class="mono">scripts/</span>, <span class="mono">dashboard/</span> — the team improves itself through workspace MRs, not by editing framework code mid-card.</p>
-    </div>
-    <div class="callout">
-      <div class="head"><span class="badge tool">Sequence</span><b>Two boards, two cadences</b></div>
-      <p>Operations work (real-time, per-bot mutex) and back-office work (async, worktree-isolated) live on separate boards. Don't queue script bugs behind mining tasks; don't slot mining behind doc reviews. Different metrics, different reviewers, different lanes.</p>
+      <div class="head"><span class="badge card">Custom layer</span><b>Recall inject: task-time context into card body</b></div>
+      <p>Before a worker sees a card, the dispatcher shifts relevant recall bullets into the body—nearest resources, recent damage, blockages. This is the <em>recall inject</em> step: task-time memory, not prompt engineering. The worker wakes already knowing where to go.</p>
     </div>
   </div>
 </section>
@@ -1106,18 +955,20 @@ reference/ingest/souls/**:              {write: engineer, approve: <span class="
     <a href="target.md">target.md — canonical target architecture</a>
     <a href="hermes-agents.md">hermes-agents.md — Hermes profiles, skills, planner DSL</a>
     <a href="components.md">components.md — runtime map (processes, APIs)</a>
+    <a href="embodied-control.md">embodied-control.md — reflex-first bot/agent interface</a>
     <a href="epic-lifecycle.md">epic-lifecycle.md — epic metadata, auto-nav</a>
     <a href="example-wheat-farm-walkthrough.md">example-wheat-farm-walkthrough.md — wheat epic timeline</a>
-    <a href="dashboard-metrics-spec.md">dashboard-metrics-spec.md — colony overview UI</a>
     <a href="bots-and-mc.md">bots-and-mc.md — registry, mc, fleet names</a>
-    <a href="workspaces.md">workspaces.md — access model, domains, OWNERS, two boards</a>
+    <a href="workspaces.md">workspaces.md — access model, domains, OWNERS</a>
     <a href="data-api.md">data-api.md — host recall stream + operations endpoints</a>
-    <a href="board-dynamics.md">board-dynamics.md — leasing, scoring, maintenance, recovery</a>
+    <a href="board-dynamics.md">board-dynamics.md — dispatch bind, maintenance, URGENT preemption</a>
+    <a href="bot-lease.md">bot-lease.md — body leasing, checkout/renew/release</a>
+    <a href="mc-verify-spec.md">mc-verify-spec.md — deterministic acceptance predicates</a>
+    <a href="observe-cards.md">observe-cards.md — fairplay [VERIFY] observation cards</a>
+    <a href="scheduled-operations.md">scheduled-operations.md — cron registry, orchestrator + specialist</a>
     <a href="impact.md">impact.md — where the model touches existing code</a>
+    <a href="dashboard-metrics-spec.md">dashboard-metrics-spec.md — colony overview UI</a>
     <a href="hermes-v0.15-reference.md">hermes-v0.15-reference.md — primitives this design cites</a>
-    <a href="../specs/kanban/plugin-landfolk.md">landfolk-plugin.md — per-bot mutex (load-bearing)</a>
-    <a href="../specs/world/marks-sign-anchored.md">sign-anchored-placemarks.md — :mark: notation</a>
-    <a href="../platform/hermes-upgrade-0.15-runbook.md">hermes-0.15-upgrade.md — v0.15 install &amp; verify runbook</a>
   </div>
 </footer>
 
@@ -1186,7 +1037,7 @@ reference/ingest/souls/**:              {write: engineer, approve: <span class="
       card: { id: 't_x002 + t_rep01', name: 'blocked + [REPAIR]', status: 'blocked → repair', assignee: 'builder', bot: 'mox', kind: 'execute' },
       bot: { loc: ':field_south:', activity: 'repair pass', mutex: 'busy' },
       agent: { who: 'builder', mode: 'same profile · repair spawn' },
-      actions: ['kanban_block world_state_mismatch', 'dispatcher creates repair child', 'mc fix · unblock t_x002']
+      actions: ['kanban_block world_state_mismatch', 'dispatcher creates repair child', 'mc fix · unblock t_x002 (see §5)']
     },
     {
       phase: 'Execute', event: 'CLAIM → COMPLETE',
