@@ -20,10 +20,13 @@ phases:
   P2:
     marks:
       lt_prefix_min: 3                  # at least 3 resource marks on the map
-    regions:
-      - id: farm                        # a tilled wheat plot region
-    inventory:
-      resources: [wheat, wood, cobblestone]   # each at/above its target_min
+      farm_prefix_min: 1               # a tilled wheat plot marked (farm_*)
+    # Region + inventory gates deferred this iteration: base-inventory's chest
+    # snapshots come back items:null (no live capture) and its vocabulary
+    # (food/wood/stone/coal) doesn't match the gate's (wheat/cobblestone), so a
+    # stocked-storage check can't be evaluated yet. P2 completion = a farm plot
+    # marked + organized storage (chest_* from P1). Re-add an inventory gate once
+    # chest-snapshot quantity tracking populates.
   P3:
     mine_registry:
       entries_min: 1                    # at least one registered mine entrance

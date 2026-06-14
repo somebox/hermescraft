@@ -475,7 +475,19 @@ def check_phases() -> dict[str, dict]:
     rules = gl.parse_yaml_simple(TEMPLATES_DIR / "phase-checklists.yaml").get("phases", {})
     marks = _shared_marks()
     regions = {r.get("id"): r for r in _regions()}
-    mines = gl._load_json(DATA_DIR / "mines-world.json", default={})
+    # Mine registry is PER-WORLD (data/mines-<world>.json). Read the active
+    # genesis world's file — NOT the hardcoded "mines-world.json", which is the
+    # production world (literally named "world"); its mines must not satisfy the
+    # genesis P3 gate.
+    _gworld = "genesis2"
+    try:
+        _rid = active_run_id()
+        if _rid:
+            _gworld = load_config(_rid).get("world") or _gworld
+    except Exception:
+        pass
+    _safe_world = re.sub(r"[^\w.-]", "_", str(_gworld))
+    mines = gl._load_json(DATA_DIR / f"mines-{_safe_world}.json", default={})
     mine_entries = mines.get("mines", mines) if isinstance(mines, dict) else mines
     out: dict[str, dict] = {}
     for phase, rule in rules.items():
@@ -484,7 +496,7 @@ def check_phases() -> dict[str, dict]:
         if mk.get("base_anchor_required") and not any("base_anchor" in n for n in marks):
             fails.append("missing base_anchor mark")
         for pref, key in (("chest_", "chest_prefix_min"), ("lt_", "lt_prefix_min"),
-                          ("mine_", "mine_prefix_min")):
+                          ("mine_", "mine_prefix_min"), ("farm_", "farm_prefix_min")):
             if key in mk:
                 have = sum(1 for n in marks if str(n).startswith(pref))
                 if have < mk[key]:
