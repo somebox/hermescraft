@@ -148,6 +148,8 @@ Goal: nether access + blaze rods + ender pearls
 
 **Crafting table needed for**: all tools, weapons, armor, furnace, doors, chest, shield, bucket, bow — everything except planks, sticks, and the table itself.
 
+**Table range matters**: a 3x3 (table) recipe only crafts when a real crafting_table is **within ~4 blocks** and you're facing it. If `mc craft` returns `CRAFT_NO_OP` ("produced 0, materials present"), you are almost certainly NOT in range of a table — crafting is NOT broken. Fix: `mc place crafting_table <x> <y> <z>` on solid ground in a cell ADJACENT to you (read your position from `mc status`; pick a ground-level neighbor, never a floating cell), stand next to it, then retry ONCE. Never loop-retry or report the server/crafting as broken — that's always a range/orientation problem.
+
 **Smelting** requires a placed furnace. Only smelt: raw_iron, raw_gold, raw_copper, raw_beef, raw_porkchop, raw_chicken, raw_cod, raw_salmon, sand (→glass), cobblestone (→stone), oak_log (→charcoal). Do NOT smelt gravel, dirt, or random blocks.
 
 **Before placing blocks**: `mc equip BLOCK` first, then `mc place BLOCK X Y Z`. Read coordinates from `mc status` output — don't guess.

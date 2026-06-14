@@ -14,6 +14,7 @@ touches the world or bodies is procworld-native here.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -156,6 +157,50 @@ def _bot_position(port: int, *, timeout: float = 4.0) -> dict | None:
         return None
 
 
+def _bot_connected(port: int) -> bool:
+    return _bot_position(port) is not None
+
+
+def restart_bodies(*, mc_host: str | None = None, mc_port: int | None = None, timeout_s: int = 120) -> None:
+    """Kill + relaunch the pool's bot processes, then wait until all reconnect.
+    Called AFTER reset_world: the world delete/recreate wedges mineflayer
+    ("session replacement in flight"), so a clean restart is more reliable than
+    waiting on auto-reconnect (which failed the probe last run)."""
+    import shutil
+    host = mc_host or os.environ.get("MC_HOST", "192.168.1.202")
+    port_mc = mc_port or int(os.environ.get("MC_PORT", "25565"))
+    for b in BODY_POOL.values():
+        api = b["port"]
+        # Kill whatever holds the API port (the wedged bot).
+        try:
+            out = subprocess.run(["lsof", "-ti", f":{api}"], capture_output=True, text=True, timeout=10).stdout
+            for pid in out.split():
+                try:
+                    os.kill(int(pid), 9)
+                except (ProcessLookupError, ValueError):
+                    pass
+        except Exception:
+            pass
+    time.sleep(3)
+    node = shutil.which("node") or "node"
+    for b in BODY_POOL.values():
+        api, user = b["port"], b["user"]
+        env = {**os.environ, "API_PORT": str(api), "VIEWER_PORT": str(api + 1000),
+               "BOT_MOVEMENT_PROFILE": "slow", "MC_HOST": host, "MC_PORT": str(port_mc),
+               "MC_USERNAME": user}
+        log = open(f"/tmp/{user.lower()}-bot.log", "a")
+        subprocess.Popen([node, "bot/server.js"], cwd=str(REPO_ROOT), env=env,
+                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    # Wait for all bodies connected.
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if all(_bot_connected(b["port"]) for b in BODY_POOL.values()):
+            return
+        time.sleep(3)
+    down = [b["user"] for b in BODY_POOL.values() if not _bot_connected(b["port"])]
+    raise RuntimeError(f"bodies did not reconnect after restart: {down}")
+
+
 def probe_natural_spawn(world: str, *, probe_user: str = "Mox",
                         probe_port: int = 3007) -> dict[str, int]:
     """The colony spawn IS wherever the bodies naturally land in `world` — no
@@ -187,24 +232,79 @@ def probe_natural_spawn(world: str, *, probe_user: str = "Mox",
     rcon_in(world, [f"forceload add {x >> 4} {z >> 4}"])
     # Land check: feet must not be in water, and there must be solid ground just
     # below. Sea level is ~63 — a settled Y at/below that over water means ocean.
-    feet_water = "WATER" in rcon_in(
-        world, [f"execute positioned {x} {y} {z} if block ~ ~ ~ minecraft:water run say WATER"])
-    below_water = "WATER" in rcon_in(
-        world, [f"execute positioned {x} {y} {z} if block ~ ~-1 ~ minecraft:water run say WATER"])
+    # NB: read the condition via `execute if`'s "Test passed"/"Test failed" result
+    # — `run say MARKER` does NOT round-trip through rcon (the broadcast never
+    # appears in the command response), so the old say-based checks always read
+    # false (e.g. never detected water, and false-rejected every biome).
+    feet_water = "Test passed" in rcon_in(
+        world, [f"execute positioned {x} {y} {z} if block ~ ~ ~ minecraft:water"])
+    below_water = "Test passed" in rcon_in(
+        world, [f"execute positioned {x} {y} {z} if block ~ ~-1 ~ minecraft:water"])
     if feet_water or below_water:
         raise RuntimeError(
             f"natural spawn ({x},{y},{z}) is water/ocean in {world}; re-roll the "
             f"seed (--seed) for a land spawn")
+    # Biome quality: a colony needs trees + LIQUID water + farmable land. Frozen
+    # biomes (packed_ice/snow) freeze water — no buckets, no crop hydration — and
+    # deserts/badlands have no wood. The land check alone passes packed_ice, so
+    # require a temperate biome via server-authoritative `execute if biome`
+    # (independent of the bot's registry, which reports "unknown" on ice).
+    GOOD_BIOMES = [
+        "plains", "sunflower_plains", "meadow",
+        "forest", "flower_forest", "birch_forest", "old_growth_birch_forest", "dark_forest",
+        "taiga", "old_growth_pine_taiga", "old_growth_spruce_taiga",
+        "savanna", "savanna_plateau", "windswept_savanna",
+        "jungle", "sparse_jungle", "bamboo_jungle",
+        "swamp", "mangrove_swamp",
+    ]
+    biome_ok = any(
+        "Test passed" in rcon_in(
+            world,
+            [f"execute positioned {x} {y} {z} if biome ~ ~ ~ minecraft:{bn}"])
+        for bn in GOOD_BIOMES
+    )
+    if not biome_ok:
+        raise RuntimeError(
+            f"natural spawn ({x},{y},{z}) is not a temperate colony biome in {world} "
+            f"(frozen/desert/badlands — no liquid water or wood); re-roll the seed (--seed)")
     return {"x": x, "y": y, "z": z}
 
 
+def find_good_spawn(world: str, seed: int, *, max_tries: int = 8) -> tuple[int, dict[str, int]]:
+    """Reset the world and probe its natural spawn, AUTO-REROLLING the seed until
+    the spawn is a temperate land biome (not ocean/frozen/desert). Resetting wedges
+    mineflayer, so each attempt also restarts the bodies before probing. Returns
+    (seed_used, spawn). Raises if no good spawn is found within max_tries."""
+    last_err: Exception | None = None
+    for i in range(max_tries):
+        s = seed + i * 7919  # spread seeds so adjacent attempts land far apart
+        reset_world(world=world, seed=s)
+        restart_bodies()  # reset drops the bodies; clean restart beats auto-reconnect
+        try:
+            spawn = probe_natural_spawn(world)
+            if i:
+                sys.stderr.write(f"[find_good_spawn] accepted seed {s} after {i} reroll(s): {spawn}\n")
+            return s, spawn
+        except RuntimeError as e:
+            last_err = e
+            sys.stderr.write(f"[find_good_spawn] seed {s} rejected: {e}\n")
+    raise RuntimeError(f"no temperate land spawn after {max_tries} seeds from {seed}: {last_err}")
+
+
 def wipe_marks() -> None:
-    """Clear the shared + per-bot mark stores so the colony starts on a clean
-    map. Without this the run inherits stale waypoints (e.g. wp_road* from a
-    prior proc-nav roadplan run) and the phase gates read garbage."""
-    targets = [DATA_DIR / "locations-base.json"]
-    targets += list(DATA_DIR.glob("locations-*.json"))
-    targets += list(DATA_DIR.glob("personal-pois-*.json"))
+    """Clear the shared map + the genesis-v2 BODIES' private stores so the colony
+    starts on a clean map. Scoped to mox/pip/zee + the shared files ONLY — must
+    NOT glob every locations-*.json / personal-pois-*.json, which would delete
+    production bot state (flint/mason/gatherer) that has nothing to do with this
+    world."""
+    targets = [
+        DATA_DIR / "locations-base.json",
+        DATA_DIR / "personal-pois-shared.json",
+    ]
+    for b in BODY_POOL.values():
+        u = b["user"].lower()
+        targets.append(DATA_DIR / f"locations-{u}.json")
+        targets.append(DATA_DIR / f"personal-pois-{u}.json")
     for p in targets:
         try:
             p.unlink()
@@ -250,6 +350,27 @@ def world_setup(world: str, spawn: dict[str, int]) -> None:
         else:
             raise RuntimeError(f"{user} would not settle at spawn ({x},{y},{z}); "
                                f"last pos {pos}")
+    setup_observer(world, spawn)
+
+
+def setup_observer(world: str, spawn: dict[str, int], observer: str = "re44") -> bool:
+    """Best-effort: drop the human observer at the colony spawn in spectator mode
+    so they can watch the run live. Skipped silently if `observer` isn't online —
+    never fails the boot. Returns True if the observer was set up."""
+    x, y, z = spawn["x"], spawn["y"], spawn["z"]
+    try:
+        online = _rcon(["list"])
+        if observer not in online:
+            return False
+        _rcon([f"mvtp {observer} {world}"])
+        time.sleep(1)
+        _rcon([
+            f"tp {observer} {x} {y + 3} {z}",
+            f"gamemode spectator {observer}",
+        ])
+        return True
+    except Exception:
+        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -292,16 +413,29 @@ def _create_card(*, title: str, body: str, assignee: str, parent: str | None = N
 
 
 def seed_board(ctx: dict[str, str]) -> dict:
-    """Create the epic chain (P1->P5 via --parent depends_on) and the P1 scout
-    cards (assignee colony-scout). Returns {epic_ids, scout_ids}."""
+    """Create the phase epics and the P1 scout cards. Returns {epic_ids, scout_ids}.
+
+    Epics are NOT chained via --parent depends_on. Phase advancement is
+    POLLER-AUTHORITATIVE: P1 is left dispatchable (ready) and P2..P5 are PARKED
+    (blocked) at seed time. The poller (advance_phases) is the sole promoter — it
+    `unblock`s the next phase only when the current phase's world-gate passes. This
+    makes premature epic completion (e.g. a Steward worker that finishes instead of
+    parking) HARMLESS: the next phase stays blocked until the gate really passes, so
+    no cascade is possible. (Previously the depends_on chain auto-promoted P(n+1) the
+    instant Pn went `done`, which a finishing Steward worker triggered with no real
+    work — see the genesis-v2 postmortem.)"""
     epics = gl.parse_yaml_simple(TEMPLATES_DIR / "phase-epics.yaml")["epics"]
     cards = gl.parse_yaml_simple(TEMPLATES_DIR / "phase1-cards.yaml")["cards"]
-    epic_ids, prev = [], None
-    for e in epics:
+    epic_ids = []
+    for i, e in enumerate(epics):
         eid = _create_card(title=e["title"], body=gl.substitute(e.get("body", ""), ctx),
-                           assignee=e["assignee"], parent=prev)
+                           assignee=e["assignee"])
+        # Park every phase after P1 so only the poller can open it (anti-cascade).
+        # NOTE: `block` takes its reason as a POSITIONAL arg (unlike `unblock`,
+        # which uses --reason). Passing --reason here silently no-ops the block.
+        if i > 0:
+            _hermes(["block", eid, "awaiting prior-phase gate (poller unblocks)"], timeout=15)
         epic_ids.append(eid)
-        prev = eid
     scout_ids = [_create_card(title=c["title"], body=gl.substitute(c.get("body", ""), ctx),
                               assignee=c["assignee"]) for c in cards]
     meta = {"epic_ids": epic_ids, "scout_ids": scout_ids}
@@ -322,6 +456,19 @@ def _shared_marks() -> set[str]:
 
 def _regions() -> list[dict]:
     return gl._load_json(DATA_DIR / "regions-world.json", default={}).get("regions", [])
+
+
+def _inventory() -> dict:
+    """Base-storage inventory as {resource: {current, target_min}} via
+    base-inventory.py. Empty on any failure (gate then reports the shortfall)."""
+    try:
+        p = subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "base-inventory.py"), "--json"],
+                           cwd=REPO_ROOT, capture_output=True, text=True, timeout=30)
+        if p.returncode == 0:
+            return json.loads(p.stdout or "{}")
+    except Exception:
+        pass
+    return {}
 
 
 def check_phases() -> dict[str, dict]:
@@ -354,6 +501,18 @@ def check_phases() -> dict[str, dict]:
             n = len(mine_entries) if isinstance(mine_entries, (list, dict)) else 0
             if n < mr["entries_min"]:
                 fails.append(f"mine entries {n} < {mr['entries_min']}")
+        # Inventory gate (P2): each listed resource at/above its target_min in
+        # base storage. Lazy — only the phase(s) with an inventory rule pay the
+        # base-inventory.py read.
+        inv_rule = rule.get("inventory", {})
+        if inv_rule.get("resources"):
+            inv = _inventory()
+            for res in inv_rule["resources"]:
+                r = inv.get(res) or {}
+                cur = r.get("current", 0)
+                need = r.get("target_min", 9999)
+                if cur < need:
+                    fails.append(f"{res} {cur} < {need}")
         # Gates not yet implemented in code (P4 roads / far marks, P5
         # steady-state) must FAIL — otherwise an unevaluated rule reads as a
         # trivial pass and the poller would auto-complete the phase. Until these
@@ -370,29 +529,115 @@ def check_phases() -> dict[str, dict]:
 # --------------------------------------------------------------------------- #
 # gate-gated epic completion (verified state advances phases, not narration)
 # --------------------------------------------------------------------------- #
-def complete_passed_epics(run_id: str) -> list[str]:
-    """Complete any phase epic whose gate (check_phases) actually passes and is
-    still open. This is the ONLY path that advances a phase — the Steward never
-    completes its own epics, so phases can't race ahead on hallucinated work.
-    Returns the phase keys completed this call."""
-    cfg = load_config(run_id)
-    epic_ids = cfg.get("epic_ids", [])           # ordered P1..P5
-    gates = check_phases()
-    phases = [f"P{i}" for i in range(1, len(epic_ids) + 1)]
+def _board_status_by_id() -> dict[str, str]:
     try:
         lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
         tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
     except Exception:
         tasks = []
-    status_by_id = {str(t.get("id")): (t.get("status") or "").lower() for t in tasks}
-    done: list[str] = []
-    for phase, eid in zip(phases, epic_ids):
+    return {str(t.get("id")): (t.get("status") or "").lower() for t in tasks}
+
+
+def _free_body_count() -> int:
+    """Free bodies in the lease pool (not leased, not busy, reachable)."""
+    try:
+        out = subprocess.run(["mc", "bot", "status", "--pool", "--json"],
+                             capture_output=True, text=True, timeout=15, cwd=REPO_ROOT)
+        bodies = json.loads(out.stdout or "{}").get("data", {}).get("bodies", [])
+        return sum(1 for b in bodies
+                   if not b.get("lease") and not b.get("busy") and b.get("reachable", True))
+    except Exception:
+        return 0
+
+
+def _latest_block_reason(tid: str) -> str:
+    """Most recent block reason for a task (empty if currently effectively unblocked)."""
+    try:
+        d = json.loads(_hermes(["show", str(tid), "--json"]).stdout or "{}")
+    except Exception:
+        return ""
+    reason = ""
+    for ev in d.get("events", []):
+        kind = ev.get("kind")
+        if kind == "blocked":
+            reason = (ev.get("payload") or {}).get("reason", "") or ""
+        elif kind == "unblocked":
+            reason = ""
+    return reason
+
+
+def requeue_deferred(run_id: str) -> list[str]:
+    """Unblock worker cards that deferred with `no_free_body` once the pool frees up.
+    A deferred card is sticky-blocked and never retries on its own, so anything
+    depending on it (e.g. BASE-SELECT waiting on ALL scouts) stalls forever behind a
+    scout that merely lost the lease race. Requeue at most `free` of them per tick.
+    NEVER touches phase EPICS — those are parked intentionally and only
+    advance_phases opens them on a gate-pass. Returns the requeued ids."""
+    free = _free_body_count()
+    if free <= 0:
+        return []
+    cfg = load_config(run_id)
+    epic_ids = {str(e) for e in cfg.get("epic_ids", [])}
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return []
+    requeued: list[str] = []
+    for t in tasks:
+        tid = str(t.get("id"))
+        if (t.get("status") or "").lower() != "blocked" or tid in epic_ids:
+            continue
+        if "no_free_body" not in _latest_block_reason(tid):
+            continue
+        r = _hermes(["unblock", tid, "--reason", "body free — requeue deferred (no_free_body)"], timeout=20)
+        if r.returncode == 0:
+            requeued.append(tid)
+            free -= 1
+            if free <= 0:
+                break
+    return requeued
+
+
+def advance_phases(run_id: str, *, status_by_id: dict[str, str] | None = None,
+                   gates: dict | None = None) -> list[str]:
+    """Poller-authoritative phase advancement. Walk phases in order; for each whose
+    world-gate (check_phases) passes, ensure its epic is `done` and `unblock` the
+    NEXT phase epic (parked `blocked` at seed time) so the gateway dispatches it.
+    Stop at the first phase whose gate does NOT pass — never skip ahead.
+
+    This is the ONLY promoter. Because P2..P5 are seeded `blocked`, a Steward worker
+    that finishes (completing its epic) instead of parking cannot promote the next
+    phase — only a real gate-pass here unblocks it. Returns phase keys advanced.
+
+    `status_by_id`/`gates` are injectable for the no-agent transition test.
+
+    Args of note: completing an epic accepts `blocked` (parked) state too — see
+    hermes complete_task `status IN (running, ready, blocked)`."""
+    cfg = load_config(run_id)
+    epic_ids = cfg.get("epic_ids", [])           # ordered P1..P5
+    gates = gates if gates is not None else check_phases()
+    phases = [f"P{i}" for i in range(1, len(epic_ids) + 1)]
+    status = status_by_id if status_by_id is not None else _board_status_by_id()
+    advanced: list[str] = []
+    for i, (phase, eid) in enumerate(zip(phases, epic_ids)):
         g = gates.get(phase, {})
-        if g.get("pass") and status_by_id.get(str(eid)) not in ("done", "archived"):
+        if not g.get("pass"):
+            break  # frontier reached — do not promote past an unmet gate
+        # 1) ensure this phase's epic is closed (idempotent).
+        if status.get(str(eid)) not in ("done", "archived"):
             r = _hermes(["complete", str(eid), "--result", f"gate {phase} passed"], timeout=20)
             if r.returncode == 0:
-                done.append(phase)
-    return done
+                status[str(eid)] = "done"
+                advanced.append(phase)
+        # 2) open the next phase epic if it's still parked.
+        if i + 1 < len(epic_ids):
+            nxt = str(epic_ids[i + 1])
+            if status.get(nxt) == "blocked":
+                r = _hermes(["unblock", nxt, "--reason", f"{phase} gate passed"], timeout=20)
+                if r.returncode == 0:
+                    status[nxt] = "ready"
+    return advanced
 
 
 # --------------------------------------------------------------------------- #

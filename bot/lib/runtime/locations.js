@@ -23,7 +23,10 @@ const CONTAINER_BLOCK_NAMES = new Set([
 // the *private* mark via `mc waypoint`; `roadplan` is the sole writer of
 // the shared projection, matching the reconciler-only-writer invariant
 // above.
-export const FLEET_MARK_PREFIXES = ['chest_', 'base_', 'lt_', 'wp_'];
+// Kept in sync with scripts/reconcile-marks.py FLEET_PREFIXES. candidate_pad_/
+// mine_/farm_/road_ are the genesis-v2 colony families (scout pads, mine
+// entrances, farm plots, confirmed roads) that must reconcile to the shared map.
+export const FLEET_MARK_PREFIXES = ['chest_', 'base_', 'lt_', 'wp_', 'candidate_pad_', 'mine_', 'farm_', 'road_'];
 
 export function isFleetMark(name) {
   if (!name || typeof name !== 'string') return false;

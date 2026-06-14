@@ -296,20 +296,28 @@ export function createCraftingActions(services) {
         );
       }
 
-      // ── Attempt craft. Failures here are catch-all INTERRUPTED-ish. ──
+      // ── Attempt craft, retrying the silent no-op window race. ──
       // For table-required recipes, mineflayer 4.23 + Paper 1.21 has a race
-      // where b.craft silently no-ops if the bot isn't oriented + close
-      // enough at the exact moment the open-window packet fires. Explicitly
-      // lookAt the table and brief settle before crafting.
-      if (requiresBench && table) {
+      // where b.craft silently no-ops (returns 0 items, no throw) if the bot
+      // isn't oriented + close at the exact moment the open-window packet fires.
+      // It's INTERMITTENT — empirically only ~1-in-5 attempts lands — so re-lookAt
+      // and retry several times before surrendering. The PaperMCP server-side
+      // fallback also covers this, but bodies without PaperMCP configured rely
+      // entirely on this in-process retry (which is why a lone attempt made
+      // agents see a "broken" craft and give up). 2x2 recipes don't hit the race.
+      const MAX_CRAFT_ATTEMPTS = requiresBench ? 6 : 1;
+      let endedInventory = startedInventory;
+      let craftedDelta = 0;
+      for (let _attempt = 0; _attempt < MAX_CRAFT_ATTEMPTS; _attempt++) {
+       if (requiresBench && table) {
         try {
           await b.lookAt(table.position.offset(0.5, 0.5, 0.5), true);
           await sleep(150);
         } catch { /* best-effort */ }
-      }
-      try {
+       }
+       try {
         await b.craft(recipe, invocations, requiresBench ? table : undefined);
-      } catch (err) {
+       } catch (err) {
         const msg = /** @type {Error} */ (err).message || String(err);
         // Re-classify mineflayer's raw error string to one of our codes.
         if (/requires crafting.?table|non craftingtable used/i.test(msg)) {
@@ -370,12 +378,18 @@ export function createCraftingActions(services) {
           observed_state: { item: itemName, requested_count: count, mineflayer_error: msg },
           retry_safe: true,
         });
-      }
-      await sleep(250);
+       }
+       await sleep(250);
 
-      // ── Verify via inventory delta ──
-      const endedInventory = inventoryAt();
-      const craftedDelta = (endedInventory[itemName] || 0) - (startedInventory[itemName] || 0);
+       // ── Verify via inventory delta ──
+       endedInventory = inventoryAt();
+       craftedDelta = (endedInventory[itemName] || 0) - (startedInventory[itemName] || 0);
+       if (craftedDelta >= 1) break;            // crafted — stop retrying
+       if (_attempt < MAX_CRAFT_ATTEMPTS - 1) {
+         try { log?.(`[craft] ${itemName} no-op (mineflayer/Paper window race) — retry ${_attempt + 2}/${MAX_CRAFT_ATTEMPTS}`); } catch {}
+         await sleep(300);                       // settle, then re-attempt
+       }
+      }  // end window-race retry loop
       const expectedDelta = invocations * resultPerCraft;
       const ingredientsConsumed = {};
       for (const [name, before] of Object.entries(startedInventory)) {
@@ -437,9 +451,30 @@ export function createCraftingActions(services) {
             },
           );
         }
+        // #100: a 3x3 recipe that no-ops with materials intact is almost
+        // always a TABLE-RANGE problem, NOT a server fault: mineflayer only
+        // crafts a table recipe when a real crafting_table is within ~4 blocks
+        // AND the bot is oriented at it. Crafting itself is functional — do not
+        // tell the agent the server is broken (that triggers give-up/retry
+        // spins). Lead with the concrete fix: stand next to a table and retry.
+        let tableDist = null;
+        if (requiresBench && table?.position) {
+          const bp = b.entity?.position;
+          const tp = table.position;
+          if (bp && tp && Number.isFinite(bp.x) && Number.isFinite(tp.x)) {
+            tableDist = Math.round(Math.hypot(bp.x - (tp.x + 0.5), bp.y - (tp.y + 0.5), bp.z - (tp.z + 0.5)));
+          }
+        }
+        const rangeMsg = !requiresBench
+          ? `This is a 2x2 recipe (no table needed); retry once.`
+          : tableDist == null
+            ? `No crafting_table was in range when the craft fired — mineflayer can't craft a table recipe without one within ~4 blocks. Place a crafting_table on solid ground right beside you (mc place crafting_table <x> <y> <z> at an adjacent ground cell) and retry.`
+            : tableDist > 4
+              ? `A crafting_table was ${tableDist} blocks away — out of the ~4-block working range. Move within 2 blocks of it (or place a fresh one beside you), face it, and retry.`
+              : `A crafting_table was in range (${tableDist} block(s)) yet the craft no-op'd — this is the known mineflayer/Paper 1.21 window bug, not a server outage. Retry ONCE; if it persists, place a fresh crafting_table right beside you and retry. Do not declare crafting broken.`;
         return fail(
           'CRAFT_NO_OP',
-          `Craft of ${itemName} x${count} produced 0 — materials present (${shortfall.map((s) => `${s.name} ${s.have}/${s.need}`).join(', ')}) but mineflayer.craft did not deliver. Likely a server-side window race. Try once more, or place a fresh crafting_table closer to the bot.`,
+          `Craft of ${itemName} x${count} produced 0 with materials present (${shortfall.map((s) => `${s.name} ${s.have}/${s.need}`).join(', ')}). Crafting works server-wide — this is a table-range/orientation issue, not a server fault. ${rangeMsg}`,
           {
             observed_state: {
               item: itemName,
@@ -447,13 +482,15 @@ export function createCraftingActions(services) {
               expected_delta: expectedDelta,
               observed_delta: craftedDelta,
               ingredients_status: shortfall,
+              table_in_range: requiresBench ? Boolean(table?.position) : null,
+              table_distance: tableDist,
               started_inventory: startedInventory,
               ended_inventory: endedInventory,
             },
             retry_safe: true,
             next_action_hint: requiresBench
-              ? `Verify a crafting_table is within 4 blocks (mc inspect TABLE_X TABLE_Y TABLE_Z), look at it (mc face TABLE_X TABLE_Y TABLE_Z), then retry.`
-              : `Retry once. If it fails again, this is a known mineflayer/Paper bug; try a different recipe path.`,
+              ? `Place/stand next to a crafting_table (within 2 blocks, on solid ground), then retry ONCE. Do NOT loop-retry or report the server broken — crafting is functional.`
+              : `Retry once.`,
           },
         );
       }

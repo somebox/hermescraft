@@ -43,7 +43,13 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 SHARED_FILE = DATA_DIR / "locations-base.json"
-FLEET_PREFIXES = ("chest_", "base_", "lt_")
+# Kept in sync with bot/lib/runtime/locations.js FLEET_MARK_PREFIXES.
+FLEET_PREFIXES = ("chest_", "base_", "lt_", "wp_", "candidate_pad_", "mine_", "farm_", "road_")
+
+# When set (via --bots), restrict reconciliation to these bot owners only — so a
+# scoped run (e.g. genesis-v2: mox/pip/zee) doesn't pull production bots'
+# (flint/mason/…) marks into the shared map. None = all bots (default).
+ONLY_BOTS: set[str] | None = None
 
 
 def is_fleet_mark(name: str) -> bool:
@@ -71,6 +77,8 @@ def scan_private_marks() -> dict[str, dict[tuple[int, int, int], list[dict]]]:
         if path.name == "locations-base.json":
             continue
         owner = path.stem.replace("locations-", "")
+        if ONLY_BOTS is not None and owner.lower() not in ONLY_BOTS:
+            continue
         try:
             with open(path) as fh:
                 locs = json.load(fh)
@@ -281,7 +289,14 @@ def main() -> int:
                    help="rewrite locations-base.json even if no additions (sorts keys, normalizes formatting)")
     p.add_argument("--print", action="store_true",
                    help="print current locations-base.json and exit")
+    p.add_argument("--bots", default=None,
+                   help="comma-separated bot owners to reconcile (e.g. mox,pip,zee); "
+                        "default all. Scopes a run so it doesn't pull other bots' marks.")
     args = p.parse_args()
+
+    if args.bots:
+        global ONLY_BOTS
+        ONLY_BOTS = {b.strip().lower() for b in args.bots.split(",") if b.strip()}
 
     if args.print:
         if not SHARED_FILE.exists():

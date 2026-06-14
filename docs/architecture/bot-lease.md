@@ -2,7 +2,7 @@
 
 Status: **MVP implemented** (in-repo). Agents explicitly check out a Minecraft **body** for an in-world phase, renew while acting, and release when done. This is **additive** beside Hermes **card claim** and landfolk gate-check mutex — see [board-dynamics.md](board-dynamics.md).
 
-Companion: live steps in [../guides/bot-lease-live-runbook.md](../guides/bot-lease-live-runbook.md). Source design notes: `~/.claude/plans/groovy-doodling-simon.md`.
+Companion: live steps in [../guides/bot-lease-live-runbook.md](../guides/bot-lease-live-runbook.md). This doc is the canonical spec (D1–D9 landed); design history lived in a Claude plan since repurposed for the genesis-v2 colony reconcile/run work.
 
 ---
 
@@ -41,8 +41,8 @@ leased ──release --force (operator)──▶ none
 
 | Context | `owner_id` |
 |---------|------------|
-| Kanban worker (`HERMES_BOT_LEASE=1`) | `${HERMES_KANBAN_BOARD}:${HERMES_KANBAN_TASK}:pid:${pid}` — requires `HERMES_KANBAN_TASK` |
-| Manual smoke (no task) | `cli:adhoc:pid:${pid}` |
+| Kanban worker (`HERMES_BOT_LEASE=1`) | `${HERMES_KANBAN_BOARD}:${HERMES_KANBAN_TASK}[:${HERMES_SESSION_ID}]` — stable across the worker's many `mc` subprocess calls (NOT `pid`, which differs per invocation) |
+| Manual smoke (no task) | `cli:adhoc[:${HERMES_BOT_LEASE_OWNER}]` |
 
 Upgrade to Hermes session id when stable env export exists (§ Deferred D5).
 

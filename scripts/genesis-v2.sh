@@ -98,10 +98,13 @@ seed = int(os.environ["GV2_SEED"])
 run_id = g2.next_run_id()
 print(f"[genesis-v2] run {run_id}")
 
-g2.reset_world(world=world, seed=seed)
+# Reset + probe with auto-reroll: keep regenerating until the natural spawn is a
+# temperate LAND biome (not ocean/frozen/desert) — a colony needs wood + liquid
+# water. find_good_spawn resets+restarts bodies each attempt and returns the seed
+# it settled on (may differ from --seed if the original rolled a bad biome).
+seed, spawn = g2.find_good_spawn(world, seed)
+print(f"[genesis-v2] natural land spawn @ {spawn} (seed={seed})")
 g2.wipe_marks()  # clean map — drop stale waypoints from prior runs
-spawn = g2.probe_natural_spawn(world)  # colony anchors at the bodies' natural land spawn
-print(f"[genesis-v2] natural land spawn @ {spawn}")
 g2.world_setup(world, spawn)
 
 g2.reinit_board()

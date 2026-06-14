@@ -292,7 +292,11 @@ test('craft: #86 delta=0 with materials intact (no fallback) → CRAFT_NO_OP', a
   assertContract(r);
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'CRAFT_NO_OP');
-  assert.match(r.error.message, /materials present.*mineflayer.craft did not deliver/);
+  // Message must NOT blame a server outage (that triggers agent give-up/spin);
+  // it states crafting works and points at the table-range/window cause.
+  assert.match(r.error.message, /produced 0 with materials present/);
+  assert.match(r.error.message, /not a server fault/);
+  assert.doesNotMatch(r.error.message, /server-side window race/);
   assert.equal(r.error.retry_safe, true);
   // ingredients_status carries the diagnostic
   const status = r.error.observed_state.ingredients_status;

@@ -37,13 +37,35 @@ epics:
           lease per body) is the mutex, and `--near` self-balances work to the
           nearest free body. You assign expertise; the worker takes the body.
 
-      Decompose into, roughly in order (wire later cards `after:` the ones
-      they depend on):
+      CARD WIRING (critical — read before you create any card):
+        - NEVER put THIS phase epic in a worker card's `parents`. A `parent` is a
+          BLOCKING dependency (a child stays `todo` until every parent is `done`),
+          and this epic is never marked done by you — it auto-completes only when
+          its world-gate passes, which itself needs the worker cards to run. Epic
+          as a parent = permanent deadlock.
+        - Phase membership comes from the TITLE TAG, not a parent edge: give every
+          worker card a `[GENESIS2:P1]` title prefix (e.g.
+          `[GENESIS2:P1] [BUILD] ...`). That is how the poller groups the phase.
+        - Use `parents`/`after:` ONLY to order SIBLING worker cards (e.g. BUILD
+          after GATHER, GATHER after BASE-SELECT). Never to the epic.
+
+      Decompose into, roughly in order (wire later cards `after:` the prior
+      sibling worker card — never `after:` this epic):
         1. SCOUT (colony-scout) — explore outward from spawn, mark wood
            (`lt_wood_*`), stone (`lt_stone_*`), water (`lt_water_*`) and 1-2 flat
            candidate base pads (`candidate_pad_*`). Surface only. (Pre-seeded.)
-        2. Choose the base site from the candidate marks; record it as the
-           shared mark `base_anchor` — the colony's center.
+        2. BASE-SELECT (colony-builder OR colony-scout) — pick the best
+           `candidate_pad_*` from the shared marks (flat, near wood + water) and
+           record the colony center. This MUST be a real worker card with a body
+           and a LITERAL verb — you (the Steward) are bodiless and cannot mark.
+           Card body, literal lines:
+             `mc bot checkout --near <candidate_pad coords> --cap build`
+             `mc go_mark <candidate_pad_name>`
+             `mc mark base_anchor`   (marks the worker's current position; or
+                                      `mc mark base_anchor <X> <Y> <Z>`)
+             `mc bot release`
+           The P1 gate requires the shared `base_anchor` mark, so this card is a
+           hard prerequisite of GATHER and BUILD (wire them `after:` it).
         3. GATHER (colony-gatherer) — `mc bot checkout --near <lt_wood coords>
            --cap gather`, collect >=16 wood, craft a full stone tool set
            (pickaxe, axe, shovel), `mc bot release`. Literal `mc` verb lines.
@@ -62,12 +84,34 @@ epics:
     assignee: colony-steward
     initial_status: todo
     body: |
-      Make the base self-sustaining for food and basic supply. Decompose into
-      FARM (colony-farmer: till a small wheat plot near water, plant, set a
-      harvest loop) and STORAGE (colony-builder: organize + label chests so
-      wood/stone/food each have a home). Keep a steady stock of wood, stone,
-      and food. Emit specialist cards with literal `mc` verb lines; never act
-      yourself. Done when the P2 gate passes.
+      Make the base self-sustaining for food + basic supply. You are the Steward:
+      decompose into specialist worker cards and emit them — never act yourself.
+
+      Same rules as P1: route by EXPERTISE assignee; every worker card body starts
+      with `mc bot checkout --near <X,Y,Z> --cap <role>` (use the work-site coords
+      from a mark) and ends with `mc bot release` before `kanban_complete`; on
+      `no free body — defer` the worker `kanban_block(no_free_body)`. No `[bot:]`
+      pins. Do NOT `kanban_complete` this epic — it auto-completes when the P2 gate
+      passes. If the cards already exist, report and stop (no duplicates).
+
+      CARD WIRING (same as P1, critical): NEVER put this phase epic in a worker
+      card's `parents` (a parent BLOCKS until done; this epic never is → deadlock).
+      Tag phase membership with a `[GENESIS2:P2]` title prefix; use `parents`/
+      `after:` only to order SIBLING worker cards.
+
+      Decompose into:
+        1. FARM (assignee colony-farmer) — `mc bot checkout --near <lt_water_*
+           coords> --cap farm`; till a small wheat plot beside the water, plant
+           seeds, set a harvest/replant loop; mark the plot `farm_wheat` and a
+           `farm` region; `mc bot release`. Literal `mc` verb lines.
+        2. STORAGE (assignee colony-builder) — `mc bot checkout --near
+           <base_anchor coords> --cap build`; organize + label the base chests so
+           wood / stone / food each have a home (record/keep `chest_*` marks);
+           `mc bot release`.
+
+      Done when the P2 gate passes: a `farm` region active, >=3 `lt_*` marks on
+      the shared map, and wood/cobblestone/wheat each at/above their target_min in
+      base storage.
 
   - phase: P3
     title: "[EPIC] [GENESIS2:P3] Open a mine"

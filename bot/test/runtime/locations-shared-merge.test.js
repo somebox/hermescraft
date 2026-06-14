@@ -41,10 +41,12 @@ test('isFleetMark detects every configured prefix', () => {
 
 test('FLEET_MARK_PREFIXES is the documented set', () => {
   // If you add a new prefix, update the Glossary entry in
-  // docs/specs/kanban/plugin-landfolk.md → Fleet-prefix mark.
-  // wp_ is the adaptive-road-planning waypoint family (§5.1).
+  // docs/specs/kanban/plugin-landfolk.md → Fleet-prefix mark AND keep
+  // scripts/reconcile-marks.py FLEET_PREFIXES in sync.
+  // wp_ = adaptive-road-planning waypoints (§5.1); candidate_pad_/mine_/farm_/
+  // road_ = genesis-v2 colony families (scout pads, mines, farms, roads).
   assert.deepEqual([...FLEET_MARK_PREFIXES].sort(),
-    ['base_', 'chest_', 'lt_', 'wp_']);
+    ['base_', 'candidate_pad_', 'chest_', 'farm_', 'lt_', 'mine_', 'road_', 'wp_']);
 });
 
 test('mergeMarks: shared wins for fleet-prefix names, source tag added', () => {
