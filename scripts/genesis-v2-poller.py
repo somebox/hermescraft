@@ -75,6 +75,17 @@ def main() -> int:
                         sys.stderr.write(f"[poller] snapshot {label} failed: {e}\n")
         except Exception as e:
             sys.stderr.write(f"[poller] gate check failed: {e}\n")
+        # Planner re-engagement: a worker running far longer than a healthy one
+        # (~minutes) is very likely stuck. File a [SUPERVISE] card so the PLANNER
+        # investigates + re-scopes/reassigns. Run-age based, so a worker that's
+        # simply progressing (finishes under the cap) is never disrupted.
+        try:
+            for w in g2.detect_stalled_workers():
+                cid = g2.file_supervise_card(args.run_id, w["id"], w["title"], w["age_s"])
+                if cid:
+                    sys.stderr.write(f"[poller] worker {w['id']} stalled {w['age_s']}s → planner supervise card {cid}\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] stall-supervise failed: {e}\n")
         time.sleep(args.interval)
 
 

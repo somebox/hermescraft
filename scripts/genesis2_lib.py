@@ -638,6 +638,82 @@ def requeue_deferred(run_id: str) -> list[str]:
     return requeued
 
 
+STALL_AGE_S = 600  # a running worker older than this is very likely stuck (a
+                   # healthy worker finishes in a few minutes). Run-age — not
+                   # position — is the signal, so a worker that's progressing (and
+                   # will finish under the cap) is NEVER flagged; in-place work
+                   # (building, crafting) isn't false-flagged either.
+
+
+def detect_stalled_workers(max_age_s: int = STALL_AGE_S) -> list[dict]:
+    """Running, non-epic worker cards whose current run has exceeded max_age_s.
+    These are alive-but-likely-stuck (looping on a failing action, unreachable
+    target, etc). Skips epics and existing SUPERVISE cards."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return []
+    now = time.time()
+    out = []
+    for t in tasks:
+        if (t.get("status") or "").lower() != "running":
+            continue
+        title = t.get("title", "") or ""
+        if title.startswith("[EPIC]") or "SUPERVISE" in title:
+            continue
+        started = t.get("started_at")
+        if not started:
+            continue
+        try:
+            age = now - float(started)
+        except (TypeError, ValueError):
+            continue
+        if age > max_age_s:
+            out.append({"id": str(t.get("id")), "title": title, "age_s": int(age)})
+    return out
+
+
+def file_supervise_card(run_id: str, worker_id: str, worker_title: str, age_s: int) -> str | None:
+    """Re-engage the PLANNER: file a [SUPERVISE] card (assignee colony-steward) for a
+    stalled worker, unless one is already open for it. The planner investigates and
+    intervenes via the board only (block/re-scope/reassign) — it never touches a
+    body. Returns the new card id, or None if one already exists / on error."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    tag = f"SUPERVISE {worker_id}"
+    for t in tasks:
+        if tag in (t.get("title", "") or "") and (t.get("status") or "").lower() not in ("done", "archived"):
+            return None  # already escalated for this worker
+    title = f"[GENESIS2:SUPERVISE] {tag} stalled {age_s // 60}m"
+    body = (
+        f"Worker {worker_id} (\"{worker_title[:60]}\") has been running ~{age_s // 60} min "
+        f"with no completion. A healthy worker finishes in a few minutes, so it is very "
+        f"likely stuck — looping on a failing action, an unreachable target, or missing "
+        f"materials.\n\n"
+        f"You are the PLANNER. Investigate and act via the BOARD only — never touch a body:\n"
+        f"  1. `kanban show {worker_id}` — read its latest comments/events: what is it retrying?\n"
+        f"  2. Read the shared map (`mc marks`-style data) + board for context.\n"
+        f"  3. Decide ONE:\n"
+        f"     a. It's actually progressing / nearly done -> comment why and `kanban_complete` "
+        f"THIS supervise card (leave the worker alone).\n"
+        f"     b. It's stuck -> `kanban_block {worker_id}` with a precise reason, then file a "
+        f"SMALLER or alternative worker card (same expertise, the lease ritual + literal `mc` "
+        f"verb lines) that makes the needed progress; then `kanban_complete` this card.\n"
+        f"  Do NOT duplicate work already in flight, and do NOT `kanban_complete` a phase epic."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-steward", "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
+
+
 def advance_phases(run_id: str, *, status_by_id: dict[str, str] | None = None,
                    gates: dict | None = None) -> list[str]:
     """Poller-authoritative phase advancement. Walk phases in order; for each whose
