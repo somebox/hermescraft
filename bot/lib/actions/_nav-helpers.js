@@ -391,7 +391,8 @@ function neighborStatus(b, bx, by, bz, dx, dz) {
   if (below.boundingBox === 'block') return 'open';
 
   // Safe step-down probe. Match pathfinder's default maxCumulativeDropDown
-  // (3 blocks; see manager.js MAX_CUMULATIVE_DROP_DOWN_DEFAULT). For each
+  // (3 blocks; see manager.js MAX_CUMULATIVE_DROP_DOWN_DEFAULT and dig-tools
+  // SAFE_STEP_DOWN_BLOCKS). For each candidate landing depth, every cell the
   // candidate landing depth, every cell the bot falls through must be
   // truly air — water/lava/leaves change physics and aren't a clean drop.
   for (let dy = 2; dy <= 4; dy++) {

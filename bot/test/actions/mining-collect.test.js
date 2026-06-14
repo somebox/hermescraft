@@ -27,6 +27,7 @@ import {
   makeDeps,
   flatPatch,
   makeMutableWorld,
+  makeStubMcData,
 } from './_mining-test-helpers.js';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -467,6 +468,12 @@ test('mining.collect: inventory_gain captures the drop name when blockName ≠ d
   // field shape.
   assert.equal(typeof r.data, 'object');
   assert.equal(r.data.block_name, 'dirt');
+});
+
+test('makeStubMcData: iron_ore block drops raw_iron item (MC 1.17+)', () => {
+  const md = makeStubMcData();
+  assert.equal(md.blocksByName.iron_ore.drops[0], 51);
+  assert.equal(md.items[51].name, 'raw_iron');
 });
 
 // ─────────────────────────────────────────────────────────────────────────

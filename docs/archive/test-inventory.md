@@ -9,7 +9,21 @@ Each suspected overlap and gap below was validated by reading the
 actual source files (not just filename heuristics) — see "Validation
 notes" at the end of each section.
 
-**Last verified:** 2026-05-23 (functional audit hardening — assertion depth, shared fixtures, xfail scope)
+**Last verified:** 2026-06-14 (arena remediation — harness reset, LOS stance, prune overlap)
+
+**Arena policy (2026-06):** See [`tests/README.md`](../../tests/README.md) § Arena test policy. **~190** functional pytest cases (run `pytest tests/functional --collect-only -q`). **LOS stance:** chest/interact/through succeed via re-stancing, not `NO_LINE_OF_SIGHT`. **Runners:** `restart-tester.sh` + `run-functional-{core,fast,full}.sh`.
+
+**xfail registry (exit criteria):**
+
+| Module | Reason | Exit when |
+|--------|--------|-----------|
+| `test_door_pathfind` (4× N/S closed) | pathfinder door flake | upstream fix or delete param |
+| `test_recovery_protocols` R2 e2e | slow-dig guard | excavation fix |
+| `test_pillar_thick_ceiling` capture | drop timing race | capture path stable |
+| `test_strip_flatten` | strip algorithm | mining strip fix |
+| `test_movement_errors_enriched` alley | nav enrichment | stable NAV_* code |
+
+**Removed functional modules (Tier 1 or duplicate):** `test_smoke`, `test_inspect`, `test_inventory_advisories`, `test_till_grass_to_farmland`, `test_stair_to_endpoint`, 3× `test_water_navigation` (kept F15 shallow-water only).
 
 **Node Tier 1:** superseded for layout and mc-command coverage by [`bot/test/README.md`](../../bot/test/README.md) and [`docs/reference/audits/bot-test-coverage-2026-06-06.md`](../reference/audits/bot-test-coverage-2026-06-06.md) (regenerate via `node scripts/bot-test-coverage-report.mjs`).
 **Verification baseline:** 113 Node unit tests + 15 pytest unit tests + 127 pytest

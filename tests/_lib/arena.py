@@ -606,8 +606,10 @@ class Arena:
         return self.rcon.run(f"execute in {self.world} run forceload add {cx1} {cz1} {cx2} {cz2}")
 
     def forceload_remove_all(self) -> str:
-        """Mirror of `forceload`. Removes all forceloaded chunks in the world."""
-        return self.rcon.run(f"execute in {self.world} run forceload remove all")
+        """Deprecated: do not strip session forceload. Re-assert arena forceload instead."""
+        from tests._lib.functional_fixtures import ensure_arena_forceload
+
+        return ensure_arena_forceload(self.rcon, self.world)
 
     def save_prefab(self, name: str, bbox: tuple[int, int, int, int, int, int]) -> None:
         vx, vy, vz = PREFAB_VAULT_ORIGIN

@@ -19,7 +19,7 @@ MINE_ID = "test_em"
 
 
 @pytest.fixture
-def em_arena(rcon, arena, tester_bot, config, bot):
+def em_arena(functional_world, rcon, arena, tester_bot, config, bot):
     """Solid stone pad (diggable) with the bot on top at (0,65,0), bound to a
     fresh mine via task_context. Removes the mine on teardown."""
     world = config["mc"]["world"]
@@ -74,7 +74,7 @@ def test_stair_down_does_not_pollute_registry(bot, em_arena):
 
 
 @pytest.mark.functional
-def test_chamber_hollows_lights_and_records(bot, em_arena):
+def test_chamber_hollows_lights_and_records(bot, rcon, em_arena):
     """chamber hollows a box, places torches, and records a chamber point."""
     r = bot.post(
         "/action/chamber",
@@ -92,3 +92,6 @@ def test_chamber_hollows_lights_and_records(bot, em_arena):
     assert len(chambers) >= 1, chambers
     # Torches are best-effort underground; assert at least one went down.
     assert data.get("torches", 0) >= 1, data
+    assert rcon.block_is(0, 63, 4, "air") or rcon.block_is(0, 64, 4, "air"), (
+        "chamber should hollow at least one interior cell"
+    )

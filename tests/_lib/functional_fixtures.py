@@ -44,11 +44,17 @@ def lay_ground_substrate_session(rcon, world: str) -> None:
     ])
 
 
+def ensure_arena_forceload(rcon, world: str) -> None:
+    """Re-apply session forceload (fixtures must not call forceload remove all)."""
+    rcon.run(f"execute in {world} run forceload add -32 -32 32 32")
+
+
 def reset_ground_arena(rcon, world: str, *, floor: str = "grass_block") -> None:
-    """Per-test reset: air column, dirt subfloor, grass cap, zone markers."""
+    """Per-test reset: restore full canonical substrate in ±32 (y=50..80)."""
     floor_full = floor if ":" in floor else f"minecraft:{floor}"
     rcon.batch([
         f"execute in {world} run fill -32 65 -32 32 80 32 minecraft:air",
+        f"execute in {world} run fill -32 50 -32 32 59 32 minecraft:stone",
         f"execute in {world} run fill -32 60 -32 32 63 32 minecraft:dirt",
         f"execute in {world} run fill -32 64 -32 32 64 32 {floor_full}",
         f"execute in {world} run setblock 0 65 -32 minecraft:lapis_block",
@@ -56,10 +62,17 @@ def reset_ground_arena(rcon, world: str, *, floor: str = "grass_block") -> None:
         f"execute in {world} run setblock 0 65 32 minecraft:lapis_block",
         f"execute in {world} run setblock 0 66 32 minecraft:lapis_block",
     ])
+    ensure_arena_forceload(rcon, world)
+
+
+def tp_tester_at_origin_facing_west(rcon, world: str) -> None:
+    """Park at origin with yaw 90° (MC: west). Used for +X targets at x=2 through obsidian at x=1."""
+    rcon.run(f"execute in {world} run tp Tester 0 65 0 90 0")
 
 
 def tp_tester_at_origin_facing_east(rcon, world: str) -> None:
-    rcon.run(f"execute in {world} run tp Tester 0 65 0 90 0")
+    """Alias: historical name; same as facing_west (yaw 90). Prefer tp_tester_at_origin_facing_west."""
+    tp_tester_at_origin_facing_west(rcon, world)
 
 
 def place_obsidian_los_wall(

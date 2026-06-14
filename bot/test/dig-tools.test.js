@@ -11,7 +11,16 @@ import {
   isDigProtected,
   recordRecentPlace,
   detectPostDigBreach,
+  SAFE_STEP_DOWN_BLOCKS,
+  measureDrop,
+  measureDropIfSupportRemoved,
+  describeDrop,
+  formatFallHazardMessage,
+  checkFallHazard,
+  detectDigHazards,
+  hasPlaceableBlocks,
 } from '../lib/runtime/dig-tools.js';
+import { Vec3 } from 'vec3';
 
 test('blockNeedsAxeHarvest recognizes log types', () => {
   assert.ok(blockNeedsAxeHarvest('oak_log'));
@@ -256,4 +265,129 @@ test('detectPostDigBreach: honors custom sleep injection (no real-time wait)', a
   const fakeSleep = async (ms) => { slept = ms; };
   await detectPostDigBreach(bot, { x: 5, y: 64, z: 5 }, { settleMs: 250, sleep: fakeSleep });
   assert.equal(slept, 250);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// measureDrop / fall hazard classification
+// ─────────────────────────────────────────────────────────────────────────
+
+function makeTerrainBot(terrain) {
+  return {
+    entity: { position: new Vec3(0.5, 65, 0.5) },
+    blockAt(p) {
+      const raw = terrain(p.x, p.y, p.z);
+      const name = typeof raw === 'string' ? raw : raw?.name ?? 'air';
+      const fluid = name === 'water' || name === 'flowing_water' || name === 'lava' || name === 'flowing_lava';
+      const boundingBox = name === 'air' || name === 'cave_air' || name === 'void_air' || fluid ? 'empty' : 'block';
+      return { name, boundingBox };
+    },
+    inventory: { items: () => [] },
+  };
+}
+
+test('measureDrop: flat when solid directly under stand cell', () => {
+  const bot = makeTerrainBot((x, y, z) => {
+    if (x === 0 && y === 64 && z === 0) return 'stone';
+    return 'air';
+  });
+  const m = measureDrop(bot, 0, 65, 0);
+  assert.equal(m.kind, 'flat');
+  assert.equal(m.depth, 0);
+});
+
+test('measureDrop: 2-block step-down (M2-like forward stand)', () => {
+  const bot = makeTerrainBot((x, y, z) => {
+    if (x === 0 && y === 62 && z === 0) return 'stone';
+    return 'air';
+  });
+  const m = measureDrop(bot, 0, 65, 0);
+  assert.equal(m.kind, 'step');
+  assert.equal(m.depth, 2);
+});
+
+test('measureDrop: 3-block step is still step', () => {
+  const bot = makeTerrainBot((x, y, z) => {
+    if (x === 0 && y === 61 && z === 0) return 'stone';
+    return 'air';
+  });
+  const m = measureDrop(bot, 0, 65, 0);
+  assert.equal(m.kind, 'step');
+  assert.equal(m.depth, 3);
+});
+
+test('measureDrop: 5-block drop to solid floor', () => {
+  const bot = makeTerrainBot((x, y, z) => {
+    if (x === 0 && y === 59 && z === 0) return 'stone';
+    return 'air';
+  });
+  const m = measureDrop(bot, 0, 65, 0);
+  assert.equal(m.kind, 'drop');
+  assert.equal(m.depth, 5);
+});
+
+test('measureDrop: no floor within maxScan → void', () => {
+  const bot = makeTerrainBot(() => 'air');
+  const m = measureDrop(bot, 0, 65, 0, { maxScan: 8 });
+  assert.equal(m.kind, 'void');
+});
+
+test('measureDrop: water in fall column → void not step', () => {
+  const bot = makeTerrainBot((x, y, z) => {
+    if (x === 0 && y === 63 && z === 0) return 'water';
+    if (x === 0 && y === 62 && z === 0) return 'stone';
+    return 'air';
+  });
+  const m = measureDrop(bot, 0, 65, 0);
+  assert.equal(m.kind, 'void');
+});
+
+test('describeDrop: step context avoids cliff wording', () => {
+  const msg = describeDrop(
+    { kind: 'step', depth: 2, floorY: 63 },
+    { context: 'stair_down_fully_air', dir: 'north' },
+  );
+  assert.match(msg, /minor falloff/i);
+  assert.doesNotMatch(msg, /\bfall through\b/i);
+  assert.match(msg, /mc move/i);
+});
+
+test('checkFallHazard: 2-block air below foot → step', () => {
+  const bot = makeTerrainBot((x, y, z) => {
+    if (x === 0 && y === 64 && z === 0) return 'stone';
+    if (x === 0 && y === 62 && z === 0) return 'stone';
+    return 'air';
+  });
+  bot.entity.position = new Vec3(0.5, 65, 0.5);
+  const h = checkFallHazard(bot, 0, 64, 0);
+  assert.ok(h);
+  assert.equal(h.dropKind, 'step');
+  assert.equal(h.drop, 2);
+});
+
+test('checkFallHazard: 10-block air → dropKind drop not void', () => {
+  const bot = makeTerrainBot((x, y, z) => {
+    if (x === 0 && y === 54 && z === 0) return 'stone';
+    if (x === 0 && y === 64 && z === 0) return 'stone';
+    return 'air';
+  });
+  bot.entity.position = new Vec3(0.5, 65, 0.5);
+  const h = checkFallHazard(bot, 0, 64, 0);
+  assert.ok(h);
+  assert.equal(h.dropKind, 'drop');
+  assert.equal(h.drop, 10);
+});
+
+test('formatFallHazardMessage: step vs drop tone', () => {
+  const calm = formatFallHazardMessage(
+    { drop: 2, dropKind: 'step' },
+    { x: 0, y: 64, z: 0 },
+    { blockName: 'stone' },
+  );
+  assert.match(calm, /harmless/i);
+  const harsh = formatFallHazardMessage(
+    { drop: 10, dropKind: 'drop' },
+    { x: 0, y: 64, z: 0 },
+    { blockName: 'stone' },
+  );
+  assert.match(harsh, /fall damage/i);
 });

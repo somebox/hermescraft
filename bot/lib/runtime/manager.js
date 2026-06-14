@@ -129,7 +129,8 @@ const AVOID_WATER_DEFAULT = (() => {
  * decide whether to bridge, stair_down, or pivot.
  *
  * Override via env `BOT_MAX_CUMULATIVE_DROP_DOWN=<int>`. Set very
- * high (e.g. 256) to effectively disable.
+ * high (e.g. 256) to effectively disable. Action-verb drop copy uses the
+ * same default via dig-tools SAFE_STEP_DOWN_BLOCKS (not env-synced).
  */
 const MAX_CUMULATIVE_DROP_DOWN_DEFAULT = parsePositiveIntEnv(
   process.env.BOT_MAX_CUMULATIVE_DROP_DOWN,

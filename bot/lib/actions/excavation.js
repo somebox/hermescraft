@@ -1,6 +1,6 @@
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
-import { equipForDig, DIG_PASSABLE_NAMES, nudgeOffStandPillar, detectDigHazards, isDigProtected } from '../runtime/dig-tools.js';
+import { equipForDig, DIG_PASSABLE_NAMES, nudgeOffStandPillar, detectDigHazards, isDigProtected, measureDrop, describeDrop, formatFallHazardMessage, hasPlaceableBlocks } from '../runtime/dig-tools.js';
 import { shouldSkipDigAt, createRegionSkipTracker } from '../runtime/regions/policy-guard.js';
 import { createEgressTracker, clearEgressTrail } from '../runtime/egress-guard.js';
 import { ok, fail } from '../shared/action-contract.js';
@@ -346,11 +346,16 @@ export function createExcavationActions(services) {
               hazard.kind === 'lava' ? 'HAZARD_LAVA' :
               hazard.kind === 'fall' ? 'HAZARD_FALL' :
               'HAZARD_SUFFOCATE';
+            const targetBlk = b.blockAt(new Vec3(pos.x, pos.y, pos.z));
+            const hazardDetail =
+              hazard.kind === 'fall'
+                ? formatFallHazardMessage(hazard, { x: pos.x, y: pos.y, z: pos.z }, { blockName: targetBlk?.name })
+                : `${hazard.kind} hazard`;
             return {
               ok: false,
               error: {
                 code,
-                message: `dig_area aborted at ${pos.x},${pos.y},${pos.z}: ${hazard.kind} hazard. ${dug} blocks dug so far. Pass safe:false to override, or clear the hazard explicitly.`,
+                message: `dig_area aborted at ${pos.x},${pos.y},${pos.z}: ${hazardDetail} ${dug} blocks dug so far. Pass safe:false to override, or clear the hazard explicitly.`,
                 observed_state: { hazard_at: { x: pos.x, y: pos.y, z: pos.z }, hazard, dug_so_far: dug, skipped_so_far: skipped },
                 retry_safe: false,
               },
@@ -734,9 +739,14 @@ export function createExcavationActions(services) {
         // If everything was already air, add an explicit hint to the
         // error envelope so the LLM understands the column is open.
         if (reasons.already_air === targets.length) {
+          const standFootY = fy - 1;
+          const dropInfo = measureDrop(b, fx, standFootY, fz);
           errorMsgs.push(
-            `target column at (${fx},${fy - 1}..${fy + H - 2},${fz}) is fully air — you're at a cliff edge or existing tunnel. ` +
-            `Move to solid ground first (mc move + mc terrain_top to find a fresh surface), then retry stair_down.`,
+            describeDrop(dropInfo, {
+              context: 'stair_down_fully_air',
+              dir: key,
+              hasPlaceable: hasPlaceableBlocks(b),
+            }),
           );
         }
         break;
@@ -754,14 +764,17 @@ export function createExcavationActions(services) {
       // Abort cleanly with a clear reason so the worker picks a
       // different direction or uses `mc dig` to handle the void
       // manually (placing a support block, then continuing).
-      const floorBlock = b.blockAt(new Vec3(fx, fy - 2, fz));
-      const floorName = floorBlock?.name || 'unknown';
-      const floorIsPassable = !floorBlock || DIG_PASSABLE_NAMES.has(floorName);
-      if (floorIsPassable) {
+      const standFootY = fy - 1;
+      const dropBelow = measureDrop(b, fx, standFootY, fz);
+      if (dropBelow.kind !== 'flat') {
         stoppedAtStep = i;
-        stoppedReason.value = `cave_below_step_${i}_floor_is_${floorName}_at_${fx}_${fy - 2}_${fz}`;
+        stoppedReason.value = `cave_below_step_${i}_drop_${dropBelow.kind}_depth_${dropBelow.depth}`;
         errorMsgs.push(
-          `cave_below: floor under next stand cell (${fx},${fy - 1},${fz}) is ${floorName} at (${fx},${fy - 2},${fz}) — bot would fall through. Use mc place to bridge OR pick another direction.`,
+          describeDrop(dropBelow, {
+            context: 'cave_below',
+            dir: key,
+            hasPlaceable: hasPlaceableBlocks(b),
+          }),
         );
         break;
       }

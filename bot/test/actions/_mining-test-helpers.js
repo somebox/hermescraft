@@ -96,12 +96,14 @@ export function makeStubMcData() {
     stone:       { id: 1,  drops: [4],  boundingBox: 'block' },  // drops cobblestone
     cobblestone: { id: 4,  drops: [4],  boundingBox: 'block' },
     coal_ore:    { id: 16, drops: [263], boundingBox: 'block' }, // drops coal
+    iron_ore:    { id: 50, drops: [51], boundingBox: 'block' },
     oak_log:     { id: 17, drops: [17], boundingBox: 'block' },
   };
   const items = {
     dirt: { id: 3 },
     cobblestone: { id: 4 },
     coal: { id: 263 },
+    raw_iron: { id: 51 },
     oak_log: { id: 17 },
   };
   return {
@@ -112,6 +114,7 @@ export function makeStubMcData() {
       4: { name: 'cobblestone' },
       17: { name: 'oak_log' },
       263: { name: 'coal' },
+      51: { name: 'raw_iron' },
     },
   };
 }

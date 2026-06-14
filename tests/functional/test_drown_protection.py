@@ -20,7 +20,7 @@ import pytest
 
 
 @pytest.fixture
-def pool_arena(rcon, arena, tester_bot, config):
+def pool_arena(functional_world, rcon, arena, tester_bot, config):
     """3×3 water column on canonical surface; grass cap around the pool.
     Bot starts NOT in the water — each test TPs it underwater explicitly."""
     world = config["mc"]["world"]
@@ -44,8 +44,9 @@ def _tp_underwater(arena, bot, world: str) -> None:
         f"clear Tester",
         f"execute in {world} run effect clear Tester",
         f"execute in {world} run effect give Tester minecraft:saturation 600 1",
+        f"execute in {world} run tp Tester 0 61 0 0 0",
     ])
-    arena.place_player(bot, 0, 61, 0)
+    arena.settle_water()
 
 
 def _wait_for_surface(bot, max_seconds: int = 12) -> tuple[bool, float]:
@@ -82,15 +83,8 @@ def test_swim_up_overrides_pathfinder_underwater(bot, rcon, arena, config, pool_
     world = config["mc"]["world"]
     _tp_underwater(arena, bot, world)
     bot.post("/action/mode", {"name": "normal"}, timeout=5)
-    # Background goto — fire-and-forget. If bg_goto doesn't exist,
-    # fall back to a short blocking goto (3s timeout).
-    try:
-        bot.post("/action/bg_goto", {"x": 0, "y": 61, "z": -5}, timeout=3)
-    except Exception:
-        try:
-            bot.post("/action/goto", {"x": 0, "y": 61, "z": -5}, timeout=3)
-        except Exception:
-            pass
+    # Goto may run until swim_up cancels pathfinding; allow long HTTP wait.
+    bot.post("/action/goto", {"x": 0, "y": 61, "z": -8}, timeout=90)
     surfaced, hp = _wait_for_surface(bot, max_seconds=15)
     assert surfaced, f"bot didn't surface within 15s with active pathfind; hp={hp}"
     assert hp >= 12, f"bot surfaced but HP={hp} < 12 — swim_up didn't cancel pathfind fast enough"

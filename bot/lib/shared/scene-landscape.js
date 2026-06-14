@@ -215,8 +215,8 @@ export function formatLandscapeClause(parts) {
  *   - underground:   feet_vs_local_ground ≤ -3 AND no cardinal egress within 2
  *                    (negative fvlg = the column scan found terrain ABOVE
  *                    the bot — a cave roof / overhang)
- *   - cliff_above:   one cardinal jumps ≥ 4 up, none drops
- *   - cliff_below:   one cardinal drops ≤ -4, none rises
+ *   - cliff_above:   one cardinal jumps ≥ 6 up, none drops
+ *   - cliff_below:   one cardinal drops ≤ -6, none rises
  *   - unknown:       canopy detected, no surface found, or ambiguous shape
  *
  * Steward SOUL (PR-F) is intentionally a no-op on 'unknown' — she falls back

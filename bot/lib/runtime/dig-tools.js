@@ -167,6 +167,180 @@ export const FALLING_BLOCK_NAMES = new Set([
 ]);
 const LAVA_NAMES = new Set(['lava', 'flowing_lava']);
 
+/** Aligns with pathfinder default maxCumulativeDropDown (see manager.js). */
+export const SAFE_STEP_DOWN_BLOCKS = 3;
+
+export const DEFAULT_DROP_MAX_SCAN = 8;
+export const DIG_FALL_HAZARD_MAX_SCAN = 16;
+
+const PLACEABLE_ITEM_RE = /^(dirt|coarse_dirt|cobblestone|stone|sand|gravel|.*_planks|netherrack)$/;
+
+export function hasPlaceableBlocks(b) {
+  return !!b.inventory?.items?.().some((i) => PLACEABLE_ITEM_RE.test(i.name));
+}
+
+function isSolidFloorBlock(block) {
+  if (!block || block.boundingBox !== 'block') return false;
+  if (block.name && (DIG_FLUID_NAMES.has(block.name) || block.name === 'flowing_water' || block.name === 'flowing_lava')) {
+    return false;
+  }
+  return true;
+}
+
+function isFallColumnCellPassable(block) {
+  if (!block) return false;
+  if (DIG_PASSABLE_NAMES.has(block.name)) return true;
+  if (block.name === 'water' || block.name === 'flowing_water' || block.name === 'lava' || block.name === 'flowing_lava') {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * Scan straight down from a stand cell (footY = entity floor block Y, same as
+ * standingState `by`). Returns drop classification for action error copy.
+ */
+export function measureDrop(b, footX, footY, footZ, opts = {}) {
+  const safeDrop = opts.safeDrop ?? SAFE_STEP_DOWN_BLOCKS;
+  const maxScan = opts.maxScan ?? DEFAULT_DROP_MAX_SCAN;
+
+  const supportY = footY - 1;
+  const support = b.blockAt(new Vec3(footX, supportY, footZ));
+  if (!support) {
+    return { depth: 0, floorY: null, fallColumnClear: false, kind: 'void' };
+  }
+  if (isSolidFloorBlock(support)) {
+    return { depth: 0, floorY: supportY, fallColumnClear: true, kind: 'flat' };
+  }
+
+  return classifyDropBelow(b, footX, supportY, footZ, { safeDrop, maxScan, firstCellPassable: true });
+}
+
+/**
+ * Drop if block at floorBlockY is removed (dig-under-foot hazard).
+ */
+export function measureDropIfSupportRemoved(b, x, floorBlockY, z, opts = {}) {
+  const safeDrop = opts.safeDrop ?? SAFE_STEP_DOWN_BLOCKS;
+  const maxScan = opts.maxScan ?? DIG_FALL_HAZARD_MAX_SCAN;
+  return classifyDropBelow(b, x, floorBlockY, z, { safeDrop, maxScan, firstCellPassable: false });
+}
+
+function classifyDropBelow(b, x, startY, z, { safeDrop, maxScan, firstCellPassable }) {
+  for (let depth = 1; depth <= maxScan; depth++) {
+    const floorY = startY - depth;
+    const landing = b.blockAt(new Vec3(x, floorY, z));
+    if (!landing) {
+      return { depth: 0, floorY: null, fallColumnClear: false, kind: 'void' };
+    }
+    if (!isSolidFloorBlock(landing)) continue;
+
+    if (!firstCellPassable && depth === 1) {
+      return { depth: 0, floorY, fallColumnClear: true, kind: 'flat' };
+    }
+
+    let fallColumnClear = true;
+    for (let i = 1; i < depth; i++) {
+      const through = b.blockAt(new Vec3(x, startY - i, z));
+      if (!isFallColumnCellPassable(through)) {
+        fallColumnClear = false;
+        break;
+      }
+    }
+
+    if (!fallColumnClear) {
+      return { depth, floorY, fallColumnClear: false, kind: 'void' };
+    }
+    if (depth <= safeDrop) {
+      return { depth, floorY, fallColumnClear: true, kind: 'step' };
+    }
+    return { depth, floorY, fallColumnClear: true, kind: 'drop' };
+  }
+
+  let airDepth = 0;
+  for (let dy = 1; dy < maxScan; dy++) {
+    const c = b.blockAt(new Vec3(x, startY - dy, z));
+    if (!c || isSolidFloorBlock(c)) break;
+    airDepth = dy;
+  }
+  return { depth: airDepth, floorY: null, fallColumnClear: false, kind: 'void' };
+}
+
+/**
+ * Action-facing copy for excavation drop guards (not under-foot dig hazards).
+ */
+export function describeDrop(measurement, { context, dir, hasPlaceable } = {}) {
+  const d = measurement?.depth ?? 0;
+  const dirBit = dir ? ` ${dir}` : '';
+  const placeHint = hasPlaceable
+    ? 'mc place a tread under the next stand cell, or '
+    : '';
+
+  if (measurement.kind === 'step') {
+    const n = d === 1 ? '1 block' : `${d}-block`;
+    if (context === 'stair_down_fully_air') {
+      return (
+        `Forward column is open air with a ${n} step-down (minor falloff — safe walk-down). ` +
+        `${placeHint}mc move into it${dirBit} and retry mc stair_down${dirBit}.`
+      );
+    }
+    if (context === 'cave_below') {
+      return (
+        `Floor under the next stand cell is ${n} lower (minor falloff, not a chasm). ` +
+        `${placeHint}mc move into the stand cell${dirBit} and retry mc stair_down${dirBit}, or bridge with mc place.`
+      );
+    }
+    return `Surface steps down ${n} here (minor falloff — safe walk-down) — move into it${dirBit} and continue.`;
+  }
+
+  if (measurement.kind === 'drop') {
+    return (
+      `An ${d}-block drop to solid ground at y=${measurement.floorY} — use mc place to bridge, ` +
+      `or descend deliberately${dirBit} (fall damage risk).`
+    );
+  }
+
+  if (measurement.kind === 'void') {
+    return (
+      `Opens over a deep drop (no safe floor within range, or fall column blocked) — ` +
+      `a chasm or hill edge; shift to solid ground or pick another direction.`
+    );
+  }
+
+  return 'Solid ground here.';
+}
+
+/**
+ * HAZARD_FALL message for mc safe_dig / dig_area.
+ */
+export function formatFallHazardMessage(hazard, coord, { blockName } = {}) {
+  const { x, y, z } = coord;
+  const name = blockName || 'block';
+  const dropKind = hazard.dropKind ?? 'drop';
+
+  if (dropKind === 'flat') {
+    return (
+      `Block at ${x},${y},${z} (${name}) is the floor under the bot — digging it removes your support. ` +
+      `Step away first, or mc safe_dig --force to override.`
+    );
+  }
+  if (dropKind === 'step') {
+    return (
+      `Block at ${x},${y},${z} is the floor under the bot — digging it would step you down ${hazard.drop} block(s) ` +
+      `(harmless fall). Step away if unintended, or mc safe_dig --force to override.`
+    );
+  }
+  if (dropKind === 'void') {
+    return (
+      `Block at ${x},${y},${z} is the floor under the bot — digging it opens a deep drop with no safe landing nearby. ` +
+      `Step away first, or mc safe_dig --force to override.`
+    );
+  }
+  return (
+    `Block at ${x},${y},${z} is the floor under the bot — digging it would drop the bot ${hazard.drop} blocks (fall damage). ` +
+    `Step away first, or mc safe_dig --force to override.`
+  );
+}
+
 /**
  * Check if breaking the block at (x, y, z) would expose adjacent lava.
  * Returns { kind: "lava", at:{x,y,z} } if any face neighbor is lava, else null.
@@ -194,14 +368,16 @@ export function checkFallHazard(b, x, y, z) {
     z: Math.floor(me.z),
   };
   if (myFootBlock.x !== x || myFootBlock.y !== y || myFootBlock.z !== z) return null;
-  // Target IS the block under bot. How far would bot fall?
-  let drop = 0;
-  for (let dy = 1; dy < 16; dy++) {
-    const below = b.blockAt(new Vec3(x, y - dy, z));
-    if (below && below.boundingBox === 'block') break;
-    drop = dy;
+
+  const measured = measureDropIfSupportRemoved(b, x, y, z, { maxScan: DIG_FALL_HAZARD_MAX_SCAN });
+
+  if (measured.kind === 'flat') {
+    return { kind: 'fall', drop: 0, dropKind: 'flat' };
   }
-  return { kind: 'fall', drop };
+  if (measured.kind === 'void') {
+    return { kind: 'fall', drop: measured.depth || DIG_FALL_HAZARD_MAX_SCAN - 1, dropKind: 'void' };
+  }
+  return { kind: 'fall', drop: measured.depth, dropKind: measured.kind };
 }
 
 /**

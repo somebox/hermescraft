@@ -48,6 +48,10 @@ def pickup_arena(rcon, arena, tester_bot, config):
         pass
     arena.settle_heavy()
     yield
+    try:
+        tester_bot.post("/action/mode", {"name": "normal"}, timeout=5)
+    except Exception:
+        pass
     rcon.run(f"execute in {world} run kill @e[type=item,distance=..40]")
 
 

@@ -133,16 +133,9 @@ def test_attack_through_shelter_wall_is_refused(bot, rcon, config, combat_arena)
     err = r.get("error") or {}
     if isinstance(err, dict):
         code = err.get("code") or ""
-        msg = err.get("message") or ""
     else:
-        code = ""
-        msg = str(err)
-    refused = (
-        code == "ATTACK_BLOCKED"
-        or "line of sight" in msg.lower()
-        or "blocked" in msg.lower()
-    )
-    assert refused, r
+        code = str(err)
+    assert code == "ATTACK_BLOCKED", f"expected ATTACK_BLOCKED, got {code!r}: {r}"
     time.sleep(0.5)
     hp1 = _zombie_hp(rcon, world)
     assert hp1 is not None and abs(hp1 - hp0) < 0.01, f"HP changed despite refused attack: {hp0} → {hp1}"

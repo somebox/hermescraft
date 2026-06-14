@@ -167,17 +167,17 @@ def test_pillar_capture_from_dirt_ceiling_empty_inventory(bot, rcon, config, pil
 
 @pytest.mark.functional
 def test_pillar_force_required_for_bare_hand_stone(bot, rcon, config, pillar_arena):
-    """C: 3-block stone ceiling + 4 dirt + no pickaxe → default fails,
-    --force succeeds via slow bare-hand stone dig + pillar with stocked dirt.
+    """C: 3-block stone ceiling over a 3×3 cavity (not genuinely trapped) +
+    dirt inventory, no pickaxe → default refuses slow bare-hand stone dig;
+    --force succeeds.
     """
     world = config["mc"]["world"]
-    # 3-block stone ceiling (y=66..68). Surface at y=69. Bot has dirt to
-    # pillar with but NO pickaxe, so stone-dig is gated by the slow-dig
-    # guard — default pillar_step must refuse, then --force bypasses.
+    # Widen to 3×3×2 air so isGenuinelyStuckAt is false (open cardinal at head),
+    # while keeping a 1×1 stone ceiling stack above (0,66..68,0).
     rcon.batch([
+        f"execute in {world} run fill -1 64 -1 1 65 1 minecraft:air",
         f"execute in {world} run fill {ARENA_X_MIN} 66 {ARENA_Z_MIN} "
         f"{ARENA_X_MAX} 68 {ARENA_Z_MAX} minecraft:stone",
-        # Re-carve the 1x1 cavity.
         f"execute in {world} run setblock 0 {ARENA_Y_CAVITY_LO} 0 minecraft:air",
         f"execute in {world} run setblock 0 {ARENA_Y_CAVITY_HI} 0 minecraft:air",
         "clear Tester",
@@ -191,11 +191,19 @@ def test_pillar_force_required_for_bare_hand_stone(bot, rcon, config, pillar_are
     # PILLAR_FAILED (or a partial-placement result that doesn't reach
     # surface) with a hint about --force in the fail_reasons.
     r1 = bot.post("/action/pillar_step", {"count": 8}, timeout=60)
+    assert r1.get("ok") is False, f"expected refusal without force, got ok: {r1}"
+    err = r1.get("error") or {}
+    assert err.get("code") in (
+        "PILLAR_FAILED",
+        "SLOW_DIG_REFUSED",
+        "NO_BLOCKS",
+        "OUT_OF_BLOCKS",
+    ) or "force" in (r1.get("result") or "").lower() or any(
+        "force" in str(x).lower() for x in (r1.get("fail_reasons") or [])
+    ), f"expected slow-dig / force hint, got {r1}"
     after1 = bot.position() or {}
-    assert after1.get("y", 0) < 69, (
-        f"expected bot stuck below surface without --force, was at {after1}. "
-        f"r={r1}"
-    )
+    if r1.get("ok") is False and after1.get("y", 0) >= 69:
+        pytest.fail(f"refused but bot reached surface: {after1} r={r1}")
 
     # Now retry with --force. The slow-dig guard is bypassed; the bot
     # bare-hand digs the stone (slow — ~7.5s per cell, no drop), pillars

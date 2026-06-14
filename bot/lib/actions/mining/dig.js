@@ -5,6 +5,7 @@ import {
   isDigProtected,
   getSupportedDoorAbove,
   detectPostDigBreach,
+  formatFallHazardMessage,
 } from '../../runtime/dig-tools.js';
 import { OperationTimeoutError, ACTION_CAPS_MS, timeoutError, pathfindGotoNear } from '../_helpers.js';
 import { coord3 } from '../_args.js';
@@ -590,7 +591,7 @@ export function createDigHandlers(deps) {
           'HAZARD_SUFFOCATE';
         const messages = {
           HAZARD_LAVA: `Lava at ${hazard.at?.x},${hazard.at?.y},${hazard.at?.z} would flow on the bot if ${target.name} at ${tx},${ty},${tz} is broken. Use mc seal to wall it off, or mc safe_dig --force to override.`,
-          HAZARD_FALL: `Block at ${tx},${ty},${tz} is the floor under the bot — digging it would drop the bot ${hazard.drop} blocks. Step away first, or mc safe_dig --force to override.`,
+          HAZARD_FALL: formatFallHazardMessage(hazard, { x: tx, y: ty, z: tz }, { blockName: target.name }),
           HAZARD_SUFFOCATE: `Falling-block column (${hazard.falling_block} × ${hazard.column_height}) above ${tx},${ty},${tz} would fall on the bot if dug. Approach from a side, or mc safe_dig --force to override.`,
         };
         return fail(code, messages[code], {

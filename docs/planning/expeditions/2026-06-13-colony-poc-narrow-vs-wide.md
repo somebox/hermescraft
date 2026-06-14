@@ -80,6 +80,44 @@ narrower scope ⇒ fewer turns, less context, equal outcome.**
    controlled leaf-wall test). Minor future polish: bias confirm away from
    head-level foliage.
 
+## Model swap — `xiaomi/mimo-v2.5` re-run (2026-06-14)
+
+The deepseek wide walk crashed *twice* on garbage Chinese refusals (finding
+#4). To separate **model instability** from **architecture**, the identical
+4-card A/B was re-run with both profiles repointed to `xiaomi/mimo-v2.5`
+(same corridor, same seed, regen between arms).
+
+| card (arm) | status | turns | tool calls | wall | input tok | ctx/turn | road |
+|---|---|---|---|---|---|---|---|
+| **mN1 plan+light (narrow)** | done | **31** | **15** | **152 s** | 109 534 | **22 519** | 17/17 ✓ |
+| mW1 plan+light (wide) | done | 74 | 37 | 244 s | 175 709 | 35 028 | 17/17 ✓ |
+| **mN2 walk+verify (narrow)** | done | **46** | **23** | **103 s** | 129 815 | **28 621** | GATE PASS 17/17 |
+| mW2 walk+verify (wide) | **done** | 73 | 37 | 223 s | 164 062 | 37 705 | GATE PASS 17/17 |
+
+Both arms again produced the **identical valid road** (cost 139.25, 17/17,
+one ≤2-cell `wp_13` anchor nudge in the wide arm — the skill's documented
+`suggested_anchor` reflex, used correctly).
+
+**Two discernible differences vs the deepseek baseline:**
+
+1. **mimo wide does NOT crash.** Both wide cards completed with GATE PASS —
+   the deepseek wide walk failed (Chinese refusal) on both attempts. So the
+   crash was a **deepseek model hiccup, not the wide architecture**, exactly
+   as finding #4 suspected. mimo is the more stable provider for board work.
+2. **mimo *widens* the narrow-vs-wide gap.** The POC verdict reproduces under
+   a different model — narrow beats wide on every metric again — but harder:
+   wide plan+light ballooned to **74 turns vs deepseek wide's 38**, and ~35 k
+   ctx/turn vs deepseek's 24 k. The narrow arm stayed lean (31 turns, 22.5 k
+   ctx/turn), close to deepseek narrow (29 / 21 k). mimo on the bigger context
+   is markedly more verbose, so the per-turn and total-token penalty for the
+   wide catalog is *larger* with mimo, not smaller.
+
+**Net:** the narrow-wins result is model-robust (holds for deepseek and mimo);
+the wide-crash flakiness was model-specific (deepseek only). Picking a stable
+model fixes the crash, but does **not** close the narrow vs wide efficiency
+gap — that gap is structural (catalog width ⇒ context + turns), and if
+anything mimo makes it worse. Architecture is still the lever.
+
 ## Next steps
 
 - The POC win justifies the colony direction: keep building narrow specialist

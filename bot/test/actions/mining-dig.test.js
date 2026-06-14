@@ -214,3 +214,32 @@ test('mining.dig: blocks adjacent to bot but not under-feet are fine', async () 
       `lateral dig must not trip DIG_UNDER_FEET; got ${r.error.code}`);
   }
 });
+
+test('mining.safe_dig: HAZARD_FALL step-down uses calm harmless wording', async () => {
+  const blockAtByPos = (pos) => {
+    const { x, y, z } = pos;
+    if (x === 5 && z === 5 && y === 64) {
+      return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}) };
+    }
+    if (x === 5 && z === 5 && y === 61) {
+      return { name: 'stone', position: pos, boundingBox: 'block', getProperties: () => ({}) };
+    }
+    if (x === 5 && z === 5 && y < 64 && y > 61) {
+      return { name: 'air', position: pos, boundingBox: 'empty', getProperties: () => ({}) };
+    }
+    return null;
+  };
+  const bot = makeStubBot({
+    position: new Vec3(5.5, 65, 5.5),
+    blockAtByPos,
+  });
+  bot.blockAt = blockAtByPos;
+  const deps = makeDeps({ bot });
+  const actions = createMiningActions(deps);
+  const r = await actions.safe_dig({ x: 5, y: 64, z: 5 });
+  assert.equal(r.ok, false);
+  assert.equal(r.error.code, 'HAZARD_FALL');
+  assert.match(r.error.message, /harmless/i);
+  assert.equal(r.error.observed_state.hazard.dropKind, 'step');
+});
+

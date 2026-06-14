@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fast functional run (~10-15 min): skips @slow tests.
-# Restarts Tester only (Steve/Gatherer left alone — see stop-bots.sh).
+# Uses restart-tester.sh (verified fresh :3004 bot). Steve/Gatherer left alone.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

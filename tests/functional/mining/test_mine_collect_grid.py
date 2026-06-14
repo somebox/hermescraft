@@ -41,8 +41,7 @@ GRID_PILLAR_CELLS = {(x, z) for x in (2, 4, 6) for z in (2, 4, 6)}
 
 
 @pytest.fixture
-def grid_arena(rcon, arena, config):
-    """Harness lays canonical arena; prefab optional for grid tests."""
+def grid_arena(functional_world, rcon, arena, config):
     arena.settle_default()
     yield
 
@@ -139,17 +138,20 @@ def _run_collect_scenario(
     # generalize to a percentage so larger counts inherit the same
     # philosophy. 85% means 1 miss on 9-block runs, 2 misses on 18.
     # For count=1, ceil(0.85)=1 → still strict.
-    threshold = math.ceil(want_count * 0.85)
+    threshold = want_count if want_count == 1 else math.ceil(want_count * 0.85)
     assert mined_count >= threshold, (
-        f"mc collect mined {mined_count}/{want_count} (threshold {threshold}, 85%) — "
-        f"strip-mine loop is leaving too much behind. inventory_gained={gained} "
+        f"mc collect mined {mined_count}/{want_count} (threshold {threshold}) — "
         f"causes={causes} elapsed={elapsed:.1f}s"
     )
-    inv_threshold = math.ceil(want_count * 0.75)
+    inv_threshold = want_count if want_count == 1 else math.ceil(want_count * 0.75)
     assert gained >= inv_threshold, (
         f"inventory gained {gained}/{want_count} (threshold {inv_threshold}) — "
-        f"mined_count={mined_count} without matching inventory delta"
+        f"mined_count={mined_count}"
     )
+    if want_count == 1:
+        assert rcon.block_is(2, 65, 2, "air") or rcon.block_is(4, 65, 2, "air"), (
+            "single-block collect should remove at least one grid cobble"
+        )
 
 
 @pytest.mark.functional

@@ -86,7 +86,7 @@ def state_arena(rcon, config, tester_bot):
 # ─── A. Slab refusal ─────────────────────────────────────────────────────
 
 @pytest.mark.functional
-def test_pillar_step_refuses_from_slab(bot, rcon, config, state_arena):
+def test_pillar_step_refuses_from_slab(bot, rcon, config, state_arena, arena):
     """pillar_step on a slab top must surface PILLAR_FROM_PARTIAL_BLOCK
     and leave the bot where it was (no place attempt, no Y change).
 
@@ -95,17 +95,17 @@ def test_pillar_step_refuses_from_slab(bot, rcon, config, state_arena):
     minecraft:oak_slab, bot.position()['y'] is the real fractional 64.5,
     and the bot's POSITION must not move."""
     world = config["mc"]["world"]
-    # Place a slab at (3, 64, 3) — replaces the air cell directly above
-    # the stone floor at y=63. Slab fills the BOTTOM half so its top is
-    # at y=64.5.
+    # Replace the full stone cell with a bottom slab so the bot stands on a
+    # partial top (y≈63.5). TP Y must match slab geometry — rcon tp at 64.5
+    # often snaps to y=64 on the stone neighbor in full-block collision.
     rcon.batch([
-        f"execute in {world} run setblock 3 64 3 minecraft:oak_slab[type=bottom]",
+        f"execute in {world} run setblock 3 63 3 minecraft:oak_slab[type=bottom]",
         "give Tester minecraft:cobblestone 32",
-        f"execute in {world} run tp Tester 3.5 64.5 3.5 0 0",
+        f"execute in {world} run tp Tester 3.5 63.5 3.5 0 0",
     ])
-    time.sleep(1.5)
+    arena.settle_default()
     before = bot.position() or {}
-    assert before.get("y", 0) > 64.4, f"bot should be on slab top y≈64.5, was at {before}"
+    assert before.get("y", 0) > 63.4, f"bot should be on slab top y≈63.5, was at {before}"
 
     r = bot.post("/action/pillar_step", {"count": 3}, timeout=15)
     assert r.get("ok") is False, f"expected refusal, got: {r}"
@@ -121,17 +121,17 @@ def test_pillar_step_refuses_from_slab(bot, rcon, config, state_arena):
 
 
 @pytest.mark.functional
-def test_pillar_step_force_bypasses_slab_guard(bot, rcon, config, state_arena):
+def test_pillar_step_force_bypasses_slab_guard(bot, rcon, config, state_arena, arena):
     """The force flag must allow pillar_step from a slab even though the
     guard warns about the off-by-one. (Caller acknowledges the math is
     weird; cleanup primitives sometimes need this.)"""
     world = config["mc"]["world"]
     rcon.batch([
-        f"execute in {world} run setblock 3 64 3 minecraft:oak_slab[type=bottom]",
+        f"execute in {world} run setblock 3 63 3 minecraft:oak_slab[type=bottom]",
         "give Tester minecraft:cobblestone 32",
-        f"execute in {world} run tp Tester 3.5 64.5 3.5 0 0",
+        f"execute in {world} run tp Tester 3.5 63.5 3.5 0 0",
     ])
-    time.sleep(1.5)
+    arena.settle_default()
     # Whatever physics actually produces, the guard must not be the failure.
     r = bot.post("/action/pillar_step", {"count": 1, "force": True}, timeout=30)
     if r.get("ok") is False:
@@ -192,7 +192,7 @@ def test_pillar_step_position_matches_report(bot, rcon, config, state_arena):
 # ─── C. pillar_down position snapshot pre-pickup ─────────────────────────
 
 @pytest.mark.functional
-def test_pillar_down_position_is_pre_pickup_landing(bot, rcon, config, state_arena):
+def test_pillar_down_position_is_pre_pickup_landing(bot, rcon, config, state_arena, arena):
     """pillar_down's reported `position` must be the pillar's ENDING
     landing — NOT where the post-action pickup pathed to grab drops.
 
@@ -205,13 +205,14 @@ def test_pillar_down_position_is_pre_pickup_landing(bot, rcon, config, state_are
         # Stone column already exists from the arena fixture (full floor).
         # Bot at (4.5, 64, 4.5).
         "give Tester minecraft:iron_pickaxe 1",
+        "give Tester minecraft:cobblestone 32",
         f"execute in {world} run tp Tester 4.5 {ARENA_Y_STAND} 4.5 0 0",
         # Spawn a drop laterally so pickup MUST move the bot.
         f"execute in {world} run summon item -3 {ARENA_Y_STAND} -3 "
         f'{{Item:{{id:"minecraft:cobblestone",count:1}},'
         f"PickupDelay:0,Age:0,Motion:[0d,0d,0d]}}",
     ])
-    time.sleep(1.5)
+    arena.settle_default()
     before = bot.position() or {}
     assert abs(before.get("x", 0) - 4.5) < 0.5, f"bot should start at x=4.5, got {before}"
 

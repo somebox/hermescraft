@@ -146,6 +146,72 @@ test('excavation.stair_down: invalid direction returns INVALID_VALUE', async () 
   assert.match(r.error.message, /Invalid direction/);
 });
 
+test('excavation.stair_down: fully-air forward column with 2-block step → calm message, ok:true', async () => {
+  const bot = {
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true },
+    inventory: { items: () => [{ name: 'dirt', count: 8 }] },
+    look: async () => {},
+    pathfinder: { goto: async () => {}, setGoal: () => {} },
+    blockAt: (p) => {
+      if (p.x === 0 && p.z === 0 && p.y === 64) {
+        return { name: 'stone', boundingBox: 'block', position: p, digTime: 1 };
+      }
+      if (p.x === 0 && p.z === -1 && p.y === 62) {
+        return { name: 'stone', boundingBox: 'block', position: p, digTime: 1 };
+      }
+      return { name: 'air', boundingBox: 'empty', position: p };
+    },
+    dig: async () => {},
+    equip: async () => {},
+    stopDigging: () => {},
+    heldItem: { name: 'iron_pickaxe' },
+    tool: { itemInHand: () => ({ name: 'iron_pickaxe' }), getDigTime: () => 20 },
+  };
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: { blocksByName: {} } }, runtime: {} },
+    ensureBot: () => bot,
+    getActions: () => ({ pickup: async () => ({ ok: true }) }),
+  });
+  const actions = createExcavationActions(services);
+  const r = await actions.stair_down({ direction: 'north', length: 2, pickup: false });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(r.data?.stopped_at_step, 'should stop early');
+  const msgs = (r.data?.error_messages || []).join(' ');
+  assert.doesNotMatch(msgs, /cliff edge/i);
+  assert.match(msgs, /minor falloff|safe walk-down/i);
+  assert.match(msgs, /mc move/i);
+});
+
+test('excavation.stair_down: deep void under forward stand → alarming message', async () => {
+  const bot = {
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true },
+    inventory: { items: () => [] },
+    look: async () => {},
+    pathfinder: { goto: async () => {}, setGoal: () => {} },
+    blockAt: (p) => {
+      if (p.x === 0 && p.z === 0 && p.y === 64) {
+        return { name: 'stone', boundingBox: 'block', position: p, digTime: 1 };
+      }
+      return { name: 'air', boundingBox: 'empty', position: p };
+    },
+    dig: async () => {},
+    equip: async () => {},
+    stopDigging: () => {},
+    heldItem: { name: 'iron_pickaxe' },
+    tool: { itemInHand: () => ({ name: 'iron_pickaxe' }), getDigTime: () => 20 },
+  };
+  const services = createMockServices({
+    state: { world: { botReady: true, bot, mcData: { blocksByName: {} } }, runtime: {} },
+    ensureBot: () => bot,
+    getActions: () => ({ pickup: async () => ({ ok: true }) }),
+  });
+  const actions = createExcavationActions(services);
+  const r = await actions.stair_down({ direction: 'north', length: 2, pickup: false });
+  assert.equal(r.ok, true);
+  const msgs = (r.data?.error_messages || []).join(' ');
+  assert.match(msgs, /deep drop|chasm|no safe floor/i);
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // pillar_down state-drift: the report's `position` field must reflect
 // where pillar_down ENDED, NOT where the post-action pickup pathed to

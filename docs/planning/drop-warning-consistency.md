@@ -1,6 +1,6 @@
 # Consistent drop / edge / falloff warnings (shared classifier)
 
-Status: PROPOSED — scoped for a small standalone refactor session.
+Status: IMPLEMENTED — shared classifier in dig-tools (2026-06-14).
 Owner: TBD (spun out of the mining-agent work, 2026-06-14).
 Prereq: none. Self-contained bot-side change.
 
@@ -95,6 +95,8 @@ calibrated severity (a `step` is informational/recoverable, not a scary error):
   `void`.
 - `dig.js` `safe_dig` `HAZARD_FALL` message → a 1–2 block drop is "you'll step
   down N blocks (harmless)"; only `drop`/`void` warns about fall damage.
+- `excavation.js` `dig_area` hazard abort → same `dropPhrase` for `fall` (today
+  only `${hazard.kind}` in the message).
 
 ### 3.3 Leave as-is (but cite the shared threshold)
 
@@ -105,8 +107,9 @@ calibrated severity (a `step` is informational/recoverable, not a scary error):
 
 ## 4. Scope / non-goals
 
-- **In scope:** the shared classifier + re-phrasing the three action-verb sites;
-  consistent threshold + calm/actionable language.
+- **In scope:** the shared classifier + re-phrasing **`stair_down`**, **`cave_below`**,
+  **`safe_dig` `HAZARD_FALL`**, and **`dig_area`** fall abort messages; consistent
+  threshold + calm/actionable language.
 - **Non-goal (this session):** changing *behavior* — e.g. `stair_down`
   auto-stepping into a minor falloff and continuing without an agent round-trip.
   That's a worthwhile follow-up but a bigger change to the descent loop; note it,
@@ -128,3 +131,99 @@ calibrated severity (a `step` is informational/recoverable, not a scary error):
   pinned the old "cliff edge" / "fully air" strings.
 - (Optional) a functional check: `stair_down` toward a 2-block surface step
   returns a `step`-class message, not a cliff warning.
+
+---
+
+## 6. Codebase audit (2026-06-14)
+
+Subagent + manual pass over `bot/`. **Plan assumptions validated**; expand scope
+slightly so the taxonomy stays consistent.
+
+### 6.1 Validated
+
+| Claim in §2 | Verdict |
+|---|---|
+| `neighborStatus` uses 1–3 block safe step-down (`dy` 2..4) | **Correct** — `_nav-helpers.js` L393–409; pinned by `nav-helpers.test.js` |
+| `scene-landscape` cliff at ±6 | **Correct in code** (L269–270); JSDoc still says ≥4 — fix comment only |
+| `stair_down` / `cave_below` strings | **Correct** — `excavation.js` L736–740, L760–765 |
+| `checkFallHazard` → `safe_dig` `HAZARD_FALL` | **Correct** — `dig-tools.js` L189–205, `dig.js` L585–593 |
+| No shared classifier on action verbs | **Correct** — `checkFallHazard` counts depth but does not classify step vs damage vs void |
+| M2 failure mode (fully air column ≠ chasm) | **Plausible** — `already_air === targets.length` fires before any step; no depth probe today |
+
+### 6.2 Taxonomy: who speaks about drops (agent-facing)
+
+| Layer | Signal | Threshold today | Refactor? |
+|---|---|---|---|
+| **Action errors (alarm-prone)** | `stair_down` fully-air, `cave_below` | Binary air / no depth | **Yes — §3.2** |
+| **Action errors** | `safe_dig` / `dig_area` `HAZARD_FALL` | Any `drop > 0` same tone | **Yes — add `dig_area`** (generic message at `excavation.js` L345–353) |
+| **Action errors** | `mc dig` `DIG_UNDER_FEET` | Always refuse under-foot | **No** — stranding guard, not drop-depth taxonomy |
+| **Nav preflight** | `BOT_ON_PILLAR` “every direction is a cliff” | 4× `no_support` | **No** — real 4+ drops on all sides |
+| **Nav standing** | `mc standing` `cliff:` / `cliff_dirs` | `no_support` only (excludes `step_down`) | **No** — already aligned with safeDrop=3 |
+| **Post-nav** | `⚠ FELL N blocks` (`goto`, `goto_near`) | `fellBy >= 4` | **No** — already damage-aligned |
+| **Observation** | `formatStandingSituation` “Ledge nearby … mind drops” | `edge` + any `cliff_dirs` | **Optional follow-up** — only names true cliffs (`no_support`), but ignores adjacent `step_down_dirs` as safe exits; calmer copy possible, not blocking |
+| **Scene / planning** | `terrain_kind` cliff_*, `survey_line` drop/drop_hazard, path `ravine/cliff` | 6 / 2 / 16 respectively | **Out of scope** — different domains (visual relief, road spec, corridor planning) |
+
+**Collect gap (document only):** `mc collect` calls `b.dig()` with no
+`detectDigHazards` — intentional or not, leave unchanged this session.
+
+### 6.3 Implementation notes for `measureDrop`
+
+1. **Probe origin must match nav.** For cardinal descent, prefer the same geometry
+   as `neighborStatus(b, bx, by, bz, dx, dz)`: foot at `(bx, by, bz)`, scan landing
+   at `by - dy` for `dy ∈ [2..4]` with fall-column air check (reuse `AIR_NAMES` /
+   fluid-leaf rules from `_nav-helpers.js` or export one helper). For `stair_down`
+   “fully air” branch, probe from the **forward stand cell** `(fx, fy-1, fz)` (or
+   equivalent neighbor step), not from the bot’s current cell only.
+
+2. **`cave_below` is stricter than pathfinder today.** It treats any passable block
+   at `(fx, fy-2, fz)` as “fall through”, even when solid is 2–3 blocks below
+   (pathfinder would allow). Refactor should **replace the binary check** with
+   `measureDrop`; abort only when kind is `void`, or `drop` if product policy
+   says 4+ under next stand is still too risky for auto-step (keep abort, calm
+   phrase). For `step`, message should match §3.2 even if behavior still stops
+   the loop (non-goal §4).
+
+3. **`checkFallHazard` should delegate** to `measureDrop` at the under-foot cell
+   so `hazard.drop` and `kind` stay consistent; `detectDigHazards` can attach
+   `kind` on the fall hazard object for callers.
+
+4. **Export `SAFE_STEP_DOWN_BLOCKS = 3`** (or import from one place) referenced
+   in comments in `_nav-helpers.js` and `manager.js` `MAX_CUMULATIVE_DROP_DOWN_DEFAULT`.
+
+### 6.4 Preserve real danger (do not soften)
+
+- **`void`**: no floor within `maxScan`, or fall column blocked by water/lava/leaves
+  (same as `no_support` / water test in `nav-helpers.test.js`).
+- **`drop` (4+ to solid floor)**: fall-damage band; keep explicit bridge / deliberate
+  descent wording.
+- **`on_pillar` / `BOT_ON_PILLAR`**: four true cliffs — keep strong language.
+- **`cave_below` with deep air column** (original flint kick scenario): still abort;
+  distinguish from 2-block hillside air column via depth, not by removing the guard.
+- **Post-dig fluid breach** (`detectPostDigBreach`): unrelated; no change.
+
+### 6.5 Test contract (gaps vs §5)
+
+**Already enforces safe-drop=3:** `nav-helpers.test.js`, `bot-manager.test.js`
+(pathfinder landing cap).
+
+**Missing (add in this refactor):**
+
+| Test file | What to add |
+|---|---|
+| `bot/test/dig-tools.test.js` | `measureDrop` + `dropPhrase` matrix (§5 fixtures); water-blocked column |
+| `bot/test/dig-tools.test.js` | `checkFallHazard` / `detectDigHazards` for step vs drop depths (currently untested) |
+| `bot/test/actions/excavation-contract.test.js` | Mock world: `stair_down` north with 2-block air column → message has no `cliff`, includes step phrasing; deep void → still alarming |
+| `bot/test/actions/excavation-contract.test.js` | `cave_below`: solid 3 blocks below stand → step/drop phrasing, not “fall through” for 2-block case |
+| `bot/test/actions/mining-dig.test.js` (or dig-tools) | `safe_dig` `HAZARD_FALL`: drop=2 calm vs drop=10 damage wording |
+
+**Fixture not wired:** `data/test-fixtures/L3/L6.3_dig_floor_under_self.yaml` documents
+10-block `HAZARD_FALL` — optional pytest hook later; unit mocks suffice for CI.
+
+**Optional:** `perception-standing.test.js` for `edge` ledge line; lower priority.
+
+### 6.6 Revised in-scope list (§4)
+
+- Shared `measureDrop` / `dropPhrase` + tests.
+- Message routing: `stair_down` (fully air), `cave_below`, `safe_dig` **`HAZARD_FALL`**, and **`dig_area`** fall branch (same phrases, generic envelope today).
+- Comments tying `safeDrop=3` to nav/pathfinder.
+- **Not in scope:** perception ledge line, `collect` hazards, behavior auto-continue on `step`, road/survey thresholds.

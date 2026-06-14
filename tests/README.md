@@ -120,12 +120,39 @@ def test_pickup_after_dig(arena, bot):
 
 Legacy `scripts/test-*.py` were migrated in Round 3 (2026-05-16). For new tests, follow patterns in [docs/archive/testing-migration.md](../docs/archive/testing-migration.md) and existing files under `tests/functional/`.
 
-## Functional test quality checklist
+## Arena test policy (2026-06)
 
-When adding or tightening a functional test:
+### When to add a Tier 3 test
 
-1. **Prove the side effect** — not only `ok=true` (use `rcon.block_is`, inventory delta, or position change).
-2. **Match error codes to intent** — do not accept unrelated codes (e.g. `NO_LINE_OF_SIGHT` on a timeout scenario).
-3. **Avoid masking** — prefer scoped `pytest.xfail()` on a failing assertion segment over whole-test xfail; use `@pytest.mark.skip` for unimplemented specs.
-4. **Isolate setup/teardown** — clear terrain you build; verify critical cells after prep when using `/fill` in shared worlds.
-5. **Reuse geometry** — import helpers from `tests/_lib/functional_fixtures.py` when the scenario matches an existing pattern (LOS wall, mining grid).
+Document in the module docstring what **live MC** proves that `bot/test/` cannot (pathfinder, raycast body, reactive timing, multi-step world mutation). Otherwise use unit/contract tests.
+
+### Spatial checklist
+
+- Feet **y=65** on grass **y=64** (`ARENA_FEET_Y` / `ARENA_FLOOR_Y`).
+- MC yaw: **0=south, 90=west, -90/270=east** — use `tp_tester_at_origin_facing_west` for +X targets.
+- Declare `functional_world` on fixtures that mutate blocks.
+- **Preflight:** `rcon.block_is` on critical cells after setup.
+- **Postflight:** side effect, not `ok` alone — helpers in `tests/_lib/scenario_verify.py`.
+
+### Contamination / harness
+
+- Do not call `forceload remove all` (harness re-applies session forceload).
+- Geometry outside ±32 or below y=50 must be torn down in fixture or restored by `reset_ground_arena`.
+- Runners use `./scripts/restart-tester.sh` before pytest (orphan-safe :3004).
+
+### Profiles
+
+| Script | Marker |
+|--------|--------|
+| `run-functional-core.sh` | `functional_core` |
+| `run-functional-fast.sh` | `functional and not slow` |
+| `run-functional-full.sh` | all `functional` |
+
+### Replacement-first
+
+Do not delete a functional module until Tier 1 covers the same **postflight** side effect.
+
+### xfail / flake
+
+Every `xfail` needs an owner and exit condition in `docs/archive/test-inventory.md`. Prefer harness fixes over `strict=False`.
+

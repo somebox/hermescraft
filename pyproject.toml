@@ -20,6 +20,8 @@ markers = [
   "slow: takes >30s, skip in fast feedback loops",
   "trace(interval): per-test BotTrace poll interval in seconds (default 1.0)",
   "no_trace: disable BotTrace poller for this test",
+  "no_say: skip harness rcon say announcements (chat-sensitive tests)",
+  "functional_core: highest-signal arena subset for run-functional-core.sh",
   "colony: agent-arch validation tests; opt-in only, never in fast/full functional runners — see tests/colony/README.md",
 ]
 addopts = "-ra --strict-markers"

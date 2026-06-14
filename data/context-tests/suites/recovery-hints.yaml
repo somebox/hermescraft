@@ -1,3 +1,5 @@
 id: recovery-hints
 scenarios:
   - pillar_down_hint_honored
+  - stair_down_minor_falloff_recovery
+  - stair_down_void_bridge_or_reroute

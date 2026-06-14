@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-pytestmark = pytest.mark.slow
+pytestmark = [pytest.mark.slow, pytest.mark.no_say]
 
 
 @pytest.fixture

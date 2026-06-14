@@ -31,6 +31,29 @@ from tests._lib.functional_fixtures import (
 )
 
 
+def _harness_reset_bot_runtime(tester_bot: BotClient, arena: Arena) -> None:
+    """Best-effort bot state normalization between functional tests."""
+    try:
+        tester_bot.post("/task/cancel", {}, timeout=8)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        tester_bot.post("/action/stop", {}, timeout=8)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        tester_bot.post("/action/mode", {"name": "normal"}, timeout=8)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        arena.move_to_safe(bot=tester_bot)
+    except Exception:  # noqa: BLE001
+        try:
+            arena.rescue_tester(bot=tester_bot, wait=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @pytest.fixture(scope="session")
 def config():
     """Loaded config/hermescraft.yaml. Session-scoped — read once."""
@@ -357,10 +380,11 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
         harness_errors.append(f"rescue_tester: {type(e).__name__}: {e}")
 
     # 2. Announce.
-    try:
-        rcon.run(f'execute in {world} run say [test #{n}] {short}')
-    except Exception as e:  # noqa: BLE001
-        harness_errors.append(f"announce_start: {type(e).__name__}: {e}")
+    if request.node.get_closest_marker("no_say") is None:
+        try:
+            rcon.run(f'execute in {world} run say [test #{n}] {short}')
+        except Exception as e:  # noqa: BLE001
+            harness_errors.append(f"announce_start: {type(e).__name__}: {e}")
 
     # 3. TEST_START marker. Capture the bot's pos via the trace's
     #    own preserve=true status call so we don't perturb runtime state.
@@ -460,11 +484,15 @@ def _functional_harness(request, config, rcon, tester_bot, log_dir):
         except Exception:  # noqa: BLE001 — never let trace write break teardown
             pass
 
-        # 8. Done announcement.
-        try:
-            rcon.run(f'execute in {world} run say [done #{n}] {elapsed:.1f}s {outcome}')
-        except Exception:  # noqa: BLE001
-            pass
+        # 8. Done announcement (skip when test opts out — chat-sensitive cases).
+        if request.node.get_closest_marker("no_say") is None:
+            try:
+                rcon.run(f'execute in {world} run say [done #{n}] {elapsed:.1f}s {outcome}')
+            except Exception:  # noqa: BLE001
+                pass
 
-        # 9. Park: next test's harness rescue_tester parks at 0,65,0.
-        # Session end: _final_park runs once.
+        # 9. Reset bot runtime + park before next test's harness setup.
+        try:
+            _harness_reset_bot_runtime(tester_bot, arena)
+        except Exception as e:  # noqa: BLE001
+            harness_errors.append(f"harness_teardown_bot: {type(e).__name__}: {e}")
