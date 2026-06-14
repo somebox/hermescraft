@@ -103,6 +103,8 @@ Add a weighted score **only** when the lexicographic list produces obvious wrong
 
 ---
 
+**Pull-checkout (partial MVP):** Bodiless workers can lease a registry body at runtime with `mc bot checkout` / `release` ([`bot-lease.md`](bot-lease.md)). That is separate from Hermes card `claim_lock` and from write-time `metadata.bot` bind. Nearest/capability policy and dispatcher push-bind sharing the same store are **deferred** — see `bot-lease.md` § Deferred (post-MVP).
+
 ## Leasing and the bot mutex
 
 Hermes v0.15 already provides leases — use them, don't reinvent ([ref](hermes-v0.15-reference.md#kanban--lifecycle-claim_lock-heartbeat)).

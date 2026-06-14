@@ -163,6 +163,7 @@ Gate-check and spawn **must use the same body-resolution function** so mutex dom
 
 - Agents **do not** read `data/bots/` or discover ports from card prose ([`workspaces.md`](workspaces.md) access model).
 - `mc` resolves HTTP via [`bot/cli/api-url.mjs`](../../bot/cli/api-url.mjs): on kanban workers, `HERMES_KANBAN_TASK` + `MC_API_URL` beat a stale parent `_MC_API_URL_LOCKED`.
+- **Genesis v2 lease path (MVP):** colony specialists mint with `HERMES_BOT_LEASE=1` and **no** `MC_API_URL` — bodies are acquired at runtime via [`mc bot checkout`](bot-lease.md) / `release`. See [`bot-lease.md`](bot-lease.md). Landfolk flint/mason remain on frozen `MC_API_URL`.
 - Hermes **scrubs `MC_*` at kanban worker spawn** (parent/dispatcher exports do not stick). Injection must land **after** scrub via:
   - **Target:** spawn wrapper / plugin hook (per-card registry lookup) — [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh).
   - **Validated interim (W1 wheat):** same-body `MC_API_URL` + `MC_USERNAME` in each execute-role profile `.env` ([`setup-role-profiles.sh`](../../prototypes/agent-arch/setup-role-profiles.sh)); **not** SOUL/wrapper-on-PATH. **Capstone / single-bot only** — fleet needs per-card lookup (scorecard `injection_ceiling_note` in [`w1-1780879052`](../../data/postmortems/wheat-capstone/w1-1780879052/scorecard.json)).

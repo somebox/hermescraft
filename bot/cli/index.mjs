@@ -10,7 +10,8 @@ import { requestHttp } from './http.mjs';
 import { RAW_COMMAND_DEFS, buildAliasMap, CATEGORY_ORDER, suggestCommands } from './registry.mjs';
 import { runAdviseCli } from './advise.mjs';
 import { renderHuman, slimStatusEnvelope } from './output.mjs';
-import { apiUrl } from './api-url.mjs';
+import { apiUrl, isNoActiveLease } from './api-url.mjs';
+import { dispatchBotSubcommand } from './lease-registry.mjs';
 
 const MAX_BATCH = 10;
 
@@ -320,6 +321,10 @@ async function dispatchHttpLike(resolved, positional, globals, ctx) {
     return { ok: true, render: 'none' };
   }
 
+  if (canonicalName === 'bot') {
+    return dispatchBotSubcommand(positional, globals);
+  }
+
   if (canonicalName === 'anchors') {
     const env = await anchorsEnvelope(ctx.api, globals);
     return { ok: env.ok !== false, env, render: globals.json ? 'json' : 'human' };
@@ -428,6 +433,19 @@ async function main() {
 
   const first = cmdLine[0];
   const firstHit = resolveToken(first, aliasMap);
+
+  if (isNoActiveLease(ctx.api) && firstHit.canonicalName !== 'bot') {
+    const env = {
+      ok: false,
+      command: firstHit.canonicalName,
+      error: "no active bot lease — run 'mc bot checkout'",
+      error_type: 'no_bot_lease',
+    };
+    if (globals.json) printJson(env, true);
+    else console.log(`ERROR (cli): ${env.error}`);
+    flushAndExit(1);
+    return;
+  }
 
   // Short-circuit `mc <cmd> --help` (and `-h`) before dispatch — prints the
   // command's metadata and exits without an HTTP call. Lets agents discover

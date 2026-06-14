@@ -66,12 +66,14 @@ your skill lists the verbs you need.
 MCCONV
   fi
 
-  # Body routing. Steward is read-only (no body); still give it a harmless
-  # MC_API_URL so env_passthrough has a value, but it must not act in-world.
+  # Body routing. Specialists use bot lease (HERMES_BOT_LEASE=1, no frozen MC_*).
+  # Steward is read-only — keeps a harmless MC_API_URL for env passthrough only.
   local api="http://localhost:${port:-3007}"
-  python3 - "$dst/.env" "$api" "${user:-Steward}" <<'PY'
+  local lease_flag=0
+  if [[ -n "$port" ]]; then lease_flag=1; fi
+  python3 - "$dst/.env" "$api" "${user:-Steward}" "$lease_flag" <<'PY'
 import re, sys
-envf, api, user = sys.argv[1], sys.argv[2], sys.argv[3]
+envf, api, user, lease = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 lines = open(envf).read().splitlines()
 def setkv(lines, key, val):
     pat = re.compile(rf'^{re.escape(key)}=')
@@ -84,10 +86,30 @@ def setkv(lines, key, val):
     if not seen:
         out.append(f"{key}={val}")
     return out
-for k, v in (("MC_API_URL", api), ("MC_USERNAME", user), ("_MC_API_URL_LOCKED", api)):
-    lines = setkv(lines, k, v)
+def delkv(lines, key):
+    pat = re.compile(rf'^{re.escape(key)}=')
+    return [ln for ln in lines if not pat.match(ln)]
+if lease == '1':
+    lines = delkv(lines, 'MC_API_URL')
+    lines = delkv(lines, '_MC_API_URL_LOCKED')
+    lines = setkv(lines, 'HERMES_BOT_LEASE', '1')
+    lines = setkv(lines, 'MC_USERNAME', user)
+else:
+    for k, v in (("MC_API_URL", api), ("MC_USERNAME", user), ("_MC_API_URL_LOCKED", api)):
+        lines = setkv(lines, k, v)
 open(envf, "w").write("\n".join(lines) + "\n")
 PY
+
+  if [[ -n "$port" ]]; then
+    cat >> "$dst/SOUL.md" <<'LEASE'
+
+## Bot lease (genesis v2)
+Before any in-world `mc` action: `mc bot checkout` (optionally `--bot <name>`).
+After in-world work, before desk-work / `kanban_complete`: `mc bot release`.
+On `no free body — defer`, block the card with reason `no_free_body` — do not retry in a tight loop.
+See `docs/architecture/bot-lease.md`.
+LEASE
+  fi
 
   # Model.
   python3 - "$dst/config.yaml" "$MODEL" <<'PY'

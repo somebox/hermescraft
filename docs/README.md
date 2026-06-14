@@ -12,6 +12,7 @@
 | [`architecture/target.md`](architecture/target.md) | Canonical target statement |
 | [`architecture/embodied-control.md`](architecture/embodied-control.md) | Reflex-first interface — registry vs agent surface, delivery order, evidence loop |
 | [`architecture/impact.md`](architecture/impact.md) | Code touchpoints for migration |
+| [`architecture/bot-lease.md`](architecture/bot-lease.md) | Runtime bot lease (`mc bot`, genesis v2) |
 
 ## 2. Reference (bot, `mc`, conventions)
 
@@ -52,6 +53,7 @@ These describe the **Steward + roster** fleet until `@planner` / `@dispatcher` l
 | [`guides/procedural-smoke-runbook.md`](guides/procedural-smoke-runbook.md) | Procedural smoke |
 | [`guides/procedural-bench-runbook.md`](guides/procedural-bench-runbook.md) | Procedural bench |
 | [`guides/expedition-logging-runbook.md`](guides/expedition-logging-runbook.md) | `scripts/exp.sh` logging |
+| [`guides/bot-lease-live-runbook.md`](guides/bot-lease-live-runbook.md) | Two-body lease spike + genesis trial (operator) |
 | [`guides/test-overview.md`](guides/test-overview.md) | Test tiers |
 | [`guides/test-world-landfolk.md`](guides/test-world-landfolk.md) | `landfolk-test` world |
 | [`guides/test-agent-llm-runbook.md`](guides/test-agent-llm-runbook.md) | Agent test runner |

@@ -61,8 +61,9 @@ verbs is documented in `docs/reference/mc-cheatsheet.md` — that file is **gene
 help, run `mc <verb> --help` against a live bot. The registry includes verbs
 like `status`, `observe`, `scene`, `nearby`, `goto`, `move`, `dig`, `collect`,
 `place`, `fill`, `craft`, `pillar_up`, `pillar_down`, `stair_up`, `stair_down`,
-`mark`, `marks`, `go_mark`, `chest_search`, `deposit`, `withdraw`, plus the
-async `bg_*` variants for long-running tasks.
+`mark`, `marks`, `go_mark`, `chest_search`, `deposit`, `withdraw`, and
+`mc bot checkout` / `release` / `renew` / `status` when `HERMES_BOT_LEASE=1` (see [`docs/architecture/bot-lease.md`](docs/architecture/bot-lease.md)),
+plus the async `bg_*` variants for long-running tasks.
 
 ### Bot status (who is in-game?)
 

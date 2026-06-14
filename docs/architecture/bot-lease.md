@@ -1,0 +1,114 @@
+# Bot lease (librarian)
+
+Status: **MVP implemented** (in-repo). Agents explicitly check out a Minecraft **body** for an in-world phase, renew while acting, and release when done. This is **additive** beside Hermes **card claim** and landfolk gate-check mutex — see [board-dynamics.md](board-dynamics.md).
+
+Companion: live steps in [../guides/bot-lease-live-runbook.md](../guides/bot-lease-live-runbook.md). Source design notes: `~/.claude/plans/groovy-doodling-simon.md`.
+
+---
+
+## Problem
+
+A kanban **card** can stay open through desk-work (comments, `kanban_complete`) while the **body** is idle in-world. Frozen `MC_API_URL` at spawn ties one profile to one HTTP port for the whole worker session. Genesis v2’s 1:1 specialist→body mapping leaves other bodies unused during long scout phases.
+
+**Bot lease** decouples “who owns the card” from “who controls the body right now.”
+
+## Three concepts (do not merge)
+
+| Concept | Meaning |
+|---------|---------|
+| **Card claim** | Hermes: this agent is responsible for this task (`claim_lock`, worker lifecycle). Unchanged. |
+| **Bot lease** | This session controls this registry body (`~/.hermes/bot-leases.db`). New. |
+| **Checkout policy** | Which free body to pick ([board-dynamics.md](board-dynamics.md) bind rules — pull face via `mc bot checkout`). MVP: explicit `--bot` + tie-break; see § Deferred. |
+
+**Keystone invariant:** No silent auto-checkout. After `mc bot release`, action verbs fail until `mc bot checkout`. Only `mc bot renew` extends TTL — ordinary `mc` verbs do not.
+
+## State machine (per body)
+
+```
+none ──checkout──▶ leased ──release──▶ none
+leased ──ttl lapse + not-busy──▶ expired_idle ──reclaim──▶ none (may re-lease)
+leased ──reclaimed by another──▶ lost (renew fails; action verbs hard-fail)
+leased ──release --force (operator)──▶ none
+```
+
+## Storage
+
+- Path: `~/.hermes/bot-leases.db` (override: `HERMES_BOT_LEASE_DB`)
+- Table `bot_leases`: `bot` PK, `api_url`, `world`, `owner_id`, `lease_version`, `leased_at_ms`, `expires_at_ms`, `profile`
+- Mutations use conditional writes on `(bot, owner_id, lease_version)`; `lease_version` increments on checkout/reclaim (fencing).
+
+## Owner identity (MVP)
+
+| Context | `owner_id` |
+|---------|------------|
+| Kanban worker (`HERMES_BOT_LEASE=1`) | `${HERMES_KANBAN_BOARD}:${HERMES_KANBAN_TASK}:pid:${pid}` — requires `HERMES_KANBAN_TASK` |
+| Manual smoke (no task) | `cli:adhoc:pid:${pid}` |
+
+Upgrade to Hermes session id when stable env export exists (§ Deferred D5).
+
+## Busy and reclaim
+
+Busy signal: `GET /task` on the body’s `api_url` — busy when `data.sync != null` or `data.task != null`.
+
+| Lease | `/task` | Reclaimable at checkout? |
+|-------|---------|---------------------------|
+| expired | idle | Yes |
+| expired | busy | No |
+| expired | unreachable | Yes |
+| not expired | any | Never |
+
+## Environment
+
+| Variable | Purpose |
+|----------|---------|
+| `HERMES_BOT_LEASE=1` | Enable lease-aware `mc` (no `MC_API_URL` on genesis v2 specialists) |
+| `HERMES_BOT_LEASE_DB` | Optional path to lease SQLite file |
+| `HERMES_BOT_LEASE_ADMIN=1` | Required with `mc bot release --force --as-operator` |
+| `HERMES_KANBAN_BOARD` | Part of `owner_id` for workers |
+| `HERMES_KANBAN_TASK` | Required for worker checkout/release/renew |
+
+Lease-mode workers must **not** set `MC_API_URL` or `_MC_API_URL_LOCKED` (genesis v2 mint). Landfolk flint/mason remain on frozen `MC_API_URL`.
+
+## `mc bot` verbs (MVP)
+
+See [mc-cheatsheet.md](../reference/mc-cheatsheet.md) for generated help.
+
+- `mc bot checkout [--bot <name>] [--ttl <s>] [--json]` — lease a body; defer returns `retry_after_ms` and `holders[]`
+- `mc bot release` — refuse if body busy; `mc bot release --force --as-operator` with admin env cancels job first
+- `mc bot renew [--ttl <s>]`
+- `mc bot status [--pool] [--json]`
+
+Body pool: `data/bots/*.yaml` (`api_port`, `username`).
+
+## Worker ritual (genesis v2 lease-mode)
+
+1. `mc bot checkout --bot <name>` or `mc bot checkout` (tie-break)
+2. In-world work (`mc` action verbs)
+3. `mc bot renew` during long steps if needed
+4. `mc bot release` before desk-work / `kanban_complete`
+5. On `no free body — defer`: `kanban_block` with reason `no_free_body` (do not spin-retry)
+
+## Relation to dispatcher bind
+
+Target [@dispatcher](board-dynamics.md) **push-binds** `metadata.bot` at card write time. **Pull-checkout** is the same policy store accessed at runtime (`mc bot checkout`). MVP implements pull only; push via Python dispatcher is deferred (D11).
+
+---
+
+## Deferred (post-MVP)
+
+Track status here (`planned` → `done` + PR link). Do not rely on chat or Cursor plan alone.
+
+| ID | Capability | Trigger | Status |
+|----|------------|---------|--------|
+| D1 | `mc bot checkout --near X,Y,Z` | Live two-body spike signed off | planned |
+| D2 | `mc bot checkout --cap <skill>` | After D1 or parallel | planned |
+| D3 | `last_mark` column + `--mark` on checkout | With D1 | planned |
+| D4 | Kanban audit on checkout (`[leased_bot=…]` comment) | Bodiless workers on real board | planned |
+| D5 | `owner_id` Hermes session suffix | Stable `HERMES_SESSION_ID` / run id | planned |
+| D6 | `spawn-with-bot.sh --lease-mode` | Optional; mint covers genesis | planned |
+| D7 | Genesis `phase-epics.yaml` pull-lease decomposition | After D1–D4 on manual `[LEASE-TRIAL]` | planned |
+| D8 | `skills/minecraft-bot-lease.md` + mint | With D7 | planned |
+| D9 | Assignee model (expertise vs 1:1 body profile) | With D7; explicit decision | planned |
+| D10 | Clear lease on Hermes card reclaim | TTL-only reap pain in production | planned |
+| D11 | Python dispatcher reads `bot-leases.db` | Pull path stable | planned |
+| D12 | Landfolk fleet lease-mode migration | Operator decision; default stay on `MC_API_URL` | planned |

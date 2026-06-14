@@ -182,6 +182,7 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
 | Bot Hermes profiles (`~/.hermes/profiles/flint/` etc.) |  | (registry entries in `data/bots/`) | When agent profiles ship + spawn layer works |
 | Agent Hermes profiles |  | (NEW: one per agent) |  |
 | Spawn pipeline for bot-bound cards |  | (NEW: env injection layer) | Stand-in: [`spawn-with-bot.sh`](../../scripts/colony-validation/spawn-with-bot.sh); wire into live dispatch per [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding |
+| Runtime bot lease (pull bodies) |  | [`bot/cli/lease-registry.mjs`](../../bot/cli/lease-registry.mjs), `mc bot` | Genesis v2 mint; see [`bot-lease.md`](bot-lease.md) |
 | Fleet status snapshot | [`scripts/roster.py`](../../scripts/roster.py), dashboard `GET /api/fleet`, dispatcher yaml | (NEW: `PUT …/operations/fleet-state`) | When single writer ships ([`data-api.md`](data-api.md) § Fleet state record) |
 | `scripts/setup-landfolk-profiles.sh` |  | (rewrite: agent profiles + bot registry; sources skills/SOULs from workspace) |  |
 | Skill bundles | (move from `skills/` to `data/workspace/reference/skills/`) |  | After workspace migration |

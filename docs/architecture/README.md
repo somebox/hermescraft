@@ -13,6 +13,7 @@ Status: **design exploration** (2026-06-05). Not yet built. Validating with one 
 | Hermes profiles, L0–L3, skill matrix, DSL parse shapes | [`hermes-agents.md`](hermes-agents.md) | target (link only) |
 | Epic metadata, `--epic` / `--depends-on`, card modes, auto-nav | [`epic-lifecycle.md`](epic-lifecycle.md) | hermes-agents (link) |
 | Bot registry, fleet names, `mc`, marks, mutex, **fleet binding** | [`bots-and-mc.md`](bots-and-mc.md) | bot-roster (stub) |
+| **Bot lease** (`mc bot checkout`, genesis v2 pull bodies) | [`bot-lease.md`](bot-lease.md) | bots-and-mc (summary only) |
 | Bot/worker **supervision** (PID, restart) | [`components.md`](components.md) § Supervision contract | bots-and-mc (link only) |
 | **Fleet status** snapshot schema | [`data-api.md`](data-api.md) § Fleet state record | dashboard spec (UI only) |
 | Processes, ticks, APIs | [`components.md`](components.md) | impact (migration only) |
@@ -56,6 +57,7 @@ Not a roadmap — what's actively in play. Update as we go.
 - Open: agent registry file timing (`data/agents.yaml`) — see [`hermes-agents.md`](hermes-agents.md) open questions.
 - Open: pinch test on `@crafter` — needs a `minecraft-crafting` companion skill that doesn't exist yet ([`hermes-agents.md`](hermes-agents.md) skill matrix).
 - **Fleet binding:** normative contract in [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding; **W1 wheat PASS** (`w1-1780879052`) supports A6 on single-bot role profiles + `.env` MC channel — next: wire `spawn-with-bot.sh` for per-card body (W4); fleet-state writer per [`data-api.md`](data-api.md) § Fleet state record.
+- **Bot lease MVP:** [`bot-lease.md`](bot-lease.md) + live runbook [`../guides/bot-lease-live-runbook.md`](../guides/bot-lease-live-runbook.md); follow-ups in § Deferred (post-MVP).
 
 ## Related docs that stay where they are
 

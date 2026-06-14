@@ -2801,6 +2801,18 @@ export const RAW_COMMAND_DEFS = [
   }),
 
   /* Platform */
+  g('bot', 'platform', [], {
+    customParse: true,
+    description: 'Bot body lease — checkout, release, renew, status (see docs/architecture/bot-lease.md)',
+    usage: 'mc bot checkout|release|renew|status [flags]',
+    examples: [
+      'mc bot checkout --bot mox',
+      'mc bot checkout --json',
+      'mc bot release',
+      'mc bot renew --ttl 600',
+      'mc bot status --pool --json',
+    ],
+  }),
   g('commands', 'platform', [], {
     examples: ["mc commands"],
  customParse: true, description: `Dump CLI registry metadata as JSON.` }),
