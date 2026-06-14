@@ -75,15 +75,22 @@ def main() -> int:
                         sys.stderr.write(f"[poller] snapshot {label} failed: {e}\n")
         except Exception as e:
             sys.stderr.write(f"[poller] gate check failed: {e}\n")
-        # Planner re-engagement: a worker running far longer than a healthy one
-        # (~minutes) is very likely stuck. File a [SUPERVISE] card so the PLANNER
-        # investigates + re-scopes/reassigns. Run-age based, so a worker that's
-        # simply progressing (finishes under the cap) is never disrupted.
+        # Planner re-engagement: a worker that's stuck — either RUNNING far longer
+        # than a healthy one (~minutes) OR BLOCKED for a substantive reason (no
+        # water, out of materials, unreachable; not no_free_body) — stalls the
+        # colony. File a [SUPERVISE] card so the PLANNER investigates + re-scopes /
+        # supplies a prerequisite. Run-age gating means a progressing worker is
+        # never disrupted; the blocked path is what unsticks "all blocked, none
+        # running" dead-ends.
         try:
-            for w in g2.detect_stalled_workers():
-                cid = g2.file_supervise_card(args.run_id, w["id"], w["title"], w["age_s"])
+            stalled = [{"id": w["id"], "title": w["title"],
+                        "summary": f"running ~{w['age_s'] // 60}m with no completion"}
+                       for w in g2.detect_stalled_workers()]
+            stalled += g2.detect_blocked_workers()
+            for w in stalled:
+                cid = g2.file_supervise_card(args.run_id, w["id"], w["title"], w["summary"])
                 if cid:
-                    sys.stderr.write(f"[poller] worker {w['id']} stalled {w['age_s']}s → planner supervise card {cid}\n")
+                    sys.stderr.write(f"[poller] worker {w['id']} stuck ({w['summary'][:40]}) → planner supervise card {cid}\n")
         except Exception as e:
             sys.stderr.write(f"[poller] stall-supervise failed: {e}\n")
         time.sleep(args.interval)

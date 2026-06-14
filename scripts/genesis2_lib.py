@@ -674,11 +674,41 @@ def detect_stalled_workers(max_age_s: int = STALL_AGE_S) -> list[dict]:
     return out
 
 
-def file_supervise_card(run_id: str, worker_id: str, worker_title: str, age_s: int) -> str | None:
+def detect_blocked_workers(gates: dict | None = None) -> list[dict]:
+    """Blocked, non-epic worker cards that the planner should resolve: a worker that
+    blocked itself for a substantive reason (no_water, help_needed, region, out of
+    materials, etc) stalls the colony with nothing running. EXCLUDES `no_free_body`
+    (requeue_deferred handles that) and workers whose phase gate already passed
+    (those are moot — e.g. a P1 worker after P1 is done). Returns {id,title,summary}."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return []
+    gates = gates if gates is not None else check_phases()
+    out = []
+    for t in tasks:
+        if (t.get("status") or "").lower() != "blocked":
+            continue
+        title = t.get("title", "") or ""
+        if title.startswith("[EPIC]") or "SUPERVISE" in title:
+            continue
+        # Skip workers whose phase gate already passed (moot/superseded).
+        m = re.search(r"\[GENESIS2:(P\d)\]", title)
+        if m and gates.get(m.group(1), {}).get("pass"):
+            continue
+        reason = _latest_block_reason(str(t.get("id")))
+        if not reason or "no_free_body" in reason:
+            continue  # requeue handles no_free_body; ignore reasonless
+        out.append({"id": str(t.get("id")), "title": title, "summary": f"blocked: {reason}"})
+    return out
+
+
+def file_supervise_card(run_id: str, worker_id: str, worker_title: str, summary: str) -> str | None:
     """Re-engage the PLANNER: file a [SUPERVISE] card (assignee colony-steward) for a
-    stalled worker, unless one is already open for it. The planner investigates and
-    intervenes via the board only (block/re-scope/reassign) — it never touches a
-    body. Returns the new card id, or None if one already exists / on error."""
+    stuck worker (running too long OR blocked), unless one is already open for it. The
+    planner investigates and intervenes via the board only (block/re-scope/reassign/
+    provide-prereq) — it never touches a body. Returns the new card id, or None."""
     try:
         lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
         tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
@@ -688,21 +718,21 @@ def file_supervise_card(run_id: str, worker_id: str, worker_title: str, age_s: i
     for t in tasks:
         if tag in (t.get("title", "") or "") and (t.get("status") or "").lower() not in ("done", "archived"):
             return None  # already escalated for this worker
-    title = f"[GENESIS2:SUPERVISE] {tag} stalled {age_s // 60}m"
+    title = f"[GENESIS2:SUPERVISE] {tag}"
     body = (
-        f"Worker {worker_id} (\"{worker_title[:60]}\") has been running ~{age_s // 60} min "
-        f"with no completion. A healthy worker finishes in a few minutes, so it is very "
-        f"likely stuck — looping on a failing action, an unreachable target, or missing "
-        f"materials.\n\n"
+        f"Worker {worker_id} (\"{worker_title[:60]}\") is stuck — {summary}\n\n"
         f"You are the PLANNER. Investigate and act via the BOARD only — never touch a body:\n"
-        f"  1. `kanban show {worker_id}` — read its latest comments/events: what is it retrying?\n"
-        f"  2. Read the shared map (`mc marks`-style data) + board for context.\n"
+        f"  1. `kanban show {worker_id}` — read its latest comments/events: what failed?\n"
+        f"  2. Read the shared map + board for context (resources, marks, what exists).\n"
         f"  3. Decide ONE:\n"
-        f"     a. It's actually progressing / nearly done -> comment why and `kanban_complete` "
-        f"THIS supervise card (leave the worker alone).\n"
-        f"     b. It's stuck -> `kanban_block {worker_id}` with a precise reason, then file a "
-        f"SMALLER or alternative worker card (same expertise, the lease ritual + literal `mc` "
-        f"verb lines) that makes the needed progress; then `kanban_complete` this card.\n"
+        f"     a. It's actually fine / nearly done or already superseded -> comment why and "
+        f"`kanban_complete` THIS supervise card.\n"
+        f"     b. It needs a PREREQUISITE (e.g. no water → file a card to source/place water; "
+        f"out of materials → file a gather card) -> file that worker card (lease ritual + "
+        f"literal `mc` verbs), keep the blocked worker for later or re-file a fresh one, then "
+        f"complete this card.\n"
+        f"     c. It's mis-scoped/unreachable -> `kanban_block` it with a precise reason and file "
+        f"a smaller/alternative worker card.\n"
         f"  Do NOT duplicate work already in flight, and do NOT `kanban_complete` a phase epic."
     )
     r = _hermes(["create", title, "--body", body, "--assignee", "colony-steward", "--json"])
