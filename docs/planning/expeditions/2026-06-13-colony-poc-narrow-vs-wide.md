@@ -118,6 +118,35 @@ model fixes the crash, but does **not** close the narrow vs wide efficiency
 gap — that gap is structural (catalog width ⇒ context + turns), and if
 anything mimo makes it worse. Architecture is still the lever.
 
+## Cost — which model is actually cheaper (2026-06-14)
+
+Per-token rates (openrouter): **deepseek-v4-flash $0.09/M in, $0.18/M out**;
+**mimo-v2.5 $0.14/M in, $0.28/M out** — mimo is ~1.56× pricier per token on
+both axes. Recorded `estimated_cost_usd` (provider_models_api) per card, which
+already bakes in these rates plus each provider's small cache-read fee:
+
+| arm | deepseek | mimo |
+|---|---|---|
+| narrow (plan + walk) | $0.0231 + $0.0812 = **$0.104** | $0.0176 + $0.0222 = **$0.040** |
+| wide (plan + walk) | $0.0279 + walk **crashed**, ~$0.018 burned, DNF | $0.0331 + $0.0317 = **$0.065** |
+
+Two layers, easy to conflate:
+
+- **Per token, deepseek wins** (1.56×). Same work / same token volume ⇒
+  deepseek is the cheaper engine, full stop.
+- **Cost-to-complete *this run* went to mimo**, but on **token volume, not
+  rate**. The flip is one card: deepseek's narrow walk ran **70 turns /
+  517,929 input tokens** ($0.081); mimo did the same walk in **46 turns /
+  129,815 input** ($0.022). Run deepseek's *rate* on mimo's *token counts* and
+  deepseek narrow drops to ~$0.022 — cheaper than mimo's $0.040.
+
+**Verdict (n=1 per cell, so calibrate):** deepseek is cheaper *per token*;
+mimo came out cheaper *to finish* here only because deepseek's walk was
+token-bloated and its wide walk never completed. The robust claims are
+"deepseek cheaper per token" and "mimo more reliable (no crash)"; the absolute
+cost edge needs 3+ repeats per cell to trust, since deepseek's token blowup
+could be variance.
+
 ## Next steps
 
 - The POC win justifies the colony direction: keep building narrow specialist
