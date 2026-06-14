@@ -118,22 +118,84 @@ epics:
     assignee: colony-steward
     initial_status: todo
     body: |
-      Start extracting stone-tier resources. Decompose into MINE cards
-      (colony-miner) that register a mine entrance near a `lt_stone_*` mark,
-      dig a safe descent, and bring stone/coal/iron back to storage. Use the
-      mine-registry. Emit specialist cards with literal `mc` verb lines. Done
-      when the P3 gate passes.
+      Open the colony's first mine and start stone-tier extraction from the base
+      established in P1. You are the Steward: decompose into specialist worker
+      cards and emit them — never act in-world yourself.
+
+      Route by EXPERTISE assignee (`colony-miner`). Bodies (mox/pip/zee) are a
+      shared POOL — every worker is lease-mode. Each worker card body MUST start
+      with `mc bot checkout --near <X,Y,Z> --cap mine` and end with `mc bot
+      release` before `kanban_complete`; on `no free body — defer` the worker
+      `kanban_block(no_free_body)`.
+
+      CARD WIRING (critical): NEVER put this phase epic in a worker card's
+      `parents` (a parent BLOCKS until done; this epic only auto-completes on its
+      world-gate → deadlock). Tag every worker card `[GENESIS2:P3]`; use
+      `parents`/`after:` only to order SIBLING worker cards.
+
+      Decompose into (wire later cards `after:` the prior sibling worker card):
+        1. MINE-OPEN (colony-miner) — choose a `lt_stone_*` mark near base_anchor,
+           register a mine there and stake a safe descent. Card body, literal
+           lines (the worker refines specifics via `skill_view minecraft-mining`):
+             `mc bot checkout --near <lt_stone coords> --cap mine`
+             `mc go_mark <lt_stone_name>`
+             `mc task_context set mine1`     (authorize ad-hoc dig/place for this card)
+             `mc mine_open mine1 north 16 stone`   (registers the entrance → per-world mine registry)
+             `mc mark mine_mine1`            (shared mine_* mark at the entrance)
+             `mc stair_down north 40`        (descend toward the stone band; chain if needed)
+             `mc task_context clear`
+             `mc bot release`
+        2. MINE-SUPPLY (colony-miner, `after:` MINE-OPEN) — extract stone/coal/iron
+           and haul it to base storage:
+             `mc bot checkout --near <mine entrance coords> --cap mine`
+             `mc task_context set mine1`
+             `mc mine_resume mine1`          (continue from an open frontier)
+             collect cobblestone/coal/iron, then `mc stair_up` / `mc pillar_up` out
+             deposit into the base `chest_stone`
+             `mc task_context clear`
+             `mc bot release`
+
+      Do NOT `kanban_complete` this epic — it auto-completes when the P3 gate
+      passes (>=1 mine registered in this world + a `mine_*` mark). If worker
+      cards for this phase already exist, report status and stop (no duplicates).
 
   - phase: P4
     title: "[EPIC] [GENESIS2:P4] Connect resource areas with roads"
     assignee: colony-steward
     initial_status: todo
     body: |
-      Tie the map together. Decompose into SCOUT cards (colony-scout) to mark
-      distant resource areas (`lt_*` >= a threshold distance from
-      `base_anchor`) and ROAD cards (road-planner) to plan + light walkable
-      routes base->resource using the roadplan loop. Emit specialist cards;
-      never act yourself. Done when the P4 gate passes.
+      Tie the colony's resource areas to base with safe, lit, walkable roads. You
+      are the Steward: decompose into specialist worker cards and emit them —
+      never act in-world yourself.
+
+      Same rules as prior phases: route by EXPERTISE assignee; every worker card
+      body starts with `mc bot checkout --near <X,Y,Z> --cap <role>` and ends with
+      `mc bot release` before `kanban_complete`; on `no free body — defer` the
+      worker `kanban_block(no_free_body)`.
+
+      CARD WIRING (critical): NEVER put this phase epic in a worker card's
+      `parents`. Tag every worker card `[GENESIS2:P4]`; use `parents`/`after:`
+      only to order SIBLING worker cards.
+
+      Decompose into (one SCOUT-FAR + one ROAD per distant cluster; wire each
+      ROAD `after:` its matching SCOUT-FAR):
+        1. SCOUT-FAR (colony-scout) — for each `lt_*` resource mark >= 64 blocks
+           from `base_anchor`, confirm/refine it on the shared map:
+             `mc bot checkout --near <lt_* coords> --cap scout`
+             `mc go_mark <lt_* name>`   (verify the resource is there)
+             `mc bot release`
+        2. ROAD (colony-road, `after:` the matching SCOUT-FAR) — plan + light a
+           walkable route from base to that resource:
+             `mc bot checkout --near <base_anchor coords> --cap road`
+             `skill_view road-planner`  then run the sample → solve → confirm
+             roadplan loop to stake + torch the route end-to-end
+             `mc mark road_<dest>`      (record the staked route)
+             `mc bot release`
+           Literal `mc` / `roadplan` lines only — no prose steps.
+
+      Do NOT `kanban_complete` this epic — it auto-completes when the P4 gate
+      passes (>=2 far `lt_*` marks + >=1 confirmed road). If worker cards for this
+      phase already exist, report status and stop (no duplicates).
 
   - phase: P5
     title: "[EPIC] [GENESIS2:P5] Steady-state routine"
