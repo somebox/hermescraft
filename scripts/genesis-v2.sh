@@ -65,13 +65,17 @@ cmd="${1:-}"; shift || true
 
 case "$cmd" in
   new-run)
-    SEED=""; WORLD="genesis2"; MODEL="deepseek/deepseek-v4-flash:exacto"
+    SEED=""; WORLD="genesis2"; MODEL="deepseek/deepseek-v4-flash:exacto"; SPAWN=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --seed) SEED="$2"; shift 2 ;;
         --seed=*) SEED="${1#--seed=}"; shift ;;
         --world) WORLD="$2"; shift 2 ;;
         --model) MODEL="$2"; shift 2 ;;
+        # Operator-pinned spawn: skip the probe/biome/flatness reroll and anchor
+        # the colony at these coords (must be valid land in this seed's world).
+        --spawn) SPAWN="$2"; shift 2 ;;
+        --spawn=*) SPAWN="${1#--spawn=}"; shift ;;
         *) echo "unknown flag: $1" >&2; exit 1 ;;
       esac
     done
@@ -87,23 +91,35 @@ case "$cmd" in
     done
     wait_bodies_connected
 
-    echo "[genesis-v2] reset + probe + setup + seed (world=$WORLD seed=$SEED)"
-    GV2_WORLD="$WORLD" GV2_SEED="$SEED" exec "$PY" - <<'PYEOF'
+    echo "[genesis-v2] reset + probe + setup + seed (world=$WORLD seed=$SEED spawn=${SPAWN:-auto})"
+    GV2_WORLD="$WORLD" GV2_SEED="$SEED" GV2_SPAWN="$SPAWN" exec "$PY" - <<'PYEOF'
 import os, sys
 sys.path.insert(0, os.path.join(os.getcwd(), "scripts"))
 import genesis2_lib as g2
 
 world = os.environ["GV2_WORLD"]
 seed = int(os.environ["GV2_SEED"])
+spawn_arg = (os.environ.get("GV2_SPAWN") or "").strip()
 run_id = g2.next_run_id()
 print(f"[genesis-v2] run {run_id}")
 
-# Reset + probe with auto-reroll: keep regenerating until the natural spawn is a
-# temperate LAND biome (not ocean/frozen/desert) — a colony needs wood + liquid
-# water. find_good_spawn resets+restarts bodies each attempt and returns the seed
-# it settled on (may differ from --seed if the original rolled a bad biome).
-seed, spawn = g2.find_good_spawn(world, seed)
-print(f"[genesis-v2] natural land spawn @ {spawn} (seed={seed})")
+if spawn_arg:
+    # Operator-pinned spawn: reset the world to the seed, then anchor the colony
+    # at the given coords — skip the find_good_spawn probe/biome/flatness reroll.
+    # The operator vouches for the site (it must be valid land in this seed).
+    sx, sy, sz = (int(v) for v in spawn_arg.split(","))
+    g2.reset_world(world=world, seed=seed)
+    g2.restart_bodies()  # reset wedges mineflayer — clean restart beats auto-reconnect
+    spawn = {"x": sx, "y": sy, "z": sz}
+    print(f"[genesis-v2] operator-pinned spawn @ {spawn} (seed={seed})")
+else:
+    # Reset + probe with auto-reroll: keep regenerating until the natural spawn is
+    # a flat, temperate LAND biome (not ocean/frozen/desert/mountain) — a colony
+    # needs wood + liquid water + buildable ground. find_good_spawn resets+restarts
+    # bodies each attempt and returns the seed it settled on (may differ from
+    # --seed if the original rolled a bad spawn).
+    seed, spawn = g2.find_good_spawn(world, seed)
+    print(f"[genesis-v2] natural land spawn @ {spawn} (seed={seed})")
 g2.wipe_marks()  # clean map — drop stale waypoints from prior runs
 g2.world_setup(world, spawn)
 
@@ -173,5 +189,5 @@ if rid:
 "
     ;;
 
-  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M]|check|snapshot|status}" >&2; exit 1 ;;
+  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|check|snapshot|status}" >&2; exit 1 ;;
 esac
