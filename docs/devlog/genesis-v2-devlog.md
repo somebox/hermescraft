@@ -9,7 +9,41 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
-## 2026-06-15 — agent feedback round (synthesis)
+## 2026-06-15 — stabilization slice (implementation)
+
+Shipped the **minimum slice** from the Genesis V2 Stabilization plan (Option **A**
+for shelter: rcon setblock render at `base_anchor` after BASE-SELECT).
+
+**Code / templates**
+- Per-run `regions-world.json` from `data/genesis-v2/templates/regions-world.template.json`
+  (single buildable `shelter`, no protect trap).
+- `probe_natural_spawn` / `find_good_spawn`: hard-fail without surface water within
+  `SURFACE_WATER_RADIUS` (48) unless dev override.
+- Poller: `sync_body_pool_gates` (`awaiting_free_body`) then `requeue_deferred`
+  (`no_free_body` only); `maybe_render_shelter_for_run` when `base_anchor` exists.
+- P1 epic: forbid ad-hoc `region_create protect`; BUILD = verify/furnish inside boot
+  `shelter` + `mc task_context set shelter`; BASE-SELECT uses `mc mark … --at`.
+- Escape enclosure uses **`forceEscape`** on internal `dig` (not CLI `mc dig --force`), so
+  landfolk protect regions are not griefable; generic `--force` still only bypasses
+  global structural denylist + other non-region guards.
+- Shelter rcon render **`fill`s interior air** and clears cells outside the east door.
+- `sync_body_pool_gates` **caps releases** to `_free_body_count()` (same as requeue).
+- Offline tests: `scripts/tests/test_genesis2_lib.py`, `scripts/lib/gv2_template_contract.py`.
+
+**Verification run (this session)**
+- `node --test bot/test/integration/region-protection.test.js` — pass (6/6).
+- Python: `scripts/tests/test_genesis2_lib.py` — run locally with pytest in a venv
+  (`python3 -m venv .venv && pip install pytest && pytest scripts/tests/test_genesis2_lib.py`).
+- **Live** `genesis-v2.sh new-run` not executed here (requires homelab MC + gateway +
+  body pool). Next operator step: verification ladder in plan Phase 6, then new-run
+  without `--spawn` unless bypassing water probe.
+
+**Remaining gaps (belt)**
+- Live capture of `pos.floored` stack if escape still fails in-water paths.
+- Gateway admission to eliminate spawn→block race (poller gate only reduces churn).
+- P2+ inventory gates when chest snapshots return quantities.
+
+---
 
 Asked each agent (bot-less `[FEEDBACK]` card) to review its genesis-v2 cards and
 report WORKS / NEEDS-IMPROVEMENT / IDEAS. Returns from all six roles (scout,
