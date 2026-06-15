@@ -12,9 +12,9 @@ Related: [target architecture](../architecture/target.md),
 ## 2026-06-15 — agent feedback round (synthesis)
 
 Asked each agent (bot-less `[FEEDBACK]` card) to review its genesis-v2 cards and
-report WORKS / NEEDS-IMPROVEMENT / IDEAS. Returns from scout, gatherer, builder,
-farmer, miner (planner pending). Independently corroborates the diagnoses above and
-adds concrete execution-layer bugs.
+report WORKS / NEEDS-IMPROVEMENT / IDEAS. Returns from all six roles (scout,
+gatherer, builder, farmer, miner, planner). Independently corroborates the diagnoses
+above and adds concrete execution-layer bugs.
 
 ### Confirmed by multiple agents
 - **Region-protected shelter traps bots** — gatherer ("single biggest failure",
@@ -39,6 +39,26 @@ adds concrete execution-layer bugs.
   waterless base** with no `till_area` in the spec — oversized + mis-sited. Matches
   the "start small" sizing + farm-needs-water points.
 
+### Planner (orchestrator) adds
+- **One admin issue blocked 3 cards across 2 phases** — the region-trap at
+  base_anchor stalled roof-patch + mine-supply + water-supply. Single point of failure.
+- **No fast-path for admin-only blockers** — SUPERVISE is the wrong tool when the
+  answer is "operator must edit region protection"; the planner kept re-investigating
+  (**10 supervise cycles on one card**). Confirms the escalation cap (now 3) and argues
+  for a distinct **needs-operator** terminal state that pings the human, not churn.
+- **Prerequisite chains not enforced** — the water-supply card was spawned before its
+  inputs could exist (water bucket ← 3 iron ← a mine, none present). The planner must
+  not emit a card whose inputs can't exist yet; sequence water *after* iron/mine.
+- **Checkout coords vs. actual base** — cards used the seed spawn (258,79,-53) but the
+  base settled at (223,80,-15); workers reconciled mid-run. Bind cards to the
+  `base_anchor` mark, not the spawn coord.
+- **Validated**: the decomposition model (epic → 2-4 specialist cards), `after:`
+  sibling chains (no deadlock), and the **retry pattern** (block stale card → new card
+  same spec) — that's how BUILD recovered.
+- Self-reported counts: **160 cards / 55 done / 9 blocked**; top blockers =
+  region protection, no iron for water bucket, bot trapped in shelter. (160 cards is
+  itself a churn signal — supervise + retries + dupes across the run series.)
+
 ### Validated — what WORKS (don't regress)
 - **Literal `mc` verb lines in cards** — farmer: "the single best thing in the card
   design… no ambiguity, no improvisation." Echoed by gatherer.
@@ -49,11 +69,57 @@ adds concrete execution-layer bugs.
   **WATER_DROUGHT flag**; **chat narration**; **crafting wooden-vs-stone diagnostic**.
 
 ### New concrete bugs to fix (agent-sourced)
-1. `mc escape` — `pos.floored is not a function` (in-region self-rescue broken).
-2. `mc mark --at` — bug reported by builder.
-3. Body-pool contention — dispatch-time body-availability gate (don't spawn→block).
-4. Card coords must be validated standable before emit.
-5. Door placement timeout; `mc goto`/pathfinder flakiness.
+1. **`mc escape` — `pos.floored is not a function`** — Report not reproduced on the
+   current escape handler (`bot/lib/actions/queries/escape/`); `mc dig` already uses
+   `Vec3` for `blockAt`. Same symptom was fixed elsewhere (sail_to, v22). Residual
+   risk: `escape/strategies.js` still calls `b.blockAt({x,y,z})` with plain objects
+   — align with `Vec3` and capture a live stack if the TypeError recurs.
+2. **`mc mark --at`** — No CLI/parser regression found (`parseMarkFlags` + tests in
+   `mark-at.test.js` / `mark-soft-warn.test.js`). Run-time failure mode is usually
+   **omitting `--at`** (mark saves at bot feet → `MARK_NO_AT_COORD_IN_NOTE`) or HTTP
+   bodies with flat `x/y/z` instead of nested `at: {x,y,z}` (`locations.resolvePlace`).
+   Fix path: planner/card templates always emit `--at` on remote coords; optional
+   hard-fail in `mc mark` when note contains a coord triple and `--at` is missing.
+3. **Body-pool contention** — **Verified:** workers block with `no_free_body`; poller
+   only **requeues** deferred cards via `_free_body_count()` (`genesis2_lib.requeue_deferred`).
+   Hermes dispatcher still spawns agents with no pool check → wasted turns. Fix path:
+   gate dispatch on `mc bot status --pool` (free ≥ 1) or poller `blocked` on ready
+   lease cards while `free == 0`; grow pool / batch cards as ops mitigation.
+4. **Card coords standable** — **Verified gap:** `scripts/lib/card_body_linter.py`
+   requires `mc` verb lines but does **not** call `mc reachable` / standability.
+   Spawn probe checks biome/flatness/wet feet, not card target cells. Fix path: at
+   card emit (planner or `kanban add` lint), reject or rewrite coords where
+   `target_standable` is false; use `best_stand` in the card body.
+5. **Door placement timeout; nav flakiness** — Door flake **confirmed** for N/S closed
+   doors (`tests/functional/test_door_pathfind.py`, xfail). E/W shelter rule in devlog
+   is the right mitigation. `mc goto` timeouts are a broad pathfinder/reliability class
+   (preflight + `closest_standable` hints exist); track per-postmortem, not one quick fix.
+
+### Verification notes (code review 2026-06-15)
+
+**Shelter trap + in-region self-rescue (confirmed in code, not just agent narrative).**
+- `genesis-v2.sh` calls `wipe_marks()` only — **`data/regions-world.json` is not reset**
+  on new-run (contrast `scripts/genesis_lib.py` template render). Stale protect regions
+  can accumulate.
+- **`mc escape` / `mc pillar_up` inside a protect region:** `enclosure_inside` auto-dig
+  uses `mc dig --force`, but `dig.js` **still returns `REGION_PROTECTED`** (no
+  `forceEscape` bypass on region deny). Trapped branch calls `pillar_step` without
+  `--force`; headroom dig uses `shouldSkipDigAt` → **`POLICY_DENY`** unless
+  `force && isGenuinelyStuck()`. **`shouldSkipPlaceAt` has no escape bypass** (place
+  path is separate). Net: policy blocks self-rescue inside protect even when the trap
+  is the colony's own sealed shelter.
+- **Fix path (ordered):** (1) door-bearing blueprint + correct region geometry (primary);
+  (2) reset/template `regions-world.json` per run; (3) wire `mc task_context set` /
+  `worksite:` on BUILD cards (today only illustrated for mine in `phase-epics.yaml`);
+  (4) optional belt: extend `forceEscape` to `enclosure_inside` + genuinely-stuck
+  `pillar_up` when `WORKSITE_GRANT` is active — do not rely on this instead of doors.
+
+**Duplicate / oversized farm cards** — Not enforced in genesis templates or poller;
+  dedup and farm sizing remain **planner / overseer** responsibilities (devlog sizing
+  rules are correct; no code gate yet).
+
+**What still WORKS** — Agent praise for literal `mc` lines, lease defer/requeue pattern,
+  and handoff metadata matches existing templates and `genesis2_lib` behavior.
 
 ---
 
@@ -217,9 +283,14 @@ an LLM-sealed box. genesis-v2 kept the lock and removed the door.
   free-build.
 - **Template + reset** the protect region per run (correct geometry, positioned so
   base_anchor work happens *through* a door, not sealed inside); clear
-  `regions-world.json` on `new-run` (currently never reset → stale accumulation).
+  `regions-world.json` on `new-run` (**verified:** `genesis-v2.sh` only wipes marks;
+  port `genesis_lib` template render or delete+seed on `new-run`).
 - Wire `worksite:`/`task_context` on cards that legitimately edit inside a protect
-  region (belt-and-suspenders egress per the spec).
+  region (belt-and-suspenders egress per the spec). **Verified gap:** BUILD/shelter
+  cards do not set task context; escape/pillar/dig stay region-blocked without it.
+- **Self-rescue policy:** `mc dig --force` does not bypass region protect
+  (`dig.js` `runPreDigGuards`); treat operator `/tp` or worksite grant as the hatch
+  until blueprint+door fixes remove the trap class.
 
 ### Other environment findings
 - **Dry spawn**: flat+temperate isn't enough; plains can lack surface water within
@@ -308,8 +379,17 @@ Changes for future runs:
 1. **Door-bearing shelter blueprint** (kills the trap class). Deterministic
    `mc construct`/blueprint with a door, not LLM free-build.
 2. **Region lifecycle**: template + per-run reset of `regions-world.json`; wire
-   `worksite`/`task_context` for in-region edits.
-3. **Parallelize the P1 decomposition** (gather ∥ scout); gate cards on data
+   `worksite`/`task_context` on BUILD cards (not only mine examples in templates).
+3. **Execution self-rescue vs region policy** — verified: `mc escape` auto-dig and
+   `pillar_up` headroom dig hit `REGION_PROTECTED` / `POLICY_DENY` inside protect
+   without worksite/`--force`+`forceEscape`; fix trap class first, then optional
+   policy alignment.
+4. **Dispatch body gate** before spawn (`mc bot status --pool`); complements
+   `requeue_deferred`.
+5. **Card coord standability** at emit (`mc reachable` / `best_stand` rewrite).
+6. **Parallelize the P1 decomposition** (gather ∥ scout); gate cards on data
    dependencies, not phase walls.
-4. **Spawn water-proximity** criterion (or planner water-sourcing).
-5. **Rename steward → planner**; name the dispatcher concern; add overseer/verify.
+7. **Spawn water-proximity** — `probe_natural_spawn` does not require nearby surface
+   water today; add criterion or planner water-sourcing.
+8. **Rename steward → planner**; name the dispatcher concern; add overseer/verify +
+   in-flight card dedup (farmer duplicate-farm report — no code gate yet).
