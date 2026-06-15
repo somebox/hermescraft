@@ -201,8 +201,46 @@ def restart_bodies(*, mc_host: str | None = None, mc_port: int | None = None, ti
     raise RuntimeError(f"bodies did not reconnect after restart: {down}")
 
 
-def probe_natural_spawn(world: str, *, probe_user: str = "Mox",
-                        probe_port: int = 3007) -> dict[str, int]:
+# Natural-ground materials (block + tag predicates for `execute if block`). The
+# `#` tags cover families: #dirt = grass_block/dirt/podzol/coarse_dirt/mud/
+# mycelium/rooted_dirt; #sand = sand/red_sand; #base_stone_overworld =
+# stone/granite/diorite/andesite/tuff/deepslate. Anything NOT in this set
+# (leaves, logs, plants, snow_layer, water, structures) is skipped when finding
+# ground — so a tree canopy or a cave floor is never mistaken for the surface.
+GROUND_BLOCKS = (
+    "#minecraft:dirt",
+    "#minecraft:sand",
+    "minecraft:gravel",
+    "#minecraft:base_stone_overworld",
+)
+
+
+def _ground_y(world: str, px: int, pz: int, *, top: int, bottom: int) -> int | None:
+    """Top-down scan for NATURAL GROUND at (px,pz): the first GROUND-material block,
+    skipping air, water, and foliage (leaves/logs/plants/snow layer). Scanning from
+    above the surface downward, the first ground hit is the surface top — never a
+    tree branch (skipped) nor a cave floor (below the surface). Returns ground-top Y
+    or None if no ground in [bottom, top]."""
+    for yy in range(top, bottom, -1):
+        if "Test passed" in rcon_in(
+                world, [f"execute positioned {px} {yy} {pz} if block ~ ~ ~ minecraft:air"]):
+            continue  # air column above the surface
+        if any("Test passed" in rcon_in(
+                world, [f"execute positioned {px} {yy} {pz} if block ~ ~ ~ {b}"])
+               for b in GROUND_BLOCKS):
+            return yy
+        # else: non-air, non-ground (leaves/log/plant/snow_layer/water/structure)
+        # — keep scanning down to the real ground.
+    return None
+
+
+def probe_natural_spawn(
+    world: str,
+    *,
+    probe_user: str = "Mox",
+    probe_port: int = 3007,
+    require_surface_water: bool = True,
+) -> dict[str, int]:
     """The colony spawn IS wherever the bodies naturally land in `world` — no
     long-distance relocation (which is unreliable across unloaded chunks). Drop
     the probe body onto the world, read its settled position, and require it to
@@ -228,22 +266,28 @@ def probe_natural_spawn(world: str, *, probe_user: str = "Mox",
         last = pos
     if not last:
         raise RuntimeError("probe body never reported a settled position")
-    x, y, z = int(round(last["x"])), int(round(last["y"])), int(round(last["z"]))
+    x, z = int(round(last["x"])), int(round(last["z"]))
+    settled_y = int(round(last["y"]))
     rcon_in(world, [f"forceload add {x >> 4} {z >> 4}"])
-    # Land check: feet must not be in water, and there must be solid ground just
-    # below. Sea level is ~63 — a settled Y at/below that over water means ocean.
-    # NB: read the condition via `execute if`'s "Test passed"/"Test failed" result
-    # — `run say MARKER` does NOT round-trip through rcon (the broadcast never
-    # appears in the command response), so the old say-based checks always read
-    # false (e.g. never detected water, and false-rejected every biome).
-    feet_water = "Test passed" in rcon_in(
-        world, [f"execute positioned {x} {y} {z} if block ~ ~ ~ minecraft:water"])
-    below_water = "Test passed" in rcon_in(
-        world, [f"execute positioned {x} {y} {z} if block ~ ~-1 ~ minecraft:water"])
-    if feet_water or below_water:
+    # Anchor on NATURAL GROUND, not the bot's settled Y: leaves are solid, so the
+    # bot can land on a tree canopy; a ledge/overhang is also possible. Scan top-
+    # down (from just above the settle point) for the first ground material,
+    # skipping foliage — this is the real walkable surface. `execute if`'s
+    # "Test passed"/"Test failed" is the readable result (`run say` does NOT
+    # round-trip through rcon).
+    ground_y = _ground_y(world, x, z, top=settled_y + 8, bottom=settled_y - 30)
+    if ground_y is None:
         raise RuntimeError(
-            f"natural spawn ({x},{y},{z}) is water/ocean in {world}; re-roll the "
-            f"seed (--seed) for a land spawn")
+            f"no natural ground under spawn ({x},{z}) in {world} (deep water / void); "
+            f"re-roll the seed (--seed)")
+    y = ground_y + 1  # standable cell on top of the ground
+    # Ocean / lake-bed reject: water directly above the found ground = submerged.
+    submerged = "Test passed" in rcon_in(
+        world, [f"execute positioned {x} {ground_y + 1} {z} if block ~ ~ ~ minecraft:water"])
+    if submerged:
+        raise RuntimeError(
+            f"natural spawn ({x},{ground_y},{z}) is submerged (ocean/lake bed) in "
+            f"{world}; re-roll the seed (--seed) for a dry land spawn")
     # Biome quality: a colony needs trees + LIQUID water + farmable land. Frozen
     # biomes (packed_ice/snow) freeze water — no buckets, no crop hydration — and
     # deserts/badlands have no wood. The land check alone passes packed_ice, so
@@ -275,25 +319,23 @@ def probe_natural_spawn(world: str, *, probe_user: str = "Mox",
     rcon_in(world, [f"forceload add {(x - 8) >> 4} {(z - 8) >> 4} {(x + 8) >> 4} {(z + 8) >> 4}"])
     time.sleep(0.5)
 
-    def _surface_y(px: int, pz: int) -> int | None:
-        for yy in range(y + 12, y - 12, -1):
-            solid = "Test passed" in rcon_in(
-                world,
-                [f"execute positioned {px} {yy} {pz} unless block ~ ~ ~ minecraft:air "
-                 f"unless block ~ ~ ~ minecraft:water"])
-            if solid:
-                return yy
-        return None
-
+    # Flatness measured on GROUND height (foliage-skipped), so a flat forest isn't
+    # falsely rejected for tree-canopy variation and a steep hill is still caught.
     samples = [(x + dx, z + dz) for dx, dz in
                ((0, 0), (6, 0), (-6, 0), (0, 6), (0, -6), (6, 6), (-6, -6))]
-    ys = [s for s in (_surface_y(px, pz) for px, pz in samples) if s is not None]
+    ys = [g for g in
+          (_ground_y(world, px, pz, top=ground_y + 10, bottom=ground_y - 25) for px, pz in samples)
+          if g is not None]
     if len(ys) >= 4:
         spread = max(ys) - min(ys)
         if spread > 5:
             raise RuntimeError(
-                f"natural spawn ({x},{y},{z}) terrain too steep (surface-Y spread "
+                f"natural spawn ({x},{ground_y},{z}) terrain too steep (ground-Y spread "
                 f"{spread} over ~12 blocks) — mountainous, not buildable; re-roll the seed")
+    if require_surface_water and not surface_water_within(world, x, y, z):
+        raise RuntimeError(
+            f"natural spawn ({x},{y},{z}) has no surface water within "
+            f"{SURFACE_WATER_RADIUS} blocks — re-roll the seed (--seed) or use --spawn for dev")
     return {"x": x, "y": y, "z": z}
 
 
@@ -337,6 +379,223 @@ def wipe_marks() -> None:
             p.unlink()
         except FileNotFoundError:
             pass
+
+
+# Surface water within N blocks — load-bearing for P2 farm before P3 mine.
+SURFACE_WATER_RADIUS = 48
+
+COLONY_WORKER_ASSIGNEES = frozenset({
+    "colony-scout", "colony-gatherer", "colony-builder",
+    "colony-farmer", "colony-miner", "colony-road",
+})
+AWAITING_FREE_BODY = "awaiting_free_body — pool empty (poller)"
+
+
+def surface_water_within(
+    world: str,
+    x: int,
+    y: int,
+    z: int,
+    radius: int = SURFACE_WATER_RADIUS,
+    *,
+    rcon_fn=rcon_in,
+) -> bool:
+    """True if any water block exists within a horizontal disc (coarse grid scan)."""
+    step = max(4, radius // 12)
+    for dx in range(-radius, radius + 1, step):
+        for dz in range(-radius, radius + 1, step):
+            if dx * dx + dz * dz > radius * radius:
+                continue
+            px, pz = x + dx, z + dz
+            for dy in (-3, -1, 0, 1):
+                py = y + dy
+                cmd = f"execute positioned {px} {py} {pz} if block ~ ~ ~ minecraft:water"
+                if "Test passed" in rcon_fn(world, [cmd]):
+                    return True
+    return False
+
+
+def _archive_data_file(name: str, run_id: str) -> None:
+    p = DATA_DIR / name
+    if not p.exists():
+        return
+    dest = run_dir(run_id) / "archived" / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(p.read_bytes())
+
+
+def render_regions_world(*, spawn: dict[str, int], ctx: dict[str, str]) -> None:
+    """Reset data/regions-world.json from genesis-v2 template (singular buildable shelter)."""
+    run_id = ctx.get("run_id", "unknown")
+    sub = {
+        **ctx,
+        "spawn_x": str(spawn["x"]),
+        "spawn_y": str(spawn["y"]),
+        "spawn_z": str(spawn["z"]),
+        "spawn_y_max": str(spawn["y"] + 12),
+    }
+    src = (TEMPLATES_DIR / "regions-world.template.json").read_text()
+    out = gl.substitute(src, sub)
+    _archive_data_file("regions-world.json", run_id)
+    (DATA_DIR / "regions-world.json").write_text(out)
+    (run_dir(run_id) / "rendered").mkdir(parents=True, exist_ok=True)
+    (run_dir(run_id) / "rendered" / "regions-world.json").write_text(out)
+
+
+def wipe_world_mines(world: str) -> None:
+    safe = re.sub(r"[^\w.-]", "_", world)
+    p = DATA_DIR / f"mines-{safe}.json"
+    try:
+        p.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def shelter_setblock_commands(world: str, ax: int, ay: int, az: int) -> list[str]:
+    """7×7 shelter with E/W-traversable east-facing door; returns `execute in world run ...` cmds."""
+    floor_y = ay - 1
+    wall_h = 3
+    roof_y = ay + wall_h
+    cmds: list[str] = []
+    # Clear interior + door approach so trees/slope don't seal the shell.
+    cmds.append(
+        f"fill {ax - 2} {ay} {az - 2} {ax + 2} {ay + wall_h - 1} {az + 2} air replace"
+    )
+    cmds.append(f"setblock {ax + 4} {ay} {az} air")
+    cmds.append(f"setblock {ax + 4} {ay + 1} {az} air")
+    for dx in range(-3, 4):
+        for dz in range(-3, 4):
+            x, z = ax + dx, az + dz
+            cmds.append(f"setblock {x} {floor_y} {z} minecraft:cobblestone")
+    for h in range(wall_h):
+        wy = ay + h
+        for dx in range(-3, 4):
+            for dz in range(-3, 4):
+                on_edge = abs(dx) == 3 or abs(dz) == 3
+                if not on_edge:
+                    continue
+                x, z = ax + dx, az + dz
+                # East-wall door (facing east) at center of +X wall
+                if dx == 3 and dz == 0 and h < 2:
+                    half = "lower" if h == 0 else "upper"
+                    cmds.append(
+                        f"setblock {x} {wy} {z} minecraft:oak_door[half={half},facing=east,open=false]"
+                    )
+                    continue
+                if dx == 3 and dz == 0:
+                    continue
+                cmds.append(f"setblock {x} {wy} {z} minecraft:oak_planks")
+    for dx in range(-3, 4):
+        for dz in range(-3, 4):
+            cmds.append(f"setblock {ax + dx} {roof_y} {az + dz} minecraft:oak_planks")
+    # Chest pads just inside entry (west of door)
+    cmds.append(f"setblock {ax - 1} {ay} {az} minecraft:chest[facing=east]")
+    cmds.append(f"setblock {ax - 1} {ay} {az + 1} minecraft:chest[facing=east]")
+    return [f"execute in {world} run {c}" for c in cmds]
+
+
+def render_shelter_structure(world: str, anchor: dict[str, int]) -> None:
+    ax, ay, az = anchor["x"], anchor["y"], anchor["z"]
+    rcon_in(world, [f"forceload add {ax >> 4} {az >> 4}"])
+    batch = shelter_setblock_commands(world, ax, ay, az)
+    for i in range(0, len(batch), 40):
+        _rcon(batch[i : i + 40])
+
+
+def reposition_shelter_region(anchor: dict[str, int], run_id: str) -> None:
+    path = DATA_DIR / "regions-world.json"
+    data = gl._load_json(path, default={"regions": []})
+    regions = data.get("regions") or []
+    for reg in regions:
+        if reg.get("id") == "shelter":
+            reg["anchor"] = {"x": anchor["x"], "y": anchor["y"], "z": anchor["z"]}
+            reg["status"] = "active"
+            reg["updated"] = gl._iso_utc()
+    data["regions"] = regions
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def _base_anchor_coords() -> dict[str, int] | None:
+    loc = gl._load_json(DATA_DIR / "locations-base.json", default={})
+    if not isinstance(loc, dict):
+        return None
+    m = loc.get("base_anchor")
+    if not m or not isinstance(m, dict):
+        return None
+    return {"x": int(m["x"]), "y": int(m["y"]), "z": int(m["z"])}
+
+
+def maybe_render_shelter_for_run(run_id: str) -> bool:
+    """Option A: rcon-render shelter once base_anchor exists (idempotent per run)."""
+    cfg = load_config(run_id)
+    if cfg.get("shelter_rendered"):
+        return False
+    anchor = _base_anchor_coords()
+    if not anchor:
+        return False
+    world = cfg.get("world") or "genesis2"
+    render_shelter_structure(world, anchor)
+    reposition_shelter_region(anchor, run_id)
+    cfg["shelter_rendered"] = True
+    cfg["shelter_anchor"] = anchor
+    save_config(cfg)
+    return True
+
+
+def _is_pool_gated_worker(t: dict, epic_ids: set[str]) -> bool:
+    tid = str(t.get("id"))
+    if tid in epic_ids:
+        return False
+    title = t.get("title") or ""
+    if title.startswith("[EPIC]") or "SUPERVISE" in title or "NEEDS-OPERATOR" in title:
+        return False
+    assignee = (t.get("assignee") or "").strip().lower()
+    return assignee in COLONY_WORKER_ASSIGNEES
+
+
+def sync_body_pool_gates(run_id: str) -> dict[str, list[str]]:
+    """Block ready colony workers when pool empty; release when bodies free."""
+    cfg = load_config(run_id)
+    epic_ids = {str(e) for e in cfg.get("epic_ids", [])}
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return {"blocked": [], "released": []}
+    free = _free_body_count()
+    blocked: list[str] = []
+    released: list[str] = []
+    if free <= 0:
+        for t in tasks:
+            tid = str(t.get("id"))
+            if (t.get("status") or "").lower() != "ready":
+                continue
+            if not _is_pool_gated_worker(t, epic_ids):
+                continue
+            r = _hermes(["block", tid, AWAITING_FREE_BODY], timeout=15)
+            if r.returncode == 0:
+                blocked.append(tid)
+    else:
+        slots = free
+        for t in tasks:
+            if slots <= 0:
+                break
+            tid = str(t.get("id"))
+            if (t.get("status") or "").lower() != "blocked":
+                continue
+            if not _is_pool_gated_worker(t, epic_ids):
+                continue
+            reason = _latest_block_reason(tid)
+            if AWAITING_FREE_BODY not in reason:
+                continue
+            r = _hermes(
+                ["unblock", tid, "--reason", "body pool has free capacity (poller)"],
+                timeout=15,
+            )
+            if r.returncode == 0:
+                released.append(tid)
+                slots -= 1
+    return {"blocked": blocked, "released": released}
 
 
 def world_setup(world: str, spawn: dict[str, int]) -> None:
@@ -698,8 +957,8 @@ def detect_blocked_workers(gates: dict | None = None) -> list[dict]:
         if m and gates.get(m.group(1), {}).get("pass"):
             continue
         reason = _latest_block_reason(str(t.get("id")))
-        if not reason or "no_free_body" in reason:
-            continue  # requeue handles no_free_body; ignore reasonless
+        if not reason or "no_free_body" in reason or AWAITING_FREE_BODY in reason:
+            continue  # pool gates handle these; ignore reasonless
         out.append({"id": str(t.get("id")), "title": title, "summary": f"blocked: {reason}"})
     return out
 
