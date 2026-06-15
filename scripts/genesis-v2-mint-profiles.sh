@@ -8,11 +8,11 @@
 #
 # Expertise profiles (lease mode — NO fixed body). Each runs HERMES_BOT_LEASE=1
 # with no MC_API_URL and checks out any body from the pool (mox/pip/zee) per
-# card via `mc bot checkout`. Steward is bodiless (read-only orchestrator).
+# card via `mc bot checkout`. The planner is bodiless (read-only orchestrator).
 #   colony-scout    skills: minecraft-scouting-site + minecraft-bot-lease
 #   colony-gatherer skills: minecraft-survival       + minecraft-bot-lease
 #   colony-builder  skills: minecraft-building        + minecraft-bot-lease
-#   colony-steward  skills: steward-survey + blueprint-plan (no body)
+#   colony-planner  skills: steward-survey + blueprint-plan (no body)
 #
 # Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>]
 set -euo pipefail
@@ -186,10 +186,11 @@ route between two points using the \`roadplan\` powertool + \`mc\` verbs, then s
 it. You do not gather, build structures, mine, or farm. On every task, run
 \`skill_view road-planner\` first and follow it exactly."
 
-mint colony-steward  "" "" "minecraft-steward-survey minecraft-steward-blueprint-plan" \
-"# Colony steward
+mint colony-planner  "" "" "minecraft-steward-survey minecraft-steward-blueprint-plan" \
+"# Colony planner
 
-You are the colony planner (a.k.a. steward): a read-only orchestrator. You
+You are the colony planner: a read-only orchestrator (the planning concern in the
+target architecture — there is no 'steward' agent). You
 decompose phase epics into specialist worker cards and emit them on the kanban
 board — you NEVER mine, place, dig, or move a body yourself. Every card you emit
 must carry literal \`mc <verb> <args>\` lines for the worker, never prose.
@@ -233,4 +234,4 @@ Three hard rules:
    create duplicates — report status and stop. Read the shared map + board to
    decide what to file next."
 
-echo "[mint] done. profiles: colony-scout colony-gatherer colony-builder colony-farmer colony-miner colony-road colony-steward"
+echo "[mint] done. profiles: colony-scout colony-gatherer colony-builder colony-farmer colony-miner colony-road colony-planner"

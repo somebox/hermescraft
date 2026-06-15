@@ -711,7 +711,7 @@ MAX_SUPERVISE_PER_WORKER = 3  # cap escalations — past this the worker is park
 
 
 def file_supervise_card(run_id: str, worker_id: str, worker_title: str, summary: str) -> str | None:
-    """Re-engage the PLANNER: file a [SUPERVISE] card (assignee colony-steward) for a
+    """Re-engage the PLANNER: file a [SUPERVISE] card (assignee colony-planner) for a
     stuck worker (running too long OR blocked). Skips if one is already OPEN, OR if the
     worker has already been escalated MAX_SUPERVISE_PER_WORKER times (open+resolved) —
     a persistently-stuck worker is an operator problem (structural/admin), so stop the
@@ -748,7 +748,7 @@ def file_supervise_card(run_id: str, worker_id: str, worker_title: str, summary:
         f"a smaller/alternative worker card.\n"
         f"  Do NOT duplicate work already in flight, and do NOT `kanban_complete` a phase epic."
     )
-    r = _hermes(["create", title, "--body", body, "--assignee", "colony-steward", "--json"])
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
     if r.returncode == 0:
         try:
             return str(json.loads(r.stdout).get("id"))

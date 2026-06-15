@@ -2,26 +2,26 @@
 #
 # Five phases, chained P1->P2->P3->P4->P5 via depends_on (each phase's
 # done_when gate, in phase-checklists.yaml, must pass before the next opens).
-# All epics are assigned to colony-steward: the read-only orchestrator
+# All epics are assigned to colony-planner: the read-only orchestrator
 # DECOMPOSES each epic into specialist worker cards bound to a free body.
-# Steward never digs/places — it emits cards with literal `mc <verb>` lines.
+# Planner never digs/places — it emits cards with literal `mc <verb>` lines.
 #
 # Placeholders are limited to what is known at boot — only the plains spawn.
 # Everything else (base site, resource areas, roads) is discovered at runtime
 # via exploration and lives in marks, never hard-written into a card body.
 #
 # Title convention: `[EPIC] [GENESIS2:Pn] ...` — the [EPIC] prefix fires the
-# steward decomposition handler; the [GENESIS2:Pn] tag is the poller's phase
+# planner decomposition handler; the [GENESIS2:Pn] tag is the poller's phase
 # routing key (see scripts/genesis-v2-poller.py).
 
 epics:
   - phase: P1
     title: "[EPIC] [GENESIS2:P1] Establish base"
-    assignee: colony-steward
+    assignee: colony-planner
     initial_status: ready
     body: |
       Establish the colony's first foothold from the bare plains spawn at
-      ({spawn_x},{spawn_y},{spawn_z}). You are the Steward: decompose this
+      ({spawn_x},{spawn_y},{spawn_z}). You are the Planner: decompose this
       into specialist worker cards and emit them — never act in-world yourself.
 
       Route each worker card by EXPERTISE assignee — `colony-scout` for
@@ -57,7 +57,7 @@ epics:
         2. BASE-SELECT (colony-builder OR colony-scout) — pick the best
            `candidate_pad_*` from the shared marks (flat, near wood + water) and
            record the colony center. This MUST be a real worker card with a body
-           and a LITERAL verb — you (the Steward) are bodiless and cannot mark.
+           and a LITERAL verb — you (the Planner) are bodiless and cannot mark.
            Card body, literal lines:
              `mc bot checkout --near <candidate_pad coords> --cap build`
              `mc go_mark <candidate_pad_name>`
@@ -81,10 +81,10 @@ epics:
 
   - phase: P2
     title: "[EPIC] [GENESIS2:P2] Provision the colony"
-    assignee: colony-steward
+    assignee: colony-planner
     initial_status: todo
     body: |
-      Make the base self-sustaining for food + basic supply. You are the Steward:
+      Make the base self-sustaining for food + basic supply. You are the Planner:
       decompose into specialist worker cards and emit them — never act yourself.
 
       Same rules as P1: route by EXPERTISE assignee; every worker card body starts
@@ -115,11 +115,11 @@ epics:
 
   - phase: P3
     title: "[EPIC] [GENESIS2:P3] Open a mine"
-    assignee: colony-steward
+    assignee: colony-planner
     initial_status: todo
     body: |
       Open the colony's first mine and start stone-tier extraction from the base
-      established in P1. You are the Steward: decompose into specialist worker
+      established in P1. You are the Planner: decompose into specialist worker
       cards and emit them — never act in-world yourself.
 
       Route by EXPERTISE assignee (`colony-miner`). Bodies (mox/pip/zee) are a
@@ -161,11 +161,11 @@ epics:
 
   - phase: P4
     title: "[EPIC] [GENESIS2:P4] Connect resource areas with roads"
-    assignee: colony-steward
+    assignee: colony-planner
     initial_status: todo
     body: |
       Tie the colony's resource areas to base with safe, lit, walkable roads. You
-      are the Steward: decompose into specialist worker cards and emit them —
+      are the Planner: decompose into specialist worker cards and emit them —
       never act in-world yourself.
 
       Same rules as prior phases: route by EXPERTISE assignee; every worker card
@@ -199,7 +199,7 @@ epics:
 
   - phase: P5
     title: "[EPIC] [GENESIS2:P5] Steady-state routine"
-    assignee: colony-steward
+    assignee: colony-planner
     initial_status: todo
     body: |
       Hold the colony in balance. Run a managed recurring routine: restock low
