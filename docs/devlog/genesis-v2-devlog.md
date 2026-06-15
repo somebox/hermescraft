@@ -9,6 +9,36 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-15 — CRAFT root cause: table-window race (the real blocker)
+
+Both the deepseek and mimo stabilized runs (gv2-2026-06-15-1/2) stalled at the
+**same place** — GATHER, unable to craft the stone tool set — isolating the blocker
+as the craft path, NOT the model (mimo reached base+shelter in ~12 min vs deepseek
+~50, then both hung at GATHER with chests=0; BUILD waits on GATHER → P1 never gates).
+
+**Root cause (reproduced clean: table at 0.7m + materials present):**
+- 3×3 table recipes (`stone_pickaxe` `needsTable:true`) need `b.craft` to open the
+  crafting-table WINDOW; that window-open **silently fails ~50%** (4/8 in test) —
+  `b.craft` returns having crafted nothing, no error → `CRAFT_NO_OP`.
+- 2×2 recipes (`oak_planks` `needsTable:false`) craft in the bot's own inventory
+  grid (no window) → never fail. Explains "planks work, tools don't."
+- Failures **cluster** for a few seconds, so the in-process 6-retry (all within
+  ~4s) can fail as a block; the agent then wastes wood placing extra tables.
+- The designed mitigation `serverSideCraftFallback` (clear ingredients + give
+  result, bypassing the window) is OFF — gated on `paperMcpConfig()`, and no
+  `PAPERMCP_TOKEN` is set on the bodies.
+
+**Fix options:** (1) enable PaperMCP (`PAPERMCP_TOKEN` env + plugin) → the existing
+fallback deterministically completes table crafts; (2) if no PaperMCP, add a
+server-side craft fallback over rcon (poller-side, or a node rcon client in the
+bot); (3) retry-hardening alone won't beat a 50% clustered failure. The lease
+material/tool handoff (inventory stranded per-body) is a SEPARATE, secondary gap.
+
+**Runs gv2-2026-06-15-1/2 abandoned** (deepseek slow; mimo stalled on craft + the
+diagnosis hand-fed Mox tools). Re-run clean after the craft fix.
+
+---
+
 ## 2026-06-15 — stabilization slice (implementation)
 
 Shipped the **minimum slice** from the Genesis V2 Stabilization plan (Option **A**
