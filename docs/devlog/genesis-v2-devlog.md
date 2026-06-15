@@ -9,6 +9,56 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-15 — base & shelter spec + planner roadmap (operator requirements)
+
+### Door facing — bot traversal limitation (MUST be in the shelter spec)
+mineflayer-pathfinder's "open the door and walk through" is **reliable for
+EAST/WEST-facing doors but FLAKY for NORTH/SOUTH-facing closed doors** — a
+documented framework limitation (`test-door-pathfind.py`, the 4 N/S closed cases
+are `KNOWN_FRAMEWORK_LIMITATIONS`/xfail). On a N/S door the bot opens it
+(`door_now=open`) but then stalls ~5-6 s without committing to the path through the
+open cell; the pathfinder timeout fires and it ends touching the wall's outer face.
+Suspected race between the door-open action and pathfinder's path re-evaluation.
+
+**Shelter spec rule:** shelter/base **doors MUST face east or west.** Place the
+doorway so the door's `facing` resolves to E/W; never rely on a N/S-facing door for
+routine traversal. (Revisit if the upstream pathfinder race is fixed.) This pairs
+with the door-bearing blueprint requirement — the blueprint must orient its door E/W.
+
+### Base site
+- A **leveled, cleared** footprint (flat ground, obstructions removed) so it can
+  later be **walled** to control mob approach — a defensible, gated perimeter.
+- Shelter from a **deterministic, door-bearing blueprint** (E/W door), not LLM
+  free-build (see the trap diagnosis above).
+- **Supplies/chests easily accessible** — near the entry/work area, organized per
+  resource (wood / stone / food / tools), not buried inside a sealed room.
+
+### Base-location selection (what scouting is for)
+Choosing the base site is a real optimization, informed by scouting:
+- **Water access** for farming (surface water / pond within ~N blocks), and/or
+- **Route access** (good corridors to resource clusters + room to expand).
+
+P1 scouting gathers candidate pads + resource/water marks to make this call.
+**Scouting does not stop after P1** — it continues throughout the run to find new
+resource areas, water, and expansion sites as the colony grows.
+
+### Planner roadmap
+The planner should work from a **roadmap** — an ordered, goal-driven guide rather
+than rigid one-shot phases (ties into the gating section below):
+- **Essentials first:** base (leveled + walled-capable) → tools → food → storage.
+- **Then expansion:** mine, roads, more farm/storage, perimeter walls, new sites.
+- **Standing goals kept topped up continuously** (not once):
+  - **food** stock,
+  - **building materials** (wood, cobblestone) stock,
+  - **tools** — maintain a healthy *spare* stock (pickaxes/axes/shovels), not a
+    single set; tools wear out and workers need replacements on hand,
+  - chests organized + accessible per resource.
+
+The roadmap orders *intent*; the planner emits parallel work as prerequisites allow
+(see gating). "Phases" are roadmap milestones for reporting, not execution walls.
+
+---
+
 ## 2026-06-14/15 — first sustained run series (runs gv2-...-8 → -13)
 
 ### What got validated (keep)
