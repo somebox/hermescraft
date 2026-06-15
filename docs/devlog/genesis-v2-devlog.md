@@ -9,6 +9,65 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-15 — operational layer & phase sizing (research)
+
+> target.md defines the **roles** (planner / dispatcher / execution / overseer) and
+> the **card-flow**, but is thin on the **operational dynamics** — *when/how often*
+> each agent engages, *what board signals* trigger which agent, and how readiness is
+> guaranteed across the lease pool. That operational layer is the next research area.
+
+### Phase sizing — start small, wall later
+- The base starts **small**: a shelter building + chests nearby, ~**10×10** footprint.
+- **Walls come later and sit farther out** (a defensible perimeter ring), which feeds
+  back into:
+  - **base location** — pick a site with room to expand the wall ring, and
+  - **leveling** — clear/level the *larger* wall footprint, not just the building pad.
+- **First farm: near water AND close to base — but the base need not be next to
+  water.** Water is a *farm* constraint, not a *base* constraint. The planner should
+  read this straight from the requirements (don't force the base onto the shoreline).
+
+### Tool/material readiness across lease handoffs (operational requirement)
+The lease pool **decouples expertise (agent) from inventory (body)**. A body that
+just finished one task may be poorly equipped for the next mission a *different*
+agent leases onto it — tools don't follow the worker, they sit in whatever body had
+them. Consequences for card breakdown:
+- **Tools live in shared base chests**, never assumed in a body's inventory.
+- **Every card's first step is a precondition check** — "withdraw/equip the needed
+  tool from a chest, or craft it" — not "assume I have a pickaxe."
+- The **crafter agent maintains a standing tool stock** in chests (spare
+  pickaxes/axes/shovels) + material buffers, so any leased body can equip before its
+  mission. (This is why the roadmap's standing goals include a *spare tool stock*.)
+
+### Multi-agent board scanning (not just the planner)
+Generalize the supervisor we built (poller → planner on stalls) into a **periodic,
+multi-agent operational layer** — each agent scans the board for *its* concern:
+- **crafter** — scans cards + chest inventories for material/tool gaps; pre-stocks
+  tools/materials so downstream cards aren't blocked on a missing pickaxe.
+- **builder** — reviews cards that need better build planning (vague "build shelter"
+  → a sized, E/W-door, blueprint-backed card).
+- **overseer / verifier** — verifies completion + catches structural defects (door
+  faces E/W? farm hydrated? chests accessible?).
+- **planner** — decomposition + roadmap ordering.
+
+So the board is a shared substrate that several specialist agents *read and improve*,
+not a pipeline only the planner touches. Each wakes on a relevant board signal or a
+cadence, contributes its expertise, and exits — same fresh-scope discipline as
+execution cards.
+
+### Open research questions (the operational gap)
+1. **Triggers & cadence** — what board signal wakes which agent (event vs. periodic
+   sweep), and how often, without burning tokens.
+2. **Concern → agent mapping** — crafter/builder/overseer scan filters; what each is
+   allowed to change on a card it didn't create.
+3. **Readiness guarantee** — where the "ensure tools/materials before a mission"
+   check lives (card-template precondition vs. crafter pre-stock vs. dispatcher).
+4. **Anti-thrash** — coordination so multiple scanners don't fight (escalation caps,
+   ownership of a card, idempotent edits). We already hit runaway churn once.
+5. **Where this lands in target.md** — promote the operational layer from implicit to
+   a documented section (role table is static; operations are dynamic).
+
+---
+
 ## 2026-06-15 — base & shelter spec + planner roadmap (operator requirements)
 
 ### Door facing — bot traversal limitation (MUST be in the shelter spec)
