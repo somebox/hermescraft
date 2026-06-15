@@ -24,6 +24,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+# Also put the repo root on the path so the LOCAL `mapcatalog` package (rcon
+# client, used by _rcon) imports when this module is loaded from a script file
+# (e.g. the poller: `python scripts/genesis-v2-poller.py`, whose sys.path[0] is
+# scripts/, not the repo root). The boot only got it via the cwd-on-path of a
+# `python - <<EOF` stdin invocation.
+sys.path.insert(0, str(REPO_ROOT))
 import genesis_lib as gl  # noqa: E402  (pure helpers only: parse_yaml_simple, substitute, _iso_utc, _load_json)
 
 TEMPLATES_DIR = REPO_ROOT / "data" / "genesis-v2" / "templates"
