@@ -9,6 +9,54 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-15 — agent feedback round (synthesis)
+
+Asked each agent (bot-less `[FEEDBACK]` card) to review its genesis-v2 cards and
+report WORKS / NEEDS-IMPROVEMENT / IDEAS. Returns from scout, gatherer, builder,
+farmer, miner (planner pending). Independently corroborates the diagnoses above and
+adds concrete execution-layer bugs.
+
+### Confirmed by multiple agents
+- **Region-protected shelter traps bots** — gatherer ("single biggest failure",
+  ~40 min wasted), builder, miner. Plus: **`mc escape` is broken**
+  (`pos.floored is not a function`) and **`mc pillar_up` returns POLICY_DENY**
+  inside the protect region — so the in-region self-rescue path doesn't exist. Top
+  priority; validates the door-blueprint + region-lifecycle + worksite fixes.
+- **Body contention (`no_free_body`) is the #1 throughput bottleneck** — scout:
+  **15 of ~20 sessions blocked**; 3 bodies shared across all roles starves every
+  queue, and each block **wastes a full agent spawn** (skill load + kanban + memory
+  read) for zero world output. → dispatch should gate on body availability
+  (don't spawn a worker that will immediately block), and/or grow the pool / batch
+  cards. Ties to the dispatcher concern in the operational-layer research.
+- **Card coords not standable** — scout: cards gave spawn/site coords inside
+  structures or on unstandable terrain (e.g. 0,65,0; 64,83,-96). Coords in card
+  bodies must be validated standable (matches the spawn-probe findings).
+- **Navigation unreliable** — scout (`mc goto` NAV_FAILED/timeout), miner
+  (pathfinder failures), builder (door placement timeout). Recurring execution-layer
+  reliability gap.
+- **Duplicate + oversized cards** — farmer: two identical farm cards dispatched
+  minutes apart (planner should dedup in-flight cards); a **9×9 (81-block) farm at a
+  waterless base** with no `till_area` in the spec — oversized + mis-sited. Matches
+  the "start small" sizing + farm-needs-water points.
+
+### Validated — what WORKS (don't regress)
+- **Literal `mc` verb lines in cards** — farmer: "the single best thing in the card
+  design… no ambiguity, no improvisation." Echoed by gatherer.
+- **Lease checkout/release + `--cap` filter** — clean when a body is free.
+- **Structured handoff metadata in `kanban_complete`** (scout, farmer) — downstream
+  verify without re-reading.
+- **Batch verbs** (`mc collect N`, `till_area`); **scout handoff template** +
+  **WATER_DROUGHT flag**; **chat narration**; **crafting wooden-vs-stone diagnostic**.
+
+### New concrete bugs to fix (agent-sourced)
+1. `mc escape` — `pos.floored is not a function` (in-region self-rescue broken).
+2. `mc mark --at` — bug reported by builder.
+3. Body-pool contention — dispatch-time body-availability gate (don't spawn→block).
+4. Card coords must be validated standable before emit.
+5. Door placement timeout; `mc goto`/pathfinder flakiness.
+
+---
+
 ## 2026-06-15 — operational layer & phase sizing (research)
 
 > target.md defines the **roles** (planner / dispatcher / execution / overseer) and
