@@ -9,6 +9,286 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-16 — door + gate traversal: matrix-mapped; E/W reliable, N/S a framework limit
+
+Investigated the shelter-door egress ceiling test-first. Built a comprehensive
+functional matrix (`tests/functional/test_door_pathfind.py`): `{oak_door,
+oak_fence_gate} × facing{N,S,E,W} × hinge{L,R} × open{T,F} × method{goto_near
+(pathfinder), through (robust)}` = 48 cells, plus a shelter-egress test
+(`test_shelter_egress.py`).
+
+**Empirical result:**
+- **E/W doors + ALL fence gates (every facing): 100% reliable**, both methods —
+  guaranteed + hard-asserted.
+- **N/S-facing DOORS: framework limitation.** Pathfinder crossing of N/S doors
+  races (door opens, path re-eval lags → bot stalls outside; north fails
+  open+closed via pathfinder). The robust `through` direct-walk wedges at the
+  door-cell center on a south-facing closed→opened door — the door DOES open
+  (confirmed `open=true`), but the centered 0.6 hitbox wedges. Mitigations
+  (F69c sneak, F69d strafe-nudge, F69e retreat-then-pathfinder) took south-closed
+  0→1/6 — not solved. It's a real N/S handedness in mineflayer-pathfinder + door
+  swing/collision, below our action layer.
+
+**Decision (operator): enforce E/W + document the limit.** E/W is already the
+shelter spec (`genesis2_lib.shelter_setblock_commands` renders `facing=east`).
+Shelter egress through the E/W door is reliable — `test_shelter_egress.py` passes
+for move/through/goto_near. N/S door cells are `xfail(strict=False)` in the matrix
+(regression guard for the reliable set); the `through` hardening is kept (no
+regression, marginal N/S help).
+
+**Shelter egress was NOT a door-mechanic bug** — the E/W shelter egress passes
+cleanly in isolation. The live "cannot exit shelter, door" was most likely
+terrain/approach (base not cleared — see the base-clearing observation), not the
+door itself.
+
+**Deferred:** true any-facing door traversal needs a mineflayer-pathfinder-level
+fix for the N/S handedness (or a custom door-cross routine). Tracked as a known
+limitation; build E/W doors until then.
+
+---
+
+## 2026-06-16 — SESSION WRAP-UP: resilience + agent self-correction validated (P1–P3)
+
+**Outcome.** Run `gv2-2026-06-15-5` cleared **P1 ✅ P2 ✅ P3 ✅** — every implemented
+phase — on one clean run, self-recovering through every failure mode. This is the
+deepest and cleanest genesis-v2 run to date. The colony built a base + shelter +
+storage, tilled a farm by water, and opened a registered mine, then advanced into
+P4 (whose gate is an unbuilt stub). All the fixes below were proven live, in order
+of discovery this session.
+
+### The arc — what got fixed (each validated live)
+1. **Craft blocker (PaperMCP).** Genesis bodies never sourced repo `.env`, so
+   `PAPERMCP_TOKEN` was absent → `serverSideCraftFallback` off → ~50% of 3×3 table
+   crafts silently no-op'd (this killed runs -1/-2 at GATHER). Fix: `genesis-v2.sh`
+   + `restart_bodies` source/inject the token. Verified token-in-env + live
+   PaperMCP round-trip; crafting reliable since.
+2. **Lease leak on worker death (deadlock in -3).** A timed-out/killed worker never
+   ran `mc bot release`, so its body stayed leased for the 1h TTL; all three leaked
+   → pool deadlock. Fix: **touch-on-use renewal + short idle TTL** (600s,
+   `HERMES_BOT_LEASE_TTL_S`) in `lease-registry.mjs` — a live worker renews on every
+   command, a dead one lapses fast; plus genesis `reap_orphan_leases` (poller reaps
+   terminal-owner leases ≤60s) + boot `clear_pool_leases`.
+3. **Gateway dispatch-task death (silent stall in -4).** The hermes asyncio
+   dispatcher can throw on a worker-crash path and die while the event loop keeps
+   running — process looks alive, dispatch/promotion stop. (Root-caused via py-spy:
+   main thread healthy in `select`, dispatch task gone — NOT a poller hang; the
+   poller was just idle.) Fix: poller **watchdog** restarts the gateway when
+   `gateway.log` goes silent while cards wait (3 auto-recoveries in -5).
+4. **Dispatcher fragility.** `kanban.failure_limit` was being applied as **1** (a
+   9-day-stale gateway); one mimo protocol slip killed a card. Fix: config → **3** +
+   gateway restart baked into `new-run`.
+5. **Mine-registry world mismatch (P3 stuck in -4).** Bodies write mines to
+   `mines-world.json` (regionsWorld resolves to "world"); the P3 gate read a
+   nonexistent `mines-genesis2.json`. Fix: `check_phases` reads the file the bodies
+   write, **filtered to genesis-pool-authored mines** (production mines excluded);
+   boot strips prior-run genesis mines for a clean slate. P3 passed automatically in -5.
+6. **Agent self-correction (the -5 build).** Replaced the mechanical gate-gap card
+   with an **OVERSEER agent**: at a phase transition (frontier idle + gate unmet)
+   the poller files an `[OVERSEE]` card carrying the gate state; the read-only
+   `colony-overseer` confirms the gate or files the missing worker card(s) with
+   judgment. Plus **verify-before-complete** in every SOUL, and a **planner
+   skill-routing** fix (route by assignee, never invent a `skills` field — killed
+   the `minecraft-scouting` vs `-site` "Unknown skill" errors).
+7. **One-command clean launch.** `new-run` now does the full reset end-to-end:
+   clean shutdown (poller + stale workers + gateway --replace) → re-mint 8 profiles
+   (skills copied) → Multiverse world regen → restart bodies → wipe leases/marks/
+   mines → archive board → reseed → fresh poller.
+
+### What -5 proved about the self-correction layer
+- **Overseer works end-to-end:** it corrected the P1 chest gap (3 OVERSEE cards →
+  chest placed → P1 closed) and stayed **quiet for P2/P3** (they passed cleanly).
+  Fires only where correction is needed.
+- **verify-before-complete is the WEAK layer.** mimo still completed BUILD with 1 of
+  2 chests; the overseer is what caught it. Treat per-agent self-check as soft;
+  the overseer is the real backstop.
+- **Defense-in-depth held:** watchdog (gateway), lease reaper (bodies), supervise
+  (stuck workers), overseer (gate gaps), failure_limit (crash churn) — each caught
+  a distinct failure, none alone sufficient.
+
+### The one real ceiling: shelter-door egress (gameplay, not infra)
+Builders repeatedly stuck *"cannot exit shelter, door…"* (the door-direction
+limitation) — it nearly exhausted the overseer's cap-of-3 in P1 before a retry got
+through. This is the only failure no agent/infra mechanism can fix; it needs a
+code/spec change. **Top priority for the next iteration.**
+
+### Prioritized next-iteration backlog
+- **P0 — Shelter door egress.** Fix the rendered door facing (face the working/
+  approach side) and/or bot door traversal; bake into the shelter spec. The hard ceiling.
+- **P1 — Escalation + verification.** Stuck workers hallucinate `mc advise` (exit 1);
+  teach SOULs to `kanban_block` with a reason (or add a real escalate verb). Decide
+  whether to strengthen verify-before-complete or lean on the overseer as primary.
+- **P2 — Gameplay skills.** Gatherer should use `fell_tree` (not random block hunt);
+  miner should place torches → coal in the supply chain; base area should be
+  cleared/flattened; resource gathering should be first-class in planning.
+- **P3 — Lease policy.** Prefer **card-chain continuity** over `--near`/inventory;
+  detect true-idle as "last card was a chain end"; put idle bodies on chores.
+- **P4 — Phase coverage.** Build the P4 (roads) + P5 (steady-state) gates to extend
+  past the current P1–P3 implemented set.
+
+---
+
+## 2026-06-15 — gv2-...-5 live observations (operator, for wrap-up)
+
+Captured while watching the agent-self-correction run. Not yet acted on —
+candidate work items for the next iteration.
+
+**Gameplay / worker-skill gaps**
+- **Gatherer ignores `fell_tree`.** It searched semi-randomly for blocks instead
+  of using the `fell_tree` primitive. The survival skill/SOUL should direct wood
+  collection through `fell_tree` (whole-tree, efficient) rather than ad-hoc block
+  hunting.
+- **Miner should place torches** when possible — which means **coal must be in the
+  supply chain** (mine → coal → torches for lit, safe descents). Today mining
+  doesn't light itself.
+- **Base area + surroundings should be CLEARED** — fell trees, flatten ground,
+  open up space around `base_anchor`. There's no clear/flatten step today; the
+  base gets built into unprepared terrain.
+
+**Planning emphasis**
+- **Resource gathering should be more prominent in planning** — the planner
+  under-weights raw-material supply; gather/stock should be a first-class,
+  recurring concern, not an afterthought behind structure cards.
+
+**Shelter egress / escalation (live stall on gv2-...-5 P1)**
+- **Door egress is a hard blocker.** Builders repeatedly stuck *"cannot exit
+  shelter, door…"* (t_90c1b722 supervised 3× to the cap, then t_bbfb343b retried
+  same) → can't place the P1 chest → P1 stalls. This is the known door-direction
+  limitation: the bot can't traverse the rendered E/W `oak_door` in its working
+  direction. Fix the shelter render's door facing (face the working/approach side)
+  and/or the bot's door traversal — this MUST land in the shelter spec.
+- **`mc advise` is hallucinated.** A stuck worker invented `mc advise --reason …
+  --target …` to ask for help; the verb doesn't exist (exit 1). The real
+  escalation is `kanban_block` (which the supervise detector keys on) — teach the
+  worker SOULs to `kanban_block` with a precise reason when stuck, OR add a real
+  `mc advise`/escalate verb. Right now stuck workers have no working help path.
+- **Supervise can't fix structural problems.** It re-engages the planner, but a
+  door-direction wall isn't fixable by re-filing cards — it cycles to the cap and
+  parks. Structural/skill gaps need a code/spec fix, not more supervise cards.
+
+**Lease policy — card-chain continuity (design idea)**
+- A bot lease should **stick to the same card SERIES (chain) when possible** —
+  prioritise chain continuity OVER `--near` location or inventory. When binding a
+  bot to an agent, check whether the **previous linked card in the chain used the
+  same bot** and prefer it.
+- **True-idle detection:** a bot is genuinely idle only when the last card it
+  worked was the **end of a chain** (no further children / dependents). 
+- **Idle bots should do chores** — scouting, food, wood, etc. — rather than sit
+  free. Surface productive filler work for chain-ended bodies.
+
+---
+
+## 2026-06-15 — run gv2-2026-06-15-4 postmortem: gateway dispatch-task death
+
+First run with the lease-release-on-timeout fixes live. **The lease fixes held**
+(pool clean throughout — no leak, no deadlock). But the run stalled early, at the
+scout→P1-work handoff, for a completely different reason — and the first diagnosis
+("poller hung") was **wrong**. py-spy settled it:
+
+- **Poller (ours): healthy.** `py-spy dump` showed it asleep in `time.sleep`
+  (`genesis-v2-poller.py:119`). Its log only *looked* frozen because the run was
+  stalled — no card transitions → nothing actionable → nothing to log. It was idle,
+  not stuck. (Same for the "poller hang" suspected in run-3 — a misread.)
+- **Gateway (vendored hermes-agent): dispatch task dead.** `py-spy dump` showed the
+  asyncio event loop *alive and healthy* (`select`/`run_once`/`run_gateway`), but
+  the dispatcher had stopped. Classic asyncio failure: an unhandled exception inside
+  the dispatch coroutine kills that task silently while the loop keeps spinning, so
+  the process looks fine but never dispatches/promotes again. Matches the log: last
+  tick (18:11:46) was `crashed=1 … auto_blocked=1` (a mimo protocol-violating
+  scout), then dispatch stops forever; a leaked `CLOSE_WAIT` socket to an LLM/443
+  endpoint is the half-cleaned-up error path.
+
+Chain: mimo protocol violation (worker exits rc=0 without `kanban_complete`/
+`kanban_block`) → worker crash + auto_block → **exception takes out the dispatch
+task** → no promotion → P1-work cards (BASE-SELECT/GATHER/BUILD) stuck in `todo`
+→ stall. Promotion logic itself (`kanban_db.py:2886`, promote when all parents
+done/archived) is correct — it just stopped being called.
+
+Aggravator: `effective_limit: 1` — the **9-day-old gateway was running stale config**
+(`config.yaml` already said `failure_limit: 2`); one mimo slip killed a card.
+
+**Fixes shipped:**
+1. `config.yaml kanban.failure_limit` → **3** (was being applied as 1 from stale
+   gateway). More retry tolerance for mimo's flaky protocol compliance + fewer
+   auto_blocks means the dispatch-killing path is hit less often. Needs a gateway
+   restart to load.
+2. **Gateway dispatch watchdog** (`genesis2_lib.maybe_restart_dead_gateway`, wired
+   first in the poller loop): if `gateway.log` is silent past `GATEWAY_STALE_S`
+   (180s) while genesis cards await dispatch (ready/todo), bounce the gateway
+   (`hermes gateway run --replace`), cooldown-guarded (300s) against restart loops.
+   A single mimo crash can no longer silently freeze a whole run.
+3. Manual gateway restart recovered run-4 in place — dispatch + promotion resumed
+   immediately, the `gave_up` scout retried under the higher limit, and a
+   subsequent `crashed=1/auto_blocked=1` was absorbed *without* killing dispatch.
+
+Durable upstream gap (not ours to patch cleanly): the hermes dispatch task should
+be supervised/wrapped so it can't die unhandled. The watchdog is our backstop.
+
+---
+
+## 2026-06-15 — run gv2-2026-06-15-3 postmortem: lease-leak deadlock
+
+First run with the **PaperMCP craft fix live** (genesis bodies now source repo
+`.env` → `PAPERMCP_TOKEN` reaches them → `paperMcpConfig()` non-null →
+`serverSideCraftFallback` enabled; verified token-in-env on all three bodies +
+live PaperMCP auth/`execute_command` round-trip). The craft blocker is gone.
+
+**Progress (gates confirm it was real):** P1 ✅ (base_anchor + 2 chests + buildable
+shelter) and P2 ✅ (wheat plot tilled beside water + storage organized + ≥3
+resource marks) both passed legitimately. P3 partial — MINE-NAVIGATE + MINE-OPEN
+done, but the mine registry stayed at 0 entries (P3 gate fails `mine entries
+0<1`) and MINE-SUPPLY never ran.
+
+**Why it stopped — a stale-lease deadlock (not normal blocking):**
+- A gatherer task `t_4091f488` (`[P2] collect wheat seeds by breaking grass`) went
+  `timed_out → gave_up → archived` and **never released its bot leases on pip+zee**.
+  A third lease on mox was held by another timed-out owner. → **0 free bodies for
+  ~1h**; every work card then blocked `no_free_body`. The card's own diagnosis:
+  *"pip/zee owned by archived task t_4091f488 … requires manual lease release."*
+- Root mechanism: `lease-registry.reapExpiredIdle`/`isReclaimable` only reclaim a
+  lease once `expires_at_ms < now` — i.e. **after the full 1h TTL** — regardless of
+  whether the body is idle or the owning task is dead. The lease layer is
+  deliberately task-agnostic, so it can't know the worker died. A worker that
+  times out/gives up/is killed never runs `mc bot release` → its body is locked
+  for up to an hour.
+- Compounding: the poller filed the **max 3 supervise cards/worker** (cap hit on
+  all stuck workers); the planner correctly said it needed a *manual lease
+  release* — which the agent layer can't do. After the leases finally TTL-expired
+  (DB empty now, bodies free), `requeue_deferred` didn't pick the cards back up
+  because their *terminal* block reasons aren't the `no_free_body`-deferred type it
+  matches (FARM=`prerequisite: waiting for seeds`, MINE-SUPPLY=`help-needed:
+  navigation/water`). So the poller now silently no-ops every 60s.
+- Secondary real blockers (legit gameplay gaps, independent of the leak): the
+  gatherer couldn't collect wheat seeds by breaking grass (the timeout that
+  started the cascade); MINE-SUPPLY couldn't path to the mine entrance ("frontier
+  far away; water issue").
+
+**Fix (lease-release-on-timeout), shipped this session:**
+1. **Touch-on-use renewal + short idle TTL** (the architectural root-cause fix, all
+   consumers — `bot/cli/lease-registry.mjs`). Every leased `mc` command now renews
+   the lease (`resolveLeaseUrl` pushes `expires_at_ms` out by one TTL, `max()` so a
+   longer explicit lease is never shrunk). `DEFAULT_TTL_S` dropped 3600→**600s**
+   (env override `HERMES_BOT_LEASE_TTL_S`). A live worker keeps its body by using
+   it; a worker that **times out / is killed** stops issuing commands → its lease
+   lapses within one TTL → the next checkout reclaims the idle body. The keystone
+   invariant holds: `resolveLeaseUrl` only renews an *existing valid* lease, never
+   re-acquires a released/expired one (no silent auto-checkout). Cuts the leak from
+   ~1h after a single checkout to ≤10 min after the last command.
+2. **Genesis runtime reaper** — `genesis2_lib.reap_orphan_leases()` each poller tick
+   releases any pool lease whose owner kanban task is terminal (archived/done/
+   cancelled) or absent from the board, via a new `mc bot release --owner <id>`
+   path. `release()` still refuses a busy body. Reaps in ≤60s where the owner is
+   already known-dead — faster than waiting out even the short TTL.
+3. **Boot clean-slate** — `genesis2_lib.clear_pool_leases()` at new-run start drops
+   every genesis-owned lease on the pool bodies, so a fresh run can't inherit a
+   prior run's leak ("mox owned by previous run").
+
+Not yet addressed (next iteration): (a) the supervise-cap + terminal-block-reason
+combo that prevents auto-recovery once bodies free up — `requeue_deferred` should
+also re-engage cards stuck purely behind a (now-resolved) lease shortage; (b) the
+gameplay gaps (grass→seeds, mine-entrance navigation over water).
+
+---
+
 ## 2026-06-15 — CRAFT root cause: table-window race (the real blocker)
 
 Both the deepseek and mimo stabilized runs (gv2-2026-06-15-1/2) stalled at the

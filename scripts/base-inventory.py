@@ -44,7 +44,25 @@ BOT_PORTS = {
     "barley":   3004,
     "steward":  3005,
 }
+# Genesis-v2 body pool — distinct ports from the prod/landfolk set above. Without
+# this, genesis runs would miss Mox:3007 + Zee:3006 and mislabel Pip:3005.
+GENESIS_POOL = {
+    "mox": 3007,
+    "pip": 3005,
+    "zee": 3006,
+}
+# Genesis SUPPLY-card routing: which expertise restocks each resource category.
+GENESIS_ASSIGNEE = {
+    "food":  "colony-gatherer",
+    "wood":  "colony-gatherer",
+    "stone": "colony-miner",
+    "coal":  "colony-miner",
+}
 MARK_PREFIX = "chest_"
+
+
+def ports_for_pool(pool: str) -> dict:
+    return GENESIS_POOL if pool in ("genesis-v2", "genesis") else BOT_PORTS
 
 
 def parse_yaml(path: Path) -> dict:
@@ -215,12 +233,13 @@ def snapshot_for_coord(snapshots: dict, coord: list[int], mark_name: str | None 
     return candidates[0][1]
 
 
-def aggregate(goals: dict, chest_marks: dict[str, dict]) -> dict:
-    """Walk every live bot, collect chest snapshots for each registered
-    chest, sum items into goal categories."""
+def aggregate(goals: dict, chest_marks: dict[str, dict], ports: dict | None = None) -> dict:
+    """Walk every live bot in `ports` (default prod BOT_PORTS), collect chest
+    snapshots for each registered chest, sum items into goal categories."""
+    ports = ports if ports is not None else BOT_PORTS
     # Fetch each live bot's snapshots once
     all_snaps: dict[str, dict] = {}
-    for name, port in BOT_PORTS.items():
+    for name, port in ports.items():
         all_snaps[name] = fetch_chest_snapshots(port)
 
     # Build per-mark item lists by collapsing across bot snapshots (newest wins)
@@ -255,6 +274,36 @@ def aggregate(goals: dict, chest_marks: dict[str, dict]) -> dict:
     return {"totals": totals, "chests": chest_data, "goals": goals}
 
 
+def compute_deficits(pool: str = "prod") -> dict:
+    """Typed deficits for `pool` ('genesis-v2' or 'prod') — for the poller to
+    consume DIRECTLY (no human-text parsing). Returns:
+      {ok, pool, totals, chests_total, chests_fresh,
+       deficits: [{resource, current, target_min, target_ok, deficit, assignee, items}]}
+    `assignee` is genesis expertise (gatherer/miner) for the genesis pool, else the
+    goal's prod assignee. A resource is a deficit when current < target_min."""
+    if not GOALS_YAML.is_file():
+        return {"ok": False, "error": f"missing {GOALS_YAML}"}
+    goals = parse_yaml(GOALS_YAML)
+    chest_marks = load_chest_marks()
+    result = aggregate(goals, chest_marks, ports=ports_for_pool(pool))
+    genesis = pool in ("genesis-v2", "genesis")
+    deficits = []
+    for cat, spec in goals.items():
+        cur = int(result["totals"].get(cat, 0))
+        tmin = int(spec.get("target_min", 0))
+        if cur < tmin:
+            assignee = (GENESIS_ASSIGNEE.get(cat, "colony-gatherer") if genesis
+                        else spec.get("assignee", "flint"))
+            deficits.append({
+                "resource": cat, "current": cur, "target_min": tmin,
+                "target_ok": int(spec.get("target_ok", tmin)), "deficit": tmin - cur,
+                "assignee": assignee, "items": spec.get("items", []),
+            })
+    fresh = sum(1 for ch in result["chests"].values() if ch.get("fresh"))
+    return {"ok": True, "pool": pool, "totals": result["totals"],
+            "chests_total": len(chest_marks), "chests_fresh": fresh, "deficits": deficits}
+
+
 def fmt_age(ts: str) -> str:
     if not ts:
         return "—"
@@ -272,9 +321,17 @@ def fmt_age(ts: str) -> str:
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--pool", default="prod",
+                    help="body pool to scan: 'prod' (default, ports 3001-3005) or 'genesis-v2' (Mox/Pip/Zee)")
     ap.add_argument("--suggest-cards", action="store_true",
-                    help="Print [SUPPLY] card drafts for deficits")
+                    help="Print [SUPPLY] card drafts for deficits (human text)")
+    ap.add_argument("--suggest-json", action="store_true",
+                    help="Print typed deficits as JSON for the poller (genesis assignees with --pool genesis-v2)")
     args = ap.parse_args()
+
+    if args.suggest_json:
+        print(json.dumps(compute_deficits(args.pool), indent=2, default=str))
+        return
 
     if not GOALS_YAML.is_file():
         sys.exit(f"missing {GOALS_YAML}")
@@ -294,7 +351,7 @@ def main():
         print("Then re-run this script. See data/base-goals.yaml for resource categories.")
         return
 
-    result = aggregate(goals, chest_marks)
+    result = aggregate(goals, chest_marks, ports=ports_for_pool(args.pool))
 
     if args.json:
         print(json.dumps(result, indent=2, default=str))

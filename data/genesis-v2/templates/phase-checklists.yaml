@@ -1,6 +1,6 @@
 # Genesis v2 — machine-readable phase gates.
 #
-# Read by scripts/genesis-v2-check.py (via genesis2_lib.check_phases). A phase
+# Read by scripts/genesis-v2.sh check (genesis2_lib.check_phases). A phase
 # passes when all of its declared conditions hold. Marks are read from the
 # shared map (data/locations-base.json on the genesis-v2 world); regions from
 # regions-world.json; the mine registry from data/mines-world.json.
@@ -21,12 +21,14 @@ phases:
     marks:
       lt_prefix_min: 3                  # at least 3 resource marks on the map
       farm_prefix_min: 1               # a tilled wheat plot marked (farm_*)
-    # Region + inventory gates deferred this iteration: base-inventory's chest
-    # snapshots come back items:null (no live capture) and its vocabulary
-    # (food/wood/stone/coal) doesn't match the gate's (wheat/cobblestone), so a
-    # stocked-storage check can't be evaluated yet. P2 completion = a farm plot
-    # marked + organized storage (chest_* from P1). Re-add an inventory gate once
-    # chest-snapshot quantity tracking populates.
+    inventory:
+      resources: [food, wood]          # base storage stocked (vs base-goals target_min)
+    # The inventory gate is FAIL-SAFE (check_phases): it only enforces once the
+    # base is MEASURABLE (genesis-aware base-inventory returns fresh, non-zero
+    # stock). An empty/unreadable base (capture not live, or nothing gathered yet)
+    # does NOT block — the continuous-supply poller loop fills stocks, then this
+    # gate bites. (The old `items:null` / vocabulary mismatch is fixed by the
+    # genesis-aware --pool + --suggest-json reader.)
   P3:
     mine_registry:
       entries_min: 1                    # at least one registered mine entrance

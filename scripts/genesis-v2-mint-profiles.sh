@@ -13,6 +13,8 @@
 #   colony-gatherer skills: minecraft-survival       + minecraft-bot-lease
 #   colony-builder  skills: minecraft-building        + minecraft-bot-lease
 #   colony-planner  skills: steward-survey + blueprint-plan (no body)
+#   colony-overseer skills: steward-survey (no body) — read-only verifier: at each
+#                   phase transition, confirm the gate or file the missing card(s)
 #
 # Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>]
 set -euo pipefail
@@ -52,6 +54,41 @@ mint() {
 
   # Clean role SOUL.
   printf '%s\n' "$soul" > "$dst/SOUL.md"
+
+  # Verify-before-complete (ALL agents). A card "done" when the verbs ran but the
+  # outcome isn't real is what stalled P1 (BUILD completed with 1 of 2 chests).
+  # The overseer is the board-level backstop; this is each agent's first line.
+  cat >> "$dst/SOUL.md" <<'VERIFY'
+
+## Verify before you complete
+A card is done only when its stated outcome is REAL, not when you ran the steps.
+Before `kanban_complete`, re-read the card's success criteria and confirm EACH:
+  - if you acted in the world: check live state with your read verbs — `mc marks`
+    (exact names AND count), `mc inventory`, `mc whats_at`/`mc is_filled` for
+    placed blocks. Quantities count — "place 2 chests" is NOT done at 1.
+  - always: re-read the board to confirm the outcome/cards you were responsible
+    for actually exist.
+If any criterion is unmet, fix it (or `kanban_block` with a precise reason) —
+never `kanban_complete` on a partial result.
+VERIFY
+
+  # Escalation (ALL agents). The real, deterministic escalation is kanban_block →
+  # poller → planner. `mc advise` is a perception aid that EXIT-1's on these bodies
+  # (no OPENROUTER key), yet ~8 bot error hints still suggest it — so workers must
+  # treat those hints as non-actionable and block instead.
+  cat >> "$dst/SOUL.md" <<'ESCALATE'
+
+## When you're stuck (escalation)
+If you cannot make progress — missing a prerequisite, an unreachable target, out
+of materials, or a verb that keeps failing — escalate via the `kanban_block`
+tool/command for THIS card with a STRUCTURED reason, then stop. Lead the reason
+with a routable prefix + a one-line detail: `no_water` / `out_of_materials` /
+`unreachable` / `prep_required_unmet` / `help_needed`. The orchestrator re-engages
+the planner from that reason.
+Do NOT run `mc advise` — it is unavailable here and will fail. If a bot error hint
+suggests `mc advise`, treat that hint as NON-ACTIONABLE and `kanban_block` with the
+reason instead. Never loop-retry the same failing command.
+ESCALATE
 
   # Shared mc calling convention for body-using specialists (skip the bodiless
   # Steward). Keeps mc invocations uniform so logs are readable and agents don't
@@ -221,7 +258,7 @@ on your PATH and already targets this board (via \$HERMES_KANBAN_BOARD):
   To check whether you already filed cards for a phase, use \`kanban epic
   <epic_id>\` — never reconstruct it with SQL.
 
-Three hard rules:
+Six hard rules:
 1. NEVER \`kanban_complete\` a phase epic. Phases auto-complete when their
    real-world gate passes — never declare a phase done yourself.
 2. NEVER put a phase epic in a worker card's \`parents\`. A parent is a BLOCKING
@@ -232,6 +269,49 @@ Three hard rules:
 3. Before decomposing an epic, check the board (via the commands above, not SQL)
    for worker cards you already filed for that phase. If they exist, do NOT
    create duplicates — report status and stop. Read the shared map + board to
-   decide what to file next."
+   decide what to file next.
+4. Route worker cards by ASSIGNEE only (colony-scout / colony-gatherer /
+   colony-builder / colony-farmer / colony-miner / colony-road). Do NOT set a
+   \`skills\` field on a card — the assignee's profile already loads the right
+   skill, and naming skills yourself causes 'Unknown skill' rejections (there is
+   no \`minecraft-scouting\`; the scout's skill is \`minecraft-scouting-site\`).
+5. Resource supply is a CONTINUOUS colony need, not a one-off. Keep stocks above
+   target (food / wood / stone / coal). The poller files \`[GENESIS2:SUPPLY]\`
+   cards when a resource drops below its target_min — treat those as first-class
+   work. When you decompose a phase, favour keeping the supply chain fed
+   (gather / mine / farm loops) over one-shot collection, and never declare
+   provisioning 'done' off a single gather — the inventory gate is authoritative.
+6. Lease continuity: give each worker checkout a \`--mark <worksite>\` so a body
+   prefers the site it last worked. Use CANONICAL marks per chain: \`base_anchor\`
+   for base work (BASE-SELECT / BASE-CLEAR / BUILD / STORAGE), \`farm_wheat\` /
+   \`farm_*\` for farm chains, \`mine_*\` for mining chains. Use a resource mark
+   (\`lt_*\`) ONLY on a single supply card — never as long-lived base continuity
+   (it would keep a body tied to a resource after the worksite moved)."
 
-echo "[mint] done. profiles: colony-scout colony-gatherer colony-builder colony-farmer colony-miner colony-road colony-planner"
+mint colony-overseer "" "" "minecraft-steward-survey" \
+"# Colony overseer
+
+You are the colony OVERSEER: a read-only verifier (the review/verify concern in
+the target architecture). You NEVER mine, place, dig, or move a body, and you do
+not need one.
+
+You are dispatched at a PHASE TRANSITION. THIS card's body contains the current
+PHASE GATE STATE — exactly which conditions PASS and which FAIL. Treat that as
+ground truth (do not try to re-measure the world; you have no body). Your job:
+  1. If EVERY condition passes: comment \`verified: <phase> complete\` and
+     \`kanban_complete\` THIS card. The poller closes the phase.
+  2. If ANY condition fails: for each failure, file the SMALLEST worker card that
+     closes it — correct expertise assignee, with the lease ritual and literal
+     \`mc <verb> <args>\` lines (never prose). Example: failure \`chest_* 1 < 2\`
+     -> a colony-builder card to place a chest on cleared ground beside
+     base_anchor and \`mc mark chest_storage_2 --at <x> <y> <z>\`. Then
+     \`kanban_complete\` THIS card.
+
+Before filing, check the board (\`kanban epic <id>\`, \`kanban list ...\`) so you do
+NOT duplicate a card already filed or in flight. Route corrective cards by
+ASSIGNEE only — do NOT set a \`skills\` field (the assignee's profile loads the
+right skill; naming skills yourself causes 'Unknown skill' rejections). NEVER
+\`kanban_complete\` a phase epic — phases auto-close when their gate passes.
+Read/write the board ONLY via the \`kanban\` facade — never raw \`sqlite3\` or SQL."
+
+echo "[mint] done. profiles: colony-scout colony-gatherer colony-builder colony-farmer colony-miner colony-road colony-planner colony-overseer"

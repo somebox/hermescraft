@@ -46,32 +46,60 @@ epics:
         - Phase membership comes from the TITLE TAG, not a parent edge: give every
           worker card a `[GENESIS2:P1]` title prefix (e.g.
           `[GENESIS2:P1] [BUILD] ...`). That is how the poller groups the phase.
-        - Use `parents`/`after:` ONLY to order SIBLING worker cards (e.g. BUILD
-          after GATHER, GATHER after BASE-SELECT). Never to the epic.
+        - Use `parents`/`after:` ONLY to order SIBLING worker cards (e.g.
+          BASE-CLEAR after BASE-SELECT, BUILD after BASE-CLEAR). Never to the epic.
 
       Decompose into, roughly in order (wire later cards `after:` the prior
-      sibling worker card — never `after:` this epic):
+      sibling worker card — never `after:` this epic). SCOUT cards may run in
+      parallel (multiple `[GENESIS2:P1]` scouts); BASE-SELECT waits until enough
+      `candidate_pad_*` marks exist:
         1. SCOUT (colony-scout) — explore outward from spawn, mark wood
            (`lt_wood_*`), stone (`lt_stone_*`), water (`lt_water_*`) and 1-2 flat
            candidate base pads (`candidate_pad_*`). Surface only. (Pre-seeded.)
         2. BASE-SELECT (colony-builder OR colony-scout) — pick the best
-           `candidate_pad_*` from the shared marks (flat, near wood + water) and
-           record the colony center. This MUST be a real worker card with a body
-           and a LITERAL verb — you (the Planner) are bodiless and cannot mark.
-           Card body, literal lines:
+           `candidate_pad_*` from the shared marks (flat, near wood + water,
+           route access, room for a later perimeter wall ring — prefer pads with
+           clearance beyond the ~10×10 shelter footprint). This MUST be a real
+           worker card with a body and LITERAL verbs — you (the Planner) are
+           bodiless and cannot mark. Card body, literal lines:
              `mc bot checkout --near <candidate_pad coords> --cap build`
              `mc go_mark <candidate_pad_name>`
-             `mc mark base_anchor`   (marks the worker's current position; or
-                                      `mc mark base_anchor <X> <Y> <Z>`)
+             `mc mark base_anchor "Colony center" --at <X> <Y> <Z>`
+               (or `mc go_mark <candidate_pad>` then `mc mark base_anchor "…"`)
              `mc bot release`
            The P1 gate requires the shared `base_anchor` mark, so this card is a
            hard prerequisite of GATHER and BUILD (wire them `after:` it).
-        3. GATHER (colony-gatherer) — `mc bot checkout --near <lt_wood coords>
-           --cap gather`, collect >=16 wood, craft a full stone tool set
-           (pickaxe, axe, shovel), `mc bot release`. Literal `mc` verb lines.
-        4. BUILD (colony-builder) — `mc bot checkout --near <base_anchor coords>
-           --cap build`, raise a simple shelter (>=5x5 walls + roof), place >=2
-           labeled storage chests (record `chest_*`), `mc bot release`.
+        3. BASE-CLEAR (colony-builder) — clear trees + flatten the ~10x10 base
+           footprint around `base_anchor` so the shelter/walls sit on prepared
+           ground (live-run "built into terrain / cannot exit" stalls came from
+           skipping this). Card body, literal lines:
+             `mc bot checkout --near <base_anchor coords> --cap build --mark base_anchor`
+             `mc go_mark base_anchor`
+             `mc clear_strip <x1> <z1> <x2> <z2> surface_y=<feet_y> road_mode=true height=8`
+               (tree-aware: takes trunks + canopy; or `mc fell_tree <x> <z>` per trunk)
+             `mc level_ground <x1> <z1> <x2> <z2> execute=true target=<feet_y>`
+               — level_ground is DRY-RUN without `execute=true`, and caps at 16
+               columns/call: tile the ~10x10 footprint into <=16-column rectangles
+               (e.g. 4x4 blocks), one `mc level_ground ... execute=true` call each.
+             `mc bot release`
+           Wire BASE-CLEAR `after:` BASE-SELECT, and BUILD `after:` BASE-CLEAR.
+        4. GATHER (colony-gatherer) — first steps MUST satisfy tools before
+           leaving base: `mc chest_search` / `mc withdraw` for pickaxe, axe,
+           shovel OR `mc craft` them from wood/stone at base chests. Then
+           `mc bot checkout --near <lt_wood coords> --cap gather`, collect
+           >=16 wood, `mc bot release`. Literal `mc` verb lines only.
+        5. BUILD (colony-builder) — shelter walls/roof are **pre-rendered** at
+           `base_anchor` on new-run (rcon setblocks + east-facing door). Do NOT
+           `mc region_create` with protect intent and do NOT free-build walls
+           from prose. Card body, literal lines:
+             `mc bot checkout --near <base_anchor coords> --cap build --mark base_anchor`
+             `mc go_mark base_anchor`
+             `mc task_context set shelter`
+             verify door/egress (walk through east door once)
+             place >=2 labeled storage chests inside boot region `shelter`
+             (`mc mark chest_*` at each chest)
+             `mc bot release`
+           Work only inside the boot-seeded buildable `shelter` region.
 
       Do NOT `kanban_complete` this epic — it auto-completes when the P1 gate
       passes (base_anchor mark + >=2 chest_* marks + active shelter region). If
@@ -101,17 +129,18 @@ epics:
 
       Decompose into:
         1. FARM (assignee colony-farmer) — `mc bot checkout --near <lt_water_*
-           coords> --cap farm`; till a small wheat plot beside the water, plant
-           seeds, set a harvest/replant loop; mark the plot `farm_wheat` and a
-           `farm` region; `mc bot release`. Literal `mc` verb lines.
+           coords> --cap farm`; till a **small** plot beside water (start ~5×5,
+           not a full 9×9 field); plant seeds; mark `farm_wheat` (or `farm_*`);
+           `mc bot release`. Literal `mc` verb lines.
         2. STORAGE (assignee colony-builder) — `mc bot checkout --near
            <base_anchor coords> --cap build`; organize + label the base chests so
            wood / stone / food each have a home (record/keep `chest_*` marks);
            `mc bot release`.
 
-      Done when the P2 gate passes: a `farm` region active, >=3 `lt_*` marks on
-      the shared map, and wood/cobblestone/wheat each at/above their target_min in
-      base storage.
+      Done when the P2 gate passes (see phase-checklists.yaml): >=3 `lt_*`
+      marks on the shared map and >=1 `farm_*` mark (tilled plot). Base chest
+      organization is still required on the STORAGE card but inventory quantity
+      gates are deferred until chest snapshots populate.
 
   - phase: P3
     title: "[EPIC] [GENESIS2:P3] Open a mine"

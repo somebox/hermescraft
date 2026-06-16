@@ -1,0 +1,24 @@
+{
+  "world": "genesis2",
+  "regions": [
+    {
+      "id": "shelter",
+      "profile": "base",
+      "intent": "marker",
+      "status": "active",
+      "anchor": { "x": {spawn_x}, "y": {spawn_y}, "z": {spawn_z} },
+      "shape": { "kind": "column", "radius": 10, "y_min": {spawn_y}, "y_max": {spawn_y_max} },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": true,
+        "allow_harvest": true,
+        "overrides_global_denylist": false
+      },
+      "created": "{started_at}",
+      "updated": "{started_at}",
+      "notes": "Genesis-v2 boot region {run_id} — buildable shelter pad only. Do NOT add protect shells here. Structure is rcon-rendered after base_anchor."
+    }
+  ]
+}

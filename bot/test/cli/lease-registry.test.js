@@ -123,6 +123,22 @@ describe('bot lease registry', () => {
     assert.ok(Array.isArray(d.holders));
   });
 
+  it('touch-on-use renews the lease (releases body only after holder goes silent)', async () => {
+    process.env.HERMES_KANBAN_TASK = 't_touch';
+    const oid = ownerId();
+    await checkout({ bot: 'mox', ttl: 1 }); // ~1s window
+    // A live holder issuing a command (resolveLeaseUrl) before expiry extends it.
+    assert.equal(resolveLeaseUrl(oid), 'http://127.0.0.1:3007');
+    await new Promise((r) => setTimeout(r, 1100)); // original 1s window has elapsed
+    // Still held — touch-on-use pushed expiry to now+DEFAULT_TTL_S; a different
+    // owner therefore cannot steal it (the holder is still "alive").
+    assert.equal(resolveLeaseUrl(oid), 'http://127.0.0.1:3007');
+    process.env.HERMES_KANBAN_TASK = 't_touch_other';
+    const steal = await checkout({ bot: 'mox', ttl: 120 });
+    assert.equal(steal.ok, false);
+    process.env.HERMES_KANBAN_TASK = oid.includes(':') ? 't_touch' : oid;
+  });
+
   it('TTL reclaim when expired and idle', async () => {
     process.env.HERMES_KANBAN_TASK = 't_old';
     await checkout({ bot: 'mox', ttl: 1 });

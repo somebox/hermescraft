@@ -115,7 +115,7 @@ Fix mismatches with `mc place`, `mc dig`, and bulk verbs; re-verify before marki
 4. **Verify standability** at the corners — `mc reachable X Y Z` returns `best_stand` if a corner is buried/blocked.
 5. **Plan it out** — tell the player your plan in chat before placing blocks.
 6. **Mark the site** — `mc mark cabin_site` so you can `mc move @cabin_site` after gathering.
-7. **Clear + level** — `mc dig` trees / tall grass, then `mc level X1 Z1 X2 Z2 Y` over the footprint.
+7. **Clear + level** — fell trees with `mc fell_tree <x> <z>` (or, for a tree-filled area, `mc clear_strip X1 Z1 X2 Z2 surface_y=<feet_y> road_mode=true height=8` to take trunks + canopy), then flatten with `mc level_ground X1 Z1 X2 Z2 execute=true target=<y>`. NOTE: `level_ground` is **dry-run unless `execute=true`**, and each call caps at **16 columns** — tile a larger footprint into ≤16-column rectangles (multiple calls), don't try one big call.
 
 ## Vertical builds (structure vs scaffold)
 

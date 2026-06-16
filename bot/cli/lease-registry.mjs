@@ -15,7 +15,17 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 /** Sentinel: lease-mode active but no lease for this owner. */
 export const NO_LEASE = '';
 
-const DEFAULT_TTL_S = 3600;
+// The lease TTL doubles as the IDLE-RECLAIM window: a live holder renews it on
+// every command (touch-on-use, see resolveLeaseUrl), so the TTL only elapses once
+// the holder STOPS issuing commands — i.e. it timed out, was killed, or crashed.
+// At that point the body becomes reclaimable within one TTL instead of lingering
+// for an hour. Keep it comfortably longer than the worst gap between commands a
+// live worker has (slow-model planning turns), but short enough that a dead
+// worker's body frees quickly. Override with HERMES_BOT_LEASE_TTL_S if a flow
+// legitimately holds a body idle for longer.
+const DEFAULT_TTL_S = Number(process.env.HERMES_BOT_LEASE_TTL_S) > 0
+  ? Number(process.env.HERMES_BOT_LEASE_TTL_S)
+  : 600;
 const DEFER_RETRY_MS_MIN = 2000;
 const DEFER_RETRY_MS_MAX = 5000;
 
@@ -304,7 +314,22 @@ export function resolveLeaseUrl(owner_id) {
   if (!leaseModeEnabled()) return NO_LEASE;
   const row = leaseForOwner(owner_id);
   if (!row) return NO_LEASE;
-  if (row.expires_at_ms < Date.now()) return NO_LEASE;
+  const now = Date.now();
+  if (row.expires_at_ms < now) return NO_LEASE; // already lapsed — leave for reclaim
+  // Touch-on-use: resolving the lease means the holder is issuing a command, so
+  // it's alive — push expiry out by a full TTL. This is what releases a body on
+  // worker TIMEOUT/kill without an explicit `mc bot release`: a dead worker stops
+  // issuing commands, so its lease stops being renewed and lapses within one TTL,
+  // and the next checkout reclaims the now-idle body. `max()` never SHRINKS a
+  // longer explicit lease (e.g. a deliberate --ttl 7200 unattended job).
+  try {
+    const floor = now + DEFAULT_TTL_S * 1000;
+    runSql(
+      `UPDATE bot_leases SET expires_at_ms=max(expires_at_ms, ${floor}) WHERE bot='${sqlQuote(row.bot)}' AND owner_id='${sqlQuote(owner_id)}' AND lease_version=${row.lease_version};`,
+    );
+  } catch {
+    /* renewal is best-effort — a failed touch must never fail the command */
+  }
   return row.api_url;
 }
 
@@ -603,7 +628,7 @@ export async function status(opts = {}) {
 export async function dispatchBotSubcommand(positional, globals = {}) {
   const sub = (positional[0] || 'help').toLowerCase();
   const args = positional.slice(1);
-  const flags = { bot: null, ttl: null, force: false, asOperator: false, pool: false, near: null, cap: null, mark: null };
+  const flags = { bot: null, ttl: null, force: false, asOperator: false, pool: false, near: null, cap: null, mark: null, owner: null };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--bot' && args[i + 1]) flags.bot = args[++i];
@@ -614,6 +639,10 @@ export async function dispatchBotSubcommand(positional, globals = {}) {
     else if (a === '--near' && args[i + 1]) flags.near = args[++i];
     else if (a === '--cap' && args[i + 1]) flags.cap = args[++i];
     else if (a === '--mark' && args[i + 1]) flags.mark = args[++i];
+    // --owner releases a SPECIFIC owner's lease (orphan reaping by an operator /
+    // the genesis poller), instead of the caller's own env-derived owner. The
+    // busy-probe in release() still applies, so an in-flight body is never stolen.
+    else if (a === '--owner' && args[i + 1]) flags.owner = args[++i];
   }
 
   // --near X,Y,Z (comma-separated, e.g. --near 10,64,-20)
@@ -634,7 +663,7 @@ export async function dispatchBotSubcommand(positional, globals = {}) {
       mark: flags.mark || undefined,
     });
   } else if (sub === 'release') {
-    result = await release({ force: flags.force, asOperator: flags.asOperator });
+    result = await release({ force: flags.force, asOperator: flags.asOperator, owner_id: flags.owner || undefined });
   } else if (sub === 'renew') {
     result = await renew({ ttl: flags.ttl || undefined });
   } else if (sub === 'status') {

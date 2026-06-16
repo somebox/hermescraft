@@ -271,8 +271,10 @@ mc inventory
 |---|---|---|
 | Pickaxe of correct tier | stone for iron/coal/cobble, iron for gold/redstone, iron+ for diamond | Walk to base crafting table; `mc craft stone_pickaxe` (3 cobble + 2 sticks) |
 | Cobblestone or dirt | 64 (for pillar/wall/escape) | `mc collect cobblestone 64` near surface stone first |
-| Torches | 16 | `mc craft torch 16` (1 coal + 1 stick → 4 torches) |
+| Torches | 16 | **COAL is the blocking input.** No coal → get it FIRST: `mc collect coal_ore 8` (common y16–112) OR smelt logs→charcoal in a furnace. Then `mc craft torch 16` (1 coal/charcoal + 1 stick → 4 torches). |
 | Food (cooked) | 8 | Visit `food_chest` mark; `mc withdraw cooked_beef 8` |
+
+Light the descent with `mc place_torch <x> <y> <z>` at intervals (the `tunnel` primitive auto-spaces torches when you carry them). A dark shaft spawns mobs and loses the route back — torches are not optional.
 
 If the card body lists `prep_required:` with thresholds, those win over this default. If you can't meet the prep, **`kanban_block prep_required_unmet`** — don't try to mine without gear. The orchestrator will queue a `[SUPPLY]` precursor for the missing items.
 

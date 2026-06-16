@@ -20,7 +20,9 @@ A kanban **card** can stay open through desk-work (comments, `kanban_complete`) 
 | **Bot lease** | This session controls this registry body (`~/.hermes/bot-leases.db`). New. |
 | **Checkout policy** | Which free body to pick ([board-dynamics.md](board-dynamics.md) bind rules — pull face via `mc bot checkout`). MVP: explicit `--bot` + tie-break; see § Deferred. |
 
-**Keystone invariant:** No silent auto-checkout. After `mc bot release`, action verbs fail until `mc bot checkout`. Only `mc bot renew` extends TTL — ordinary `mc` verbs do not.
+**Keystone invariant:** No silent auto-**checkout**. After `mc bot release` (or once a lease lapses), action verbs hard-fail until `mc bot checkout` — `resolveLeaseUrl` only ever renews an *existing, still-valid* lease, never re-acquires a released or expired one.
+
+**Touch-on-use renewal (release-on-timeout):** ordinary `mc` verbs renew the active lease on every command — each command pushes `expires_at_ms` out by one TTL (`max()`, never shrinking a longer explicit lease). This is how a body frees itself on worker **timeout/kill**: a dead worker issues no more commands, so its lease stops being renewed, lapses within one TTL (`DEFAULT_TTL_S`, default 600s, override `HERMES_BOT_LEASE_TTL_S`), and the next checkout reclaims the now-idle body — instead of lingering for the full TTL after a *single* checkout. `mc bot renew` still sets an explicit window for unattended holds.
 
 ## State machine (per body)
 
@@ -134,6 +136,6 @@ Track status here (`planned` → `done` + PR link). Do not rely on chat or Curso
 | D7 | Genesis `phase-epics.yaml` + scout cards pull-lease decomposition (location-tagged, `--near`) | After D1–D4 on manual `[LEASE-TRIAL]` | done |
 | D8 | `skills/minecraft-bot-lease.md` + mint install | With D7 | done |
 | D9 | Assignee model: expertise profiles + body pool; **lease replaces gate-check as the genesis-v2 body-mutex** | With D7; explicit decision | done |
-| D10 | Clear lease on Hermes card reclaim | TTL-only reap pain in production | planned |
+| D10 | Release lease on worker death | TTL-only reap pain in production (1h leak deadlocked gv2-2026-06-15-3) | done — touch-on-use renewal + short idle TTL (general); genesis poller `reap_orphan_leases` reaps terminal-owner leases each tick + boot `clear_pool_leases` clean-slate |
 | D11 | Python dispatcher reads `bot-leases.db` | Pull path stable | planned |
 | D12 | Landfolk fleet lease-mode migration | Operator decision; default stay on `MC_API_URL` | planned |

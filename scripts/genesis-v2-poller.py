@@ -49,16 +49,49 @@ def main() -> int:
                            cwd=REPO_ROOT, capture_output=True, text=True, timeout=30)
         except Exception as e:
             sys.stderr.write(f"[poller] reconcile-marks failed: {e}\n")
+        # Gateway watchdog FIRST: the hermes dispatcher is an asyncio task that can
+        # die silently on a worker-crash path (gv2-2026-06-15-4), freezing dispatch
+        # while the process stays up. If gateway.log is silent while genesis cards
+        # await dispatch, bounce the gateway (cooldown-guarded) so a single mimo
+        # crash can't quietly stall a whole run.
+        try:
+            if g2.maybe_restart_dead_gateway(args.run_id):
+                sys.stderr.write("[poller] gateway dispatch looked dead (log silent + cards waiting) → restarted gateway\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] gateway watchdog failed: {e}\n")
+        # Reap orphan leases FIRST: a worker that timed out / gave up / was killed
+        # never ran `mc bot release`, so its body stays leased until the 1h TTL —
+        # leak all three and the pool deadlocks (gv2-2026-06-15-3). Release any
+        # lease whose owner task is terminal/absent before the pool-gate math runs,
+        # so freed bodies are visible to requeue this same tick.
+        try:
+            reaped = g2.reap_orphan_leases(args.run_id)
+            if reaped:
+                sys.stderr.write(f"[poller] reaped {len(reaped)} orphan lease(s): "
+                                 f"{[(r['bot'], r['status']) for r in reaped]}\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] orphan-lease reap failed: {e}\n")
         # Requeue deferred work: a worker that lost the lease race blocked itself
         # `no_free_body` (sticky — never retries alone). Once the pool frees up,
         # unblock those so dependents (e.g. BASE-SELECT waiting on all scouts)
         # don't stall behind them. Epics are never touched here.
         try:
-            requeued = g2.requeue_deferred(args.run_id)
-            if requeued:
-                sys.stderr.write(f"[poller] requeued {len(requeued)} deferred card(s): {requeued}\n")
+            gate = g2.sync_body_pool_gates(args.run_id)
+            if gate.get("blocked"):
+                sys.stderr.write(f"[poller] pool gate blocked {gate['blocked']}\n")
+            if gate.get("released"):
+                sys.stderr.write(f"[poller] pool gate released {gate['released']}\n")
+            if gate.get("released") or not gate.get("blocked"):
+                requeued = g2.requeue_deferred(args.run_id)
+                if requeued:
+                    sys.stderr.write(f"[poller] requeued {len(requeued)} deferred card(s): {requeued}\n")
         except Exception as e:
-            sys.stderr.write(f"[poller] requeue_deferred failed: {e}\n")
+            sys.stderr.write(f"[poller] body pool sync/requeue failed: {e}\n")
+        try:
+            if g2.maybe_render_shelter_for_run(args.run_id):
+                sys.stderr.write("[poller] shelter structure rcon-rendered at base_anchor\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] shelter render failed: {e}\n")
         # Poller-authoritative advance: complete the epic whose real-world gate
         # passes AND unblock the next (parked) phase epic. Sole promoter — the
         # next phase stays blocked until its predecessor's gate truly passes, so a
@@ -75,6 +108,33 @@ def main() -> int:
                         sys.stderr.write(f"[poller] snapshot {label} failed: {e}\n")
         except Exception as e:
             sys.stderr.write(f"[poller] gate check failed: {e}\n")
+        # Overseer review on phase transition: when the frontier phase's worker
+        # cards are done but the gate hasn't closed (e.g. BUILD placed 1 of 2
+        # chests, gv2-2026-06-15-4), file an [OVERSEE] card carrying the gate state
+        # so the read-only OVERSEER agent verifies + files the missing worker
+        # card(s) with judgment. This is the primary corrector; file_gate_gap_card
+        # remains a latent mechanical backstop. The stuck-worker path only fires on
+        # running/blocked workers, so this is what catches "done but gate unmet".
+        try:
+            gap = g2.detect_gate_gap(args.run_id)
+            if gap:
+                phase, failures = gap
+                cid = g2.file_overseer_card(args.run_id, phase, {"pass": False, "failures": failures})
+                if cid:
+                    sys.stderr.write(f"[poller] {phase} gate unmet + no active cards ({failures}) → overseer review card {cid}\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] overseer review failed: {e}\n")
+        # Continuous supply: keep base stocks above target_min. Reads the
+        # genesis-aware base inventory each tick; when a resource is below target
+        # (and the base is measurable), files a [GENESIS2:SUPPLY] card to the
+        # restocking expertise (dedup+cap). Makes gathering a continuous need.
+        try:
+            for d in g2.detect_supply_deficits():
+                cid = g2.file_supply_card(args.run_id, d)
+                if cid:
+                    sys.stderr.write(f"[poller] {d['resource']} low ({d['current']}<{d['target_min']}) → supply card {cid} ({d['assignee']})\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] supply check failed: {e}\n")
         # Planner re-engagement: a worker that's stuck — either RUNNING far longer
         # than a healthy one (~minutes) OR BLOCKED for a substantive reason (no
         # water, out of materials, unreachable; not no_free_body) — stalls the

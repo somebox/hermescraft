@@ -15,6 +15,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Source the repo-local .env so launched bodies inherit PAPERMCP_TOKEN. Without
+# it paperMcpConfig() returns null and the crafting server-side fallback — the
+# fix for the mineflayer/Paper 1.21 3x3 table-craft window race (#3399) — can't
+# fire, so ~half of all tool crafts silently produce nothing. genesis-v2 bypasses
+# hermescraft.sh (which sources this), which is exactly why it was lost here.
+if [ -f "$REPO_ROOT/.env" ]; then set -a; . "$REPO_ROOT/.env"; set +a; fi
 PY="$REPO_ROOT/.venv/bin/python3"           # needs mapcatalog + pyyaml
 MC_HOST="${MC_HOST:-192.168.1.202}"
 MC_PORT="${MC_PORT:-25565}"
@@ -81,6 +87,18 @@ case "$cmd" in
     done
     [[ -n "$SEED" ]] || { echo "--seed <int> required" >&2; exit 1; }
 
+    # Clean the agent layer before booting: stop the prior poller, kill orphaned
+    # gateway workers (they don't self-reap and would act on the about-to-be-
+    # archived board), and bounce the gateway with --replace so it restarts with
+    # NO stale workers, a cleared dispatch task, and the current kanban.failure_limit.
+    # The board is archived + reseeded below, so the fresh gateway dispatches only
+    # this run's cards. (Localhost single-project; authorised to bounce the gateway.)
+    echo "[genesis-v2] clean shutdown: prior poller + stale workers + gateway"
+    for pid in $(pgrep -f 'genesis-v2-poller' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    for pid in $(pgrep -f 'tui_gateway.slash_worker' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    nohup hermes gateway run --replace >> "$HOME/.hermes/logs/gateway.log" 2>&1 &
+    sleep 6
+
     echo "[genesis-v2] minting specialist profiles (model=$MODEL)"
     "$SCRIPT_DIR/genesis-v2-mint-profiles.sh" --model "$MODEL"
 
@@ -121,6 +139,18 @@ else:
     seed, spawn = g2.find_good_spawn(world, seed)
     print(f"[genesis-v2] natural land spawn @ {spawn} (seed={seed})")
 g2.wipe_marks()  # clean map — drop stale waypoints from prior runs
+# Clean-slate the lease pool: a prior run's worker may have leaked a lease (died
+# without `mc bot release`), which would lock that body for this run too. Start empty.
+_freed = g2.clear_pool_leases()
+if _freed:
+    print(f"[genesis-v2] cleared {len(_freed)} stale pool lease(s) from prior runs: {[f['bot'] for f in _freed]}")
+ctx_pre = {
+    "run_id": run_id, "seed": str(seed),
+    "spawn_x": str(spawn["x"]), "spawn_y": str(spawn["y"]), "spawn_z": str(spawn["z"]),
+    "started_at": g2.gl._iso_utc(),
+}
+g2.wipe_world_mines(world)
+g2.render_regions_world(spawn=spawn, ctx=ctx_pre)
 g2.world_setup(world, spawn)
 
 g2.reinit_board()

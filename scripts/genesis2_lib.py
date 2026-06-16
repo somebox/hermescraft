@@ -167,6 +167,26 @@ def _bot_connected(port: int) -> bool:
     return _bot_position(port) is not None
 
 
+def _dotenv_papermcp() -> dict[str, str]:
+    """PAPERMCP_* vars from the repo-local .env, so launched bodies get the
+    server-side craft fallback (paperMcpConfig) even when the launcher didn't
+    source .env — e.g. a manual restart_bodies. genesis-v2.sh sources .env too;
+    this is belt-and-suspenders for the table-craft window-race fix (#3399)."""
+    out: dict[str, str] = {}
+    envf = REPO_ROOT / ".env"
+    if not envf.exists():
+        return out
+    try:
+        for ln in envf.read_text().splitlines():
+            ln = ln.strip()
+            if ln.startswith("PAPERMCP_") and "=" in ln and not ln.startswith("#"):
+                k, v = ln.split("=", 1)
+                out[k.strip()] = v.strip()
+    except Exception:
+        pass
+    return out
+
+
 def restart_bodies(*, mc_host: str | None = None, mc_port: int | None = None, timeout_s: int = 120) -> None:
     """Kill + relaunch the pool's bot processes, then wait until all reconnect.
     Called AFTER reset_world: the world delete/recreate wedges mineflayer
@@ -191,7 +211,8 @@ def restart_bodies(*, mc_host: str | None = None, mc_port: int | None = None, ti
     node = shutil.which("node") or "node"
     for b in BODY_POOL.values():
         api, user = b["port"], b["user"]
-        env = {**os.environ, "API_PORT": str(api), "VIEWER_PORT": str(api + 1000),
+        env = {**os.environ, **_dotenv_papermcp(),
+               "API_PORT": str(api), "VIEWER_PORT": str(api + 1000),
                "BOT_MOVEMENT_PROFILE": "slow", "MC_HOST": host, "MC_PORT": str(port_mc),
                "MC_USERNAME": user}
         log = open(f"/tmp/{user.lower()}-bot.log", "a")
@@ -455,6 +476,21 @@ def wipe_world_mines(world: str) -> None:
         p.unlink()
     except FileNotFoundError:
         pass
+    # Clean-start the SHARED registry too: the pool bodies write genesis mines into
+    # mines-world.json (regionsWorld resolves to "world"), so prior-run genesis
+    # mines persist there and would count toward this run's P3 gate. Strip just the
+    # pool-authored mines; leave production mines (Flint/Tester etc.) intact.
+    if safe != "world":
+        sp = DATA_DIR / "mines-world.json"
+        try:
+            doc = gl._load_json(sp, default=None)
+        except Exception:
+            doc = None
+        if isinstance(doc, dict) and isinstance(doc.get("mines"), list):
+            kept = [m for m in doc["mines"] if not _is_genesis_mine(m)]
+            if len(kept) != len(doc["mines"]):
+                doc["mines"] = kept
+                sp.write_text(json.dumps(doc, indent=2) + "\n")
 
 
 def shelter_setblock_commands(world: str, ax: int, ay: int, az: int) -> list[str]:
@@ -750,17 +786,66 @@ def _regions() -> list[dict]:
     return gl._load_json(DATA_DIR / "regions-world.json", default={}).get("regions", [])
 
 
-def _inventory() -> dict:
-    """Base-storage inventory as {resource: {current, target_min}} via
-    base-inventory.py. Empty on any failure (gate then reports the shortfall)."""
+def _inventory(pool: str = "genesis-v2") -> dict:
+    """Genesis base-storage stock via base-inventory.py --pool <p> --suggest-json
+    (genesis-aware: Mox/Pip/Zee; structured, not parsed text). Returns
+    {ok, totals, chests_fresh, deficits:[{resource,current,target_min,deficit,
+    assignee,items}]} or {} on failure."""
     try:
-        p = subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "base-inventory.py"), "--json"],
+        p = subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "base-inventory.py"),
+                            "--pool", pool, "--suggest-json"],
                            cwd=REPO_ROOT, capture_output=True, text=True, timeout=30)
         if p.returncode == 0:
             return json.loads(p.stdout or "{}")
     except Exception:
         pass
     return {}
+
+
+GENESIS_BODY_USERS = frozenset(b["user"] for b in BODY_POOL.values())  # {Mox, Pip, Zee}
+
+
+def _is_genesis_mine(m: dict) -> bool:
+    """A mine authored by a genesis pool body (any entrance/point `by` in the
+    pool). Used to count genesis mines in the SHARED mines-world.json without
+    counting production mines (by Flint/Tester etc.) that also live there."""
+    if not isinstance(m, dict):
+        return False
+    authors: set[str] = set()
+    for e in (m.get("entrances") or []):
+        if isinstance(e, dict) and e.get("by"):
+            authors.add(e["by"])
+    for p in (m.get("points") or []):
+        if isinstance(p, dict) and p.get("by"):
+            authors.add(p["by"])
+    return bool(authors & GENESIS_BODY_USERS)
+
+
+def _genesis_mine_entries(safe_world: str) -> list:
+    """Mine-registry entries that belong to THIS genesis run.
+
+    The bot's mine store keys its file by config.behaviors.regionsWorld, which for
+    the genesis pool resolves to the default "world" (mineflayer can't see the
+    Multiverse name) — so genesis mines land in the SHARED data/mines-world.json
+    alongside production mines, NOT in mines-<multiverse-world>.json. The P3 gate
+    was reading the (nonexistent) per-world file, so it never saw the mines the
+    bodies actually registered (gv2-2026-06-15-4). Read both:
+      (a) mines-<safe_world>.json — honoured if a future run sets regionsWorld to
+          the multiverse name (proper per-world isolation), and
+      (b) mines-world.json, filtered to pool-authored mines — what the pool writes
+          today; the author filter keeps production mines from satisfying the gate.
+    """
+    out: list = []
+    per_world = gl._load_json(DATA_DIR / f"mines-{safe_world}.json", default={})
+    pw = per_world.get("mines", per_world) if isinstance(per_world, dict) else per_world
+    if isinstance(pw, list):
+        out += pw
+    if safe_world != "world":
+        shared = gl._load_json(DATA_DIR / "mines-world.json", default={})
+        sm = shared.get("mines", []) if isinstance(shared, dict) else shared
+        if isinstance(sm, list):
+            out += [m for m in sm if _is_genesis_mine(m)]
+    return out
 
 
 def check_phases() -> dict[str, dict]:
@@ -779,8 +864,7 @@ def check_phases() -> dict[str, dict]:
     except Exception:
         pass
     _safe_world = re.sub(r"[^\w.-]", "_", str(_gworld))
-    mines = gl._load_json(DATA_DIR / f"mines-{_safe_world}.json", default={})
-    mine_entries = mines.get("mines", mines) if isinstance(mines, dict) else mines
+    mine_entries = _genesis_mine_entries(_safe_world)
     out: dict[str, dict] = {}
     for phase, rule in rules.items():
         fails: list[str] = []
@@ -811,12 +895,20 @@ def check_phases() -> dict[str, dict]:
         inv_rule = rule.get("inventory", {})
         if inv_rule.get("resources"):
             inv = _inventory()
-            for res in inv_rule["resources"]:
-                r = inv.get(res) or {}
-                cur = r.get("current", 0)
-                need = r.get("target_min", 9999)
-                if cur < need:
-                    fails.append(f"{res} {cur} < {need}")
+            totals = inv.get("totals") or {}
+            # Fail-safe: only enforce the stock gate when the base is MEASURABLE
+            # (capture live + something stocked). An empty/zero or unreadable
+            # inventory (broken chest-snapshot capture, or nothing gathered yet)
+            # must NOT block the phase — the continuous-supply loop fills stocks,
+            # and this gate bites once anything is stocked. (Prevents the
+            # broken-capture-stalls-P2 failure the deferral was guarding against.)
+            measurable = bool(inv.get("ok")) and sum(int(v) for v in totals.values()) > 0
+            if measurable:
+                deficits = {d["resource"]: d for d in inv.get("deficits", [])}
+                for res in inv_rule["resources"]:
+                    d = deficits.get(res)
+                    if d:
+                        fails.append(f"{res} {d['current']} < {d['target_min']}")
         # Gates not yet implemented in code (P4 roads / far marks, P5
         # steady-state) must FAIL — otherwise an unevaluated rule reads as a
         # trivial pass and the poller would auto-complete the phase. Until these
@@ -852,6 +944,341 @@ def _free_body_count() -> int:
                    if not b.get("lease") and not b.get("busy") and b.get("reachable", True))
     except Exception:
         return 0
+
+
+# Kanban statuses that mean the owning worker is dead — its bot lease is an orphan.
+# (`archived` tasks are also dropped from `hermes list`, so an owner absent from
+# the board status map is treated as terminal too.)
+TERMINAL_TASK_STATUSES = {"archived", "done", "cancelled", "canceled"}
+
+
+def _pool_lease_rows() -> list[dict]:
+    """[{bot, owner_id, busy, reachable}] for pool bodies that currently hold a lease."""
+    try:
+        out = subprocess.run(["mc", "bot", "status", "--pool", "--json"],
+                             capture_output=True, text=True, timeout=15, cwd=REPO_ROOT)
+        bodies = json.loads(out.stdout or "{}").get("data", {}).get("bodies", [])
+    except Exception:
+        return []
+    rows = []
+    for b in bodies:
+        lease = b.get("lease")
+        if lease and lease.get("owner_id"):
+            rows.append({"bot": b.get("bot"), "owner_id": lease["owner_id"],
+                         "busy": bool(b.get("busy")), "reachable": b.get("reachable", True)})
+    return rows
+
+
+def _release_lease_by_owner(owner_id: str) -> bool:
+    """Release a specific owner's lease via `mc bot release --owner`. The CLI's
+    release() probes the body and refuses a busy one, so this can't steal a body
+    that's mid-action. Returns True only on a clean release."""
+    try:
+        r = subprocess.run(["mc", "bot", "release", "--owner", owner_id],
+                           capture_output=True, text=True, timeout=15, cwd=REPO_ROOT)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def reap_orphan_leases(run_id: str | None = None, *, reap_all: bool = False,
+                       status_by_id: dict[str, str] | None = None,
+                       lease_rows: list[dict] | None = None) -> list[dict]:
+    """Free pool-body leases whose owning kanban task is no longer active.
+
+    A worker that times out / gives up / is killed never runs `mc bot release`, so
+    its lease lingers until the 1h TTL (lease-registry.reapExpiredIdle only
+    reclaims AFTER expiry — it's task-agnostic and can't see the worker died).
+    That locks the body; once all three leak the pool deadlocks (see the
+    gv2-2026-06-15-3 postmortem). The poller CAN see board status, so it reaps
+    here: a lease whose owner task is terminal (archived/done/cancelled) or absent
+    from the board is released immediately. `release()` still refuses a busy body,
+    so an in-flight action is never stolen.
+
+    reap_all=True (boot clean-slate) releases every genesis-owned lease regardless
+    of status — a fresh run must start with an empty pool, which also clears a
+    prior run's leak ('body owned by previous run'). Only genesis-owned leases
+    (owner_id `genesis-v2:*`) are ever touched; operator/foreign leases are left.
+    """
+    rows = lease_rows if lease_rows is not None else _pool_lease_rows()
+    status = status_by_id if status_by_id is not None else _board_status_by_id()
+    prefix = f"{BOARD}:"
+    freed: list[dict] = []
+    for r in rows:
+        owner = r.get("owner_id") or ""
+        if not owner.startswith(prefix):
+            continue  # operator / foreign-board lease — never our business
+        task_id = owner[len(prefix):].split(":", 1)[0]  # board:task[:session]
+        st = status.get(task_id)
+        terminal = (st is None) or (st in TERMINAL_TASK_STATUSES)
+        if reap_all or terminal:
+            if _release_lease_by_owner(owner):
+                freed.append({"bot": r.get("bot"), "owner_id": owner, "status": st or "absent"})
+    return freed
+
+
+def clear_pool_leases() -> list[dict]:
+    """Boot clean-slate: drop all genesis-owned leases on the pool bodies so a
+    fresh run starts with an empty pool (prevents cross-run lease leaks)."""
+    return reap_orphan_leases(reap_all=True)
+
+
+# ── Gateway dispatch watchdog ────────────────────────────────────────────────
+# The hermes gateway runs the kanban dispatcher as an asyncio task. On a
+# worker-crash/auto-block path that task can throw and die SILENTLY while the
+# event loop keeps running (verified via py-spy on run gv2-2026-06-15-4: main
+# thread healthy in select(), but dispatch/promotion stopped and gateway.log went
+# quiet). The process looks alive, so nothing restarts it, and the run stalls
+# with ready/todo cards that never dispatch. Until that's fixed upstream, the
+# poller watches gateway.log and bounces the gateway when it goes silent while
+# work is waiting.
+GATEWAY_LOG = Path.home() / ".hermes" / "logs" / "gateway.log"
+GATEWAY_STALE_S = 180             # 3 missed 60s dispatch ticks → task suspected dead
+GATEWAY_RESTART_COOLDOWN_S = 300  # don't bounce again until a restart has had time to take
+
+
+def _dispatch_looks_dead(log_age_s: float, pending: int) -> bool:
+    """Pure decision: gateway.log silent past the stale threshold AND genesis
+    cards are waiting for dispatch/promotion (ready/todo)."""
+    return log_age_s >= GATEWAY_STALE_S and pending > 0
+
+
+def detect_dead_dispatch(*, status_by_id: dict[str, str] | None = None,
+                         now: float | None = None) -> bool:
+    try:
+        age = (now if now is not None else time.time()) - GATEWAY_LOG.stat().st_mtime
+    except Exception:
+        return False  # no log to judge by — don't act
+    status = status_by_id if status_by_id is not None else _board_status_by_id()
+    pending = sum(1 for s in status.values() if s in ("ready", "todo"))
+    return _dispatch_looks_dead(age, pending)
+
+
+def restart_gateway() -> bool:
+    """Replace the gateway process (clears a dead dispatch task + reloads config).
+    Authorised for this localhost, single-project setup."""
+    try:
+        subprocess.Popen(["hermes", "gateway", "run", "--replace"], cwd=REPO_ROOT,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return True
+    except Exception:
+        return False
+
+
+def maybe_restart_dead_gateway(run_id: str, *, now: float | None = None) -> bool:
+    """Watchdog: bounce the gateway if its dispatch task looks dead, with a
+    cooldown (stamped per run) so a slow-to-start gateway can't trigger a restart
+    loop. Returns True if a restart was issued."""
+    if not detect_dead_dispatch(now=now):
+        return False
+    now = now if now is not None else time.time()
+    stamp = run_dir(run_id) / "gateway-restart.stamp"
+    try:
+        last = float(stamp.read_text().strip())
+    except Exception:
+        last = 0.0
+    if now - last < GATEWAY_RESTART_COOLDOWN_S:
+        return False
+    if restart_gateway():
+        try:
+            stamp.write_text(str(now))
+        except Exception:
+            pass
+        return True
+    return False
+
+
+# ── Gate-gap re-engagement ───────────────────────────────────────────────────
+# The colony can mark every worker card done yet leave a phase gate unmet — e.g.
+# BUILD completes having placed 1 of 2 required chests (run gv2-2026-06-15-4).
+# With the phase epic prematurely completed and zero active cards, nothing
+# recovers: the stuck-worker detector only fires on running/blocked workers, not
+# on "gate unmet + idle". This re-engages the planner to close the specific gap.
+MAX_GATE_GAP_PER_PHASE = 3  # cap re-engagement cards per phase (else operator problem)
+
+
+def _active_card_count() -> int:
+    """Cards the gateway/workers are actively moving (ready/todo/running). Excludes
+    parked epics (blocked) and done/archived. Returns -1 if the board is unreadable
+    (caller treats that as 'don't act')."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return -1
+    return sum(1 for t in tasks
+               if (t.get("status") or "").lower() in ("ready", "todo", "running"))
+
+
+def detect_gate_gap(run_id: str, *, gates: dict | None = None,
+                    active: int | None = None) -> tuple[str, list[str]] | None:
+    """Returns (frontier_phase, failures) when the lowest failing phase gate is
+    unmet AND there are no active cards (work has run dry without satisfying the
+    gate), else None."""
+    active = active if active is not None else _active_card_count()
+    if active != 0:
+        return None  # work still in flight (or board unreadable) — let it run
+    gates = gates if gates is not None else check_phases()
+    for phase in sorted(gates):  # P1..P5
+        g = gates[phase]
+        if not g.get("pass"):
+            return (phase, list(g.get("failures", [])))
+    return None
+
+
+def file_gate_gap_card(run_id: str, phase: str, failures: list[str]) -> str | None:
+    """Re-engage the PLANNER when a phase gate is unmet but no work is in flight.
+    Dedup (skip if an open GATE-GAP card for this phase exists) + cap. The planner
+    acts via the board only. Returns the new card id, or None."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    tag = f"GATE-GAP {phase}"
+    prior = 0
+    for t in tasks:
+        if tag in (t.get("title", "") or ""):
+            prior += 1
+            if (t.get("status") or "").lower() not in ("done", "archived"):
+                return None  # already open for this phase
+    if prior >= MAX_GATE_GAP_PER_PHASE:
+        return None  # budget spent — leave parked for the operator
+    fails = "; ".join(failures) or "gate unmet"
+    title = f"[GENESIS2:GATE-GAP] {tag}"
+    body = (
+        f"Phase {phase} is INCOMPLETE but every worker card is done and nothing is in "
+        f"flight — the colony ran dry without satisfying the gate.\n\n"
+        f"Unmet {phase} gate conditions: {fails}\n\n"
+        f"You are the PLANNER. Act via the BOARD only — never touch a body:\n"
+        f"  1. Read the shared map + board: what exists vs what the gate needs above.\n"
+        f"  2. File the SMALLEST worker card(s) that close the gap, with the lease ritual "
+        f"(`mc bot checkout --near <coords> --cap <role>` -> work -> `mc bot release`) and "
+        f"literal `mc` verb lines. (E.g. a missing chest: place a chest on cleared ground "
+        f"beside base_anchor and `mc mark chest_storage_<n> --at <x> <y> <z>`.)\n"
+        f"  3. Then `kanban_complete` THIS card. Do NOT `kanban_complete` a phase epic, "
+        f"and do NOT duplicate work already done."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
+
+
+# ── Overseer review (primary phase-boundary verifier) ────────────────────────
+# At a phase transition the OVERSEER (read-only agent) verifies the gate and
+# either confirms the phase or files the missing worker card(s) — agent judgment
+# where file_gate_gap_card was a mechanical stand-in (now a latent deeper
+# backstop). Dedup + cap like the others.
+MAX_OVERSEER_PER_PHASE = 3
+
+
+def file_overseer_card(run_id: str, phase: str, gate: dict) -> str | None:
+    """File a colony-overseer review card carrying the phase's gate state. Skips
+    if an open OVERSEE card for this phase exists, or once the per-phase budget is
+    spent (operator problem then). Returns the new card id, or None."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    tag = f"OVERSEE {phase}"
+    prior = 0
+    for t in tasks:
+        if tag in (t.get("title", "") or ""):
+            prior += 1
+            if (t.get("status") or "").lower() not in ("done", "archived"):
+                return None  # already open for this phase
+    if prior >= MAX_OVERSEER_PER_PHASE:
+        return None
+    fails = gate.get("failures", [])
+    status_line = "ALL CONDITIONS PASS" if gate.get("pass") else ("FAILING -> " + ("; ".join(fails) or "gate unmet"))
+    title = f"[GENESIS2:OVERSEE] {tag}"
+    body = (
+        f"Phase {phase} reached a transition: its worker cards are done but the "
+        f"phase has not closed. Verify it.\n\n"
+        f"CURRENT {phase} GATE STATE (ground truth — you have no body, do not "
+        f"re-measure the world): {status_line}\n\n"
+        f"You are the OVERSEER (read-only). If every condition passes, comment "
+        f"`verified: {phase} complete` and `kanban_complete` THIS card (the poller "
+        f"closes the phase). If any condition fails, file the SMALLEST worker "
+        f"card(s) that close each failure — correct expertise assignee, lease "
+        f"ritual + literal `mc <verb>` lines — checking the board first to avoid "
+        f"duplicates, then `kanban_complete` THIS card. NEVER `kanban_complete` a "
+        f"phase epic."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-overseer", "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
+
+
+# ── Continuous supply ────────────────────────────────────────────────────────
+# Resource supply is a continuous colony need, not a one-off. Each tick, read the
+# genesis-aware base inventory; when a resource is below target_min (and the base
+# is measurable — something stocked), file a [GENESIS2:SUPPLY] card to the
+# expertise that restocks it. Dedup + cap so a persistent deficit doesn't spam.
+MAX_SUPPLY_PER_RESOURCE = 2
+
+
+def detect_supply_deficits(pool: str = "genesis-v2") -> list[dict]:
+    """Resources below target_min in base storage (genesis-aware, structured).
+    Empty when capture isn't live / nothing stocked yet (fail-safe — don't spam
+    SUPPLY cards before any chest is filled) or all resources are at target."""
+    inv = _inventory(pool)
+    if not inv.get("ok"):
+        return []
+    totals = inv.get("totals") or {}
+    if sum(int(v) for v in totals.values()) <= 0:
+        return []  # unmeasured/empty base — let the phase work stock the first chest
+    return inv.get("deficits", [])
+
+
+def file_supply_card(run_id: str, deficit: dict) -> str | None:
+    """File a [GENESIS2:SUPPLY] worker card for a below-target resource, routed to
+    the genesis expertise that restocks it (deficit['assignee']). Dedup (skip an
+    open SUPPLY card for this resource) + cap. Returns the new card id, or None."""
+    res = deficit.get("resource")
+    assignee = deficit.get("assignee") or "colony-gatherer"
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    tag = f"SUPPLY {res}"
+    prior = 0
+    for t in tasks:
+        if tag in (t.get("title", "") or ""):
+            prior += 1
+            if (t.get("status") or "").lower() not in ("done", "archived"):
+                return None  # already an open supply card for this resource
+    if prior >= MAX_SUPPLY_PER_RESOURCE:
+        return None
+    cur, tmin = deficit.get("current"), deficit.get("target_min")
+    items = ", ".join((deficit.get("items") or [])[:4])
+    title = f"[GENESIS2:SUPPLY] {tag}"
+    body = (
+        f"Base {res} is low: {cur} < target_min {tmin}. Restock it and deposit to a "
+        f"base chest, then `kanban_complete`.\n\n"
+        f"Lease ritual + literal mc verbs: `mc bot checkout --near <base_anchor coords> "
+        f"--cap <your role> --mark base_anchor` -> gather/mine {res} ({items}) -> deposit "
+        f"to the `chest_{res}` (or a labeled base chest) -> `mc bot release`. Verify the "
+        f"chest count rose before completing — base-inventory is the authoritative check."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", assignee, "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
 
 
 def _latest_block_reason(tid: str) -> str:
