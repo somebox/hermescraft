@@ -368,11 +368,6 @@ export function createInteractionActions(services) {
       if (!wasOpen) {
         await b.activateBlock(gate);
         opened = true;
-        // Immediately re-clear pathfinder state — closes the microsecond
-        // window between activateBlock returning and the next-statement
-        // setGoal(null) below. mineflayer-pathfinder's tick loop runs at
-        // ~50ms; without this, a tick that fires between activate-resolve
-        // and the standard clear can pursue a stale path.
         try { b.pathfinder.setGoal(null); } catch {}
       }
     } catch (e) {
@@ -392,13 +387,27 @@ export function createInteractionActions(services) {
     // F56: doors sit on raised platforms in real builds; the bot often
     // needs to jump up 1 block to enter the doorway. Detection-based
     // jump nudges handle this without flailing.
-    const TRAVERSAL_TIMEOUT_MS = 3500;
+    const TRAVERSAL_TIMEOUT_MS = 5000;
     let crossedGate = false;
     let reached = false;
+    // F69c: sneak through the doorway. An open door's 0.1875-thick slab + the
+    // bot's 0.6-wide hitbox leaves almost no clearance; at full walk speed the
+    // bot wedges on the slab and stalls just past the threshold (observed on
+    // south-facing closed->opened doors in the traversal matrix). Sneaking caps
+    // speed (~1.3 m/s) and tightens control so it threads the gap. Pathfinder
+    // gets this via F69b; the direct-walk needs its own. (Timeout bumped to 5s to
+    // cover the slower sneak speed across the doorway.)
+    b.setControlState('sneak', true);
     b.setControlState('forward', true);
     let lastPos = { x: b.entity.position.x, z: b.entity.position.z };
     let stallStart = 0;
-    let jumpUntil = 0;
+    let nudgeUntil = 0;
+    let strafeLeft = true;       // F69d: alternate strafe side each nudge
+    let strafeDir = null;
+    const clearNudge = () => {
+      try { b.setControlState('jump', false); } catch { /* ignore */ }
+      if (strafeDir) { try { b.setControlState(strafeDir, false); } catch { /* ignore */ } strafeDir = null; }
+    };
     try {
       while (Date.now() - traverseStart < TRAVERSAL_TIMEOUT_MS) {
         await sleep(100);
@@ -415,33 +424,65 @@ export function createInteractionActions(services) {
         }
         if (dist < 1.0) { reached = true; break; }
 
-        // F56: stall + jump-nudge. If bot's XZ has barely changed over
-        // 250ms, it's collided with the doorframe / platform edge.
-        // Trigger a 400ms jump pulse to step up 1 block. Repeat at most
-        // every 600ms to avoid jump-spam.
+        // Stall recovery. If bot's XZ has barely changed over 250ms it's
+        // collided with the doorframe, a platform edge, or an open-door slab.
+        // F56: pulse jump (step up a 1-block lip). F69d: ALSO pulse a strafe
+        // (alternating left/right) — an open door's slab sits on one x-edge of
+        // the doorway and the centered 0.6 hitbox can wedge on it; a sideways
+        // nudge slips it onto the clear side. Both pulse for ~600ms, then clear.
         const dx = me.x - lastPos.x;
         const dz = me.z - lastPos.z;
         const moved = Math.hypot(dx, dz);
         if (moved < 0.05) {
           if (stallStart === 0) stallStart = now;
-          else if (now - stallStart >= 250 && now >= jumpUntil) {
+          else if (now - stallStart >= 250 && now >= nudgeUntil) {
             b.setControlState('jump', true);
-            jumpUntil = now + 600;
+            strafeDir = strafeLeft ? 'left' : 'right';
+            b.setControlState(strafeDir, true);
+            strafeLeft = !strafeLeft;
+            nudgeUntil = now + 600;
             stallStart = 0;
           }
         } else {
           stallStart = 0;
         }
-        if (now >= jumpUntil) {
-          try { b.setControlState('jump', false); } catch { /* ignore */ }
-        }
+        if (now >= nudgeUntil) clearNudge();
         lastPos = { x: me.x, z: me.z };
       }
     } finally {
+      clearNudge();
       b.setControlState('forward', false);
       try { b.setControlState('jump', false); } catch { /* ignore */ }
+      try { b.setControlState('sneak', false); } catch { /* ignore */ }
     }
 
+    if (!reached) {
+      // F69e: the direct-walk wedged in the doorway. The matrix shows a N/S
+      // handedness split — direct-walk threads N/E/W but wedges on the swung
+      // slab of a freshly-opened S-facing door, while pathfinder (with F69b
+      // sneak) threads an OPEN door of that facing. The door is OPEN now, so
+      // fall back to pathfinder — but first RETREAT off the door (the earlier
+      // pathfinder-from-the-wedge attempt failed because the bot was physically
+      // stuck). Backing toward the approach side is open space, then pathfinder
+      // re-crosses the now-open door cleanly.
+      try {
+        const backDir = new Vec3(
+          Math.sign((gate.position.x + 0.5) - destPos.x),
+          0,
+          Math.sign((gate.position.z + 0.5) - destPos.z));
+        const backPoint = new Vec3(
+          gate.position.x + 0.5 + backDir.x * 3, gate.position.y,
+          gate.position.z + 0.5 + backDir.z * 3);
+        await b.lookAt(backPoint);
+        b.setControlState('forward', true);
+        await sleep(900);                       // walk back off the door to un-wedge
+        b.setControlState('forward', false);
+        await ensureWithinReach({ bot: b, goals }, { x: destX, y: destY, z: destZ },
+          { range: 1.3, capMs: 6000 });
+        if (b.entity.position.distanceTo(destPos) < 1.6) reached = true;
+      } catch { /* fall through to the failure return below */ }
+      finally { try { b.setControlState('forward', false); } catch { /* ignore */ } }
+    }
     if (!reached) {
       // Try to close gate before returning the failure (best-effort).
       try { const g2 = b.blockAt(gateVec); if (g2) await b.activateBlock(g2); } catch {}

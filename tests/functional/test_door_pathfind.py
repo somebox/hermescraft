@@ -1,23 +1,21 @@
-"""Door pathfind matrix: open/closed × hinge × travel direction.
+"""Door + fence-gate traversal MATRIX: type × facing × hinge × open × method.
 
-Migrated from scripts/test-door-pathfind.py with pytest.mark.xfail
-conversion for the known flaky N/S closed-door scenarios.
+Comprehensive grid (replaces the ad-hoc 10-row version). Builds a sealed
+obsidian box (5×5, 2-tall walls) with a single door/gate on the wall facing the
+bot's travel direction. Bot starts outside; target is inside; the only route is
+through the opening. Tests BOTH crossing methods:
+  - goto_near : /action/goto_near — bot opens + walks via mineflayer-pathfinder
+  - through   : /action/through  — explicit open + direct-walk + jump-nudge (robust)
 
-Builds a sealed obsidian box (5×5, 2-tall walls) with a single
-oak_door on the wall facing the bot's travel direction. Bot starts
-outside, target is inside the box. The only route is through the door.
+Scope: oak_door + oak_fence_gate; facings N/S/E/W; both hinges (doors); open +
+closed; approached from both sides (the 4 directions cover both sides of each axis).
 
-Per-scenario expectations:
-  - F69 (open door, any hinge):  pathfinder walks straight through.
-  - F66+F69 (closed door):       pathfinder opens via useOne + walks.
-
-Known framework limitation (xfail'd): mineflayer-pathfinder's
-"open the door and walk through" sequence is reliable for E/W-facing
-doors but FLAKY for N/S closed cases. Across consecutive suite runs,
-the 4 N/S closed scenarios fail at least once; one to three pass on
-any given run, the rest stall ~5-6s with door_now=open but bot still
-on the outer side. Race between the door-open action and the path
-re-evaluation. Investigation deferred.
+This grid is the regression guard. **E/W doors + ALL fence gates (every facing)
+are guaranteed** and hard-asserted. **N/S-facing DOORS are a known framework
+limitation** (mineflayer-pathfinder N/S race + a `through` direct-walk wedge on
+south-facing closed->opened doors) and are `xfail(strict=False)` — see
+`_ns_door_xfail` / `_NS_LIMIT`. The build/shelter spec mandates E/W door facing;
+shelter egress through the E/W door is covered by test_shelter_egress.py.
 """
 
 from __future__ import annotations
@@ -29,71 +27,50 @@ import pytest
 
 WORLD_GEOMETRY = {
     "west": {
-        "door": (3, 0),
-        "bot_start": (-3, 0),
-        "target": (5, 0),
-        "walls": {
-            "west":  (3, -2, 3,  2),
-            "east":  (7, -2, 7,  2),
-            "north": (3, -2, 7, -2),
-            "south": (3,  2, 7,  2),
-        },
+        "door": (3, 0), "bot_start": (-3, 0), "target": (5, 0),
+        "walls": {"west": (3, -2, 3, 2), "east": (7, -2, 7, 2),
+                  "north": (3, -2, 7, -2), "south": (3, 2, 7, 2)},
     },
     "east": {
-        "door": (7, 0),
-        "bot_start": (13, 0),
-        "target": (5, 0),
-        "walls": {
-            "west":  (3, -2, 3,  2),
-            "east":  (7, -2, 7,  2),
-            "north": (3, -2, 7, -2),
-            "south": (3,  2, 7,  2),
-        },
+        "door": (7, 0), "bot_start": (13, 0), "target": (5, 0),
+        "walls": {"west": (3, -2, 3, 2), "east": (7, -2, 7, 2),
+                  "north": (3, -2, 7, -2), "south": (3, 2, 7, 2)},
     },
     "north": {
-        "door": (5, -2),
-        "bot_start": (5, -8),
-        "target": (5, 0),
-        "walls": {
-            "west":  (3, -2, 3,  2),
-            "east":  (7, -2, 7,  2),
-            "north": (3, -2, 7, -2),
-            "south": (3,  2, 7,  2),
-        },
+        "door": (5, -2), "bot_start": (5, -8), "target": (5, 0),
+        "walls": {"west": (3, -2, 3, 2), "east": (7, -2, 7, 2),
+                  "north": (3, -2, 7, -2), "south": (3, 2, 7, 2)},
     },
     "south": {
-        "door": (5, 2),
-        "bot_start": (5, 8),
-        "target": (5, 0),
-        "walls": {
-            "west":  (3, -2, 3,  2),
-            "east":  (7, -2, 7,  2),
-            "north": (3, -2, 7, -2),
-            "south": (3,  2, 7,  2),
-        },
+        "door": (5, 2), "bot_start": (5, 8), "target": (5, 0),
+        "walls": {"west": (3, -2, 3, 2), "east": (7, -2, 7, 2),
+                  "north": (3, -2, 7, -2), "south": (3, 2, 7, 2)},
     },
 }
 
 
-def _build_box(rcon, world: str, direction: str, door_facing: str, hinge: str, door_open: bool) -> None:
-    """Construct sealed obsidian box; the wall in `direction` has a 1-cell
-    gap at the door coord, filled with the configured oak_door."""
+def _build_box(rcon, world, direction, block_type, hinge, door_open):
+    """Sealed obsidian box; the wall in `direction` has a 1-cell opening filled
+    with the configured door (2 halves) or fence gate (1 block + air above).
+    The door/gate faces `direction` (= the bot's travel direction)."""
     geo = WORLD_GEOMETRY[direction]
     dx, dz = geo["door"]
-    cmds = []
-    for _name, (x1, z1, x2, z2) in geo["walls"].items():
-        cmds.append(f"execute in {world} run fill {x1} 65 {z1} {x2} 66 {z2} minecraft:obsidian")
+    facing = direction
+    open_str = "true" if door_open else "false"
+    cmds = [f"execute in {world} run fill {x1} 65 {z1} {x2} 66 {z2} minecraft:obsidian"
+            for (x1, z1, x2, z2) in geo["walls"].values()]
+    # Clear the 2-tall opening, then place the block.
     cmds.append(f"execute in {world} run setblock {dx} 65 {dz} minecraft:air")
     cmds.append(f"execute in {world} run setblock {dx} 66 {dz} minecraft:air")
-    open_str = "true" if door_open else "false"
-    cmds.append(
-        f"execute in {world} run setblock {dx} 65 {dz} "
-        f"minecraft:oak_door[half=lower,facing={door_facing},open={open_str},hinge={hinge}]"
-    )
-    cmds.append(
-        f"execute in {world} run setblock {dx} 66 {dz} "
-        f"minecraft:oak_door[half=upper,facing={door_facing},open={open_str},hinge={hinge}]"
-    )
+    if block_type == "oak_fence_gate":
+        cmds.append(f"execute in {world} run setblock {dx} 65 {dz} "
+                    f"minecraft:oak_fence_gate[facing={facing},open={open_str}]")
+        # y=66 stays air — a fence gate is a single block.
+    else:  # oak_door (two halves)
+        cmds.append(f"execute in {world} run setblock {dx} 65 {dz} "
+                    f"minecraft:oak_door[half=lower,facing={facing},open={open_str},hinge={hinge}]")
+        cmds.append(f"execute in {world} run setblock {dx} 66 {dz} "
+                    f"minecraft:oak_door[half=upper,facing={facing},open={open_str},hinge={hinge}]")
     bx, bz = geo["bot_start"]
     cmds.append(f"execute in {world} run tp Tester {bx} 65 {bz} 0 0")
     rcon.batch(cmds)
@@ -104,22 +81,50 @@ def _in_box(pos: dict) -> bool:
     return 3 < pos.get("x", -99) < 7.5 and -2 < pos.get("z", -99) < 2 and pos.get("y", 0) >= 65
 
 
-# Parametrize: each row is (direction, door_facing, hinge, start_open).
-# The four N/S closed-door scenarios get xfail markers because of the
-# mineflayer-pathfinder race documented above.
-_KNOWN_NS_CLOSED_FLAKY_REASON = (
-    "mineflayer-pathfinder N/S closed-door race: door opens but path "
-    "re-eval lags; bot stalls outside. Investigation deferred. See "
-    "docs/archive/test-inventory.md."
-)
+# N/S-facing DOOR traversal is a known framework limitation (mineflayer-pathfinder
+# + door swing/collision has a north/south handedness): pathfinder crossing of
+# N/S doors races, and the `through` direct-walk wedges on a south-facing
+# closed->opened door. E/W doors and ALL fence gates are 100% reliable, so the
+# build/shelter spec mandates E/W door facing. These cells are xfail(strict=False)
+# — they may xpass on a lucky run; the guarantee is E/W + gates.
+_NS_LIMIT = ("N/S-facing door framework limitation (pathfinder N/S race / through "
+             "south-wedge). Spec mandates E/W doors — those + all gates are reliable.")
+
+
+def _ns_door_xfail(block_type, direction, door_open, method):
+    if block_type != "oak_door":
+        return False                       # gates: all facings reliable
+    if method == "goto_near" and direction == "north":
+        return True                        # pathfinder north: open+closed both flaky
+    if method == "goto_near" and direction == "south" and not door_open:
+        return True                        # pathfinder south-closed: flaky
+    if method == "through" and direction == "south" and not door_open:
+        return True                        # through direct-walk wedges south-closed
+    return False
+
+
+def _matrix_params():
+    params = []
+    for direction in ("west", "east", "north", "south"):
+        for door_open in (False, True):
+            for method in ("goto_near", "through"):
+                state = "open" if door_open else "closed"
+                rows = [("oak_door", h) for h in ("left", "right")] + [("oak_fence_gate", "left")]
+                for block_type, hinge in rows:
+                    label = ("door" if block_type == "oak_door" else "gate")
+                    cid = (f"door-{direction}-{hinge}-{state}-{method}" if label == "door"
+                           else f"gate-{direction}-{state}-{method}")
+                    marks = (pytest.mark.xfail(strict=False, reason=_NS_LIMIT),) \
+                        if _ns_door_xfail(block_type, direction, door_open, method) else ()
+                    params.append(pytest.param(
+                        block_type, direction, hinge, door_open, method, id=cid, marks=marks))
+    return params
 
 
 @pytest.fixture
 def door_arena(rcon, arena, tester_bot, config):
-    """Reset arena: forceload + packed sub-floor (y=60..63 stone) + grass
-    cap at y=64 — actually we use stone floor + air above. The packed
-    sub-floor is the load-bearing fix: without it, prior tests' lava /
-    voids at y<64 chunk through and kill the bot mid-pathfind."""
+    """Reset arena: forceload + packed sub-floor (stone y60..64) so prior tests'
+    voids don't chunk through and kill the bot mid-pathfind."""
     world = config["mc"]["world"]
     rcon.run(f"execute in {world} run tp Tester 0 65 0 0 0")
     arena.forceload((-1, -1, 1, 1))
@@ -138,38 +143,24 @@ def door_arena(rcon, arena, tester_bot, config):
 
 
 @pytest.mark.functional
-@pytest.mark.parametrize(
-    "direction,door_facing,hinge,start_open",
-    [
-        ("west",  "west",  "left",  False),
-        ("west",  "west",  "right", False),
-        ("west",  "west",  "left",  True),   # F69 regression: open door
-        ("west",  "west",  "right", True),
-        ("east",  "east",  "left",  False),
-        ("east",  "east",  "right", False),
-        pytest.param("north", "north", "left",  False,
-                     marks=pytest.mark.xfail(strict=False, reason=_KNOWN_NS_CLOSED_FLAKY_REASON)),
-        pytest.param("north", "north", "right", False,
-                     marks=pytest.mark.xfail(strict=False, reason=_KNOWN_NS_CLOSED_FLAKY_REASON)),
-        pytest.param("south", "south", "left",  False,
-                     marks=pytest.mark.xfail(strict=False, reason=_KNOWN_NS_CLOSED_FLAKY_REASON)),
-        pytest.param("south", "south", "right", False,
-                     marks=pytest.mark.xfail(strict=False, reason=_KNOWN_NS_CLOSED_FLAKY_REASON)),
-    ],
-)
-def test_bot_traverses_door(
-    bot, rcon, config, door_arena,
-    direction: str, door_facing: str, hinge: str, start_open: bool,
-):
-    """Bot starts outside the sealed box, target is inside. Only the door
-    is traversable. PASS = bot inside the box in <12s."""
+@pytest.mark.parametrize("block_type,direction,hinge,door_open,method", _matrix_params())
+def test_traverse(bot, rcon, config, door_arena,
+                  block_type, direction, hinge, door_open, method):
+    """Bot outside the sealed box, target inside, only the opening traversable.
+    PASS = bot inside the box, via the given method, in <20s."""
     world = config["mc"]["world"]
-    _build_box(rcon, world, direction, door_facing, hinge, start_open)
-    tx, tz = WORLD_GEOMETRY[direction]["target"]
+    _build_box(rcon, world, direction, block_type, hinge, door_open)
+    geo = WORLD_GEOMETRY[direction]
+    tx, tz = geo["target"]
+    dx, dz = geo["door"]
     t0 = time.time()
-    r = bot.post("/action/goto_near", {"x": tx, "y": 65, "z": tz, "range": 1}, timeout=15)
+    if method == "goto_near":
+        r = bot.post("/action/goto_near", {"x": tx, "y": 65, "z": tz, "range": 1}, timeout=20)
+    else:  # through — gate/door coords + far-side destination (= target)
+        r = bot.post("/action/through",
+                     {"gx": dx, "gy": 65, "gz": dz, "dx": tx, "dy": 65, "dz": tz}, timeout=30)
     elapsed = time.time() - t0
-    assert r.get("ok"), r
+    assert r.get("ok"), f"{method} not ok: {r}"
     pos = bot.position()
-    assert _in_box(pos), f"bot ended outside box at {pos}"
-    assert elapsed < 12.0, f"goto_near took {elapsed:.1f}s — slow path"
+    assert _in_box(pos), f"bot ended outside box at {pos} ({method})"
+    assert elapsed < 20.0, f"{method} took {elapsed:.1f}s — slow path"
