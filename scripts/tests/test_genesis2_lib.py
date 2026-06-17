@@ -298,6 +298,27 @@ def test_reap_orphan_leases_skips_foreign_owners(monkeypatch):
     assert released == []                            # never touch non-genesis leases
 
 
+def test_supply_source_picks_nearest_and_handles_missing(monkeypatch, tmp_path):
+    import json
+    monkeypatch.setattr(g2, "DATA_DIR", tmp_path)
+    (tmp_path / "locations-base.json").write_text(json.dumps({
+        "base_anchor": {"x": 0, "y": 64, "z": 0},
+        "lt_stone_far": {"x": 100, "y": 64, "z": 0},
+        "lt_stone_near": {"x": 10, "y": 64, "z": 0},
+        "lt_stone_stale": {"x": 1, "y": 64, "z": 0, "stale": True},  # ignored
+        "lt_wood_a": {"x": 50, "y": 64, "z": 0},
+    }))
+    # stone → nearest non-stale lt_stone_*
+    name, coords = g2._supply_source("stone")
+    assert name == "lt_stone_near" and coords == {"x": 10, "y": 64, "z": 0}
+    # wood → the lt_wood mark
+    assert g2._supply_source("wood")[0] == "lt_wood_a"
+    # coal → no mine_/lt source present besides stone; coal prefixes are mine_,lt_stone_
+    assert g2._supply_source("coal")[0] == "lt_stone_near"
+    # food → no farm_/lt_water_ marked → None (card will escalate)
+    assert g2._supply_source("food") is None
+
+
 def test_mark_shelter_chests(monkeypatch, tmp_path):
     import json
     monkeypatch.setattr(g2, "DATA_DIR", tmp_path)

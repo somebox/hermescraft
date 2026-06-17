@@ -1345,6 +1345,37 @@ def detect_supply_deficits(pool: str = "genesis-v2") -> list[dict]:
     return inv.get("deficits", [])
 
 
+# Where each supply resource actually comes from, by shared-mark prefix (nearest
+# wins). A worker sent to "mine stone near base_anchor" on a grass plain just
+# wedges itself in the 7×7 shelter (gv2-2026-06-17-2); send it to the source.
+SUPPLY_SOURCE_PREFIXES = {
+    "wood": ("lt_wood_",),
+    "stone": ("lt_stone_", "mine_"),
+    "coal": ("mine_", "lt_stone_"),   # coal is underground — head to a mine
+    "food": ("farm_", "lt_water_"),
+}
+
+
+def _supply_source(res: str) -> tuple[str, dict] | None:
+    """Nearest known source mark (name, coords) for a supply resource, or None if
+    none is marked yet. Nearest to base_anchor so hauling stays short."""
+    loc = gl._load_json(DATA_DIR / "locations-base.json", default={})
+    if not isinstance(loc, dict):
+        return None
+    prefixes = SUPPLY_SOURCE_PREFIXES.get(res, ())
+    cands = [(n, m) for n, m in loc.items()
+             if isinstance(m, dict) and "x" in m and not m.get("stale")
+             and any(n.startswith(p) for p in prefixes)]
+    if not cands:
+        return None
+    anchor = _base_anchor_coords()
+    if anchor:
+        cands.sort(key=lambda nm: (nm[1]["x"] - anchor["x"]) ** 2
+                   + (nm[1]["z"] - anchor["z"]) ** 2)
+    n, m = cands[0]
+    return n, {"x": int(m["x"]), "y": int(m["y"]), "z": int(m["z"])}
+
+
 def file_supply_card(run_id: str, deficit: dict) -> str | None:
     """File a [GENESIS2:SUPPLY] worker card for a below-target resource, routed to
     the genesis expertise that restocks it (deficit['assignee']). Dedup (skip an
@@ -1368,14 +1399,32 @@ def file_supply_card(run_id: str, deficit: dict) -> str | None:
     cur, tmin = deficit.get("current"), deficit.get("target_min")
     items = ", ".join((deficit.get("items") or [])[:4])
     title = f"[GENESIS2:SUPPLY] {tag}"
-    body = (
-        f"Base {res} is low: {cur} < target_min {tmin}. Restock it and deposit to a "
-        f"base chest, then `kanban_complete`.\n\n"
-        f"Lease ritual + literal mc verbs: `mc bot checkout --near <base_anchor coords> "
-        f"--cap <your role> --mark base_anchor` -> gather/mine {res} ({items}) -> deposit "
-        f"to the `chest_{res}` (or a labeled base chest) -> `mc bot release`. Verify the "
-        f"chest count rose before completing — base-inventory is the authoritative check."
-    )
+    src = _supply_source(res)
+    if src:
+        sname, sc = src
+        body = (
+            f"Base {res} is low: {cur} < target_min {tmin}. Go to the known {res} "
+            f"SOURCE, restock, haul back to base, deposit, then `kanban_complete`.\n\n"
+            f"Literal mc verbs (do NOT gather/mine at base — there is no {res} there):\n"
+            f"`mc bot checkout --near {sc['x']},{sc['y']},{sc['z']} --cap <your role> --mark {sname}`\n"
+            f"`mc go_mark {sname}`   (the {res} source)\n"
+            f"gather/mine {res} ({items}) at the source\n"
+            f"`mc go_mark base_anchor` then deposit to `chest_{res}` (or chest_wood/chest_food)\n"
+            f"`mc bot release`. Verify the chest count rose — base-inventory is authoritative."
+        )
+    else:
+        # No source on the shared map yet — flailing at base wedges the bot in the
+        # cramped shelter. Tell the worker to escalate so the planner scouts/opens
+        # a source instead of churning.
+        body = (
+            f"Base {res} is low: {cur} < target_min {tmin}, but NO {res} source is "
+            f"marked on the shared map yet. Do NOT try to mine/gather at base_anchor "
+            f"(there is none there — you will just get stuck).\n\n"
+            f"`mc bot checkout --near <base_anchor coords> --cap <your role>`, run "
+            f"`mc marks` to confirm no {res} source exists, then `mc bot release` and "
+            f"`kanban_block` with reason `prep_required_unmet: no {res} source marked "
+            f"(needs scout/mine first)`. The planner will open one."
+        )
     r = _hermes(["create", title, "--body", body, "--assignee", assignee, "--json"])
     if r.returncode == 0:
         try:
