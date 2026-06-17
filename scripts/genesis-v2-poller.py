@@ -38,6 +38,16 @@ def main() -> int:
     args = ap.parse_args()
     seen: set[str] = set()
     while True:
+        # Sanitize worker-card skills FIRST: the planner LLM sometimes attaches one
+        # of its own skills to a worker card, which the agent rejects at boot
+        # ("Unknown skill(s)") → crash-blocked (gv2-2026-06-17-1). Null the skills
+        # column + unblock so the card re-dispatches clean before anything else.
+        try:
+            stripped = g2.strip_worker_card_skills()
+            if stripped:
+                sys.stderr.write(f"[poller] stripped force-loaded skills off worker card(s): {stripped}\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] skill-strip failed: {e}\n")
         # Promote per-bot marks to the shared map BEFORE checking gates: workers
         # `mc mark` to their private locations-<bot>.json (the reconciler is the
         # sole writer to the shared file), so without this the gates never see

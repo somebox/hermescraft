@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -1057,8 +1058,9 @@ GATEWAY_RESTART_COOLDOWN_S = 300  # don't bounce again until a restart has had t
 
 
 def _dispatch_looks_dead(log_age_s: float, pending: int) -> bool:
-    """Pure decision: gateway.log silent past the stale threshold AND genesis
-    cards are waiting for dispatch/promotion (ready/todo)."""
+    """Pure decision: gateway.log silent past the stale threshold AND a
+    DISPATCHABLE card is waiting (a `ready` card the dispatcher should be
+    claiming but isn't)."""
     return log_age_s >= GATEWAY_STALE_S and pending > 0
 
 
@@ -1069,7 +1071,13 @@ def detect_dead_dispatch(*, status_by_id: dict[str, str] | None = None,
     except Exception:
         return False  # no log to judge by — don't act
     status = status_by_id if status_by_id is not None else _board_status_by_id()
-    pending = sum(1 for s in status.values() if s in ("ready", "todo"))
+    # Count only READY cards. `todo` cards are correctly parked behind unmet
+    # `after:`/parent deps — the dispatcher is RIGHT not to touch them, so a quiet
+    # log alongside todo-only work is normal, not dead (gv2-2026-06-17-1: with
+    # BASE-SELECT blocked, its todo dependents kept tripping a false "dispatch
+    # dead" and thrashed the shared gateway every tick). Only an unclaimed `ready`
+    # card + silent log signals a genuinely dead dispatch task.
+    pending = sum(1 for s in status.values() if s == "ready")
     return _dispatch_looks_dead(age, pending)
 
 
@@ -1106,6 +1114,55 @@ def maybe_restart_dead_gateway(run_id: str, *, now: float | None = None) -> bool
             pass
         return True
     return False
+
+
+# ── Worker-card skill sanitizer ──────────────────────────────────────────────
+# Genesis specialist workers must NEVER carry a force-loaded `skills` field on a
+# card: their profile already loads the right expertise skill. But the planner
+# LLM sometimes attaches one of its OWN skills (gv2-2026-06-17-1: it stamped
+# `minecraft-steward-blueprint-plan` onto all three builder cards) — which the
+# upstream agent rejects at boot with a fatal `Unknown skill(s)`, crashing the
+# worker to the failure cap → blocked. No CLI can clear a card's skills, and the
+# crash is upstream, so the deterministic recovery is to null the column directly
+# on the board DB and unblock anything the bad skill crash-blocked.
+BOARD_DB = Path.home() / ".hermes" / "kanban" / "boards" / BOARD / "kanban.db"
+
+
+def strip_worker_card_skills() -> list[str]:
+    """Null `skills` on any genesis WORKER card that carries one, and unblock cards
+    the bad skill crash-blocked. Worker-only (planner/overseer untouched). Returns
+    the stripped card ids. Self-healing: a freshly-poisoned card may crash once
+    before the next poll, but then runs clean."""
+    if not BOARD_DB.exists() or not COLONY_WORKER_ASSIGNEES:
+        return []
+    placeholders = ",".join("?" for _ in COLONY_WORKER_ASSIGNEES)
+    rows: list[tuple] = []
+    try:
+        con = sqlite3.connect(str(BOARD_DB), timeout=10)
+        try:
+            con.execute("PRAGMA busy_timeout=5000")
+            rows = con.execute(
+                f"SELECT id, status FROM tasks WHERE assignee IN ({placeholders}) "
+                f"AND skills IS NOT NULL AND skills != '' AND skills != '[]'",
+                tuple(COLONY_WORKER_ASSIGNEES),
+            ).fetchall()
+            if rows:
+                con.executemany("UPDATE tasks SET skills=NULL WHERE id=?",
+                                [(r[0],) for r in rows])
+                con.commit()
+        finally:
+            con.close()
+    except Exception:
+        return []
+    stripped: list[str] = []
+    for tid, status in rows:
+        if (status or "").lower() == "blocked":
+            try:
+                _hermes(["unblock", str(tid)])
+            except Exception:
+                pass
+        stripped.append(str(tid))
+    return stripped
 
 
 # ── Gate-gap re-engagement ───────────────────────────────────────────────────

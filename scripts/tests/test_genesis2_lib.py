@@ -298,6 +298,35 @@ def test_reap_orphan_leases_skips_foreign_owners(monkeypatch):
     assert released == []                            # never touch non-genesis leases
 
 
+def test_strip_worker_card_skills(monkeypatch, tmp_path):
+    import sqlite3
+    db = tmp_path / "kanban.db"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE tasks (id TEXT, assignee TEXT, skills TEXT, status TEXT)")
+    con.executemany("INSERT INTO tasks VALUES (?,?,?,?)", [
+        ("t_build", "colony-builder", '["minecraft-steward-blueprint-plan"]', "blocked"),
+        ("t_scout", "colony-scout", '["x"]', "ready"),
+        ("t_clean", "colony-gatherer", None, "ready"),       # no skills → untouched
+        ("t_planner", "colony-planner", '["minecraft-steward-blueprint-plan"]', "ready"),  # not a worker → untouched
+    ])
+    con.commit(); con.close()
+    monkeypatch.setattr(g2, "BOARD_DB", db)
+    monkeypatch.setattr(g2, "COLONY_WORKER_ASSIGNEES",
+                        frozenset({"colony-builder", "colony-scout", "colony-gatherer"}))
+    unblocked = []
+    monkeypatch.setattr(g2, "_hermes", lambda args, **kw: unblocked.append(args) or None)
+
+    stripped = g2.strip_worker_card_skills()
+    assert set(stripped) == {"t_build", "t_scout"}
+    # blocked worker card was unblocked; ready one was not
+    assert unblocked == [["unblock", "t_build"]]
+    con = sqlite3.connect(str(db))
+    skills = dict(con.execute("SELECT id, skills FROM tasks").fetchall())
+    con.close()
+    assert skills["t_build"] is None and skills["t_scout"] is None   # worker skills nulled
+    assert skills["t_planner"] == '["minecraft-steward-blueprint-plan"]'  # planner untouched
+
+
 def test_dispatch_looks_dead_thresholds():
     # stale log + work waiting → dead
     assert g2._dispatch_looks_dead(g2.GATEWAY_STALE_S + 1, pending=2) is True
@@ -317,7 +346,11 @@ def test_detect_dead_dispatch_uses_log_age_and_pending(monkeypatch, tmp_path):
     assert g2.detect_dead_dispatch(now=stale_now) is True            # stale + a ready card
     assert g2.detect_dead_dispatch(now=log.stat().st_mtime + 1) is False  # fresh log
     monkeypatch.setattr(g2, "_board_status_by_id", lambda: {"a": "done", "b": "blocked"})
-    assert g2.detect_dead_dispatch(now=stale_now) is False           # stale but no ready/todo
+    assert g2.detect_dead_dispatch(now=stale_now) is False           # stale but no ready
+    # gv2-2026-06-17-1 regression: todo cards parked behind unmet deps must NOT
+    # read as dead dispatch (the dispatcher is correct not to claim them).
+    monkeypatch.setattr(g2, "_board_status_by_id", lambda: {"a": "todo", "b": "todo", "c": "blocked"})
+    assert g2.detect_dead_dispatch(now=stale_now) is False           # stale + todo-only → alive
 
 
 def test_maybe_restart_dead_gateway_respects_cooldown(monkeypatch, tmp_path):

@@ -308,10 +308,14 @@ Seven hard rules:
    create duplicates — report status and stop. Read the shared map + board to
    decide what to file next.
 4. Route worker cards by ASSIGNEE only (colony-scout / colony-gatherer /
-   colony-builder / colony-farmer / colony-miner / colony-road). Do NOT set a
-   \`skills\` field on a card — the assignee's profile already loads the right
-   skill, and naming skills yourself causes 'Unknown skill' rejections (there is
-   no \`minecraft-scouting\`; the scout's skill is \`minecraft-scouting-site\`).
+   colony-builder / colony-farmer / colony-miner / colony-road). NEVER set a
+   \`skills\` field on a worker card — NOT your own skills, NOT any skill name.
+   The assignee's profile already force-loads the right skill. A skills field the
+   worker can't load (e.g. your \`minecraft-steward-blueprint-plan\` on a builder)
+   CRASHES the worker at boot with 'Unknown skill(s)' → the card retries, crashes
+   again, and ends up blocked (gv2-2026-06-17-1 lost the whole base chain this
+   way). Leave skills unset; pick the right ASSIGNEE and let its profile supply
+   the skill.
 5. Resource supply is a CONTINUOUS colony need, not a one-off. Keep stocks above
    target (food / wood / stone / coal). The poller files \`[GENESIS2:SUPPLY]\`
    cards when a resource drops below its target_min — treat those as first-class
