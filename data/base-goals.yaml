@@ -1,8 +1,12 @@
 # Genesis benchmark supply targets (not production 512/768).
 food:
   items: [bread, cooked_beef, cooked_chicken, cooked_porkchop, cooked_mutton, cooked_rabbit, baked_potato, apple, golden_apple, melon_slice]
-  target_min: 64
-  target_ok: 128
+  # Lowered 64->16 (gv2-2026-06-17-3): 64 prepared-food items is unrealistic for
+  # an early colony with no cooking pipeline — it dead-locked the P2 gate while
+  # bots starved. 16 is an achievable starter pantry (apples from felling + a
+  # first wheat/cook batch). Raise once a real food loop exists.
+  target_min: 16
+  target_ok: 32
   assignee: flint
 
 wood:
