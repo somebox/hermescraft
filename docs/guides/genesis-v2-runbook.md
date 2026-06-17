@@ -97,7 +97,7 @@ Same logic applies to wood/stone/coal targets vs the colony's gather/mine
 throughput — don't set a benchmark the workers can't reach in a run.
 
 ## Known remaining ceilings (not reset issues — awareness)
-- **Craft window-race** (Paper 1.21 3×3 table): `stone_pickaxe no-op … retry N/6`. Intermittent; PaperMCP fallback (C1) reduces it but it still slows crafting workers.
+- **Craft window-race** (Paper 1.21 3×3 table, mineflayer #3399): native `b.craft` lands only ~1-in-5 attempts. **Mitigated** (gv2-2026-06-17-4): `crafting.js` now does the reliable PaperMCP server-side craft FIRST for bench recipes when PaperMCP is configured (`paperMcpConfig()` non-null), skipping the racy 6× native loop; bodies without PaperMCP fall back to native retries. Compounding factor: a bot stuck in water can't hold still to craft at all — keep the base on dry ground (F2/water-safety).
 - **P4 (roads) gate is implemented** — `lt_far` = ≥2 `lt_*` marks ≥`far_distance` (64) blocks from `base_anchor` (distance calc), and `roads` = ≥1 `road_*` mark (ROAD cards mark after the roadplan stake+torch loop). It closes once a road is staked + marked.
 - **P5 (steady-state) gate is NOT implemented** — `check_phases` returns "steady_state gate not yet implemented" (it needs a base-stock time-series over a ~30-min window). The colony stops at P5 until that's built; P4 and below run end-to-end.
 - **Planner SUPERVISE diagnoses can be wrong** — it once called a stuck-but-working miner a "systemic lease failure". Treat its diagnoses as hypotheses; check the body log (`/tmp/<user>-bot.log`) for ground truth.

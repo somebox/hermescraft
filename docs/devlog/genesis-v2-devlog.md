@@ -9,6 +9,40 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-17 — craft window-race: verified, isolated, mitigated (PaperMCP-first)
+
+gv2-2026-06-17-4 stalled at P2 (no wood/farm). Dug into it with the live bodies.
+
+**Root cause (confirmed):** mineflayer 4.23 + Paper 1.21 3×3 table-craft window
+race (#3399). Native `b.craft` lands only ~1-in-5 attempts. Run logs: 48 crafts
+raced, 18 ran the full 6-retry loop, 9 PaperMCP fallbacks fired (9/9 succeeded,
+tools got made). It's a PERFORMANCE problem, not functional — but each bench
+craft burns ~4–5s of racing, and that devours worker iteration/time budget.
+
+**Isolated:** the reliable PaperMCP server-side craft was the LAST resort —
+`MAX_CRAFT_ATTEMPTS = requiresBench ? 6 : 1`, fallback only after all 6 native
+attempts fail.
+
+**Live-debug findings:**
+- PaperMCP server-side commands are 100% reliable live (fill/setblock/tp/give
+  9/9 across two setups) — exactly what `serverSideCraftFallback` uses (clear +
+  give). The fix's mechanism is proven, not just logged.
+- A bot stuck in water can't hold still to craft at all — a plain 2×2 stick craft
+  timed out at 30s while pip was in a water-escape loop (18 min). So the colony's
+  craft failures are window-race PLUS environmental instability (watery base).
+- Couldn't force a clean isolated native-craft count on a test platform — the
+  live bots won't stay where they're tp'd (they path back to their work area;
+  `goals-*.json` is empty so it's not a persisted goal). Native rate is well
+  sampled by the run logs anyway.
+
+**Fix:** `crafting.js` now does the PaperMCP server-side craft FIRST for bench
+recipes when `paperMcpConfig()` is non-null (ingredients intact), skipping the
+racy native loop; bodies without PaperMCP (or a fallback that doesn't land) fall
+through to the native retries unchanged. Backward-compatible — the 41 existing
+craft tests pass (no PaperMCP in the test env → native path).
+
+---
+
 ## 2026-06-16 — gv2-2026-06-16-1 live findings (Gaps 1–5 validation + new base-prep gaps)
 
 First live run with Gaps 1–5. **Validated WINS (the new behaviors fire in-world):**

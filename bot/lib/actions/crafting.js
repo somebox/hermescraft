@@ -296,6 +296,34 @@ export function createCraftingActions(services) {
         );
       }
 
+      // ── PaperMCP-first for bench crafts: skip the racy native window. ──
+      // The mineflayer/Paper 1.21 3x3 table-craft race (#3399) lands only ~1-in-5
+      // native attempts, so the loop below otherwise burns up to 6 tries (~4-5s)
+      // before falling back to the reliable server-side craft. When PaperMCP is
+      // configured AND the recipe needs a table, do that server-side craft FIRST —
+      // one command vs seconds of racing (gv2-2026-06-17-4: ~150 no-op retries
+      // starved the colony). Bodies WITHOUT PaperMCP, or a fallback that doesn't
+      // land, fall through to the native retry loop unchanged.
+      if (requiresBench && paperMcpConfig()) {
+        const requiredIngs = recipeIngredientMap(recipe, ctx.world.mcData);
+        const ingsIntact = Object.entries(requiredIngs).every(
+          ([n, perCraft]) => (startedInventory[n] || 0) >= perCraft * invocations,
+        );
+        if (ingsIntact) {
+          const fb = await serverSideCraftFallback({
+            itemName, count: invocations, recipe, ctx, b,
+            getMyName, log, sleep, inventoryAt,
+            startedInventory, requiredIngs,
+            expectedDelta: invocations * resultPerCraft, reason,
+          });
+          if (fb) {
+            if (table?.position) autoMarkCraftingTable(table.position);
+            return fb;
+          }
+          // server-side craft didn't land — fall through to native attempts.
+        }
+      }
+
       // ── Attempt craft, retrying the silent no-op window race. ──
       // For table-required recipes, mineflayer 4.23 + Paper 1.21 has a race
       // where b.craft silently no-ops (returns 0 items, no throw) if the bot
@@ -764,7 +792,7 @@ async function serverSideCraftFallback({
   if (!pmcpCfg) return null;
   const username = getMyName();
   if (!username) return null;
-  if (log) log(`[craft] server-side fallback for ${itemName} x${count} (mineflayer delta=0 bug)`);
+  if (log) log(`[craft] server-side craft for ${itemName} x${count} (PaperMCP — avoids 3x3 window race)`);
 
   const totalIngs = {};
   for (const [n, perCraft] of Object.entries(requiredIngs)) {
