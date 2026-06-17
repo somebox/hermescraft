@@ -86,7 +86,8 @@ on a live run.
 
 ## Known remaining ceilings (not reset issues — awareness)
 - **Craft window-race** (Paper 1.21 3×3 table): `stone_pickaxe no-op … retry N/6`. Intermittent; PaperMCP fallback (C1) reduces it but it still slows crafting workers.
-- **P4 (roads) + P5 (steady-state) gates are not implemented** — `check_phases` returns "gate not yet implemented", so those epics never auto-complete. The colony stops at P4 until the roads registry + `lt_far` distance gate are built (mirror the mine registry).
+- **P4 (roads) gate is implemented** — `lt_far` = ≥2 `lt_*` marks ≥`far_distance` (64) blocks from `base_anchor` (distance calc), and `roads` = ≥1 `road_*` mark (ROAD cards mark after the roadplan stake+torch loop). It closes once a road is staked + marked.
+- **P5 (steady-state) gate is NOT implemented** — `check_phases` returns "steady_state gate not yet implemented" (it needs a base-stock time-series over a ~30-min window). The colony stops at P5 until that's built; P4 and below run end-to-end.
 - **Planner SUPERVISE diagnoses can be wrong** — it once called a stuck-but-working miner a "systemic lease failure". Treat its diagnoses as hypotheses; check the body log (`/tmp/<user>-bot.log`) for ground truth.
 
 ## Quick post-launch verification (one pass)

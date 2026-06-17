@@ -830,6 +830,18 @@ def _shared_marks() -> set[str]:
     return set()
 
 
+def _marks_with_coords() -> dict[str, tuple[int, int, int]]:
+    """Shared marks as {name: (x, y, z)} for distance gates (P4 lt_far)."""
+    loc = gl._load_json(DATA_DIR / "locations-base.json", default={})
+    out: dict[str, tuple[int, int, int]] = {}
+    items = loc.items() if isinstance(loc, dict) else (
+        (m.get("name"), m) for m in loc if isinstance(m, dict))
+    for n, m in items:
+        if n and isinstance(m, dict) and "x" in m and "z" in m:
+            out[str(n)] = (int(m["x"]), int(m.get("y", 0)), int(m["z"]))
+    return out
+
+
 def _regions() -> list[dict]:
     return gl._load_json(DATA_DIR / "regions-world.json", default={}).get("regions", [])
 
@@ -899,6 +911,7 @@ def _genesis_mine_entries(safe_world: str) -> list:
 def check_phases() -> dict[str, dict]:
     rules = gl.parse_yaml_simple(TEMPLATES_DIR / "phase-checklists.yaml").get("phases", {})
     marks = _shared_marks()
+    coords = _marks_with_coords()
     regions = {r.get("id"): r for r in _regions()}
     # Mine registry is PER-WORLD (data/mines-<world>.json). Read the active
     # genesis world's file — NOT the hardcoded "mines-world.json", which is the
@@ -957,15 +970,33 @@ def check_phases() -> dict[str, dict]:
                     d = deficits.get(res)
                     if d:
                         fails.append(f"{res} {d['current']} < {d['target_min']}")
-        # Gates not yet implemented in code (P4 roads / far marks, P5
-        # steady-state) must FAIL — otherwise an unevaluated rule reads as a
-        # trivial pass and the poller would auto-complete the phase. Until these
-        # are built, the phase cannot close.
-        for unimpl in ("roads", "steady_state"):
-            if unimpl in rule:
-                fails.append(f"{unimpl} gate not yet implemented")
-        if "lt_far_min" in rule.get("marks", {}):
-            fails.append("lt_far gate not yet implemented")
+        # P4 lt_far: >= lt_far_min resource marks (lt_*) at least far_distance
+        # blocks (x/z) from base_anchor — the "far resources worth a road" signal.
+        if "lt_far_min" in mk:
+            far = float(mk.get("far_distance", 64))
+            anchor = _base_anchor_coords()
+            n_far = 0
+            if anchor:
+                ax, az = anchor["x"], anchor["z"]
+                for name, (x, _y, z) in coords.items():
+                    if str(name).startswith("lt_") and \
+                            ((x - ax) ** 2 + (z - az) ** 2) ** 0.5 >= far:
+                        n_far += 1
+            if n_far < mk["lt_far_min"]:
+                fails.append(f"lt_far {n_far} < {mk['lt_far_min']} (>= {int(far)} blocks from base)")
+        # P4 roads: >= confirmed_min staked road chains. ROAD cards `mc mark
+        # road_<dest>` after the roadplan stake+torch loop, so road_* marks are
+        # the colony's confirmed-route record (same trust model as mine_*/farm_*).
+        rd = rule.get("roads", {})
+        if "confirmed_min" in rd:
+            n_roads = sum(1 for n in marks if str(n).startswith("road_"))
+            if n_roads < rd["confirmed_min"]:
+                fails.append(f"confirmed roads {n_roads} < {rd['confirmed_min']}")
+        # P5 steady-state remains a time-window gate (sample base stock over a
+        # 30-min window) — separate effort; keep it failing so P5 can't trivially
+        # auto-complete until built.
+        if "steady_state" in rule:
+            fails.append("steady_state gate not yet implemented")
         out[phase] = {"pass": not fails, "failures": fails}
     return out
 

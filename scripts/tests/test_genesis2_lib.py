@@ -84,6 +84,32 @@ def test_render_regions_world_writes_buildable_shelter(tmp_path, monkeypatch):
     assert reg["anchor"]["x"] == 5
 
 
+def test_check_phases_p4_roads_gate(tmp_path, monkeypatch):
+    monkeypatch.setattr(g2, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(g2, "_inventory", lambda *a, **k: {"ok": False})
+    monkeypatch.setattr(g2, "_regions", lambda: [])
+    marks = {
+        "base_anchor": {"x": 0, "y": 64, "z": 0},
+        "lt_stone_far": {"x": 100, "y": 64, "z": 0},   # 100 >= 64 → far
+        "lt_wood_far": {"x": 0, "y": 64, "z": 80},     # 80 >= 64 → far
+        "lt_wood_near": {"x": 10, "y": 64, "z": 0},    # near → doesn't count
+        "road_to_stone": {"x": 50, "y": 64, "z": 0},   # 1 confirmed road
+    }
+    def write(m):
+        (tmp_path / "locations-base.json").write_text(json.dumps(m))
+        monkeypatch.setattr(g2, "_shared_marks", lambda: set(m))
+    write(marks)
+    p4 = g2.check_phases()["P4"]["failures"]
+    assert not any("lt_far" in f for f in p4)          # 2 far lt_* satisfies lt_far_min=2
+    assert not any("confirmed roads" in f for f in p4) # 1 road_* satisfies confirmed_min=1
+    # Drop a far resource + the road → both P4 sub-gates fail.
+    m2 = {k: v for k, v in marks.items() if k not in ("lt_wood_far", "road_to_stone")}
+    write(m2)
+    p4b = g2.check_phases()["P4"]["failures"]
+    assert any("lt_far" in f for f in p4b)
+    assert any("confirmed roads" in f for f in p4b)
+
+
 def test_check_phases_p1_shelter_buildable(tmp_path, monkeypatch):
     monkeypatch.setattr(g2, "DATA_DIR", tmp_path)
     (tmp_path / "locations-base.json").write_text(
