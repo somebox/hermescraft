@@ -77,12 +77,24 @@ on a live run.
 | F1 | Shelter render once `base_anchor` exists | bots built into terrain / couldn't exit | `genesis2_lib.maybe_render_shelter_for_run` (poller) | `cfg.shelter_rendered=True` |
 | F2 | **Dry, solid foundation** — force cobble pad + drain water under/around the base | base sited over water drowned the colony | `shelter_setblock_commands` (foundation fill + `air replace water`) | no drowning; base walkable |
 | F3 | **Chests pre-marked** — `chest_wood`+`chest_food` written at render | render PROVIDES the chests; BUILD churned ~20m trying to place a 2nd one it had no materials for | `genesis2_lib.mark_shelter_chests` | `mc marks` shows 2 `chest_*` at base |
+| F3b | **Starter food pantry** — render rcon-stocks `chest_food` with `STARTER_FOOD_COUNT` bread + writes a render snapshot base-inventory reads | colony can't build a cooking loop early; bots starved + P2 dead-locked at `food 2/64` | `genesis2_lib.{shelter_setblock_commands,write_starter_provision_snapshot}` + `base-inventory.load_render_snapshots` | P2 food gate clears at boot; a later live chest snapshot supersedes the pantry |
 | F4 | Poller skill-strip backstop | null `skills` on worker cards the planner poisoned + unblock | `strip_worker_card_skills` (poller step 1) | poller log "stripped … skills" (only if poisoned) |
 | F5 | Gateway watchdog (no false-positive) | restart ONLY when ready work waits AND nothing is running (running>0 proves dispatch alive); `todo`-on-deps and ready-behind-a-full-pool are backpressure, not death — both thrashed the gateway + killed agents before this gate | `detect_dead_dispatch` (`ready>0 and running==0`) | ~0 restarts on a healthy run |
 | F6 | SUPPLY cards target the resource SOURCE | "mine stone near base_anchor" wedged miners in the cramped shelter on a grass plain | `_supply_source` + `file_supply_card` | SUPPLY card body says `go_mark lt_stone_*`, not base |
 | F7 | Reconcile marks, lease reap, pool-gate requeue, advance_phases, gate-gap/overseer, stall-supervise | poller-authoritative phase progression + recovery | `genesis-v2-poller.py` loop | poller log shows steps |
 
 ---
+
+## Keep these three aligned (goals ↔ farm ↔ pantry)
+A supply target with no matching production path dead-locks its phase gate. The
+food trio must move together:
+- `data/base-goals.yaml` **`food.target_min`** (the P2 gate; currently 16)
+- `genesis2_lib` **`STARTER_FOOD_COUNT`** (render pantry; should equal the target)
+- the P2 **FARM card plot size** (should yield ~the target per 1–2 harvests; a
+  ~5×5–6×6 wheat plot ≈ 8–12 bread)
+
+Same logic applies to wood/stone/coal targets vs the colony's gather/mine
+throughput — don't set a benchmark the workers can't reach in a run.
 
 ## Known remaining ceilings (not reset issues — awareness)
 - **Craft window-race** (Paper 1.21 3×3 table): `stone_pickaxe no-op … retry N/6`. Intermittent; PaperMCP fallback (C1) reduces it but it still slows crafting workers.

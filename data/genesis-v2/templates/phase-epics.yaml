@@ -167,9 +167,16 @@ epics:
 
       Decompose into:
         1. FARM (assignee colony-farmer) — `mc bot checkout --near <lt_water_*
-           coords> --cap farm`; till a **small** plot beside water (start ~5×5,
-           not a full 9×9 field); plant seeds; mark `farm_wheat` (or `farm_*`);
-           `mc bot release`. Literal `mc` verb lines.
+           coords> --cap farm`; till a plot beside water (~5×5–6×6); plant seeds;
+           mark `farm_wheat` (or `farm_*`); `mc bot release`. Literal `mc` verbs.
+           SIZE ↔ GOAL: the food gate is `food.target_min` (currently 16; see
+           data/base-goals.yaml), and the render pre-stocks a matching starter
+           pantry in `chest_food`. A ~5×5–6×6 plot yields ~8–12 bread/harvest, so
+           it replenishes that pantry in ~1–2 harvests. Keep the plot, the food
+           target, and the starter pantry (genesis2_lib STARTER_FOOD_COUNT) sized
+           together — a big target with a tiny plot is what dead-locked P2 before.
+           NOTE: "food" means PREPARED items (bread/cooked); harvested wheat must
+           be crafted to bread to count — a harvest-only card produces no food.
         2. STORAGE (assignee colony-builder) — `mc bot checkout --near
            <base_anchor coords> --cap build`; organize + label the base chests so
            wood / stone / food each have a home (record/keep `chest_*` marks);

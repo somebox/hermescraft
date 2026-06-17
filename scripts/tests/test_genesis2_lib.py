@@ -345,6 +345,20 @@ def test_supply_source_picks_nearest_and_handles_missing(monkeypatch, tmp_path):
     assert g2._supply_source("food") is None
 
 
+def test_starter_provision_snapshot_and_chest_fill(monkeypatch, tmp_path):
+    import json
+    monkeypatch.setattr(g2, "DATA_DIR", tmp_path)
+    g2.write_starter_provision_snapshot({"x": 78, "y": 64, "z": -18})
+    cf = json.loads((tmp_path / "chest-snapshots-render.json").read_text())["chest_food"]
+    assert cf["position"] == {"x": 77, "y": 64, "z": -17}   # ax-1, az+1
+    assert cf["total"] == g2.STARTER_FOOD_COUNT
+    assert cf["items"][0] == {"name": g2.STARTER_FOOD_ITEM, "count": g2.STARTER_FOOD_COUNT}
+    # render also physically stocks that chest
+    cmds = "\n".join(g2.shelter_setblock_commands("genesis2", 78, 64, -18))
+    assert (f"item replace block 77 64 -17 container.0 with "
+            f"minecraft:{g2.STARTER_FOOD_ITEM} {g2.STARTER_FOOD_COUNT}") in cmds
+
+
 def test_mark_shelter_chests(monkeypatch, tmp_path):
     import json
     monkeypatch.setattr(g2, "DATA_DIR", tmp_path)

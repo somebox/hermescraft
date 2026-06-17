@@ -402,11 +402,15 @@ def wipe_marks() -> None:
     targets = [
         DATA_DIR / "locations-base.json",
         DATA_DIR / "personal-pois-shared.json",
+        # Stale starter-pantry snapshot keyed "chest_food" by NAME would otherwise
+        # count toward this run's food gate before its own render overwrites it.
+        DATA_DIR / "chest-snapshots-render.json",
     ]
     for b in BODY_POOL.values():
         u = b["user"].lower()
         targets.append(DATA_DIR / f"locations-{u}.json")
         targets.append(DATA_DIR / f"personal-pois-{u}.json")
+        targets.append(DATA_DIR / f"chest-snapshots-{u}.json")
     for p in targets:
         try:
             p.unlink()
@@ -553,6 +557,15 @@ def shelter_setblock_commands(world: str, ax: int, ay: int, az: int) -> list[str
     # Chest pads just inside entry (west of door)
     cmds.append(f"setblock {ax - 1} {ay} {az} minecraft:chest[facing=east]")
     cmds.append(f"setblock {ax - 1} {ay} {az + 1} minecraft:chest[facing=east]")
+    # Starter pantry: pre-stock chest_food (ax-1, az+1) so the colony isn't dead on
+    # the P2 food gate before it can build a cooking loop (gv2-2026-06-17-3 starved
+    # out at food 2/64). Physical bread so bots can actually eat it; the gate sees
+    # it via write_starter_provision_snapshot. Amount matches base-goals food
+    # target_min — keep them aligned.
+    cmds.append(
+        f"item replace block {ax - 1} {ay} {az + 1} container.0 "
+        f"with minecraft:{STARTER_FOOD_ITEM} {STARTER_FOOD_COUNT}"
+    )
     return [f"execute in {world} run {c}" for c in cmds]
 
 
@@ -575,6 +588,31 @@ def reposition_shelter_region(anchor: dict[str, int], run_id: str) -> None:
             reg["updated"] = gl._iso_utc()
     data["regions"] = regions
     path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+# Starter pantry pre-stocked into chest_food at render. Keep STARTER_FOOD_COUNT
+# aligned with data/base-goals.yaml food.target_min (the P2 gate) and with the
+# FARM card's plot size (one harvest should roughly replenish this).
+STARTER_FOOD_ITEM = "bread"
+STARTER_FOOD_COUNT = 16
+
+
+def write_starter_provision_snapshot(anchor: dict[str, int]) -> None:
+    """Record the render-stocked chest_food as a chest snapshot base-inventory
+    reads, so the P2 food gate sees the starter pantry without waiting for a worker
+    to open the chest (/marks serves in-memory only). A later live snapshot (newer
+    `at`) supersedes this, so real depletion still shows. Overwrites each render."""
+    ax, ay, az = anchor["x"], anchor["y"], anchor["z"]
+    x, y, z = ax - 1, ay, az + 1  # chest_food position (matches mark_shelter_chests)
+    snap = {
+        "chest_food": {
+            "at": gl._iso_utc(),
+            "position": {"x": x, "y": y, "z": z},
+            "total": STARTER_FOOD_COUNT,
+            "items": [{"name": STARTER_FOOD_ITEM, "count": STARTER_FOOD_COUNT}],
+        }
+    }
+    (DATA_DIR / "chest-snapshots-render.json").write_text(json.dumps(snap, indent=2) + "\n")
 
 
 def mark_shelter_chests(anchor: dict[str, int]) -> list[str]:
@@ -626,6 +664,7 @@ def maybe_render_shelter_for_run(run_id: str) -> bool:
     render_shelter_structure(world, anchor)
     reposition_shelter_region(anchor, run_id)
     mark_shelter_chests(anchor)  # provided storage is marked + known at render time
+    write_starter_provision_snapshot(anchor)  # starter pantry the P2 food gate can see
     cfg["shelter_rendered"] = True
     cfg["shelter_anchor"] = anchor
     save_config(cfg)

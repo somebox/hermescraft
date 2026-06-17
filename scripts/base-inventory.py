@@ -190,6 +190,29 @@ def fetch_chest_snapshots(port: int, timeout: float = 1.5) -> dict:
     return snaps
 
 
+def load_render_snapshots() -> dict:
+    """Render-provided starter-provision snapshots (genesis): chest_food pre-stocked
+    at shelter render so the P2 food gate sees the pantry without a worker opening
+    the chest (/marks serves in-memory only). Indexed by name + coord like
+    fetch_chest_snapshots; a newer live snapshot supersedes it in aggregate()."""
+    f = DATA_DIR / "chest-snapshots-render.json"
+    try:
+        data = json.loads(f.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out: dict = {}
+    if isinstance(data, dict):
+        for name, snap in data.items():
+            if not isinstance(snap, dict):
+                continue
+            pos = snap.get("position") or {}
+            s = {**snap, "position": pos}
+            out[name] = s
+            if all(pos.get(k) is not None for k in ("x", "y", "z")):
+                out[f"{int(pos['x'])},{int(pos['y'])},{int(pos['z'])}"] = s
+    return out
+
+
 def coord_key(coord: list[int]) -> str:
     """chestSnapshots uses 'x,y,z' string keys."""
     return f"{int(coord[0])},{int(coord[1])},{int(coord[2])}"
@@ -241,6 +264,11 @@ def aggregate(goals: dict, chest_marks: dict[str, dict], ports: dict | None = No
     all_snaps: dict[str, dict] = {}
     for name, port in ports.items():
         all_snaps[name] = fetch_chest_snapshots(port)
+    # Render-provided starter pantry (genesis): counts until a live snapshot of the
+    # same chest (newer `at`) supersedes it, so real depletion still shows.
+    render = load_render_snapshots()
+    if render:
+        all_snaps["render"] = render
 
     # Build per-mark item lists by collapsing across bot snapshots (newest wins)
     chest_data: dict[str, dict] = {}
