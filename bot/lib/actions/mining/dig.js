@@ -1,4 +1,5 @@
 import { Vec3 } from 'vec3';
+import { escalationHint } from '../../shared/escalation-hint.js';
 import {
   equipForDig,
   detectDigHazards,
@@ -150,7 +151,7 @@ export function createDigHandlers(deps) {
    * Honors the `force` flag for guards that opt-in to bypass (DIG_UNDER_FEET,
    * SUBMERGED, SUPPORT_BLOCK, PROTECTED_BLOCK via regionPolicy.skipGlobalDeny).
    */
-  function runPreDigGuards(b, x, y, z, cell, target, force, tracker) {
+  function runPreDigGuards(b, x, y, z, cell, target, force, forceEscape, tracker) {
     if (!target || AIR_NAMES.has(target.name)) {
       tracker.record('NO_BLOCK_AT_COORD');
       return fail(
@@ -164,12 +165,17 @@ export function createDigHandlers(deps) {
     }
 
     const regionDig = evaluateRegionPolicy(ctx, config, 'dig', x, y, z, target.name);
-    if (regionDig.deny) {
+    if (regionDig.deny && !forceEscape) {
       tracker.record('REGION_PROTECTED');
       return regionProtectedFailure('dig', target.name, x, y, z, regionDig.regionResult);
     }
 
-    if (!regionDig.skipGlobalDeny && isDigProtected(target.name, { x, y, z }, ctx)) {
+    if (
+      !regionDig.skipGlobalDeny &&
+      !forceEscape &&
+      !force &&
+      isDigProtected(target.name, { x, y, z }, ctx)
+    ) {
       tracker.record('PROTECTED_BLOCK');
       return fail(
         'PROTECTED_BLOCK',
@@ -479,6 +485,7 @@ export function createDigHandlers(deps) {
     if (!c.ok) return c.response;
     const { x, y, z } = c;
     const force = args.force;
+    const forceEscape = args.forceEscape === true;
     const b = ensureBot();
     const target = b.blockAt(new Vec3(x, y, z));
     const cell = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) };
@@ -500,14 +507,14 @@ export function createDigHandlers(deps) {
             requested_coord: cell,
             bot_position: posObj(b.entity.position),
           },
-          next_action_hint: `mc advise --reason="dig blocked at ${cell.x},${cell.y},${cell.z}"`,
+          next_action_hint: escalationHint({ reason: `dig blocked at ${cell.x},${cell.y},${cell.z}` }),
           retry_safe: false,
         },
       );
     }
 
     // 2) Sequential pre-dig guards (region, protection, self-block, water, door support).
-    const guardFail = runPreDigGuards(b, x, y, z, cell, target, force, tracker);
+    const guardFail = runPreDigGuards(b, x, y, z, cell, target, force, forceEscape, tracker);
     if (guardFail) return guardFail;
 
     const distance = b.entity.position.distanceTo(target.position);

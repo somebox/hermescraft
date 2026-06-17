@@ -90,6 +90,32 @@ suggests `mc advise`, treat that hint as NON-ACTIONABLE and `kanban_block` with 
 reason instead. Never loop-retry the same failing command.
 ESCALATE
 
+  # Handoff (ALL agents). Workers run in sequence on a worksite but each starts
+  # cold — per-round memory is wiped, so the agent before you is gone. The board
+  # is the shared memory: read the predecessor's handoff on pickup, leave one on
+  # completion. gv2-2026-06-16-1: a builder dug a site a prior step had already
+  # prepped because nothing carried forward what was done.
+  cat >> "$dst/SOUL.md" <<'HANDOFF'
+
+## Handoff (continuity between workers)
+You are one specialist in a sequence; the worker before you is gone. The board is
+your shared memory — use it both ways:
+  - ON PICKUP: read THIS card fully. If its body says `Continues from <id>`, run
+    `kanban show <id>` and read that step's HANDOFF note + Latest summary BEFORE you
+    act. It tells you what's already done (site chosen, ground prepped, chests
+    placed), where the body was left, and what's stocked. Do NOT re-pick a site or
+    redo work a prior step finished.
+  - ON FINISH: just before `kanban_complete`, post a `kanban_comment` that begins
+    with `HANDOFF:` and covers, in a few lines —
+      • world changes: exact mark names you created/updated (e.g. `base_anchor`,
+        `chest_wood`), regions/mines opened;
+      • body: where you left it (coords) and which body (mox/pip/zee);
+      • storage: what you deposited and into which `chest_*`;
+      • prereqs: which conditions the NEXT step needs are now MET (or still open);
+      • hazards/observations the next worker must know (water, drops, blockers).
+    This note IS the next worker's context — be concrete, not "done".
+HANDOFF
+
   # Shared mc calling convention for body-using specialists (skip the bodiless
   # Steward). Keeps mc invocations uniform so logs are readable and agents don't
   # waste tokens on cd/redirect noise.
@@ -167,9 +193,20 @@ if port:  # body-using specialist → lease mode
 open(cfgf, "w").write(s)
 PY
 
-  # Clean slate for a fresh colony run: empty memories, fresh session db.
-  rm -f "$dst"/memories/*.md 2>/dev/null || true
+  # Clean slate for a fresh colony run. A stale profile re-surfaces prior-run
+  # decisions/marks from its message history + saved memories — gv2-2026-06-16-1:
+  # a "@23:12" memory entry from a previous run reappeared in a 01:05 run, and
+  # the clone source (road-planner) itself ships a state.db full of its own
+  # history. Auth lives in .env/config.yaml (regenerated above), NOT state.db —
+  # so wipe the agent's working memory in full each round:
+  #   - saved auto-memories (memories/ contents + the MEMORY.md index)
+  #   - the session/message-history DB (state.db + wal/shm): hermes recreates a
+  #     fresh empty one on boot — don't carry the source profile's transcript
+  #   - past session transcripts
+  rm -f "$dst"/memories/* 2>/dev/null || true
   : > "$dst/MEMORY.md" 2>/dev/null || true
+  rm -f "$dst"/state.db "$dst"/state.db-wal "$dst"/state.db-shm 2>/dev/null || true
+  rm -rf "$dst"/sessions/* 2>/dev/null || true
 }
 
 mint colony-scout    Mox 3007 "minecraft-scouting-site minecraft-bot-lease" \
@@ -258,7 +295,7 @@ on your PATH and already targets this board (via \$HERMES_KANBAN_BOARD):
   To check whether you already filed cards for a phase, use \`kanban epic
   <epic_id>\` — never reconstruct it with SQL.
 
-Six hard rules:
+Seven hard rules:
 1. NEVER \`kanban_complete\` a phase epic. Phases auto-complete when their
    real-world gate passes — never declare a phase done yourself.
 2. NEVER put a phase epic in a worker card's \`parents\`. A parent is a BLOCKING
@@ -286,7 +323,14 @@ Six hard rules:
    for base work (BASE-SELECT / BASE-CLEAR / BUILD / STORAGE), \`farm_wheat\` /
    \`farm_*\` for farm chains, \`mine_*\` for mining chains. Use a resource mark
    (\`lt_*\`) ONLY on a single supply card — never as long-lived base continuity
-   (it would keep a body tied to a resource after the worksite moved)."
+   (it would keep a body tied to a resource after the worksite moved).
+7. Handoff continuity: when you wire a card \`after:\` a prior step, put a line at
+   the TOP of the new card's body that reads — Continues from <prior_card_id>: run
+   \`kanban show <prior_card_id>\` and read its HANDOFF note before acting. You
+   know that id (you just created the prior card). The next specialist starts cold
+   with no memory of the last one, so this pointer is how it learns the site already
+   chosen, where the body was left, and what's stocked — instead of redoing or
+   second-guessing finished work."
 
 mint colony-overseer "" "" "minecraft-steward-survey" \
 "# Colony overseer

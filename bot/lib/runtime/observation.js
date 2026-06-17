@@ -7,6 +7,7 @@ import { formatStandingSituation, isStuckStandingClassification } from '../share
 import { buildActionStats, classifyIdleReason } from '../server/diagnostics.js';
 import { filterPlacementBlockingEntities } from '../shared/entity-blocking.js';
 import { placementInsightForBlock } from '../shared/placement-insight.js';
+import { adviseHintsSuppressed } from '../shared/escalation-hint.js';
 import { getConfig } from '../config/index.js';
 import {
   buildNavFrame,
@@ -671,13 +672,14 @@ export function createObservation(deps) {
           const px = b.entity.position.x.toFixed(0);
           const py = b.entity.position.y.toFixed(0);
           const pz = b.entity.position.z.toFixed(0);
+          const stuckAction = adviseHintsSuppressed()
+            ? `REQUIRED next action: kanban_block reason="stuck:<short>" with a kanban_comment naming what you need from the planner. Do NOT run mc advise.`
+            : `REQUIRED next action: (1) mc advise --reason="stuck ${stuckMin}min: <one-line what you tried>" --target ${px},${py},${pz}, OR (2) kanban_block reason="stuck:<short>" with a kanban_comment naming what you need from re44 or Steward.`;
           stuckBlock = {
             stuck_minutes: stuckMin,
             stuck_warning:
               `STUCK ${stuckMin}min at (${px},${py},${pz}). Local iteration is failing. ` +
-              `REQUIRED next action: (1) mc advise --reason="stuck ${stuckMin}min: <one-line what you tried>" --target ${px},${py},${pz}, ` +
-              `OR (2) kanban_block reason="stuck:<short>" with a kanban_comment naming what you need from re44 or Steward. ` +
-              `Do NOT retry the same approach.`,
+              `${stuckAction} Do NOT retry the same approach.`,
           };
         } else if (stuckMin >= 2) {
           // Soft signal — not yet an emergency, but worth knowing.

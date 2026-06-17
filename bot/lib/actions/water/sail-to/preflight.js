@@ -1,6 +1,7 @@
 /** sail_to preflight: coords, retry guard, at_target, NO_BOAT. */
 
 import { fail, ok } from '../../../shared/action-contract.js';
+import { escalationHint } from '../../../shared/escalation-hint.js';
 
 export function runSailPreflight(bindings, diag, { x, y, z }) {
   const {
@@ -52,7 +53,7 @@ export function runSailPreflight(bindings, diag, { x, y, z }) {
     const hintLabel = stance ? 'walkable shore' : 'nearest water';
     const nextHint = hintCoord
       ? `mc bg_goto ${hintCoord.x} ${hintCoord.y} ${hintCoord.z}  # ${hintLabel} — then mc sail_to ${target.x} ${target.y} ${target.z} again from there`
-      : 'mc advise --reason="sail_to stuck retrying"';
+      : escalationHint({ reason: 'sail_to stuck retrying' });
     return {
       done: true,
       result: fail(

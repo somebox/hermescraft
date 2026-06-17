@@ -42,8 +42,13 @@ ensure_body() {
   sleep 2
   echo "[genesis-v2] starting body $user on :$port"
   local log="/tmp/$(echo "$user" | tr '[:upper:]' '[:lower:]')-bot.log"
+  # MC_SUPPRESS_ADVISE_HINTS: colony workers escalate via kanban_block (the
+  # planner picks it up), not `mc advise` (gv2-2026-06-16-1: 62 dead advise
+  # attempts because the bot's own stuck/blocked hints kept pointing there). This
+  # flag degrades those hints to a kanban_block directive on genesis bodies only.
   (cd "$REPO_ROOT" && API_PORT="$port" VIEWER_PORT="$viewer" BOT_MOVEMENT_PROFILE=slow \
      MC_HOST="$MC_HOST" MC_PORT="$MC_PORT" MC_USERNAME="$user" \
+     MC_SUPPRESS_ADVISE_HINTS=1 \
      nohup node bot/server.js > "$log" 2>&1 &)
 }
 

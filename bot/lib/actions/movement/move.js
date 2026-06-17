@@ -1,5 +1,6 @@
 /** @size-exempt: move shares door-assist navigation */
 import { Vec3 } from 'vec3';
+import { escalationHint } from '../../shared/escalation-hint.js';
 import {
   pathfindWithProgressWatchdog,
   ACTION_CAPS_MS,
@@ -156,7 +157,7 @@ export function createMove(deps) {
             last_reason: movePriorRetry.lastReason,
             target: { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) },
           },
-          next_action_hint: 'mc advise --reason="mc move stuck retrying"',
+          next_action_hint: escalationHint({ reason: 'mc move stuck retrying' }),
           retry_safe: false,
         },
       };

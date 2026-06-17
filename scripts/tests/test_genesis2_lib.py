@@ -23,6 +23,19 @@ def test_shelter_setblock_commands_include_east_door():
     assert "setblock 104 70 -50 air" in joined
 
 
+def test_shelter_render_makes_safe_dry_foundation():
+    # gv2-2026-06-16-1: base sited over water drowned the colony. The render must
+    # deterministically produce a dry, solid pad regardless of the chosen anchor:
+    # a force-filled cobble foundation under the footprint+apron, then drained
+    # water above it. (margin=2 → 11×11 pad around a 7×7 shell @ (47,64,-49).)
+    cmds = g2.shelter_setblock_commands("genesis2", 47, 64, -49)
+    joined = "\n".join(cmds)
+    # Solid 2-layer foundation across the 11×11 (x 42..52, z -54..-44, y 62..63).
+    assert "fill 42 62 -54 52 63 -44 minecraft:cobblestone" in joined
+    # Standing water drained at foot/head height above the pad (y 64..66).
+    assert "fill 42 64 -54 52 66 -44 minecraft:air replace minecraft:water" in joined
+
+
 def test_surface_water_within_mock():
     def fake_rcon(_world, cmds):
         if "minecraft:water" in cmds[0] and "12" in cmds[0]:

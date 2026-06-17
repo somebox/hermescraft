@@ -498,7 +498,21 @@ def shelter_setblock_commands(world: str, ax: int, ay: int, az: int) -> list[str
     floor_y = ay - 1
     wall_h = 3
     roof_y = ay + wall_h
+    margin = 2  # safe-apron radius beyond the 7×7 shell (→ 11×11 dry pad)
     cmds: list[str] = []
+    # Water safety FIRST (gv2-2026-06-16-1: bots drowned on a base sited over
+    # water). Deterministic backstop independent of agent leveling: force a solid
+    # 2-layer cobble foundation under the whole pad+apron (plugs under-base water
+    # and any void the door-exit walks onto), then drain standing water at
+    # foot/head height above it. Bounded fills (11×11), so no runaway volume.
+    cmds.append(
+        f"fill {ax - 3 - margin} {floor_y - 1} {az - 3 - margin} "
+        f"{ax + 3 + margin} {floor_y} {az + 3 + margin} minecraft:cobblestone"
+    )
+    cmds.append(
+        f"fill {ax - 3 - margin} {ay} {az - 3 - margin} "
+        f"{ax + 3 + margin} {ay + 2} {az + 3 + margin} minecraft:air replace minecraft:water"
+    )
     # Clear interior + door approach so trees/slope don't seal the shell.
     cmds.append(
         f"fill {ax - 2} {ay} {az - 2} {ax + 2} {ay + wall_h - 1} {az + 2} air replace"

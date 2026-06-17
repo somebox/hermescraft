@@ -2,6 +2,7 @@
  * Structured next_action_hint strings for NAV_* envelopes (Phase 7.2).
  */
 import { computeReachability } from '../_nav-helpers.js';
+import { escalationHint } from '../../shared/escalation-hint.js';
 import { detourHintForDy } from './detour-check.js';
 import { resolveRouteSculptHint, standabilityActionHint } from './route-sculpt-hint.js';
 
@@ -130,7 +131,7 @@ export function withNavRetryWarning(result, retryKey, counts, limit = 4) {
   if (typeof error.next_action_hint === 'string' && error.next_action_hint.length) {
     error.next_action_hint += suffix;
   } else {
-    error.next_action_hint = 'mc advise --reason="stuck: 3 failures to same move/goto target"';
+    error.next_action_hint = escalationHint({ reason: 'stuck: 3 failures to same move/goto target' });
   }
   return { ok: false, error };
 }

@@ -48,6 +48,12 @@ epics:
           `[GENESIS2:P1] [BUILD] ...`). That is how the poller groups the phase.
         - Use `parents`/`after:` ONLY to order SIBLING worker cards (e.g.
           BASE-CLEAR after BASE-SELECT, BUILD after BASE-CLEAR). Never to the epic.
+        - HANDOFF: whenever you wire a card `after:` a prior step, put a first line
+          in the new card's body that reads — Continues from <prior_card_id>: run
+          `kanban show <prior_card_id>` and read its HANDOFF note before acting.
+          The next specialist starts cold (memory is wiped each round), so this is
+          how it learns the site already chosen, the body's position, and what's
+          stocked — instead of redoing or re-deciding finished work.
 
       Decompose into, roughly in order (wire later cards `after:` the prior
       sibling worker card — never `after:` this epic). SCOUT cards may run in
@@ -59,28 +65,56 @@ epics:
         2. BASE-SELECT (colony-builder OR colony-scout) — pick the best
            `candidate_pad_*` from the shared marks (flat, near wood + water,
            route access, room for a later perimeter wall ring — prefer pads with
-           clearance beyond the ~10×10 shelter footprint). This MUST be a real
+           clearance beyond the ~10×10 shelter footprint). INSPECT the pad before
+           committing: the base must sit on solid, DRY land. WATER in or under the
+           footprint is a red flag (gv2-2026-06-16-1: a base sited over water
+           drowned the colony) — reject a watery pad and pick another candidate,
+           or shift the anchor onto solid ground nearby. This MUST be a real
            worker card with a body and LITERAL verbs — you (the Planner) are
            bodiless and cannot mark. Card body, literal lines:
              `mc bot checkout --near <candidate_pad coords> --cap build`
              `mc go_mark <candidate_pad_name>`
+             `mc terrain_top <X> <Z> radius=5 full=true`
+               — inspect the ~11×11 footprint: confirm solid ground and a level
+               surface; if the top blocks include water (or a steep drop), this
+               pad is unsafe — go_mark a different `candidate_pad_*` and re-check.
              `mc mark base_anchor "Colony center" --at <X> <Y> <Z>`
                (or `mc go_mark <candidate_pad>` then `mc mark base_anchor "…"`)
              `mc bot release`
            The P1 gate requires the shared `base_anchor` mark, so this card is a
            hard prerequisite of GATHER and BUILD (wire them `after:` it).
-        3. BASE-CLEAR (colony-builder) — clear trees + flatten the ~10x10 base
-           footprint around `base_anchor` so the shelter/walls sit on prepared
-           ground (live-run "built into terrain / cannot exit" stalls came from
-           skipping this). Card body, literal lines:
+        3. BASE-CLEAR (colony-builder) — clear trees + flatten the ground AROUND
+           the base so workers can path in/out and a perimeter wall can sit on
+           prepared ground (live-run "built into terrain / cannot exit" stalls
+           came from skipping this). CRITICAL SCOPE: the 7×7 shelter footprint
+           (base_anchor ± 3 in X/Z) and its solid, drained foundation are
+           PRE-RENDERED at boot — do NOT clear_strip or level_ground over that
+           footprint, or you will dig up the shelter and expose water below
+           (gv2-2026-06-16-1: a worker dug itself into the shelter and got stuck).
+           Clear/level only the APRON + APPROACH OUTSIDE base_anchor ± 3. Card
+           body, literal lines:
              `mc bot checkout --near <base_anchor coords> --cap build --mark base_anchor`
              `mc go_mark base_anchor`
+             `mc fell_tree <x> <z>` for each tree within ~8 blocks of base_anchor
+               whose trunk/canopy is OUTSIDE the footprint (shade/seal hazard).
              `mc clear_strip <x1> <z1> <x2> <z2> surface_y=<feet_y> road_mode=true height=8`
-               (tree-aware: takes trunks + canopy; or `mc fell_tree <x> <z>` per trunk)
+               on the door-exit corridor running EAST from base_anchor+4 (the
+               door faces east) — clears the path workers walk out onto. Do NOT
+               span the footprint.
              `mc level_ground <x1> <z1> <x2> <z2> execute=true target=<feet_y>`
-               — level_ground is DRY-RUN without `execute=true`, and caps at 16
-               columns/call: tile the ~10x10 footprint into <=16-column rectangles
-               (e.g. 4x4 blocks), one `mc level_ground ... execute=true` call each.
+               to flatten the apron rings OUTSIDE base_anchor ± 3 (the approach +
+               where the perimeter wall will sit). level_ground is DRY-RUN
+               without `execute=true`, caps at 16 columns/call, and digs above +
+               fills AIR holes to a solid surface (it does NOT fill water): tile
+               the apron into <=16-column rectangles (e.g. 4×4), one
+               `mc level_ground ... execute=true` call each. If a rectangle would
+               overlap base_anchor ± 3, skip or shrink it.
+             If the apron has open water (BASE-SELECT should have avoided this),
+               bridge it walkable with
+               `mc deck <x1> <z1> <x2> <z2> surface_y=<feet_y> block=cobblestone`
+               (decks the air row above the water — bots drown in unfilled water).
+               The 7×7 footprint itself is already drained + floored by the boot
+               render; only the apron needs this.
              `mc bot release`
            Wire BASE-CLEAR `after:` BASE-SELECT, and BUILD `after:` BASE-CLEAR.
         4. GATHER (colony-gatherer) — first steps MUST satisfy tools before

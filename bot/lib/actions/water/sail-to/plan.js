@@ -1,6 +1,7 @@
 /** sail_to plan_route: planWaterRoute, refusals, legs + sailLegs closure. */
 
 import { fail, ok } from '../../../shared/action-contract.js';
+import { escalationHint } from '../../../shared/escalation-hint.js';
 
 export async function runSailPlanRoute(bindings, diag, state) {
   const {
@@ -50,7 +51,7 @@ export async function runSailPlanRoute(bindings, diag, state) {
     } else if (nearestCandidate) {
       nextHint = `mc bg_goto ${nearestCandidate.x} ${nearestCandidate.y} ${nearestCandidate.z}  # nearest water — then mc sail_to ${target.x} ${target.y} ${target.z}`;
     } else if (routeRes.error.code === 'NO_WATER_ROUTE') {
-      nextHint = `mc advise --reason="find shore to sail to ${target.x},${target.y},${target.z}" --target ${target.x},${target.y},${target.z}`;
+      nextHint = escalationHint({ reason: `find shore to sail to ${target.x},${target.y},${target.z}`, target: `${target.x},${target.y},${target.z}` });
     } else if (routeRes.error.code === 'POND_DISCONNECTED') {
       nextHint = 'mc bg_goto <coast coords>  # then mc sail_to again';
     } else {

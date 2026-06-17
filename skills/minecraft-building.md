@@ -111,11 +111,12 @@ Fix mismatches with `mc place`, `mc dig`, and bulk verbs; re-verify before marki
 
 1. **Check memory** for building lessons the player taught you.
 2. **Ask the player** where they want it if they didn't specify.
-3. **Find flat ground** — `mc map 16` for an overview; `mc terrain_top X Z 8` to compare column heights over a small radius.
+3. **Find flat, DRY ground** — `mc map 16` for an overview; `mc terrain_top X Z 8` to compare column heights over a small radius. **Water in or under the footprint is a red flag** — don't build (or walk) on it. Bots drown in unfilled water; pick solid ground, or fill/cover the water first (see step 7).
 4. **Verify standability** at the corners — `mc reachable X Y Z` returns `best_stand` if a corner is buried/blocked.
 5. **Plan it out** — tell the player your plan in chat before placing blocks.
 6. **Mark the site** — `mc mark cabin_site` so you can `mc move @cabin_site` after gathering.
-7. **Clear + level** — fell trees with `mc fell_tree <x> <z>` (or, for a tree-filled area, `mc clear_strip X1 Z1 X2 Z2 surface_y=<feet_y> road_mode=true height=8` to take trunks + canopy), then flatten with `mc level_ground X1 Z1 X2 Z2 execute=true target=<y>`. NOTE: `level_ground` is **dry-run unless `execute=true`**, and each call caps at **16 columns** — tile a larger footprint into ≤16-column rectangles (multiple calls), don't try one big call.
+7. **Clear + level** — fell trees with `mc fell_tree <x> <z>` (or, for a tree-filled area, `mc clear_strip X1 Z1 X2 Z2 surface_y=<feet_y> road_mode=true height=8` to take trunks + canopy), then flatten with `mc level_ground X1 Z1 X2 Z2 execute=true target=<y>`. `level_ground` digs above target and fills **air** holes / bridge-fills **air** voids below — it does NOT fill water (water cells are skipped). NOTE: `level_ground` is **dry-run unless `execute=true`**, and each call caps at **16 columns** — tile a larger footprint into ≤16-column rectangles (multiple calls), don't try one big call.
+   - **Water — cover it, don't leave it.** `level_ground` won't fill water, so prefer a dry site (step 3). If you must build over water, **bridge it** with `mc deck X1 Z1 X2 Z2 surface_y=<feet_y> block=cobblestone` — deck places a solid walkable layer at the air row above the water surface. Never leave open water in a footprint you or other bots will walk through; bots drown.
 
 ## Vertical builds (structure vs scaffold)
 

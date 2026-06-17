@@ -1,5 +1,6 @@
 /** @size-exempt: goto shares pathfinder + stall recovery */
 import { Vec3 } from 'vec3';
+import { escalationHint } from '../../shared/escalation-hint.js';
 import {
   pathfindWithProgressWatchdog,
   ACTION_CAPS_MS,
@@ -57,7 +58,7 @@ export function createGoto(deps) {
             last_reason: priorRetry.lastReason,
             target: { x: Math.floor(Number(x)), y: Math.floor(Number(y)), z: Math.floor(Number(z)) },
           },
-          next_action_hint: 'mc advise --reason="bg_goto stuck retrying"',
+          next_action_hint: escalationHint({ reason: 'bg_goto stuck retrying' }),
           retry_safe: false,
         },
       };

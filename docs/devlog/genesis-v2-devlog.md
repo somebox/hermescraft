@@ -9,6 +9,70 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-16 — gv2-2026-06-16-1 live findings (Gaps 1–5 validation + new base-prep gaps)
+
+First live run with Gaps 1–5. **Validated WINS (the new behaviors fire in-world):**
+fell_tree (gatherer, 7 logs), clear_strip + level_ground (builder BASE-CLEAR),
+place_torch, kanban_block (110×), --mark base_anchor (47×). Infra healthy
+(poller/watchdog/lease clean). But the run surfaced a cluster of NEW gaps:
+
+- **Cross-run memory contamination (operator-confirmed).** `mint` clears the
+  top-level `MEMORY.md` but NOT `memories/MEMORY.md` (it held a prior-run `@23:12`
+  entry in an `@01:05` run) and **preserves the 88MB `state.db` by design**. Stale
+  marks/decisions carry across runs. Fix: new-run must fully wipe agent working
+  memory (`memories/` + reset `state.db`) per round.
+- **BASE-CLEAR vs the pre-rendered shelter (self-inflicted scope bug).** BASE-CLEAR
+  `clear_strip`/`level_ground` over the "~10×10 footprint around base_anchor"
+  overlaps the boot-rendered 7×7 shelter → the builder digs up the shelter from
+  inside, stuck + destructive. Re-scope: clear/flatten AROUND the shelter (tree
+  removal + wall perimeter), EXCLUDE the shelter footprint (the render preps it).
+- **Base site not inspected for safety.** Scouts mark candidate pads and
+  BASE-SELECT picks one (base_anchor=47,-49) without checking it's dry/solid/flat
+  → base placed over water; bots drown. Need a real site inspection (reject/flag
+  water under/around the pad; require solid flat ground).
+- **Leveling must FILL/COVER water + voids, not just dig.** Operator: "water around
+  the base — fill or cover with blocks to make it safe to walk." Base prep must
+  produce a solid, water-free, walkable pad (level_ground fill + a deck/fill pass
+  over water), as part of leveling.
+- **Agents don't treat water as a hazard.** They walk/fall in and drown instead of
+  noticing "water around base = red flag → fill/cover before building/walking."
+  Needs a skill/SOUL red-flag.
+- **`mc advise` still attempted 62×** despite the SOUL "non-actionable" rule — the
+  bot's own error hints keep tempting the model. Neutralize the hints at source.
+- **Chest-snapshot capture-content still zero** (totals 0, chests_fresh 4) — `items`
+  not captured. Inventory gate + supply loop correctly stayed fail-safe (0 supply
+  cards), so nothing stalled, but the capture path needs fixing for those to bite.
+
+### Fixes (this round — offline-validated, not yet run live)
+- **Water safety is now deterministic.** `shelter_setblock_commands` force-fills a
+  solid 2-layer cobble foundation under an 11×11 pad + drains standing water above
+  it — base is dry/solid regardless of anchor (no longer dependent on agent
+  leveling). Pinned by `test_shelter_render_makes_safe_dry_foundation`.
+- **BASE-CLEAR scope fixed + site inspection added.** BASE-SELECT inspects the pad
+  (`mc terrain_top … radius=5`) and rejects water; BASE-CLEAR excludes the
+  pre-rendered footprint (base_anchor ± 3), clears/levels only the apron +
+  door-exit corridor. Building skill flags water + points to `mc deck`. (Correction:
+  `level_ground`/`deck` fill only AIR, not water — skill + template now say so.)
+- **Memory wipe per round (real fix).** `mint` resets `state.db` (+ wal/shm) and
+  `sessions/`, not just `*.md` — the message-history DB was the cross-run `@23:12`
+  source (and the road-planner clone ships its own history). Auth is in
+  `.env`/`config.yaml`, so safe. (Assumes hermes recreates `state.db` on boot —
+  confirm next run.)
+- **`mc advise` neutralized at source.** `bot/lib/shared/escalation-hint.js`
+  degrades all 8 stuck/blocked hints to `kanban_block` when `MC_SUPPRESS_ADVISE_HINTS=1`
+  (genesis bodies set it; default-off = prod-safe, identical string). Unit-tested.
+- **Capture-content is NOT a code bug.** `snapshotChestAtPosition` is correct;
+  `total=0` = nothing deposited. Real gap = GATHER never deposits + chests lack a
+  `chest_*` mark to deposit into — a sequencing concern, addressed via handoff.
+- **Handoff convention (Option B).** Shared SOUL HANDOFF block: read predecessor's
+  note on pickup (`kanban show <prior_id>`), post a structured `HANDOFF:` comment
+  before `kanban_complete`. Planner rule 7 + P1 CARD-WIRING inject a
+  `Continues from <prior_id>` pointer when wiring `after:`. Chosen over single-card
+  stage-rotation to avoid a poller state machine; `kanban show` already surfaces
+  parent comments, so no new tooling.
+
+---
+
 ## 2026-06-16 — door + gate traversal: matrix-mapped; E/W reliable, N/S a framework limit
 
 Investigated the shelter-door egress ceiling test-first. Built a comprehensive

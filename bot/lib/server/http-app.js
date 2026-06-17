@@ -17,6 +17,7 @@ import { clearNavTrail, navTrailCrumbsNewestFirst } from '../runtime/nav-trail.j
 import { buildNavFrame } from '../runtime/nav-brief.js';
 import { autoClearPlaybookOnCardChange } from '../runtime/playbook-context.js';
 import { gateOrchestratorMcAction } from './middleware/orchestrator-mc-gate.js';
+import { adviseHintsSuppressed } from '../shared/escalation-hint.js';
 
 // A2 (Phase 1 / item 1.3, 2026-06-02): Check whether a kanban worker has
 // claimed this bot. When true, `mc goals` returns an empty list so the
@@ -277,12 +278,12 @@ export function createBotHttpListener(deps) {
           }
           stuckMinutes = +((now - oldestInRadius.time) / 60000).toFixed(1);
           if (stuckMinutes >= STUCK_THRESHOLD_MIN) {
+            const stuckAction = adviseHintsSuppressed()
+              ? `REQUIRED next action: kanban_block reason="stuck:<short>" with a kanban_comment naming what you need from the planner. Do NOT run mc advise.`
+              : `REQUIRED next action: (1) mc advise --reason="stuck ${stuckMinutes}min: <one-line what you tried>" --target ${pos.x.toFixed(0)},${pos.y.toFixed(0)},${pos.z.toFixed(0)}, OR (2) kanban_block reason="stuck:<short>" with a kanban_comment naming what you need.`;
             stuckWarning =
               `STUCK ${stuckMinutes}min at (${pos.x.toFixed(0)},${pos.y.toFixed(0)},${pos.z.toFixed(0)}). ` +
-              `Local iteration is failing. REQUIRED next action: ` +
-              `(1) mc advise --reason="stuck ${stuckMinutes}min: <one-line what you tried>" --target ${pos.x.toFixed(0)},${pos.y.toFixed(0)},${pos.z.toFixed(0)}, ` +
-              `OR (2) kanban_block reason="stuck:<short>" with a kanban_comment naming what you need. ` +
-              `Do NOT retry the same approach.`;
+              `Local iteration is failing. ${stuckAction} Do NOT retry the same approach.`;
           }
         }
         return respond(res, 200, {
