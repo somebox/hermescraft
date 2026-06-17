@@ -78,7 +78,7 @@ on a live run.
 | F2 | **Dry, solid foundation** — force cobble pad + drain water under/around the base | base sited over water drowned the colony | `shelter_setblock_commands` (foundation fill + `air replace water`) | no drowning; base walkable |
 | F3 | **Chests pre-marked** — `chest_wood`+`chest_food` written at render | render PROVIDES the chests; BUILD churned ~20m trying to place a 2nd one it had no materials for | `genesis2_lib.mark_shelter_chests` | `mc marks` shows 2 `chest_*` at base |
 | F4 | Poller skill-strip backstop | null `skills` on worker cards the planner poisoned + unblock | `strip_worker_card_skills` (poller step 1) | poller log "stripped … skills" (only if poisoned) |
-| F5 | Gateway watchdog (no false-positive) | restart only when a `ready` card sits + log silent; `todo`-on-deps is NOT dead dispatch (don't thrash) | `detect_dead_dispatch` (`ready` only) | ≤ a couple restarts/run, not per-tick |
+| F5 | Gateway watchdog (no false-positive) | restart ONLY when ready work waits AND nothing is running (running>0 proves dispatch alive); `todo`-on-deps and ready-behind-a-full-pool are backpressure, not death — both thrashed the gateway + killed agents before this gate | `detect_dead_dispatch` (`ready>0 and running==0`) | ~0 restarts on a healthy run |
 | F6 | SUPPLY cards target the resource SOURCE | "mine stone near base_anchor" wedged miners in the cramped shelter on a grass plain | `_supply_source` + `file_supply_card` | SUPPLY card body says `go_mark lt_stone_*`, not base |
 | F7 | Reconcile marks, lease reap, pool-gate requeue, advance_phases, gate-gap/overseer, stall-supervise | poller-authoritative phase progression + recovery | `genesis-v2-poller.py` loop | poller log shows steps |
 
