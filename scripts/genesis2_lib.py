@@ -214,7 +214,12 @@ def restart_bodies(*, mc_host: str | None = None, mc_port: int | None = None, ti
         env = {**os.environ, **_dotenv_papermcp(),
                "API_PORT": str(api), "VIEWER_PORT": str(api + 1000),
                "BOT_MOVEMENT_PROFILE": "slow", "MC_HOST": host, "MC_PORT": str(port_mc),
-               "MC_USERNAME": user}
+               "MC_USERNAME": user,
+               # Colony workers escalate via kanban_block, not `mc advise` — degrade
+               # the bot's stuck/blocked advise hints (gv2-2026-06-16-1: 62 dead
+               # attempts). Must match the genesis-v2.sh ensure_body launch; this is
+               # the path that runs on reset_world/operator-pinned-spawn restarts.
+               "MC_SUPPRESS_ADVISE_HINTS": "1"}
         log = open(f"/tmp/{user.lower()}-bot.log", "a")
         subprocess.Popen([node, "bot/server.js"], cwd=str(REPO_ROOT), env=env,
                          stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
