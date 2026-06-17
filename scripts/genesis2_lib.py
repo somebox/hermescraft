@@ -594,7 +594,7 @@ def reposition_shelter_region(anchor: dict[str, int], run_id: str) -> None:
 # aligned with data/base-goals.yaml food.target_min (the P2 gate) and with the
 # FARM card's plot size (one harvest should roughly replenish this).
 STARTER_FOOD_ITEM = "bread"
-STARTER_FOOD_COUNT = 16
+STARTER_FOOD_COUNT = 8  # lean starter pantry — covers the gate but pushes the colony to produce food sooner
 
 
 def write_starter_provision_snapshot(anchor: dict[str, int]) -> None:

@@ -5,8 +5,8 @@ food:
   # an early colony with no cooking pipeline — it dead-locked the P2 gate while
   # bots starved. 16 is an achievable starter pantry (apples from felling + a
   # first wheat/cook batch). Raise once a real food loop exists.
-  target_min: 16
-  target_ok: 32
+  target_min: 8
+  target_ok: 16
   assignee: flint
 
 wood:
