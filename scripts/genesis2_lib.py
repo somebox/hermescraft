@@ -577,6 +577,33 @@ def reposition_shelter_region(anchor: dict[str, int], run_id: str) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n")
 
 
+def mark_shelter_chests(anchor: dict[str, int]) -> list[str]:
+    """Record the two pre-rendered shelter chests on the shared map so they are
+    KNOWN without a worker placing/marking them — the render is what PROVIDES the
+    storage, so the render is what should make it known (gv2-2026-06-17-2: BUILD
+    churned ~20m trying to place a 2nd chest that the render had already placed).
+    Positions match shelter_setblock_commands: (ax-1, ay, az) and (ax-1, ay, az+1).
+    Merge-safe (the reconciler starts from the existing shared file) + idempotent.
+    Returns the mark names written."""
+    ax, ay, az = anchor["x"], anchor["y"], anchor["z"]
+    chests = {"chest_wood": (ax - 1, ay, az), "chest_food": (ax - 1, ay, az + 1)}
+    path = DATA_DIR / "locations-base.json"
+    data = gl._load_json(path, default={})
+    if not isinstance(data, dict):
+        data = {}
+    now = gl._iso_utc()
+    for name, (x, y, z) in chests.items():
+        data[name] = {
+            "category": None, "last_visited": None, "mode": None,
+            "note": f"pre-rendered shelter chest --at {x} {y} {z}",
+            "radius": None, "reconciled_at": now, "reconciled_from": ["render"],
+            "saved": now, "stale": False, "stale_reason": None,
+            "updated": now, "visit_count": 0, "x": x, "y": y, "z": z,
+        }
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    return list(chests)
+
+
 def _base_anchor_coords() -> dict[str, int] | None:
     loc = gl._load_json(DATA_DIR / "locations-base.json", default={})
     if not isinstance(loc, dict):
@@ -598,6 +625,7 @@ def maybe_render_shelter_for_run(run_id: str) -> bool:
     world = cfg.get("world") or "genesis2"
     render_shelter_structure(world, anchor)
     reposition_shelter_region(anchor, run_id)
+    mark_shelter_chests(anchor)  # provided storage is marked + known at render time
     cfg["shelter_rendered"] = True
     cfg["shelter_anchor"] = anchor
     save_config(cfg)

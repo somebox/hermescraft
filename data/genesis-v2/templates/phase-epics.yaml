@@ -122,21 +122,25 @@ epics:
            shovel OR `mc craft` them from wood/stone at base chests. Then
            `mc bot checkout --near <lt_wood coords> --cap gather`, collect
            >=16 wood, `mc bot release`. Literal `mc` verb lines only.
-        5. BUILD (colony-builder) — shelter walls/roof are **pre-rendered** at
-           `base_anchor` on new-run (rcon setblocks + east-facing door). Do NOT
-           `mc region_create` with protect intent and do NOT free-build walls
-           from prose. Card body, literal lines:
+        5. BUILD (colony-builder) — shelter walls/roof AND its two storage chests
+           are **pre-rendered** at `base_anchor` on new-run (rcon setblocks +
+           east-facing door + two chests just inside the door), and those chests
+           are already recorded on the shared map as `chest_wood` + `chest_food`.
+           Do NOT place or mark chests, do NOT `mc region_create` with protect
+           intent, and do NOT free-build walls from prose — everything physical is
+           already there. This card just CONFIRMS the base is usable. Card body,
+           literal lines:
              `mc bot checkout --near <base_anchor coords> --cap build --mark base_anchor`
              `mc go_mark base_anchor`
              `mc task_context set shelter`
-             verify door/egress (walk through east door once)
-             place >=2 labeled storage chests inside boot region `shelter`
-             (`mc mark chest_*` at each chest)
+             verify door/egress (walk through the east door once, both ways)
+             `mc marks` — confirm `chest_wood` + `chest_food` resolve inside the shelter
              `mc bot release`
            Work only inside the boot-seeded buildable `shelter` region.
 
       Do NOT `kanban_complete` this epic — it auto-completes when the P1 gate
-      passes (base_anchor mark + >=2 chest_* marks + active shelter region). If
+      passes (base_anchor mark + >=2 chest_* marks [pre-rendered] + active shelter
+      region). If
       worker cards for this phase already exist on the board, do not create
       duplicates: just report status and stop. Your job is to decompose and
       monitor, never to declare the phase done.

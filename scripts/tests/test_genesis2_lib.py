@@ -298,6 +298,21 @@ def test_reap_orphan_leases_skips_foreign_owners(monkeypatch):
     assert released == []                            # never touch non-genesis leases
 
 
+def test_mark_shelter_chests(monkeypatch, tmp_path):
+    import json
+    monkeypatch.setattr(g2, "DATA_DIR", tmp_path)
+    (tmp_path / "locations-base.json").write_text(json.dumps({
+        "base_anchor": {"x": 78, "y": 64, "z": -18},  # pre-existing entry must survive
+    }))
+    written = g2.mark_shelter_chests({"x": 78, "y": 64, "z": -18})
+    assert set(written) == {"chest_wood", "chest_food"}
+    data = json.loads((tmp_path / "locations-base.json").read_text())
+    assert "base_anchor" in data                       # merge-safe: existing kept
+    assert (data["chest_wood"]["x"], data["chest_wood"]["y"], data["chest_wood"]["z"]) == (77, 64, -18)
+    assert (data["chest_food"]["x"], data["chest_food"]["y"], data["chest_food"]["z"]) == (77, 64, -17)
+    assert data["chest_wood"]["reconciled_from"] == ["render"]
+
+
 def test_strip_worker_card_skills(monkeypatch, tmp_path):
     import sqlite3
     db = tmp_path / "kanban.db"
