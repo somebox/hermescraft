@@ -1099,13 +1099,20 @@ def detect_dead_dispatch(*, status_by_id: dict[str, str] | None = None,
     except Exception:
         return False  # no log to judge by — don't act
     status = status_by_id if status_by_id is not None else _board_status_by_id()
-    # Count only READY cards. `todo` cards are correctly parked behind unmet
-    # `after:`/parent deps — the dispatcher is RIGHT not to touch them, so a quiet
-    # log alongside todo-only work is normal, not dead (gv2-2026-06-17-1: with
-    # BASE-SELECT blocked, its todo dependents kept tripping a false "dispatch
-    # dead" and thrashed the shared gateway every tick). Only an unclaimed `ready`
-    # card + silent log signals a genuinely dead dispatch task.
-    pending = sum(1 for s in status.values() if s == "ready")
+    statuses = list(status.values())
+    ready = sum(1 for s in statuses if s == "ready")
+    running = sum(1 for s in statuses if s == "running")
+    # Fire ONLY when work is ready AND nothing is running. Rationale:
+    #  - `todo` cards are parked behind unmet deps — the dispatcher is right not to
+    #    touch them (gv2-2026-06-17-1 false positive), so they never count.
+    #  - `ready` cards can legitimately wait when every body is leased: the pool is
+    #    full, so the gateway has nothing to hand out and its log goes quiet. That
+    #    is backpressure, not death (gv2-2026-06-17-3: 10 ready behind a full
+    #    3-body pool tripped a restart loop that KILLED in-flight agents).
+    #  - A live dispatcher churns the running set, so running>0 proves it's alive.
+    # Genuine dead dispatch = ready work waiting with nothing running and a silent
+    # log.
+    pending = ready if running == 0 else 0
     return _dispatch_looks_dead(age, pending)
 
 

@@ -387,6 +387,12 @@ def test_detect_dead_dispatch_uses_log_age_and_pending(monkeypatch, tmp_path):
     # read as dead dispatch (the dispatcher is correct not to claim them).
     monkeypatch.setattr(g2, "_board_status_by_id", lambda: {"a": "todo", "b": "todo", "c": "blocked"})
     assert g2.detect_dead_dispatch(now=stale_now) is False           # stale + todo-only → alive
+    # gv2-2026-06-17-3 regression: ready cards waiting behind a full body pool
+    # while agents RUN is backpressure, not dead dispatch — running>0 proves alive.
+    monkeypatch.setattr(g2, "_board_status_by_id", lambda: {"a": "ready", "b": "ready", "c": "running"})
+    assert g2.detect_dead_dispatch(now=stale_now) is False           # stale + ready but running → alive
+    monkeypatch.setattr(g2, "_board_status_by_id", lambda: {"a": "ready", "b": "ready"})
+    assert g2.detect_dead_dispatch(now=stale_now) is True            # stale + ready + nothing running → dead
 
 
 def test_maybe_restart_dead_gateway_respects_cooldown(monkeypatch, tmp_path):
