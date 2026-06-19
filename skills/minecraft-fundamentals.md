@@ -22,8 +22,14 @@ covers your job; this covers what every role on the colony shares.
 - Coordinates are X (east+/west−), Y (height), Z (south+/north−). Y is the one
   that decides ore, lava, and fall safety — always know your Y.
 - `mc scene` / `mc map` / `mc terrain_top X Z` to look around before acting.
-- Action results carry a `next_action_hint` and an `observed_state` — read them.
-  A repeated failure to the SAME coord means change approach, never re-issue it.
+- Action results carry a `next_action_hint` and an `observed_state`, and `mc observe`
+  carries a **Suggested next commands** block (`next_action_hints[]`). **Weigh these
+  first** — they mirror the safe precedence (walk/`mc move`, safe exits, `mc check`
+  before destructive `dig_area`/`tunnel`). But do NOT obey blindly: skip them when
+  they contradict protect-region policy, a stale brief (`STALE_BRIEF` /
+  `brief_refresh_required`), or your skill doctrine — they are suggestions to judge,
+  not orders.
+- A repeated failure to the SAME coord means change approach, never re-issue it.
 
 ## Traversal — what's passable
 - A **1-block step up** is auto-walkable (`mc move` / `mc goto`). A **2+ block
@@ -34,6 +40,10 @@ covers your job; this covers what every role on the colony shares.
 - **Gaps / water** in the way: bridge a walkable surface with `mc deck …` (it
   decks the air row), or cross open water with `mc sail_to`. Never leave open
   water in a path — bots drown in it.
+- **`pillar_up` is for true VERTICAL traps** (stuck in a pit/shaft), not for outdoor
+  scouting or route repair. To get past terrain or gain a vantage, prefer `mc move`,
+  `mc stair_up`, `mc reachable`, or a wider `mc scene`/`mc map` — blind `pillar_up`
+  builds a stray tower and can strand you.
 - **Stuck** (`no horizontal movement`, "wiggling", `STUCK_IN_WATER`): stop
   retrying. `mc escape`, or reassess with `mc scene` and pick a different route.
 
