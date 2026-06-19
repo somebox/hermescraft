@@ -116,6 +116,10 @@ export function slimStatusEnvelope(raw, { verbose = false } = {}) {
 
 /** Goals/task/alerts one-liners after nav text so human observe is not JSON-only. */
 function projectObserveTail(d) {
+  if (Array.isArray(d?.next_action_hints) && d.next_action_hints.length) {
+    console.log('Suggested next commands:');
+    for (const h of d.next_action_hints.slice(0, 5)) console.log(`  ${h}`);
+  }
   if (d.task && typeof d.task === 'object' && d.task.kind) {
     console.log(`  task: ${d.task.kind}${d.task.status ? ` (${d.task.status})` : ''}`);
   }

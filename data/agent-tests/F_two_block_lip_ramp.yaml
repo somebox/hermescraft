@@ -1,0 +1,48 @@
+# F_lip — 2-block vertical lip; place tread, dig lip, or build_stairs (not stair_up mine).
+# Context twin: two_block_lip_place_or_ramp.
+
+agent_test_id: F_two_block_lip_ramp
+world: landfolk-test
+
+prompt: |
+  You are Tester. MC CLI on PATH at (108, 65, 100).
+
+  Goal: stand on (110, 66, 100). mc move may fail on the 2-block lip.
+  Then use ONE of: mc place cobblestone 109 65 100, mc dig 110 65 100, mc build_stairs cobblestone east 2 108 64 100
+  — not stair_up. Finish with mc move 110 66 100 when the lip is fixed.
+
+skills: [minecraft-navigation, minecraft-roadbuilding, minecraft-survival]
+max_turns: 10
+timeout_seconds: 180
+
+verify_bot_at: { x: 108, y: 65, z: 100, range: 3 }
+
+expect:
+  bot_at: { x: 110, y: 66, z: 100, range: 2 }
+  mc_verbs_include_any: [place, dig, build_stairs, move]
+  mc_cli_invocations_max: 14
+
+verify_after_prep:
+  - { block: stone, min_count: 12, radius: 20 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 106 64 98 112 80 102 minecraft:air"
+  - "execute in landfolk-test run fill 107 64 99 111 64 101 minecraft:stone"
+  - "execute in landfolk-test run fill 110 64 100 110 65 100 minecraft:stone"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 108 65 100"
+  - "effect clear Tester"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "clear Tester"
+  - "give Tester minecraft:cobblestone 16"
+  - "give Tester minecraft:dirt 8"
+
+cleanup:
+  - "execute in landfolk-test run fill 106 64 98 112 80 102 minecraft:air"
+  - "execute in landfolk-test run fill 107 64 99 111 64 101 minecraft:stone"
+  - "execute in landfolk-test run tp Tester 52 65 52"

@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 10.5, "y": 64, "z": 10.5 }
+  },
+  "standing": {
+    "classification": "open",
+    "cell": { "x": 10, "y": 64, "z": 10 },
+    "step_up_dirs": ["E"],
+    "block_below": "grass_block"
+  },
+  "inventory_summary": { "cobblestone": 12 },
+  "route": {
+    "target": { "x": 11, "y": 65, "z": 10 }
+  }
+}

@@ -21,7 +21,7 @@ Inputs live in **git** (scenarios, experiment configs). Runs store **scores + ma
 ./context-tuner runs query last
 ```
 
-Suite `examples` includes `pillar_down_hint_honored` and `goals_gap_not_withdraw`. Example experiment write-up: [reports/2026-05-27-goals-gap-context-tuning.md](./reports/2026-05-27-goals-gap-context-tuning.md).
+Suite `examples` includes `pillar_down_hint_honored` and `goals_gap_not_withdraw`. Example experiment write-ups: [reports/2026-05-27-goals-gap-context-tuning.md](./reports/2026-05-27-goals-gap-context-tuning.md), [reports/2026-06-17-terrain-shaping-closure.md](./reports/2026-06-17-terrain-shaping-closure.md) (terrain context — closed), [reports/2026-06-19-terrain-shaping-status.md](./reports/2026-06-19-terrain-shaping-status.md) (verification rollup).
 
 See [workflow-agents.md](./workflow-agents.md) for the full change-validation loop.
 

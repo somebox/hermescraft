@@ -125,7 +125,7 @@ export async function escapeStrategyEnclosureInside(ctx) {
     }
 
     try {
-      const r = await actions.dig({ x: c.x, y: c.y, z: c.z, force: true });
+      const r = await actions.dig({ x: c.x, y: c.y, z: c.z, force: true, forceEscape: true });
       tried.push({ ...c, block: blk.name, result: r?.ok ? 'dug' : (r?.error?.code || 'failed') });
       if (r?.ok) {
         return recordEscapeSuccess({

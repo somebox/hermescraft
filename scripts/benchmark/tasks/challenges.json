@@ -99,5 +99,96 @@
       "require_parse_ok": true,
       "max_mc_lines": 2
     }
+  },
+  {
+    "id": "terrain_deck_water_span",
+    "category": "terrain",
+    "task": "You have 16 cobblestone. Bridge a 3-cell water span from (10,20) to (12,20) at foot y=64 using the deck verb with dry_run first.",
+    "challenge": {
+      "required_canonical_all": ["deck"],
+      "correct": ["mc deck 10 20 12 20 y=64 block=cobblestone dry_run=true"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "terrain_shallow_ford_place",
+    "category": "terrain",
+    "task": "Fill a single missing grass cell at (8, 64, 8) with dirt from inventory so you can stand on it.",
+    "challenge": {
+      "required_canonical_any": ["place", "fill"],
+      "correct": ["mc place 8 64 8 block=dirt", "mc fill dirt 8 64 8 8 64 8"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "terrain_level_pad_dry_run",
+    "category": "terrain",
+    "task": "Survey flattening a 5x5 pad at y=64 from x=48 z=48 to x=52 z=52 using level_ground in dry-run mode first.",
+    "challenge": {
+      "required_canonical_all": ["level_ground"],
+      "correct": ["mc level_ground 48 64 48 52 64 52 dry_run=true"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "terrain_lip_build_stairs_ramp",
+    "category": "terrain",
+    "task": "Build a cobblestone surface ramp north for 4 steps to climb a 2-block lip (not mine stair_up).",
+    "challenge": {
+      "required_canonical_all": ["build_stairs"],
+      "forbidden_canonical": ["stair_up"],
+      "correct": ["mc build_stairs cobblestone north 4"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "terrain_lip_single_place",
+    "category": "terrain",
+    "task": "Place one dirt tread at (9, 65, 8) to step up a 1-block lip.",
+    "challenge": {
+      "required_canonical_all": ["place"],
+      "correct": ["mc place 9 65 8 block=dirt"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "terrain_tunnel_ridge",
+    "category": "terrain",
+    "task": "Dig a 3-wide 3-tall tunnel corridor toward (20, 64, 30) through a hill blocking the route.",
+    "challenge": {
+      "required_canonical_all": ["tunnel"],
+      "correct": ["mc tunnel 20 64 30 W=3 H=3"],
+      "require_parse_ok": true,
+      "max_mc_lines": 3
+    }
+  },
+  {
+    "id": "terrain_fluid_plug_before_dig",
+    "category": "terrain",
+    "task": "Lava exposed at (5, 64, 5) on your dig line — place cobble to seal before continuing to dig.",
+    "challenge": {
+      "required_canonical_any": ["place", "fill"],
+      "forbidden_canonical": ["dig", "safe_dig"],
+      "correct": ["mc place 5 64 5 block=cobblestone"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
+  },
+  {
+    "id": "terrain_mine_stair_down_corridor",
+    "category": "terrain",
+    "task": "Dig a descending mine corridor straight north 8 steps from the surface (mine stair_down, not surface bridge).",
+    "challenge": {
+      "required_canonical_all": ["stair_down"],
+      "forbidden_canonical": ["build_stairs"],
+      "correct": ["mc stair_down north 8"],
+      "require_parse_ok": true,
+      "max_mc_lines": 2
+    }
   }
 ]

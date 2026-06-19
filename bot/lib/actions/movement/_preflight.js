@@ -13,7 +13,7 @@ import {
   targetChunkLoaded,
 } from '../_nav-helpers.js';
 import { DIR_VEC_4 as DIR_VEC } from '../_directions.js';
-import { navBlockedNextActionHint, botTrappedNextActionHint } from './nav-hints.js';
+import { navBlockedNextActionHint, botTrappedNextActionHint, navTargetUnstandableNextActionHint, regionNavExitHintFromStore } from './nav-hints.js';
 
 // Y-grace: when an agent calls mc move / goto / goto_near with the right
 // XZ but a wrong Y (target inside a hill, floating in air), we rescue by
@@ -27,7 +27,7 @@ export const Y_GRACE_MAX_DY = 5;
  * Enrich observed_state with standability diagnostics.
  * Exported for tests that monkey-patch internal flows.
  */
-export function enrichWithStand(b, observedState, x, y, z) {
+export function enrichWithStand(b, observedState, x, y, z, ctx) {
   try {
     const tx = Math.floor(Number(x));
     const ty = Math.floor(Number(y));
@@ -46,6 +46,20 @@ export function enrichWithStand(b, observedState, x, y, z) {
       open_dirs: ss.open_dirs,
     };
   } catch { /* never let diagnostic enrichment break the error path */ }
+  try {
+    const store = ctx?.runtime?.regions;
+    const pos = b?.entity?.position;
+    if (store && pos) {
+      const here = store.regionsHere(pos);
+      if (here.length) observedState.regions_here = here;
+      const protect = here.filter((r) => r.intent === 'protect');
+      if (protect.length) {
+        observedState.nav_in_protect_region = true;
+        const exitHint = regionNavExitHintFromStore(store, protect[0].id);
+        if (exitHint) observedState.region_nav_exit_hint = exitHint;
+      }
+    }
+  } catch { /* region enrichment is best-effort */ }
   return observedState;
 }
 
@@ -161,7 +175,7 @@ export function createNavErrors(fmt, enrich) {
 /**
  * F50.2: Pre-flight checks before invoking the pathfinder.
  */
-export function createPreflightNav(refuseWaterRouteWithoutBoat, recentStuckNear) {
+export function createPreflightNav(refuseWaterRouteWithoutBoat, recentStuckNear, enrich = enrichWithStand) {
   return function preflightNav(b, x, y, z, range) {
     const boatRefusal = refuseWaterRouteWithoutBoat(b, x, y, z);
     if (boatRefusal) return boatRefusal;
@@ -172,7 +186,7 @@ export function createPreflightNav(refuseWaterRouteWithoutBoat, recentStuckNear)
       const tx = Math.floor(Number(x));
       const ty = Math.floor(Number(y));
       const tz = Math.floor(Number(z));
-      const observed_state = enrichWithStand(b, {
+      const observed_state = enrich(b, {
         your_standing_state: ss,
         target: { x: tx, y: ty, z: tz },
       }, tx, ty, tz);
@@ -265,21 +279,23 @@ export function createPreflightNav(refuseWaterRouteWithoutBoat, recentStuckNear)
       if (!targetChunkLoaded(b, tx, ty, tz, Y_GRACE_MAX_DY)) {
         return null;
       }
+      const observed_state = enrich(b, {
+        target: { x: tx, y: ty, z: tz },
+        scan_range: scan,
+        y_grace_searched: Y_GRACE_MAX_DY,
+        your_standing_state: ss ? {
+          classification: ss.classification,
+          blocked_dirs: ss.blocked_dirs,
+          open_dirs: ss.open_dirs,
+        } : null,
+      }, tx, ty, tz);
       return {
         ok: false,
         error: {
           code: 'NAV_TARGET_UNSTANDABLE',
           message: `No standable cell within ${scan} of ${tx},${ty},${tz}, and no standable Y within ±${Y_GRACE_MAX_DY} at the same (x,z). Target area is solid or floating. Pick a different destination, or mc dig to clear blocks first.`,
-          observed_state: {
-            target: { x: tx, y: ty, z: tz },
-            scan_range: scan,
-            y_grace_searched: Y_GRACE_MAX_DY,
-            your_standing_state: ss ? {
-              classification: ss.classification,
-              blocked_dirs: ss.blocked_dirs,
-              open_dirs: ss.open_dirs,
-            } : null,
-          },
+          observed_state,
+          next_action_hint: navTargetUnstandableNextActionHint(b, tx, ty, tz, observed_state),
           retry_safe: false,
         },
       };

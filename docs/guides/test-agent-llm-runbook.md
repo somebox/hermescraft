@@ -43,6 +43,17 @@ Smaller **B1–B4** smelt/fetch specs: `data/test-fixtures/behavior/B*.yaml` —
 python3 scripts/agent-test.py --bot-url http://localhost:3001 data/agent-tests/F2_phantom_search.yaml
 ```
 
+**Terrain shaping suite** (pairs with context suite — [closure](../testing/context-tuner/reports/2026-06-17-terrain-shaping-closure.md), [standing 2026-06-19](../testing/context-tuner/reports/2026-06-19-terrain-shaping-status.md)):
+
+```bash
+./scripts/terrain-agent-tests.sh list
+./scripts/terrain-agent-tests.sh all   # regression: expect 6/6 on Tester :3004
+# or one spec:
+./scripts/terrain-agent-tests.sh data/agent-tests/F_deck_gap_reach.yaml
+```
+
+Requires **Tester** on port **3004** and `landfolk-test` rcon (same as functional pytest). The batch script runs `scripts/run-tester-bot.sh` if needed.
+
 ## Suite
 
 | Class | Test | Capability | Avg time |
@@ -53,6 +64,12 @@ python3 scripts/agent-test.py --bot-url http://localhost:3001 data/agent-tests/F
 | | F3 | stuck in 3-deep pit (`mc pillar_step` / `mc stair_up`) | 48s |
 | | F4 | wooden vs stone pickaxe tier mismatch on iron_ore | 22s |
 | | F5 | door blockade — `mc goto`→NAV_BLOCKED→`mc through` | 20s |
+| **Terrain shaping** | F_deck | water span → `deck` then `move` (explicit bbox) | ~60s |
+| | F_river | missing floor cell → `mc place` ford | ~30s |
+| | F_walkable | 1-block step down → `mc move` / `goto_near` | ~25s |
+| | F_lip | 2-block lip → `place` / `dig` / `build_stairs` | ~45s |
+| | F_chasm | void gap → `mc deck` + cross | ~90s |
+| | F_apron | `clear_strip` on ring; shelter cobble intact | ~60s |
 | | F6 | axe-break cascade (planks→sticks→table→axe→mine) | 60s |
 | Composite | G1 | full chain to `stone_pickaxe` from nothing | 100-200s |
 | | G2 | 5×5 cobblestone shelter walls | 45s |

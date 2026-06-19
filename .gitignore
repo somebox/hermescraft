@@ -88,3 +88,11 @@ data/agent-tests/runs/**
 scripts/rescue-*.txt
 /tmp/
 /tmp/mc_screenshot_*.png
+
+# Generated per-run state (genesis-v2 + roadplan + per-bot runtime files)
+data/genesis-v2-runs/
+scripts/data/runtime/
+data/locations-base.json
+data/goals-*.json
+data/personal-pois-*.json
+data/marks/*.bak

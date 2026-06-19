@@ -17,7 +17,7 @@ version: 4.1.0
 
 # Minecraft Navigation
 
-Canonical command syntax, argument keys, and refusal → next-command matrix: [`docs/reference/mc-command-reference.md`](../docs/reference/mc-command-reference.md) (especially Section D–E for water and `BOAT_REQUIRED`). Navigation refactor (move-canonical DSL, per-round brief, breadcrumbs): [`docs/specs/nav/route-precompute-context.md`](../docs/specs/nav/route-precompute-context.md). Strategic framing (taxi nav, replan on stall): [`docs/architecture/embodied-control.md`](../docs/architecture/embodied-control.md).
+Canonical command syntax, argument keys, and refusal → next-command matrix: [`docs/reference/mc-command-reference.md`](../docs/reference/mc-command-reference.md) (especially Section D–E for water and `BOAT_REQUIRED`). Player hitbox, jump height, bridging, trap recovery: [`docs/reference/minecraft-gameplay-mechanics.md`](../docs/reference/minecraft-gameplay-mechanics.md). Navigation refactor (move-canonical DSL, per-round brief, breadcrumbs): [`docs/specs/nav/route-precompute-context.md`](../docs/specs/nav/route-precompute-context.md). Strategic framing (taxi nav, replan on stall): [`docs/architecture/embodied-control.md`](../docs/architecture/embodied-control.md).
 
 ## Per-round route brief (`mc observe`)
 
@@ -26,6 +26,8 @@ When the fleet runs with **`HERMES_NAV_BRIEF=1`**, `mc observe` includes a **`na
 **Doctrine:** read the brief, pick a line (usually the one with `← suggested`), run it. If that line fails, do not retry the same destination blindly — re-run `mc observe` or use `mc scene` / `mc standing` to see what changed. In **confined** mode (pit, sealed room), long strategic `move` rows may show `⚠ blocked (confined)`; use DO primitives (`pillar_up`, `stair_up`, `dig`) from the same brief instead of reasoning a path from `mc map`.
 
 Shadow rollout (`HERMES_NAV_BRIEF=shadow`) logs the brief without showing it to the agent — ops only.
+
+**Runtime hints:** weigh `error.next_action_hint` and observe **Suggested next commands** (`next_action_hints[]`) first — they mirror bot precedence (walk/`mc move`, safe exits, `mc check` before destructive `dig_area` / `mc tunnel`). Do not obey blindly when the hint contradicts protect-region policy, stale brief flags (`STALE_BRIEF`, `brief_refresh_required`), or your skill doctrine.
 
 ## Commands
 
@@ -139,6 +141,8 @@ When `mc move` fails with `NAV_BLOCKED`, the error includes `observed_state.near
 
 **Traversability:** pathfinder treats **1-block** step-ups as walkable; natural slopes often need a **2-block lip** opened (`mc dig` on the upper blocking cell) or a short **`mc build_stairs BLOCK DIR LEN`** ramp (effective rise ≤2 blocks per step). Do not repeat the same `mc move` line after `NAV_BLOCKED` — read `next_action_hint` first.
 
+**Adjacent 1-block step-up:** When the target is one block higher on a cardinal neighbor and `observed_state.target_standable` or `next_hop_suggestion` points at that cell, prefer **`mc move X Y Z`** or **`mc goto_near X Y Z range=1`**. Do not call `build_stairs`, `dig_area`, or `tunnel` for that geometry.
+
 | Situation | Typical hint / action |
 |---|---|
 | Target not standable | `mc reachable` → `mc goto_near` to `best_stand`, then retry |
@@ -185,8 +189,10 @@ Use pillar_up when:
 
 Don't use pillar_up to:
 - get over a wall — `mc dig` through it, or walk around
-- scout/survey — `mc map`, `mc nearby`, `mc scene` work without climbing
-- reach a destination — `mc move`, `mc stair_up`, `mc bridge`/`mc place` to bridge a gap
+- scout/survey — `mc map`, `mc nearby`, `mc scene`, `mc reachable` work without climbing; perception is range-capped and height rarely buys distance
+- reach a destination — `mc move`, `mc stair_up`, `mc deck` / `mc place` to bridge a gap
+
+**Observation rule:** do not `pillar_up` just to "see farther." Use only when (a) a concrete local occlusion blocks immediate planning and (b) no safer horizontal probe exists (`scene`/`map`/`reachable`, short `goto_near`, `stair_up`). If you pillar, pair `pillar_down` cleanup in the same plan.
 
 `pillar_up` climbs the full count you ask for (e.g. `mc pillar_up 9` climbs up to 9), stopping early only when it reaches a sky-open surface or hits an obstruction it can't clear. When it does stop, read the result: it reports `placed/requested`, why it stopped, and a `next_action_hint` (often `--force` if the ceiling is stone and you're bare-handed). A climb that ends on a 1×1 column includes a `cleanup_hint` (`"mc pillar_down N"`) — descend before navigating. Placed pillar blocks are tracked in `recentPlaces`, so the bot may mine its own pillars on cleanup (no `PROTECTED_BLOCK` refusal).
 

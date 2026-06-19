@@ -1,0 +1,38 @@
+schema_version: 2
+id: base_apron_excludes_shelter
+category: terrain-shaping
+description: BASE-CLEAR ring; clear_strip/level on apron, not inside shelter footprint.
+contract_level: hard
+decision_class: repair_now
+mechanics_claim: |
+  Vegetation on approach ring only; pre-rendered shelter footprint must stay intact.
+primitive_mapping: |
+  clear_strip or level_ground on apron_ring bbox. Wrong: place/fill inside shelter footprint.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-roadbuilding.md
+observe: data/context-tests/_shared/observe-base-apron-shelter.json
+memory:
+  mode: none
+
+user_prompt: Clear the base approach ring for genesis BASE-CLEAR. Do not damage the shelter. Reply with one mc line from suggested next commands (apron ring only).
+
+expect:
+  tool_calls:
+    required_canonical_any: [clear_strip, level_ground]
+    forbidden_canonical: [goto]
+    require_parse_ok: true
+    max_lines: 4
+    forbidden_coord_in_bbox:
+      - verbs: [place, fill, dig]
+        bbox: { x1: 50, y1: 64, z1: 50, x2: 54, y2: 67, z2: 54 }
+        body_keys: [x, y, z]
+
+patterns:
+  - id: apron_safe
+    type: forbidden_bbox_for_area_verbs
+    args:
+      forbidden_bbox: { x1: 50, y1: 64, z1: 50, x2: 54, y2: 67, z2: 54 }
+      verbs: [clear_strip, level_ground, deck]

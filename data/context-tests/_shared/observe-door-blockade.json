@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 0.5, "y": 65, "z": 7.5 }
+  },
+  "route": {
+    "target": { "x": 0, "y": 65, "z": 2 }
+  }
+}

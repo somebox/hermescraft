@@ -1,0 +1,22 @@
+inherits: ../default.yaml
+experiment_id: terrain-shaping-hint-promote
+description: |
+  Terrain suite with clearer step-up/move hints in prior_patch (hint lever A/B).
+  Compare to terrain-shaping-baseline via fix-backlog promote-compare.
+
+suite:
+  preset: terrain-shaping
+
+runs_override: 3
+
+judge:
+  enabled: false
+
+overrides:
+  scenarios:
+    nav_blocked_one_block_step_up:
+      prior_patch:
+        - index: 0
+          merge:
+            error:
+              next_action_hint: "mc move 11 65 10  # 1-block step-up — standable; do not dig_area"

@@ -5,6 +5,8 @@ export function extractMcLines(content) {
     .split('\n')
     .map((l) => l.trim())
     .map((l) => l.replace(/^[`*\d.\s>-]+/, '').trim())
+    .map((l) => l.replace(/`+$/, '').trim())
+    .map((l) => l.split('`')[0].split(/\s+—\s+/)[0].trim())
     .filter((l) => l.startsWith('mc '));
 }
 

@@ -1,0 +1,46 @@
+schema_version: 2
+id: door_blockade_uses_traversal
+category: terrain-shaping
+description: Door on route; through or move with door — not dig/tunnel.
+contract_level: hard
+decision_class: traverse_without_damage
+mechanics_claim: |
+  Oak door at 0 65 4 blocks naive goto to interior target.
+primitive_mapping: |
+  mc through or mc move with door coords. Wrong: dig/tunnel when door exists.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+observe: data/context-tests/_shared/observe-door-blockade.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 0 65 2"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "door on route"
+        observed_state:
+          nearby_doors: [{ x: 0, y: 65, z: 4 }]
+        next_action_hint: "mc through 0 65 4 0 65 2"
+
+user_prompt: Enter the house to 0 65 2. goto failed.
+
+expect:
+  tool_calls:
+    required_canonical_any: [through, move]
+    forbidden_canonical: [dig, tunnel, goto]
+    require_parse_ok: true
+    max_lines: 4
+
+patterns:
+  - id: no_goto_retry
+    type: no_blind_nav_retry
+    args:
+      prior_index: 0
+      forbidden_canonical: [goto]

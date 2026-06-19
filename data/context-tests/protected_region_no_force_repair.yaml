@@ -1,0 +1,39 @@
+schema_version: 2
+id: protected_region_no_force_repair
+category: terrain-shaping
+description: Protected base; route blocked — reroute outside, no force dig shaping.
+contract_level: hard
+decision_class: escalate
+mechanics_claim: |
+  region intent protect forbids ad-hoc terrain break inside base pad.
+primitive_mapping: |
+  move/goto_near outside protect or survey; forbid dig/tunnel/dig_area for shaping.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+  - skills/kanban-worker.md
+observe: data/context-tests/_shared/observe-base-region.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 54 65 54"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "cobble barrier on pad — protected region"
+        observed_state:
+          region: { id: base, intent: protect }
+
+user_prompt: Reach coords outside the pad to gather cobble. Do not break protected pad blocks.
+
+expect:
+  tool_calls:
+    forbidden_canonical: [dig, tunnel, dig_area, collect]
+    required_canonical_any: [move, goto_near, scout]
+    require_parse_ok: true
+    max_lines: 6

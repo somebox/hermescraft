@@ -7,6 +7,8 @@
 | LLM + bot agent tests | [`../guides/test-agent-llm-runbook.md`](../guides/test-agent-llm-runbook.md) |
 | Arena quickstart | [`../guides/test-arena-quickstart.md`](../guides/test-arena-quickstart.md) |
 | Context / prompt tuning | [`context-tuner/README.md`](context-tuner/README.md) |
+| Terrain shaping → bot promotion | [`../planning/terrain-shaping-runtime-promotion.md`](../planning/terrain-shaping-runtime-promotion.md) |
+| Terrain shaping standing (2026-06-19) | [`context-tuner/reports/2026-06-19-terrain-shaping-status.md`](context-tuner/reports/2026-06-19-terrain-shaping-status.md) |
 | Procedural maps & scenarios | [`procedural/`](procedural/) — model in [`procedural/testing-model.md`](procedural/testing-model.md); data in [`../../data/scenarios/`](../../data/scenarios/) and [`../../mapcatalog/`](../../mapcatalog/) |
 | Playbook improvement pass (closed) | [`playbooks/`](playbooks/) |
 

@@ -1,0 +1,22 @@
+inherits: ../default.yaml
+experiment_id: step-up-hint-clear
+description: |
+  Same scenario; stronger next_action_hint (move onto standable step-up cell).
+  Tests verb-response lever only — skills/profile unchanged.
+
+suite:
+  preset: step-up-methodology
+
+runs_override: 3
+
+judge:
+  enabled: false
+
+overrides:
+  scenarios:
+    nav_blocked_one_block_step_up:
+      prior_patch:
+        - index: 0
+          merge:
+            error:
+              next_action_hint: "mc move 11 65 10  # 1-block step-up east — standable; do not build_stairs or retry mc goto"

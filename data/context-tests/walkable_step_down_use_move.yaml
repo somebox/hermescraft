@@ -1,0 +1,38 @@
+schema_version: 2
+id: walkable_step_down_use_move
+category: terrain-shaping
+description: Safe 1-block step-down; use move, do not overbuild.
+contract_level: hard
+requires_observation_field: [standing.step_down_dirs]
+decision_class: traverse_without_damage
+mechanics_claim: |
+  standing.step_down_dirs includes S; target one block lower is a safe walk-off.
+primitive_mapping: |
+  mc move into step-down direction. Wrong: deck, build_stairs, stair_down, place.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+observe: data/context-tests/_shared/observe-walkable-step-down.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 10 64 12"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "pathfinder stalled on safe step-down — try mc move 10 64 12 south"
+        next_action_hint: "mc move 10 64 12"
+
+user_prompt: Reach the lower mark. Do not place blocks if walking works.
+
+expect:
+  tool_calls:
+    required_canonical_any: [move]
+    forbidden_canonical: [place, deck, build_stairs, stair_down, stair_up, goto]
+    require_parse_ok: true
+    max_lines: 3

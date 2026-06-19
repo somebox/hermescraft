@@ -4,6 +4,24 @@ function formatToolResult(tr) {
   return '```json\n' + JSON.stringify(tr, null, 2) + '\n```';
 }
 
+/** Pull optional copy-paste hints from observe JSON (fixture lever for terrain-shaping). */
+function observeHintsSection(observeJson) {
+  if (!observeJson) return '';
+  try {
+    const o = JSON.parse(observeJson);
+    const hints = o.next_action_hints;
+    if (!Array.isArray(hints) || hints.length === 0) return '';
+    const lines = hints.map((h) => (typeof h === 'string' ? `- ${h}` : `- ${JSON.stringify(h)}`));
+    return (
+      '\n\n# Suggested next commands (from observe)\n\n' +
+      lines.join('\n') +
+      '\n\nCopy one line exactly into your code block (no extra punctuation or commentary).'
+    );
+  } catch {
+    return '';
+  }
+}
+
 export function buildSnapshotMessages({
   persona,
   skills,
@@ -29,7 +47,7 @@ export function buildSnapshotMessages({
     } catch {
       pretty = observeJson;
     }
-    sections.push('# Current game state (observe)\n\n```json\n' + pretty + '\n```');
+    sections.push('# Current game state (observe)\n\n```json\n' + pretty + '\n```' + observeHintsSection(observeJson));
   }
   if (prior?.length) {
     const lines = [];
@@ -104,7 +122,7 @@ function buildTranscriptToolCalls(args) {
   }
   messages.push({
     role: 'user',
-    content: '# Observe\n\n```json\n' + observePretty + '\n```\n\n# Task\n\n' + (args.userPrompt || ''),
+    content: '# Observe\n\n```json\n' + observePretty + '\n```' + observeHintsSection(args.observeJson) + '\n\n# Task\n\n' + (args.userPrompt || ''),
   });
   let tcId = 0;
   for (const p of args.prior || []) {

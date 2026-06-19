@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 30.5, "y": 65, "z": 30.5 }
+  },
+  "inventory_summary": { "cobblestone": 32 },
+  "route": {
+    "target": { "x": 34, "y": 65, "z": 30 },
+    "chasm": {
+      "x1": 31,
+      "z1": 29,
+      "x2": 33,
+      "z2": 31,
+      "depth": 12
+    }
+  },
+  "next_action_hints": [
+    "mc deck 31 29 33 31 y=64 block=cobblestone dry_run=true",
+    "mc mark ravine_reroute defer deck until cobble staged"
+  ]
+}

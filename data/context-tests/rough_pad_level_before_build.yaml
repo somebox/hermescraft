@@ -1,0 +1,33 @@
+schema_version: 2
+id: rough_pad_level_before_build
+category: terrain-shaping
+description: Uneven pad; level_ground dry-run before execute on pad bbox.
+contract_level: hard
+decision_class: survey_then_repair
+mechanics_claim: |
+  Mixed cut/fill on 5x5 pad; no void under pad.
+primitive_mapping: |
+  level_ground dry_run=true on pad coords first. Wrong: execute=true without survey.
+
+profile: prompts/landfolk/mason.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-roadbuilding.md
+observe: data/context-tests/_shared/observe-rough-pad.json
+memory:
+  mode: none
+
+user_prompt: Flatten the build pad before placing storage. Next mc command?
+
+expect:
+  tool_calls:
+    required_canonical_any: [level_ground]
+    forbidden_canonical: [goto, place]
+    require_parse_ok: true
+    max_lines: 4
+
+patterns:
+  - id: dry_run_survey
+    type: dry_run_before_execute
+    args:
+      verbs: [level_ground, deck]

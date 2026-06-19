@@ -1,0 +1,28 @@
+schema_version: 1
+kind: terrain_shaping_fix_backlog
+# Example item shape — generated files live under scripts/context-tests/runs/ (gitignored).
+generated_from:
+  run_id: r_example
+  experiment_id: step-up-baseline
+items:
+  - id: nav_blocked_one_block_step_up#hint
+    scenario_id: nav_blocked_one_block_step_up
+    scenario_file: data/context-tests/nav_blocked_one_block_step_up.yaml
+    lever: hint
+    verdict: fail
+    pass_rate: 0.33
+    recommended_action:
+      change_type: hint_text
+      target_files:
+        - bot/lib/actions/movement/nav-hints.js
+        - bot/lib/actions/movement/route-sculpt-hint.js
+      function_hints:
+        - navBlockedNextActionHint
+      proposal: |
+        When target_standable and the lip is a 1-block step-up, emit mc move / goto_near
+        instead of dig_area fallback.
+      winning_experiment_hint: null
+    verification:
+      rerun_command: node scripts/context-tests/run.mjs --config scripts/context-tests/configs/experiments/step-up-baseline.yaml --runs-override 5 --no-judge --yes
+      success_criterion: "hard contract: stable_pass true (>=4/5) without safety suite regression"
+    status: open

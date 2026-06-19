@@ -1,0 +1,54 @@
+# F_deck — narrow water span; reach east bank via mc deck (not blind goto).
+# Context twin: nav_blocked_water_bridge / terrain_deck_water_span.
+
+agent_test_id: F_deck_gap_reach
+world: landfolk-test
+
+prompt: |
+  You are Tester. MC CLI on PATH at (100, 65, 100) in landfolk-test.
+
+  Water blocks x=102..104 at bed y=63 (feet on stone at y=65). Goal: (106, 65, 100).
+  You have cobblestone. Do not inspect or goto — bridge then walk.
+
+  Do exactly this sequence:
+  1. mc deck 102 100 104 100 y=64 block=cobblestone
+  2. mc move 106 65 100
+
+skills: [minecraft-navigation, minecraft-roadbuilding, minecraft-survival]
+max_turns: 6
+timeout_seconds: 180
+
+verify_bot_at: { x: 100, y: 65, z: 100, range: 3 }
+
+expect:
+  bot_at: { x: 106, y: 65, z: 100, range: 3 }
+  mc_verbs_include_all: [deck, move]
+  mc_cli_invocations_max: 8
+
+verify_after_prep:
+  - { block: water, min_count: 2, radius: 24 }
+  - { block: stone, min_count: 20, radius: 24 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 98 64 98 108 80 102 minecraft:air"
+  - "execute in landfolk-test run fill 99 64 99 107 64 101 minecraft:stone"
+  - "execute in landfolk-test run setblock 102 63 100 minecraft:water"
+  - "execute in landfolk-test run setblock 103 63 100 minecraft:water"
+  - "execute in landfolk-test run setblock 104 63 100 minecraft:water"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 100 65 100"
+  - "effect clear Tester"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "clear Tester"
+  - "give Tester minecraft:cobblestone 32"
+
+cleanup:
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 98 63 98 108 80 102 minecraft:air"
+  - "execute in landfolk-test run fill 99 64 99 107 64 101 minecraft:stone"
+  - "execute in landfolk-test run tp Tester 52 65 52"

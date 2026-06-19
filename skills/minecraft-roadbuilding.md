@@ -145,6 +145,25 @@ mc stair_down DIRECTION [LENGTH] [X Y Z] [WIDTH] [HEIGHT]
 # step is a 3-wide tread, so the road keeps its width up the slope.
 ```
 
+### Nav / card obstacle → repair verb (quick reference)
+
+| Obstacle | Prefer | Avoid |
+|----------|--------|-------|
+| Narrow water span | `mc deck … dry_run=true` then execute | Blind `goto` / swim |
+| Shallow dip (≤3 cells) | `level_ground mode=max` dry-run first | `deck` over whole strip |
+| 2-block lip on route | `build_stairs` or single `place` tread | `stair_up` (mine dig-up) |
+| Tree/log in corridor | `clear_strip road_mode=true` or `fell_tree` | Repeat `goto` |
+| Door on path | `through` / `move --door` | `dig` / `tunnel` |
+| Deep ravine on segment | Reroute segment or `deck` if scoped | `level_ground execute` over void |
+| Protected structure bbox | Exclude footprint from `clear_strip` / `level_ground` | Edits inside shelter |
+| Log/tree blocks route (`NAV_BLOCKED`) | **`mc clear_strip … road_mode=true`** or **`mc fell_tree`** on the trunk column | Another **`mc goto`** / **`mc move`** through the same blocked cell |
+| Genesis **BASE-CLEAR** apron ring | **`mc clear_strip`** / **`mc level_ground`** on the **ring bbox only** (observe gives apron coords) | **`mc place` / `mc fill` / dig inside the shelter footprint** |
+| Mason **build pad** flatten | **`mc level_ground X1 Z1 X2 Z2 target=Y`** with **no `execute=true`** first; read dispositions, then execute | **`mc chat`**, **`mc place`**, or **`execute=true`** before dry-run |
+
+**Protected region (`intent: protect`):** you may **`mc observe` / `mc scene`** to orient, but the **next shaping command must not break pad blocks**. Route with **`mc move` / `mc goto_near` / `mc scout`** to stand **outside** the protect bbox and gather or work there — never **`dig` / `tunnel` / `dig_area`** on the pad to “fix” nav.
+
+**Tree line after failed goto:** if prior turns already failed **`goto`** on a log block, **do not retry nav** — clear the corridor band in one shaping call (`clear_strip` or `fell_tree`), then walk.
+
 ### Verify in the field — confirm before handing off
 
 ```

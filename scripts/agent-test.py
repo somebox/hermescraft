@@ -964,6 +964,14 @@ def predicate_results(spec: dict, agent_chat: str, end_state: dict,
         detail = (",".join(hits) + " used") if hits else f"none of: {','.join(wanted)} in {mc_verbs}"
         results.append({"kind": f"mc_verbs_include_any:{label}", "pass": ok, "detail": detail})
 
+    if "mc_verbs_include_all" in expect:
+        wanted = expect["mc_verbs_include_all"]
+        missing = [v for v in wanted if v not in mc_verbs]
+        ok = len(missing) == 0
+        label = ",".join(wanted)
+        detail = "all used" if ok else f"missing: {','.join(missing)} in {mc_verbs}"
+        results.append({"kind": f"mc_verbs_include_all:{label}", "pass": ok, "detail": detail})
+
     if "world_no_entity_of_type" in expect:
         # Pass when no entity of the given type exists in the test world.
         # Uses rcon stdout: a `data get entity` selector prints entity NBT on
@@ -1251,6 +1259,24 @@ def main():
                 fail = True
         if fail:
             print(f"  ABORT: prep verification failed — world not in expected state")
+            fixture_run(spec, "cleanup")
+            sys.exit(3)
+
+    vba = spec.get("verify_bot_at")
+    if vba:
+        obs = observe(args.bot_url)
+        pos = (obs.get("state") or {}).get("position") or {}
+        if not pos:
+            print("  ABORT: verify_bot_at — no bot position after prep")
+            fixture_run(spec, "cleanup")
+            sys.exit(3)
+        tx, ty, tz = float(vba["x"]), float(vba["y"]), float(vba["z"])
+        r = float(vba.get("range", 2))
+        dist = ((pos.get("x", 0) - tx) ** 2 + (pos.get("y", 0) - ty) ** 2 + (pos.get("z", 0) - tz) ** 2) ** 0.5
+        ok = dist <= r
+        print(f"  verify_bot_at: {'✓' if ok else '✗'} dist={dist:.1f} (want ≤{r} of {tx},{ty},{tz})")
+        if not ok:
+            print(f"  ABORT: bot not at arena spawn after prep")
             fixture_run(spec, "cleanup")
             sys.exit(3)
 

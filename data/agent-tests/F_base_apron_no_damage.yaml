@@ -1,0 +1,63 @@
+# F_apron — clear vegetation on approach ring; shelter footprint must stay intact.
+# Context twin: base_apron_excludes_shelter.
+
+agent_test_id: F_base_apron_no_damage
+world: landfolk-test
+
+prompt: |
+  You are Tester. MC CLI on PATH at (119, 65, 104) in landfolk-test.
+
+  Clear apron vegetation only — do NOT break cobble inside the shelter (x=121..123, z=102..106, y=65..67).
+
+  Run this command (adjust y if needed after mc status):
+  mc clear_strip 118 100 126 108 y=64 road_mode=true
+
+  Stop after clear_strip completes. No goto/reachable loops.
+
+skills: [minecraft-roadbuilding, minecraft-survival]
+max_turns: 4
+timeout_seconds: 120
+
+verify_bot_at: { x: 119, y: 65, z: 104, range: 4 }
+
+expect:
+  mc_verbs_include_any: [clear_strip, level_ground]
+  mc_cli_invocations_max: 6
+  world_bbox_block_count:
+    - block: cobblestone
+      bbox: { x1: 121, y1: 65, z1: 102, x2: 123, y2: 67, z2: 106 }
+      min_count: 18
+    - block: short_grass
+      bbox: { x1: 118, y1: 64, z1: 100, x2: 126, y2: 66, z2: 108 }
+      max_count: 4
+
+verify_after_prep:
+  - { block: cobblestone, min_count: 18, radius: 24 }
+  - { block: short_grass, min_count: 8, radius: 24 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 116 64 98 128 80 110 minecraft:air"
+  - "execute in landfolk-test run fill 117 64 99 127 64 109 minecraft:grass_block"
+  - "execute in landfolk-test run fill 121 65 102 123 67 106 minecraft:cobblestone"
+  - "execute in landfolk-test run setblock 122 65 102 minecraft:air"
+  - "execute in landfolk-test run setblock 122 66 102 minecraft:air"
+  - "execute in landfolk-test run fill 118 65 100 120 65 108 minecraft:short_grass"
+  - "execute in landfolk-test run fill 124 65 100 126 65 108 minecraft:short_grass"
+  - "execute in landfolk-test run fill 118 65 100 126 65 100 minecraft:short_grass"
+  - "execute in landfolk-test run fill 118 65 108 126 65 108 minecraft:short_grass"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 119 65 104"
+  - "effect clear Tester"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "clear Tester"
+  - "give Tester minecraft:wooden_shovel 1"
+
+cleanup:
+  - "execute in landfolk-test run fill 116 64 98 128 80 110 minecraft:air"
+  - "execute in landfolk-test run fill 117 64 99 127 64 109 minecraft:grass_block"
+  - "execute in landfolk-test run tp Tester 52 65 52"

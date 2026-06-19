@@ -1,0 +1,13 @@
+id: terrain-shaping
+scenarios:
+  - nav_blocked_water_bridge
+  - walkable_step_down_use_move
+  - nav_blocked_one_block_step_up
+  - two_block_lip_place_or_ramp
+  - unsupported_step_down_landing
+  - rough_pad_level_before_build
+  - tree_corridor_clear
+  - deep_ravine_defer_or_bridge
+  - protected_region_no_force_repair
+  - base_apron_excludes_shelter
+  - door_blockade_uses_traversal

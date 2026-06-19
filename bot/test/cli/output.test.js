@@ -40,6 +40,33 @@ describe('cli output', () => {
     assert.ok(!joined.includes('"nav_brief_text"'));
   });
 
+  it('renderHuman prints Suggested next commands for observe when next_action_hints present', () => {
+    const logs = [];
+    const orig = console.log;
+    console.log = (...args) => logs.push(args.join(' '));
+    try {
+      renderHuman({
+        ok: true,
+        command: 'observe',
+        data: {
+          nav_header: {
+            situation: 'Surface',
+            pos: { x: 1, y: 64, z: 2 },
+            nav_mode: 'open',
+            suggested_hint: 'mc move one step N',
+          },
+          next_action_hints: ['mc move one step N', 'mc go_mark base'],
+          goals: [],
+        },
+      });
+    } finally {
+      console.log = orig;
+    }
+    const joined = logs.join('\n');
+    assert.ok(joined.includes('Suggested next commands'));
+    assert.ok(joined.includes('mc go_mark base'));
+  });
+
   it('renderHuman prefixes mc scene with nav_header line (#50 follow-up)', () => {
     // Server now ships nav_header on /scene and /status envelopes so the
     // brief reaches workers who favor those verbs. The CLI human renderer

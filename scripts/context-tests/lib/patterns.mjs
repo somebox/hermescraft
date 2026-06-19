@@ -77,9 +77,178 @@ function nextActionHintFollowed(rows, args, ctx) {
   };
 }
 
+function parseBody(body) {
+  if (!body) return {};
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return {};
+    }
+  }
+  return body;
+}
+
+function priorAssistantMcLine(prior, index = 0) {
+  const item = prior?.[index];
+  if (!item?.assistant) return null;
+  const line = String(item.assistant).trim();
+  return line.startsWith('mc ') ? line : line.includes('mc ') ? line.slice(line.indexOf('mc ')) : null;
+}
+
+function worldShapingActionFirst(rows, args) {
+  const allowed = new Set(
+    args.allowed || [
+      'deck',
+      'place',
+      'level_ground',
+      'clear_strip',
+      'build_stairs',
+      'tunnel',
+      'fell_tree',
+      'dig',
+      'fill',
+    ],
+  );
+  const perception = new Set(
+    args.perception_allowed || ['map', 'scene', 'observe', 'standing', 'reachable', 'terrain_top'],
+  );
+  const maxP = args.max_perception ?? 1;
+  const seq = canonicalsFromRows(rows, new Set([...DEFAULT_IGNORE, ...perception]));
+  let i = 0;
+  let pCount = 0;
+  const allCanon = canonicalsFromRows(rows);
+  while (i < allCanon.length && perception.has(allCanon[i]) && pCount < maxP) {
+    pCount++;
+    i++;
+  }
+  if (i >= allCanon.length) {
+    return { pass: false, evidence: { reason: 'perception_only_no_shaping' } };
+  }
+  const first = allCanon[i];
+  const pass = allowed.has(first);
+  return { pass, evidence: { seq: allCanon, first_action: first, perception_prefix: allCanon.slice(0, i) } };
+}
+
+function noBlindNavRetry(rows, args, ctx) {
+  const prior = ctx?.prior;
+  const idx = args.prior_index ?? 0;
+  const forbidden = new Set(args.forbidden_canonical || ['goto', 'move']);
+  const priorLine = priorAssistantMcLine(prior, idx);
+  if (!priorLine) return { pass: true, evidence: { note: 'no_prior_mc_line' } };
+  const priorSim = simulateMcLine(priorLine);
+  const seq = canonicalsFromRows(rows);
+  if (!seq.length) return { pass: false, evidence: { reason: 'no_mc_emitted' } };
+  const first = seq[0];
+  const firstRow = rows.find((r) => (r.canonical_name || r.sim?.canonical_name) === first);
+  const firstLine = firstRow?.line || '';
+  const firstSim = simulateMcLine(firstLine.startsWith('mc ') ? firstLine : `mc ${firstLine}`);
+  const sameVerb = first === priorSim.canonical_name && forbidden.has(first);
+  const sameBody =
+    sameVerb &&
+    JSON.stringify(parseBody(firstSim.simulated_request?.body)) ===
+      JSON.stringify(parseBody(priorSim.simulated_request?.body));
+  const pass = !(sameVerb && (sameBody || !priorSim.simulated_request?.body));
+  return {
+    pass,
+    evidence: {
+      prior_line: priorLine,
+      first_emitted: first,
+      repeated_blind_retry: !pass,
+    },
+  };
+}
+
+function repairOrEscalate(rows, args) {
+  const repair = new Set(
+    args.repair_verbs || ['deck', 'place', 'level_ground', 'clear_strip', 'build_stairs', 'tunnel', 'fell_tree', 'mark', 'move', 'through', 'goto_near'],
+  );
+  const perception = new Set(args.perception_allowed || ['observe', 'scene', 'map', 'standing', 'reachable']);
+  const maxP = args.max_perception ?? 1;
+  const seq = canonicalsFromRows(rows);
+  let i = 0;
+  let pCount = 0;
+  while (i < seq.length && perception.has(seq[i]) && pCount < maxP) {
+    pCount++;
+    i++;
+  }
+  if (i >= seq.length) return { pass: false, evidence: { seq, reason: 'no_action_after_perception' } };
+  const first = seq[i];
+  const pass = repair.has(first);
+  return { pass, evidence: { seq, first_meaningful: first } };
+}
+
+function bboxOverlapAreaVerb(body, forbiddenBbox) {
+  const o = parseBody(body);
+  const x1 = Number(o.x1 ?? o.x);
+  const x2 = Number(o.x2 ?? o.x);
+  const z1 = Number(o.z1 ?? o.z);
+  const z2 = Number(o.z2 ?? o.z);
+  if (![x1, x2, z1, z2].every(Number.isFinite)) return false;
+  const fb = forbiddenBbox;
+  const minX = Math.min(fb.x1, fb.x2);
+  const maxX = Math.max(fb.x1, fb.x2);
+  const minZ = Math.min(fb.z1, fb.z2);
+  const maxZ = Math.max(fb.z1, fb.z2);
+  const minY = Math.min(fb.y1 ?? fb.y ?? -64, fb.y2 ?? fb.y ?? 320);
+  const maxY = Math.max(fb.y1 ?? fb.y ?? -64, fb.y2 ?? fb.y ?? 320);
+  for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
+    for (let z = Math.min(z1, z2); z <= Math.max(z1, z2); z++) {
+      if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) {
+        const y = Number(o.y ?? o.target_y ?? fb.y1);
+        if (y >= minY && y <= maxY) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function forbiddenBboxForAreaVerbs(rows, args) {
+  const verbs = new Set(args.verbs || ['deck', 'level_ground', 'clear_strip']);
+  const fb = args.forbidden_bbox;
+  if (!fb) return { pass: false, evidence: { reason: 'missing_forbidden_bbox' } };
+  for (const r of rows) {
+    const c = r.canonical_name || r.sim?.canonical_name;
+    if (!verbs.has(c)) continue;
+    if (bboxOverlapAreaVerb(r.sim?.simulated_request?.body, fb)) {
+      return { pass: false, evidence: { verb: c, line: r.line, forbidden_bbox: fb } };
+    }
+  }
+  return { pass: true, evidence: {} };
+}
+
+function dryRunBeforeExecute(rows, args) {
+  const verbs = new Set(args.verbs || ['level_ground', 'deck']);
+  let sawDryRun = false;
+  let sawExecute = false;
+  for (const r of rows) {
+    const c = r.canonical_name || r.sim?.canonical_name;
+    if (!verbs.has(c)) continue;
+    const o = parseBody(r.sim?.simulated_request?.body);
+    if (o.dry_run === true || o.dry_run === 'true') sawDryRun = true;
+    if (o.execute === true || o.execute === 'true') sawExecute = true;
+  }
+  if (sawExecute && !sawDryRun) {
+    return { pass: false, evidence: { reason: 'execute_without_dry_run', sawExecute, sawDryRun } };
+  }
+  if (!sawDryRun && rows.some((r) => verbs.has(r.canonical_name || r.sim?.canonical_name))) {
+    const first = rows.find((r) => verbs.has(r.canonical_name || r.sim?.canonical_name));
+    const o = parseBody(first?.sim?.simulated_request?.body);
+    if (o.execute !== true && o.dry_run !== true) {
+      return { pass: false, evidence: { reason: 'expected_dry_run_first', first_verb: first?.sim?.canonical_name } };
+    }
+  }
+  return { pass: true, evidence: { sawDryRun, sawExecute } };
+}
+
 const HANDLERS = {
   defense_class_action_first: defenseClassActionFirst,
   next_action_hint_followed: nextActionHintFollowed,
+  world_shaping_action_first: worldShapingActionFirst,
+  no_blind_nav_retry: noBlindNavRetry,
+  repair_or_escalate: repairOrEscalate,
+  forbidden_bbox_for_area_verbs: forbiddenBboxForAreaVerbs,
+  dry_run_before_execute: dryRunBeforeExecute,
 };
 
 /**

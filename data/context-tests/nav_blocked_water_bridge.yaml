@@ -1,0 +1,58 @@
+schema_version: 2
+id: nav_blocked_water_bridge
+category: terrain-shaping
+description: Narrow water span blocks direct route; deck with dry_run when hinted.
+contract_level: hard
+requires_observation_field: [route.blocked_span.kind, inventory_summary.cobblestone]
+decision_class: repair_now
+mechanics_claim: |
+  Water span at z=20 blocks walking; deck at y=64 creates walkable surface at y=65.
+primitive_mapping: |
+  Use mc deck for interior span cells. Wrong: retry mc goto/goto_near across water.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+  - skills/minecraft-roadbuilding.md
+observe: data/context-tests/_shared/observe-water-bridge.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 14 65 20"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "direct route crosses water span; swimming unsafe for this card"
+        retry_safe: false
+        next_action_hint: "mc deck 10 20 12 20 y=64 block=cobblestone dry_run=true"
+
+user_prompt: Reach the target across the water. goto failed. Next action?
+
+expect:
+  tool_calls:
+    forbidden_canonical: [goto, goto_near]
+    required_canonical_any: [deck]
+    require_parse_ok: true
+    max_lines: 4
+    required_body:
+      - verb: deck
+        where:
+          x1: 10
+          z1: 20
+          x2: 12
+          z2: 20
+          y: 64
+          block: cobblestone
+          dry_run: true
+  judge:
+    enabled: false
+
+patterns:
+  - id: follows_deck_hint
+    type: next_action_hint_followed
+    args:
+      hint_path: error.next_action_hint

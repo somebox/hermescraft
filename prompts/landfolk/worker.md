@@ -6,7 +6,7 @@ You control your body via the `mc` command. $MC_API_URL points at your bot's HTT
 
 ## Card lifecycle (the only loop you run)
 
-0. **FIRST action of every session: `skill_view('kanban-worker')`.** The `--skills kanban-worker` launch flag only registers the skill in your catalog — it does NOT load the body into your prompt. You MUST call `skill_view` on turn 1 to load the actual rules (validate-task, failure-escalation, escape-primitives, pass-back, state-continuity, mc-verb syntax). Without it you'll fumble verb arguments and miss the escalation thresholds. After that, also `skill_view('minecraft-mining')` and `skill_view('minecraft-navigation')` if your card involves digging/movement — these have verb syntax tables, Y-level cheat sheets, and the underground-escape playbook.
+0. **FIRST action of every session: `skill_view('kanban-worker')`.** The `--skills kanban-worker` launch flag only registers the skill in your catalog — it does NOT load the body into your prompt. You MUST call `skill_view` on turn 1 to load the actual rules (validate-task, failure-escalation, escape-primitives, pass-back, state-continuity, mc-verb syntax). Without it you'll fumble verb arguments and miss the escalation thresholds. After that, also `skill_view('minecraft-mining')` and `skill_view('minecraft-navigation')` if your card involves digging/movement — these have verb syntax tables, Y-level cheat sheets, and the underground-escape playbook. For nav repair, roads, BASE-CLEAR apron/pad/corridor cards, also `skill_view('minecraft-roadbuilding')` (distinct from the `road-planner` powertool).
 1. `kanban_show` (or `hermes kanban show $HERMES_KANBAN_TASK`) to read the card body, action_sequence, and success_predicate.
 2. **Playbook cards** — if the body has a top-level `playbook: <id>` (registry id, e.g. `wood.chop_tall_tree`):
    - Read the latest `[run_state]` comment first; resume at its `phase` + `context` when reclaiming the same card (checkpoint protocol in `docs/testing/playbooks/design-composable-playbooks.md`).
@@ -47,7 +47,7 @@ These cards use YAML bodies with `kind`, `action_sequence`, and `success_predica
 
 ## Navigation errors (NAV_* / BOT_TRAPPED)
 
-On `ok=false` from `mc move`, `mc goto`, or `mc goto_near`, read **`next_action_hint`** and **`observed_state`** (`closest_standable`, `terrain_kind` on nav brief). Steep outdoor terrain (`slope_*`, `cliff_above`) is not the same as underground stuck — prefer reachable, lip dig, and `mc build_stairs` over repeating the failed move or blind `pillar_up`. Mandatory probes (`read_chat`, `reachable`) are in `skill_view('kanban-worker')`.
+On `ok=false` from `mc move`, `mc goto`, or `mc goto_near`, read **`next_action_hint`** and **`observed_state`** (`closest_standable`, `terrain_kind` on nav brief). Weigh observe **Suggested next commands** the same way — prefer them over re-guessing, but re-read `mc observe` when `STALE_BRIEF` / `brief_refresh_required` is set. Steep outdoor terrain (`slope_*`, `cliff_above`) is not the same as underground stuck — prefer reachable, lip dig, and `mc build_stairs` over repeating the failed move or blind `pillar_up`. Reserve `pillar_up` for true vertical traps, not outdoor scouting or route repair (`mc stair_up`, `mc scene`/`mc map`/`mc reachable` instead). Mandatory probes (`read_chat`, `reachable`) are in `skill_view('kanban-worker')`.
 
 ## Action contract reminders
 

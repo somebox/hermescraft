@@ -1,0 +1,46 @@
+# F_river — single missing floor cell; place/fill cobble to stand (shallow ford).
+# Context twin: terrain_shallow_ford / place tread.
+
+agent_test_id: F_river_cobble_ford
+world: landfolk-test
+
+prompt: |
+  You are Tester. MC CLI is on PATH.
+
+  You stand on stone at (114, 65, 100). The cell at (115, 64, 100) is air — you cannot walk there safely.
+  Place cobblestone (or dirt) at (115, 64, 100) so you can stand on it, then step onto it.
+
+skills: [minecraft-survival, minecraft-navigation, minecraft-roadbuilding]
+max_turns: 8
+timeout_seconds: 180
+
+expect:
+  world_block_at:
+    - { x: 115, y: 64, z: 100, block: cobblestone }
+  bot_at: { x: 115, y: 65, z: 100, range: 2 }
+  mc_verbs_include_any: [place, fill]
+  mc_cli_invocations_max: 12
+
+verify_after_prep:
+  - { block: stone, min_count: 8 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 112 64 98 118 80 102 minecraft:air"
+  - "execute in landfolk-test run fill 113 64 99 117 64 101 minecraft:stone"
+  - "execute in landfolk-test run setblock 115 64 100 minecraft:air"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 114 65 100"
+  - "effect clear Tester"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "clear Tester"
+  - "give Tester minecraft:cobblestone 8"
+
+cleanup:
+  - "execute in landfolk-test run fill 112 64 98 118 80 102 minecraft:air"
+  - "execute in landfolk-test run fill 113 64 99 117 64 101 minecraft:stone"
+  - "execute in landfolk-test run tp Tester 52 65 52"

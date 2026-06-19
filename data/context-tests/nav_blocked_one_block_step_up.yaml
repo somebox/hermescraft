@@ -1,0 +1,47 @@
+schema_version: 2
+id: nav_blocked_one_block_step_up
+category: terrain-shaping
+description: 1-block step-up lip; move or goto_near — not dig_area fallback.
+contract_level: hard
+decision_class: traverse_without_damage
+mechanics_claim: |
+  Target one block up on adjacent cell; target_standable with next_hop at target.
+primitive_mapping: |
+  mc move or mc goto_near. Wrong: dig_area, build_stairs, retry goto.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+observe: data/context-tests/_shared/observe-one-block-step-up.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 11 65 10"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "1-block lip — try mc goto_near 11 65 10 range=1"
+        observed_state:
+          target_standable: true
+          next_hop_suggestion: { x: 11, y: 65, z: 10 }
+        next_action_hint: "mc dig_area to clear terrain blocking 11 65 10, or mc tunnel — pathfinder will not break blocks"
+
+user_prompt: Reach 11 65 10. goto failed.
+
+expect:
+  tool_calls:
+    required_canonical_any: [move, goto_near]
+    forbidden_canonical: [goto, build_stairs, stair_up, dig_area, tunnel, deck]
+    require_parse_ok: true
+    max_lines: 3
+
+patterns:
+  - id: no_goto_retry
+    type: no_blind_nav_retry
+    args:
+      prior_index: 0
+      forbidden_canonical: [goto]

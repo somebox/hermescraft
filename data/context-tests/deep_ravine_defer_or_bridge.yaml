@@ -1,0 +1,45 @@
+schema_version: 2
+id: deep_ravine_defer_or_bridge
+category: terrain-shaping
+description: Deep chasm; deck segment or mark/defer — not level_ground execute across void.
+contract_level: soft
+decision_class: reroute
+mechanics_claim: |
+  12-block deep chasm under route; leveling execute would be unsafe/wasteful.
+primitive_mapping: |
+  deck segment if cobble budget, mark reroute, or structured defer. Wrong: level_ground execute on void.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-roadbuilding.md
+  - skills/kanban-worker.md
+observe: data/context-tests/_shared/observe-deep-ravine.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 34 65 30"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "chasm depth 12 — no walkable floor"
+        next_action_hint: "mc deck 31 29 33 31 y=64 block=cobblestone dry_run=true"
+
+user_prompt: Cross the ravine toward the mark or defer safely.
+
+expect:
+  tool_calls:
+    required_canonical_any: [deck, mark, move]
+    forbidden_canonical: [goto]
+    require_parse_ok: true
+    max_lines: 4
+
+patterns:
+  - id: repair_or_escalate
+    type: repair_or_escalate
+    args:
+      repair_verbs: [deck, mark, place]
+      max_perception: 1

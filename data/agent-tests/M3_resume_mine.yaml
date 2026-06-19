@@ -1,0 +1,66 @@
+# M3 — re-enter a mine we built earlier, extend it, and climb out.
+#
+# The durable-state payoff: `stone_hill` (built in an M2 run) persists in the
+# registry AND is dug into the hill at (320,451). A fresh agent must DISCOVER it
+# (mc mine_list), RESUME from its open frontier (mc mine_resume → returns the
+# frontier + a goto), travel back down to it, EXTEND the tunnel, re-record the
+# frontier, and climb out. No new mine — re-enter the existing one.
+#
+# NB: the registry is NOT reset in prep — the persisted stone_hill is the whole
+# point. The mine is the deliverable; cleanup only releases the forceload.
+#
+# Known risk being tested: the frontier is at y=41, ~41 blocks away. mine_resume
+# hands back a goto_near to it; the deep re-navigation down the existing stairs
+# is the thing most likely to bite (goto_near 15s cap). If it does, that's a
+# finding for mine_resume (route via entrance + descend in segments).
+
+agent_test_id: M3_resume_mine
+world: world
+
+prompt: |
+  You are a Minecraft bot named Flint, on the surface next to a mine you built
+  earlier. It's already in the registry and dug into the hill — DON'T start a
+  new one. Re-enter it, extend it, and climb back out. The `mc` CLI is on PATH;
+  follow the minecraft-mining doctrine (small bites, one direction).
+
+    1. Find the existing mine: `mc mine_list` (shows registered mines + their
+       open frontiers).
+    2. Resume it: `mc mine_resume <id>` — it returns the nearest OPEN frontier
+       (the open tunnel-end) plus a ready `goto_near` and `tunnel` to continue.
+    3. Travel down to that frontier. The staircase and tunnel are already dug
+       and lit, so walk down them (use the goto it gave you; if a single goto
+       can't reach the deep frontier, move down the staircase in steps).
+    4. From the frontier, EXTEND the trunk tunnel a few more bites
+       (`mc tunnel <x> <y> <z> <dir> 8 2 3`, repeat), placing a torch at each
+       new end (`mc place_torch <x> <y> <z>`).
+    5. Record a NEW frontier at the new tunnel end
+       (`mc mine_note <id> frontier --dir <dir> --target-y 41`) so the mine
+       stays resumable for next time.
+    6. Climb back to the surface (`mc stair_up`, small bites) and stop. Report
+       what you extended.
+
+  Re-enter and extend the EXISTING mine — don't dig a fresh one.
+
+skills: [minecraft-mining, minecraft-survival]
+max_turns: 50
+timeout_seconds: 720
+
+expect:
+  mc_verbs_include_any: [mine_resume]
+  bot_y_at_least: 70
+
+prep:
+  # Flint is pre-staged in `world`; no mvtp. Registry is NOT reset — stone_hill
+  # must persist (the point of the test).
+  - "forceload add 316 405 336 455"
+  - "tp Flint 316 82 451"
+  - "effect clear Flint"
+  - "effect give Flint minecraft:saturation 1800 4"
+  - "clear Flint"
+  - "give Flint minecraft:iron_pickaxe 2"
+  - "give Flint minecraft:cobblestone 64"
+  - "give Flint minecraft:torch 32"
+  - "give Flint minecraft:cooked_beef 16"
+
+cleanup:
+  - "forceload remove 316 405 336 455"

@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "food": 18,
+    "position": { "x": 9.5, "y": 65, "z": 20.5 }
+  },
+  "standing": {
+    "classification": "solid_ground",
+    "block_below": "grass_block"
+  },
+  "inventory_summary": {
+    "cobblestone": 16,
+    "dirt": 4
+  },
+  "task": {
+    "id": "terrain_water_bridge",
+    "summary": "Reach the marker across a narrow water span without swimming."
+  },
+  "route": {
+    "target": { "x": 14, "y": 65, "z": 20 },
+    "blocked_span": {
+      "kind": "water",
+      "from": { "x": 10, "z": 20 },
+      "to": { "x": 12, "z": 20 },
+      "deck_y": 64
+    }
+  }
+}

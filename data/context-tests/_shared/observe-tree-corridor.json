@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 0.5, "y": 65, "z": 0.5 }
+  },
+  "route": {
+    "target": { "x": 8, "y": 65, "z": 0 },
+    "obstacle": "oak_log_canopy",
+    "log_at": { "x": 4, "y": 66, "z": 0 }
+  },
+  "inventory_summary": { "wooden_axe": 1 },
+  "next_action_hints": [
+    "mc fell_tree 4 0",
+    "mc clear_strip 2 0 6 0 y=65 road_mode=true"
+  ]
+}

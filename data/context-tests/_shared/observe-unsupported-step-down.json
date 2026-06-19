@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 20.5, "y": 66, "z": 20.5 }
+  },
+  "standing": {
+    "classification": "open",
+    "cell": { "x": 20, "y": 66, "z": 20 }
+  },
+  "inventory_summary": { "cobblestone": 12 },
+  "route": {
+    "target": { "x": 22, "y": 63, "z": 20 }
+  }
+}

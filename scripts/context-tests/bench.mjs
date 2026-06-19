@@ -7,6 +7,7 @@ import { runRunCmd } from './cli/run-cmd.mjs';
 import { runRuns } from './cli/runs-cmd.mjs';
 import { runCompare } from './cli/compare-cmd.mjs';
 import { runTrend } from './cli/trend-cmd.mjs';
+import { runFixBacklog } from './cli/fix-backlog-cmd.mjs';
 
 const HELP = `context-tuner — prompt/context signal workbench
 
@@ -20,6 +21,9 @@ Usage:
   context-tuner run <scenario|suite|config> [--config experiment.yaml] [--runs=N] [--no-judge] [--yes] [-q]
   context-tuner runs list|show|query <id|last|last~N> [--json] [--failing]
   context-tuner compare [<A>] [<B>] [--json] [--append-learnings]
+  context-tuner fix-backlog from-run [run-id|last] [--json]
+  context-tuner fix-backlog from-context <*-context.json>
+  context-tuner fix-backlog promote-compare [baseline-id] [variant-id]
   context-tuner trend <suite-preset> [-n N] [--json]
   context-tuner trend --scenario <id> [-n N] [--json]
 
@@ -61,6 +65,9 @@ try {
       break;
     case 'trend':
       runTrend(rest);
+      break;
+    case 'fix-backlog':
+      runFixBacklog(rest);
       break;
     default:
       console.error(`Unknown command: ${cmd}\n`);

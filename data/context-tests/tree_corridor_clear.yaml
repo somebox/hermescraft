@@ -1,0 +1,44 @@
+schema_version: 2
+id: tree_corridor_clear
+category: terrain-shaping
+description: Log blocks corridor; fell_tree or clear_strip, not nav retry loop.
+contract_level: hard
+decision_class: repair_now
+mechanics_claim: |
+  Oak log at head height blocks horizontal route to target.
+primitive_mapping: |
+  fell_tree or clear_strip road_mode=true. Wrong: repeated goto/move.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+  - skills/minecraft-roadbuilding.md
+observe: data/context-tests/_shared/observe-tree-corridor.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 8 65 0"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        message: "log blocks corridor at 4 66 0"
+
+user_prompt: Reach the east mark through the tree line. goto failed twice before.
+
+expect:
+  tool_calls:
+    required_canonical_any: [fell_tree, clear_strip]
+    forbidden_canonical: [goto]
+    require_parse_ok: true
+    max_lines: 4
+
+patterns:
+  - id: no_goto_retry
+    type: no_blind_nav_retry
+    args:
+      prior_index: 0
+      forbidden_canonical: [goto]

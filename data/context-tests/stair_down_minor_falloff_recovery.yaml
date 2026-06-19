@@ -1,0 +1,38 @@
+schema_version: 2
+id: stair_down_minor_falloff_recovery
+category: recovery
+description: |
+  After mc stair_down stops on a minor (2-block) open-air step-down, recover with
+  mc move or mc place — do not spam inspect/terrain_top hunting for "solid ground".
+contract_level: hard
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-mining.md
+observe: data/context-tests/_shared/observe-base-region.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc stair_down north 4"
+    tool_result:
+      ok: true
+      result: "Stair down north stopped at step 1/4 (no_progress_at_step_1 (3 already_air))"
+      data:
+        stopped_at_step: 1
+        stopped_reason: "no_progress_at_step_1 (3 already_air)"
+        error_messages:
+          - "Forward column is open air with a 2-block step-down (minor falloff — safe walk-down). mc place a tread under the next stand cell, or mc move into it north and retry mc stair_down north."
+
+user_prompt: "You were descending north. stair_down stopped with the message above. What do you do next?"
+
+expect:
+  tool_calls:
+    required_canonical_any: [move, place, stair_down]
+    forbidden_canonical: [inspect, terrain_top]
+    require_parse_ok: true
+    max_lines: 4
+    max_repeats_of_same_call: 2
+  judge:
+    enabled: false

@@ -1,0 +1,49 @@
+# F_chasm — deep air gap; deck cobble bridge then reach far bank.
+# Context twin: deep_ravine_defer_or_bridge.
+
+agent_test_id: F_chasm_bridge_reach
+world: landfolk-test
+
+prompt: |
+  You are Tester. MC CLI on PATH at (100, 65, 110) in landfolk-test.
+
+  Void under x=102..104 at bed y=64. Goal: (106, 65, 110).
+
+  Do exactly this sequence (no inspect/goto loops):
+  1. mc deck 102 110 104 110 y=64 block=cobblestone
+  2. mc move 106 65 110
+
+skills: [minecraft-navigation, minecraft-roadbuilding, minecraft-survival]
+max_turns: 6
+timeout_seconds: 180
+
+verify_bot_at: { x: 100, y: 65, z: 110, range: 3 }
+
+expect:
+  bot_at: { x: 106, y: 65, z: 110, range: 3 }
+  mc_verbs_include_any: [deck, move]
+  mc_cli_invocations_max: 8
+
+verify_after_prep:
+  - { block: stone, min_count: 20, radius: 24 }
+
+prep:
+  - "execute in landfolk-test run difficulty peaceful"
+  - "execute in landfolk-test run gamerule doMobSpawning false"
+  - "execute in landfolk-test run gamerule doDaylightCycle false"
+  - "execute in landfolk-test run time set day"
+  - "execute in landfolk-test run kill @e[type=!player]"
+  - "execute in landfolk-test run fill 98 64 108 98 80 112 minecraft:air"
+  - "execute in landfolk-test run fill 99 64 99 101 64 111 minecraft:stone"
+  - "execute in landfolk-test run fill 105 64 105 107 64 111 minecraft:stone"
+  - "mvtp Tester landfolk-test"
+  - "execute in landfolk-test run tp Tester 100 65 110"
+  - "effect clear Tester"
+  - "effect give Tester minecraft:saturation 600 1"
+  - "clear Tester"
+  - "give Tester minecraft:cobblestone 48"
+
+cleanup:
+  - "execute in landfolk-test run fill 98 64 108 98 80 112 minecraft:air"
+  - "execute in landfolk-test run fill 99 64 99 107 64 111 minecraft:stone"
+  - "execute in landfolk-test run tp Tester 52 65 52"

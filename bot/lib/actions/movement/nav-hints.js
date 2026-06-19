@@ -1,10 +1,90 @@
 /**
  * Structured next_action_hint strings for NAV_* envelopes (Phase 7.2).
  */
-import { computeReachability } from '../_nav-helpers.js';
+import { computeReachability, targetChunkLoaded } from '../_nav-helpers.js';
 import { escalationHint } from '../../shared/escalation-hint.js';
 import { detourHintForDy } from './detour-check.js';
 import { resolveRouteSculptHint, standabilityActionHint } from './route-sculpt-hint.js';
+
+const EXIT_SITE_NAMES = new Set(['gate', 'entrance', 'exit']);
+
+/** @param {string} hint */
+export function isDestructiveNavHint(hint) {
+  if (!hint || typeof hint !== 'string') return false;
+  const s = hint.trim();
+  if (/^\s*mc\s+(dig_area|tunnel|dig\b|build_stairs)/i.test(s)) return true;
+  if (/dig_area|mc tunnel/i.test(s)) return true;
+  return false;
+}
+
+/**
+ * Non-destructive recovery when nav fails inside a protect-intent region.
+ * @param {Record<string, unknown> | undefined} obs
+ * @param {{ x: number, y: number, z: number }} target
+ * @param {number} tx
+ * @param {number} ty
+ * @param {number} tz
+ * @param {number} dy
+ */
+export function protectRegionNavHint(obs, target, tx, ty, tz, dy) {
+  if (obs?.target_standable === true && Math.abs(dy) <= 2) {
+    return `mc move ${tx} ${ty} ${tz}  # standable target — exit protect pad on foot before terrain sculpt`;
+  }
+  const cs = obs?.closest_standable;
+  if (cs && Number.isFinite(cs.x) && Number.isFinite(cs.y) && Number.isFinite(cs.z)) {
+    return `mc goto_near ${Math.floor(cs.x)} ${Math.floor(cs.y)} ${Math.floor(cs.z)} range=1  # protect region — step to standable cell`;
+  }
+  if (typeof obs?.region_nav_exit_hint === 'string' && obs.region_nav_exit_hint.length) {
+    return obs.region_nav_exit_hint;
+  }
+  return `mc check dig ${tx} ${ty} ${tz}   # protect region — verify policy, then mc move outside before clearing`;
+}
+
+/**
+ * @param {import('mineflayer').Bot} b
+ * @param {number} tx
+ * @param {number} ty
+ * @param {number} tz
+ * @param {Record<string, unknown>} [observedState]
+ */
+export function navTargetUnstandableNextActionHint(b, tx, ty, tz, observedState) {
+  if (!targetChunkLoaded(b, tx, ty, tz, 5)) {
+    return `mc bg_goto ${tx} ${ty} ${tz}  # distant target — chunk may expose standable surface when loaded`;
+  }
+  const cs = observedState?.closest_standable;
+  if (cs && Number.isFinite(cs.x) && Number.isFinite(cs.y) && Number.isFinite(cs.z)) {
+    return `mc goto_near ${Math.floor(cs.x)} ${Math.floor(cs.y)} ${Math.floor(cs.z)} range=1`;
+  }
+  // Inside a protect region the target is protected — never suggest `mc dig` there.
+  // Prefer the region exit hint (leave first) or a policy `check` over clearing.
+  if (observedState?.nav_in_protect_region === true) {
+    return observedState.region_nav_exit_hint
+      || `mc check dig ${tx} ${ty} ${tz}   # protect region — verify policy, pick a standable cell or leave before clearing`;
+  }
+  return `mc reachable ${tx} ${ty} ${tz}; pick a standable destination or mc dig to clear solid blocks at target`;
+}
+
+/** @param {{ get?: (id: string) => { id: string, sites?: Record<string, unknown> | unknown[] } | null }} store */
+export function regionNavExitHintFromStore(store, regionId) {
+  if (!store || !regionId) return null;
+  const r = store.get(regionId);
+  if (!r) return `mc go_site :${regionId}:`;
+  const sites = r.sites || {};
+  const names = Array.isArray(sites) ? sites : Object.keys(sites);
+  const preferred = names.find((n) => EXIT_SITE_NAMES.has(String(n).toLowerCase()));
+  if (preferred) {
+    return `mc go_site :${r.id}:/${preferred}   # leave protect region first`;
+  }
+  return `mc go_site :${r.id}:   # region anchor`;
+}
+
+function applyProtectFilter(obs, target, tx, ty, tz, dy, hint) {
+  if (!hint) return null;
+  if (obs?.nav_in_protect_region === true && isDestructiveNavHint(hint)) {
+    return protectRegionNavHint(obs, target, tx, ty, tz, dy);
+  }
+  return hint;
+}
 
 /**
  * @param {import('mineflayer').Bot} b
@@ -25,11 +105,24 @@ export function navBlockedNextActionHint(b, target, pos, opts = {}) {
   const standHint = standabilityActionHint(obs, target);
   if (standHint) return standHint;
 
+  if (obs?.target_standable === true && Math.abs(dy) <= 2) {
+    return `mc move ${tx} ${ty} ${tz}  # standable target — try walk/step before dig_area/tunnel clearance`;
+  }
+
   try {
     const reach = computeReachability(b, { x: tx, y: ty, z: tz }, 144);
     if (reach?.next_hop_suggestion) {
       const h = reach.next_hop_suggestion;
-      return `mc goto_near ${h.x} ${h.y} ${h.z} range=1`;
+      const hop = applyProtectFilter(
+        obs,
+        target,
+        tx,
+        ty,
+        tz,
+        dy,
+        `mc goto_near ${h.x} ${h.y} ${h.z} range=1`,
+      );
+      if (hop) return hop;
     }
     const sculpted = resolveRouteSculptHint({
       bot: b,
@@ -38,12 +131,14 @@ export function navBlockedNextActionHint(b, target, pos, opts = {}) {
       observedState: obs,
       reach,
     });
-    if (sculpted.hint) return sculpted.hint;
+    const sh = applyProtectFilter(obs, target, tx, ty, tz, dy, sculpted.hint);
+    if (sh) return sh;
   } catch { /* reachability / sculpt hints are best-effort */ }
 
   try {
     const sculpted = resolveRouteSculptHint({ bot: b, target, pos, observedState: obs });
-    if (sculpted.hint) return sculpted.hint;
+    const sh = applyProtectFilter(obs, target, tx, ty, tz, dy, sculpted.hint);
+    if (sh) return sh;
   } catch { /* ignore */ }
 
   if (dy < -3) {
@@ -61,7 +156,8 @@ export function navBlockedNextActionHint(b, target, pos, opts = {}) {
     return `mc through ${d.x} ${d.y} ${d.z} <far_x> <far_y> <far_z> (door/gate on route)`;
   }
 
-  return `mc dig_area to clear terrain blocking ${tx} ${ty} ${tz}, or mc tunnel — pathfinder will not break blocks`;
+  const fallback = `mc dig_area to clear terrain blocking ${tx} ${ty} ${tz}, or mc tunnel — pathfinder will not break blocks`;
+  return applyProtectFilter(obs, target, tx, ty, tz, dy, fallback) || fallback;
 }
 
 /**

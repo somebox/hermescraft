@@ -1,0 +1,44 @@
+schema_version: 2
+id: two_block_lip_place_or_ramp
+category: terrain-shaping
+description: 2-block lip; place tread, lip dig, or build_stairs — not stair_up mining.
+contract_level: hard
+decision_class: repair_now
+mechanics_claim: |
+  Target two blocks above adjacent cell; jump cannot reach; needs tread or ramp.
+primitive_mapping: |
+  place, dig on lip coords from hint, or build_stairs. Wrong: stair_up (mine dig-up).
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+observe: data/context-tests/_shared/observe-two-block-lip.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc move 9 66 8"
+    tool_result:
+      ok: false
+      error:
+        code: BOT_TRAPPED
+        message: "step_up_only — 2-high lip east"
+        next_action_hint: "mc dig 9 65 8  # 2-high lip blocking step-up"
+
+user_prompt: Reach 9 66 8. Prior move failed with lip hint.
+
+expect:
+  tool_calls:
+    required_canonical_any: [place, dig, build_stairs]
+    forbidden_canonical: [stair_up, goto, goto_near]
+    require_parse_ok: true
+    max_lines: 4
+
+patterns:
+  - id: shaping_first
+    type: world_shaping_action_first
+    args:
+      allowed: [place, dig, build_stairs]
+      max_perception: 1

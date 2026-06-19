@@ -1,0 +1,17 @@
+inherits: ../default.yaml
+experiment_id: step-up-skill-nudge
+description: |
+  Same weak dig_area hint as baseline; navigation skill experiment adds explicit
+  1-block step-up doctrine. Tests skill lever without fixing the hint generator.
+
+suite:
+  preset: step-up-methodology
+
+runs_override: 3
+
+judge:
+  enabled: false
+
+overrides:
+  skills:
+    "skills/minecraft-navigation.md": "skills/experiments/minecraft-navigation-step-up-nudge.md"

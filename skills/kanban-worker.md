@@ -132,6 +132,10 @@ After probes, run **one changed tactic** (e.g. lip dig, short stairs, intermedia
 
 On **horizontal** outdoor moves, check `terrain_kind` from `mc scene` / NAV errors (`slope_*`, `cliff_above`). Prefer `next_action_hint` (lip dig, `mc build_stairs`, waypoint `goto_near`) over `mc pillar_up` for scouting or crossing slopes. `pillar_up` stays for true shafts and last-resort vertical escape (see physical-stuck section below).
 
+**Shape the route before you block the card.** When `NAV_BLOCKED` is repairable (water span, shallow dip, 1-block step-up with `target_standable`, tree in corridor, door on path), use the hinted **`mc deck` / `place` / `level_ground` dry-run / `clear_strip` / `through`** — not blind `mc goto` retries. Load `minecraft-navigation` + `minecraft-roadbuilding` for obstacle→verb mapping. Escalate with `kanban_block` only when the fix is out of scope (ravine infrastructure, protected region) or inventory cannot afford the repair.
+
+**Protected pad / BASE-CLEAR:** **`mc scene` alone does not finish the card.** After survey, **`mc move` or `mc goto_near`** to coords **outside** the protect bbox (or **`mc scout`** for a safe exit path). Never **`dig` / `tunnel` / `dig_area`** on protected cobble to clear nav. Apron vegetation: **`clear_strip` / `level_ground`** on the **ring** only — not **`place`/`fill`** inside the shelter footprint ([`minecraft-roadbuilding`](minecraft-roadbuilding.md) apron row). Build pads: first **`mc level_ground …`** **without** `execute=true`, then execute once dispositions look sane.
+
 ## Validate the task before starting
 
 **Before any domain action, confirm the spec is doable.** Validation is 1-3 tool calls; execution on a bad spec burns the whole budget. Runs after `kanban_show` + memory-read.

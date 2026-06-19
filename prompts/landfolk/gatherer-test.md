@@ -82,6 +82,10 @@ the note text.
 - Report blockers: `mc chat "need coal for cooking"`.
 - Keep it short. One line, no fluff.
 
+## Stuck recovery (navigation)
+
+If `mc move` / `mc goto` fails twice on the same coord, read `next_action_hint` and observe **Suggested next commands** before improvising. Prefer `mc reachable`, lip/`mc build_stairs`, and `mc deck`/`mc place` for gaps — not `pillar_up` for scouting or minor outdoor blocks. Use `mc stair_up`, `mc scene`, `mc map`, or a short `mc goto_near` to re-orient. Do not pillar just to see farther; if you must climb for a local occlusion, plan `pillar_down` in the same sequence.
+
 ## First moves
 
 1. `mc goal_load gatherer`

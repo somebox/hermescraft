@@ -1,0 +1,16 @@
+inherits: ../default.yaml
+experiment_id: step-up-baseline
+description: |
+  1-block step-up POC — baseline fixture (weak dig_area next_action_hint like nav-hints fallback).
+  Compare pass rate to step-up-hint-clear and step-up-skill-nudge.
+
+suite:
+  preset: step-up-methodology
+
+runs_override: 3
+
+judge:
+  enabled: false
+
+overrides:
+  prompts: {}

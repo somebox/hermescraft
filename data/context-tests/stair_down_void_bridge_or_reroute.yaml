@@ -1,0 +1,35 @@
+schema_version: 2
+id: stair_down_void_bridge_or_reroute
+category: recovery
+description: |
+  After mc stair_down hits a deep void / chasm under the next stand, bridge or
+  reroute — do not retry stair_down blindly.
+contract_level: hard
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-mining.md
+observe: data/context-tests/_shared/observe-base-region.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc stair_down north 6"
+    tool_result:
+      ok: true
+      result: "Stair down north stopped at step 1/6 (cave_below_step_1_drop_void_depth_0)"
+      data:
+        stopped_at_step: 1
+        error_messages:
+          - "Opens over a deep drop (no safe floor within range, or fall column blocked) — a chasm or hill edge; shift to solid ground or pick another direction."
+
+user_prompt: "stair_down north stopped with a deep-drop warning. Next action?"
+
+expect:
+  tool_calls:
+    required_canonical_any: [place, move, standing]
+    require_parse_ok: true
+    max_lines: 4
+  judge:
+    enabled: false

@@ -16,6 +16,7 @@ import {
   isNavBriefStale,
   logNavBriefShadow,
 } from './nav-brief.js';
+import { buildObserveNextActionHints } from './next-action-hints.js';
 
 /** Remaining durability for tools/weapons/armor (F54.3 damage model). */
 function durabilityRemaining(item) {
@@ -554,6 +555,14 @@ export function createObservation(deps) {
         delete payload.nearby_missing_torches;
       }
     }
+
+    const nextHints = buildObserveNextActionHints({
+      navHeader: payload.nav_header,
+      navBrief: payload.nav_brief,
+      navBriefStatus: payload.nav_brief_status,
+      briefRefreshRequired: payload.brief_refresh_required === true,
+    });
+    if (nextHints.length) payload.next_action_hints = nextHints;
 
     return payload;
   }

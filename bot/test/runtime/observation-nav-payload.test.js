@@ -73,6 +73,18 @@ function makeObserve({ envBrief = '', locations = {} } = {}) {
   };
 }
 
+test('buildObservePayload includes next_action_hints from nav header', () => {
+  const { buildObservePayload, restore } = makeObserve();
+  try {
+    const p = buildObservePayload({ lean: true });
+    assert.ok(Array.isArray(p.next_action_hints));
+    assert.ok(p.next_action_hints.length >= 1);
+    assert.match(p.next_action_hints[0], /mc move|open_dirs|go_mark/i);
+  } finally {
+    restore();
+  }
+});
+
 test('buildObservePayload always includes nav frame fields', () => {
   const { buildObservePayload, restore } = makeObserve();
   try {

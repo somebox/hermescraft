@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 52.5, "y": 65, "z": 48.5 }
+  },
+  "task": {
+    "id": "base_clear_apron",
+    "summary": "Clear vegetation on approach ring; do not damage pre-rendered shelter."
+  },
+  "shelter": {
+    "footprint": { "x1": 50, "y1": 64, "z1": 50, "x2": 54, "y2": 67, "z2": 54 },
+    "door_at": { "x": 52, "y": 65, "z": 50 }
+  },
+  "apron_ring": { "x1": 47, "z1": 47, "x2": 57, "z2": 57, "y": 64 },
+  "inventory_summary": { "wooden_shovel": 1 },
+  "next_action_hints": [
+    "mc clear_strip 47 47 57 57 y=64 road_mode=true"
+  ]
+}

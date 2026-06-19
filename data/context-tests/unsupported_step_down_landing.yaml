@@ -1,0 +1,39 @@
+schema_version: 2
+id: unsupported_step_down_landing
+category: terrain-shaping
+description: Target below with no path; place landing or goto_near — not stair_down on open air.
+contract_level: hard
+decision_class: repair_now
+mechanics_claim: |
+  Target y=63 not safely pathable from y=66; needs placed landing or standable hop.
+primitive_mapping: |
+  place, deck, goto_near to anchor. Wrong: distant goto, stair_down without mining context.
+
+profile: prompts/landfolk/flint.md
+skills:
+  - skills/minecraft-survival.md
+  - skills/minecraft-navigation.md
+observe: data/context-tests/_shared/observe-unsupported-step-down.json
+memory:
+  mode: none
+
+prior_format: text
+prior:
+  - assistant: "mc goto 22 63 20"
+    tool_result:
+      ok: false
+      error:
+        code: NAV_BLOCKED
+        observed_state:
+          target_standable: true
+          closest_standable: { x: 22, y: 63, z: 20 }
+        next_action_hint: "mc goto_near 22 63 20 range=1"
+
+user_prompt: Get to the lower target safely. goto failed.
+
+expect:
+  tool_calls:
+    required_canonical_any: [place, goto_near, move, deck]
+    forbidden_canonical: [goto, stair_down, build_stairs]
+    require_parse_ok: true
+    max_lines: 4

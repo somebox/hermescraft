@@ -35,6 +35,7 @@ import { wilsonLowerBound } from './lib/stats.mjs';
 import { estimateTokens, estimateRunCostUsd } from './lib/preflight.mjs';
 import { DEFAULT_OUTPUT_TOKENS, SCHEMA_VERSION } from './lib/constants.mjs';
 import { buildJudgeContext } from './lib/judge-context.mjs';
+import { writeFixBacklogArtifacts } from './lib/fix-backlog.mjs';
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -437,6 +438,12 @@ for (const model of models) {
     console.log(writtenId);
   } else {
     console.error(`Run record ${writtenId}`);
+  }
+  try {
+    const fb = writeFixBacklogArtifacts(outPath, { runId: writtenId, runDir: join(RUNS_DIR, slug, stamp) });
+    if (!quiet) console.error(`Fix backlog ${fb.jsonPath.replace(REPO_ROOT + '/', '')}`);
+  } catch (e) {
+    if (!quiet) console.error(`fix-backlog skip: ${e.message}`);
   }
   if (compact.some((s) => s.verdict === 'fail')) suiteHadFailures = true;
 }

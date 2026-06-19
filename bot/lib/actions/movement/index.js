@@ -87,9 +87,10 @@ export function createMovementActions({
   };
 
   const { pushStuckCell, recentStuckNear } = createStuckRegistry(ctx);
-  const preflightNav = createPreflightNav(refuseWaterRouteWithoutBoat, recentStuckNear);
+  const enrichNav = (b, obs, x, y, z) => enrichWithStand(b, obs, x, y, z, ctx);
+  const preflightNav = createPreflightNav(refuseWaterRouteWithoutBoat, recentStuckNear, enrichNav);
   const preNudgeIfSticky = createPreNudge(goals, raceWithTimeout);
-  const { navBlockedError, navFailureError } = createNavErrors(fmt, enrichWithStand);
+  const { navBlockedError, navFailureError } = createNavErrors(fmt, enrichNav);
 
   const deps = {
     ctx,
@@ -107,7 +108,7 @@ export function createMovementActions({
     recordMoveFailure,
     clearGotoRetry,
     clearMoveFailure,
-    enrichWithStand,
+    enrichWithStand: enrichNav,
     pushStuckCell,
     preflightNav,
     preNudgeIfSticky,

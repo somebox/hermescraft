@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "state": {
+    "health": 20,
+    "position": { "x": 50.5, "y": 65, "z": 50.5 }
+  },
+  "task": {
+    "id": "base_pad_level",
+    "summary": "Flatten 5x5 build pad before placing chest."
+  },
+  "pad_survey": {
+    "x1": 48,
+    "z1": 48,
+    "x2": 52,
+    "z2": 52,
+    "y": 64,
+    "cut_cells": 4,
+    "fill_cells": 3,
+    "void_under": false
+  },
+  "inventory_summary": { "dirt": 16, "cobblestone": 8 },
+  "next_action_hints": [
+    "mc level_ground 48 48 52 52 target=64"
+  ]
+}

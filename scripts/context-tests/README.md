@@ -43,6 +43,18 @@ Requires `OPENROUTER_API_KEY` or `secrets.yaml` with `openrouter_api_key`.
 
 Prefer `./context-tuner run …` so `--config` on a scenario id is applied correctly (see `cli/run-cmd.mjs`).
 
+**Fix backlog:** every run writes `fix-backlog.json` / `.md` next to the run record. See [data/context-tests/fix-backlog/README.md](../../data/context-tests/fix-backlog/README.md).
+
+**Terrain-shaping batch (no one-off commands):** context pass **closed** — [closure](../../docs/testing/context-tuner/reports/2026-06-17-terrain-shaping-closure.md), [standing 2026-06-19](../../docs/testing/context-tuner/reports/2026-06-19-terrain-shaping-status.md). Regression guard: stable ≥ 8/11 at n=3 on baseline; embodied **6/6** via `./scripts/terrain-agent-tests.sh all`.
+
+```bash
+./scripts/terrain-shaping-batch.sh doctor
+./scripts/terrain-shaping-batch.sh baseline --runs 3 --yes
+./scripts/terrain-shaping-batch.sh ab --runs 3 --yes      # baseline + hint variant + promotion summary
+./scripts/terrain-shaping-batch.sh summary --run last
+./scripts/terrain-shaping-batch.sh gate --runs 1 --yes      # region-protect smoke before mint
+```
+
 ## Experiments
 
 ```bash
