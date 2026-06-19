@@ -9,12 +9,15 @@
 # Expertise profiles (lease mode — NO fixed body). Each runs HERMES_BOT_LEASE=1
 # with no MC_API_URL and checks out any body from the pool (mox/pip/zee) per
 # card via `mc bot checkout`. The planner is bodiless (read-only orchestrator).
-#   colony-scout    skills: minecraft-scouting-site + minecraft-bot-lease
-#   colony-gatherer skills: minecraft-survival       + minecraft-bot-lease
-#   colony-builder  skills: minecraft-building        + minecraft-bot-lease
-#   colony-planner  skills: steward-survey + blueprint-plan (no body)
-#   colony-overseer skills: steward-survey (no body) — read-only verifier: at each
-#                   phase transition, confirm the gate or file the missing card(s)
+# Every body-using worker AND the planner also load `minecraft-fundamentals` — the
+# shared decision-level mechanics layer (traversal, safe descent + ore Y-levels,
+# hazards/escape, health/hunger, marks, what a safe structure is, sustaining a
+# colony) — so universal knowledge isn't siloed in one specialty skill.
+#   colony-scout    skills: minecraft-scouting-site + fundamentals + bot-lease
+#   colony-gatherer skills: minecraft-survival       + fundamentals + bot-lease
+#   colony-builder  skills: minecraft-building        + fundamentals + bot-lease
+#   colony-planner  skills: steward-survey + blueprint-plan + fundamentals (no body)
+#   colony-overseer skills: steward-survey (no body) — read-only verifier
 #
 # Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>]
 set -euo pipefail
@@ -209,7 +212,7 @@ PY
   rm -rf "$dst"/sessions/* 2>/dev/null || true
 }
 
-mint colony-scout    Mox 3007 "minecraft-scouting-site minecraft-bot-lease" \
+mint colony-scout    Mox 3007 "minecraft-scouting-site minecraft-fundamentals minecraft-bot-lease" \
 "# Colony scout
 
 You are a colony scout. Your only job is to explore unknown terrain and mark
@@ -217,7 +220,7 @@ what the colony needs — wood, stone, water, and flat candidate base pads — o
 the shared map. You never dig, build, craft, or fight. On every task, run
 \`skill_view minecraft-scouting-site\` first and follow it exactly."
 
-mint colony-gatherer Pip 3005 "minecraft-survival minecraft-bot-lease" \
+mint colony-gatherer Pip 3005 "minecraft-survival minecraft-fundamentals minecraft-bot-lease" \
 "# Colony gatherer
 
 You are a colony gatherer. Your only job is to collect raw materials (wood
@@ -225,7 +228,7 @@ first) and craft the basic tools the colony needs, driving the \`mc\` verbs.
 You do not scout, build structures, mine deep, or farm. On every task, run
 \`skill_view minecraft-survival\` first and follow it exactly."
 
-mint colony-builder  Zee 3006 "minecraft-building minecraft-bot-lease" \
+mint colony-builder  Zee 3006 "minecraft-building minecraft-fundamentals minecraft-bot-lease" \
 "# Colony builder
 
 You are a colony builder. Your only job is to place blocks to spec — shelters,
@@ -236,7 +239,7 @@ first and follow it exactly."
 # NOTE: the user/port args below are vestigial for lease roles — they only seed
 # MC_USERNAME + trigger lease env. With HERMES_BOT_LEASE=1 there is NO 1:1 body
 # binding; every role leases any free body from the pool (mox/pip/zee) per card.
-mint colony-farmer   Pip 3005 "minecraft-farming minecraft-bot-lease" \
+mint colony-farmer   Pip 3005 "minecraft-farming minecraft-fundamentals minecraft-bot-lease" \
 "# Colony farmer
 
 You are a colony farmer. Your only job is to till soil, plant and harvest crops
@@ -244,7 +247,7 @@ You are a colony farmer. Your only job is to till soil, plant and harvest crops
 not scout, build structures, mine, or fight. On every task, run
 \`skill_view minecraft-farming\` first and follow it exactly."
 
-mint colony-miner    Zee 3006 "minecraft-mining minecraft-bot-lease" \
+mint colony-miner    Zee 3006 "minecraft-mining minecraft-fundamentals minecraft-bot-lease" \
 "# Colony miner
 
 You are a colony miner. Your only job is to register a mine, dig a safe descent,
@@ -252,7 +255,7 @@ extract stone/coal/iron, and haul it to storage, driving the \`mc\` verbs. You d
 not scout, build, gather wood, or farm. On every task, run
 \`skill_view minecraft-mining\` first and follow it exactly."
 
-mint colony-road     Mox 3007 "road-planner minecraft-bot-lease" \
+mint colony-road     Mox 3007 "road-planner minecraft-fundamentals minecraft-bot-lease" \
 "# Colony road planner
 
 You are a colony road planner. Your only job is to plan and light a safe walkable
@@ -260,7 +263,7 @@ route between two points using the \`roadplan\` powertool + \`mc\` verbs, then s
 it. You do not gather, build structures, mine, or farm. On every task, run
 \`skill_view road-planner\` first and follow it exactly."
 
-mint colony-planner  "" "" "minecraft-steward-survey minecraft-steward-blueprint-plan" \
+mint colony-planner  "" "" "minecraft-steward-survey minecraft-steward-blueprint-plan minecraft-fundamentals" \
 "# Colony planner
 
 You are the colony planner: a read-only orchestrator (the planning concern in the
