@@ -14,7 +14,7 @@ test('thresholdsFor: known items map to their resource', () => {
   const breadT = thresholdsFor('bread');
   assert.ok(breadT);
   assert.equal(breadT.resource, 'food');
-  assert.equal(breadT.target_min, 64);
+  assert.equal(breadT.target_min, 16);  // genesis early benchmark (lowered from 64)
 
   const cobbleT = thresholdsFor('cobblestone');
   assert.ok(cobbleT);
