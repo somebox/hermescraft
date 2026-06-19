@@ -1,0 +1,24 @@
+{
+  "world": "genesis2",
+  "regions": [
+    {
+      "id": "colony",
+      "profile": "base",
+      "intent": "marker",
+      "status": "active",
+      "anchor": { "x": {spawn_x}, "y": {spawn_y}, "z": {spawn_z} },
+      "shape": { "kind": "column", "radius": 64, "y_min": 0, "y_max": 255 },
+      "sites": {},
+      "capabilities": {
+        "allow_ad_hoc_dig": true,
+        "allow_ad_hoc_place": true,
+        "allow_guided_edit": true,
+        "allow_harvest": true,
+        "overrides_global_denylist": false
+      },
+      "created": "{started_at}",
+      "updated": "{started_at}",
+      "notes": "Emergent colony build authorization {run_id} — a large permissive area around spawn so the team can build/dig where they choose (`mc task_context set colony`). The ONLY infra allowance; no structures, marks, or materials are pre-given."
+    }
+  ]
+}

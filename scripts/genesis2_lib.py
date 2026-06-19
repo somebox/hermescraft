@@ -461,8 +461,11 @@ def _archive_data_file(name: str, run_id: str) -> None:
     dest.write_bytes(p.read_bytes())
 
 
-def render_regions_world(*, spawn: dict[str, int], ctx: dict[str, str]) -> None:
-    """Reset data/regions-world.json from genesis-v2 template (singular buildable shelter)."""
+def render_regions_world(*, spawn: dict[str, int], ctx: dict[str, str],
+                         template: str = "regions-world.template.json") -> None:
+    """Reset data/regions-world.json from a genesis-v2 region template. Default is
+    the gated singular buildable shelter; emergent mode passes
+    `regions-world.emergent.template.json` (one large permissive colony area)."""
     run_id = ctx.get("run_id", "unknown")
     sub = {
         **ctx,
@@ -471,7 +474,7 @@ def render_regions_world(*, spawn: dict[str, int], ctx: dict[str, str]) -> None:
         "spawn_z": str(spawn["z"]),
         "spawn_y_max": str(spawn["y"] + 12),
     }
-    src = (TEMPLATES_DIR / "regions-world.template.json").read_text()
+    src = (TEMPLATES_DIR / template).read_text()
     out = gl.substitute(src, sub)
     _archive_data_file("regions-world.json", run_id)
     (DATA_DIR / "regions-world.json").write_text(out)
@@ -855,6 +858,17 @@ def seed_board(ctx: dict[str, str]) -> dict:
                               assignee=c["assignee"]) for c in cards]
     meta = {"epic_ids": epic_ids, "scout_ids": scout_ids}
     return meta
+
+
+def seed_emergent_mission(ctx: dict[str, str]) -> dict:
+    """Emergent mode: seed ONE standing MISSION card to colony-planner — no phase
+    epics, no gates. The planner proposes a plan, consults the team per epic
+    (FEEDBACK cards), decomposes, and manages. Returns {mission_id, epic_ids: []}
+    (epic_ids empty so the poller's phase machinery no-ops)."""
+    body = gl.substitute((TEMPLATES_DIR.parent / "emergent-mission.md").read_text(), ctx)
+    mid = _create_card(title="[MISSION] Establish a thriving colony",
+                       body=body, assignee="colony-planner")
+    return {"mission_id": mid, "epic_ids": []}
 
 
 # --------------------------------------------------------------------------- #

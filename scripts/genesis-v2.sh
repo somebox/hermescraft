@@ -193,6 +193,96 @@ print(f"[genesis-v2] lease-mutex (no gate-check); gateway dispatch + poller star
 PYEOF
     ;;
 
+  emergent-run)
+    # EXPERIMENT: no phases/gates. colony-planner gets a MISSION and drives the
+    # colony — propose plan -> consult team per epic -> decompose -> manage.
+    # Nothing pre-given except ONE permissive build region. Non-destructive: the
+    # gated `new-run` path above is untouched.
+    SEED=""; WORLD="genesis2"; MODEL="deepseek/deepseek-v4-flash:exacto"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --seed) SEED="$2"; shift 2 ;;
+        --seed=*) SEED="${1#--seed=}"; shift ;;
+        --world) WORLD="$2"; shift 2 ;;
+        --model) MODEL="$2"; shift 2 ;;
+        *) echo "unknown flag: $1" >&2; exit 1 ;;
+      esac
+    done
+    [[ -n "$SEED" ]] || { echo "--seed <int> required" >&2; exit 1; }
+
+    echo "[genesis-v2][emergent] clean shutdown: prior poller + stale workers + gateway"
+    for pid in $(pgrep -f 'genesis-v2-poller' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    for pid in $(pgrep -f 'tui_gateway.slash_worker' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    nohup hermes gateway run --replace >> "$HOME/.hermes/logs/gateway.log" 2>&1 &
+    sleep 6
+
+    echo "[genesis-v2][emergent] minting profiles (model=$MODEL)"
+    "$SCRIPT_DIR/genesis-v2-mint-profiles.sh" --model "$MODEL"
+
+    echo "[genesis-v2][emergent] installing emergent planner SOUL + worker feedback note"
+    cp "$REPO_ROOT/data/genesis-v2/emergent-planner-soul.md" "$HOME/.hermes/profiles/colony-planner/SOUL.md"
+    for w in colony-scout colony-gatherer colony-builder colony-farmer colony-miner colony-road; do
+      cat >> "$HOME/.hermes/profiles/$w/SOUL.md" <<'FB'
+
+## Giving feedback (emergent colony)
+The planner may file a `[FEEDBACK]` card asking your specialist opinion on a plan
+or epic. For a FEEDBACK card, do NOT lease a body or act in-world — reply with
+concrete, skills-grounded feedback via `kanban_comment` (what you'd do, what you'd
+need, risks/gaps you see), then `kanban_complete` the feedback card.
+FB
+    done
+
+    echo "[genesis-v2][emergent] ensuring 3 bodies are up"
+    for b in "${BODIES[@]}"; do
+      u="${b%%:*}"; rest="${b#*:}"; p="${rest%%:*}"; v="${rest##*:}"
+      ensure_body "$u" "$p" "$v"
+    done
+    wait_bodies_connected
+
+    echo "[genesis-v2][emergent] reset + dry-land spawn + setup + seed mission (world=$WORLD seed=$SEED)"
+    GV2_WORLD="$WORLD" GV2_SEED="$SEED" exec "$PY" - <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.path.join(os.getcwd(), "scripts"))
+import genesis2_lib as g2
+
+world = os.environ["GV2_WORLD"]
+seed = int(os.environ["GV2_SEED"])
+run_id = g2.next_run_id()
+print(f"[genesis-v2][emergent] run {run_id}")
+
+# Auto land spawn; world_setup makes it peaceful/calm (no mobs, frozen day).
+seed, spawn = g2.find_good_spawn(world, seed)
+print(f"[genesis-v2][emergent] natural land spawn @ {spawn} (seed={seed})")
+g2.wipe_marks()                      # no pre-given markers
+_freed = g2.clear_pool_leases()
+if _freed: print(f"[genesis-v2][emergent] cleared {len(_freed)} stale lease(s)")
+g2.wipe_world_mines(world)
+ctx = {"run_id": run_id, "seed": str(seed),
+       "spawn_x": str(spawn["x"]), "spawn_y": str(spawn["y"]), "spawn_z": str(spawn["z"]),
+       "started_at": g2.gl._iso_utc()}
+# ONE permissive build region (only infra allowance). NO shelter render, NO pantry,
+# NO pre-marked chests, NO phase epics.
+g2.render_regions_world(spawn=spawn, ctx=ctx, template="regions-world.emergent.template.json")
+g2.world_setup(world, spawn)
+g2.reinit_board()
+meta = g2.seed_emergent_mission(ctx)
+cfg = {"run_id": run_id, "world": world, "seed": seed, "spawn": spawn, "mode": "emergent",
+       "started_at": ctx["started_at"], **meta}
+g2.save_config(cfg)
+g2.write_active(run_id)
+g2.snapshot("start", run_id)
+
+import subprocess
+poller = os.path.join(os.getcwd(), "scripts", "genesis-v2-poller.py")
+log = open(g2.run_dir(run_id) / "poller.log", "a")
+proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id],
+                        stdout=log, stderr=subprocess.STDOUT, cwd=os.getcwd())
+(g2.run_dir(run_id) / "poller.pid").write_text(str(proc.pid))
+print(f"[genesis-v2][emergent] run {run_id} LIVE: world={world} spawn={spawn} mission={meta['mission_id']}")
+print(f"[genesis-v2][emergent] planner holds the MISSION; poller runs agent-failure backstops only")
+PYEOF
+    ;;
+
   check)
     exec "$PY" -c "
 import sys; sys.path.insert(0,'$REPO_ROOT/scripts')
@@ -224,5 +314,5 @@ if rid:
 "
     ;;
 
-  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|check|snapshot|status}" >&2; exit 1 ;;
+  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status}" >&2; exit 1 ;;
 esac

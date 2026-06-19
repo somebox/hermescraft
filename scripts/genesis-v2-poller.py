@@ -37,6 +37,17 @@ def main() -> int:
     ap.add_argument("--interval", type=int, default=60)
     args = ap.parse_args()
     seen: set[str] = set()
+    # Emergent mode: no phases/gates. Disable the phase machinery (shelter render,
+    # phase advance, gate-gap/overseer, continuous supply) and run ONLY the
+    # agent-failure backstops (skill-strip, mark reconcile, gateway watchdog,
+    # lease reap, pool requeue, stall-supervise). The planner drives everything
+    # from the MISSION card; nothing here dictates colony work.
+    try:
+        emergent = (g2.load_config(args.run_id).get("mode") == "emergent")
+    except Exception:
+        emergent = False
+    if emergent:
+        sys.stderr.write("[poller] EMERGENT mode — phase/gate/supply/render disabled; agent-failure backstops only\n")
     while True:
         # Sanitize worker-card skills FIRST: the planner LLM sometimes attaches one
         # of its own skills to a worker card, which the agent rejects at boot
@@ -98,7 +109,7 @@ def main() -> int:
         except Exception as e:
             sys.stderr.write(f"[poller] body pool sync/requeue failed: {e}\n")
         try:
-            if g2.maybe_render_shelter_for_run(args.run_id):
+            if not emergent and g2.maybe_render_shelter_for_run(args.run_id):
                 sys.stderr.write("[poller] shelter structure rcon-rendered at base_anchor\n")
         except Exception as e:
             sys.stderr.write(f"[poller] shelter render failed: {e}\n")
@@ -107,7 +118,7 @@ def main() -> int:
         # next phase stays blocked until its predecessor's gate truly passes, so a
         # Steward worker finishing early can't cascade. Snapshot each phase close.
         try:
-            for phase in g2.advance_phases(args.run_id):
+            for phase in (g2.advance_phases(args.run_id) if not emergent else []):
                 label = f"phase{phase[1:]}"
                 if label not in seen:
                     seen.add(label)
@@ -126,7 +137,7 @@ def main() -> int:
         # remains a latent mechanical backstop. The stuck-worker path only fires on
         # running/blocked workers, so this is what catches "done but gate unmet".
         try:
-            gap = g2.detect_gate_gap(args.run_id)
+            gap = g2.detect_gate_gap(args.run_id) if not emergent else None
             if gap:
                 phase, failures = gap
                 cid = g2.file_overseer_card(args.run_id, phase, {"pass": False, "failures": failures})
@@ -139,7 +150,7 @@ def main() -> int:
         # (and the base is measurable), files a [GENESIS2:SUPPLY] card to the
         # restocking expertise (dedup+cap). Makes gathering a continuous need.
         try:
-            for d in g2.detect_supply_deficits():
+            for d in (g2.detect_supply_deficits() if not emergent else []):
                 cid = g2.file_supply_card(args.run_id, d)
                 if cid:
                     sys.stderr.write(f"[poller] {d['resource']} low ({d['current']}<{d['target_min']}) → supply card {cid} ({d['assignee']})\n")
