@@ -91,7 +91,7 @@ Goal: stone tools + crafting table + furnace + shelter
 5. Find flat ground, `mc place crafting_table X Y Z`
 6. `mc craft wooden_pickaxe` — need table nearby
 7. `mc craft wooden_axe` — same tier as pick; **use axe for all wood** (`*_log`, stems)
-8. `mc equip wooden_axe`, then `mc fell_tree <x> <z>` at a trunk column — fells the WHOLE tree (logs + canopy) in one call; far more efficient than `mc collect`/`mc dig` block-hunting. Repeat on nearby trunks for more wood. (Use `mc collect oak_log` only as a fallback when no standing tree is reachable.)
+8. `mc equip wooden_axe`, then `mc fell_tree <x> <z>` at a trunk column — fells the WHOLE tree (logs + canopy) in one call; far more efficient than `mc collect`/`mc dig` block-hunting. Repeat on nearby trunks for more wood. **Once you have an axe, `mc fell_tree` is the DEFAULT way to gather wood in bulk — prefer it over repeated `mc collect oak_log`, which is only for the very first few logs (no axe yet) or when no standing tree is reachable.**
 9. `mc collect cobblestone 20` — uses pickaxe (equip `wooden_pickaxe` if needed)
 10. `mc craft stone_pickaxe` + `mc craft stone_sword` — upgrade after cobble run
 11. `mc craft furnace` — 8 cobblestone

@@ -76,7 +76,7 @@ cmd="${1:-}"; shift || true
 
 case "$cmd" in
   new-run)
-    SEED=""; WORLD="genesis2"; MODEL="deepseek/deepseek-v4-flash:exacto"; SPAWN=""
+    SEED=""; WORLD="genesis2"; MODEL="xiaomi/mimo-v2.5"; SPAWN=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --seed) SEED="$2"; shift 2 ;;
@@ -198,7 +198,7 @@ PYEOF
     # colony — propose plan -> consult team per epic -> decompose -> manage.
     # Nothing pre-given except ONE permissive build region. Non-destructive: the
     # gated `new-run` path above is untouched.
-    SEED=""; WORLD="genesis2"; MODEL="deepseek/deepseek-v4-flash:exacto"
+    SEED=""; WORLD="genesis2"; MODEL="xiaomi/mimo-v2.5"
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --seed) SEED="$2"; shift 2 ;;
@@ -251,8 +251,10 @@ run_id = g2.next_run_id()
 print(f"[genesis-v2][emergent] run {run_id}")
 
 # Auto land spawn; world_setup makes it peaceful/calm (no mobs, frozen day).
-seed, spawn = g2.find_good_spawn(world, seed)
-print(f"[genesis-v2][emergent] natural land spawn @ {spawn} (seed={seed})")
+# require_water=False: accept a DRY temperate world (requiring nearby water forces
+# watery seeds — the colony can scout for water instead).
+seed, spawn = g2.find_good_spawn(world, seed, require_water=False)
+print(f"[genesis-v2][emergent] dry land spawn @ {spawn} (seed={seed})")
 g2.wipe_marks()                      # no pre-given markers
 _freed = g2.clear_pool_leases()
 if _freed: print(f"[genesis-v2][emergent] cleared {len(_freed)} stale lease(s)")

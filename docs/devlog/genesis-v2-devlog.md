@@ -9,6 +9,111 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-19 — gv2-2026-06-19-2 (emergent, fixed): a near-complete colony; ceiling is site-fit + forest nav
+
+Second emergent run, on **`xiaomi/mimo-v2.5`** (swapped from deepseek after run-1's
+quota death; operator recall: more done with fewer errors/turns), seed 63210, same
+dry calm world. Carried 5 fixes from run-1: model swap, `[MISSION]` exempt from
+stall/blocked supervise, planner anti-duplicate + orient-first SOUL, stop-after-3
+escalation SOUL rule, `fell_tree` as default bulk-wood. Ran ~2h, stopped by operator
+after the build stalled. **Round feedback collected from all 7 agents before teardown
+(RETRO cards).**
+
+### What the agents actually accomplished (agent reports — the mark file undercounted)
+External tracking (9 marks, board status) badly **understated** reality. Per the
+agents' own retros:
+- **builder:** built a **7×7 spruce-plank shelter** at base_anchor (verified by Mox).
+- **farmer:** tilled a **5×5 wheat plot** near water, planted 10 seeds, marked `farm_wheat`.
+- **road:** planned + **lit an 80-block route** (12 waypoints) base→water through forest.
+- **miner:** supplied **~384 cobble** (3 SUPPLY cards); Mine1 active.
+- **gatherer:** 2× 32 spruce logs → chest_wood, planted 3 saplings.
+- **scout:** full 4-quadrant survey, scored 2 candidate pads, set base_anchor.
+**Lesson: `mc` marks/registries are written inconsistently by agents, so mark-based
+progress tracking undercounts real work.** A run is *more* done than the marks imply.
+
+### Fixes that HELD (vs run-1)
+- **Model: 0 API errors** the entire ~2h. mimo-v2.5 fully stable. The #1 run-1 killer is gone.
+- **Churn controlled:** 0 SUPERVISE-of-MISSION (exemption works); clean 1-per-specialist
+  FEEDBACK (anti-duplicate works); supervise capped at 3/worker.
+- **Craft fix:** 0 window-races; all bench crafts server-side via PaperMCP.
+- **Reached BUILD/FARM/ROAD/MINE** — first time past prerequisites; shelter + farm + road
+  + cobble all actually produced. Run-1 never left prerequisite-gathering.
+- **Planner adapted well:** detected the 9×9 cobble shelter was *physically impossible*
+  (190 cobble, no stone at base), re-scoped to a plank-only shelter that succeeded.
+
+### The real ceiling (from agent feedback — reordered from my external read)
+1. **Site-fit was poor and cascaded.** base_anchor (-15,64,-45) had **no stone within
+   ~20 blocks and water only at a frozen lake ~85 blocks away** (scout scored it 2/5 but
+   it was still chosen). This *caused* the cobble-shelter impossibility (builder, planner),
+   the far-water farm (farmer), and redundant stone re-supply (miner). **Site selection
+   must weight stone + liquid-water proximity, and reject low-scoring pads.**
+2. **Dense spruce forest = navigation hell.** `fell_tree` *was* used but **timed out
+   repeatedly**; bots got stuck in canopy; pathfinder couldn't route through trunks
+   (gatherer's "30-min navigation fight"; builder trapped underground 18 min). My
+   "fell_tree ignored (0 uses)" read was wrong — it was *attempted and failing* in dense
+   forest. Want `fell_tree --clear_radius` and/or tree-density scouting before dispatch.
+3. **No chest stock visibility.** builder blocked repeatedly by empty chest_wood; miner
+   over-supplied with no "sufficient" signal; planner wants stock flags. This is exactly
+   the deferred inventory-gate / base-goals work.
+4. **No auto-archive of impossible/superseded tasks.** Impossible t_c531e81c was never
+   archived → mox kept burning cycles; 4 SUPERVISE cards piled on the same target;
+   dependency edges to blocked parents silently block children with no planner visibility.
+5. **Cards lack scout-provided coords** (farmer/builder self-select sites = wasted turns).
+6. **`mc observe`/`scene` lossy mode silently strips marks/signs/torches** under
+   `HERMES_NAV_BRIEF=1` (scout: +2-3 turns/card); wants a `--full` override.
+
+### Fix verdicts
+- Model swap, MISSION-exemption, anti-duplicate, craft, supervise-cap: **CONFIRMED.**
+- **stop-after-3 escalation (SOUL text): FAILED.** Builder spun ~252 tool errors before
+  blocking twice. Agents can't self-count failures across turns — this needs a
+  **deterministic auto-block** backstop, not SOUL prose.
+- **fell_tree-as-default (SOUL text): inconclusive/misdiagnosed** — used but timing out in
+  dense forest; the problem is the *verb's forest behavior*, not agent verb-choice.
+
+---
+
+## 2026-06-19 — gv2-2026-06-19-1 (first emergent run): planning works, killed by API quota
+
+First **emergent-mode** run (no phases/gates; planner gets a standing `[MISSION]`,
+proposes → consults specialists per epic → decomposes → manages). Model:
+`deepseek/deepseek-v4-flash:exacto`. Seed 63210, dry calm world.
+
+**Headline: the run died of OpenRouter quota, not agent logic.** From ~16:45 every
+agent's LLM calls returned `402` (weekly credit limit: *"requested up to 32768
+tokens, can only afford 17180"*) / `403`. That coincides exactly with the late-run
+"stall" — `done` flat at 18, cards going blocked, planner "churning" supervises.
+Post-16:45 behavior is confounded; **valid window ≈ 15:44–16:44.**
+
+**What worked (healthy window):**
+- **Craft fix (PaperMCP-first):** 0 window-races; mox did 2 clean server-side crafts.
+- **Advise suppression:** 0 `mc advise` attempts this run (was 10 across prior runs).
+- **Emergent planning was real:** planner produced an 8-epic plan; builder/farmer/road
+  each *ran* (15:44–15:51) and answered their `[FEEDBACK]` consult card before idling.
+- **Escalation used (partially):** gatherer called `kanban_block` 3× when truly stuck.
+- **Real output:** base sited+marked (31,63,-51), 32 spruce logs → `chest_wood`, mine
+  opened (`mine_entrance` 2,71,-28).
+
+**Real gaps (independent of quota):**
+- **`fell_tree` = 0** — gatherer ignored the skill's whole-tree verb, used `mc collect`.
+- **Decomposition never reached BUILD/TILL** — only prerequisite SUPPLY/CLEAR/SCOUT
+  cards issued, and all blocked (wheat seeds, cobblestone, clear-site) → no shelter/farm.
+- **Embodiment is the bottleneck:** gatherer logged 66 tool errors (pathfinder give-up,
+  "trapped all 4 cardinal dirs," `pillar_up` could-not-place) fighting plateau terrain
+  for wheat seeds — 1414 log lines, repeated traps.
+- **Uneven escalation:** miner/scout had 24/20 tool errors but **0** `kanban_block` —
+  retry-spun instead of escalating.
+- **Churn (real, secondary):** poller supervised the standing `[MISSION]` card 3×;
+  planner re-filed duplicate `[FEEDBACK]` cards.
+
+**Fixes applied for next run (offline; effective on re-mint / poller restart):**
+1. Model → `xiaomi/mimo-v2.5` (more done with fewer errors/turns per operator recall).
+2. `[MISSION]` exempt from `detect_stalled_workers` + `detect_blocked_workers`.
+3. Emergent planner SOUL: ORIENT-first (read board each cold dispatch) + NO-DUPLICATE-CARDS rule.
+4. Escalation SOUL (all agents): hard **stop-after-3-failures → `kanban_block`** rule.
+5. `fell_tree` made the DEFAULT bulk-wood method (survival skill + gatherer SOUL).
+
+---
+
 ## 2026-06-17 — craft window-race: verified, isolated, mitigated (PaperMCP-first)
 
 gv2-2026-06-17-4 stalled at P2 (no wood/farm). Dug into it with the live bodies.

@@ -25,7 +25,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILES="$HOME/.hermes/profiles"
 SRC="$PROFILES/road-planner"
-MODEL="deepseek/deepseek-v4-flash:exacto"
+MODEL="xiaomi/mimo-v2.5"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,7 +90,13 @@ with a routable prefix + a one-line detail: `no_water` / `out_of_materials` /
 the planner from that reason.
 Do NOT run `mc advise` — it is unavailable here and will fail. If a bot error hint
 suggests `mc advise`, treat that hint as NON-ACTIONABLE and `kanban_block` with the
-reason instead. Never loop-retry the same failing command.
+reason instead.
+HARD RULE — stop after 3 failures: if the SAME action (or same target coord) errors
+~3 times in a row, or you've been fighting one obstacle for several turns with no
+inventory/position gain, STOP. Do not keep retrying, re-pathing, or pillar/dig-ing
+around it — that just burns turns. `kanban_block` THIS card with the structured
+reason and let the planner re-plan. Spinning on a blocked target is the #1 way runs
+stall; escalating early is correct, not a failure.
 ESCALATE
 
   # Handoff (ALL agents). Workers run in sequence on a worksite but each starts
@@ -225,8 +231,10 @@ mint colony-gatherer Pip 3005 "minecraft-survival minecraft-fundamentals minecra
 
 You are a colony gatherer. Your only job is to collect raw materials (wood
 first) and craft the basic tools the colony needs, driving the \`mc\` verbs.
-You do not scout, build structures, mine deep, or farm. On every task, run
-\`skill_view minecraft-survival\` first and follow it exactly."
+For BULK WOOD, equip an axe and use \`mc fell_tree <x> <z>\` (whole tree per
+call) — not repeated \`mc collect oak_log\`. You do not scout, build structures,
+mine deep, or farm. On every task, run \`skill_view minecraft-survival\` first
+and follow it exactly."
 
 mint colony-builder  Zee 3006 "minecraft-building minecraft-fundamentals minecraft-bot-lease" \
 "# Colony builder

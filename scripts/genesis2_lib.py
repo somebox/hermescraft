@@ -372,18 +372,23 @@ def probe_natural_spawn(
     return {"x": x, "y": y, "z": z}
 
 
-def find_good_spawn(world: str, seed: int, *, max_tries: int = 12) -> tuple[int, dict[str, int]]:
+def find_good_spawn(world: str, seed: int, *, max_tries: int = 12,
+                    require_water: bool = True) -> tuple[int, dict[str, int]]:
     """Reset the world and probe its natural spawn, AUTO-REROLLING the seed until
     the spawn is a temperate land biome (not ocean/frozen/desert). Resetting wedges
     mineflayer, so each attempt also restarts the bodies before probing. Returns
-    (seed_used, spawn). Raises if no good spawn is found within max_tries."""
+    (seed_used, spawn). Raises if no good spawn is found within max_tries.
+
+    require_water=False relaxes the surface-water-within-48 check — for a CALM DRY
+    world (the emergent experiment), where requiring nearby water forces watery
+    seeds; the colony can scout for water instead."""
     last_err: Exception | None = None
     for i in range(max_tries):
         s = seed + i * 7919  # spread seeds so adjacent attempts land far apart
         reset_world(world=world, seed=s)
         restart_bodies()  # reset drops the bodies; clean restart beats auto-reconnect
         try:
-            spawn = probe_natural_spawn(world)
+            spawn = probe_natural_spawn(world, require_surface_water=require_water)
             if i:
                 sys.stderr.write(f"[find_good_spawn] accepted seed {s} after {i} reroll(s): {spawn}\n")
             return s, spawn
@@ -1584,7 +1589,9 @@ STALL_AGE_S = 600  # a running worker older than this is very likely stuck (a
 def detect_stalled_workers(max_age_s: int = STALL_AGE_S) -> list[dict]:
     """Running, non-epic worker cards whose current run has exceeded max_age_s.
     These are alive-but-likely-stuck (looping on a failing action, unreachable
-    target, etc). Skips epics and existing SUPERVISE cards."""
+    target, etc). Skips epics, the standing [MISSION] card (emergent mode — the
+    planner's brief runs for the whole colony lifetime by design), and existing
+    SUPERVISE cards."""
     try:
         lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
         tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
@@ -1596,7 +1603,7 @@ def detect_stalled_workers(max_age_s: int = STALL_AGE_S) -> list[dict]:
         if (t.get("status") or "").lower() != "running":
             continue
         title = t.get("title", "") or ""
-        if title.startswith("[EPIC]") or "SUPERVISE" in title:
+        if title.startswith("[EPIC]") or title.startswith("[MISSION]") or "SUPERVISE" in title:
             continue
         started = t.get("started_at")
         if not started:
@@ -1627,7 +1634,7 @@ def detect_blocked_workers(gates: dict | None = None) -> list[dict]:
         if (t.get("status") or "").lower() != "blocked":
             continue
         title = t.get("title", "") or ""
-        if title.startswith("[EPIC]") or "SUPERVISE" in title:
+        if title.startswith("[EPIC]") or title.startswith("[MISSION]") or "SUPERVISE" in title:
             continue
         # Skip workers whose phase gate already passed (moot/superseded).
         m = re.search(r"\[GENESIS2:(P\d)\]", title)
