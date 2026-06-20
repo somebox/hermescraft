@@ -9,6 +9,137 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-20 — gv2-2026-06-20-3 postmortem (Phase 0 validation): evidence corrects earlier claims
+
+Capped 2h emergent run on `xiaomi/mimo-v2.5`, seed 63210 (SAME dense-forest world as
+-2, for a clean A/B), carrying the Phase 0 reactive sync-gate + Vec3 guard. This entry
+is written deliberately to CORRECT three things earlier entries/checks asserted on
+weaker evidence (poller-log inference). Where a prior claim was wrong, it's marked.
+
+### Run hygiene — verified clean
+- No old cards: all 106 cards created within the run window (12:22→14:06); single
+  `[MISSION]` (this run's t_a1aa540e); 0 leftover RETRO cards (prior run's archived).
+- Memory wiped at mint: MEMORY.md truncated to 0b @ launch, sessions/ emptied,
+  state.db removed (mint lines 219–222). The later memories/ files are in-run rewrites.
+- mimo, seed 63210, 0 API errors all run.
+
+### Phase 0 A/B result — partial, and attribution corrected
+- **GoalChanged rate dropped ~70%** (35/h vs the -2 baseline 114/h). 0 `pos.floored`
+  crashes (was ~10). Both good.
+- **BUT not attributable to the reactive gate.** Polling all 3 bodies' /observe
+  auto_action_log repeatedly showed reactive **wasn't firing at all** (0 deferrals,
+  empty logs) — same-seed -2 had heavy reactive (escape 181, pillar 452). So the drop
+  is run variance + the Vec3-crash fix stabilizing the tick, NOT the gate. The gate is
+  harmless but UNVALIDATED.
+- **Residual GoalChanged is 100% in-process command overlap** — for all sampled errors
+  the competing in-flight command was the worker's own verb (tunnel/stair_down/
+  fell_tree/collect/place_fill), ZERO manager/no-overlap cases. The fix for THIS is the
+  action-mutex + nav-arbiter (refactor Phases 2–3), not the reactive gate.
+
+### CORRECTION 1 — "workers stalled from command overlap" was misattributed
+The stalls that generated the 52 SUPERVISE cards are **terrain unreachability**, per the
+workers' OWN kanban_block reasons (card events, not inference): `unreachable` ×8 of 14 —
+*"dense spruce forest blocks ALL pathfinding in every direction"*, *"shelter site
+(-3,69,13) is mid-air above a deep canyon"*, *"spawn ridge isolated — air drops on ALL
+sides"*, *"deep canyon between base and farm"*, *"steep cliffs/caves"*; plus
+terrain_too_complex, stuck_pocket_no_escape, prep_required_unmet. So: **stalls = extreme
+fragmented terrain (canyons/cliffs/dense forest); GoalChanged errors = command overlap.**
+Two distinct problems; earlier checks conflated them.
+
+### CORRECTION 2 — the planner did NOT deliberately close its MISSION
+Earlier entries said "mimo closes its own [MISSION] every cycle." The MISSION card's
+event log has **zero agent `completed`/`blocked` events.** Instead: `gave_up ×3`,
+`protocol_violation ×3`, `promoted ×2`, 77 heartbeats, 21 comments. The comments show
+ACTIVE competent management throughout ("MANAGE cycle 3/5/7 — Shelter 9x9 DONE, Storage
+DONE, tools crafted, pipeline intact, no blockers"). `gave_up` is NOT a runtime
+cap — see the addendum; it's a protocol violation, and it reveals the SOUL rule actually
+WORKED (the opposite of an earlier claim).
+
+### ADDENDUM — root cause of the MANAGE churn: SOUL ⊥ dispatcher protocol (definitive)
+The 3 gave_up payloads are explicit: *"worker exited cleanly (rc=0) without calling
+kanban_complete or kanban_block — protocol violation"*, `effective_limit: 1,
+limit_source: dispatcher`. Confirmed in `~/.hermes/hermes-agent/hermes_cli/kanban_db.py`
+(~L5643–5658): a worker that exits cleanly WITHOUT a terminal `kanban_complete`/
+`kanban_block` is recorded as a failure; with the dispatcher default limit of 1, the
+first such exit trips the breaker → card set to `blocked`.
+
+So the real chain is:
+1. Planner is dispatched on the MISSION card, does a full management cycle (comments
+   prove competent work), then **exits without calling kanban_complete/kanban_block —
+   because the SOUL rule told it "never complete/block the MISSION." It OBEYED.**
+2. The dispatcher treats that clean-exit-without-terminal-call as a protocol violation
+   → MISSION → `blocked` (effective_limit=1, immediate).
+3. My guard sees the blocked mission → files a MANAGE card; the card is also `promoted`
+   back and re-dispatched. Repeat every cycle → 16 MANAGE.
+
+**This inverts "the SOUL rule didn't bite": it bit perfectly, and that's exactly what
+caused the problem.** The SOUL directive ("never complete the MISSION") is in DIRECT
+CONFLICT with a hard dispatcher invariant ("every dispatched worker must end with
+kanban_complete or kanban_block"). The planner cannot satisfy both: obey the SOUL →
+protocol violation → blocked; obey the framework → MISSION completed (which we didn't
+want). It's a framework-level contradiction, not a model failure and not (purely) my
+guard's bug — though the guard's spawn-a-new-card-instead-of-reopen design amplified it.
+
+**Correct fix (supersedes earlier "make MISSION non-closable" hand-wave):** stop fighting
+the dispatcher. Two clean options:
+- (A) Let the planner `kanban_complete` its MISSION turn each cycle (satisfying the
+  protocol), and have the poller RE-PROMOTE/re-dispatch the SAME mission card next tick —
+  no MANAGE cards, no guard loop. Standing-brief behavior via re-dispatch, not via a
+  never-terminating card.
+- (B) Set the MISSION card's `max_retries` high so protocol-violation breakers never trip,
+  and let it re-dispatch on its own. Simpler but leaves "blocked" flickers.
+Either removes the SOUL⊥dispatcher contradiction. Drop the current MANAGE guard + the
+"never complete the MISSION" SOUL rule together.
+
+### CORRECTION 3 — the 16 MANAGE cards are a GUARD BUG, not planner misbehavior
+`reengage_planner_if_mission_closed` triggers on mission status `blocked` (a `gave_up`
+card surfaces as blocked), but it files a SEPARATE `[GENESIS2:MANAGE]` card and NEVER
+reopens/unblocks the MISSION — so the trigger condition never clears and the guard
+re-fires every poll cycle (dedup bounds it to one-open, but a fresh one each cycle).
+16 MANAGE = 16 poll cycles with a blocked mission. The SOUL rule "never complete the
+MISSION" had nothing to bite on because the planner wasn't completing it. There's also a
+genuine latent conflict — the kanban-worker framework is built around "complete your
+dispatched card," which fights a standing never-completable MISSION — but that was NOT
+the active mechanism here; the runtime-cap recycle + guard loop was.
+
+### Control-card share, re-explained
+78% of the board (SUPERVISE 52 / MANAGE 16 / RESCOPE 11) is control cards — but the
+machinery is correctly bounded (≤3 supervise/worker across 22 distinct stalled workers;
+dedup-on-open everywhere). The volume faithfully measures the two upstream realities:
+(a) 22 workers stalled on terrain, (b) the gave_up/guard-loop. Cards are the alarm, not
+the fire.
+
+### Planning quality — actually good
+7 FEEDBACK cards (one per specialist, anti-duplicate held), coherent epic decomposition
+(scout→shelter→storage→mine→craft→farm→transport), only 1 duplicate work title. The
+planner understood the colony; execution (terrain) + the guard loop buried it.
+
+### Regions/markers did NOT prevent in-base mining — provisioning gap
+The only active region was `colony` (intent=`marker`, radius=None, `allow_ad_hoc_dig:
+true`) — wide-open by emergent-template design. Enforcement machinery is real
+(`dig.js` → `evaluateRegionPolicy` → REGION_PROTECTED) but a `marker` region with
+allow_ad_hoc_dig never denies. No `protect` region is ever created around the base in
+emergent mode (shelter-render is disabled; planner was never told to region_create), and
+no `base_anchor` was committed. Also `isDigProtected` is BLOCK-NAME based (protects
+placed structure blocks, never natural ground), so miners dug dirt/stone under the
+shelter freely. Floor "holes": place_fill floors failed/partialed (41 err vs 19 done —
+over-32-cap rejections + FILL_PARTIAL leaving gaps) and mining punched through the
+footprint. Fix: auto-create a bounded protect region on base commit; floor-fill must
+split-to-cap + retry failed cells.
+
+### Next actions (ranked by evidence)
+1. **Non-forest spawn seeds** — terrain unreachability is the dominant ceiling (worker
+   block reasons). Highest leverage, above the arbiter.
+2. **Fix the MANAGE guard loop** — re-engage must reopen the SAME mission card (or the
+   planner session must not be runtime-capped), not spawn MANAGE cards. Investigate the
+   gave_up cap + protocol_violations first.
+3. **nav-arbiter + action-mutex** (refactor Phases 2–3) — for the command-overlap
+   GoalChanged residual.
+4. **Auto-protect region on base commit** + floor-fill split/retry.
+5. Keep the Vec3 guard (validated); treat the reactive gate as latent/unproven.
+
+---
+
 ## 2026-06-20 — gv2-2026-06-20-2 postmortem: control plane validated; 3-layer stall root cause
 
 Capped 2h emergent run on `xiaomi/mimo-v2.5`, seed 63210, to validate the Phase 1–6
