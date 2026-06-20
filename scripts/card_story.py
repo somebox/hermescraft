@@ -42,6 +42,9 @@ from datetime import datetime
 from pathlib import Path
 
 # agent.log line: "2026-06-20 13:24:41,886 INFO [SESSION] logger: message"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+RUNTIME_DIR = REPO_ROOT / "data" / "runtime"  # per-bot action JSONL (tool calls + chat)
+
 LINE_RE = re.compile(
     r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+\s+(?P<lvl>\w+)\s+"
     r"(?:\[(?P<sess>[0-9a-f_]+)\]\s+)?(?P<logger>[\w.]+):\s+(?P<msg>.*)$"
@@ -112,6 +115,37 @@ def parse_agent_logs(profiles: Path) -> tuple[dict, dict]:
                 sess_events.setdefault(sess, []).append(
                     {"t": t, "kind": "turn_end", "detail": f"turn ended ({te.group('reason')})", "profile": profile})
     return sess_task, sess_events
+
+
+def fetch_chat(bot: str, t0: float, t1: float, runtime_dir: Path) -> list[dict]:
+    """Worker in-game `mc chat` narration for a bot within [t0,t1] (epoch sec). Action
+    JSONL timestamps are epoch MS. Best-effort (bot must be resolved)."""
+    if not bot or bot == "unknown" or not runtime_dir.exists():
+        return []
+    # action log filenames are capitalized (actions-Mox.jsonl); normalize
+    cand = list(runtime_dir.glob(f"actions-{bot}.jsonl")) + \
+        list(runtime_dir.glob(f"actions-{bot.capitalize()}.jsonl"))
+    out = []
+    seen = set()
+    for f in cand:
+        if f in seen:
+            continue
+        seen.add(f)
+        try:
+            for line in f.read_text().splitlines():
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if r.get("action") != "chat":
+                    continue
+                ts = (r.get("started_at") or 0) / 1000.0
+                if t0 <= ts <= t1:
+                    out.append({"t": ts, "kind": "chat",
+                                "detail": (r.get("detail") or "").replace("Sent: ", "")})
+        except Exception:
+            continue
+    return out
 
 
 def fetch_reasoning(profile: str, sessions: set[str], profiles_root: Path) -> list[dict]:
@@ -191,7 +225,6 @@ def card_story(card_id: str, board: str, sess_task: dict, sess_events: dict,
     reasoning = fetch_reasoning(t.get("assignee"), set(sessions), profiles_root)
     for rv in reasoning:
         timeline.append({"t": rv["t"], "src": "agent", "kind": rv["kind"], "detail": rv["detail"]})
-    timeline.sort(key=lambda x: x["t"])
 
     # bot best-effort: prefer an explicit `leased_bot=X` in a comment, else any body name.
     bot = "unknown"
@@ -203,6 +236,14 @@ def card_story(card_id: str, board: str, sess_task: dict, sess_events: dict,
         bm = re.search(r"\b(Mox|Pip|Zee|tester|Tester)\b", blob)
         if bm:
             bot = bm.group(1)
+
+    # Worker in-game chat narration, windowed to the card's active span + resolved bot.
+    span = [e["t"] for e in timeline if e["t"]]
+    t0 = min(span) if span else float(t.get("created_at") or 0)
+    t1 = max(span) if span else float(t.get("completed_at") or t0 + 3600)
+    for cv in fetch_chat(bot, t0, t1, RUNTIME_DIR):
+        timeline.append({"t": cv["t"], "src": "chat", "kind": "chat", "detail": cv["detail"]})
+    timeline.sort(key=lambda x: x["t"])
 
     return {
         "id": card_id,
@@ -293,7 +334,7 @@ def to_markdown(story: dict) -> str:
         # Reasoning is the valuable signal — give it more room than metadata lines.
         cap = 600 if ev["kind"] == "reasoning" else 200
         d = ev["detail"].replace("\n", " ")[:cap]
-        tag = "🧠" if ev["kind"] == "reasoning" else ev["kind"]
+        tag = {"reasoning": "🧠", "chat": "💬"}.get(ev["kind"], ev["kind"])
         lines.append(f"- `{ts}` [{ev['src']}/{tag}] {d}")
     return "\n".join(lines)
 

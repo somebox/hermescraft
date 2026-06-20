@@ -2185,10 +2185,11 @@ def _latest_run_id() -> str | None:
 
 def capture_run_artifacts(run_id: str | None = None) -> dict:
     """Snapshot the run's diagnostic state into the (gitignored) run dir BEFORE teardown
-    or the next mint — especially `~/.hermes/profiles/colony-*/sessions/` (the per-turn
-    error dumps), which `emergent-run`/mint WIPES (that's how the verbatim 402 quota dump
-    was lost). Also captures agent.log, bot action JSONL, and a board snapshot. Returns
-    {dest, files, run_id}."""
+    or the next mint — the reasoning (state.db), per-turn dumps (sessions/), agent.log,
+    bot action JSONL (tool calls + chat), and a board snapshot. ALL of these are WIPED by
+    the next emergent-run/mint, so this must run at stop. Then auto-generates per-card
+    diagnostic stories (goal/agent/bot + comments + reasoning/chat + tool calls). Returns
+    {dest, files, run_id, card_stories}."""
     import shutil
     run_id = run_id or _latest_run_id()
     if not run_id:
@@ -2206,6 +2207,14 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
                 shutil.copy2(alog, pdir / "agent.log"); n += 1
             except Exception:
                 pass
+        # state.db = the agent's actual reasoning (messages table). Wiped at next mint.
+        sdb = prof / "state.db"
+        if sdb.exists():
+            pdir.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(sdb, pdir / "state.db"); n += 1
+            except Exception:
+                pass
         sess = prof / "sessions"
         if sess.is_dir() and any(sess.iterdir()):
             try:
@@ -2221,7 +2230,20 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
         (dest / "board.json").write_text(_hermes(["list", "--json"]).stdout or "[]"); n += 1
     except Exception:
         pass
-    return {"dest": str(dest), "files": n, "run_id": run_id}
+    # Auto-generate per-card diagnostic stories from the LIVE sources (still present
+    # pre-mint). card_story.py reads board + agent.log + state.db + action JSONL.
+    stories_dir = run_dir(run_id) / "card-stories"
+    card_stories = None
+    try:
+        cs = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "card_story.py"),
+             "--board", BOARD, "--out", str(stories_dir)],
+            capture_output=True, text=True, timeout=300, cwd=REPO_ROOT)
+        if cs.returncode == 0:
+            card_stories = str(stories_dir)
+    except Exception:
+        pass
+    return {"dest": str(dest), "files": n, "run_id": run_id, "card_stories": card_stories}
 
 
 def advance_phases(run_id: str, *, status_by_id: dict[str, str] | None = None,
