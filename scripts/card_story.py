@@ -12,12 +12,17 @@ Correlation key: session_id. Cards carry it; agent.log lines are tagged `[sessio
 and a `conversation turn: ... msg='work kanban task t_XXX'` line maps each session to its
 card. A card may be re-dispatched across several sessions; all are merged.
 
-HONEST LIMITATIONS (so summaries aren't over-trusted):
-  - The agent's hidden chain-of-thought TEXT is NOT in agent.log (only response_len /
-    finish_reason). The per-turn request dumps that held it are wiped on re-mint. What we
-    reconstruct is the externalized decision trace (tool sequence + the agent's comments).
-  - Bot identity (Mox/Pip/Zee) isn't on the card; recovered best-effort from terminal
-    output, else "unknown".
+The agent's actual chain-of-thought IS recoverable: it lives in each profile's
+`state.db` (the `messages` table: role/content/reasoning/tool_calls, keyed by
+session_id) — NOT in agent.log (which has only metadata). We read both: state.db for
+the reasoning/content text, agent.log for tool-call timing. NOTE: the mint wipes
+state.db at run LAUNCH (clearing the prior run), so a profile's state.db holds only the
+CURRENT/most-recent run's reasoning — extract before the next run starts.
+
+LIMITATIONS:
+  - Only the latest run's reasoning survives in state.db (prior runs wiped at mint).
+  - Bot identity (Mox/Pip/Zee) isn't on the card; recovered best-effort from a
+    `leased_bot=` comment or a body name, else "unknown".
 
 Usage:
   scripts/card_story.py [--board genesis-v2] [--card t_XXXX] [--out DIR]
@@ -30,6 +35,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime
@@ -108,7 +114,47 @@ def parse_agent_logs(profiles: Path) -> tuple[dict, dict]:
     return sess_task, sess_events
 
 
-def card_story(card_id: str, board: str, sess_task: dict, sess_events: dict) -> dict:
+def fetch_reasoning(profile: str, sessions: set[str], profiles_root: Path) -> list[dict]:
+    """Read the agent's actual reasoning/content from a profile's state.db `messages`
+    table for the given sessions. Returns [{t, kind, detail}] (assistant thoughts +
+    tool results), time-ordered. Empty if the db is locked/absent."""
+    db = profiles_root / profile / "state.db"
+    if not db.exists() or not sessions:
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=1.0)
+        conn.row_factory = sqlite3.Row
+    except sqlite3.OperationalError:
+        return []
+    out = []
+    try:
+        qmarks = ",".join("?" * len(sessions))
+        rows = conn.execute(
+            f"SELECT session_id, role, tool_name, content, reasoning, timestamp "
+            f"FROM messages WHERE session_id IN ({qmarks}) ORDER BY id",
+            tuple(sessions),
+        ).fetchall()
+        for r in rows:
+            t = float(r["timestamp"] or 0)
+            role = r["role"]
+            if role == "assistant":
+                txt = (r["reasoning"] or "").strip() or (r["content"] or "").strip()
+                if txt:
+                    out.append({"t": t, "kind": "reasoning", "detail": txt})
+            elif role == "tool":
+                res = (r["content"] or "").strip()
+                if res:
+                    out.append({"t": t, "kind": "tool_result",
+                                "detail": f"{r['tool_name'] or 'tool'} → {res}"})
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+    return out
+
+
+def card_story(card_id: str, board: str, sess_task: dict, sess_events: dict,
+               profiles_root: Path) -> dict:
     d = hermes(["show", card_id, "--json"], board)
     if not isinstance(d, dict):
         return {"id": card_id, "error": "no data"}
@@ -141,6 +187,10 @@ def card_story(card_id: str, board: str, sess_task: dict, sess_events: dict) -> 
                              "kind": ev["kind"], "detail": ev["detail"]})
             if ev["kind"] == "tool":
                 tool_calls.append({"tool": ev.get("tool"), "ok": ev.get("ok"), "t": ev["t"]})
+    # Actual reasoning/content from the assignee's state.db (keyed by session).
+    reasoning = fetch_reasoning(t.get("assignee"), set(sessions), profiles_root)
+    for rv in reasoning:
+        timeline.append({"t": rv["t"], "src": "agent", "kind": rv["kind"], "detail": rv["detail"]})
     timeline.sort(key=lambda x: x["t"])
 
     # bot best-effort: prefer an explicit `leased_bot=X` in a comment, else any body name.
@@ -234,12 +284,17 @@ def to_markdown(story: dict) -> str:
             lines.append(f"- `{name}`: {n}{f'  ({e} errors)' if e else ''}")
     else:
         lines.append("- (none recorded)")
+    nreason = sum(1 for ev in (story.get("timeline") or []) if ev.get("kind") == "reasoning")
     lines += ["", "## 3. Reasoning / decision chain (time-sorted)", "",
-              "_Observable trace — tool sequence + comments. Hidden chain-of-thought text is not persisted._", ""]
+              f"_Merged trace: agent reasoning (from state.db, {nreason} thoughts) + tool calls "
+              "+ comments + board events._", ""]
     for ev in story.get("timeline") or []:
         ts = datetime.fromtimestamp(ev["t"]).strftime("%H:%M:%S") if ev["t"] else "--:--:--"
-        d = ev["detail"].replace("\n", " ")[:200]
-        lines.append(f"- `{ts}` [{ev['src']}/{ev['kind']}] {d}")
+        # Reasoning is the valuable signal — give it more room than metadata lines.
+        cap = 600 if ev["kind"] == "reasoning" else 200
+        d = ev["detail"].replace("\n", " ")[:cap]
+        tag = "🧠" if ev["kind"] == "reasoning" else ev["kind"]
+        lines.append(f"- `{ts}` [{ev['src']}/{tag}] {d}")
     return "\n".join(lines)
 
 
@@ -263,7 +318,8 @@ def main() -> int:
         ts = lst if isinstance(lst, list) else lst.get("tasks", [])
         ids = [t.get("id") for t in ts if t.get("id")]
 
-    stories = [card_story(cid, args.board, sess_task, sess_events) for cid in ids]
+    profiles_root = Path(args.profiles)
+    stories = [card_story(cid, args.board, sess_task, sess_events, profiles_root) for cid in ids]
 
     if args.out:
         out = Path(args.out)
