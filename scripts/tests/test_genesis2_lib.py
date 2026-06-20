@@ -804,3 +804,43 @@ def test_file_site_advisory_dedups_and_skips_buildable(monkeypatch):
     # Buildable anchor → no advisory.
     monkeypatch.setattr(g2, "site_fit_brief", lambda: {"base_anchor": {"buildable": True}})
     assert g2.file_site_advisory("gv2-x") is None
+
+
+# --- Emergent stock brief + planner brief ----------------------------------
+
+def test_file_stock_brief_files_once_then_dedups(monkeypatch):
+    monkeypatch.setattr(g2, "detect_supply_deficits",
+                        lambda *a, **k: [{"resource": "cobblestone", "current": 12,
+                                          "target_min": 128, "deficit": 116, "assignee": "colony-miner"}])
+    monkeypatch.setattr(g2, "_supply_source", lambda r: None)
+    state = {"open": False}
+    created = []
+    def fake(args, **kw):
+        p = MagicMock(); p.returncode = 0
+        if args and args[0] == "list":
+            p.stdout = json.dumps(
+                [{"id": "t_sb", "title": "[GENESIS2:STOCK-BRIEF] STOCK-BRIEF", "status": "running"}]
+                if state["open"] else [])
+        elif args and args[0] == "create":
+            created.append(args); p.stdout = json.dumps({"id": "t_sb"})
+        else:
+            p.stdout = "{}"
+        return p
+    monkeypatch.setattr(g2, "_hermes", fake)
+    assert g2.file_stock_brief("gv2-x") == "t_sb"          # first: filed
+    assert "[GENESIS2:STOCK-BRIEF]" in created[0][1]
+    state["open"] = True
+    assert g2.file_stock_brief("gv2-x") is None            # open brief → deduped
+
+
+def test_file_stock_brief_none_when_no_deficits(monkeypatch):
+    monkeypatch.setattr(g2, "detect_supply_deficits", lambda *a, **k: [])
+    assert g2.file_stock_brief("gv2-x") is None
+
+
+def test_planner_brief_aggregates_sitefit_and_stock(monkeypatch):
+    monkeypatch.setattr(g2, "site_fit_brief", lambda: {"anchor_buildable": True})
+    monkeypatch.setattr(g2, "detect_supply_deficits", lambda *a, **k: [{"resource": "food"}])
+    b = g2.planner_brief()
+    assert b["site_fit"] == {"anchor_buildable": True}
+    assert b["stock_deficits"] == [{"resource": "food"}]

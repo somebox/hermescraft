@@ -156,6 +156,16 @@ def main() -> int:
                     sys.stderr.write(f"[poller] {d['resource']} low ({d['current']}<{d['target_min']}) → supply card {cid} ({d['assignee']})\n")
         except Exception as e:
             sys.stderr.write(f"[poller] supply check failed: {e}\n")
+        # Emergent mode disables auto-SUPPLY; instead surface deficits to the planner
+        # as ONE deduped stock brief so it queues supply itself (builders/miners can't
+        # see chest stock — gv2-2026-06-19-2 empty-chest blocks + redundant supply).
+        if emergent:
+            try:
+                cid = g2.file_stock_brief(args.run_id)
+                if cid:
+                    sys.stderr.write(f"[poller] base stock below target → planner stock brief {cid}\n")
+            except Exception as e:
+                sys.stderr.write(f"[poller] stock brief failed: {e}\n")
         # Planner re-engagement: a worker that's stuck — either RUNNING far longer
         # than a healthy one (~minutes) OR BLOCKED for a substantive reason (no
         # water, out of materials, unreachable; not no_free_body) — stalls the

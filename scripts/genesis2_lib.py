@@ -1023,6 +1023,54 @@ def file_site_advisory(run_id: str) -> str | None:
     return None
 
 
+def planner_brief() -> dict:
+    """Compact truth surface for the emergent planner: site-fit + base stock deficits.
+    The planner should read a summary, not reconstruct colony state from scattered
+    board events."""
+    return {"site_fit": site_fit_brief(), "stock_deficits": detect_supply_deficits()}
+
+
+def file_stock_brief(run_id: str) -> str | None:
+    """Emergent mode: surface base stock deficits to the planner as ONE advisory card
+    (deduped on an open card) so it queues supply itself — emergent disables the
+    auto-SUPPLY loop, and builders/miners can't see stock (builder blocked on empty
+    chests, miner over-supplied in gv2-2026-06-19-2). Returns card id, or None when
+    there are no deficits / a brief is already open."""
+    deficits = detect_supply_deficits()
+    if not deficits:
+        return None
+    tag = "STOCK-BRIEF"
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    for t in tasks:
+        if tag in (t.get("title", "") or "") and (t.get("status") or "").lower() not in ("done", "archived"):
+            return None  # an open stock brief already exists — don't churn
+    lines = []
+    for d in deficits[:6]:
+        src = _supply_source(d.get("resource", ""))
+        srctxt = (f" — source near {src[0]} ({src[1]['x']},{src[1]['y']},{src[1]['z']})"
+                  if src else " — no source marked yet")
+        lines.append(f"  {d.get('resource')}: {d.get('current')}/{d.get('target_min')} "
+                     f"(deficit {d.get('deficit')}, -> {d.get('assignee')}){srctxt}")
+    title = f"[GENESIS2:STOCK-BRIEF] {tag}"
+    body = (
+        "BASE STOCK BRIEF (advisory). Resources below target_min:\n" + "\n".join(lines) + "\n\n"
+        "You are the PLANNER. Queue supply worker cards (lease ritual + literal `mc` verbs) "
+        "for the short resources, routed to the listed assignee + nearest source mark. Do NOT "
+        "re-gather resources already at target. Then `kanban_complete` this brief."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
+
+
 def _regions() -> list[dict]:
     return gl._load_json(DATA_DIR / "regions-world.json", default={}).get("regions", [])
 
