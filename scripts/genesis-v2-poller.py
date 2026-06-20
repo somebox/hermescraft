@@ -163,6 +163,16 @@ def main() -> int:
         # supplies a prerequisite. Run-age gating means a progressing worker is
         # never disrupted; the blocked path is what unsticks "all blocked, none
         # running" dead-ends.
+        # Site-fit advisory (BOTH modes, deduped): if base_anchor was locked with no
+        # nearby stone it can't host a cobble shelter — nudge the planner to source
+        # stone / relocate / scope plank-only before the doomed BUILD (the
+        # gv2-2026-06-19-2 cascade). Advisory only; the agent still decides.
+        try:
+            cid = g2.file_site_advisory(args.run_id)
+            if cid:
+                sys.stderr.write(f"[poller] base_anchor not buildable (no nearby stone) → site advisory {cid}\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] site advisory failed: {e}\n")
         # Deterministic tool-error backstop (BOTH modes): a body spinning on repeated
         # failed actions can't be stopped by SOUL prose (agents don't self-count across
         # turns). Attribute failures to the running card via the lease + action log and

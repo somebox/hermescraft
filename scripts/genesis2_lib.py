@@ -901,6 +901,128 @@ def _marks_with_coords() -> dict[str, tuple[int, int, int]]:
     return out
 
 
+# --- Deterministic site-fit scoring ----------------------------------------
+# gv2-2026-06-19-2: the scout locked base_anchor with NO stone within ~20 blocks
+# and water ~85 blocks away (it self-scored the pad 2/5 but chose it anyway). That
+# cascaded into an impossible cobble shelter, a far-water farm, and redundant supply.
+# Score pads deterministically from reconciled marks so the planner can relocate or
+# source the missing resource BEFORE committing. Stone is build-critical → a GATE
+# (no nearby stone = cobble shelter impossible). Water is a FARM-viability WEIGHT,
+# not a base gate (emergent worlds spawn dry on purpose, require_water=False).
+SITE_STONE_R = 24
+SITE_WATER_R = 48
+SITE_WOOD_R = 48
+
+
+def _nearest_mark_dist(pos: tuple[int, int, int], marks: dict, prefix: str) -> tuple[float | None, str | None]:
+    """Horizontal (x,z) distance to the nearest mark whose name starts with prefix."""
+    px, _, pz = pos
+    best, bn = None, None
+    for n, (x, _y, z) in marks.items():
+        if not n.startswith(prefix):
+            continue
+        d = ((x - px) ** 2 + (z - pz) ** 2) ** 0.5
+        if best is None or d < best:
+            best, bn = d, n
+    return best, bn
+
+
+def score_site(pos: tuple[int, int, int], marks: dict) -> dict:
+    """Score a candidate base position on resource proximity from reconciled marks.
+    Returns {score 0-5, buildable, *_dist, *_mark, flags[]}."""
+    sd, sn = _nearest_mark_dist(pos, marks, "lt_stone")
+    wd, wn = _nearest_mark_dist(pos, marks, "lt_water")
+    od, on = _nearest_mark_dist(pos, marks, "lt_wood")
+    stone_ok = sd is not None and sd <= SITE_STONE_R
+    water_ok = wd is not None and wd <= SITE_WATER_R
+    wood_ok = od is not None and od <= SITE_WOOD_R
+    score = 1 + (2 if stone_ok else 0) + (1 if water_ok else 0) + (1 if wood_ok else 0)
+    flags = []
+    if not stone_ok:
+        flags.append(f"no_stone_within_{SITE_STONE_R}")
+    if not water_ok:
+        flags.append(f"no_water_within_{SITE_WATER_R}")
+    if not wood_ok:
+        flags.append(f"no_wood_within_{SITE_WOOD_R}")
+    return {
+        "score": score, "buildable": stone_ok,
+        "stone_dist": None if sd is None else round(sd, 1), "stone_mark": sn,
+        "water_dist": None if wd is None else round(wd, 1), "water_mark": wn,
+        "wood_dist": None if od is None else round(od, 1), "wood_mark": on,
+        "flags": flags,
+    }
+
+
+def rank_candidate_pads(marks: dict | None = None) -> list[dict]:
+    """Rank candidate pads (marks named candidate_pad* plus base_anchor) by score, best
+    first. Returns [{name, pos, ...score}]."""
+    marks = marks if marks is not None else _marks_with_coords()
+    cands = {n: p for n, p in marks.items() if n.startswith("candidate_pad") or n == "base_anchor"}
+    ranked = [{"name": n, "pos": p, **score_site(p, marks)} for n, p in cands.items()]
+    ranked.sort(key=lambda r: (-r["score"], r["name"]))
+    return ranked
+
+
+def site_fit_brief() -> dict:
+    """Compact site-fit summary for the emergent planner: the current base_anchor's
+    score + flags and the best-ranked candidate. {} if there are no candidate marks."""
+    marks = _marks_with_coords()
+    ranked = rank_candidate_pads(marks)
+    if not ranked:
+        return {}
+    best = ranked[0]
+    out: dict = {"ranked": ranked[:5], "best": best}
+    anchor = next((r for r in ranked if r["name"] == "base_anchor"), None)
+    if anchor:
+        out["base_anchor"] = anchor
+        out["anchor_buildable"] = anchor["buildable"]
+        if not anchor["buildable"]:
+            out["warning"] = (
+                f"base_anchor scores {anchor['score']}/5 ({', '.join(anchor['flags'])}); "
+                f"best candidate {best['name']} scores {best['score']}/5 — source stone or "
+                f"relocate before committing to a cobble BUILD")
+    return out
+
+
+def file_site_advisory(run_id: str) -> str | None:
+    """If the chosen base_anchor isn't buildable (no nearby stone), file ONE advisory
+    card so the planner sources stone or relocates before a doomed cobble BUILD. Dedup.
+    Returns card id, or None when no advisory is needed / already filed."""
+    brief = site_fit_brief()
+    anchor = brief.get("base_anchor")
+    if not anchor or anchor.get("buildable"):
+        return None
+    tag = "SITE-ADVISORY base_anchor"
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    for t in tasks:
+        if tag in (t.get("title", "") or ""):
+            return None  # already advised
+    best = brief.get("best", {})
+    title = f"[GENESIS2:SITE-ADVISORY] {tag}"
+    body = (
+        f"SITE-FIT WARNING (advisory). {brief.get('warning', '')}\n\n"
+        f"base_anchor: score {anchor['score']}/5, flags {anchor['flags']}; nearest stone "
+        f"{anchor['stone_dist']} (mark {anchor['stone_mark']}), water {anchor['water_dist']}, "
+        f"wood {anchor['wood_dist']}. Best candidate: {best.get('name')} "
+        f"({best.get('score')}/5).\n\n"
+        f"You are the PLANNER. Decide via the BOARD: (a) file a SUPPLY card to source/haul "
+        f"cobble to base before any cobble BUILD, (b) relocate base_anchor to the best "
+        f"candidate, or (c) scope the shelter plank-only (no cobble). Then `kanban_complete` "
+        f"this advisory."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
+
+
 def _regions() -> list[dict]:
     return gl._load_json(DATA_DIR / "regions-world.json", default={}).get("regions", [])
 
