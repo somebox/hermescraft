@@ -1071,6 +1071,74 @@ def file_stock_brief(run_id: str) -> str | None:
     return None
 
 
+# --- Verification & retro (Phase 5) ----------------------------------------
+# gv2-2026-06-19-2 built a 7×7 shelter + farm + road that the marks/board never
+# recorded — verify OUTCOMES by world-state, not mark presence.
+STRUCTURE_BLOCKS = ("#minecraft:planks", "minecraft:cobblestone", "#minecraft:logs",
+                    "minecraft:oak_door")
+
+
+def verify_built_structure(world: str, x: int, y: int, z: int, *, radius: int = 4,
+                           height: int = 3, step: int = 1, min_blocks: int = 6,
+                           rcon_fn=rcon_in) -> dict:
+    """Mark-INDEPENDENT proof a structure was built near (x,y,z): count placed building
+    blocks (planks/cobble/logs/door) in the wall box above ground. Overseer-cadence (it
+    issues many RCON probes), NOT a per-tick check. Returns {built, solid_blocks}."""
+    count = 0
+    for dx in range(-radius, radius + 1, step):
+        for dz in range(-radius, radius + 1, step):
+            for dy in range(1, height + 1):
+                px, py, pz = x + dx, y + dy, z + dz
+                for mat in STRUCTURE_BLOCKS:
+                    if "Test passed" in rcon_fn(world, [f"execute positioned {px} {py} {pz} if block ~ ~ ~ {mat}"]):
+                        count += 1
+                        break  # one material per cell
+    return {"built": count >= min_blocks, "solid_blocks": count}
+
+
+RETRO_AGENTS = ("colony-scout", "colony-gatherer", "colony-builder", "colony-farmer",
+                "colony-miner", "colony-road", "colony-planner")
+RETRO_BODY = (
+    "RETROSPECTIVE — REFLECTION ONLY. The colony run is ending. Do NOT checkout a body,\n"
+    "do NOT run `mc` verbs, do NOT run `skill_view`, do NOT do any in-world work.\n\n"
+    "In a single `kanban_comment` on THIS card, answer briefly and concretely:\n"
+    "1. What did you accomplish this round?\n"
+    "2. What blocked you, trapped you, or made you inefficient (be specific — which\n"
+    "   verb/situation)?\n"
+    "3. What ONE change (a tool, a piece of info, clearer card instructions, a skill\n"
+    "   fix) would most help you do your job next round?\n\n"
+    "Then `kanban_complete` this card. Keep it under ~120 words."
+)
+
+
+def file_retro_cards(run_id: str, agents: tuple[str, ...] = RETRO_AGENTS) -> dict:
+    """File a reflection-only [RETRO] card per agent (run-2 learning: agent retros reveal
+    far more than marks/logs). Skips an agent that already has an OPEN retro. Must be run
+    while agents are still alive (before teardown); give them ~3 min to answer. Returns
+    {agent: card_id}."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    open_retro = {t.get("assignee") for t in tasks
+                  if "[RETRO]" in (t.get("title", "") or "")
+                  and (t.get("status") or "").lower() not in ("done", "archived")}
+    out: dict = {}
+    for a in agents:
+        if a in open_retro:
+            continue
+        r = _hermes(["create", "[RETRO] Round feedback — reflection only",
+                     "--assignee", a, "--body", RETRO_BODY, "--max-runtime", "4m",
+                     "--created-by", "operator", "--json"])
+        if r.returncode == 0:
+            try:
+                out[a] = str(json.loads(r.stdout).get("id"))
+            except Exception:
+                pass
+    return out
+
+
 def _regions() -> list[dict]:
     return gl._load_json(DATA_DIR / "regions-world.json", default={}).get("regions", [])
 

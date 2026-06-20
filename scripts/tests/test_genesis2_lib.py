@@ -844,3 +844,48 @@ def test_planner_brief_aggregates_sitefit_and_stock(monkeypatch):
     b = g2.planner_brief()
     assert b["site_fit"] == {"anchor_buildable": True}
     assert b["stock_deficits"] == [{"resource": "food"}]
+
+
+# --- Verification & retro (Phase 5) ----------------------------------------
+
+def test_verify_built_structure_counts_world_blocks_not_marks():
+    # Fake RCON: report planks at a 3x3 footprint, wall height 1 → >= min_blocks.
+    built_cells = {(px, pz) for px in range(-1, 2) for pz in range(-1, 2)}
+    def fake_rcon(_world, cmds):
+        cmd = cmds[0]
+        # parse "execute positioned PX PY PZ if block ..."
+        parts = cmd.split()
+        px, py, pz = int(parts[2]), int(parts[3]), int(parts[4])
+        if py == 65 and (px, pz) in {(0 + dx, 0 + dz) for dx, dz in built_cells} and "planks" in cmd:
+            return "Test passed"
+        return "Test failed"
+    r = g2.verify_built_structure("genesis2", 0, 64, 0, radius=1, height=1,
+                                  min_blocks=6, rcon_fn=fake_rcon)
+    assert r["built"] is True
+    assert r["solid_blocks"] == 9        # 3x3 planks
+    # Empty area → not built.
+    r2 = g2.verify_built_structure("genesis2", 0, 64, 0, radius=1, height=1,
+                                   rcon_fn=lambda *_a, **_k: "Test failed")
+    assert r2["built"] is False and r2["solid_blocks"] == 0
+
+
+def test_file_retro_cards_one_per_agent_skips_open(monkeypatch):
+    created = []
+    def fake(args, **kw):
+        p = MagicMock(); p.returncode = 0
+        if args and args[0] == "list":
+            # colony-scout already has an OPEN retro → should be skipped.
+            p.stdout = json.dumps([{"assignee": "colony-scout",
+                                    "title": "[RETRO] Round feedback — reflection only",
+                                    "status": "running"}])
+        elif args and args[0] == "create":
+            created.append(args[args.index("--assignee") + 1])
+            p.stdout = json.dumps({"id": "t_" + str(len(created))})
+        else:
+            p.stdout = "{}"
+        return p
+    monkeypatch.setattr(g2, "_hermes", fake)
+    out = g2.file_retro_cards("gv2-x")
+    assert "colony-scout" not in out          # skipped (open retro)
+    assert "colony-builder" in out and "colony-planner" in out
+    assert len(out) == len(g2.RETRO_AGENTS) - 1

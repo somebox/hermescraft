@@ -316,6 +316,19 @@ if rid:
 "
     ;;
 
+  retro)
+    # File reflection-only [RETRO] cards to every agent while they're still alive.
+    # Agent retros reveal far more than marks/logs (gv2-2026-06-19-2). Wait for them
+    # to answer, then `genesis-v2.sh stop` (which captures their comments + tears down).
+    "$PY" -c "
+import sys; sys.path.insert(0,'$REPO_ROOT/scripts')
+import genesis2_lib as g2
+rid = g2.active_run_id() or g2._latest_run_id()
+print('[genesis-v2] filed RETRO cards:', g2.file_retro_cards(rid))
+"
+    echo "[genesis-v2] wait ~3 min for agents to answer, then: scripts/genesis-v2.sh stop"
+    ;;
+
   stop)
     # Capture diagnostics BEFORE teardown (session error dumps are wiped by the next
     # mint), then bring the session down: poller, gateway workers + gateway, the 3
@@ -338,5 +351,5 @@ print('[genesis-v2] artifacts:', g2.capture_run_artifacts(rid))
     echo "[genesis-v2] session down."
     ;;
 
-  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status|stop}" >&2; exit 1 ;;
+  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status|retro|stop}" >&2; exit 1 ;;
 esac
