@@ -9,6 +9,43 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-20 — Issue-plan implementation (control-plane split): Phases 1–6
+
+Implemented the genesis-v2 issue plan (control-plane split: agents choose among
+well-shaped options; runtime/poller/overseer enforce sensing, budgets, verification).
+All offline-tested; the live cognition/embodied gate + overseer-agent loop run at the
+next genesis run. Commits `7702742`, `d1a3e7b`, `d9a6e57`, `47d1514`, `99a013c`, `6d62213`.
+
+- **P1 — deterministic tool-error backstop.** Agents can't self-count failures
+  (run-2 builder spun 252 before escalating). `detect_tool_error_spin` attributes
+  failed actions to the RUNNING card via the lease (card→leased body) + the body's
+  action JSONL windowed to run-start, and `block_card`s past 12 errors/5min; the
+  blocked path re-engages the planner. Supervise-cap now PARKs (block + `[RESCOPE]`).
+  `capture_run_artifacts` + `genesis-v2.sh stop` snapshot profiles/sessions (the
+  per-turn dumps the next mint wipes) before teardown.
+- **P2 — observe POI override.** `mc observe --full` preserves nearby_marks/signs/
+  torches under nav-brief; otherwise an explicit `poi_omitted` marker (scouts read
+  "absent" as "none" otherwise).
+- **P3 — fell_tree.** Wall-clock cap (60s) + partial-progress return + reachability
+  hints (boxed-in → clear_strip an approach); fixed survey-line fix-command form.
+- **P4 — site-fit + stock.** `score_site`/`rank_candidate_pads`/`site_fit_brief`:
+  stone is a build GATE, water a farm-viability WEIGHT (dry worlds are intentional);
+  `file_site_advisory` nudges the planner off an unbuildable base_anchor.
+  `file_stock_brief` surfaces deficits to the emergent planner (deduped) since
+  emergent disables auto-SUPPLY. (Deferred: dependency visibility — parent links
+  aren't in `list --json`; card standability lint — needs live `mc reachable`.)
+- **P5 — verify by world-state, not marks.** `verify_built_structure` counts placed
+  building blocks via RCON (run-2's shelter/farm/road weren't in the marks).
+  `file_retro_cards` + `genesis-v2.sh retro` institutionalize the agent retrospectives.
+  (Deferred to live: re-enable colony-overseer agent loop + post-BUILD verify wiring.)
+- **P6 — revalidation.** Offline gate GREEN: **969 bot unit tests** (actions/runtime/
+  cli) + **389 scripts/tests** (genesis2_lib incl. 26 new). Pre-mint LIVE gate still
+  to run next session: terrain cognition/context/embodied ladder, plus live checks of
+  the backstop, observe-POI, fell_tree-in-forest, site/stock advisories, and the
+  overseer loop.
+
+---
+
 ## 2026-06-19 — gv2-2026-06-19-2 (emergent, fixed): a near-complete colony; ceiling is site-fit + forest nav
 
 Second emergent run, on **`xiaomi/mimo-v2.5`** (swapped from deepseek after run-1's
