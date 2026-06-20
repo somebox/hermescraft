@@ -83,7 +83,9 @@ function fixCommandsFor(deficits) {
   const out = [];
   for (const d of deficits) {
     if (d.kind === 'tree') {
-      out.push(`mc fell_tree ${d.at[0]} ${d.base_y} ${d.at[1]}`);
+      // Registry form is `mc fell_tree X Z [y_hint=Y]` — emitting base_y as the
+      // 2nd positional silently mis-parsed it as Z (broken fix command).
+      out.push(`mc fell_tree ${d.at[0]} ${d.at[1]} y_hint=${d.base_y}`);
     } else if (d.kind === 'water' || d.kind === 'gap') {
       // bridge-fill: level the span at the line's elevation. Caller fills in y.
       out.push(

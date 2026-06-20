@@ -155,6 +155,24 @@ test('handler envelope carries roadplan-survey/v1 schema and fix commands', asyn
   assert.match(r.data.fix_commands.find((c) => c.startsWith('mc level')) || '', /<deck-y>/);
 });
 
+test('tree deficits emit the registry fell_tree form (X Z y_hint=Y), not X base_y Z', async (t) => {
+  const fx = fixture('forest');
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'survey-forest-test-'));
+  t.after(() => fs.rmSync(repoRoot, { recursive: true, force: true }));
+  const bot = botFromFixture(fx);
+  const actions = createSurveyLineQueries({ ensureBot: () => bot, repoRoot });
+  const r = await actions.survey_line({
+    x1: fx.line.from[0], z1: fx.line.from[1],
+    x2: fx.line.to[0],   z2: fx.line.to[1],
+    y_hint: fx.line.y_hint,
+  });
+  assertContract(r);
+  const fell = (r.data.fix_commands || []).find((c) => c.startsWith('mc fell_tree'));
+  assert.ok(fell, 'expected a fell_tree fix command from a forested line');
+  // Correct: `mc fell_tree X Z y_hint=Y`. The old bug emitted `X base_y Z`.
+  assert.match(fell, /^mc fell_tree -?\d+ -?\d+ y_hint=-?\d+$/);
+});
+
 test('--diff against the prior survey reports a bridged-water resolution', async (t) => {
   const fx = fixture('river');
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'survey-diff-test-'));

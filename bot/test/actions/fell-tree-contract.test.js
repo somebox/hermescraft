@@ -147,6 +147,21 @@ test('fell_tree: live — trunk sweep + leaf sweep, each top-down within its clu
     'leaf sweep must be top-down within cluster');
 });
 
+test('fell_tree: when every dig fails (boxed in), surfaces a clear_strip next_action_hint', async () => {
+  const terrain = new Map();
+  for (let y = 64; y <= 66; y++) terrain.set(`0,${y},0`, 'spruce_log');
+  const { bot } = makeBot({ terrain });
+  bot.dig = async () => { throw new Error('blocked by canopy'); };  // dense forest: can't break
+  const part = makePart(bot);
+  const r = await part.fell_tree({ x: 0, z: 0, y_hint: 64 });
+  assertContract(r);
+  assert.equal(r.ok, true);
+  assert.equal(r.data.logs_removed, 0);
+  assert.ok(r.data.failed > 0);
+  assert.ok('unreachable_clusters' in r.data);
+  assert.match(r.data.next_action_hint || '', /clear_strip/);  // entropy-reducing rescue
+});
+
 test('fell_tree: leaves_radius=0 leaves canopy untouched', async () => {
   const terrain = new Map();
   for (let y = 64; y <= 65; y++) terrain.set(`0,${y},0`, 'spruce_log');

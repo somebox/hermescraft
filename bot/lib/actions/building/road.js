@@ -1064,8 +1064,31 @@ export function createBuildingRoadPart(deps) {
       let logsRemoved = 0;
       let leavesRemoved = 0;
       let failed = 0;
+      let unreachableClusters = 0;
       const errors = [];
+      const totalCells = allClusters.reduce((n, c) => n + c.length, 0);
+      // Wall-clock budget: in dense forest, per-cluster pre-position pathfinds
+      // (capped individually) compound until the agent's turn budget kills the
+      // action mid-call (gv2-2026-06-19-2 gatherer: fell_tree "timed out"). Cap
+      // the whole op and return a PARTIAL result with a resume hint instead, the
+      // way clear_strip does.
+      const capMs = Number(capsMs.fell_tree) || ACTION_CAPS_MS.fell_tree;
+      const deadline = Date.now() + capMs;
+      const fellPartial = (extra = {}) => timeoutError('fell_tree', capMs, {
+        ...baseData,
+        logs_removed: logsRemoved,
+        leaves_removed: leavesRemoved,
+        failed,
+        unreachable_clusters: unreachableClusters,
+        ...extra,
+      }, `Partial: removed ${logsRemoved}/${logs.length} logs + ${leavesRemoved} leaves. `
+        + `Re-run \`mc fell_tree ${tx} ${tz} y_hint=${trunkBaseY}\` (felled cells are skipped), `
+        + `or if the tree is boxed in by dense canopy, clear a standable approach first with `
+        + `\`mc clear_strip\` before retrying.`);
       for (const cluster of allClusters) {
+        if (Date.now() > deadline) {
+          return fellPartial({ remaining_cells: totalCells - logsRemoved - leavesRemoved - failed });
+        }
         // Pre-position next to the cluster centroid. Stand at trunk base Y
         // (or cluster's lowest Y) so the bot has solid ground under it.
         const centroid = clusterCentroid(cluster);
@@ -1080,7 +1103,11 @@ export function createBuildingRoadPart(deps) {
               opName: 'fell_tree', capMs: ACTION_CAPS_MS.reach,
             });
           }
-        } catch { /* best-effort */ }
+        } catch {
+          // Can't path to this cluster (dense trunks/canopy block the approach).
+          // Don't silently skip — record it so the caller learns the tree is boxed in.
+          unreachableClusters++;
+        }
         for (const cell of cluster) {
           const live = b.blockAt(new Vec3(cell.x, cell.y, cell.z));
           if (!live || (live.name !== cell.name && !isLogBlock(live.name) && !isLeafBlock(live.name))) {
@@ -1114,6 +1141,13 @@ export function createBuildingRoadPart(deps) {
         try { await pickup(); } catch { /* best-effort */ }
       }
 
+      // If we couldn't reach clusters or most cells failed, the tree is boxed in
+      // by dense canopy/trunks — surface an actionable hint instead of a quiet
+      // "0 removed" so the agent clears an approach rather than retrying blindly.
+      const mostlyFailed = totalCells > 0 && (logsRemoved + leavesRemoved) === 0 && (failed + unreachableClusters) > 0;
+      const nextHint = (unreachableClusters > 0 || mostlyFailed)
+        ? `Dense canopy blocked the approach (${unreachableClusters} unreachable cluster(s)). Clear a standable approach with \`mc clear_strip\` toward (${tx},${tz}), then re-run \`mc fell_tree ${tx} ${tz} y_hint=${trunkBaseY}\`.`
+        : undefined;
       return {
         ok: true,
         data: {
@@ -1122,9 +1156,11 @@ export function createBuildingRoadPart(deps) {
           logs_removed: logsRemoved,
           leaves_removed: leavesRemoved,
           failed,
+          unreachable_clusters: unreachableClusters,
           errors: errors.slice(0, 5),
+          ...(nextHint ? { next_action_hint: nextHint } : {}),
         },
-        result: `fell_tree ${species || '?'} at (${tx},${trunkBaseY},${tz}): removed ${logsRemoved} logs + ${leavesRemoved} leaves${failed ? `, ${failed} failed` : ''}`,
+        result: `fell_tree ${species || '?'} at (${tx},${trunkBaseY},${tz}): removed ${logsRemoved} logs + ${leavesRemoved} leaves${failed ? `, ${failed} failed` : ''}${unreachableClusters ? `, ${unreachableClusters} unreachable` : ''}`,
       };
     },
   };
