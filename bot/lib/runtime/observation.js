@@ -547,12 +547,22 @@ export function createObservation(deps) {
             })
           : undefined;
         if (navStatus) payload.nav_brief_status = navStatus;
-        delete payload.nearby_marks;
-        // Phase A5: nav-brief mode owns the "what's nearby" channel.
-        // Workers must call mc marks / mc pois / mc nearby_signs
-        // explicitly; otherwise nav_brief and these arrays compete.
-        delete payload.nearby_signs;
-        delete payload.nearby_missing_torches;
+        // Phase A5: nav-brief mode owns the "what's nearby" channel, so the lean
+        // default drops the POI arrays (nav_brief and these compete). But a caller
+        // that explicitly asks for the full view (`mc observe --full` → lean=false,
+        // or opts.includePoi) gets them back — scouts/handoffs need marks even under
+        // nav-brief. When suppressed, say so explicitly so "absent" != "none".
+        const includePoi = opts.includePoi === true || opts.lean === false;
+        if (includePoi) {
+          payload.poi_included = true;
+        } else {
+          delete payload.nearby_marks;
+          delete payload.nearby_signs;
+          delete payload.nearby_missing_torches;
+          payload.poi_omitted = true;
+          payload.poi_hint =
+            'nearby_marks/signs/missing_torches suppressed under nav-brief — use `mc observe --full` (or `mc marks` / `mc nearby_signs`) for POI';
+        }
       }
     }
 

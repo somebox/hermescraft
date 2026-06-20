@@ -44,7 +44,7 @@ export const RAW_COMMAND_DEFS = [
     // ~80% smaller than full. Use `mc observe --full` for the verbose view.
     customParse: true,
     pathFn: (p) => (p.full ? '/observe' : '/observe?lean=true'),
-    description: 'Goals + task + alerts snapshot (lean by default; --full for everything)',
+    description: 'Goals + task + alerts snapshot (lean by default; --full for everything, incl. nearby marks/signs/torches that nav-brief otherwise suppresses)',
     examples: ['mc observe', 'mc observe --full'],
   }),
   g('alerts', 'perceive', [], { method: 'GET', path: '/alerts', description: 'Typed alerts', examples: ['mc alerts'] }),

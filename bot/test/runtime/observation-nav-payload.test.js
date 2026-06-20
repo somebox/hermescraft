@@ -132,6 +132,40 @@ test('buildObservePayload with HERMES_NAV_BRIEF=1 surfaces nav_brief_text', () =
   }
 });
 
+test('buildObservePayload under nav-brief marks POI omission when lean (no override)', () => {
+  const { buildObservePayload, restore } = makeObserve({
+    envBrief: '1',
+    locations: { base_anchor: { x: 0, y: 64, z: 0 } },
+  });
+  try {
+    const p = buildObservePayload({ lean: true });
+    assert.equal(p.nearby_marks, undefined);     // still stripped in lean
+    assert.equal(p.poi_omitted, true);           // ...but the omission is explicit
+    assert.ok(typeof p.poi_hint === 'string' && p.poi_hint.includes('--full'));
+    assert.notEqual(p.poi_included, true);
+  } finally {
+    restore();
+  }
+});
+
+test('buildObservePayload with includePoi override preserves POI under nav-brief', () => {
+  const { buildObservePayload, restore } = makeObserve({
+    envBrief: '1',
+    locations: { base_anchor: { x: 0, y: 64, z: 0 } },
+  });
+  try {
+    // lean:true keeps the test off the full-mode action-stats path; includePoi is
+    // the override `--full` (lean=false) would also trigger.
+    const p = buildObservePayload({ lean: true, includePoi: true });
+    assert.ok(p.nav_brief);                       // brief still computed
+    assert.equal(p.poi_included, true);           // POI override active
+    assert.notEqual(p.poi_omitted, true);
+    assert.equal(p.nearby_marks !== undefined, true);  // POI arrays retained
+  } finally {
+    restore();
+  }
+});
+
 test('buildObservePayload sets brief_refresh_required after terrain mutation hook', () => {
   const { buildObservePayload, restore, ctx } = makeObserve({ envBrief: '1' });
   ctx.runtime.briefRefreshRequired = { ts: Date.now(), cells: [{ x: 1, y: 2, z: 3 }] };
