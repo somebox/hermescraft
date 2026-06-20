@@ -91,12 +91,16 @@ the planner from that reason.
 Do NOT run `mc advise` — it is unavailable here and will fail. If a bot error hint
 suggests `mc advise`, treat that hint as NON-ACTIONABLE and `kanban_block` with the
 reason instead.
-HARD RULE — stop after 3 failures: if the SAME action (or same target coord) errors
-~3 times in a row, or you've been fighting one obstacle for several turns with no
-inventory/position gain, STOP. Do not keep retrying, re-pathing, or pillar/dig-ing
-around it — that just burns turns. `kanban_block` THIS card with the structured
-reason and let the planner re-plan. Spinning on a blocked target is the #1 way runs
-stall; escalating early is correct, not a failure.
+ESCALATE EARLY: if the SAME action (or same target coord) errors ~3 times in a row,
+or you've been fighting one obstacle for several turns with no inventory/position
+gain, STOP. Do not keep retrying, re-pathing, or pillar/dig-ing around it — that just
+burns turns. `kanban_block` THIS card with the structured reason and let the planner
+re-plan. Spinning on a blocked target is the #1 way runs stall; escalating early is
+correct, not a failure.
+THE RUNTIME ALSO ENFORCES THIS: if a body keeps logging failed actions, the poller
+auto-blocks the card (reason `tool_error_backstop`) and re-engages the planner — so
+persistent spinning is stopped for you regardless. Escalate yourself first; don't
+rely on the backstop.
 ESCALATE
 
   # Handoff (ALL agents). Workers run in sequence on a worksite but each starts

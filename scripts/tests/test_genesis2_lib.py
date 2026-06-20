@@ -605,3 +605,126 @@ def test_reap_all_clears_every_genesis_lease(monkeypatch):
     freed = g2.reap_orphan_leases("gv2-x", reap_all=True, status_by_id=status, lease_rows=rows)
     assert {f["bot"] for f in freed} == {"mox"}      # genesis lease cleared despite "running"
     assert released == ["genesis-v2:t_running"]      # foreign lease still untouched
+
+
+# --- Deterministic tool-error backstop -------------------------------------
+
+def test_body_for_task_matches_owner_substring():
+    rows = [
+        {"bot": "mox", "owner_id": "genesis-v2:t_aaa:sess1"},
+        {"bot": "pip", "owner_id": "genesis-v2:t_bbb"},
+    ]
+    assert g2._body_for_task("t_bbb", rows) == "pip"
+    assert g2._body_for_task("t_aaa", rows) == "mox"
+    assert g2._body_for_task("t_zzz", rows) is None
+
+
+def test_recent_action_errors_windows_by_timestamp(tmp_path, monkeypatch):
+    monkeypatch.setattr(g2, "RUNTIME_DIR", tmp_path)
+    log = tmp_path / "actions-Zee.jsonl"
+    log.write_text("\n".join([
+        json.dumps({"bot": "Zee", "action": "move", "status": "error", "started_at": 1000, "detail": "old"}),
+        json.dumps({"bot": "Zee", "action": "goto", "status": "done", "started_at": 6000}),
+        json.dumps({"bot": "Zee", "action": "place", "status": "error", "started_at": 7000, "detail": "no path"}),
+        json.dumps({"bot": "Zee", "action": "wall", "status": "error", "started_at": 8000, "detail": "blocked"}),
+    ]))
+    # since_ms=5000 → the 1000ms error is excluded; two recent errors counted.
+    n, last = g2._recent_action_errors("Zee", 5000)
+    assert n == 2
+    assert last == "blocked"
+    # No log for an unknown bot → zero.
+    assert g2._recent_action_errors("Nobody", 0) == (0, None)
+
+
+def _spin_hermes(tasks):
+    def fake(args, **kw):
+        p = MagicMock(); p.returncode = 0
+        p.stdout = json.dumps(tasks) if args and args[0] == "list" else "{}"
+        return p
+    return fake
+
+
+def test_detect_tool_error_spin_flags_over_threshold(tmp_path, monkeypatch):
+    monkeypatch.setattr(g2, "RUNTIME_DIR", tmp_path)
+    monkeypatch.setattr(g2, "time", _FakeTime(10_000))  # now = 10_000s
+    monkeypatch.setattr(g2, "_pool_lease_rows",
+                        lambda: [{"bot": "Zee", "owner_id": "genesis-v2:t_build"}])
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes([
+        {"id": "t_build", "title": "[BUILD] shelter", "status": "running", "started_at": 9_000},
+        {"id": "t_mission", "title": "[MISSION] colony", "status": "running", "started_at": 1},
+    ]))
+    # 15 errors within the window (now=10_000s → since≈9_700s=9_700_000ms; card start 9_000s).
+    lines = [json.dumps({"bot": "Zee", "action": "move", "status": "error",
+                         "started_at": 9_800_000 + i, "detail": "No path"}) for i in range(15)]
+    (tmp_path / "actions-Zee.jsonl").write_text("\n".join(lines))
+    spun = g2.detect_tool_error_spin()
+    assert [s["id"] for s in spun] == ["t_build"]   # MISSION excluded
+    assert spun[0]["error_count"] == 15
+    assert spun[0]["bot"] == "Zee"
+
+
+def test_detect_tool_error_spin_ignores_below_threshold(tmp_path, monkeypatch):
+    monkeypatch.setattr(g2, "RUNTIME_DIR", tmp_path)
+    monkeypatch.setattr(g2, "time", _FakeTime(10_000))
+    monkeypatch.setattr(g2, "_pool_lease_rows",
+                        lambda: [{"bot": "Zee", "owner_id": "genesis-v2:t_build"}])
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes([
+        {"id": "t_build", "title": "[BUILD] shelter", "status": "running", "started_at": 9_000},
+    ]))
+    lines = [json.dumps({"bot": "Zee", "action": "move", "status": "error",
+                         "started_at": 9_800_000 + i}) for i in range(3)]
+    (tmp_path / "actions-Zee.jsonl").write_text("\n".join(lines))
+    assert g2.detect_tool_error_spin() == []
+
+
+def test_supervise_or_park_parks_when_cap_exhausted(monkeypatch):
+    monkeypatch.setattr(g2, "file_supervise_card", lambda *a, **k: None)  # cap/no new card
+    # 3 prior DONE supervise cards (cap=3, none open) → should park.
+    tasks = [{"id": f"s{i}", "title": "[GENESIS2:SUPERVISE] SUPERVISE t_x", "status": "done"} for i in range(3)]
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes(tasks))
+    captured = {}
+    def _park(r, w, t):
+        captured["parked"] = w
+        return "t_rescope"
+    monkeypatch.setattr(g2, "park_capped_worker", _park)
+    res = g2.supervise_or_park("gv2-x", "t_x", "build shelter", "stuck")
+    assert res == {"action": "parked", "id": "t_rescope"}
+    assert captured["parked"] == "t_x"
+
+
+def test_supervise_or_park_noop_when_open_supervise(monkeypatch):
+    monkeypatch.setattr(g2, "file_supervise_card", lambda *a, **k: None)
+    tasks = [{"id": "s1", "title": "[GENESIS2:SUPERVISE] SUPERVISE t_x", "status": "running"}]
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes(tasks))
+    res = g2.supervise_or_park("gv2-x", "t_x", "build", "stuck")
+    assert res["action"] == "noop"
+
+
+class _FakeTime:
+    """Minimal stand-in for the `time` module: fixed time(), real sleep is unused."""
+    def __init__(self, now_s): self._now = now_s
+    def time(self): return self._now
+
+
+def test_capture_run_artifacts_snapshots_sessions_and_board(tmp_path, monkeypatch):
+    # Fake profile tree with a session error dump + agent.log, and a runtime action log.
+    home = tmp_path / "home"
+    prof = home / ".hermes" / "profiles" / "colony-scout"
+    (prof / "logs").mkdir(parents=True)
+    (prof / "logs" / "agent.log").write_text("log line\n")
+    (prof / "sessions").mkdir(parents=True)
+    (prof / "sessions" / "dump1.json").write_text('{"reason":"x"}')
+    runtime = tmp_path / "runtime"; runtime.mkdir()
+    (runtime / "actions-Mox.jsonl").write_text('{"bot":"Mox"}\n')
+    runs = tmp_path / "runs"
+    monkeypatch.setattr(g2, "RUNS_ROOT", runs)
+    monkeypatch.setattr(g2, "RUNTIME_DIR", runtime)
+    monkeypatch.setattr(g2.os.path, "expanduser", lambda p: p.replace("~", str(home)))
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes([{"id": "t1", "status": "done"}]))
+    res = g2.capture_run_artifacts("gv2-test")
+    dest = runs / "gv2-test" / "artifacts"
+    assert (dest / "colony-scout" / "sessions" / "dump1.json").exists()  # the wipe-vulnerable dumps
+    assert (dest / "colony-scout" / "agent.log").exists()
+    assert (dest / "actions-Mox.jsonl").exists()
+    assert (dest / "board.json").exists()
+    assert res["run_id"] == "gv2-test" and res["files"] >= 4

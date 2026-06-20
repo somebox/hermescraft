@@ -316,5 +316,27 @@ if rid:
 "
     ;;
 
-  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status}" >&2; exit 1 ;;
+  stop)
+    # Capture diagnostics BEFORE teardown (session error dumps are wiped by the next
+    # mint), then bring the session down: poller, gateway workers + gateway, the 3
+    # bodies, and the leaked board-tail watchers. Localhost single-project; authorised.
+    echo "[genesis-v2] capturing run artifacts before teardown"
+    "$PY" -c "
+import sys; sys.path.insert(0,'$REPO_ROOT/scripts')
+import genesis2_lib as g2
+rid = g2.active_run_id() or g2._latest_run_id()
+print('[genesis-v2] artifacts:', g2.capture_run_artifacts(rid))
+"
+    echo "[genesis-v2] stopping poller + gateway + bodies"
+    for pid in $(pgrep -f 'genesis-v2-poller' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    for pid in $(pgrep -f 'tui_gateway.slash_worker' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    for pid in $(pgrep -f 'hermes gateway' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    for port in 3005 3006 3007; do
+      for pid in $(lsof -ti tcp:$port 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    done
+    pkill -f 'tail -F .*kanban/boards/genesis-v2/logs' 2>/dev/null || true
+    echo "[genesis-v2] session down."
+    ;;
+
+  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status|stop}" >&2; exit 1 ;;
 esac

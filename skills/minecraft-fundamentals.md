@@ -30,6 +30,12 @@ covers your job; this covers what every role on the colony shares.
   `brief_refresh_required`), or your skill doctrine — they are suggestions to judge,
   not orders.
 - A repeated failure to the SAME coord means change approach, never re-issue it.
+- **POI under nav-brief:** in compact/nav-brief mode `mc observe` omits the
+  `nearby_marks`, `nearby_signs`, and `nearby_missing_torches` channels to save
+  context. Do NOT assume "no marks shown" means "no marks" — when you need the full
+  picture (scouting, handoff, finding `chest_*`/`base_anchor`), ask for it
+  explicitly: `mc observe --full` (preserves POI channels) or `mc marks` /
+  `mc nearby_signs`. Losing mark visibility mid-task is a known scout time-sink.
 
 ## Traversal — what's passable
 - A **1-block step up** is auto-walkable (`mc move` / `mc goto`). A **2+ block

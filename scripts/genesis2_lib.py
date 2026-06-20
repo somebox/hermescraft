@@ -36,6 +36,7 @@ import genesis_lib as gl  # noqa: E402  (pure helpers only: parse_yaml_simple, s
 TEMPLATES_DIR = REPO_ROOT / "data" / "genesis-v2" / "templates"
 RUNS_ROOT = REPO_ROOT / "data" / "genesis-v2-runs"
 DATA_DIR = REPO_ROOT / "data"
+RUNTIME_DIR = REPO_ROOT / "data" / "runtime"  # per-bot action JSONL lives here
 BOARD = "genesis-v2"
 SERVER_CFG = REPO_ROOT / "server.local.yaml"
 
@@ -1698,6 +1699,216 @@ def file_supervise_card(run_id: str, worker_id: str, worker_title: str, summary:
         except Exception:
             return None
     return None
+
+
+# --- Deterministic tool-error backstop -------------------------------------
+# An execution agent cannot reliably count its own repeated failures across turns
+# (gv2-2026-06-19-2: the builder logged 252 failed tool calls before escalating).
+# The SOUL "stop after N" rule is therefore advisory only — the real enforcer is
+# the poller, which attributes failed actions to the RUNNING card via the lease
+# (card -> leased body) and the body's action log (data/runtime/actions-<bot>.jsonl,
+# windowed to the card's run start) and BLOCKS the card. The existing blocked-worker
+# path then re-engages the planner. Keep the threshold conservative to avoid
+# disrupting a card that's failing-but-progressing.
+TOOL_ERROR_WINDOW_S = 300          # look back this many seconds
+TOOL_ERROR_SPIN_THRESHOLD = 12     # >= this many failed actions in the window = spinning
+
+
+def _body_for_task(task_id: str, lease_rows: list[dict] | None = None) -> str | None:
+    """Resolve the bot currently leased to a card. Lease owner_id is `board:task[:session]`
+    (bot/cli/lease-registry.mjs), so a substring match on the task id finds the holder."""
+    rows = lease_rows if lease_rows is not None else _pool_lease_rows()
+    for r in rows:
+        if task_id and task_id in (r.get("owner_id") or ""):
+            return r.get("bot")
+    return None
+
+
+def _recent_action_errors(bot: str, since_ms: int) -> tuple[int, str | None]:
+    """Count `status:"error"` actions for `bot` at/after since_ms (epoch ms). Returns
+    (count, last_error_detail). Action timestamps are epoch MS; board started_at is
+    epoch SECONDS — callers must convert."""
+    p = RUNTIME_DIR / f"actions-{bot}.jsonl"
+    if not p.exists():
+        return 0, None
+    n = 0
+    last = None
+    try:
+        for line in p.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get("status") != "error":
+                continue
+            ts = rec.get("started_at") or rec.get("finished_at") or 0
+            if ts and ts >= since_ms:
+                n += 1
+                last = rec.get("detail") or rec.get("action") or last
+    except Exception:
+        return 0, None
+    return n, last
+
+
+def detect_tool_error_spin(window_s: int = TOOL_ERROR_WINDOW_S,
+                           threshold: int = TOOL_ERROR_SPIN_THRESHOLD) -> list[dict]:
+    """Running, non-epic/mission worker cards whose leased body has logged >= threshold
+    failed actions within the last window_s (and not before the card's own run start).
+    Returns [{id, title, bot, error_count, last_detail}]."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return []
+    rows = _pool_lease_rows()
+    now_ms = int(time.time() * 1000)
+    window_floor_ms = now_ms - int(window_s * 1000)
+    out = []
+    for t in tasks:
+        if (t.get("status") or "").lower() != "running":
+            continue
+        title = t.get("title", "") or ""
+        if title.startswith("[EPIC]") or title.startswith("[MISSION]") or "SUPERVISE" in title:
+            continue
+        tid = str(t.get("id"))
+        bot = _body_for_task(tid, rows)
+        if not bot:
+            continue
+        started = t.get("started_at")
+        # Don't count a prior card's errors on the same body: floor at the card's run start.
+        card_ms = int(float(started) * 1000) if started else window_floor_ms
+        since_ms = max(window_floor_ms, card_ms)
+        n, last = _recent_action_errors(bot, since_ms)
+        if n >= threshold:
+            out.append({"id": tid, "title": title, "bot": bot,
+                        "error_count": n, "last_detail": (last or "")[:80]})
+    return out
+
+
+def block_card(card_id: str, reason: str) -> bool:
+    """Block a card with a structured reason (also appended as a comment). Idempotent
+    enough for the backstop: a blocked card is no longer `running`, so it won't re-trip."""
+    try:
+        return _hermes(["block", card_id, reason]).returncode == 0
+    except Exception:
+        return False
+
+
+def _supervise_counts(worker_id: str, tasks: list[dict] | None = None) -> tuple[int, bool]:
+    """(prior supervise-card count, any still open) for a worker."""
+    if tasks is None:
+        try:
+            lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+            tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+        except Exception:
+            tasks = []
+    tag = f"SUPERVISE {worker_id}"
+    prior = 0
+    open_exists = False
+    for t in tasks:
+        if tag in (t.get("title", "") or ""):
+            prior += 1
+            if (t.get("status") or "").lower() not in ("done", "archived"):
+                open_exists = True
+    return prior, open_exists
+
+
+def park_capped_worker(run_id: str, worker_id: str, worker_title: str) -> str | None:
+    """Supervise budget exhausted → stop the churn deterministically: BLOCK the worker
+    card and file ONE `[GENESIS2:RESCOPE]` card for the planner/overseer to archive or
+    replace. Idempotent (no duplicate rescope). Returns the rescope card id, or None."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        tasks = []
+    rtag = f"RESCOPE {worker_id}"
+    for t in tasks:
+        if rtag in (t.get("title", "") or ""):
+            return None  # already filed
+    block_card(worker_id,
+               "supervise_cap_exhausted: parked after MAX supervise escalations — archive or rescope")
+    title = f"[GENESIS2:RESCOPE] {rtag}"
+    body = (
+        f"Worker {worker_id} (\"{worker_title[:60]}\") has exhausted its supervise budget "
+        f"({MAX_SUPERVISE_PER_WORKER} escalations) and is now BLOCKED. It is not recoverable by "
+        f"re-supervising. Decide ONE via the BOARD only:\n"
+        f"  a. It is impossible/superseded as written -> `kanban archive {worker_id}` (and any duplicates).\n"
+        f"  b. A smaller/different approach can work -> file a fresh worker card (lease ritual + literal "
+        f"`mc` verbs) with a corrected target/prerequisite, then archive the parked one.\n"
+        f"Do NOT simply re-open the parked card unchanged."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
+
+
+def supervise_or_park(run_id: str, worker_id: str, worker_title: str, summary: str) -> dict:
+    """File a SUPERVISE card; if the supervise budget is exhausted, PARK the worker
+    deterministically (block + one RESCOPE card). Returns {action, id} where action is
+    one of 'supervised' | 'parked' | 'noop'."""
+    cid = file_supervise_card(run_id, worker_id, worker_title, summary)
+    if cid:
+        return {"action": "supervised", "id": cid}
+    prior, open_exists = _supervise_counts(worker_id)
+    if not open_exists and prior >= MAX_SUPERVISE_PER_WORKER:
+        return {"action": "parked", "id": park_capped_worker(run_id, worker_id, worker_title)}
+    return {"action": "noop", "id": None}
+
+
+def _latest_run_id() -> str | None:
+    if not RUNS_ROOT.exists():
+        return None
+    dirs = [d for d in RUNS_ROOT.iterdir() if d.is_dir()]
+    return max(dirs, key=lambda d: d.stat().st_mtime).name if dirs else None
+
+
+def capture_run_artifacts(run_id: str | None = None) -> dict:
+    """Snapshot the run's diagnostic state into the (gitignored) run dir BEFORE teardown
+    or the next mint — especially `~/.hermes/profiles/colony-*/sessions/` (the per-turn
+    error dumps), which `emergent-run`/mint WIPES (that's how the verbatim 402 quota dump
+    was lost). Also captures agent.log, bot action JSONL, and a board snapshot. Returns
+    {dest, files, run_id}."""
+    import shutil
+    run_id = run_id or _latest_run_id()
+    if not run_id:
+        return {"dest": None, "files": 0, "run_id": None}
+    dest = run_dir(run_id) / "artifacts"
+    dest.mkdir(parents=True, exist_ok=True)
+    profiles_root = Path(os.path.expanduser("~/.hermes/profiles"))
+    n = 0
+    for prof in sorted(profiles_root.glob("colony-*")):
+        pdir = dest / prof.name
+        alog = prof / "logs" / "agent.log"
+        if alog.exists():
+            pdir.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(alog, pdir / "agent.log"); n += 1
+            except Exception:
+                pass
+        sess = prof / "sessions"
+        if sess.is_dir() and any(sess.iterdir()):
+            try:
+                shutil.copytree(sess, pdir / "sessions", dirs_exist_ok=True); n += 1
+            except Exception:
+                pass
+    for jl in sorted(RUNTIME_DIR.glob("actions-*.jsonl")) if RUNTIME_DIR.exists() else []:
+        try:
+            shutil.copy2(jl, dest / jl.name); n += 1
+        except Exception:
+            pass
+    try:
+        (dest / "board.json").write_text(_hermes(["list", "--json"]).stdout or "[]"); n += 1
+    except Exception:
+        pass
+    return {"dest": str(dest), "files": n, "run_id": run_id}
 
 
 def advance_phases(run_id: str, *, status_by_id: dict[str, str] | None = None,

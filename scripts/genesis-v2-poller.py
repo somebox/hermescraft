@@ -163,15 +163,31 @@ def main() -> int:
         # supplies a prerequisite. Run-age gating means a progressing worker is
         # never disrupted; the blocked path is what unsticks "all blocked, none
         # running" dead-ends.
+        # Deterministic tool-error backstop (BOTH modes): a body spinning on repeated
+        # failed actions can't be stopped by SOUL prose (agents don't self-count across
+        # turns). Attribute failures to the running card via the lease + action log and
+        # BLOCK it; the blocked-worker path below then re-engages the planner. Runs
+        # before stall-supervise so a freshly-blocked spinner escalates the same tick.
+        try:
+            for s in g2.detect_tool_error_spin():
+                reason = (f"tool_error_backstop: {s['error_count']} failed actions in "
+                          f"{g2.TOOL_ERROR_WINDOW_S // 60}m on {s['bot']} — last: {s['last_detail']}")
+                if g2.block_card(s["id"], reason):
+                    sys.stderr.write(f"[poller] tool-error backstop blocked {s['id']} "
+                                     f"({s['error_count']} errors on {s['bot']}) → planner via blocked path\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] tool-error backstop failed: {e}\n")
         try:
             stalled = [{"id": w["id"], "title": w["title"],
                         "summary": f"running ~{w['age_s'] // 60}m with no completion"}
                        for w in g2.detect_stalled_workers()]
             stalled += g2.detect_blocked_workers()
             for w in stalled:
-                cid = g2.file_supervise_card(args.run_id, w["id"], w["title"], w["summary"])
-                if cid:
-                    sys.stderr.write(f"[poller] worker {w['id']} stuck ({w['summary'][:40]}) → planner supervise card {cid}\n")
+                res = g2.supervise_or_park(args.run_id, w["id"], w["title"], w["summary"])
+                if res["action"] == "supervised":
+                    sys.stderr.write(f"[poller] worker {w['id']} stuck ({w['summary'][:40]}) → planner supervise card {res['id']}\n")
+                elif res["action"] == "parked":
+                    sys.stderr.write(f"[poller] worker {w['id']} supervise budget spent → parked + rescope card {res['id']}\n")
         except Exception as e:
             sys.stderr.write(f"[poller] stall-supervise failed: {e}\n")
         time.sleep(args.interval)
