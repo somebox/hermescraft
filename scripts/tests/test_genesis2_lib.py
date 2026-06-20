@@ -889,3 +889,44 @@ def test_file_retro_cards_one_per_agent_skips_open(monkeypatch):
     assert "colony-scout" not in out          # skipped (open retro)
     assert "colony-builder" in out and "colony-planner" in out
     assert len(out) == len(g2.RETRO_AGENTS) - 1
+
+
+# --- Mission guard + run cap (gv2-2026-06-20-1) -----------------------------
+
+def test_reengage_when_mission_done_files_manage(monkeypatch):
+    created = []
+    def fake(args, **kw):
+        p = MagicMock(); p.returncode = 0
+        if args and args[0] == "list":
+            p.stdout = json.dumps([{"id": "t_82005f15", "title": "[MISSION] Establish a thriving colony",
+                                    "status": "done"}])
+        elif args and args[0] == "create":
+            created.append(args); p.stdout = json.dumps({"id": "t_manage"})
+        else:
+            p.stdout = "{}"
+        return p
+    monkeypatch.setattr(g2, "_hermes", fake)
+    assert g2.reengage_planner_if_mission_closed("gv2-x") == "t_manage"
+    assert "[GENESIS2:MANAGE]" in created[0][1]
+
+
+def test_reengage_noop_when_mission_active(monkeypatch):
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes([
+        {"id": "t_82005f15", "title": "[MISSION] colony", "status": "running"}]))
+    assert g2.reengage_planner_if_mission_closed("gv2-x") is None
+
+
+def test_reengage_dedups_on_open_manage(monkeypatch):
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes([
+        {"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"},
+        {"id": "t_m1", "title": "[GENESIS2:MANAGE] MANAGE re-engage", "status": "running"}]))
+    assert g2.reengage_planner_if_mission_closed("gv2-x") is None
+
+
+def test_reengage_capped(monkeypatch):
+    # MAX_MISSION_REENGAGE prior (all done) → stop churning.
+    tasks = [{"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"}]
+    tasks += [{"id": f"m{i}", "title": "[GENESIS2:MANAGE] MANAGE re-engage", "status": "done"}
+              for i in range(g2.MAX_MISSION_REENGAGE)]
+    monkeypatch.setattr(g2, "_hermes", _spin_hermes(tasks))
+    assert g2.reengage_planner_if_mission_closed("gv2-x") is None

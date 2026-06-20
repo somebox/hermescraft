@@ -35,8 +35,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--interval", type=int, default=60)
+    ap.add_argument("--max-runtime-h", type=float, default=2.0,
+                    help="hard run cap in hours; at expiry the poller captures artifacts, "
+                         "tears the session down, and exits (0 disables)")
     args = ap.parse_args()
     seen: set[str] = set()
+    run_started = time.time()
+    cap_s = args.max_runtime_h * 3600 if args.max_runtime_h and args.max_runtime_h > 0 else None
     # Emergent mode: no phases/gates. Disable the phase machinery (shelter render,
     # phase advance, gate-gap/overseer, continuous supply) and run ONLY the
     # agent-failure backstops (skill-strip, mark reconcile, gateway watchdog,
@@ -49,6 +54,20 @@ def main() -> int:
     if emergent:
         sys.stderr.write("[poller] EMERGENT mode — phase/gate/supply/render disabled; agent-failure backstops only\n")
     while True:
+        # Hard run cap: at expiry, capture diagnostics (incl. session dumps before any
+        # mint wipes them) + tear the session down + exit. Robust, self-contained guard
+        # so a run never lingers/burns past the cap.
+        if cap_s is not None and (time.time() - run_started) > cap_s:
+            sys.stderr.write(f"[poller] {args.max_runtime_h}h run cap reached → capturing + tearing down\n")
+            try:
+                sys.stderr.write(f"[poller] artifacts: {g2.capture_run_artifacts(args.run_id)}\n")
+            except Exception as e:
+                sys.stderr.write(f"[poller] capture failed: {e}\n")
+            try:
+                g2.teardown_session()
+            except Exception as e:
+                sys.stderr.write(f"[poller] teardown failed: {e}\n")
+            return 0
         # Sanitize worker-card skills FIRST: the planner LLM sometimes attaches one
         # of its own skills to a worker card, which the agent rejects at boot
         # ("Unknown skill(s)") → crash-blocked (gv2-2026-06-17-1). Null the skills
@@ -166,6 +185,17 @@ def main() -> int:
                     sys.stderr.write(f"[poller] base stock below target → planner stock brief {cid}\n")
             except Exception as e:
                 sys.stderr.write(f"[poller] stock brief failed: {e}\n")
+            # Mission guard: the [MISSION] card is the planner's standing brief and must
+            # never be completed/blocked (gv2-2026-06-20-1: mimo marked it done after the
+            # consult round → full stall). If it's closed, re-engage the planner with a
+            # MANAGE card so decomposition continues. The run cap (not the planner) ends
+            # the run.
+            try:
+                cid = g2.reengage_planner_if_mission_closed(args.run_id)
+                if cid:
+                    sys.stderr.write(f"[poller] MISSION closed prematurely → re-engage planner {cid}\n")
+            except Exception as e:
+                sys.stderr.write(f"[poller] mission re-engage failed: {e}\n")
         # Planner re-engagement: a worker that's stuck — either RUNNING far longer
         # than a healthy one (~minutes) OR BLOCKED for a substantive reason (no
         # water, out of materials, unreachable; not no_free_body) — stalls the

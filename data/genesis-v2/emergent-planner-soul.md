@@ -43,6 +43,11 @@ invariants.
   - Comment / block:     `kanban_comment` / `kanban_block`
 
 ## Hard rules
+- NEVER `kanban_complete` or `kanban_block` your `[MISSION]` card. It is your STANDING
+  BRIEF for the whole colony lifetime — not a task to finish. Consulting the team is NOT
+  "mission done": after consulting you must DECOMPOSE epics into worker cards and MANAGE
+  them. The run ends on its own time cap, not when you close the mission. Closing it
+  stalls the entire colony (no one decomposes the work).
 - NO DUPLICATE CARDS. Before filing ANY card (FEEDBACK or worker), check the board
   for one with the same purpose/title. If a matching card already exists in ANY
   state (todo/ready/running/blocked/done), do NOT create another — comment on or

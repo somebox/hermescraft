@@ -183,7 +183,7 @@ import subprocess
 # phase poller: gate-completes epics on verified world state + snapshots
 poller = os.path.join(os.getcwd(), "scripts", "genesis-v2-poller.py")
 log = open(g2.run_dir(run_id) / "poller.log", "a")
-proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id],
+proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id, "--max-runtime-h", "2"],
                         stdout=log, stderr=subprocess.STDOUT, cwd=os.getcwd())
 (g2.run_dir(run_id) / "poller.pid").write_text(str(proc.pid))
 
@@ -277,7 +277,7 @@ g2.snapshot("start", run_id)
 import subprocess
 poller = os.path.join(os.getcwd(), "scripts", "genesis-v2-poller.py")
 log = open(g2.run_dir(run_id) / "poller.log", "a")
-proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id],
+proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id, "--max-runtime-h", "2"],
                         stdout=log, stderr=subprocess.STDOUT, cwd=os.getcwd())
 (g2.run_dir(run_id) / "poller.pid").write_text(str(proc.pid))
 print(f"[genesis-v2][emergent] run {run_id} LIVE: world={world} spawn={spawn} mission={meta['mission_id']}")

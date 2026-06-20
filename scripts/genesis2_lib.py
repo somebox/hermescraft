@@ -1111,6 +1111,85 @@ RETRO_BODY = (
 )
 
 
+MAX_MISSION_REENGAGE = 5  # backstop the planner re-closing its mission; cap the churn
+
+
+def reengage_planner_if_mission_closed(run_id: str) -> str | None:
+    """The [MISSION] card is the planner's standing brief — it must stay open for the
+    whole run (the run cap ends the run, not the planner). gv2-2026-06-20-1: mimo marked
+    its mission `done` after consulting → full stall. `done` cards can't be cleanly
+    reopened, so re-engage with a [GENESIS2:MANAGE] card telling the planner to keep the
+    mission open and resume DECOMPOSE/MANAGE. Dedup on an open MANAGE; capped. Returns the
+    card id, or None (mission still open / already re-engaged / cap spent)."""
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return None
+    mission = next((t for t in tasks if (t.get("title") or "").startswith("[MISSION]")), None)
+    if not mission or (mission.get("status") or "").lower() not in ("done", "blocked", "archived"):
+        return None  # mission still active — nothing to do
+    tag = "MANAGE re-engage"
+    prior = 0
+    for t in tasks:
+        if tag in (t.get("title", "") or ""):
+            prior += 1
+            if (t.get("status") or "").lower() not in ("done", "archived"):
+                return None  # an open re-engage already exists
+    if prior >= MAX_MISSION_REENGAGE:
+        return None  # planner keeps closing the mission — leave for the operator
+    title = f"[GENESIS2:MANAGE] {tag}"
+    body = (
+        "Your [MISSION] card was CLOSED, but the colony isn't finished and the run is still "
+        "going. The MISSION is your STANDING BRIEF — never `kanban_complete` or `kanban_block` "
+        "it; the run's time cap ends the run, not you.\n\n"
+        "Resume now: review the board + your earlier specialist consultation, then DECOMPOSE "
+        "the epics into worker cards (each: lease ritual + literal `mc` verbs, routed by "
+        "assignee) and MANAGE them. `kanban_complete` THIS card once you've filed the next "
+        "batch of worker cards — and leave the MISSION open."
+    )
+    r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
+    if r.returncode == 0:
+        try:
+            return str(json.loads(r.stdout).get("id"))
+        except Exception:
+            return None
+    return None
+
+
+def teardown_session() -> None:
+    """Stop the run's processes (poller peers + bodies), e.g. at the run cap. Kills the
+    gateway + slash workers, the 3 pool bodies (ports 3005-3007), and leaked board-tail
+    watchers. Does NOT kill the poller itself — the caller (poller) returns after this so
+    it exits cleanly without a self-kill race. Localhost single-project; authorised."""
+    import signal
+    patterns = ["tui_gateway.slash_worker", "hermes gateway"]
+    for pat in patterns:
+        try:
+            out = subprocess.run(["pgrep", "-f", pat], capture_output=True, text=True, timeout=10)
+            for pid in (out.stdout or "").split():
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    for port in (3005, 3006, 3007):
+        try:
+            out = subprocess.run(["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True, timeout=10)
+            for pid in (out.stdout or "").split():
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    try:
+        subprocess.run(["pkill", "-f", "tail -F .*kanban/boards/genesis-v2/logs"], timeout=10)
+    except Exception:
+        pass
+
+
 def file_retro_cards(run_id: str, agents: tuple[str, ...] = RETRO_AGENTS) -> dict:
     """File a reflection-only [RETRO] card per agent (run-2 learning: agent retros reveal
     far more than marks/logs). Skips an agent that already has an OPEN retro. Must be run
