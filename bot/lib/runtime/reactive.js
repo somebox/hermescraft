@@ -52,6 +52,28 @@ const RANGED_HOSTILE_NAMES = new Set([
   'skeleton', 'stray', 'pillager', 'witch', 'blaze', 'ghast', 'drowned',
 ]);
 
+// Phase 0 interim sync-gate (pathfinder ownership refactor). While a worker's sync
+// action or background task holds the bot, NON-life-critical reactions must not
+// preempt its navigation — they fight the pathfinder / cancel the active goal, which
+// produced the gv2-2026-06-20 "goal was changed" flood. Offensive engagement and
+// distant/low-urgency flee defer; life-critical flee (creeper_close / critical_hp)
+// and all survival reactions (escape_lava, swim_up, auto_escape_water,
+// auto_disembark_low_hp) are NOT in this set and still preempt.
+const DEFERRABLE_DURING_SYNC = new Set(['attack_step', 'advance_step', 'flee_step']);
+const LIFE_CRITICAL_WHY = new Set(['creeper_close', 'critical_hp']);
+
+/**
+ * Whether a reactive decision should be deferred because a worker command is in
+ * flight. Pure + exported for tests. `tasks` is `ctx.tasks`.
+ * @param {{action?: string, why?: string}} decision
+ * @param {{syncActionInFlight?: boolean, currentTask?: {status?: string}}|undefined} tasks
+ */
+export function shouldDeferReaction(decision, tasks) {
+  const syncBusy = tasks?.syncActionInFlight === true || tasks?.currentTask?.status === 'running';
+  if (!syncBusy) return false;
+  return DEFERRABLE_DURING_SYNC.has(decision?.action) && !LIFE_CRITICAL_WHY.has(decision?.why);
+}
+
 const RECENT_DAMAGE_MS = 2000;
 const MELEE_RANGE = 4;
 const GUARD_RANGE = 12;
@@ -258,7 +280,13 @@ export function createReactive(deps) {
     let inLava = !!b.entity.isInLava;
     let inWater = !!b.entity.isInWater;
     let onFire = !!b.entity.metadata?.[0] && (b.entity.metadata[0] & 0x01) !== 0;
-    const footPos = myPos.floored();
+    // myPos is normally a live mineflayer Vec3, but transiently (post-respawn /
+    // teleport / pre-spawn) b.entity.position can be a plain {x,y,z} with no
+    // .floored() — that threw "pos.floored is not a function" ~10x/run and crashed
+    // the reactive hazard scan. Guard it.
+    const footPos = typeof myPos.floored === 'function'
+      ? myPos.floored()
+      : new Vec3(Math.floor(myPos.x), Math.floor(myPos.y), Math.floor(myPos.z));
     const lavaNeighbors = [];
     // Head-in-water detection: distinguishes wading (foot only) from
     // submerged (head also). swim_up should fire when head is wet even
@@ -1125,6 +1153,25 @@ export function createReactive(deps) {
         return;
       }
       attackTickGate = 0;
+    }
+
+    // Phase 0 interim sync-gate (pathfinder ownership refactor): while a worker's
+    // sync action OR background task is in flight, NON-life-critical reactions must
+    // not preempt its navigation (they fight the pathfinder / cancel the goal →
+    // the gv2-2026-06-20 "goal was changed" flood). Offensive engagement
+    // (attack/advance) and distant/low-urgency flee are deferred; life-critical
+    // flee (creeper_close / critical_hp) and all survival reactions (escape_lava,
+    // swim_up, auto_escape_water, auto_disembark_low_hp) still preempt. Deferred
+    // reactions are recorded so a run can show what was held back.
+    if (shouldDeferReaction(decision, ctx.tasks)) {
+      pushAutoEvent({
+        kind: 'reactive_deferred',
+        action: decision.action,
+        why: decision.why,
+        sync: ctx.tasks?.syncActionInFlight ? 'sync_action' : 'bg_task',
+        target: state.closest_hostile?.name,
+      });
+      return;
     }
 
     // Log on transition (don't spam every tick of an ongoing engagement).
