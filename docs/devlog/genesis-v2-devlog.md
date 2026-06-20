@@ -9,6 +9,68 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-20 — gv2-2026-06-20-2 postmortem: control plane validated; 3-layer stall root cause
+
+Capped 2h emergent run on `xiaomi/mimo-v2.5`, seed 63210, to validate the Phase 1–6
+control-plane work + the mission-guard. Ran ~1h50m (manually stopped just before the
+2h cap, at operator request, to dig into stalls). RETRO collected from all 7 agents
+(gateway+bodies restarted post-stop WITHOUT re-mint to preserve run memory).
+
+### Control-plane fixes — CONFIRMED working live
+- **0 API errors** the whole run (mimo stable).
+- **Mission-guard is load-bearing.** mimo repeatedly `kanban_complete`d its own standing
+  `[MISSION]` (the SOUL prose did NOT stop it); the deterministic poller guard re-engaged
+  it **38×**, keeping the colony producing — vs gv2-2026-06-20-1 which fully stalled at 7
+  done when the planner closed the mission and nothing re-opened it. Removing the guard's
+  total cap (kept only dedup-on-open) was necessary — the cap=5 was spent in 22min.
+- **supervise-cap → park + `[RESCOPE]`** fired (80 parks); **MISSION-supervise exemption**
+  held (0 SUPERVISE-of-MISSION); **`genesis-v2.sh stop` capture+teardown** validated live
+  (16 artifacts incl. session dumps). The 2h auto-cap fire was NOT observed (pre-empted by
+  manual stop) — code is unit-tested; live auto-fire still unproven.
+- NOT exercised (conditions never arose): `tool_error_backstop`, `site advisory` (no
+  base_anchor ever committed), `stock brief`. Armed, not validated.
+
+### But the colony PLATEAUED — and the root cause is 3 layers deep
+Converged to 12 marks by 66min, then churned: **185 done / 200 cards but 162 (88%) are
+poller control cards** (SUPERVISE 100, MANAGE 38, RESCOPE 25) — only ~23 real work cards.
+No base_anchor, no shelter, scattered marks, open-pit cobble pits = "messy map".
+
+1. **Dense-forest pathfinding (the dominant cause — agent-unanimous).** All 5 workers'
+   retros independently name it: *"dense spruce forest blankets every quadrant… every
+   navigation-dependent card blocked with 10-15+ NAV_BLOCKED"* (gatherer); *"killed
+   navigation, bots kept teleporting/stuck"* (builder); *"39-40 trees surround farm_plot
+   from every direction, tried zee/pip/mox, all blocked"* (farmer). Seed 63210 is a spruce
+   forest; the pathfinder can't route under canopy. This is THE embodiment ceiling.
+2. **Concurrent commands on single bodies → `"goal was changed"` ×209.** Action logs show
+   **226 (Mox) + 164 (Zee)** overlapping top-level command pairs (`move‖goto`, two
+   `clear_strip` overlapping 43s). The body's `/action` HTTP endpoint has **no caller
+   auth** — the lease is a CLIENT-side mutex only (mc CLI uses `ownerId()` just to pick the
+   URL; sends no owner header; action log records no caller). Card-level corroboration:
+   **peak 4 body-needing cards ran concurrently vs 3 bodies** (oversubscribed). Cannot yet
+   attribute multi-agent vs single-agent bg/reactive overlap — the data doesn't exist.
+   Reactive fall/hostile flee (`reactive.js`, not gated by `syncActionInFlight` like the
+   water reactions) is one in-process source; a `pos.floored is not a function` crash
+   (`reactive.js:261`, ×10) destabilizes the reactive tick.
+3. **Backstop flood (second-order).** Nav failures → stalls → the supervise/park/manage
+   machinery generates 162 control cards → the planner drowns processing them instead of
+   building. The cure amplified the churn.
+
+Plus footguns from retros: `mc mark --at BEFORE name` saved 4 marks at wrong coords
+(scattered map); `clear_strip` drops the held tool on snow; pickaxe broke with no sticks
+(gear/prereq gaps). The planner itself did real management (unlinked a dead dep chain,
+archived a superseded shelter, fixed a wrong approach vector) — it's not pure churn.
+
+### Next actions (ranked)
+1. **Body-level owner enforcement** (verifies #2 AND fixes it): stamp `ownerId` on every mc
+   request, log it per action, and have the body reject/log `/action` from non-lease-holders.
+2. **Forest navigation** — the real ceiling: pathfinder can't route under spruce canopy;
+   either pick non-forest spawn seeds or add canopy-aware routing / clear-first doctrine.
+3. **Gate reactive fall/hostile-flee behind `syncActionInFlight`** + Vec3-guard `reactive.js:261`.
+4. **Backstop damping** — auto-archive impossible cards instead of RESCOPE; quieter re-engage.
+5. Fix `mc mark` arg order footgun; gear pre-departure checklist.
+
+---
+
 ## 2026-06-20 — Issue-plan implementation (control-plane split): Phases 1–6
 
 Implemented the genesis-v2 issue plan (control-plane split: agents choose among
