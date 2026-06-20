@@ -6,8 +6,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 import genesis2_lib as g2  # noqa: E402
@@ -67,8 +65,11 @@ def test_probe_natural_spawn_requires_water(monkeypatch):
 
     monkeypatch.setattr(g2, "rcon_in", fake_rcon_in)
     monkeypatch.setattr(g2, "surface_water_within", lambda *_a, **_k: False)
-    with pytest.raises(RuntimeError, match="no surface water"):
+    try:
         g2.probe_natural_spawn("genesis2", require_surface_water=True)
+        assert False, "expected RuntimeError for missing surface water"
+    except RuntimeError as exc:
+        assert "no surface water" in str(exc)
 
 
 def test_render_regions_world_writes_buildable_shelter(tmp_path, monkeypatch):
@@ -893,21 +894,26 @@ def test_file_retro_cards_one_per_agent_skips_open(monkeypatch):
 
 # --- Mission guard + run cap (gv2-2026-06-20-1) -----------------------------
 
-def test_reengage_when_mission_done_files_manage(monkeypatch):
-    created = []
+def test_reengage_when_mission_done_creates_manage_card(monkeypatch):
+    # A completed [MISSION] card is terminal — there is no `retry` verb and `done`
+    # cards cannot be reopened — so continuity rides on a fresh [GENESIS2:MANAGE] card.
+    calls = []
     def fake(args, **kw):
+        calls.append(args)
         p = MagicMock(); p.returncode = 0
         if args and args[0] == "list":
             p.stdout = json.dumps([{"id": "t_82005f15", "title": "[MISSION] Establish a thriving colony",
                                     "status": "done"}])
         elif args and args[0] == "create":
-            created.append(args); p.stdout = json.dumps({"id": "t_manage"})
+            p.stdout = json.dumps({"id": "t_new"})
         else:
             p.stdout = "{}"
         return p
     monkeypatch.setattr(g2, "_hermes", fake)
-    assert g2.reengage_planner_if_mission_closed("gv2-x") == "t_manage"
-    assert "[GENESIS2:MANAGE]" in created[0][1]
+    assert g2.reengage_planner_if_mission_closed("gv2-x") == "t_new"
+    verbs = [c[0] for c in calls]
+    assert "create" in verbs
+    assert "retry" not in verbs  # retry is not a kanban verb — never attempt it
 
 
 def test_reengage_noop_when_mission_active(monkeypatch):
@@ -917,28 +923,33 @@ def test_reengage_noop_when_mission_active(monkeypatch):
 
 
 def test_reengage_dedups_on_open_manage(monkeypatch):
-    monkeypatch.setattr(g2, "_hermes", _spin_hermes([
-        {"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"},
-        {"id": "t_m1", "title": "[GENESIS2:MANAGE] MANAGE re-engage", "status": "running"}]))
+    # At most one OPEN re-engage card in flight: if one already exists, do not mint another.
+    def fake(args, **kw):
+        p = MagicMock(); p.returncode = 0
+        if args and args[0] == "list":
+            p.stdout = json.dumps([
+                {"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"},
+                {"id": "t_m1", "title": "[GENESIS2:MANAGE] MANAGE re-engage", "status": "running"},
+            ])
+        else:
+            p.stdout = "{}"
+        return p
+    monkeypatch.setattr(g2, "_hermes", fake)
     assert g2.reengage_planner_if_mission_closed("gv2-x") is None
 
 
-def test_reengage_fires_despite_many_prior_done(monkeypatch):
-    # No total cap: many prior DONE re-engages (none open) must NOT stop a fresh one —
-    # mimo re-closes the mission every cycle (gv2-2026-06-20-2), so the guard keeps
-    # re-engaging for the whole run; dedup-on-open is the only bound.
+def test_reengage_manage_card_is_assigned_to_planner(monkeypatch):
     created = []
     def fake(args, **kw):
         p = MagicMock(); p.returncode = 0
         if args and args[0] == "list":
-            tasks = [{"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"}]
-            tasks += [{"id": f"m{i}", "title": "[GENESIS2:MANAGE] MANAGE re-engage", "status": "done"}
-                      for i in range(8)]
-            p.stdout = json.dumps(tasks)
+            p.stdout = json.dumps([{"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"}])
         elif args and args[0] == "create":
             created.append(args); p.stdout = json.dumps({"id": "t_new"})
         else:
             p.stdout = "{}"
         return p
     monkeypatch.setattr(g2, "_hermes", fake)
-    assert g2.reengage_planner_if_mission_closed("gv2-x") == "t_new"  # fires despite 8 prior done
+    assert g2.reengage_planner_if_mission_closed("gv2-x") == "t_new"
+    assert "[GENESIS2:MANAGE]" in created[0][1]
+    assert "colony-planner" in created[0]

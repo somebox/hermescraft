@@ -1112,16 +1112,16 @@ RETRO_BODY = (
 
 
 def reengage_planner_if_mission_closed(run_id: str) -> str | None:
-    """The [MISSION] card is the planner's standing brief — it must stay open for the
-    whole run (the run cap ends the run, not the planner). gv2-2026-06-20-1: mimo marked
-    its mission `done` after consulting → full stall. `done` cards can't be cleanly
-    reopened, so re-engage with a [GENESIS2:MANAGE] card telling the planner to keep the
-    mission open and resume DECOMPOSE/MANAGE. Deduped on an OPEN MANAGE (at most one in
-    flight) — NO total cap: gv2-2026-06-20-2 showed mimo re-closes the mission every
-    planner cycle, so a low total cap (5) was spent in ~22min and the colony lost its
-    driver for the rest of a 2h run. One-at-a-time dedup already bounds churn; the planner
-    does real work between re-engages. Returns the card id, or None (mission open / already
-    re-engaged)."""
+    """Mission continuity for emergent mode (fresh-card re-dispatch).
+
+    The planner completes its MISSION turn each dispatch, which makes the card terminal
+    (done/blocked/archived). The kanban facade has NO way to re-dispatch a terminal card
+    — `retry` is not a verb, and `promote`/`unblock` reject `done` — so continuity is by
+    re-dispatch: file one [GENESIS2:MANAGE] card for the planner to pick up and complete
+    next cycle. Deduped to at most one OPEN manage card, so a planner keeping up shows a
+    steady create→complete cadence (healthy), while a STALLED planner is visible as a
+    manage card stuck open/blocked. Returns the manage id on create, or None when the
+    mission turn is still in flight or an open manage card already exists."""
     try:
         lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
         tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
@@ -1129,20 +1129,20 @@ def reengage_planner_if_mission_closed(run_id: str) -> str | None:
         return None
     mission = next((t for t in tasks if (t.get("title") or "").startswith("[MISSION]")), None)
     if not mission or (mission.get("status") or "").lower() not in ("done", "blocked", "archived"):
-        return None  # mission still active — nothing to do
+        return None  # mission turn still in flight — nothing to do
     tag = "MANAGE re-engage"
     for t in tasks:
         if tag in (t.get("title", "") or "") and (t.get("status") or "").lower() not in ("done", "archived"):
             return None  # an open re-engage already exists — at most one in flight
     title = f"[GENESIS2:MANAGE] {tag}"
     body = (
-        "Your [MISSION] card was CLOSED, but the colony isn't finished and the run is still "
-        "going. The MISSION is your STANDING BRIEF — never `kanban_complete` or `kanban_block` "
-        "it; the run's time cap ends the run, not you.\n\n"
+        "Your [MISSION] turn is complete and the colony isn't finished — this MANAGE card "
+        "re-dispatches you for the next turn (the standing mission card is terminal once "
+        "completed, so re-engagement rides on a fresh card).\n\n"
         "Resume now: review the board + your earlier specialist consultation, then DECOMPOSE "
         "the epics into worker cards (each: lease ritual + literal `mc` verbs, routed by "
         "assignee) and MANAGE them. `kanban_complete` THIS card once you've filed the next "
-        "batch of worker cards — and leave the MISSION open."
+        "batch of worker cards."
     )
     r = _hermes(["create", title, "--body", body, "--assignee", "colony-planner", "--json"])
     if r.returncode == 0:

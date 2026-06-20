@@ -16,8 +16,8 @@
 #   colony-scout    skills: minecraft-scouting-site + fundamentals + bot-lease
 #   colony-gatherer skills: minecraft-survival       + fundamentals + bot-lease
 #   colony-builder  skills: minecraft-building        + fundamentals + bot-lease
-#   colony-planner  skills: steward-survey + blueprint-plan + fundamentals (no body)
-#   colony-overseer skills: steward-survey (no body) — read-only verifier
+#   colony-planner  skills: genesis-v2-planner-survey + genesis-v2-blueprint-plan + fundamentals (no body)
+#   colony-overseer skills: genesis-v2-planner-survey (no body) — read-only verifier
 #
 # Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>]
 set -euo pipefail
@@ -47,13 +47,21 @@ mint() {
   fi
 
   # Narrow gaming bundle: drop the inherited road-planner skill, install the
-  # role's skill(s) as gaming/<name>/SKILL.md (the synced layout). Keep
-  # devops/kanban-worker (every worker needs it).
+  # role's skill(s) as gaming/<name>/SKILL.md (the synced layout).
   rm -rf "$dst/skills/gaming"/*
   for sk in $skills; do
     mkdir -p "$dst/skills/gaming/$sk"
     cp "$REPO_ROOT/skills/$sk.md" "$dst/skills/gaming/$sk/SKILL.md"
   done
+  # Re-sync kanban-worker to ONE canonical location every mint. The source profile
+  # (road-planner) ships a stale copy at skills/devops/kanban-worker; installing
+  # skills/kanban-worker without removing it leaves TWO candidates for the name, so
+  # the dispatcher's auto-injected `--skills kanban-worker` fails to resolve →
+  # "Unknown skill(s): kanban-worker" → every dispatched worker (incl. the planner)
+  # exits 1 at boot before any LLM call (gv2-2026-06-20-4). Purge all copies first.
+  find "$dst/skills" -type d -name kanban-worker -prune -exec rm -rf {} + 2>/dev/null || true
+  mkdir -p "$dst/skills/kanban-worker"
+  cp "$REPO_ROOT/skills/kanban-worker.md" "$dst/skills/kanban-worker/SKILL.md"
 
   # Clean role SOUL.
   printf '%s\n' "$soul" > "$dst/SOUL.md"
@@ -103,18 +111,18 @@ persistent spinning is stopped for you regardless. Escalate yourself first; don'
 rely on the backstop.
 ESCALATE
 
-  # Handoff (ALL agents). Workers run in sequence on a worksite but each starts
-  # cold — per-round memory is wiped, so the agent before you is gone. The board
-  # is the shared memory: read the predecessor's handoff on pickup, leave one on
-  # completion. gv2-2026-06-16-1: a builder dug a site a prior step had already
-  # prepped because nothing carried forward what was done.
+  # Handoff (ALL agents). Workers run in sequence on a worksite; assume the prior
+  # specialist's in-session state is unavailable and use board comments as source
+  # of truth. Read predecessor handoff on pickup, leave one on completion.
+  # gv2-2026-06-16-1: a builder dug a site a prior step had already prepped because
+  # nothing carried forward what was done.
   cat >> "$dst/SOUL.md" <<'HANDOFF'
 
 ## Handoff (continuity between workers)
 You are one specialist in a sequence; the worker before you is gone. The board is
 your shared memory — use it both ways:
   - ON PICKUP: read THIS card fully. If its body says `Continues from <id>`, run
-    `kanban show <id>` and read that step's HANDOFF note + Latest summary BEFORE you
+    `scripts/kanban card <id>` and read that step's HANDOFF note + Latest summary BEFORE you
     act. It tells you what's already done (site chosen, ground prepped, chests
     placed), where the body was left, and what's stocked. Do NOT re-pick a site or
     redo work a prior step finished.
@@ -216,10 +224,13 @@ PY
   #   - the session/message-history DB (state.db + wal/shm): hermes recreates a
   #     fresh empty one on boot — don't carry the source profile's transcript
   #   - past session transcripts
+  #   - prior profile log output (agent.log), so diagnostics are run-scoped
   rm -f "$dst"/memories/* 2>/dev/null || true
   : > "$dst/MEMORY.md" 2>/dev/null || true
   rm -f "$dst"/state.db "$dst"/state.db-wal "$dst"/state.db-shm 2>/dev/null || true
   rm -rf "$dst"/sessions/* 2>/dev/null || true
+  mkdir -p "$dst/logs"
+  : > "$dst/logs/agent.log" 2>/dev/null || true
 }
 
 mint colony-scout    Mox 3007 "minecraft-scouting-site minecraft-fundamentals minecraft-bot-lease" \
@@ -275,7 +286,7 @@ route between two points using the \`roadplan\` powertool + \`mc\` verbs, then s
 it. You do not gather, build structures, mine, or farm. On every task, run
 \`skill_view road-planner\` first and follow it exactly."
 
-mint colony-planner  "" "" "minecraft-steward-survey minecraft-steward-blueprint-plan minecraft-fundamentals" \
+mint colony-planner  "" "" "genesis-v2-planner-survey genesis-v2-blueprint-plan minecraft-fundamentals" \
 "# Colony planner
 
 You are the colony planner: a read-only orchestrator (the planning concern in the
@@ -288,7 +299,7 @@ You run in two modes, depending on the card you are dispatched for:
   • A phase EPIC (\`[EPIC] [GENESIS2:Pn]\`): decompose it into worker cards (below).
   • A \`[GENESIS2:SUPERVISE]\` card: a worker has been running too long and is
     likely stuck. Investigate via the board only and act:
-      1. \`kanban show <worker_id>\` — read its latest comments/events: what is it
+      1. \`scripts/kanban card <worker_id>\` — read its latest comments/events: what is it
          retrying or failing on?
       2. Decide ONE: (a) it's actually progressing / nearly done → comment why and
          \`kanban_complete\` the SUPERVISE card, leaving the worker alone; or (b) it's
@@ -299,15 +310,14 @@ You run in two modes, depending on the card you are dispatched for:
 
 Read + write the board ONLY through these commands — NEVER touch the kanban
 database with \`sqlite3\` or raw SQL (it bypasses board invariants and the schema
-is not a stable interface). The \`kanban\` facade is
-on your PATH and already targets this board (via \$HERMES_KANBAN_BOARD):
-  - This epic + its children:  \`kanban epic <epic_id>\`
-  - All epics on the board:    \`kanban list-epics\`
-  - A card + its deps:         \`kanban show <id>\`  (or \`kanban card <id>\` for a lean read)
-  - Filtered list:             \`hermes kanban --board genesis-v2 list --status ready --json\`
-  - File a worker card:        \`kanban add ...\`  (or the \`kanban_create\` tool)
-  - Comment / block:           \`kanban_comment\` / \`kanban_block\`
-  To check whether you already filed cards for a phase, use \`kanban epic
+is not a stable interface). Use the repo's canonical facade:
+  - Board orient view:          \`scripts/kanban board\`
+  - This epic + its children:   \`scripts/kanban epic <epic_id>\`
+  - A card + its deps:          \`scripts/kanban card <id>\`
+  - Filtered list:              \`hermes kanban --board genesis-v2 list --status ready --json\`
+  - File a worker card:         \`scripts/kanban add ...\`  (or the \`kanban_create\` tool)
+  - Comment / block:            \`kanban_comment\` / \`kanban_block\`
+  To check whether you already filed cards for a phase, use \`scripts/kanban epic
   <epic_id>\` — never reconstruct it with SQL.
 
 Seven hard rules:
@@ -326,7 +336,7 @@ Seven hard rules:
    colony-builder / colony-farmer / colony-miner / colony-road). NEVER set a
    \`skills\` field on a worker card — NOT your own skills, NOT any skill name.
    The assignee's profile already force-loads the right skill. A skills field the
-   worker can't load (e.g. your \`minecraft-steward-blueprint-plan\` on a builder)
+   worker can't load (e.g. your \`genesis-v2-blueprint-plan\` on a builder)
    CRASHES the worker at boot with 'Unknown skill(s)' → the card retries, crashes
    again, and ends up blocked (gv2-2026-06-17-1 lost the whole base chain this
    way). Leave skills unset; pick the right ASSIGNEE and let its profile supply
@@ -345,13 +355,13 @@ Seven hard rules:
    (it would keep a body tied to a resource after the worksite moved).
 7. Handoff continuity: when you wire a card \`after:\` a prior step, put a line at
    the TOP of the new card's body that reads — Continues from <prior_card_id>: run
-   \`kanban show <prior_card_id>\` and read its HANDOFF note before acting. You
-   know that id (you just created the prior card). The next specialist starts cold
-   with no memory of the last one, so this pointer is how it learns the site already
-   chosen, where the body was left, and what's stocked — instead of redoing or
-   second-guessing finished work."
+   \`scripts/kanban card <prior_card_id>\` and read its HANDOFF note before acting. You
+   know that id (you just created the prior card). Assume handoff boundaries are cold,
+   and use this pointer so the next specialist learns the site already chosen, where
+   the body was left, and what's stocked — instead of redoing or second-guessing
+   finished work."
 
-mint colony-overseer "" "" "minecraft-steward-survey" \
+mint colony-overseer "" "" "genesis-v2-planner-survey" \
 "# Colony overseer
 
 You are the colony OVERSEER: a read-only verifier (the review/verify concern in

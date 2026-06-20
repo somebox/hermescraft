@@ -1,0 +1,257 @@
+#!/usr/bin/env bash
+# genesis-v2-verify-smoke.sh
+# Post-run verification harness for genesis-v2 emergent cleanup checks.
+#
+# Produces a PASS/WARN/FAIL summary focused on:
+# - mission protocol regression (`protocol_violation` / `gave_up`)
+# - MANAGE fallback churn vs mission retry continuity
+# - legacy mode leakage in run artifacts
+# - non-blocking warning signals (GoalChanged / terrain stalls)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+RUNS_DIR="$REPO_ROOT/data/genesis-v2-runs"
+
+RUN_ID=""
+MANAGE_FAIL_THRESHOLD=5
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  scripts/genesis-v2-verify-smoke.sh [--run-id <gv2-id>] [--manage-fail-threshold <n>]
+
+Examples:
+  scripts/genesis-v2-verify-smoke.sh
+  scripts/genesis-v2-verify-smoke.sh --run-id gv2-2026-06-20-3
+  scripts/genesis-v2-verify-smoke.sh --manage-fail-threshold 3
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --run-id)
+      RUN_ID="${2:-}"
+      shift 2
+      ;;
+    --manage-fail-threshold)
+      MANAGE_FAIL_THRESHOLD="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown flag: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$RUN_ID" ]]; then
+  RUN_ID="$(python3 - <<PY
+import pathlib
+runs = sorted(pathlib.Path("$RUNS_DIR").glob("gv2-*"), key=lambda p: p.stat().st_mtime, reverse=True)
+print(runs[0].name if runs else "")
+PY
+)"
+fi
+
+if [[ -z "$RUN_ID" ]]; then
+  echo "FAIL: no runs found in $RUNS_DIR" >&2
+  exit 2
+fi
+
+RUN_DIR="$RUNS_DIR/$RUN_ID"
+CFG="$RUN_DIR/config.json"
+POLLER_LOG="$RUN_DIR/poller.log"
+CARD_STORIES="$RUN_DIR/card-stories"
+BOARD_JSON="$RUN_DIR/artifacts/board.json"
+
+if [[ ! -d "$RUN_DIR" ]]; then
+  echo "FAIL: run dir not found: $RUN_DIR" >&2
+  exit 2
+fi
+if [[ ! -f "$CFG" ]]; then
+  echo "FAIL: config missing: $CFG" >&2
+  exit 2
+fi
+if [[ ! -f "$POLLER_LOG" ]]; then
+  echo "FAIL: poller log missing: $POLLER_LOG" >&2
+  exit 2
+fi
+
+MISSION_ID="$(python3 - <<PY
+import json
+from pathlib import Path
+cfg = json.loads(Path("$CFG").read_text())
+print(cfg.get("mission_id",""))
+PY
+)"
+MISSION_CARD="$CARD_STORIES/$MISSION_ID.md"
+
+if [[ -z "$MISSION_ID" || ! -f "$MISSION_CARD" ]]; then
+  echo "FAIL: mission card missing for run $RUN_ID (mission_id='$MISSION_ID')" >&2
+  exit 2
+fi
+
+count_lines() {
+  local content="$1"
+  if [[ -z "$content" ]]; then
+    echo 0
+  else
+    awk 'END { print NR }' <<< "$content"
+  fi
+}
+
+sample_lines() {
+  local content="$1"
+  local n="${2:-5}"
+  if [[ -n "$content" ]]; then
+    awk -v max="$n" 'NR<=max { print }' <<< "$content"
+  fi
+}
+
+protocol_hits="$(rg -n --no-heading -e 'protocol_violation|gave_up' "$MISSION_CARD" 2>/dev/null || true)"
+protocol_count="$(count_lines "$protocol_hits")"
+
+# Mission re-dispatch continuity. By design the planner completes its MISSION turn
+# (terminal card), and the poller re-dispatches it on a fresh [GENESIS2:MANAGE] card
+# each cycle (a terminal card can't be re-run). So a high CREATE count is healthy
+# re-dispatch, NOT churn — the failure signature is a manage card the planner can't
+# terminate: status `blocked`, or several piled up OPEN at once. We judge churn from
+# the captured board, counting only UNRESOLVED manage cards.
+redispatch_hits="$(rg -n --no-heading -e 're-dispatch planner via|re-engage planner' "$POLLER_LOG" 2>/dev/null || true)"
+redispatch_count="$(count_lines "$redispatch_hits")"
+
+manage_total=0; manage_done=0; manage_blocked=0; manage_open=0
+if [[ -f "$BOARD_JSON" ]]; then
+  read -r manage_total manage_done manage_blocked manage_open < <(python3 - "$BOARD_JSON" <<'PY'
+import json,sys
+try:
+    b=json.load(open(sys.argv[1]))
+except Exception:
+    print("0 0 0 0"); sys.exit()
+ts=b if isinstance(b,list) else b.get("tasks",[])
+mg=[t for t in ts if "MANAGE re-engage" in (t.get("title") or "")]
+def st(t): return (t.get("status") or "").lower()
+total=len(mg)
+done=sum(1 for t in mg if st(t) in ("done","archived"))
+blocked=sum(1 for t in mg if st(t)=="blocked")
+opn=sum(1 for t in mg if st(t) in ("todo","ready","running"))
+print(f"{total} {done} {blocked} {opn}")
+PY
+)
+fi
+# Unresolved = blocked (planner couldn't terminate) + any pile-up beyond the one
+# in-flight card the dedup allows.
+manage_unresolved=$(( manage_blocked + (manage_open > 1 ? manage_open - 1 : 0) ))
+
+# Legacy mode leakage. Exclude the MISSION card story: it's the planner's standing
+# brief, which legitimately enumerates the colony-* specialist assignees and carries
+# a structural `skills:` column — neither is worker-card leakage. Worker/other-card
+# stories + poller.log are still scanned.
+leak_pattern='assignee[:"]\s*"?((flint|mason|barley|steward))"?|`(mc advise|scripts/board|kanban show)`|kanban_reassign[^[:alnum:]]*.*steward|^\s*skills\s*:'
+raw_leak_hits="$(rg -n --no-heading -e "$leak_pattern" "$CARD_STORIES" "$POLLER_LOG" -g "!$(basename "$MISSION_CARD")" 2>/dev/null || true)"
+# Ignore reflective agent-thought lines; focus on card/poller operational surfaces.
+leak_hits="$(printf "%s\n" "$raw_leak_hits" | rg -v '\[agent/' 2>/dev/null || true)"
+leak_count="$(count_lines "$leak_hits")"
+
+goalchanged_hits="$(rg -n --no-heading -e 'GoalChanged|goal was changed' "$RUN_DIR" 2>/dev/null || true)"
+goalchanged_count="$(count_lines "$goalchanged_hits")"
+
+terrain_hits="$(rg -n --no-heading -e 'unreachable|terrain_too_complex|stuck_pocket_no_escape' "$CARD_STORIES" "$POLLER_LOG" 2>/dev/null || true)"
+terrain_count="$(count_lines "$terrain_hits")"
+
+status="PASS"
+fail_reasons=()
+warn_reasons=()
+
+if (( protocol_count > 0 )); then
+  status="FAIL"
+  fail_reasons+=("MISSION contains protocol_violation/gave_up events ($protocol_count)")
+fi
+
+if (( manage_unresolved >= MANAGE_FAIL_THRESHOLD )); then
+  status="FAIL"
+  fail_reasons+=("planner not terminating re-dispatch cards: $manage_unresolved unresolved MANAGE card(s) (blocked=$manage_blocked, open=$manage_open) >= $MANAGE_FAIL_THRESHOLD — this is the stall signature, NOT the $manage_total total created")
+elif (( manage_unresolved > 0 )); then
+  if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
+  warn_reasons+=("$manage_unresolved unresolved MANAGE card(s) (blocked=$manage_blocked, open=$manage_open); planner may be falling behind re-dispatch")
+fi
+
+if [[ ! -f "$BOARD_JSON" ]]; then
+  if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
+  warn_reasons+=("board.json not captured; MANAGE health judged blind (re-dispatch cycles=$redispatch_count)")
+fi
+
+if (( leak_count > 0 )); then
+  status="FAIL"
+  fail_reasons+=("legacy mode leakage found in run artifacts ($leak_count)")
+fi
+
+if (( goalchanged_count > 0 )); then
+  if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
+  warn_reasons+=("GoalChanged still present ($goalchanged_count) [known separate stream]")
+fi
+
+if (( terrain_count > 0 )); then
+  if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
+  warn_reasons+=("terrain stalls present ($terrain_count) [seed/world dependent]")
+fi
+
+echo "=== genesis-v2 smoke verification ==="
+echo "run_id:        $RUN_ID"
+echo "mission_id:    $MISSION_ID"
+echo "run_dir:       $RUN_DIR"
+echo
+echo "checks:"
+echo "  mission protocol events:    $protocol_count"
+echo "  re-dispatch cycles:         $redispatch_count"
+echo "  MANAGE cards total/done:    $manage_total/$manage_done"
+echo "  MANAGE unresolved:          $manage_unresolved (blocked=$manage_blocked, open=$manage_open)"
+echo "  leakage matches:            $leak_count"
+echo "  GoalChanged matches:        $goalchanged_count"
+echo "  terrain-stall matches:      $terrain_count"
+echo
+echo "result: $status"
+
+if ((${#fail_reasons[@]} > 0)); then
+  echo "fail reasons:"
+  for r in "${fail_reasons[@]}"; do
+    echo "  - $r"
+  done
+fi
+
+if ((${#warn_reasons[@]} > 0)); then
+  echo "warnings:"
+  for r in "${warn_reasons[@]}"; do
+    echo "  - $r"
+  done
+fi
+
+if (( protocol_count > 0 )); then
+  echo
+  echo "sample protocol lines:"
+  sample_lines "$protocol_hits" 8
+fi
+
+if (( manage_unresolved > 0 )); then
+  echo
+  echo "sample re-dispatch lines (unresolved MANAGE present):"
+  sample_lines "$redispatch_hits" 8
+fi
+
+if (( leak_count > 0 )); then
+  echo
+  echo "sample leakage lines:"
+  sample_lines "$leak_hits" 12
+fi
+
+case "$status" in
+  PASS) exit 0 ;;
+  WARN) exit 10 ;;
+  FAIL) exit 20 ;;
+esac

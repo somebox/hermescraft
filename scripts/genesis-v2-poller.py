@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Poll the genesis-v2 board for [GENESIS2:Pn] epic completion → phase snapshot.
+"""Poll the genesis-v2 board for phase advancement, recovery, and artifact safety.
 
-Lighter than the legacy genesis poller: world stays peaceful (no difficulty
-ramp), so on each phase-epic completion we just capture a labeled snapshot for
-postmortem. The depends_on chain (seeded by genesis2_lib.seed_board) handles
-promoting the next phase epic to ready.
+For gated runs, the poller is the sole phase promoter: it advances P1..P5 only
+after real world-gate checks pass, then captures labeled snapshots. For emergent
+runs, phase machinery is disabled and only control-plane backstops stay active.
 """
 from __future__ import annotations
 
@@ -185,15 +184,13 @@ def main() -> int:
                     sys.stderr.write(f"[poller] base stock below target → planner stock brief {cid}\n")
             except Exception as e:
                 sys.stderr.write(f"[poller] stock brief failed: {e}\n")
-            # Mission guard: the [MISSION] card is the planner's standing brief and must
-            # never be completed/blocked (gv2-2026-06-20-1: mimo marked it done after the
-            # consult round → full stall). If it's closed, re-engage the planner with a
-            # MANAGE card so decomposition continues. The run cap (not the planner) ends
-            # the run.
+            # Mission continuity: the planner completes its MISSION turn each dispatch,
+            # which makes the card terminal. Re-dispatch rides on a fresh [GENESIS2:MANAGE]
+            # card (deduped to one OPEN at a time) — a terminal card cannot be re-run.
             try:
                 cid = g2.reengage_planner_if_mission_closed(args.run_id)
                 if cid:
-                    sys.stderr.write(f"[poller] MISSION closed prematurely → re-engage planner {cid}\n")
+                    sys.stderr.write(f"[poller] MISSION turn complete → re-dispatch planner via {cid}\n")
             except Exception as e:
                 sys.stderr.write(f"[poller] mission re-engage failed: {e}\n")
         # Planner re-engagement: a worker that's stuck — either RUNNING far longer
