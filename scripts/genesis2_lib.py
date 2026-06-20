@@ -1111,16 +1111,17 @@ RETRO_BODY = (
 )
 
 
-MAX_MISSION_REENGAGE = 5  # backstop the planner re-closing its mission; cap the churn
-
-
 def reengage_planner_if_mission_closed(run_id: str) -> str | None:
     """The [MISSION] card is the planner's standing brief — it must stay open for the
     whole run (the run cap ends the run, not the planner). gv2-2026-06-20-1: mimo marked
     its mission `done` after consulting → full stall. `done` cards can't be cleanly
     reopened, so re-engage with a [GENESIS2:MANAGE] card telling the planner to keep the
-    mission open and resume DECOMPOSE/MANAGE. Dedup on an open MANAGE; capped. Returns the
-    card id, or None (mission still open / already re-engaged / cap spent)."""
+    mission open and resume DECOMPOSE/MANAGE. Deduped on an OPEN MANAGE (at most one in
+    flight) — NO total cap: gv2-2026-06-20-2 showed mimo re-closes the mission every
+    planner cycle, so a low total cap (5) was spent in ~22min and the colony lost its
+    driver for the rest of a 2h run. One-at-a-time dedup already bounds churn; the planner
+    does real work between re-engages. Returns the card id, or None (mission open / already
+    re-engaged)."""
     try:
         lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
         tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
@@ -1130,14 +1131,9 @@ def reengage_planner_if_mission_closed(run_id: str) -> str | None:
     if not mission or (mission.get("status") or "").lower() not in ("done", "blocked", "archived"):
         return None  # mission still active — nothing to do
     tag = "MANAGE re-engage"
-    prior = 0
     for t in tasks:
-        if tag in (t.get("title", "") or ""):
-            prior += 1
-            if (t.get("status") or "").lower() not in ("done", "archived"):
-                return None  # an open re-engage already exists
-    if prior >= MAX_MISSION_REENGAGE:
-        return None  # planner keeps closing the mission — leave for the operator
+        if tag in (t.get("title", "") or "") and (t.get("status") or "").lower() not in ("done", "archived"):
+            return None  # an open re-engage already exists — at most one in flight
     title = f"[GENESIS2:MANAGE] {tag}"
     body = (
         "Your [MISSION] card was CLOSED, but the colony isn't finished and the run is still "

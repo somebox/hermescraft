@@ -923,10 +923,22 @@ def test_reengage_dedups_on_open_manage(monkeypatch):
     assert g2.reengage_planner_if_mission_closed("gv2-x") is None
 
 
-def test_reengage_capped(monkeypatch):
-    # MAX_MISSION_REENGAGE prior (all done) → stop churning.
-    tasks = [{"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"}]
-    tasks += [{"id": f"m{i}", "title": "[GENESIS2:MANAGE] MANAGE re-engage", "status": "done"}
-              for i in range(g2.MAX_MISSION_REENGAGE)]
-    monkeypatch.setattr(g2, "_hermes", _spin_hermes(tasks))
-    assert g2.reengage_planner_if_mission_closed("gv2-x") is None
+def test_reengage_fires_despite_many_prior_done(monkeypatch):
+    # No total cap: many prior DONE re-engages (none open) must NOT stop a fresh one —
+    # mimo re-closes the mission every cycle (gv2-2026-06-20-2), so the guard keeps
+    # re-engaging for the whole run; dedup-on-open is the only bound.
+    created = []
+    def fake(args, **kw):
+        p = MagicMock(); p.returncode = 0
+        if args and args[0] == "list":
+            tasks = [{"id": "t_82005f15", "title": "[MISSION] colony", "status": "done"}]
+            tasks += [{"id": f"m{i}", "title": "[GENESIS2:MANAGE] MANAGE re-engage", "status": "done"}
+                      for i in range(8)]
+            p.stdout = json.dumps(tasks)
+        elif args and args[0] == "create":
+            created.append(args); p.stdout = json.dumps({"id": "t_new"})
+        else:
+            p.stdout = "{}"
+        return p
+    monkeypatch.setattr(g2, "_hermes", fake)
+    assert g2.reengage_planner_if_mission_closed("gv2-x") == "t_new"  # fires despite 8 prior done
