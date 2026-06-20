@@ -41,16 +41,27 @@ No base_anchor, no shelter, scattered marks, open-pit cobble pits = "messy map".
    navigation, bots kept teleporting/stuck"* (builder); *"39-40 trees surround farm_plot
    from every direction, tried zee/pip/mox, all blocked"* (farmer). Seed 63210 is a spruce
    forest; the pathfinder can't route under canopy. This is THE embodiment ceiling.
-2. **Concurrent commands on single bodies → `"goal was changed"` ×209.** Action logs show
-   **226 (Mox) + 164 (Zee)** overlapping top-level command pairs (`move‖goto`, two
-   `clear_strip` overlapping 43s). The body's `/action` HTTP endpoint has **no caller
-   auth** — the lease is a CLIENT-side mutex only (mc CLI uses `ownerId()` just to pick the
-   URL; sends no owner header; action log records no caller). Card-level corroboration:
-   **peak 4 body-needing cards ran concurrently vs 3 bodies** (oversubscribed). Cannot yet
-   attribute multi-agent vs single-agent bg/reactive overlap — the data doesn't exist.
-   Reactive fall/hostile flee (`reactive.js`, not gated by `syncActionInFlight` like the
-   water reactions) is one in-process source; a `pos.floored is not a function` crash
-   (`reactive.js:261`, ×10) destabilizes the reactive tick.
+2. **`"goal was changed"` ×209 = the REACTIVE TICK preempting worker navigation (NOT
+   multi-agent).** Deep-dive evidence (2026-06-20):
+   - **Causal link proven:** 85% (Mox 120/140) / 90% (Zee 64/71) of goal-changed errors
+     temporally coincide with another command in-flight on the same body.
+   - **The cancel SOURCE is reactive, code-confirmed:** the reactive tick runs on its own
+     `setInterval` (`reactive.js`, guarded only by its own re-entry flag `inFlight`, NOT by
+     `syncActionInFlight`) and calls `b.pathfinder.setGoal(null)` in `swimUp`/`flee_step`/
+     `escape*` (`reactive.js:1315`) → cancels whatever pathfinding is active (a worker's
+     goto/move or a compound verb's internal pathfind). Only the WATER-tick *accumulation*
+     is gated by `syncActionInFlight` (F31/F39, lines 448/490); the reaction dispatch is not.
+   - **The competing commands are the worker's OWN compound verbs** (`fell_tree` 29+20,
+     `tunnel` 8+21, `clear_strip`, `level`) — not independent gotos from other cards — i.e.
+     in-process overlap, not two agents.
+   - **Reactive fires constantly** (`escape` 181, `pillar_step` 311, `pillar_down` 141)
+     because the dense forest keeps workers stuck → root cause #1 FEEDS this.
+   - **Multi-agent NOT supported:** 0 `no_free_body` blocks, no body-per-card logging, and
+     the "peak 4 cards vs 3 bodies" was a timing artifact (600s default). The body's
+     `/action` endpoint *does* lack caller auth + serialization (live test: 2 concurrent
+     requests, no BUSY) — a real gap that *permits* multi-agent — but the evidence shows the
+     active cause is in-process reactive preemption. `pos.floored is not a function`
+     (`reactive.js:261`, ×10) additionally destabilizes the reactive tick.
 3. **Backstop flood (second-order).** Nav failures → stalls → the supervise/park/manage
    machinery generates 162 control cards → the planner drowns processing them instead of
    building. The cure amplified the churn.
@@ -60,14 +71,27 @@ Plus footguns from retros: `mc mark --at BEFORE name` saved 4 marks at wrong coo
 (gear/prereq gaps). The planner itself did real management (unlinked a dead dep chain,
 archived a superseded shelter, fixed a wrong approach vector) — it's not pure churn.
 
-### Next actions (ranked)
-1. **Body-level owner enforcement** (verifies #2 AND fixes it): stamp `ownerId` on every mc
-   request, log it per action, and have the body reject/log `/action` from non-lease-holders.
-2. **Forest navigation** — the real ceiling: pathfinder can't route under spruce canopy;
-   either pick non-forest spawn seeds or add canopy-aware routing / clear-first doctrine.
-3. **Gate reactive fall/hostile-flee behind `syncActionInFlight`** + Vec3-guard `reactive.js:261`.
+### Next actions (ranked — re-ordered after the deep-dive evidence)
+1. **Gate the reactive tick's `setGoal(null)` behind `syncActionInFlight`** for non-critical
+   reactions (flee/escape/pillar): when a worker command is in flight, only TRUE life-critical
+   reactions (active lava, drowning, creeper-blast range) may cancel its pathfinding. This
+   directly kills the 209 goal-changed (proven in-process cause). + Vec3-guard `reactive.js:261`.
+2. **Forest navigation** — the upstream driver of the reactive churn: pathfinder can't route
+   under spruce canopy → workers stuck → reactive fires → cancels nav. Pick non-forest spawn
+   seeds or add canopy-aware routing / clear-first doctrine.
+3. **Body-level owner enforcement + action serialization** (defense-in-depth): stamp `ownerId`
+   on mc requests, log per action, reject non-holder `/action`. Closes the multi-agent door
+   (currently *possible* though not the active cause) and would make attribution trivial.
 4. **Backstop damping** — auto-archive impossible cards instead of RESCOPE; quieter re-engage.
 5. Fix `mc mark` arg order footgun; gear pre-departure checklist.
+
+### Deep-dive verdict (validation of assumptions)
+- ✅ "goal was changed = concurrent commands on one body" — PROVEN (85-90% coincidence).
+- ❌ "multi-agent on one body" (the initial hypothesis) — NOT supported; it's IN-PROCESS
+  reactive-tick-vs-worker-command. The body lacks auth/serialization (a real gap) but that's
+  latent, not the active cause.
+- ✅ dense-forest nav is the upstream stuck-driver (agent-unanimous + reactive-fire counts).
+- ✅ reactive `setGoal(null)` ungated for flee/escape during sync actions — code-confirmed.
 
 ---
 
