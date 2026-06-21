@@ -1,7 +1,7 @@
 # Genesis v2 — P1 pre-seeded worker cards (lease model).
 #
 # Only the SCOUT cards are pre-seeded — the colony's opening move, building the
-# map immediately. The Steward (P1 epic) files the downstream CHOOSE/GATHER/BUILD
+# map immediately. The planner (P1 epic) files the downstream CHOOSE/GATHER/BUILD
 # cards once marks land.
 #
 # Bodies are a POOL (mox/pip/zee) and these are lease-mode `colony-scout`
@@ -14,57 +14,58 @@
 # discovers and marks them.
 
 cards:
-  - title: "[GENESIS2:P1] Scout NE from spawn"
+  - title: "[SURVEY] [GENESIS2:P1] Scout NE from spawn"
     assignee: colony-scout
     initial_status: ready
     body: |
-      You are a site scout. Spawn (colony center for now) is
-      ({spawn_x},{spawn_y},{spawn_z}). Explore the NORTH-EAST quadrant out to
-      ~48 blocks (toward +X / -Z).
-      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout` to
-         lease a body. On `no free body — defer`: `kanban_block` with reason
-         `no_free_body` and stop (do not retry in a loop).
-      2. `mc status`, then `skill_view minecraft-scouting-site` and follow it.
-         Mark finds on the SHARED map: trees `lt_wood_<n>`, exposed stone
-         `lt_stone_<n>`, water `lt_water_<n>`, flat base-sized patches
-         `candidate_pad_<n>`. Surface only — no dig/build.
-      3. `mc bot release`, then `kanban_complete` with a one-line tally.
+      anchor: spawn {spawn_x},{spawn_y},{spawn_z}
+      source_truth: genesis spawn coordinate
+      output_marks: lt_wood_<n>, lt_stone_<n>, lt_water_<n>, candidate_pad_<n>
+      suitability_criteria: surface-only NORTH-EAST survey to ~48 blocks; mark wood, exposed stone, water, and flat base-sized pads; no dig/build
+      done_when: HANDOFF comment tallies marks created and notes best candidate_pad_* found, or explains none found in quadrant
+      mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout
+      mc observe
+      skill_view minecraft-scouting-site and follow it for the NORTH-EAST quadrant (+X / -Z)
+      mc bot release
 
-  - title: "[GENESIS2:P1] Scout NW from spawn"
+  - title: "[SURVEY] [GENESIS2:P1] Scout NW from spawn"
     assignee: colony-scout
     initial_status: ready
     body: |
-      You are a site scout. Spawn is ({spawn_x},{spawn_y},{spawn_z}). Explore the
-      NORTH-WEST quadrant out to ~48 blocks (toward -X / -Z).
-      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout`; on
-         `no free body — defer`: `kanban_block(no_free_body)` and stop.
-      2. `mc status`, `skill_view minecraft-scouting-site`, follow it. Mark trees
-         `lt_wood_<n>`, stone `lt_stone_<n>`, water `lt_water_<n>`, flat patches
-         `candidate_pad_<n>` on the SHARED map. Surface only.
-      3. `mc bot release`, then `kanban_complete` with a tally.
+      anchor: spawn {spawn_x},{spawn_y},{spawn_z}
+      source_truth: genesis spawn coordinate
+      output_marks: lt_wood_<n>, lt_stone_<n>, lt_water_<n>, candidate_pad_<n>
+      suitability_criteria: surface-only NORTH-WEST survey to ~48 blocks; mark wood, exposed stone, water, and flat base-sized pads; no dig/build
+      done_when: HANDOFF comment tallies marks created and notes best candidate_pad_* found, or explains none found in quadrant
+      mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout
+      mc observe
+      skill_view minecraft-scouting-site and follow it for the NORTH-WEST quadrant (-X / -Z)
+      mc bot release
 
-  - title: "[GENESIS2:P1] Scout SE from spawn"
+  - title: "[SURVEY] [GENESIS2:P1] Scout SE from spawn"
     assignee: colony-scout
     initial_status: ready
     body: |
-      You are a site scout. Spawn is ({spawn_x},{spawn_y},{spawn_z}). Explore the
-      SOUTH-EAST quadrant out to ~48 blocks (toward +X / +Z).
-      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout`; on
-         `no free body — defer`: `kanban_block(no_free_body)` and stop.
-      2. `mc status`, `skill_view minecraft-scouting-site`, follow it. Mark trees
-         `lt_wood_<n>`, stone `lt_stone_<n>`, water `lt_water_<n>`, flat patches
-         `candidate_pad_<n>` on the SHARED map. Surface only.
-      3. `mc bot release`, then `kanban_complete` with a tally.
+      anchor: spawn {spawn_x},{spawn_y},{spawn_z}
+      source_truth: genesis spawn coordinate
+      output_marks: lt_wood_<n>, lt_stone_<n>, lt_water_<n>, candidate_pad_<n>
+      suitability_criteria: surface-only SOUTH-EAST survey to ~48 blocks; mark wood, exposed stone, water, and flat base-sized pads; no dig/build
+      done_when: HANDOFF comment tallies marks created and notes best candidate_pad_* found, or explains none found in quadrant
+      mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout
+      mc observe
+      skill_view minecraft-scouting-site and follow it for the SOUTH-EAST quadrant (+X / +Z)
+      mc bot release
 
-  - title: "[GENESIS2:P1] Scout SW from spawn"
+  - title: "[SURVEY] [GENESIS2:P1] Scout SW from spawn"
     assignee: colony-scout
     initial_status: ready
     body: |
-      You are a site scout. Spawn is ({spawn_x},{spawn_y},{spawn_z}). Explore the
-      SOUTH-WEST quadrant out to ~48 blocks (toward -X / +Z).
-      1. `mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout`; on
-         `no free body — defer`: `kanban_block(no_free_body)` and stop.
-      2. `mc status`, `skill_view minecraft-scouting-site`, follow it. Mark trees
-         `lt_wood_<n>`, stone `lt_stone_<n>`, water `lt_water_<n>`, flat patches
-         `candidate_pad_<n>` on the SHARED map. Surface only.
-      3. `mc bot release`, then `kanban_complete` with a tally.
+      anchor: spawn {spawn_x},{spawn_y},{spawn_z}
+      source_truth: genesis spawn coordinate
+      output_marks: lt_wood_<n>, lt_stone_<n>, lt_water_<n>, candidate_pad_<n>
+      suitability_criteria: surface-only SOUTH-WEST survey to ~48 blocks; mark wood, exposed stone, water, and flat base-sized pads; no dig/build
+      done_when: HANDOFF comment tallies marks created and notes best candidate_pad_* found, or explains none found in quadrant
+      mc bot checkout --near {spawn_x},{spawn_y},{spawn_z} --cap scout
+      mc observe
+      skill_view minecraft-scouting-site and follow it for the SOUTH-WEST quadrant (-X / +Z)
+      mc bot release

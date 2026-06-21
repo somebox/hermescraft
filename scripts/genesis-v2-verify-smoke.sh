@@ -262,6 +262,70 @@ verb_err_summary="${verb_err_summary:-none}"
 # leaving a stray literal '}' on the line. Use a brace-free fallback.
 craft_diag_summary="${craft_diag_summary:-rows=0 origins=none}"
 
+gv2_invalid=0
+gv2_checked=0
+gv2_compliance_summary="skipped"
+server_down_count=0
+if [[ -f "$BOARD_JSON" ]]; then
+  read -r gv2_checked gv2_invalid gv2_compliance_summary < <(
+    REPO_ROOT="$REPO_ROOT" python3 - "$BOARD_JSON" <<'PY'
+import json, os, sys
+sys.path.insert(0, os.environ["REPO_ROOT"])
+from scripts.lib.gv2_card_validator import validate_board_tasks
+path = sys.argv[1]
+try:
+    b = json.load(open(path))
+except Exception:
+    print("0 0 board-unreadable"); raise SystemExit
+tasks = b if isinstance(b, list) else b.get("tasks", [])
+statuses = {"ready", "running", "done", "todo"}
+filtered = [t for t in tasks if (t.get("status") or "").lower() in statuses]
+out = validate_board_tasks(filtered, statuses=None)
+bad = out["invalid_count"]
+checked = out["checked"]
+mine_miss = sum(1 for r in out["results"] if any("mine_site" in e for e in r.get("errors", [])))
+construct_miss = sum(
+    1 for r in out["results"]
+    if (r.get("kind") == "CONSTRUCT" or "[CONSTRUCT]" in (r.get("title") or ""))
+    and not r.get("ok")
+)
+summary = f"invalid={bad}/{checked} mine_site_miss={mine_miss} construct_fail={construct_miss}"
+print(checked, bad, summary)
+PY
+  )
+fi
+
+read -r server_down_count < <(python3 - "$CFG" "$RUN_DIR/artifacts" <<'PY'
+import json, glob, sys
+from datetime import datetime
+cfg_path, art = sys.argv[1], sys.argv[2]
+def iso_ms(s):
+    try: return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp() * 1000
+    except Exception: return None
+cfg = {}
+try: cfg = json.load(open(cfg_path))
+except Exception: pass
+start_ms = iso_ms(cfg.get("started_at")); end_ms = iso_ms(cfg.get("ended_at"))
+n = 0
+for f in glob.glob(art + "/actions-*.jsonl"):
+    for line in open(f):
+        line = line.strip()
+        if not line: continue
+        try: o = json.loads(line)
+        except Exception: continue
+        ts = o.get("started_at")
+        if not isinstance(ts, (int, float)): ts = o.get("finished_at")
+        if start_ms is not None and isinstance(ts, (int, float)):
+            if ts < start_ms or (end_ms is not None and ts > end_ms): continue
+        if o.get("status") != "error": continue
+        blob = json.dumps(o).lower()
+        if "503" in blob or "not connected" in blob or "mc_server_down" in blob:
+            n += 1
+print(n)
+PY
+)
+server_down_count="${server_down_count:-0}"
+
 terrain_hits="$(rg -n --no-heading -e 'unreachable|terrain_too_complex|stuck_pocket_no_escape' "$CARD_STORIES" "$POLLER_LOG" 2>/dev/null || true)"
 terrain_count="$(count_lines "$terrain_hits")"
 
@@ -307,6 +371,16 @@ if (( terrain_count > 0 )); then
   warn_reasons+=("terrain stalls present ($terrain_count) [seed/world dependent]")
 fi
 
+if [[ -f "$BOARD_JSON" ]] && (( gv2_invalid > 0 )); then
+  if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
+  warn_reasons+=("gv2 card validator: $gv2_compliance_summary (compliance metric — judge gameplay separately if 503s present)")
+fi
+
+if (( server_down_count > 0 )); then
+  if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
+  warn_reasons+=("scoped action errors suggest MC disconnect/503 ($server_down_count) — confounds card/worker outcomes")
+fi
+
 echo "=== genesis-v2 smoke verification ==="
 echo "run_id:        $RUN_ID"
 echo "mission_id:    $MISSION_ID"
@@ -323,6 +397,8 @@ echo "  craft (scoped) total/err:   $craft_total/$craft_errors"
 echo "  [RETRO] total/pending:      $retro_total/$retro_pending (ready=$retro_ready running=$retro_running)"
 echo "  scoped verb errors (top):   $verb_err_summary"
 echo "  craft_diag (scoped craft):  $craft_diag_summary"
+echo "  gv2 card compliance:        $gv2_compliance_summary"
+echo "  mc disconnect/503 (scoped): $server_down_count"
 echo "  terrain-stall matches:      $terrain_count"
 echo
 echo "result: $status"

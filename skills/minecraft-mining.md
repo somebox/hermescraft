@@ -25,15 +25,20 @@ This binds your kanban card to the named region; the bot grants ad-hoc dig/place
 
 On `kanban_complete` or `kanban_block`, run `mc task_context clear` so the grant doesn't leak to the next card.
 
-If you see repeated `policy_violation` / `region_protected` errors AND your card has no `worksite:` line, `kanban_block` with reason `region_blocked:<id>:<short_reason>` — the steward supervisor will add the worksite via comment + unblock you. Don't try to flip region intent yourself.
+If you see repeated `policy_violation` / `region_protected` errors AND your card has no `worksite:` line, `kanban_block` with reason `region_blocked:<id>:<short_reason>` — the planner/orchestrator can add the worksite via comment + unblock you. Don't try to flip region intent yourself.
 
 ## Site selection + structured-mining doctrine
 
 **Random surface mining is forbidden.** Live-session evidence (2026-05-27): bots that mined opportunistically near base left a trail of orphan stair-down shafts, exposed bedrock, and 1×1 pillars across the surface. Subsequent workers tripped over the resulting terrain; later they had to be dispatched on `level_ground` cards just to clean it up. Every mining card MUST follow the doctrine below.
 
-### Mine-site selection (Steward picks this; workers obey)
+### Mine-site selection (colony-planner must provide this; workers obey)
 
-A "mine site" is a single (x, z) on the surface where a stair_down descends to a target depth band. Steward should designate this in the card body:
+If a mining-intent card lacks a `mine_site:` block, do **not** dig near base or
+improvise a shaft. On genesis-v2, comment
+`CARD_REVIEW_NEEDED: missing mine_site; …` before checkout, or once compliance is
+measured use `kanban_block(schema-missing: no mine_site on mining-intent card)`.
+Cards that ask for opportunistic base digging →
+`kanban_block(site-occupied: mining-intent forbids tunnels at base column)`.
 
 ```yaml
 mine_site:
@@ -49,7 +54,7 @@ mine_site:
 1. **Distance from base.** Mine entries should be ≥ 24 blocks horizontally from any `base`/`hut1`/`storage1` region anchor. Mining inside a base region's column risks chunked-load surprises and surface damage even with worksite grants.
 2. **Not on a path.** Don't put a stair entrance on a road or in front of a chest. The bot will dig the supporting block of whatever the entrance opens onto.
 3. **One entrance per resource band.** Iron @ Y=16 and diamond @ Y=-59 are different sites. Don't dig a single shaft 100 blocks deep and tunnel sideways for everything — that's a session-killer pillar collapse waiting to happen.
-4. **Re-use entrances aggressively.** Before designating a new entry, check `scripts/board list --status done --assignee <bot>` for previously-mined sites at the same depth band and reassign workers to the existing entrance. Marks like `mine_iron`, `mine_coal`, `mine_diamond` should be saved at each entry with `mc mark` for future use.
+4. **Re-use entrances aggressively.** Before designating a new entry, check `scripts/kanban list --status done --assignee <bot>` for previously-mined sites at the same depth band and reassign workers to the existing entrance. Marks like `mine_iron`, `mine_coal`, `mine_diamond` should be saved at each entry with `mc mark` for future use.
 
 ### Size dig ops SMALL through solid stone (or they outrun the CLI)
 
@@ -203,7 +208,7 @@ Before descending more than 5 blocks below your current foot Y, verify in invent
 - **2 pickaxes** (or 1 pickaxe + spare sticks/cobble for an in-cave craft).
 - **Food ≥ 8 cooked.** Hunger underground kills.
 
-If anything is missing, surface trips are cheap; rescue trips from y=15 are expensive. The card body's `prep_required` field (when set by the steward) lists the exact thresholds — if they're not met, `kanban_block` with reason `prep_required_unmet` and let the orchestrator queue a `[SUPPLY]` precursor.
+If anything is missing, surface trips are cheap; rescue trips from y=15 are expensive. The card body's `prep_required` field (when set by the planner/orchestrator) lists the exact thresholds — if they're not met, `kanban_block` with reason `prep_required_unmet` and let the orchestrator queue a `[SUPPLY]` precursor.
 
 ## Primitive preference order (top first)
 
@@ -289,17 +294,13 @@ The card body either has explicit coordinates OR it doesn't. Branch on this:
 **Do NOT pick your own ore location when the card gave you one.** If you find a surface ore cluster on the way and it's at the WRONG coord, ignore it. The audit task that produced this card already weighed surface vs underground; trust the body. Drift here is the #1 cause of stuck mining sessions.
 
 **Branch B — card has no location** (`gather 64 iron`, `mine cobblestone`, etc.):
-1. **Run `mc advise --reason "<ore> location scan" --target <last_known_mine_or_base>` first.** The advise digest will identify nearby ore signatures from your perception bundle and recommend a direction — this is free intelligence, use it.
-2. If advise returns a coord, treat it as Branch A.
-3. If advise has no answer, scout in steps of 30 blocks:
-   ```
-   for step in 1..6:
-       mc move <pos> + 30 blocks in chosen direction
-       mc nearby 16                       # see anything?
-       mc find_blocks <ore> 32             # explicit scan
-       if found: break
-   ```
-   After 6 steps (180m walked) with nothing, **`kanban_block no_seam_found:<area_explored>`** — the steward will pick a better starting area. Don't wander further.
+1. Use read verbs first: `mc observe --full`, then `mc find_blocks <ore> 32`.
+2. If a coord appears, treat it as Branch A.
+3. If not, scout in bounded 30-block steps (manual sequence, no shell loops):
+   - step 1: `mc move <next_30_block_waypoint>` then `mc find_blocks <ore> 32`
+   - repeat up to 6 steps max (about 180 blocks total) in one chosen direction
+4. If still no seam after 6 steps, **`kanban_block no_seam_found:<area_explored>`**.
+   Do not keep roaming or live-debug in terminal loops.
 
 ### Phase 3 — Descend (just try `mc stair_down`)
 
@@ -432,7 +433,7 @@ If a `mc dig` error is `NO_TOOL` / `WRONG_TOOL`, you can't break that block clas
 
 After running the escape protocol AND the tool check AND `mc stair_up` (if there's headroom), still no progress in another 3 turns:
 - Post a `kanban_comment` with exact pos, inventory, and the 6-adjacent inspect results
-- `kanban_block` with reason `stuck_pocket_no_escape:<pos>` so the steward can rcon-tp you out
+- `kanban_block` with reason `stuck_pocket_no_escape:<pos>` so the operator can rcon-tp you out
 - Do NOT burn the remaining iteration budget repeating the same failing primitive.
 
 ## Common ore Y bands (1.21)
@@ -504,10 +505,10 @@ mc pillar_down [N=12]      # descend by mining the block underfoot, drop one cel
 - `mc map [R]` gives a compact ASCII overhead view without moving (R ≤ 16)
 - `mc nearby 32` lists blocks + entities within 32 blocks
 - `mc scene --reason="<what you're looking for>"` gives an LLM-digested perception bundle
-- `mc advise --reason="..." --target X,Y,Z` recommends a direction based on world state
+- `mc observe --full` + `mc find_blocks <ore> <radius>` gives directional context based on world state
 
 All of these surface terrain intelligence without committing to a vertical excursion. Save `pillar_up` for escape situations only.
 
 ## Iteration budget reminder
 
-Kanban worker has ~90 turns. A descent + ore retrieval + return cycle should fit in ~30 turns if you use `mc collect` / `mc stair_down`. If you're past 50 turns and still underground without the ore, that's a signal to `kanban_block` and ask the steward to split the work into a smaller supply card.
+Kanban worker has ~90 turns. A descent + ore retrieval + return cycle should fit in ~30 turns if you use `mc collect` / `mc stair_down`. If you're past 50 turns and still underground without the ore, that's a signal to `kanban_block` and ask the planner/orchestrator to split the work into a smaller supply card.

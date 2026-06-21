@@ -154,6 +154,16 @@ Goal: nether access + blaze rods + ender pearls
 
 **Before placing blocks**: `mc equip BLOCK` first, then `mc place BLOCK X Y Z`. Read coordinates from `mc status` output — don't guess.
 
+### Route repair (genesis-v2)
+
+Do not spend valuable stock (`oak_log`, planks, doors) on bridges or path repair.
+Use dirt, cobblestone, or cheap scaffold. If the card expects bridge material and
+inventory lacks throwaways, `kanban_comment` + `kanban_block(nav-needs-material: …)`
+rather than improvising with logs.
+
+Wood SUPPLY cards: acceptance includes whole-tree felling (`mc fell_tree`) and
+sapling replant/count where the card's `done_when` states it.
+
 ### Common recipes
 - 1 log → 4 planks (no table)
 - 2 planks → 4 sticks (no table)

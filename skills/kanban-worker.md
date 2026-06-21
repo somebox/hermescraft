@@ -426,7 +426,8 @@ When the card body includes `playbook: <registry_id>` (Stage 2a+), routing lives
 **Exit:** `mc playbook phase clear` → `mc task_context clear` → `kanban_complete` or `kanban_block` (or `scripts/kanban complete` / `scripts/kanban block` in agent-test). On **closeout** phases that deposit to a chest, use **goto_near + deposit** (see Shared-chest etiquette) — not move onto the chest cell.
 
 **Pass-back:** if the playbook id is wrong or inputs are missing from the body, use the structured pass-back comment pattern (numbered unblock options), then escalate by mode:
-- `genesis-v2`: `kanban_block(clarification-needed:...)` (planner/poller re-engages).
+- `genesis-v2`: prefer `CARD_REVIEW_NEEDED` comments before checkout (see
+  `genesis-v2-card-exceptions` in repo skills); avoid default reassign-to-planner.
 - landfolk: `kanban_reassign steward`.
 Don't improvise a different playbook id.
 
@@ -448,9 +449,13 @@ When you claim a card, your **first turn** is a spec review. Before doing any in
                   body="clarification-needed: <one sentence naming what's missing>")
    # landfolk mode:
    kanban_reassign(steward)
-   # genesis-v2 mode:
-   # kanban_block(reason="clarification-needed: <one-line>")
-   # exit cleanly — no in-game actions
+   # genesis-v2 mode (prefer cheap review before block):
+   # scripts/kanban comment $HERMES_KANBAN_TASK "CARD_REVIEW_NEEDED: <missing>; observed=<fact>; suggested_fix=<one line>"
+   # Do not mc bot checkout until the planner amends the card.
+   # kanban_block(reason="card-review-needed: <one-line>")  # optional review-block
+   # Hard safety (missing mine_site, phantom stockpile coords, valuable-bridge route):
+   # kanban_block(reason="schema-missing: …") / source-unverified / nav-needs-material
+   # See skill genesis-v2-card-exceptions (installed on gv2 worker profiles).
    ```
 4. If the card is clear enough, proceed.
 

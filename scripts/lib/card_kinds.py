@@ -16,9 +16,9 @@ import re
 
 # Card kinds that REQUIRE a literal `mc <verb>` line in the body AND
 # that are stash-worthy for `wb context`'s side effect / `cmd_stash_coord`.
-# The two rules align by design: cards whose body should drive a build
-# action need both verb-required validation AND a coord stash so
-# downstream marks can be drift-checked against the build target.
+# Emergent genesis-v2 also uses FEEDBACK, RETRO, SCOUT, COOK, FARM, and
+# `[GENESIS2:*]` titles — see `skills/genesis-v2-worker-card-schema.md` for
+# planner-facing reconciliation with these five canonical kinds.
 VERB_REQUIRED_KINDS = frozenset({"CONSTRUCT", "MINE", "TILL", "SUPPLY", "SURVEY"})
 
 # SCOUT becomes verb-required when the body has ≥ this many coord triples

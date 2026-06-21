@@ -2067,6 +2067,12 @@ def file_supervise_card(run_id: str, worker_id: str, worker_title: str, summary:
                 return None  # already escalated (open card) for this worker
     if prior >= MAX_SUPERVISE_PER_WORKER:
         return None  # escalation budget spent — leave it parked for the operator
+    # Dedup: worker already blocked for planner card review — skip SUPERVISE churn.
+    reason = _latest_block_reason(worker_id).lower()
+    if "card-review-needed" in reason or "card_review_needed" in reason or reason.startswith(
+        "schema-missing:"
+    ):
+        return None
     title = f"[GENESIS2:SUPERVISE] {tag}"
     body = (
         f"Worker {worker_id} (\"{worker_title[:60]}\") is stuck — {summary}\n\n"

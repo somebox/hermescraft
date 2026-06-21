@@ -30,3 +30,16 @@ After the next run, classify failures in scoped `artifacts/actions-*.jsonl` by v
 - Craft failures with `observed_state.craft_diag.failure_origin` when present (runs after craft-diag JSONL landed in capture)
 
 Use these buckets with card stories to decide whether the ceiling is still site-prep vs a primitive contract change.
+
+## Structured worker cards + offline validation (2026-06)
+
+- Planner/worker contract: `skills/genesis-v2-worker-card-schema.md` (minted on
+  `colony-planner` / referenced by emergent mission SOUL).
+- Read-only validation: `scripts/kanban validate-board`, `scripts/gv2-validate-cards.py`,
+  library `scripts/lib/gv2_card_validator.py`.
+- Exception tiers (comments before expensive blocks): `skills/genesis-v2-card-exceptions.md`
+  + worker patches in `kanban-worker.md`.
+- Post-run: `verify-smoke` prints validator compliance summary and scoped 503/disconnect
+  counts — treat high 503 as a confound before judging gameplay outcomes.
+- Control plane: poller skips new `[GENESIS2:SUPERVISE]` when the worker is already
+  blocked with `card-review-needed:` / `schema-missing:` (planner review path).

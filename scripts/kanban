@@ -366,6 +366,36 @@ def cmd_lint(args: argparse.Namespace) -> int:
     return 0 if result["ok"] else 1
 
 
+def cmd_validate_board(args: argparse.Namespace) -> int:
+    """Genesis-v2 read-only worker-card validation over live board rows."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.lib.gv2_card_validator import validate_board_tasks
+
+    with _db() as conn:
+        rows = _all_tasks(conn, args.status, args.assignee)
+    tasks = [dict(r) for r in rows]
+    # Rows already SQL-filtered by status; validate all returned tasks.
+    out = validate_board_tasks(tasks, statuses=None)
+    if args.json:
+        print(json.dumps(out, indent=2, default=str))
+    else:
+        print(
+            f"validate-board ({BOARD}): {'ok' if out['ok'] else 'FAIL'} "
+            f"checked={out['checked']} invalid={out['invalid_count']}"
+        )
+        for r in out["results"]:
+            if r["ok"]:
+                continue
+            title = (r.get("title") or "")[:60]
+            print(f"  {r.get('id')} [{r.get('status')}] {title}")
+            for err in r["errors"]:
+                print(f"    ERROR: {err}")
+            for w in r["warnings"]:
+                print(f"    warn: {w}")
+    return 0 if out["ok"] else 1
+
+
 def cmd_create(args: argparse.Namespace) -> int:
     """Create a new card. NO --parent flag — use --epic (no gate) or
     --depends-on (real prerequisite gate)."""
@@ -1796,6 +1826,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--body-file", type=Path, default=None, help="Read body from a file instead of --body")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_lint)
+
+    p = sub.add_parser(
+        "validate-board",
+        help="Genesis-v2 read-only worker-card validation (no bot time).",
+    )
+    p.add_argument(
+        "--status",
+        default="ready,todo",
+        help="Comma-separated statuses to check (default ready,todo)",
+    )
+    p.add_argument("--assignee", help="Optional assignee filter (same as list)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_validate_board)
 
     # list
     p = sub.add_parser("list", help="List cards (optionally filtered)")

@@ -25,7 +25,9 @@ bare — nothing is pre-built, pre-stocked, or pre-marked.
    read their feedback, revise. Specialists answer FEEDBACK cards with advice
    only; they do not act in-world for them.
 3. DECOMPOSE. Only after consulting, break the epic into worker cards with literal
-   `mc` verbs, routed by ASSIGNEE. Pace yourself — decompose the epic you're
+   `mc` verbs, routed by ASSIGNEE. Every body-using card MUST follow
+   `skill_view genesis-v2-worker-card-schema` (anchor, source_truth, checkout,
+   done_when, kind-specific blocks, checkout/release). Pace yourself — decompose the epic you're
    working, let it run, observe, then continue. Don't dump every card at once.
 4. MANAGE. Watch the board; adapt as the colony develops; re-consult the team when
    you hit something genuinely new. You may also be dispatched for a
@@ -86,3 +88,37 @@ kanban DB with `sqlite3` / raw SQL — it bypasses board invariants.
 - You decide pace + priorities from the mission and your team's feedback — not from
   a script. Keep the colony's real needs (safety, food, storage, tools, growth) in
   view, but how and when to meet them is your and your team's call.
+
+## Establishment sequence (emergent bare land)
+
+Follow this order unless the board proves a step is already done:
+
+1. Scout and choose `base_anchor` (water, wood, stone, site-fit notes).
+2. Build reachable storage; mark `chest_*` before haul/deposit cards.
+3. Scout resource marks (`lt_wood_*`, water/farm site, stone/coal site) before SUPPLY.
+4. Open a planned `mine_*` with `mine_site` before ore/coal underground work.
+5. Prefer a flat pad with natural egress before CONSTRUCT; explicit edge/ramp only if unavoidable.
+6. Construct shelter from verified stock and verified footprint.
+
+Hard rules:
+
+- No SUPPLY card cites chest coords unless from a current mark, stock brief, or HANDOFF.
+- No mining-intent card without `mine_site` (any title kind).
+- No CONSTRUCT without survey/clearance + measurable `done_when`.
+- FEEDBACK answers must become executable worker skeletons; link follow-up cards to the feedback id.
+
+## Review before mission complete (no bot time)
+
+Before `kanban_complete` on your mission turn:
+
+1. `scripts/kanban board` — orient.
+2. Run offline validation on cards you filed this turn (or all ready/todo worker cards):
+
+   `HERMES_KANBAN_BOARD=genesis-v2 scripts/kanban validate-board --status ready,todo`
+
+3. Fix failing cards (edit, block/rescope, or file replacements). Do not complete the
+   mission turn while ready worker cards fail validation.
+
+Exception handling: `skill_view genesis-v2-card-exceptions` — prefer
+`CARD_REVIEW_NEEDED` comments over duplicating stuck work; use structured block prefixes
+for safety stops.

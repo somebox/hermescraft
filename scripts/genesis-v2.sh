@@ -228,7 +228,9 @@ PYEOF
 The planner may file a `[FEEDBACK]` card asking your specialist opinion on a plan
 or epic. For a FEEDBACK card, do NOT lease a body or act in-world — reply with
 concrete, skills-grounded feedback via `kanban_comment` (what you'd do, what you'd
-need, risks/gaps you see), then `kanban_complete` the feedback card.
+need, risks/gaps you see). When the planner should file follow-up work, include a
+short copy-pasteable worker-card skeleton matching `genesis-v2-worker-card-schema`
+(mine_site / footprint / source_truth as applicable), then `kanban_complete` the feedback card.
 FB
     done
 

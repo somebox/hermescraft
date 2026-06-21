@@ -13,11 +13,11 @@
 # shared decision-level mechanics layer (traversal, safe descent + ore Y-levels,
 # hazards/escape, health/hunger, marks, what a safe structure is, sustaining a
 # colony) — so universal knowledge isn't siloed in one specialty skill.
-#   colony-scout    skills: minecraft-scouting-site + fundamentals + bot-lease
-#   colony-gatherer skills: minecraft-survival       + fundamentals + bot-lease
-#   colony-builder  skills: minecraft-building        + fundamentals + bot-lease
-#   colony-planner  skills: genesis-v2-planner-survey + genesis-v2-blueprint-plan + fundamentals (no body)
-#   colony-overseer skills: genesis-v2-planner-survey (no body) — read-only verifier
+#   colony-scout    skills: minecraft-scouting-site + fundamentals + bot-lease + card-exceptions
+#   colony-gatherer skills: minecraft-survival       + fundamentals + bot-lease + card-exceptions
+#   colony-builder  skills: minecraft-building        + fundamentals + bot-lease + card-exceptions
+#   colony-planner  skills: worker-card-schema + planner-survey + blueprint-plan + card-exceptions + fundamentals (no body)
+#   colony-overseer skills: planner-survey + worker-card-schema + card-exceptions (no body) — read-only verifier
 #
 # Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>]
 set -euo pipefail
@@ -233,7 +233,7 @@ PY
   : > "$dst/logs/agent.log" 2>/dev/null || true
 }
 
-mint colony-scout    Mox 3007 "minecraft-scouting-site minecraft-fundamentals minecraft-bot-lease" \
+mint colony-scout    Mox 3007 "minecraft-scouting-site minecraft-fundamentals minecraft-bot-lease genesis-v2-card-exceptions" \
 "# Colony scout
 
 You are a colony scout. Your only job is to explore unknown terrain and mark
@@ -241,7 +241,7 @@ what the colony needs — wood, stone, water, and flat candidate base pads — o
 the shared map. You never dig, build, craft, or fight. On every task, run
 \`skill_view minecraft-scouting-site\` first and follow it exactly."
 
-mint colony-gatherer Pip 3005 "minecraft-survival minecraft-fundamentals minecraft-bot-lease" \
+mint colony-gatherer Pip 3005 "minecraft-survival minecraft-fundamentals minecraft-bot-lease genesis-v2-card-exceptions" \
 "# Colony gatherer
 
 You are a colony gatherer. Your only job is to collect raw materials (wood
@@ -251,7 +251,7 @@ call) — not repeated \`mc collect oak_log\`. You do not scout, build structure
 mine deep, or farm. On every task, run \`skill_view minecraft-survival\` first
 and follow it exactly."
 
-mint colony-builder  Zee 3006 "minecraft-building minecraft-fundamentals minecraft-bot-lease" \
+mint colony-builder  Zee 3006 "minecraft-building minecraft-fundamentals minecraft-bot-lease genesis-v2-card-exceptions" \
 "# Colony builder
 
 You are a colony builder. Your only job is to place blocks to spec — shelters,
@@ -262,7 +262,7 @@ first and follow it exactly."
 # NOTE: the user/port args below are vestigial for lease roles — they only seed
 # MC_USERNAME + trigger lease env. With HERMES_BOT_LEASE=1 there is NO 1:1 body
 # binding; every role leases any free body from the pool (mox/pip/zee) per card.
-mint colony-farmer   Pip 3005 "minecraft-farming minecraft-fundamentals minecraft-bot-lease" \
+mint colony-farmer   Pip 3005 "minecraft-farming minecraft-fundamentals minecraft-bot-lease genesis-v2-card-exceptions" \
 "# Colony farmer
 
 You are a colony farmer. Your only job is to till soil, plant and harvest crops
@@ -270,7 +270,7 @@ You are a colony farmer. Your only job is to till soil, plant and harvest crops
 not scout, build structures, mine, or fight. On every task, run
 \`skill_view minecraft-farming\` first and follow it exactly."
 
-mint colony-miner    Zee 3006 "minecraft-mining minecraft-fundamentals minecraft-bot-lease" \
+mint colony-miner    Zee 3006 "minecraft-mining minecraft-fundamentals minecraft-bot-lease genesis-v2-card-exceptions" \
 "# Colony miner
 
 You are a colony miner. Your only job is to register a mine, dig a safe descent,
@@ -278,7 +278,7 @@ extract stone/coal/iron, and haul it to storage, driving the \`mc\` verbs. You d
 not scout, build, gather wood, or farm. On every task, run
 \`skill_view minecraft-mining\` first and follow it exactly."
 
-mint colony-road     Mox 3007 "road-planner minecraft-fundamentals minecraft-bot-lease" \
+mint colony-road     Mox 3007 "road-planner minecraft-fundamentals minecraft-bot-lease genesis-v2-card-exceptions" \
 "# Colony road planner
 
 You are a colony road planner. Your only job is to plan and light a safe walkable
@@ -286,7 +286,7 @@ route between two points using the \`roadplan\` powertool + \`mc\` verbs, then s
 it. You do not gather, build structures, mine, or farm. On every task, run
 \`skill_view road-planner\` first and follow it exactly."
 
-mint colony-planner  "" "" "genesis-v2-planner-survey genesis-v2-blueprint-plan minecraft-fundamentals" \
+mint colony-planner  "" "" "genesis-v2-worker-card-schema genesis-v2-planner-survey genesis-v2-blueprint-plan genesis-v2-card-exceptions minecraft-fundamentals" \
 "# Colony planner
 
 You are the colony planner: a read-only orchestrator (the planning concern in the
@@ -361,7 +361,7 @@ Seven hard rules:
    the body was left, and what's stocked — instead of redoing or second-guessing
    finished work."
 
-mint colony-overseer "" "" "genesis-v2-planner-survey" \
+mint colony-overseer "" "" "genesis-v2-planner-survey genesis-v2-worker-card-schema genesis-v2-card-exceptions" \
 "# Colony overseer
 
 You are the colony OVERSEER: a read-only verifier (the review/verify concern in

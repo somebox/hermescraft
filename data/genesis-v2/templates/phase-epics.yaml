@@ -1,7 +1,7 @@
 # Genesis v2 — colony phase epics (procworld stack, specialist architecture).
 #
-# Five phases, chained P1->P2->P3->P4->P5 via depends_on (each phase's
-# done_when gate, in phase-checklists.yaml, must pass before the next opens).
+# Five phases with poller-authoritative promotion. P1 starts ready; P2-P5 are
+# parked until each prior phase gate passes (phase-checklists.yaml).
 # All epics are assigned to colony-planner: the read-only orchestrator
 # DECOMPOSES each epic into specialist worker cards bound to a free body.
 # Planner never digs/places — it emits cards with literal `mc <verb>` lines.
@@ -50,10 +50,10 @@ epics:
           BASE-CLEAR after BASE-SELECT, BUILD after BASE-CLEAR). Never to the epic.
         - HANDOFF: whenever you wire a card `after:` a prior step, put a first line
           in the new card's body that reads — Continues from <prior_card_id>: run
-          `kanban show <prior_card_id>` and read its HANDOFF note before acting.
-          The next specialist starts cold (memory is wiped each round), so this is
-          how it learns the site already chosen, the body's position, and what's
-          stocked — instead of redoing or re-deciding finished work.
+          `scripts/kanban card <prior_card_id>` and read its HANDOFF note before acting.
+          Assume handoff boundaries are cold and use board comments as truth, so the
+          next specialist learns the site already chosen, the body's position, and
+          what's stocked instead of redoing or re-deciding finished work.
 
       Decompose into, roughly in order (wire later cards `after:` the prior
       sibling worker card — never `after:` this epic). SCOUT cards may run in

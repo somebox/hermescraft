@@ -89,6 +89,10 @@ footprint. Bulk verbs refuse occupied cells unless you explicitly opt in.
 5. **Doors:** prefer **`mc move`** through village structures; `mc goto` as a
    fallback when the card already states a distant target.
 
+If the card lacks survey/clearance fields from `genesis-v2-worker-card-schema`
+(no `footprint` / `protected_cells` / explicit overwrite), request planner review
+before bulk placement — do not improvise over occupied cells.
+
 ### Recovering from `FILL_PARTIAL` — don't sweep the grid
 
 `mc fill` and the other bulk verbs are **retry-safe**. When a fill returns
