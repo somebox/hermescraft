@@ -1328,7 +1328,14 @@ export function createReactive(deps) {
         const stillInLava = !!b.entity?.isInLava;
         if (!stillBurning && !stillInLava) {
           // Quick check: any lava block within 1 cardinal? If clear, break.
-          const fp = b.entity.position.floored();
+          // Guard .floored() the same way as the hazard-scan above (line ~287):
+          // b.entity.position is transiently a plain {x,y,z} (post-respawn/teleport)
+          // with no .floored() → "pos.floored is not a function" would crash the
+          // lava-escape loop mid-flee.
+          const ep = b.entity.position;
+          const fp = typeof ep.floored === 'function'
+            ? ep.floored()
+            : new Vec3(Math.floor(ep.x), Math.floor(ep.y), Math.floor(ep.z));
           let anyNeighborLava = false;
           for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const probe = b.blockAt(fp.offset(dx, 0, dz));
