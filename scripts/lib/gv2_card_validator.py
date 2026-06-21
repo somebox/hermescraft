@@ -31,23 +31,27 @@ GV2_BODILESS_ASSIGNEES = frozenset({"colony-planner", "colony-overseer"})
 CONTROL_KINDS = frozenset({"FEEDBACK", "RETRO", "MISSION"})
 
 CANONICAL_INTENT_KINDS = frozenset({"CONSTRUCT", "MINE", "TILL", "SUPPLY", "SURVEY", "SCOUT"})
+# Emergent title tags parsed for kind-specific rules (not all are verb-required).
+EXTENDED_INTENT_KINDS = CANONICAL_INTENT_KINDS | {"FARM", "COOK"}
+NON_MINING_INTENT_KINDS = frozenset({"FARM", "TILL", "COOK"})
 
-UNDERGROUND_MATERIAL_RE = re.compile(
-    r"\b(coal(?:_ore)?|iron(?:_ore)?|copper(?:_ore)?|gold(?:_ore)?|"
-    r"lapis(?:_ore)?|redstone(?:_ore)?|diamond(?:_ore)?|"
-    r"deepslate|cobble(?:stone)? from underground|stone from (?:the )?mine)\b",
-    re.IGNORECASE,
-)
-
-MINING_ACTION_RE = re.compile(
+# Unambiguous underground / registry mining — not the English verb "mine" in farm prose
+# ("mine nearby dirt", "mine stone for border").
+STRONG_MINING_RE = re.compile(
     r"\b("
-    r"mine(?:ing)?|stair_down|mine_open|mine_resume|mc mine|underground|"
-    r"shaft|ore vein|cobble from underground|stone from (?:the )?mine"
+    r"stair_down|mine_open|mine_resume|mc mine\b|underground|shaft|"
+    r"ore vein|cobble from underground|stone from (?:the )?mine|mine_site:"
     r")\b",
     re.IGNORECASE,
 )
 
+SUPPLY_MINING_TITLE_RE = re.compile(r"\b(mine|mining)\b", re.IGNORECASE)
+
 FUEL_CONTEXT_RE = re.compile(r"^\s*(fuel|smelt_fuel)\s*:", re.IGNORECASE | re.MULTILINE)
+FARM_PREP_CONTEXT_RE = re.compile(
+    r"\b(till|plant|harvest|farm_|farm\b|wheat|hoe|crop|plot|seed)\b",
+    re.IGNORECASE,
+)
 
 _ANCHOR_RE = re.compile(r"^\s*anchor\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
 _SOURCE_TRUTH_RE = re.compile(r"^\s*source_truth\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
@@ -145,27 +149,37 @@ def effective_kind(title: str | None, explicit_kind: str | None = None) -> str |
     if explicit_kind:
         return explicit_kind.upper()
     parsed = parse_kind_from_title(title)
-    if parsed in CANONICAL_INTENT_KINDS:
+    if parsed in EXTENDED_INTENT_KINDS:
         return parsed
     tags = re.findall(r"\[([A-Z]+)\]", title or "")
     for tag in tags:
-        if tag in CANONICAL_INTENT_KINDS:
+        if tag in EXTENDED_INTENT_KINDS:
             return tag
     return parsed
 
 
 def has_mining_intent(title: str | None, body: str | None) -> bool:
+    """True when the card assigns underground extraction, not surface gather/farm prep."""
     kind = effective_kind(title)
     if kind == "MINE":
         return True
+    if kind in NON_MINING_INTENT_KINDS:
+        return False
+    if FUEL_CONTEXT_RE.search(body or ""):
+        return False
     blob = f"{title or ''}\n{body or ''}"
-    if MINING_ACTION_RE.search(blob):
+    if STRONG_MINING_RE.search(blob):
         return True
-    if UNDERGROUND_MATERIAL_RE.search(blob):
-        # Fuel and smelting cards often mention coal without asking for mining.
-        return bool(re.search(r"\b(mine|underground|ore|shaft|stair_down)\b", blob, re.I)) and not (
-            FUEL_CONTEXT_RE.search(body or "") and not MINING_ACTION_RE.search(title or "")
-        )
+    # [SUPPLY] Mine coal / [SUPPLY] Mining run — not [SUPPLY] Gather oak logs
+    if kind == "SUPPLY" and SUPPLY_MINING_TITLE_RE.search(title or ""):
+        return True
+    # Residual: SUPPLY body explicitly tasks underground extraction (not surface verbs)
+    if kind == "SUPPLY" and re.search(
+        r"\b(mine|mining)\s+(coal|iron|cobble|stone|ore|deepslate)\b", blob, re.I
+    ):
+        return True
+    if FARM_PREP_CONTEXT_RE.search(blob) and not STRONG_MINING_RE.search(blob):
+        return False
     return False
 
 

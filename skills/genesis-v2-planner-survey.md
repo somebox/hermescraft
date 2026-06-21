@@ -38,6 +38,7 @@ Never route genesis-v2 work to landfolk roles (`flint`, `mason`, `steward`, etc.
 
 0. Before filing worker cards, `skill_view genesis-v2-worker-card-schema` — v1 fields
    are mandatory for body-using cards (see skill for kind taxonomy vs `card_kinds.py`).
+   For **`[SUPPLY]`**, paste the SUPPLY template from that skill and edit placeholders only.
 1. Worker cards must contain literal `mc <verb> <args>` lines.
 2. Do not set a `skills` field on worker cards.
 3. Every body-using worker card starts with `mc bot checkout ...` and ends with

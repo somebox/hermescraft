@@ -25,9 +25,11 @@ Emergent runs also use `SCOUT`, `FEEDBACK`, `RETRO`, `COOK`, `FARM`, and
 - Cooking/farming → title kind matches the specialist (`[FARM]`, etc.) but body-using
   cards still follow the v1 schema below.
 
-**Mining intent (validator fallback):** Any worker card whose title/body implies
-underground work (`mine`, `ore`, `coal`, `iron`, `cobble from underground`, etc.)
-must include a `mine_site` block — even if the title says `[SUPPLY]`.
+**Mining intent (validator fallback):** Underground extraction needs a `mine_site`
+block on `[MINE]` cards and on `[SUPPLY]` cards whose **title** says Mine/Mining
+(e.g. `[SUPPLY] Mine coal`). Surface haul/gather (`[SUPPLY] Gather oak from lt_wood_ne`)
+does **not** need `mine_site`. Farm/till/cook cards never need `mine_site` — the
+English verb “mine dirt” in farm prose is not mining intent.
 
 Control/bodiless cards (`[FEEDBACK]`, `[RETRO]`, `[MISSION]`, `[GENESIS2:MANAGE]`,
 `[GENESIS2:SUPERVISE]`, `[GENESIS2:RESCOPE]`, `[GENESIS2:SITE-ADVISORY]`, other
@@ -95,16 +97,44 @@ Include all of:
 Floors/roofs: `mc fill`. Walls: `mc wall` only for vertical walls. Prefer a flat pad
 with natural egress; ramping/edge grading is fallback with stated bounds.
 
-### `[SUPPLY]` → source, destination, quantity
+### `[SUPPLY]` → copy this template (fill `<…>` only)
+
+Do **not** put source/destination/quantity only in the title or prose — keep the
+labeled lines below. Run `validate-board` before completing your mission turn.
+
+**Wood from a scout mark (colony-gatherer):**
 
 ```
-source: mark lt_wood_ne
-destination: chest_wood at base_anchor
-quantity: 32 oak_log
-withdrawable: assume empty inventory + axe at checkout mark
+anchor: <base_anchor or lt_wood_* mark>
+source_truth: mark <lt_wood_ne> from card <scout_id> HANDOFF
+source: mark <lt_wood_ne>
+destination: chest_<material> at base_anchor
+quantity: <N> oak_log
+withdrawable: empty inventory + wooden_axe (craft at base if prep_required_unmet)
+done_when: <N> oak_log in chest_<material> (verify mc inventory / deposit)
+mc bot checkout --near <lt_wood_x>,<y>,<z> --cap gather --mark <lt_wood_ne>
+mc fell_tree <x> <z>
+mc bot release
 ```
 
-No haul from unnamed chest coords. Surface wood: whole-tree `mc fell_tree` in verbs.
+**Haul from an existing chest/mark (no underground mining):**
+
+```
+anchor: base_anchor
+source_truth: mark chest_<name> or stock brief <date/card id>
+source: chest_<name> at base_anchor
+destination: chest_<dest> at base_anchor
+quantity: <N> <item>
+withdrawable: worker can withdraw <item> at checkout (note gaps in comment if not)
+done_when: <N> <item> in chest_<dest>
+mc bot checkout --near base_anchor --cap gather --mark base_anchor
+mc withdraw <item> <N>
+mc deposit <item> <N> chest_<dest>
+mc bot release
+```
+
+Underground ore/coal → file `[MINE]` with `mine_site:` (or `[SUPPLY] Mine …` only when
+the title explicitly says Mine and you include `mine_site:`).
 
 ### Scout / survey intent
 

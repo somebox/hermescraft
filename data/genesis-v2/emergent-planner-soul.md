@@ -27,8 +27,11 @@ bare — nothing is pre-built, pre-stocked, or pre-marked.
 3. DECOMPOSE. Only after consulting, break the epic into worker cards with literal
    `mc` verbs, routed by ASSIGNEE. Every body-using card MUST follow
    `skill_view genesis-v2-worker-card-schema` (anchor, source_truth, checkout,
-   done_when, kind-specific blocks, checkout/release). Pace yourself — decompose the epic you're
-   working, let it run, observe, then continue. Don't dump every card at once.
+   done_when, kind-specific blocks, checkout/release). **For `[SUPPLY]` cards, copy the
+   SUPPLY template from that skill verbatim** — fill `<…>` placeholders only; do not
+   move `source`/`destination`/`quantity` into the title or free prose (that fails
+   validation). Pace yourself — decompose the epic you're working, let it run,
+   observe, then continue. Don't dump every card at once.
 4. MANAGE. Watch the board; adapt as the colony develops; re-consult the team when
    you hit something genuinely new. You may also be dispatched for a
    `[GENESIS2:SUPERVISE]` card (a worker stuck too long): investigate via the board

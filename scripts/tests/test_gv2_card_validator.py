@@ -85,6 +85,23 @@ class MiningIntentTest(unittest.TestCase):
             )
         )
 
+    def test_farm_surface_mine_prose_is_not_mining_intent(self):
+        self.assertFalse(
+            has_mining_intent(
+                "[FARM] Open farm plot with stone border",
+                "mine stone from nearby surface for border blocks\nmc till ...\n",
+            )
+        )
+        self.assertFalse(
+            has_mining_intent(
+                "[FARM] Farm site",
+                "mine nearby dirt for plot edges\n",
+            )
+        )
+
+    def test_supply_gather_title_not_mining_intent(self):
+        self.assertFalse(has_mining_intent("[SUPPLY] Gather oak logs", VALID_SUPPLY))
+
 
 class ControlExemptTest(unittest.TestCase):
     def test_mission_exempt(self):
