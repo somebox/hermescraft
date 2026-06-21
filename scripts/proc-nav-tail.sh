@@ -5,15 +5,15 @@
 #   [disp]      proc-nav dispatcher tick log
 #   [mox]       Mineflayer bot-mox HTTP/MC chat (port 3007)
 #   [pip]       Mineflayer bot-pip HTTP/MC chat (port 3005)  (when running)
-#   [card:TID]  per-card hermes log (auto-discovered for cards in `running`)
+#   [card:TID]  per-card hermes log (auto-discovered from the LIVE board only)
 #   [hermes]    proto-logs-follow.py: planner/navigator/builder/* state.db
 #               reasoning + tool calls + tool responses
 #
-# NOTE: this is a LIVE `tail -F` of the current run's streams (run-current by
-# construction — it follows the live board + durable logs in real time). The genesis
-# run-scoping added to capture_run_artifacts (windowed actions-*.jsonl + ended_at) is an
-# ARCHIVAL concern only and does NOT affect what this tails. The two are orthogonal: this
-# shows live activity; the scoped artifacts are the post-run, run-isolated record.
+# NOTE: this is a LIVE `tail -F`, scoped to the CURRENT run. Card ids come from the
+# live board (reinit each run), NOT from globbing the durable board log dir (which
+# holds 1000+ stale t_*.log across runs). This is separate from the genesis ARCHIVAL
+# scoping in capture_run_artifacts (windowed actions-*.jsonl + ended_at): that produces
+# the post-run record; this shows live current-run activity. Orthogonal but both run-scoped.
 #
 # Usage:
 #   scripts/proc-nav-tail.sh                # default profiles, no reasoning
@@ -141,31 +141,38 @@ done
 
 # ── 3. per-card hermes logs (auto-discovered) ────────────────────────
 # Cards land under ~/.hermes/kanban/boards/<board>/logs/t_<id>.log when the
-# dispatcher spawns a worker. We discover & tail every card on the board
-# (running OR done) — done cards' tails terminate naturally once the file
-# stops growing.
+# dispatcher spawns a worker. That dir is DURABLE across runs (1000+ stale t_*.log
+# accumulate), so we must NOT glob it — globbing would tail every prior-run card at
+# startup. Instead derive card ids from the LIVE board (reinit each run → current run
+# only), re-queried every 5s so cards created later in this run are picked up. Done
+# cards' tails terminate naturally once the file stops growing.
 if [[ "$WITH_CARDS" -eq 1 ]]; then
   CARDS_DIR="$HERMES_HOME/kanban/boards/$BOARD/logs"
   if [[ -d "$CARDS_DIR" ]]; then
     discover_cards() {
       declare -A seen
       while true; do
-        for f in "$CARDS_DIR"/t_*.log; do
+        # Run-scope: only ids on the live board, NOT every t_*.log on disk.
+        while IFS= read -r tid; do
+          [[ -n "$tid" ]] || continue
+          local f="$CARDS_DIR/$tid.log"
           [[ -f "$f" ]] || continue
-          local tid; tid="$(basename "$f" .log)"
           if [[ -z "${seen[$tid]:-}" ]]; then
             tail -F "$f" 2>/dev/null \
               | sed -u "s|^|${C_CARD}[card:${tid:0:10}]${RST} |" &
             CHILD_PIDS+=("$!")
             seen[$tid]=1
           fi
-        done
+        done < <(hermes kanban --board "$BOARD" list --json 2>/dev/null \
+                 | python3 -c 'import sys,json
+d=json.load(sys.stdin); ts=d if isinstance(d,list) else d.get("tasks",[])
+print("\n".join(t["id"] for t in ts if t.get("id")))' 2>/dev/null)
         sleep 5
       done
     }
     discover_cards &
     CHILD_PIDS+=("$!")
-    echo "${C_META}[proc-nav-tail] card logs: $CARDS_DIR (live discovery)${RST}" >&2
+    echo "${C_META}[proc-nav-tail] card logs: $BOARD board (live, run-scoped)${RST}" >&2
   else
     echo "${C_META}[proc-nav-tail] no card-logs dir (skip)${RST}" >&2
   fi
