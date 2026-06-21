@@ -115,6 +115,44 @@ export function intermediateSourceItem(name) {
 }
 
 /**
+ * Resolve the common craft-name aliases agents use that aren't exact item ids:
+ *   'sticks' → 'stick'
+ *   wood-typed singular 'spruce_plank' → 'spruce_planks'
+ *   'plank'/'planks' → the plank variant the bot can craft from a held log (else oak_planks)
+ *   'boat'/'boats'  → the boat for a held plank/log (else oak_boat; nether woods have no boat)
+ * Returns a concrete item name, or null when `query` is not one of these aliases (the caller
+ * then resolves normally). Inventory-aware so `craft planks` with spruce logs doesn't trade an
+ * Unknown-item error for a wrong-wood MISSING_INGREDIENTS. Reuses LOG_TO_PLANKS — no new map.
+ * @param {string} query
+ * @param {{name:string,count:number}[]} [invItems] bot.inventory.items()
+ */
+export function aliasCraftItem(query, invItems = []) {
+  const q = String(query || '').trim().toLowerCase().replace(/\s+/g, '_');
+  if (!q) return null;
+  if (q === 'sticks') return 'stick';
+  // wood-typed singular plank → its plural item id (spruce_plank → spruce_planks)
+  if (q.endsWith('_plank')) {
+    const plural = `${q}s`;
+    if (Object.values(LOG_TO_PLANKS).includes(plural)) return plural;
+  }
+  const have = new Set((invItems || []).map((i) => i.name));
+  if (q === 'plank' || q === 'planks') {
+    for (const [log, plank] of Object.entries(LOG_TO_PLANKS)) {
+      if (have.has(log)) return plank;
+    }
+    return 'oak_planks';
+  }
+  if (q === 'boat' || q === 'boats') {
+    for (const [log, plank] of Object.entries(LOG_TO_PLANKS)) {
+      if (plank.includes('crimson') || plank.includes('warped')) continue; // nether woods → no boat
+      if (have.has(plank) || have.has(log)) return `${plank.replace('_planks', '')}_boat`;
+    }
+    return 'oak_boat';
+  }
+  return null;
+}
+
+/**
  * For a tagged ingredient, return the variant the agent should prefer to obtain.
  * Surfacing `cobbled_deepslate` to the agent when `cobblestone` would do is
  * misleading — the agent goes mining deepslate when the recipe accepts the

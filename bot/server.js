@@ -53,6 +53,7 @@ import {
   buildCraftPlanFromRecipes,
   pickRecipeFromRecipes as _pickRecipeFromRecipes,
   pickRecipeForCraft as _pickRecipeForCraft,
+  aliasCraftItem,
 } from './lib/shared/recipe-ingredients.js';
 import {
   goalsFileForUser,
@@ -601,6 +602,14 @@ function resolveMiningBlockName(raw) {
 
 /** Resolve craft target (exact id or alias like axe → wooden_axe). */
 function resolveCraftItemName(raw) {
+  // Inventory-aware aliases first: 'planks'/'sticks'/'boat'/'spruce_plank' etc. → a concrete
+  // item id (the variant the bot can actually craft), so agents' loose names don't hit
+  // "Unknown craft target" (gv2: 'planks' threw because resolveCraftTarget has no
+  // resource_group branch). null = not an alias → resolve normally.
+  let inv = [];
+  try { inv = ctx.world.bot?.inventory?.items?.() || []; } catch { /* no bot yet */ }
+  const aliased = aliasCraftItem(raw, inv);
+  if (aliased) return aliased;
   let cr = resolveCraftTarget({ mcData: ctx.world.mcData, query: String(raw), policy: 'cheapest_craftable' });
   if (!cr.ok) cr = resolveCraftTarget({ mcData: ctx.world.mcData, query: String(raw), policy: 'exact_required' });
   if (!cr.ok) throw new Error(cr.message || `Unknown item "${raw}". Check spelling.`);

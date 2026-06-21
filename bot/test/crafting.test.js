@@ -4,6 +4,7 @@ import {
   recipeIngredientMap,
   bestRecipeForInventory,
   buildCraftPlanFromRecipes,
+  aliasCraftItem,
 } from '../lib/shared/recipe-ingredients.js';
 
 // --- Helpers ---
@@ -310,4 +311,33 @@ test('buildCraftPlanFromRecipes: tagged ingredient surfaces preferred variant in
     undefined,
     'should not surface cobbled_deepslate as the missing name',
   );
+});
+
+// --- aliasCraftItem: loose craft names → concrete, inventory-aware item ids ---
+
+test('aliasCraftItem: planks picks the variant for a held log', () => {
+  assert.equal(aliasCraftItem('planks', [{ name: 'spruce_log', count: 3 }]), 'spruce_planks');
+  assert.equal(aliasCraftItem('plank', [{ name: 'birch_log', count: 1 }]), 'birch_planks');
+});
+
+test('aliasCraftItem: planks falls back to oak when no logs held', () => {
+  assert.equal(aliasCraftItem('planks', []), 'oak_planks');
+});
+
+test('aliasCraftItem: sticks → stick, wood-typed singular plank → plural', () => {
+  assert.equal(aliasCraftItem('sticks', []), 'stick');
+  assert.equal(aliasCraftItem('spruce_plank', []), 'spruce_planks');
+  assert.equal(aliasCraftItem('oak_plank', []), 'oak_planks');
+});
+
+test('aliasCraftItem: boat picks wood from held planks/logs, else oak', () => {
+  assert.equal(aliasCraftItem('boat', [{ name: 'birch_planks', count: 5 }]), 'birch_boat');
+  assert.equal(aliasCraftItem('boat', [{ name: 'jungle_log', count: 2 }]), 'jungle_boat');
+  assert.equal(aliasCraftItem('boat', []), 'oak_boat');
+});
+
+test('aliasCraftItem: returns null for exact ids + non-aliases (resolve normally)', () => {
+  assert.equal(aliasCraftItem('oak_planks', []), null);   // already a real id
+  assert.equal(aliasCraftItem('stone_pickaxe', []), null);
+  assert.equal(aliasCraftItem('', []), null);
 });

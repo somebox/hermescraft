@@ -9,6 +9,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
   dispatchAction,
@@ -270,6 +273,39 @@ test('pushAction omits craft_diag when none present (non-craft error)', () => {
   const state = createBotState({ behaviors: { fairPlay: true } });
   pushAction(state, 'move', 'error', Date.now(), { ok: false, error: { message: 'stuck' } }, 'stuck');
   assert.equal(state.tasks.actionHistory[0].craft_diag, undefined);
+});
+
+test('appendActionLog writes craft_diag into the durable JSONL file', () => {
+  // Belt-and-suspenders: the in-memory entry test above proves pushAction builds it;
+  // this proves appendActionLog serializes that same entry to actions-<user>.jsonl.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pnt-actlog-'));
+  try {
+    const state = createBotState({ behaviors: { fairPlay: true } });
+    state.runtime = { ...(state.runtime || {}), dataDir };
+    state.config = { ...(state.config || {}), mc: { ...(state.config?.mc || {}), username: 'TestBot' } };
+    const result = {
+      ok: false,
+      error: {
+        code: 'CRAFT_NO_OP',
+        message: 'produced 0 with materials present',
+        observed_state: { craft_diag: {
+          failure_origin: 'delta_noop_materials_present',
+          intermediate_available: false, snapshot_desync: false,
+          ingredients: [{ name: 'oak_planks', need: 2, have_before: 6, have_after: 6, have_settled: 6 }],
+        } },
+      },
+    };
+    pushAction(state, 'craft', 'error', Date.now(), result, result.error.message);
+    const file = path.join(dataDir, 'runtime', 'actions-TestBot.jsonl');
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
+    const row = JSON.parse(lines[lines.length - 1]);
+    assert.equal(row.action, 'craft');
+    assert.equal(row.craft_diag.failure_origin, 'delta_noop_materials_present');
+    assert.equal(row.craft_diag.snapshot_desync, false);
+    assert.equal(row.craft_diag.ingredients[0].have_settled, 6);
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
 });
 
 test('recordActionOutcome stores event with error msg', () => {
