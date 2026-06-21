@@ -109,29 +109,27 @@ prefix_tail() {
 
 declare -a CHILD_PIDS=()
 
+# Our process group. Run normally (executed from an interactive shell), this script is
+# its OWN process-group leader (PGID == $$, distinct from the parent shell's group). That
+# lets cleanup SIGKILL the WHOLE group — the ONLY reliable way to reap the per-card
+# `tail | sed` pipelines, because they (a) live in discover_cards' SUBSHELL so they never
+# reach CHILD_PIDS, and (b) are `&`-backgrounded so they IGNORE the terminal's Ctrl-C
+# SIGINT. We group-kill ONLY when our PGID differs from the parent's, so we never signal
+# the user's shell. The run's poller/gateway/bodies are in other groups — untouched.
+MY_PGID="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
+PARENT_PGID="$(ps -o pgid= -p "${PPID:-0}" 2>/dev/null | tr -d ' ')"
+
 cleanup() {
-  # Disable re-entry. Second Ctrl-C during cleanup shouldn't recurse.
-  trap '' INT TERM EXIT
-  echo "${C_META}[proc-nav-tail] stopping ${#CHILD_PIDS[@]} tracked children${RST}" >&2
-
-  # Strategy: SIGKILL everything we spawned, no graceful TERM phase.
-  # Reasons:
-  #   - tail / sed exit cleanly on either signal; KILL is no worse.
-  #   - proto-logs-follow.py only installs a KeyboardInterrupt (SIGINT)
-  #     handler — on SIGTERM the Python default action runs, but we can't
-  #     count on it returning fast enough.
-  #   - The previous recursive pgrep walker hot-looped on macOS in the
-  #     SIGTERM-then-wait phase (sampling showed bash spending ~99% of
-  #     cleanup time inside read_comsub waiting on pgrep forks).
-  # Children spawned inside discover_cards' subshell never made it into
-  # CHILD_PIDS (the += there mutates the SUBSHELL's local copy, not the
-  # script's), so we ALSO sweep direct children via `pkill -P $$`. Any
-  # grandchildren left orphan get reaped by launchd / init.
-  for pid in "${CHILD_PIDS[@]}"; do
-    kill -KILL "$pid" 2>/dev/null || true
-  done
+  trap '' INT TERM EXIT   # disable re-entry; a second Ctrl-C mustn't recurse
+  echo "${C_META}[proc-nav-tail] stopping — reaping stream processes${RST}" >&2
+  if [[ -n "$MY_PGID" && "$MY_PGID" != "0" && "$MY_PGID" != "$PARENT_PGID" ]]; then
+    # SIGKILL the whole process group: reaches subshell grandchildren AND the
+    # SIGINT-ignoring `&` jobs. This kills THIS process too, so it's our last act.
+    kill -KILL -"$MY_PGID" 2>/dev/null
+  fi
+  # Fallback (shared/unresolved group) + belt-and-suspenders: direct-child sweep.
+  for pid in "${CHILD_PIDS[@]}"; do kill -KILL "$pid" 2>/dev/null || true; done
   pkill -KILL -P $$ 2>/dev/null || true
-
   echo "${C_META}[proc-nav-tail] done${RST}" >&2
   exit 0
 }
