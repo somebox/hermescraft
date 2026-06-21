@@ -36,7 +36,17 @@ set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-BOARD="${BOARD:-proc-nav-lab}"
+# Board selection: an explicit BOARD env wins; otherwise auto-detect a live genesis-v2
+# run (its poller process) so the BARE command "just works" during a colony run, and
+# fall back to the proc-nav lab when none is running.
+if [[ -n "${BOARD:-}" ]]; then
+  :
+elif pgrep -f 'genesis-v2-poller' >/dev/null 2>&1; then
+  BOARD="genesis-v2"
+  echo "[proc-nav-tail] auto-detected live genesis-v2 run (poller up)" >&2
+else
+  BOARD="proc-nav-lab"
+fi
 # Board-aware defaults (env PROFILES still wins). Genesis-v2 = colony-* agents +
 # the mox/pip/zee body pool; proc-nav = its own roster.
 if [[ "$BOARD" == genesis* ]]; then
@@ -67,7 +77,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 RUN_ID="${RUN_ID:-$(cat /tmp/proc-nav-run-id 2>/dev/null || true)}"
-if [[ -z "$RUN_ID" ]]; then
+# RUN_ID only selects the proc-nav dispatcher log; genesis-v2 uses the gateway log.
+if [[ -z "$RUN_ID" && "$GENESIS" -eq 0 ]]; then
   echo "[proc-nav-tail] WARN: no RUN_ID — dispatcher log path may be wrong" >&2
 fi
 
