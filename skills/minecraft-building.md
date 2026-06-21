@@ -73,6 +73,22 @@ A loop of `mc place` calls is slower, error-prone, and harder to debug.
 | Stairs out of a foundation pit | `mc build_stairs cobblestone east 4` |
 | Torches / decoration / single blocks | `mc place BLOCK X Y Z` |
 
+### Genesis / village pads (occupied cells)
+
+Pre-generated villages and partial runs often leave **non-air cells** in a shelter
+footprint. Bulk verbs refuse occupied cells unless you explicitly opt in.
+
+1. **`mc scene`** at the build anchor before filing or executing a footprint card.
+2. Choose a **clear 7×7** (or shift `base_anchor` / shelter mark) when debris fills
+   the default pad.
+3. **Horizontal slabs** (floor, roof): `mc fill`. **Vertical shells:** `mc wall`.
+   Do not use `mc wall` for flat layers.
+4. Clearing requires card-level authorization: pass **`overwrite=true`** on bulk
+   placement, or scoped **`mc dig_area` / `mc level`**. Without authorization,
+   `kanban_block(site_occupied:…)` and rescope — do not repeat the same failing grid.
+5. **Doors:** prefer **`mc move`** through village structures; `mc goto` as a
+   fallback when the card already states a distant target.
+
 ### Recovering from `FILL_PARTIAL` — don't sweep the grid
 
 `mc fill` and the other bulk verbs are **retry-safe**. When a fill returns

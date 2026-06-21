@@ -886,10 +886,83 @@ def test_file_retro_cards_one_per_agent_skips_open(monkeypatch):
             p.stdout = "{}"
         return p
     monkeypatch.setattr(g2, "_hermes", fake)
+    monkeypatch.setattr(g2, "load_config", lambda _r: {"run_id": "gv2-x"})
+    monkeypatch.setattr(g2, "save_config", lambda _c: None)
     out = g2.file_retro_cards("gv2-x")
     assert "colony-scout" not in out          # skipped (open retro)
     assert "colony-builder" in out and "colony-planner" in out
     assert len(out) == len(g2.RETRO_AGENTS) - 1
+
+
+def test_file_retro_cards_use_high_priority(monkeypatch):
+    create_args = []
+    def fake(args, **kw):
+        p = MagicMock(); p.returncode = 0
+        if args and args[0] == "list":
+            p.stdout = "[]"
+        elif args and args[0] == "create":
+            create_args.append(list(args))
+            p.stdout = json.dumps({"id": "t_retro"})
+        else:
+            p.stdout = "{}"
+        return p
+    monkeypatch.setattr(g2, "_hermes", fake)
+    monkeypatch.setattr(g2, "load_config", lambda _r: {"run_id": "gv2-x"})
+    monkeypatch.setattr(g2, "save_config", lambda _c: None)
+    g2.file_retro_cards("gv2-x", agents=("colony-scout",))
+    assert create_args
+    args = create_args[0]
+    assert str(g2.RETRO_CARD_PRIORITY) in args
+    assert args[args.index("--priority") + 1] == str(g2.RETRO_CARD_PRIORITY)
+
+
+def test_retro_cards_not_pool_gated():
+    epic_ids = set()
+    retro = {"id": "t_r", "title": "[RETRO] Round feedback", "assignee": "colony-builder", "status": "ready"}
+    worker = {"id": "t_w", "title": "[GENESIS2] build", "assignee": "colony-builder", "status": "ready"}
+    assert g2._is_pool_gated_worker(retro, epic_ids) is False
+    assert g2._is_pool_gated_worker(worker, epic_ids) is True
+
+
+def test_wait_for_retro_cards_succeeds_when_done(monkeypatch):
+    calls = [0]
+    def fake_snap(**_k):
+        calls[0] += 1
+        if calls[0] == 1:
+            return {"total": 1, "ready": [], "running": ["t_r"], "done": [],
+                    "other": [], "pending": 1}
+        return {"total": 1, "ready": [], "running": [], "done": ["t_r"],
+                "other": [], "pending": 0}
+    monkeypatch.setattr(g2, "retro_card_snapshot", fake_snap)
+    monkeypatch.setattr(g2.time, "sleep", lambda _s: None)
+    out = g2.wait_for_retro_cards("gv2-x", timeout_s=60, poll_s=5)
+    assert out["ok"] is True
+    assert out["pending"] == 0
+
+
+def test_wait_for_retro_cards_timeout_reports_incomplete(monkeypatch):
+    snap = {"total": 2, "ready": ["t_r1"], "running": ["t_r2"], "done": [],
+            "other": [], "pending": 2}
+    monkeypatch.setattr(g2, "retro_card_snapshot", lambda **_k: snap)
+    monkeypatch.setattr(g2.time, "sleep", lambda _s: None)
+    t = [1000.0]
+    monkeypatch.setattr(g2.time, "time", lambda: t.__setitem__(0, t[0] + 500) or t[0])
+    out = g2.wait_for_retro_cards("gv2-x", timeout_s=10, poll_s=1)
+    assert out["ok"] is False
+    assert out["timed_out"] is True
+    assert "t_r1" in out["incomplete_ids"] and "t_r2" in out["incomplete_ids"]
+
+
+def test_detect_dead_dispatch_retro_ready_with_worker_running_not_dead(monkeypatch, tmp_path):
+    """Retro cards waiting while workers run is backpressure, not dead dispatch."""
+    log = tmp_path / "gateway.log"
+    log.write_text("x")
+    monkeypatch.setattr(g2, "GATEWAY_LOG", log)
+    stale_now = log.stat().st_mtime + g2.GATEWAY_STALE_S + 10
+    monkeypatch.setattr(g2, "_board_status_by_id", lambda: {
+        "retro": "ready", "worker": "running", "other": "ready",
+    })
+    assert g2.detect_dead_dispatch(now=stale_now) is False
 
 
 # --- Mission guard + run cap (gv2-2026-06-20-1) -----------------------------

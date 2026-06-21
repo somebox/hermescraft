@@ -127,7 +127,19 @@ def main() -> int:
         except Exception as e:
             sys.stderr.write(f"[poller] body pool sync/requeue failed: {e}\n")
         try:
-            if not emergent and g2.maybe_render_shelter_for_run(args.run_id):
+            retro_mode = bool(g2.load_config(args.run_id).get("retro_mode"))
+        except Exception:
+            retro_mode = False
+        if retro_mode:
+            try:
+                snap = g2.retro_card_snapshot()
+                if snap.get("pending"):
+                    sys.stderr.write(f"[poller] retro_mode — suppressing new poller cards "
+                                     f"(pending retros={snap['pending']})\n")
+            except Exception:
+                pass
+        try:
+            if not retro_mode and not emergent and g2.maybe_render_shelter_for_run(args.run_id):
                 sys.stderr.write("[poller] shelter structure rcon-rendered at base_anchor\n")
         except Exception as e:
             sys.stderr.write(f"[poller] shelter render failed: {e}\n")
@@ -136,7 +148,7 @@ def main() -> int:
         # next phase stays blocked until its predecessor's gate truly passes, so a
         # Steward worker finishing early can't cascade. Snapshot each phase close.
         try:
-            for phase in (g2.advance_phases(args.run_id) if not emergent else []):
+            for phase in (g2.advance_phases(args.run_id) if (not emergent and not retro_mode) else []):
                 label = f"phase{phase[1:]}"
                 if label not in seen:
                     seen.add(label)
@@ -155,7 +167,7 @@ def main() -> int:
         # remains a latent mechanical backstop. The stuck-worker path only fires on
         # running/blocked workers, so this is what catches "done but gate unmet".
         try:
-            gap = g2.detect_gate_gap(args.run_id) if not emergent else None
+            gap = g2.detect_gate_gap(args.run_id) if (not emergent and not retro_mode) else None
             if gap:
                 phase, failures = gap
                 cid = g2.file_overseer_card(args.run_id, phase, {"pass": False, "failures": failures})
@@ -163,80 +175,74 @@ def main() -> int:
                     sys.stderr.write(f"[poller] {phase} gate unmet + no active cards ({failures}) → overseer review card {cid}\n")
         except Exception as e:
             sys.stderr.write(f"[poller] overseer review failed: {e}\n")
-        # Continuous supply: keep base stocks above target_min. Reads the
-        # genesis-aware base inventory each tick; when a resource is below target
-        # (and the base is measurable), files a [GENESIS2:SUPPLY] card to the
-        # restocking expertise (dedup+cap). Makes gathering a continuous need.
-        try:
-            for d in (g2.detect_supply_deficits() if not emergent else []):
-                cid = g2.file_supply_card(args.run_id, d)
-                if cid:
-                    sys.stderr.write(f"[poller] {d['resource']} low ({d['current']}<{d['target_min']}) → supply card {cid} ({d['assignee']})\n")
-        except Exception as e:
-            sys.stderr.write(f"[poller] supply check failed: {e}\n")
-        # Emergent mode disables auto-SUPPLY; instead surface deficits to the planner
-        # as ONE deduped stock brief so it queues supply itself (builders/miners can't
-        # see chest stock — gv2-2026-06-19-2 empty-chest blocks + redundant supply).
-        if emergent:
+        if not retro_mode:
+            # Continuous supply: keep base stocks above target_min. Reads the
+            # genesis-aware base inventory each tick; when a resource is below target
+            # (and the base is measurable), files a [GENESIS2:SUPPLY] card to the
+            # restocking expertise (dedup+cap). Makes gathering a continuous need.
             try:
-                cid = g2.file_stock_brief(args.run_id)
-                if cid:
-                    sys.stderr.write(f"[poller] base stock below target → planner stock brief {cid}\n")
+                for d in (g2.detect_supply_deficits() if not emergent else []):
+                    cid = g2.file_supply_card(args.run_id, d)
+                    if cid:
+                        sys.stderr.write(f"[poller] {d['resource']} low ({d['current']}<{d['target_min']}) → supply card {cid} ({d['assignee']})\n")
             except Exception as e:
-                sys.stderr.write(f"[poller] stock brief failed: {e}\n")
-            # Mission continuity: the planner completes its MISSION turn each dispatch,
-            # which makes the card terminal. Re-dispatch rides on a fresh [GENESIS2:MANAGE]
-            # card (deduped to one OPEN at a time) — a terminal card cannot be re-run.
+                sys.stderr.write(f"[poller] supply check failed: {e}\n")
+            # Emergent mode disables auto-SUPPLY; instead surface deficits to the planner
+            # as ONE deduped stock brief so it queues supply itself (builders/miners can't
+            # see chest stock — gv2-2026-06-19-2 empty-chest blocks + redundant supply).
+            if emergent:
+                try:
+                    cid = g2.file_stock_brief(args.run_id)
+                    if cid:
+                        sys.stderr.write(f"[poller] base stock below target → planner stock brief {cid}\n")
+                except Exception as e:
+                    sys.stderr.write(f"[poller] stock brief failed: {e}\n")
+                # Mission continuity: the planner completes its MISSION turn each dispatch,
+                # which makes the card terminal. Re-dispatch rides on a fresh [GENESIS2:MANAGE]
+                # card (deduped to one OPEN at a time) — a terminal card cannot be re-run.
+                try:
+                    cid = g2.reengage_planner_if_mission_closed(args.run_id)
+                    if cid:
+                        sys.stderr.write(f"[poller] MISSION turn complete → re-dispatch planner via {cid}\n")
+                except Exception as e:
+                    sys.stderr.write(f"[poller] mission re-engage failed: {e}\n")
+            # Site-fit advisory (BOTH modes, deduped): if base_anchor was locked with no
+            # nearby stone it can't host a cobble shelter — nudge the planner to source
+            # stone / relocate / scope plank-only before the doomed BUILD (the
+            # gv2-2026-06-19-2 cascade). Advisory only; the agent still decides.
             try:
-                cid = g2.reengage_planner_if_mission_closed(args.run_id)
+                cid = g2.file_site_advisory(args.run_id)
                 if cid:
-                    sys.stderr.write(f"[poller] MISSION turn complete → re-dispatch planner via {cid}\n")
+                    sys.stderr.write(f"[poller] base_anchor not buildable (no nearby stone) → site advisory {cid}\n")
             except Exception as e:
-                sys.stderr.write(f"[poller] mission re-engage failed: {e}\n")
-        # Planner re-engagement: a worker that's stuck — either RUNNING far longer
-        # than a healthy one (~minutes) OR BLOCKED for a substantive reason (no
-        # water, out of materials, unreachable; not no_free_body) — stalls the
-        # colony. File a [SUPERVISE] card so the PLANNER investigates + re-scopes /
-        # supplies a prerequisite. Run-age gating means a progressing worker is
-        # never disrupted; the blocked path is what unsticks "all blocked, none
-        # running" dead-ends.
-        # Site-fit advisory (BOTH modes, deduped): if base_anchor was locked with no
-        # nearby stone it can't host a cobble shelter — nudge the planner to source
-        # stone / relocate / scope plank-only before the doomed BUILD (the
-        # gv2-2026-06-19-2 cascade). Advisory only; the agent still decides.
-        try:
-            cid = g2.file_site_advisory(args.run_id)
-            if cid:
-                sys.stderr.write(f"[poller] base_anchor not buildable (no nearby stone) → site advisory {cid}\n")
-        except Exception as e:
-            sys.stderr.write(f"[poller] site advisory failed: {e}\n")
-        # Deterministic tool-error backstop (BOTH modes): a body spinning on repeated
-        # failed actions can't be stopped by SOUL prose (agents don't self-count across
-        # turns). Attribute failures to the running card via the lease + action log and
-        # BLOCK it; the blocked-worker path below then re-engages the planner. Runs
-        # before stall-supervise so a freshly-blocked spinner escalates the same tick.
-        try:
-            for s in g2.detect_tool_error_spin():
-                reason = (f"tool_error_backstop: {s['error_count']} failed actions in "
-                          f"{g2.TOOL_ERROR_WINDOW_S // 60}m on {s['bot']} — last: {s['last_detail']}")
-                if g2.block_card(s["id"], reason):
-                    sys.stderr.write(f"[poller] tool-error backstop blocked {s['id']} "
-                                     f"({s['error_count']} errors on {s['bot']}) → planner via blocked path\n")
-        except Exception as e:
-            sys.stderr.write(f"[poller] tool-error backstop failed: {e}\n")
-        try:
-            stalled = [{"id": w["id"], "title": w["title"],
-                        "summary": f"running ~{w['age_s'] // 60}m with no completion"}
-                       for w in g2.detect_stalled_workers()]
-            stalled += g2.detect_blocked_workers()
-            for w in stalled:
-                res = g2.supervise_or_park(args.run_id, w["id"], w["title"], w["summary"])
-                if res["action"] == "supervised":
-                    sys.stderr.write(f"[poller] worker {w['id']} stuck ({w['summary'][:40]}) → planner supervise card {res['id']}\n")
-                elif res["action"] == "parked":
-                    sys.stderr.write(f"[poller] worker {w['id']} supervise budget spent → parked + rescope card {res['id']}\n")
-        except Exception as e:
-            sys.stderr.write(f"[poller] stall-supervise failed: {e}\n")
+                sys.stderr.write(f"[poller] site advisory failed: {e}\n")
+            # Deterministic tool-error backstop (BOTH modes): a body spinning on repeated
+            # failed actions can't be stopped by SOUL prose (agents don't self-count across
+            # turns). Attribute failures to the running card via the lease + action log and
+            # BLOCK it; the blocked-worker path below then re-engages the planner. Runs
+            # before stall-supervise so a freshly-blocked spinner escalates the same tick.
+            try:
+                for s in g2.detect_tool_error_spin():
+                    reason = (f"tool_error_backstop: {s['error_count']} failed actions in "
+                              f"{g2.TOOL_ERROR_WINDOW_S // 60}m on {s['bot']} — last: {s['last_detail']}")
+                    if g2.block_card(s["id"], reason):
+                        sys.stderr.write(f"[poller] tool-error backstop blocked {s['id']} "
+                                         f"({s['error_count']} errors on {s['bot']}) → planner via blocked path\n")
+            except Exception as e:
+                sys.stderr.write(f"[poller] tool-error backstop failed: {e}\n")
+            try:
+                stalled = [{"id": w["id"], "title": w["title"],
+                            "summary": f"running ~{w['age_s'] // 60}m with no completion"}
+                           for w in g2.detect_stalled_workers()]
+                stalled += g2.detect_blocked_workers()
+                for w in stalled:
+                    res = g2.supervise_or_park(args.run_id, w["id"], w["title"], w["summary"])
+                    if res["action"] == "supervised":
+                        sys.stderr.write(f"[poller] worker {w['id']} stuck ({w['summary'][:40]}) → planner supervise card {res['id']}\n")
+                    elif res["action"] == "parked":
+                        sys.stderr.write(f"[poller] worker {w['id']} supervise budget spent → parked + rescope card {res['id']}\n")
+            except Exception as e:
+                sys.stderr.write(f"[poller] stall-supervise failed: {e}\n")
         time.sleep(args.interval)
 
 

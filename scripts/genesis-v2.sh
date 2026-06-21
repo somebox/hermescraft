@@ -318,18 +318,43 @@ if rid:
 
   retro)
     # File reflection-only [RETRO] cards to every agent while they're still alive.
-    # Agent retros reveal far more than marks/logs (gv2-2026-06-19-2). Wait for them
-    # to answer, then `genesis-v2.sh stop` (which captures their comments + tears down).
+    # Agent retros reveal far more than marks/logs (gv2-2026-06-19-2). Then run
+    # `genesis-v2.sh stop` (waits for RETRO completion before artifact capture).
     "$PY" -c "
 import sys; sys.path.insert(0,'$REPO_ROOT/scripts')
 import genesis2_lib as g2
 rid = g2.active_run_id() or g2._latest_run_id()
-print('[genesis-v2] filed RETRO cards:', g2.file_retro_cards(rid))
+filed = g2.file_retro_cards(rid)
+print('[genesis-v2] filed RETRO cards:', filed)
+snap = g2.retro_card_snapshot()
+print('[genesis-v2] retro status:', snap)
+print('[genesis-v2] next: scripts/genesis-v2.sh stop  (or stop --force to skip retro wait)')
 "
-    echo "[genesis-v2] wait ~3 min for agents to answer, then: scripts/genesis-v2.sh stop"
     ;;
 
   stop)
+    FORCE=0
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --force) FORCE=1; shift ;;
+        *) echo "[genesis-v2] unknown stop flag: $1" >&2; exit 1 ;;
+      esac
+    done
+    echo "[genesis-v2] waiting for [RETRO] cards (use stop --force to skip)"
+    GV2_STOP_FORCE="$FORCE" "$PY" -c "
+import os, sys; sys.path.insert(0,'$REPO_ROOT/scripts')
+import genesis2_lib as g2
+rid = g2.active_run_id() or g2._latest_run_id()
+if os.environ.get('GV2_STOP_FORCE','0') != '1':
+    wait = g2.wait_for_retro_cards(rid, timeout_s=g2.RETRO_WAIT_DEFAULT_S)
+    print('[genesis-v2] retro wait:', wait)
+    if not wait.get('ok'):
+        incomplete = wait.get('incomplete_ids') or wait.get('ready', []) + wait.get('running', [])
+        print('[genesis-v2] RETRO incomplete:', incomplete, file=sys.stderr)
+        sys.exit(3)
+else:
+    print('[genesis-v2] retro wait skipped (--force)')
+"
     # Capture diagnostics BEFORE teardown (session error dumps are wiped by the next
     # mint), then bring the session down: poller, gateway workers + gateway, the 3
     # bodies, and the leaked board-tail watchers. Localhost single-project; authorised.
@@ -351,5 +376,5 @@ print('[genesis-v2] artifacts:', g2.capture_run_artifacts(rid))
     echo "[genesis-v2] session down."
     ;;
 
-  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status|retro|stop}" >&2; exit 1 ;;
+  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status|retro|stop [--force]}" >&2; exit 1 ;;
 esac

@@ -13,6 +13,21 @@ metadata:
 
 > You're seeing this skill because the Hermes Kanban dispatcher spawned you as a worker with `--skills kanban-worker` — it's loaded automatically for every dispatched worker. The **lifecycle** (6 steps: orient → work → heartbeat → block/complete) also lives in the `KANBAN_GUIDANCE` block that's auto-injected into your system prompt. This skill is the deeper detail: good handoff shapes, retry diagnostics, edge cases.
 
+## Genesis-v2 colony overrides (read first)
+
+When `HERMES_KANBAN_BOARD=genesis-v2` or your assignee is `colony-*`, these rules
+override older landfolk conventions in this skill:
+
+- Do **not** run `mc advise`; treat advise hints as non-actionable and escalate with
+  `kanban_block` using a structured reason.
+- Do **not** `kanban_reassign ... steward`; route escalation via `kanban_block` so
+  `colony-planner`/poller backstops re-engage.
+- Use canonical board reads with `scripts/kanban card <id>` (or `kanban_show` tool).
+- Avoid shell-loop command sequences (`for ... mc ...`); run bounded step-by-step
+  attempts and then block when still stuck.
+- Do not live-debug through ad-hoc terminal surgery on worker turns; leave evidence
+  in `kanban_comment` / `mc feedback` and let control-plane follow-ups handle it.
+
 ## State continuity — write memory often
 
 **Your session is ephemeral. Memory is the only thing that survives to your next incarnation.** Workers spawn, run for a bounded time (max-turns or max-runtime, whichever fires first), then exit. The next worker on the same task — or a different task that depends on what you learned — gets a fresh process with no in-memory state. Its only continuity link to you is the `MEMORY.md` you leave behind. Treat memory like committing code: do it often, do it explicitly, do it before you might be interrupted.
@@ -93,7 +108,7 @@ Use the `kanban_show()` tool to read your card. It's the OpenAI-tool form and gi
 
 When you need a cheap re-read mid-session (e.g. recheck after a comment landed), prefer `scripts/kanban card $HERMES_KANBAN_TASK` — it's ~30 lines (header, body, last comment, last run) vs ~150 from raw `hermes kanban show`. Same data, 80% fewer tokens. Reach for `hermes kanban show $HERMES_KANBAN_TASK` only when you genuinely need the full event log (incident forensics).
 
-**Re-read body + latest comments at the START of every reasoning round.** Comments are how Steward and re44 inject mid-flight corrections (geometry fixes, doctrine clarifications, "this is wrong, try X"). If you keep operating from your turn-1 mental model, you miss those updates. Cheap re-read: `scripts/kanban card $HERMES_KANBAN_TASK` — surfaces the body + newest comments without the full event log. Do it on round 1 (read), round 2 (re-read for comments), every round thereafter. Don't skip just because "the body hasn't changed" — comments are deltas, not body edits.
+**Re-read body + latest comments at the START of every reasoning round.** Comments are how your orchestrator/operator inject mid-flight corrections (geometry fixes, doctrine clarifications, "this is wrong, try X"). If you keep operating from your turn-1 mental model, you miss those updates. Cheap re-read: `scripts/kanban card $HERMES_KANBAN_TASK` — surfaces the body + newest comments without the full event log. Do it on round 1 (read), round 2 (re-read for comments), every round thereafter. Don't skip just because "the body hasn't changed" — comments are deltas, not body edits.
 
 ## Your task source is the kanban card — `top_goal` is advisory only
 
@@ -110,12 +125,12 @@ If you genuinely need to break from the card to handle a survival emergency (HP 
 If a `mc status` (or any `mc observe`-family) response includes `stuck_warning`, you have been within a 5-block radius of the same position for 5+ minutes. Treat this as **bounded recovery mode**:
 
 1. **Probe + explore alternatives first** (mandatory probes below, then a different tactic from `next_action_hint`).
-2. If still failing, **ask for suggestions/help** with **`mc advise --reason="stuck Nmin: <one-line>" --target X,Y,Z`**.
-3. Only after threshold breach (same-class failures / turn budget), **rescue/escalate** via `kanban_block(help-needed:...)` or pass-back to Steward.
+2. If still failing, gather one more perception pass (`mc scene` / `mc observe --full`) and switch tactic.
+3. Only after threshold breach (same-class failures / turn budget), **rescue/escalate** via `kanban_block(help-needed:...)` or pass-back to the orchestrator.
 
 **Do NOT silently retry the same line.** `stuck_warning` means "change strategy now," not "spam attempts."
 
-The warning includes a suggested `mc advise` command pre-filled with your coords — run it verbatim when you enter step 2. Keep `--target`; the digester uses it to weight scene context.
+Some environments suggest `mc advise` in warning text; on genesis-v2 treat that as non-actionable and escalate with `kanban_block` instead.
 
 ## Mandatory probes before repeating a failed move (physical stuck)
 
@@ -123,7 +138,7 @@ The warning includes a suggested `mc advise` command pre-filled with your coords
 
 **Required order** (cheap — do all three before any retry):
 
-1. **`mc read_chat 20`** — operator guidance and Steward comments land in chat; whispers and `mc chat` from other bots are invisible until you read.
+1. **`mc read_chat 20`** — operator/orchestrator guidance can land in chat; whispers and `mc chat` from other bots are invisible until you read.
    Tool output may also prefix lines like `<OtherBot> done t_…` from fleet chat — **background noise** unless your card body asks you to coordinate with that bot.
 2. **`mc reachable <target_x> <target_y> <target_z>`** (use `surface_y` when the card gives surface coords).
 3. If the target cell is **not** standable and the response includes **`best_stand`**: **`mc goto_near <best.x> <best.y> <best.z> range=1`**, then re-run `mc reachable` on the original target. **Do not** repeat the prior failed verb until these probes complete.
@@ -135,6 +150,8 @@ On **horizontal** outdoor moves, check `terrain_kind` from `mc scene` / NAV erro
 **Shape the route before you block the card.** When `NAV_BLOCKED` is repairable (water span, shallow dip, 1-block step-up with `target_standable`, tree in corridor, door on path), use the hinted **`mc deck` / `place` / `level_ground` dry-run / `clear_strip` / `through`** — not blind `mc goto` retries. Load `minecraft-navigation` + `minecraft-roadbuilding` for obstacle→verb mapping. Escalate with `kanban_block` only when the fix is out of scope (ravine infrastructure, protected region) or inventory cannot afford the repair.
 
 **Protected pad / BASE-CLEAR:** **`mc scene` alone does not finish the card.** After survey, **`mc move` or `mc goto_near`** to coords **outside** the protect bbox (or **`mc scout`** for a safe exit path). Never **`dig` / `tunnel` / `dig_area`** on protected cobble to clear nav. Apron vegetation: **`clear_strip` / `level_ground`** on the **ring** only — not **`place`/`fill`** inside the shelter footprint ([`minecraft-roadbuilding`](minecraft-roadbuilding.md) apron row). Build pads: first **`mc level_ground …`** **without** `execute=true`, then execute once dispositions look sane.
+
+**Genesis shelter / village pad (occupied structure):** Before any 7×7 (or similar) shelter bulk build, **`mc scene` + `mc observe`** at the anchor. If cells are occupied by village debris, trees, or prior partial build, either (a) file/rescope to a **cleared footprint** or shift the mark, or (b) only when the **card explicitly authorizes clearing**, use `mc dig_area` / `mc level` / bulk `overwrite=true`. Do **not** loop `place_fill` on occupied cells — block with `site_occupied` and escalate. **Floors/roofs:** `mc fill`; **walls:** `mc wall` only. Near doors and tight paths, **`mc move`** before `mc goto`.
 
 ## Validate the task before starting
 
@@ -198,7 +215,7 @@ Confirm at minimum:
 If anything is missing, the lightest fix order:
 1. `mc chest_search` at the relevant base chest (`chest_tools`, `chest_food`, `chest_wood`) — most kit is on hand.
 2. `mc craft <item>` at a nearby crafting table if materials exist (planks for swords/axes/picks; coal + log for cooking).
-3. Only after both fail: `kanban_block(reason="clarification-needed: no_combat_gear — need <missing items> before leaving base")`. Steward will source it or reassign.
+3. Only after both fail: `kanban_block(reason="clarification-needed: no_combat_gear — need <missing items> before leaving base")`. The orchestrator can source it or reassign.
 
 **Don't skip this check for short trips.** Yesterday's deaths included a 4-block detour for a saplings card.
 
@@ -206,11 +223,11 @@ If anything is missing, the lightest fix order:
 
 **Do not trust `auto_escape_water` to recover you.** The reactive escape strategy fails ~75% of the time and has driven multiple bots to <1 HP this project (run g-2026-05-27, bot-mason.log: 8× `STUCK_IN_WATER`, one drop to hp=0.8 unattended). Treat water as a hard route constraint, not as terrain you walk through.
 
-**Before any `mc move` / `mc goto`** to a target outside base, scan `mc scene 6` from your current position. If the scene shows water (or you see `water` in the path classification of a `mc advise --target X,Y,Z` route_preview), do one of:
+**Before any `mc move` / `mc goto`** to a target outside base, scan `mc scene 6` from your current position. If the scene shows water (or pathing hints classify water risk in route preview output), do one of:
 
 1. **Route around.** `mc goto` with a +6 lateral offset away from the water. The extra travel time is cheaper than a 3-minute rescue.
 2. **Bridge.** Bring 8+ throwaway blocks (dirt/cobble) for any cross-base trip. `mc place dirt` / `mc place cobblestone` into the cells before stepping. Mine the bridge back behind you on the return.
-3. **Refuse.** If water is unavoidable AND you have no bridge blocks, `kanban_block(reason="water_in_path: <coords>; needs route via <suggested_dir> or bridge materials")`. Steward will re-spec or supply you.
+3. **Refuse.** If water is unavoidable AND you have no bridge blocks, `kanban_block(reason="water_in_path: <coords>; needs route via <suggested_dir> or bridge materials")`. The orchestrator can re-spec or supply you.
 
 **For lava: refuse, always.** Do not bridge across lava. Filing a [BUG] is cheaper than a respawn-with-inventory-loss.
 
@@ -218,7 +235,7 @@ If anything is missing, the lightest fix order:
 
 ## Shared-chest etiquette
 
-The base chests are the fleet's shared working stock. Other workers (peer bot, Steward, next card on this bot) are pulling from the same chests. Two rules:
+The base chests are the fleet's shared working stock. Other workers (peer bot, orchestrator, next card on this bot) are pulling from the same chests. Two rules:
 
 **Withdraw to need, not to max.** Estimate what the card calls for from its body (bbox area, recipe quantity, tool count) and pull that plus a small buffer. Stack-of-64 by reflex starves the peer worker.
 
@@ -226,7 +243,7 @@ The base chests are the fleet's shared working stock. Other workers (peer bot, S
 
 **Depositing into a chest block:** Chests are solid blocks — you cannot stand on `(cx,cy,cz)` where the chest sits. Path to an **adjacent** standable cell (`mc goto_near cx cy cz 2` is usually enough), then `mc deposit ITEM COUNT cx cy cz` (or `COUNT MARK` / `COUNT MARK cx cy cz`). Using `mc move` or `mc goto` with the chest's own coordinates often yields NAV_TARGET_UNSTANDABLE; that is expected, not a broken chest.
 
-If you find a chest at floor stock (fewer items than a single card typically needs), don't fully drain it. Take what you need to finish, leave a note in chat (`"chest_<name> low — used last N <item>, next worker needs restock"`) so Steward can promote a [SUPPLY] card.
+If you find a chest at floor stock (fewer items than a single card typically needs), don't fully drain it. Take what you need to finish, leave a note in chat (`"chest_<name> low — used last N <item>, next worker needs restock"`) so the orchestrator can promote a [SUPPLY] card.
 
 ## Felling trees — cut the whole thing AND plant a sapling
 
@@ -236,9 +253,9 @@ When a [SUPPLY] wood card sends you to a tree (e.g. `lt_wood_ne`):
 
 2. **Collect every sapling drop.** When leaves decay (which happens within ~60s of the trunk being cut), they drop saplings ~5% per leaf-block. Walk under the felled tree's leaf cloud for at least 60s before leaving the site — bare hand is fine for sapling pickup. Each tree typically drops 2-6 saplings.
 
-3. **Plant one sapling per tree felled at `lt_grove_<dir>`** (Steward registers this near the harvest site; if there's no `lt_grove_*` mark, file a [BUG] back to Steward and skip the plant — do NOT improvise a planting spot). Saplings need dirt or grass underfoot and 1-block clearance overhead. A 2-block gap between saplings prevents leaf-overlap that slows growth.
+3. **Plant one sapling per tree felled at `lt_grove_<dir>`** (orchestrator usually registers this near the harvest site; if there's no `lt_grove_*` mark, file a [BUG] and skip the plant — do NOT improvise a planting spot). Saplings need dirt or grass underfoot and 1-block clearance overhead. A 2-block gap between saplings prevents leaf-overlap that slows growth.
 
-4. **Quote both numbers in your completion chat:** `mc chat "done lt_wood_ne: 11 oak harvested, 3 saplings planted at lt_grove_ne"`. The "N harvested, M planted" pair is what Steward audits for sustainability — see her resource-gathering doctrine.
+4. **Quote both numbers in your completion chat:** `mc chat "done lt_wood_ne: 11 oak harvested, 3 saplings planted at lt_grove_ne"`. The "N harvested, M planted" pair is what sustainability audits rely on.
 
 Anti-pattern: harvesting 32 logs from a 2-tree stand without replanting. The next session's scout reports the area as "wood depleted, no trees" — and there's no path back because the saplings you didn't collect are decayed leaves on the ground.
 
@@ -408,7 +425,10 @@ When the card body includes `playbook: <registry_id>` (Stage 2a+), routing lives
 
 **Exit:** `mc playbook phase clear` → `mc task_context clear` → `kanban_complete` or `kanban_block` (or `scripts/kanban complete` / `scripts/kanban block` in agent-test). On **closeout** phases that deposit to a chest, use **goto_near + deposit** (see Shared-chest etiquette) — not move onto the chest cell.
 
-**Pass-back:** if the playbook id is wrong or inputs are missing from the body, use the structured pass-back comment pattern (numbered unblock options) + `kanban_reassign steward` — don't improvise a different playbook id.
+**Pass-back:** if the playbook id is wrong or inputs are missing from the body, use the structured pass-back comment pattern (numbered unblock options), then escalate by mode:
+- `genesis-v2`: `kanban_block(clarification-needed:...)` (planner/poller re-engages).
+- landfolk: `kanban_reassign steward`.
+Don't improvise a different playbook id.
 
 **Sub-play (Stage 2b):** When a parent phase row says `use_playbook: pillar_up_safe`, enter the sub-play and set telemetry:
 
@@ -426,12 +446,15 @@ When you claim a card, your **first turn** is a spec review. Before doing any in
    ```python
    kanban_comment(task_id=os.environ["HERMES_KANBAN_TASK"],
                   body="clarification-needed: <one sentence naming what's missing>")
+   # landfolk mode:
    kanban_reassign(steward)
+   # genesis-v2 mode:
+   # kanban_block(reason="clarification-needed: <one-line>")
    # exit cleanly — no in-game actions
    ```
 4. If the card is clear enough, proceed.
 
-**Why:** a worker hitting "what does this card even mean?" 30 turns in burns its iteration budget figuring it out. A 1-turn spec review costs almost nothing and routes ambiguity back to Steward where it belongs. This isn't "blocked" — it's a clarification bounce; Steward fixes the spec and reassigns when ready.
+**Why:** a worker hitting "what does this card even mean?" 30 turns in burns its iteration budget figuring it out. A 1-turn spec review costs almost nothing and routes ambiguity back to the orchestrator where it belongs.
 
 ## In-place blocker resolution — fix small obstacles before bouncing
 
@@ -442,7 +465,7 @@ When you discover a small obstacle on-site **with materials in hand**, resolve i
 - A missing torch in a corridor → place one from your inventory.
 - A doorway with a stray block → mine the block.
 
-Comment what you did on the current card so Steward sees the deviation:
+Comment what you did on the current card so the orchestrator sees the deviation:
 
 ```python
 kanban_comment(task_id=os.environ["HERMES_KANBAN_TASK"],
@@ -454,7 +477,7 @@ kanban_comment(task_id=os.environ["HERMES_KANBAN_TASK"],
 - The fix requires **materials you don't have** (and there's no nearby chest with them).
 - The fix requires **another bot's body** (e.g. you need a stone pickaxe and only have wood).
 
-The previous pattern was: discover blocker → block → Steward triages → files a new SUPPLY card → reassigns to you → spawn fresh worker → walk all the way back to the site. That's expensive (4-5 task transitions, 2 spawns, lots of movement) when the in-place fix would have been 5 turns. Bounce only when bouncing is genuinely cheaper.
+The previous pattern was: discover blocker → block → orchestrator triages → files a new SUPPLY card → reassigns to you → spawn fresh worker → walk all the way back to the site. That's expensive (4-5 task transitions, 2 spawns, lots of movement) when the in-place fix would have been 5 turns. Bounce only when bouncing is genuinely cheaper.
 
 ## Claiming cards you actually created
 
@@ -508,7 +531,7 @@ Required `mc chat` lines per card:
 |---|---|---|
 | First or second tool call | `mc chat "starting <tid>: <verb + target>"` | `"starting t_6f58ca52: mining 3 iron at Y-15"` |
 | Every 3-5 min during work | `mc chat "<bot>: <progress>"` | `"<flint>: 2/3 iron mined, smelting next"` |
-| Stuck (2-fail mark, before mc advise) | `mc chat "<bot>: stuck at (X,Y,Z), trying <variant>"` | `"<flint>: stuck at (418,48,-621), trying pillar_up --force"` |
+| Stuck (2-fail mark) | `mc chat "<bot>: stuck at (X,Y,Z), trying <variant>"` | `"<worker>: stuck at (418,48,-621), trying pillar_up --force"` |
 | Before `kanban_complete` | `mc chat "done <tid>: <result>"` | `"done t_6f58ca52: bucket crafted, deposited"` |
 | Before `kanban_block` | `mc chat "blocked <tid>: <prefix>: <reason>"` | `"blocked t_6f58ca52: help-needed: 4× collect failed"` |
 
@@ -538,7 +561,7 @@ If you open the task and `kanban_show` returns `runs: [...]` with one or more cl
 
 ## Stuck in the world? Try escape primitives BEFORE escalating
 
-If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profiles) and your symptoms look physical-stuckness (NOT spec confusion or missing materials), there are dedicated `mc` verbs that resolve most cases without `kanban_block`. Try them FIRST — they often work and they're cheap.
+If you're a Minecraft-domain worker profile and your symptoms look physical-stuckness (NOT spec confusion or missing materials), there are dedicated `mc` verbs that resolve most cases without `kanban_block`. Try them FIRST — they often work and they're cheap.
 
 **Before the escape verbs below:** run the **Mandatory probes** section (`read_chat`, `reachable`, `goto_near` to `best_stand` when needed). NAV failures often include a concrete `next_action_hint` — follow it instead of repeating the same move.
 
@@ -557,13 +580,13 @@ If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profile
    - `mc pillar_up 8` — climb 8, use captured drops (works for dirt/sand/gravel ceilings). When truly trapped (4 walls + ceiling) it auto bare-hand digs a stone ceiling without `--force`.
    - `mc pillar_up 8 --force` — also slow-digs stone faster and bypasses region/global denylists for the escape dig **only when the 4-walls+ceiling stuck-predicate is verified**. Use when the early-stop hint tells you to (stone ceiling + bare hands), OR you're inside a protected region.
    - Drop-timing race: if you get `PILLAR_FAILED` with "capture-from-ceiling failed: cell above head is air", the drop arrived AFTER the call returned. **Call `mc pillar_up` a second time** — it'll use the captured block. Two-call pattern is reliable.
-   - **NEVER pillar_up to "see farther" or scout.** That's a Minecraft-human tactic that doesn't apply here. Use `mc map`, `mc nearby`, `mc scene`, or `mc advise` — they give you terrain intelligence without an excursion you then have to undo.
+   - **NEVER pillar_up to "see farther" or scout.** That's a Minecraft-human tactic that doesn't apply here. Use `mc map`, `mc nearby`, `mc scene`, or `mc observe --full` — they give you terrain intelligence without an excursion you then have to undo.
 
 2. **`mc pillar_down [N=12]`** — descend back from a pillar by mining underfoot, dropping one cell, repeating. **You'll need this every time you `pillar_up`.** Sitting on the column after climbing IS stuck — the surface around you is air, you can't `mc move` off without falling. Once you're back at ground level via `pillar_down`, normal pathfinding works again.
 
 3. **`mc escape`** — last-resort general unstuck (classifies your situation: sidestep / pillar / wait / break-out by surrounding terrain).
 
-4. **`mc advise --reason="stuck at (X,Y,Z): <one-line symptom>"`** — perception bundle + LLM digest. Often spots an air opening you missed or a navigation angle you haven't tried.
+4. If your environment explicitly supports it, optionally run `mc advise --reason="stuck at (X,Y,Z): <one-line symptom>"`; otherwise skip this step and escalate via kanban.
 
 **Don't:**
 - Don't `mc dig` straight up in a 1×1 shaft (you'll be in the same shaft, one block higher).
@@ -572,7 +595,7 @@ If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profile
 
 **Deeper playbook:** `skill_view minecraft-mining` → "Underground pillar escape" + "Escape protocol" sections. Load it on demand if the above doesn't resolve.
 
-**Only after the escape verbs fail** (and you've tried the two-call pillar pattern + `--force` if appropriate + `mc advise`), proceed to Failure escalation below. A worker who blocks "stuck" without trying `mc pillar_up` is the anti-pattern this section exists to prevent.
+**Only after the escape verbs fail** (and you've tried the two-call pillar pattern + `--force` if appropriate), proceed to Failure escalation below. A worker who blocks "stuck" without trying `mc pillar_up` is the anti-pattern this section exists to prevent.
 
 ## Failure escalation — when to ask for help instead of trying harder
 
@@ -582,9 +605,9 @@ If you're a Minecraft-domain worker (flint/mason/gatherer/barley/steward profile
 |---|---|
 | 0 | Normal work. |
 | 1–2 | Vary the approach (adjacent coord, smaller chunk, different prerequisite). |
-| **3rd** | **MANDATORY** `mc advise --reason="<one-line>"` before the 4th attempt. The framework prints `hint=mc advise ...` after consecutive failures — *don't ignore it*. |
+| **3rd** | Run one bounded alternate probe (`mc scene` / `mc observe --full` / `mc reachable`) before a 4th attempt, then either change method or escalate. |
 | **4+** | Stop. `kanban_block(reason="help-needed: <one-line>")` + comment with full failure pattern. Exit. |
-| **4+ AND you have an unblock idea** | `kanban_reassign <id> steward` with a comment naming what would unblock the task (precondition card, spec change, [BUG]). See *Pass-back* below. |
+| **4+ AND you have an unblock idea** | pass back to your orchestrator assignee (`colony-planner` on genesis-v2, `steward` on landfolk) with a comment naming what would unblock the task (precondition card, spec change, [BUG]). See *Pass-back* below. |
 
 **Same-class** = same primitive + same target class. `mc dig (x,y,z)` → `mc dig (x,y,z+1)` → `mc dig (x,y+1,z)` is 3 same-class (same worksite). `mc till × 81` in a loop is 81 same-class — should have stopped at 3.
 
@@ -613,10 +636,10 @@ The anti-pattern is specifically **shelling out to `mc` in a loop to fake a miss
 ### Soft-help chat (optional at 2-failure mark)
 
 ```
-mc chat "@steward <bot>: 2× fail on <primitive> at <target> — <error>. Trying <variant>."
+mc chat "@<orchestrator> <bot>: 2× fail on <primitive> at <target> — <error>. Trying <variant>."
 ```
 
-Invites Steward attention without blocking. She may comment / unblock / reassign before you hit the hard threshold.
+Invites orchestrator attention without blocking. They may comment / unblock / reassign before you hit the hard threshold.
 
 ### Reading `runs[]`
 
@@ -632,11 +655,14 @@ if len(fails) >= 4:
 
 `--max-retries` is the hard backstop; the rule above is the soft escalation engaging before it.
 
-### Pass-back to Steward — when you have an unblock idea but can't act on it yourself
+### Pass-back to orchestrator — when you have an unblock idea but can't act on it yourself
 
-`kanban_block(reason="help-needed: ...")` parks a card and waits. **Pass-back is the active alternative**: you `kanban_reassign <id> steward` after leaving a comment that names *specifically what would unblock the task*. Steward sees a card in her queue (she has Per-bot mutex exemption for orchestrator-class cards, so it lands fast), reads your comment, and acts on the suggestion — typically by creating a precondition card, amending the spec, or freeing a needed resource — then reassigns back to you (or a more appropriate worker).
+`kanban_block(reason="help-needed: ...")` parks a card and waits. **Pass-back is the active alternative**: leave a comment naming *specifically what would unblock the task*, then route by mode:
+- `genesis-v2`: keep ownership flow via `kanban_block` (planner/poller will re-engage).
+- landfolk: use `kanban_reassign <id> steward` when direct pass-back is needed.
+The orchestrator can then create prerequisite cards, amend spec, or reroute work.
 
-**Use pass-back when** you can fill in the blank in this sentence: *"If only `___` existed/were true, I could complete this task."* That blank is something Steward can produce: a SUPPLY card for missing materials, a SCOUT card for a missing coord, a region edit, a spec amendment. If you can't name the blank, use plain `help-needed:` block instead — that's a "please research" not "please do."
+**Use pass-back when** you can fill in the blank in this sentence: *"If only `___` existed/were true, I could complete this task."* That blank is something the orchestrator can produce: a SUPPLY card for missing materials, a SCOUT card for a missing coord, a region edit, a spec amendment. If you can't name the blank, use plain `help-needed:` block instead — that's a "please research" not "please do."
 
 **Examples that warrant pass-back:**
 
@@ -645,11 +671,14 @@ if len(fails) >= 4:
 kanban_comment(body=(
     "Tried to start construction at (370, 65, -608); inventory has 0 iron. "
     "Chest_iron has 4 (need 16). What would unblock this:\n"
-    "  1. Create [SUPPLY] iron (12 ingots) assigned to flint, parent=<this_id>\n"
+    "  1. Create [SUPPLY] iron (12 ingots) assigned to the appropriate gather/miner profile, parent=<this_id>\n"
     "  2. After that completes, reassign this back to me; chest_iron will hold the stock.\n"
     "  3. Alternative: shrink the build to its iron-free pieces and add a follow-up CONSTRUCT for the iron parts."
 ))
+# landfolk mode:
 kanban_reassign(task_id, "steward")
+# genesis-v2 mode:
+# kanban_block(reason="help-needed: missing iron precondition")
 ```
 
 ```python
@@ -660,7 +689,10 @@ kanban_comment(body=(
     "  1. SCOUT card: find a suitable wheat-farm site near base, place a `:wheatfield:` placemark sign, mark `wheatfield_anchor`.\n"
     "  2. Reassign this card back to me once the anchor is in-world."
 ))
+# landfolk mode:
 kanban_reassign(task_id, "steward")
+# genesis-v2 mode:
+# kanban_block(reason="help-needed: missing anchor mark")
 ```
 
 ```python
@@ -672,17 +704,20 @@ kanban_comment(body=(
     "  2. Alternatively: reduce farm to 16 tiles for the manual path; rest waits on the bug fix.\n"
     "  3. Reassign back to me once option 1 or 2 is chosen."
 ))
+# landfolk mode:
 kanban_reassign(task_id, "steward")
+# genesis-v2 mode:
+# kanban_block(reason="help-needed: missing primitive")
 ```
 
 **Don't pass back when:**
 
 - You just need *advice* and would still do the work yourself (use `help-needed:` block).
 - You're stumped without a hypothesis (use `help-needed:` block).
-- The task is fine as-written and you just failed at it (this is the bare `mc advise` mandatory tier or `help-needed:` block, not pass-back).
-- The needed action is operator-only (rcon, server config) — escalate directly to `re44`, not Steward.
+- The task is fine as-written and you just failed at it (`help-needed:` block, not pass-back).
+- The needed action is operator-only (rcon, server config) — escalate directly to the operator lane, not the orchestrator queue.
 
-**Format of the comment matters.** Steward acts on what's *concrete*. List 2–3 numbered options for how the unblock could work, including "alternative: shrink scope" or "alternative: defer" when applicable. Steward's research toolkit is built around acting on specific suggestions, not freeform "please figure this out." A vague pass-back wastes her iteration budget; a structured one converts to action in one cycle.
+**Format of the comment matters.** The orchestrator acts on what's *concrete*. List 2–3 numbered options for how the unblock could work, including "alternative: shrink scope" or "alternative: defer" when applicable. A vague pass-back wastes cycle budget; a structured one converts to action quickly.
 
 After reassign, **exit cleanly** with no further action on the card. Don't `kanban_complete` and don't keep retrying — the card is no longer yours. Write your final memory checkpoint summarizing the pass-back, then return.
 
@@ -703,11 +738,11 @@ After reassign, **exit cleanly** with no further action on the card. Don't `kanb
 
 ## CLI fallback (for scripting)
 
-## `[MAP]` cards — the mapping mission protocol
+## `[MAP]` cards — landfolk mapping mission protocol (landfolk-only)
 
 A `[MAP]` card under a `[MAP:ARENA]` epic is a *mapping mission* — you range to a quadrant, name landmarks with in-world signs, mark internal nav waypoints with torches + personal POIs, and return with the evidence. Different from `[EXPLORE]`: no resource hunt, no candidate-pad survey. Load **`minecraft-mapping`** for the full vocabulary + sign / torch / POI protocol; this section covers the kanban-specific contract.
 
-**Range.** The card body gives a quadrant (NE / NW / SE / SW) and a target radius (typically `{quadrant_radius}` ≈ 50 blocks on a 64-radius arena). Get out at least that far before naming. Picking landmarks 10 blocks from muster is inadmissible — Steward's coverage_radius metric needs you to actually range.
+**Range.** The card body gives a quadrant (NE / NW / SE / SW) and a target radius (typically `{quadrant_radius}` ≈ 50 blocks on a 64-radius arena). Get out at least that far before naming. Picking landmarks 10 blocks from muster is inadmissible — orchestrator coverage metrics need you to actually range.
 
 **Landmark protocol (per name).**
 
@@ -744,9 +779,9 @@ mc pois
 mc nearby_signs 32
 ```
 
-Not a summary. Not "see attached". The literal command output. Steward rejects empty-after-colon stubs (`pois:` followed by nothing); if you found zero of something, say so in a sentence (`"no fleet marks placed this card; 2 landmark POIs added: …"`).
+Not a summary. Not "see attached". The literal command output. The orchestrator rejects empty-after-colon stubs (`pois:` followed by nothing); if you found zero of something, say so in a sentence (`"no fleet marks placed this card; 2 landmark POIs added: …"`).
 
-**Quadrant scope = your epic's coverage tile.** Don't stray into another worker's quadrant unless your own has nothing worth naming AND chat says so. Steward dispatches one worker per quadrant per cycle; collisions waste coverage credit.
+**Quadrant scope = your epic's coverage tile.** Don't stray into another worker's quadrant unless your own has nothing worth naming AND chat says so. The orchestrator dispatches one worker per quadrant per cycle; collisions waste coverage credit.
 
 **Inventory expectations.** Starter kit is 4 signs + 16 torches; chest holds 16 signs + 64 torches + 32 coal. If you run out:
 
@@ -764,9 +799,9 @@ Don't return to base for a single sign — batch 2+ POIs first.
 
 Every tool has a CLI equivalent for human operators and out-of-agent scripts. **From a SOUL action use the `kanban_*` tools, not the CLI** — the tools work across all terminal backends (Docker, Modal, SSH); the CLI only works locally.
 
-For scripts and human operators on the landfolk-ops board, prefer the `scripts/kanban` facade over raw `hermes kanban`:
+For scripts and human operators on landfolk boards, prefer the `scripts/kanban` facade over raw `hermes kanban`:
 
-- `kanban_show` ↔ `scripts/kanban show <id>` (or `hermes kanban show <id> --json` for full event log)
+- `kanban_show` ↔ `scripts/kanban card <id>` (or `hermes kanban show <id> --json` for full event log)
 - `kanban_complete` ↔ `scripts/kanban complete <id> [--result "..."]`
 - `kanban_block` ↔ `scripts/kanban block <id> "reason"`
 - `kanban_create` ↔ `scripts/kanban create "title" --assignee <profile> [--epic <epic_id>] [--depends-on <id>...]`

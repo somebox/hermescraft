@@ -685,6 +685,8 @@ def _is_pool_gated_worker(t: dict, epic_ids: set[str]) -> bool:
     if tid in epic_ids:
         return False
     title = t.get("title") or ""
+    if "[RETRO]" in title:
+        return False  # reflection-only; no body checkout
     if title.startswith("[EPIC]") or "SUPERVISE" in title or "NEEDS-OPERATOR" in title:
         return False
     assignee = (t.get("assignee") or "").strip().lower()
@@ -1098,6 +1100,8 @@ def verify_built_structure(world: str, x: int, y: int, z: int, *, radius: int = 
 
 RETRO_AGENTS = ("colony-scout", "colony-gatherer", "colony-builder", "colony-farmer",
                 "colony-miner", "colony-road", "colony-planner")
+RETRO_CARD_PRIORITY = 50  # dispatcher: priority DESC — retros beat normal worker cards
+RETRO_WAIT_DEFAULT_S = 240
 RETRO_BODY = (
     "RETROSPECTIVE — REFLECTION ONLY. The colony run is ending. Do NOT checkout a body,\n"
     "do NOT run `mc` verbs, do NOT run `skill_view`, do NOT do any in-world work.\n\n"
@@ -1186,16 +1190,83 @@ def teardown_session() -> None:
         pass
 
 
-def file_retro_cards(run_id: str, agents: tuple[str, ...] = RETRO_AGENTS) -> dict:
-    """File a reflection-only [RETRO] card per agent (run-2 learning: agent retros reveal
-    far more than marks/logs). Skips an agent that already has an OPEN retro. Must be run
-    while agents are still alive (before teardown); give them ~3 min to answer. Returns
-    {agent: card_id}."""
+def _board_tasks_list() -> list[dict]:
     try:
         lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
-        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+        return lst if isinstance(lst, list) else lst.get("tasks", [])
     except Exception:
-        tasks = []
+        return []
+
+
+def _retro_tasks(tasks: list[dict] | None = None) -> list[dict]:
+    rows = tasks if tasks is not None else _board_tasks_list()
+    return [t for t in rows if "[RETRO]" in (t.get("title") or "")]
+
+
+def retro_card_snapshot(*, tasks: list[dict] | None = None) -> dict:
+    """Summarize [RETRO] cards on the board for operator status + stop-time wait."""
+    retros = _retro_tasks(tasks)
+    ready: list[str] = []
+    running: list[str] = []
+    done: list[str] = []
+    other: list[str] = []
+    for t in retros:
+        tid = str(t.get("id") or "")
+        st = (t.get("status") or "").lower()
+        if st in ("done", "archived"):
+            done.append(tid)
+        elif st == "ready":
+            ready.append(tid)
+        elif st == "running":
+            running.append(tid)
+        else:
+            other.append(tid)
+    pending = len(ready) + len(running)
+    return {
+        "total": len(retros),
+        "ready": ready,
+        "running": running,
+        "done": done,
+        "other": other,
+        "pending": pending,
+    }
+
+
+def wait_for_retro_cards(
+    run_id: str,
+    *,
+    timeout_s: int = RETRO_WAIT_DEFAULT_S,
+    poll_s: int = 10,
+) -> dict:
+    """Block until every [RETRO] is terminal or timeout. Returns ok=False when any
+    retro remains ready/running past timeout (caller should refuse teardown or use --force)."""
+    deadline = time.time() + max(1, int(timeout_s))
+    last = retro_card_snapshot()
+    if last["total"] == 0:
+        return {**last, "ok": True, "timed_out": False, "run_id": run_id}
+    while time.time() < deadline:
+        last = retro_card_snapshot()
+        if last["pending"] == 0:
+            return {**last, "ok": True, "timed_out": False, "run_id": run_id}
+        time.sleep(max(1, int(poll_s)))
+    last = retro_card_snapshot()
+    incomplete = last["ready"] + last["running"] + last["other"]
+    return {
+        **last,
+        "ok": False,
+        "timed_out": True,
+        "run_id": run_id,
+        "incomplete_ids": incomplete,
+    }
+
+
+def file_retro_cards(run_id: str, agents: tuple[str, ...] = RETRO_AGENTS) -> dict:
+    """File a reflection-only [RETRO] card per agent (run-2 learning: agent retros reveal
+    far more than marks/logs). Skips an agent that already has an OPEN retro. Sets
+    retro_mode on the run config so the poller stops filing new SUPPLY/supervise cards.
+    High priority so retros dispatch ahead of saturated worker backlog. Must be run while
+    agents are still alive (before teardown). Returns {agent: card_id}."""
+    tasks = _board_tasks_list()
     open_retro = {t.get("assignee") for t in tasks
                   if "[RETRO]" in (t.get("title", "") or "")
                   and (t.get("status") or "").lower() not in ("done", "archived")}
@@ -1205,12 +1276,20 @@ def file_retro_cards(run_id: str, agents: tuple[str, ...] = RETRO_AGENTS) -> dic
             continue
         r = _hermes(["create", "[RETRO] Round feedback — reflection only",
                      "--assignee", a, "--body", RETRO_BODY, "--max-runtime", "4m",
+                     "--priority", str(RETRO_CARD_PRIORITY),
                      "--created-by", "operator", "--json"])
         if r.returncode == 0:
             try:
                 out[a] = str(json.loads(r.stdout).get("id"))
             except Exception:
                 pass
+    try:
+        cfg = load_config(run_id)
+        cfg["retro_mode"] = True
+        cfg["retro_filed_at"] = gl._iso_utc()
+        save_config(cfg)
+    except Exception:
+        pass
     return out
 
 

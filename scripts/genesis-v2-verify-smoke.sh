@@ -7,6 +7,8 @@
 # - MANAGE fallback churn vs mission retry continuity
 # - legacy mode leakage in run artifacts
 # - non-blocking warning signals (GoalChanged / terrain stalls)
+# - RETRO card completion (board snapshot)
+# - scoped verb error buckets + craft_diag failure_origin (next-run bottleneck triage)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -195,6 +197,71 @@ PY
 )
 goalchanged_count="${goalchanged_count:-0}"; craft_total="${craft_total:-0}"; craft_errors="${craft_errors:-0}"
 
+read -r retro_total retro_pending retro_ready retro_running < <(python3 - "$BOARD_JSON" <<'PY'
+import json, sys
+path = sys.argv[1]
+if not __import__("pathlib").Path(path).is_file():
+    print("0 0 0 0"); raise SystemExit
+try:
+    b = json.load(open(path))
+except Exception:
+    print("0 0 0 0"); raise SystemExit
+ts = b if isinstance(b, list) else b.get("tasks", [])
+ret = [t for t in ts if "[RETRO]" in (t.get("title") or "")]
+def st(t): return (t.get("status") or "").lower()
+ready = sum(1 for t in ret if st(t) == "ready")
+running = sum(1 for t in ret if st(t) == "running")
+pending = ready + running
+print(len(ret), pending, ready, running)
+PY
+)
+
+# Two values on SEPARATE lines (each contains spaces/commas) — read line-by-line, NOT
+# `read a b` (which would take only line 1 and word-split it, dropping line 2).
+{ read -r verb_err_summary; read -r craft_diag_summary; } < <(python3 - "$CFG" "$RUN_DIR/artifacts" <<'PY'
+import json, glob, sys, collections
+cfg_path, art = sys.argv[1], sys.argv[2]
+from datetime import datetime
+def iso_ms(s):
+    try: return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp() * 1000
+    except Exception: return None
+cfg = {}
+try: cfg = json.load(open(cfg_path))
+except Exception: pass
+start_ms = iso_ms(cfg.get("started_at")); end_ms = iso_ms(cfg.get("ended_at"))
+verbs = collections.Counter()
+craft_origins = collections.Counter()
+craft_diag_rows = 0
+for f in glob.glob(art + "/actions-*.jsonl"):
+    for line in open(f):
+        line = line.strip()
+        if not line: continue
+        try: o = json.loads(line)
+        except Exception: continue
+        ts = o.get("started_at")
+        if not isinstance(ts, (int, float)): ts = o.get("finished_at")
+        if start_ms is not None and isinstance(ts, (int, float)):
+            if ts < start_ms or (end_ms is not None and ts > end_ms): continue
+        if o.get("status") != "error": continue
+        act = o.get("action") or "unknown"
+        verbs[act] += 1
+        if act == "craft":
+            diag = (o.get("observed_state") or {}).get("craft_diag") or {}
+            if diag:
+                craft_diag_rows += 1
+                fo = diag.get("failure_origin") or "unknown"
+                craft_origins[fo] += 1
+vsum = ", ".join(f"{k}={v}" for k, v in verbs.most_common(12)) or "none"
+cdsum = f"rows={craft_diag_rows} origins={dict(craft_origins.most_common(8)) or '{}'}"
+print(vsum)
+print(cdsum)
+PY
+)
+verb_err_summary="${verb_err_summary:-none}"
+# Default must not contain braces: bash closes ${var:-...} at the first '}' inside '{}',
+# leaving a stray literal '}' on the line. Use a brace-free fallback.
+craft_diag_summary="${craft_diag_summary:-rows=0 origins=none}"
+
 terrain_hits="$(rg -n --no-heading -e 'unreachable|terrain_too_complex|stuck_pocket_no_escape' "$CARD_STORIES" "$POLLER_LOG" 2>/dev/null || true)"
 terrain_count="$(count_lines "$terrain_hits")"
 
@@ -225,6 +292,11 @@ if (( leak_count > 0 )); then
   fail_reasons+=("legacy mode leakage found in run artifacts ($leak_count)")
 fi
 
+if (( retro_total > 0 && retro_pending > 0 )); then
+  status="FAIL"
+  fail_reasons+=("[RETRO] cards incomplete at capture: $retro_pending still ready/running of $retro_total")
+fi
+
 if (( goalchanged_count > 0 )); then
   if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
   warn_reasons+=("GoalChanged still present ($goalchanged_count) [known separate stream]")
@@ -248,6 +320,9 @@ echo "  MANAGE unresolved:          $manage_unresolved (blocked=$manage_blocked,
 echo "  leakage matches:            $leak_count"
 echo "  GoalChanged (scoped):       $goalchanged_count"
 echo "  craft (scoped) total/err:   $craft_total/$craft_errors"
+echo "  [RETRO] total/pending:      $retro_total/$retro_pending (ready=$retro_ready running=$retro_running)"
+echo "  scoped verb errors (top):   $verb_err_summary"
+echo "  craft_diag (scoped craft):  $craft_diag_summary"
 echo "  terrain-stall matches:      $terrain_count"
 echo
 echo "result: $status"
