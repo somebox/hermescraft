@@ -1,33 +1,35 @@
 #!/usr/bin/env bash
-# proc-nav-tail.sh — one-pane tail for the proc-nav trial.
+# proc-nav-tail.sh — one-pane live tail for a trial run (proc-nav OR genesis-v2).
 #
 # Multiplexes (each line prefixed by source + color):
-#   [disp]      proc-nav dispatcher tick log
-#   [mox]       Mineflayer bot-mox HTTP/MC chat (port 3007)
-#   [pip]       Mineflayer bot-pip HTTP/MC chat (port 3005)  (when running)
+#   [disp]      dispatcher tick log (proc-nav) / gateway log (genesis-v2)
+#   [mox/pip/zee] Mineflayer body HTTP/MC chat (the active bots)
 #   [card:TID]  per-card hermes log (auto-discovered from the LIVE board only)
-#   [hermes]    proto-logs-follow.py: planner/navigator/builder/* state.db
-#               reasoning + tool calls + tool responses
+#   [hermes]    proto-logs-follow.py: ACTIVE AGENTS' state.db reasoning + tool calls
+#   [lease]     which body each agent currently holds (bot <- profile, TTL) — on change
 #
-# NOTE: this is a LIVE `tail -F`, scoped to the CURRENT run. Card ids come from the
-# live board (reinit each run), NOT from globbing the durable board log dir (which
-# holds 1000+ stale t_*.log across runs). This is separate from the genesis ARCHIVAL
-# scoping in capture_run_artifacts (windowed actions-*.jsonl + ended_at): that produces
-# the post-run record; this shows live current-run activity. Orthogonal but both run-scoped.
+# Defaults to BOARD-aware behaviour: BOARD=genesis-v2 follows the colony-* agents +
+# the mox/pip/zee body pool; otherwise the proc-nav roster. Agent REASONING is shown
+# BY DEFAULT (use --no-reasoning to hide).
+#
+# NOTE: LIVE `tail -F`, scoped to the CURRENT run. Card ids come from the live board
+# (reinit each run), NOT from globbing the durable board log dir (1000+ stale t_*.log).
+# Separate from the genesis ARCHIVAL scoping in capture_run_artifacts (windowed
+# actions-*.jsonl + ended_at): that's the post-run record; this is live activity.
 #
 # Usage:
-#   scripts/proc-nav-tail.sh                # default profiles, no reasoning
-#   scripts/proc-nav-tail.sh --reasoning    # include hidden reasoning blocks
-#   scripts/proc-nav-tail.sh --no-hermes    # skip the proto-logs-follow stream
-#   scripts/proc-nav-tail.sh --no-cards     # skip per-card log discovery
-#   scripts/proc-nav-tail.sh --tail 200     # backfill last N from each hermes profile
+#   BOARD=genesis-v2 scripts/proc-nav-tail.sh   # colony agents + mox/pip/zee + reasoning + lease
+#   scripts/proc-nav-tail.sh --no-reasoning     # hide reasoning blocks
+#   scripts/proc-nav-tail.sh --no-hermes        # skip the agent-reasoning stream
+#   scripts/proc-nav-tail.sh --no-cards         # skip per-card log discovery
+#   scripts/proc-nav-tail.sh --no-lease         # skip the bot-lease view
+#   scripts/proc-nav-tail.sh --tail 200         # backfill last N from each agent
 #
 # Env:
 #   RUN_ID       Trial id; auto-read from /tmp/proc-nav-run-id if unset
-#   BOARD        Default: proc-nav-lab
+#   BOARD        Default: proc-nav-lab (set genesis-v2 for colony runs)
 #   HERMES_HOME  Default: ~/.hermes
-#   PROFILES     Comma-list to follow. Default covers single + dual-bot roles:
-#                navigator,planner,builder,navigator-pip,builder-mox,engineer,overseer
+#   PROFILES     Comma-list to follow (overrides the board-derived default)
 #
 # Ctrl-C cleanly stops every child tail.
 set -u
@@ -35,20 +37,31 @@ set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 BOARD="${BOARD:-proc-nav-lab}"
-PROFILES="${PROFILES:-navigator,planner,builder,navigator-pip,builder-mox,engineer,overseer}"
-WITH_REASONING=""
+# Board-aware defaults (env PROFILES still wins). Genesis-v2 = colony-* agents +
+# the mox/pip/zee body pool; proc-nav = its own roster.
+if [[ "$BOARD" == genesis* ]]; then
+  GENESIS=1
+  PROFILES="${PROFILES:-colony-planner,colony-overseer,colony-scout,colony-gatherer,colony-builder,colony-farmer,colony-miner,colony-road}"
+else
+  GENESIS=0
+  PROFILES="${PROFILES:-navigator,planner,builder,navigator-pip,builder-mox,engineer,overseer}"
+fi
+WITH_REASONING="--reasoning"   # active-agent reasoning ON by default (--no-reasoning hides it)
 WITH_HERMES=1
 WITH_CARDS=1
+WITH_LEASE=1
 TAIL_N=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --reasoning)    WITH_REASONING="--reasoning"; shift ;;
+    --no-reasoning) WITH_REASONING=""; shift ;;
     --no-hermes)    WITH_HERMES=0; shift ;;
     --no-cards)     WITH_CARDS=0; shift ;;
+    --no-lease)     WITH_LEASE=0; shift ;;
     --tail)         TAIL_N="$2"; shift 2 ;;
     --profiles)     PROFILES="$2"; shift 2 ;;
-    -h|--help)      sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '2,34p' "$0"; exit 0 ;;
     *)              echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -63,12 +76,14 @@ if [[ -t 1 ]]; then
   C_DISP=$'\033[38;5;75m'    # blue
   C_MOX=$'\033[38;5;221m'    # gold
   C_PIP=$'\033[38;5;114m'    # green
+  C_ZEE=$'\033[38;5;209m'    # salmon
   C_CARD=$'\033[38;5;180m'   # tan
   C_HERMES=$'\033[38;5;141m' # purple
+  C_LEASE=$'\033[1;38;5;45m' # bright cyan
   C_META=$'\033[2;38;5;244m' # dim grey
   RST=$'\033[0m'
 else
-  C_DISP=""; C_MOX=""; C_PIP=""; C_CARD=""; C_HERMES=""; C_META=""; RST=""
+  C_DISP=""; C_MOX=""; C_PIP=""; C_ZEE=""; C_CARD=""; C_HERMES=""; C_LEASE=""; C_META=""; RST=""
 fi
 
 prefix_tail() {
@@ -111,12 +126,18 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-# ── 1. dispatcher log ────────────────────────────────────────────────
+# ── 1. dispatcher / gateway log ──────────────────────────────────────
+# Genesis-v2 dispatch runs through the hermes gateway (its log shows the
+# dispatcher ticks: spawned/reclaimed/crashed/promoted). proc-nav uses a
+# per-run dispatcher log under /tmp.
 DISPATCHER_LOG=""
-for c in \
+_disp_candidates=()
+[[ "$GENESIS" -eq 1 ]] && _disp_candidates+=("$HERMES_HOME/logs/gateway.log")
+_disp_candidates+=( \
   "/tmp/proc-nav-dispatcher-${RUN_ID}.log" \
   "$(ls -t /tmp/proc-nav-dispatcher-*.log 2>/dev/null | head -1)" \
-  "$(ls -t /tmp/wheat-dispatcher-*.log 2>/dev/null | head -1)"; do
+  "$(ls -t /tmp/wheat-dispatcher-*.log 2>/dev/null | head -1)")
+for c in "${_disp_candidates[@]}"; do
   [[ -n "$c" && -f "$c" ]] && { DISPATCHER_LOG="$c"; break; }
 done
 if [[ -n "$DISPATCHER_LOG" ]]; then
@@ -126,12 +147,16 @@ else
   echo "${C_META}[proc-nav-tail] no dispatcher log found${RST}" >&2
 fi
 
-# ── 2. bot HTTP logs ─────────────────────────────────────────────────
-for bot in mox pip; do
-  log="/tmp/hermescraft/bot-${bot}.log"
+# ── 2. bot (body) HTTP logs — the active bots ────────────────────────
+# Genesis bodies log to /tmp/<name>-bot.log (genesis-v2.sh ensure_body); the
+# proc-nav lab uses /tmp/hermescraft/bot-<name>.log. The genesis pool is mox/pip/zee.
+if [[ "$GENESIS" -eq 1 ]]; then BOT_NAMES=(mox pip zee); else BOT_NAMES=(mox pip); fi
+for bot in "${BOT_NAMES[@]}"; do
+  if [[ "$GENESIS" -eq 1 ]]; then log="/tmp/${bot}-bot.log"; else log="/tmp/hermescraft/bot-${bot}.log"; fi
   if [[ -f "$log" ]]; then
     color="$C_MOX"
     [[ "$bot" == "pip" ]] && color="$C_PIP"
+    [[ "$bot" == "zee" ]] && color="$C_ZEE"
     echo "${C_META}[proc-nav-tail] $bot bot log: $log${RST}" >&2
     prefix_tail "$bot" "$color" "$log"
   else
@@ -190,6 +215,38 @@ if [[ "$WITH_HERMES" -eq 1 ]]; then
     CHILD_PIDS+=("$!")
   else
     echo "${C_META}[proc-nav-tail] proto-logs-follow.py not executable (skip)${RST}" >&2
+  fi
+fi
+
+# ── 5. live lease view: which body each active agent holds ───────────
+# Answers "which bot is involved in this card/command": leases live in
+# ~/.hermes/bot-leases.db (bot <- profile, with a TTL). A worker's `mc bot checkout`
+# binds a body; this prints the bot<-profile map (only when it changes) so you can
+# correlate an agent's reasoning ([hermes]) and a card ([card:TID]) with the body
+# ([mox]/[pip]/[zee]) it's actually driving.
+if [[ "$WITH_LEASE" -eq 1 ]]; then
+  LEASE_DB="$HERMES_HOME/bot-leases.db"
+  if [[ -f "$LEASE_DB" ]] && command -v sqlite3 >/dev/null 2>&1; then
+    lease_snapshot() {
+      local last=""
+      while true; do
+        local now_ms=$(($(date +%s) * 1000)) snap
+        snap="$(sqlite3 "$LEASE_DB" \
+          "SELECT bot || '<-' || IFNULL(profile,'?') || '(' || CAST((expires_at_ms-$now_ms)/1000 AS INT) || 's)' \
+           FROM bot_leases WHERE expires_at_ms > $now_ms ORDER BY bot;" 2>/dev/null | paste -sd' ' -)"
+        [[ -z "$snap" ]] && snap="(no active leases)"
+        if [[ "$snap" != "$last" ]]; then
+          echo "${C_LEASE}[lease]${RST} $snap"
+          last="$snap"
+        fi
+        sleep 5
+      done
+    }
+    lease_snapshot &
+    CHILD_PIDS+=("$!")
+    echo "${C_META}[proc-nav-tail] lease view: $LEASE_DB${RST}" >&2
+  else
+    echo "${C_META}[proc-nav-tail] no lease db / sqlite3 (skip lease view)${RST}" >&2
   fi
 fi
 
