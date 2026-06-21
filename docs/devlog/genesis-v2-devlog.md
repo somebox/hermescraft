@@ -9,6 +9,77 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-21 — gv2-2026-06-21-1/2 postmortem: retro capture FIXED + validated; the ceiling is the village + raised-pad nav trap, not craft
+
+Two runs (seed 91011, the village seed) that (a) fixed and validated the retro-feedback
+capture gap, (b) corrected a measurement-contamination bug that had been inflating every
+count, and (c) — with trustworthy numbers + the first full retro set in three runs —
+re-pointed the whole investigation away from craft and onto **navigation around the
+village + raised/level pads**.
+
+### Retro capture — the `-1` miss, the fix, and `-2` validation
+- **-1 lost all 7 retros.** Every `[RETRO]` stayed `ready, events=['created']` — never
+  dispatched. Cause: priority 0, competing with a saturated worker backlog for the
+  agent's dispatch slot, and `stop` captured immediately (3-min orchestration sleep, no
+  real wait). The richest feedback source was gone.
+- **Fix (committed `5470d37`):** `[RETRO]` filed at **priority 50** + **excluded from
+  body-pool gating** (reflection-only, no checkout); **`retro_mode`** in run config so the
+  poller stops filing SUPPLY/stock/MANAGE/advisory/supervise while retros run;
+  **`wait_for_retro_cards()` (240s)** with `genesis-v2.sh stop` blocking before capture
+  and **exit 3** (set -e aborts teardown) unless `stop --force`; a `retro` subcommand.
+- **-2 validated it:** all 7 retros `ready→done` (**pending 0**) inside the wait, clean
+  `stop`, verify-smoke `[RETRO] 7/0` — **no FAIL**. The `-1` class is closed.
+
+### Measurement contamination — corrected (from the `-1` analysis)
+The durable per-body `actions-<bot>.jsonl` are append-only across EVERY run.
+`capture_run_artifacts` copied them verbatim, so `-1`'s first-draft counts (**828 craft /
+323 errors / GoalChanged ~1016**) were ~6 days of history. Run-scoped, `-1` was **29 craft
+/ 0 in-run GoalChanged**. Fix: stamp `config.ended_at`, copy only rows in
+`[started_at, ended_at]` (fallback `finished_at`), drop+count malformed ts, write
+`action-log-scope.json`; verify-smoke recomputes from scoped rows. **Every count below is
+run-scoped.**
+
+### The real ceiling: village + raised-pad nav, NOT craft
+Tool-success across `-1`/`-2` (scoped) puts craft mid/low; the cost is navigation and
+construction/perception primitives:
+- `-1`: move 44% err, place_fill **74%** ("cells already occupied" = building on the
+  village), goto_near 31%, collect **88%** (LOS), withdraw 70%, dig 45%, **craft 26%**.
+- `-2`: nav dominant (goto_near 26 + move 25 + goto 6 = 57 errors), collect 16 (LOS),
+  craft only 8/3.
+**The village is the through-line** (confirmed by retros, both runs): it breaks nav
+("could not traverse oak_door", "no path"), `place_fill` ("cells occupied"), and wood
+gathering (walled trees). And a **raised/level pad creates a nav lip**: in `-2` the miner
+(`t_94268ad9`, Mox) couldn't path off the Y69-70 pad to its coal — `goto_near` kept
+snapping the target up +5 ("no standable cell") — got stuck in a reactive goto loop, and
+**bridged forward with supplied oak logs** (`place oak_log 0,70,1→18`) trying to make a
+path. Supplied building wood wasted on a bridge to nowhere.
+
+### Craft is now table-positioning, not no-op/desync
+`-2`'s 3 craft errors were ALL `TABLE_REQUIRED` ("no crafting_table within 4 blocks") —
+so `craft_diag rows=0` is CORRECT (those return before any attempt, outside
+`buildCraftDiag`'s 4 origins), NOT a plumbing bug (the JSONL landing via `pushAction`,
+`b10f1ac`, is verified present). Resolver aliases (`fbb82fa`) + `craft_diag` remain ready;
+craft engine work (2×2 retry/fallback) stays deferred — the numbers don't justify it.
+Gap noted: table-positioning craft failures are uninstrumented.
+
+### Confound + recurring retro asks
+- **MC server 503s in `-2`** (gatherer: "down 3× consecutive, cards dead on arrival";
+  planner: "cards stuck on 503") — partial run quality; the `place_fill 17→2` drop can't
+  be cleanly credited to site-prep. Re-run on a clean seed to de-confound.
+- Recurring (3 runs): no `mc find_water` verb; **farmer/road advisory-only, never
+  execute** (FEEDBACK→CONSTRUCT gap); builder wants **protected-cell coords on CONSTRUCT
+  cards** (village blocks ate ~30% of budget — identical to the `-6` retro); miner wants
+  **structured `mine_site:[coords]`** so it stops re-scouting/wandering.
+
+### Next
+Per the stabilization doc's decision rule (nav dominates + craft_diag empty → planner/
+card-templates, not engine): build **village/nav-aware planner card templates**
+(protected-cell coords, structured `mine_site:[coords]`, FEEDBACK→CONSTRUCT linkage) and
+have level/clear grade a **ramped edge** instead of a vertical lip. Keep primitive motor
+changes deferred until a clean (no-503) run still shows nav dominating.
+
+---
+
 ## 2026-06-20 — gv2-2026-06-20-4/5/6 postmortem: emergent mode works END-TO-END after two infra fixes; craft reliability is the new ceiling
 
 Three runs validating the emergent mode-split cleanup, seed 91011 (**non-forest** — chosen
