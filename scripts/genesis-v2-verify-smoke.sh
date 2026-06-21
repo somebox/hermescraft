@@ -159,8 +159,41 @@ raw_leak_hits="$(rg -n --no-heading -e "$leak_pattern" "$CARD_STORIES" "$POLLER_
 leak_hits="$(printf "%s\n" "$raw_leak_hits" | rg -v '\[agent/' 2>/dev/null || true)"
 leak_count="$(count_lines "$leak_hits")"
 
-goalchanged_hits="$(rg -n --no-heading -e 'GoalChanged|goal was changed' "$RUN_DIR" 2>/dev/null || true)"
-goalchanged_count="$(count_lines "$goalchanged_hits")"
+# GoalChanged + craft from the RUN-SCOPED action logs (artifacts/actions-*.jsonl), NOT a
+# raw rg over the run dir. The durable per-body logs span every run; capture now windows
+# them, but we re-apply the config.started_at/ended_at guard here too (belt-and-suspenders:
+# stays correct if re-run on a pre-fix run dir or if capture couldn't window).
+read -r goalchanged_count craft_total craft_errors < <(python3 - "$CFG" "$RUN_DIR/artifacts" <<'PY'
+import json, glob, sys
+from datetime import datetime
+cfg_path, art = sys.argv[1], sys.argv[2]
+def iso_ms(s):
+    try: return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp() * 1000
+    except Exception: return None
+cfg = {}
+try: cfg = json.load(open(cfg_path))
+except Exception: pass
+start_ms = iso_ms(cfg.get("started_at")); end_ms = iso_ms(cfg.get("ended_at"))
+gc = craft = cerr = 0
+for f in glob.glob(art + "/actions-*.jsonl"):
+    for line in open(f):
+        line = line.strip()
+        if not line: continue
+        try: o = json.loads(line)
+        except Exception: continue
+        ts = o.get("started_at")
+        if not isinstance(ts, (int, float)): ts = o.get("finished_at")
+        if start_ms is not None and isinstance(ts, (int, float)):
+            if ts < start_ms or (end_ms is not None and ts > end_ms): continue
+        blob = json.dumps(o).lower()
+        if "goalchanged" in blob or "goal was changed" in blob: gc += 1
+        if o.get("action") == "craft":
+            craft += 1
+            if o.get("status") == "error": cerr += 1
+print(gc, craft, cerr)
+PY
+)
+goalchanged_count="${goalchanged_count:-0}"; craft_total="${craft_total:-0}"; craft_errors="${craft_errors:-0}"
 
 terrain_hits="$(rg -n --no-heading -e 'unreachable|terrain_too_complex|stuck_pocket_no_escape' "$CARD_STORIES" "$POLLER_LOG" 2>/dev/null || true)"
 terrain_count="$(count_lines "$terrain_hits")"
@@ -213,7 +246,8 @@ echo "  re-dispatch cycles:         $redispatch_count"
 echo "  MANAGE cards total/done:    $manage_total/$manage_done"
 echo "  MANAGE unresolved:          $manage_unresolved (blocked=$manage_blocked, open=$manage_open)"
 echo "  leakage matches:            $leak_count"
-echo "  GoalChanged matches:        $goalchanged_count"
+echo "  GoalChanged (scoped):       $goalchanged_count"
+echo "  craft (scoped) total/err:   $craft_total/$craft_errors"
 echo "  terrain-stall matches:      $terrain_count"
 echo
 echo "result: $status"

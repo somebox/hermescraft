@@ -2183,6 +2183,50 @@ def _latest_run_id() -> str | None:
     return max(dirs, key=lambda d: d.stat().st_mtime).name if dirs else None
 
 
+def _iso_to_ms(s) -> float | None:
+    """Parse a UTC-ISO timestamp ('2026-06-20T20:41:02Z') to epoch ms, or None on failure."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).timestamp() * 1000
+    except Exception:
+        return None
+
+
+def scope_action_rows(lines, start_ms, end_ms):
+    """Filter durable per-body action-log lines to a run window for archival.
+
+    `actions-<body>.jsonl` is append-only across EVERY run, so capturing it verbatim mixes
+    runs (the bug that poisoned GoalChanged/craft counts). Keep a row when its `started_at`
+    (fallback `finished_at`) is numeric and within `[start_ms, end_ms]` (epoch ms). When
+    `start_ms` is None no window is applied. Rows with unparseable JSON or a missing/malformed
+    timestamp are DROPPED and counted, so the scoping stays auditable. Returns
+    `(kept_lines, stats)` with stats = total / kept / dropped_out_of_window / dropped_bad_ts."""
+    kept = []
+    stats = {"total": 0, "kept": 0, "dropped_out_of_window": 0, "dropped_bad_ts": 0}
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        stats["total"] += 1
+        try:
+            o = json.loads(line)
+        except Exception:
+            stats["dropped_bad_ts"] += 1
+            continue
+        ts = o.get("started_at")
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+            ts = o.get("finished_at")                  # fallback per design
+        if not isinstance(ts, (int, float)) or isinstance(ts, bool):
+            stats["dropped_bad_ts"] += 1
+            continue
+        if start_ms is not None and (ts < start_ms or (end_ms is not None and ts > end_ms)):
+            stats["dropped_out_of_window"] += 1
+            continue
+        kept.append(line)
+        stats["kept"] += 1
+    return kept, stats
+
+
 def capture_run_artifacts(run_id: str | None = None) -> dict:
     """Snapshot the run's diagnostic state into the (gitignored) run dir BEFORE teardown
     or the next mint — the reasoning (state.db), per-turn dumps (sessions/), agent.log,
@@ -2221,11 +2265,42 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
                 shutil.copytree(sess, pdir / "sessions", dirs_exist_ok=True); n += 1
             except Exception:
                 pass
+    # Run-scope the durable per-body action logs. RUNTIME_DIR/actions-<body>.jsonl is
+    # append-only and spans EVERY run (days of history) — copying it verbatim poisoned
+    # downstream counts (GoalChanged/craft) with prior runs. Stamp the run-window END,
+    # then copy only rows whose timestamp falls in [started_at, ended_at]. `started_at`
+    # is preferred; `finished_at` is the fallback. Rows with a missing/malformed
+    # timestamp are DROPPED but counted, so the scoping stays auditable
+    # (artifacts/action-log-scope.json).
+    cfg = None
+    try:
+        cfg = load_config(run_id)
+        if not cfg.get("ended_at"):
+            cfg["ended_at"] = gl._iso_utc()   # UTC ISO, same format as started_at
+            save_config(cfg)
+    except Exception:
+        cfg = None
+
+    start_ms = _iso_to_ms(cfg.get("started_at")) if cfg else None
+    end_ms = _iso_to_ms(cfg.get("ended_at")) if cfg else None
+    scope = {"run_id": run_id,
+             "started_at": (cfg or {}).get("started_at"),
+             "ended_at": (cfg or {}).get("ended_at"),
+             "windowed": start_ms is not None,
+             "files": {}}
     for jl in sorted(RUNTIME_DIR.glob("actions-*.jsonl")) if RUNTIME_DIR.exists() else []:
         try:
-            shutil.copy2(jl, dest / jl.name); n += 1
+            kept, st = scope_action_rows(jl.read_text().splitlines(), start_ms, end_ms)
+            (dest / jl.name).write_text(("\n".join(kept) + "\n") if kept else "")
+            n += 1
+            scope["files"][jl.name] = st
         except Exception:
             pass
+    try:
+        (dest / "action-log-scope.json").write_text(json.dumps(scope, indent=2) + "\n")
+        n += 1
+    except Exception:
+        pass
     try:
         (dest / "board.json").write_text(_hermes(["list", "--json"]).stdout or "[]"); n += 1
     except Exception:

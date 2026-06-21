@@ -953,3 +953,35 @@ def test_reengage_manage_card_is_assigned_to_planner(monkeypatch):
     assert g2.reengage_planner_if_mission_closed("gv2-x") == "t_new"
     assert "[GENESIS2:MANAGE]" in created[0][1]
     assert "colony-planner" in created[0]
+
+
+# --- action-log run-scoping (capture_run_artifacts windowing) -----------------
+
+def test_scope_action_rows_windows_and_counts():
+    # Window [1000, 2000] epoch ms. Rows: before / in / after / no-ts / bad-json /
+    # in-via-finished_at-fallback. Only the two in-window rows survive (in order); the
+    # out-of-window and malformed-timestamp rows are dropped AND counted.
+    start_ms, end_ms = 1000, 2000
+    rows = [
+        json.dumps({"started_at": 500, "action": "before"}),
+        json.dumps({"started_at": 1500, "action": "in"}),
+        json.dumps({"started_at": 2500, "action": "after"}),
+        json.dumps({"action": "no_ts"}),                       # missing timestamp
+        "{ not valid json",                                    # unparseable
+        json.dumps({"finished_at": 1600, "action": "fallback"}),  # in-window via fallback
+    ]
+    kept, stats = g2.scope_action_rows(rows, start_ms, end_ms)
+    assert [json.loads(l)["action"] for l in kept] == ["in", "fallback"]
+    assert stats == {"total": 6, "kept": 2, "dropped_out_of_window": 2, "dropped_bad_ts": 2}
+
+
+def test_scope_action_rows_no_window_keeps_all_valid():
+    # start_ms=None → no window applied; only malformed-ts rows are dropped.
+    rows = [
+        json.dumps({"started_at": 500, "action": "a"}),
+        json.dumps({"started_at": 9_000_000, "action": "b"}),
+        json.dumps({"action": "no_ts"}),
+    ]
+    kept, stats = g2.scope_action_rows(rows, None, None)
+    assert [json.loads(l)["action"] for l in kept] == ["a", "b"]
+    assert stats["kept"] == 2 and stats["dropped_out_of_window"] == 0 and stats["dropped_bad_ts"] == 1

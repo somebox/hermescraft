@@ -9,6 +9,122 @@ Related: [target architecture](../architecture/target.md),
 
 ---
 
+## 2026-06-20 — gv2-2026-06-20-4/5/6 postmortem: emergent mode works END-TO-END after two infra fixes; craft reliability is the new ceiling
+
+Three runs validating the emergent mode-split cleanup, seed 91011 (**non-forest** — chosen
+deliberately to isolate the cleanup from the dense-forest terrain confound that dominated
+-2/-3). Net: after fixing two infra blockers, the colony ran the full
+propose→consult→decompose→manage→supervise loop with **0 protocol violations and 0 legacy
+leakage**. Crafting reliability — not control-plane or terrain — is now the top in-world ceiling.
+
+### Run arc
+- **-4 DEAD-ON-ARRIVAL.** Planner crashed (`exit 1`) ~60s after each of 3 spawns, 0 sessions /
+  0 tool calls, then the dispatcher blocked the mission; 0 worker cards, idle ~22 min.
+- **-5 boot-check** (post fix-1): planner booted clean, completed its mission turn, ran the
+  6-card consult round. Confirmed the fix in ~4 min, then stopped.
+- **-6 full ~24-min run** (post fix-1+2): the validated run analysed below.
+
+### Fix 1 — mint skill collision (the -4 DOA root cause)
+The crash signal was NOT in `agent.log`/`errors.log` (which showed only a `Skill name
+collision for 'kanban-worker'` WARNING) — it was in the board task log
+(`~/.hermes/kanban/boards/genesis-v2/logs/<mission>.log`): **`Error: Unknown skill(s):
+kanban-worker`**, ×3. Cause: the mint installed a top-level `skills/kanban-worker` ON TOP of
+the source profile's stale `skills/devops/kanban-worker`, so the dispatcher's auto-injected
+`--skills kanban-worker` resolved to TWO candidates → unresolvable → the agent CLI exits 1 at
+boot, before any LLM call. Hit ALL 8 colony profiles → whole colony non-functional. **Fix:**
+`genesis-v2-mint-profiles.sh` now purges every `kanban-worker` copy before installing the
+single canonical one. (Diagnostic lesson: a clean-exit-1 with no traceback in the agent logs
+= look at the dispatcher/board task log for the spawn-command error.)
+
+### Fix 2 — mission re-dispatch continuity (corrects the -3 entry's proposed fix)
+The -3 postmortem proposed "planner completes its turn + poller re-promotes the SAME mission
+card." **That is structurally impossible with this kanban facade:** `retry` is not a verb, and
+a `done` card cannot be reopened (`promote --force` → *"task is 'done'; promote only applies to
+'todo' or 'blocked'"*; `unblock` is blocked→ready only). So `reengage_planner_if_mission_closed`'s
+`kanban retry` call errored 100% of the time and ALWAYS fell to the MANAGE-card path — same-card
+continuity NEVER ran once. **Resolution (chosen):** keep fresh-card re-dispatch — planner
+completes its MISSION turn (terminal, no protocol-violation), poller mints one
+`[GENESIS2:MANAGE]` card per cycle, deduped to one OPEN. A high create count is HEALTHY
+re-dispatch, not churn; the stall signature is an *unresolved* manage card (blocked / piled-up).
+Removed the dead retry call (committed `1d4fc59`). -6 result: 14 create→complete cycles, **0
+unresolved**, 0 protocol events.
+
+### What -6 achieved (the cleanup is validated)
+Full emergent loop ran: planner posted plan → 6 `[FEEDBACK]` consult cards (one per
+specialist, all done) → decomposed into SCOUT/SUPPLY/CONSTRUCT worker cards → managed via
+SUPERVISE/RESCOPE. 47 cards, 34 done, **all assignees `colony-*`, 0 legacy leakage**. In-world:
+scout committed a build site (26,63,17 — 5×5 flat pad, marks placed), gatherer crafted a
+bucket, miner deposited 8 iron, builder finished a storage room (4 chests/4 signs/2 torches,
+verified). Shelter/farm/roads were still `todo` at stop — the ~24-min window + craft/nav
+friction consumed the cycles before big builds landed. New post-run gate
+`scripts/genesis-v2-verify-smoke.sh` (protocol_violation/gave_up + leakage + unresolved-MANAGE;
+exits 0/10/20) scored -6 **WARN** — the only run-scoped warning is terrain (36 kanban_block
+mentions). (GoalChanged is **0 in-run** — see the measurement correction below; the ~1016 figure
+quoted in an earlier draft of this entry was unscoped durable-log contamination.)
+
+### ⚠ MEASUREMENT CORRECTION — earlier craft/GoalChanged counts were unscoped (fixed)
+The first draft of this entry reported **828 craft events / 323 errors** and **GoalChanged
+~1016** "for -6". Those were WRONG: `capture_run_artifacts` copied the durable per-body
+`actions-<body>.jsonl` **verbatim**, and those files are append-only across EVERY run (here:
+2026-06-14 → 06-20, plus other bodies Flint/Mason/Tester). So the counts were ~6 days of
+history, not this run. **Fix:** capture now stamps `config.ended_at` and copies only rows whose
+`started_at` (fallback `finished_at`) falls in `[started_at, ended_at]`, dropping malformed-ts
+rows with an audit summary at `artifacts/action-log-scope.json`; the verifier recomputes
+GoalChanged/craft from the scoped rows with the same window guard. Re-scoped, -6's durable logs
+collapse from ~28k rows to **371 in-run** (Mox 226 / Pip 100 / Zee 45; Flint/Mason/Tester → 0).
+
+### Craft reliability — "craft desync" is FOUR issue classes (RUN-SCOPED: 32 craft events, 23 errors)
+Counts are tiny (workers spent most cycles on nav/scouting; only 32 crafts fired) so treat
+magnitudes as **provisional pending a clean next run** — but the four classes and the conclusion hold.
+| # | Issue | -6 count | Root cause |
+|---|---|---|---|
+| 1 | `MISSING_INGREDIENTS` | 13 | Mostly *legit* — agent crafts a tool before its intermediate (planks/sticks); workers mis-report as desync |
+| 2 | No table in ~4 blocks | 4 | Bot not positioned at a crafting_table when a 3×3 craft fires |
+| 3 | **#3399 no-op, materials present** | 5 | The *true* desync — and in -6 **all 5 were 2×2 plank crafts** (oak_planks ×3, spruce_planks ×2), which get **1 attempt + NO server-side fallback**. (The "bench fallback bails `delta still 0`" / stone_pickaxe story from the first draft was historical contamination — 0 bench no-ops in-run this time.) |
+| 4 | `Unknown craft target` | 1 | Resolver gap — `craft planks`/`sticks`/`plank`/`oak_plank`/`boat` throw; `resolveCraftItemName` (craft path) lacks the resource-group aliasing `resolveCraftTarget` already has |
+
+Key code (`bot/lib/actions/crafting.js`): `MAX_CRAFT_ATTEMPTS = requiresBench ? 6 : 1` (2×2 gets
+ONE shot) and the server-side fallback is gated on `requiresBench` (so 2×2 has none) — exactly
+the path the 5 in-run plank no-ops hit. `serverSideCraftFallback` also **clears ingredients
+before confirming the give reflects** with only a ~1s settle window (a latent bench-reliability
+risk, unexercised in -6). Recommended order (per the measurement-first plan): **(0) prove desync
+via craft instrumentation** (log inventory source vs status inventory) so magnitudes are
+trustworthy → **#4 resolver aliases** (≈trivial) → **#3 2×2 retries + fallback** (the confirmed
+in-run desync) → **#3 bench fallback hardening** (give-before-clear + longer settle) → **#1
+worker-SOUL craft-order guidance**. #2 (table positioning) is the biggest standalone effort.
+
+### Agent retros (all 7 answered before stop) — corroborate craft + surface mark/nav gaps
+- **miner & planner — craft desync confirmed as a top blocker:** *"mc inventory shows spruce_log
+  x12 but mc craft spruce_planks says 0/1"*; planner *"couldn't fix in-place, had to spawn a whole
+  new card."* Both independently propose a **worker preflight `mc inventory` vs card requirements →
+  auto-block on mismatch** instead of burning turns.
+- **gatherer — fatal mark placement:** `lt_wood_ne` (29,65,23) was placed INSIDE a village
+  structure → trees unreachable, drops in walled cells, **0 logs after 15+ turns**. Wants scout
+  marks to pre-check standability/open-sky (`mc reachable`, or ≥3 blocks from any wall/door).
+- **scout — water all underground** (Y48-55, none on surface within 64); wants a `find_water
+  surface_only` verb; `mc scene` doesn't surface marks under `HERMES_NAV_BRIEF=1`.
+- **builder — server-protected cobble at the shelter entrance killed nav** (~8 wasted turns);
+  wants CONSTRUCT cards to pre-state protected cell coords (`mc regions --at` at card-creation).
+- **farmer & road — never executed in-world**, only FEEDBACK design; both want FEEDBACK cards to
+  **auto-connect to a CONSTRUCT card** (else advice never reaches execution) + a terrain-survey verb.
+- **miner — bodies spawn at Y65 surface** with no resources → wasted descent; wants spawn pre-flight.
+
+### Open levers (ranked)
+0. **Measurement integrity — DONE this session.** Run-scope the durable action logs at capture
+   (`config.ended_at` + windowed copy + `action-log-scope.json` audit) so counts mean what they say.
+1. **Residual `pos.floored` guard** — patch the remaining `b.entity.position.floored()` path in
+   reactive escape/lava handling (the Vec3 crash class).
+2. **Craft reliability** — (a) instrument craft (inventory source vs status) to PROVE desync, then
+   (b) resolver aliases, (c) 2×2 retries + fallback (the confirmed in-run desync), (d) bench
+   fallback hardening. Top in-world unblocker.
+3. **Worker preflight inventory check** (miner+planner ask) — convert doomed craft turns into early auto-blocks.
+4. **Mark reachability pre-check** (gatherer's village-mark failure class).
+5. **FEEDBACK→CONSTRUCT linkage** (farmer/road advisory work never executes).
+6. **GoalChanged command-overlap** — action-mutex/nav-arbiter. NOTE: 0 in-run for -6 (non-forest,
+   light worker activity); it dominated forest runs (-2/-3). Re-measure on a busier run before sizing.
+
+---
+
 ## 2026-06-20 — gv2-2026-06-20-3 postmortem (Phase 0 validation): evidence corrects earlier claims
 
 Capped 2h emergent run on `xiaomi/mimo-v2.5`, seed 63210 (SAME dense-forest world as

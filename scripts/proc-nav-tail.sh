@@ -9,6 +9,12 @@
 #   [hermes]    proto-logs-follow.py: planner/navigator/builder/* state.db
 #               reasoning + tool calls + tool responses
 #
+# NOTE: this is a LIVE `tail -F` of the current run's streams (run-current by
+# construction — it follows the live board + durable logs in real time). The genesis
+# run-scoping added to capture_run_artifacts (windowed actions-*.jsonl + ended_at) is an
+# ARCHIVAL concern only and does NOT affect what this tails. The two are orthogonal: this
+# shows live activity; the scoped artifacts are the post-run, run-isolated record.
+#
 # Usage:
 #   scripts/proc-nav-tail.sh                # default profiles, no reasoning
 #   scripts/proc-nav-tail.sh --reasoning    # include hidden reasoning blocks
