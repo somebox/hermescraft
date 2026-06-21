@@ -246,7 +246,10 @@ for f in glob.glob(art + "/actions-*.jsonl"):
         act = o.get("action") or "unknown"
         verbs[act] += 1
         if act == "craft":
-            diag = (o.get("observed_state") or {}).get("craft_diag") or {}
+            # pushAction writes craft_diag at the TOP LEVEL of the action-log row (it
+            # lifts it out of fail() observed_state). Fall back to observed_state for any
+            # row written by a path that kept it nested.
+            diag = o.get("craft_diag") or (o.get("observed_state") or {}).get("craft_diag") or {}
             if diag:
                 craft_diag_rows += 1
                 fo = diag.get("failure_origin") or "unknown"
