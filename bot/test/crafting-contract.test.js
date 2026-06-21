@@ -305,6 +305,116 @@ test('craft: #86 delta=0 with materials intact (no fallback) → CRAFT_NO_OP', a
   assert.equal(status[0].need, 1);
 });
 
+// ── craft_diag: the four failure_origins, intermediate vs desync classification ──
+
+test('craft_diag: preflight plank-missing with matching log present → intermediate_available, not desync', async () => {
+  const recipe = { requiresTable: false, result: { count: 4 }, inShape: [[{ id: 5 }], [{ id: 5 }]] };
+  const inv = [{ name: 'spruce_log', count: 12, type: 6 }];
+  const mockBot = makeMockBot({
+    inventoryItems: inv,
+    bot: { recipesFor: () => [recipe], recipesAll: () => [recipe] },
+  });
+  mockBot.inventory.items = () => inv.slice();
+  const services = createMockServices({
+    state: { world: { botReady: true, mcData: {
+      itemsByName: { stick: { id: 280 } },
+      blocksByName: { crafting_table: { id: 58 } },
+      items: { 5: { name: 'spruce_planks' } },
+    }, bot: mockBot } },
+    ensureBot: () => mockBot,
+    utils: { sleep: async () => {} },
+    getActions: () => ({}),
+    craft: {
+      resolveCraftItemName: (raw) => raw,
+      buildCraftPlan: () => ({ ok: true, missing: [{ name: 'spruce_planks', short: 2 }] }),
+      bestRecipeForInventory: (r) => r[0],
+    },
+  });
+  const r = await createCraftingActions(services).craft({ item: 'stick', count: 1 });
+  assertContract(r);
+  assert.equal(r.error.code, 'MISSING_INGREDIENTS');
+  const d = r.error.observed_state.craft_diag;
+  assert.equal(d.failure_origin, 'preflight_plan_missing');
+  assert.equal(d.intermediate_available, true);   // spruce_log on hand crafts spruce_planks
+  assert.equal(d.snapshot_desync, false);          // planks genuinely absent — not a desync
+  const ing = d.ingredients.find((x) => x.name === 'spruce_planks');
+  assert.equal(ing.need, 2);
+  assert.equal(ing.have_before, 0);
+});
+
+test('craft_diag: mineflayer "missing" thrown while materials present → snapshot_desync', async () => {
+  const recipe = { requiresTable: false, result: { count: 1 }, inShape: [[{ id: 280 }], [{ id: 280 }]] };
+  const inv = [{ name: 'stick', count: 8, type: 280 }];
+  const mockBot = makeMockBot({
+    inventoryItems: inv,
+    bot: {
+      recipesFor: () => [recipe], recipesAll: () => [recipe],
+      craft: async () => { throw new Error('missing ingredients'); },
+    },
+  });
+  mockBot.inventory.items = () => inv.slice();
+  const services = createMockServices({
+    state: { world: { botReady: true, mcData: {
+      itemsByName: { ladder: { id: 65 } },
+      blocksByName: { crafting_table: { id: 58 } },
+      items: { 280: { name: 'stick' } },
+    }, bot: mockBot } },
+    ensureBot: () => mockBot,
+    utils: { sleep: async () => {} },
+    getActions: () => ({}),
+    craft: {
+      resolveCraftItemName: (raw) => raw,
+      buildCraftPlan: () => ({ ok: true, missing: [] }),
+      bestRecipeForInventory: (r) => r[0],
+    },
+  });
+  const r = await createCraftingActions(services).craft({ item: 'ladder', count: 1 });
+  assertContract(r);
+  assert.equal(r.error.code, 'MISSING_INGREDIENTS');
+  const d = r.error.observed_state.craft_diag;
+  assert.equal(d.failure_origin, 'mineflayer_missing_throw');
+  assert.equal(d.snapshot_desync, true);           // stick present yet mineflayer claimed missing
+  assert.equal(d.intermediate_available, false);
+});
+
+test('craft_diag: CRAFT_NO_OP carries failure_origin + after/settle snapshots, no desync', async () => {
+  const recipe = { requiresTable: true, result: { count: 1 }, inShape: [[{ id: 4 }]] };
+  const inv = [{ name: 'cobblestone', count: 8, type: 4 }];
+  const mockBot = makeMockBot({
+    inventoryItems: inv,
+    bot: {
+      recipesFor: () => [recipe], recipesAll: () => [recipe],
+      craft: async () => {}, // no-op; materials intact
+      findBlock: () => ({ position: { x: 0, y: 64, z: 0 }, name: 'crafting_table' }),
+    },
+  });
+  mockBot.inventory.items = () => inv.slice();
+  const services = createMockServices({
+    state: { world: { botReady: true, mcData: {
+      itemsByName: { stone: { id: 1 } },
+      blocksByName: { crafting_table: { id: 58 }, cobblestone: { id: 4 } },
+      items: { 4: { name: 'cobblestone' } },
+    }, bot: mockBot } },
+    ensureBot: () => mockBot,
+    utils: { sleep: async () => {} },
+    getActions: () => ({}),
+    craft: {
+      resolveCraftItemName: (raw) => raw,
+      buildCraftPlan: () => ({ ok: true, missing: [] }),
+      bestRecipeForInventory: (r) => r[0],
+    },
+  });
+  const r = await createCraftingActions(services).craft({ item: 'stone', count: 1 });
+  assertContract(r);
+  assert.equal(r.error.code, 'CRAFT_NO_OP');
+  const d = r.error.observed_state.craft_diag;
+  assert.equal(d.failure_origin, 'delta_noop_materials_present');
+  assert.equal(d.snapshot_desync, false);          // present-but-produced-0 is a no-op, not a missing claim
+  assert.equal(d.intermediate_available, false);
+  assert.deepEqual(d.inventory_after_settle, { cobblestone: 8 });
+  assert.equal(d.ingredients.find((x) => x.name === 'cobblestone').have_settled, 8);
+});
+
 test('craft: reason= flows through to data._reason on success', async () => {
   // Force a success path: bot.craft succeeds + inventory shows positive delta.
   let inv = [];

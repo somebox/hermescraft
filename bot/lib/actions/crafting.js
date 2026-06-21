@@ -1,7 +1,7 @@
 // @size-exempt: recipe-handling verbs + craft fallback helper
 import { Vec3 } from 'vec3';
 import pathfinderPkg from 'mineflayer-pathfinder';
-import { ingredientCountsFromSlots, recipeIngredientMap } from '../shared/recipe-ingredients.js';
+import { ingredientCountsFromSlots, recipeIngredientMap, countSatisfyingFromMap, intermediateSourceItem } from '../shared/recipe-ingredients.js';
 import { executeServerCommand, paperMcpConfig } from '../runtime/paper-mcp.js';
 import { raceWithTimeout, timeoutError, OperationTimeoutError, ACTION_CAPS_MS, pathfindGotoNear } from './_helpers.js';
 import { ok, fail } from '../shared/action-contract.js';
@@ -280,6 +280,12 @@ export function createCraftingActions(services) {
       }
 
       if (plan && plan.ok && plan.missing && plan.missing.length > 0) {
+        const craft_diag = await buildCraftDiag({
+          origin: 'preflight_plan_missing', item, itemName, recipe, invocations, requiresBench,
+          requiredIngs: recipeIngredientMap(recipe, ctx.world.mcData),
+          startedInventory, endedInventory: startedInventory, attempted: false,
+          declaredShort: plan.missing.map(m => m.recipe_canonical || m.name),
+        });
         return fail(
           'MISSING_INGREDIENTS',
           `Can't craft ${itemName} x${count} — need: ${plan.missing.map(m => `${m.short}x ${m.name}`).join(', ')}.`,
@@ -290,6 +296,7 @@ export function createCraftingActions(services) {
               missing: plan.missing.map(m => ({ name: m.name, short: m.short })),
               started_inventory: startedInventory,
               ...(autoFetched ? { auto_fetched: autoFetched } : {}),
+              craft_diag,
             },
             retry_safe: false,
           },
@@ -387,6 +394,17 @@ export function createCraftingActions(services) {
           // computes per-recipe requirements for the agent.
           const slots = recipe.inShape ? recipe.inShape.flat() : recipe.ingredients?.flat() || [];
           const ings = ingredientCountsFromSlots(slots, ctx.world.mcData, count);
+          // Equivalence-aware short list. If NONE are short (materials present yet
+          // mineflayer threw "missing" — the #98 case), declare all so snapshot_desync trips.
+          const shortNames = Object.keys(requiredIngs).filter(
+            (n) => countSatisfyingFromMap(n, startedInventory) < requiredIngs[n] * invocations,
+          );
+          const craft_diag = await buildCraftDiag({
+            origin: 'mineflayer_missing_throw', item, itemName, recipe, invocations, requiresBench,
+            requiredIngs, startedInventory, endedInventory: inventoryAt(), attempted: true,
+            declaredShort: shortNames.length ? shortNames : Object.keys(requiredIngs),
+            inventoryAt, sleep,
+          });
           return fail(
             'MISSING_INGREDIENTS',
             `Mineflayer reported missing ingredients for ${itemName} x${count}.`,
@@ -397,6 +415,7 @@ export function createCraftingActions(services) {
                 missing: Object.entries(ings).map(([name, short]) => ({ name, short })),
                 started_inventory: startedInventory,
                 mineflayer_error: msg,
+                craft_diag,
               },
               retry_safe: false,
             },
@@ -462,6 +481,11 @@ export function createCraftingActions(services) {
         });
         const missing = shortfall.filter((s) => s.short > 0);
         if (missing.length > 0) {
+          const craft_diag = await buildCraftDiag({
+            origin: 'delta_noop_missing', item, itemName, recipe, invocations, requiresBench,
+            requiredIngs, startedInventory, endedInventory, attempted: true,
+            declaredShort: missing.map((s) => s.name), inventoryAt, sleep,
+          });
           return fail(
             'MISSING_INGREDIENTS',
             `Can't craft ${itemName} x${count} — missing: ${missing.map((s) => `${s.short}× ${s.name} (have ${s.have}/${s.need})`).join(', ')}.`,
@@ -474,6 +498,7 @@ export function createCraftingActions(services) {
                 missing: missing.map((s) => ({ name: s.name, short: s.short, have: s.have, need: s.need })),
                 ingredients_status: shortfall,
                 started_inventory: startedInventory,
+                craft_diag,
               },
               retry_safe: false,
             },
@@ -500,6 +525,11 @@ export function createCraftingActions(services) {
             : tableDist > 4
               ? `A crafting_table was ${tableDist} blocks away — out of the ~4-block working range. Move within 2 blocks of it (or place a fresh one beside you), face it, and retry.`
               : `A crafting_table was in range (${tableDist} block(s)) yet the craft no-op'd — this is the known mineflayer/Paper 1.21 window bug, not a server outage. Retry ONCE; if it persists, place a fresh crafting_table right beside you and retry. Do not declare crafting broken.`;
+        const craft_diag = await buildCraftDiag({
+          origin: 'delta_noop_materials_present', item, itemName, recipe, invocations, requiresBench,
+          requiredIngs, startedInventory, endedInventory, attempted: true,
+          declaredShort: [], inventoryAt, sleep,
+        });
         return fail(
           'CRAFT_NO_OP',
           `Craft of ${itemName} x${count} produced 0 with materials present (${shortfall.map((s) => `${s.name} ${s.have}/${s.need}`).join(', ')}). Crafting works server-wide — this is a table-range/orientation issue, not a server fault. ${rangeMsg}`,
@@ -514,6 +544,7 @@ export function createCraftingActions(services) {
               table_distance: tableDist,
               started_inventory: startedInventory,
               ended_inventory: endedInventory,
+              craft_diag,
             },
             retry_safe: true,
             next_action_hint: requiresBench
@@ -774,6 +805,63 @@ export function createCraftingActions(services) {
   };
 
   return handlers;
+}
+
+/**
+ * Structured craft diagnostics for the action JSONL (lands in observed_state, not just
+ * bot logs). Makes the "craft desync" classes PROVABLE rather than inferred:
+ *   failure_origin ∈ { preflight_plan_missing, mineflayer_missing_throw,
+ *                      delta_noop_missing, delta_noop_materials_present }
+ *   intermediate_available — a declared-short ingredient is itself craftable from a raw
+ *                            material on hand (spruce_planks short, spruce_log present) → NOT desync
+ *   snapshot_desync (narrow) — the branch declared an ingredient unsatisfiable yet the SAME
+ *                            snapshot (equivalence-counted, like recipe selection) has have >= need
+ * `declaredShort` is the set of ingredient names the calling branch couldn't satisfy.
+ * The settle re-read (inventory_after_settle) only runs when a craft was attempted —
+ * catching a result the server materialized a beat after our delta check.
+ */
+export async function buildCraftDiag({
+  origin, item, itemName, recipe, invocations, requiresBench,
+  requiredIngs, startedInventory, endedInventory,
+  declaredShort = [], attempted = false, inventoryAt = null, sleep = null,
+}) {
+  const before = startedInventory || {};
+  const after = endedInventory || before;
+  let settled = after;
+  if (attempted && typeof inventoryAt === 'function' && typeof sleep === 'function') {
+    try { await sleep(400); settled = inventoryAt(); } catch { /* best-effort */ }
+  }
+  const need = (n) => (requiredIngs?.[n] || 0) * invocations;
+  const ingredients = Object.keys(requiredIngs || {}).map((name) => ({
+    name,
+    need: need(name),
+    have_before: countSatisfyingFromMap(name, before),
+    have_after: countSatisfyingFromMap(name, after),
+    have_settled: countSatisfyingFromMap(name, settled),
+  }));
+  const snapshot_desync = declaredShort.some(
+    (n) => need(n) > 0 && countSatisfyingFromMap(n, before) >= need(n),
+  );
+  const intermediate_available = declaredShort.some((n) => {
+    const src = intermediateSourceItem(n);
+    return !!src && (before[src] || 0) > 0;
+  });
+  return {
+    failure_origin: origin,
+    requested_item: item,
+    resolved_item: itemName,
+    recipe_result: recipe?.result ? { name: recipe.result.name, count: recipe.result.count } : null,
+    invocations,
+    requires_table: requiresBench,
+    selected_recipe_ingredients: requiredIngs || {},
+    inventory_before: before,
+    inventory_after_attempt: after,
+    inventory_after_settle: settled,
+    ingredients,
+    declared_short: declaredShort,
+    intermediate_available,
+    snapshot_desync,
+  };
 }
 
 /**

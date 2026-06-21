@@ -90,6 +90,31 @@ function countSatisfying(name, invItems) {
 }
 
 /**
+ * Same as countSatisfying but reads a reduced `{ name: count }` inventory map
+ * (e.g. from a craft handler's inventoryAt() snapshot) instead of an items array.
+ * Exported so craft DIAGNOSTICS count an ingredient the SAME way recipe selection
+ * does (tag-equivalence aware) — no parallel counting logic.
+ */
+export function countSatisfyingFromMap(name, invMap) {
+  const equivalents = INGREDIENT_TAG_EQUIVALENTS[name] || [name];
+  return equivalents.reduce((s, e) => s + ((invMap && invMap[e]) || 0), 0);
+}
+
+const PLANK_TO_LOG = Object.fromEntries(
+  Object.entries(LOG_TO_PLANKS).map(([log, plank]) => [plank, log]),
+);
+
+/**
+ * The raw material that crafts into `name` (e.g. spruce_planks -> spruce_log), or
+ * null if `name` isn't a known intermediate. Reuses LOG_TO_PLANKS (no duplicate map).
+ * Lets craft diagnostics tell a missing INTERMEDIATE (raw material on hand, just not
+ * crafted yet) apart from a real inventory desync.
+ */
+export function intermediateSourceItem(name) {
+  return PLANK_TO_LOG[name] || null;
+}
+
+/**
  * For a tagged ingredient, return the variant the agent should prefer to obtain.
  * Surfacing `cobbled_deepslate` to the agent when `cobblestone` would do is
  * misleading — the agent goes mining deepslate when the recipe accepts the
