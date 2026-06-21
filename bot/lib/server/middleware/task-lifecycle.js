@@ -72,6 +72,22 @@ export function pushAction(ctx, action, status, startedAt, result, error, reason
     detail: status === 'done' ? actionSummary(result) : (error || '').slice(0, 80),
   };
   if (reason) entry.reason = reason;
+  // Surface structured craft diagnostics into the durable action JSONL so a desync can
+  // be CLASSIFIED offline (failure_origin + intermediate_available/snapshot_desync). It
+  // rides in the fail() observed_state, which otherwise never reaches this log — only the
+  // 80-char `detail` does. Compact form (drop the bulky inventory maps; keep the
+  // per-ingredient need/have which is what classification needs).
+  if (status === 'error' && result && typeof result === 'object') {
+    const cd = result.error?.observed_state?.craft_diag;
+    if (cd) {
+      entry.craft_diag = {
+        failure_origin: cd.failure_origin,
+        intermediate_available: cd.intermediate_available,
+        snapshot_desync: cd.snapshot_desync,
+        ingredients: cd.ingredients,
+      };
+    }
+  }
   ctx.tasks.actionHistory.push(entry);
   if (ctx.tasks.actionHistory.length > ctx.tasks.MAX_ACTION_HISTORY) ctx.tasks.actionHistory.shift();
   appendActionLog(ctx, entry);
@@ -191,7 +207,10 @@ export function logReadNavTelemetry(services, actionName) {
  */
 export async function dispatchAction(services, actionName, body, opts) {
   const { mode, actionRegistry, briefState, createTaskRecord, pushTaskHistoryRecord } = opts;
-  const { state: ctx, ensureBot } = services;
+  const { state: ctx } = services;
+  const runningTask = ctx.tasks.currentTask && ctx.tasks.currentTask.status === 'running'
+    ? ctx.tasks.currentTask
+    : null;
 
   // Unknown-action check is identical in both modes.
   const actionFn = actionRegistry.get(actionName);
@@ -205,13 +224,21 @@ export async function dispatchAction(services, actionName, body, opts) {
   }
 
   if (mode === 'task') {
-    // Conflict: an existing bg task is still running.
-    if (ctx.tasks.currentTask && ctx.tasks.currentTask.status === 'running') {
-      const elapsedS = Math.round((Date.now() - ctx.tasks.currentTask.started) / 1000);
+    if (ctx.tasks.syncActionInFlight) {
+      const elapsedS = Math.round((Date.now() - (ctx.tasks.syncActionStartedAt || Date.now())) / 1000);
       return {
         ok: false,
         status: 409,
-        error: `Task "${ctx.tasks.currentTask.action}" is already running (${elapsedS}s). POST /task/cancel first.`,
+        error: `Sync action "${ctx.tasks.syncActionName || 'unknown'}" is already running (${elapsedS}s). Retry after it finishes.`,
+      };
+    }
+    // Conflict: an existing bg task is still running.
+    if (runningTask) {
+      const elapsedS = Math.round((Date.now() - runningTask.started) / 1000);
+      return {
+        ok: false,
+        status: 409,
+        error: `Task "${runningTask.action}" is already running (${elapsedS}s). POST /task/cancel first.`,
       };
     }
 
@@ -294,6 +321,22 @@ export async function dispatchAction(services, actionName, body, opts) {
   }
 
   // ── Sync mode ──
+  if (ctx.tasks.syncActionInFlight) {
+    const elapsedS = Math.round((Date.now() - (ctx.tasks.syncActionStartedAt || Date.now())) / 1000);
+    return {
+      ok: false,
+      status: 409,
+      error: `Sync action "${ctx.tasks.syncActionName || 'unknown'}" is already running (${elapsedS}s). Retry after it finishes.`,
+    };
+  }
+  if (runningTask) {
+    const elapsedS = Math.round((Date.now() - runningTask.started) / 1000);
+    return {
+      ok: false,
+      status: 409,
+      error: `Task "${runningTask.action}" is already running (${elapsedS}s). Retry after it finishes or POST /task/cancel first.`,
+    };
+  }
   const startedAt = Date.now();
   const reason = typeof body?.reason === 'string' ? body.reason.trim().slice(0, 120) : null;
   /** @type {Record<string, any>} */
@@ -315,12 +358,6 @@ export async function dispatchAction(services, actionName, body, opts) {
   ctx.tasks.syncActionInFlight = true;
   ctx.tasks.syncActionName = actionName;
   ctx.tasks.syncActionStartedAt = startedAt;
-
-  // Clear any running bg task's pathfinder goal so sync action can use pathfinder
-  // without triggering "goal was changed" on the sync action.
-  if (ctx.tasks.currentTask && ctx.tasks.currentTask.status === 'running') {
-    try { ensureBot().pathfinder.setGoal(null); } catch { /* ignore */ }
-  }
 
   try {
     let result = await actionFn(body);

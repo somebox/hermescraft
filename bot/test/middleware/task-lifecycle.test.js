@@ -151,6 +151,28 @@ test('sync: clears syncActionInFlight state when handler throws', async () => {
   assert.equal(state.tasks.syncActionName, null);
 });
 
+test('sync: returns 409 when another sync action is already running', async () => {
+  const { state, services } = fixture();
+  state.tasks.syncActionInFlight = true;
+  state.tasks.syncActionName = 'dig';
+  state.tasks.syncActionStartedAt = Date.now() - 1200;
+  const reg = buildRegistry({ move: async () => ok({ result: 'moved' }) });
+  const r = await dispatchAction(services, 'move', {}, { mode: 'sync', ...baseOpts(reg) });
+  assert.equal(r.ok, false);
+  assert.equal(r.status, 409);
+  assert.match(r.error, /sync action "dig" is already running/i);
+});
+
+test('sync: returns 409 when a task is already running', async () => {
+  const { state, services } = fixture();
+  state.tasks.currentTask = { action: 'fell_tree', status: 'running', started: Date.now() - 5000 };
+  const reg = buildRegistry({ move: async () => ok({ result: 'moved' }) });
+  const r = await dispatchAction(services, 'move', {}, { mode: 'sync', ...baseOpts(reg) });
+  assert.equal(r.ok, false);
+  assert.equal(r.status, 409);
+  assert.match(r.error, /Task "fell_tree" is already running/i);
+});
+
 // ── Task mode ────────────────────────────────────────────────────────────
 
 test('task: returns task_id immediately; result lands in actionHistory async', async () => {
@@ -187,6 +209,18 @@ test('task: returns 409 conflict when a task is already running', async () => {
   assert.match(r.error, /already running/i);
 });
 
+test('task: returns 409 conflict when a sync action is already running', async () => {
+  const { state, services } = fixture();
+  state.tasks.syncActionInFlight = true;
+  state.tasks.syncActionName = 'move';
+  state.tasks.syncActionStartedAt = Date.now() - 500;
+  const reg = buildRegistry({ act: async () => ok() });
+  const r = await dispatchAction(services, 'act', {}, { mode: 'task', ...baseOpts(reg) });
+  assert.equal(r.ok, false);
+  assert.equal(r.status, 409);
+  assert.match(r.error, /sync action "move" is already running/i);
+});
+
 // ── pushAction / recordActionOutcome / recordLastApiError ───────────────
 
 test('pushAction trims actionHistory to MAX_ACTION_HISTORY', () => {
@@ -204,6 +238,38 @@ test('pushAction omits reason field when reason not supplied', () => {
   const state = createBotState({ behaviors: { fairPlay: true } });
   pushAction(state, 'verb', 'done', Date.now(), { result: 'r' });
   assert.equal(state.tasks.actionHistory[0].reason, undefined);
+});
+
+test('pushAction copies a compact craft_diag from a soft-failure observed_state', () => {
+  const state = createBotState({ behaviors: { fairPlay: true } });
+  const result = {
+    ok: false,
+    error: {
+      code: 'CRAFT_NO_OP',
+      message: 'produced 0 with materials present',
+      observed_state: {
+        craft_diag: {
+          failure_origin: 'delta_noop_materials_present',
+          intermediate_available: false,
+          snapshot_desync: false,
+          ingredients: [{ name: 'oak_planks', need: 2, have_before: 6, have_after: 6, have_settled: 6 }],
+          inventory_before: { oak_planks: 6, oak_log: 20 }, // bulky map must be dropped
+        },
+      },
+    },
+  };
+  pushAction(state, 'craft', 'error', Date.now(), result, result.error.message);
+  const e = state.tasks.actionHistory[0];
+  assert.equal(e.craft_diag.failure_origin, 'delta_noop_materials_present');
+  assert.equal(e.craft_diag.snapshot_desync, false);
+  assert.equal(e.craft_diag.ingredients[0].have_settled, 6);
+  assert.equal(e.craft_diag.inventory_before, undefined); // compacted out
+});
+
+test('pushAction omits craft_diag when none present (non-craft error)', () => {
+  const state = createBotState({ behaviors: { fairPlay: true } });
+  pushAction(state, 'move', 'error', Date.now(), { ok: false, error: { message: 'stuck' } }, 'stuck');
+  assert.equal(state.tasks.actionHistory[0].craft_diag, undefined);
 });
 
 test('recordActionOutcome stores event with error msg', () => {
