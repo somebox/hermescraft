@@ -178,6 +178,28 @@ describe('bot lease registry', () => {
     assert.equal(r.bot, 'near1');
   });
 
+  it('existing card continuity beats --near distance', async () => {
+    __testOnly_setPool(() => ({
+      near1: { bot: 'near1', api_url: 'http://127.0.0.1:4001', username: 'N', port: 4001, caps: null },
+      far1: { bot: 'far1', api_url: 'http://127.0.0.1:4002', username: 'F', port: 4002, caps: null },
+    }));
+    __testOnly_setHealthProbe(async (url) =>
+      url.includes('4001') ? { position: { x: 0, y: 0, z: 0 } } : { position: { x: 100, y: 0, z: 0 } },
+    );
+
+    // Seed continuity for t_same onto far1.
+    process.env.HERMES_KANBAN_TASK = 't_same';
+    const first = await checkout({ bot: 'far1', ttl: 120 });
+    assert.equal(first.ok, true);
+    await release();
+
+    // Same card asks again with --near favoring near1; continuity should keep far1.
+    process.env.HERMES_KANBAN_TASK = 't_same';
+    const cont = await checkout({ near: { x: 0, y: 0, z: 0 }, ttl: 120 });
+    assert.equal(cont.ok, true);
+    assert.equal(cont.bot, 'far1');
+  });
+
   // ── D2: --cap capability filter ──────────────────────────────────────────
   it('checkout --cap excludes incapable bodies', async () => {
     __testOnly_setPool(() => ({

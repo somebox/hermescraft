@@ -17,6 +17,7 @@ describe('cli results', () => {
     const aborted = classifyError({ networkError: 'AbortError: aborted' }, 'collect');
     assert.equal(aborted.error_type, 'unreachable');
     assert.match(aborted.hint || '', /MC_HTTP_LONG_ACTION_MS/i);
+    assert.match(aborted.hint || '', /may still finish on the server/i);
 
     const conflict = classifyError({ httpStatus: 409 }, 'task_cancel');
     assert.equal(conflict.error_type, 'task_conflict');

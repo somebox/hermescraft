@@ -105,6 +105,37 @@ describe('cli dispatch', () => {
     assert.equal(body.mark, 'wheat_farm');
   });
 
+  it('mark parses trailing --at X Y Z (canonical form)', () => {
+    const def = defOf('mark');
+    const built = buildHttpRequest(def, 'mark', ['lt_iron_ne', 'iron vein', '--at', '12', '64', '30']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.name, 'lt_iron_ne');
+    assert.equal(body.note, 'iron vein');
+    assert.deepEqual(body.at, { x: 12, y: 64, z: 30 });
+    assert.equal(body.at_mark, undefined);
+  });
+
+  it('mark_update parses trailing --at @MARK and preserves note text', () => {
+    const def = defOf('mark_update');
+    const built = buildHttpRequest(def, 'mark_update', ['lt_iron_ne', 'refined note', '--at', '@mine_entrance']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.name, 'lt_iron_ne');
+    assert.equal(body.note, 'refined note');
+    assert.equal(body.at_mark, 'mine_entrance');
+    assert.equal(body.at, undefined);
+  });
+
+  it('mark still supports leading flags and mixed placement', () => {
+    const def = defOf('mark');
+    const built = buildHttpRequest(def, 'mark', ['--category', 'resource', 'lt_coal', '--radius', '8', 'coal seam', '--at', '3', '61', '-9']);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.name, 'lt_coal');
+    assert.equal(body.note, 'coal seam');
+    assert.equal(body.category, 'resource');
+    assert.equal(body.radius, 8);
+    assert.deepEqual(body.at, { x: 3, y: 61, z: -9 });
+  });
+
   it('unremind parses id', () => {
     const def = defOf('unremind');
     const built = buildHttpRequest(def, 'unremind', ['3']);

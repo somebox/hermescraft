@@ -2237,7 +2237,7 @@ export const RAW_COMMAND_DEFS = [
   }),
   g('mark_update', 'memory', ['mark-up', 'mu'], {
     description: 'Move existing MARK to current position',
-    examples: ["mc mark_update"],
+    examples: ['mc mark_update base_entry "better anchor"', 'mc mark_update base_entry --at 12 64 30', 'mc mark_update base_entry --at @shelter_site'],
     method: 'POST',
     path: '/action/mark_update',
     customParse: true,
@@ -2249,6 +2249,8 @@ export const RAW_COMMAND_DEFS = [
         ...(p.radius !== undefined ? { radius: p.radius } : {}),
         ...(p.mode !== undefined ? { mode: p.mode } : {}),
         ...(p.stale !== undefined ? { stale: p.stale } : {}),
+        ...(p.at && typeof p.at === 'object' ? { at: p.at } : {}),
+        ...(p.at_mark ? { at_mark: p.at_mark } : {}),
       }),
   }),
   g('go_mark', 'memory', [], {

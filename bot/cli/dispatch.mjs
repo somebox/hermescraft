@@ -16,23 +16,47 @@ const empty = '{}';
 function parseMarkFlags(positional) {
   const out = /** @type {Record<string, unknown>} */ ({});
   const q = positional.slice();
-  while (q.length && String(q[0]).startsWith('--')) {
-    const f = String(q.shift());
-    if (f === '--category' || f === '--cat') out.category = String(q.shift() ?? '');
-    else if (f === '--radius') out.radius = Number(q.shift());
-    else if (f === '--mode') out.mode = String(q.shift() ?? '');
-    else if (f === '--stale') out.stale = String(q.shift() ?? 'true') === 'true';
-    else if (f === '--at') {
-      const a = String(q.shift() ?? '');
-      if (a.startsWith('@')) out.at_mark = a.slice(1);
-      else {
-        const y = q.shift();
-        const z = q.shift();
-        out.at = { x: Number(a), y: Number(y), z: Number(z) };
+  const rest = [];
+  for (let i = 0; i < q.length; ) {
+    const f = String(q[i]);
+    if (!f.startsWith('--')) {
+      rest.push(String(q[i]));
+      i += 1;
+      continue;
+    }
+    if (f === '--category' || f === '--cat') {
+      i += 2;
+      out.category = String(q[i - 1] ?? '');
+      continue;
+    } else if (f === '--radius') {
+      i += 2;
+      out.radius = Number(q[i - 1]);
+      continue;
+    } else if (f === '--mode') {
+      i += 2;
+      out.mode = String(q[i - 1] ?? '');
+      continue;
+    } else if (f === '--stale') {
+      i += 2;
+      out.stale = String(q[i - 1] ?? 'true') === 'true';
+      continue;
+    } else if (f === '--at') {
+      const a = String(q[i + 1] ?? '');
+      if (!a) throw new Error('missing_value:--at');
+      if (a.startsWith('@')) {
+        out.at_mark = a.slice(1);
+        i += 2;
+        continue;
       }
+      const y = q[i + 2];
+      const z = q[i + 3];
+      if (y == null || z == null) throw new Error('missing_coords:--at requires X Y Z');
+      out.at = { x: Number(a), y: Number(y), z: Number(z) };
+      i += 4;
+      continue;
     } else throw new Error(`unknown_flag:${f}`);
   }
-  out._rest = q;
+  out._rest = rest;
   return out;
 }
 

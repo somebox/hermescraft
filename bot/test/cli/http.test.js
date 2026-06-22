@@ -6,6 +6,7 @@ import {
   classifyPathDeadline,
   LONG_ACTION_DEADLINE_MS,
   READ_DEADLINE_MS,
+  requestHttp,
 } from '../../cli/http.mjs';
 
 describe('cli http deadlines', () => {
@@ -49,5 +50,25 @@ describe('cli http deadlines', () => {
       classifyPathDeadline('POST', '/action/collect?x=1'),
       LONG_ACTION_DEADLINE_MS,
     );
+  });
+
+  it('POST abort returns network error without retries (L3 attribution baseline)', async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    try {
+      globalThis.fetch = async () => {
+        calls += 1;
+        const err = new Error('aborted');
+        err.name = 'AbortError';
+        throw err;
+      };
+      const r = await requestHttp('http://127.0.0.1:3000', '/action/fell_tree', { method: 'POST' });
+      assert.strictEqual(r.ok, false);
+      assert.strictEqual(r.httpStatus, 0);
+      assert.match(String(r.networkError || ''), /aborted/i);
+      assert.strictEqual(calls, 1, 'POST path should not retry on abort');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

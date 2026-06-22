@@ -79,6 +79,11 @@ function ensureSchema(db) {
       bot TEXT PRIMARY KEY,
       mark TEXT NOT NULL,
       ts_ms INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS bot_last_task (
+      task_id TEXT PRIMARY KEY,
+      bot TEXT NOT NULL,
+      ts_ms INTEGER NOT NULL
     );`,
     ],
     { encoding: 'utf8' },
@@ -266,6 +271,18 @@ function recordLastMark(bot, mark) {
   );
 }
 
+function lastBotForTask(taskId) {
+  const out = runSql(`SELECT bot FROM bot_last_task WHERE task_id='${sqlQuote(taskId)}';`);
+  return out ? out.trim() : null;
+}
+
+function recordTaskContinuity(taskId, bot) {
+  runSql(
+    `INSERT INTO bot_last_task (task_id, bot, ts_ms) VALUES ('${sqlQuote(taskId)}','${sqlQuote(bot)}',${Date.now()})
+     ON CONFLICT(task_id) DO UPDATE SET bot=excluded.bot, ts_ms=excluded.ts_ms;`,
+  );
+}
+
 /** @type {((info: { bot: string, leaseVersion: number, board: string, task: string }) => void) | null} */
 let stampOverride = null;
 
@@ -365,36 +382,42 @@ async function buildHolders(leasedRows, pool, now) {
 
 /**
  * Rank free candidates by the board-dynamics pull policy:
- * continuity (last worked the mark) → nearest (--near) → least-recently-leased
+ * task continuity (same card/body) → mark continuity (last worked the mark) →
+ * nearest (--near) → least-recently-leased
  * → lexical. `distances`/`mark` are optional; omitting them reduces to the
  * original LRL→lexical tie-break.
- * @param {{ leasedRows?: LeaseRow[], mark?: string|null, distances?: Map<string,number>|null }} opts
+ * @param {{ leasedRows?: LeaseRow[], taskId?: string|null, mark?: string|null, distances?: Map<string,number>|null }} opts
  */
 function rankCandidates(candidates, opts = {}) {
-  const { leasedRows = [], mark = null, distances = null } = opts;
+  const { leasedRows = [], taskId = null, mark = null, distances = null } = opts;
   const byBot = Object.fromEntries(leasedRows.map((r) => [r.bot, r]));
+  const taskPreferredBot = taskId ? lastBotForTask(taskId) : null;
   const continuity = new Set(
     mark ? candidates.filter((c) => lastMarkFor(c.bot) === mark).map((c) => c.bot) : [],
   );
   return [...candidates].sort((a, b) => {
-    // 1. continuity: a body that last worked this mark comes first.
+    // 1. task continuity: for an existing card, prefer the prior body.
+    const ta = taskPreferredBot && a.bot === taskPreferredBot ? 0 : 1;
+    const tb = taskPreferredBot && b.bot === taskPreferredBot ? 0 : 1;
+    if (ta !== tb) return ta - tb;
+    // 2. mark continuity: a body that last worked this mark comes first.
     const ca = continuity.has(a.bot) ? 0 : 1;
     const cb = continuity.has(b.bot) ? 0 : 1;
     if (ca !== cb) return ca - cb;
-    // 2. nearest to --near (only when distances provided).
+    // 3. nearest to --near (only when distances provided).
     if (distances) {
       const da = distances.has(a.bot) ? distances.get(a.bot) : Infinity;
       const db = distances.has(b.bot) ? distances.get(b.bot) : Infinity;
       if (da !== db) return da - db;
     }
-    // 3. least-recently leased (never-leased first).
+    // 4. least-recently leased (never-leased first).
     const la = byBot[a.bot]?.leased_at_ms ?? 0;
     const lb = byBot[b.bot]?.leased_at_ms ?? 0;
     const aNull = la === 0;
     const bNull = lb === 0;
     if (aNull !== bNull) return aNull ? -1 : 1;
     if (la !== lb) return la - lb;
-    // 4. lexical.
+    // 5. lexical.
     return a.bot.localeCompare(b.bot);
   });
 }
@@ -404,6 +427,7 @@ function rankCandidates(candidates, opts = {}) {
  */
 export async function checkout(opts = {}) {
   const owner_id = requireOwnerForMutation();
+  const taskId = opts.task ? String(opts.task) : String(process.env.HERMES_KANBAN_TASK || '').trim();
   const now = Date.now();
   const ttlS = Number(opts.ttl) > 0 ? Number(opts.ttl) : DEFAULT_TTL_S;
   const expires = now + ttlS * 1000;
@@ -488,7 +512,12 @@ export async function checkout(opts = {}) {
       }),
     );
   }
-  const ordered = rankCandidates(rankSet, { leasedRows, mark: opts.mark || null, distances });
+  const ordered = rankCandidates(rankSet, {
+    leasedRows,
+    taskId: taskId || null,
+    mark: opts.mark || null,
+    distances,
+  });
 
   for (const entry of ordered) {
     const prev = leaseForBot(entry.bot);
@@ -519,6 +548,7 @@ export async function checkout(opts = {}) {
     runSql(insertSql);
     const got = leaseForBot(entry.bot);
     if (got && got.owner_id === owner_id && got.expires_at_ms >= now) {
+      if (taskId) recordTaskContinuity(taskId, got.bot);
       if (opts.mark) recordLastMark(got.bot, String(opts.mark)); // D3 continuity
       stampCard(got.bot, got.lease_version); // D4 audit (best-effort)
       return {
