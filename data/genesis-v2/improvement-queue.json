@@ -152,7 +152,7 @@
     },
     {
       "work_id": "gv2-verify-layer-l0",
-      "status": "proposed",
+      "status": "verified",
       "type": "tooling-design",
       "title": "verify_layer(L0): read-only rcon pad-acceptance gate (water==0, air==0, no fixture-over-air)",
       "source_run_id": "gv2-2026-06-22-1",
@@ -167,8 +167,16 @@
       "candidate_direction": "Spec doc + impl: verify_layer(origin, footprint, offset, expected) -> probes layer y=origin_y+offset via execute-if-block (read-only), returns per-cell coverage + offending cells; L0 gate = air==0 AND water==0 over footprint+1-ring apron; fixture gate = each fixture present AND block-below==slab. Wire as a [VERIFY] card kind or post-CONSTRUCT scoring hook so a flooded pad can't score shell=yes uncontested.",
       "blocked_by": "None for the read-only verify tool; build_layer (separate) depends on it.",
       "expected_metrics": null,
-      "notes": "PROPOSED (operator default path: spec/implement L0 verify_layer before build_layer). Pillar 2 of the 3-pillar bulletproof base build. SPEC captured: docs/architecture/base-build-layered.md (verify_layer + build_layer contracts, L0/L1/L2 gates, wiring as [VERIFY] card / scorecard viability sub-metric).",
-      "spec_doc": "docs/architecture/base-build-layered.md"
+      "notes": "PROPOSED (operator default path: spec/implement L0 verify_layer before build_layer). Pillar 2 of the 3-pillar bulletproof base build. SPEC captured: docs/architecture/base-build-layered.md (verify_layer + build_layer contracts, L0/L1/L2 gates, wiring as [VERIFY] card / scorecard viability sub-metric). VERIFIED 2026-06-22: read-only verify_layer implemented+tested+live-validated. NEXT: wire as [VERIFY] card / scorecard viability sub-metric, then build_layer (refuse-until-verified).",
+      "spec_doc": "docs/architecture/base-build-layered.md",
+      "change": {
+        "files": [
+          "scripts/lib/gv2_layer_verify.py: verify_layer(origin,footprint,offset,gate,rcon_fn,...) read-only rcon gate; ground/slab/fixtures predicates; classify_cells with banner-robust last-N parsing.",
+          "scripts/gv2-verify-layer.py: CLI.",
+          "scripts/tests/test_gv2_layer_verify.py: 8 tests replaying the -22-1 flood (air/water L0, chest-over-air L2)."
+        ]
+      },
+      "deterministic_check": "8 unit tests pass + LIVE validation against the flooded gv2-2026-06-22-1 base: L0(y=62) FAIL 43/81 air-water; fixtures(y=63) FAIL all 5 chests over air/grass/unknown (not slab). Catches exactly what establishment=3.5 missed."
     }
   ]
 }
