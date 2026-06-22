@@ -122,6 +122,12 @@ export function loadBotPool() {
     const doc = yaml.parse(raw);
     const port = Number(doc?.api_port);
     if (!Number.isFinite(port)) continue;
+    // Exclude test-harness / observer bots from the leasable pool. tester.yaml has no
+    // `caps`, so it would otherwise be a "universal" body that colony workers check out
+    // (gv2-2026-06-22-3: a worker leased Tester ~270 blocks from the colony spawn ->
+    // pathfinding failures). These bots are addressed directly by their harness, never leased.
+    const role = String(doc?.role || '').toLowerCase();
+    if (role === 'tester' || role === 'observer') continue;
     // Optional capability registry flag. Missing/empty caps = universal body
     // (passes any --cap), so the current generic pool is unaffected.
     const caps = Array.isArray(doc?.caps)

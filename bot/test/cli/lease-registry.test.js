@@ -299,3 +299,17 @@ describe('apiUrl lease mode', () => {
     assert.equal(apiUrl(), 'http://localhost:3999');
   });
 });
+
+describe('loadBotPool excludes test-harness bots', () => {
+  // Regression: gv2-2026-06-22-3 — tester.yaml has no `caps`, so it was a "universal"
+  // body a colony worker leased ~270 blocks from spawn -> pathfinding failures. The
+  // test-harness/observer bots must never be in the leasable colony pool.
+  it('omits role: tester / observer, keeps mox/pip/zee', () => {
+    __testOnly_setPool(null); // read the real data/bots/ fixtures
+    const pool = loadBotPool();
+    assert.equal('tester' in pool, false, 'role: tester must not be leasable');
+    for (const b of ['mox', 'pip', 'zee']) {
+      assert.equal(b in pool, true, `${b} must remain in the colony pool`);
+    }
+  });
+});
