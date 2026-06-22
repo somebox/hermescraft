@@ -1489,3 +1489,37 @@ def test_run_start_metadata_does_not_override_explicit_expected_metrics(tmp_path
         {"run_id": "gv2-test", "expected_metrics": {"already": {"min": 1}}}, repo_root=tmp_path
     )
     assert cfg["expected_metrics"] == {"already": {"min": 1}}
+
+
+def test_purge_board_db_hard_deletes_prior_cards(tmp_path, monkeypatch):
+    # gv2-2026-06-22-4: archived prior-run cards persisted in the shared board DB and the
+    # planner read their stale coords. reinit must HARD-purge, not just archive.
+    import sqlite3
+    db = tmp_path / "kanban.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE tasks (id TEXT, title TEXT, body TEXT, status TEXT)")
+    conn.execute("CREATE TABLE task_comments (id INTEGER, task_id TEXT, body TEXT)")
+    conn.execute("CREATE TABLE task_events (id INTEGER, task_id TEXT)")
+    conn.executemany("INSERT INTO tasks VALUES (?,?,?,?)", [
+        ("t_old1", "[CONSTRUCT] shelter at base_anchor", "anchor: base_anchor (53,63,49)", "archived"),
+        ("t_old2", "[MINE] descent", "mc goto_near 53 63 49", "done"),
+    ])
+    conn.execute("INSERT INTO task_comments VALUES (1, 't_old1', 'retry at (53,63,49)')")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(db))
+    deleted = g2.purge_board_db()
+    assert deleted == 2  # reports tasks cleared
+
+    conn = sqlite3.connect(str(db))
+    assert conn.execute("SELECT count(*) FROM tasks").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM task_comments").fetchone()[0] == 0
+    # no row anywhere still leaks the stale coord
+    assert conn.execute("SELECT count(*) FROM tasks WHERE body LIKE '%53,63,49%'").fetchone()[0] == 0
+    conn.close()
+
+
+def test_purge_board_db_missing_db_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_KANBAN_DB", str(tmp_path / "nope.db"))
+    assert g2.purge_board_db() == 0

@@ -1085,21 +1085,69 @@ def _hermes(args: list[str], *, timeout: int = 30) -> subprocess.CompletedProces
                           cwd=REPO_ROOT, capture_output=True, text=True, timeout=timeout)
 
 
+def _board_db_path() -> Path:
+    env = os.environ.get("HERMES_KANBAN_DB")
+    if env:
+        return Path(env)
+    return Path(os.path.expanduser("~")) / ".hermes" / "kanban" / "boards" / BOARD / "kanban.db"
+
+
+def purge_board_db() -> int:
+    """Hard-delete ALL cards (+ links/comments/events/runs/attachments) from the
+    dedicated genesis-v2 board DB so prior-run cards can NEVER be surfaced to the
+    planner via board reads.
+
+    reinit's old path only set status=archived; archived cards persisted in the shared
+    per-board DB (1427 accumulated by gv2-2026-06-22-4) and the planner's board reads
+    pulled their stale coords -> it adopted a prior base_anchor (53,63,49) and built on
+    the OLD map while the colony spawned 270 blocks away. The board DB is dedicated to
+    this board and reinit runs at setup BEFORE seeding, so a full clear is safe and makes
+    EVERY repeated run start truly empty. Returns the number of task rows deleted."""
+    db = _board_db_path()
+    if not db.exists():
+        return 0
+    conn = sqlite3.connect(str(db), timeout=10.0)
+    try:
+        try:
+            n = conn.execute("SELECT count(*) FROM tasks").fetchone()[0]
+        except sqlite3.OperationalError:
+            return 0  # schema not initialized yet
+        for tbl in ("task_links", "task_comments", "task_events", "task_runs",
+                    "task_attachments", "tasks"):
+            try:
+                conn.execute(f"DELETE FROM {tbl}")
+            except sqlite3.OperationalError:
+                pass  # table may not exist in this schema version
+        conn.commit()
+        return int(n)
+    finally:
+        conn.close()
+
+
 def reinit_board() -> None:
     _hermes(["boards", "create", BOARD])
     p = _hermes(["init"])
     if p.returncode != 0 and "exists" not in (p.stderr + p.stdout).lower():
         raise RuntimeError(f"board init failed: {p.stderr[:300]}")
-    # Archive any leftover cards from a prior run so the board starts clean.
+    # DURABLE clean start: hard-purge prior-run cards from the dedicated board DB so the
+    # planner can't read stale coords (archive-only left them queryable -> cross-run
+    # contamination). Fall back to the facade archive sweep only if the DB can't be
+    # resolved/purged, so there is never a regression vs the old behavior.
+    purged = -1
     try:
-        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
-        rows = lst if isinstance(lst, list) else lst.get("tasks", [])
-        for t in rows:
-            tid = str(t.get("id"))
-            if tid and tid != "None":
-                _hermes(["archive", tid], timeout=15)
+        purged = purge_board_db()
     except Exception:
-        pass
+        purged = -1
+    if purged <= 0:
+        try:
+            lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+            rows = lst if isinstance(lst, list) else lst.get("tasks", [])
+            for t in rows:
+                tid = str(t.get("id"))
+                if tid and tid != "None":
+                    _hermes(["archive", tid], timeout=15)
+        except Exception:
+            pass
 
 
 def _create_card(*, title: str, body: str, assignee: str, parent: str | None = None) -> str:
