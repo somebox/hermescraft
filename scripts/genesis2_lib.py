@@ -2486,6 +2486,37 @@ def _capture_chest_snapshots() -> dict | None:
     return {"captured_at": gl._iso_utc(), "chests": chests}
 
 
+def _capture_base_snapshot(world: str = "genesis2") -> dict | None:
+    """Read-only rcon block snapshot of the base box across y=anchor±2, for the
+    base_viability scorecard gate (verify_layer L0). Best-effort; None if no anchor or
+    rcon/classify unavailable. Captured at stop while the world still exists."""
+    anchor = _base_anchor_coords()
+    if not anchor:
+        return None
+    try:
+        from collections import Counter
+
+        if str(REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(REPO_ROOT))
+        from scripts.lib.gv2_layer_verify import classify_cells
+    except Exception:
+        return None
+    ox, oy, oz = anchor["x"], anchor["y"], anchor["z"]
+    cells = [(x, z) for z in range(oz - 3, oz + 8) for x in range(ox - 3, ox + 8)]
+    layers: dict[str, dict] = {}
+    try:
+        for y in (oy - 2, oy - 1, oy, oy + 1, oy + 2):
+            cls = classify_cells(world, y, cells, rcon_in)
+            layers[str(y)] = {
+                "counts": dict(Counter(cls.values())),
+                "cells": {f"{x},{z}": m for (x, z), m in cls.items() if m not in ("air", "unknown")},
+            }
+    except Exception:
+        return None
+    return {"origin": [ox, oy, oz], "footprint": [7, 7],
+            "captured_from": "stop (live world)", "layers": layers}
+
+
 def capture_run_artifacts(run_id: str | None = None) -> dict:
     """Snapshot the run's diagnostic state into the (gitignored) run dir BEFORE teardown
     or the next mint — the reasoning (state.db), per-turn dumps (sessions/), agent.log,
@@ -2637,6 +2668,18 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
             world_dest.mkdir(parents=True, exist_ok=True)
             (world_dest / "chest-snapshots.json").write_text(
                 json.dumps(chest_data, indent=2) + "\n")
+            n += 1
+    except Exception:
+        pass
+
+    # Read-only base block snapshot for the base_viability gate (verify_layer L0).
+    try:
+        base_snap = _capture_base_snapshot((cfg or {}).get("world", "genesis2"))
+        if base_snap:
+            base_snap["run_id"] = run_id
+            world_dest.mkdir(parents=True, exist_ok=True)
+            (world_dest / "base-snapshot.json").write_text(
+                json.dumps(base_snap, indent=2) + "\n")
             n += 1
     except Exception:
         pass

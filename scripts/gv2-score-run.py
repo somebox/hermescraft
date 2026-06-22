@@ -16,6 +16,10 @@ import genesis2_lib as g2  # noqa: E402
 from scripts.lib.gv2_fleet_index import update_fleet_artifacts  # noqa: E402
 from scripts.lib.gv2_metrics.achievement_level import evaluate_achievement_level  # noqa: E402
 from scripts.lib.gv2_metrics.audit import extract_audit  # noqa: E402
+from scripts.lib.gv2_metrics.base_viability import (  # noqa: E402
+    apply_viability_gate,
+    extract_base_viability,
+)
 from scripts.lib.gv2_metrics.board_quality import extract_board_quality  # noqa: E402
 from scripts.lib.gv2_metrics.cards import extract_cards  # noqa: E402
 from scripts.lib.gv2_metrics.compare_enrich import enrich_compare  # noqa: E402
@@ -42,11 +46,14 @@ def score_run(run_root: Path) -> dict:
     retro = g2.retro_card_snapshot(tasks=board)
     time_m = extract_time(config, board)
     motor = extract_motor(art)
+    base_viability = extract_base_viability(run_root)
+    establishment = apply_viability_gate(extract_establishment(run_root), base_viability)
     metrics = {
         "time": time_m,
         "motor": motor,
         "production": extract_production(run_root),
-        "establishment": extract_establishment(run_root),
+        "establishment": establishment,
+        "base_viability": base_viability,
         "board_quality": extract_board_quality(board),
         "cards": extract_cards(board, run_root=run_root),
         "fleet": extract_fleet(art, time_m.get("run_wall_s")),

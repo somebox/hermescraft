@@ -61,7 +61,7 @@
       "candidate_direction": "Sub-target A (operator-directed via field obs) is now concrete = BASE-BUILD STANDARD: (1) assess base area; (2) distinguish stand_y vs place-at y in card/skill language; (3) order = solid level slab FIRST -> chests/doors at next level (on slab) -> ceiling +2-3 above; never chests before slab. Encode in genesis-v2-blueprint-plan + minecraft-building skills + planner SOUL. Sub-target B (ground/food templates) still open. Pairs with gv2-reserved-structure-override (relocation needs an override path).",
       "blocked_by": "gv2-scope-coverage-metric + gv2-board-quality-supply-cards validation on gv2-2026-06-22-1 (don't stack behavioral changes before current fixes validate). ALSO the per-profile bot-lease finding (gv2-bot-lease-shared-db) confounds establishment until fixed.",
       "expected_metrics": null,
-      "notes": "PROPOSED. Sub-target A now has a concrete operator spec (base-build standard, [[feedback_base_build_standards]]). Behavioral change; validate on same arm (>=2 runs). Do not implement inside the autonomous loop without escalation."
+      "notes": "PROPOSED. Sub-target A now has a concrete operator spec (base-build standard, [[feedback_base_build_standards]]). Behavioral change; validate on same arm (>=2 runs). Do not implement inside the autonomous loop without escalation. base_viability gate (verify_layer L0) now downgrades shell on a flooded base, so establishment is honest before this behavioral work lands."
     },
     {
       "work_id": "gv2-reserved-structure-override",
@@ -152,7 +152,7 @@
     },
     {
       "work_id": "gv2-verify-layer-l0",
-      "status": "verified",
+      "status": "done",
       "type": "tooling-design",
       "title": "verify_layer(L0): read-only rcon pad-acceptance gate (water==0, air==0, no fixture-over-air)",
       "source_run_id": "gv2-2026-06-22-1",
@@ -176,7 +176,9 @@
           "scripts/tests/test_gv2_layer_verify.py: 8 tests replaying the -22-1 flood (air/water L0, chest-over-air L2)."
         ]
       },
-      "deterministic_check": "8 unit tests pass + LIVE validation against the flooded gv2-2026-06-22-1 base: L0(y=62) FAIL 43/81 air-water; fixtures(y=63) FAIL all 5 chests over air/grass/unknown (not slab). Catches exactly what establishment=3.5 missed."
+      "deterministic_check": "8 unit tests pass + LIVE validation against the flooded gv2-2026-06-22-1 base: L0(y=62) FAIL 43/81 air-water; fixtures(y=63) FAIL all 5 chests over air/grass/unknown (not slab). Catches exactly what establishment=3.5 missed.",
+      "validation_run_id": "gv2-2026-06-22-1",
+      "validation_result": "DONE 2026-06-22: verify_layer live-validated + wired as base_viability scorecard sub-metric. Re-score of -22-1: base_viability.viable=false (L0 y=62: 42 air+3 water) -> shell gated yes->no, establishment 3.5->2.5. Auto-capture (artifacts/world/base-snapshot.json) added at stop for future runs."
     }
   ]
 }
