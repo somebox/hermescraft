@@ -167,7 +167,8 @@
       "candidate_direction": "Spec doc + impl: verify_layer(origin, footprint, offset, expected) -> probes layer y=origin_y+offset via execute-if-block (read-only), returns per-cell coverage + offending cells; L0 gate = air==0 AND water==0 over footprint+1-ring apron; fixture gate = each fixture present AND block-below==slab. Wire as a [VERIFY] card kind or post-CONSTRUCT scoring hook so a flooded pad can't score shell=yes uncontested.",
       "blocked_by": "None for the read-only verify tool; build_layer (separate) depends on it.",
       "expected_metrics": null,
-      "notes": "PROPOSED (operator default path: spec/implement L0 verify_layer before build_layer). Pillar 2 of the 3-pillar bulletproof base build."
+      "notes": "PROPOSED (operator default path: spec/implement L0 verify_layer before build_layer). Pillar 2 of the 3-pillar bulletproof base build. SPEC captured: docs/architecture/base-build-layered.md (verify_layer + build_layer contracts, L0/L1/L2 gates, wiring as [VERIFY] card / scorecard viability sub-metric).",
+      "spec_doc": "docs/architecture/base-build-layered.md"
     }
   ]
 }
