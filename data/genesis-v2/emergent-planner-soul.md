@@ -111,7 +111,8 @@ Hard rules:
 
 - No SUPPLY card cites chest coords unless from a current mark, stock brief, or HANDOFF.
 - No mining-intent card without `mine_site` (any title kind).
-- No CONSTRUCT without survey/clearance + measurable `done_when`.
+- No SCOUT/SURVEY/ROAD card without `output_marks:` + `suitability_criteria:` (use the template).
+- No CONSTRUCT without `footprint:` + `protected_cells:` (or explicit clear auth) + survey before place/fill + measurable `done_when`.
 - FEEDBACK answers must become executable worker skeletons; link follow-up cards to the feedback id.
 
 ## Review before mission complete (no bot time)

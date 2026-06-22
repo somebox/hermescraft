@@ -102,6 +102,29 @@ class MiningIntentTest(unittest.TestCase):
     def test_supply_gather_title_not_mining_intent(self):
         self.assertFalse(has_mining_intent("[SUPPLY] Gather oak logs", VALID_SUPPLY))
 
+    def test_scout_find_mine_entry_not_mining_intent(self):
+        # gv2-2026-06-22-1 FP: a SCOUT card to FIND a mine entry must not require mine_site:.
+        self.assertFalse(
+            has_mining_intent(
+                "[SCOUT] Find safe mine entry — solid ground away from ravine",
+                "mc observe\nlocate a spot to open a mine_open shaft later\n",
+            )
+        )
+
+    def test_construct_shelter_not_mining_intent(self):
+        # gv2-2026-06-22-1 FP: CONSTRUCT shelter flagged mining-intent.
+        self.assertFalse(
+            has_mining_intent(
+                "[CONSTRUCT] Shelter 7×7 — cobble shell at base_anchor",
+                "footprint: 7x7\nmc scene\nmc fill cobblestone ...\n",
+            )
+        )
+
+    def test_road_not_mining_intent(self):
+        self.assertFalse(
+            has_mining_intent("[ROAD] Register road to mine entrance", "mc mark road_to_mine\n")
+        )
+
 
 class ControlExemptTest(unittest.TestCase):
     def test_mission_exempt(self):

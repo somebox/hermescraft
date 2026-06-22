@@ -119,7 +119,7 @@
     },
     {
       "work_id": "gv2-board-quality-scout-construct",
-      "status": "selected",
+      "status": "verified",
       "type": "planner-card-quality",
       "title": "Remaining gv2_invalid: SCOUT/ROAD + CONSTRUCT schema gaps + mining-intent false-positives",
       "source_run_id": "gv2-2026-06-22-1",
@@ -138,7 +138,17 @@
           "max": 0
         }
       },
-      "notes": "PROPOSED. The CONSTRUCT footprint/protected_cells requirement aligns with the build_layer schematic (Pillar 1) \u2014 fixing base-build and these CONSTRUCT invalids is the same work."
+      "notes": "VERIFIED 2026-06-22. Validator half (FP fix) is code+tested. Planner-guidance half (SCOUT/CONSTRUCT templates+SOUL) is behavioral -> validate gv2_invalid=0 on next same-arm run.",
+      "change": {
+        "files": [
+          "scripts/lib/gv2_card_validator.py: NON_MINING_INTENT_KINDS += SCOUT/SURVEY/CONSTRUCT/ROAD (clears mining-intent false-positives on 'find mine entry'/'Shelter').",
+          "skills/genesis-v2-worker-card-schema.md: add SCOUT/SURVEY/ROAD template (output_marks:+suitability_criteria:) + CONSTRUCT template (footprint:+protected_cells:+survey); kind table updated.",
+          "data/genesis-v2/emergent-planner-soul.md: hard rules now require those fields per kind.",
+          "scripts/tests/test_gv2_card_validator.py: 3 mining-intent FP regression tests."
+        ]
+      },
+      "deterministic_check": "Validator FP fix: 27 tests + 4 subtests pass; re-validate gv2-2026-06-22-1 board -> ZERO mining-intent false-positives (was 3). Remaining invalids are genuine SCOUT/CONSTRUCT missing-field gaps now addressed by planner guidance (validate on next run).",
+      "validation_run_id": null
     },
     {
       "work_id": "gv2-verify-layer-l0",

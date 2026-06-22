@@ -32,8 +32,8 @@ mc bot release
 
 | Kind (title tag) | Required body fields |
 |------------------|----------------------|
-| SURVEY / SCOUT | `mc scene` or `mc observe`; output marks |
-| CONSTRUCT / BUILD | `footprint:`; survey before bulk `place_fill` |
+| SURVEY / SCOUT / ROAD | `output_marks:`, `suitability_criteria:`; `mc scene`/`mc observe` (see template) |
+| CONSTRUCT / BUILD | `footprint:`, `protected_cells:` (or explicit clear/overwrite auth); survey before bulk `place_fill` (see template) |
 | MINE (mining intent) | `mine_site:` before underground verbs |
 | SUPPLY | `source:`, `destination:`, `quantity:`, `withdrawable:`; **+ `mine_site:` if the source is a mine** (see template) |
 | FARM / TILL | till/plant verbs; no `mine_site` for farm prep |
@@ -72,6 +72,37 @@ mine_site:
   target_y: <Y>
   resource: <coal_ore|iron_ore|…>
   reuse_existing: <true|false>
+```
+
+## SCOUT / SURVEY / ROAD template (copy verbatim; fill placeholders)
+
+```
+anchor: <mark or X,Y,Z>
+source_truth: marks
+output_marks: <mark1>, <mark2>, …          # the marks this card must register
+suitability_criteria: <what makes a result acceptable, e.g. flat 7x7, dry, stone+water within 20>
+mc bot checkout --near <X,Y,Z> --cap scout
+mc observe
+done_when: <output_marks> registered
+mc bot release
+```
+
+## CONSTRUCT template (copy verbatim; fill placeholders)
+
+Survey BEFORE any place/fill. `protected_cells:` declares cells the card may NOT
+overwrite (existing chests/doors); if it must build over reserved cells, state
+explicit clear/overwrite authorization instead.
+
+```
+anchor: base_anchor
+source_truth: marks
+footprint: <WxH e.g. 7x7 at base_anchor>
+protected_cells: <chest_*/door marks the build must not overwrite, or "none">
+mc bot checkout --near <X,Y,Z> --cap builder --mark base_anchor
+mc scene
+mc fill <block> <x1 y1 z1> <x2 y2 z2>
+done_when: <measurable: pad/shell complete, interior dry>
+mc bot release
 ```
 
 See `scripts/lib/gv2_card_validator.py` for the full rule set.

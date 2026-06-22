@@ -33,7 +33,11 @@ CONTROL_KINDS = frozenset({"FEEDBACK", "RETRO", "MISSION"})
 CANONICAL_INTENT_KINDS = frozenset({"CONSTRUCT", "MINE", "TILL", "SUPPLY", "SURVEY", "SCOUT"})
 # Emergent title tags parsed for kind-specific rules (not all are verb-required).
 EXTENDED_INTENT_KINDS = CANONICAL_INTENT_KINDS | {"FARM", "COOK"}
-NON_MINING_INTENT_KINDS = frozenset({"FARM", "TILL", "COOK"})
+# mine_site: is required only for dedicated extraction (MINE / mining-SUPPLY). SCOUT/
+# SURVEY find a mine entry, CONSTRUCT/ROAD build — none should be flagged mining-intent
+# just because a title/body says "mine entry" or matches the underground regex
+# (gv2-2026-06-22-1 false-positives on "[SCOUT] find safe mine entry" + "[CONSTRUCT] Shelter").
+NON_MINING_INTENT_KINDS = frozenset({"FARM", "TILL", "COOK", "SCOUT", "SURVEY", "CONSTRUCT", "ROAD"})
 
 # Unambiguous underground / registry mining — not the English verb "mine" in farm prose
 # ("mine nearby dirt", "mine stone for border").
