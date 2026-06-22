@@ -342,6 +342,7 @@ def to_markdown(story: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--board", default="genesis-v2")
+    ap.add_argument("--board-json", type=Path, help="Offline board snapshot (list or {tasks:[]})")
     ap.add_argument("--card", help="single card id; default = whole board")
     ap.add_argument("--out", help="output dir for per-card markdown + INDEX.md")
     ap.add_argument("--profiles", default=os.path.expanduser("~/.hermes/profiles"))
@@ -354,6 +355,10 @@ def main() -> int:
 
     if args.card:
         ids = [args.card]
+    elif args.board_json:
+        raw = json.loads(args.board_json.read_text(encoding="utf-8"))
+        ts = raw if isinstance(raw, list) else raw.get("tasks", [])
+        ids = [t.get("id") for t in ts if t.get("id")]
     else:
         lst = hermes(["list", "--json"], args.board)
         ts = lst if isinstance(lst, list) else lst.get("tasks", [])

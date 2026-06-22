@@ -78,7 +78,99 @@ def next_run_id() -> str:
     return f"{prefix}{n}"
 
 
+def previous_run_id(before_run_id: str | None = None) -> str | None:
+    """Latest gv2 run dir before ``before_run_id`` (or before active/latest if omitted)."""
+    dirs = sorted(
+        (p.name for p in runs_root().iterdir() if p.is_dir() and p.name.startswith("gv2-")),
+        reverse=True,
+    )
+    if before_run_id:
+        try:
+            i = dirs.index(before_run_id)
+            if i + 1 < len(dirs):
+                return dirs[i + 1]
+            return None
+        except ValueError:
+            pass
+    return dirs[1] if len(dirs) > 1 else None
+
+
+def default_evidence_arm(cfg: dict) -> str:
+    """Stable protocol label for same-arm compare (tier / model slug / mode [/ pinned spawn])."""
+    tier = cfg.get("tier") or "standard"
+    model = (
+        cfg.get("planner_model")
+        or cfg.get("worker_model")
+        or "unknown"
+    )
+    slug = model.split("/")[-1] if "/" in model else model
+    mode = cfg.get("mode") or "emergent"
+    base = f"{tier}/{slug}/{mode}"
+    if cfg.get("spawn_source") == "pinned" and isinstance(cfg.get("spawn"), dict):
+        sp = cfg["spawn"]
+        return f"{base}/spawn-{sp.get('x')},{sp.get('y')},{sp.get('z')}"
+    return base
+
+
+def apply_run_start_metadata(cfg: dict, *, repo_root: Path | None = None) -> dict:
+    """Attach prev_run_id, repo rev, and optional loop/tier env for scorecard compare."""
+    import os
+    import subprocess
+
+    rid = cfg.get("run_id")
+    prev = previous_run_id(rid)
+    if prev:
+        cfg.setdefault("prev_run_id", prev)
+    root = repo_root or Path(__file__).resolve().parents[1]
+    try:
+        rev = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=root,
+        )
+        if rev.returncode == 0:
+            cfg.setdefault("repo_rev_at_start", rev.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    cfg.setdefault("loop_goal", os.environ.get("GV2_LOOP_GOAL", cfg.get("loop_goal") or ""))
+    cfg.setdefault("tier", os.environ.get("GV2_TIER", cfg.get("tier") or "standard"))
+    arm = os.environ.get("GV2_EVIDENCE_ARM", "").strip()
+    if arm:
+        cfg.setdefault("evidence_arm", arm)
+    elif not cfg.get("evidence_arm"):
+        cfg["evidence_arm"] = default_evidence_arm(cfg)
+    if not cfg.get("expected_metrics"):
+        qpath = root / "data" / "genesis-v2" / "improvement-queue.json"
+        if qpath.is_file():
+            try:
+                q = json.loads(qpath.read_text())
+                merged: dict = {}
+                for it in q.get("items") or []:
+                    if it.get("status") in ("selected", "in_progress"):
+                        em = it.get("expected_metrics") or {}
+                        if isinstance(em, dict):
+                            merged.update(em)
+                if merged:
+                    cfg["expected_metrics"] = merged
+            except (json.JSONDecodeError, OSError):
+                pass
+    baseline = os.environ.get("GV2_VALIDATION_BASELINE_RUN_ID", "").strip()
+    if baseline:
+        cfg.setdefault("validation_baseline_run_id", baseline)
+    return cfg
+
+
 def save_config(cfg: dict) -> None:
+    """Write run metadata to ``data/genesis-v2-runs/<run_id>/config.json``.
+
+    Known keys (extensible): run_id, world, seed, spawn, spawn_source, mode,
+    mission_id, epic_ids, worker_model, planner_model, started_at, ended_at,
+    retro_mode, shelter_rendered, shelter_anchor, loop_goal, hypothesis,
+    expected_metrics, evidence_arm, tier, repo_rev_at_start, repo_rev_at_stop,
+    target_achievement_level, validation_baseline_run_id, prev_run_id.
+    """
     (run_dir(cfg["run_id"]) / "config.json").write_text(json.dumps(cfg, indent=2) + "\n")
 
 
@@ -98,7 +190,30 @@ def active_run_id() -> str | None:
 # --------------------------------------------------------------------------- #
 # rcon (mapcatalog client; per-world via `execute in <world> run`)
 # --------------------------------------------------------------------------- #
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07")
+_LIST_PLAYERS_RE = re.compile(
+    r"There are \d+ of a max of \d+ players online:\s*(.*)",
+    re.IGNORECASE,
+)
+
+
+def parse_online_players(stdout: str | None) -> list[str]:
+    """Bare player names from rcon `list` (same semantics as reset-proc-lab.py)."""
+    m = _LIST_PLAYERS_RE.search(stdout or "")
+    if not m:
+        return []
+    raw = m.group(1).strip()
+    if not raw:
+        return []
+    return [
+        p.strip()
+        for p in raw.split(",")
+        if p.strip() and p.strip()[0].isalnum()
+    ]
+
+
+def default_observer_name() -> str:
+    return (os.environ.get("GENESIS_V2_OBSERVER") or "re44").strip() or "re44"
 
 
 def _rcon(cmds: list[str]) -> str:
@@ -779,24 +894,59 @@ def world_setup(world: str, spawn: dict[str, int]) -> None:
     setup_observer(world, spawn)
 
 
-def setup_observer(world: str, spawn: dict[str, int], observer: str = "re44") -> bool:
+def setup_observer(world: str, spawn: dict[str, int], observer: str | None = None) -> bool:
     """Best-effort: drop the human observer at the colony spawn in spectator mode
     so they can watch the run live. Skipped silently if `observer` isn't online —
     never fails the boot. Returns True if the observer was set up."""
+    observer = observer or default_observer_name()
     x, y, z = spawn["x"], spawn["y"], spawn["z"]
     try:
-        online = _rcon(["list"])
+        online = parse_online_players(_rcon(["list"]))
         if observer not in online:
             return False
         _rcon([f"mvtp {observer} {world}"])
         time.sleep(1)
-        _rcon([
+        rcon_in(world, [
             f"tp {observer} {x} {y + 3} {z}",
             f"gamemode spectator {observer}",
         ])
         return True
     except Exception:
         return False
+
+
+def _observer_session_marker(run_id: str, observer: str) -> Path:
+    safe = re.sub(r"[^\w.-]+", "_", observer)
+    return run_dir(run_id) / f".observer_{safe}.ready"
+
+
+def ensure_observer_watching(run_id: str, observer: str | None = None) -> bool:
+    """When the human observer connects mid-run (after evac to hub), move them to
+    the colony world in spectator mode once per online stint. Clears the marker
+    when they disconnect so a later join is handled again."""
+    observer = observer or default_observer_name()
+    marker = _observer_session_marker(run_id, observer)
+    try:
+        online = parse_online_players(_rcon(["list"]))
+    except Exception:
+        return False
+    if observer not in online:
+        marker.unlink(missing_ok=True)
+        return False
+    if marker.is_file():
+        return False
+    try:
+        cfg = load_config(run_id)
+    except Exception:
+        return False
+    world = cfg.get("world") or "genesis2"
+    spawn = cfg.get("spawn")
+    if not spawn or not isinstance(spawn, dict):
+        return False
+    if setup_observer(world, spawn, observer):
+        marker.write_text(gl._iso_utc() + "\n")
+        return True
+    return False
 
 
 # --------------------------------------------------------------------------- #
@@ -2312,6 +2462,27 @@ def scope_action_rows(lines, start_ms, end_ms):
     return kept, stats
 
 
+def _capture_chest_snapshots() -> dict | None:
+    """Best-effort chest snapshots from genesis pool bot /state endpoints."""
+    chests: dict = {}
+    for name, meta in BODY_POOL.items():
+        port = meta["port"]
+        url = f"http://127.0.0.1:{port}/state"
+        try:
+            with urllib.request.urlopen(url, timeout=3) as resp:
+                data = json.loads(resp.read().decode())
+        except Exception:
+            continue
+        snaps = data.get("chestSnapshots") or {}
+        if isinstance(snaps, dict):
+            for k, v in snaps.items():
+                if str(k).startswith("chest_"):
+                    chests[f"{name}:{k}"] = v
+    if not chests:
+        return None
+    return {"captured_at": gl._iso_utc(), "chests": chests}
+
+
 def capture_run_artifacts(run_id: str | None = None) -> dict:
     """Snapshot the run's diagnostic state into the (gitignored) run dir BEFORE teardown
     or the next mint — the reasoning (state.db), per-turn dumps (sessions/), agent.log,
@@ -2390,10 +2561,38 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
         (dest / "board.json").write_text(_hermes(["list", "--json"]).stdout or "[]"); n += 1
     except Exception:
         pass
+    try:
+        from scripts.lib.gv2_kanban_runs_export import write_kanban_runs_artifact
+
+        write_kanban_runs_artifact(dest, BOARD)
+        n += 1
+    except Exception:
+        pass
+    # Freeze shared world state for postmortem (locations-base is live otherwise).
+    world_dest = dest / "world"
+    world_dest.mkdir(parents=True, exist_ok=True)
+    for rel in ("locations-base.json", "regions-world.json"):
+        src = DATA_DIR / rel
+        if src.exists():
+            try:
+                shutil.copy2(src, world_dest / rel)
+                n += 1
+            except Exception:
+                pass
+    if cfg:
+        mines_name = f"mines-{cfg.get('world', 'genesis2')}.json"
+        mines_src = DATA_DIR / mines_name
+        if mines_src.exists():
+            try:
+                shutil.copy2(mines_src, world_dest / mines_name)
+                n += 1
+            except Exception:
+                pass
     # Auto-generate per-card diagnostic stories from the LIVE sources (still present
     # pre-mint). card_story.py reads board + agent.log + state.db + action JSONL.
     stories_dir = run_dir(run_id) / "card-stories"
     card_stories = None
+    card_stories_error = None
     try:
         cs = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts" / "card_story.py"),
@@ -2401,9 +2600,51 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
             capture_output=True, text=True, timeout=300, cwd=REPO_ROOT)
         if cs.returncode == 0:
             card_stories = str(stories_dir)
+        else:
+            card_stories_error = (cs.stderr or cs.stdout or "card_story failed").strip()[:4000]
+            try:
+                (dest / "card-story-error.txt").write_text(card_stories_error + "\n")
+                n += 1
+            except Exception:
+                pass
+    except Exception as exc:
+        card_stories_error = str(exc)
+        try:
+            (dest / "card-story-error.txt").write_text(card_stories_error + "\n")
+            n += 1
+        except Exception:
+            pass
+
+    # Repo revision at stop (for dashboard changelog).
+    try:
+        rev = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10, cwd=REPO_ROOT,
+        )
+        if rev.returncode == 0 and cfg:
+            cfg["repo_rev_at_stop"] = rev.stdout.strip()
+            save_config(cfg)
     except Exception:
         pass
-    return {"dest": str(dest), "files": n, "run_id": run_id, "card_stories": card_stories}
+
+    # Frozen chest snapshots while pool bots may still be up.
+    try:
+        chest_data = _capture_chest_snapshots()
+        if chest_data:
+            world_dest.mkdir(parents=True, exist_ok=True)
+            (world_dest / "chest-snapshots.json").write_text(
+                json.dumps(chest_data, indent=2) + "\n")
+            n += 1
+    except Exception:
+        pass
+
+    return {
+        "dest": str(dest),
+        "files": n,
+        "run_id": run_id,
+        "card_stories": card_stories,
+        "card_stories_error": card_stories_error,
+    }
 
 
 def advance_phases(run_id: str, *, status_by_id: dict[str, str] | None = None,

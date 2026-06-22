@@ -1,0 +1,26 @@
+# Genesis-v2 achievement levels (deterministic predicates per tier).
+schema_version: 1
+levels:
+  G0:
+    predicates:
+      - { metric: operational.retro_pending, op: max, value: 0 }
+      - { metric: audit.scope_windowed, op: eq, value: true }
+      - { metric: audit.scope_coverage_ratio, op: min, value: 0.5 }
+      - { metric: board_quality.gv2_invalid, op: max, value: 0 }
+  G1:
+    predicates:
+      - { metric: compare.compare_safe, op: eq, value: true }
+      - { metric: motor.server_down, op: max, value: 0 }
+      - { metric: time.cards_done, op: min, value: 1, tier_overrides: { easy: 1, standard: 2, stress: 3 } }
+  G2:
+    predicates:
+      - { metric: establishment.score, op: min, value: 2.0, tier_overrides: { easy: 2.0, standard: 2.5, stress: 3.0 } }
+  G3:
+    predicates:
+      - { metric: production.food_ratio, op: min, value: 0.5, tier_overrides: { easy: 0.4, standard: 0.55, stress: 0.7 } }
+  G4:
+    predicates:
+      - { metric: fleet.active_mc_pct, op: min, value: 15 }
+  G5:
+    predicates:
+      - { metric: establishment.score, op: min, value: 5.0 }

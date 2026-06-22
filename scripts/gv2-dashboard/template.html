@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>{{RUN_ID}} — gv2 dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 960px; }
+    .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .box { border: 1px solid #ccc; padding: 1rem; border-radius: 6px; }
+    h1 { font-size: 1.25rem; }
+    .badge { font-weight: bold; font-size: 1.1rem; }
+    nav { margin: .5rem 0 1rem; font-size: .95rem; }
+  </style>
+</head>
+<body>
+  <nav>{{NAV}}</nav>
+  <h1>{{RUN_ID}}</h1>
+  <p>{{HEADLINE}}</p>
+  <p>{{LOOP_GOAL}}</p>
+  <p class="badge">Level {{ACHIEVE_LEVEL}} → target {{ACHIEVE_TARGET}}</p>
+  <p>{{COMPARE}}</p>
+  <div class="hero">
+    <div class="box"><h2>Operational</h2><pre>{{OPERATIONAL}}</pre></div>
+    <div class="box"><h2>Achievement</h2><pre>{{ACHIEVEMENT}}</pre></div>
+  </div>
+  <p>
+    <a href="../scorecard.json">scorecard.json</a> ·
+    <a href="../postmortem.md">postmortem.md</a> ·
+    <a href="../feedback-bundle.json">feedback-bundle.json</a>
+  </p>
+</body>
+</html>

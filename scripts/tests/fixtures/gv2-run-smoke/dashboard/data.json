@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "run_id": "fixture",
+  "metrics": {
+    "time": {
+      "run_wall_s": 5400,
+      "cards_done": 2,
+      "cards_total": 3,
+      "cards_per_hour": 1.333
+    },
+    "motor": {
+      "errors": 1,
+      "timeouts": 0,
+      "slow": 0,
+      "verbs": [
+        {
+          "verb": "goto",
+          "calls": 1,
+          "errors": 0,
+          "timeouts": 0,
+          "slow": 0,
+          "error_rate": 0.0
+        },
+        {
+          "verb": "goto_near",
+          "calls": 1,
+          "errors": 1,
+          "timeouts": 0,
+          "slow": 0,
+          "error_rate": 1.0
+        }
+      ],
+      "hotspots": [
+        {
+          "verb": "goto_near",
+          "calls": 1,
+          "errors": 1,
+          "timeouts": 0,
+          "slow": 0,
+          "error_rate": 1.0
+        },
+        {
+          "verb": "goto",
+          "calls": 1,
+          "errors": 0,
+          "timeouts": 0,
+          "slow": 0,
+          "error_rate": 0.0
+        }
+      ],
+      "never_used_core": [],
+      "server_down": 0,
+      "goalchanged": 1,
+      "repeated_calls": []
+    },
+    "production": {
+      "food_ratio": 1.0,
+      "production_critical_ok": true,
+      "by_resource": [],
+      "withdrawable": null
+    },
+    "establishment": {
+      "score": 6.0,
+      "max": 6,
+      "milestones": {
+        "site": "yes",
+        "ground": "yes",
+        "shell": "yes",
+        "chest": "yes",
+        "food": "yes",
+        "mine": "yes"
+      },
+      "evidence": {
+        "site": [
+          "mark:base_anchor"
+        ],
+        "ground": [
+          "config:shelter_rendered"
+        ],
+        "shell": [],
+        "chest": [
+          "mark:chest_food",
+          "mark:chest_tools"
+        ],
+        "food": [
+          "ratio:1.00"
+        ],
+        "mine": [
+          "mark:mine_iron"
+        ]
+      },
+      "source": "artifacts"
+    },
+    "board_quality": {
+      "gv2_invalid": 1,
+      "checked": 3,
+      "ok": false
+    },
+    "cards": {
+      "cards": [
+        {
+          "id": "t_mission",
+          "title": "[MISSION] Establish colony",
+          "size": null,
+          "outcome": "running",
+          "effectiveness": 20
+        },
+        {
+          "id": "t_done1",
+          "title": "[MINE] Iron vein",
+          "size": null,
+          "outcome": "done",
+          "effectiveness": 80
+        },
+        {
+          "id": "t_retro1",
+          "title": "[RETRO] Round feedback",
+          "size": null,
+          "outcome": "done",
+          "effectiveness": 80
+        }
+      ],
+      "effectiveness_median": 80
+    },
+    "fleet": {
+      "active_mc_pct": 0.0,
+      "bots_used": [
+        "mox"
+      ]
+    },
+    "audit": {
+      "scope_coverage_ratio": 1.0,
+      "scope_windowed": true,
+      "scope_kept": 2
+    }
+  },
+  "summary": {
+    "loop_goal": "",
+    "hypothesis": "",
+    "expected_metrics": {},
+    "what_changed": {
+      "repo_commits": [],
+      "config_vs_prev": []
+    },
+    "outcome_vs_expected": {
+      "met": [],
+      "missed": []
+    },
+    "compare": {
+      "prev_run_id": "gv2-fixture-test",
+      "baseline_run_id": null,
+      "compare_safe": true,
+      "overall_delta_vs_prev": null,
+      "overall_delta_vs_baseline": null,
+      "note": " prev scorecard missing for gv2-fixture-test."
+    },
+    "headline": "Achievement G0 (overall 28) \u2014 board_quality.gv2_invalid 1 vs max 0",
+    "band": "C",
+    "overall": 28,
+    "confidence": "medium",
+    "operational": {
+      "wall_min": 90.0,
+      "cap_min": null,
+      "cards_done": 2,
+      "cards_total": 3,
+      "retro_done": "1/1",
+      "retro_pending": 0,
+      "smoke": null,
+      "exceptions": [
+        "gv2_invalid:1"
+      ],
+      "gv2_invalid": 1,
+      "motor_errors_scoped": 1,
+      "goalchanged": 1,
+      "server_down": 0,
+      "card_effectiveness_median": 80,
+      "active_mc_pct": 0.0
+    },
+    "achievement": {
+      "establishment_score": 6.0,
+      "production_critical_ok": true,
+      "food_ratio": 1.0,
+      "milestones_met": [
+        "site",
+        "ground",
+        "shell",
+        "chest",
+        "food",
+        "mine"
+      ],
+      "milestones_missed": []
+    },
+    "achievement_level": {
+      "current": "G0",
+      "next": "G1",
+      "target": "G1",
+      "tier": "easy",
+      "gaps": [
+        "board_quality.gv2_invalid 1 vs max 0"
+      ],
+      "failed_predicates": [
+        "G0:board_quality.gv2_invalid:max:0"
+      ],
+      "missing_evidence": []
+    },
+    "target_achievement_level": null
+  },
+  "feedback": {
+    "bundle_path": "feedback-bundle.json",
+    "retro_count": 1,
+    "retro_pending_at_capture": 0
+  }
+}

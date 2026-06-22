@@ -1,0 +1,8 @@
+{
+  "captured_at": "2026-06-21T11:30:00Z",
+  "chests": {
+    "mox:chest_food": {
+      "items": {"bread": 12, "cooked_beef": 4}
+    }
+  }
+}

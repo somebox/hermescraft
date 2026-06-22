@@ -1,0 +1,23 @@
+[
+  {
+    "id": "t_mission",
+    "title": "[MISSION] Establish colony",
+    "status": "running",
+    "assignee": "colony-planner",
+    "body": "Mission body"
+  },
+  {
+    "id": "t_done1",
+    "title": "[MINE] Iron vein",
+    "status": "done",
+    "assignee": "colony-miner",
+    "body": "mc goto 10 64 10\nmc dig"
+  },
+  {
+    "id": "t_retro1",
+    "title": "[RETRO] Round feedback",
+    "status": "done",
+    "assignee": "colony-miner",
+    "body": "Nav was hard"
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "run_id": "fixture",
+  "evidence_arm": "B",
+  "tier": "easy",
+  "prev_run_id": "gv2-fixture-test",
+  "next_run_id": null,
+  "baseline_run_id": null,
+  "same_arm_runs": [],
+  "overall": 28,
+  "achievement_level": "G0",
+  "paths": {
+    "scorecard": "scorecard.json",
+    "postmortem": "postmortem.md",
+    "dashboard": "dashboard/index.html",
+    "feedback": "feedback-bundle.json"
+  }
+}

@@ -1,0 +1,2 @@
+{"action":"goto","status":"ok","started_at":1000,"finished_at":2000,"detail":""}
+{"action":"goto_near","status":"error","started_at":3000,"finished_at":4000,"detail":"GoalChanged"}

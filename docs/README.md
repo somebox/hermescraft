@@ -8,8 +8,13 @@
 
 | Doc | Purpose |
 |-----|---------|
-| [`architecture/README.md`](architecture/README.md) | Reading order, doc map, next steps |
+| [`architecture/README.md`](architecture/README.md) | Reading order, doc map, maturity matrix, next steps |
 | [`architecture/target.md`](architecture/target.md) | Canonical target statement |
+| [`architecture/genesis-v2-stabilization.md`](architecture/genesis-v2-stabilization.md) | Genesis-v2 evidence gates, retro/stop (operator supplement) |
+| [`guides/genesis-v2-dev-loop.md`](guides/genesis-v2-dev-loop.md) | Post-run measurement + improvement dev loop |
+| [`testing/genesis-v2/competence-scorecard.md`](testing/genesis-v2/competence-scorecard.md) | Scorecard schema v1 |
+| [`testing/genesis-v2/plan-alignment.md`](testing/genesis-v2/plan-alignment.md) | Plan vs shipped gv2 measurement gaps |
+| [`architecture/stock-truth-model.md`](architecture/stock-truth-model.md) | Stored / reachable / withdrawable stock contract |
 | [`architecture/embodied-control.md`](architecture/embodied-control.md) | Reflex-first interface — registry vs agent surface, delivery order, evidence loop |
 | [`architecture/impact.md`](architecture/impact.md) | Code touchpoints for migration |
 | [`architecture/bot-lease.md`](architecture/bot-lease.md) | Runtime bot lease (`mc bot`, genesis v2) |
@@ -19,7 +24,10 @@
 | [`architecture/data-api.md`](architecture/data-api.md) | Recall stream + fleet operations HTTP |
 | [`architecture/scheduled-operations.md`](architecture/scheduled-operations.md) | Colony cron / scheduled card pattern |
 | [`architecture/mc-verify-spec.md`](architecture/mc-verify-spec.md) | `mc verify` facade contract |
+| [`architecture/example-wheat-farm-walkthrough.md`](architecture/example-wheat-farm-walkthrough.md) | Worked wheat epic timeline (companion to epic-lifecycle) |
+| [`architecture/observe-cards.md`](architecture/observe-cards.md) | `[VERIFY]` / observe card kinds |
 | [`architecture/dashboard-metrics-spec.md`](architecture/dashboard-metrics-spec.md) | Colony dashboard metrics (wireframes: [`dashboard-wireframes.html`](architecture/dashboard-wireframes.html)) |
+| [`architecture/pi-vs-hermescraft-mapping.md`](architecture/pi-vs-hermescraft-mapping.md) | Pi platform thought experiment (not migration plan) |
 
 ## 2. Reference (bot, `mc`, conventions)
 

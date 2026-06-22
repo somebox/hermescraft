@@ -91,6 +91,7 @@ scripts/rescue-*.txt
 
 # Generated per-run state (genesis-v2 + roadplan + per-bot runtime files)
 data/genesis-v2-runs/
+data/genesis-v2-metrics-history.jsonl
 scripts/data/runtime/
 data/locations-base.json
 data/goals-*.json

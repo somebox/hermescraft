@@ -1,0 +1,8 @@
+{
+  "marks": {
+    "base_anchor": {"x": 0, "y": 69, "z": 0},
+    "chest_food": {"x": 1, "y": 69, "z": 1},
+    "chest_tools": {"x": 2, "y": 69, "z": 1},
+    "mine_iron": {"x": 10, "y": 64, "z": 10}
+  }
+}

@@ -1011,6 +1011,77 @@ def test_reengage_dedups_on_open_manage(monkeypatch):
     assert g2.reengage_planner_if_mission_closed("gv2-x") is None
 
 
+def test_parse_online_players():
+    assert g2.parse_online_players("There are 0 of a max of 10 players online:") == []
+    assert g2.parse_online_players("There are 1 of a max of 10 players online: re44") == ["re44"]
+    assert g2.parse_online_players(
+        "There are 3 of a max of 10 players online: re44, Mox, Pip"
+    ) == ["re44", "Mox", "Pip"]
+
+
+def test_setup_observer_uses_parsed_list_and_world_scoped_commands(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_rcon(cmds):
+        calls.append(list(cmds))
+        return "There are 1 of a max of 10 players online: re44"
+
+    def fake_rcon_in(world, cmds):
+        calls.append([f"in:{world}"] + list(cmds))
+        return "ok"
+
+    monkeypatch.setattr(g2, "_rcon", fake_rcon)
+    monkeypatch.setattr(g2, "rcon_in", fake_rcon_in)
+    monkeypatch.setattr(g2.time, "sleep", lambda _s: None)
+    ok = g2.setup_observer("genesis2", {"x": 10, "y": 64, "z": -5}, "re44")
+    assert ok is True
+    assert calls[0] == ["list"]
+    assert calls[1] == ["mvtp re44 genesis2"]
+    assert "tp re44 10 67 -5" in calls[2][1]
+    assert "gamemode spectator re44" in calls[2][2]
+
+
+def test_setup_observer_skips_when_offline(monkeypatch):
+    monkeypatch.setattr(g2, "_rcon", lambda _c: "There are 0 of a max of 10 players online:")
+    assert g2.setup_observer("genesis2", {"x": 0, "y": 64, "z": 0}) is False
+
+
+def test_ensure_observer_watching_on_connect_mid_run(tmp_path, monkeypatch):
+    rid = "gv2-observer-test"
+    monkeypatch.setattr(g2, "run_dir", lambda _r: tmp_path / _r)
+    (tmp_path / rid).mkdir(parents=True)
+    (tmp_path / rid / "config.json").write_text(
+        json.dumps({"world": "genesis2", "spawn": {"x": 1, "y": 64, "z": 2}})
+    )
+    states = ["offline", "online", "online"]
+
+    def fake_list(_cmds):
+        if states[0] == "offline":
+            return "There are 0 of a max of 10 players online:"
+        return "There are 1 of a max of 10 players online: re44"
+
+    monkeypatch.setattr(g2, "_rcon", lambda cmds: fake_list(cmds))
+    setup_calls = []
+
+    def fake_setup(world, spawn, observer=None):
+        setup_calls.append((world, spawn, observer))
+        return True
+
+    monkeypatch.setattr(g2, "setup_observer", fake_setup)
+    assert g2.ensure_observer_watching(rid) is False
+    states[0] = "online"
+    assert g2.ensure_observer_watching(rid) is True
+    assert setup_calls == [("genesis2", {"x": 1, "y": 64, "z": 2}, "re44")]
+    assert g2._observer_session_marker(rid, "re44").is_file()
+    assert g2.ensure_observer_watching(rid) is False  # already set up this stint
+    states[0] = "offline"
+    assert g2.ensure_observer_watching(rid) is False
+    assert not g2._observer_session_marker(rid, "re44").is_file()
+    states[0] = "online"
+    assert g2.ensure_observer_watching(rid) is True
+    assert len(setup_calls) == 2
+
+
 def test_reengage_manage_card_is_assigned_to_planner(monkeypatch):
     created = []
     def fake(args, **kw):

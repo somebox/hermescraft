@@ -33,3 +33,21 @@ jobs:
           bash -n hermescraft.sh
           bash -n setup.sh
           bash -n server/start.sh
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Genesis-v2 scorecard tests
+        run: |
+          export GV2_SCORE_SKIP_SMOKE=1
+          python3 -m unittest \
+            scripts.tests.test_gv2_evidence_arm \
+            scripts.tests.test_gv2_compare_enrich \
+            scripts.tests.test_gv2_motor_fleet \
+            scripts.tests.test_gv2_establishment_ladder \
+            scripts.tests.test_gv2_metrics_audit \
+            scripts.tests.test_gv2_render_dashboard \
+            scripts.tests.test_gv2_card_validator \
+            scripts.tests.test_card_story
+          bash scripts/gv2-tooling-check.sh

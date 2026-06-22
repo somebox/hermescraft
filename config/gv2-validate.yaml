@@ -1,0 +1,7 @@
+# Mid-run validation thresholds (gv2-run-validate.py)
+schema_version: 1
+predicates:
+  board_stalled_min: 30
+  establishment_warn_below: 2.0
+  motor_error_rate_per_min: 20
+  manage_unresolved_abort: 8

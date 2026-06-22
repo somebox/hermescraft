@@ -16,16 +16,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNS_DIR="$REPO_ROOT/data/genesis-v2-runs"
 
 RUN_ID=""
+RUN_DIR=""
+FIXTURE_MODE=0
 MANAGE_FAIL_THRESHOLD=5
 
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/genesis-v2-verify-smoke.sh [--run-id <gv2-id>] [--manage-fail-threshold <n>]
+  scripts/genesis-v2-verify-smoke.sh [--run-id <gv2-id>] [--run-dir <path>] [--manage-fail-threshold <n>]
 
 Examples:
   scripts/genesis-v2-verify-smoke.sh
   scripts/genesis-v2-verify-smoke.sh --run-id gv2-2026-06-20-3
+  scripts/genesis-v2-verify-smoke.sh --run-dir data/genesis-v2-runs/gv2-2026-06-20-3
   scripts/genesis-v2-verify-smoke.sh --manage-fail-threshold 3
 USAGE
 }
@@ -34,6 +37,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --run-id)
       RUN_ID="${2:-}"
+      shift 2
+      ;;
+    --run-dir)
+      RUN_DIR="${2:-}"
       shift 2
       ;;
     --manage-fail-threshold)
@@ -52,6 +59,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -n "$RUN_DIR" ]]; then
+  RUN_DIR="$(cd "$RUN_DIR" 2>/dev/null && pwd || echo "$RUN_DIR")"
+  if [[ -z "$RUN_ID" ]]; then
+    RUN_ID="$(basename "$RUN_DIR")"
+  fi
+  if [[ "$RUN_DIR" != "$RUNS_DIR/"* ]]; then
+    FIXTURE_MODE=1
+  fi
+fi
+
 if [[ -z "$RUN_ID" ]]; then
   RUN_ID="$(python3 - <<PY
 import pathlib
@@ -66,7 +83,9 @@ if [[ -z "$RUN_ID" ]]; then
   exit 2
 fi
 
-RUN_DIR="$RUNS_DIR/$RUN_ID"
+if [[ -z "$RUN_DIR" ]]; then
+  RUN_DIR="$RUNS_DIR/$RUN_ID"
+fi
 CFG="$RUN_DIR/config.json"
 POLLER_LOG="$RUN_DIR/poller.log"
 CARD_STORIES="$RUN_DIR/card-stories"
@@ -80,7 +99,7 @@ if [[ ! -f "$CFG" ]]; then
   echo "FAIL: config missing: $CFG" >&2
   exit 2
 fi
-if [[ ! -f "$POLLER_LOG" ]]; then
+if [[ "$FIXTURE_MODE" -eq 0 && ! -f "$POLLER_LOG" ]]; then
   echo "FAIL: poller log missing: $POLLER_LOG" >&2
   exit 2
 fi
@@ -94,9 +113,11 @@ PY
 )"
 MISSION_CARD="$CARD_STORIES/$MISSION_ID.md"
 
-if [[ -z "$MISSION_ID" || ! -f "$MISSION_CARD" ]]; then
-  echo "FAIL: mission card missing for run $RUN_ID (mission_id='$MISSION_ID')" >&2
-  exit 2
+if [[ "$FIXTURE_MODE" -eq 0 ]]; then
+  if [[ -z "$MISSION_ID" || ! -f "$MISSION_CARD" ]]; then
+    echo "FAIL: mission card missing for run $RUN_ID (mission_id='$MISSION_ID')" >&2
+    exit 2
+  fi
 fi
 
 count_lines() {
@@ -116,8 +137,17 @@ sample_lines() {
   fi
 }
 
-protocol_hits="$(rg -n --no-heading -e 'protocol_violation|gave_up' "$MISSION_CARD" 2>/dev/null || true)"
-protocol_count="$(count_lines "$protocol_hits")"
+establishment_summary="skipped"
+if [[ -f "$REPO_ROOT/scripts/gv2-establishment-ladder.py" ]]; then
+  establishment_summary="$(python3 "$REPO_ROOT/scripts/gv2-establishment-ladder.py" --run-dir "$RUN_DIR" 2>/dev/null | tail -1 || echo "ladder error")"
+fi
+
+protocol_hits=""
+protocol_count=0
+if [[ -f "$MISSION_CARD" ]]; then
+  protocol_hits="$(rg -n --no-heading -e 'protocol_violation|gave_up' "$MISSION_CARD" 2>/dev/null || true)"
+  protocol_count="$(count_lines "$protocol_hits")"
+fi
 
 # Mission re-dispatch continuity. By design the planner completes its MISSION turn
 # (terminal card), and the poller re-dispatches it on a fresh [GENESIS2:MANAGE] card
@@ -403,7 +433,18 @@ echo "  craft_diag (scoped craft):  $craft_diag_summary"
 echo "  gv2 card compliance:        $gv2_compliance_summary"
 echo "  mc disconnect/503 (scoped): $server_down_count"
 echo "  terrain-stall matches:      $terrain_count"
+echo "  establishment ladder:       $establishment_summary"
 echo
+
+est_warn_below="${GV2_ESTABLISHMENT_WARN_BELOW:-2.0}"
+if [[ "$establishment_summary" =~ score=([0-9.]+)/ ]]; then
+  est_score="${BASH_REMATCH[1]}"
+  if ! python3 -c "import sys; sys.exit(0 if float('${est_score}') >= float('${est_warn_below}') else 1)" 2>/dev/null; then
+    if [[ "$status" != "FAIL" ]]; then status="WARN"; fi
+    warn_reasons+=("establishment score ${est_score} below ${est_warn_below}")
+  fi
+fi
+
 echo "result: $status"
 
 if ((${#fail_reasons[@]} > 0)); then

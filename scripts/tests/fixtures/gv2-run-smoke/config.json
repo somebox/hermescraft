@@ -1,0 +1,12 @@
+{
+  "run_id": "fixture",
+  "world": "genesis2",
+  "seed": 91011,
+  "mode": "emergent",
+  "mission_id": "t_mission",
+  "shelter_rendered": true,
+  "started_at": "2026-06-21T10:00:00Z",
+  "ended_at": "2026-06-21T11:30:00Z",
+  "evidence_arm": "B",
+  "tier": "easy"
+}

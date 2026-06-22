@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>fixture — gv2 dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.5rem; max-width: 960px; }
+    .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .box { border: 1px solid #ccc; padding: 1rem; border-radius: 6px; }
+    h1 { font-size: 1.25rem; }
+    .badge { font-weight: bold; font-size: 1.1rem; }
+    nav { margin: .5rem 0 1rem; font-size: .95rem; }
+  </style>
+</head>
+<body>
+  <nav><a href="../../gv2-fixture-test/dashboard/index.html">← gv2-fixture-test</a> · <strong>fixture</strong> · <a href="../../_index/index.html">fleet index</a></nav>
+  <h1>fixture</h1>
+  <p>Achievement G0 (overall 28) — board_quality.gv2_invalid 1 vs max 0</p>
+  <p></p>
+  <p class="badge">Level G0 → target G1</p>
+  <p>No prior scorecard for delta · compare_safe=True</p>
+  <div class="hero">
+    <div class="box"><h2>Operational</h2><pre>{
+  &quot;wall_min&quot;: 90.0,
+  &quot;cap_min&quot;: null,
+  &quot;cards_done&quot;: 2,
+  &quot;cards_total&quot;: 3,
+  &quot;retro_done&quot;: &quot;1/1&quot;,
+  &quot;retro_pending&quot;: 0,
+  &quot;smoke&quot;: null,
+  &quot;exceptions&quot;: [
+    &quot;gv2_invalid:1&quot;
+  ],
+  &quot;gv2_invalid&quot;: 1,
+  &quot;motor_errors_scoped&quot;: 1,
+  &quot;goalchanged&quot;: 1,
+  &quot;server_down&quot;: 0,
+  &quot;card_effectiveness_median&quot;: 80,
+  &quot;active_mc_pct&quot;: 0.0
+}</pre></div>
+    <div class="box"><h2>Achievement</h2><pre>{
+  &quot;establishment_score&quot;: 6.0,
+  &quot;production_critical_ok&quot;: true,
+  &quot;food_ratio&quot;: 1.0,
+  &quot;milestones_met&quot;: [
+    &quot;site&quot;,
+    &quot;ground&quot;,
+    &quot;shell&quot;,
+    &quot;chest&quot;,
+    &quot;food&quot;,
+    &quot;mine&quot;
+  ],
+  &quot;milestones_missed&quot;: []
+}</pre></div>
+  </div>
+  <p>
+    <a href="../scorecard.json">scorecard.json</a> ·
+    <a href="../postmortem.md">postmortem.md</a> ·
+    <a href="../feedback-bundle.json">feedback-bundle.json</a>
+  </p>
+</body>
+</html>

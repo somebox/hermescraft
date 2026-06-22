@@ -1,0 +1,9 @@
+{
+  "run_id": "fixture",
+  "started_at": "2026-06-21T10:00:00Z",
+  "ended_at": "2026-06-21T11:30:00Z",
+  "windowed": true,
+  "files": {
+    "actions-mox.jsonl": {"kept": 2, "dropped_out_of_window": 0}
+  }
+}

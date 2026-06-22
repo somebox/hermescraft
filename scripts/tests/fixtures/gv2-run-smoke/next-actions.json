@@ -1,0 +1,15 @@
+[
+  {
+    "id": "na-1",
+    "type": "planner_prompt_or_skill",
+    "title": "Close gap: board_quality.gv2_invalid 1 vs max 0",
+    "evidence": [
+      "board_quality.gv2_invalid 1 vs max 0"
+    ],
+    "confidence": "medium",
+    "predicted_delta": {
+      "establishment": 5
+    },
+    "suggested_test": "scripts/tests/test_gv2_establishment_ladder.py"
+  }
+]
