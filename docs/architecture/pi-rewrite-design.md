@@ -1,6 +1,6 @@
 # Hermescraft on Pi: Rewrite Design
 
-Status: **design proposal** — not committed, ready for review.
+Status: **design proposal** — not committed, ready for review. **Not the migration plan:** the canonical Hermes + kanban direction remains [`target.md`](target.md) and [`README.md`](README.md). See also [`pi-vs-hermescraft-mapping.md`](pi-vs-hermescraft-mapping.md).
 
 This doc describes what a hermescraft rewrite on top of Pi would look like, informed by three external sources:
 - Pi's [extension API](https://pi.dev/docs/latest/extensions) (lifecycle events, tools, commands, session management)

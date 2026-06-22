@@ -1,6 +1,6 @@
 # Embodied control: reflex-first bot ↔ agent interface
 
-Status: **design exploration** (2026-06-10). Strategic vision for how Hermes workers act in Minecraft **without visual reasoning** and with a **bounded `mc` surface**. Card-level orchestration (narrow agents, one phase per card) lives in [`target.md`](target.md). This doc is the **vertical** complement: what the body does vs what the mind chooses.
+Status: **active strategy** (2026-06-10, aligned with [`target.md`](target.md)). Strategic vision for how Hermes workers act in Minecraft **without visual reasoning** and with a **bounded `mc` surface**. Card-level orchestration (narrow agents, one phase per card) lives in [`target.md`](target.md). This doc is the **vertical** complement: what the body does vs what the mind chooses. Folder maturity: [`README.md`](README.md) § Maturity.
 
 **Living vocabulary.** Names here (reflex, taxi, macro, microscope, LOOK/GO/DO, playbook tiers) are **working labels**. Taxonomy churn is expected — driven by **evidence**, not prose debates (see [Evidence loop](#evidence-loop-policy) below).
 

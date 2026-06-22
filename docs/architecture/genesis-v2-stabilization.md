@@ -1,6 +1,6 @@
 # Genesis v2 stabilization notes
 
-Status: operator runbook supplement (2026-06). Complements [`target.md`](target.md) and the genesis-v2 devlog. Documents stabilization choices that are **evidence-gated** — not implemented in bot code until the next run proves site-prep + correct verbs were used and failures persist.
+Status: operator runbook supplement (2026-06). Indexed from [`README.md`](README.md). Complements [`target.md`](target.md) and the genesis-v2 devlog. Documents stabilization choices that are **evidence-gated** — not implemented in bot code until the next run proves site-prep + correct verbs were used and failures persist.
 
 ## Retro capture
 
@@ -43,3 +43,16 @@ Use these buckets with card stories to decide whether the ceiling is still site-
   counts — treat high 503 as a confound before judging gameplay outcomes.
 - Control plane: poller skips new `[GENESIS2:SUPERVISE]` when the worker is already
   blocked with `card-review-needed:` / `schema-missing:` (planner review path).
+
+## Evidence Loop phase 1 (2026-06)
+
+Minimal experiment surface before deeper metrics tooling:
+
+- **`--planner-model`** on `new-run` / `emergent-run` — bodiless profiles use planner model; workers use `--model`. Persisted in run `config.json`.
+- **`emergent-run --spawn`** — operator-pinned easy-site control; `spawn_source` in config. **Evidence Loop three-way:** pin all arms (see runbook); do not rely on auto `find_good_spawn` for A/B.
+- **Establishment ladder** — `scripts/gv2-establishment-ladder.py` + smoke WARN line; marks frozen under `artifacts/world/` at `stop`.
+
+Readout precedence: establishment score → retro/503/MANAGE → scoped motor errors → `gv2_invalid`.
+Operator protocol and decision table: [`docs/guides/genesis-v2-runbook.md`](../guides/genesis-v2-runbook.md) (Evidence Loop section).
+
+Phase 2 (gated): extract `gv2_run_metrics.py`, tiered compliance, linter normalization, `gv2-run-report.py` — only after the three-way result.

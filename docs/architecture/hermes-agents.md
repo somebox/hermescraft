@@ -79,6 +79,8 @@ Example:
 
 Each `@` line → `kanban_create`: `assignee`, `metadata.bot`, `skills`, chained `parents`. **Single-bot chain:** epic sets `metadata.bot`; assignee rotates navigator → miner → … on the same body ([`epic-lifecycle.md`](epic-lifecycle.md)).
 
+**Intent vs materialized card:** When `@planner` emits **intents** (ready rows with `assignee` but **no** `metadata.bot` yet), `@dispatcher` BIND sets the body per [`board-dynamics.md`](board-dynamics.md). When the pilot DSL parser materializes a line directly (bot name in the `@` line), **`metadata.bot` is set at create** — dispatcher only validates availability and mutex, it does not silently reassign a named bot.
+
 Cards **without** `@mentions` use prose decomposition or Hermes auto-decompose.
 
 ---

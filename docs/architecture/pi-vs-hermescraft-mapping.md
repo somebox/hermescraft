@@ -1,6 +1,6 @@
 # Hermescraft on Pi: Architecture Mapping
 
-Status: **design exploration** — not a migration plan, a thought experiment.
+Status: **design exploration** — not a migration plan, a thought experiment. Canonical direction: [`README.md`](README.md), [`target.md`](target.md).
 
 **Question:** If we were building hermescraft today on top of Pi instead of Hermes v0.15, what would the architecture look like? Where do concepts map cleanly? Where do they diverge?
 

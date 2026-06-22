@@ -91,6 +91,8 @@ write any entry.
 
 ## Priority and aging
 
+**Not dispatcher bind priority.** Weighted `standing_hint + aging_term + state_urgency` here applies only to the **cron orchestrator's field registry** — which check cards to file. Kanban **body bind** at MVP uses the lexicographic tick in [`board-dynamics.md`](board-dynamics.md) § MVP (no weighted scorer). Card `priority` numbers sort the ready queue within a bot lane; they do not feed the orchestrator formula above.
+
 The orchestrator computes a check-priority for every registry entry
 at every cron tick. The form is roughly:
 

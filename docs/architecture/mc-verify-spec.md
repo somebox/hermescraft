@@ -125,7 +125,7 @@ The verb dispatches by kind into existing primitives where possible:
 
 - `chest_contains` → reads `/marks` to resolve, then `data get block` via the bot's existing chest-read path (mirrors `mc inspect`)
 - `inventory_contains` → reads bot inventory
-- `region_empty`/`region_filled` → call existing `mc is_empty`/`mc is_filled`
+- `region_blocks` → scan bounded volume (see § Grammar); may delegate to existing region helpers where implemented
 
 This keeps `mc verify` thin — it's a uniform predicate surface, not a re-implementation of every primitive.
 

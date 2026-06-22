@@ -87,6 +87,7 @@ Workers know mode from **`metadata.bot`** + **`metadata.card_kind`** (and title 
 | **Review** | unset | `review` | Compare acceptance vs child summaries, spawn verify | L0 + `agent-overseer` |
 | **Clarify** | unset | `clarify` | Read epic + comments, emit revised spec or new children | L0 + `agent-planner` |
 | **Plan** | unset | `plan` | Decompose epic spec → child creates | L0 + `agent-planner` |
+| **Observe** | set or unset | `observe` | Desk or in-world peek for verification / fair-play evidence; title often `[VERIFY]` | L0 + role bundle observe section — see [`observe-cards.md`](observe-cards.md) |
 
 **Same expertise, different context:** `@farmer` execute uses **`minecraft-farming`** + playbook coords (often scripted grid); `@farmer` research uses file tools only. `@miner` execute loads **`minecraft-navigation` + mining** for uneven terrain; desk mode does not.
 

@@ -76,7 +76,7 @@ Per-topic format: official docs link, key facts, our usage. Entries are tight by
 **Our usage:**
 - This is **not** a substitute for our per-bot mutex. Our `landfolk` plugin's `gate-check` + `post_tool_call` hook enforces "one card per assignee at a time" because v0.15 doesn't expose a per-assignee cap.
 - We may set `max_in_progress` as a soft global ceiling (5 bots × 1 card each + headroom).
-- Our [`landfolk-plugin.md`](../specs/kanban/plugin-landfolk.md) stays load-bearing because of this scope gap.
+- Our [`plugin-landfolk.md`](../specs/kanban/plugin-landfolk.md) stays load-bearing because of this scope gap.
 
 ---
 

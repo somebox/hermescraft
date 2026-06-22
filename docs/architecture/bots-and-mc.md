@@ -1,6 +1,6 @@
 # Bots and in-game control (`mc`, HTTP, marks)
 
-Status: **design exploration** (2026-06-05). **Minecraft bodies** and how agents act in-world: bot registry, Mineflayer HTTP, the **`mc` CLI**, marks, and host hooks (mutex, spawn env). Hermes profiles, skills, and planner DSL: [`hermes-agents.md`](hermes-agents.md). Card flow: [`target.md`](target.md). **Reflex-first interface vision:** [`embodied-control.md`](embodied-control.md).
+Status: **design exploration** (2026-06-05); normative binding and lease paths partially landed — see [`README.md`](README.md) § Maturity. **Minecraft bodies** and how agents act in-world: bot registry, Mineflayer HTTP, the **`mc` CLI**, marks, and host hooks (mutex, spawn env). Hermes profiles, skills, and planner DSL: [`hermes-agents.md`](hermes-agents.md). Card flow: [`target.md`](target.md). **Reflex-first interface vision:** [`embodied-control.md`](embodied-control.md).
 
 Operator cheat sheet: [`../../AGENTS.md`](../../AGENTS.md). Runtime map: [`components.md`](components.md). Verb registry: [`../reference/mc-cheatsheet.md`](../reference/mc-cheatsheet.md) (generated from [`bot/cli/registry.mjs`](../../bot/cli/registry.mjs)).
 
@@ -76,7 +76,7 @@ Dashboard and operators also poll bot HTTP (read-only); agents use **`mc`** as t
 | Live state slices | `bot/lib/server/state.js` — status, observe, inv, marks, … |
 | Marks + shared names | `GET /marks`, `data/locations-*.json`, [`reconcile-marks.py`](../../scripts/reconcile-marks.py) |
 | Regions (enforce) | Bot regions API + `data/regions-*.json` ([`designated-regions.md`](../specs/world/designated-regions.md)) |
-| Mutex / promotion | `hermes landfolk gate-check` — **extend** to `metadata.bot` ([`landfolk-plugin.md`](../specs/kanban/plugin-landfolk.md)) |
+| Mutex / promotion | `hermes landfolk gate-check` — **extend** to `metadata.bot` ([`plugin-landfolk.md`](../specs/kanban/plugin-landfolk.md)) |
 
 **Not validated yet:** spawn-time injection from `metadata.bot`; assignee = agent name on production cards; `:mark:` resolver when chosen bot is `down` (fallback: `locations-base.json` vs fail parse — open question below).
 
@@ -161,7 +161,7 @@ Gate-check and spawn **must use the same body-resolution function** so mutex dom
 
 ### Worker runtime contract
 
-- Agents **do not** read `data/bots/` or discover ports from card prose ([`workspaces.md`](workspaces.md) access model).
+- Worker **agents** must not read `data/bots/` to choose a body or port — binding comes from kanban `metadata.bot` + host spawn/lease injection ([`workspaces.md`](workspaces.md) access model). The spawn layer and file-tool allowlist may read `data/bots/*.yaml`; that is not agent-side discovery.
 - `mc` resolves HTTP via [`bot/cli/api-url.mjs`](../../bot/cli/api-url.mjs): on kanban workers, `HERMES_KANBAN_TASK` + `MC_API_URL` beat a stale parent `_MC_API_URL_LOCKED`.
 - **Genesis v2 lease path (MVP):** colony specialists mint with `HERMES_BOT_LEASE=1` and **no** `MC_API_URL` — bodies are acquired at runtime via [`mc bot checkout`](bot-lease.md) / `release`. See [`bot-lease.md`](bot-lease.md). Landfolk flint/mason remain on frozen `MC_API_URL`.
 - Hermes **scrubs `MC_*` at kanban worker spawn** (parent/dispatcher exports do not stick). Injection must land **after** scrub via:

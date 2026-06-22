@@ -1,168 +1,261 @@
 # Target architecture
 
-Status: **design exploration** (2026-06-05). Not yet built. This is the canonical statement of the architecture we're building toward. Other docs in this folder zoom into specific parts: [`embodied-control.md`](embodied-control.md) for the **reflex-first** bot ↔ agent interface, [`hermes-agents.md`](hermes-agents.md) for Hermes profiles and skills, [`bots-and-mc.md`](bots-and-mc.md) for in-game control, [`components.md`](components.md) for processes and APIs, [`workspaces.md`](workspaces.md) for the storage model, [`board-dynamics.md`](board-dynamics.md) for operations, [`impact.md`](impact.md) for where this touches existing code.
+Status: **active target** (updated 2026-06-20 after genesis-v2 emergent runs). This is the canonical statement of the architecture we are building toward: a sharper agent/framework interface that makes Minecraft agents more efficient in-game by reducing decision entropy, making `mc` commands more robust, and giving agents the observation chain they need for good choices.
 
-If you want the visual version first, open [`architecture-visual-guide.html`](architecture-visual-guide.html) in a browser.
+Related docs:
+
+- [`embodied-control.md`](embodied-control.md) — reflex-first bot ↔ agent interface and generated `mc` surface.
+- [`hermes-agents.md`](hermes-agents.md) — Hermes profiles, skills, and card roles.
+- [`bots-and-mc.md`](bots-and-mc.md) — in-game control, bot registry, fleet binding.
+- [`board-dynamics.md`](board-dynamics.md) — dispatcher, mutex, recovery, board operations.
+- [`stock-truth-model.md`](stock-truth-model.md) — stored/reachable/withdrawable stock contract.
+- [`workspaces.md`](workspaces.md) — workspace and runtime access model.
+- [`components.md`](components.md), [`impact.md`](impact.md) — process/API map and implementation impact.
 
 ---
 
-## The problem
+## Current thesis
 
-Long Minecraft worker sessions thrash. The diagnosis:
+The agent framework should make **good in-game decisions cheap**.
 
-- Worker context grows linearly per turn; decision-relevant context stays roughly constant.
-- A single worker loads a wide skill catalog (nav + mining + crafting + building + survival) regardless of what the current card actually needs.
-- A flash-tier model with too many plausible next actions per turn produces fewer good ones.
-- Phase transitions inside one card (navigate → mine → return → craft) accumulate noise in the working set — failed move attempts, stale observations, intermediate plans.
+Agents should choose among well-shaped options: which goal matters, which card to file, which command line to run next, and when to rescope. The framework should handle the mechanics that language models are bad at doing reliably over long sessions: pathfinding loops, repeated-failure counting, compact observation, stock truth, body binding, verification, and recovery.
 
-The fix is not a stronger model. It's **smaller scope per agent invocation**. The card boundary is the natural place to reset scope.
+The direction is not “use a stronger model” or “write more SOUL prose.” The direction is:
 
-Pair that horizontal split with a **vertical** one: push motor control and task-shaped sensing into the bot; keep the agent on goals and choices. **Convergence strategy** (large registry, small generated agent surface, envelope/addressing spine, survey-driven facades): [`embodied-control.md`](embodied-control.md).
+- **Smaller scope per agent invocation.** One card, one phase, one fresh context.
+- **Stronger vertical interface.** Bot runtime owns motor control and task-shaped sensing; agents choose goals and commands.
+- **Control-plane backstops.** Dispatcher, poller, and overseer enforce budgets, bindings, verification, and rescope paths.
+- **Compact truth surfaces.** Observation should answer the current decision, not dump raw state that forces voxel reasoning.
+
+Recent genesis-v2 runs support this direction: the system reached shelter, farm, road, mine, cobble, and wood production. The remaining failures were mostly places where prompt text was asked to enforce an invariant that should live in code.
+
+---
+
+## The problem now
+
+Long Minecraft worker sessions still thrash when the framework exposes too many plausible actions and too little structured truth.
+
+Evidence from recent runs:
+
+- Workers can produce real colony output when profiles are narrow and the planner decomposes work, but tool-error loops still burn hundreds of failed commands when stop conditions are prompt-only.
+- `mc` motor programs such as crafting and navigation improve outcomes when they absorb fragile low-level sequences; dense-forest `fell_tree` now needs the same treatment.
+- Observation quality directly affects turn count. If `observe` hides marks/signs/torches under nav brief, scouts waste turns rediscovering state.
+- Planner quality depends on deterministic summaries: site score, stock sufficiency, blocked dependencies, stale data, and verification results.
+- Mark-based progress alone undercounts real work. Run artifacts and verification must be first-class.
+
+So the central architecture question is:
+
+> How do we make the next correct in-game action obvious, bounded, and auditable?
+
+---
 
 ## The model in three sentences
 
-**Agents are actor identities. Bots are bodies. Cards pair them per phase.**
+**Agents are actor identities. Bots are bodies. Cards pair them for a bounded phase of work.**
 
-An **agent** is a Hermes profile that owns expertise — its own home (`~/.hermes/profiles/<agent>/`), its preferred model, its skills, its accumulated cross-bot memory, its SOUL. `@navigator`, `@miner`, `@crafter` are agents; so are bot-less coordinators `@planner`, `@dispatcher`, `@overseer`. A **bot** is a Minecraft player body — a Mineflayer process with login credentials and an HTTP API on a known port. Bots aren't Hermes profiles; they're registry entries (`data/bots/<bot>.yaml`) the agents remote-control. Each card spawns a fresh worker on the agent's profile (with the bot's MC env injected when bot-bound), runs one phase, and exits clean.
+An **agent** is a Hermes profile that owns expertise: home directory, model, skills, memory, and SOUL. `@navigator`, `@miner`, `@builder`, `@farmer`, `@planner`, `@dispatcher`, and `@overseer` are agents.
 
-## The vocabulary
+A **bot** is a Minecraft player body: a Mineflayer process with login credentials and an HTTP API. Bots are registry entries, not Hermes profiles. A card binds an agent to a body, injects the body’s `MC_*` environment, runs a phase, records handoff/evidence, then exits.
 
-Six categories. Detailed in [`architecture-visual-guide.html`](architecture-visual-guide.html); summarized here:
+---
 
-| Category | What it is | Examples |
+## Vocabulary
+
+| Term | Meaning | Examples |
 |---|---|---|
 | **Role** | Architectural concern | planning, allocation, execution, review, watch, tooling |
-| **Agent** | A named actor identity — Hermes profile with expertise | `miner`, `navigator`, `crafter`, `planner`, `dispatcher` |
-| **Bot** | A named player body — Mineflayer + registry entry; persona (later) | [`bots-and-mc.md`](bots-and-mc.md#target-fleet-roster); card→body contract: [§ Fleet binding](bots-and-mc.md#fleet-binding-and-supervision-normative) |
-| **Workspace** | A directory of state and code (often git-backed) | `data/agents/miner/`, `~/.hermes/profiles/miner/workspace/` |
-| **Card** | A unit of work on the kanban board | `assignee=<agent>` + `metadata.bot=<bot>` (target) or interim `[bot:<id>]` title prefix + optional `metadata.card_kind` |
-| **Human** | The operator | Sets goals, reviews, intervenes on edge cases |
+| **Agent** | Hermes profile with expertise | `planner`, `navigator`, `miner`, `builder`, `overseer` |
+| **Bot** | Mineflayer-controlled Minecraft body | `pip`, `mox`, `zee`; see [`bots-and-mc.md`](bots-and-mc.md) |
+| **Card** | Unit of work on the kanban board | `assignee=<agent>`, `metadata.bot=<bot>`, parents/deps |
+| **Control plane** | Host-side scripts/plugins that enforce run invariants | dispatcher, poller, gate-check, backstops |
+| **Observation chain** | The sensing path from world state to agent decision | `observe`, `scene`, nav brief, stock brief, planner brief |
+| **Human** | Operator | Sets goals, reviews, intervenes on edge cases |
 
-## Three concerns
+---
 
-Architectural concerns are abstract jobs. Each maps to one or more **Hermes agent profiles** (not bots). Data flows top to bottom; execution completes back up through review and side channels (watch, tooling).
+## Responsibility split
 
-| Order | Concern | Primary agent(s) | Bot-bound? | Delivers |
-|---|---|---|---|---|
-| 1 | **Planning** | `@planner` | No | Parses `@mention` DSL → intents; triage + research cards; LLM for prose cards |
-| 2 | **Allocation** | `@dispatcher` (script OK at MVP) | No | Fleet snapshot; bind `metadata.bot`; maintenance + rebind ([`board-dynamics.md`](board-dynamics.md)) |
-| 3 | **Execution** | `@navigator`, `@miner`, `@crafter`, `@builder`, `@farmer`, `@soldier`, … | Yes (when `metadata.bot` set) | One phase per card; fresh worker; MC env injected at spawn |
-| 4 | **Review** | `@overseer` | No | Epic judgment; optional per-card verify |
-| — | **Watch** | *(no profile at MVP)* | — | URGENT cards, dispatcher tick |
-| — | **Curation** | *(no profile at MVP)* | — | Recall compaction → git ([`data-api.md`](data-api.md)) |
-| — | **Tooling** | operator + back-office | — | Workspace scripts, `[MR]` cards |
+The architecture works when each layer owns the right kind of decision.
 
-There is no Steward orchestrator bot. `@planner`, `@dispatcher`, and `@overseer` replace Steward’s planning, dispatch, and judgment. The Steward **player** (if kept) is a normal registry bot. See [`hermes-agents.md`](hermes-agents.md) for roster and **additional profile ideas**.
+| Layer | Owns | Must not rely on |
+|---|---|---|
+| **Planner** | Goals, tradeoffs, decomposition, rescope when evidence changes | Raw log reading, stock inference, pathfinder debugging |
+| **Dispatcher / poller** | Body binding, mutex, run health, time/error budgets, blocked dependency summaries | LLM self-counting or voluntary stop conditions |
+| **Execution agent** | Choosing from the current card’s shaped command surface and leaving handoff evidence | Long multi-phase planning, hidden observe-mode memory, repeated low-level retry loops |
+| **Bot runtime / `mc`** | Motor programs, region policy, route hints, partial progress, honest envelopes, task-shaped sensing | Colony strategy, kanban decomposition |
+| **Overseer / verifier** | Outcome judgment, impossible/superseded cards, acceptance metadata | Worker narration as proof |
+| **Human** | Goals, priorities, exceptional intervention | Routine verification or run-log archaeology |
 
-## How cards flow
+There is no Steward orchestrator bot in the target. Steward’s concerns split into `@planner`, `@dispatcher`, and `@overseer`. A Steward player, if kept, is just another bot body.
 
+---
+
+## Agent/framework interface contract
+
+The interface is the product. A worker should not need to reverse-engineer the world from prose, logs, or hidden state.
+
+### Cards
+
+Cards should provide:
+
+- a single bounded phase;
+- literal `mc` command lines or a narrow playbook phase;
+- required mark/site/coord inputs;
+- parent/dependency context;
+- done criteria and verification hint;
+- body binding metadata or a lease ritual;
+- max runtime / failure budget where supported.
+
+### Observations
+
+Observation surfaces should provide:
+
+- **task-shaped summaries**: stock, site fit, route options, hazards, blocked dependencies;
+- **truth flags**: stale snapshot, brief refresh required, missing POI channel, unknown stock;
+- **copy-paste commands** when the next action is mechanical;
+- **full override** for scout/planner situations that need marks, signs, torches, or raw details;
+- consistent JSON fields so scripts and agents see the same truth.
+
+Observation is not only “what the bot sees.” It is the decision input contract.
+
+### Actions
+
+Every important `mc` action should have:
+
+- a structured success/failure envelope;
+- typed `observed_state` or `state_after` where useful;
+- `next_action_hint` only when it is safe and fresh;
+- partial-progress semantics for long actions;
+- bounded retry behavior and explicit retry safety;
+- policy-aware hints for regions/protected sites.
+
+### Backstops
+
+The framework, not the prompt, enforces:
+
+- repeated tool-error budgets;
+- max runtime / stalled card handling;
+- body mutex and lease cleanup;
+- no duplicate/superseded card churn;
+- audit capture at run end;
+- blocked dependency visibility.
+
+---
+
+## Flow
+
+```mermaid
+flowchart TD
+  operator["Operator: goal or mission"] --> planner["Planner: decompose and rescope"]
+  planner --> dispatcher["Dispatcher / poller: bind body, enforce budgets"]
+  dispatcher --> card["Card: bounded phase"]
+  card --> executor["Execution agent: choose next command"]
+  executor --> mc["mc / bot runtime: motor and sensing"]
+  mc --> evidence["Structured evidence: state, hints, errors, stock"]
+  evidence --> dispatcher
+  evidence --> overseer["Overseer: verify, archive, rescope"]
+  overseer --> planner
 ```
-Operator drops triage card with @mention DSL body
-   │
-   ▼
-@planner (Hermes profile) wakes on triage event
-   │   Reads body, parses @mentions, validates :marks: (bot /marks or base file)
-   │
-   ▼
-@planner emits N intents (agent named, bot blank) to @dispatcher
-   │
-   ▼
-@dispatcher (Hermes profile) reads fleet state, applies bind rules
-   │   Sets metadata.bot per intent ([`board-dynamics.md`](board-dynamics.md))
-   │
-   ▼
-@dispatcher writes N kanban_create calls:
-   │   assignee = <agent>      (e.g. "miner")
-   │   metadata.bot = <bot>    (e.g. "pip")
-   │   skills = [agent-miner-bundle, ...]
-   │
-   ▼
-Hermes/landfolk dispatcher claims first card
-   │   Profile=~/.hermes/profiles/miner/ → loads agent home
-   │   metadata.bot=pip → spawn injects MC_API_URL + MC_USERNAME for pip
-   │
-   ▼
-Worker spawns with miner's expertise + pip's body env
-   │   Calls skill_view('agent-miner') turn 1; runs phase
-   │
-   ▼
-Worker calls kanban_complete with handoff metadata; exits
-   │
-   ▼
-post_tool_call hook promotes next ready card for that bot
-   │   (mutex enforced on metadata.bot, not assignee)
-   │
-   ▼
-(chain continues; on failure, @dispatcher writes a repair card)
-   │
-   ▼
-All children done → parent root ready → @overseer judges epic completion
-```
 
-Epic **metadata**, **`--epic` vs `--depends-on`**, progress as child counts, review + follow-up doc: [`epic-lifecycle.md`](epic-lifecycle.md).
+Normal flow:
 
-Detail walkthroughs: [`hermes-agents.md`](hermes-agents.md) (profiles + DSL), [`bots-and-mc.md`](bots-and-mc.md) (`mc` + registry + § Fleet binding), [`board-dynamics.md`](board-dynamics.md) (dispatch tick, mutex, recovery).
+1. Operator drops a mission, triage card, or `@mention` DSL body.
+2. `@planner` emits bounded cards with assignee, deps, required marks/coords, and verification criteria.
+3. `@dispatcher` binds a bot body and enforces mutex/runtime constraints.
+4. The execution agent runs one phase using a scoped skill/verb surface.
+5. Bot runtime returns structured evidence and durable action logs.
+6. Worker completes/blocks with handoff metadata.
+7. Poller/overseer verifies outcomes, archives superseded work, and asks planner to rescope when needed.
 
-## What we lean on v0.15 for
+Detailed mechanics live in [`hermes-agents.md`](hermes-agents.md), [`bots-and-mc.md`](bots-and-mc.md), [`board-dynamics.md`](board-dynamics.md), and [`epic-lifecycle.md`](epic-lifecycle.md).
 
-| Need | v0.15 primitive |
+---
+
+## What we lean on Hermes for
+
+| Need | Hermes / kanban primitive |
 |---|---|
 | Narrow skill catalog per card | `kanban_create(skills=[...])` |
-| Per-phase budget | `kanban_create(max_runtime_seconds=N)` |
-| Safe retries | `kanban_create(idempotency_key=...)` |
-| Lease + heartbeat + reclaim | `claim_lock` + `kanban_heartbeat` + TTL |
-| Event-driven rebind | `WS /api/plugins/kanban/events?since=<id>` |
-| Worker introspection | `GET /api/plugins/kanban/workers/active` |
-| Sequential / parallel phases | `kanban_create(parents=[...])` |
-| Intra-phase model routing | `delegate_task(model=...)` for short bot-less cards |
+| Sequential / parallel work | card parents / dependencies |
+| Runtime budget | `max_runtime_seconds` where available |
+| Safe retries | idempotency keys / explicit replacement cards |
+| Worker lifecycle | claim, heartbeat, completion/block events |
+| Bot-less coordination | planner / dispatcher / overseer profiles |
+| Short specialist calls | delegated bot-less research/review where useful |
 
-Field-level detail in [`hermes-v0.15-reference.md`](hermes-v0.15-reference.md).
+Hermes provides the card and worker substrate. Minecraft-specific body binding, `mc` env injection, and run-control backstops remain our host layer.
+
+---
 
 ## What we build
 
 | Need | Where it lives |
 |---|---|
-| Hermes profile per agent | `~/.hermes/profiles/<agent>/` (one per agent, set up by deploy script) |
-| Bot registry | `data/bots/<bot>.yaml` (port, username, description) |
-| Per-card MC env injection at spawn | Custom dispatcher layer (see below); normative contract [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding |
-| Per-bot mutex | `landfolk` plugin gate-check on resolved body id ([`mutex_key.py`](../../plugins/landfolk/landfolk/orchestrator/mutex_key.py); `metadata.bot` when schema ships) |
-| `@mention` DSL parser | Deterministic Python lib + `@planner` agent loop |
-| Fleet state + bind rules | `@dispatcher` tick (lexicographic; see [`board-dynamics.md`](board-dynamics.md)) |
-| Agent skill bundles | `data/workspace/reference/skills/agent-<name>.md` — skill **layers** L0–L3 in [`hermes-agents.md`](hermes-agents.md) |
-| Agent SOULs | `data/workspace/reference/souls/<agent>.md` — deployed to each profile's `SOUL.md` |
-| Shared git workspace (audited / designed content) | `data/workspace/` — domain-organized (geo, infra, production, operations, reference); ownership in `OWNERS.yaml`; PRs via back-office board |
-| Live operational data | Host data API at `/api/workspace/*` — **recall stream** (cross-bot report/query for task-time memory) + fleet/dispatch operations. Compacted catalogs land in git via workspace cards. Optional spatial catalog is phase 2. See [`data-api.md`](data-api.md). |
-| Bot-bound runtime context | Card metadata + agent workspace (when needed) |
-| Distributed commands | `bin/` (e.g. `mc`) — installed to each profile's PATH at deploy; read-only at runtime |
-| Preemption + repair chains | Conventions on top of `kanban_block` reasons |
+| Agent profiles | `~/.hermes/profiles/<agent>/` plus deployment scripts |
+| Bot registry | `data/bots/<bot>.yaml` or equivalent registry source |
+| Per-card MC env injection | dispatcher / gate-check wrapper; see [`bots-and-mc.md`](bots-and-mc.md) |
+| Per-bot mutex | landfolk plugin / dispatcher on resolved body id |
+| Fleet state and bind rules | dispatcher tick and board metadata |
+| Agent skill bundles | `skills/agent-*.md` and `minecraft-*` companions; see [`hermes-agents.md`](hermes-agents.md) |
+| `mc` agent surface | generated profile-scoped help from registry tiers; see [`embodied-control.md`](embodied-control.md) |
+| Observation chain | `observe`, nav brief, stock brief, site brief, planner brief |
+| Run control plane | poller backstops, supervise cap behavior, dependency summaries, artifact capture |
+| Verification | script predicates first, `@overseer` only when interpretation is needed |
+| Live operational memory | handoff comments, recall stream, compact workspace data; see [`data-api.md`](data-api.md) |
 
-### The per-card MC env injection problem
+### Per-card MC env injection
 
-v0.15 has **no native `pre_spawn` hook** for per-card env modification. For bot-bound cards (`metadata.bot` is set), the worker spawn needs the bot's MC env vars (`MC_API_URL`, `MC_USERNAME`) injected at spawn time. The agent profile doesn't have them in its `.env` — they're per-card.
+Bot-bound cards need body-specific `MC_API_URL`, `MC_USERNAME`, and lease context at spawn time. Hermes profiles do not own those values because bots are bodies, not agents.
 
-Resolution: bot-bound spawn goes through our custom dispatcher (either an extension to the `landfolk` plugin's gate-check, or a small spawn wrapper). For bot-less cards (no `metadata.bot`), Hermes' embedded dispatcher handles spawn natively (just loads the agent profile).
+Resolution: bot-bound spawn goes through our dispatcher/gate-check layer. Bot-less cards use Hermes directly. This stays outside Hermes core.
 
-This is a real but bounded customization, consistent with what `scripts/landfolk-control.sh` already does today (explicit `env … hermes …` invocation).
+---
 
-## What we deliberately don't do
+## What we deliberately do not do
 
-- **Late binding at dispatch.** v0.15 requires `assignee` at create. `@dispatcher` binds at write time and rebinds via `hermes kanban reassign` on WS death events.
-- **Per-task `model_override`.** Not exposed on v0.15. Per-agent profile model + intra-phase `delegate_task` are the only routing knobs.
-- **Mid-card agent swap.** One card = one agent = one fresh context. Phase transitions are card boundaries.
-- **Hermes core patches.** Spawn-env injection is in our dispatcher layer, not in Hermes itself.
-- **`kanban swarm` for outer phases.** Our work is sequential at the bot level (one body, one act at a time). Swarm topology is for parallelizable problems.
-- **Agent runtime access to the source tree.** Workers spawn with `cwd=data/workspace/` and a `pre_tool_call` hook in the landfolk plugin enforces a path allowlist. Agents see workspace + their own Hermes home + distributed `bin/` commands; they don't see `bot/`, `plugins/`, `scripts/`, `dashboard/`. See [`workspaces.md`](workspaces.md) for the five-layer access model.
+- **Do not make SOUL prose the only enforcement layer.** Prompts can describe rules; control plane enforces budgets and stop conditions.
+- **Do not collapse planner, dispatcher, and overseer back into a Steward monolith.** The last runs show the split is useful; it needs stronger interfaces.
+- **Do not ask agents to debug pathfinder or count repeated failures from memory.** That is runtime/poller work.
+- **Do not shrink the `mc` registry by deleting capability.** Keep the large registry; generate a small current surface per profile/playbook.
+- **Do not rely on mark count alone for progress.** Verify world outcomes and archive run artifacts.
+- **Do not make every worker load every Minecraft skill.** Scope skills by card and profile.
+- **Do not patch Hermes core for Minecraft-specific body binding.** Keep this in our dispatcher layer.
 
-## What success looks like
+---
 
-The prototype card on `@navigator` beats today's baseline on:
-- Worker context tokens at completion (smaller)
-- Turn count (fewer)
-- Time to complete (faster or equal)
-- Success rate (equal or better)
+## Efficiency goals
 
-If yes, the architecture pays off and we scale. If no, the bundle content is wrong, not the model — revise content first.
+The architecture is working when a specialist card beats the wide-worker baseline on:
 
-**Reading order and per-topic owners:** [`README.md`](README.md).
+- fewer tool errors per completed card;
+- fewer turns to first useful action;
+- fewer repeated identical or same-class failures;
+- lower context tokens at completion/block;
+- faster wall-clock completion for the same world outcome;
+- equal or better success rate;
+- better auditability: action logs, snapshots, kanban state, and verification explain what happened;
+- better observation sufficiency: workers do not need extra turns to discover hidden marks, stock, or route hints.
 
-There is no roadmap doc. Next steps live in the README as a short working list.
+For genesis-v2 specifically, success means the colony can run longer without operator diagnosis because:
+
+- site selection rejects bad pads before build/farm cards;
+- stock state stops oversupply and empty-chest churn;
+- dense forest work has bounded partial progress and fallback hints;
+- repeated tool-error loops auto-block/rescope before hundreds of failures;
+- outcome verification catches impossible/superseded work;
+- run artifacts are captured for reproducible postmortems.
+
+Stabilization runbook (retro capture, evidence-gated primitives, verify-smoke buckets): [`genesis-v2-stabilization.md`](genesis-v2-stabilization.md).
+
+---
+
+## Near-term build order
+
+1. **Run control plane:** tool-error backstop, supervise cap outcome, artifact capture.
+2. **Observation contract:** `observe --full` / POI override, explicit omissions, stock/site/planner briefs.
+3. **Motor robustness:** partial-progress `fell_tree`, dense-forest fallback, corrected route/fix commands.
+4. **Planner truth surfaces:** deterministic site scoring, stock sufficiency, blocked dependency summary.
+5. **Overseer verification:** script-first acceptance checks, agent judgment only where needed.
+6. **Profile-scoped agent surface:** generated `mc help --profile`, narrow skills, context tests that validate affordance use.
+
+These steps refine the interface between agents and framework. They are not separate from in-game performance; they are how we get it.

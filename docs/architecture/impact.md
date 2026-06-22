@@ -43,7 +43,7 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
 **New model:**
 - Bots are **no longer Hermes profiles**. They're registry entries (`data/bots/<bot>.yaml`) with port, username, description, optional role hints. See [`workspaces.md`](workspaces.md).
 - Mineflayer process supervision is **unchanged** — `scripts/landfolk` still starts/stops the bot processes. The processes themselves don't care about the kanban model.
-- A new consumer: `@dispatcher` polls `/api/players`, `/api/marks`, per-bot status every ~60s and maintains `data/agents/dispatcher/fleet-state.yaml`.
+- A new consumer: `@dispatcher` polls `/api/players`, `/api/marks`, per-bot status every ~60s and maintains `data/agents/dispatcher/fleet-state.yaml` (record shape: [`data-api.md`](data-api.md) § Fleet state record).
 - Marks system stays as a system primitive. Long-term direction is [`../specs/world/marks-sign-anchored.md`](../specs/world/marks-sign-anchored.md) — independent of the agent model.
 
 **MVP:**
@@ -211,7 +211,7 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
 | (no profile) | `~/.hermes/profiles/crafter/` (NEW) | same |
 | (no profile) | `~/.hermes/profiles/builder/` (NEW) | same |
 | (no profile) | `~/.hermes/profiles/planner/` (NEW) | bot-less; agent skill bundle (`agent-planner.md`) drives the parser |
-| (no profile) | `~/.hermes/profiles/dispatcher/` (NEW) | bot-less; runs the affinity scorer + fleet polling |
+| (no profile) | `~/.hermes/profiles/dispatcher/` (NEW) | bot-less; runs the dispatch tick + fleet polling ([`board-dynamics.md`](board-dynamics.md) § MVP) |
 | (no profile) | `~/.hermes/profiles/overseer/` (NEW) | bot-less; triggered on epic root promotions |
 | (no profile) | `~/.hermes/profiles/sentinel/` (NEW) | bot-less; cron-triggered watches |
 | (no profile) | `~/.hermes/profiles/engineer/` (NEW) | bot-less; tooling maintenance (speculative) |
@@ -220,12 +220,18 @@ The MVP is a **rewrite**, not an adaptation. Most existing infra scripts won't b
 
 ## Migration posture
 
-**Build alongside, switch when ready.** New agent profiles come up alongside today's bot profiles. Initial dispatch mode is **advisory** — `@dispatcher` scores and comments, doesn't bind. Once scoring is trusted, it starts writing typed cards. Once typed cards work, today's bot profiles gradually retire.
+**Build alongside, switch when ready.** New agent profiles come up alongside today's bot profiles. **Dispatcher rollout is phased** — normative bind rules (lexicographic tick, no weighted scorer at MVP) live in [`board-dynamics.md`](board-dynamics.md) § MVP and § Pilot steps:
+
+1. **Script-first tick** — `scripts/dispatcher-tick.py` (or plugin cron) before a `@dispatcher` Hermes profile.
+2. **Advisory bind** — log/comment which bot the lexicographic list would pick; operators sanity-check before auto-bind.
+3. **Write-time bind** — `@dispatcher` sets `metadata.bot` when materializing `@planner` intents (or when DSL already names a bot).
+
+There is **no weighted affinity scorer** at MVP; do not describe dispatch as "scoring" except for optional future tie-breakers ([`board-dynamics.md`](board-dynamics.md) § When to add weights).
 
 **No big-bang.** Each layer flips from old to new independently:
 - Worker SOUL update + first agent profile (`navigator`) can ship right after the v0.15.2 upgrade — the spawn layer reads `metadata.bot` and injects MC env from the bot registry; the rest of the fleet still uses today's bot profiles.
 - One pilot card with `assignee=navigator` + `metadata.bot=pip` validates the end-to-end loop.
-- `@dispatcher` advisory mode runs without touching the rest of the fleet.
+- Phase 2 advisory dispatch can run without touching the rest of the fleet.
 - Full migration of bot profiles → bot registry is the last step, not the first.
 
 This posture matches the [README's](README.md) next-steps list and is consistent with the v0.15.2 upgrade plan at [`../platform/hermes-upgrade-0.15-runbook.md`](../platform/hermes-upgrade-0.15-runbook.md).

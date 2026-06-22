@@ -2,7 +2,22 @@
 
 This folder holds the working design for hermescraft's next architectural direction — separating the body (which Minecraft player) from the expertise (what kind of work). A card pairs them per phase. Steward dissolves into bot-less agents. Workers spawn fresh per card with a narrow skill catalog.
 
-Status: **design exploration** (2026-06-05). Not yet built. Validating with one prototype skill bundle ([`skills/agent-navigator.md`](../../skills/agent-navigator.md)) before scaling.
+**North star:** [`target.md`](target.md) — canonical target statement (updated from genesis-v2 evidence).
+
+Individual docs may still carry older **Status** lines in their headers; when they disagree with the table below, treat this README + `target.md` as authoritative.
+
+## Maturity (what is real today)
+
+| Layer | Maturity | Owner doc |
+|---|---|---|
+| Target vocabulary, responsibility split, build order | **Active target** | [`target.md`](target.md) |
+| Reflex-first `mc` / agent surface strategy | **Active strategy** (delivery in progress) | [`embodied-control.md`](embodied-control.md) |
+| Genesis-v2 run control, evidence gates, retro/stop | **Operator supplement** (in use on runs) | [`genesis-v2-stabilization.md`](genesis-v2-stabilization.md), [`../guides/genesis-v2-runbook.md`](../guides/genesis-v2-runbook.md) |
+| Stock truth (stored / reachable / withdrawable) | **Contract proposal** (genesis-v2 follow-up) | [`stock-truth-model.md`](stock-truth-model.md) |
+| `mc bot` lease + genesis v2 pull bodies | **MVP shipped** | [`bot-lease.md`](bot-lease.md) |
+| `mc verify` predicates | **Partial implementation** | [`mc-verify-spec.md`](mc-verify-spec.md) |
+| Push `@dispatcher` bind tick, host data API, full agent roster | **Design / partial spikes** | [`board-dynamics.md`](board-dynamics.md), [`data-api.md`](data-api.md), [`impact.md`](impact.md) |
+| Pi-based rewrite | **Exploratory — not the migration plan** | [`pi-vs-hermescraft-mapping.md`](pi-vs-hermescraft-mapping.md), [`pi-rewrite-design.md`](pi-rewrite-design.md) |
 
 ## Doc map (canonical owner — avoid duplicating elsewhere)
 
@@ -19,7 +34,7 @@ Status: **design exploration** (2026-06-05). Not yet built. Validating with one 
 | Processes, ticks, APIs | [`components.md`](components.md) | impact (migration only) |
 | Git workspace, OWNERS, two boards | [`workspaces.md`](workspaces.md) | data-api (recall vs git table only) |
 | Recall stream + host operations HTTP | [`data-api.md`](data-api.md) | dashboard spec (UI) |
-| Dispatcher tick, bind, maint | [`board-dynamics.md`](board-dynamics.md) | target flow (one diagram) |
+| Dispatcher tick, bind, maint | [`board-dynamics.md`](board-dynamics.md) | target flow (one diagram); impact § Migration posture (link phases) |
 | Colony dashboard UI + trends | [`dashboard-metrics-spec.md`](dashboard-metrics-spec.md) | data-api (rollup pointer) |
 | Dashboard wireframes (HTML) | [`dashboard-wireframes.html`](dashboard-wireframes.html) | metrics spec (ASCII removed) |
 | End-to-end board example | [`example-wheat-farm-walkthrough.md`](example-wheat-farm-walkthrough.md) | epic-lifecycle (summary row) |
@@ -28,7 +43,16 @@ Status: **design exploration** (2026-06-05). Not yet built. Validating with one 
 | Today → target code touchpoints | [`impact.md`](impact.md) | components (inventory) |
 | Visual narrative + walkthrough stepper | [`architecture-visual-guide.html`](architecture-visual-guide.html) | keep in sync with target + walkthrough |
 | **`mc verify`** facade | [`mc-verify-spec.md`](mc-verify-spec.md) | embodied-control (summary); observation grammar (detail) |
-| Scheduled / cron colony cards | [`scheduled-operations.md`](scheduled-operations.md) | epic-lifecycle (card shape only) |
+| Scheduled / cron colony cards | [`scheduled-operations.md`](scheduled-operations.md) | epic-lifecycle (card shape only); board-dynamics § MVP bind (different priority) |
+| Genesis-v2 stabilization (evidence gates, retro/stop) | [`genesis-v2-stabilization.md`](genesis-v2-stabilization.md) | target § build order (link only) |
+| Stock truth contract | [`stock-truth-model.md`](stock-truth-model.md) | target prose (one-line pointer) |
+
+### Alternative platform (exploratory)
+
+| Topic | Owner doc | Notes |
+|---|---|---|
+| Hermescraft ↔ Pi concept map | [`pi-vs-hermescraft-mapping.md`](pi-vs-hermescraft-mapping.md) | Thought experiment; shares [`embodied-control.md`](embodied-control.md) policy |
+| Pi rewrite proposal | [`pi-rewrite-design.md`](pi-rewrite-design.md) | Not committed; Hermes + kanban path remains canonical unless project pivots |
 
 ## Reading order
 
@@ -50,6 +74,8 @@ Status: **design exploration** (2026-06-05). Not yet built. Validating with one 
 | 8 | [hermes-v0.15-reference.md](hermes-v0.15-reference.md) | Hermes primitives our architecture cites. |
 | 9 | [dashboard-metrics-spec.md](dashboard-metrics-spec.md) | **Colony & fleet overview** — metrics, plumbing, phases. Wireframes: [dashboard-wireframes.html](dashboard-wireframes.html). |
 
+**Genesis-v2 operators:** after `target.md`, read [`genesis-v2-stabilization.md`](genesis-v2-stabilization.md) and [`../guides/genesis-v2-runbook.md`](../guides/genesis-v2-runbook.md).
+
 ## Next steps (working list)
 
 Not a roadmap — what's actively in play. Update as we go.
@@ -60,6 +86,7 @@ Not a roadmap — what's actively in play. Update as we go.
 - Open: pinch test on `@crafter` — needs a `minecraft-crafting` companion skill that doesn't exist yet ([`hermes-agents.md`](hermes-agents.md) skill matrix).
 - **Fleet binding:** normative contract in [`bots-and-mc.md`](bots-and-mc.md) § Fleet binding; **W1 wheat PASS** (`w1-1780879052`) supports A6 on single-bot role profiles + `.env` MC channel — next: wire `spawn-with-bot.sh` for per-card body (W4); fleet-state writer per [`data-api.md`](data-api.md) § Fleet state record.
 - **Bot lease MVP:** [`bot-lease.md`](bot-lease.md) + live runbook [`../guides/bot-lease-live-runbook.md`](../guides/bot-lease-live-runbook.md); follow-ups in § Deferred (post-MVP).
+- **Genesis-v2 stabilization:** evidence-gated motor changes and stock truth — [`genesis-v2-stabilization.md`](genesis-v2-stabilization.md), [`stock-truth-model.md`](stock-truth-model.md).
 
 ## Related docs that stay where they are
 
