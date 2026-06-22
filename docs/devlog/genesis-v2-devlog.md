@@ -1381,3 +1381,62 @@ Changes for future runs:
    water today; add criterion or planner water-sourcing.
 8. **Rename steward → planner**; name the dispatcher concern; add overseer/verify +
    in-flight card dedup (farmer duplicate-farm report — no code gate yet).
+
+---
+
+## 2026-06-22 — run gv2-2026-06-22-1 postmortem (flooded base) + measurement-fix validation
+
+Same-arm validation run (seed 91011, spawn 80,64,-19, mimo-v2.5 emergent, prev `-7`).
+Stopped early by operator: **the base flooded** from a breached nearby water source and
+was unrecoverable. Scored G0 (overall 28), 120/132 cards done, wall 108.8 min, 0 retros
+filed (the struggling colony never reached the retro phase), `compare_safe=true`.
+
+### What validated (keep)
+- **scope_coverage_ratio fix — VALIDATED.** `audit={ratio:1.0, windowed:true, kept:2421}`,
+  `compare_safe=true`. All three expected_metrics auto-evaluated as **met** in
+  `outcome_vs_expected`. The full auto-validation chain works end-to-end on a real run:
+  verified-item `expected_metrics` → `apply_run_start_metadata` (seeds `verified`) →
+  run config → `build_summary` context → `outcome_vs_expected`.
+- **SUPPLY-card fix (Option A) — VALIDATED.** **Zero invalid SUPPLY cards** this run; the
+  mining-SUPPLY `mine_site:` variant + "haul-only = SUPPLY" kinding took effect via the
+  schema skill + planner SOUL.
+
+### What failed
+- **board_quality gate still open: `gv2_invalid=8`** — but NONE are SUPPLY. Remaining
+  classes: CONSTRUCT missing `footprint:`/`protected_cells:`/survey; SCOUT/ROAD missing
+  `output_marks:`/`suitability_criteria:`; and validator **false-positives** flagging
+  "find safe mine **entry**" (SCOUT) and "Shelter" (CONSTRUCT) as mining-intent (the
+  regex matches "mine"; SCOUT/SURVEY/CONSTRUCT aren't in `NON_MINING_INTENT_KINDS`).
+  Carried to `gv2-board-quality-scout-construct`.
+- **The base build itself.** rcon probe of the pad (origin `base_anchor` 53,63,49):
+  fixtures all co-planar at y=63 (chests/furnace 52,63,48/craft); **no slab** — the y=62
+  layer under them is 76/132 natural dirt-grass, **37 air**, **8 water**, only 2 built.
+  `chest_wood`(56,63,49) and `chest_stone`(56,63,52) sit directly **over air**. Chests
+  placed before any leveling/slab; water never drained → flood.
+
+### Findings
+1. **Flooding is invisible to the establishment metric.** Scored establishment **3.5**
+   (site=yes, shell=yes, chest=yes) on a base that flooded and died. The metric counts
+   milestones, not **viability** (dry/sealed interior). Strongest argument for a
+   `verify_layer` gate (interior air, ground drained).
+2. **Over-decomposition + lease contention.** 132 cards for a 3-body pool. Bot-lease DBs
+   are **per-profile** (`~/.hermes/profiles/<p>/home/.hermes/bot-leases.db`), so profiles
+   sharing a body (miner/builder→Zee, gatherer/farmer→Pip) don't share the mutex →
+   starvation/collision. See `gv2-bot-lease-shared-db` (to file).
+3. **Scoring crashed** on `scripts/lib/gv2_metrics/cards.py` using `json`/`Path` without
+   importing them (only triggers when a `kanban-runs.json` artifact exists — `-7` had
+   none). Fixed (added imports); re-scored clean. **Uncommitted.**
+4. **0 retros** — the run died before the retro phase; postmortem leans on probe + logs.
+
+### Remediation — bulletproof base build (3 pillars)
+1. **`build_layer(origin, footprint, offset, spec)`** — planner emits a relative
+   schematic anchored at the base marker; the tool owns all y-math (kills the
+   stand_y/place_y confusion). Layers: L0 level+drain → L1 slab → L2 fixtures-on-slab →
+   L3 walls+windows → L4/5 roof.
+2. **`verify_layer`** — the read-only rcon probe as a per-layer acceptance gate;
+   `build_layer(L_n)` refuses to run until `verify_layer(L_{n-1})` passes. L0 gate
+   `air==0 AND water==0` is exactly what this run missed.
+3. **Supporting:** shared lease DB; reserved-structure relocate override
+   (`verify_layer` finds a mis-placed chest → request grant → re-place on slab);
+   y-standard doctrine in skills/SOUL ([[feedback_base_build_standards]]); SCOUT/CONSTRUCT
+   card-schema + validator false-positive fixes.

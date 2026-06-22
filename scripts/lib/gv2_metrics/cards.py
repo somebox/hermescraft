@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 
 def extract_cards(board: list[dict], *, run_root: Path | None = None) -> dict:
     kanban_runs: dict[str, dict] = {}
