@@ -2,6 +2,19 @@
 
 Read-only world observation for the landfolk **steward** profile on `landfolk-ops` survey cards.
 
+## Genesis-v2 colony override
+
+When this skill is used by `colony-planner` or `colony-overseer` on board
+`genesis-v2`, apply these overrides first:
+
+- Use assignees `colony-scout|colony-gatherer|colony-builder|colony-farmer|colony-miner|colony-road`.
+- Use `scripts/kanban board` / `scripts/kanban card <id>` for board reads and
+  `scripts/kanban add ...` for card filing.
+- Do not route work to `flint`/`mason`/`gatherer`/`barley`/`steward`.
+- Prefer board evidence + run artifacts over mid-run worker session-log digging.
+- In emergent mode, planner completes only planner-owned cards (`[MISSION]`,
+  `[GENESIS2:SUPERVISE]`, planner `[FEEDBACK]` turns), never worker cards.
+
 ## Allowed commands
 
 Use only these `mc` verbs (read-only / query):

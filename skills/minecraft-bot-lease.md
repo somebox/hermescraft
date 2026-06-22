@@ -27,9 +27,11 @@ many workers run at once, each on its own body. Full spec:
 ## The ritual (every card)
 
 1. **Check out a body** for the card's work location:
-   `mc bot checkout --near <X,Y,Z> [--cap <scout|gather|build|mine>]`
+   `mc bot checkout --near <X,Y,Z> [--cap <scout|gather|build|mine>] [--mark <site>]`
    - `--near` picks the **nearest free body** to your target (the resource mark
      or base coords in your card). `--cap` filters to capable bodies.
+   - Use `--mark` when the card is part of a multi-step chain at one site
+     (`base_anchor`, `farm_*`, `mine_*`), so checkout prefers continuity.
    - `--bot <name>` forces a specific body (rarely needed).
    - Success prints the bound `bot` + `api_url`; now `mc status`/actions work and
      route to that body.

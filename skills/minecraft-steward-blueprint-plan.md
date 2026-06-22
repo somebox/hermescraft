@@ -2,6 +2,15 @@
 
 Plan structures from GrabCraft URLs for **steward** on `landfolk-ops` (orchestrator only — workers build).
 
+## Genesis-v2 colony override
+
+If this skill is loaded by `colony-planner` on board `genesis-v2`:
+
+- Use `colony-*` assignees (not `flint`/`mason`).
+- Use `scripts/kanban board` and `scripts/kanban card <id>` for orient/read.
+- Keep worker cards literal and lease-aware (`mc bot checkout ...` first, `mc bot release` last).
+- Do not reference legacy `scripts/board*` helpers in planner runs.
+
 ## Trigger: a card with a grabcraft URL lands on your queue
 
 The auto-decomposer is configured to **defer** any card containing a
@@ -55,8 +64,8 @@ Output JSON includes `materials_planned`, `phases` (by blueprint Y layer), and `
    - `[SUPPLY]` / gather materials from `materials_planned`
    - `[REGION]` create + sites for the build pad; add `plan=<plan_id>` on the placemark sign when anchored
    - `[CONSTRUCT]` worker card with the resolved anchor written **into the card body** (see template below — do NOT just reference the scout card)
-5. **Per-bot mutex:** promote at most one `[CONSTRUCT]` layer card per worker to `ready`/`running`; park extra layers with `queue-mutex:` blocks. Run `scripts/board-recent.py` before re-triaging blueprint epics.
-6. Do **not** mine or place yourself — assign to `flint` (solo ops) or the appropriate worker profile.
+5. **Per-bot mutex:** promote at most one `[CONSTRUCT]` layer card per worker to `ready`/`running`; park extra layers with `queue-mutex:` blocks. Re-check with `scripts/kanban board` / `scripts/kanban card` before re-triaging blueprint epics.
+6. Do **not** mine or place yourself — assign to the appropriate worker profile (`colony-builder` / `colony-gatherer` / etc. in genesis-v2).
 
 ## Required handoff pattern: anchor lives IN the child body
 
