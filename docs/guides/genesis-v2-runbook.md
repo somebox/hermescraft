@@ -7,18 +7,17 @@ row names the script that performs it and how to verify it took.
 Primary commands:
 
 ```bash
-bash scripts/genesis-v2.sh new-run --seed <int> [--world genesis2] [--model <id>] [--spawn X,Y,Z]
-bash scripts/genesis-v2.sh emergent-run --seed <int> [--world genesis2] [--model <id>]
+bash scripts/genesis-v2.sh new-run --seed <int> [--world genesis2] [--model <id>] [--planner-model <id>] [--spawn X,Y,Z]
+bash scripts/genesis-v2.sh emergent-run --seed <int> [--world genesis2] [--model <id>] [--planner-model <id>] [--spawn X,Y,Z]
 bash scripts/genesis-v2.sh retro
 bash scripts/genesis-v2.sh stop
 ```
 
 - `--seed` is required.
-- `--spawn X,Y,Z` pins the colony center and skips the land-biome probe (operator
-  vouches the coords are valid land). Without it, `find_good_spawn` rerolls the
-  seed until the natural spawn is flat temperate land.
-- Reuse a prior run's `seed`+`spawn` for an A/B test (e.g. `--seed 20276453
-  --spawn 64,64,-64`).
+- `--planner-model` sets LLM `default:` on bodiless `colony-planner` and `colony-overseer`; workers use `--model`. Omitted → same as `--model`. Recorded in run `config.json` as `worker_model` / `planner_model`.
+- `--spawn X,Y,Z` pins the colony center and **skips `find_good_spawn` rerolls** (not the world reset — pinned launches still call `reset_world` + `restart_bodies`). Sets `spawn_source: pinned` in `config.json`; auto spawn sets `spawn_source: auto`.
+- Without `--spawn`, `find_good_spawn` may reset+restart bodies up to 12× (~70–90s per attempt). Prefer `--spawn` for experiments and A/B runs.
+- Reuse a prior run's `seed`+`spawn` for an A/B test (e.g. `--seed 91011 --spawn 0,69,0`).
 
 `new-run` and `emergent-run` run synchronously through setup, then background the
 poller and print `run <id> live`. Bodies + gateway + poller are nohup/Popen —
@@ -42,15 +41,17 @@ on a live run.
 
 | # | Item | Why (past failure) | Where | Verify |
 |---|------|--------------------|-------|--------|
-| A1 | Kill prior poller | old poller acts on the about-to-be-archived board | `genesis-v2.sh` new-run (`pgrep -f genesis-v2-poller`) | `pgrep -f genesis-v2-poller` → only the new run's pid |
-| A2 | Kill stale gateway workers | orphaned `slash_worker`s keep running prior-run cards | `genesis-v2.sh` (`pgrep -f tui_gateway.slash_worker`) | `pgrep -f slash_worker` → none from the old run |
-| A3 | Bounce gateway `--replace` | the dispatch asyncio task can die silently; restart clears it + reloads `kanban.failure_limit` | `genesis-v2.sh` (`hermes gateway run --replace`) | gateway.log fresh; cards dispatch |
+| A1 | Kill prior poller | old poller acts on the about-to-be-archived board | `gv2_shutdown_agent_layer` (`pgrep -f genesis-v2-poller`) | `pgrep -f genesis-v2-poller` → only the new run's pid |
+| A2 | Kill stale gateway workers | orphaned `slash_worker`s keep running prior-run cards | `gv2_shutdown_agent_layer` (`pgrep -f tui_gateway.slash_worker`) | `pgrep -f slash_worker` → none from the old run |
+| A3 | **`hermes gateway stop`** (not bare SIGTERM) | launchd can restart the gateway after SIGTERM while seed is still running → stale `genesis-v2` cards dispatch | `gv2_shutdown_agent_layer` | `pgrep -f 'hermes gateway'` empty; `hermes gateway status` not running |
+| A4 | **Early `reinit_board`** before world reset | slow `find_good_spawn` must not leave prior-run cards on the board if a gateway leaks | `new-run` / `emergent-run` python (right after `next_run_id`) | launch log prints `early reinit_board`; mid-seed board has no ready cards from prior run |
+| A5 | Start gateway **after** seed + mission/epics | dispatch only this run's cards | `new-run` / `emergent-run` python (`hermes gateway run --replace`) | gateway.log dispatch line after `run … live` |
 
 ### B. Profile mint — fresh agent memory + correct env
 
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
-| B1 | Clone + write SOUL/skills/.env/model (including re-sync of `skills/kanban-worker.md`) | specialist profiles from road-planner | `genesis-v2-mint-profiles.sh` | `[mint] done` line lists 8 profiles |
+| B1 | Clone + write SOUL/skills/.env/model (including re-sync of `skills/kanban-worker.md`) | specialist profiles from road-planner; optional `--planner-model` for bodiless roles | `genesis-v2-mint-profiles.sh` | `[mint] done` line lists 8 profiles; `grep default ~/.hermes/profiles/colony-planner/config.yaml` vs worker |
 | B2 | **Wipe agent memory/state** — `memories/*`, `MEMORY.md`, `state.db`(+wal/shm), `sessions/*`, `logs/agent.log` | cross-run contamination: a prior-run memory (`@23:12`) resurfaced in a later run because `state.db` (message history) was preserved | `genesis-v2-mint-profiles.sh` clean-slate block | `~/.hermes/profiles/colony-scout/`: `MEMORY.md`=0b, `memories/` empty, `state.db` small/absent (recreated ~4 KB on first agent boot), `logs/agent.log` reset |
 | B3 | `env_passthrough` forwards `HERMES_BOT_LEASE*` to the `mc` subprocess | W1: workers had the var but `mc` never saw lease mode | `genesis-v2-mint-profiles.sh` config.yaml writer | `grep env_passthrough ~/.hermes/profiles/colony-miner/config.yaml` includes `HERMES_BOT_LEASE` |
 | B4 | Lease mode (`HERMES_BOT_LEASE=1`, no `MC_API_URL`) for workers; planner/overseer bodiless | bodies are a shared pool, leased per card | mint `.env` writer | worker `.env` has `HERMES_BOT_LEASE=1`, no `MC_API_URL` |
@@ -77,12 +78,13 @@ on a live run.
 | D5 | `wipe_world_mines` | stale mine-registry entries from another world | `genesis2_lib.wipe_world_mines` | `mines-world.json` empty for this world |
 | D6 | `render_regions_world` | seeds the buildable `shelter` region placeholder | `genesis2_lib.render_regions_world` | `regions-world.json` has `shelter` |
 | D7 | `world_setup` | forceload + gamerules (peaceful, no difficulty ramp) | `genesis2_lib.world_setup` | — |
+| D8 | Observer (`re44` by default) | evac to hub on reset; poller moves online observer to spawn + `gamemode spectator` when they join mid-run | `setup_observer` at boot + `ensure_observer_watching` each poller tick | join run world as spectator above colony spawn |
 
 ### E. Board reset and card assignment shape
 
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
-| E1 | `reinit_board` — archive leftover cards + init | prior-run cards would dispatch into this run | `genesis2_lib.reinit_board` | board has only the freshly seeded cards |
+| E1 | `reinit_board` — archive leftover cards + init | prior-run cards would dispatch into this run | early in boot python (A4) + board empty until seed | after `run … live`, board has only this run's cards |
 | E2 | `seed_board` — P1 ready, P2–P5 parked (blocked), scout cards | poller-authoritative phase chain; epics never used as `parents` (deadlock) | `genesis2_lib.seed_board` | 5 epics + 4 scouts; P1 ready |
 | E3 | `save_config` + `write_active` + `snapshot("start")` | run metadata + baseline | new-run python | `data/genesis-v2-runs/<id>/config.json` |
 
@@ -95,6 +97,7 @@ Role clarity in seeded flow:
 
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
+| F0 | Gateway up only after seed | see A5 | `genesis-v2.sh` python block | no `spawned=` in gateway.log between clean shutdown and `run … live` |
 | F1 | Shelter render once `base_anchor` exists | bots built into terrain / couldn't exit | `genesis2_lib.maybe_render_shelter_for_run` (poller) | `cfg.shelter_rendered=True` |
 | F2 | **Dry, solid foundation** — force cobble pad + drain water under/around the base | base sited over water drowned the colony | `shelter_setblock_commands` (foundation fill + `air replace water`) | no drowning; base walkable |
 | F3 | **Chests pre-marked** — `chest_wood`+`chest_food` written at render | render PROVIDES the chests; BUILD churned ~20m trying to place a 2nd one it had no materials for | `genesis2_lib.mark_shelter_chests` | `mc marks` shows 2 `chest_*` at base |
@@ -112,6 +115,82 @@ Role clarity in seeded flow:
 | G2 | Poller disables phase/render/supply auto-cards, keeps control-plane backstops | planner owns decomposition; poller still prevents deadlocks/stalls | `genesis-v2-poller.py` emergent branch | poller log prints emergent-mode line |
 | G3 | Mission continuity uses same-card retry first | avoids MANAGE churn and preserves card continuity | `reengage_planner_if_mission_closed` | closed mission gets `retry`; fallback MANAGE only on retry failure |
 | G4 | Planner mission protocol is terminal-per-turn | dispatcher requires complete/block on dispatched turns | `data/genesis-v2/emergent-mission.md`, `emergent-planner-soul.md` | no `protocol_violation`/`gave_up` loop on mission turn exits |
+| G5 | Spawn: auto dry land or operator `--spawn` | same pin semantics as gated `new-run`; no water requirement on auto | `genesis-v2.sh` emergent-run | log shows pinned or dry land spawn; `config.json` has `spawn_source` |
+| G6 | `evidence_arm` on config | same-arm compare for improvement loop | `apply_run_start_metadata` / `GV2_EVIDENCE_ARM` | `config.json` has `evidence_arm` (default `{tier}/{model}/{mode}[/spawn]`) |
+| G7 | Mid-run validate (emergent default) | abort early on corrupt board / manage pile-up | poller `--validate-every-min` via **`GV2_VALIDATE_EVERY_MIN`** (default **15** on `emergent-run`, **0** on `new-run`; set **0** to disable) | poller log `validate live exit=…`; `config.abort_reason` if exit ≥ 20 |
+
+Emergent vs gated (short):
+
+| | Gated `new-run` | `emergent-run` |
+|--|-----------------|----------------|
+| Board seed | P1–P5 epics + scouts | Single `[MISSION]` |
+| Spawn probe | Water required unless `--spawn` | Dry land unless `--spawn` |
+| Shelter render / pantry | Yes (poller) | No |
+| Regions template | `regions-world.template.json` | `regions-world.emergent.template.json` |
+
+---
+
+## Evidence Loop — three-way experiment (operator)
+
+Use **pinned spawn on all three arms** so terrain/planner are the variables, not `find_good_spawn` reroll time. Each launch still **regenerates** `genesis2` via `reset_world` (clean world per run).
+
+Readout order: **establishment ladder → retro/503/MANAGE → motor verb buckets → `gv2_invalid` (secondary).**
+
+### Pre-flight (every arm)
+
+From repo root:
+
+```bash
+hermes gateway stop --all 2>/dev/null || hermes gateway stop 2>/dev/null || true
+pgrep -fl 'hermes gateway|genesis-v2-poller|tui_gateway.slash_worker'   # expect empty
+curl -s http://127.0.0.1:3005/health | grep -q '"connected":true' && echo bodies ok
+```
+
+Launch should reach `run gv2-… live` in **~2–5 minutes** with `--spawn`. If it sits >10 minutes with no `live` line, abort (Ctrl+C), run pre-flight again, and do **not** start a second launch in parallel.
+
+### Three runs (same seed; planner varies on arm 2)
+
+Replace `<stronger-model-id>` with the operator-chosen planner model.
+
+```bash
+# Arm 1 — hard site baseline (seed 91011 natural spawn coords, no reroll loop)
+bash scripts/genesis-v2.sh emergent-run --seed 91011 --spawn 0,69,0 --model xiaomi/mimo-v2.5
+
+# Arm 2 — planner A/B (only change planner model)
+bash scripts/genesis-v2.sh emergent-run --seed 91011 --spawn 0,69,0 --model xiaomi/mimo-v2.5 --planner-model '<stronger-model-id>'
+
+# Arm 3 — easy pinned control
+bash scripts/genesis-v2.sh emergent-run --seed 91011 --spawn 80,64,-19 --model xiaomi/mimo-v2.5
+```
+
+**Per arm:** let the run proceed → `bash scripts/genesis-v2.sh retro` (while agents alive, ~3 min) → `bash scripts/genesis-v2.sh stop` (use `stop --force` only if retro stuck). Record `run_id` from launch log or `scripts/genesis-v2.sh status`.
+
+After each `stop`:
+
+```bash
+bash scripts/genesis-v2-verify-smoke.sh --run-id <id>
+python3 scripts/gv2-establishment-ladder.py --run-id <id>
+python3 scripts/gv2-establishment-ladder.py --run-id <id> --live-marks   # if stop predates world capture
+```
+
+Log results in a small table: `run_id | arm | spawn | planner_model | ladder score | smoke notes`.
+
+**Do not** use bare `emergent-run --seed 91011` (no `--spawn`) for this experiment unless debugging `find_good_spawn` itself.
+
+**Compliance warnings:** smoke `gv2_invalid` uses full validator on captured `done` cards;
+`kanban add` only runs line-start `mc` lint. Numbered-list planner recipes inflate invalid
+counts — do not use compliance alone for planner A/B. Compare runs with smoke’s status set
+(`ready,running,done,todo`), not default `validate-board` (`ready,todo` only).
+
+### Decision gates (after three-way)
+
+| Outcome | Next investment |
+|---------|-----------------|
+| Planner helps on 91011 and easy pinned succeeds | Stronger planner / routing; targeted motor work |
+| Planner helps cards but 91011 fails; easy succeeds | Motor/nav/construct-positioning |
+| Planner unchanged; easy succeeds | Terrain dominates 91011 |
+| Easy pinned fails | Worker loop / sync / skills before terrain |
+| Sync/move spin on chest chains across runs | Motor backstop (pad rule + sync cancel) |
 
 ---
 
@@ -141,13 +220,25 @@ throughput — don't set a benchmark the workers can't reach in a run.
 It must do this order:
 
 1. Capture artifacts first (`capture_run_artifacts`) while profiles/session DB/logs are still present.
-2. Stop poller + gateway workers + gateway + body processes.
+2. Stop poller + gateway workers + gateway (`gv2_shutdown_agent_layer`) + body processes.
 3. Kill leaked board-tail watchers.
 
 Verification:
 - artifact dir exists: `data/genesis-v2-runs/<run-id>/artifacts`
 - card-story dir exists: `data/genesis-v2-runs/<run-id>/card-stories`
 - no live run processes: `pgrep -f 'genesis-v2-poller|tui_gateway.slash_worker|bot/server.js|hermes gateway'` returns nothing
+
+Post-stop scoring (measurement loop):
+
+```bash
+scripts/genesis-v2.sh stop --score   # capture artifacts, then deterministic score + dashboard
+# or manually:
+python3 scripts/gv2-score-run.py --run-id <run-id>
+# open data/genesis-v2-runs/<run-id>/dashboard/index.html
+bash scripts/genesis-v2-verify-smoke.sh --run-id <run-id>
+```
+
+Interpretation and improvement work: [`genesis-v2-dev-loop.md`](genesis-v2-dev-loop.md).
 
 ## Recurring failures and current coverage
 

@@ -37,9 +37,17 @@ def main() -> int:
     ap.add_argument("--max-runtime-h", type=float, default=2.0,
                     help="hard run cap in hours; at expiry the poller captures artifacts, "
                          "tears the session down, and exits (0 disables)")
+    ap.add_argument(
+        "--validate-every-min",
+        type=float,
+        default=0,
+        help="if >0, run gv2-run-validate.py --live each N minutes; exit 20+ triggers capture+teardown",
+    )
     args = ap.parse_args()
     seen: set[str] = set()
     run_started = time.time()
+    last_validate = run_started
+    validate_interval_s = args.validate_every_min * 60 if args.validate_every_min and args.validate_every_min > 0 else None
     cap_s = args.max_runtime_h * 3600 if args.max_runtime_h and args.max_runtime_h > 0 else None
     # Emergent mode: no phases/gates. Disable the phase machinery (shelter render,
     # phase advance, gate-gap/overseer, continuous supply) and run ONLY the
@@ -53,6 +61,13 @@ def main() -> int:
     if emergent:
         sys.stderr.write("[poller] EMERGENT mode — phase/gate/supply/render disabled; agent-failure backstops only\n")
     while True:
+        try:
+            if g2.ensure_observer_watching(args.run_id):
+                sys.stderr.write(
+                    f"[poller] observer {g2.default_observer_name()} → colony spawn (spectator)\n"
+                )
+        except Exception as e:
+            sys.stderr.write(f"[poller] observer setup failed: {e}\n")
         # Hard run cap: at expiry, capture diagnostics (incl. session dumps before any
         # mint wipes them) + tear the session down + exit. Robust, self-contained guard
         # so a run never lingers/burns past the cap.
@@ -67,6 +82,30 @@ def main() -> int:
             except Exception as e:
                 sys.stderr.write(f"[poller] teardown failed: {e}\n")
             return 0
+        if validate_interval_s and (time.time() - last_validate) >= validate_interval_s:
+            last_validate = time.time()
+            try:
+                vp = subprocess.run(
+                    [sys.executable, str(REPO_ROOT / "scripts" / "gv2-run-validate.py"),
+                     "--run-id", args.run_id, "--live", "--json"],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                payload = json.loads(vp.stdout or "{}") if vp.stdout else {}
+                exit_code = int(payload.get("exit_code", vp.returncode))
+                sys.stderr.write(f"[poller] validate live exit={exit_code} {payload}\n")
+                if exit_code >= 20:
+                    cfg = g2.load_config(args.run_id)
+                    cfg["abort_reason"] = payload.get("reason") or f"validate_exit_{exit_code}"
+                    g2.save_config(cfg)
+                    sys.stderr.write(f"[poller] validate abort → capture + teardown ({cfg['abort_reason']})\n")
+                    g2.capture_run_artifacts(args.run_id)
+                    g2.teardown_session()
+                    return exit_code
+            except Exception as e:
+                sys.stderr.write(f"[poller] validate hook failed: {e}\n")
         # Sanitize worker-card skills FIRST: the planner LLM sometimes attaches one
         # of its own skills to a worker card, which the agent rejects at boot
         # ("Unknown skill(s)") → crash-blocked (gv2-2026-06-17-1). Null the skills

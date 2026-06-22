@@ -7,7 +7,8 @@
 # specialist profiles + read-only Steward instead of the wide landfolk roster.
 #
 # commands:
-#   new-run  --seed <int> [--world genesis2] [--model <id>]
+#   new-run  --seed <int> [--world genesis2] [--model <id>] [--planner-model <id>]
+#   emergent-run --seed <int> [--world W] [--model M] [--planner-model M] [--spawn X,Y,Z]
 #   check                         # print phase gates
 #   snapshot [--label <name>]
 #   status
@@ -72,17 +73,48 @@ wait_bodies_connected() {
   exit 1
 }
 
+# Stop poller, gateway workers, and Hermes gateway before a launch or after stop.
+# Use `hermes gateway stop` first — SIGTERM alone can let launchd restart the
+# gateway while find_good_spawn is still running (stale board dispatch).
+gv2_shutdown_agent_layer() {
+  local tag="${1:-genesis-v2}"
+  echo "[${tag}] clean shutdown: poller + gateway workers + gateway"
+  for pid in $(pgrep -f 'genesis-v2-poller' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+  for pid in $(pgrep -f 'tui_gateway.slash_worker' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+  if command -v hermes >/dev/null 2>&1; then
+    hermes gateway stop --all 2>/dev/null || hermes gateway stop 2>/dev/null || true
+    for _ in $(seq 1 25); do
+      if ! pgrep -f 'hermes gateway' >/dev/null 2>&1; then
+        break
+      fi
+      if hermes gateway status 2>&1 | grep -qiE 'not loaded|not running|is not'; then
+        break
+      fi
+      sleep 1
+    done
+  fi
+  for pid in $(pgrep -f 'hermes gateway' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+  for pid in $(pgrep -f 'tui_gateway' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+  sleep 2
+  if pgrep -f 'hermes gateway|tui_gateway.slash_worker|genesis-v2-poller' >/dev/null 2>&1; then
+    echo "[${tag}] WARN: agent layer may still be up (check launchd / hermes gateway status):" >&2
+    pgrep -fl 'hermes gateway|tui_gateway.slash_worker|genesis-v2-poller' 2>/dev/null >&2 || true
+  fi
+}
+
 cmd="${1:-}"; shift || true
 
 case "$cmd" in
   new-run)
-    SEED=""; WORLD="genesis2"; MODEL="xiaomi/mimo-v2.5"; SPAWN=""
+    SEED=""; WORLD="genesis2"; MODEL="xiaomi/mimo-v2.5"; PLANNER_MODEL=""; SPAWN=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --seed) SEED="$2"; shift 2 ;;
         --seed=*) SEED="${1#--seed=}"; shift ;;
         --world) WORLD="$2"; shift 2 ;;
         --model) MODEL="$2"; shift 2 ;;
+        --planner-model) PLANNER_MODEL="$2"; shift 2 ;;
+        --planner-model=*) PLANNER_MODEL="${1#--planner-model=}"; shift ;;
         # Operator-pinned spawn: skip the probe/biome/flatness reroll and anchor
         # the colony at these coords (must be valid land in this seed's world).
         --spawn) SPAWN="$2"; shift 2 ;;
@@ -91,21 +123,12 @@ case "$cmd" in
       esac
     done
     [[ -n "$SEED" ]] || { echo "--seed <int> required" >&2; exit 1; }
+    PLANNER_MODEL="${PLANNER_MODEL:-$MODEL}"
 
-    # Clean the agent layer before booting: stop the prior poller, kill orphaned
-    # gateway workers (they don't self-reap and would act on the about-to-be-
-    # archived board), and bounce the gateway with --replace so it restarts with
-    # NO stale workers, a cleared dispatch task, and the current kanban.failure_limit.
-    # The board is archived + reseeded below, so the fresh gateway dispatches only
-    # this run's cards. (Localhost single-project; authorised to bounce the gateway.)
-    echo "[genesis-v2] clean shutdown: prior poller + stale workers + gateway"
-    for pid in $(pgrep -f 'genesis-v2-poller' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
-    for pid in $(pgrep -f 'tui_gateway.slash_worker' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
-    nohup hermes gateway run --replace >> "$HOME/.hermes/logs/gateway.log" 2>&1 &
-    sleep 6
+    gv2_shutdown_agent_layer "genesis-v2"
 
-    echo "[genesis-v2] minting specialist profiles (model=$MODEL)"
-    "$SCRIPT_DIR/genesis-v2-mint-profiles.sh" --model "$MODEL"
+    echo "[genesis-v2] minting specialist profiles (worker_model=$MODEL planner_model=$PLANNER_MODEL)"
+    "$SCRIPT_DIR/genesis-v2-mint-profiles.sh" --model "$MODEL" --planner-model "$PLANNER_MODEL"
 
     echo "[genesis-v2] ensuring 3 bodies are up"
     for b in "${BODIES[@]}"; do
@@ -115,7 +138,10 @@ case "$cmd" in
     wait_bodies_connected
 
     echo "[genesis-v2] reset + probe + setup + seed (world=$WORLD seed=$SEED spawn=${SPAWN:-auto})"
-    GV2_WORLD="$WORLD" GV2_SEED="$SEED" GV2_SPAWN="$SPAWN" exec "$PY" - <<'PYEOF'
+    GV2_VALIDATE_EVERY_MIN="${GV2_VALIDATE_EVERY_MIN:-0}"
+    GV2_WORLD="$WORLD" GV2_SEED="$SEED" GV2_SPAWN="$SPAWN" \
+      GV2_WORKER_MODEL="$MODEL" GV2_PLANNER_MODEL="$PLANNER_MODEL" \
+      GV2_VALIDATE_EVERY_MIN="$GV2_VALIDATE_EVERY_MIN" exec "$PY" - <<'PYEOF'
 import os, sys
 sys.path.insert(0, os.path.join(os.getcwd(), "scripts"))
 import genesis2_lib as g2
@@ -125,7 +151,10 @@ seed = int(os.environ["GV2_SEED"])
 spawn_arg = (os.environ.get("GV2_SPAWN") or "").strip()
 run_id = g2.next_run_id()
 print(f"[genesis-v2] run {run_id}")
+print("[genesis-v2] early reinit_board (before world reset — empty board during slow spawn)")
+g2.reinit_board()
 
+spawn_source = "auto"
 if spawn_arg:
     # Operator-pinned spawn: reset the world to the seed, then anchor the colony
     # at the given coords — skip the find_good_spawn probe/biome/flatness reroll.
@@ -134,6 +163,7 @@ if spawn_arg:
     g2.reset_world(world=world, seed=seed)
     g2.restart_bodies()  # reset wedges mineflayer — clean restart beats auto-reconnect
     spawn = {"x": sx, "y": sy, "z": sz}
+    spawn_source = "pinned"
     print(f"[genesis-v2] operator-pinned spawn @ {spawn} (seed={seed})")
 else:
     # Reset + probe with auto-reroll: keep regenerating until the natural spawn is
@@ -158,7 +188,6 @@ g2.wipe_world_mines(world)
 g2.render_regions_world(spawn=spawn, ctx=ctx_pre)
 g2.world_setup(world, spawn)
 
-g2.reinit_board()
 ctx = {
     "run_id": run_id, "seed": str(seed),
     "spawn_x": str(spawn["x"]), "spawn_y": str(spawn["y"]), "spawn_z": str(spawn["z"]),
@@ -166,12 +195,25 @@ ctx = {
 }
 meta = g2.seed_board(ctx)
 cfg = {"run_id": run_id, "world": world, "seed": seed, "spawn": spawn,
+       "spawn_source": spawn_source,
+       "worker_model": os.environ.get("GV2_WORKER_MODEL", ""),
+       "planner_model": os.environ.get("GV2_PLANNER_MODEL", ""),
        "started_at": ctx["started_at"], **meta}
+g2.apply_run_start_metadata(cfg)
 g2.save_config(cfg)
 g2.write_active(run_id)
 g2.snapshot("start", run_id)
 
 import subprocess
+import time
+
+_gw_log = os.path.expanduser("~/.hermes/logs/gateway.log")
+print("[genesis-v2] starting gateway after reinit_board + seed")
+subprocess.Popen(
+    ["bash", "-lc", f"nohup hermes gateway run --replace >> {_gw_log!r} 2>&1 &"],
+    cwd=os.getcwd(),
+)
+time.sleep(6)
 
 # No gate-check / landfolk-dispatcher: the BOT LEASE is the body-mutex now (one
 # lease per body, atomic, with --near ranking + defer). The hermes gateway
@@ -183,8 +225,15 @@ import subprocess
 # phase poller: gate-completes epics on verified world state + snapshots
 poller = os.path.join(os.getcwd(), "scripts", "genesis-v2-poller.py")
 log = open(g2.run_dir(run_id) / "poller.log", "a")
-proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id, "--max-runtime-h", "2"],
-                        stdout=log, stderr=subprocess.STDOUT, cwd=os.getcwd())
+poller_cmd = [sys.executable, poller, "--run-id", run_id, "--max-runtime-h", "2"]
+_vmin = (os.environ.get("GV2_VALIDATE_EVERY_MIN") or "0").strip()
+try:
+    if _vmin and float(_vmin) > 0:
+        poller_cmd.extend(["--validate-every-min", _vmin])
+        print(f"[genesis-v2] poller validate every {_vmin} min (GV2_VALIDATE_EVERY_MIN)")
+except ValueError:
+    pass
+proc = subprocess.Popen(poller_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=os.getcwd())
 (g2.run_dir(run_id) / "poller.pid").write_text(str(proc.pid))
 
 print(f"[genesis-v2] run {run_id} live: world={world} spawn={spawn} "
@@ -198,26 +247,27 @@ PYEOF
     # colony — propose plan -> consult team per epic -> decompose -> manage.
     # Nothing pre-given except ONE permissive build region. Non-destructive: the
     # gated `new-run` path above is untouched.
-    SEED=""; WORLD="genesis2"; MODEL="xiaomi/mimo-v2.5"
+    SEED=""; WORLD="genesis2"; MODEL="xiaomi/mimo-v2.5"; PLANNER_MODEL=""; SPAWN=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --seed) SEED="$2"; shift 2 ;;
         --seed=*) SEED="${1#--seed=}"; shift ;;
         --world) WORLD="$2"; shift 2 ;;
         --model) MODEL="$2"; shift 2 ;;
+        --planner-model) PLANNER_MODEL="$2"; shift 2 ;;
+        --planner-model=*) PLANNER_MODEL="${1#--planner-model=}"; shift ;;
+        --spawn) SPAWN="$2"; shift 2 ;;
+        --spawn=*) SPAWN="${1#--spawn=}"; shift ;;
         *) echo "unknown flag: $1" >&2; exit 1 ;;
       esac
     done
     [[ -n "$SEED" ]] || { echo "--seed <int> required" >&2; exit 1; }
+    PLANNER_MODEL="${PLANNER_MODEL:-$MODEL}"
 
-    echo "[genesis-v2][emergent] clean shutdown: prior poller + stale workers + gateway"
-    for pid in $(pgrep -f 'genesis-v2-poller' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
-    for pid in $(pgrep -f 'tui_gateway.slash_worker' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
-    nohup hermes gateway run --replace >> "$HOME/.hermes/logs/gateway.log" 2>&1 &
-    sleep 6
+    gv2_shutdown_agent_layer "genesis-v2[emergent]"
 
-    echo "[genesis-v2][emergent] minting profiles (model=$MODEL)"
-    "$SCRIPT_DIR/genesis-v2-mint-profiles.sh" --model "$MODEL"
+    echo "[genesis-v2][emergent] minting profiles (worker_model=$MODEL planner_model=$PLANNER_MODEL)"
+    "$SCRIPT_DIR/genesis-v2-mint-profiles.sh" --model "$MODEL" --planner-model "$PLANNER_MODEL"
 
     echo "[genesis-v2][emergent] installing emergent planner SOUL + worker feedback note"
     cp "$REPO_ROOT/data/genesis-v2/emergent-planner-soul.md" "$HOME/.hermes/profiles/colony-planner/SOUL.md"
@@ -241,22 +291,37 @@ FB
     done
     wait_bodies_connected
 
-    echo "[genesis-v2][emergent] reset + dry-land spawn + setup + seed mission (world=$WORLD seed=$SEED)"
-    GV2_WORLD="$WORLD" GV2_SEED="$SEED" exec "$PY" - <<'PYEOF'
+    echo "[genesis-v2][emergent] reset + spawn + setup + seed mission (world=$WORLD seed=$SEED spawn=${SPAWN:-auto})"
+    GV2_VALIDATE_EVERY_MIN="${GV2_VALIDATE_EVERY_MIN:-15}"
+    GV2_WORLD="$WORLD" GV2_SEED="$SEED" GV2_SPAWN="$SPAWN" \
+      GV2_WORKER_MODEL="$MODEL" GV2_PLANNER_MODEL="$PLANNER_MODEL" \
+      GV2_VALIDATE_EVERY_MIN="$GV2_VALIDATE_EVERY_MIN" exec "$PY" - <<'PYEOF'
 import os, sys
 sys.path.insert(0, os.path.join(os.getcwd(), "scripts"))
 import genesis2_lib as g2
 
 world = os.environ["GV2_WORLD"]
 seed = int(os.environ["GV2_SEED"])
+spawn_arg = (os.environ.get("GV2_SPAWN") or "").strip()
 run_id = g2.next_run_id()
 print(f"[genesis-v2][emergent] run {run_id}")
+print("[genesis-v2][emergent] early reinit_board (before world reset — empty board during slow spawn)")
+g2.reinit_board()
 
-# Auto land spawn; world_setup makes it peaceful/calm (no mobs, frozen day).
-# require_water=False: accept a DRY temperate world (requiring nearby water forces
-# watery seeds — the colony can scout for water instead).
-seed, spawn = g2.find_good_spawn(world, seed, require_water=False)
-print(f"[genesis-v2][emergent] dry land spawn @ {spawn} (seed={seed})")
+spawn_source = "auto"
+if spawn_arg:
+    sx, sy, sz = (int(v) for v in spawn_arg.split(","))
+    g2.reset_world(world=world, seed=seed)
+    g2.restart_bodies()
+    spawn = {"x": sx, "y": sy, "z": sz}
+    spawn_source = "pinned"
+    print(f"[genesis-v2][emergent] operator-pinned spawn @ {spawn} (seed={seed})")
+else:
+    # Auto land spawn; world_setup makes it peaceful/calm (no mobs, frozen day).
+    # require_water=False: accept a DRY temperate world (requiring nearby water forces
+    # watery seeds — the colony can scout for water instead).
+    seed, spawn = g2.find_good_spawn(world, seed, require_water=False)
+    print(f"[genesis-v2][emergent] dry land spawn @ {spawn} (seed={seed})")
 g2.wipe_marks()                      # no pre-given markers
 _freed = g2.clear_pool_leases()
 if _freed: print(f"[genesis-v2][emergent] cleared {len(_freed)} stale lease(s)")
@@ -268,19 +333,39 @@ ctx = {"run_id": run_id, "seed": str(seed),
 # NO pre-marked chests, NO phase epics.
 g2.render_regions_world(spawn=spawn, ctx=ctx, template="regions-world.emergent.template.json")
 g2.world_setup(world, spawn)
-g2.reinit_board()
 meta = g2.seed_emergent_mission(ctx)
 cfg = {"run_id": run_id, "world": world, "seed": seed, "spawn": spawn, "mode": "emergent",
+       "spawn_source": spawn_source,
+       "worker_model": os.environ.get("GV2_WORKER_MODEL", ""),
+       "planner_model": os.environ.get("GV2_PLANNER_MODEL", ""),
        "started_at": ctx["started_at"], **meta}
+g2.apply_run_start_metadata(cfg)
 g2.save_config(cfg)
 g2.write_active(run_id)
 g2.snapshot("start", run_id)
 
 import subprocess
+import time
+
+_gw_log = os.path.expanduser("~/.hermes/logs/gateway.log")
+print("[genesis-v2][emergent] starting gateway after reinit_board + seed")
+subprocess.Popen(
+    ["bash", "-lc", f"nohup hermes gateway run --replace >> {_gw_log!r} 2>&1 &"],
+    cwd=os.getcwd(),
+)
+time.sleep(6)
+
 poller = os.path.join(os.getcwd(), "scripts", "genesis-v2-poller.py")
 log = open(g2.run_dir(run_id) / "poller.log", "a")
-proc = subprocess.Popen([sys.executable, poller, "--run-id", run_id, "--max-runtime-h", "2"],
-                        stdout=log, stderr=subprocess.STDOUT, cwd=os.getcwd())
+poller_cmd = [sys.executable, poller, "--run-id", run_id, "--max-runtime-h", "2"]
+_vmin = (os.environ.get("GV2_VALIDATE_EVERY_MIN") or "0").strip()
+try:
+    if _vmin and float(_vmin) > 0:
+        poller_cmd.extend(["--validate-every-min", _vmin])
+        print(f"[genesis-v2][emergent] poller validate every {_vmin} min (GV2_VALIDATE_EVERY_MIN)")
+except ValueError:
+    pass
+proc = subprocess.Popen(poller_cmd, stdout=log, stderr=subprocess.STDOUT, cwd=os.getcwd())
 (g2.run_dir(run_id) / "poller.pid").write_text(str(proc.pid))
 print(f"[genesis-v2][emergent] run {run_id} LIVE: world={world} spawn={spawn} mission={meta['mission_id']}")
 print(f"[genesis-v2][emergent] planner holds the MISSION; poller runs agent-failure backstops only")
@@ -336,17 +421,20 @@ print('[genesis-v2] next: scripts/genesis-v2.sh stop  (or stop --force to skip r
 
   stop)
     FORCE=0
+    SCORE=0
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --force) FORCE=1; shift ;;
+        --score) SCORE=1; shift ;;
         *) echo "[genesis-v2] unknown stop flag: $1" >&2; exit 1 ;;
       esac
     done
     echo "[genesis-v2] waiting for [RETRO] cards (use stop --force to skip)"
-    GV2_STOP_FORCE="$FORCE" "$PY" -c "
+    GV2_RUN_ID="$("$PY" -c "import sys; sys.path.insert(0,'$REPO_ROOT/scripts'); import genesis2_lib as g2; print(g2.active_run_id() or g2._latest_run_id() or '')")"
+    GV2_STOP_FORCE="$FORCE" GV2_RUN_ID="$GV2_RUN_ID" "$PY" -c "
 import os, sys; sys.path.insert(0,'$REPO_ROOT/scripts')
 import genesis2_lib as g2
-rid = g2.active_run_id() or g2._latest_run_id()
+rid = os.environ.get('GV2_RUN_ID') or g2.active_run_id() or g2._latest_run_id()
 if os.environ.get('GV2_STOP_FORCE','0') != '1':
     wait = g2.wait_for_retro_cards(rid, timeout_s=g2.RETRO_WAIT_DEFAULT_S)
     print('[genesis-v2] retro wait:', wait)
@@ -361,16 +449,21 @@ else:
     # mint), then bring the session down: poller, gateway workers + gateway, the 3
     # bodies, and the leaked board-tail watchers. Localhost single-project; authorised.
     echo "[genesis-v2] capturing run artifacts before teardown"
-    "$PY" -c "
-import sys; sys.path.insert(0,'$REPO_ROOT/scripts')
+    GV2_RUN_ID="$GV2_RUN_ID" "$PY" -c "
+import os, sys; sys.path.insert(0,'$REPO_ROOT/scripts')
 import genesis2_lib as g2
-rid = g2.active_run_id() or g2._latest_run_id()
+rid = os.environ.get('GV2_RUN_ID') or g2.active_run_id() or g2._latest_run_id()
 print('[genesis-v2] artifacts:', g2.capture_run_artifacts(rid))
 "
+    if [[ "$SCORE" -eq 1 && -n "$GV2_RUN_ID" ]]; then
+      echo "[genesis-v2] scoring run (deterministic, no LLM)"
+      "$PY" "$REPO_ROOT/scripts/gv2-collect-feedback.py" --run-id "$GV2_RUN_ID"
+      "$PY" "$REPO_ROOT/scripts/gv2-score-run.py" --run-id "$GV2_RUN_ID"
+      "$PY" "$REPO_ROOT/scripts/gv2-planner-review.py" --run-id "$GV2_RUN_ID"
+      "$PY" "$REPO_ROOT/scripts/gv2-improvement-queue.py" ingest --run-dir "$REPO_ROOT/data/genesis-v2-runs/$GV2_RUN_ID"
+    fi
     echo "[genesis-v2] stopping poller + gateway + bodies"
-    for pid in $(pgrep -f 'genesis-v2-poller' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
-    for pid in $(pgrep -f 'tui_gateway.slash_worker' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
-    for pid in $(pgrep -f 'hermes gateway' 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+    gv2_shutdown_agent_layer "genesis-v2"
     for port in 3005 3006 3007; do
       for pid in $(lsof -ti tcp:$port 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
     done
@@ -378,5 +471,5 @@ print('[genesis-v2] artifacts:', g2.capture_run_artifacts(rid))
     echo "[genesis-v2] session down."
     ;;
 
-  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M]|check|snapshot|status|retro|stop [--force]}" >&2; exit 1 ;;
+  *) echo "usage: genesis-v2.sh {new-run --seed <int> [--world W] [--model M] [--planner-model M] [--spawn X,Y,Z]|emergent-run --seed <int> [--world W] [--model M] [--planner-model M] [--spawn X,Y,Z]|check|snapshot|status|retro|stop [--force] [--score]}" >&2; exit 1 ;;
 esac

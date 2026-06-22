@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "work_id": "gv2-scope-coverage-metric",
+      "status": "verified",
+      "type": "measurement-fix",
+      "title": "scope_coverage_ratio: parse-health, not kept/all-history (unblock G0 + compare_safe)",
+      "source_run_id": "gv2-2026-06-21-7",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G0",
+      "target_gap": "audit.scope_coverage_ratio 0.008 vs min 0.5 (G0 gate) + compare_safe forced false",
+      "evidence": [
+        "gv2-2026-06-21-7 scorecard: achievement_level.current=G0, gap 'audit.scope_coverage_ratio 0.008 vs min 0.5'; compare_safe=false",
+        "action-log-scope.json: kept=233, dropped_out_of_window=30731, dropped_bad_ts=0 -> old ratio kept/(kept+dropped_out_of_window)=0.0075",
+        "Verified non-bug: Zee last active 20:46 (37min pre-run), Mason Jun15, Flint Jun14 -> those bodies genuinely inactive; only Mox/Pip ran. Windowing correct.",
+        "Root cause: durable actions-<body>.jsonl is append-only across EVERY run, so dropped_out_of_window is dominated by prior runs and grows without bound -> ratio -> 0 regardless of run quality."
+      ],
+      "change": {
+        "files": [
+          "scripts/lib/gv2_metrics/audit.py: scope_coverage_ratio := (kept+out_of_window)/(kept+out_of_window+bad_ts) (timestamp-parse health, accumulation-invariant); add scope_kept.",
+          "scripts/lib/gv2_metrics/summary.py: compare_safe gates on scope_windowed (catches verbatim-capture poisoning the old ratio masked) in addition to ratio<0.5.",
+          "config/gv2-achievement-levels.yaml: G0 adds {audit.scope_windowed eq true}; keeps scope_coverage_ratio min 0.5.",
+          "scripts/tests/test_gv2_metrics_audit.py: 8 tests (accumulation-invariance, bad-ts drop, windowed/ratio/retro/server_down compare_safe)."
+        ]
+      },
+      "deterministic_check": "Re-scored gv2-2026-06-21-7: audit={ratio:1.0, windowed:true, kept:233}; compare_safe=true; achievement_level G0->G1; remaining gap now real (G2 establishment.score 2.0 vs 2.5).",
+      "expected_metrics": {
+        "audit.scope_coverage_ratio": { "min": 0.5 },
+        "audit.scope_windowed": true,
+        "compare.compare_safe": true,
+        "achievement_level.current_min": "G1"
+      },
+      "compare_safe": true,
+      "suggested_test": "scripts/tests/test_gv2_metrics_audit.py",
+      "validation_run_id": null,
+      "notes": "Measurement-only fix; no agent/behavioral change. Validation = next same-arm (standard/mimo-v2.5/emergent) run must report ratio>=0.5, scope_windowed=true, compare_safe=true, and a level >= G1 driven by real metrics. Do NOT mark done until that run's compare confirms no regression."
+    },
+    {
+      "work_id": "gv2-establishment-shell-site-variance",
+      "status": "proposed",
+      "type": "behavioral-design",
+      "title": "Establishment variance: shell/site swing G1<->G2 across same-arm runs; ground/food are hard gaps",
+      "source_run_id": "gv2-2026-06-21-7",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G2",
+      "target_gap": "establishment.score swings 2.0-3.0 across same-arm runs; G2 needs 2.5 (standard)",
+      "evidence": [
+        "Cross-run (same arm, re-scored with fixed metric): -5 score=3.0 site=yes shell=yes (G2); -6 score=2.5 site=yes shell=yes (G2); -7 score=2.0 site=partial shell=NO (G1). Different emergent missions (t_f8d7b177/t_016c86a0/t_5d0bbe09).",
+        "SWING milestone = shell (walls+roof) + site completion: succeeds in -5/-6, fails in -7 -> NAV/place-on-village variance, NOT a hard ceiling. Matches [[project_genesis_v2_validated]] ceiling.",
+        "HARD gaps (never reached in any of -5/-6/-7): ground=level pad, food=farm. These are genuine missing capabilities, not variance.",
+        "Caveat: emergent missions differ per run, so establishment is NOT apples-to-apples across -5/-6/-7; compare_safe only gates operational safety, not mission equivalence."
+      ],
+      "candidate_direction": "Two distinct sub-targets: (A) reduce shell/site place-on-village variance (reliability of existing capability); (B) author ground(level-pad)+food(farm) card templates (new capability). Village/nav-aware planner templates per memory 'Next'; motor changes deferred. Needs operator design choice on A-vs-B priority before implementation.",
+      "blocked_by": "gv2-scope-coverage-metric validation (don't stack a behavioral change before the measurement fix is validated on a same-arm run — would muddy attribution).",
+      "expected_metrics": null,
+      "notes": "PROPOSED only — not selected. Behavioral/NAV change requiring (1) operator design direction (sub-target A vs B) and (2) a clean same-arm baseline post measurement-fix validation. Establishment is high-variance across emergent missions, so any validation needs >=2 same-arm runs to read signal over noise. Do not implement inside the autonomous loop without escalation."
+    }
+  ]
+}
