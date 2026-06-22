@@ -94,6 +94,11 @@ data/genesis-v2-runs/
 data/genesis-v2-metrics-history.jsonl
 scripts/data/runtime/
 data/locations-base.json
+data/regions-world.json
 data/goals-*.json
 data/personal-pois-*.json
 data/marks/*.bak
+
+# Transient ops / local validation scripts (not part of repo surface)
+scripts/tmp-*.sh
+scripts/_validate_gv2.py
