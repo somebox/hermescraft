@@ -19,20 +19,25 @@
 #   colony-planner  skills: worker-card-schema + planner-survey + blueprint-plan + card-exceptions + fundamentals (no body)
 #   colony-overseer skills: planner-survey + worker-card-schema + card-exceptions (no body) — read-only verifier
 #
-# Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>]
+# Usage: scripts/genesis-v2-mint-profiles.sh [--model <id>] [--planner-model <id>]
+# Workers (lease bodies) use --model; bodiless colony-planner + colony-overseer use
+# --planner-model (defaults to --model when omitted).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILES="$HOME/.hermes/profiles"
 SRC="$PROFILES/road-planner"
 MODEL="xiaomi/mimo-v2.5"
+PLANNER_MODEL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --model) MODEL="$2"; shift 2 ;;
+    --planner-model) PLANNER_MODEL="$2"; shift 2 ;;
     *) echo "unknown flag: $1" >&2; exit 1 ;;
   esac
 done
+PLANNER_MODEL="${PLANNER_MODEL:-$MODEL}"
 
 [[ -d "$SRC" ]] || { echo "ERROR: template profile $SRC not found (mint road-planner first)" >&2; exit 1; }
 
@@ -198,9 +203,10 @@ LEASE
   # Model + env_passthrough. Lease-mode specialists need HERMES_BOT_LEASE (and
   # the optional DB/admin guards) FORWARDED to the `mc` terminal subprocess —
   # without this the agent has the var but `mc` never sees lease mode.
-  python3 - "$dst/config.yaml" "$MODEL" "$port" <<'PY'
+  python3 - "$dst/config.yaml" "$MODEL" "$PLANNER_MODEL" "$port" <<'PY'
 import re, sys
-cfgf, model, port = sys.argv[1], sys.argv[2], sys.argv[3]
+cfgf, worker_model, planner_model, port = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+model = planner_model if not port else worker_model
 s = open(cfgf).read()
 s = re.sub(r'(\n\s*default:\s*)\S+', rf'\g<1>{model}', s, count=1)
 if port:  # body-using specialist → lease mode
