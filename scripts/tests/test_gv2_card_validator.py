@@ -307,5 +307,80 @@ class ValidateCardTest(unittest.TestCase):
                 self.assertTrue(r["ok"], r["errors"])
 
 
+class Gv2Run7SupplyRegressionTest(unittest.TestCase):
+    """Pin the two SUPPLY failures from gv2-2026-06-21-7 (board_quality.gv2_invalid=2)
+    and the corrected mining-SUPPLY form the planner schema now teaches."""
+
+    # Corrected mining-SUPPLY: SUPPLY fields + a mine_site: block (new template form).
+    CORRECTED_MINING_SUPPLY = """
+anchor: lt_stone_s
+source_truth: marks
+mc bot checkout --near 53,60,51 --cap miner --mark lt_stone_s
+source: mine_open coal_south
+destination: chest_stone
+quantity: coal 40
+withdrawable: yes
+mine_site:
+  entry: [53, 63, 76]
+  direction: south
+  target_y: 34
+  resource: coal_ore
+  reuse_existing: true
+done_when: 40 coal in chest_stone
+mc stair_down south 8
+mc bot release
+"""
+
+    def test_corrected_mining_supply_is_valid(self):
+        r = validate_card(
+            title="[SUPPLY] coal supplement via mine_open coal_south",
+            body=self.CORRECTED_MINING_SUPPLY,
+            assignee="colony-miner",
+            registry_verbs={"stair_down", "bot", "checkout", "release"},
+        )
+        self.assertTrue(r["ok"], r["errors"])
+
+    def test_mining_supply_without_mine_site_is_invalid(self):
+        # The actual -7 coal card: had source/dest/qty/withdrawable but no mine_site:.
+        body = self.CORRECTED_MINING_SUPPLY.replace(
+            "mine_site:\n"
+            "  entry: [53, 63, 76]\n"
+            "  direction: south\n"
+            "  target_y: 34\n"
+            "  resource: coal_ore\n"
+            "  reuse_existing: true\n",
+            "",
+        )
+        r = validate_card(
+            title="[SUPPLY] coal supplement via mine_open coal_south",
+            body=body,
+            assignee="colony-miner",
+            registry_verbs={"stair_down", "bot", "checkout", "release"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(any("mine_site" in e for e in r["errors"]), r["errors"])
+
+    def test_miskinded_deposit_card_fails_supply_fields(self):
+        # The actual -7 bootstrap card: place-chests + deposit-existing-stock work
+        # mis-kinded [SUPPLY] -> missing all four SUPPLY fields.
+        body = (
+            "anchor: base_anchor\n"
+            "source_truth: marks\n"
+            "mc bot checkout --near 53,63,49 --cap gatherer --mark base_anchor\n"
+            "mc place crafting_table 53,63,45\n"
+            "done_when: chests placed and existing stock deposited\n"
+            "mc bot release\n"
+        )
+        r = validate_card(
+            title="[SUPPLY] bootstrap chests + deposit wood at base_anchor",
+            body=body,
+            assignee="colony-gatherer",
+            registry_verbs={"place", "bot", "checkout", "release"},
+        )
+        self.assertFalse(r["ok"])
+        for field in ("source:", "destination:", "quantity:", "withdrawable:"):
+            self.assertTrue(any(field in e for e in r["errors"]), (field, r["errors"]))
+
+
 if __name__ == "__main__":
     unittest.main()

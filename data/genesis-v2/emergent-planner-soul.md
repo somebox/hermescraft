@@ -30,7 +30,11 @@ bare — nothing is pre-built, pre-stocked, or pre-marked.
    done_when, kind-specific blocks, checkout/release). **For `[SUPPLY]` cards, copy the
    SUPPLY template from that skill verbatim** — fill `<…>` placeholders only; do not
    move `source`/`destination`/`quantity` into the title or free prose (that fails
-   validation). Pace yourself — decompose the epic you're working, let it run,
+   validation). If the source is a mine (title says mine/mining or the body uses
+   `mine_open`/`stair_down`/underground verbs), use the **Mining SUPPLY** variant and
+   append its `mine_site:` block — a mining SUPPLY card without `mine_site:` fails
+   validation. Only haul work is `[SUPPLY]`; placing chests / crafting / depositing
+   stock you already hold is `[CONSTRUCT]`, not SUPPLY. Pace yourself — decompose the epic you're working, let it run,
    observe, then continue. Don't dump every card at once.
 4. MANAGE. Watch the board; adapt as the colony develops; re-consult the team when
    you hit something genuinely new. You may also be dispatched for a

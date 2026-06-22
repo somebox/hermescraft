@@ -61,7 +61,7 @@
     },
     {
       "work_id": "gv2-board-quality-supply-cards",
-      "status": "proposed",
+      "status": "verified",
       "type": "planner-card-quality",
       "title": "Planner emits 2 non-conforming SUPPLY cards -> board_quality.gv2_invalid=2 blocks G0",
       "source_run_id": "gv2-2026-06-21-7",
@@ -75,13 +75,19 @@
         "INVALID 2 (colony-miner, todo) '[SUPPLY] coal supplement via mine_open coal_south': has source:/destination:/quantity:/withdrawable: BUT lacks a literal 'mine_site:' block. Validator (gv2_card_validator.py:237) requires mine_site: for mining-intent titles; planner emitted 'source: mine_open coal_south' instead. REAL template gap, not a false-positive.",
         "board_quality was gv2_invalid=0 at iter1; the 2 surfaced from concurrent edits to scripts/lib/gv2_card_validator.py + new config/gv2-validate.yaml (user actively editing this area)."
       ],
-      "design_questions_for_operator": [
-        "(card2) Should the mining-SUPPLY planner template emit an explicit 'mine_site: <name>' block, or should the validator accept 'source: mine_open <name>' as satisfying mine_site? Schema/product choice.",
-        "(card1) Fix at planner (don't kind deposit/construct work as [SUPPLY]) or at validator (kind-inference)?"
-      ],
-      "blocked_by": "Validator + config/gv2-validate.yaml are under active operator edit; gv2_invalid count may still move. Do not modify the validator inside the autonomous loop — escalate.",
+      "operator_decision": "Option A (operator-approved 2026-06-22): treat validator as authoritative, fix planner guidance — do NOT loosen the validator.",
+      "change": {
+        "files": [
+          "skills/genesis-v2-worker-card-schema.md: SUPPLY row now lists withdrawable: + 'mine_site: if source is a mine'; added 'Kind it right' note (haul-only = SUPPLY, place/craft/deposit-held-stock = CONSTRUCT); SUPPLY template gained a 'Mining SUPPLY' variant with a mine_site: block.",
+          "data/genesis-v2/emergent-planner-soul.md: verbatim-copy instruction now points mining sources at the Mining SUPPLY variant + mine_site:, and states only haul work is [SUPPLY].",
+          "scripts/tests/test_gv2_card_validator.py: Gv2Run7SupplyRegressionTest pins corrected mining-SUPPLY=valid and both -7 patterns (no mine_site:, mis-kinded deposit) = invalid."
+        ]
+      },
+      "deterministic_check": "test_gv2_card_validator.py 24 passed: corrected mining-SUPPLY validates; both -7 malformed patterns fail with the expected errors. Validator unchanged (authoritative).",
       "expected_metrics": { "board_quality.gv2_invalid": { "max": 0 } },
-      "notes": "PROPOSED + ESCALATE. This is the current G0 blocker for -7 (ahead of the G2 establishment gap). Needs operator schema/kinding decision before implementation; behavioral planner-template change. compare_safe is TRUE, so this is a real board-quality finding, not a measurement confound."
+      "suggested_test": "scripts/tests/test_gv2_card_validator.py::Gv2Run7SupplyRegressionTest",
+      "validation_run_id": null,
+      "notes": "Planner-guidance fix only (skill + soul); validator left authoritative per Option A. Validation = next same-arm run's board must show gv2_invalid=0 (auto-checked via expected_metrics now that this item is verified -> flows to run config). Card1 mis-kinding fix is guidance ('haul-only=SUPPLY'); confirm on fresh board it no longer recurs. Do NOT mark done until a fresh run's board.json (not a re-score of -7) shows gv2_invalid=0."
     }
   ]
 }

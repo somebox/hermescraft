@@ -35,8 +35,14 @@ mc bot release
 | SURVEY / SCOUT | `mc scene` or `mc observe`; output marks |
 | CONSTRUCT / BUILD | `footprint:`; survey before bulk `place_fill` |
 | MINE (mining intent) | `mine_site:` before underground verbs |
-| SUPPLY | `source:`, `destination:`, `quantity:` (see template below) |
+| SUPPLY | `source:`, `destination:`, `quantity:`, `withdrawable:`; **+ `mine_site:` if the source is a mine** (see template) |
 | FARM / TILL | till/plant verbs; no `mine_site` for farm prep |
+
+**Kind it right.** `[SUPPLY]` is only for hauling NEW material from a `source:` to a
+`destination:` with a target `quantity:`. Placing chests, crafting, or depositing
+stock you *already hold* is CONSTRUCT/bootstrap work — file it as `[CONSTRUCT]` (or
+fold it into the producing card), **never** as a bare `[SUPPLY]`, or it will fail the
+SUPPLY field checks.
 
 ## SUPPLY template (copy verbatim; fill placeholders)
 
@@ -52,6 +58,20 @@ mc collect …
 mc deposit …
 done_when: <item> count in destination chest >= <count>
 mc bot release
+```
+
+**Mining SUPPLY** — if the source is a mine (title says *mine/mining*, or the body
+uses `mine_open` / `mine_resume` / `stair_down` / underground verbs), the card is also
+mining-intent: add a `mine_site:` block before the underground verbs (any title kind
+needs it, SUPPLY included). Append this after the `withdrawable:` line:
+
+```
+mine_site:
+  entry: [<X>, <Y>, <Z>]
+  direction: <north|south|east|west>
+  target_y: <Y>
+  resource: <coal_ore|iron_ore|…>
+  reuse_existing: <true|false>
 ```
 
 See `scripts/lib/gv2_card_validator.py` for the full rule set.
