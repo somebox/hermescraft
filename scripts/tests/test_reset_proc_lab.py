@@ -204,6 +204,23 @@ class StagedBuildersTest(unittest.TestCase):
     def test_evac_empty_bots(self):
         self.assertEqual(rp.build_evac_commands(hub="hub", bots=[]), [])
 
+    def test_evac_targets_observer_first(self):
+        order = rp.build_evac_targets(
+            bots=["Mox", "Pip"],
+            online_players=["re44", "Mox"],
+            observer="re44",
+        )
+        self.assertEqual(order, ["re44", "Mox", "Pip"])
+
+    def test_evac_targets_strict_skips_humans(self):
+        order = rp.build_evac_targets(
+            bots=["Mox"],
+            online_players=["re44"],
+            observer="re44",
+            strict=True,
+        )
+        self.assertEqual(order, ["Mox"])
+
     def test_delete_unloads_first(self):
         cmds = rp.build_delete_commands("proc-lab")
         self.assertEqual(cmds, ["mv unload proc-lab", "mv delete proc-lab"])

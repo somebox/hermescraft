@@ -57,6 +57,33 @@ def build_evac_commands(*, hub: str, bots: list[str]) -> list[str]:
     return [f"mvtp {bot} {hub}" for bot in bots]
 
 
+def build_evac_targets(
+    *,
+    bots: list[str],
+    online_players: list[str],
+    observer: str | None = None,
+    strict: bool = False,
+) -> list[str]:
+    """Ordered player names to mvtp to the hub before `mv delete`.
+
+    Observer (human operator) goes first so they leave the run world before
+    the disc is wiped — avoids a full client disconnect from sitting in a
+    deleted world. Pool bots follow; other online humans last. Offline bots
+    are still listed so Multiverse gets a no-op mvtp."""
+    order: list[str] = []
+    obs = (observer or "").strip()
+    if obs and obs in online_players and not strict:
+        order.append(obs)
+    for bot in bots:
+        if bot not in order:
+            order.append(bot)
+    if online_players and not strict:
+        for p in online_players:
+            if p not in order:
+                order.append(p)
+    return order
+
+
 def build_delete_commands(world: str) -> list[str]:
     """Phase 2: unload + request delete. The response will contain an
     OTP number we capture out-of-band and send via `build_confirm_command`.
@@ -189,6 +216,11 @@ def main() -> int:
                     help="World generator (default: NORMAL)")
     ap.add_argument("--bots", default=",".join(DEFAULT_BOTS),
                     help="Comma-list of bot names to evac (default: Gatherer,Flint,Mason,Steward)")
+    ap.add_argument(
+        "--observer",
+        default=(os.environ.get("GENESIS_V2_OBSERVER") or "re44").strip(),
+        help="Human observer name to evac first (default: GENESIS_V2_OBSERVER or re44)",
+    )
     ap.add_argument("--dry-run", action="store_true",
                     help="Print the rcon command sequence without executing")
     ap.add_argument("--no-verify", action="store_true",
@@ -226,13 +258,22 @@ def main() -> int:
     # is to evac any online players to the hub automatically. --strict
     # opts into refusal for use against non-test worlds.
     print("  pre-flight player check…", end=" ", flush=True)
-    try:
-        list_out = rcon(["list"], timeout_s=15.0)
-    except subprocess.TimeoutExpired:
-        print("FAIL")
-        print("  ! rcon `list` timed out — check ssh_docker connectivity", file=sys.stderr)
-        return 2
-    players = parse_online_players(list_out)
+    list_out = ""
+    players: list[str] = []
+    for attempt in range(3):
+        try:
+            list_out = rcon(["list"], timeout_s=15.0)
+        except subprocess.TimeoutExpired:
+            if attempt == 2:
+                print("FAIL")
+                print("  ! rcon `list` timed out — check ssh_docker connectivity", file=sys.stderr)
+                return 2
+            time.sleep(1.0)
+            continue
+        players = parse_online_players(list_out)
+        if players or "players online" in (list_out or "").lower():
+            break
+        time.sleep(0.75)
     if players and args.strict:
         print("REFUSED (strict)")
         print(f"  ! players online: {', '.join(players)}", file=sys.stderr)
@@ -244,14 +285,17 @@ def main() -> int:
         return 4
     print("ok" if not players else f"online: {', '.join(players)}")
 
-    # Stage 2: evac bots + any online humans (test-area default).
-    targets = list(bots)
-    if players and not args.strict:
-        targets.extend(players)
+    # Stage 2: evac observer first, then bots + any other online humans.
+    targets = build_evac_targets(
+        bots=bots,
+        online_players=players,
+        observer=args.observer,
+        strict=args.strict,
+    )
     if targets:
         print(f"  evac → {args.hub}: {', '.join(targets)}")
         rcon(build_evac_commands(hub=args.hub, bots=targets), timeout_s=30.0)
-        time.sleep(1.5)  # let the tp settle before delete
+        time.sleep(2.5)  # let hub tp settle before delete (avoid disconnect in run world)
 
     # Stage 3: unload + delete (captures OTP).
     print(f"  mv unload + delete {args.world}…", end=" ", flush=True)
