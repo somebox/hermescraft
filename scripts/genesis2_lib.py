@@ -32,6 +32,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 # `python - <<EOF` stdin invocation.
 sys.path.insert(0, str(REPO_ROOT))
 import genesis_lib as gl  # noqa: E402  (pure helpers only: parse_yaml_simple, substitute, _iso_utc, _load_json)
+from lib.gv2_card_validator import validate_card
 
 TEMPLATES_DIR = REPO_ROOT / "data" / "genesis-v2" / "templates"
 RUNS_ROOT = REPO_ROOT / "data" / "genesis-v2-runs"
@@ -219,6 +220,58 @@ def default_observer_name() -> str:
     return (os.environ.get("GENESIS_V2_OBSERVER") or "re44").strip() or "re44"
 
 
+def online_players(*, retries: int = 3) -> list[str]:
+    """Online player names from rcon `list`, with brief retries on empty parse."""
+    last = ""
+    for attempt in range(max(1, retries)):
+        try:
+            last = _rcon(["list"])
+        except Exception:
+            last = ""
+        players = parse_online_players(last)
+        if players or "players online" in (last or "").lower():
+            return players
+        if attempt + 1 < retries:
+            time.sleep(0.75)
+    return parse_online_players(last)
+
+
+def evac_to_hub_before_world_reset(*, hub: str = "landfolk-test", observer: str | None = None) -> list[str]:
+    """mvtp online humans + pool bodies to the hub before deleting a Multiverse world.
+
+    Never kicks — only Multiverse teleports. Observer goes first so they stay on
+    the server in ``hub`` (e.g. landfolk-test) while the run world is recreated,
+    then ``setup_observer`` / ``ensure_observer_watching`` mvtp them back."""
+    observer = observer or default_observer_name()
+    players = online_players()
+    bots = [b["user"] for b in BODY_POOL.values()]
+    order: list[str] = []
+    if observer in players:
+        order.append(observer)
+    for u in bots:
+        if u not in order:
+            order.append(u)
+    for p in players:
+        if p not in order:
+            order.append(p)
+    if not order:
+        return []
+    for name in order:
+        try:
+            _rcon([f"mvtp {name} {hub}"])
+        except Exception:
+            pass
+    time.sleep(2.5)
+    # Drop observer stint marker so post-reset setup always re-tps into the new world.
+    active = RUNS_ROOT / ".active"
+    if active.is_file():
+        rid = active.read_text(encoding="utf-8", errors="replace").strip()
+        if rid:
+            safe = re.sub(r"[^\w.-]+", "_", observer)
+            (run_dir(rid) / f".observer_{safe}.ready").unlink(missing_ok=True)
+    return order
+
+
 def _rcon(cmds: list[str]) -> str:
     """Run a batch of raw rcon commands; returns the concatenated response as a
     single ANSI-stripped string. (mapcatalog's run_batch returns one string;
@@ -250,11 +303,10 @@ def reset_world(*, world: str, seed: int, hub: str = "landfolk-test") -> None:
     create it — there's nothing to delete, so the reset-proc-lab delete+OTP path
     would stall. If it exists, route through reset-proc-lab.py for the full
     evacuate→delete→confirm→create cycle."""
+    evac_to_hub_before_world_reset(hub=hub)
+    observer = default_observer_name()
     bots = ",".join(b["user"] for b in BODY_POOL.values())
     if not _world_exists(world):
-        # Evacuate any body that happens to be there, then create fresh.
-        for b in BODY_POOL.values():
-            _rcon([f"mvtp {b['user']} {hub}"])
         out = _rcon([f"mv create {world} NORMAL -s {seed}"])
         if "created" in out.lower() or "already exists" in out.lower():
             # Give MV a moment to register the world in `mv list` before callers
@@ -267,7 +319,8 @@ def reset_world(*, world: str, seed: int, hub: str = "landfolk-test") -> None:
         raise RuntimeError(f"mv create {world} failed: {out[:300]}")
     proc = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "reset-proc-lab.py"),
-         "--world", world, "--seed", str(seed), "--hub", hub, "--bots", bots],
+         "--world", world, "--seed", str(seed), "--hub", hub, "--bots", bots,
+         "--observer", observer],
         cwd=REPO_ROOT, capture_output=True, text=True, timeout=300,
     )
     if proc.returncode != 0:
@@ -550,6 +603,8 @@ COLONY_WORKER_ASSIGNEES = frozenset({
     "colony-farmer", "colony-miner", "colony-road",
 })
 AWAITING_FREE_BODY = "awaiting_free_body — pool empty (poller)"
+_CONTROL_TITLE_RE = re.compile(r"^\s*\[(FEEDBACK|RETRO|MISSION)\]", re.IGNORECASE)
+_POLLER_CONTROL_TITLE_RE = re.compile(r"^\s*\[GENESIS2:(?!P[1-9]\])", re.IGNORECASE)
 
 
 def surface_water_within(
@@ -856,6 +911,59 @@ def sync_body_pool_gates(run_id: str) -> dict[str, list[str]]:
     return {"blocked": blocked, "released": released}
 
 
+def block_invalid_ready_cards(run_id: str) -> list[str]:
+    """Deterministic schema gate: block malformed READY worker cards.
+
+    Scope:
+    - Same worker filter as the pool gate (`_is_pool_gated_worker`)
+    - Skip control/poller cards (`[FEEDBACK]`, `[RETRO]`, `[MISSION]`, non-phase `[GENESIS2:*]`)
+    - Idempotent: skip cards already blocked for schema/card-review reasons
+    """
+    try:
+        cfg = load_config(run_id)
+        epic_ids = {str(e) for e in cfg.get("epic_ids", [])}
+    except Exception:
+        epic_ids = set()
+    try:
+        lst = json.loads(_hermes(["list", "--json"]).stdout or "[]")
+        tasks = lst if isinstance(lst, list) else lst.get("tasks", [])
+    except Exception:
+        return []
+    blocked: list[str] = []
+    for t in tasks:
+        tid = str(t.get("id") or "")
+        if not tid or tid == "None":
+            continue
+        if (t.get("status") or "").lower() != "ready":
+            continue
+        if not _is_pool_gated_worker(t, epic_ids):
+            continue
+        title = t.get("title") or ""
+        if _CONTROL_TITLE_RE.search(title) or _POLLER_CONTROL_TITLE_RE.search(title):
+            continue
+        reason = _latest_block_reason(tid).strip().lower()
+        if "card-review-needed" in reason or "card_review_needed" in reason or reason.startswith(
+            "schema-missing:"
+        ):
+            continue
+        verdict = validate_card(
+            title=title,
+            body=t.get("body"),
+            assignee=t.get("assignee"),
+        )
+        if verdict.get("ok"):
+            continue
+        first_error = ""
+        if verdict.get("errors"):
+            first_error = str(verdict["errors"][0]).strip()
+        if not first_error:
+            first_error = "card failed schema validation"
+        block_reason = f"schema-missing: {' '.join(first_error.split())}"
+        if block_card(tid, block_reason):
+            blocked.append(tid)
+    return blocked
+
+
 def world_setup(world: str, spawn: dict[str, int]) -> None:
     """Peaceful, no mob spawning, frozen day; pin worldspawn to the colony spawn
     (the bodies' natural landing point) and confirm each body is there. The tp
@@ -950,6 +1058,23 @@ def ensure_observer_watching(run_id: str, observer: str | None = None) -> bool:
         marker.write_text(gl._iso_utc() + "\n")
         return True
     return False
+
+
+def restore_observer_to_colony(run_id: str, observer: str | None = None) -> bool:
+    """mvtp observer from hub into the run world (spectator @ spawn). Clears the
+    per-stint marker so this always runs — use after world reset when they stayed
+    connected in the hub world."""
+    observer = observer or default_observer_name()
+    _observer_session_marker(run_id, observer).unlink(missing_ok=True)
+    try:
+        cfg = load_config(run_id)
+    except Exception:
+        return False
+    world = cfg.get("world") or "genesis2"
+    spawn = cfg.get("spawn")
+    if not spawn or not isinstance(spawn, dict):
+        return False
+    return setup_observer(world, spawn, observer)
 
 
 # --------------------------------------------------------------------------- #
@@ -1255,6 +1380,7 @@ RETRO_AGENTS = ("colony-scout", "colony-gatherer", "colony-builder", "colony-far
                 "colony-miner", "colony-road", "colony-planner")
 RETRO_CARD_PRIORITY = 50  # dispatcher: priority DESC — retros beat normal worker cards
 RETRO_WAIT_DEFAULT_S = 240
+CAP_RETRO_WAIT_S = 120
 RETRO_BODY = (
     "RETROSPECTIVE — REFLECTION ONLY. The colony run is ending. Do NOT checkout a body,\n"
     "do NOT run `mc` verbs, do NOT run `skill_view`, do NOT do any in-world work.\n\n"
@@ -1410,6 +1536,50 @@ def wait_for_retro_cards(
         "timed_out": True,
         "run_id": run_id,
         "incomplete_ids": incomplete,
+    }
+
+
+def ensure_retro_phase(
+    run_id: str,
+    *,
+    wait_s: int | None = None,
+    force: bool = False,
+) -> dict:
+    """Ensure a retro phase exists, then wait for completion unless forced.
+
+    If no retro cards exist yet, this files one per retro agent first.
+    Returns {ok, snap, filed, run_id, wait_s, forced}. On wait failure, marks the
+    run config with retro_incomplete_at_stop for honest post-stop reporting.
+    """
+    filed = {}
+    snap = retro_card_snapshot()
+    if int(snap.get("total") or 0) == 0:
+        filed = file_retro_cards(run_id)
+        snap = retro_card_snapshot()
+
+    timeout_s = RETRO_WAIT_DEFAULT_S if wait_s is None else max(1, int(wait_s))
+    if force:
+        wait = {**snap, "ok": True, "timed_out": False, "run_id": run_id, "skipped_wait": True}
+    else:
+        wait = wait_for_retro_cards(run_id, timeout_s=timeout_s)
+
+    try:
+        cfg = load_config(run_id)
+        if wait.get("ok"):
+            cfg.pop("retro_incomplete_at_stop", None)
+        else:
+            cfg["retro_incomplete_at_stop"] = gl._iso_utc()
+        save_config(cfg)
+    except Exception:
+        pass
+
+    return {
+        "ok": bool(wait.get("ok")),
+        "snap": wait,
+        "filed": len(filed),
+        "run_id": run_id,
+        "wait_s": timeout_s,
+        "forced": bool(force),
     }
 
 
@@ -2691,6 +2861,33 @@ def capture_run_artifacts(run_id: str | None = None) -> dict:
         "card_stories": card_stories,
         "card_stories_error": card_stories_error,
     }
+
+
+def run_cap_score_bundle(run_id: str) -> dict:
+    """Best-effort deterministic feedback+score bundle after cap capture."""
+    steps = [
+        ("collect_feedback", [sys.executable, str(REPO_ROOT / "scripts" / "gv2-collect-feedback.py"),
+                              "--run-id", run_id]),
+        ("score_run", [sys.executable, str(REPO_ROOT / "scripts" / "gv2-score-run.py"),
+                       "--run-id", run_id]),
+    ]
+    out: list[dict] = []
+    ok = True
+    for name, cmd in steps:
+        try:
+            p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=300)
+            out.append({
+                "step": name,
+                "ok": (p.returncode == 0),
+                "returncode": p.returncode,
+                "stderr": (p.stderr or "").strip()[:500],
+            })
+            if p.returncode != 0:
+                ok = False
+        except Exception as exc:
+            out.append({"step": name, "ok": False, "error": str(exc)})
+            ok = False
+    return {"ok": ok, "run_id": run_id, "steps": out}
 
 
 def advance_phases(run_id: str, *, status_by_id: dict[str, str] | None = None,

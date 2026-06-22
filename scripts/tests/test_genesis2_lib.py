@@ -1,6 +1,7 @@
 """Offline tests for genesis2_lib (mock rcon/hermes/mc — no live Minecraft)."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -222,6 +223,146 @@ def test_sync_body_pool_gates_caps_releases_to_free_count(monkeypatch):
     out = g2.sync_body_pool_gates("gv2-x")
     assert out["released"] == ["a"]
     assert unblocked == ["a"]
+
+
+def test_block_invalid_ready_cards(monkeypatch):
+    monkeypatch.setattr(g2, "load_config", lambda _r: {"epic_ids": []})
+    blocked_calls: list[tuple[str, str]] = []
+    active_reasons: dict[str, str] = {}
+    tasks = [
+        {
+            "id": "w_bad",
+            "status": "ready",
+            "assignee": "colony-builder",
+            "title": "[CONSTRUCT] [GENESIS2:P1] Base layer L0 chest bootstrap",
+            "body": (
+                "anchor: base_anchor\n"
+                "source_truth: marks\n"
+                "footprint: 7x7 at base_anchor\n"
+                "protected_cells: none\n"
+                "layer: L0\n"
+                "done_when: chest placed\n"
+                "mc bot checkout --near 53,63,49 --cap builder --mark base_anchor\n"
+                "mc scene\n"
+                "mc place chest 53,63,49\n"
+                "mc bot release\n"
+            ),
+        },
+        {
+            "id": "w_ok",
+            "status": "ready",
+            "assignee": "colony-builder",
+            "title": "[CONSTRUCT] [GENESIS2:P1] Base layer L0 foundation",
+            "body": (
+                "anchor: base_anchor\n"
+                "source_truth: marks\n"
+                "footprint: 7x7 at base_anchor\n"
+                "protected_cells: none\n"
+                "layer: L0\n"
+                "materials_required:\n"
+                "  cobblestone: 96\n"
+                "preflight:\n"
+                "  mc marks\n"
+                "  mc scene\n"
+                "work:\n"
+                "  mc bot checkout --near 53,63,49 --cap builder --mark base_anchor\n"
+                "  mc scene\n"
+                "  mc fill cobblestone 50 63 46 56 63 52\n"
+                "verify_on_site: L0 gate pass\n"
+                "done_when: L0 done\n"
+                "mc bot release\n"
+            ),
+        },
+        {
+            "id": "w_control",
+            "status": "ready",
+            "assignee": "colony-builder",
+            "title": "[GENESIS2:SUPPLY] SUPPLY wood",
+            "body": "anchor: base_anchor\nsource_truth: marks\ndone_when: n/a\n",
+        },
+    ]
+
+    def fake_hermes(args, **kw):
+        p = MagicMock()
+        p.returncode = 0
+        if args[0] == "list":
+            p.stdout = json.dumps(tasks)
+        elif args[0] == "show":
+            reason = active_reasons.get(args[1], "")
+            events = [{"kind": "blocked", "payload": {"reason": reason}}] if reason else []
+            p.stdout = json.dumps({"events": events})
+        elif args[0] == "block":
+            tid, reason = args[1], args[2]
+            blocked_calls.append((tid, reason))
+            active_reasons[tid] = reason
+            p.stdout = "{}"
+        else:
+            p.stdout = "{}"
+        return p
+
+    monkeypatch.setattr(g2, "_hermes", fake_hermes)
+    first = g2.block_invalid_ready_cards("gv2-x")
+    assert first == ["w_bad"]
+    assert blocked_calls and blocked_calls[0][0] == "w_bad"
+    assert blocked_calls[0][1].startswith("schema-missing:")
+    second = g2.block_invalid_ready_cards("gv2-x")
+    assert second == []
+    assert len(blocked_calls) == 1
+
+
+def test_block_invalid_ready_cards_idempotent_when_already_schema_blocked(monkeypatch):
+    monkeypatch.setattr(g2, "load_config", lambda _r: {"epic_ids": []})
+    blocked_calls: list[tuple[str, str]] = []
+    tasks = [
+        {
+            "id": "w_bad",
+            "status": "ready",
+            "assignee": "colony-builder",
+            "title": "[CONSTRUCT] [GENESIS2:P1] Base layer L0 chest bootstrap",
+            "body": (
+                "anchor: base_anchor\n"
+                "source_truth: marks\n"
+                "footprint: 7x7 at base_anchor\n"
+                "protected_cells: none\n"
+                "layer: L0\n"
+                "done_when: chest placed\n"
+                "mc bot checkout --near 53,63,49 --cap builder --mark base_anchor\n"
+                "mc scene\n"
+                "mc place chest 53,63,49\n"
+                "mc bot release\n"
+            ),
+        },
+    ]
+
+    def fake_hermes(args, **kw):
+        p = MagicMock()
+        p.returncode = 0
+        if args[0] == "list":
+            p.stdout = json.dumps(tasks)
+        elif args[0] == "show":
+            p.stdout = json.dumps(
+                {
+                    "events": [
+                        {
+                            "kind": "blocked",
+                            "payload": {
+                                "reason": "schema-missing: base-layer CONSTRUCT missing preflight:",
+                            },
+                        }
+                    ]
+                }
+            )
+        elif args[0] == "block":
+            blocked_calls.append((args[1], args[2]))
+            p.stdout = "{}"
+        else:
+            p.stdout = "{}"
+        return p
+
+    monkeypatch.setattr(g2, "_hermes", fake_hermes)
+    out = g2.block_invalid_ready_cards("gv2-x")
+    assert out == []
+    assert blocked_calls == []
 
 
 def test_requeue_deferred_skips_awaiting_free_body(monkeypatch):
@@ -701,6 +842,38 @@ def test_supervise_or_park_noop_when_open_supervise(monkeypatch):
     assert res["action"] == "noop"
 
 
+def test_file_supervise_skips_schema_missing_block(monkeypatch):
+    created = []
+
+    def fake(args, **kw):
+        p = MagicMock()
+        p.returncode = 0
+        if args and args[0] == "list":
+            p.stdout = "[]"
+        elif args and args[0] == "show":
+            p.stdout = json.dumps(
+                {
+                    "events": [
+                        {
+                            "kind": "blocked",
+                            "payload": {"reason": "schema-missing: base-layer CONSTRUCT missing preflight:"},
+                        }
+                    ]
+                }
+            )
+        elif args and args[0] == "create":
+            created.append(args)
+            p.stdout = json.dumps({"id": "t_supervise"})
+        else:
+            p.stdout = "{}"
+        return p
+
+    monkeypatch.setattr(g2, "_hermes", fake)
+    out = g2.file_supervise_card("gv2-x", "w_bad", "Bad construct", "blocked by schema gate")
+    assert out is None
+    assert created == []
+
+
 class _FakeTime:
     """Minimal stand-in for the `time` module: fixed time(), real sleep is unused."""
     def __init__(self, now_s): self._now = now_s
@@ -953,6 +1126,144 @@ def test_wait_for_retro_cards_timeout_reports_incomplete(monkeypatch):
     assert "t_r1" in out["incomplete_ids"] and "t_r2" in out["incomplete_ids"]
 
 
+def test_ensure_retro_phase_files_when_missing(monkeypatch):
+    calls = {"filed": 0, "timeout_s": None}
+    cfg = {"run_id": "gv2-x"}
+    saves = []
+
+    monkeypatch.setattr(g2, "retro_card_snapshot", lambda **_k: {
+        "total": 0, "ready": [], "running": [], "done": [], "other": [], "pending": 0
+    })
+
+    def fake_file(run_id, agents=g2.RETRO_AGENTS):
+        calls["filed"] += 1
+        assert run_id == "gv2-x"
+        assert agents == g2.RETRO_AGENTS
+        return {"colony-scout": "t1", "colony-builder": "t2"}
+
+    def fake_wait(run_id, *, timeout_s=g2.RETRO_WAIT_DEFAULT_S, poll_s=10):
+        assert run_id == "gv2-x"
+        calls["timeout_s"] = timeout_s
+        return {"total": 2, "ready": [], "running": [], "done": ["t1", "t2"],
+                "other": [], "pending": 0, "ok": True, "timed_out": False}
+
+    monkeypatch.setattr(g2, "file_retro_cards", fake_file)
+    monkeypatch.setattr(g2, "wait_for_retro_cards", fake_wait)
+    monkeypatch.setattr(g2, "load_config", lambda _r: dict(cfg))
+    monkeypatch.setattr(g2, "save_config", lambda c: saves.append(dict(c)))
+
+    out = g2.ensure_retro_phase("gv2-x", wait_s=77)
+    assert out["ok"] is True
+    assert out["filed"] == 2
+    assert calls["filed"] == 1
+    assert calls["timeout_s"] == 77
+    assert "retro_incomplete_at_stop" not in saves[-1]
+
+
+def test_ensure_retro_phase_idempotent_when_cards_exist(monkeypatch):
+    wait_calls = []
+    saves = []
+
+    monkeypatch.setattr(g2, "retro_card_snapshot", lambda **_k: {
+        "total": 1, "ready": [], "running": [], "done": ["t_r"], "other": [], "pending": 0
+    })
+    monkeypatch.setattr(g2, "file_retro_cards",
+                        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("should not file")))
+    monkeypatch.setattr(g2, "wait_for_retro_cards",
+                        lambda _r, *, timeout_s=g2.RETRO_WAIT_DEFAULT_S, poll_s=10:
+                        (wait_calls.append(timeout_s) or
+                         {"total": 1, "ready": [], "running": [], "done": ["t_r"], "other": [],
+                          "pending": 0, "ok": True, "timed_out": False}))
+    monkeypatch.setattr(g2, "load_config",
+                        lambda _r: {"run_id": "gv2-x", "retro_incomplete_at_stop": "2026-01-01T00:00:00Z"})
+    monkeypatch.setattr(g2, "save_config", lambda c: saves.append(dict(c)))
+
+    a = g2.ensure_retro_phase("gv2-x")
+    b = g2.ensure_retro_phase("gv2-x")
+    assert a["filed"] == 0 and b["filed"] == 0
+    assert wait_calls == [g2.RETRO_WAIT_DEFAULT_S, g2.RETRO_WAIT_DEFAULT_S]
+    assert "retro_incomplete_at_stop" not in saves[-1]
+
+
+def test_ensure_retro_phase_marks_incomplete_on_timeout(monkeypatch):
+    saves = []
+    monkeypatch.setattr(g2, "retro_card_snapshot", lambda **_k: {
+        "total": 1, "ready": ["t_r"], "running": [], "done": [], "other": [], "pending": 1
+    })
+    monkeypatch.setattr(g2, "wait_for_retro_cards", lambda *_a, **_k: {
+        "total": 1, "ready": ["t_r"], "running": [], "done": [], "other": [],
+        "pending": 1, "ok": False, "timed_out": True, "incomplete_ids": ["t_r"]
+    })
+    monkeypatch.setattr(g2, "load_config", lambda _r: {"run_id": "gv2-x"})
+    monkeypatch.setattr(g2, "save_config", lambda c: saves.append(dict(c)))
+    out = g2.ensure_retro_phase("gv2-x")
+    assert out["ok"] is False
+    assert out["snap"]["timed_out"] is True
+    assert "retro_incomplete_at_stop" in saves[-1]
+
+
+def test_run_cap_score_bundle_runs_collect_then_score(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **_kw):
+        calls.append(cmd)
+        p = MagicMock()
+        p.returncode = 0
+        p.stderr = ""
+        p.stdout = ""
+        return p
+
+    monkeypatch.setattr(g2.subprocess, "run", fake_run)
+    out = g2.run_cap_score_bundle("gv2-x")
+    assert out["ok"] is True
+    assert len(calls) == 2
+    assert calls[0][1].endswith("gv2-collect-feedback.py")
+    assert calls[1][1].endswith("gv2-score-run.py")
+
+
+def test_poller_cap_calls_retro_phase_before_capture(monkeypatch):
+    poller_path = REPO / "scripts" / "genesis-v2-poller.py"
+    spec = importlib.util.spec_from_file_location("gv2_poller_test_mod", poller_path)
+    assert spec and spec.loader
+    poller = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(poller)
+
+    # run_started uses first reading (0); cap check uses second (1000) => cap branch.
+    ticks = iter([0.0, 1000.0])
+    monkeypatch.setattr(poller.time, "time", lambda: next(ticks))
+    monkeypatch.setattr(
+        poller.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: type("Args", (), {
+            "run_id": "gv2-x",
+            "interval": 1,
+            "max_runtime_h": 0.001,
+            "validate_every_min": 0,
+        })(),
+    )
+
+    calls = []
+    monkeypatch.setattr(poller.g2, "load_config", lambda _r: {"mode": "emergent"})
+    monkeypatch.setattr(poller.g2, "ensure_observer_watching", lambda _r: False)
+    monkeypatch.setattr(poller.g2, "ensure_retro_phase",
+                        lambda _r, wait_s=None: calls.append(("ensure", wait_s)) or {"ok": True})
+    monkeypatch.setattr(poller.g2, "capture_run_artifacts",
+                        lambda _r: calls.append(("capture", None)) or {"ok": True})
+    monkeypatch.setattr(poller.g2, "run_cap_score_bundle",
+                        lambda _r: calls.append(("bundle", None)) or {"ok": True})
+    monkeypatch.setattr(poller.g2, "teardown_session",
+                        lambda: calls.append(("teardown", None)))
+
+    rc = poller.main()
+    assert rc == 0
+    assert calls == [
+        ("ensure", poller.g2.CAP_RETRO_WAIT_S),
+        ("capture", None),
+        ("bundle", None),
+        ("teardown", None),
+    ]
+
+
 def test_detect_dead_dispatch_retro_ready_with_worker_running_not_dead(monkeypatch, tmp_path):
     """Retro cards waiting while workers run is backpressure, not dead dispatch."""
     log = tmp_path / "gateway.log"
@@ -1044,6 +1355,23 @@ def test_setup_observer_uses_parsed_list_and_world_scoped_commands(monkeypatch):
 def test_setup_observer_skips_when_offline(monkeypatch):
     monkeypatch.setattr(g2, "_rcon", lambda _c: "There are 0 of a max of 10 players online:")
     assert g2.setup_observer("genesis2", {"x": 0, "y": 64, "z": 0}) is False
+
+
+def test_evac_to_hub_observer_first(monkeypatch):
+    mvtps: list[str] = []
+
+    def fake_rcon(cmds):
+        if cmds == ["list"]:
+            return "There are 2 of a max of 10 players online: re44, Mox"
+        mvtps.append(cmds[0])
+        return "ok"
+
+    monkeypatch.setattr(g2, "_rcon", fake_rcon)
+    monkeypatch.setattr(g2.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(g2, "RUNS_ROOT", Path("/nonexistent"))
+    order = g2.evac_to_hub_before_world_reset(hub="landfolk-test", observer="re44")
+    assert order[0] == "re44"
+    assert mvtps[0] == "mvtp re44 landfolk-test"
 
 
 def test_ensure_observer_watching_on_connect_mid_run(tmp_path, monkeypatch):

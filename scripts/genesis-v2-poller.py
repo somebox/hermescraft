@@ -74,9 +74,19 @@ def main() -> int:
         if cap_s is not None and (time.time() - run_started) > cap_s:
             sys.stderr.write(f"[poller] {args.max_runtime_h}h run cap reached → capturing + tearing down\n")
             try:
+                retro = g2.ensure_retro_phase(args.run_id, wait_s=g2.CAP_RETRO_WAIT_S)
+                sys.stderr.write(f"[poller] retro phase before cap capture: {retro}\n")
+            except Exception as e:
+                sys.stderr.write(f"[poller] retro phase failed before cap capture: {e}\n")
+            try:
                 sys.stderr.write(f"[poller] artifacts: {g2.capture_run_artifacts(args.run_id)}\n")
             except Exception as e:
                 sys.stderr.write(f"[poller] capture failed: {e}\n")
+            try:
+                bundle = g2.run_cap_score_bundle(args.run_id)
+                sys.stderr.write(f"[poller] cap score bundle: {bundle}\n")
+            except Exception as e:
+                sys.stderr.write(f"[poller] cap score bundle failed: {e}\n")
             try:
                 g2.teardown_session()
             except Exception as e:
@@ -101,8 +111,24 @@ def main() -> int:
                     cfg["abort_reason"] = payload.get("reason") or f"validate_exit_{exit_code}"
                     g2.save_config(cfg)
                     sys.stderr.write(f"[poller] validate abort → capture + teardown ({cfg['abort_reason']})\n")
-                    g2.capture_run_artifacts(args.run_id)
-                    g2.teardown_session()
+                    try:
+                        retro = g2.ensure_retro_phase(args.run_id)
+                        sys.stderr.write(f"[poller] retro phase before validate capture: {retro}\n")
+                    except Exception as e:
+                        sys.stderr.write(f"[poller] retro phase failed before validate capture: {e}\n")
+                    try:
+                        sys.stderr.write(f"[poller] artifacts: {g2.capture_run_artifacts(args.run_id)}\n")
+                    except Exception as e:
+                        sys.stderr.write(f"[poller] capture failed: {e}\n")
+                    try:
+                        bundle = g2.run_cap_score_bundle(args.run_id)
+                        sys.stderr.write(f"[poller] cap score bundle: {bundle}\n")
+                    except Exception as e:
+                        sys.stderr.write(f"[poller] cap score bundle failed: {e}\n")
+                    try:
+                        g2.teardown_session()
+                    except Exception as e:
+                        sys.stderr.write(f"[poller] teardown failed: {e}\n")
                     return exit_code
             except Exception as e:
                 sys.stderr.write(f"[poller] validate hook failed: {e}\n")
@@ -116,6 +142,14 @@ def main() -> int:
                 sys.stderr.write(f"[poller] stripped force-loaded skills off worker card(s): {stripped}\n")
         except Exception as e:
             sys.stderr.write(f"[poller] skill-strip failed: {e}\n")
+        # Deterministic schema gate: block malformed READY worker cards before any
+        # pool-gate / requeue dispatch movement in this tick.
+        try:
+            blocked = g2.block_invalid_ready_cards(args.run_id)
+            if blocked:
+                sys.stderr.write(f"[poller] schema-gate blocked invalid ready card(s): {blocked}\n")
+        except Exception as e:
+            sys.stderr.write(f"[poller] schema-gate failed: {e}\n")
         # Promote per-bot marks to the shared map BEFORE checking gates: workers
         # `mc mark` to their private locations-<bot>.json (the reconciler is the
         # sole writer to the shared file), so without this the gates never see

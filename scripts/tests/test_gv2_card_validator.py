@@ -33,15 +33,73 @@ mc bot release
 """
 
 VALID_CONSTRUCT = """
-anchor: base_anchor
+anchor: pad_mark
 source_truth: scout card t_scout HANDOFF
-done_when: 7x7 pad clear at base_anchor
-mc bot checkout --near base_anchor --cap builder --mark base_anchor
+done_when: 7x7 pad clear at pad_mark
+mc bot checkout --near pad_mark --cap builder --mark pad_mark
 mc scene
 mc observe
-footprint: 7x7 at base_anchor
+footprint: 7x7 at pad_mark
 protected_cells: none after survey
 mc fill cobblestone 0 64 0 6 64 6
+mc bot release
+"""
+
+CANONICAL_BASE_L0_CONSTRUCT = """
+anchor: base_anchor
+source_truth: marks
+footprint: 7x7 at base_anchor
+protected_cells: none
+layer: L0
+materials_required:
+  cobblestone: 96
+preflight:
+  mc marks
+  mc scene
+  mc inventory
+work:
+  mc bot checkout --near 53,63,49 --cap builder --mark base_anchor
+  mc scene
+  mc fill cobblestone 50 63 46 56 63 52
+  mc fill air 49 63 45 57 63 53 replace water
+verify_on_site: L0 gate pass (footprint + apron has no air/water)
+done_when: L0 footprint + apron has no air/water at origin_y
+mc bot release
+"""
+
+VALID_L0_VERIFY = """
+anchor: base_anchor
+source_truth: mark base_anchor from CONSTRUCT t_l0
+depends_on: t_l0
+layer: L0
+gate: ground
+footprint: 7x7 at base_anchor
+done_when: gv2-verify-layer ground gate PASS
+mc bot checkout --near 53,63,49 --cap builder --mark base_anchor
+preflight:
+  mc scene
+verify_cmd:
+  python3 scripts/gv2-verify-layer.py --origin 53,63,49 --footprint 7,7 --offset -1 --gate ground --apron 1 --json
+mc bot release
+"""
+
+BAD_OUTDOOR_CHEST_L0 = """
+anchor: base_anchor
+source_truth: marks
+footprint: 7x7 at base_anchor
+protected_cells: none
+layer: L0
+materials_required:
+  cobblestone: 96
+preflight:
+  mc marks
+  mc scene
+work:
+  mc bot checkout --near 53,63,49 --cap builder --mark base_anchor
+  mc scene
+  mc place chest 53,63,49
+verify_on_site: L0 gate pass
+done_when: base storage starts
 mc bot release
 """
 
@@ -283,6 +341,124 @@ class ValidateCardTest(unittest.TestCase):
             registry_verbs={"scene", "observe", "fill", "bot"},
         )
         self.assertTrue(r["ok"], r["errors"])
+
+    def test_canonical_base_l0_template_passes(self):
+        r = validate_card(
+            title="[CONSTRUCT] [GENESIS2:P1] Base layer L0 foundation at base_anchor",
+            body=CANONICAL_BASE_L0_CONSTRUCT,
+            assignee="colony-builder",
+            registry_verbs={"bot", "marks", "scene", "inventory", "fill"},
+        )
+        self.assertTrue(r["ok"], r["errors"])
+
+    def test_base_handoff_source_truth_errors_on_base_layer(self):
+        body = CANONICAL_BASE_L0_CONSTRUCT.replace(
+            "source_truth: marks",
+            "source_truth: handoff from planner",
+        )
+        r = validate_card(
+            title="[CONSTRUCT] Base L0 at base_anchor",
+            body=body,
+            assignee="colony-builder",
+            registry_verbs={"bot", "marks", "scene", "inventory", "fill"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(any("handoff" in e.lower() for e in r["errors"]), r["errors"])
+
+    def test_valid_l0_verify_template(self):
+        r = validate_card(
+            title="[VERIFY] Base layer L0 ground gate",
+            body=VALID_L0_VERIFY,
+            assignee="colony-builder",
+            registry_verbs={"bot", "scene"},
+        )
+        self.assertTrue(r["ok"], r["errors"])
+
+    def test_verify_missing_layer_cmd_fails(self):
+        r = validate_card(
+            title="[VERIFY] L0 gate",
+            body=(
+                "anchor: base_anchor\n"
+                "source_truth: marks\n"
+                "done_when: pass\n"
+                "mc bot checkout --near 0,64,0 --cap builder\n"
+                "mc scene\n"
+                "mc bot release\n"
+            ),
+            assignee="colony-builder",
+            registry_verbs={"bot", "scene"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(any("gv2-verify-layer" in e for e in r["errors"]), r["errors"])
+
+    def test_bad_outdoor_chest_l0_fails(self):
+        r = validate_card(
+            title="[CONSTRUCT] [GENESIS2:P1] Base layer L0 chest-first bootstrap",
+            body=BAD_OUTDOOR_CHEST_L0,
+            assignee="colony-builder",
+            registry_verbs={"bot", "marks", "scene", "place"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(
+            any("must not place chest/furnace" in e for e in r["errors"]),
+            r["errors"],
+        )
+
+    def test_base_l0_missing_preflight_fails(self):
+        body = """
+anchor: base_anchor
+source_truth: marks
+footprint: 7x7 at base_anchor
+protected_cells: none
+layer: L0
+materials_required:
+  cobblestone: 96
+work:
+  mc bot checkout --near 53,63,49 --cap builder --mark base_anchor
+  mc scene
+  mc fill cobblestone 50 63 46 56 63 52
+verify_on_site: L0 gate pass
+done_when: L0 done
+mc bot release
+"""
+        r = validate_card(
+            title="[CONSTRUCT] [GENESIS2:P1] Base layer L0 foundation",
+            body=body,
+            assignee="colony-builder",
+            registry_verbs={"bot", "scene", "fill"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(
+            any("missing preflight" in e for e in r["errors"]),
+            r["errors"],
+        )
+        self.assertFalse(
+            any("must not place chest/furnace" in e for e in r["errors"]),
+            r["errors"],
+        )
+
+    def test_generic_construct_without_layer_allows_place(self):
+        body = """
+anchor: outpost_mark
+source_truth: scout HANDOFF
+footprint: 3x3 at outpost_mark
+protected_cells: none
+done_when: storage chest at outpost
+mc bot checkout --near outpost_mark --cap builder --mark outpost_mark
+mc scene
+mc place chest 10 64 10
+mc bot release
+"""
+        r = validate_card(
+            title="[CONSTRUCT] [GENESIS2:P2] Outpost storage chest",
+            body=body,
+            assignee="colony-builder",
+            registry_verbs={"bot", "scene", "place"},
+        )
+        self.assertFalse(
+            any("must not place chest/furnace" in e for e in r["errors"]),
+            r["errors"],
+        )
 
     def test_valuable_bridge_material(self):
         r = validate_card(

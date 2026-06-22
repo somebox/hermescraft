@@ -32,7 +32,7 @@ CONTROL_KINDS = frozenset({"FEEDBACK", "RETRO", "MISSION"})
 
 CANONICAL_INTENT_KINDS = frozenset({"CONSTRUCT", "MINE", "TILL", "SUPPLY", "SURVEY", "SCOUT"})
 # Emergent title tags parsed for kind-specific rules (not all are verb-required).
-EXTENDED_INTENT_KINDS = CANONICAL_INTENT_KINDS | {"FARM", "COOK"}
+EXTENDED_INTENT_KINDS = CANONICAL_INTENT_KINDS | {"FARM", "COOK", "VERIFY"}
 # mine_site: is required only for dedicated extraction (MINE / mining-SUPPLY). SCOUT/
 # SURVEY find a mine entry, CONSTRUCT/ROAD build — none should be flagged mining-intent
 # just because a title/body says "mine entry" or matches the underground regex
@@ -107,6 +107,21 @@ _PLACE_BEFORE_SURVEY_RE = re.compile(
     r"^\s*mc\s+(place|fill)\b",
     re.MULTILINE | re.IGNORECASE,
 )
+_BASE_LAYER_RE = re.compile(r"^\s*layer\s*:\s*L[01]\b", re.IGNORECASE | re.MULTILINE)
+_MATERIALS_REQUIRED_RE = re.compile(r"^\s*materials_required\s*:", re.IGNORECASE | re.MULTILINE)
+_PREFLIGHT_RE = re.compile(r"^\s*preflight\s*:", re.IGNORECASE | re.MULTILINE)
+_VERIFY_ON_SITE_RE = re.compile(r"^\s*verify_on_site\s*:", re.IGNORECASE | re.MULTILINE)
+_SOURCE_TRUTH_HANDOFF_RE = re.compile(
+    r"^\s*source_truth\s*:\s*.*\bhandoff\b", re.IGNORECASE | re.MULTILINE
+)
+_TITLE_L0_L1_RE = re.compile(r"\bL[01]\b", re.IGNORECASE)
+_CHEST_FURNACE_PLACE_RE = re.compile(
+    r"^\s*mc\s+place\s+.*\b(chest|furnace)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+_VERIFY_LAYER_CMD_RE = re.compile(r"\bgv2-verify-layer\.py\b", re.IGNORECASE)
+_VERIFY_GATE_RE = re.compile(r"^\s*gate\s*:\s*(ground|slab|fixtures)\b", re.IGNORECASE | re.MULTILINE)
+_DEPENDS_ON_RE = re.compile(r"^\s*depends_on\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
 
 KNOWN_ALIASES = {
     "list_container": "chest",
@@ -184,6 +199,31 @@ def has_mining_intent(title: str | None, body: str | None) -> bool:
         return True
     if FARM_PREP_CONTEXT_RE.search(blob) and not STRONG_MINING_RE.search(blob):
         return False
+    return False
+
+
+def _is_base_layer_construct(title: str | None, body: str | None) -> bool:
+    """Pilot scope detector for base L0/L1 construct cards.
+
+    Signals:
+    - explicit `layer: L0|L1`
+    - title mentions L0/L1 and base
+    - body has both base_anchor and footprint language plus an explicit layer cue
+    """
+    title = title or ""
+    body = body or ""
+    if _BASE_LAYER_RE.search(body):
+        return True
+    title_has_layer = bool(_TITLE_L0_L1_RE.search(title))
+    title_has_base = "base" in title.lower() or "base_anchor" in body.lower()
+    if title_has_layer and title_has_base:
+        return True
+    if (
+        "base_anchor" in body.lower()
+        and _FOOTPRINT_RE.search(body)
+        and re.search(r"\blayer\b", f"{title}\n{body}", re.IGNORECASE)
+    ):
+        return True
     return False
 
 
@@ -284,6 +324,35 @@ def validate_card(
                 if survey_idx is None or i < survey_idx:
                     warnings.append("placement/fill appears before mc scene/observe on shelter card")
                     break
+        if _is_base_layer_construct(title, body):
+            if not _PREFLIGHT_RE.search(body):
+                errors.append("base-layer CONSTRUCT missing preflight:")
+            if _CHEST_FURNACE_PLACE_RE.search(body):
+                errors.append("base-layer L0/L1 CONSTRUCT must not place chest/furnace")
+            if not _MATERIALS_REQUIRED_RE.search(body):
+                warnings.append("base-layer CONSTRUCT missing materials_required:")
+            if not _VERIFY_ON_SITE_RE.search(body):
+                warnings.append("base-layer CONSTRUCT missing verify_on_site:")
+            if _SOURCE_TRUTH_HANDOFF_RE.search(body):
+                errors.append(
+                    "base-layer CONSTRUCT uses source_truth: handoff — file a done SCOUT/SURVEY "
+                    "card and cite mark ids, not handoff-only prose"
+                )
+
+    if resolved_kind == "VERIFY":
+        if assignee in GV2_WORKER_ASSIGNEES:
+            if not _BASE_LAYER_RE.search(body) and not _VERIFY_GATE_RE.search(body):
+                errors.append("VERIFY card missing layer: L0|L1 or gate: ground|slab|fixtures")
+            if not _VERIFY_LAYER_CMD_RE.search(body):
+                errors.append(
+                    "VERIFY card must invoke scripts/gv2-verify-layer.py (read-only gate probe)"
+                )
+            if not _DEPENDS_ON_RE.search(body):
+                warnings.append(
+                    "VERIFY card missing depends_on: — wire kanban set-after from layer CONSTRUCT"
+                )
+            if not _DONE_WHEN_RE.search(body):
+                errors.append("VERIFY card missing done_when:")
 
     if resolved_kind in ("SURVEY", "SCOUT") or assignee == "colony-scout":
         if assignee in GV2_WORKER_ASSIGNEES:

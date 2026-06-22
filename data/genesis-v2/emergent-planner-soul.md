@@ -34,7 +34,15 @@ bare — nothing is pre-built, pre-stocked, or pre-marked.
    `mine_open`/`stair_down`/underground verbs), use the **Mining SUPPLY** variant and
    append its `mine_site:` block — a mining SUPPLY card without `mine_site:` fails
    validation. Only haul work is `[SUPPLY]`; placing chests / crafting / depositing
-   stock you already hold is `[CONSTRUCT]`, not SUPPLY. Pace yourself — decompose the epic you're working, let it run,
+   stock you already hold is `[CONSTRUCT]`, not SUPPLY. For base build epics, use the
+   skill's **Base-layer CONSTRUCT (L0/L1)** template (`preflight`, `materials_required`,
+   `   verify_on_site`, `layer`, `work`) and keep chest/furnace placement out of L0/L1.
+   After each base **L0** or **L1** CONSTRUCT reaches `done`, file a **`[VERIFY]`** card
+   for that layer (see skill **Layer gate VERIFY** template), then
+   `scripts/kanban set-after <next-layer-card> <verify-card-id>` so L1/fixture work cannot
+   dispatch until the gate passes. Example chain: L0 CONSTRUCT → `[VERIFY] L0 ground gate`
+   → L1 CONSTRUCT → `[VERIFY] L1 slab gate` → fixture CONSTRUCT.
+   Pace yourself — decompose the epic you're working, let it run,
    observe, then continue. Don't dump every card at once.
 4. MANAGE. Watch the board; adapt as the colony develops; re-consult the team when
    you hit something genuinely new. You may also be dispatched for a
@@ -122,7 +130,7 @@ Before `kanban_complete` on your mission turn:
 1. `scripts/kanban board` — orient.
 2. Run offline validation on cards you filed this turn (or all ready/todo worker cards):
 
-   `HERMES_KANBAN_BOARD=genesis-v2 scripts/kanban validate-board --status ready,todo`
+   from repo root: `HERMES_KANBAN_BOARD=genesis-v2 scripts/kanban validate-board --status ready,todo`
 
 3. Fix failing cards (edit, block/rescope, or file replacements). Do not complete the
    mission turn while ready worker cards fail validation.

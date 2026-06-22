@@ -78,13 +78,15 @@ on a live run.
 | D5 | `wipe_world_mines` | stale mine-registry entries from another world | `genesis2_lib.wipe_world_mines` | `mines-world.json` empty for this world |
 | D6 | `render_regions_world` | seeds the buildable `shelter` region placeholder | `genesis2_lib.render_regions_world` | `regions-world.json` has `shelter` |
 | D7 | `world_setup` | forceload + gamerules (peaceful, no difficulty ramp) | `genesis2_lib.world_setup` | — |
-| D8 | Observer (`re44` by default) | evac to hub on reset; poller moves online observer to spawn + `gamemode spectator` when they join mid-run | `setup_observer` at boot + `ensure_observer_watching` each poller tick | join run world as spectator above colony spawn |
+| D8 | Observer (`re44` by default, `GENESIS_V2_OBSERVER`) | **Before** world delete: `evac_to_hub_before_world_reset` mvtp to hub (never kick). After `world_setup`: `setup_observer` mvtp back + spectator @ spawn; poller `ensure_observer_watching` if you join mid-run | `genesis2_lib.reset_world` + `world_setup` + poller | stay connected in hub during reset; auto-return to run world |
 
 ### E. Board reset and card assignment shape
 
 | # | Item | Why | Where | Verify |
 |---|------|-----|-------|--------|
 | E1 | `reinit_board` — archive leftover cards + init | prior-run cards would dispatch into this run | early in boot python (A4) + board empty until seed | after `run … live`, board has only this run's cards |
+
+**Naming:** checklist row **E1** above is boot-time **`reinit_board` only**. The **card-gate E1 experiment** (base preflight: poller `block_invalid_ready_cards`, cap-path **`ensure_retro_phase`**, pilot base CONSTRUCT validator rules) is a separate validation run — see [Card-gate E1 experiment](#card-gate-e1-experiment-base-preflight) below. Do not use the reset checklist E1 row as that experiment's pass/fail checklist.
 | E2 | `seed_board` — P1 ready, P2–P5 parked (blocked), scout cards | poller-authoritative phase chain; epics never used as `parents` (deadlock) | `genesis2_lib.seed_board` | 5 epics + 4 scouts; P1 ready |
 | E3 | `save_config` + `write_active` + `snapshot("start")` | run metadata + baseline | new-run python | `data/genesis-v2-runs/<id>/config.json` |
 
@@ -181,6 +183,75 @@ Log results in a small table: `run_id | arm | spawn | planner_model | ladder sco
 `kanban add` only runs line-start `mc` lint. Numbered-list planner recipes inflate invalid
 counts — do not use compliance alone for planner A/B. Compare runs with smoke’s status set
 (`ready,running,done,todo`), not default `validate-board` (`ready,todo` only).
+
+---
+
+## Card-gate E1 experiment (base preflight)
+
+**Not** reset checklist E1 (`reinit_board`). This experiment validates deterministic card
+readiness before worker dispatch and retro capture on **poller cap / validate-abort** paths
+(where manual `retro` → `stop` is easy to skip).
+
+**Evidence arm (hold constant):** `standard/mimo-v2.5/emergent`, same pinned spawn as prior
+`-22-*` arms, shared lease DB, normal capture/score tooling.
+
+### Runtime hooks (card-gate E1)
+
+Implemented in `scripts/genesis2_lib.py` + `scripts/genesis-v2-poller.py`:
+
+- **`block_invalid_ready_cards(run_id)`** — after `strip_worker_card_skills`, before pool
+  gates: for each `ready` colony worker card, run `validate_card()`; on failure,
+  `block_card(..., "schema-missing: …")` (prefix must match supervise dedup). Skips control
+  cards (`FEEDBACK`, `RETRO`, `MISSION`, `[GENESIS2:*]`).
+- **`ensure_retro_phase(run_id)`** — if `retro_card_snapshot()["total"] == 0`, call
+  `file_retro_cards()` then bounded `wait_for_retro_cards()` **before**
+  `capture_run_artifacts` on: poller **max-runtime cap**, poller **validate abort**, and
+  manual **`stop`** (not `--force`). Cap path uses **`CAP_RETRO_WAIT_S=120`**; manual stop
+  default wait is **`RETRO_WAIT_DEFAULT_S=240`**. After capture on cap and validate-abort,
+  the poller runs **`run_cap_score_bundle`** (`gv2-collect-feedback.py` +
+  `gv2-score-run.py`) so `feedback-bundle.json` exists without a post-teardown `stop --score`.
+
+**Known holes (document only):** create/edit/promote paths can still reach `ready` for one
+tick; mid-run `gv2-run-validate.py` does **not** enforce card schema — poller gate is the lever.
+
+### Board validation scope
+
+From **repo root** (there is no `HERMESCRAFT_ROOT` env var in this repo):
+
+```bash
+HERMES_KANBAN_BOARD=genesis-v2 scripts/kanban validate-board --status ready,todo
+```
+
+Planner turn-end checks using **only** `ready,todo` missed invalid cards still in
+`running`/`done` on runs such as `gv2-2026-06-22-2`. For experiment readout and smoke parity,
+use full captured board scope:
+
+```bash
+python3 scripts/gv2-validate-cards.py \
+  --board-json data/genesis-v2-runs/<run-id>/artifacts/board.json \
+  --status ready,running,done,todo
+```
+
+Trust **scorecard `board_quality` + `base_viability`** for gates; smoke establishment WARN
+can diverge when viability is score-only.
+
+### Operator validation (card-gate E1 — checklist only, no live run here)
+
+After a capped or manual **stop + score** on the evidence arm, record pass/fail against:
+
+| Criterion | Pass signal |
+|-----------|-------------|
+| Board compliance (primary) | `gv2_invalid == 0` on `--status ready,running,done,todo` **or** every remaining invalid worker card was **`blocked` with `schema-missing:`** before any worker session (card-stories / block events). |
+| Base CONSTRUCT at capture | No invalid **base-layer** CONSTRUCT still in `ready`. |
+| Retro bundle | `artifacts/feedback-bundle.json` with **`retro_count > 0`** (requires score step on cap or manual `stop --score`). Postmortem/dashboard retro total **not** `0/0` unless debug skip documented. |
+| Audit | `compare.compare_safe == true` — **does not** prove retros ran; both `-22-1` and `-22-2` had `retro_done: 0/0` with `compare_safe: true`. |
+| Base viability | `base_viability` still **fail-closed** on bad L0; **shell/establishment improvement is not required** for experiment success. |
+| Block rate | Count poller `schema-missing:` blocks per run — high rate ⇒ template/planner work, not gate failure. |
+
+**Confounds to note in postmortem:** Tester `actions-*.jsonl` in artifacts (motor metrics),
+smoke WARN vs scorecard establishment, stale devlog card-count prose.
+
+**Do not** treat planner-only `validate-board --status ready,todo` as sufficient for this experiment.
 
 ### Decision gates (after three-way)
 

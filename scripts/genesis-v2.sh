@@ -436,10 +436,11 @@ import os, sys; sys.path.insert(0,'$REPO_ROOT/scripts')
 import genesis2_lib as g2
 rid = os.environ.get('GV2_RUN_ID') or g2.active_run_id() or g2._latest_run_id()
 if os.environ.get('GV2_STOP_FORCE','0') != '1':
-    wait = g2.wait_for_retro_cards(rid, timeout_s=g2.RETRO_WAIT_DEFAULT_S)
-    print('[genesis-v2] retro wait:', wait)
-    if not wait.get('ok'):
-        incomplete = wait.get('incomplete_ids') or wait.get('ready', []) + wait.get('running', [])
+    phase = g2.ensure_retro_phase(rid, wait_s=g2.RETRO_WAIT_DEFAULT_S)
+    print('[genesis-v2] retro phase:', phase)
+    if not phase.get('ok'):
+        snap = phase.get('snap') or {}
+        incomplete = snap.get('incomplete_ids') or snap.get('ready', []) + snap.get('running', [])
         print('[genesis-v2] RETRO incomplete:', incomplete, file=sys.stderr)
         sys.exit(3)
 else:
