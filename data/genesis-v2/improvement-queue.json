@@ -21,21 +21,22 @@
         "files": [
           "scripts/lib/gv2_metrics/audit.py: scope_coverage_ratio := (kept+out_of_window)/(kept+out_of_window+bad_ts) (timestamp-parse health, accumulation-invariant); add scope_kept.",
           "scripts/lib/gv2_metrics/summary.py: compare_safe gates on scope_windowed (catches verbatim-capture poisoning the old ratio masked) in addition to ratio<0.5.",
+          "scripts/lib/gv2_metrics/summary.py: build_summary now passes a context (metric tree + compare.compare_safe + achievement_level) into evaluate_expected_metrics, so a selected WorkItem's dotted expected_metrics (audit.*, compare.*, establishment.*) actually resolve at score time instead of landing in 'missed'. Completes the context/resolve() scaffolding added concurrently.",
           "config/gv2-achievement-levels.yaml: G0 adds {audit.scope_windowed eq true}; keeps scope_coverage_ratio min 0.5.",
-          "scripts/tests/test_gv2_metrics_audit.py: 8 tests (accumulation-invariance, bad-ts drop, windowed/ratio/retro/server_down compare_safe)."
+          "scripts/tests/test_gv2_metrics_audit.py: 10 tests (accumulation-invariance, bad-ts drop, windowed/ratio/retro/server_down compare_safe, dotted expected_metrics resolve+discriminate)."
         ]
       },
-      "deterministic_check": "Re-scored gv2-2026-06-21-7: audit={ratio:1.0, windowed:true, kept:233}; compare_safe=true; achievement_level G0->G1; remaining gap now real (G2 establishment.score 2.0 vs 2.5).",
+      "deterministic_check": "Re-scored gv2-2026-06-21-7: audit={ratio:1.0, windowed:true, kept:233}; compare_safe=true (audit fix holds). NOTE: achievement_level now reads G0 (not G1) because board_quality.gv2_invalid=2 from concurrent card-validator tightening — INDEPENDENT of this audit fix; see gv2-board-quality-supply-cards. Cross-run re-score (iter3) confirmed all 7 recent runs report ratio=1.0/windowed=true and -1 still trips compare_safe=false on real retro_pending=7.",
       "expected_metrics": {
         "audit.scope_coverage_ratio": { "min": 0.5 },
         "audit.scope_windowed": true,
-        "compare.compare_safe": true,
-        "achievement_level.current_min": "G1"
+        "compare.compare_safe": true
       },
+      "expected_metrics_note": "Only machine-evaluable keys here (these now auto-flow to the next run via apply_run_start_metadata since 'verified' was added to the seed set, and resolve via build_summary context). Level expectation (>= G1 on real metrics) is checked manually — evaluate_expected_metrics has no level-ordering, and G1 is currently gated by board_quality not audit (see gv2-board-quality-supply-cards).",
       "compare_safe": true,
-      "suggested_test": "scripts/tests/test_gv2_metrics_audit.py",
+      "suggested_test": "scripts/tests/test_gv2_metrics_audit.py + scripts/tests/test_genesis2_lib.py::test_run_start_metadata_flows_verified_item_expected_metrics",
       "validation_run_id": null,
-      "notes": "Measurement-only fix; no agent/behavioral change. Validation = next same-arm (standard/mimo-v2.5/emergent) run must report ratio>=0.5, scope_windowed=true, compare_safe=true, and a level >= G1 driven by real metrics. Do NOT mark done until that run's compare confirms no regression."
+      "notes": "Measurement-only fix; no agent/behavioral change. Validation = next same-arm (standard/mimo-v2.5/emergent) run must report ratio>=0.5, scope_windowed=true, compare_safe=true (these now auto-evaluate in outcome_vs_expected). Do NOT mark done until that run's compare confirms no regression."
     },
     {
       "work_id": "gv2-establishment-shell-site-variance",
@@ -57,6 +58,30 @@
       "blocked_by": "gv2-scope-coverage-metric validation (don't stack a behavioral change before the measurement fix is validated on a same-arm run — would muddy attribution).",
       "expected_metrics": null,
       "notes": "PROPOSED only — not selected. Behavioral/NAV change requiring (1) operator design direction (sub-target A vs B) and (2) a clean same-arm baseline post measurement-fix validation. Establishment is high-variance across emergent missions, so any validation needs >=2 same-arm runs to read signal over noise. Do not implement inside the autonomous loop without escalation."
+    },
+    {
+      "work_id": "gv2-board-quality-supply-cards",
+      "status": "proposed",
+      "type": "planner-card-quality",
+      "title": "Planner emits 2 non-conforming SUPPLY cards -> board_quality.gv2_invalid=2 blocks G0",
+      "source_run_id": "gv2-2026-06-21-7",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "G0",
+      "target_gap": "board_quality.gv2_invalid 2 vs max 0 (G0 gate) — CURRENT top blocker for -7",
+      "evidence": [
+        "Validate -7 board (post concurrent validator tightening): 33 checked, 2 invalid.",
+        "INVALID 1 (colony-gatherer, done) '[SUPPLY] bootstrap chests + deposit wood at base_anchor': missing source:/destination:/quantity:/withdrawable:. Body is really place-chests + craft + deposit-existing-stock — MIS-KINDED as [SUPPLY] (closer to CONSTRUCT/STORAGE).",
+        "INVALID 2 (colony-miner, todo) '[SUPPLY] coal supplement via mine_open coal_south': has source:/destination:/quantity:/withdrawable: BUT lacks a literal 'mine_site:' block. Validator (gv2_card_validator.py:237) requires mine_site: for mining-intent titles; planner emitted 'source: mine_open coal_south' instead. REAL template gap, not a false-positive.",
+        "board_quality was gv2_invalid=0 at iter1; the 2 surfaced from concurrent edits to scripts/lib/gv2_card_validator.py + new config/gv2-validate.yaml (user actively editing this area)."
+      ],
+      "design_questions_for_operator": [
+        "(card2) Should the mining-SUPPLY planner template emit an explicit 'mine_site: <name>' block, or should the validator accept 'source: mine_open <name>' as satisfying mine_site? Schema/product choice.",
+        "(card1) Fix at planner (don't kind deposit/construct work as [SUPPLY]) or at validator (kind-inference)?"
+      ],
+      "blocked_by": "Validator + config/gv2-validate.yaml are under active operator edit; gv2_invalid count may still move. Do not modify the validator inside the autonomous loop — escalate.",
+      "expected_metrics": { "board_quality.gv2_invalid": { "max": 0 } },
+      "notes": "PROPOSED + ESCALATE. This is the current G0 blocker for -7 (ahead of the G2 establishment gap). Needs operator schema/kinding decision before implementation; behavioral planner-template change. compare_safe is TRUE, so this is a real board-quality finding, not a measurement confound."
     }
   ]
 }

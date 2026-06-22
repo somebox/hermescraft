@@ -148,7 +148,10 @@ def apply_run_start_metadata(cfg: dict, *, repo_root: Path | None = None) -> dic
                 q = json.loads(qpath.read_text())
                 merged: dict = {}
                 for it in q.get("items") or []:
-                    if it.get("status") in ("selected", "in_progress"):
+                    # "verified" = implemented+tested, awaiting its same-arm validation
+                    # run — exactly the item whose expected_metrics should seed the next
+                    # run's config so the scorecard auto-evaluates outcome_vs_expected.
+                    if it.get("status") in ("selected", "in_progress", "verified"):
                         em = it.get("expected_metrics") or {}
                         if isinstance(em, dict):
                             merged.update(em)

@@ -15,7 +15,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from scripts.lib.gv2_metrics.audit import extract_audit  # noqa: E402
-from scripts.lib.gv2_metrics.summary import compare_safe  # noqa: E402
+from scripts.lib.gv2_metrics.summary import build_summary, compare_safe  # noqa: E402
 
 
 def _scope(tmp_path: Path, files: dict, windowed: bool = True) -> Path:
@@ -85,3 +85,40 @@ def test_compare_safe_still_fails_on_retro_pending_and_server_down():
     good = {"scope_coverage_ratio": 1.0, "scope_windowed": True}
     assert compare_safe({"server_down": 0}, 1, good) is False
     assert compare_safe({"server_down": 2}, 0, good) is False
+
+
+def _summary(expected, *, ratio=1.0, windowed=True, est=2.5, retro_pending=0, server_down=0):
+    return build_summary(
+        config={"expected_metrics": expected},
+        metrics={
+            "audit": {"scope_coverage_ratio": ratio, "scope_windowed": windowed},
+            "establishment": {"score": est},
+            "motor": {"server_down": server_down},
+        },
+        retro={"pending": retro_pending, "done": [], "total": 0},
+    )
+
+
+def test_expected_metrics_resolve_dotted_keys_through_build_summary():
+    # A selected WorkItem's expected_metrics (dotted keys into the metric tree)
+    # must validate at score time — not silently land in `missed` for lack of a flat key.
+    expected = {
+        "audit.scope_coverage_ratio": {"min": 0.5},
+        "audit.scope_windowed": True,
+        "compare.compare_safe": True,
+        "establishment.score": {"min": 2.0},
+    }
+    outcome = _summary(expected)["outcome_vs_expected"]
+    assert outcome["missed"] == []
+    assert len(outcome["met"]) == 4
+
+
+def test_expected_metrics_dotted_keys_discriminate_failure():
+    # Same keys, but a parse-failure run: ratio below floor + compare_safe flips false.
+    expected = {
+        "audit.scope_coverage_ratio": {"min": 0.5},
+        "compare.compare_safe": True,
+    }
+    outcome = _summary(expected, ratio=0.2)["outcome_vs_expected"]
+    assert any("scope_coverage_ratio" in m for m in outcome["missed"])
+    assert any("compare.compare_safe" in m for m in outcome["missed"])

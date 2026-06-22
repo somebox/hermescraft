@@ -1129,3 +1129,35 @@ def test_scope_action_rows_no_window_keeps_all_valid():
     kept, stats = g2.scope_action_rows(rows, None, None)
     assert [json.loads(l)["action"] for l in kept] == ["a", "b"]
     assert stats["kept"] == 2 and stats["dropped_out_of_window"] == 0 and stats["dropped_bad_ts"] == 1
+
+
+def _write_queue(repo_root: Path, items: list) -> None:
+    q = repo_root / "data" / "genesis-v2"
+    q.mkdir(parents=True, exist_ok=True)
+    (q / "improvement-queue.json").write_text(json.dumps({"schema_version": 1, "items": items}))
+
+
+def test_run_start_metadata_flows_verified_item_expected_metrics(tmp_path):
+    # A "verified" WorkItem (implemented+tested, awaiting its same-arm validation run)
+    # must seed the next run's expected_metrics so the scorecard auto-evaluates it.
+    _write_queue(tmp_path, [
+        {"work_id": "w1", "status": "verified",
+         "expected_metrics": {"audit.scope_coverage_ratio": {"min": 0.5}, "compare.compare_safe": True}},
+        {"work_id": "w2", "status": "proposed",
+         "expected_metrics": {"establishment.score": {"min": 9.0}}},  # must NOT flow
+    ])
+    cfg = g2.apply_run_start_metadata({"run_id": "gv2-test"}, repo_root=tmp_path)
+    assert cfg["expected_metrics"] == {
+        "audit.scope_coverage_ratio": {"min": 0.5},
+        "compare.compare_safe": True,
+    }
+
+
+def test_run_start_metadata_does_not_override_explicit_expected_metrics(tmp_path):
+    _write_queue(tmp_path, [
+        {"work_id": "w1", "status": "verified", "expected_metrics": {"audit.scope_windowed": True}},
+    ])
+    cfg = g2.apply_run_start_metadata(
+        {"run_id": "gv2-test", "expected_metrics": {"already": {"min": 1}}}, repo_root=tmp_path
+    )
+    assert cfg["expected_metrics"] == {"already": {"min": 1}}

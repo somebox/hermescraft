@@ -79,7 +79,16 @@ def build_summary(
         "craft_error_share": 0,
         **{k: v for k, v in (compare or {}).items()},
     }
-    outcome = evaluate_expected_metrics(config.get("expected_metrics") or {}, flat)
+    # Resolve dotted expected_metrics keys (e.g. audit.scope_coverage_ratio,
+    # compare.compare_safe, establishment.score) against the full metric tree so a
+    # selected WorkItem's expected_metrics can validate against any scored signal,
+    # not just the handful flattened above.
+    eval_ctx = {
+        **metrics,
+        "compare": {"compare_safe": safe},
+        "achievement_level": achievement_level or {},
+    }
+    outcome = evaluate_expected_metrics(config.get("expected_metrics") or {}, flat, context=eval_ctx)
     wall_min = None
     if time_m.get("run_wall_s") is not None:
         wall_min = round(time_m["run_wall_s"] / 60.0, 1)
