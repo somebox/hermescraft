@@ -29,6 +29,14 @@ PROFILES="$HOME/.hermes/profiles"
 SRC="$PROFILES/road-planner"
 MODEL="xiaomi/mimo-v2.5"
 PLANNER_MODEL=""
+# Single SHARED bot-lease DB (absolute, HOME-independent) so every profile's `mc`
+# coordinates on one mutex. Per-profile sandbox HOMEs otherwise give each profile its
+# own ~/.hermes/bot-leases.db, so profiles sharing a body (miner/builder->Zee,
+# gatherer/farmer->Pip) never see each other's leases -> collision/starvation
+# (gv2-2026-06-22-1). Cleared here each launch (mint runs after the clean shutdown).
+LEASE_DB="$REPO_ROOT/data/runtime/bot-leases.db"
+mkdir -p "$REPO_ROOT/data/runtime"
+rm -f "$LEASE_DB" "$LEASE_DB-wal" "$LEASE_DB-shm" 2>/dev/null || true
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -161,9 +169,9 @@ MCCONV
   local api="http://localhost:${port:-3007}"
   local lease_flag=0
   if [[ -n "$port" ]]; then lease_flag=1; fi
-  python3 - "$dst/.env" "$api" "${user:-Steward}" "$lease_flag" <<'PY'
+  python3 - "$dst/.env" "$api" "${user:-Steward}" "$lease_flag" "$LEASE_DB" <<'PY'
 import re, sys
-envf, api, user, lease = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+envf, api, user, lease, lease_db = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 lines = open(envf).read().splitlines()
 def setkv(lines, key, val):
     pat = re.compile(rf'^{re.escape(key)}=')
@@ -183,6 +191,7 @@ if lease == '1':
     lines = delkv(lines, 'MC_API_URL')
     lines = delkv(lines, '_MC_API_URL_LOCKED')
     lines = setkv(lines, 'HERMES_BOT_LEASE', '1')
+    lines = setkv(lines, 'HERMES_BOT_LEASE_DB', lease_db)  # shared mutex across profiles
     lines = setkv(lines, 'MC_USERNAME', user)
 else:
     for k, v in (("MC_API_URL", api), ("MC_USERNAME", user), ("_MC_API_URL_LOCKED", api)):

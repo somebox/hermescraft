@@ -179,6 +179,29 @@
       "deterministic_check": "8 unit tests pass + LIVE validation against the flooded gv2-2026-06-22-1 base: L0(y=62) FAIL 43/81 air-water; fixtures(y=63) FAIL all 5 chests over air/grass/unknown (not slab). Catches exactly what establishment=3.5 missed.",
       "validation_run_id": "gv2-2026-06-22-1",
       "validation_result": "DONE 2026-06-22: verify_layer live-validated + wired as base_viability scorecard sub-metric. Re-score of -22-1: base_viability.viable=false (L0 y=62: 42 air+3 water) -> shell gated yes->no, establishment 3.5->2.5. Auto-capture (artifacts/world/base-snapshot.json) added at stop for future runs."
+    },
+    {
+      "work_id": "gv2-bot-lease-shared-db",
+      "status": "verified",
+      "type": "infra-fix",
+      "title": "Shared bot-lease DB so profiles sharing a body coordinate on one mutex",
+      "source_run_id": "gv2-2026-06-22-1",
+      "evidence_arm": "standard/mimo-v2.5/emergent",
+      "tier": "standard",
+      "lifts_level": "confound",
+      "target_gap": "Per-profile sandbox HOMEs gave each profile its own ~/.hermes/bot-leases.db; profiles sharing a body (miner/builder->Zee, gatherer/farmer->Pip) never saw each other's leases -> collision/starvation; confounds establishment + '132 cards/3 bodies'.",
+      "evidence": [
+        "gv2-2026-06-22-1: live probe found colony-miner's profile-home DB holding mox/pip/zee while colony-builder/gatherer DBs were empty (separate files); checkout() reads only its own DB.",
+        "mint set HERMES_BOT_LEASE=1 but NO HERMES_BOT_LEASE_DB -> default $HOME/.hermes/bot-leases.db resolves under each sandbox HOME."
+      ],
+      "change": {
+        "files": [
+          "scripts/genesis-v2-mint-profiles.sh: define LEASE_DB=$REPO_ROOT/data/runtime/bot-leases.db (absolute, HOME-independent), clear it each launch (after clean shutdown), and set HERMES_BOT_LEASE_DB=$LEASE_DB in every lease-mode .env (env_passthrough already forwards it to mc)."
+        ]
+      },
+      "deterministic_check": "bash -n OK; .env-writer simulation sets HERMES_BOT_LEASE_DB to the shared abs path. FULL validation on next run: all profiles' .env share one HERMES_BOT_LEASE_DB; query data/runtime/bot-leases.db -> no body held by 2 owners; gatherer/builder not starved while miner holds bodies.",
+      "expected_metrics": null,
+      "notes": "VERIFIED 2026-06-22 (config/launch fix). NON-NEGOTIABLE before the next long emergent run (operator) so establishment isn't lease-confounded. Validate live next run."
     }
   ]
 }
