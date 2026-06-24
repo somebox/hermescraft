@@ -1,5 +1,6 @@
 import { fail } from '../../shared/action-contract.js';
 import { getConfig } from '../../config/index.js';
+import { constructScopingEnabled, getConstructContext } from '../construct-context.js';
 
 const EXIT_SITE_NAMES = new Set(['gate', 'entrance', 'exit']);
 
@@ -53,9 +54,12 @@ export function activeWorksiteRegion(ctx) {
 export function buildRegionResolveArgs(ctx, overrides = {}) {
   const taskWorksite =
     overrides.task_worksite !== undefined ? overrides.task_worksite : activeWorksiteRegion(ctx);
+  const constructGuided =
+    constructScopingEnabled() && getConstructContext(ctx)?.kind === 'construct';
+  const guided = overrides.guided === true || constructGuided;
   return {
-    ad_hoc: overrides.ad_hoc !== false && !overrides.guided,
-    guided: overrides.guided === true,
+    ad_hoc: overrides.ad_hoc !== false && !guided,
+    guided,
     task_worksite: taskWorksite,
   };
 }

@@ -314,6 +314,35 @@ class ValidateCardTest(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertTrue(any("survey" in e.lower() or "footprint" in e.lower() for e in r["errors"]))
 
+    def test_schematic_construct_plan_requires_worksite_and_phase(self):
+        base = (
+            "plan: starter_shelter\n"
+            "done_when: L1 slab clean\n"
+            "mc bot checkout --near 0,64,0 --cap builder\n"
+            "mc scene\n"
+            "mc observe\n"
+            "footprint: 7x7\n"
+            "protected_cells: none after survey\n"
+            "mc task_context set base --card t_shelter\n"
+            "mc bot release\n"
+        )
+        r = validate_card(
+            title="[CONSTRUCT] starter shelter L1",
+            body=base,
+            assignee="colony-builder",
+            registry_verbs={"scene", "observe", "bot", "task_context"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(any("worksite" in e for e in r["errors"]))
+        r2 = validate_card(
+            title="[CONSTRUCT] starter shelter L1",
+            body=base + "worksite: base\n",
+            assignee="colony-builder",
+            registry_verbs={"scene", "observe", "bot", "task_context"},
+        )
+        self.assertFalse(r2["ok"])
+        self.assertTrue(any("phase" in e or "level" in e for e in r2["errors"]))
+
     def test_construct_scene_only_is_not_enough(self):
         r = validate_card(
             title="[CONSTRUCT] Pad",
@@ -579,6 +608,63 @@ mc bot release
         self.assertFalse(r["ok"])
         for field in ("source:", "destination:", "quantity:", "withdrawable:"):
             self.assertTrue(any(field in e for e in r["errors"]), (field, r["errors"]))
+
+
+SCHEMATIC_CONSTRUCT = """
+anchor: shelter_pad
+source_truth: region sign plan=starter_shelter
+worksite: :shelter:
+plan: starter_shelter
+phase: L1_slab
+level: 1
+done_when: construct phase L1 clean + mc construct end gates pass
+mc bot checkout --near shelter_pad --cap builder --mark shelter_pad
+mc task_context set :shelter: --card t_shelter_l1 --plan starter_shelter --level 1 --card-kind CONSTRUCT
+mc scene
+mc observe
+footprint: 7x7 at shelter_pad
+protected_cells: none after survey — use construct workset
+mc construct show
+mc fill cobblestone (workset slices only)
+mc construct end
+mc bot release
+"""
+
+
+class SchematicConstructValidatorTest(unittest.TestCase):
+    def test_schematic_construct_with_plan_phase_worksite_valid(self):
+        r = validate_card(
+            title="[CONSTRUCT] starter_shelter L1 slab",
+            body=SCHEMATIC_CONSTRUCT,
+            assignee="colony-builder",
+            registry_verbs={
+                "bot", "checkout", "release", "scene", "observe", "fill",
+                "task_context", "construct", "show", "end",
+            },
+        )
+        self.assertTrue(r["ok"], r["errors"])
+
+    def test_schematic_construct_missing_worksite_invalid(self):
+        body = SCHEMATIC_CONSTRUCT.replace("worksite: :shelter:\n", "")
+        r = validate_card(
+            title="[CONSTRUCT] starter_shelter L1 slab",
+            body=body,
+            assignee="colony-builder",
+            registry_verbs={"bot", "checkout", "release", "scene", "observe", "fill", "task_context", "construct", "show", "end"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(any("worksite" in e for e in r["errors"]), r["errors"])
+
+    def test_schematic_construct_missing_phase_invalid(self):
+        body = SCHEMATIC_CONSTRUCT.replace("phase: L1_slab\n", "").replace("level: 1\n", "")
+        r = validate_card(
+            title="[CONSTRUCT] starter_shelter L1 slab",
+            body=body,
+            assignee="colony-builder",
+            registry_verbs={"bot", "checkout", "release", "scene", "observe", "fill", "task_context", "construct", "show", "end"},
+        )
+        self.assertFalse(r["ok"])
+        self.assertTrue(any("phase" in e or "level" in e for e in r["errors"]), r["errors"])
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import { normalizeRegions } from '../regions/resolver.js';
 import { resolveFootprint, tightFootprintFromCells } from './footprint.js';
 import { assertPlanSize } from './limits.js';
 
-const PLAN_ID_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
+const PLAN_ID_RE = /^[a-z0-9][a-z0-9_-]{1,40}$/;
 
 export function plansDir(dataDir) {
   return path.join(dataDir, 'ops', 'plans');

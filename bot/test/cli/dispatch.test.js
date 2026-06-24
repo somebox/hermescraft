@@ -294,6 +294,26 @@ describe('cli dispatch', () => {
     assert.equal(body.worksite_region, undefined);
   });
 
+  it('task_context set forwards CONSTRUCT plan fields', () => {
+    process.env.HERMES_KANBAN_TASK = 't_construct';
+    const def = defOf('task_context');
+    const built = buildHttpRequest(def, 'task_context', [
+      'set',
+      'base',
+      '--plan',
+      'starter_shelter',
+      '--level',
+      '1',
+      '--card-kind',
+      'CONSTRUCT',
+    ]);
+    const body = JSON.parse(built.body || '{}');
+    assert.equal(body.worksite_region, 'base');
+    assert.equal(body.plan, 'starter_shelter');
+    assert.equal(body.level, 1);
+    assert.equal(body.card_kind, 'CONSTRUCT');
+  });
+
   it('task_context set fails without card id', () => {
     const prev = process.env.HERMES_KANBAN_TASK;
     delete process.env.HERMES_KANBAN_TASK;

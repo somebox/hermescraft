@@ -11,6 +11,8 @@ Status: **active strategy** (2026-06-10, aligned with [`target.md`](target.md)).
 | Navigation refactor (brief, breadcrumbs, `move`) | [`../specs/nav/route-precompute-context.md`](../specs/nav/route-precompute-context.md) |
 | Composable playbooks + task-shaped reads | [`../testing/playbooks/design-composable-playbooks.md`](../testing/playbooks/design-composable-playbooks.md) |
 | Return envelopes + per-primitive contracts | [`../reference/bot/handler-response-contracts.md`](../reference/bot/handler-response-contracts.md) |
+| Bulk motor (`orderCells`, `runCells`, partial envelope) | [`execution-kernel.md`](./execution-kernel.md) |
+| Construct scope hook (`allowUnit` from workset) | [`execution-kernel.md`](./execution-kernel.md) § Construct mode hook · [`bot/lib/runtime/construct-context.js`](../../bot/lib/runtime/construct-context.js) |
 | Typed nouns, symmetric success, perceive lanes | [`../specs/mc/observation-verb-grammar.md`](../specs/mc/observation-verb-grammar.md) |
 | Region selectors + query substrate (Layer A) | [`../specs/agent/scripting-layer-dsl.md`](../specs/agent/scripting-layer-dsl.md) |
 | Fleet usage + registry hygiene audit | [`../reference/audits/audit-mc-commands-2026-05-29.md`](../reference/audits/audit-mc-commands-2026-05-29.md) |

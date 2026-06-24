@@ -1,0 +1,1226 @@
+{
+  "kind": "construct",
+  "plan_id": "starter_shelter",
+  "revision": "starter_shelter-v1",
+  "source": {
+    "type": "genesis",
+    "name": "7x7 starter shelter (layered base MVP fixture)"
+  },
+  "footprint": {
+    "mode": "tight",
+    "local": {
+      "x": [
+        0,
+        6
+      ],
+      "y": [
+        0,
+        5
+      ],
+      "z": [
+        0,
+        6
+      ]
+    }
+  },
+  "anchor": {
+    "coords": [
+      0,
+      64,
+      0
+    ],
+    "marker": {
+      "coords": [
+        3,
+        64,
+        -1
+      ],
+      "note": "sign south of door gap"
+    }
+  },
+  "phases": [
+    {
+      "id": "L0_ground",
+      "range": "0..0"
+    },
+    {
+      "id": "L1_slab",
+      "level": 1
+    },
+    {
+      "id": "L3_walls",
+      "range": "3..4"
+    },
+    {
+      "id": "L4_roof",
+      "level": 5
+    }
+  ],
+  "gates": [
+    "l0_ground",
+    "door_traversable",
+    "interior_air"
+  ],
+  "door_gap": {
+    "face": "min_z"
+  },
+  "materials_by_phase": {
+    "L1_slab": [
+      {
+        "name": "cobblestone",
+        "count": 49
+      }
+    ],
+    "L3_walls": [
+      {
+        "name": "oak_log",
+        "count": 40
+      }
+    ],
+    "L4_roof": [
+      {
+        "name": "oak_planks",
+        "count": 47
+      }
+    ]
+  },
+  "substitutions": {
+    "cobblestone": [
+      "stone",
+      "oak_planks"
+    ],
+    "oak_log": [
+      "spruce_log",
+      "birch_log"
+    ],
+    "oak_planks": [
+      "spruce_planks",
+      "birch_planks"
+    ]
+  },
+  "cells": [
+    {
+      "local": [
+        0,
+        1,
+        0
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        0,
+        1,
+        1
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        0,
+        1,
+        2
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        0,
+        1,
+        3
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        0,
+        1,
+        4
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        0,
+        1,
+        5
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        0,
+        1,
+        6
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        1,
+        1,
+        0
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        1,
+        1,
+        1
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        1,
+        1,
+        2
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        1,
+        1,
+        3
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        1,
+        1,
+        4
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        1,
+        1,
+        5
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        1,
+        1,
+        6
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        2,
+        1,
+        0
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        2,
+        1,
+        1
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        2,
+        1,
+        2
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        2,
+        1,
+        3
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        2,
+        1,
+        4
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        2,
+        1,
+        5
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        2,
+        1,
+        6
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        3,
+        1,
+        0
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        3,
+        1,
+        1
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        3,
+        1,
+        2
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        3,
+        1,
+        3
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        3,
+        1,
+        4
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        3,
+        1,
+        5
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        3,
+        1,
+        6
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        4,
+        1,
+        0
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        4,
+        1,
+        1
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        4,
+        1,
+        2
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        4,
+        1,
+        3
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        4,
+        1,
+        4
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        4,
+        1,
+        5
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        4,
+        1,
+        6
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        5,
+        1,
+        0
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        5,
+        1,
+        1
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        5,
+        1,
+        2
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        5,
+        1,
+        3
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        5,
+        1,
+        4
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        5,
+        1,
+        5
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        5,
+        1,
+        6
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        6,
+        1,
+        0
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        6,
+        1,
+        1
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        6,
+        1,
+        2
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        6,
+        1,
+        3
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        6,
+        1,
+        4
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        6,
+        1,
+        5
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        6,
+        1,
+        6
+      ],
+      "block": "cobblestone"
+    },
+    {
+      "local": [
+        0,
+        3,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        3,
+        1
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        3,
+        2
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        3,
+        3
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        3,
+        4
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        3,
+        5
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        3,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        1,
+        3,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        1,
+        3,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        2,
+        3,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        2,
+        3,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        3,
+        3,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        4,
+        3,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        5,
+        3,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        5,
+        3,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        3,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        3,
+        1
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        3,
+        2
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        3,
+        3
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        3,
+        4
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        3,
+        5
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        3,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        4,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        4,
+        1
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        4,
+        2
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        4,
+        3
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        4,
+        4
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        4,
+        5
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        4,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        1,
+        4,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        1,
+        4,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        2,
+        4,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        2,
+        4,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        3,
+        4,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        4,
+        4,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        5,
+        4,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        5,
+        4,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        4,
+        0
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        4,
+        1
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        4,
+        2
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        4,
+        3
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        4,
+        4
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        4,
+        5
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        6,
+        4,
+        6
+      ],
+      "block": "oak_log"
+    },
+    {
+      "local": [
+        0,
+        5,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        5,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        5,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        5,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        5,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        5,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        0,
+        5,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        5,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        5,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        5,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        5,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        5,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        5,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        1,
+        5,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        5,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        5,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        5,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        5,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        5,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        5,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        2,
+        5,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        5,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        5,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        5,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        5,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        5,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        3,
+        5,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        5,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        5,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        5,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        5,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        5,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        4,
+        5,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        5,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        5,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        5,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        5,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        5,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        5,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        5,
+        5,
+        6
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        5,
+        0
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        5,
+        1
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        5,
+        2
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        5,
+        3
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        5,
+        4
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        5,
+        5
+      ],
+      "block": "oak_planks"
+    },
+    {
+      "local": [
+        6,
+        5,
+        6
+      ],
+      "block": "oak_planks"
+    }
+  ],
+  "stats": {
+    "cells": 140
+  }
+}

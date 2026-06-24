@@ -29,6 +29,7 @@ import { createRegionsMutateActions } from './regions/create.js';
 import { createMinesActions } from './mines/index.js';
 import { createRegionsCheckActions } from './regions/check.js';
 import { createBlueprintActions } from './blueprints/index.js';
+import { createConstructActions } from './construct/index.js';
 import { createPlaybookActions } from './playbooks.js';
 import { createReachActions } from './movement/reach.js';
 import { createVerifyActions } from './verify.js';
@@ -56,6 +57,9 @@ export function createAllActions(deps) {
   // Modules still on the legacy deps bag — they will migrate to services in
   // a future sweep. Phase 5 splits containers.js into 5 focused modules but
   // keeps them on deps for now.
+  const blueprintActions = createBlueprintActions(deps);
+  const constructActions = createConstructActions(deps, blueprintActions);
+
   const base = {
     ...inventory,
     ...building,
@@ -76,7 +80,8 @@ export function createAllActions(deps) {
     ...createRegionsMutateActions(deps),
     ...createRegionsCheckActions(deps),
     ...createMinesActions(deps),
-    ...createBlueprintActions(deps),
+    ...blueprintActions,
+    ...constructActions,
     ...createPlaybookActions(services),
     ...createReachActions(services),
     ...createTeamActions(deps),

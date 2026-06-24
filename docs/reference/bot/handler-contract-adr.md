@@ -66,7 +66,7 @@ Adoption is incremental: handlers call `_args` at the top and `return parsed.res
 
 ## Blueprint verify envelope
 
-`mc blueprint verify` uses the standard success/failure envelope. It does **not** emit `guided_edit_progress` (that shape is reserved for `mc construct` / blueprint-aware `mc repair` in [designated-regions Phase 2c](../../specs/world/designated-regions.md) (full detail in [`../../archive/features/designated-regions-full.md`](../../archive/features/designated-regions-full.md))).
+`mc blueprint verify` uses the standard success/failure envelope. It does **not** emit `guided_edit_progress` (that shape is on **`mc construct`** / scoped bulk responses — see [Guided edit progress](#guided-edit-progress-construct--repair) below).
 
 On success (`ok()`), `data` includes:
 
@@ -82,7 +82,9 @@ Inside the footprint, any cell not listed in `cells[]` is expected **air**. Fail
 
 ## Guided edit progress (construct / repair)
 
-When `mc construct` or blueprint-aware `mc repair` ship (Phase 2c), success responses should include `guided_edit_progress` alongside plan summaries (`plan_summary`, `materials_needed`, `verify_summary`, etc.). Until then, those verbs return `NOT_IMPLEMENTED` with a `next_action_hint` pointing at `mc blueprint verify` and manual place/dig.
+When construct context is active (schematic MVP: `task_context` auto-begin or `mc construct begin`), scoped **`place` / `fill` / `dig`** responses should include `guided_edit_progress` and `construct_context` progress snapshots. Bulk **`place_fill` / `dig_area`** use the same scope via execution-kernel **`allowUnit`** — see [`docs/architecture/execution-kernel.md`](../../architecture/execution-kernel.md) § Construct mode hook and [`bot/lib/runtime/construct-context.js`](../../../bot/lib/runtime/construct-context.js).
+
+Construct mode requires **`HERMES_CONSTRUCT_CONTEXT=1`** on the bot profile; without it, workers use unscoped motors and **`mc blueprint verify`** for audits. Read-only verify does **not** emit `guided_edit_progress`. Rollout: [`docs/architecture/construct-canary.md`](../../architecture/construct-canary.md).
 
 ## Test tagging
 

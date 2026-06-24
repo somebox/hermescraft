@@ -53,7 +53,7 @@ python3 scripts/grabcraft_downloader.py "<url>" blueprint.json
 - **`--substitute`** (on): swaps hard-to-source blocks for base-friendly ids (e.g. clay→dirt, stone_bricks→cobblestone, extra wood→oak_planks). Use `--no-substitute` for faithful materials.
 - **`--simplify`** (on): drops decorative cells (carpets, flower pots, etc.). Use `--no-simplify` to keep them.
 
-Output JSON includes `materials_planned`, `phases` (by blueprint Y layer), and `cells` (local x,y,z + block id). See `docs/specs/world/blueprints-grabcraft.md`.
+Output JSON includes `materials_planned`, `phases` (by blueprint Y layer), and `cells[]` (`local` + `block` id). Same committed plan shape as [`docs/specs/world/blueprints-grabcraft.md`](../docs/specs/world/blueprints-grabcraft.md).
 
 ## Kanban workflow
 

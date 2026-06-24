@@ -13,7 +13,7 @@ Working set for most cards; full usage on each line.
 - `mc inventory` (inv, i) — List items in bot inventory
 - `mc map [RADIUS]` (m) — Compact ASCII map of nearby terrain (radius default 12, max 16; larger values clamped).
 - `mc nearby [RADIUS]` (n) — List nearby blocks/entities within radius
-- `mc observe` (snapshot) — Goals + task + alerts snapshot (lean by default; --full for everything)
+- `mc observe` (snapshot) — Goals + task + alerts snapshot (lean by default; --full for everything, incl. nearby marks/signs/torches that nav-brief otherwise suppresses)
 - `mc scene [RANGE] [FULL]` (vision) — Visible entities + landmarks in vision range. Lean by default (drops raw block-hit array). Use `mc scene --full` for ray-level detail.
 - `mc status` (state, s) — Self snapshot: position, HP, food, holding, supplies, nearby_entities, situation when stuck. World vision: mc scene / nearby / map. --full adds task_context, regions, chat hints.
 
@@ -67,7 +67,7 @@ Working set for most cards; full usage on each line.
 - `mc bg_collect BLOCK [COUNT]` — Background mine N of BLOCK
 - `mc bg_goto X Y Z` — Background walk to X Y Z
 - `mc task` (task_status) — Activity status. Returns {task, sync, last}: task=async bg task if any, sync=currently-running synchronous action (mc place, mc collect, etc.), last=most recent completed action with status. If task and sync are both null, the bot is idle — check `last` to see what just finished.
-- `mc task_context set [<worksite>] [--card ID] [--expires-min N] | clear | show` (task-context) — Bind kanban card worksite grant for protect-region construction (set/clear/show)
+- `mc task_context set [<worksite>] [--card ID] [--plan ID] [--level N] [--range Y1..Y2] [--phase ID] [--card-kind CONSTRUCT] [--plan-revision REV] [--no-construct-auto-begin] [--expires-min N] | clear | show` (task-context) — Bind kanban card worksite grant for protect-region construction (set/clear/show)
 
 ## Extended
 

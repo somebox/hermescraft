@@ -3,6 +3,7 @@
 
 import { Vec3 } from 'vec3';
 import { isDigProtected } from './dig-tools.js';
+import { clearConstructSession } from './construct-lifecycle.js';
 import { setupRegionSignWatcher } from './regions/sign-watcher.js';
 import { sampleNavTrailCrumb, clearNavTrail } from './nav-trail.js';
 
@@ -952,6 +953,7 @@ export function createBotManager(deps) {
             ctx.tasks.currentTask.error = 'Interrupted by player death';
             pushTaskHistoryRecord(ctx.tasks.currentTask, 'cancelled');
           }
+          clearConstructSession(ctx);
 
           // mineflayer auto-respawns once from health.js; some servers/packet timing need a retry.
           const nudgeMs = [0, 200, 500, 1200, 2500, 5000, 8000];
@@ -992,6 +994,7 @@ export function createBotManager(deps) {
           ctx.world.mcSessionStartedAt = null;
           ctx.world.positionHistory = [];
           clearNavTrail(ctx, 'reconnect');
+          clearConstructSession(ctx);
           const skipReconnect = ctx.death.suppressEndReconnect;
           if (ctx.death.suppressEndReconnect) ctx.death.suppressEndReconnect = false;
 

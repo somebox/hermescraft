@@ -1025,6 +1025,37 @@ def cmd_complete(args: argparse.Namespace) -> int:
             # call; the worker-evidence audit isn't worth blocking on a
             # transient DB hiccup (default-allow keeps the facade usable).
             pass
+    assignee_for_construct = ""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT assignee FROM tasks WHERE id = ?", (args.task_id,)
+        ).fetchone()
+        assignee_for_construct = ((row[0] if row else None) or "").strip()
+    except sqlite3.Error:
+        assignee_for_construct = ""
+    if (
+        assignee_for_construct
+        and os.environ.get("KANBAN_ALLOW_COMPLETE_WITH_CONSTRUCT") != "1"
+    ):
+        try:
+            if str(REPO_ROOT) not in sys.path:
+                sys.path.insert(0, str(REPO_ROOT))
+            from scripts.lib.construct_kanban_guard import construct_complete_blocked_on_bot
+
+            block = construct_complete_blocked_on_bot(assignee_for_construct)
+        except Exception:
+            block = None
+        if block:
+            hint = block.get("next_action_hint") or "mc construct end, then complete the card"
+            sys.stderr.write(
+                f"refused: assignee={assignee_for_construct} has active construct session "
+                f"({block.get('code', 'CONSTRUCT_SESSION_ACTIVE')}).\n"
+                f"{block.get('message', '')}\n"
+                f"Next: {hint}\n"
+                "Override (operator rescue only): KANBAN_ALLOW_COMPLETE_WITH_CONSTRUCT=1\n"
+            )
+            return 2
     cmd_args = ["complete", args.task_id]
     if args.result:
         cmd_args.extend(["--result", args.result])

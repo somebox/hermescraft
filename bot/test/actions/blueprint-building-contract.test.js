@@ -30,17 +30,6 @@ test('blueprint: unknown subcommand → INVALID_ARGS # spec', async () => {
   assertFailure(r, { code: 'INVALID_ARGS', messageIncludes: 'subcommand', retrySafe: false });
 });
 
-test('construct: NOT_IMPLEMENTED with next_action_hint', async () => {
-  const actions = createBlueprintActions(blueprintDeps());
-  const r = await actions.construct({});
-  assertFailure(r, {
-    code: 'NOT_IMPLEMENTED',
-    messageIncludes: 'construct',
-    retrySafe: false,
-  });
-  assert.match(r.error.next_action_hint, /blueprint verify/i);
-});
-
 test('repair: NOT_IMPLEMENTED without target', async () => {
   const actions = createBlueprintActions(blueprintDeps());
   const r = await actions.repair({});

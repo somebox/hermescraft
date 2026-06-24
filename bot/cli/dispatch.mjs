@@ -762,6 +762,13 @@ function customParse(canonicalName, positional) {
       if (sub === 'set') {
         let card = process.env.HERMES_KANBAN_TASK || '';
         let expiresMin = null;
+        let plan = '';
+        let level = null;
+        let range = '';
+        let phase = '';
+        let cardKind = '';
+        let planRevision = '';
+        let constructAutoBegin = undefined;
         /** @type {string[]} */
         const positionals = [];
         while (q.length) {
@@ -774,6 +781,41 @@ function customParse(canonicalName, positional) {
           if (t === '--expires-min') {
             q.shift();
             expiresMin = Number(q.shift());
+            continue;
+          }
+          if (t === '--plan') {
+            q.shift();
+            plan = String(q.shift() || '').trim();
+            continue;
+          }
+          if (t === '--level') {
+            q.shift();
+            level = Number(q.shift());
+            continue;
+          }
+          if (t === '--range') {
+            q.shift();
+            range = String(q.shift() || '').trim();
+            continue;
+          }
+          if (t === '--phase') {
+            q.shift();
+            phase = String(q.shift() || '').trim();
+            continue;
+          }
+          if (t === '--card-kind') {
+            q.shift();
+            cardKind = String(q.shift() || '').trim();
+            continue;
+          }
+          if (t === '--plan-revision') {
+            q.shift();
+            planRevision = String(q.shift() || '').trim();
+            continue;
+          }
+          if (t === '--no-construct-auto-begin') {
+            q.shift();
+            constructAutoBegin = false;
             continue;
           }
           if (t.startsWith('--')) throw new Error(`unknown_flag:${t}`);
@@ -801,6 +843,13 @@ function customParse(canonicalName, positional) {
           card_id: card,
           ...(worksite ? { worksite_region: String(worksite) } : {}),
           expires_at_ms,
+          ...(plan ? { plan } : {}),
+          ...(Number.isFinite(level) ? { level } : {}),
+          ...(range ? { range } : {}),
+          ...(phase ? { phase } : {}),
+          ...(cardKind ? { card_kind: cardKind } : {}),
+          ...(planRevision ? { plan_revision: planRevision } : {}),
+          ...(constructAutoBegin === false ? { construct_auto_begin: false } : {}),
         };
       }
       throw new Error('task_context_subcommand: use set|clear|show');

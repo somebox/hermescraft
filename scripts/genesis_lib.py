@@ -382,6 +382,28 @@ def render_templates(
     plan_path.write_text(json.dumps(plan, indent=2))
     (rendered_dir / "hut1-guard-tower-plan.json").write_text(json.dumps(plan, indent=2))
 
+    # starter_shelter schematic fixture — footprint origin + sign marker (E2)
+    ss_tpl = TEMPLATES_DIR / "starter_shelter-plan.template.json"
+    ss_source = REPO_ROOT / "data" / "ops" / "plans" / "starter_shelter-plan.json"
+    if ss_tpl.exists() and ss_source.exists():
+        ss_meta = json.loads(ss_tpl.read_text())
+        ss_plan = json.loads(ss_source.read_text())
+        ox, oy, oz = int(ctx["anchor_x"]), int(ctx["anchor_y"]), int(ctx["anchor_z"])
+        off = ss_meta.get("marker_offset") or {"dx": 3, "dy": 0, "dz": -1}
+        if ss_plan.get("anchor"):
+            ss_plan["anchor"]["coords"] = [ox, oy, oz]
+            if ss_plan["anchor"].get("marker"):
+                ss_plan["anchor"]["marker"]["coords"] = [
+                    ox + int(off["dx"]),
+                    oy + int(off["dy"]),
+                    oz + int(off["dz"]),
+                ]
+        ss_path = DATA_DIR / "ops" / "plans" / "starter_shelter-plan.json"
+        _archive_if_exists(ss_path, run_id)
+        ss_path.parent.mkdir(parents=True, exist_ok=True)
+        ss_path.write_text(json.dumps(ss_plan, indent=2) + "\n")
+        (rendered_dir / "starter_shelter-plan.json").write_text(json.dumps(ss_plan, indent=2))
+
     offsets = load_offsets()
     pr, ot, sg = offsets["primary"], offsets["other"], offsets["sign"]
     ax, ay, az = anchor["x"], anchor["y"], anchor["z"]

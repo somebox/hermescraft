@@ -116,3 +116,50 @@ build_layer(origin, footprint, offset, spec)   # spec: material(s) / fixture lis
 4. Validate on same arm (`standard/mimo-v2.5/emergent`), ≥2 runs (mission IDs differ);
    success = `compare_safe=true`, `gv2_invalid=0`, and L0-dry-before-fixtures held (or a
    viability sub-metric fails closed on water-under-fixtures).
+
+## Requirements from gv2-2026-06-22-5 (execution failures `build_layer` must prevent)
+
+E1 produced an unusable shelter even though the card *blueprint* was reasonable (cobble
+floor → `mc wall` ring → plank roof → door + torches). The failures were all in
+**execution**, and each maps to a `build_layer` invariant:
+
+1. **Door rejected because the wall filled the doorway.** Order was walls-first, then
+   `mc place oak_door` into the now-solid wall → server rejected it 6+ times
+   (`Event blockUpdate:(-183,72,-241) did not apply`; cell below already cobblestone),
+   so there was **no usable entrance**. → `build_layer` must build the wall ring **with
+   the door gap left open** (skip the door cells in the wall fill) and place the door
+   **into the pre-cleared gap, last**. Add a **`verify(door-traversable)`** gate: the
+   door's two cells + the cell in front and behind are passable (air at foot+head).
+2. **Builder coordinate disorientation.** The log shows blocks placed at wrong y-levels
+   and scattered coords (crafting tables at y48/y56/y61 — far below the y71 base; cobble
+   at y56; repeated "foot cell" / "view blocked" / "already stone" errors). → `build_layer`
+   owns all coord/y math from `origin + offset`; the agent never passes absolute coords.
+3. **Solid interior, not a hollow room.** Floor fill + wall fill + scattered placement
+   left the interior filled rather than enclosing air. → walls are a **ring** (perimeter
+   only); add a **`verify(interior-air)`** gate (interior cells at stand+head height are
+   air) before the shelter counts done.
+4. **Five overlapping retry cards** for one shelter ("Shelter 7x7", "finish roof+door",
+   "door", "L1 slab shell", "L0 ground patch") — the planner re-filed as it failed. The
+   "L1 slab shell" card even fills the whole 7×7 at y72 solid (floor/shell conflation). →
+   one `build_layer` build, **refuse-until-`verify_layer`**; no per-failure re-file.
+5. **No L0 slab + partial at cap.** Built on raw dirt/grass (the 24/14 air-hole L0 gap),
+   cards still running/`todo` at the 2h cap. → L0 level+slab must pass before walls; a
+   smaller/parameterized footprint if material/time-bound.
+
+Net: the blueprint intent was fine; `build_layer` must own **order, coordinates,
+door-gap, and hollowness**, gated by `verify_layer` (now including door-traversable +
+interior-air), as a single coherent build.
+
+## Relation to schematic-first construct MVP
+
+Layered **`verify_layer` / `build_layer`** (this doc) targets genesis pad discipline. The parallel **construct mode** track uses **`construct_context`** so workers run familiar **`mc fill` / `place` / `dig`** against a committed blueprint plan workset (door gap = absent/air cells in `cells[]`). Vocabulary and JSON fields: [`docs/specs/world/blueprints-grabcraft.md`](../specs/world/blueprints-grabcraft.md). Reference fixture: [`data/ops/plans/starter_shelter-plan.json`](../../data/ops/plans/starter_shelter-plan.json). Bulk motor scope uses [`docs/architecture/execution-kernel.md`](execution-kernel.md) **`allowUnit`** via [`bot/lib/runtime/construct-context.js`](../../bot/lib/runtime/construct-context.js). Converge gates (`l0_ground`, `door_traversable`, `interior_air`) can appear in both plan JSON metadata and layer verify scripts.
+
+### Planner / kanban card pattern (construct MVP)
+
+| Card kind | Body carries | Worker entry |
+|-----------|----------------|--------------|
+| **CONSTRUCT** | `worksite`, `plan`, `phase` (or `level` / `range`); optional `plan_revision` | `mc task_context set :worksite: --card <id>` → auto-begin; loop `construct show` + fill/place/dig; `construct end` |
+| **SUPPLY** | Materials id from plan `materials_by_phase` (gather/deposit targets) | Normal gather verbs; no construct context |
+| **VERIFY** | Layer or gate id | Read-only `verify_layer` / `blueprint verify`; may run without construct |
+
+Card validation (genesis v2): [`scripts/lib/gv2_card_validator.py`](../../scripts/lib/gv2_card_validator.py) — CONSTRUCT rows must include plan + phase + worksite. **Emit SUPPLY + schematic CONSTRUCT siblings** from plan JSON: `./scripts/construct-plan-cards.py --plan <id> --phase <phase> --worksite … --destination … --dry-run` (see [`scripts/lib/plan_supply.py`](../../scripts/lib/plan_supply.py)). Workers: skill [`skills/minecraft-building.md`](../../skills/minecraft-building.md) § Schematic construct mode. Region policy during construct: [`buildRegionResolveArgs`](../../bot/lib/runtime/regions/policy-guard.js) sets **`guided: true`** so protect-intent worksites allow in-footprint edits without ad-hoc override. Pre-rollout canary: [`construct-canary.md`](construct-canary.md).

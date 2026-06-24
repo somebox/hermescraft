@@ -1,0 +1,6 @@
+{
+  "_comment": "Rendered by genesis_lib: copies starter_shelter plan and patches anchor.coords + anchor.marker (sign south of door gap)",
+  "source_plan": "data/ops/plans/starter_shelter-plan.json",
+  "footprint_origin_keys": ["anchor_x", "anchor_y", "anchor_z"],
+  "marker_offset": { "dx": 3, "dy": 0, "dz": -1 }
+}

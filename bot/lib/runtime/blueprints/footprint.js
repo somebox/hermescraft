@@ -70,3 +70,15 @@ export function worldToLocal(anchor, footprint, wx, wy, wz) {
   const mins = footprintMins(footprint);
   return [wx - anchor[0] + mins.x, wy - anchor[1] + mins.y, wz - anchor[2] + mins.z];
 }
+
+/** @param {number[]} anchor [x,y,z] @param {object} footprint */
+export function worldInsideFootprint(wx, wy, wz, anchor, footprint) {
+  if (!Array.isArray(anchor) || anchor.length < 3 || !footprint?.local) return false;
+  const [lx, ly, lz] = worldToLocal(anchor, footprint, wx, wy, wz);
+  const loc = footprint.local;
+  return (
+    lx >= loc.x[0] && lx <= loc.x[1]
+    && ly >= loc.y[0] && ly <= loc.y[1]
+    && lz >= loc.z[0] && lz <= loc.z[1]
+  );
+}

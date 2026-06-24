@@ -39,6 +39,8 @@ queries.js    → export { createQueriesActions } from './queries/index.js'
 
 Boat **routing math** stays in `bot/lib/runtime/water-route.js` and `bot/lib/runtime/boat-path.js`, not under `actions/`.
 
+**Bulk motor:** `bot/lib/runtime/execution-kernel/` (`orderCells`, `runCells`, progress envelope) — used by excavation/building adapters; see [`docs/architecture/execution-kernel.md`](../../architecture/execution-kernel.md).
+
 ## Shared helpers (`_`-prefix)
 
 | Module | Role |

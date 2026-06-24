@@ -122,6 +122,9 @@ _CHEST_FURNACE_PLACE_RE = re.compile(
 _VERIFY_LAYER_CMD_RE = re.compile(r"\bgv2-verify-layer\.py\b", re.IGNORECASE)
 _VERIFY_GATE_RE = re.compile(r"^\s*gate\s*:\s*(ground|slab|fixtures)\b", re.IGNORECASE | re.MULTILINE)
 _DEPENDS_ON_RE = re.compile(r"^\s*depends_on\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
+_PLAN_FIELD_RE = re.compile(r"^\s*plan\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
+_WORKSITE_FIELD_RE = re.compile(r"^\s*worksite\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
+_PHASE_LEVEL_RE = re.compile(r"^\s*(phase|level)\s*:\s*\S+", re.IGNORECASE | re.MULTILINE)
 
 KNOWN_ALIASES = {
     "list_container": "chest",
@@ -314,6 +317,11 @@ def validate_card(
             )
         if _WALL_FLOOR_RE.search(body):
             warnings.append("CONSTRUCT may use mc wall for floor/roof — prefer mc fill")
+        if _PLAN_FIELD_RE.search(body):
+            if not _WORKSITE_FIELD_RE.search(body):
+                errors.append("schematic CONSTRUCT (plan:) missing worksite:")
+            if not _PHASE_LEVEL_RE.search(body):
+                errors.append("schematic CONSTRUCT (plan:) missing phase: or level:")
         lines = body.splitlines()
         survey_idx = next(
             (i for i, ln in enumerate(lines) if re.search(r"mc\s+(scene|observe)\b", ln, re.I)),

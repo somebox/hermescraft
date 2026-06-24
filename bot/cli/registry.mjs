@@ -2175,10 +2175,11 @@ export const RAW_COMMAND_DEFS = [
   }),
   g('task_context', 'task', ['task-context'], {
     description: 'Bind kanban card worksite grant for protect-region construction (set/clear/show)',
-    usage: 'mc task_context set [<worksite>] [--card ID] [--expires-min N] | clear | show',
+    usage: 'mc task_context set [<worksite>] [--card ID] [--plan ID] [--level N] [--range Y1..Y2] [--phase ID] [--card-kind CONSTRUCT] [--plan-revision REV] [--no-construct-auto-begin] [--expires-min N] | clear | show',
     examples: [
       'mc task_context set hut3                    # uses HERMES_KANBAN_TASK for card_id',
       'mc task_context set hut3 --card t_abc123 --expires-min 45',
+      'mc task_context set base --card t_abc --plan starter_shelter --level 1 --card-kind CONSTRUCT',
       'mc task_context set --card t_abc123         # card bind only (no protect worksite)',
       'mc task_context set --card t_abc123 hut3    # flags before worksite also accepted',
       'mc task_context show',
@@ -2192,6 +2193,13 @@ export const RAW_COMMAND_DEFS = [
         worksite_region: p.worksite_region,
         expires_at_ms: p.expires_at_ms,
         source: 'cli',
+        ...(p.plan ? { plan: p.plan } : {}),
+        ...(p.level != null && Number.isFinite(Number(p.level)) ? { level: Number(p.level) } : {}),
+        ...(p.range ? { range: p.range } : {}),
+        ...(p.phase ? { phase: p.phase } : {}),
+        ...(p.card_kind ? { card_kind: p.card_kind } : {}),
+        ...(p.plan_revision ? { plan_revision: p.plan_revision } : {}),
+        ...(p.construct_auto_begin === false ? { construct_auto_begin: false } : {}),
       }),
   }),
   g('playbook_phase_set', 'task', ['playbook-phase-set'], {

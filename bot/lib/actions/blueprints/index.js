@@ -182,13 +182,17 @@ export function createBlueprintActions(deps) {
         },
         phase,
       );
-      const sample = result.mismatches.slice(0, Number(body.sample) || 20);
+      const sample = result.mismatches.slice(0, Number(body.mismatch_cap) || Number(body.sample) || 20);
       return ok({
         result: `verify: ok=${result.summary.ok} missing=${result.summary.missing} wrong=${result.summary.wrong} extra=${result.summary.extra}`,
         data: {
           blueprint_verify: true,
+          plan_id: r.ctxPlan.planId,
+          footprint: r.ctxPlan.footprint,
+          anchor: r.ctxPlan.anchor,
           summary: result.summary,
           mismatches: sample,
+          mismatches_total: result.mismatches.length,
           truncated: result.truncated,
           next_hint: result.next_hint,
         },
@@ -356,13 +360,6 @@ export function createBlueprintActions(deps) {
       return ok({
         result: `Captured ${planned.length} cells → ${planId}`,
         data: { plan_id: planId, path: outPath, cells: planned.length, anchor },
-      });
-    },
-
-    async construct(body) {
-      return fail('NOT_IMPLEMENTED', 'mc construct from blueprint ships after regions Phase 2c guided edit', {
-        retry_safe: false,
-        next_action_hint: 'Use mc blueprint verify and manual mc place until construct is enabled',
       });
     },
 

@@ -607,6 +607,12 @@ export async function release(opts = {}) {
   if (after && after.bot === row.bot) {
     throw new Error('lease lost — re-checkout');
   }
+  const base = row.api_url.replace(/\/$/, '');
+  try {
+    await fetch(`${base}/task-context`, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
+  } catch {
+    /* best-effort: clear worksite grant + construct session on release */
+  }
   return { ok: true, released: row.bot };
 }
 

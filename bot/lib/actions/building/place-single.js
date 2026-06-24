@@ -8,6 +8,8 @@ import { canSeeBlockFaces, standardBlockFacePoints } from '../_los.js';
 import { fail, ok } from '../../shared/action-contract.js';
 import { entitiesAtBlockingCell } from '../../shared/entity-blocking.js';
 import { evaluateRegionPolicy, regionProtectedFailure } from '../../runtime/regions/policy-guard.js';
+import { evaluateConstructMutation } from '../../runtime/construct-context.js';
+import { attachConstructMotorEnvelope } from '../../runtime/construct-lifecycle.js';
 import { markBriefRefreshRequired } from '../../runtime/nav-brief.js';
 import { FAIR_PLAY } from '../../runtime/fair-play-constants.js';
 
@@ -45,6 +47,9 @@ export function createBuildingPlaceSinglePart(deps) {
       if (regionPlace.deny) {
         return regionProtectedFailure('place', blockName, x, y, z, regionPlace.regionResult);
       }
+
+      const constructPlace = evaluateConstructMutation(ctx, x, y, z, 'add', { blockName });
+      if (constructPlace) return constructPlace;
 
       const targetPos = new Vec3(x, y, z);
       const offsets = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
@@ -358,10 +363,10 @@ export function createBuildingPlaceSinglePart(deps) {
           }
           return {
             ok: true,
-            data: {
+            data: attachConstructMotorEnvelope(ctx, {
               placed_block: blockName,
               at: { x, y, z },
-            },
+            }),
             // Legacy field for callers that look for `result`.
             result: `Placed ${blockName} at ${x}, ${y}, ${z}`,
           };

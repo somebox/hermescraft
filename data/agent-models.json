@@ -29,13 +29,16 @@
       "model": "xiaomi/mimo-v2.5",
       "provider": "openrouter",
       "role": "builder",
-      "api_port": 3003
+      "api_port": 3003,
+      "bot_env": {
+        "HERMES_CONSTRUCT_CONTEXT": "1"
+      }
     },
     "Barley": {
       "model": "nvidia/nemotron-3-super-120b-a12b:free",
       "provider": "openrouter",
       "role": "food",
-      "api_port": 3004
+      "api_port": 3008
     },
     "Steward": {
       "model": "deepseek/deepseek-v4-flash:exacto",

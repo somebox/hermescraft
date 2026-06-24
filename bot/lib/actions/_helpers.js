@@ -301,6 +301,7 @@ export const ACTION_CAPS_MS = Object.freeze({
   level: 100000,
   clear_strip: 100000,
   place_fill: 100000,
+  wall: 100000,
   fell_tree: 60000,
 });
 

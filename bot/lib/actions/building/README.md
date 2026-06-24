@@ -18,7 +18,7 @@ Place blocks, bulk fills, pillars, and terrain shaping. Placement protection and
 - **Replaceable cells:** **`REPLACEABLE`** from [`../_block-sets.js`](../_block-sets.js) in place-single (not duplicated inline).
 - **LOS:** `place` uses **`canSeeBlockFaces`** + optional stand-ring hint ([`../_los.js`](../_los.js)).
 - **Pathfind:** Approach cells via **`pathfindGotoNear`** / **`pathfindWithProgressWatchdog`** ([`../_helpers.js`](../_helpers.js)); bulk **`GoalBlock`** standpoints use watchdog + cap.
-- **Volume limits:** `place_fill` refuses **`AREA_TOO_LARGE`** above 500 cells.
+- **Volume limits:** `place_fill` refuses **`AREA_TOO_LARGE`** above **32** cells (same cap as `dig_area`). Bulk iteration for several building/excavation verbs uses [`../../runtime/execution-kernel/`](../../runtime/execution-kernel/) — see [`docs/architecture/execution-kernel.md`](../../../docs/architecture/execution-kernel.md).
 - **Contract:** **`ok()`** / **`fail()`** from [`../../shared/action-contract.js`](../../shared/action-contract.js).
 
 ## Tests

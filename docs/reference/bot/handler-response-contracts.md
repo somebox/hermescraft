@@ -25,6 +25,16 @@ This is the **gate**: no L1+ test can pass until the action it depends on meets 
 }
 ```
 
+### Bulk partial progress (`ProgressEnvelope`)
+
+Long bulk handlers (`level`, `place_fill`, `clear_strip`, kernel-backed `dig_area`) may stop at a wallclock cap or cancel and return `error.code` **`OPERATION_TIMEOUT`** or **`CANCELLED`** with `retry_safe: true`. Shared kernel fields in `error.observed_state` (when the adapter uses [`execution-kernel`](../../architecture/execution-kernel.md)):
+
+- `cursor.next_index`, `cursor.units_done`, `cursor.units_total`
+- `plan_hash` — stable re-run idempotency for the same geometry/command
+- Verb-specific counters remain (`columns_done`, `next_unfilled`, `placed`, `dug`, …)
+
+`TOOL_MISSING` on level dig-above (kernel path) uses the same envelope counters plus `retry_safe: true`.
+
 ### Per-primitive contracts (L0–L4 hot path)
 
 #### `mc dig X Y Z`

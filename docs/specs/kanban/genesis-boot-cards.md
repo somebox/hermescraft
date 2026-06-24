@@ -91,7 +91,7 @@ Steward decomposes after P2 closes. P3 is still peaceful and is treated as the f
 
 - `[CONSTRUCT]` mason — Upgrade shelter walls (5×5 → 7×7, raise to 3 blocks, add door + roof access).
 - `[SITE]` mason — Designate `tower_anchor` placemark adjacent to base, in `regions-world.json` with `allow_ad_hoc_place: true`.
-- `[CONSTRUCT]` mason — Build watch tower from `data/ops/plans/hut1-guard-tower-plan.json` (per-run copy with anchor rewritten from template). **In-world:** `mc task_context set hut1` (or worksite region id), layer-wise `mc blueprint verify hut1-guard-tower --level N`, then **manual `mc place`** — `mc construct` is not implemented yet. **Offline audit:** `scripts/blueprint-tool.py verify hut1-guard-tower-plan.json`. Steward may use `scripts/blueprint-plan.py` for layer cards.
+- `[CONSTRUCT]` mason — Build watch tower from `data/ops/plans/hut1-guard-tower-plan.json` (per-run copy with anchor rewritten from template). **In-world (current):** prefer CONSTRUCT cards + `mc task_context set` / construct mode when `HERMES_CONSTRUCT_CONTEXT=1`; otherwise layer-wise `mc blueprint verify hut1-guard-tower --level N` and manual `mc place`. **Offline audit:** `scripts/blueprint-tool.py verify hut1-guard-tower-plan.json`. Steward may use `scripts/blueprint-plan.py` for layer cards. Plan format: [`blueprints-grabcraft.md`](../world/blueprints-grabcraft.md).
 
 Phase done_when: `:hut1:` (or tower) region active in `regions-world.json`, `mc blueprint verify` passes for all plan layers, defensive readiness noted on cards (weapons + fallback posture).
 
@@ -319,7 +319,7 @@ The `digest.md` rolls up everything when a run closes: phase durations, resource
 | `scripts/board-recent.py --since --json` | Kanban event deltas for snapshot |
 | `scripts/lib/kanban_block_reason.py` | Block reason histogram (known prefixes only) |
 | `mc region_create` / `mc regions_reload` | Shelter, farm, hut1 regions |
-| `mc blueprint verify` | P3 layer acceptance (`mc construct` N/I — manual place) |
+| `mc blueprint verify` | P3 layer acceptance; optional construct mode when `HERMES_CONSTRUCT_CONTEXT=1` |
 | `scripts/blueprint-tool.py` + hut1 plan JSON | Offline verify; per-run plan from template |
 | `plugins/landfolk/.../hooks.py` | Optional snapshot-on-complete fast path |
 | `prompts/landfolk/steward.md` | Build D genesis doctrine |
@@ -425,4 +425,4 @@ scripts/genesis.sh new-run \
 
 ## Validated against repo (Core v1 ship)
 
-Implemented: genesis CLI/lib/snapshot/diff/poller, seven templates, Steward genesis doctrine, runbook, unit tests under `scripts/tests/`. Still accurate from prior review: kanban parent gating, `mc construct` N/I, `mark-drift.py` N/I, P3 blueprint verify best-effort in `check_phases` (full layer verify remains Steward/`mc blueprint verify`). v1.1 backlog: `watch-rescues`, `genesis_targets.py`, plugin snapshot hook, worker SOUL one-liner, README genesis section.
+Implemented: genesis CLI/lib/snapshot/diff/poller, seven templates, Steward genesis doctrine, runbook, unit tests under `scripts/tests/`. Still accurate from prior review: kanban parent gating, `mark-drift.py` N/I, P3 blueprint verify best-effort in `check_phases` (full layer verify remains Steward/`mc blueprint verify`; construct mode is opt-in via bot env). v1.1 backlog: `watch-rescues`, `genesis_targets.py`, plugin snapshot hook, worker SOUL one-liner, README genesis section.

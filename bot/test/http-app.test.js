@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'events';
 import { parseBody, createBotHttpListener } from '../lib/server/http-app.js';
+import { setConstructContext } from '../lib/runtime/construct-context.js';
 
 function mockReq(chunks) {
   const req = new EventEmitter();
@@ -113,6 +114,54 @@ test('DELETE /task-context clears the grant', async () => {
   assert.equal(ctx.runtime.taskContext, null);
 });
 
+test('DELETE /task-context clears construct session (F2 lifecycle)', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  process.env.HERMES_CONSTRUCT_CONTEXT = '1';
+  try {
+    const { listener, ctx } = makeListenerWithTaskContext();
+    ctx.runtime.taskContext = { card_id: 't_xyz', worksite_region: 'base', expires_at: Date.now() + 99999, source: 'fixture' };
+    setConstructContext(ctx, {
+      kind: 'construct',
+      plan_id: 'starter_shelter',
+      mutation_policy: ['missing'],
+    });
+    ctx.runtime._constructWorkset = new Map([['1,1,1', { category: 'missing' }]]);
+    const req = mockReqWithBody('DELETE', '/task-context', null);
+    const res = mockRes();
+    await listener(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(ctx.runtime.taskContext, null);
+    assert.equal(ctx.runtime.construct_context, null);
+    assert.equal(ctx.runtime._constructWorkset, undefined);
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_CONSTRUCT_CONTEXT;
+    else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
+});
+
+test('GET /task-context exposes construct_complete_blocked when session active', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  process.env.HERMES_CONSTRUCT_CONTEXT = '1';
+  try {
+    const { listener, ctx } = makeListenerWithTaskContext();
+    ctx.runtime.taskContext = { card_id: 't_xyz', worksite_region: 'base', expires_at: Date.now() + 99999, source: 'fixture' };
+    setConstructContext(ctx, {
+      kind: 'construct',
+      plan_id: 'starter_shelter',
+      mutation_policy: ['missing'],
+    });
+    const req = mockReqWithBody('GET', '/task-context', null);
+    const res = mockRes();
+    await listener(req, res);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.data.construct_complete_blocked?.code, 'CONSTRUCT_SESSION_ACTIVE');
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_CONSTRUCT_CONTEXT;
+    else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
+});
+
 test('POST /task-context with missing card_id returns 400 (not 404)', async () => {
   const { listener } = makeListenerWithTaskContext();
   const req = mockReqWithBody('POST', '/task-context', '{}');
@@ -123,6 +172,36 @@ test('POST /task-context with missing card_id returns 400 (not 404)', async () =
   assert.equal(res.statusCode, 400, `expected 400, got ${res.statusCode}: ${res.body}`);
   const body = JSON.parse(res.body);
   assert.equal(body.error.code, 'MISSING_CARD_ID');
+});
+
+test('POST /task-context new card_id clears construct session (F2 lifecycle)', async () => {
+  const prev = process.env.HERMES_CONSTRUCT_CONTEXT;
+  process.env.HERMES_CONSTRUCT_CONTEXT = '1';
+  try {
+    const { listener, ctx } = makeListenerWithTaskContext();
+    ctx.runtime.taskContext = {
+      card_id: 't_old',
+      worksite_region: 'base',
+      expires_at: Date.now() + 99999,
+      source: 'fixture',
+    };
+    setConstructContext(ctx, {
+      kind: 'construct',
+      plan_id: 'starter_shelter',
+      card_id: 't_old',
+      mutation_policy: ['missing'],
+    });
+    const req = mockReqWithBody('POST', '/task-context',
+      JSON.stringify({ card_id: 't_new', worksite_region: 'base', source: 'test' }));
+    const res = mockRes();
+    await listener(req, res);
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(ctx.runtime.construct_context, null);
+    assert.equal(ctx.runtime.taskContext.card_id, 't_new');
+  } finally {
+    if (prev === undefined) delete process.env.HERMES_CONSTRUCT_CONTEXT;
+    else process.env.HERMES_CONSTRUCT_CONTEXT = prev;
+  }
 });
 
 test('POST /regions/reload calls store.reload() and returns the updated region list', async () => {

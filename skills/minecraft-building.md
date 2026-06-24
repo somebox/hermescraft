@@ -12,7 +12,7 @@ triggers:
   - build fence
   - build farm
   - build pen
-version: 4.3.0
+version: 4.4.0
 ---
 
 # Minecraft Building — With Taste
@@ -116,16 +116,22 @@ A 9×9 pad needs at most three fill attempts — initial, post-blocker-clear,
 and final verify. If you find yourself running more than ten `mc inspect`
 calls on one fill failure, stop and re-read `remaining_cells`.
 
-## Building from a blueprint
+## Schematic construct mode (bound CONSTRUCT cards)
 
-When a construct card includes `plan_id` and a bound region (`plan=` on the sign), use the blueprint library instead of guessing block lists:
+When `HERMES_CONSTRUCT_CONTEXT=1` and the kanban card is **CONSTRUCT** with `plan` + `phase` + `worksite`, **`mc task_context set :worksite: --card <id>`** auto-begins a construct session (same pipeline as **`mc construct begin`** for debug).
 
-```bash
-mc blueprint layer <plan_id> --y N       # expected cells for local layer N
-mc blueprint verify :region: --level N   # ok / missing / wrong / extra
-```
+**Loop:**
 
-Fix mismatches with `mc place`, `mc dig`, and bulk verbs; re-verify before marking the card done. Full workflow: skill [`minecraft-blueprints.md`](minecraft-blueprints.md). `mc construct` is not available yet (Phase 2c).
+1. **`mc task_context set :base: --card <id>`** — binds worksite; construct session starts when the card has plan+phase.
+2. **`mc construct show`** — verify summary, sample mismatches, **`materials_needed` / `materials_missing`**, workset size.
+3. Build with familiar verbs inside the footprint only: **`mc fill`**, **`mc place`**, **`mc dig`** ( **`mc wall` is rejected** in construct context).
+4. Read **`guided_edit_progress`** on motor responses after each patch.
+5. **`mc construct end`** — runs phase-clean + plan gates (`door_traversable`, `interior_air`, `l0_ground`); fix **`GATE_FAIL`** before retrying end.
+6. **`mc task_context clear`** or **`mc bot release`** — also drops construct session. Do **not** mark the kanban card done while construct is still active (`construct_complete_blocked` on **`mc task_context show`**; **`scripts/kanban complete`** refuses when the assignee bot still reports that block).
+
+Materials: **`construct show`** lists plan **`materials_by_phase`**; gather via **SUPPLY** cards, not prose coords in the CONSTRUCT body.
+
+Legacy read-only audit: **`mc blueprint verify :region: --level N`**. Deep reference: skill [`minecraft-blueprints.md`](minecraft-blueprints.md). Ops/tests may stamp a plan with **`scripts/place-schematic-rcon.py`** (RCON, no construct session) — [`docs/specs/world/blueprints-grabcraft.md`](../docs/specs/world/blueprints-grabcraft.md).
 
 ## Before you build ANYTHING
 

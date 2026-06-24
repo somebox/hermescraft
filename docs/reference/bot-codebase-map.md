@@ -30,6 +30,8 @@ extend it.
 │         └── task-lifecycle.js   dispatchAction + helpers │
 ├─────────────────────────────────────────────────────────┤
 │  lib/runtime/       Layer 2 reactive + perception        │
+│    execution-kernel/  Bulk orderCells + runCells motor   │
+│    construct-context.js  Workset allowUnit factory (schematic MVP) │
 │    ├── reactive.js          tick loop                    │
 │    ├── reactive-helpers.js  pure watchdog state-machine helpers │
 │    ├── manager.js           connect + stuck watchdog     │

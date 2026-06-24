@@ -16,6 +16,14 @@ import { sceneToolNeeds } from '../runtime/inventory-hints.js';
 import { clearNavTrail, navTrailCrumbsNewestFirst } from '../runtime/nav-trail.js';
 import { buildNavFrame } from '../runtime/nav-brief.js';
 import { autoClearPlaybookOnCardChange } from '../runtime/playbook-context.js';
+import {
+  autoClearConstructOnCardChange,
+  clearConstructSession,
+  constructCompletionBlockedReason,
+  constructFieldsForTaskContext,
+  resolveConstructPlanSnapshot,
+  tryAutoBeginConstructFromTaskContext,
+} from '../runtime/construct-lifecycle.js';
 import { gateOrchestratorMcAction } from './middleware/orchestrator-mc-gate.js';
 import { adviseHintsSuppressed } from '../shared/escalation-hint.js';
 
@@ -158,10 +166,18 @@ export function createBotHttpListener(deps) {
       const TASK_DEFAULT_MS = 30 * 60 * 1000;
       const TASK_MAX_MS = 4 * 60 * 60 * 1000;
       if (req.method === 'GET') {
-        return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
+        const block = constructCompletionBlockedReason(ctx);
+        return respond(res, 200, {
+          ok: true,
+          data: {
+            task_context: ctx.runtime.taskContext,
+            ...(block ? { construct_complete_blocked: block } : {}),
+          },
+        });
       }
       if (req.method === 'DELETE') {
         ctx.runtime.taskContext = null;
+        clearConstructSession(ctx);
         return respond(res, 200, { ok: true, data: { cleared: true } });
       }
       if (req.method === 'POST') {
@@ -194,13 +210,50 @@ export function createBotHttpListener(deps) {
             ? normalizeId(worksiteRaw)
             : null;
         autoClearPlaybookOnCardChange(ctx, cardId);
+        autoClearConstructOnCardChange(ctx, cardId);
+        const constructExtra = constructFieldsForTaskContext(body, worksite_region);
         ctx.runtime.taskContext = {
           card_id: cardId,
           worksite_region,
           expires_at: expiresAt,
           source: String(body.source || 'http'),
+          ...constructExtra,
         };
-        return respond(res, 200, { ok: true, data: { task_context: ctx.runtime.taskContext } });
+        if (constructExtra.card_kind === 'CONSTRUCT') {
+          const snap = resolveConstructPlanSnapshot(ctx, {
+            plan: constructExtra.plan,
+            worksite_region,
+            plan_target: constructExtra.plan_target,
+          });
+          if (snap.ok) {
+            ctx.runtime.taskContext.construct_plan = {
+              plan_id: snap.plan_id,
+              anchor: snap.anchor,
+              footprint: snap.footprint,
+              target: snap.target,
+            };
+          }
+        }
+        let construct_auto_begin = null;
+        try {
+          construct_auto_begin = await tryAutoBeginConstructFromTaskContext(
+            { ctx, config, ensureBot },
+            ctx.runtime.taskContext,
+            body,
+          );
+        } catch (e) {
+          construct_auto_begin = {
+            ok: false,
+            error: { code: 'CONSTRUCT_AUTO_BEGIN_FAILED', message: String(e?.message || e), retry_safe: true },
+          };
+        }
+        return respond(res, 200, {
+          ok: true,
+          data: {
+            task_context: ctx.runtime.taskContext,
+            ...(construct_auto_begin ? { construct_auto_begin } : {}),
+          },
+        });
       }
       return respond(res, 405, { ok: false, error: { message: 'Method not allowed' } });
     }

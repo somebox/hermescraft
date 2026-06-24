@@ -30,6 +30,11 @@ def test_render_substitutes_scalars(tmp_path, monkeypatch):
         (tmp_path / "data" / "ops" / "plans" / "hut1-guard-tower-plan.json").write_text(
             json.dumps({"anchor": {"coords": [0, 65, 0], "marker": {"coords": [0, 65, 0]}}})
         )
+    ss_src = REPO / "data" / "ops" / "plans" / "starter_shelter-plan.json"
+    if ss_src.exists():
+        import shutil
+
+        shutil.copy(ss_src, tmp_path / "data" / "ops" / "plans" / "starter_shelter-plan.json")
     rid = "g-2099-01-01-1"
     anchor = {"x": 10, "y": 64, "z": -20}
     cfg = gl.render_templates(run_id=rid, seed=42, anchor=anchor, difficulty=None)
@@ -37,3 +42,8 @@ def test_render_substitutes_scalars(tmp_path, monkeypatch):
     assert cfg["system_chest_at"]["x"] == anchor["x"] + 1
     regions = json.loads((tmp_path / "data" / "regions-world.json").read_text())
     assert regions["regions"][0]["anchor"]["x"] == 10
+    ss_out = tmp_path / "data" / "ops" / "plans" / "starter_shelter-plan.json"
+    if ss_out.exists():
+        ss_plan = json.loads(ss_out.read_text())
+        assert ss_plan["anchor"]["coords"] == [10, 64, -20]
+        assert ss_plan["anchor"]["marker"]["coords"] == [13, 64, -21]
